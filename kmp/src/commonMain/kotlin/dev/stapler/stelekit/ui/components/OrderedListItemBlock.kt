@@ -1,6 +1,5 @@
 package dev.stapler.stelekit.ui.components
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
@@ -23,12 +22,15 @@ internal fun OrderedListItemBlock(
     onStartEditing: () -> Unit,
     onLinkClick: (String) -> Unit,
     modifier: Modifier = Modifier,
+    isInSelectionMode: Boolean = false,
+    onToggleSelect: () -> Unit = {},
+    onLongPressSelect: (() -> Unit)? = null,
 ) {
     val strippedContent = remember(content) {
         content.trimStart().dropWhile { it.isDigit() }.removePrefix(".").removePrefix(")").trimStart()
     }
 
-    Row(modifier = modifier.clickable { onStartEditing() }) {
+    Row(modifier = modifier) {
         Text(
             text = "$number.",
             style = MaterialTheme.typography.bodyMedium,
@@ -42,6 +44,9 @@ internal fun OrderedListItemBlock(
             resolvedRefs = emptyMap(),
             onLinkClick = onLinkClick,
             onClick = onStartEditing,
+            isInSelectionMode = isInSelectionMode,
+            onToggleSelect = onToggleSelect,
+            onLongPressSelect = onLongPressSelect,
             modifier = Modifier.weight(1f),
         )
     }

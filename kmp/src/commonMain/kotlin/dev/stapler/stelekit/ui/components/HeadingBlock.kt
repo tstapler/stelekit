@@ -1,6 +1,5 @@
 package dev.stapler.stelekit.ui.components
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -30,6 +29,9 @@ internal fun HeadingBlock(
     onStartEditing: () -> Unit,
     onLinkClick: (String) -> Unit,
     modifier: Modifier = Modifier,
+    isInSelectionMode: Boolean = false,
+    onToggleSelect: () -> Unit = {},
+    onLongPressSelect: (() -> Unit)? = null,
 ) {
     val strippedContent = content.trimStart('#').trimStart()
     val textColor = MaterialTheme.colorScheme.onBackground
@@ -62,18 +64,24 @@ internal fun HeadingBlock(
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp)
-            .clickable { onStartEditing() }
-            .pointerInput(annotatedString) {
-                detectTapGestures { tapOffset ->
-                    val layout = textLayoutResult ?: run { onStartEditing(); return@detectTapGestures }
-                    val offset = layout.getOffsetForPosition(tapOffset)
-                    val wikiLink = annotatedString.getStringAnnotations(WIKI_LINK_TAG, offset, offset).firstOrNull()
-                    if (wikiLink != null) {
-                        onLinkClick(wikiLink.item)
-                    } else {
-                        onStartEditing()
+            .pointerInput(annotatedString, isInSelectionMode) {
+                detectTapGestures(
+                    onLongPress = { onLongPressSelect?.invoke() },
+                    onTap = { tapOffset ->
+                        if (isInSelectionMode) {
+                            onToggleSelect()
+                            return@detectTapGestures
+                        }
+                        val layout = textLayoutResult ?: run { onStartEditing(); return@detectTapGestures }
+                        val offset = layout.getOffsetForPosition(tapOffset)
+                        val wikiLink = annotatedString.getStringAnnotations(WIKI_LINK_TAG, offset, offset).firstOrNull()
+                        if (wikiLink != null) {
+                            onLinkClick(wikiLink.item)
+                        } else {
+                            onStartEditing()
+                        }
                     }
-                }
+                )
             }
     )
 }
