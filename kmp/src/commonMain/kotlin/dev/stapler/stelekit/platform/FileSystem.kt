@@ -145,6 +145,14 @@ interface FileSystem {
     suspend fun syncShadow(graphPath: String) { /* no-op */ }
 
     /**
+     * Current [HostAccessState] of [graphPath]'s connection to a host directory picked via the
+     * File System Access API (web-local-folder-livesync project). Only the wasmJs actual
+     * overrides this; every other platform has no concept of a "host directory" separate from
+     * its own storage, so the default returns [HostAccessState.NotApplicable] and performs no I/O.
+     */
+    suspend fun hostDirectoryAccessState(graphPath: String): HostAccessState = HostAccessState.NotApplicable
+
+    /**
      * Returns a platform-loadable URI string for a file at [graphRoot]/[relativePath].
      * On Android SAF paths this returns the `content://` document URI (or a `file://`
      * real path when MANAGE_EXTERNAL_STORAGE is granted); on other platforms returns null
