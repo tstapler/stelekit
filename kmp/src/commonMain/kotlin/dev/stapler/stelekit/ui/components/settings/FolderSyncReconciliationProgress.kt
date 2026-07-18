@@ -81,7 +81,7 @@ fun FolderSyncReconciliationProgress(
 }
 
 @Composable
-private fun ConnectingState(modifier: Modifier) {
+private fun ConnectingState(modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -107,7 +107,7 @@ private fun ConnectingState(modifier: Modifier) {
 private fun SummaryState(
     state: ReconciliationUiState.Summary,
     onDone: () -> Unit,
-    modifier: Modifier,
+    modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxWidth().padding(16.dp)) {
         Row(
@@ -159,7 +159,7 @@ private fun SummaryState(
 private fun FailedState(
     onRetry: () -> Unit,
     onCancel: () -> Unit,
-    modifier: Modifier,
+    modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxWidth().padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {

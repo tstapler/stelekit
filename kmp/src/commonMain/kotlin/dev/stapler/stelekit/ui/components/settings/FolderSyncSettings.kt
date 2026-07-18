@@ -18,6 +18,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.platform.HostAccessState
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 /**
@@ -57,6 +58,8 @@ fun FolderSyncSettings(
         scope.launch {
             uiState = try {
                 onConnect()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Throwable) {
                 ReconciliationUiState.Failed(e.message ?: "Couldn't finish comparing your files")
             }
