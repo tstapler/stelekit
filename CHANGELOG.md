@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.71.0](https://github.com/tstapler/stelekit/compare/v0.70.0...v0.71.0) (2026-07-18)
+
+
+### Features
+
+* **web:** local folder live sync (write-through, external-change detection, cross-tab locks) ([#245](https://github.com/tstapler/stelekit/issues/245)) ([da00bae](https://github.com/tstapler/stelekit/commit/da00bae141255e46044e5eedd4ac8756706e9516))
+
+
+### Bug Fixes
+
+* **ui:** resolve tap-vs-selection race by consolidating gesture recognizers per block row ([#240](https://github.com/tstapler/stelekit/issues/240)) ([dc94048](https://github.com/tstapler/stelekit/commit/dc94048f63ff051d5720d45855577df70144a8c3))
+
 ## [0.70.0](https://github.com/tstapler/stelekit/compare/v0.69.1...v0.70.0) (2026-07-16)
 
 
