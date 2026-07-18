@@ -498,7 +498,29 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     override suspend fun hostDirectoryAccessState(graphPath: String): HostAccessState =
         hostDirectorySync.hostAccessStateFlow.value
 
-    actual override fun getLastModifiedTime(path: String): Long? = null
+    /**
+     * Epic 5.1 (Task 5.2.1a): one-line delegate to [HostDirectorySync.hostModTimes], populated by
+     * [HostDirectorySync.pollHostDirectoryOnce]/`runHostReconciliation`. [HostDirectorySync.hostModTimes]
+     * itself already returns nothing meaningful (an empty/miss map) when no host directory is
+     * connected, so no separate `hostDirHandle == null` check is needed here — matches this
+     * method's pre-Phase-5 `null` regression behavior exactly in that case.
+     */
+    actual override fun getLastModifiedTime(path: String): Long? = hostDirectorySync.hostModTimes[path]
+
+    /**
+     * Epic 5.1 (Task 5.2.1b): delegates to [HostDirectorySync.listFilesWithModTimes] — a single
+     * map-iteration pass instead of N synchronous [getLastModifiedTime] calls. Falls through to
+     * the [FileSystem] interface's default implementation (`listFiles` + per-file
+     * [getLastModifiedTime]) whenever the delegate returns empty — covers both "no host directory
+     * connected" and "connected, but this directory happens to have no known entries yet."
+     */
+    override fun listFilesWithModTimes(path: String): List<Pair<String, Long>> {
+        val delegated = hostDirectorySync.listFilesWithModTimes(path)
+        return delegated.ifEmpty {
+            listFiles(path).map { name -> name to (getLastModifiedTime("$path/$name") ?: 0L) }
+        }
+    }
+
     override fun registerBlobUrl(path: String, url: String) { blobUrlCache[path] = url }
     override fun resolveAssetUri(graphRoot: String, relativePath: String): String? =
         blobUrlCache["${graphRoot.trimEnd('/')}/$relativePath"]

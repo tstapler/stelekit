@@ -137,6 +137,16 @@ internal fun changeRecordRelativePath(record: JsAny): List<String> {
     return (0 until length).map { jsArrayGetString(arr, it) }
 }
 
+/**
+ * Epic 5.2 (Task 5.2.2b): `FileSystemObserver`'s callback receives `records` as a plain JS array
+ * of change-record objects (each shaped for [changeRecordType]/[changeRecordRelativePath]) — these
+ * two accessors let [HostDirectorySync.handleObserverRecords] iterate that array the same
+ * `arr.length`/`arr[index]` way [jsArrayLength]/[jsArrayGetString] already do for a
+ * `relativePathComponents` array, just returning `JsAny` (a record) instead of `String`.
+ */
+internal fun jsRecordsLength(records: JsAny): Int = js("records.length | 0")
+internal fun jsRecordsGet(records: JsAny, index: Int): JsAny = js("records[index]")
+
 // ---------------------------------------------------------------------------------------------
 // File.lastModified / size, and the visibility-visible promise (Story 1.5.5)
 // ---------------------------------------------------------------------------------------------
