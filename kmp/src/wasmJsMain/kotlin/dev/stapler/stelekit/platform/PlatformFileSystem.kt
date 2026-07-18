@@ -7,8 +7,10 @@ import dev.stapler.stelekit.git.model.PendingCommit
 import dev.stapler.stelekit.git.model.gitApiJson
 import dev.stapler.stelekit.sync.WasmSectionSyncService
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.await
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -41,6 +43,55 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     private var markerWriteInFlight = false
     private var markerWriteDirty = false
 
+    // ── Epic 1.7 (Story 1.7.1): per-path in-flight OPFS-write tracking ────────────────────────
+    // Populated when writeFile/writeFileBytes launches its OPFS-persisting write, self-cleans on
+    // completion (success or failure). HostDirectorySync.scheduleHostWriteThrough (Phase 4) will
+    // await a path's entry here before enqueueing it for host write-through, closing the crash
+    // window where a host push could otherwise race ahead of the edit actually landing in OPFS.
+    private val opfsWriteInFlight = mutableMapOf<String, Deferred<Unit>>()
+
+    /**
+     * Task 1.7.1a: accessor for [path]'s currently in-flight OPFS-persisting write, if any.
+     * Tested directly (Story 1.7.3) as well as exposed to [hostDirectorySync] via
+     * [HostDirectorySync.CacheAccess.opfsWriteDeferredFor].
+     */
+    fun opfsWriteDeferredFor(path: String): Deferred<Unit>? = opfsWriteInFlight[path]
+
+    // ── Epic 1.6: HostDirectorySync composition (architecture-review.md Blocker 1 remediation) ─
+    // Every Phase 2-7 host-directory-sync field/method lives on hostDirectorySync, never here.
+    // Exposed non-privately so Main.kt/UI code can call its non-FileSystem-interface entry points
+    // (reconnectHostDirectory, requestHostDirectoryAccess, connectHostDirectory, its StateFlows)
+    // directly, without PlatformFileSystem needing to re-expose every one as a passthrough.
+    val hostDirectorySync: HostDirectorySync = HostDirectorySync(
+        graphId = graphId,
+        cacheAccess = object : HostDirectorySync.CacheAccess {
+            override fun get(path: String) = cache[path]
+            override fun set(path: String, content: String) {
+                cache[path] = content
+            }
+            override fun remove(path: String) {
+                cache.remove(path)
+            }
+            override fun getBytes(path: String) = bytesCache[path]
+            override fun setBytes(path: String, data: ByteArray) {
+                bytesCache[path] = data
+            }
+            override fun removeBytes(path: String) {
+                bytesCache.remove(path)
+            }
+            override fun keysUnder(opfsPath: String) =
+                (cache.keys + bytesCache.keys).filter { it.startsWith("$opfsPath/") }.toSet()
+            override fun writeOpfsMirror(path: String, content: String) {
+                scope.launch { opfsWriteFile(path, content) }
+            }
+            override fun writeOpfsMirrorBytes(path: String, data: ByteArray) {
+                scope.launch { opfsWriteFileBytes(path, data.toJsArrayBuffer()) }
+            }
+            override fun opfsWriteDeferredFor(path: String): Deferred<Unit>? = opfsWriteInFlight[path]
+        },
+        scope = scope,
+    )
+
     init {
         // Belt-and-suspenders flush: fire the same scheduler when the tab is hidden/closed, even
         // though the redesign above already bounds the crash-loss window to a single in-flight
@@ -53,6 +104,26 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
                     break
                 }
                 scheduleMarkerWrite()
+            }
+        }
+
+        // Epic 1.7 (Task 1.7.2b): best-effort teardown diagnostic — logs any OPFS writes still in
+        // flight at pagehide/beforeunload. This does NOT attempt to force or await completion of
+        // any in-flight write and closes no crash window beyond what Story 1.7.1's
+        // await-before-enqueue fix already closes; it exists purely so a real-world crash-window
+        // occurrence is observable in logs rather than silent. Applies platform-wide, not gated on
+        // a host directory being connected.
+        scope.launch {
+            while (true) {
+                try {
+                    jsPageHidePromise().await<JsAny?>()
+                } catch (e: Throwable) {
+                    break
+                }
+                val inFlightCount = opfsWriteInFlight.size
+                if (inFlightCount > 0) {
+                    println("[SteleKit] pagehide: $inFlightCount OPFS writes still in flight")
+                }
             }
         }
     }
@@ -271,7 +342,13 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         }
         cache[path] = content
         recordDirty(path, DirtyOp.WRITE)
-        scope.launch { opfsWriteFile(path, content) }
+        opfsWriteInFlight[path] = scope.async {
+            try {
+                opfsWriteFile(path, content)
+            } finally {
+                opfsWriteInFlight.remove(path)
+            }
+        }
         return true
     }
 
@@ -300,7 +377,13 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         if (path.startsWith(DOWNLOAD_PREFIX)) return false
         bytesCache[path] = data
         recordDirty(path, DirtyOp.WRITE)
-        scope.launch { opfsWriteFileBytes(path, data.toJsArrayBuffer()) }
+        opfsWriteInFlight[path] = scope.async {
+            try {
+                opfsWriteFileBytes(path, data.toJsArrayBuffer())
+            } finally {
+                opfsWriteInFlight.remove(path)
+            }
+        }
         return true
     }
 

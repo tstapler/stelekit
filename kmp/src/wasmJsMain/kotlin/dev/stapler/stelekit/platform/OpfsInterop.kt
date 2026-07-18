@@ -178,3 +178,33 @@ internal fun jsVisibilityHiddenPromise(): kotlin.js.Promise<JsAny?> = js(
     })()
     """
 )
+
+/**
+ * Epic 1.7 (Task 1.7.2a): resolves the instant either `pagehide` or `beforeunload` fires (once,
+ * the earlier of the two) — used by [PlatformFileSystem]'s best-effort teardown diagnostic to log
+ * any still-in-flight OPFS writes. Mirrors [jsVisibilityHiddenPromise]'s shape/caveats: in
+ * environments with no `window` (e.g. some test runners) the returned promise simply never
+ * resolves — a safe no-op, not a crash. Best-effort only — browsers do not reliably await async
+ * work after these events fire.
+ */
+internal fun jsPageHidePromise(): kotlin.js.Promise<JsAny?> = js(
+    """
+    (function() {
+        return new Promise(function(resolve) {
+            if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') {
+                return;
+            }
+            var settled = false;
+            function handler() {
+                if (settled) return;
+                settled = true;
+                window.removeEventListener('pagehide', handler);
+                window.removeEventListener('beforeunload', handler);
+                resolve(null);
+            }
+            window.addEventListener('pagehide', handler);
+            window.addEventListener('beforeunload', handler);
+        });
+    })()
+    """
+)
