@@ -83,6 +83,23 @@ class HostDirectorySync(
      * than only the `println` observability line. `null` until the first reconciliation runs.
      */
     internal var lastReconciliationSummary: ReconciliationSummary? = null
+
+    // ── Epic 5.1's fields (forward-declared, Story 3.4.1): mtime/size reconciliation baseline ──
+    /**
+     * Forward-declared per Story 3.4.1's design — nominally "Epic 5.1's fields" (the poller,
+     * `pollHostDirectoryOnce`, Task 5.1.1b, not yet implemented), added here so
+     * [runHostReconciliation]'s mtime/size pre-filter has somewhere to read/write a baseline now,
+     * and so reconciliation and the future poller share one up-to-date baseline instead of two
+     * independently-drifting ones. Keyed by absolute OPFS path (matching `hostVisitedPaths`/
+     * `cacheAccess.keysUnder`'s path shape). Empty until the first reconciliation/poll populates
+     * an entry for a given path — an absent entry is always treated as "no baseline, must read
+     * content," never as "unchanged" (see [runHostReconciliation]'s pre-filter branch).
+     */
+    internal val hostModTimes: MutableMap<String, Long> = mutableMapOf()
+
+    /** Sibling baseline to [hostModTimes] — see that field's doc comment. */
+    internal val hostFileSizes: MutableMap<String, Long> = mutableMapOf()
+
     /**
      * Small constructor-injected interface [HostDirectorySync] uses to read/write
      * `PlatformFileSystem`'s `cache`/`bytesCache` without owning either map — keeps `cache`/
@@ -203,6 +220,23 @@ class HostDirectorySync(
      * Paths present in [CacheAccess] but never visited by the host walk (Task 3.2.1b) are
      * classified as [ReconciliationOutcome.BrowserOnlyNeedsPush] against a `null` host side.
      *
+     * **Story 3.4.1 (mtime/size pre-filter)**: before reading a visited file's content, the walk
+     * first compares `fileLastModified`/`fileSize` (from the file's already-cheap `getFile()`
+     * metadata — [getOpfsFile]) against [hostModTimes]/[hostFileSizes]'s baseline for that path.
+     * A match short-circuits straight to [ReconciliationOutcome.Identical] — no `.text()`/
+     * `.arrayBuffer()` content read, no [classifyReconciliation]/[classifyReconciliationBytes]
+     * call. No baseline entry (first-ever reconciliation for a path) is always treated as "must
+     * read," never as "unchanged." [hostModTimes]/[hostFileSizes] are updated for every visited
+     * path regardless of which branch ran, so the baseline stays current for the next pass (and
+     * for the future poller, Epic 5.1, which shares these same fields).
+     *
+     * **Story 3.4.2 (calling convention)**: this function is a plain `suspend fun` with no
+     * assumption that its caller awaits it synchronously. It **must be launched via
+     * `scope.launch`** (non-blocking) when called from `reconnectHostDirectory`'s silent-resume
+     * path — session-resume must never block app startup on a full reconciliation walk.
+     * [connectHostDirectory]'s one-time opt-in flow remains awaited/blocking, since its progress
+     * UI (Surface 8) is designed for exactly that wait.
+     *
      * Returns a [ReconciliationSummary] tallying every classification, also stashed in
      * [lastReconciliationSummary] for UI wiring that runs after [connectHostDirectory] resolves.
      */
@@ -213,6 +247,14 @@ class HostDirectorySync(
         var browserOnlyNeedsPushCount = 0
         val hostVisitedPaths = mutableSetOf<String>()
 
+        // Task 3.4.1a: a path's cheap metadata matches a known-good baseline iff both mtime and
+        // size are present and unchanged — mirrors FileRegistry.detectChanges's mtime-first idiom.
+        fun matchesBaseline(path: String, mtime: Long, size: Long): Boolean {
+            val knownMtime = hostModTimes[path]
+            val knownSize = hostFileSizes[path]
+            return knownMtime != null && knownSize != null && knownMtime == mtime && knownSize == size
+        }
+
         suspend fun walk(handle: JsAny, currentPath: String) {
             for (entry in listOpfsEntries(handle)) {
                 val name = getEntryName(entry)
@@ -220,61 +262,79 @@ class HostDirectorySync(
                 when {
                     isFileEntry(entry) && path.endsWith(".md.stek") -> {
                         hostVisitedPaths += path
-                        val hostBytes = readOpfsFileAsBytes(entry)
-                        if (hostBytes == null) {
-                            println("[SteleKit] runHostReconciliation: failed to read '$path' from host, skipping")
+                        val file = getOpfsFile(entry)
+                        val mtime = fileLastModified(file)
+                        val size = fileSize(file)
+                        if (matchesBaseline(path, mtime, size)) {
+                            identicalCount++
                         } else {
-                            val cacheBytes = cacheAccess.getBytes(path)
-                            when (classifyReconciliationBytes(hostBytes, cacheBytes)) {
-                                ReconciliationOutcome.Identical -> identicalCount++
-                                ReconciliationOutcome.HostChangedConflict -> {
-                                    hostChangedConflictCount++
-                                    // Deliberately does NOT call onHostConflict here: that callback
-                                    // is String-typed (GraphLoader.emitExternalFileChange takes
-                                    // plaintext markdown), and decoding paranoid-mode ciphertext to
-                                    // a String to satisfy that signature is exactly what
-                                    // adversarial-review.md Blocker 4 forbids. Counted in the
-                                    // summary; a bytes-aware conflict surface is out of this
-                                    // dispatch's scope (Epic 3.1-3.3).
-                                }
-                                ReconciliationOutcome.HostOnlyNew -> {
-                                    hostOnlyNewCount++
-                                    cacheAccess.setBytes(path, hostBytes)
-                                    cacheAccess.writeOpfsMirrorBytes(path, hostBytes)
-                                }
-                                ReconciliationOutcome.BrowserOnlyNeedsPush -> {
-                                    // Unreachable: hostBytes is non-null in this branch (the walk
-                                    // only visits paths that exist on the host), so
-                                    // classifyReconciliationBytes can never return this variant
-                                    // here. Kept for `when` exhaustiveness (type-driven design —
-                                    // a future ReconciliationOutcome variant fails the build here).
+                            val hostBytes = readOpfsFileAsBytes(entry)
+                            if (hostBytes == null) {
+                                println("[SteleKit] runHostReconciliation: failed to read '$path' from host, skipping")
+                            } else {
+                                val cacheBytes = cacheAccess.getBytes(path)
+                                when (classifyReconciliationBytes(hostBytes, cacheBytes)) {
+                                    ReconciliationOutcome.Identical -> identicalCount++
+                                    ReconciliationOutcome.HostChangedConflict -> {
+                                        hostChangedConflictCount++
+                                        // Deliberately does NOT call onHostConflict here: that callback
+                                        // is String-typed (GraphLoader.emitExternalFileChange takes
+                                        // plaintext markdown), and decoding paranoid-mode ciphertext to
+                                        // a String to satisfy that signature is exactly what
+                                        // adversarial-review.md Blocker 4 forbids. Counted in the
+                                        // summary; a bytes-aware conflict surface is out of this
+                                        // dispatch's scope (Epic 3.1-3.3).
+                                    }
+                                    ReconciliationOutcome.HostOnlyNew -> {
+                                        hostOnlyNewCount++
+                                        cacheAccess.setBytes(path, hostBytes)
+                                        cacheAccess.writeOpfsMirrorBytes(path, hostBytes)
+                                    }
+                                    ReconciliationOutcome.BrowserOnlyNeedsPush -> {
+                                        // Unreachable: hostBytes is non-null in this branch (the walk
+                                        // only visits paths that exist on the host), so
+                                        // classifyReconciliationBytes can never return this variant
+                                        // here. Kept for `when` exhaustiveness (type-driven design —
+                                        // a future ReconciliationOutcome variant fails the build here).
+                                    }
                                 }
                             }
                         }
+                        hostModTimes[path] = mtime
+                        hostFileSizes[path] = size
                     }
                     isFileEntry(entry) -> {
                         hostVisitedPaths += path
-                        val hostContent = readOpfsFile(entry)
-                        if (hostContent == null) {
-                            println("[SteleKit] runHostReconciliation: failed to read '$path' from host, skipping")
+                        val file = getOpfsFile(entry)
+                        val mtime = fileLastModified(file)
+                        val size = fileSize(file)
+                        if (matchesBaseline(path, mtime, size)) {
+                            identicalCount++
                         } else {
-                            val cacheContent = cacheAccess.get(path)
-                            when (classifyReconciliation(hostContent, cacheContent)) {
-                                ReconciliationOutcome.Identical -> identicalCount++
-                                ReconciliationOutcome.HostChangedConflict -> {
-                                    hostChangedConflictCount++
-                                    onHostConflict(path.removePrefix("$opfsPath/"), hostContent)
-                                }
-                                ReconciliationOutcome.HostOnlyNew -> {
-                                    hostOnlyNewCount++
-                                    cacheAccess.set(path, hostContent)
-                                    cacheAccess.writeOpfsMirror(path, hostContent)
-                                }
-                                ReconciliationOutcome.BrowserOnlyNeedsPush -> {
-                                    // Unreachable here — see the `.md.stek` branch's identical note.
+                            val hostContent = readOpfsFile(entry)
+                            if (hostContent == null) {
+                                println("[SteleKit] runHostReconciliation: failed to read '$path' from host, skipping")
+                            } else {
+                                val cacheContent = cacheAccess.get(path)
+                                when (classifyReconciliation(hostContent, cacheContent)) {
+                                    ReconciliationOutcome.Identical -> identicalCount++
+                                    ReconciliationOutcome.HostChangedConflict -> {
+                                        hostChangedConflictCount++
+                                        onHostConflict(path.removePrefix("$opfsPath/"), hostContent)
+                                    }
+                                    ReconciliationOutcome.HostOnlyNew -> {
+                                        hostOnlyNewCount++
+                                        cacheAccess.set(path, hostContent)
+                                        cacheAccess.writeOpfsMirror(path, hostContent)
+                                    }
+                                    ReconciliationOutcome.BrowserOnlyNeedsPush -> {
+                                        // Unreachable here — see the `.md.stek` branch's identical note.
+                                    }
                                 }
                             }
                         }
+                        hostModTimes[path] = mtime
+                        hostFileSizes[path] = size
                     }
                     isDirectoryEntry(entry) -> walk(entry, path)
                 }

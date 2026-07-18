@@ -5,7 +5,6 @@ package dev.stapler.stelekit.platform
 
 import dev.stapler.stelekit.git.model.DirtyOp
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -21,97 +20,10 @@ import kotlin.test.assertTrue
 // js() calls must be top-level functions in Kotlin/Wasm — not inside a class or companion object
 // (mirrors HostDirectorySyncHandleRetentionTest.kt's established idiom for this codebase).
 
-// ── Fake FileSystemDirectoryHandle/FileSystemFileHandle tree builders ─────────────────────────
-// Mirrors the `listOpfsEntries`/`isFileEntry`/`isDirectoryEntry`/`getFile().text()`/
-// `getFile().arrayBuffer()` surface `runHostReconciliation`/`PlatformFileSystem.pickDirectoryAsync`
-// actually consume (OpfsInterop.kt) — a minimal test double for the real browser API, following
-// PlatformFileSystemDirtyTrackingIntegrationTest.kt/HostDirectorySyncHandleRetentionTest.kt's
-// precedent of testing against the real wasmJs interop surface (headless Chrome,
-// `wasmJsBrowserTest`) rather than injecting a mock traversal function.
-
-private fun newJsArray(): JsAny = js("[]")
-private fun jsArrayPush(arr: JsAny, item: JsAny): Unit = js("arr.push(item)")
-
-private fun toJsArray(items: List<JsAny>): JsAny {
-    val arr = newJsArray()
-    for (item in items) jsArrayPush(arr, item)
-    return arr
-}
-
-private fun fakeTextFileEntry(name: String, content: String): JsAny = js(
-    """
-    ({
-        kind: 'file',
-        name: name,
-        getFile: function() {
-            return Promise.resolve({
-                text: function() { return Promise.resolve(content); }
-            });
-        }
-    })
-    """,
-)
-
-private fun fakeBytesFileEntry(name: String, buffer: JsAny): JsAny = js(
-    """
-    ({
-        kind: 'file',
-        name: name,
-        getFile: function() {
-            return Promise.resolve({
-                arrayBuffer: function() { return Promise.resolve(buffer); }
-            });
-        }
-    })
-    """,
-)
-
-private fun fakeDirEntry(name: String, children: JsAny): JsAny = js(
-    """
-    ({
-        kind: 'directory',
-        name: name,
-        values: function() {
-            var idx = 0;
-            return {
-                next: function() {
-                    if (idx < children.length) {
-                        return Promise.resolve({ done: false, value: children[idx++] });
-                    }
-                    return Promise.resolve({ done: true, value: undefined });
-                }
-            };
-        }
-    })
-    """,
-)
-
-/** Used by the `connectHostDirectory`/`runHostReconciliation` error-path test. */
-private fun fakeThrowingDirEntry(name: String): JsAny = js(
-    """
-    ({
-        kind: 'directory',
-        name: name,
-        values: function() { throw new Error('boom: directory unreadable'); }
-    })
-    """,
-)
-
-private sealed interface Entry
-private data class TextFile(val name: String, val content: String) : Entry
-private data class BytesFile(val name: String, val bytes: ByteArray) : Entry
-private data class Dir(val name: String, val children: List<Entry> = emptyList()) : Entry
-
-private fun buildEntry(e: Entry): JsAny = when (e) {
-    is TextFile -> fakeTextFileEntry(e.name, e.content)
-    is BytesFile -> fakeBytesFileEntry(e.name, e.bytes.toJsArrayBuffer())
-    is Dir -> fakeDirEntry(e.name, toJsArray(e.children.map { buildEntry(it) }))
-}
-
-/** Builds a fake root [FileSystemDirectoryHandle]-shaped `JsAny` from a declarative [Entry] tree. */
-private fun rootDir(vararg children: Entry): JsAny = buildEntry(Dir("root", children.toList()))
-
-private fun emptyRootDir(): JsAny = fakeDirEntry("root", newJsArray())
+// The fake FileSystemDirectoryHandle/FileSystemFileHandle tree builders (fakeTextFileEntry,
+// fakeBytesFileEntry, fakeDirEntry, fakeThrowingDirEntry, Entry/TextFile/BytesFile/Dir, buildEntry,
+// rootDir, emptyRootDir) and FakeCacheAccess live in HostDirectoryTestFixtures.kt (Task 3.4.3a) —
+// shared with HostDirectorySyncReconciliationBenchmarkTest.kt, same package, no import needed.
 
 // ── window.showDirectoryPicker stubbing (Task 3.3.1d/connectHostDirectory tests) ──────────────
 // Mirrors HostDirectorySyncHandleRetentionTest.kt's stubIndexedDbOpenToThrow/restoreIndexedDb idiom.
@@ -165,48 +77,8 @@ private fun restoreShowDirectoryPicker(original: JsAny?): Unit = js(
  */
 class HostDirectorySyncReconciliationTest {
 
-    private class FakeCacheAccess : HostDirectorySync.CacheAccess {
-        val textStore = mutableMapOf<String, String>()
-        val bytesStore = mutableMapOf<String, ByteArray>()
-        var getCallCount = 0
-        var setCallCount = 0
-        var getBytesCallCount = 0
-        var setBytesCallCount = 0
-        val mirrorWrites = mutableListOf<Pair<String, String>>()
-        val mirrorBytesWrites = mutableListOf<Pair<String, ByteArray>>()
-
-        override fun get(path: String): String? {
-            getCallCount++
-            return textStore[path]
-        }
-        override fun set(path: String, content: String) {
-            setCallCount++
-            textStore[path] = content
-        }
-        override fun remove(path: String) {
-            textStore.remove(path)
-        }
-        override fun getBytes(path: String): ByteArray? {
-            getBytesCallCount++
-            return bytesStore[path]
-        }
-        override fun setBytes(path: String, data: ByteArray) {
-            setBytesCallCount++
-            bytesStore[path] = data
-        }
-        override fun removeBytes(path: String) {
-            bytesStore.remove(path)
-        }
-        override fun keysUnder(opfsPath: String): Set<String> =
-            (textStore.keys + bytesStore.keys).filter { it.startsWith("$opfsPath/") }.toSet()
-        override fun writeOpfsMirror(path: String, content: String) {
-            mirrorWrites += path to content
-        }
-        override fun writeOpfsMirrorBytes(path: String, data: ByteArray) {
-            mirrorBytesWrites += path to data
-        }
-        override fun opfsWriteDeferredFor(path: String): Deferred<Unit>? = null
-    }
+    // FakeCacheAccess is defined in HostDirectoryTestFixtures.kt (Task 3.4.3a — shared with
+    // HostDirectorySyncReconciliationBenchmarkTest.kt).
 
     private fun newSync(
         graphId: String,
@@ -391,6 +263,103 @@ class HostDirectorySyncReconciliationTest {
         assertTrue(sync.hostWritePending.containsKey("pages/OnlyA.md"))
         assertTrue(sync.hostWritePending.containsKey("pages/OnlyB.md"))
         assertFalse(sync.hostWritePending.containsKey("pages/Unrelated.md"))
+        testScope.cancel()
+    }
+
+    // ── mtime/size pre-filter (Story 3.4.1, Task 3.4.1b) ───────────────────────────────────────
+
+    @Test
+    fun runHostReconciliation_should_PerformZeroContentReads_When_AllFilesMatchMtimeSizeBaseline() = runTest {
+        val opfsPath = "/stelekit/g"
+        val cache = FakeCacheAccess()
+        val testScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val sync = newSync("g", cache, testScope)
+
+        val fileCount = 25
+        val files = (1..fileCount).map { i -> TextFile("File$i.md", "content-$i", lastModified = 1_000L + i) }
+        // Baseline exactly matches every file's mtime/size — a steady-state session-resume with
+        // nothing changed since the last reconciliation/poll.
+        files.forEach { f ->
+            val path = "$opfsPath/pages/${f.name}"
+            sync.hostModTimes[path] = f.lastModified
+            sync.hostFileSizes[path] = f.size
+            cache.textStore[path] = f.content
+        }
+
+        val counter = newReadCounter()
+        val host = rootDir(Dir("pages", files), counter = counter)
+
+        val summary = sync.runHostReconciliation(host, opfsPath)
+
+        assertEquals(fileCount, summary.identical)
+        assertEquals(0, readCounterValue(counter))
+        assertTrue(cache.mirrorWrites.isEmpty())
+        testScope.cancel()
+    }
+
+    @Test
+    fun runHostReconciliation_should_PerformExactlyNContentReads_When_NOfManyFilesDifferFromBaseline() = runTest {
+        val opfsPath = "/stelekit/g"
+        val cache = FakeCacheAccess()
+        val testScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val sync = newSync("g", cache, testScope)
+
+        val totalCount = 30
+        val changedCount = 7
+        val files = (1..totalCount).map { i ->
+            val changed = i <= changedCount
+            TextFile("File$i.md", "content-$i", lastModified = if (changed) 2_000L + i else 1_000L + i)
+        }
+        // Baseline reflects each file's PREVIOUS mtime — changedCount of them no longer match the
+        // walk's freshly-observed mtime, forcing a fall-through content read for exactly those.
+        files.forEachIndexed { idx, f ->
+            val i = idx + 1
+            val path = "$opfsPath/pages/${f.name}"
+            sync.hostModTimes[path] = 1_000L + i
+            sync.hostFileSizes[path] = f.size
+            cache.textStore[path] = f.content
+        }
+
+        val counter = newReadCounter()
+        val host = rootDir(Dir("pages", files), counter = counter)
+
+        val summary = sync.runHostReconciliation(host, opfsPath)
+
+        // The pre-filter is a short-circuit for the unchanged case only — a mtime miss still
+        // routes through the normal four-way classification, which lands on Identical here since
+        // content itself didn't change, proving the pre-filter never substitutes for classification.
+        assertEquals(changedCount, readCounterValue(counter))
+        assertEquals(totalCount, summary.identical)
+        testScope.cancel()
+    }
+
+    @Test
+    fun runHostReconciliation_should_FallBackToFullContentRead_When_NoBaselineExistsForAnyPath() = runTest {
+        val opfsPath = "/stelekit/g"
+        val cache = FakeCacheAccess()
+        val testScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val sync = newSync("g", cache, testScope)
+        // sync.hostModTimes/hostFileSizes intentionally left empty — first-ever reconciliation for
+        // this graph (e.g. a fresh connectHostDirectory) must never treat "no baseline" as
+        // "unchanged."
+
+        val fileCount = 12
+        val files = (1..fileCount).map { i -> TextFile("File$i.md", "content-$i", lastModified = 5_000L + i) }
+        val counter = newReadCounter()
+        val host = rootDir(Dir("pages", files), counter = counter)
+
+        val summary = sync.runHostReconciliation(host, opfsPath)
+
+        assertEquals(fileCount, readCounterValue(counter))
+        // Cache started empty, so every file is HostOnlyNew — identical to Task 3.2.1a's
+        // pre-existing first-connect behavior (no behavior change for this case).
+        assertEquals(fileCount, summary.hostOnlyNew)
+        // The baseline is now populated for the next (steady-state) pass.
+        files.forEach { f ->
+            val path = "$opfsPath/pages/${f.name}"
+            assertEquals(f.lastModified, sync.hostModTimes[path])
+            assertEquals(f.size, sync.hostFileSizes[path])
+        }
         testScope.cancel()
     }
 

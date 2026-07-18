@@ -51,6 +51,16 @@ internal suspend fun readOpfsFile(fileHandle: JsAny): String? = try {
     null
 }
 
+/**
+ * Epic 3.4 (Task 3.4.1a): resolves a file handle's underlying `File` object without reading any
+ * content (`.text()`/`.arrayBuffer()`) — the same `handle.getFile()` call [readOpfsFile]/
+ * [readOpfsFileAsBytes] already make internally before reading content, exposed here so
+ * `runHostReconciliation`'s mtime/size pre-filter (`fileLastModified`/`fileSize`,
+ * `HostDirectoryInterop.kt`) can inspect metadata first and skip the content read entirely when
+ * the pre-filter matches a known-good baseline.
+ */
+internal suspend fun getOpfsFile(fileHandle: JsAny): JsAny = fileHandleGetFile(fileHandle).await()
+
 private fun fileHandleCreateWritable(handle: JsAny): kotlin.js.Promise<JsAny> = js("handle.createWritable()")
 private fun writableWrite(writable: JsAny, content: String): kotlin.js.Promise<JsAny> = js("writable.write(content)")
 private fun writableWriteBuffer(writable: JsAny, buffer: JsAny): kotlin.js.Promise<JsAny> = js("writable.write(buffer)")
