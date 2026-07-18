@@ -808,6 +808,15 @@ class SqlDelightBlockRepository(
 
                 // Update current block hierarchy in one shot
                 queries.updateBlockHierarchy(grandParentUuid, newLeftUuid, newPosition, newLevel, block.uuid)
+
+                // Descendants moved with the block — their absolute levels must shift by the
+                // same delta or they'd stay stale relative to their (now-shallower) ancestor.
+                val levelDelta = newLevel - block.level
+                if (levelDelta != 0L) {
+                    queries.selectBlockHierarchyRecursive(block.uuid).asFlow().mapToList(PlatformDispatcher.DB).first()
+                        .filter { it.uuid != block.uuid }
+                        .forEach { descendant -> queries.updateBlockLevelOnly(descendant.level + levelDelta, descendant.uuid) }
+                }
             }
 
             hierarchyCache.invalidateAll()
