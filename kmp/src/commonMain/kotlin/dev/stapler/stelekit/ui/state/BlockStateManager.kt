@@ -1216,6 +1216,11 @@ class BlockStateManager(
             ?.position
 
     override fun addNewBlock(currentBlockUuid: BlockUuid): Job = scope.launch {
+        // Held for the whole split (read-through-write) so a concurrent link/text insertion on
+        // currentBlockUuid can't land between the content read here and writeSplitBlock below —
+        // otherwise cursorPosition is computed against stale content length and the split point
+        // lands mid-insertion. Mirrors insertTextAtCursor/insertLinkAtCursor/etc.
+        getBlockMutex(currentBlockUuid).withLock {
         val sourceBlock = findBlockOrNull(currentBlockUuid) ?: return@launch
         val pageUuidStr = sourceBlock.pageUuid.value
         val before = takePageSnapshot(pageUuidStr)
@@ -1263,14 +1268,20 @@ class BlockStateManager(
             }
             requestEditBlock(currentBlockUuid, cursorPosition)
         }
+        }
     }
 
     override fun splitBlock(blockUuid: BlockUuid, cursorPosition: Int): Job = scope.launch {
+        // See addNewBlock: held for the whole split so a concurrent link/text insertion on
+        // blockUuid can't land between the content read here and writeSplitBlock below.
+        getBlockMutex(blockUuid).withLock {
         val pageUuid = getPageUuidForBlock(blockUuid) ?: return@launch
         val before = takePageSnapshot(pageUuid)
 
-        // Optimistic: split _blocks in-memory and move focus immediately
-        val sourceBlock = _blocks.value[pageUuid]?.find { it.uuid == blockUuid } ?: return@launch
+        // Optimistic: split _blocks in-memory and move focus immediately, re-read via
+        // findBlockOrNull (not a bare _blocks lookup) so we see the latest optimistic content
+        // even if a concurrent insert just landed while we were waiting for the lock above.
+        val sourceBlock = findBlockOrNull(blockUuid) ?: return@launch
         val clampedCursor = cursorPosition.coerceIn(0, sourceBlock.content.length)
         val firstPart = sourceBlock.content.substring(0, clampedCursor).trim()
         val secondPart = sourceBlock.content.substring(clampedCursor).trim()
@@ -1319,6 +1330,7 @@ class BlockStateManager(
                 state + (pageUuid to pageBlocks)
             }
             requestEditBlock(blockUuid, clampedCursor)
+        }
         }
     }
 

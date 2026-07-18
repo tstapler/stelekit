@@ -2026,6 +2026,50 @@ class BlockStateManagerTest {
 
         actor.close()
     }
+
+    /**
+     * TC-N4f: pressing Enter immediately after inserting a link must not split the link into
+     * its own block. addNewBlock/splitBlock now take the same per-block content-mutation lock
+     * as insertLinkAtCursor, so the Enter keypress's cursor-length read waits for the pending
+     * link insertion to land in `_blocks` instead of racing it — closing the exact scenario from
+     * the reported bug ("type/autocomplete a link then press Enter").
+     */
+    @Test
+    fun addNewBlock_immediately_after_insertLinkAtCursor_keeps_link_with_original_block() = runTest {
+        val innerRepo = InMemoryBlockRepository()
+        val delayedRepo = DelayedContentBlockRepository(innerRepo, contentDelayMs = 500L)
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, delayedRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val actor = DatabaseWriteActor(delayedRepo, pageRepo, scope = scope)
+
+        pageRepo.savePage(createPage())
+        innerRepo.saveBlock(createBlock("b1", content = "See ", position = "a0"))
+        val manager = BlockStateManager(
+            blockRepository = delayedRepo,
+            graphLoader = graphLoader,
+            scope = scope,
+            writeActor = actor,
+        )
+        manager.observePage(PageUuid(pageUuid))
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        // Autocomplete inserts the link, then the user immediately hits Enter — addNewBlock
+        // fires before the link's content write has settled into _blocks.
+        manager.insertLinkAtCursor(BlockUuid("b1"), "PageA", overrideCursorIndex = null)
+        manager.addNewBlock(BlockUuid("b1"))
+        advanceUntilIdle()
+
+        val blocks = manager.blocks.value[pageUuid] ?: emptyList()
+        assertEquals(2, blocks.size, "addNewBlock must still produce 2 blocks")
+        assertEquals("See [[PageA]]", blocks.find { it.uuid.value == "b1" }?.content,
+            "The just-inserted link must stay in the original block, not get split into the new one")
+        val newBlock = blocks.find { it.uuid.value != "b1" }
+        assertEquals("", newBlock?.content,
+            "The new block from Enter must be empty, not contain part of the link")
+
+        actor.close()
+    }
 }
 
 // ---- dirtyPageUuids: watcher guard for journals refresh (FR-2) ----
