@@ -3,12 +3,15 @@
 
 package dev.stapler.stelekit.platform
 
+import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.model.DirtyEntry
 import dev.stapler.stelekit.git.model.DirtyOp
 import dev.stapler.stelekit.git.model.HostHandleEnvelope
 import dev.stapler.stelekit.git.model.gitApiJson
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.await
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -72,13 +75,71 @@ class HostDirectorySync(
     val hostAccessStateFlow: StateFlow<HostAccessState> = _hostAccessStateFlow.asStateFlow()
 
     /**
-     * Epic 2.3 (Task 2.3.1c) placeholder: Phase 4's write-through queue (`scheduleHostWriteThrough`,
-     * Epic 4.1) does not exist yet on this branch, so there is nothing real to report — always `0`.
-     * Threaded through `App.kt`/`Main.kt` now so `FolderSyncStatusBadge`'s parameter plumbing is
-     * complete end-to-end; a future epic only needs to change this field's assignment (e.g. derive
-     * it from `hostWritePending.size`), never its wiring.
+     * Epic 4.1/4.2: live count of [hostWritePending], updated by [updatePendingCount] on every
+     * enqueue/dequeue (both [scheduleHostWriteThrough]'s coalescing scheduler and
+     * [runHostReconciliation]'s `BrowserOnlyNeedsPush` dispatch). Was a permanently-`0` stub
+     * (Task 2.3.1c) until this queue became real — `App.kt`/`Main.kt`'s wiring is unchanged, only
+     * this field's backing implementation.
      */
-    val hostWritePendingCountFlow: StateFlow<Int> = MutableStateFlow(0).asStateFlow()
+    private val _hostWritePendingCountFlow = MutableStateFlow(0)
+    val hostWritePendingCountFlow: StateFlow<Int> = _hostWritePendingCountFlow.asStateFlow()
+
+    private fun updatePendingCount() {
+        _hostWritePendingCountFlow.value = hostWritePending.size
+    }
+
+    // ── Epic 4.1 (Task 4.1.1a): per-path write-through coalescing state ───────────────────────
+    /** Paths whose flush cycle currently owns [scheduleHostWriteThrough]'s coalescing loop. */
+    private val hostWriteInFlight = mutableSetOf<String>()
+
+    /**
+     * Paths that received a new [scheduleHostWriteThrough] call while already in
+     * [hostWriteInFlight] — a set (not a scalar), since multiple paths can be independently
+     * mid-flush concurrently, unlike [PlatformFileSystem]'s single marker-write scheduler.
+     * `internal` so [HostDirectorySyncWriteThroughTest] can assert coalescing state directly.
+     */
+    internal val hostWriteDirtyDuringFlush = mutableSetOf<String>()
+
+    /**
+     * The most recently scheduled [HostWritePayload] for a repo-relative path — [flushHostWrite]
+     * reads this fresh immediately after its own first suspension point (the proactive permission
+     * check), so a coalesced update that lands while a flush attempt is already suspended there is
+     * folded into that *same* in-flight write rather than requiring a redundant follow-up one; see
+     * [scheduleHostWriteThrough]'s doc comment for the full "exactly one write of the latest
+     * content" rationale (Story 4.1.1's coalescing acceptance criterion).
+     */
+    private val hostWriteLatestPayload = mutableMapOf<String, HostWritePayload>()
+
+    // ── Epic 4.2 (Task 4.2.1a): freshness-check baseline ───────────────────────────────────────
+    /**
+     * Last-known host content hash per absolute OPFS path (same key convention as
+     * [hostModTimes]/[hostFileSizes]), consulted by [flushHostWrite]'s pre-write freshness check
+     * for [HostWritePayload.Text] payloads. An absent entry means "no baseline yet" — the check
+     * always proceeds (never blocks) rather than treating absence as a conflict. `internal` so
+     * tests can seed a baseline directly.
+     */
+    internal val hostContentHashes: MutableMap<String, Int> = mutableMapOf()
+
+    // ── Epic 4.4 (Task 4.4.1a/b): write-through failure surfacing ─────────────────────────────
+    /**
+     * `true` while a write-through flush is failing for a reason that is *not* permission loss
+     * and *not* a stale/moved handle (`NotFoundError`) — i.e. a genuinely transient failure (quota,
+     * brief I/O blip) observed while a permission re-query still confirms `"granted"`. This is the
+     * signal [Task 4.4.1c's `SyncDegraded`][dev.stapler.stelekit.ui.components.folderSyncBadgeContent]
+     * distinguishes from ordinary in-flight syncing. Reset to `false` on the next successful
+     * [flushHostWrite].
+     */
+    private val _hostWriteStuckFlow = MutableStateFlow(false)
+    val hostWriteStuckFlow: StateFlow<Boolean> = _hostWriteStuckFlow.asStateFlow()
+
+    /**
+     * Task 4.4.1b: settable callback (mirrors [onHostConflict]'s settable-`var` pattern), invoked
+     * once per failed [flushHostWrite] attempt regardless of how the failure was classified. Set
+     * from `App.kt` to a small forwarding method on `GraphLoader` that reuses its existing
+     * `writeErrors` channel — no new error surface. Defaults to a no-op so production code that
+     * never wires a graph (or tests) still compiles and runs safely.
+     */
+    internal var onHostWriteFailed: (error: DomainError.FileSystemError.WriteFailed) -> Unit = {}
 
     // ── Epic 3.2 (Task 3.2.2a/c): reconciliation dispatch collaborators ───────────────────────
     /**
@@ -529,6 +590,7 @@ class HostDirectorySync(
                 browserOnlyNeedsPushCount++
                 val repoRelative = path.removePrefix("$opfsPath/")
                 hostWritePending[repoRelative] = DirtyEntry(DirtyOp.WRITE, Clock.System.now().toEpochMilliseconds())
+                updatePendingCount()
             }
         }
 
@@ -544,6 +606,204 @@ class HostDirectorySync(
                 "${summary.hostOnlyNew} host-only, ${summary.browserOnlyNeedsPush} browser-only",
         )
         return summary
+    }
+
+    // ── Epic 4.1-4.4: write-through queue, coalescing flush scheduler, failure surfacing ──────
+
+    /** Repo-relative key derivation matching [runHostReconciliation]'s existing convention. */
+    private fun repoRelativePath(path: String): String {
+        val opfsPath = hostGraphOpfsPath
+        return if (opfsPath != null && path.startsWith("$opfsPath/")) path.removePrefix("$opfsPath/") else path
+    }
+
+    private fun dirtyOpFor(payload: HostWritePayload): DirtyOp =
+        if (payload is HostWritePayload.Delete) DirtyOp.DELETE else DirtyOp.WRITE
+
+    /**
+     * Task 4.2.3a: factored out of both [flushHostWrite]'s proactive pre-write check and its
+     * reactive post-failure re-query (Task 4.4.1a) so the two call sites cannot drift out of sync.
+     */
+    private fun mapPermissionResultToAccessState(result: String): HostAccessState = when (result) {
+        "prompt" -> HostAccessState.PromptNeeded
+        else -> HostAccessState.Denied
+    }
+
+    /**
+     * Task 4.1.1b (Story 4.1.1) / Epic 1.7 (Task 1.7.1b): coalescing write-through scheduler,
+     * mirroring [PlatformFileSystem]'s existing `scheduleMarkerWrite` "at most one flush in
+     * flight, trailing writes coalesce" idiom, generalized to per-path via [hostWriteInFlight]/
+     * [hostWriteDirtyDuringFlush] instead of a single pair of scalars.
+     *
+     * [path] is the *absolute* OPFS path — the same parameter `writeFile`/`writeFileBytes`/
+     * `deleteFile` already receive and the same key convention [CacheAccess.opfsWriteDeferredFor]
+     * uses — re-keyed internally to repo-relative for [hostWritePending]/[hostWriteInFlight],
+     * matching [runHostReconciliation]'s convention.
+     *
+     * Not a `suspend fun`: `writeFile`/`writeFileBytes`/`deleteFile` are synchronous
+     * `FileSystem`-interface methods (Task 4.3.1a/b/c's "one-line delegation" call sites), so all
+     * async work here — the Epic 1.7 await, the permission check, the actual write — runs inside
+     * an internally-launched coroutine.
+     *
+     * **Epic 1.7 scope expansion**: awaits [path]'s in-flight OPFS-persisting write (if any) via
+     * [CacheAccess.opfsWriteDeferredFor] *before* this edit is added to [hostWritePending] —
+     * closes the crash window where a host push could otherwise race ahead of the edit actually
+     * landing in OPFS. [hostWritePending] is deliberately populated only after this await
+     * resolves (see `HostDirectorySyncReconciliationTest.kt`'s
+     * `scheduleHostWriteThrough_should_NotContainPathUntilOpfsWriteDeferredResolves_...` mechanism
+     * regression test).
+     *
+     * **Coalescing**: [hostWriteLatestPayload] always holds the most recent payload for a path. A
+     * call arriving while a flush cycle already owns that path ([hostWriteInFlight]) only updates
+     * the payload and marks [hostWriteDirtyDuringFlush] — it never launches a second concurrent
+     * flush cycle. [flushHostWrite] itself re-reads the latest payload (and consumes the dirty
+     * marker) immediately after its own first suspension point (the proactive permission check),
+     * so a coalesced update delivered while that very attempt was suspended there is folded into
+     * the *same* write instead of requiring a redundant follow-up one — this is what makes Story
+     * 4.1.1's "exactly one write of the latest content" guarantee hold even for a burst that
+     * lands before the first flush's actual host write begins.
+     */
+    fun scheduleHostWriteThrough(path: String, payload: HostWritePayload) {
+        val repoRelative = repoRelativePath(path)
+        val opfsWriteDeferred = cacheAccess.opfsWriteDeferredFor(path)
+        scope.launch {
+            // Epic 1.7: never let a host push race ahead of the edit actually landing in OPFS.
+            opfsWriteDeferred?.await()
+
+            hostWriteLatestPayload[repoRelative] = payload
+            hostWritePending[repoRelative] = DirtyEntry(dirtyOpFor(payload), Clock.System.now().toEpochMilliseconds())
+            updatePendingCount()
+
+            if (repoRelative in hostWriteInFlight) {
+                hostWriteDirtyDuringFlush += repoRelative
+                return@launch
+            }
+            hostWriteInFlight += repoRelative
+            try {
+                do {
+                    flushHostWrite(repoRelative)
+                } while (repoRelative in hostWriteDirtyDuringFlush)
+            } finally {
+                hostWriteInFlight -= repoRelative
+            }
+        }
+    }
+
+    /**
+     * Task 4.2.1a/b/c, 4.2.2a, 4.2.3a, 4.4.1a: performs one host-directory write attempt for
+     * [repoRelative] against [hostWriteLatestPayload]'s value, read fresh right after this
+     * function's own first suspension point — see [scheduleHostWriteThrough]'s doc comment.
+     */
+    private suspend fun flushHostWrite(repoRelative: String) {
+        val handle = hostDirHandle ?: return
+
+        // Task 4.2.3a: proactive permission check — *before* any write attempt is made, not only
+        // reactively after one has already failed (research/pitfalls.md §1.1).
+        val access = queryHandlePermission(handle)
+        if (access != "granted") {
+            _hostAccessStateFlow.value = mapPermissionResultToAccessState(access)
+            onHostWriteFailed(
+                DomainError.FileSystemError.WriteFailed(repoRelative, "Host directory permission is '$access'"),
+            )
+            return
+        }
+
+        val payload = hostWriteLatestPayload[repoRelative] ?: return
+        hostWriteDirtyDuringFlush -= repoRelative
+
+        val opfsPath = hostGraphOpfsPath
+        val fullPath = if (opfsPath != null) "$opfsPath/$repoRelative" else repoRelative
+
+        try {
+            when (payload) {
+                is HostWritePayload.Text -> {
+                    val (dir, fileName) = resolveHostEntry(handle, repoRelative, create = true)
+                    val fileHandle = getFileHandle(dir, fileName, true)
+                    // Task 4.2.1a: pre-write freshness check — text payloads only.
+                    val currentHostContent = readOpfsFile(fileHandle)
+                    val knownHash = hostContentHashes[fullPath]
+                    if (currentHostContent != null && knownHash != null && currentHostContent.hashCode() != knownHash) {
+                        onHostConflict(repoRelative, currentHostContent)
+                        return
+                    }
+                    val writable: JsAny = fileHandleCreateWritable(fileHandle).await()
+                    writableWrite(writable, payload.content).await<JsAny>()
+                    writableClose(writable).await<JsAny>()
+                    hostContentHashes[fullPath] = payload.content.hashCode()
+                }
+                is HostWritePayload.Bytes -> {
+                    // Task 4.2.2a: paranoid-mode — no hash guard. Bytes never round-trip through
+                    // the String-typed onHostConflict (adversarial-review.md Blocker 4's rationale
+                    // — see runHostReconciliation's `.md.stek` branch), and FileRegistry.kt's
+                    // documented "modtime change alone is sufficient signal" rule for encrypted
+                    // files means no live bytes-aware conflict signal exists yet either — this
+                    // branch deliberately skips a freshness check entirely rather than perform a
+                    // read whose mismatch has nowhere safe to be routed.
+                    val (dir, fileName) = resolveHostEntry(handle, repoRelative, create = true)
+                    val fileHandle = getFileHandle(dir, fileName, true)
+                    val writable: JsAny = fileHandleCreateWritable(fileHandle).await()
+                    writableWriteBuffer(writable, payload.data.toJsArrayBuffer()).await<JsAny>()
+                    writableClose(writable).await<JsAny>()
+                }
+                is HostWritePayload.Delete -> {
+                    val (dir, fileName) = resolveHostEntry(handle, repoRelative, create = false)
+                    dirRemoveEntry(dir, fileName).await<JsAny>()
+                    hostContentHashes.remove(fullPath)
+                }
+            }
+
+            // Task 4.2.1c: dequeue + bookkeeping on success.
+            hostWritePending.remove(repoRelative)
+            updatePendingCount()
+            hostModTimes[fullPath] = Clock.System.now().toEpochMilliseconds()
+            _hostWriteStuckFlow.value = false
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            handleFlushFailure(repoRelative, handle, e)
+        }
+    }
+
+    /**
+     * Task 3.2.1a's traversal shape, rooted at [rootHandle] (the host directory handle) rather
+     * than `getOpfsRoot()` — resolves [repoRelative]'s parent directory (creating intermediate
+     * directories when [create] is true, mirroring [opfsWriteFile]'s own segment walk) and returns
+     * it alongside the final path segment (the file/entry name).
+     */
+    private suspend fun resolveHostEntry(rootHandle: JsAny, repoRelative: String, create: Boolean): Pair<JsAny, String> {
+        val parts = repoRelative.split("/")
+        var dir: JsAny = rootHandle
+        for (part in parts.dropLast(1)) {
+            dir = getDirectoryHandle(dir, part, create)
+        }
+        return dir to parts.last()
+    }
+
+    /**
+     * Task 4.4.1a: classifies a thrown [flushHostWrite] failure. `NotFoundError`-shaped messages
+     * (the stored handle no longer resolves — directory moved/deleted outside the browser)
+     * transition to [HostAccessState.Disconnected]. Every other failure (`NotAllowedError`-shaped,
+     * or defensively any other error — permission revocation is not guaranteed to surface a
+     * distinctly-named error per research/pitfalls.md §1.1) re-queries [queryHandlePermission]: a
+     * `"prompt"`/`"denied"` result means the grant really is gone, mapped via
+     * [mapPermissionResultToAccessState]; a re-query that still returns `"granted"` means this was
+     * a genuinely transient failure (quota, brief I/O blip) — [hostAccessStateFlow] is left
+     * untouched and [_hostWriteStuckFlow] is set instead (Task 4.4.1c's `SyncDegraded` signal). In
+     * every branch, [repoRelative] stays queued in [hostWritePending] (never dequeued here) and
+     * [onHostWriteFailed] fires exactly once. Never lets the exception escape uncaught.
+     */
+    private suspend fun handleFlushFailure(repoRelative: String, handle: JsAny, e: Throwable) {
+        val message = e.message ?: "unknown"
+        if (message.contains("NotFoundError", ignoreCase = true)) {
+            _hostAccessStateFlow.value = HostAccessState.Disconnected(message)
+        } else {
+            val requery = queryHandlePermission(handle)
+            if (requery == "granted") {
+                _hostWriteStuckFlow.value = true
+            } else {
+                _hostAccessStateFlow.value = mapPermissionResultToAccessState(requery)
+            }
+        }
+        onHostWriteFailed(DomainError.FileSystemError.WriteFailed(repoRelative, message))
     }
 }
 

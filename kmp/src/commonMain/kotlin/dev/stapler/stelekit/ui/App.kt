@@ -218,6 +218,13 @@ fun StelekitApp(
      */
     hostWritePendingCountFlow: kotlinx.coroutines.flow.StateFlow<Int>? = null,
     /**
+     * Epic 4.4 (Task 4.4.1c): `true` while a write-through flush is stuck (transient failure,
+     * permission nominally still `Granted`) — web only. Pass
+     * `PlatformFileSystem.hostDirectorySync.hostWriteStuckFlow` on web. When null (default —
+     * JVM/Android/iOS), `FolderSyncStatusBadge` never renders the `SyncDegraded` row.
+     */
+    hostWriteStuckFlow: kotlinx.coroutines.flow.StateFlow<Boolean>? = null,
+    /**
      * Called when the user taps `FolderSyncStatusBadge`'s reconnect/grant-access affordance (web
      * only) — should invoke `PlatformFileSystem.hostDirectorySync.requestHostDirectoryAccess`.
      * When null (default — JVM/Android/iOS), the badge's click affordance is disabled (it never
@@ -392,6 +399,7 @@ fun StelekitApp(
             localChangesCountFlow = localChangesCountFlow,
             hostAccessStateFlow = hostAccessStateFlow,
             hostWritePendingCountFlow = hostWritePendingCountFlow,
+            hostWriteStuckFlow = hostWriteStuckFlow,
             onReconnectHostDirectory = onReconnectHostDirectory,
         )
     }
@@ -430,6 +438,7 @@ private fun GraphContent(
     localChangesCountFlow: kotlinx.coroutines.flow.StateFlow<Int>? = null,
     hostAccessStateFlow: kotlinx.coroutines.flow.StateFlow<HostAccessState>? = null,
     hostWritePendingCountFlow: kotlinx.coroutines.flow.StateFlow<Int>? = null,
+    hostWriteStuckFlow: kotlinx.coroutines.flow.StateFlow<Boolean>? = null,
     onReconnectHostDirectory: (() -> Unit)? = null,
 ) {
     // Epic 2.3 (Task 2.3.1c): resolved here (not passed as raw StateFlow into StelekitViewModel,
@@ -437,6 +446,8 @@ private fun GraphContent(
     // not part of syncState, so collectAsState() directly feeds its call site below.
     val hostAccessState = hostAccessStateFlow?.collectAsState()?.value ?: HostAccessState.NotApplicable
     val hostWritePendingCount = hostWritePendingCountFlow?.collectAsState()?.value ?: 0
+    // Epic 4.4 (Task 4.4.1c): SyncDegraded signal — see FolderSyncStatusBadge's state table.
+    val hostWriteStuck = hostWriteStuckFlow?.collectAsState()?.value ?: false
 
     CompositionLocalProvider(
         LocalSpanRecorder provides spanRecorder,
@@ -580,6 +591,9 @@ private fun GraphContent(
         // wasmJsMain's Main.kt, so this is where the plan's "after GraphLoader exists, wire the
         // callback" instruction actually applies. No-op on every platform but wasmJs.
         effectiveFileSystem.setOnHostConflict(graphLoader::emitExternalFileChange)
+        // web-local-folder-livesync Epic 4.4 (Task 4.4.1b): same wiring pattern, one call later —
+        // forwards write-through failures onto GraphLoader's existing writeErrors channel.
+        effectiveFileSystem.setOnHostWriteFailed(graphLoader::reportHostWriteFailure)
     }
 
     val graphWriter = remember(effectiveFileSystem, repos, graphLoader, sidecarManager) {
@@ -1355,6 +1369,7 @@ private fun GraphContent(
                                 onDismissDemoBanner = { demoBannerDismissed = true },
                                 hostAccessState = hostAccessState,
                                 hostPendingWriteCount = hostWritePendingCount,
+                                hostWriteStuck = hostWriteStuck,
                                 onReconnectHostDirectory = onReconnectHostDirectory ?: {},
                                 onPageClick = { page ->
                                     viewModel.navigateTo(Screen.PageView(page))

@@ -94,6 +94,9 @@ fun LeftSidebar(
      * (the default) renders [FolderSyncStatusBadge] as nothing — matches every non-web platform. */
     hostAccessState: HostAccessState = HostAccessState.NotApplicable,
     hostPendingWriteCount: Int = 0,
+    /** Epic 4.4 (Task 4.4.1c): true while a write-through flush is stuck mid-`Granted` — drives
+     * [FolderSyncStatusBadge]'s `SyncDegraded` row (ux.md Surface 3, row 3). */
+    hostWriteStuck: Boolean = false,
     onReconnectHostDirectory: () -> Unit = {},
     onCloneGraph: () -> Unit = {},
     gitSyncedGraphId: String? = null,
@@ -187,6 +190,7 @@ fun LeftSidebar(
                 state = hostAccessState,
                 dirName = currentGraphName.ifEmpty { null },
                 pendingWriteCount = hostPendingWriteCount,
+                hostWriteStuck = hostWriteStuck,
                 onReconnect = onReconnectHostDirectory,
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
             )

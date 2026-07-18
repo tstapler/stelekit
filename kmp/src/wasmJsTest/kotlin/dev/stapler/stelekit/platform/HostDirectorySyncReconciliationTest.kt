@@ -4,6 +4,7 @@
 package dev.stapler.stelekit.platform
 
 import dev.stapler.stelekit.git.model.DirtyOp
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -82,10 +83,11 @@ private fun withGrantedPermission(dirHandle: JsAny): JsAny = js(
  * which deliberately targets the real [PlatformFileSystem] as a regression guard on the
  * pre-existing fresh-graph import path this project must not touch.
  *
- * **Deferred tests** (still deferred — require `scheduleHostWriteThrough`'s real flush logic, Epic
- * 4.1, which does not exist yet on this branch):
- * - `scheduleHostWriteThrough_should_EnqueuePathOnceDelayedOpfsWriteResolves_When_WriteFileWasCalledWithASlowOpfsWriteFileDouble`
- * - `scheduleHostWriteThrough_should_NotContainPathUntilOpfsWriteDeferredResolves_When_GivenTheSameSlowOpfsWriteFileDouble`
+ * **Crash-recovery await-mechanism tests** (Epic 4.1, Task 3.3.1g's third/fourth remediation
+ * tests — implemented below, in the "scheduleHostWriteThrough await mechanism (Epic 4.1)" section
+ * near the end of this class, now that `scheduleHostWriteThrough`'s real flush logic exists):
+ * - [scheduleHostWriteThrough_should_EnqueuePathOnceDelayedOpfsWriteResolves_When_WriteFileWasCalledWithASlowOpfsWriteFileDouble]
+ * - [scheduleHostWriteThrough_should_NotContainPathUntilOpfsWriteDeferredResolves_When_GivenTheSameSlowOpfsWriteFileDouble]
  *
  * The two `reconnectHostDirectory`-driven tests previously deferred here (Epic 2.2 did not exist
  * on this branch when this file was first written) are now implemented below, in the
@@ -581,6 +583,77 @@ class HostDirectorySyncReconciliationTest {
         // entry points share this data-loss protection, not just the one-time connect flow).
         assertEquals(listOf("pages/B.md" to "host new version"), onHostConflictCalls)
         assertEquals("old version", cache.textStore["$opfsPath/pages/B.md"])
+        testScope.cancel()
+    }
+
+    // ── scheduleHostWriteThrough await mechanism (Epic 4.1, Task 3.3.1g's remediation tests) ────
+    // Epic 1.7's OPFS-write-durability fix: scheduleHostWriteThrough awaits a path's in-flight
+    // OPFS-persisting write (CacheAccess.opfsWriteDeferredFor) BEFORE adding it to hostWritePending
+    // — these two tests assert that mechanism directly using FakeCacheAccess.setDeferred to stand
+    // in for "writeFile(...) was called and launched a slow-but-eventually-resolving OPFS write."
+
+    @Test
+    fun scheduleHostWriteThrough_should_EnqueuePathOnceDelayedOpfsWriteResolves_When_WriteFileWasCalledWithASlowOpfsWriteFileDouble() = runTest {
+        val opfsPath = "/stelekit/g"
+        val cache = FakeCacheAccess()
+        val testScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val sync = newSync("g", cache, testScope)
+        sync.hostDirHandle = makeWritableHostRoot()
+        sync.hostGraphOpfsPath = opfsPath
+
+        val path = "$opfsPath/pages/Draft.md"
+        val slowOpfsWrite = CompletableDeferred<Unit>()
+        cache.setDeferred(path, slowOpfsWrite)
+
+        // Simulates writeFile("pages/Draft.md", "unsaved edit") having already updated cache/
+        // dirtySet and launched a slow-but-eventually-resolving OPFS write, then reaching its own
+        // scheduleHostWriteThrough delegation call.
+        sync.scheduleHostWriteThrough(path, HostWritePayload.Text("unsaved edit"))
+
+        slowOpfsWrite.complete(Unit)
+        withContext(Dispatchers.Default) {
+            var waited = 0L
+            while ("pages/Draft.md" !in sync.hostWritePending && waited < 2000) {
+                delay(10)
+                waited += 10
+            }
+        }
+        assertTrue(
+            "pages/Draft.md" in sync.hostWritePending,
+            "the edit must not be silently dropped while awaiting the delayed OPFS write",
+        )
+        testScope.cancel()
+    }
+
+    @Test
+    fun scheduleHostWriteThrough_should_NotContainPathUntilOpfsWriteDeferredResolves_When_GivenTheSameSlowOpfsWriteFileDouble() = runTest {
+        val opfsPath = "/stelekit/g"
+        val cache = FakeCacheAccess()
+        val testScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val sync = newSync("g", cache, testScope)
+        sync.hostDirHandle = makeWritableHostRoot()
+        sync.hostGraphOpfsPath = opfsPath
+
+        val path = "$opfsPath/pages/Draft.md"
+        val slowOpfsWrite = CompletableDeferred<Unit>()
+        cache.setDeferred(path, slowOpfsWrite)
+
+        sync.scheduleHostWriteThrough(path, HostWritePayload.Text("unsaved edit"))
+
+        // Immediately after scheduleHostWriteThrough returns control — before the delay elapses —
+        // hostWritePending must NOT yet contain the path: proves the await mechanism itself
+        // (Task 1.7.1a/1.7.1b), not just its eventual outcome (the test above).
+        assertFalse("pages/Draft.md" in sync.hostWritePending)
+
+        slowOpfsWrite.complete(Unit)
+        withContext(Dispatchers.Default) {
+            var waited = 0L
+            while ("pages/Draft.md" !in sync.hostWritePending && waited < 2000) {
+                delay(10)
+                waited += 10
+            }
+        }
+        assertTrue("pages/Draft.md" in sync.hostWritePending)
         testScope.cancel()
     }
 }

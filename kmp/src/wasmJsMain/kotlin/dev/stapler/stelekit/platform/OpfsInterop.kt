@@ -61,11 +61,14 @@ internal suspend fun readOpfsFile(fileHandle: JsAny): String? = try {
  */
 internal suspend fun getOpfsFile(fileHandle: JsAny): JsAny = fileHandleGetFile(fileHandle).await()
 
-private fun fileHandleCreateWritable(handle: JsAny): kotlin.js.Promise<JsAny> = js("handle.createWritable()")
-private fun writableWrite(writable: JsAny, content: String): kotlin.js.Promise<JsAny> = js("writable.write(content)")
-private fun writableWriteBuffer(writable: JsAny, buffer: JsAny): kotlin.js.Promise<JsAny> = js("writable.write(buffer)")
-private fun writableClose(writable: JsAny): kotlin.js.Promise<JsAny> = js("writable.close()")
-private fun dirRemoveEntry(dir: JsAny, name: String): kotlin.js.Promise<JsAny> = js("dir.removeEntry(name)")
+// Epic 4.2 (Task 4.2.1b/4.2.2a/4.3.1c): internal rather than private — HostDirectorySync.kt's
+// flushHostWrite (Phase 4) reuses these directly against a host-picked FileSystemDirectoryHandle,
+// not just OPFS-rooted handles; they are API-identical for either (research/stack.md §5).
+internal fun fileHandleCreateWritable(handle: JsAny): kotlin.js.Promise<JsAny> = js("handle.createWritable()")
+internal fun writableWrite(writable: JsAny, content: String): kotlin.js.Promise<JsAny> = js("writable.write(content)")
+internal fun writableWriteBuffer(writable: JsAny, buffer: JsAny): kotlin.js.Promise<JsAny> = js("writable.write(buffer)")
+internal fun writableClose(writable: JsAny): kotlin.js.Promise<JsAny> = js("writable.close()")
+internal fun dirRemoveEntry(dir: JsAny, name: String): kotlin.js.Promise<JsAny> = js("dir.removeEntry(name)")
 
 internal suspend fun opfsWriteFile(path: String, content: String) {
     try {

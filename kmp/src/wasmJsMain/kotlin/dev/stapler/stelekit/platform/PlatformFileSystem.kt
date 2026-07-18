@@ -349,6 +349,12 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
                 opfsWriteInFlight.remove(path)
             }
         }
+        // Epic 4.3 (Task 4.3.1a): the fourth independent effect (web-local-folder-livesync) —
+        // one-line delegation; all coalescing/freshness-check/actual-write logic lives on
+        // HostDirectorySync. No-op when no host directory is connected for this graph.
+        if (hostDirectorySync.hostDirHandle != null) {
+            hostDirectorySync.scheduleHostWriteThrough(path, HostWritePayload.Text(content))
+        }
         return true
     }
 
@@ -359,6 +365,13 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
      * NOT call [recordDirty]: auto-merged remote content is not a local edit, so re-marking it
      * dirty here would corrupt the "only push what changed locally" invariant (it would cause the
      * next commit to needlessly re-push content that already matches the remote).
+     *
+     * Task 4.3.1d (web-local-folder-livesync): for the identical reason, this deliberately never
+     * calls `hostDirectorySync.scheduleHostWriteThrough` either — merged-in remote git content was
+     * not written by the user in *this* browser tab, so pushing it back out to the host directory
+     * would falsely attribute an external (GitHub-origin) change to a local edit. The host folder
+     * should only ever receive content this tab's own [writeFile]/[writeFileBytes]/[deleteFile]
+     * produced.
      */
     fun applyRemoteContent(path: String, content: String): Boolean {
         if (path.startsWith(DOWNLOAD_PREFIX)) return false
@@ -384,6 +397,10 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
                 opfsWriteInFlight.remove(path)
             }
         }
+        // Epic 4.3 (Task 4.3.1b): same one-line delegation as writeFile, for paranoid-mode bytes.
+        if (hostDirectorySync.hostDirHandle != null) {
+            hostDirectorySync.scheduleHostWriteThrough(path, HostWritePayload.Bytes(data))
+        }
         return true
     }
 
@@ -400,6 +417,11 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         bytesCache.remove(path)
         recordDirty(path, DirtyOp.DELETE)
         scope.launch { opfsDeleteFile(path) }
+        // Epic 4.3 (Task 4.3.1c): same one-line delegation, dispatches to flushHostWrite's
+        // HostWritePayload.Delete branch (dirRemoveEntry against hostDirHandle).
+        if (hostDirectorySync.hostDirHandle != null) {
+            hostDirectorySync.scheduleHostWriteThrough(path, HostWritePayload.Delete)
+        }
         return true
     }
     actual override fun pickDirectory(): String? = null
@@ -455,6 +477,15 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
      */
     override fun setOnHostConflict(callback: ((path: String, hostContent: String) -> Unit)?) {
         hostDirectorySync.onHostConflict = callback ?: { _, _ -> }
+    }
+
+    /**
+     * Epic 4.4 (Task 4.4.1b): delegates to [HostDirectorySync.onHostWriteFailed]. Wired from
+     * `App.kt` alongside [setOnHostConflict], for the same reason — `GraphLoader` only exists
+     * later, per-active-graph, inside `App.kt`'s composition.
+     */
+    override fun setOnHostWriteFailed(callback: ((dev.stapler.stelekit.error.DomainError.FileSystemError.WriteFailed) -> Unit)?) {
+        hostDirectorySync.onHostWriteFailed = callback ?: {}
     }
 
     /**

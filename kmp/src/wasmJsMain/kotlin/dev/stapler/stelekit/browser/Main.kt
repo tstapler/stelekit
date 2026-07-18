@@ -205,6 +205,7 @@ fun main() {
                 localChangesCountFlow = opfsFileSystem.dirtyFileCountFlow,
                 hostAccessStateFlow = opfsFileSystem.hostDirectorySync.hostAccessStateFlow,
                 hostWritePendingCountFlow = opfsFileSystem.hostDirectorySync.hostWritePendingCountFlow,
+                hostWriteStuckFlow = opfsFileSystem.hostDirectorySync.hostWriteStuckFlow,
                 onReconnectHostDirectory = {
                     scope.launch { opfsFileSystem.hostDirectorySync.requestHostDirectoryAccess(graphId) }
                 },

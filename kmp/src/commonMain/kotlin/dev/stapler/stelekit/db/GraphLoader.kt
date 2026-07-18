@@ -425,6 +425,17 @@ class GraphLoader(
     }
 
     /**
+     * Epic 4.4 (Task 4.4.1b, web-local-folder-livesync): forwards a host-directory write-through
+     * failure onto this graph's existing [writeErrors] channel — reuses the same [WriteError]
+     * surface every other write-failure path already emits through rather than adding a second
+     * error channel. Wired from `App.kt` via `FileSystem.setOnHostWriteFailed`, mirroring
+     * [emitExternalFileChange]'s `setOnHostConflict` wiring.
+     */
+    fun reportHostWriteFailure(error: dev.stapler.stelekit.error.DomainError.FileSystemError.WriteFailed) {
+        _writeErrors.tryEmit(WriteError(error.path, 0, error))
+    }
+
+    /**
      * Emitted when the file watcher detects an external modification to a file.
      * Consumers (e.g. StelekitViewModel) can collect this flow and decide whether to
      * treat the change as a conflict.  If the event's [suppress] callback is invoked

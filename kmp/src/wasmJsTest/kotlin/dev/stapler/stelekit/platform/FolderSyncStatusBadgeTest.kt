@@ -24,9 +24,9 @@ import kotlin.test.assertTrue
  * composable's own package.
  *
  * The `SyncDegraded` variant of the `Granted` row (design/ux.md's "N changes not yet synced" copy
- * for a stuck write-through queue) is Phase 4's Task 4.4.1c and deliberately **not** covered here —
- * [folderSyncBadgeContent] does not yet distinguish it from the ordinary in-flight `Granted`
- * row, since the write-through queue that would ever make that condition true doesn't exist yet.
+ * for a stuck write-through queue, Task 4.4.1c) is covered by
+ * [folderSyncStatusBadge_should_RenderSyncDegradedText_When_StateIsGrantedAndPendingCountIsNonZeroAndHostWriteStuck]
+ * below, now that the write-through queue exists.
  */
 class FolderSyncStatusBadgeTest {
 
@@ -81,6 +81,47 @@ class FolderSyncStatusBadgeTest {
 
         assertEquals("3 changes syncing to my-notes", content?.text)
         assertTrue(content?.clickable == false)
+    }
+
+    @Test
+    fun folderSyncStatusBadge_should_RenderSyncDegradedText_When_StateIsGrantedAndPendingCountIsNonZeroAndHostWriteStuck() {
+        val content = folderSyncBadgeContent(
+            HostAccessState.Granted,
+            dirName = "my-notes",
+            pendingWriteCount = 2,
+            hostWriteStuck = true,
+        )
+
+        assertEquals("2 changes not yet synced to folder", content?.text)
+        assertTrue(content?.clickable == true, "SyncDegraded must offer the same reconnect affordance as Denied/PromptNeeded")
+    }
+
+    @Test
+    fun folderSyncStatusBadge_should_RenderOrdinarySyncingText_When_StateIsGrantedAndPendingCountIsNonZeroAndNotStuck() {
+        val content = folderSyncBadgeContent(
+            HostAccessState.Granted,
+            dirName = "my-notes",
+            pendingWriteCount = 2,
+            hostWriteStuck = false,
+        )
+
+        assertEquals("2 changes syncing to my-notes", content?.text)
+        assertTrue(content?.clickable == false, "ordinary in-flight syncing must not be clickable")
+    }
+
+    @Test
+    fun folderSyncStatusBadge_should_TakePrecedenceOverSyncDegraded_When_StateIsDeniedEvenWithHostWriteStuckTrue() {
+        // ux.md Principle 2 / Surface 3 precedence: Denied/PromptNeeded/Disconnected are
+        // unconditional top-precedence rows — hostWriteStuck must never leak SyncDegraded copy
+        // into a non-Granted state.
+        val content = folderSyncBadgeContent(
+            HostAccessState.Denied,
+            dirName = "my-notes",
+            pendingWriteCount = 2,
+            hostWriteStuck = true,
+        )
+
+        assertEquals("Folder access declined — Grant access", content?.text)
     }
 
     @Test

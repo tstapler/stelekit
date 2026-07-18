@@ -166,6 +166,16 @@ interface FileSystem {
     fun setOnHostConflict(callback: ((path: String, hostContent: String) -> Unit)?) { /* no-op */ }
 
     /**
+     * Registers a callback invoked when a web-local-folder-livesync write-through flush
+     * (`HostDirectorySync.flushHostWrite`, Epic 4.2) fails — permission revoked, `NotFoundError`,
+     * quota, or any other thrown error. Wired the same way as [setOnHostConflict] (`App.kt`, at
+     * the point `GraphLoader` first exists) to a small forwarding method on `GraphLoader` that
+     * reuses its existing `writeErrors` channel — no new error surface (Epic 4.4, Task 4.4.1b).
+     * No-op on every platform except the wasmJs actual.
+     */
+    fun setOnHostWriteFailed(callback: ((dev.stapler.stelekit.error.DomainError.FileSystemError.WriteFailed) -> Unit)?) { /* no-op */ }
+
+    /**
      * Returns a platform-loadable URI string for a file at [graphRoot]/[relativePath].
      * On Android SAF paths this returns the `content://` document URI (or a `file://`
      * real path when MANAGE_EXTERNAL_STORAGE is granted); on other platforms returns null

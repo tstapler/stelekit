@@ -48,10 +48,12 @@ private val FolderSyncWarningColor = Color(0xFFF59E0B)
  *   [HostAccessState.PromptNeeded]'s copy so a user who explicitly clicked "Don't allow"
  *   understands *why* they're being asked again.
  * - [HostAccessState.PromptNeeded]: "Reconnect folder".
- * - [HostAccessState.Granted] with [pendingWriteCount] > 0: "N changes syncing to `<dirName>`"
- *   (informational, not clickable). The `SyncDegraded` variant of this row (design/ux.md's
- *   "N changes not yet synced" copy for a stuck queue) is Phase 4's Task 4.4.1c — deferred, not
- *   rendered here, since the queue that would ever make this condition true doesn't exist yet.
+ * - [HostAccessState.Granted] with [pendingWriteCount] > 0 and [hostWriteStuck]: `SyncDegraded`
+ *   (Phase 4's Task 4.4.1c, design/ux.md Surface 3 row 3) — "N changes not yet synced to folder",
+ *   warning-tinted and clickable through the same reconnect affordance as `Denied`/`PromptNeeded`
+ *   (a stuck queue while nominally still `Granted` needs the same recovery nudge).
+ * - [HostAccessState.Granted] with [pendingWriteCount] > 0 and not stuck: "N changes syncing to
+ *   `<dirName>`" (informational, not clickable — ordinary in-flight syncing).
  * - [HostAccessState.Granted] with zero pending writes: "Synced to `<dirName>`".
  */
 data class FolderSyncBadgeContent(
@@ -63,6 +65,16 @@ fun folderSyncBadgeContent(
     state: HostAccessState,
     dirName: String?,
     pendingWriteCount: Int,
+    /**
+     * Epic 4.4 (Task 4.4.1c): `true` while a write-through flush is stuck (a transient failure —
+     * quota, brief I/O blip — with permission still nominally `Granted`; see
+     * `HostDirectorySync.hostWriteStuckFlow`). Drives the `SyncDegraded` row (ux.md Surface 3, row
+     * 3), which — per that table's precedence — only ever applies when [state] is
+     * [HostAccessState.Granted]; `Denied`/`PromptNeeded`/`Disconnected` take unconditional
+     * precedence over it (design/ux.md Principle 2 — reconnect and sync-degraded never share
+     * copy/affordance). Defaults to `false` so existing call sites are unaffected.
+     */
+    hostWriteStuck: Boolean = false,
 ): FolderSyncBadgeContent? = when (state) {
     is HostAccessState.NotApplicable -> null
 
@@ -81,13 +93,18 @@ fun folderSyncBadgeContent(
         clickable = true,
     )
 
-    is HostAccessState.Granted -> if (pendingWriteCount > 0) {
-        FolderSyncBadgeContent(
+    is HostAccessState.Granted -> when {
+        // Task 4.4.1c: SyncDegraded — hostAccessState == Granted && pendingWriteCount > 0 &&
+        // hostWriteStuck (implementation/plan.md Domain Glossary, ux.md Surface 3 row 3).
+        pendingWriteCount > 0 && hostWriteStuck -> FolderSyncBadgeContent(
+            text = "$pendingWriteCount changes not yet synced to folder",
+            clickable = true,
+        )
+        pendingWriteCount > 0 -> FolderSyncBadgeContent(
             text = "$pendingWriteCount changes syncing to ${dirName ?: "folder"}",
             clickable = false,
         )
-    } else {
-        FolderSyncBadgeContent(
+        else -> FolderSyncBadgeContent(
             text = "Synced to ${dirName ?: "folder"}",
             clickable = false,
         )
@@ -121,6 +138,8 @@ private fun folderSyncBadgeIcon(state: HostAccessState): ImageVector = when (sta
  *   read when [state] is [HostAccessState.Granted].
  * @param pendingWriteCount Count of edits queued for push to the host directory (Phase 4's
  *   write-through queue; always `0` until that queue exists).
+ * @param hostWriteStuck Epic 4.4 (Task 4.4.1c): true while a write-through flush is stuck mid-
+ *   `Granted` — drives the `SyncDegraded` row. See [folderSyncBadgeContent]'s doc comment.
  * @param onReconnect Called when the user taps the reconnect/grant-access affordance. The caller
  *   is responsible for routing this to `requestHostDirectoryAccess` (permission re-grant, used by
  *   [HostAccessState.PromptNeeded]/[HostAccessState.Denied]) or a directory re-pick (used by
@@ -135,8 +154,9 @@ fun FolderSyncStatusBadge(
     pendingWriteCount: Int,
     onReconnect: () -> Unit,
     modifier: Modifier = Modifier,
+    hostWriteStuck: Boolean = false,
 ) {
-    val content = folderSyncBadgeContent(state, dirName, pendingWriteCount) ?: return
+    val content = folderSyncBadgeContent(state, dirName, pendingWriteCount, hostWriteStuck) ?: return
     val tint = if (content.clickable) FolderSyncWarningColor else MaterialTheme.colorScheme.onSurfaceVariant
 
     val rowModifier = modifier.padding(horizontal = 4.dp).let {
