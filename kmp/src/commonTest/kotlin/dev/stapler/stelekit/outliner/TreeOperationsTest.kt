@@ -130,6 +130,16 @@ class TreeOperationsTest {
     }
 
     @Test
+    fun testOutdentTopLevelBlockIsNoOp() {
+        // A block with no parent is already at top level — outdenting it must be a safe no-op.
+        val b1 = createBlock("1")
+        val siblings = listOf(b1)
+
+        val result = TreeOperations.outdent(b1, parent = null, siblings = siblings, parentSiblings = emptyList())
+        assertNull(result)
+    }
+
+    @Test
     fun testMoveUp() {
         val b1 = createBlock("1")
         val b2 = createBlock("2", leftUuid = uuid("1"), position = "a1")

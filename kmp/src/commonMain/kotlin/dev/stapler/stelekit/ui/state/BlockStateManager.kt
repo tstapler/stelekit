@@ -1194,7 +1194,7 @@ class BlockStateManager(
     override fun outdentBlock(blockUuid: BlockUuid): Job = scope.launch {
         val pageUuid = getPageUuidForBlock(blockUuid) ?: return@launch
         val before = takePageSnapshot(pageUuid)
-        writeOutdentBlock(blockUuid)
+        writeOutdentBlock(blockUuid).onLeft { err -> logger.error("outdentBlock: DB write failed for $blockUuid: $err") }
         refreshBlocksForPage(blockUuid)
         val after = takePageSnapshot(pageUuid)
         record(
