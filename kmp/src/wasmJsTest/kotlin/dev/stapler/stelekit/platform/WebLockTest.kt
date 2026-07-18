@@ -4,10 +4,15 @@
 package dev.stapler.stelekit.platform
 
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.TimeSource
 
 /**
  * Epic 1.1 (Story 1.1.1): focused coverage for [WebLock.withLock]'s own basic semantics, run
@@ -84,5 +89,48 @@ class WebLockTest {
             "same-name withLock() calls must serialize: the second block must not begin until the " +
                 "first block (including its release) has fully completed",
         )
+    }
+
+    // ── Epic 6.3 (Task 6.3.1a): WebLock.tryWithLock non-blocking semantics ─────────────────────
+
+    @Test
+    fun tryWithLock_should_ReturnBlockResult_When_LockIsFree() = runTest {
+        val lockName = freshLockName("wl-try-free")
+
+        val result = WebLock.tryWithLock(lockName) { "block-ran" }
+
+        assertEquals("block-ran", result)
+    }
+
+    @Test
+    fun tryWithLock_should_ReturnNull_When_AnotherWithLockCallAlreadyHoldsSameLockName() = runTest {
+        val lockName = freshLockName("wl-try-busy")
+        val holderAcquired = kotlinx.coroutines.CompletableDeferred<Unit>()
+
+        // The holder runs its 1000ms hold on a real (non-test-scheduler) dispatcher so this is a
+        // genuine wall-clock hold, not something runTest's virtual-time auto-advance would skip —
+        // otherwise the "tryWithLock returns well before the hold completes" assertion below would
+        // be meaningless (both would appear to complete "instantly" in virtual time).
+        val holder = async(kotlinx.coroutines.Dispatchers.Default) {
+            WebLock.withLock(lockName) {
+                holderAcquired.complete(Unit)
+                delay(1000)
+            }
+        }
+
+        holderAcquired.await()
+
+        val mark = TimeSource.Monotonic.markNow()
+        val result = WebLock.tryWithLock(lockName) { "should not run" }
+        val elapsed = mark.elapsedNow()
+
+        assertNull(result, "tryWithLock must return null when another withLock call already holds the lock")
+        assertTrue(
+            elapsed < 100.milliseconds,
+            "tryWithLock must not block waiting for the lock to free up — took $elapsed while the " +
+                "competing withLock() holds for 1000ms",
+        )
+
+        holder.await()
     }
 }

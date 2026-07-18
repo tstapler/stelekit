@@ -273,7 +273,16 @@ class HostDirectorySync(
                 val handle = hostDirHandle ?: continue
                 val opfsPath = hostGraphOpfsPath ?: continue
                 try {
-                    pollHostDirectoryOnce(handle, opfsPath)
+                    // Epic 6.2 (Task 6.2.1b): leader-for-one-tick — a `null` result means another
+                    // tab already holds this graph's poll lock for this tick; that is a silent
+                    // skip (OPFS is cross-tab-shared, so this tab's own next tick, or its next
+                    // `cache` read, sees the winner's result), never an error or user-visible event.
+                    val acquired = WebLock.tryWithLock(FolderSyncLockNaming.pollLockNameFor(graphIdProvider())) {
+                        pollHostDirectoryOnce(handle, opfsPath)
+                    }
+                    if (acquired == null) {
+                        println("[SteleKit] HostDirectoryPoller tick skipped: poll lock held by another tab")
+                    }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Throwable) {
@@ -378,7 +387,14 @@ class HostDirectorySync(
                 val handle = hostDirHandle ?: continue
                 val opfsPath = hostGraphOpfsPath ?: continue
                 try {
-                    pollHostDirectoryOnce(handle, opfsPath)
+                    // Epic 6.2 (Task 6.2.1b): same leader-for-one-tick lock as the timer loop above
+                    // — a `null` result (another tab already owns this tick) is a silent skip.
+                    val acquired = WebLock.tryWithLock(FolderSyncLockNaming.pollLockNameFor(graphIdProvider())) {
+                        pollHostDirectoryOnce(handle, opfsPath)
+                    }
+                    if (acquired == null) {
+                        println("[SteleKit] visibility-regain poll skipped: poll lock held by another tab")
+                    }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Throwable) {
@@ -987,6 +1003,17 @@ class HostDirectorySync(
      * Task 4.2.1a/b/c, 4.2.2a, 4.2.3a, 4.4.1a: performs one host-directory write attempt for
      * [repoRelative] against [hostWriteLatestPayload]'s value, read fresh right after this
      * function's own first suspension point — see [scheduleHostWriteThrough]'s doc comment.
+     *
+     * Epic 6.1 (Task 6.1.1a): the write critical section — freshness check through the successful
+     * dequeue/hash-update — runs inside [WebLock.withLock] keyed by
+     * [FolderSyncLockNaming.writeLockNameFor], so two tabs' `flushHostWrite` calls for the same
+     * path never interleave their `createWritable()`/`write()`/`close()` sequence
+     * (`research/pitfalls.md` §1.5's `'siloed'`-mode last-write-wins race). The proactive
+     * permission pre-check (Task 4.2.3a) deliberately stays *outside* the lock — it touches no
+     * shared write state, and per `GitWriteLock`'s documented scope discipline
+     * (`GitWriteLock.kt:47-55`) a lock should cover only the actual critical section, never be
+     * widened to include independent preflight checks. Uses [graphIdProvider] (the live value),
+     * never a captured/stale `graphId`, matching every other lock-name derivation in this class.
      */
     private suspend fun flushHostWrite(repoRelative: String) {
         val handle = hostDirHandle ?: return
@@ -1002,59 +1029,63 @@ class HostDirectorySync(
             return
         }
 
-        val payload = hostWriteLatestPayload[repoRelative] ?: return
-        hostWriteDirtyDuringFlush -= repoRelative
+        WebLock.withLock(FolderSyncLockNaming.writeLockNameFor(graphIdProvider(), repoRelative)) {
+            val payload = hostWriteLatestPayload[repoRelative] ?: return@withLock
+            hostWriteDirtyDuringFlush -= repoRelative
 
-        val opfsPath = hostGraphOpfsPath
-        val fullPath = if (opfsPath != null) "$opfsPath/$repoRelative" else repoRelative
+            val opfsPath = hostGraphOpfsPath
+            val fullPath = if (opfsPath != null) "$opfsPath/$repoRelative" else repoRelative
 
-        try {
-            when (payload) {
-                is HostWritePayload.Text -> {
-                    val (dir, fileName) = resolveHostEntry(handle, repoRelative, create = true)
-                    val fileHandle = getFileHandle(dir, fileName, true)
-                    // Task 4.2.1a: pre-write freshness check — text payloads only.
-                    val currentHostContent = readOpfsFile(fileHandle)
-                    val knownHash = hostContentHashes[fullPath]
-                    if (currentHostContent != null && knownHash != null && currentHostContent.hashCode() != knownHash) {
-                        onHostConflict(repoRelative, currentHostContent)
-                        return
+            try {
+                when (payload) {
+                    is HostWritePayload.Text -> {
+                        val (dir, fileName) = resolveHostEntry(handle, repoRelative, create = true)
+                        val fileHandle = getFileHandle(dir, fileName, true)
+                        // Task 4.2.1a: pre-write freshness check — text payloads only. Re-checked
+                        // fresh under the lock, so a tab that just lost the race for this path
+                        // sees the winner's just-written content here, not a stale pre-lock read.
+                        val currentHostContent = readOpfsFile(fileHandle)
+                        val knownHash = hostContentHashes[fullPath]
+                        if (currentHostContent != null && knownHash != null && currentHostContent.hashCode() != knownHash) {
+                            onHostConflict(repoRelative, currentHostContent)
+                            return@withLock
+                        }
+                        val writable: JsAny = fileHandleCreateWritable(fileHandle).await()
+                        writableWrite(writable, payload.content).await<JsAny>()
+                        writableClose(writable).await<JsAny>()
+                        hostContentHashes[fullPath] = payload.content.hashCode()
                     }
-                    val writable: JsAny = fileHandleCreateWritable(fileHandle).await()
-                    writableWrite(writable, payload.content).await<JsAny>()
-                    writableClose(writable).await<JsAny>()
-                    hostContentHashes[fullPath] = payload.content.hashCode()
+                    is HostWritePayload.Bytes -> {
+                        // Task 4.2.2a: paranoid-mode — no hash guard. Bytes never round-trip through
+                        // the String-typed onHostConflict (adversarial-review.md Blocker 4's rationale
+                        // — see runHostReconciliation's `.md.stek` branch), and FileRegistry.kt's
+                        // documented "modtime change alone is sufficient signal" rule for encrypted
+                        // files means no live bytes-aware conflict signal exists yet either — this
+                        // branch deliberately skips a freshness check entirely rather than perform a
+                        // read whose mismatch has nowhere safe to be routed.
+                        val (dir, fileName) = resolveHostEntry(handle, repoRelative, create = true)
+                        val fileHandle = getFileHandle(dir, fileName, true)
+                        val writable: JsAny = fileHandleCreateWritable(fileHandle).await()
+                        writableWriteBuffer(writable, payload.data.toJsArrayBuffer()).await<JsAny>()
+                        writableClose(writable).await<JsAny>()
+                    }
+                    is HostWritePayload.Delete -> {
+                        val (dir, fileName) = resolveHostEntry(handle, repoRelative, create = false)
+                        dirRemoveEntry(dir, fileName).await<JsAny>()
+                        hostContentHashes.remove(fullPath)
+                    }
                 }
-                is HostWritePayload.Bytes -> {
-                    // Task 4.2.2a: paranoid-mode — no hash guard. Bytes never round-trip through
-                    // the String-typed onHostConflict (adversarial-review.md Blocker 4's rationale
-                    // — see runHostReconciliation's `.md.stek` branch), and FileRegistry.kt's
-                    // documented "modtime change alone is sufficient signal" rule for encrypted
-                    // files means no live bytes-aware conflict signal exists yet either — this
-                    // branch deliberately skips a freshness check entirely rather than perform a
-                    // read whose mismatch has nowhere safe to be routed.
-                    val (dir, fileName) = resolveHostEntry(handle, repoRelative, create = true)
-                    val fileHandle = getFileHandle(dir, fileName, true)
-                    val writable: JsAny = fileHandleCreateWritable(fileHandle).await()
-                    writableWriteBuffer(writable, payload.data.toJsArrayBuffer()).await<JsAny>()
-                    writableClose(writable).await<JsAny>()
-                }
-                is HostWritePayload.Delete -> {
-                    val (dir, fileName) = resolveHostEntry(handle, repoRelative, create = false)
-                    dirRemoveEntry(dir, fileName).await<JsAny>()
-                    hostContentHashes.remove(fullPath)
-                }
-            }
 
-            // Task 4.2.1c: dequeue + bookkeeping on success.
-            hostWritePending.remove(repoRelative)
-            updatePendingCount()
-            hostModTimes[fullPath] = Clock.System.now().toEpochMilliseconds()
-            _hostWriteStuckFlow.value = false
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Throwable) {
-            handleFlushFailure(repoRelative, handle, e)
+                // Task 4.2.1c: dequeue + bookkeeping on success.
+                hostWritePending.remove(repoRelative)
+                updatePendingCount()
+                hostModTimes[fullPath] = Clock.System.now().toEpochMilliseconds()
+                _hostWriteStuckFlow.value = false
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                handleFlushFailure(repoRelative, handle, e)
+            }
         }
     }
 

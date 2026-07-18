@@ -50,6 +50,43 @@ private fun jsHandleRelease(handle: JsAny): Unit = js("handle.release()")
 private fun jsHandleDonePromise(handle: JsAny): kotlin.js.Promise<JsAny> = js("handle.done")
 
 /**
+ * Task 6.2.1a: non-blocking sibling of [jsRequestLockHandle] using `navigator.locks.request(name,
+ * { ifAvailable: true }, callback)` — per the Web Locks spec, when `ifAvailable: true` and the
+ * lock is already held elsewhere, the callback is invoked synchronously with `lock === null` and
+ * whatever it returns settles `done` immediately, with nothing to release. This is a genuinely
+ * different control-flow shape from [jsRequestLockHandle] (which always resolves `acquired` to a
+ * real lock and always needs [jsHandleRelease] called) — not reused/parameterized from it, per
+ * this task's own doc note in `project_plans/web-local-folder-livesync/implementation/plan.md`
+ * ("don't try to reuse the blocking `withLock`'s interop function since the semantics differ").
+ *
+ * `acquired` resolves to the granted lock object on success, or JS `null` when the lock was busy
+ * — [WebLock.tryWithLock] surfaces that `null` directly as its own Kotlin `null` return.
+ */
+private fun jsRequestLockHandleIfAvailable(name: String): JsAny = js(
+    """
+    (function() {
+        var acquiredResolve;
+        var releaseResolve;
+        var acquired = new Promise(function(resolve) { acquiredResolve = resolve; });
+        var held = new Promise(function(resolve) { releaseResolve = resolve; });
+        var done = navigator.locks.request(name, { ifAvailable: true }, function(lock) {
+            if (lock === null) {
+                acquiredResolve(null);
+                return Promise.resolve();
+            }
+            acquiredResolve(lock);
+            return held;
+        });
+        return { acquired: acquired, release: releaseResolve, done: done };
+    })()
+    """
+)
+
+/** Nullable-aware sibling of [jsHandleAcquiredPromise] — [jsRequestLockHandleIfAvailable]'s
+ * `acquired` promise can resolve to JS `null` (lock busy under `ifAvailable: true`). */
+private fun jsHandleAcquiredPromiseOrNull(handle: JsAny): kotlin.js.Promise<JsAny?> = js("handle.acquired")
+
+/**
  * Web-Locks-backed mutual exclusion for `web-local-folder-livesync`'s own lock names (see
  * `FolderSyncLockNaming`, Epic 1.2). This is a standalone implementation — it does not import from
  * or delegate to `git/GitWriteLock.kt`, which is a `web-git-writeback`-owned file this project must
@@ -66,6 +103,32 @@ object WebLock {
     suspend fun <T> withLock(lockName: String, block: suspend () -> T): T {
         val handle = jsRequestLockHandle(lockName)
         jsHandleAcquiredPromise(handle).await<JsAny>()
+        try {
+            return block()
+        } finally {
+            jsHandleRelease(handle)
+            jsHandleDonePromise(handle).await<JsAny>()
+        }
+    }
+
+    /**
+     * Task 6.2.1a: non-blocking variant of [withLock] — attempts to acquire [lockName] via
+     * `navigator.locks.request(name, { ifAvailable: true }, ...)`. If another [withLock]/
+     * [tryWithLock] call already holds [lockName], returns `null` immediately (the callback fires
+     * synchronously with a busy `null` lock — see [jsRequestLockHandleIfAvailable]'s doc comment)
+     * rather than blocking until the lock is released. If the lock is free, acquires it, runs
+     * [block] exclusively, and releases the lock whether [block] returns normally or throws — same
+     * release discipline as [withLock]. Do NOT hold this across multiple independently-invoked
+     * suspend calls — scope it tightly around a single tick's work, same as [withLock].
+     */
+    suspend fun <T> tryWithLock(lockName: String, block: suspend () -> T): T? {
+        val handle = jsRequestLockHandleIfAvailable(lockName)
+        val lock = jsHandleAcquiredPromiseOrNull(handle).await<JsAny?>()
+        if (lock == null) {
+            // Not granted — the callback already returned, settling `done` on its own. Nothing
+            // was acquired, so there is nothing to release.
+            return null
+        }
         try {
             return block()
         } finally {
