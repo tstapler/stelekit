@@ -620,25 +620,24 @@ class HostDirectorySync(
             return HostAccessState.NotApplicable
         }
         val (handle, opfsPath) = found
-        val result = when (queryHandlePermission(handle)) {
-            "granted" -> {
-                hostDirHandle = handle
-                hostGraphOpfsPath = opfsPath
-                scope.launch { runHostReconciliation(handle, opfsPath) }
-                scope.launch {
-                    val granted = requestStoragePersistence()
-                    println("[SteleKit] storage.persist(): granted=$granted")
-                }
-                // Epic 5.1/5.2: same wiring as connectHostDirectory — launched non-blocking
-                // (startHostChangeObserver is suspend) so session-resume startup latency/UI
-                // interruption stays zero, matching this branch's existing "never wait on a
-                // launched coroutine" doc comment above.
-                startHostDirectoryPolling()
-                scope.launch { startHostChangeObserver(handle) }
-                HostAccessState.Granted
+        val permission = queryHandlePermission(handle)
+        val result = if (permission == "granted") {
+            hostDirHandle = handle
+            hostGraphOpfsPath = opfsPath
+            scope.launch { runHostReconciliation(handle, opfsPath) }
+            scope.launch {
+                val granted = requestStoragePersistence()
+                println("[SteleKit] storage.persist(): granted=$granted")
             }
-            "prompt" -> HostAccessState.PromptNeeded
-            else -> HostAccessState.Denied
+            // Epic 5.1/5.2: same wiring as connectHostDirectory — launched non-blocking
+            // (startHostChangeObserver is suspend) so session-resume startup latency/UI
+            // interruption stays zero, matching this branch's existing "never wait on a
+            // launched coroutine" doc comment above.
+            startHostDirectoryPolling()
+            scope.launch { startHostChangeObserver(handle) }
+            HostAccessState.Granted
+        } else {
+            mapPermissionResultToAccessState(permission)
         }
         _hostAccessStateFlow.value = result
         return result
