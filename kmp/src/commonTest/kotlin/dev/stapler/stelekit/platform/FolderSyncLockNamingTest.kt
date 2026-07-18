@@ -42,6 +42,31 @@ class FolderSyncLockNamingTest {
         assertTrue(bar.matches(Regex("^[A-Za-z0-9.-]+$")), "name '$bar' contains unsafe characters")
     }
 
+    // ── Bug fix (code-review repair loop): literal '-' must not collide with a collapsed '/' ────
+
+    @Test
+    fun writeLockNameFor_should_ReturnDifferentNames_When_OneInputHasLiteralDashAndOtherHasPathSeparator() {
+        val graphId = "a1b2c3d4"
+
+        // "a/b" has one path separator; "a-b" has one literal dash. Before the fix, both collapsed
+        // to the identical sanitized "a-b" — a real lock-name collision between two different files.
+        val withSeparator = FolderSyncLockNaming.writeLockNameFor(graphId, "a/b")
+        val withLiteralDash = FolderSyncLockNaming.writeLockNameFor(graphId, "a-b")
+
+        assertNotEquals(
+            withSeparator,
+            withLiteralDash,
+            "a path separator ('a/b') and a literal dash ('a-b') must never sanitize to the same lock name",
+        )
+
+        // Still deterministic and still restricted to the documented safe character set.
+        assertEquals(withLiteralDash, FolderSyncLockNaming.writeLockNameFor(graphId, "a-b"))
+        assertTrue(
+            withLiteralDash.matches(Regex("^[A-Za-z0-9.-]+$")),
+            "name '$withLiteralDash' contains unsafe characters",
+        )
+    }
+
     // ── Cross-feature isolation guard ────────────────────────────────────────
 
     @Test

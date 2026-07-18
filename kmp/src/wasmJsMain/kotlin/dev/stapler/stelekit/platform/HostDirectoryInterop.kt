@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.platform
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.await
 
 // js() calls must be top-level functions in Kotlin/Wasm — not inside a class or companion object.
@@ -55,6 +56,8 @@ internal suspend fun idbOpenHandleDb(): JsAny = try {
 internal suspend fun idbPutHandle(db: JsAny, key: String, handle: JsAny) {
     try {
         idbPutHandlePromise(db, key, handle).await()
+    } catch (e: CancellationException) {
+        throw e
     } catch (e: Throwable) {
         println("[SteleKit] IndexedDB put failed for key=$key: ${e.message}")
     }
@@ -63,6 +66,8 @@ internal suspend fun idbPutHandle(db: JsAny, key: String, handle: JsAny) {
 /** Read path — returns null on failure or when the key is absent, never throws. */
 internal suspend fun idbGetHandle(db: JsAny, key: String): JsAny? = try {
     idbGetHandlePromise(db, key).await()
+} catch (e: CancellationException) {
+    throw e
 } catch (e: Throwable) {
     println("[SteleKit] IndexedDB get failed for key=$key: ${e.message}")
     null
@@ -92,6 +97,8 @@ internal fun jsAnyToUtf8String(v: JsAny): String = js("String(v)")
 
 internal suspend fun queryHandlePermission(handle: JsAny, mode: String = "readwrite"): String = try {
     jsStringValue(queryPermissionPromise(handle, mode).await())
+} catch (e: CancellationException) {
+    throw e
 } catch (e: Throwable) {
     println("[SteleKit] queryPermission failed: ${e.message}")
     "denied"
@@ -99,6 +106,8 @@ internal suspend fun queryHandlePermission(handle: JsAny, mode: String = "readwr
 
 internal suspend fun requestHandlePermission(handle: JsAny, mode: String = "readwrite"): String = try {
     jsStringValue(requestPermissionPromise(handle, mode).await())
+} catch (e: CancellationException) {
+    throw e
 } catch (e: Throwable) {
     println("[SteleKit] requestPermission failed: ${e.message}")
     "denied"
@@ -120,6 +129,8 @@ private fun observePromise(observer: JsAny, handle: JsAny, recursive: Boolean): 
 internal suspend fun observeHandle(observer: JsAny, handle: JsAny, recursive: Boolean = true) {
     try {
         observePromise(observer, handle, recursive).await()
+    } catch (e: CancellationException) {
+        throw e
     } catch (e: Throwable) {
         println("[SteleKit] FileSystemObserver.observe failed: ${e.message}")
     }
@@ -198,6 +209,8 @@ internal suspend fun requestStoragePersistence(): Boolean {
     if (!storagePersistSupported()) return false
     return try {
         jsBooleanValue(jsStoragePersistPromise().await())
+    } catch (e: CancellationException) {
+        throw e
     } catch (e: Throwable) {
         println("[SteleKit] storage.persist() request failed: ${e.message}")
         false

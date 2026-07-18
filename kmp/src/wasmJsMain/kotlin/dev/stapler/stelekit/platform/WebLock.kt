@@ -3,7 +3,9 @@
 
 package dev.stapler.stelekit.platform
 
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.await
+import kotlinx.coroutines.withContext
 
 // js() calls must be top-level functions in Kotlin/Wasm — not inside a class or companion object.
 
@@ -99,15 +101,31 @@ object WebLock {
      * Acquires the named lock, runs [block] exclusively, and releases the lock whether [block]
      * returns normally or throws. Do NOT hold this across multiple independently-invoked suspend
      * calls — scope it tightly around a single critical section.
+     *
+     * Bug fix (code-review repair loop): `navigator.locks.request(...)` (inside
+     * [jsRequestLockHandle]) fires synchronously — the *browser* acquires the lock the instant its
+     * callback runs, independent of whether the Kotlin coroutine awaiting
+     * [jsHandleAcquiredPromise] is still suspended or has since been cancelled. Previously the
+     * acquire-await sat *outside* the `try`, so a cancellation delivered while suspended there (or
+     * anywhere else in this function) skipped the `finally` release entirely — the lock then stays
+     * held until the browser tab closes. The `try` now wraps the acquire-await itself, and the
+     * `finally`'s release is run under [NonCancellable] so it can still suspend
+     * (`jsHandleDonePromise(handle).await()`) even though this coroutine's own `Job` is already
+     * cancelled by the time `finally` runs. Calling [jsHandleRelease] here is safe even if the
+     * lock was never actually granted (e.g. cancelled before [jsHandleAcquiredPromise] resolved) —
+     * it only resolves the callback's held `Promise`, a harmless no-op if that callback hasn't
+     * fired yet, and the lock is then released the instant it eventually is.
      */
     suspend fun <T> withLock(lockName: String, block: suspend () -> T): T {
         val handle = jsRequestLockHandle(lockName)
-        jsHandleAcquiredPromise(handle).await<JsAny>()
         try {
+            jsHandleAcquiredPromise(handle).await<JsAny>()
             return block()
         } finally {
-            jsHandleRelease(handle)
-            jsHandleDonePromise(handle).await<JsAny>()
+            withContext(NonCancellable) {
+                jsHandleRelease(handle)
+                jsHandleDonePromise(handle).await<JsAny>()
+            }
         }
     }
 
@@ -123,17 +141,25 @@ object WebLock {
      */
     suspend fun <T> tryWithLock(lockName: String, block: suspend () -> T): T? {
         val handle = jsRequestLockHandleIfAvailable(lockName)
-        val lock = jsHandleAcquiredPromiseOrNull(handle).await<JsAny?>()
-        if (lock == null) {
-            // Not granted — the callback already returned, settling `done` on its own. Nothing
-            // was acquired, so there is nothing to release.
-            return null
-        }
+        // Bug fix (code-review repair loop): same leak as `withLock` above — the acquire-await
+        // (and the "was it actually granted?" branch below) now live inside the `try`, and release
+        // runs under `NonCancellable` in `finally`, so a cancellation delivered anywhere in this
+        // function — including before we've even learned whether the lock was granted or busy —
+        // still releases it if it was (or is about to be) granted. Calling [jsHandleRelease]
+        // unconditionally in `finally` is safe even for the "busy" (`lock == null`) case: the
+        // callback there already resolved its own held `Promise` itself (`Promise.resolve()`), so
+        // this is a harmless no-op resolve-of-an-already-settled-promise, not a real release.
         try {
+            val lock = jsHandleAcquiredPromiseOrNull(handle).await<JsAny?>()
+            if (lock == null) {
+                return null
+            }
             return block()
         } finally {
-            jsHandleRelease(handle)
-            jsHandleDonePromise(handle).await<JsAny>()
+            withContext(NonCancellable) {
+                jsHandleRelease(handle)
+                jsHandleDonePromise(handle).await<JsAny>()
+            }
         }
     }
 }

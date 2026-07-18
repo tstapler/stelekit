@@ -496,6 +496,8 @@ class HostDirectorySync(
             val encoded = gitApiJson.encodeToString(envelope)
             idbPutHandle(db, graphId, encoded.toJsString())
             idbPutHandle(db, handleObjectKey(graphId), _handle)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Throwable) {
             println("[SteleKit] persistHostHandle failed for graphId=$graphId: ${e.message}")
         }
@@ -525,6 +527,8 @@ class HostDirectorySync(
             val envelope = gitApiJson.decodeFromString<HostHandleEnvelope>(jsAnyToUtf8String(envelopeRaw))
             handle to "$HOME_DIR/${envelope.dirName}"
         }
+    } catch (e: CancellationException) {
+        throw e
     } catch (e: Throwable) {
         println("[SteleKit] lookupPersistedHandle failed for graphId=$graphId: ${e.message}")
         null
@@ -579,6 +583,8 @@ class HostDirectorySync(
             startHostDirectoryPolling()
             startHostChangeObserver(dirHandle)
             HostAccessState.Granted
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Throwable) {
             println("[SteleKit] connectHostDirectory failed for '$existingOpfsPath': ${e.message}")
             HostAccessState.NotApplicable
@@ -664,13 +670,19 @@ class HostDirectorySync(
             return HostAccessState.NotApplicable
         }
         val (handle, opfsPath) = found
-        val result = when (requestHandlePermission(handle)) {
-            "granted" -> {
-                hostDirHandle = handle
-                hostGraphOpfsPath = opfsPath
-                HostAccessState.Granted
-            }
-            else -> HostAccessState.Denied
+        // Bug fix (code-review repair loop): route non-"granted" results through the same
+        // mapPermissionResultToAccessState helper reconnectHostDirectory (above) and
+        // handleFlushFailure (below) already use, instead of a bespoke inline `else -> Denied`
+        // that silently dropped the "prompt" case — requestHandlePermission (the prompting
+        // variant used here) can itself return "prompt" in edge cases per its own doc comment, and
+        // a user in that state should see PromptNeeded (try again), not Denied.
+        val permission = requestHandlePermission(handle)
+        val result = if (permission == "granted") {
+            hostDirHandle = handle
+            hostGraphOpfsPath = opfsPath
+            HostAccessState.Granted
+        } else {
+            mapPermissionResultToAccessState(permission)
         }
         _hostAccessStateFlow.value = result
         return result
@@ -1011,25 +1023,44 @@ class HostDirectorySync(
         val opfsWriteDeferred = cacheAccess.opfsWriteDeferredFor(path)
         val completion = hostWriteCompletion.getOrPut(repoRelative) { CompletableDeferred() }
         scope.launch {
-            // Epic 1.7: never let a host push race ahead of the edit actually landing in OPFS.
-            opfsWriteDeferred?.await()
-
-            hostWriteLatestPayload[repoRelative] = payload
-            hostWritePending[repoRelative] = DirtyEntry(dirtyOpFor(payload), Clock.System.now().toEpochMilliseconds())
-            updatePendingCount()
-
-            if (repoRelative in hostWriteInFlight) {
-                hostWriteDirtyDuringFlush += repoRelative
-                return@launch
-            }
-            hostWriteInFlight += repoRelative
             try {
-                do {
-                    flushHostWrite(repoRelative)
-                } while (repoRelative in hostWriteDirtyDuringFlush)
-            } finally {
-                hostWriteInFlight -= repoRelative
-                hostWriteCompletion.remove(repoRelative)?.complete(Unit)
+                // Epic 1.7: never let a host push race ahead of the edit actually landing in OPFS.
+                opfsWriteDeferred?.await()
+
+                hostWriteLatestPayload[repoRelative] = payload
+                hostWritePending[repoRelative] =
+                    DirtyEntry(dirtyOpFor(payload), Clock.System.now().toEpochMilliseconds())
+                updatePendingCount()
+
+                if (repoRelative in hostWriteInFlight) {
+                    hostWriteDirtyDuringFlush += repoRelative
+                    return@launch
+                }
+                hostWriteInFlight += repoRelative
+                try {
+                    do {
+                        flushHostWrite(repoRelative)
+                    } while (repoRelative in hostWriteDirtyDuringFlush)
+                } finally {
+                    hostWriteInFlight -= repoRelative
+                    hostWriteCompletion.remove(repoRelative)?.complete(Unit)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                // Bug fix (code-review repair loop): opfsWriteDeferred?.await() above (or the
+                // bookkeeping immediately following it) can throw *before* this call determines
+                // whether it owns this path's flush cycle. Previously nothing completed
+                // hostWriteCompletion[repoRelative] in that case, so renameHostFile's .await() on
+                // this same Deferred would hang forever. Complete it here only if no other
+                // still-running owner will complete it later — hostWriteInFlight not containing
+                // this path means either nobody has claimed ownership yet, or the owner already
+                // finished and cleared it itself; if another call's flush cycle is still actively
+                // running (path still present in hostWriteInFlight), leave the Deferred alone so
+                // that owner's own finally block is the one that eventually completes it.
+                if (repoRelative !in hostWriteInFlight) {
+                    hostWriteCompletion.remove(repoRelative)?.complete(Unit)
+                }
             }
         }
         return completion

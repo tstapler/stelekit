@@ -48,10 +48,23 @@ fun FolderSyncSettings(
     onConnect: suspend () -> ReconciliationUiState,
     modifier: Modifier = Modifier,
 ) {
-    if (!supportsNativeDirectoryPicker || hostAccessState != HostAccessState.NotApplicable) return
-
     val scope = rememberCoroutineScope()
     var uiState by remember { mutableStateOf<ReconciliationUiState?>(null) }
+
+    // Bug fix (code-review repair loop): this guard now runs AFTER `uiState` is read via
+    // `remember`, and only applies while there is no in-progress/terminal reconciliation screen to
+    // show (`uiState == null`). `connectHostDirectory` flips `hostAccessState` to `Granted` as
+    // PART OF the connect flow — before the reconciliation-progress screen is naturally dismissed
+    // by the user via `onDone`/`onCancel` — so a recomposition triggered while `uiState` is
+    // `Connecting`/`Summary`/`Failed` must not bail out here just because `hostAccessState` has
+    // already moved past `NotApplicable`. Doing so (the original bug: this check sat above the
+    // `remember` line, so it ran unconditionally on every recomposition) would make the in-progress
+    // or terminal reconciliation screen disappear mid-flow — exactly the scenario this composable's
+    // own doc comment calls "the highest-stakes surface in the whole feature" (the UI proving the
+    // Critical Finding — browser edits preserved — didn't just happen silently off-screen).
+    if (uiState == null && (!supportsNativeDirectoryPicker || hostAccessState != HostAccessState.NotApplicable)) {
+        return
+    }
 
     fun startConnect() {
         uiState = ReconciliationUiState.Connecting

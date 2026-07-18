@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.platform
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.await
 
 internal fun showDirectoryPickerSupported(): Boolean = js("typeof window.showDirectoryPicker === 'function'")
@@ -120,6 +121,8 @@ internal fun JsAny.toKotlinByteArray(): ByteArray {
 internal suspend fun readOpfsFileAsBytes(fileHandle: JsAny): ByteArray? = try {
     val file: JsAny = fileHandleGetFile(fileHandle).await()
     fileArrayBuffer(file).await<JsAny>().toKotlinByteArray()
+} catch (e: CancellationException) {
+    throw e
 } catch (e: Throwable) {
     null
 }

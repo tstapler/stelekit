@@ -119,10 +119,17 @@ fun folderSyncBadgeContent(
     }
 }
 
+// Bug fix (code-review repair loop): no `else` branch — [HostAccessState] is "exhaustive by
+// design" per its own doc comment, and [folderSyncBadgeContent] above already has no `else`
+// either. An `else -> Icons.Default.Folder` here silently covered NotApplicable/PromptNeeded/
+// Denied with a generic fallback instead of explicit branches, so a future new [HostAccessState]
+// variant would compile-error in [folderSyncBadgeContent] but silently fall through here.
 private fun folderSyncBadgeIcon(state: HostAccessState): ImageVector = when (state) {
+    is HostAccessState.NotApplicable -> Icons.Default.Folder
+    is HostAccessState.PromptNeeded -> Icons.Default.Folder
+    is HostAccessState.Denied -> Icons.Default.Folder
     is HostAccessState.Disconnected -> Icons.Default.FolderOff
     is HostAccessState.Granted -> Icons.Default.FolderOpen
-    else -> Icons.Default.Folder
 }
 
 /**
