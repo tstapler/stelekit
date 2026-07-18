@@ -9,6 +9,7 @@ import dev.stapler.stelekit.git.model.DirtyOp
 import dev.stapler.stelekit.git.model.HostHandleEnvelope
 import dev.stapler.stelekit.git.model.gitApiJson
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
@@ -119,6 +120,22 @@ class HostDirectorySync(
      * content" rationale (Story 4.1.1's coalescing acceptance criterion).
      */
     private val hostWriteLatestPayload = mutableMapOf<String, HostWritePayload>()
+
+    /**
+     * Epic 7.1 (Task 7.1.1a): completion signal for [scheduleHostWriteThrough]'s in-flight flush
+     * cycle for a given repo-relative path — lets [renameHostFile] await the *specific* flush it
+     * just enqueued for the rename's new path before proceeding to verify/delete, rather than
+     * merely knowing the write was scheduled (`scheduleHostWriteThrough` itself is fire-and-forget
+     * from a synchronous caller's perspective — `writeFile`/`writeFileBytes`/`deleteFile` never
+     * needed to await it before this Epic). Reuses [hostWriteInFlight]'s exact coalescing
+     * lifecycle: a path's entry here is created the instant the first (non-coalesced)
+     * [scheduleHostWriteThrough] call for that path is issued, and is removed + completed only
+     * once the owning flush cycle's do-while loop — including every coalesced follow-up — has
+     * fully finished. A call that arrives mid-flight and merely coalesces
+     * ([hostWriteDirtyDuringFlush]) receives that *same* [Deferred], which therefore only
+     * resolves once its own coalesced payload has actually been flushed too.
+     */
+    private val hostWriteCompletion = mutableMapOf<String, CompletableDeferred<Unit>>()
 
     // ── Epic 4.2 (Task 4.2.1a): freshness-check baseline ───────────────────────────────────────
     /**
@@ -746,6 +763,11 @@ class HostDirectorySync(
                                         hostOnlyNewCount++
                                         cacheAccess.setBytes(path, hostBytes)
                                         cacheAccess.writeOpfsMirrorBytes(path, hostBytes)
+                                        // Task 7.1.2a: log-only stale-rename-duplicate check — see
+                                        // logPossibleStaleRenameDuplicate's doc comment.
+                                        logPossibleStaleRenameDuplicate(path, opfsPath) { otherPath ->
+                                            cacheAccess.getBytes(otherPath)?.contentEquals(hostBytes) == true
+                                        }
                                     }
                                     ReconciliationOutcome.BrowserOnlyNeedsPush -> {
                                         // Unreachable: hostBytes is non-null in this branch (the walk
@@ -783,6 +805,11 @@ class HostDirectorySync(
                                         hostOnlyNewCount++
                                         cacheAccess.set(path, hostContent)
                                         cacheAccess.writeOpfsMirror(path, hostContent)
+                                        // Task 7.1.2a: log-only stale-rename-duplicate check — see
+                                        // logPossibleStaleRenameDuplicate's doc comment.
+                                        logPossibleStaleRenameDuplicate(path, opfsPath) { otherPath ->
+                                            cacheAccess.get(otherPath) == hostContent
+                                        }
                                     }
                                     ReconciliationOutcome.BrowserOnlyNeedsPush -> {
                                         // Unreachable here — see the `.md.stek` branch's identical note.
@@ -972,10 +999,17 @@ class HostDirectorySync(
      * the *same* write instead of requiring a redundant follow-up one — this is what makes Story
      * 4.1.1's "exactly one write of the latest content" guarantee hold even for a burst that
      * lands before the first flush's actual host write begins.
+     *
+     * **Epic 7.1 addition**: returns a [Deferred] ([hostWriteCompletion]) that resolves once
+     * [path]'s owning flush cycle — including every coalesced follow-up — has fully finished.
+     * Existing synchronous call sites (`writeFile`/`writeFileBytes`/`deleteFile`) simply discard
+     * it, exactly as they discarded this method's previous `Unit` return; [renameHostFile] is the
+     * first caller that actually awaits it.
      */
-    fun scheduleHostWriteThrough(path: String, payload: HostWritePayload) {
+    fun scheduleHostWriteThrough(path: String, payload: HostWritePayload): Deferred<Unit> {
         val repoRelative = repoRelativePath(path)
         val opfsWriteDeferred = cacheAccess.opfsWriteDeferredFor(path)
+        val completion = hostWriteCompletion.getOrPut(repoRelative) { CompletableDeferred() }
         scope.launch {
             // Epic 1.7: never let a host push race ahead of the edit actually landing in OPFS.
             opfsWriteDeferred?.await()
@@ -995,8 +1029,10 @@ class HostDirectorySync(
                 } while (repoRelative in hostWriteDirtyDuringFlush)
             } finally {
                 hostWriteInFlight -= repoRelative
+                hostWriteCompletion.remove(repoRelative)?.complete(Unit)
             }
         }
+        return completion
     }
 
     /**
@@ -1137,6 +1173,87 @@ class HostDirectorySync(
             }
         }
         onHostWriteFailed(DomainError.FileSystemError.WriteFailed(repoRelative, message))
+    }
+
+    // ── Epic 7.1 (Story 7.1.1): HostRenameOp — write-new, verify, delete-old ──────────────────
+    /**
+     * Task 7.1.1a/7.1.1b: the two-phase [HostRenameOp] protocol that propagates an in-app page
+     * rename to the host directory. Writes [to]'s content through the existing
+     * [scheduleHostWriteThrough]/[flushHostWrite] machinery (Epic 4.1/4.2 — `WebLock`-guarded per
+     * Epic 6.1's [FolderSyncLockNaming.writeLockNameFor] lock), **awaits that specific flush's
+     * completion** via the returned [Deferred] (not merely its enqueue — see
+     * [scheduleHostWriteThrough]'s Epic 7.1 doc note), then reads the new host file back and
+     * compares its hash against [content] before deleting [from]. Deliberately never relies on
+     * `FileSystemHandle.move()` (inconsistent browser support — `research/architecture.md`'s
+     * documented rationale) and deliberately never opens a second, unlocked write path — the
+     * delete goes through the identical [HostWritePayload.Delete] dispatch (Task 4.3.1c) every
+     * other host delete uses — its completion is awaited too, so this function does not return
+     * until the entire two-phase protocol (write, verify, delete-or-leave-in-place) has settled.
+     *
+     * **Fail-safe, not fail-destructive** (Task 7.1.1b): a mismatched hash, a missing new file, or
+     * a thrown read error are all treated identically — [from] is left in place and only a
+     * diagnostic line is logged. [from] is deleted only on a confirmed-matching verification. This
+     * closes the "crash between write-new and delete-old" window from `research/pitfalls.md` §2
+     * item 3 as tightly as a browser sandbox allows — not atomic, but the old file is never removed
+     * until the new one is confirmed present with matching content.
+     *
+     * A `null` [hostDirHandle] (no host directory connected) is a no-op — mirrors every other
+     * `HostDirectorySync` entry point's "nothing to sync" contract.
+     */
+    suspend fun renameHostFile(from: String, to: String, content: String) {
+        val handle = hostDirHandle ?: return
+
+        scheduleHostWriteThrough(to, HostWritePayload.Text(content)).await()
+
+        val repoRelativeTo = repoRelativePath(to)
+        val verified = try {
+            val (dir, fileName) = resolveHostEntry(handle, repoRelativeTo, create = false)
+            val fileHandle = getFileHandle(dir, fileName, false)
+            val readBack = readOpfsFile(fileHandle)
+            readBack != null && readBack.hashCode() == content.hashCode() && readBack == content
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            println("[SteleKit] renameHostFile: failed to verify '$to' after write: ${e.message}")
+            false
+        }
+
+        if (verified) {
+            scheduleHostWriteThrough(from, HostWritePayload.Delete).await()
+        } else {
+            println(
+                "[SteleKit] renameHostFile: verification failed for '$to', leaving '$from' in place " +
+                    "(fail-safe, not fail-destructive)",
+            )
+        }
+    }
+
+    /**
+     * Task 7.1.2a (Story 7.1.2, adversarial-review.md Blocker 5): purely observability — logs when
+     * a newly-imported [ReconciliationOutcome.HostOnlyNew] path's content coincidentally matches
+     * ([matches]) another path already present in [cacheAccess] under [opfsPath], **and does
+     * nothing else**: no deletion, no host mutation, no [hostWritePending] entry. A coincidental
+     * content match between two genuinely-unrelated pages is common enough in this domain (empty
+     * journal pages, template stubs, boilerplate — Logseq-style outliners routinely produce many
+     * byte-identical pages) that auto-deleting on this signal alone was assessed as a net-negative
+     * trade during planning — worse than the interrupted-rename duplication it would "fix," since
+     * it risks destroying a legitimate, unrelated page on a false positive. This project
+     * deliberately accepts a visible, recoverable duplicate over that risk (`research/pitfalls.md`
+     * §2 item 3; see the Domain Glossary's `HostRenameOp` entry and Story 7.1.2's design note).
+     * Logs (and returns after) only the first match found — additional coincidental matches would
+     * only ever produce redundant log lines for the same non-action.
+     */
+    private fun logPossibleStaleRenameDuplicate(path: String, opfsPath: String, matches: (otherPath: String) -> Boolean) {
+        for (otherPath in cacheAccess.keysUnder(opfsPath)) {
+            if (otherPath == path) continue
+            if (matches(otherPath)) {
+                println(
+                    "[SteleKit] reconciliation: possible stale-rename duplicate: " +
+                        "${path.removePrefix("$opfsPath/")} matches content of ${otherPath.removePrefix("$opfsPath/")}",
+                )
+                return
+            }
+        }
     }
 }
 

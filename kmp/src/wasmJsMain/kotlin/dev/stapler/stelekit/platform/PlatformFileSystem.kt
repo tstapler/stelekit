@@ -424,6 +424,27 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         }
         return true
     }
+    /**
+     * Epic 7.1 (Task 7.1.1a): `HostRenameOp` — the seventh [FileSystem]-interface delegation touch
+     * point, previously falling through to the interface default (`false`), a documented
+     * pre-existing gap this phase closes (`research/architecture.md` §1). `cache`-mirroring stays
+     * unconditional (applies regardless of whether host sync is active, matching every other
+     * `cache` field on this class), then [HostDirectorySync.renameHostFile] is fired off
+     * (`scope.launch`, matching this class's established sync-signature/async-side-effect pattern
+     * for [writeFile]/[writeFileBytes]/[deleteFile]) only when a host directory is connected.
+     * Returns `false` (nothing to rename) when [from] isn't present in [cache] — matches the
+     * [FileSystem] interface default's contract for a non-existent source.
+     */
+    override fun renameFile(from: String, to: String): Boolean {
+        val content = cache[from] ?: return false
+        cache[to] = content
+        cache.remove(from)
+        if (hostDirectorySync.hostDirHandle != null) {
+            scope.launch { hostDirectorySync.renameHostFile(from, to, content) }
+        }
+        return true
+    }
+
     actual override fun pickDirectory(): String? = null
     override val supportsNativeDirectoryPicker: Boolean get() = showDirectoryPickerSupported()
     actual override suspend fun pickDirectoryAsync(): String? {
