@@ -86,6 +86,19 @@ class HostDirectorySync(
     val hostAccessStateFlow: StateFlow<HostAccessState> = _hostAccessStateFlow.asStateFlow()
 
     /**
+     * Observability Plan (plan.md): logs every permission-state transition, old → new, per the
+     * plan's "Logs" bullet — the state itself is also exposed reactively via [hostAccessStateFlow]
+     * for UI consumption, but the plan calls for a println line at each transition too.
+     */
+    private fun setHostAccessState(newState: HostAccessState) {
+        val old = _hostAccessStateFlow.value
+        if (old != newState) {
+            println("[SteleKit] host access state: $old -> $newState")
+        }
+        _hostAccessStateFlow.value = newState
+    }
+
+    /**
      * Epic 4.1/4.2: live count of [hostWritePending], updated by [updatePendingCount] on every
      * enqueue/dequeue (both [scheduleHostWriteThrough]'s coalescing scheduler and
      * [runHostReconciliation]'s `BrowserOnlyNeedsPush` dispatch). Was a permanently-`0` stub
@@ -589,7 +602,7 @@ class HostDirectorySync(
             println("[SteleKit] connectHostDirectory failed for '$existingOpfsPath': ${e.message}")
             HostAccessState.NotApplicable
         }
-        _hostAccessStateFlow.value = result
+        setHostAccessState(result)
         return result
     }
 
@@ -616,7 +629,7 @@ class HostDirectorySync(
     suspend fun reconnectHostDirectory(graphId: String): HostAccessState {
         val found = lookupPersistedHandle(graphId)
         if (found == null) {
-            _hostAccessStateFlow.value = HostAccessState.NotApplicable
+            setHostAccessState(HostAccessState.NotApplicable)
             return HostAccessState.NotApplicable
         }
         val (handle, opfsPath) = found
@@ -639,7 +652,7 @@ class HostDirectorySync(
         } else {
             mapPermissionResultToAccessState(permission)
         }
-        _hostAccessStateFlow.value = result
+        setHostAccessState(result)
         return result
     }
 
@@ -665,7 +678,7 @@ class HostDirectorySync(
     suspend fun requestHostDirectoryAccess(graphId: String): HostAccessState {
         val found = lookupPersistedHandle(graphId)
         if (found == null) {
-            _hostAccessStateFlow.value = HostAccessState.NotApplicable
+            setHostAccessState(HostAccessState.NotApplicable)
             return HostAccessState.NotApplicable
         }
         val (handle, opfsPath) = found
@@ -683,7 +696,7 @@ class HostDirectorySync(
         } else {
             mapPermissionResultToAccessState(permission)
         }
-        _hostAccessStateFlow.value = result
+        setHostAccessState(result)
         return result
     }
 
@@ -1088,7 +1101,7 @@ class HostDirectorySync(
         // reactively after one has already failed (research/pitfalls.md §1.1).
         val access = queryHandlePermission(handle)
         if (access != "granted") {
-            _hostAccessStateFlow.value = mapPermissionResultToAccessState(access)
+            setHostAccessState(mapPermissionResultToAccessState(access))
             onHostWriteFailed(
                 DomainError.FileSystemError.WriteFailed(repoRelative, "Host directory permission is '$access'"),
             )
@@ -1186,7 +1199,7 @@ class HostDirectorySync(
     private suspend fun handleFlushFailure(repoRelative: String, handle: JsAny, e: Throwable) {
         val message = e.message ?: "unknown"
         if (message.contains("NotFoundError", ignoreCase = true)) {
-            _hostAccessStateFlow.value = HostAccessState.Disconnected(message)
+            setHostAccessState(HostAccessState.Disconnected(message))
             // Epic 5.1/5.2: the stored handle no longer resolves — stop polling/treating the
             // observer as active for it. hostDirHandle itself is deliberately left set (matches
             // this method's existing doc comment: no field-clearing "disconnect" flow exists yet),
@@ -1199,7 +1212,7 @@ class HostDirectorySync(
             if (requery == "granted") {
                 _hostWriteStuckFlow.value = true
             } else {
-                _hostAccessStateFlow.value = mapPermissionResultToAccessState(requery)
+                setHostAccessState(mapPermissionResultToAccessState(requery))
             }
         }
         onHostWriteFailed(DomainError.FileSystemError.WriteFailed(repoRelative, message))
