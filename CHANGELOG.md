@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.71.1](https://github.com/tstapler/stelekit/compare/v0.71.0...v0.71.1) (2026-07-18)
+
+
+### Bug Fixes
+
+* **test:** close QrTransferCoordinatorTest's real event-capture race with CoroutineStart.UNDISPATCHED ([#246](https://github.com/tstapler/stelekit/issues/246)) ([56a3d3d](https://github.com/tstapler/stelekit/commit/56a3d3d588c7e21ae489497b9c6f9686600c52a7))
+
 ## [0.71.0](https://github.com/tstapler/stelekit/compare/v0.70.0...v0.71.0) (2026-07-18)
 
 
