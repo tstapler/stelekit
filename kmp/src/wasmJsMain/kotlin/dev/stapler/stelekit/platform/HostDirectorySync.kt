@@ -3,6 +3,8 @@
 
 package dev.stapler.stelekit.platform
 
+import dev.stapler.stelekit.git.model.DirtyEntry
+import dev.stapler.stelekit.git.model.DirtyOp
 import dev.stapler.stelekit.git.model.HostHandleEnvelope
 import dev.stapler.stelekit.git.model.gitApiJson
 import kotlinx.coroutines.CoroutineScope
@@ -47,6 +49,40 @@ class HostDirectorySync(
     // this module.
     internal var hostDirHandle: JsAny? = null
     internal var hostGraphOpfsPath: String? = null
+
+    // ── Epic 3.2 (Task 3.2.2a/c): reconciliation dispatch collaborators ───────────────────────
+    /**
+     * Forward-declared per Epic 4.1's design (Task 3.2.2c) — Epic 4.1 (not yet implemented) will
+     * add the flush/scheduling logic that drains this queue; Epic 3.2 only needs the field to
+     * exist so `runHostReconciliation`'s `BrowserOnlyNeedsPush` branch has somewhere to enqueue.
+     * `internal` (not `private`) so `HostDirectorySyncReconciliationTest.kt` (wasmJsTest, friend
+     * source set) can assert on it directly, per validation.md's acceptance criteria.
+     */
+    internal val hostWritePending = mutableMapOf<String, DirtyEntry>()
+
+    /**
+     * Task 3.2.2a: constructor-injected-in-spirit but exposed as a settable `var` rather than a
+     * constructor parameter — `hostDirectorySync` is composed into `PlatformFileSystem` in a
+     * field initializer, before `GraphLoader` exists (`GraphLoader` is only ever constructed
+     * later, per-active-graph, inside `App.kt`'s composition — see `RepositorySet.createGraphLoader`
+     * usage). A constructor param with a real default would therefore permanently stay the no-op
+     * default in production. Defaults to a no-op so tests/production code that never sets it
+     * still compile and run safely. Set from `App.kt` alongside the other `FileSystem` write-behind
+     * callbacks (`setOnFlushPreWrite`/`setOnFlushComplete`/`setOnFlushFailed`) via the matching
+     * `FileSystem.setOnHostConflict` no-op-default interface method — mirrors this codebase's
+     * established convention for wiring a `GraphLoader` callback into the platform layer without
+     * `HostDirectorySync`/`PlatformFileSystem` importing `GraphLoader` directly (architecture-review.md
+     * Blocker 1's independence goal). See [PlatformFileSystem]'s `setOnHostConflict` override.
+     */
+    internal var onHostConflict: (path: String, hostContent: String) -> Unit = { _, _ -> }
+
+    /**
+     * Task 3.1.2b: the last [ReconciliationSummary] produced by [runHostReconciliation], read by
+     * UI wiring (`FolderSyncSettings`'s `onConnect` callback) after [connectHostDirectory]
+     * resolves, so the reconciliation summary screen can show real per-category counts rather
+     * than only the `println` observability line. `null` until the first reconciliation runs.
+     */
+    internal var lastReconciliationSummary: ReconciliationSummary? = null
     /**
      * Small constructor-injected interface [HostDirectorySync] uses to read/write
      * `PlatformFileSystem`'s `cache`/`bytesCache` without owning either map — keeps `cache`/
@@ -121,4 +157,172 @@ class HostDirectorySync(
             println("[SteleKit] persistHostHandle failed for graphId=$graphId: ${e.message}")
         }
     }
+
+    // ── Epic 3.1 (Story 3.1.1): connectHostDirectory — reconcile, never import ────────────────
+    /**
+     * Task 3.1.1a: entry point for enabling live sync on an **already-populated** graph — the
+     * Critical Finding's remediation. Calls [showDirectoryPicker] then [runHostReconciliation]
+     * (Epic 3.2) — **never** `PlatformFileSystem.importUserDirToCache`, which is the unconditional
+     * overwrite-only import path reserved for brand-new graphs via `pickDirectoryAsync()`. Only on
+     * success is [hostDirHandle]/[hostGraphOpfsPath] set and persisted (reusing [attachFreshHandle]'s
+     * [persistHostHandle] step) — a failure anywhere in this sequence (picker cancelled/denied,
+     * reconciliation throwing mid-walk) leaves the handle unset and returns
+     * [HostAccessState.NotApplicable], so no partial reconciliation is ever treated as complete
+     * (design/ux.md Surface 8's error-state contract).
+     */
+    suspend fun connectHostDirectory(existingOpfsPath: String): HostAccessState {
+        return try {
+            val dirHandle = showDirectoryPicker()
+            runHostReconciliation(dirHandle, existingOpfsPath)
+            hostDirHandle = dirHandle
+            hostGraphOpfsPath = existingOpfsPath
+            val dirName = existingOpfsPath.substringAfterLast("/")
+            persistHostHandle(graphIdProvider(), dirName, dirHandle)
+            HostAccessState.Granted
+        } catch (e: Throwable) {
+            println("[SteleKit] connectHostDirectory failed for '$existingOpfsPath': ${e.message}")
+            HostAccessState.NotApplicable
+        }
+    }
+
+    // ── Epic 3.2 (Stories 3.2.1, 3.2.2): reconciliation walk, classification, dispatch ────────
+    /**
+     * Task 3.2.1a/b, 3.2.2a/b/c: walks [dirHandle] recursively (mirroring
+     * `PlatformFileSystem.importUserDirToCache`'s traversal shape — reused by reference, not
+     * duplicated, since [HostDirectorySync] doesn't own that function), classifies every path
+     * present on either side via [classifyReconciliation]/[classifyReconciliationBytes], and
+     * dispatches each [ReconciliationOutcome] to its documented action:
+     * - [ReconciliationOutcome.Identical] — no-op.
+     * - [ReconciliationOutcome.HostChangedConflict] — invokes [onHostConflict] (text paths only;
+     *   see the `.md.stek` branch's doc note for why paranoid-mode conflicts are count-only here).
+     * - [ReconciliationOutcome.HostOnlyNew] — imports via [CacheAccess], bytes-aware for `.md.stek`
+     *   paths (adversarial-review.md Blocker 4).
+     * - [ReconciliationOutcome.BrowserOnlyNeedsPush] — enqueues [hostWritePending] directly
+     *   (Epic 4.1's flush loop will drain it once implemented).
+     *
+     * Paths present in [CacheAccess] but never visited by the host walk (Task 3.2.1b) are
+     * classified as [ReconciliationOutcome.BrowserOnlyNeedsPush] against a `null` host side.
+     *
+     * Returns a [ReconciliationSummary] tallying every classification, also stashed in
+     * [lastReconciliationSummary] for UI wiring that runs after [connectHostDirectory] resolves.
+     */
+    suspend fun runHostReconciliation(dirHandle: JsAny, opfsPath: String): ReconciliationSummary {
+        var identicalCount = 0
+        var hostChangedConflictCount = 0
+        var hostOnlyNewCount = 0
+        var browserOnlyNeedsPushCount = 0
+        val hostVisitedPaths = mutableSetOf<String>()
+
+        suspend fun walk(handle: JsAny, currentPath: String) {
+            for (entry in listOpfsEntries(handle)) {
+                val name = getEntryName(entry)
+                val path = "$currentPath/$name"
+                when {
+                    isFileEntry(entry) && path.endsWith(".md.stek") -> {
+                        hostVisitedPaths += path
+                        val hostBytes = readOpfsFileAsBytes(entry)
+                        if (hostBytes == null) {
+                            println("[SteleKit] runHostReconciliation: failed to read '$path' from host, skipping")
+                        } else {
+                            val cacheBytes = cacheAccess.getBytes(path)
+                            when (classifyReconciliationBytes(hostBytes, cacheBytes)) {
+                                ReconciliationOutcome.Identical -> identicalCount++
+                                ReconciliationOutcome.HostChangedConflict -> {
+                                    hostChangedConflictCount++
+                                    // Deliberately does NOT call onHostConflict here: that callback
+                                    // is String-typed (GraphLoader.emitExternalFileChange takes
+                                    // plaintext markdown), and decoding paranoid-mode ciphertext to
+                                    // a String to satisfy that signature is exactly what
+                                    // adversarial-review.md Blocker 4 forbids. Counted in the
+                                    // summary; a bytes-aware conflict surface is out of this
+                                    // dispatch's scope (Epic 3.1-3.3).
+                                }
+                                ReconciliationOutcome.HostOnlyNew -> {
+                                    hostOnlyNewCount++
+                                    cacheAccess.setBytes(path, hostBytes)
+                                    cacheAccess.writeOpfsMirrorBytes(path, hostBytes)
+                                }
+                                ReconciliationOutcome.BrowserOnlyNeedsPush -> {
+                                    // Unreachable: hostBytes is non-null in this branch (the walk
+                                    // only visits paths that exist on the host), so
+                                    // classifyReconciliationBytes can never return this variant
+                                    // here. Kept for `when` exhaustiveness (type-driven design —
+                                    // a future ReconciliationOutcome variant fails the build here).
+                                }
+                            }
+                        }
+                    }
+                    isFileEntry(entry) -> {
+                        hostVisitedPaths += path
+                        val hostContent = readOpfsFile(entry)
+                        if (hostContent == null) {
+                            println("[SteleKit] runHostReconciliation: failed to read '$path' from host, skipping")
+                        } else {
+                            val cacheContent = cacheAccess.get(path)
+                            when (classifyReconciliation(hostContent, cacheContent)) {
+                                ReconciliationOutcome.Identical -> identicalCount++
+                                ReconciliationOutcome.HostChangedConflict -> {
+                                    hostChangedConflictCount++
+                                    onHostConflict(path.removePrefix("$opfsPath/"), hostContent)
+                                }
+                                ReconciliationOutcome.HostOnlyNew -> {
+                                    hostOnlyNewCount++
+                                    cacheAccess.set(path, hostContent)
+                                    cacheAccess.writeOpfsMirror(path, hostContent)
+                                }
+                                ReconciliationOutcome.BrowserOnlyNeedsPush -> {
+                                    // Unreachable here — see the `.md.stek` branch's identical note.
+                                }
+                            }
+                        }
+                    }
+                    isDirectoryEntry(entry) -> walk(entry, path)
+                }
+            }
+        }
+
+        walk(dirHandle, opfsPath)
+
+        // Task 3.2.1b: paths known to CacheAccess but never visited by the host walk above.
+        for (path in cacheAccess.keysUnder(opfsPath)) {
+            if (path in hostVisitedPaths) continue
+            val cacheBytes = cacheAccess.getBytes(path)
+            val outcome = if (cacheBytes != null) {
+                classifyReconciliationBytes(null, cacheBytes)
+            } else {
+                classifyReconciliation(null, cacheAccess.get(path))
+            }
+            if (outcome == ReconciliationOutcome.BrowserOnlyNeedsPush) {
+                browserOnlyNeedsPushCount++
+                val repoRelative = path.removePrefix("$opfsPath/")
+                hostWritePending[repoRelative] = DirtyEntry(DirtyOp.WRITE, Clock.System.now().toEpochMilliseconds())
+            }
+        }
+
+        val summary = ReconciliationSummary(
+            identical = identicalCount,
+            hostChangedConflict = hostChangedConflictCount,
+            hostOnlyNew = hostOnlyNewCount,
+            browserOnlyNeedsPush = browserOnlyNeedsPushCount,
+        )
+        lastReconciliationSummary = summary
+        println(
+            "[SteleKit] reconciliation: ${summary.identical} identical, ${summary.hostChangedConflict} conflict, " +
+                "${summary.hostOnlyNew} host-only, ${summary.browserOnlyNeedsPush} browser-only",
+        )
+        return summary
+    }
 }
+
+/**
+ * Task 3.1.2b: per-category tally of [ReconciliationOutcome]s produced by one
+ * [HostDirectorySync.runHostReconciliation] pass — the return value that exposes classification
+ * counts to UI wiring (`FolderSyncReconciliationProgress`'s summary state) rather than only the
+ * `println` observability line.
+ */
+data class ReconciliationSummary(
+    val identical: Int,
+    val hostChangedConflict: Int,
+    val hostOnlyNew: Int,
+    val browserOnlyNeedsPush: Int,
+)

@@ -542,6 +542,12 @@ private fun GraphContent(
         effectiveFileSystem.setOnFlushPreWrite(graphLoader::preMarkFileWrite)
         effectiveFileSystem.setOnFlushComplete(graphLoader::markFileWrittenByUs)
         effectiveFileSystem.setOnFlushFailed(graphLoader::clearFilePendingWrite)
+        // web-local-folder-livesync Epic 3.2 (Task 3.2.2d): wires HostDirectorySync's
+        // reconciliation-conflict callback the same way as the three flush callbacks above —
+        // GraphLoader only exists here (per-active-graph, inside this composition), never in
+        // wasmJsMain's Main.kt, so this is where the plan's "after GraphLoader exists, wire the
+        // callback" instruction actually applies. No-op on every platform but wasmJs.
+        effectiveFileSystem.setOnHostConflict(graphLoader::emitExternalFileChange)
     }
 
     val graphWriter = remember(effectiveFileSystem, repos, graphLoader, sidecarManager) {

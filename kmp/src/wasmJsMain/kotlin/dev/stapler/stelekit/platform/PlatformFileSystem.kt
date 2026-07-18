@@ -446,6 +446,17 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         }
     }
     override suspend fun pickFileAsync(): String? = null
+
+    /**
+     * Epic 3.2 (Task 3.2.2a/d): delegates to [HostDirectorySync.onHostConflict]. Wired from
+     * `App.kt` alongside the other write-behind flush callbacks (not `Main.kt` — `GraphLoader` is
+     * only ever constructed later, per-active-graph, inside `App.kt`'s composition; see
+     * [HostDirectorySync.onHostConflict]'s doc comment for the full rationale).
+     */
+    override fun setOnHostConflict(callback: ((path: String, hostContent: String) -> Unit)?) {
+        hostDirectorySync.onHostConflict = callback ?: { _, _ -> }
+    }
+
     actual override fun getLastModifiedTime(path: String): Long? = null
     override fun registerBlobUrl(path: String, url: String) { blobUrlCache[path] = url }
     override fun resolveAssetUri(graphRoot: String, relativePath: String): String? =

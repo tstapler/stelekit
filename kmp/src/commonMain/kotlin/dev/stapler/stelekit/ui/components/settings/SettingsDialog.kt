@@ -209,6 +209,16 @@ fun SettingsDialog(
                                     onConnect = { onConnectGoogle?.invoke() },
                                     onDisconnect = { onDisconnectGoogle?.invoke() },
                                 )
+                                // TODO(web-local-folder-livesync Task 3.1.1c): wire FolderSyncSettings
+                                // in here once a SYNC SettingsCategory exists and hostAccessState/
+                                // onConnect are threaded down from App.kt the same way
+                                // localChangesCountFlow/hostAccessStateFlow are (Task 2.3.1c, not yet
+                                // landed as of Epic 3.1-3.3). Deferred rather than half-wired: adding
+                                // the category now with no live hostAccessState source would either
+                                // show a permanently-NotApplicable panel or require a throwaway
+                                // downcast to PlatformFileSystem this codebase's established
+                                // convention (Pattern Decisions table, "UI-layer access to
+                                // HostDirectorySync's reactive state") explicitly avoids.
                                 SettingsCategory.VAULT -> VaultSettings(
                                     isParanoidMode = isParanoidMode,
                                     isVaultUnlocked = isVaultUnlocked,

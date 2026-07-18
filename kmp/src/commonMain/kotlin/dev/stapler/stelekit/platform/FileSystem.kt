@@ -153,6 +153,19 @@ interface FileSystem {
     suspend fun hostDirectoryAccessState(graphPath: String): HostAccessState = HostAccessState.NotApplicable
 
     /**
+     * Registers a callback invoked when the web-local-folder-livesync reconciliation pass
+     * (`HostDirectorySync.runHostReconciliation`, Epic 3.2) classifies a path as
+     * `ReconciliationOutcome.HostChangedConflict` — `(repoRelativePath, hostContent) -> Unit`.
+     * Wired from `App.kt` to `graphLoader::emitExternalFileChange` at the same point the existing
+     * write-behind flush callbacks (`setOnFlushPreWrite`/`setOnFlushComplete`/`setOnFlushFailed`)
+     * are wired, so `HostDirectorySync`/`PlatformFileSystem` never import `GraphLoader` directly
+     * (architecture-review.md Blocker 1's independence goal — matches the precedent those three
+     * callbacks already established). No-op on every platform except the wasmJs actual, which is
+     * the only one with a concept of a host directory to reconcile against.
+     */
+    fun setOnHostConflict(callback: ((path: String, hostContent: String) -> Unit)?) { /* no-op */ }
+
+    /**
      * Returns a platform-loadable URI string for a file at [graphRoot]/[relativePath].
      * On Android SAF paths this returns the `content://` document URI (or a `file://`
      * real path when MANAGE_EXTERNAL_STORAGE is granted); on other platforms returns null

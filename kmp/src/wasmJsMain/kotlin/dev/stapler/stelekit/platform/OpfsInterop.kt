@@ -84,6 +84,33 @@ internal suspend fun readOpfsFileAsObjectUrl(fileHandle: JsAny): String? = try {
     null
 }
 
+private fun fileArrayBuffer(file: JsAny): kotlin.js.Promise<JsAny> = js("file.arrayBuffer()")
+private fun jsArrayBufferLength(buffer: JsAny): Int = js("new Uint8Array(buffer).length")
+private fun jsArrayBufferByteAt(buffer: JsAny, index: Int): Int = js("new Uint8Array(buffer)[index]")
+
+/**
+ * Epic 3.2 (Task 3.2.1a): inverse of [ByteArray.toJsArrayBuffer] — marshals an opaque JS
+ * `ArrayBuffer` into a Kotlin [ByteArray], byte-by-byte (same interop idiom/cost profile as the
+ * write direction — acceptable for markdown-page-sized paranoid-mode content, not large blobs).
+ */
+internal fun JsAny.toKotlinByteArray(): ByteArray {
+    val length = jsArrayBufferLength(this)
+    return ByteArray(length) { i -> jsArrayBufferByteAt(this, i).toByte() }
+}
+
+/**
+ * Epic 3.2 (Task 3.2.1a): raw-bytes sibling of [readOpfsFile], used for `.md.stek` paranoid-mode
+ * paths during host reconciliation so encrypted content is never decoded as UTF-8 text
+ * (adversarial-review.md Blocker 4) — mirrors `flushHostWrite`'s `Bytes` branch (Task 4.2.2a),
+ * which reads host content the same way for writes.
+ */
+internal suspend fun readOpfsFileAsBytes(fileHandle: JsAny): ByteArray? = try {
+    val file: JsAny = fileHandleGetFile(fileHandle).await()
+    fileArrayBuffer(file).await<JsAny>().toKotlinByteArray()
+} catch (e: Throwable) {
+    null
+}
+
 internal suspend fun opfsWriteFileBytes(path: String, data: JsAny) {
     try {
         val root = getOpfsRoot()
