@@ -259,24 +259,7 @@ class QrTransferCoordinator(
 
     private suspend fun runDataPath() {
         try {
-            // No `.conflate()` here (root-cause fix — was previously applied, copied from
-            // runDiagnostics()'s legitimate use below without accounting for the different
-            // semantics): each raw frame on this path decodes to a DISTINCT fountain-coded
-            // fragment that FountainCodec's reassembly needs — conflate's entire contract is
-            // "only the most recent value survives if the collector falls behind," which is
-            // correct for the diagnostics path's camera-preview frames (stale ones are
-            // meaningless) but silently discards real transfer data here. Under any scheduling
-            // lag between the producer and this collector (GC pause, a busy shared thread pool,
-            // a slow device) conflate can drop one or more fragments the encoder assumed would
-            // arrive, so reassembly falls short of "enough" fragments and fails intermittently —
-            // this was the root cause of QrTransferCoordinatorTest's CI-only flakiness (passes
-            // locally on a lightly-loaded machine, fails under the shared/contended CI runner).
-            // Removing conflate restores normal Flow backpressure: the producer suspends until
-            // this collector is ready for the next fragment, so none can ever be silently lost.
-            // A real camera-frame producer is already rate-limited at the source (QR decode is
-            // throttled to a few fps, see `framesPerSecond`), so backpressure here never stalls
-            // frame capture in practice.
-            frameTransportReceiver.frames().collect { rawFrame ->
+            frameTransportReceiver.frames().conflate().collect { rawFrame ->
                 val chunk = ChunkFrameCodec.decode(rawFrame) ?: return@collect
 
                 var activeSession = session
