@@ -4,6 +4,7 @@
 package dev.stapler.stelekit.ui.components
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
@@ -17,8 +18,15 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -159,13 +167,39 @@ fun FolderSyncStatusBadge(
     val content = folderSyncBadgeContent(state, dirName, pendingWriteCount, hostWriteStuck) ?: return
     val tint = if (content.clickable) FolderSyncWarningColor else MaterialTheme.colorScheme.onSurfaceVariant
 
-    val rowModifier = modifier.padding(horizontal = 4.dp).let {
-        if (content.clickable) {
-            it.semantics { role = Role.Button }.clickable(onClick = onReconnect)
-        } else {
-            it
+    // Task 8.3.1a (design/ux.md Surface 3 accessibility note): the "Reconnect folder"/"Grant
+    // access" click triggers the browser's *native* permission prompt, not an in-app dialog — so
+    // Compose's own dialog focus trap never applies, and default DOM focus restoration after the
+    // prompt closes is not guaranteed consistent across Chromium versions. A click can also flip
+    // [content.clickable] to false on the very next recomposition (e.g. PromptNeeded → Granted
+    // with zero pending writes drops this Row's clickable/Role.Button semantics entirely), which
+    // would otherwise strand focus on a now-non-interactive element. [everInteracted] keeps this
+    // Row a valid focus target for the remainder of the composition once the user has actually
+    // clicked reconnect, so [focusRequester.requestFocus] always has somewhere to land once the
+    // state resulting from that click is observed — granted, denied, or unchanged.
+    val focusRequester = remember { FocusRequester() }
+    var awaitingReconnectResolution by remember { mutableStateOf(false) }
+    var everInteracted by remember { mutableStateOf(false) }
+    LaunchedEffect(state) {
+        if (awaitingReconnectResolution) {
+            awaitingReconnectResolution = false
+            focusRequester.requestFocus()
         }
     }
+
+    val rowModifier = modifier.padding(horizontal = 4.dp)
+        .focusRequester(focusRequester)
+        .let {
+            when {
+                content.clickable -> it.semantics { role = Role.Button }.clickable(onClick = {
+                    everInteracted = true
+                    awaitingReconnectResolution = true
+                    onReconnect()
+                })
+                everInteracted -> it.focusable()
+                else -> it
+            }
+        }
 
     Row(
         modifier = rowModifier,
