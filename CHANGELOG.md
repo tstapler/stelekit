@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.71.2](https://github.com/tstapler/stelekit/compare/v0.71.1...v0.71.2) (2026-07-18)
+
+
+### Bug Fixes
+
+* **transfer:** assign collisionChannel before emitting CollisionDetected ([#248](https://github.com/tstapler/stelekit/issues/248)) ([1de0384](https://github.com/tstapler/stelekit/commit/1de03844a101373a98c905bdb17fd8869236d239))
+
 ## [0.71.1](https://github.com/tstapler/stelekit/compare/v0.71.0...v0.71.1) (2026-07-18)
 
 
