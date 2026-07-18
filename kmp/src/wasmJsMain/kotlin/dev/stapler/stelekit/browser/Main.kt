@@ -16,6 +16,7 @@ import dev.stapler.stelekit.git.model.GitHostConfig
 import dev.stapler.stelekit.git.resolve
 import dev.stapler.stelekit.platform.DemoFileSystem
 import dev.stapler.stelekit.platform.FileSystem
+import dev.stapler.stelekit.platform.HostAccessState
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.sync.WasmSectionSyncService
@@ -23,6 +24,7 @@ import dev.stapler.stelekit.repository.GraphBackend
 import dev.stapler.stelekit.model.DEMO_GRAPH_ID
 import dev.stapler.stelekit.service.WasmMediaAttachmentService
 import dev.stapler.stelekit.ui.StelekitApp
+import dev.stapler.stelekit.ui.components.settings.ReconciliationUiState
 import kotlinx.browser.localStorage
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.MainScope
@@ -126,6 +128,14 @@ fun main() {
 
         // preload() must run after GitHub config is wired; directoryExists() requires preload().
         opfsFileSystem.preload(opfsGraphPath)
+
+        // Epic 2.2 (Task 2.2.1c): silently resume a previously-connected host directory, if any —
+        // its own sequential startup step, matching this function's existing "config wiring →
+        // preload → driver → ..." step ordering. A no-op (resolves to NotApplicable) for the vast
+        // majority of users who have never connected a host directory.
+        val hostAccessState = opfsFileSystem.hostDirectorySync.reconnectHostDirectory(graphId)
+        println("[SteleKit] reconnectHostDirectory('$graphId'): $hostAccessState")
+
         val isNewUser = !opfsFileSystem.directoryExists(opfsGraphPath)
 
         val driverFactory = DriverFactory()
@@ -195,6 +205,33 @@ fun main() {
                 attachmentService = WasmMediaAttachmentService(fileSystem),
                 gitRepository = wasmGitRepository,
                 localChangesCountFlow = opfsFileSystem.dirtyFileCountFlow,
+                hostAccessStateFlow = opfsFileSystem.hostDirectorySync.hostAccessStateFlow,
+                hostWritePendingCountFlow = opfsFileSystem.hostDirectorySync.hostWritePendingCountFlow,
+                hostWriteStuckFlow = opfsFileSystem.hostDirectorySync.hostWriteStuckFlow,
+                onReconnectHostDirectory = {
+                    scope.launch { opfsFileSystem.hostDirectorySync.requestHostDirectoryAccess(graphId) }
+                },
+                // Task 3.1.1c: "Enable live folder sync" — wired the same way the badge's flows
+                // above are, straight to HostDirectorySync.connectHostDirectory. Its own internal
+                // showDirectoryPicker → runHostReconciliation sequence already leaves hostDirHandle
+                // unset on any failure, so a non-Granted result here always means "nothing changed."
+                // lastReconciliationSummary is stashed by runHostReconciliation on the same call,
+                // so it is always fresh when result == Granted.
+                onConnectHostDirectory = connectHostDirectory@{
+                    val result = opfsFileSystem.hostDirectorySync.connectHostDirectory(opfsGraphPath)
+                    val summary = opfsFileSystem.hostDirectorySync.lastReconciliationSummary
+                    if (result != HostAccessState.Granted || summary == null) {
+                        return@connectHostDirectory ReconciliationUiState.Failed(
+                            "Couldn't finish comparing your files"
+                        )
+                    }
+                    ReconciliationUiState.Summary(
+                        identical = summary.identical,
+                        hostChangedConflict = summary.hostChangedConflict,
+                        hostOnlyNew = summary.hostOnlyNew,
+                        browserOnlyNeedsPush = summary.browserOnlyNeedsPush,
+                    )
+                },
             )
         }
     }

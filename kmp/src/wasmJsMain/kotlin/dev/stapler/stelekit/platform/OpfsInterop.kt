@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.platform
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.await
 
 internal fun showDirectoryPickerSupported(): Boolean = js("typeof window.showDirectoryPicker === 'function'")
@@ -51,11 +52,24 @@ internal suspend fun readOpfsFile(fileHandle: JsAny): String? = try {
     null
 }
 
-private fun fileHandleCreateWritable(handle: JsAny): kotlin.js.Promise<JsAny> = js("handle.createWritable()")
-private fun writableWrite(writable: JsAny, content: String): kotlin.js.Promise<JsAny> = js("writable.write(content)")
-private fun writableWriteBuffer(writable: JsAny, buffer: JsAny): kotlin.js.Promise<JsAny> = js("writable.write(buffer)")
-private fun writableClose(writable: JsAny): kotlin.js.Promise<JsAny> = js("writable.close()")
-private fun dirRemoveEntry(dir: JsAny, name: String): kotlin.js.Promise<JsAny> = js("dir.removeEntry(name)")
+/**
+ * Epic 3.4 (Task 3.4.1a): resolves a file handle's underlying `File` object without reading any
+ * content (`.text()`/`.arrayBuffer()`) — the same `handle.getFile()` call [readOpfsFile]/
+ * [readOpfsFileAsBytes] already make internally before reading content, exposed here so
+ * `runHostReconciliation`'s mtime/size pre-filter (`fileLastModified`/`fileSize`,
+ * `HostDirectoryInterop.kt`) can inspect metadata first and skip the content read entirely when
+ * the pre-filter matches a known-good baseline.
+ */
+internal suspend fun getOpfsFile(fileHandle: JsAny): JsAny = fileHandleGetFile(fileHandle).await()
+
+// Epic 4.2 (Task 4.2.1b/4.2.2a/4.3.1c): internal rather than private — HostDirectorySync.kt's
+// flushHostWrite (Phase 4) reuses these directly against a host-picked FileSystemDirectoryHandle,
+// not just OPFS-rooted handles; they are API-identical for either (research/stack.md §5).
+internal fun fileHandleCreateWritable(handle: JsAny): kotlin.js.Promise<JsAny> = js("handle.createWritable()")
+internal fun writableWrite(writable: JsAny, content: String): kotlin.js.Promise<JsAny> = js("writable.write(content)")
+internal fun writableWriteBuffer(writable: JsAny, buffer: JsAny): kotlin.js.Promise<JsAny> = js("writable.write(buffer)")
+internal fun writableClose(writable: JsAny): kotlin.js.Promise<JsAny> = js("writable.close()")
+internal fun dirRemoveEntry(dir: JsAny, name: String): kotlin.js.Promise<JsAny> = js("dir.removeEntry(name)")
 
 internal suspend fun opfsWriteFile(path: String, content: String) {
     try {
@@ -80,6 +94,35 @@ internal fun createObjectUrlFromFile(file: JsAny): String = js("URL.createObject
 internal suspend fun readOpfsFileAsObjectUrl(fileHandle: JsAny): String? = try {
     val file: JsAny = fileHandleGetFile(fileHandle).await()
     createObjectUrlFromFile(file)
+} catch (e: Throwable) {
+    null
+}
+
+private fun fileArrayBuffer(file: JsAny): kotlin.js.Promise<JsAny> = js("file.arrayBuffer()")
+private fun jsArrayBufferLength(buffer: JsAny): Int = js("new Uint8Array(buffer).length")
+private fun jsArrayBufferByteAt(buffer: JsAny, index: Int): Int = js("new Uint8Array(buffer)[index]")
+
+/**
+ * Epic 3.2 (Task 3.2.1a): inverse of [ByteArray.toJsArrayBuffer] — marshals an opaque JS
+ * `ArrayBuffer` into a Kotlin [ByteArray], byte-by-byte (same interop idiom/cost profile as the
+ * write direction — acceptable for markdown-page-sized paranoid-mode content, not large blobs).
+ */
+internal fun JsAny.toKotlinByteArray(): ByteArray {
+    val length = jsArrayBufferLength(this)
+    return ByteArray(length) { i -> jsArrayBufferByteAt(this, i).toByte() }
+}
+
+/**
+ * Epic 3.2 (Task 3.2.1a): raw-bytes sibling of [readOpfsFile], used for `.md.stek` paranoid-mode
+ * paths during host reconciliation so encrypted content is never decoded as UTF-8 text
+ * (adversarial-review.md Blocker 4) — mirrors `flushHostWrite`'s `Bytes` branch (Task 4.2.2a),
+ * which reads host content the same way for writes.
+ */
+internal suspend fun readOpfsFileAsBytes(fileHandle: JsAny): ByteArray? = try {
+    val file: JsAny = fileHandleGetFile(fileHandle).await()
+    fileArrayBuffer(file).await<JsAny>().toKotlinByteArray()
+} catch (e: CancellationException) {
+    throw e
 } catch (e: Throwable) {
     null
 }
@@ -174,6 +217,36 @@ internal fun jsVisibilityHiddenPromise(): kotlin.js.Promise<JsAny?> = js(
                 }
             }
             document.addEventListener('visibilitychange', handler);
+        });
+    })()
+    """
+)
+
+/**
+ * Epic 1.7 (Task 1.7.2a): resolves the instant either `pagehide` or `beforeunload` fires (once,
+ * the earlier of the two) — used by [PlatformFileSystem]'s best-effort teardown diagnostic to log
+ * any still-in-flight OPFS writes. Mirrors [jsVisibilityHiddenPromise]'s shape/caveats: in
+ * environments with no `window` (e.g. some test runners) the returned promise simply never
+ * resolves — a safe no-op, not a crash. Best-effort only — browsers do not reliably await async
+ * work after these events fire.
+ */
+internal fun jsPageHidePromise(): kotlin.js.Promise<JsAny?> = js(
+    """
+    (function() {
+        return new Promise(function(resolve) {
+            if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') {
+                return;
+            }
+            var settled = false;
+            function handler() {
+                if (settled) return;
+                settled = true;
+                window.removeEventListener('pagehide', handler);
+                window.removeEventListener('beforeunload', handler);
+                resolve(null);
+            }
+            window.addEventListener('pagehide', handler);
+            window.addEventListener('beforeunload', handler);
         });
     })()
     """

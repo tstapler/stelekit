@@ -145,6 +145,37 @@ interface FileSystem {
     suspend fun syncShadow(graphPath: String) { /* no-op */ }
 
     /**
+     * Current [HostAccessState] of [graphPath]'s connection to a host directory picked via the
+     * File System Access API (web-local-folder-livesync project). Only the wasmJs actual
+     * overrides this; every other platform has no concept of a "host directory" separate from
+     * its own storage, so the default returns [HostAccessState.NotApplicable] and performs no I/O.
+     */
+    suspend fun hostDirectoryAccessState(graphPath: String): HostAccessState = HostAccessState.NotApplicable
+
+    /**
+     * Registers a callback invoked when the web-local-folder-livesync reconciliation pass
+     * (`HostDirectorySync.runHostReconciliation`, Epic 3.2) classifies a path as
+     * `ReconciliationOutcome.HostChangedConflict` — `(repoRelativePath, hostContent) -> Unit`.
+     * Wired from `App.kt` to `graphLoader::emitExternalFileChange` at the same point the existing
+     * write-behind flush callbacks (`setOnFlushPreWrite`/`setOnFlushComplete`/`setOnFlushFailed`)
+     * are wired, so `HostDirectorySync`/`PlatformFileSystem` never import `GraphLoader` directly
+     * (architecture-review.md Blocker 1's independence goal — matches the precedent those three
+     * callbacks already established). No-op on every platform except the wasmJs actual, which is
+     * the only one with a concept of a host directory to reconcile against.
+     */
+    fun setOnHostConflict(callback: ((path: String, hostContent: String) -> Unit)?) { /* no-op */ }
+
+    /**
+     * Registers a callback invoked when a web-local-folder-livesync write-through flush
+     * (`HostDirectorySync.flushHostWrite`, Epic 4.2) fails — permission revoked, `NotFoundError`,
+     * quota, or any other thrown error. Wired the same way as [setOnHostConflict] (`App.kt`, at
+     * the point `GraphLoader` first exists) to a small forwarding method on `GraphLoader` that
+     * reuses its existing `writeErrors` channel — no new error surface (Epic 4.4, Task 4.4.1b).
+     * No-op on every platform except the wasmJs actual.
+     */
+    fun setOnHostWriteFailed(callback: ((dev.stapler.stelekit.error.DomainError.FileSystemError.WriteFailed) -> Unit)?) { /* no-op */ }
+
+    /**
      * Returns a platform-loadable URI string for a file at [graphRoot]/[relativePath].
      * On Android SAF paths this returns the `content://` document URI (or a `file://`
      * real path when MANAGE_EXTERNAL_STORAGE is granted); on other platforms returns null

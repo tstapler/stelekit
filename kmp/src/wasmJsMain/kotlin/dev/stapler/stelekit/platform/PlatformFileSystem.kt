@@ -7,8 +7,10 @@ import dev.stapler.stelekit.git.model.PendingCommit
 import dev.stapler.stelekit.git.model.gitApiJson
 import dev.stapler.stelekit.sync.WasmSectionSyncService
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.await
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -41,6 +43,55 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     private var markerWriteInFlight = false
     private var markerWriteDirty = false
 
+    // ── Epic 1.7 (Story 1.7.1): per-path in-flight OPFS-write tracking ────────────────────────
+    // Populated when writeFile/writeFileBytes launches its OPFS-persisting write, self-cleans on
+    // completion (success or failure). HostDirectorySync.scheduleHostWriteThrough (Phase 4) will
+    // await a path's entry here before enqueueing it for host write-through, closing the crash
+    // window where a host push could otherwise race ahead of the edit actually landing in OPFS.
+    private val opfsWriteInFlight = mutableMapOf<String, Deferred<Unit>>()
+
+    /**
+     * Task 1.7.1a: accessor for [path]'s currently in-flight OPFS-persisting write, if any.
+     * Tested directly (Story 1.7.3) as well as exposed to [hostDirectorySync] via
+     * [HostDirectorySync.CacheAccess.opfsWriteDeferredFor].
+     */
+    fun opfsWriteDeferredFor(path: String): Deferred<Unit>? = opfsWriteInFlight[path]
+
+    // ── Epic 1.6: HostDirectorySync composition (architecture-review.md Blocker 1 remediation) ─
+    // Every Phase 2-7 host-directory-sync field/method lives on hostDirectorySync, never here.
+    // Exposed non-privately so Main.kt/UI code can call its non-FileSystem-interface entry points
+    // (reconnectHostDirectory, requestHostDirectoryAccess, connectHostDirectory, its StateFlows)
+    // directly, without PlatformFileSystem needing to re-expose every one as a passthrough.
+    val hostDirectorySync: HostDirectorySync = HostDirectorySync(
+        graphIdProvider = { graphId },
+        cacheAccess = object : HostDirectorySync.CacheAccess {
+            override fun get(path: String) = cache[path]
+            override fun set(path: String, content: String) {
+                cache[path] = content
+            }
+            override fun remove(path: String) {
+                cache.remove(path)
+            }
+            override fun getBytes(path: String) = bytesCache[path]
+            override fun setBytes(path: String, data: ByteArray) {
+                bytesCache[path] = data
+            }
+            override fun removeBytes(path: String) {
+                bytesCache.remove(path)
+            }
+            override fun keysUnder(opfsPath: String) =
+                (cache.keys + bytesCache.keys).filter { it.startsWith("$opfsPath/") }.toSet()
+            override fun writeOpfsMirror(path: String, content: String) {
+                scope.launch { opfsWriteFile(path, content) }
+            }
+            override fun writeOpfsMirrorBytes(path: String, data: ByteArray) {
+                scope.launch { opfsWriteFileBytes(path, data.toJsArrayBuffer()) }
+            }
+            override fun opfsWriteDeferredFor(path: String): Deferred<Unit>? = opfsWriteInFlight[path]
+        },
+        scope = scope,
+    )
+
     init {
         // Belt-and-suspenders flush: fire the same scheduler when the tab is hidden/closed, even
         // though the redesign above already bounds the crash-loss window to a single in-flight
@@ -53,6 +104,26 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
                     break
                 }
                 scheduleMarkerWrite()
+            }
+        }
+
+        // Epic 1.7 (Task 1.7.2b): best-effort teardown diagnostic — logs any OPFS writes still in
+        // flight at pagehide/beforeunload. This does NOT attempt to force or await completion of
+        // any in-flight write and closes no crash window beyond what Story 1.7.1's
+        // await-before-enqueue fix already closes; it exists purely so a real-world crash-window
+        // occurrence is observable in logs rather than silent. Applies platform-wide, not gated on
+        // a host directory being connected.
+        scope.launch {
+            while (true) {
+                try {
+                    jsPageHidePromise().await<JsAny?>()
+                } catch (e: Throwable) {
+                    break
+                }
+                val inFlightCount = opfsWriteInFlight.size
+                if (inFlightCount > 0) {
+                    println("[SteleKit] pagehide: $inFlightCount OPFS writes still in flight")
+                }
             }
         }
     }
@@ -271,7 +342,19 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         }
         cache[path] = content
         recordDirty(path, DirtyOp.WRITE)
-        scope.launch { opfsWriteFile(path, content) }
+        opfsWriteInFlight[path] = scope.async {
+            try {
+                opfsWriteFile(path, content)
+            } finally {
+                opfsWriteInFlight.remove(path)
+            }
+        }
+        // Epic 4.3 (Task 4.3.1a): the fourth independent effect (web-local-folder-livesync) —
+        // one-line delegation; all coalescing/freshness-check/actual-write logic lives on
+        // HostDirectorySync. No-op when no host directory is connected for this graph.
+        if (hostDirectorySync.hostDirHandle != null) {
+            hostDirectorySync.scheduleHostWriteThrough(path, HostWritePayload.Text(content))
+        }
         return true
     }
 
@@ -282,6 +365,13 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
      * NOT call [recordDirty]: auto-merged remote content is not a local edit, so re-marking it
      * dirty here would corrupt the "only push what changed locally" invariant (it would cause the
      * next commit to needlessly re-push content that already matches the remote).
+     *
+     * Task 4.3.1d (web-local-folder-livesync): for the identical reason, this deliberately never
+     * calls `hostDirectorySync.scheduleHostWriteThrough` either — merged-in remote git content was
+     * not written by the user in *this* browser tab, so pushing it back out to the host directory
+     * would falsely attribute an external (GitHub-origin) change to a local edit. The host folder
+     * should only ever receive content this tab's own [writeFile]/[writeFileBytes]/[deleteFile]
+     * produced.
      */
     fun applyRemoteContent(path: String, content: String): Boolean {
         if (path.startsWith(DOWNLOAD_PREFIX)) return false
@@ -300,7 +390,17 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         if (path.startsWith(DOWNLOAD_PREFIX)) return false
         bytesCache[path] = data
         recordDirty(path, DirtyOp.WRITE)
-        scope.launch { opfsWriteFileBytes(path, data.toJsArrayBuffer()) }
+        opfsWriteInFlight[path] = scope.async {
+            try {
+                opfsWriteFileBytes(path, data.toJsArrayBuffer())
+            } finally {
+                opfsWriteInFlight.remove(path)
+            }
+        }
+        // Epic 4.3 (Task 4.3.1b): same one-line delegation as writeFile, for paranoid-mode bytes.
+        if (hostDirectorySync.hostDirHandle != null) {
+            hostDirectorySync.scheduleHostWriteThrough(path, HostWritePayload.Bytes(data))
+        }
         return true
     }
 
@@ -317,8 +417,34 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         bytesCache.remove(path)
         recordDirty(path, DirtyOp.DELETE)
         scope.launch { opfsDeleteFile(path) }
+        // Epic 4.3 (Task 4.3.1c): same one-line delegation, dispatches to flushHostWrite's
+        // HostWritePayload.Delete branch (dirRemoveEntry against hostDirHandle).
+        if (hostDirectorySync.hostDirHandle != null) {
+            hostDirectorySync.scheduleHostWriteThrough(path, HostWritePayload.Delete)
+        }
         return true
     }
+    /**
+     * Epic 7.1 (Task 7.1.1a): `HostRenameOp` — the seventh [FileSystem]-interface delegation touch
+     * point, previously falling through to the interface default (`false`), a documented
+     * pre-existing gap this phase closes (`research/architecture.md` §1). `cache`-mirroring stays
+     * unconditional (applies regardless of whether host sync is active, matching every other
+     * `cache` field on this class), then [HostDirectorySync.renameHostFile] is fired off
+     * (`scope.launch`, matching this class's established sync-signature/async-side-effect pattern
+     * for [writeFile]/[writeFileBytes]/[deleteFile]) only when a host directory is connected.
+     * Returns `false` (nothing to rename) when [from] isn't present in [cache] — matches the
+     * [FileSystem] interface default's contract for a non-existent source.
+     */
+    override fun renameFile(from: String, to: String): Boolean {
+        val content = cache[from] ?: return false
+        cache[to] = content
+        cache.remove(from)
+        if (hostDirectorySync.hostDirHandle != null) {
+            scope.launch { hostDirectorySync.renameHostFile(from, to, content) }
+        }
+        return true
+    }
+
     actual override fun pickDirectory(): String? = null
     override val supportsNativeDirectoryPicker: Boolean get() = showDirectoryPickerSupported()
     actual override suspend fun pickDirectoryAsync(): String? {
@@ -329,6 +455,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             val opfsPath = "$homeDir/$name"
             println("[SteleKit] pickDirectory: importing '$name' → '$opfsPath'")
             importUserDirToCache(dirHandle, opfsPath)
+            hostDirectorySync.attachFreshHandle(dirHandle, opfsPath)
             val count = cache.keys.count { it.startsWith("$opfsPath/") }
             println("[SteleKit] pickDirectory: $count files imported to cache")
             opfsPath
@@ -362,7 +489,59 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         }
     }
     override suspend fun pickFileAsync(): String? = null
-    actual override fun getLastModifiedTime(path: String): Long? = null
+
+    /**
+     * Epic 3.2 (Task 3.2.2a/d): delegates to [HostDirectorySync.onHostConflict]. Wired from
+     * `App.kt` alongside the other write-behind flush callbacks (not `Main.kt` — `GraphLoader` is
+     * only ever constructed later, per-active-graph, inside `App.kt`'s composition; see
+     * [HostDirectorySync.onHostConflict]'s doc comment for the full rationale).
+     */
+    override fun setOnHostConflict(callback: ((path: String, hostContent: String) -> Unit)?) {
+        hostDirectorySync.onHostConflict = callback ?: { _, _ -> }
+    }
+
+    /**
+     * Epic 4.4 (Task 4.4.1b): delegates to [HostDirectorySync.onHostWriteFailed]. Wired from
+     * `App.kt` alongside [setOnHostConflict], for the same reason — `GraphLoader` only exists
+     * later, per-active-graph, inside `App.kt`'s composition.
+     */
+    override fun setOnHostWriteFailed(callback: ((dev.stapler.stelekit.error.DomainError.FileSystemError.WriteFailed) -> Unit)?) {
+        hostDirectorySync.onHostWriteFailed = callback ?: {}
+    }
+
+    /**
+     * Task 2.2.2b: one-line delegate to [HostDirectorySync.hostAccessStateFlow]'s current value —
+     * satisfies the [FileSystem] interface's [graphPath]-scoped query for commonMain callers that
+     * don't want to downcast to [PlatformFileSystem] to reach [hostDirectorySync] directly. [graphPath]
+     * is intentionally unused: this graph's [HostDirectorySync] instance already tracks exactly one
+     * graph's host-directory connection at a time (see `graphIdProvider`'s doc comment).
+     */
+    override suspend fun hostDirectoryAccessState(graphPath: String): HostAccessState =
+        hostDirectorySync.hostAccessStateFlow.value
+
+    /**
+     * Epic 5.1 (Task 5.2.1a): one-line delegate to [HostDirectorySync.hostModTimes], populated by
+     * [HostDirectorySync.pollHostDirectoryOnce]/`runHostReconciliation`. [HostDirectorySync.hostModTimes]
+     * itself already returns nothing meaningful (an empty/miss map) when no host directory is
+     * connected, so no separate `hostDirHandle == null` check is needed here — matches this
+     * method's pre-Phase-5 `null` regression behavior exactly in that case.
+     */
+    actual override fun getLastModifiedTime(path: String): Long? = hostDirectorySync.hostModTimes[path]
+
+    /**
+     * Epic 5.1 (Task 5.2.1b): delegates to [HostDirectorySync.listFilesWithModTimes] — a single
+     * map-iteration pass instead of N synchronous [getLastModifiedTime] calls. Falls through to
+     * the [FileSystem] interface's default implementation (`listFiles` + per-file
+     * [getLastModifiedTime]) whenever the delegate returns empty — covers both "no host directory
+     * connected" and "connected, but this directory happens to have no known entries yet."
+     */
+    override fun listFilesWithModTimes(path: String): List<Pair<String, Long>> {
+        val delegated = hostDirectorySync.listFilesWithModTimes(path)
+        return delegated.ifEmpty {
+            listFiles(path).map { name -> name to (getLastModifiedTime("$path/$name") ?: 0L) }
+        }
+    }
+
     override fun registerBlobUrl(path: String, url: String) { blobUrlCache[path] = url }
     override fun resolveAssetUri(graphRoot: String, relativePath: String): String? =
         blobUrlCache["${graphRoot.trimEnd('/')}/$relativePath"]
