@@ -21,6 +21,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -116,12 +117,45 @@ class QrTransferCoordinatorTest {
      * A [Channel] has real queueing semantics — every emitted event is buffered regardless of
      * whether a consumer is currently reading — so subscribing exactly once, before
      * [QrTransferCoordinator.start] is even called, and draining sequentially via
-     * [awaitEvent]/[awaitTerminal] afterward can never miss an event no matter how the two ends
-     * are scheduled.
+     * [awaitEvent]/[awaitTerminal] afterward avoids the resubscription race above.
+     *
+     * **This alone is not sufficient** — a SECOND, distinct race remains, and was the actual
+     * cause of a later CI-only flake here (`AssertionError: expected a Reassembling event, got
+     * [Success(...)]`): constructing this class only *schedules* its collector coroutine
+     * (`scope.launch { ... }`, not run synchronously); if the coordinator's `start()` — called by
+     * the test immediately after construction — runs to completion on `Dispatchers.Default`
+     * before this collector's launch actually gets dispatched, the collector's first subscription
+     * to the `replay = 1` `events` flow attaches AFTER the early milestone events already fired,
+     * so it only ever sees the single most recent replayed event. See the `CoroutineStart.UNDISPATCHED`
+     * comment on [job] for the fix — this class's constructor must fully register its subscription
+     * before returning, not just enqueue a coroutine that will eventually do so.
      */
     private class EventRecorder(coordinator: QrTransferCoordinator, scope: CoroutineScope) {
         private val channel = Channel<CoordinatorEvent>(Channel.UNLIMITED)
-        private val job: Job = scope.launch { coordinator.events.collect { channel.send(it) } }
+
+        // CoroutineStart.UNDISPATCHED (root-cause fix): a plain `scope.launch { ... }` only
+        // SCHEDULES the collector coroutine — it does not guarantee `coordinator.events.collect`
+        // has actually subscribed to the SharedFlow before this constructor returns. `events` is
+        // `replay = 1`: if the coordinator's `start()` (called by the test immediately after
+        // constructing this recorder) runs its whole pipeline — FragmentAdmitted, Reassembling,
+        // Importing, Success — before this launched coroutine gets its first turn on the
+        // dispatcher, the late-attaching subscriber only receives the single most recent replayed
+        // event (Success) via the replay cache; every earlier event emitted before it subscribed
+        // is invisible to it, even though the coordinator emitted them correctly. This is
+        // invisible on a slow/idle scheduler (the collector reliably wins the race to subscribe
+        // before the pipeline finishes) but reliably manifests as "expected a Reassembling event,
+        // got [Success(...)]" once producer and collector are close enough in speed that ordering
+        // isn't guaranteed (e.g. CI's shared/contended runners, or a synthetic frame source with
+        // no artificial delay). `UNDISPATCHED` runs the coroutine body synchronously up to its
+        // first real suspension point, so the SharedFlow subscription (registered before
+        // `collect` ever suspends waiting for a value) is guaranteed live by the time this
+        // constructor returns — the collector can never lose this race, regardless of scheduler
+        // pressure. See stelekit CI history for this file's prior lost-event race (a different
+        // race than this one — that one was about repeated `.first {}` resubscription; this is
+        // about the FIRST subscription's timing relative to `start()`).
+        private val job: Job = scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            coordinator.events.collect { channel.send(it) }
+        }
 
         suspend fun awaitEvent(timeoutMs: Long = 5_000, predicate: (CoordinatorEvent) -> Boolean): CoordinatorEvent =
             withTimeout(timeoutMs) { channel.receiveAsFlow().first(predicate) }
