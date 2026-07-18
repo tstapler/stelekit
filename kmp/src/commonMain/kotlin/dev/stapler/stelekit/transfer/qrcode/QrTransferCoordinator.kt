@@ -339,9 +339,21 @@ class QrTransferCoordinator(
         val choice = if (existing == null) {
             QrImportService.CollisionChoice.KEEP_BOTH
         } else {
-            emitEvent(CoordinatorEvent.CollisionDetected(PageName(existing.name), decodedName))
+            // Root-cause fix: `collisionChannel` MUST be assigned before `CollisionDetected` is
+            // emitted, not after. `resolveCollision()`/`cancel()` are called synchronously by an
+            // external caller reacting to that event (see their own KDoc/CRITICAL C4 comment on
+            // the `collisionChannel` field) — if the event reaches the caller before this field
+            // is set, `collisionChannel?.trySend(choice)` silently no-ops against the still-null
+            // reference (from whatever it held before this collision), and the `channel.receive()`
+            // below then blocks forever, since nothing will ever be sent to the channel created
+            // moments later. This TOCTOU window was narrow enough to be invisible under this
+            // event's normal (slower) delivery latency, but widened into a real, reproducible
+            // `TimeoutCancellationException` once event delivery got fast enough for a caller to
+            // react before this line ran (see the coroutine-start fix in
+            // QrTransferCoordinatorTest.kt's EventRecorder, which inadvertently exposed this).
             val channel = Channel<QrImportService.CollisionChoice?>(Channel.RENDEZVOUS)
             collisionChannel = channel
+            emitEvent(CoordinatorEvent.CollisionDetected(PageName(existing.name), decodedName))
             val resolved = channel.receive()
             collisionChannel = null
             if (resolved == null) {
