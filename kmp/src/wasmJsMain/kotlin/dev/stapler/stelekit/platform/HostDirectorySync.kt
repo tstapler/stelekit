@@ -9,9 +9,20 @@ import dev.stapler.stelekit.git.model.HostHandleEnvelope
 import dev.stapler.stelekit.git.model.gitApiJson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlin.js.toJsString
 import kotlin.time.Clock
+
+/** Mirrors [PlatformFileSystem]'s `homeDir` constant — duplicated (not shared) deliberately, per
+ * this file's class doc comment: [HostDirectorySync] must construct/operate standalone, without
+ * a reference back to [PlatformFileSystem] (architecture-review.md Blocker 1's independence goal;
+ * see `HostDirectorySyncConstructionTest.kt`). */
+private const val HOME_DIR = "/stelekit"
 
 /**
  * Epic 1.6 (architecture-review.md Blocker 1 remediation): standalone collaborator that owns all
@@ -49,6 +60,25 @@ class HostDirectorySync(
     // this module.
     internal var hostDirHandle: JsAny? = null
     internal var hostGraphOpfsPath: String? = null
+
+    // ── Epic 2.2 (Task 2.2.1b): current HostAccessState, observed by commonMain UI ────────────
+    /**
+     * Mirrors [HostAccessState.NotApplicable]'s "no host directory" default until
+     * [reconnectHostDirectory]/[requestHostDirectoryAccess]/[connectHostDirectory] resolves
+     * otherwise. `FolderSyncStatusBadge` (Epic 2.3) collects [hostAccessStateFlow] via `App.kt`'s
+     * nullable `StateFlow` parameter — mirrors [PlatformFileSystem]'s `dirtyFileCountFlow` pattern.
+     */
+    private val _hostAccessStateFlow = MutableStateFlow<HostAccessState>(HostAccessState.NotApplicable)
+    val hostAccessStateFlow: StateFlow<HostAccessState> = _hostAccessStateFlow.asStateFlow()
+
+    /**
+     * Epic 2.3 (Task 2.3.1c) placeholder: Phase 4's write-through queue (`scheduleHostWriteThrough`,
+     * Epic 4.1) does not exist yet on this branch, so there is nothing real to report — always `0`.
+     * Threaded through `App.kt`/`Main.kt` now so `FolderSyncStatusBadge`'s parameter plumbing is
+     * complete end-to-end; a future epic only needs to change this field's assignment (e.g. derive
+     * it from `hostWritePending.size`), never its wiring.
+     */
+    val hostWritePendingCountFlow: StateFlow<Int> = MutableStateFlow(0).asStateFlow()
 
     // ── Epic 3.2 (Task 3.2.2a/c): reconciliation dispatch collaborators ───────────────────────
     /**
@@ -154,11 +184,15 @@ class HostDirectorySync(
      * `HostDirectoryInterop.kt`'s failure-tolerant `println("[SteleKit] ...")` convention — and
      * must never fail the directory pick itself, since [attachFreshHandle] has already retained
      * the real handle in memory regardless of whether persistence succeeds. The handle itself
-     * (`_handle`) is not part of the persisted envelope — only its `graphId`/`dirName`/
-     * `storedAtMillis` metadata is — a `FileSystemDirectoryHandle` is a structured-clone-only
-     * opaque value with no meaningful JSON shape (see [HostHandleEnvelope]'s doc comment); it is
-     * kept as a parameter so a future session-resume path (Epic 2.2) can extend this method to
-     * persist the handle itself alongside its envelope without a signature change.
+     * (`_handle`) was not, until Epic 2.2, part of the persisted envelope — only its `graphId`/
+     * `dirName`/`storedAtMillis` metadata was — a `FileSystemDirectoryHandle` is a
+     * structured-clone-only opaque value with no meaningful JSON shape (see [HostHandleEnvelope]'s
+     * doc comment). Epic 2.2 now also persists `_handle` itself, **alongside** (not replacing) the
+     * JSON envelope — under a distinct key ([handleObjectKey]), so [HostDirectorySyncHandleRetentionTest]'s
+     * already-landed contract (`idbGetHandle(db, graphId)` decodes as a [HostHandleEnvelope] JSON
+     * string) is untouched. `FileSystemDirectoryHandle` is structured-clone-safe for real handles
+     * (browsers implement this specially, unlike a plain function-bearing JS object); see
+     * [lookupPersistedHandle]'s doc comment for why that matters for testability.
      */
     private suspend fun persistHostHandle(graphId: String, dirName: String, _handle: JsAny) {
         try {
@@ -170,10 +204,54 @@ class HostDirectorySync(
             )
             val encoded = gitApiJson.encodeToString(envelope)
             idbPutHandle(db, graphId, encoded.toJsString())
+            idbPutHandle(db, handleObjectKey(graphId), _handle)
         } catch (e: Throwable) {
             println("[SteleKit] persistHostHandle failed for graphId=$graphId: ${e.message}")
         }
     }
+
+    // ── Epic 2.2 (Story 2.2.1/2.2.2): shared IndexedDB handle lookup ───────────────────────────
+
+    /** Distinct IndexedDB key (same `handles` object store) for [graphId]'s real persisted handle
+     * object — see [persistHostHandle]'s doc comment for why this is a separate key rather than
+     * overwriting the envelope stored at the plain [graphId] key. */
+    private fun handleObjectKey(graphId: String): String = "$graphId::handle"
+
+    /**
+     * Real (production) implementation of [lookupPersistedHandle] — reads the envelope + real
+     * handle object [persistHostHandle] wrote, both keyed off [graphId]. Returns `null` if either
+     * half is missing (nothing was ever persisted, or a previous version of this app only wrote
+     * the envelope half) or the envelope fails to decode — "nothing to silently resume," never a
+     * thrown exception.
+     */
+    private suspend fun defaultLookupPersistedHandle(graphId: String): Pair<JsAny, String>? = try {
+        val db = idbOpenHandleDb()
+        val envelopeRaw = idbGetHandle(db, graphId)
+        val handle = idbGetHandle(db, handleObjectKey(graphId))
+        if (envelopeRaw == null || handle == null) {
+            null
+        } else {
+            val envelope = gitApiJson.decodeFromString<HostHandleEnvelope>(jsAnyToUtf8String(envelopeRaw))
+            handle to "$HOME_DIR/${envelope.dirName}"
+        }
+    } catch (e: Throwable) {
+        println("[SteleKit] lookupPersistedHandle failed for graphId=$graphId: ${e.message}")
+        null
+    }
+
+    /**
+     * Task 2.2.1a/2.2.2a (testability seam): overridable in tests, mirroring [onHostConflict]'s
+     * settable-`var` pattern. Defaults to [defaultLookupPersistedHandle] (real IndexedDB). Real
+     * `FileSystemDirectoryHandle` instances are structured-clone-safe (browsers implement this
+     * specially for `FileSystemHandle`), but the lightweight fake handle objects this project's
+     * tests use elsewhere (e.g. `HostDirectoryInteropTest.kt`'s `fakeHandleWithPermissionResult`,
+     * which carries `queryPermission`/`requestPermission` function-valued own properties) fail
+     * IndexedDB's structured clone algorithm outright — so `HostDirectorySyncSessionResumeTest.kt`
+     * overrides this field directly with a fake in-memory lookup instead of routing such a handle
+     * through a real IndexedDB round trip.
+     */
+    internal var lookupPersistedHandle: suspend (graphId: String) -> Pair<JsAny, String>? =
+        { graphId -> defaultLookupPersistedHandle(graphId) }
 
     // ── Epic 3.1 (Story 3.1.1): connectHostDirectory — reconcile, never import ────────────────
     /**
@@ -186,20 +264,115 @@ class HostDirectorySync(
      * reconciliation throwing mid-walk) leaves the handle unset and returns
      * [HostAccessState.NotApplicable], so no partial reconciliation is ever treated as complete
      * (design/ux.md Surface 8's error-state contract).
+     *
+     * Epic 2.2/2.4: also mirrors the outcome into [hostAccessStateFlow] (so `FolderSyncStatusBadge`
+     * reflects a manual connect the same way it reflects [reconnectHostDirectory]/
+     * [requestHostDirectoryAccess]) and, on success only, fires [requestStoragePersistence] as a
+     * best-effort, fire-and-forget call — logged, never awaited inline, never blocking this
+     * function's return.
      */
     suspend fun connectHostDirectory(existingOpfsPath: String): HostAccessState {
-        return try {
+        val result = try {
             val dirHandle = showDirectoryPicker()
             runHostReconciliation(dirHandle, existingOpfsPath)
             hostDirHandle = dirHandle
             hostGraphOpfsPath = existingOpfsPath
             val dirName = existingOpfsPath.substringAfterLast("/")
             persistHostHandle(graphIdProvider(), dirName, dirHandle)
+            scope.launch {
+                val granted = requestStoragePersistence()
+                println("[SteleKit] storage.persist(): granted=$granted")
+            }
             HostAccessState.Granted
         } catch (e: Throwable) {
             println("[SteleKit] connectHostDirectory failed for '$existingOpfsPath': ${e.message}")
             HostAccessState.NotApplicable
         }
+        _hostAccessStateFlow.value = result
+        return result
+    }
+
+    // ── Epic 2.2 (Story 2.2.1): reconnectHostDirectory — silent resume, always reconciling ────
+    /**
+     * Task 2.2.1a: session-resume entry point, called once from `Main.kt`'s startup sequence right
+     * after `PlatformFileSystem.preload`. Looks up [graphId]'s persisted handle via
+     * [lookupPersistedHandle]; if nothing was ever persisted, resolves to
+     * [HostAccessState.NotApplicable] without touching the browser's permission APIs at all
+     * (matches today's no-host-directory behavior exactly). Otherwise queries (never *requests* —
+     * this runs with no user gesture) the browser's current permission for the handle:
+     * - `"granted"`: sets [hostDirHandle]/[hostGraphOpfsPath], **launches**
+     *   [runHostReconciliation] non-blocking (`scope.launch` — Story 2.2.1's Blocker 3/pre-mortem
+     *   P1 #1 remediation, see [runHostReconciliation]'s own doc comment), fires
+     *   [requestStoragePersistence] fire-and-forget (Epic 2.4), and resolves to
+     *   [HostAccessState.Granted] immediately, **without** waiting on either launched coroutine —
+     *   zero added startup latency, zero UI interruption.
+     * - `"prompt"` / `"denied"`: resolves to [HostAccessState.PromptNeeded]/[HostAccessState.Denied]
+     *   without setting [hostDirHandle] and without calling [runHostReconciliation] — there is no
+     *   handle attached yet, so nothing to reconcile against.
+     *
+     * Every branch mirrors its result into [hostAccessStateFlow] before returning.
+     */
+    suspend fun reconnectHostDirectory(graphId: String): HostAccessState {
+        val found = lookupPersistedHandle(graphId)
+        if (found == null) {
+            _hostAccessStateFlow.value = HostAccessState.NotApplicable
+            return HostAccessState.NotApplicable
+        }
+        val (handle, opfsPath) = found
+        val result = when (queryHandlePermission(handle)) {
+            "granted" -> {
+                hostDirHandle = handle
+                hostGraphOpfsPath = opfsPath
+                scope.launch { runHostReconciliation(handle, opfsPath) }
+                scope.launch {
+                    val granted = requestStoragePersistence()
+                    println("[SteleKit] storage.persist(): granted=$granted")
+                }
+                HostAccessState.Granted
+            }
+            "prompt" -> HostAccessState.PromptNeeded
+            else -> HostAccessState.Denied
+        }
+        _hostAccessStateFlow.value = result
+        return result
+    }
+
+    // ── Epic 2.2 (Story 2.2.2): requestHostDirectoryAccess — one-click resume path ────────────
+    /**
+     * Task 2.2.2a: one-click resume, called from a real UI click handler only —
+     * `requestPermission()` requires transient user activation (`research/pitfalls.md` §1.4); a
+     * call made outside a click/tap event handler's synchronous call stack silently no-ops or
+     * rejects depending on the browser. Re-fetches [graphId]'s persisted handle via
+     * [lookupPersistedHandle] (independent of whatever [reconnectHostDirectory] cached earlier this
+     * session), then calls [requestHandlePermission] (the *requesting*, prompt-showing variant —
+     * distinct from [reconnectHostDirectory]'s silent `queryHandlePermission`):
+     * - `"granted"`: sets [hostDirHandle]/[hostGraphOpfsPath], resolves to [HostAccessState.Granted].
+     * - anything else (`"denied"`, or a thrown/caught interop failure, which
+     *   [requestHandlePermission] itself already normalizes to `"denied"`): resolves to
+     *   [HostAccessState.Denied] — **no retry loop**; the user must click again to re-attempt.
+     *
+     * Does not itself launch [runHostReconciliation] or [requestStoragePersistence] — this task's
+     * acceptance criteria (Story 2.2.2) scope this method to the permission handshake only; Epic
+     * 2.4's `storage.persist()` wiring is scoped to [reconnectHostDirectory]/[connectHostDirectory]
+     * (Task 2.4.1a) alone.
+     */
+    suspend fun requestHostDirectoryAccess(graphId: String): HostAccessState {
+        val found = lookupPersistedHandle(graphId)
+        if (found == null) {
+            _hostAccessStateFlow.value = HostAccessState.NotApplicable
+            return HostAccessState.NotApplicable
+        }
+        val (handle, opfsPath) = found
+        val result = when (requestHandlePermission(handle)) {
+            "granted" -> {
+                hostDirHandle = handle
+                hostGraphOpfsPath = opfsPath
+                HostAccessState.Granted
+            }
+            else -> HostAccessState.Denied
+        }
+        _hostAccessStateFlow.value = result
+        return result
     }
 
     // ── Epic 3.2 (Stories 3.2.1, 3.2.2): reconciliation walk, classification, dispatch ────────

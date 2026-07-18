@@ -8,7 +8,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -54,6 +56,24 @@ private fun restoreShowDirectoryPicker(original: JsAny?): Unit = js(
     """,
 )
 
+// ── Permission-method stamping for reconnectHostDirectory tests (Epic 2.2) ─────────────────────
+// The rootDir()/fakeDirEntry() fixtures above only shape the walkable directory-entry surface
+// (kind/name/values()) that runHostReconciliation consumes — they carry no queryPermission/
+// requestPermission methods, since connectHostDirectory (Epic 3.1) never calls those (it gets its
+// handle straight from showDirectoryPicker(), which is always implicitly granted). This stamps
+// those two methods onto an existing fixture tree's root so it also satisfies
+// HostDirectorySync.lookupPersistedHandle's Pair<JsAny, String> contract for
+// reconnectHostDirectory's Epic 2.2 tests below.
+private fun withGrantedPermission(dirHandle: JsAny): JsAny = js(
+    """
+    (function() {
+        dirHandle.queryPermission = function(opts) { return Promise.resolve('granted'); };
+        dirHandle.requestPermission = function(opts) { return Promise.resolve('granted'); };
+        return dirHandle;
+    })()
+    """,
+)
+
 /**
  * Epic 3.3 (Story 3.3.1): dedicated regression/safety coverage for the Critical Finding —
  * reconciliation must never silently destroy browser-only edits when live sync is (re)established.
@@ -62,13 +82,16 @@ private fun restoreShowDirectoryPicker(original: JsAny?): Unit = js(
  * which deliberately targets the real [PlatformFileSystem] as a regression guard on the
  * pre-existing fresh-graph import path this project must not touch.
  *
- * **Deferred tests** (see this dispatch's final report for the full rationale — all require
- * `reconnectHostDirectory`, Epic 2.2, or `scheduleHostWriteThrough`'s real flush logic, Epic 4.1,
- * neither of which exist yet on this branch):
- * - `reconnectHostDirectory_should_RunHostReconciliationAndSetGranted_When_HandleFoundAndPermissionGranted`
- * - `reconnectHostDirectory_should_InvokeOnHostConflictIdenticallyToConnectHostDirectory_When_SilentResumeEncountersDivergence`
+ * **Deferred tests** (still deferred — require `scheduleHostWriteThrough`'s real flush logic, Epic
+ * 4.1, which does not exist yet on this branch):
  * - `scheduleHostWriteThrough_should_EnqueuePathOnceDelayedOpfsWriteResolves_When_WriteFileWasCalledWithASlowOpfsWriteFileDouble`
  * - `scheduleHostWriteThrough_should_NotContainPathUntilOpfsWriteDeferredResolves_When_GivenTheSameSlowOpfsWriteFileDouble`
+ *
+ * The two `reconnectHostDirectory`-driven tests previously deferred here (Epic 2.2 did not exist
+ * on this branch when this file was first written) are now implemented below, in the
+ * "reconnectHostDirectory (Epic 2.2)" section near the end of this class:
+ * - [reconnectHostDirectory_should_RunHostReconciliationAndSetGranted_When_HandleFoundAndPermissionGranted]
+ * - [reconnectHostDirectory_should_InvokeOnHostConflictIdenticallyToConnectHostDirectory_When_SilentResumeEncountersDivergence]
  *
  * `reconnectHostDirectory_should_ReenqueueHostWritePending_When_CacheHoldsBrowserOnlyEditButInMemoryQueueWasLostToCrash`
  * (validation.md row 71) is implemented below in its `runHostReconciliation`-only form — see
@@ -490,6 +513,74 @@ class HostDirectorySyncReconciliationTest {
         sync.runHostReconciliation(emptyRootDir(), opfsPath)
 
         assertTrue(sync.hostWritePending.containsKey("pages/Draft.md"))
+        testScope.cancel()
+    }
+
+    // ── reconnectHostDirectory (Epic 2.2) ───────────────────────────────────────────────────────
+    // Previously deferred here (see this class's doc comment) pending Epic 2.2's implementation —
+    // filled in alongside it.
+
+    @Test
+    fun reconnectHostDirectory_should_RunHostReconciliationAndSetGranted_When_HandleFoundAndPermissionGranted() = runTest {
+        val opfsPath = "/stelekit/g"
+        val cache = FakeCacheAccess()
+        cache.textStore["$opfsPath/pages/BrowserOnly.md"] = "browser version"
+        val testScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val sync = newSync("g", cache, testScope)
+
+        val host = withGrantedPermission(
+            rootDir(Dir("pages", listOf(TextFile("New.md", "new content")))),
+        )
+        sync.lookupPersistedHandle = { host to opfsPath }
+
+        val state = sync.reconnectHostDirectory("g")
+
+        // Granted resolves immediately, without waiting on the launched reconciliation (Story
+        // 2.2.1's Blocker 3/pre-mortem P1 #1 non-blocking-launch contract) — no UI-blocking wait.
+        assertEquals(HostAccessState.Granted, state)
+        assertEquals(HostAccessState.Granted, sync.hostAccessStateFlow.value)
+        assertNotNull(sync.hostDirHandle)
+
+        // Give the launched (scope.launch, non-blocking) reconciliation real wall-clock time to
+        // finish before asserting its outcome — it runs on testScope's real Dispatchers.Default.
+        withContext(Dispatchers.Default) { delay(300) }
+
+        // New.md landed in cache — proof reconciliation actually ran (not just permission-queried).
+        assertEquals("new content", cache.textStore["$opfsPath/pages/New.md"])
+        // BrowserOnly.md untouched and queued for push — the same divergence-preserving contract
+        // connectHostDirectory's four-way classification test already proves for that entry point.
+        assertEquals("browser version", cache.textStore["$opfsPath/pages/BrowserOnly.md"])
+        assertTrue(sync.hostWritePending.containsKey("pages/BrowserOnly.md"))
+        testScope.cancel()
+    }
+
+    @Test
+    fun reconnectHostDirectory_should_InvokeOnHostConflictIdenticallyToConnectHostDirectory_When_SilentResumeEncountersDivergence() = runTest {
+        val opfsPath = "/stelekit/g"
+        val cache = FakeCacheAccess()
+        cache.textStore["$opfsPath/pages/B.md"] = "old version"
+        val testScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val sync = newSync("g", cache, testScope)
+
+        val host = withGrantedPermission(
+            rootDir(Dir("pages", listOf(TextFile("B.md", "host new version")))),
+        )
+        sync.lookupPersistedHandle = { host to opfsPath }
+
+        val onHostConflictCalls = mutableListOf<Pair<String, String>>()
+        sync.onHostConflict = { path, content -> onHostConflictCalls += path to content }
+
+        val state = sync.reconnectHostDirectory("g")
+        assertEquals(HostAccessState.Granted, state)
+
+        withContext(Dispatchers.Default) { delay(300) }
+
+        // Same conflict-dispatch contract connectHostDirectory's four-way classification test
+        // already proves — onHostConflict invoked exactly once, cache never silently overwritten —
+        // now proven identically for the silent-resume entry point (Blocker 3's core claim: both
+        // entry points share this data-loss protection, not just the one-time connect flow).
+        assertEquals(listOf("pages/B.md" to "host new version"), onHostConflictCalls)
+        assertEquals("old version", cache.textStore["$opfsPath/pages/B.md"])
         testScope.cancel()
     }
 }

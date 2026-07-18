@@ -126,6 +126,14 @@ fun main() {
 
         // preload() must run after GitHub config is wired; directoryExists() requires preload().
         opfsFileSystem.preload(opfsGraphPath)
+
+        // Epic 2.2 (Task 2.2.1c): silently resume a previously-connected host directory, if any —
+        // its own sequential startup step, matching this function's existing "config wiring →
+        // preload → driver → ..." step ordering. A no-op (resolves to NotApplicable) for the vast
+        // majority of users who have never connected a host directory.
+        val hostAccessState = opfsFileSystem.hostDirectorySync.reconnectHostDirectory(graphId)
+        println("[SteleKit] reconnectHostDirectory('$graphId'): $hostAccessState")
+
         val isNewUser = !opfsFileSystem.directoryExists(opfsGraphPath)
 
         val driverFactory = DriverFactory()
@@ -195,6 +203,11 @@ fun main() {
                 attachmentService = WasmMediaAttachmentService(fileSystem),
                 gitRepository = wasmGitRepository,
                 localChangesCountFlow = opfsFileSystem.dirtyFileCountFlow,
+                hostAccessStateFlow = opfsFileSystem.hostDirectorySync.hostAccessStateFlow,
+                hostWritePendingCountFlow = opfsFileSystem.hostDirectorySync.hostWritePendingCountFlow,
+                onReconnectHostDirectory = {
+                    scope.launch { opfsFileSystem.hostDirectorySync.requestHostDirectoryAccess(graphId) }
+                },
             )
         }
     }

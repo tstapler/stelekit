@@ -47,6 +47,7 @@ import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.GraphInfo
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.git.model.SyncState
+import dev.stapler.stelekit.platform.HostAccessState
 import dev.stapler.stelekit.sections.SectionManifest
 import dev.stapler.stelekit.ui.LocalWindowSizeClass
 import dev.stapler.stelekit.ui.Screen
@@ -89,6 +90,11 @@ fun LeftSidebar(
     onGitSetup: () -> Unit = {},
     isGitConfigured: Boolean = false,
     onAuthError: (() -> Unit)? = null,
+    /** Epic 2.3: current web-local-folder-livesync [HostAccessState]. [HostAccessState.NotApplicable]
+     * (the default) renders [FolderSyncStatusBadge] as nothing — matches every non-web platform. */
+    hostAccessState: HostAccessState = HostAccessState.NotApplicable,
+    hostPendingWriteCount: Int = 0,
+    onReconnectHostDirectory: () -> Unit = {},
     onCloneGraph: () -> Unit = {},
     gitSyncedGraphId: String? = null,
     onNewSectionJournalEntry: (() -> Unit)? = null,
@@ -171,6 +177,17 @@ fun LeftSidebar(
                 onSyncClick = onSyncClick,
                 isGitConfigured = isGitConfigured,
                 onAuthError = onAuthError,
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+            )
+
+            // Epic 2.3 (Story 2.3.1): sibling badge for the web-local-folder-livesync host
+            // directory connection — distinct subsystem from the git SyncStatusBadge above,
+            // renders nothing (NotApplicable) on every non-web platform.
+            FolderSyncStatusBadge(
+                state = hostAccessState,
+                dirName = currentGraphName.ifEmpty { null },
+                pendingWriteCount = hostPendingWriteCount,
+                onReconnect = onReconnectHostDirectory,
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
             )
 

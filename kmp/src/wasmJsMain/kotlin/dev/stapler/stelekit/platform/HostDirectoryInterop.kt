@@ -80,6 +80,16 @@ private fun requestPermissionPromise(handle: JsAny, mode: String): kotlin.js.Pro
 
 private fun jsStringValue(v: JsAny): String = js("String(v)")
 
+/**
+ * `internal` — Epic 2.2's `HostDirectorySync.reconnectHostDirectory`/`requestHostDirectoryAccess`
+ * reuse this to decode the JSON-string `HostHandleEnvelope` read back from IndexedDB
+ * (`HostDirectorySync.kt`, same package, different file). Named distinctly from this file's own
+ * file-private [jsStringValue] (and `OpfsInterop.kt`'s identically-named file-private helper) —
+ * `internal` top-level functions are package-visible, so reusing the exact same name would collide
+ * with `OpfsInterop.kt`'s helper as a "conflicting overloads" compile error.
+ */
+internal fun jsAnyToUtf8String(v: JsAny): String = js("String(v)")
+
 internal suspend fun queryHandlePermission(handle: JsAny, mode: String = "readwrite"): String = try {
     jsStringValue(queryPermissionPromise(handle, mode).await())
 } catch (e: Throwable) {

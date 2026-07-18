@@ -27,6 +27,7 @@ import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.migration.registerAllMigrations
 import dev.stapler.stelekit.db.SidecarManager
 import dev.stapler.stelekit.platform.DemoFileSystem
+import dev.stapler.stelekit.platform.HostAccessState
 import dev.stapler.stelekit.service.markdownImageLink
 import dev.stapler.stelekit.service.toMarkdown
 import dev.stapler.stelekit.export.ExportService
@@ -204,6 +205,25 @@ fun StelekitApp(
      * When null (default — JVM/Android), git sync state is unaffected.
      */
     localChangesCountFlow: kotlinx.coroutines.flow.StateFlow<Int>? = null,
+    /**
+     * Current [HostAccessState] for the active graph's `web-local-folder-livesync` host directory
+     * connection (web only). Pass `PlatformFileSystem.hostDirectorySync.hostAccessStateFlow` on
+     * web. When null (default — JVM/Android/iOS), `FolderSyncStatusBadge` renders nothing.
+     */
+    hostAccessStateFlow: kotlinx.coroutines.flow.StateFlow<HostAccessState>? = null,
+    /**
+     * Count of edits queued for push to the connected host directory (web only). Pass
+     * `PlatformFileSystem.hostDirectorySync.hostWritePendingCountFlow` on web. When null (default
+     * — JVM/Android/iOS), `FolderSyncStatusBadge` treats the pending count as zero.
+     */
+    hostWritePendingCountFlow: kotlinx.coroutines.flow.StateFlow<Int>? = null,
+    /**
+     * Called when the user taps `FolderSyncStatusBadge`'s reconnect/grant-access affordance (web
+     * only) — should invoke `PlatformFileSystem.hostDirectorySync.requestHostDirectoryAccess`.
+     * When null (default — JVM/Android/iOS), the badge's click affordance is disabled (it never
+     * renders on these platforms anyway, since [hostAccessStateFlow] stays null).
+     */
+    onReconnectHostDirectory: (() -> Unit)? = null,
 ) {
     val platformSettings = remember { PlatformSettings() }
     val scope = rememberCoroutineScope()
@@ -370,6 +390,9 @@ fun StelekitApp(
             googleAuthManager = googleAuthManager,
             requestCameraPermission = requestCameraPermission,
             localChangesCountFlow = localChangesCountFlow,
+            hostAccessStateFlow = hostAccessStateFlow,
+            hostWritePendingCountFlow = hostWritePendingCountFlow,
+            onReconnectHostDirectory = onReconnectHostDirectory,
         )
     }
 }
@@ -405,7 +428,16 @@ private fun GraphContent(
     googleAuthManager: dev.stapler.stelekit.platform.google.GoogleAuthManager? = null,
     requestCameraPermission: (suspend () -> Boolean)? = null,
     localChangesCountFlow: kotlinx.coroutines.flow.StateFlow<Int>? = null,
+    hostAccessStateFlow: kotlinx.coroutines.flow.StateFlow<HostAccessState>? = null,
+    hostWritePendingCountFlow: kotlinx.coroutines.flow.StateFlow<Int>? = null,
+    onReconnectHostDirectory: (() -> Unit)? = null,
 ) {
+    // Epic 2.3 (Task 2.3.1c): resolved here (not passed as raw StateFlow into StelekitViewModel,
+    // unlike localChangesCountFlow) — FolderSyncStatusBadge is a pure sidebar-header composable,
+    // not part of syncState, so collectAsState() directly feeds its call site below.
+    val hostAccessState = hostAccessStateFlow?.collectAsState()?.value ?: HostAccessState.NotApplicable
+    val hostWritePendingCount = hostWritePendingCountFlow?.collectAsState()?.value ?: 0
+
     CompositionLocalProvider(
         LocalSpanRecorder provides spanRecorder,
         LocalFileSystem provides fileSystem,
@@ -1321,6 +1353,9 @@ private fun GraphContent(
                                 isDemoActive = activeGraphInfo?.isDemo == true,
                                 demoBannerDismissed = demoBannerDismissed,
                                 onDismissDemoBanner = { demoBannerDismissed = true },
+                                hostAccessState = hostAccessState,
+                                hostPendingWriteCount = hostWritePendingCount,
+                                onReconnectHostDirectory = onReconnectHostDirectory ?: {},
                                 onPageClick = { page ->
                                     viewModel.navigateTo(Screen.PageView(page))
                                     closeSidebarIfMobile()

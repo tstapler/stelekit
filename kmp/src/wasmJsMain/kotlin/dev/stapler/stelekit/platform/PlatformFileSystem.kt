@@ -457,6 +457,16 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         hostDirectorySync.onHostConflict = callback ?: { _, _ -> }
     }
 
+    /**
+     * Task 2.2.2b: one-line delegate to [HostDirectorySync.hostAccessStateFlow]'s current value —
+     * satisfies the [FileSystem] interface's [graphPath]-scoped query for commonMain callers that
+     * don't want to downcast to [PlatformFileSystem] to reach [hostDirectorySync] directly. [graphPath]
+     * is intentionally unused: this graph's [HostDirectorySync] instance already tracks exactly one
+     * graph's host-directory connection at a time (see `graphIdProvider`'s doc comment).
+     */
+    override suspend fun hostDirectoryAccessState(graphPath: String): HostAccessState =
+        hostDirectorySync.hostAccessStateFlow.value
+
     actual override fun getLastModifiedTime(path: String): Long? = null
     override fun registerBlobUrl(path: String, url: String) { blobUrlCache[path] = url }
     override fun resolveAssetUri(graphRoot: String, relativePath: String): String? =
