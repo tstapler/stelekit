@@ -69,7 +69,7 @@ class HostDirectorySyncConstructionTest {
 
         // Given: constructed directly, no PlatformFileSystem instance involved anywhere.
         val sync = HostDirectorySync(
-            graphId = "g",
+            graphIdProvider = { "g" },
             cacheAccess = fakeCacheAccess,
             scope = testScope,
         )

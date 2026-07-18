@@ -63,7 +63,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     // (reconnectHostDirectory, requestHostDirectoryAccess, connectHostDirectory, its StateFlows)
     // directly, without PlatformFileSystem needing to re-expose every one as a passthrough.
     val hostDirectorySync: HostDirectorySync = HostDirectorySync(
-        graphId = graphId,
+        graphIdProvider = { graphId },
         cacheAccess = object : HostDirectorySync.CacheAccess {
             override fun get(path: String) = cache[path]
             override fun set(path: String, content: String) {
@@ -412,6 +412,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             val opfsPath = "$homeDir/$name"
             println("[SteleKit] pickDirectory: importing '$name' → '$opfsPath'")
             importUserDirToCache(dirHandle, opfsPath)
+            hostDirectorySync.attachFreshHandle(dirHandle, opfsPath)
             val count = cache.keys.count { it.startsWith("$opfsPath/") }
             println("[SteleKit] pickDirectory: $count files imported to cache")
             opfsPath
