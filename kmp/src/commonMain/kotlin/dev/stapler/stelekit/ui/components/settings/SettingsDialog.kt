@@ -20,6 +20,7 @@ import dev.stapler.stelekit.llm.LlmCredentialStore
 import dev.stapler.stelekit.llm.LlmProviderRegistry
 import dev.stapler.stelekit.llm.LlmSettings
 import dev.stapler.stelekit.performance.getDeviceInfo
+import dev.stapler.stelekit.platform.HostAccessState
 import dev.stapler.stelekit.sections.SectionManifest
 import dev.stapler.stelekit.sections.SectionState
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
@@ -79,6 +80,15 @@ fun SettingsDialog(
     onRenameSection: ((id: String, newDisplayName: String) -> Unit)? = null,
     onDeleteSection: ((id: String) -> Unit)? = null,
     onToggleSectionState: ((sectionId: String, newState: SectionState) -> Unit)? = null,
+    // web-local-folder-livesync (Task 3.1.1c): "Enable live folder sync" affordance for an
+    // already-populated graph — Story 3.1.1, Epic 3.1. hostAccessState/supportsNativeDirectoryPicker
+    // default to their "not applicable"/false values on JVM/Android/iOS; onConnectHostDirectory
+    // stays null there, which is what actually hides FolderSyncSettings's call site below (its own
+    // internal gate on hostAccessState/supportsNativeDirectoryPicker is a second, redundant guard
+    // for the web case where a null onConnectHostDirectory is never passed in the first place).
+    hostAccessState: HostAccessState = HostAccessState.NotApplicable,
+    supportsNativeDirectoryPicker: Boolean = false,
+    onConnectHostDirectory: (suspend () -> ReconciliationUiState)? = null,
 ) {
     if (visible) {
         Dialog(
@@ -180,14 +190,32 @@ fun SettingsDialog(
                                 .verticalScroll(rememberScrollState())
                         ) {
                             when (selectedCategory) {
-                                SettingsCategory.GENERAL -> GeneralSettings(
-                                    currentTheme = currentTheme,
-                                    onThemeChange = onThemeChange,
-                                    currentLanguage = currentLanguage,
-                                    onLanguageChange = onLanguageChange,
-                                    isLeftHanded = isLeftHanded,
-                                    onLeftHandedChange = onLeftHandedChange
-                                )
+                                SettingsCategory.GENERAL -> {
+                                    GeneralSettings(
+                                        currentTheme = currentTheme,
+                                        onThemeChange = onThemeChange,
+                                        currentLanguage = currentLanguage,
+                                        onLanguageChange = onLanguageChange,
+                                        isLeftHanded = isLeftHanded,
+                                        onLeftHandedChange = onLeftHandedChange
+                                    )
+                                    // web-local-folder-livesync Task 3.1.1c: no dedicated "Sync"
+                                    // category exists in this dialog, so the affordance lives here —
+                                    // GENERAL is the most discoverable home for a graph-wide toggle,
+                                    // and FolderSyncSettings itself is a no-op render (returns
+                                    // nothing) unless onConnectHostDirectory is non-null AND its own
+                                    // hostAccessState/supportsNativeDirectoryPicker gate passes, so
+                                    // this never adds an empty section to GENERAL on non-web
+                                    // platforms or once already connected.
+                                    if (onConnectHostDirectory != null) {
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                        FolderSyncSettings(
+                                            hostAccessState = hostAccessState,
+                                            supportsNativeDirectoryPicker = supportsNativeDirectoryPicker,
+                                            onConnect = onConnectHostDirectory,
+                                        )
+                                    }
+                                }
                                 SettingsCategory.EDITOR -> EditorSettings()
                                 SettingsCategory.PLUGINS -> PluginsSettings()
                                 SettingsCategory.ADVANCED -> AdvancedSettings(onReindex)
@@ -209,16 +237,6 @@ fun SettingsDialog(
                                     onConnect = { onConnectGoogle?.invoke() },
                                     onDisconnect = { onDisconnectGoogle?.invoke() },
                                 )
-                                // TODO(web-local-folder-livesync Task 3.1.1c): wire FolderSyncSettings
-                                // in here once a SYNC SettingsCategory exists and hostAccessState/
-                                // onConnect are threaded down from App.kt the same way
-                                // localChangesCountFlow/hostAccessStateFlow are (Task 2.3.1c, not yet
-                                // landed as of Epic 3.1-3.3). Deferred rather than half-wired: adding
-                                // the category now with no live hostAccessState source would either
-                                // show a permanently-NotApplicable panel or require a throwaway
-                                // downcast to PlatformFileSystem this codebase's established
-                                // convention (Pattern Decisions table, "UI-layer access to
-                                // HostDirectorySync's reactive state") explicitly avoids.
                                 SettingsCategory.VAULT -> VaultSettings(
                                     isParanoidMode = isParanoidMode,
                                     isVaultUnlocked = isVaultUnlocked,

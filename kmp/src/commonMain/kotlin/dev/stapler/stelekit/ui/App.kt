@@ -50,6 +50,7 @@ import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.repository.*
 import dev.stapler.stelekit.ui.components.*
 import dev.stapler.stelekit.ui.components.git.GitDetectionBanner
+import dev.stapler.stelekit.ui.components.settings.ReconciliationUiState
 import dev.stapler.stelekit.ui.i18n.I18n
 import dev.stapler.stelekit.ui.i18n.LocalI18n
 import dev.stapler.stelekit.ui.i18n.t
@@ -231,6 +232,15 @@ fun StelekitApp(
      * renders on these platforms anyway, since [hostAccessStateFlow] stays null).
      */
     onReconnectHostDirectory: (() -> Unit)? = null,
+    /**
+     * Task 3.1.1c: "Enable live folder sync" affordance for an already-populated graph — invoked
+     * from `SettingsDialog`'s `FolderSyncSettings` section (web only). Should perform the real
+     * `showDirectoryPicker → HostDirectorySync.connectHostDirectory → runHostReconciliation`
+     * sequence and resolve to the terminal [ReconciliationUiState]. Pass a lambda wrapping
+     * `PlatformFileSystem.hostDirectorySync.connectHostDirectory` on web. When null (default —
+     * JVM/Android/iOS), `FolderSyncSettings`'s call site in `SettingsDialog` renders nothing.
+     */
+    onConnectHostDirectory: (suspend () -> ReconciliationUiState)? = null,
 ) {
     val platformSettings = remember { PlatformSettings() }
     val scope = rememberCoroutineScope()
@@ -401,6 +411,7 @@ fun StelekitApp(
             hostWritePendingCountFlow = hostWritePendingCountFlow,
             hostWriteStuckFlow = hostWriteStuckFlow,
             onReconnectHostDirectory = onReconnectHostDirectory,
+            onConnectHostDirectory = onConnectHostDirectory,
         )
     }
 }
@@ -440,6 +451,7 @@ private fun GraphContent(
     hostWritePendingCountFlow: kotlinx.coroutines.flow.StateFlow<Int>? = null,
     hostWriteStuckFlow: kotlinx.coroutines.flow.StateFlow<Boolean>? = null,
     onReconnectHostDirectory: (() -> Unit)? = null,
+    onConnectHostDirectory: (suspend () -> ReconciliationUiState)? = null,
 ) {
     // Epic 2.3 (Task 2.3.1c): resolved here (not passed as raw StateFlow into StelekitViewModel,
     // unlike localChangesCountFlow) — FolderSyncStatusBadge is a pure sidebar-header composable,
@@ -1773,6 +1785,8 @@ private fun GraphContent(
                             blockStateManager.blocksForPage(it.uuid.value)
                         } ?: emptyList(),
                         selectedBlockUuids = blockStateManager.selectedBlockUuids.collectAsState().value,
+                        hostAccessState = hostAccessState,
+                        onConnectHostDirectory = onConnectHostDirectory,
                     )
 
                     if (showAddGraphDialog) {
