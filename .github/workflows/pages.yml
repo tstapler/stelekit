@@ -122,8 +122,15 @@ jobs:
       - uses: actions/checkout@v4
 
       # ── Demo artifact ─────────────────────────────────────────────────────
-      # Try current run first (when build-demo ran); fall back to last successful run
-      # so site-only edits keep the previously-built demo live.
+      # Try current run first (when build-demo ran); fall back to the latest
+      # app-dist artifact from any prior run so site-only edits (or pushes that
+      # don't touch kmp/, which skip build-demo) keep the previously-built demo
+      # live. Artifacts (90-day retention) are used instead of actions/cache —
+      # the wasm-app cache entry was observed getting evicted under this repo's
+      # cache pressure well within days, silently degrading the deployed site to
+      # its "coming soon" placeholder with no CI failure. `gh run download`
+      # without a run id fetches the most recent matching artifact across the
+      # whole repo, mirroring the fdroid-content fallback below.
       - id: download-demo
         name: Download app artifact (current run)
         uses: actions/download-artifact@v4
@@ -131,28 +138,26 @@ jobs:
         with:
           name: app-dist
           path: site/public/app/
-      - name: Restore app from cache (fallback when current-run artifact absent)
-        if: steps.download-demo.outcome == 'failure'
-        uses: actions/cache/restore@v4
-        with:
-          path: kmp/build/dist/wasmJs/productionExecutable/
-          key: wasm-app-${{ runner.os }}-${{ hashFiles('kmp/build.gradle.kts', 'gradle/libs.versions.toml', 'settings.gradle.kts', 'gradle.properties', 'kmp/src/wasmJsMain/**', 'kmp/src/jsMain/**', 'kmp/src/commonMain/**') }}
-          restore-keys: |
-            wasm-app-${{ runner.os }}-
       - id: download-demo-fallback
-        name: Copy cached app to site/public/app
+        name: Download app artifact (latest available, fallback)
         if: steps.download-demo.outcome == 'failure'
         continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download --name app-dist --dir site/public/app/
+      # Fail loudly instead of silently deploying without a demo. The previous
+      # design treated "no demo found" as a handled, non-erroring state — that's
+      # exactly what let the cache-eviction bug above ship a "coming soon"
+      # placeholder to production with fully green CI. Whatever future cause
+      # might make BOTH downloads fail, it must block the deploy, not degrade
+      # past it: the prior successful GitHub Pages deployment stays live when
+      # this job fails, which is a strictly better outcome for users than
+      # shipping a broken one.
+      - name: Fail if no app-dist artifact is available from any source
+        if: steps.download-demo.outcome == 'failure' && steps.download-demo-fallback.outcome == 'failure'
         run: |
-          if [ -d kmp/build/dist/wasmJs/productionExecutable ] && \
-             [ "$(ls -A kmp/build/dist/wasmJs/productionExecutable 2>/dev/null)" ]; then
-            mkdir -p site/public/app
-            cp -r kmp/build/dist/wasmJs/productionExecutable/. site/public/app/
-            echo "App restored from cache"
-          else
-            echo "No app cache available — app will be absent from this deploy"
-            exit 1
-          fi
+          echo "::error::No app-dist artifact found (current run and latest-available fallback both failed). Refusing to deploy — this previously shipped a silent 'coming soon' regression to production. If this is genuinely the first-ever deploy with no prior artifact to fall back to, that's the one legitimate case for this failure; otherwise investigate why build-demo / artifact retention is broken."
+          exit 1
 
       # ── F-Droid content ───────────────────────────────────────────────────
       # Primary: current run — present when fdroid.yml ran before us in the same
@@ -192,6 +197,9 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: site/package-lock.json
+      - name: Test service worker cache-validation logic
+        run: node --test looks-like-app-shell.test.js
+        working-directory: kmp/src/wasmJsMain/resources
       - name: Install site dependencies
         run: npm ci
         working-directory: site

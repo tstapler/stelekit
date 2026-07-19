@@ -14,6 +14,7 @@ import kotlin.concurrent.Volatile
  * ```kotlin
  * // In androidMain entry point:
  * SensorModule.cameraProvider = AndroidCameraProvider(context, activity)
+ * SensorModule.cameraFrameSource = AndroidCameraFrameSource(context, activity)
  * SensorModule.motionSensorProvider = AndroidMotionSensorProvider(context)
  * SensorModule.depthSensorProvider = ARCoreDepthProvider()
  * SensorModule.monocularDepthEstimator = OnnxMonocularDepthEstimator()
@@ -38,6 +39,17 @@ object SensorModule {
      */
 
     @Volatile var cameraProvider: CameraProvider = NoOpCameraProvider()
+
+    /**
+     * The active [CameraFrameSource] for this process.
+     *
+     * Provides a continuous camera luminance-frame stream, e.g. for QR code decode. Kept
+     * separate from [cameraProvider] (ISP, see ADR-002 in camera-qr-export).
+     * Set once at application startup by the platform entry point.
+     * Thread-safe for simple read after startup (Kotlin `@Volatile`).
+     */
+
+    @Volatile var cameraFrameSource: CameraFrameSource = NoOpCameraFrameSource()
 
     /**
      * The active [MotionSensorProvider] for this process.

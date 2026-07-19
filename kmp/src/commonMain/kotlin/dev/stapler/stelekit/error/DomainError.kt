@@ -94,6 +94,14 @@ sealed interface DomainError {
             override val message: String = "Cannot sync while editing is in progress"
         }
         data class CredentialExpired(override val message: String) : GitError
+        data class RateLimited(val retryAfterSeconds: Int?) : GitError {
+            override val message: String = "Rate limited by GitHub/GitLab"
+        }
+        data class FileTooLarge(val path: String, val sizeBytes: Long, val maxBytes: Long) : GitError {
+            override val message: String =
+                "File too large to sync: $path ($sizeBytes bytes exceeds max of $maxBytes bytes)"
+        }
+        data class NetworkFailure(override val message: String) : GitError
     }
 
     sealed interface AttachmentError : DomainError {
@@ -106,6 +114,46 @@ sealed interface DomainError {
         data class SerializationFailed(override val message: String) : ExportError
         data class ClipboardFailed(override val message: String) : ExportError
         data class ShareFailed(override val message: String) : ExportError
+    }
+
+    /**
+     * Five variants, not the original six (Story 1.1.2): `IncompleteTransfer(received, total)` and
+     * `TransferCancelled` were removed as dead code after an audit found no principled call site —
+     * see `ChunkBuffer.reassemble` and `QrTransferCoordinator.cancel` KDoc for why.
+     * `EnvelopeMalformed` was added afterward (see `TransferPayloadEnvelope`) for the one failure
+     * mode that can only occur AFTER `IntegrityCheckFailed`'s CRC32 gate already passed: the
+     * reassembled bytes are provably intact but don't parse as a valid name+markdown envelope.
+     */
+    sealed interface QrTransferError : DomainError {
+        data object ChunkDecodeFailed : QrTransferError {
+            override val message: String = "Failed to decode QR chunk"
+        }
+        data object IntegrityCheckFailed : QrTransferError {
+            override val message: String = "Transfer integrity check failed"
+        }
+        data class PayloadTooLarge(val sizeBytes: Int, val maxBytes: Int) : QrTransferError {
+            override val message: String = "Payload too large: $sizeBytes bytes exceeds max of $maxBytes bytes"
+        }
+        data object MarkdownParseFailed : QrTransferError {
+            override val message: String = "Failed to parse received markdown"
+        }
+        data object EnvelopeMalformed : QrTransferError {
+            override val message: String = "Transfer payload envelope is malformed"
+        }
+
+        /**
+         * [dev.stapler.stelekit.transfer.qrcode.QrImportService.import]'s overwrite path clears the
+         * pre-existing page's blocks before writing the new ones; if the new-block write then
+         * fails, the page row is deliberately left in place (never deleted — that would destroy the
+         * pre-existing page beyond what this failed operation should be allowed to touch) but its
+         * blocks may now be empty or partial. Distinct from [MarkdownParseFailed] so the UI can
+         * tell the user their previous content on this page may have been affected, not just that
+         * the new import failed.
+         */
+        data class OverwriteFailedPreviousContentAffected(val pageUuid: String) : QrTransferError {
+            override val message: String =
+                "Overwrite failed after clearing previous content for page $pageUuid — previous content may be lost"
+        }
     }
 }
 
@@ -151,12 +199,22 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.GitError.Offline -> message
     is DomainError.GitError.EditingInProgress -> message
     is DomainError.GitError.CredentialExpired -> "GitHub authentication expired — tap to re-connect"
+    is DomainError.GitError.RateLimited -> "Rate limited — retrying automatically"
+    is DomainError.GitError.FileTooLarge -> "File too large to sync: ${path}"
+    is DomainError.GitError.NetworkFailure -> "Network error — sync will retry"
     is DomainError.AttachmentError.CopyFailed -> "Attachment failed"
     is DomainError.AttachmentError.PickerFailed -> "Could not open file picker"
     is DomainError.AttachmentError.AssetsDirectoryFailed -> "Cannot create assets directory"
     is DomainError.ExportError.SerializationFailed -> "Export failed"
     is DomainError.ExportError.ClipboardFailed -> "Clipboard write failed"
     is DomainError.ExportError.ShareFailed -> "Share failed"
+    is DomainError.QrTransferError.ChunkDecodeFailed -> "Couldn't read that QR code — try again"
+    is DomainError.QrTransferError.IntegrityCheckFailed -> "This transfer looks corrupted — please try scanning again"
+    is DomainError.QrTransferError.PayloadTooLarge -> "This page is too large to send via QR"
+    is DomainError.QrTransferError.MarkdownParseFailed -> "Received data isn't valid page content"
+    is DomainError.QrTransferError.EnvelopeMalformed -> "This transfer didn't include valid page info — please try sending it again"
+    is DomainError.QrTransferError.OverwriteFailedPreviousContentAffected ->
+        "Overwrite failed — this page's previous content may have been affected. Please check it and try again"
 }
 
 fun DomainError.GitError.toSyncErrorMessage(): String = when (this) {
@@ -173,4 +231,7 @@ fun DomainError.GitError.toSyncErrorMessage(): String = when (this) {
     is DomainError.GitError.NotSupported -> "Git not supported on this platform"
     is DomainError.GitError.EditingInProgress -> "Editing in progress — sync will resume when idle"
     is DomainError.GitError.CredentialExpired -> "GitHub authentication expired — tap to re-connect"
+    is DomainError.GitError.RateLimited -> "Rate limited by GitHub/GitLab — retrying automatically"
+    is DomainError.GitError.FileTooLarge -> "File too large to sync: $path"
+    is DomainError.GitError.NetworkFailure -> "Network error — sync will retry"
 }

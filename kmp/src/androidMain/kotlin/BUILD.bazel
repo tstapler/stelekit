@@ -128,6 +128,8 @@ kt_android_library(
         "@maven//:androidx_camera_camera_core",
         "@maven//:androidx_camera_camera_camera2",
         "@maven//:androidx_camera_camera_lifecycle",
+        # CameraX PreviewView (camera-qr-export live scan preview, ui/transfer/PlatformCameraPreview.android.kt)
+        "@maven//:androidx_camera_camera_view",
 
         # Lifecycle process (required by CameraX camera-lifecycle; from androidMain)
         "@maven//:androidx_lifecycle_lifecycle_process",
@@ -143,6 +145,9 @@ kt_android_library(
 
         # Kable BLE Android (from androidMain)
         "@maven//:com_juul_kable_core_android",
+
+        # ZXing — QR encode/decode for camera-qr-export (from commonMain expect / androidMain actual)
+        "@maven//:com_google_zxing_core",
 
         # Okio — cross-platform file I/O (from commonMain)
         "@maven//:com_squareup_okio_okio_jvm",

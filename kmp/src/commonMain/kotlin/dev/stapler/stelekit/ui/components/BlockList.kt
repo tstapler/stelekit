@@ -16,12 +16,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isAltPressed
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
@@ -33,13 +34,79 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.emptyFlow
 
-private enum class DropZone { ABOVE, CHILD, BELOW }
+internal enum class DropZone { ABOVE, CHILD, BELOW }
 
 private data class BlockDragState(
     val draggedUuids: Set<String>,
     val pointerOffsetY: Float,
     val isDragging: Boolean
 )
+
+internal data class DropTargetResult(
+    val targetUuid: String?,
+    val zone: DropZone?,
+    /** True if [targetUuid] is inside the dragged selection's own subtree — a legal
+     * nearest-candidate but an illegal drop (would create a cycle). Distinguished from "no
+     * target" so callers can render a rejection cue during the drag instead of only failing
+     * silently at release (docs/ux/block-reorder-permutations.md §8, gap #1). */
+    val isBlocked: Boolean,
+)
+
+/**
+ * Resolves the drop target for [pointerY] against the current [blockBounds], or null/blocked
+ * results per docs/ux/block-reorder-permutations.md. Pure and Compose-free so the zone-boundary
+ * math (§4.5's 40/20/40 split with a floor on the CHILD zone) is unit-testable without a
+ * Compose test harness — see BlockListDropZoneTest.
+ *
+ * @param blockedTargetUuids the dragged selection's own UUIDs plus all of their descendants —
+ *   precompute once per drag (it only depends on draggedUuids, not on pointer position) rather
+ *   than walking the tree on every pointer-move tick.
+ * @param minChildZonePx floor on the CHILD zone's height so it stays reachable on short
+ *   (single-line) rows — §4.5 recommends 12dp.
+ * @param outOfBoundsMarginPx how far past the topmost/bottommost block's edge the pointer may
+ *   travel and still resolve to a target; beyond this, a release cancels instead of committing
+ *   to whichever edge block happened to be nearest (§4.7, gap #3). Deliberately generous —
+ *   §4.7 row 2 requires that dragging far below the last block (still within the same panel,
+ *   just past the visible content) keeps resolving to BELOW-last-block unconditionally; this
+ *   margin only needs to catch the pointer leaving the app's rendered area entirely (e.g. an
+ *   off-window drag on desktop), not ordinary overshoot within a short list.
+ */
+internal fun computeDropTarget(
+    pointerY: Float,
+    blockBounds: Map<String, Pair<Float, Float>>,
+    draggedUuids: Set<String>,
+    blockedTargetUuids: Set<String>,
+    minChildZonePx: Float,
+    outOfBoundsMarginPx: Float,
+): DropTargetResult {
+    if (blockBounds.isEmpty()) return DropTargetResult(null, null, false)
+
+    val listTop = blockBounds.values.minOf { it.first }
+    val listBottom = blockBounds.values.maxOf { it.second }
+    if (pointerY < listTop - outOfBoundsMarginPx || pointerY > listBottom + outOfBoundsMarginPx) {
+        return DropTargetResult(null, null, false)
+    }
+
+    val candidate = blockBounds.entries
+        .filter { (uuid, _) -> uuid !in draggedUuids }
+        .minByOrNull { (_, bounds) -> kotlin.math.abs((bounds.first + bounds.second) / 2f - pointerY) }
+        ?: return DropTargetResult(null, null, false)
+
+    val (targetUuid, bounds) = candidate
+    val top = bounds.first
+    val height = bounds.second - bounds.first
+    // 20% nominal CHILD zone, floored to minChildZonePx and capped at the row's own height —
+    // ABOVE/BELOW split whatever remains evenly (40/40 on a normal-height row).
+    val childZoneHeight = (height * 0.2f).coerceAtLeast(minChildZonePx).coerceAtMost(height)
+    val childZoneStart = top + (height - childZoneHeight) / 2f
+    val childZoneEnd = childZoneStart + childZoneHeight
+    val zone = when {
+        pointerY < childZoneStart -> DropZone.ABOVE
+        pointerY > childZoneEnd -> DropZone.BELOW
+        else -> DropZone.CHILD
+    }
+    return DropTargetResult(targetUuid, zone, isBlocked = targetUuid in blockedTargetUuids)
+}
 
 /**
  * Renders a list of blocks with proper hierarchy, supporting collapse/expand.
@@ -150,6 +217,7 @@ fun BlockList(
     var blockBounds by remember { mutableStateOf<Map<String, Pair<Float, Float>>>(emptyMap()) }
     var dropTargetUuid by remember { mutableStateOf<String?>(null) }
     var currentDropZone by remember { mutableStateOf<DropZone?>(null) }
+    var isDropBlocked by remember { mutableStateOf(false) }
 
     // GAP-010: notify the caller whenever an active drag starts/stops so the hosting scroll
     // container can suspend scrolling for the duration (see onDragStateChange's doc above).
@@ -165,31 +233,47 @@ fun BlockList(
             dragState = null
             dropTargetUuid = null
             currentDropZone = null
+            isDropBlocked = false
             currentOnDragStateChange(false)
         }
     }
 
-    fun computeDropTarget(state: BlockDragState, _allBlocksList: List<Block>) {
-        val currentY = state.pointerOffsetY
-        val dropTarget = blockBounds.entries
-            .filter { (uuid, _) -> uuid !in state.draggedUuids }
-            .minByOrNull { (_, bounds) -> kotlin.math.abs((bounds.first + bounds.second) / 2f - currentY) }
-        if (dropTarget != null) {
-            val (targetUuid, bounds) = dropTarget
-            dropTargetUuid = targetUuid
-            currentDropZone = when {
-                currentY < bounds.first + (bounds.second - bounds.first) * 0.33f -> DropZone.ABOVE
-                currentY > bounds.first + (bounds.second - bounds.first) * 0.67f -> DropZone.BELOW
-                else -> DropZone.CHILD
-            }
-        } else {
-            dropTargetUuid = null
-            currentDropZone = null
-        }
+    // docs/ux/block-reorder-permutations.md §4.5/§4.7: zone-floor and out-of-bounds margins in
+    // px, and the dragged selection's own subtree (own UUIDs + all descendants) precomputed once
+    // per drag rather than walked on every pointer-move tick.
+    val density = LocalDensity.current
+    val minChildZonePx = with(density) { 12.dp.toPx() }
+    val outOfBoundsMarginPx = with(density) { 2000.dp.toPx() }
+    val blockedTargetUuids = remember(dragState?.draggedUuids) {
+        val uuids = dragState?.draggedUuids ?: emptySet()
+        uuids + uuids.flatMap { getDescendantUuids(it) }
+    }
+
+    fun refreshDropTarget(state: BlockDragState) {
+        val result = computeDropTarget(
+            pointerY = state.pointerOffsetY,
+            blockBounds = blockBounds,
+            draggedUuids = state.draggedUuids,
+            blockedTargetUuids = blockedTargetUuids,
+            minChildZonePx = minChildZonePx,
+            outOfBoundsMarginPx = outOfBoundsMarginPx,
+        )
+        dropTargetUuid = result.targetUuid
+        currentDropZone = result.zone
+        isDropBlocked = result.isBlocked
     }
 
     Box(
         modifier = modifier
+            .onPreviewKeyEvent { event ->
+                // docs/ux/block-reorder-permutations.md §4.9: structural shortcuts (indent/
+                // outdent/move) race an in-flight drag's eventual move if left to reach the
+                // focused block's own handler — swallow them here, before they get that far,
+                // for the duration of an active drag.
+                val isStructuralShortcut = event.key == Key.Tab ||
+                    ((event.key == Key.DirectionUp || event.key == Key.DirectionDown) && event.isAltPressed)
+                if (dragState != null && isStructuralShortcut) true else false
+            }
             .onKeyEvent { event ->
                 when {
                     event.key == Key.ShiftLeft || event.key == Key.ShiftRight -> {
@@ -208,13 +292,21 @@ fun BlockList(
                         dragState = null
                         dropTargetUuid = null
                         currentDropZone = null
+                        isDropBlocked = false
                         true
                     }
                     else -> false
                 }
             }
     ) {
-        Column {
+        // Blocks are each wrapped in their own per-row Box (below, for the cut-block alpha
+        // treatment), so `coords.positionInParent()` on a block would report its position
+        // relative to that ephemeral per-row Box (always ~(0,0)) rather than its position within
+        // the list — every block would collapse to identical bounds. Track this Column's own
+        // coordinates and resolve each block's position relative to it via localPositionOf,
+        // which is robust to any intermediate wrapper nodes.
+        var columnCoords by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
+        Column(modifier = Modifier.onGloballyPositioned { columnCoords = it }) {
         blocks.forEach { block ->
             // Only show if not hidden by a collapsed ancestor
             if (block.uuid.value !in hiddenBlocks) {
@@ -292,7 +384,7 @@ fun BlockList(
                         )
                         dragState = newState
                         if (newState != null) {
-                            computeDropTarget(newState, blocks)
+                            refreshDropTarget(newState)
                         }
                     },
                     onDragEnd = {
@@ -300,10 +392,9 @@ fun BlockList(
                         if (state != null) {
                             val targetUuid = dropTargetUuid
                             val zone = currentDropZone
-                            // Guard: disallow dropping onto own subtree
-                            val allDescendants = state.draggedUuids + state.draggedUuids.flatMap { getDescendantUuids(it) }
-                            val isOwnSubtree = targetUuid != null && targetUuid in allDescendants
-                            if (!isOwnSubtree && targetUuid != null && zone != null) {
+                            // isDropBlocked already reflects the own-subtree guard, computed
+                            // live during the drag (§8 gap #1) rather than re-derived here.
+                            if (!isDropBlocked && targetUuid != null && zone != null) {
                                 val targetBlock = blocks.find { it.uuid.value == targetUuid }
                                 if (targetBlock != null) {
                                     when (zone) {
@@ -317,6 +408,12 @@ fun BlockList(
                                             onMoveSelectedBlocks(targetBlock.parentUuid?.value, targetBlock.uuid.value)
                                         }
                                         DropZone.CHILD -> {
+                                            // §4.3: a block dropped as a child of a collapsed
+                                            // target would otherwise vanish with no feedback —
+                                            // auto-expand so the moved block is visible.
+                                            if (targetBlock.uuid.value in collapsedBlocks) {
+                                                onToggleCollapse(targetBlock.uuid.value)
+                                            }
                                             onMoveSelectedBlocks(targetBlock.uuid.value, null)
                                         }
                                     }
@@ -326,10 +423,11 @@ fun BlockList(
                         dragState = null
                         dropTargetUuid = null
                         currentDropZone = null
+                        isDropBlocked = false
                     },
-                    dropAbove = isDropTarget && currentDropZone == DropZone.ABOVE,
-                    dropBelow = isDropTarget && currentDropZone == DropZone.BELOW,
-                    dropAsChild = isDropTarget && currentDropZone == DropZone.CHILD,
+                    dropAbove = isDropTarget && !isDropBlocked && currentDropZone == DropZone.ABOVE,
+                    dropBelow = isDropTarget && !isDropBlocked && currentDropZone == DropZone.BELOW,
+                    dropAsChild = isDropTarget && !isDropBlocked && currentDropZone == DropZone.CHILD,
                     onSelectionChange = if (onBlockSelectionChange != null) {
                         { range -> onBlockSelectionChange(block.uuid.value, range) }
                     } else null,
@@ -337,8 +435,11 @@ fun BlockList(
                     localPageNames = localPageNames,
                     onUnavailableLinkTap = onUnavailableLinkTap,
                     modifier = Modifier.onGloballyPositioned { coords ->
-                        val top = coords.positionInParent().y
-                        blockBounds = blockBounds + (block.uuid.value to Pair(top, top + coords.size.height))
+                        val parent = columnCoords
+                        if (parent != null) {
+                            val top = parent.localPositionOf(coords, androidx.compose.ui.geometry.Offset.Zero).y
+                            blockBounds = blockBounds + (block.uuid.value to Pair(top, top + coords.size.height))
+                        }
                     },
                 )
                 } // end Box (cut block alpha wrapper)
@@ -349,9 +450,9 @@ fun BlockList(
         // Ghost overlay shown during drag
         val currentDragState = dragState
         if (currentDragState != null && currentDragState.isDragging) {
-            val density = LocalDensity.current
             BlockDragGhost(
                 draggedCount = currentDragState.draggedUuids.size,
+                isBlocked = isDropBlocked,
                 modifier = Modifier
                     .offset(
                         x = 16.dp,

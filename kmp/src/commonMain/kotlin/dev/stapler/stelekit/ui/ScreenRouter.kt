@@ -31,6 +31,8 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import dev.stapler.stelekit.db.GraphWriterPort
 import dev.stapler.stelekit.domain.NoOpUrlFetcher
 import dev.stapler.stelekit.domain.UrlFetcher
@@ -38,7 +40,9 @@ import dev.stapler.stelekit.performance.NavigationTracingEffect
 import dev.stapler.stelekit.performance.PercentileSummary
 import dev.stapler.stelekit.performance.QueryStat
 import dev.stapler.stelekit.performance.SerializedSpan
+import dev.stapler.stelekit.platform.sensor.SensorModule
 import dev.stapler.stelekit.repository.RepositorySet
+import dev.stapler.stelekit.transfer.qrcode.QrImportService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -57,6 +61,8 @@ import dev.stapler.stelekit.ui.screens.LibraryStatsViewModel
 import dev.stapler.stelekit.ui.screens.PageView
 import dev.stapler.stelekit.ui.screens.SearchViewModel
 import dev.stapler.stelekit.tags.TagSuggestionViewModel
+import dev.stapler.stelekit.ui.transfer.QrDecodeScreen
+import dev.stapler.stelekit.ui.transfer.QrDecodeViewModel
 
 /**
  * Routes the current [Screen] to its composable. Owns screen transition animations.
@@ -87,6 +93,18 @@ internal fun ScreenRouter(
     perfHistograms: StateFlow<Map<String, PercentileSummary>> = MutableStateFlow(emptyMap()),
     perfQueryStats: StateFlow<List<QueryStat>> = MutableStateFlow(emptyList()),
     tagSuggestionViewModel: TagSuggestionViewModel? = null,
+    /**
+     * Story 4.1.1: threaded down to [PageView]'s "Send via QR" menu item (Story 3.1.4). Null hides
+     * the menu trigger entirely, mirroring [PageView]'s own null-hides-trigger contract.
+     */
+    qrTransferSettings: dev.stapler.stelekit.transfer.qrcode.QrTransferSettings? = null,
+    /**
+     * Story 3.2.4/S7 equivalent of the [qrTransferSettings] wiring above: threaded down to
+     * [dev.stapler.stelekit.ui.screens.ImportScreen]'s "Import via camera" menu item and used to
+     * build the [QrImportService] backing [QrDecodeViewModel]. Null disables the entry point
+     * entirely, same null-hides-trigger contract as the send side.
+     */
+    graphLoader: dev.stapler.stelekit.db.GraphLoader? = null,
 ) {
     if (appState.fatalError != null) {
         FatalErrorScreen(
@@ -151,6 +169,7 @@ internal fun ScreenRouter(
                 currentManifest = appState.currentManifest,
                 onSectionBadgeClick = { viewModel.showSectionPicker(currentScreen.page) },
                 hasDiskConflictPending = appState.diskConflict != null,
+                qrTransferSettings = qrTransferSettings,
             )
             is Screen.Journals -> JournalsView(
                 viewModel = journalsViewModel,
@@ -232,6 +251,10 @@ internal fun ScreenRouter(
                 DisposableEffect(importViewModel) {
                     onDispose { importViewModel.close() }
                 }
+                // Story 3.2.4/S7 — decode-side equivalent of the QrEncodeScreen wiring in
+                // PageView.kt: "Import via camera" opens QrDecodeScreen in an overlay Dialog.
+                var showQrDecodeScreen by remember { mutableStateOf(false) }
+                val writeActor = repos.writeActor
                 dev.stapler.stelekit.ui.screens.ImportScreen(
                     viewModel = importViewModel,
                     onDismiss = {
@@ -241,7 +264,44 @@ internal fun ScreenRouter(
                             viewModel.navigateToPageByName(savedName)
                         }
                     },
+                    qrTransferSettings = qrTransferSettings,
+                    onImportViaCamera = { showQrDecodeScreen = true },
                 )
+                // Split into two conditions (each under detekt's complexity threshold) rather than
+                // one 4-term && chain — local vals preserve Kotlin's smart-cast to non-null inside
+                // the inner block, which QrImportService/QrDecodeScreen below depend on.
+                if (showQrDecodeScreen) {
+                    val settings = qrTransferSettings
+                    val loader = graphLoader
+                    val actor = writeActor
+                    if (settings != null && loader != null && actor != null) {
+                        val qrDecodeViewModel = remember(graphPath) {
+                            QrDecodeViewModel(
+                                cameraFrameSource = SensorModule.cameraFrameSource,
+                                qrImportService = QrImportService(
+                                    graphLoader = loader,
+                                    pageRepository = repos.pageRepository,
+                                    writeActor = actor,
+                                ),
+                                settings = settings,
+                            )
+                        }
+                        DisposableEffect(qrDecodeViewModel) {
+                            onDispose { qrDecodeViewModel.close() }
+                        }
+                        Dialog(
+                            onDismissRequest = { showQrDecodeScreen = false },
+                            properties = DialogProperties(usePlatformDefaultWidth = false),
+                        ) {
+                            QrDecodeScreen(
+                                viewModel = qrDecodeViewModel,
+                                settings = settings,
+                                onDismiss = { showQrDecodeScreen = false },
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                    }
+                }
             }
             is Screen.VaultUnlock -> {
                 // Vault unlock is handled by the outer StelekitApp scaffold — no-op here

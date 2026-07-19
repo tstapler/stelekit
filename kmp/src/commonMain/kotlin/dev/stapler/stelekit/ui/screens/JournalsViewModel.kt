@@ -179,6 +179,8 @@ class JournalsViewModel(
     fun selectAll(pageUuid: PageUuid) = blockStateManager.selectAll(pageUuid)
     fun clearSelection() = blockStateManager.clearSelection()
     fun deleteSelectedBlocks(): Job = blockStateManager.deleteSelectedBlocks()
+    fun moveSelectedBlocks(newParentUuid: BlockUuid?, insertAfterUuid: BlockUuid?): Job =
+        blockStateManager.moveSelectedBlocks(newParentUuid, insertAfterUuid)
     fun insertLinkAtCursor(blockUuid: BlockUuid, pageName: String, overrideCursorIndex: Int? = null) =
         blockStateManager.insertLinkAtCursor(blockUuid, pageName, overrideCursorIndex)
 

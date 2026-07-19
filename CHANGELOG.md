@@ -1,5 +1,111 @@
 # Changelog
 
+## [0.71.2](https://github.com/tstapler/stelekit/compare/v0.71.1...v0.71.2) (2026-07-18)
+
+
+### Bug Fixes
+
+* **transfer:** assign collisionChannel before emitting CollisionDetected ([#248](https://github.com/tstapler/stelekit/issues/248)) ([1de0384](https://github.com/tstapler/stelekit/commit/1de03844a101373a98c905bdb17fd8869236d239))
+
+## [0.71.1](https://github.com/tstapler/stelekit/compare/v0.71.0...v0.71.1) (2026-07-18)
+
+
+### Bug Fixes
+
+* **test:** close QrTransferCoordinatorTest's real event-capture race with CoroutineStart.UNDISPATCHED ([#246](https://github.com/tstapler/stelekit/issues/246)) ([56a3d3d](https://github.com/tstapler/stelekit/commit/56a3d3d588c7e21ae489497b9c6f9686600c52a7))
+
+## [0.71.0](https://github.com/tstapler/stelekit/compare/v0.70.0...v0.71.0) (2026-07-18)
+
+
+### Features
+
+* **web:** local folder live sync (write-through, external-change detection, cross-tab locks) ([#245](https://github.com/tstapler/stelekit/issues/245)) ([da00bae](https://github.com/tstapler/stelekit/commit/da00bae141255e46044e5eedd4ac8756706e9516))
+
+
+### Bug Fixes
+
+* **ui:** resolve tap-vs-selection race by consolidating gesture recognizers per block row ([#240](https://github.com/tstapler/stelekit/issues/240)) ([dc94048](https://github.com/tstapler/stelekit/commit/dc94048f63ff051d5720d45855577df70144a8c3))
+
+## [0.70.0](https://github.com/tstapler/stelekit/compare/v0.69.1...v0.70.0) (2026-07-16)
+
+
+### Features
+
+* **drag-reorder:** implement UX punch list for block reordering ([#237](https://github.com/tstapler/stelekit/issues/237)) ([2d624d4](https://github.com/tstapler/stelekit/commit/2d624d4a87fb149b046065af6234371cd076b332))
+* **git:** implement WASM git write-back for web sync (closes BUG-005 Phase 2) ([#239](https://github.com/tstapler/stelekit/issues/239)) ([bb063ef](https://github.com/tstapler/stelekit/commit/bb063efedafc335a28b248597fe2943524132cc4))
+* **links:** index parenthetical content as a page-name alias too ([c2658b2](https://github.com/tstapler/stelekit/commit/c2658b21bb646ca5c1a8ef6cb4ec4ff91994f46c))
+* **web:** PWA install + offline durability for the browser app ([f8608b8](https://github.com/tstapler/stelekit/commit/f8608b82979c09578e13f37b17eb19711ad24de4))
+
+
+### Bug Fixes
+
+* **android:** drag-to-reorder blocks never actually moved (stelekit[#238](https://github.com/tstapler/stelekit/issues/238)) ([98b36a9](https://github.com/tstapler/stelekit/commit/98b36a9b8856cb52ec43d57e5ad35c9717d87452))
+* **ci:** satisfy detekt ComplexCondition in PageNameIndex alias registration ([6426ecb](https://github.com/tstapler/stelekit/commit/6426ecb03cab55be57a19a5c610233e5bd533cad))
+* **db:** remove O(pages×blocks) UPDATE from pages_backlink_count migration ([cdcff5e](https://github.com/tstapler/stelekit/commit/cdcff5ef02c2e52c757fc8d6e46b50686ec4405a))
+* **migration:** handle concurrent switchGraph races on migration_changelog ([d63b882](https://github.com/tstapler/stelekit/commit/d63b88289a474bc5a04e8a3137b9eaa7ada328cf))
+* **pages:** replace evictable cache fallback with artifact download for web demo ([7c704fc](https://github.com/tstapler/stelekit/commit/7c704fcddb32a29f9a89836dbee5c464790db8d4))
+* **parser:** fix exponential blowup in InlineParser on unmatched brackets ([11b9e62](https://github.com/tstapler/stelekit/commit/11b9e6270442ccd4dffe2d3c718d69fc60c612f7))
+* **test:** eliminate lost-event race in QrTransferCoordinatorTest ([eaaf0b3](https://github.com/tstapler/stelekit/commit/eaaf0b32be8e7171be6d5f127ee378d1d56cdef6))
+* **web:** prevent the coming-soon regression from recurring, protect existing clients from bad deploys ([47b97c1](https://github.com/tstapler/stelekit/commit/47b97c11821f1aa39ce252acc6fc9338442ce809))
+* wiki-link insertion ordering bugs ([#234](https://github.com/tstapler/stelekit/issues/234)) ([001942a](https://github.com/tstapler/stelekit/commit/001942a5222025c9e763bbcb3f68b371ef100479))
+
+
+### Performance Improvements
+
+* **ci:** enable persistent/multiplexed workers for Android dex/desugar ([9c24454](https://github.com/tstapler/stelekit/commit/9c244541ad74cb2549b3e8795eb2a0818e725502))
+
+
+### Reverts
+
+* **ci:** drop persistent_multiplex_android_tools, breaks Bazel Android build ([94f44db](https://github.com/tstapler/stelekit/commit/94f44db6ecaaf05842f39f669b24c34406b54f16))
+
+## [0.69.1](https://github.com/tstapler/stelekit/compare/v0.69.0...v0.69.1) (2026-07-14)
+
+
+### Bug Fixes
+
+* **detekt:** remember(context) for PreviewView constructor arg ([331b3ca](https://github.com/tstapler/stelekit/commit/331b3cab04856d48ad85e64180ea7d4eda4e8031))
+
+## [0.69.0](https://github.com/tstapler/stelekit/compare/v0.68.0...v0.69.0) (2026-07-13)
+
+
+### Features
+
+* **android:** AndroidCameraFrameSource via CameraX ImageAnalysis ([80a7c99](https://github.com/tstapler/stelekit/commit/80a7c996df750966625c3142d770b54911357e6f))
+* **android:** replace headless capture with CameraX viewfinder dialog ([0daeeae](https://github.com/tstapler/stelekit/commit/0daeeae0e199a484b06a4d52ceffa02353d569db))
+* **desktop:** wire Send via QR entry point + JVM round-trip coverage ([9b537e8](https://github.com/tstapler/stelekit/commit/9b537e8cdc244af1c33708917061ef98811afe48))
+* **ios:** CoreImage QrCodec encode actual + send entry point wiring ([c87ad73](https://github.com/tstapler/stelekit/commit/c87ad73b91f263d8d41ac51c2fa240ac5a88f007))
+* **qr-decode:** render a real CameraX preview behind the scan reticle ([375db50](https://github.com/tstapler/stelekit/commit/375db5011aa82dcf9f42f91577246837b96929a1))
+* **sensor:** CameraFrameSource interface and no-op default ([8c73967](https://github.com/tstapler/stelekit/commit/8c7396777f49bf250da691e599b3af9c55e347ac))
+* **transfer:** air-gapped QR page transfer between devices ([3899224](https://github.com/tstapler/stelekit/commit/389922467862b0e8008884a788e8a58d87cda263))
+* **transfer:** carry real page name through the QR wire payload, closing the synthesized-placeholder-name gap ([5e5ca25](https://github.com/tstapler/stelekit/commit/5e5ca258d77b02444b50d45e55771798dc8269da))
+* **transfer:** distinguish locked-on vs searching reticle state (validation.md criterion 14) ([130149c](https://github.com/tstapler/stelekit/commit/130149c19ac2d4b2c08654a0e1db75c088f76b06))
+* **transfer:** fountain codec and chunk buffer with proof-gated reassembly ([a4f53dc](https://github.com/tstapler/stelekit/commit/a4f53dc86a658d918d8ac9eed9c67c4a797e6c2d))
+* **transfer:** FrameTransport seam, QrCodec ZXing actuals, QrFrameTransport adapter ([498bf44](https://github.com/tstapler/stelekit/commit/498bf44613929abe810eb6fe05c8a8e805c566fb))
+* **transfer:** protocol core foundation — serializer, error types, newtypes, air-gap guard ([b13f27b](https://github.com/tstapler/stelekit/commit/b13f27b7e8336492e5d838c4f9b94ba37167276f))
+* **transfer:** QR decoder coordinator, ViewModel, screen, and import service ([4a01b82](https://github.com/tstapler/stelekit/commit/4a01b822884f0e7ed419d9b19fa1ed4a5d600580))
+* **transfer:** QR encoder ViewModel, screen, and send entry point ([7ab5030](https://github.com/tstapler/stelekit/commit/7ab5030a39bfeb742ef99200c2dd6c2d4ed75959))
+* **transfer:** round-trip fidelity gate, stall timer, structured logging, concurrent-sender handling ([464f748](https://github.com/tstapler/stelekit/commit/464f7485c345c547598d8643528f4b8d6c497262))
+
+
+### Bug Fixes
+
+* **build:** add kotlin-reflect to androidUnitTest dependencies ([e08475d](https://github.com/tstapler/stelekit/commit/e08475d48719d9272b372f32326cbc72df51e34d))
+* **build:** wire camera-view Bazel dep, add missing wasmJs QrCodec actual ([680f468](https://github.com/tstapler/stelekit/commit/680f468cea66012323f21dfd35c7ace425c3c124))
+* **qr-decode:** fix subscription race in shared camera-flow (CI flake root cause) ([3143f3e](https://github.com/tstapler/stelekit/commit/3143f3ea64e928f7546ea44e78d4fc514f853d2e))
+* **qr-decode:** reach PermissionDenied preflight and show distinct copy per reason ([754831e](https://github.com/tstapler/stelekit/commit/754831e6ea3ac157ee1c9f83243d7d02f4dbc109))
+* **qr-decode:** share one camera-flow subscription, bind additively, volatile coordinator fields ([e052539](https://github.com/tstapler/stelekit/commit/e0525391f6b9bbe22aca2aa1d3a0595a5db45284))
+* **qr-decode:** unique per-import pagePath and non-destructive overwrite rollback ([aa4a0dd](https://github.com/tstapler/stelekit/commit/aa4a0dd1eba4271818c4340b1c637d2ab7e4a7d5))
+* **qr-decode:** wire PayloadTooLarge decode-side, remove dead IncompleteTransfer/TransferCancelled ([92da8a4](https://github.com/tstapler/stelekit/commit/92da8a441940bc7919796ce439075d211671856d))
+* **qr-transfer:** reject oversized payloads before ZXing render in QrCodec.jvm ([f8c812d](https://github.com/tstapler/stelekit/commit/f8c812d2d8fa110db44b9f22414f8d6d83ea51e6))
+* **transfer:** address PR [#221](https://github.com/tstapler/stelekit/issues/221) Copilot review comments ([c8360e6](https://github.com/tstapler/stelekit/commit/c8360e62a68bcb84f9855fc57b1b4539ed40adbb))
+* **transfer:** bound fountain decoder work/memory against adversarial chunk sizes ([5fc5172](https://github.com/tstapler/stelekit/commit/5fc517289db2a811d60858c3661274a5d0c8f20e))
+* **transfer:** rate-limit reduce-motion tap-to-advance to WCAG 2.3.1 2fps ceiling ([c8f96ae](https://github.com/tstapler/stelekit/commit/c8f96ae474083c33fd8341213b74559bacb67507))
+* **transfer:** resolve detekt Compose-rules findings blocking CI ([cd43348](https://github.com/tstapler/stelekit/commit/cd43348d3c6eb79fe1c1c512076ade199e09ea9e))
+* **transfer:** volatile QrEncodeViewModel pacing state for cross-thread visibility ([c463261](https://github.com/tstapler/stelekit/commit/c46326117471f978e640e5b75599d6df09e2dc53))
+* **transfer:** widen ZXing try/catch, volatile TransferSession fields ([46f5e52](https://github.com/tstapler/stelekit/commit/46f5e52503034517d10c36d0aaa970d06860613f))
+* **transfer:** wire Import via camera entry point (decode-side equivalent of 9b537e8cdc) ([e90f253](https://github.com/tstapler/stelekit/commit/e90f253b4832f16164834ad72f3a99f61d771d12))
+
 ## [0.68.0](https://github.com/tstapler/stelekit/compare/v0.67.0...v0.68.0) (2026-07-11)
 
 

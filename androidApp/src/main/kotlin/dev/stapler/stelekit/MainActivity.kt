@@ -45,6 +45,7 @@ import dev.stapler.stelekit.voice.VoicePipelineConfig
 import dev.stapler.stelekit.voice.VoiceSettings
 import dev.stapler.stelekit.voice.buildVoicePipeline
 import dev.stapler.stelekit.platform.google.AndroidGoogleAuthManager
+import dev.stapler.stelekit.platform.sensor.AndroidCameraFrameSource
 import dev.stapler.stelekit.platform.sensor.AndroidCameraProvider
 import dev.stapler.stelekit.platform.sensor.SensorModule
 import kotlinx.coroutines.CompletableDeferred
@@ -182,6 +183,12 @@ class MainActivity : ComponentActivity() {
         // SteleKitApplication sets a no-callback provider at process start; the callback
         // requires a registered launcher which is only available after Activity.onCreate().
         SensorModule.cameraProvider = AndroidCameraProvider(
+            context = applicationContext,
+            requestPermission = ::requestCameraPermission,
+        )
+        // Same re-wire as cameraProvider above — SteleKitApplication sets a no-callback source
+        // at process start; the callback requires a registered launcher only available here.
+        SensorModule.cameraFrameSource = AndroidCameraFrameSource(
             context = applicationContext,
             requestPermission = ::requestCameraPermission,
         )

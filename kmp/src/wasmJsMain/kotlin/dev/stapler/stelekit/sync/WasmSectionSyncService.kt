@@ -1,6 +1,8 @@
 package dev.stapler.stelekit.sync
 
 import arrow.core.Either
+import dev.stapler.stelekit.git.GitHostAdapter
+import dev.stapler.stelekit.git.model.GitHostType
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
@@ -14,14 +16,11 @@ import kotlinx.coroutines.delay
 import kotlin.time.Clock
 
 // js() calls must be top-level functions in Kotlin/Wasm — not inside a class or companion object.
-private fun jsFetchWithToken(url: String, token: String): kotlin.js.Promise<JsAny> =
-    js("""fetch(url, { headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github+json' } })""")
+private fun jsFetchWithHeader(url: String, headerName: String, headerValue: String): kotlin.js.Promise<JsAny> =
+    js("""fetch(url, { headers: { [headerName]: headerValue, 'Accept': 'application/vnd.github+json' } })""")
 
 private fun jsFetchAnon(url: String): kotlin.js.Promise<JsAny> =
     js("""fetch(url, { headers: { 'Accept': 'application/vnd.github+json' } })""")
-
-private fun jsFetch(url: String, token: String?): kotlin.js.Promise<JsAny> =
-    if (token != null) jsFetchWithToken(url, token) else jsFetchAnon(url)
 
 private fun jsResponseStatus(response: JsAny): Int = js("response.status | 0")
 private fun jsResponseHeader(response: JsAny, name: String): String? =
@@ -46,7 +45,7 @@ class WasmSectionSyncService(private val pageRepository: PageRepository) {
         val branch = githubBranch
         val token = githubToken
 
-        val treeUrl = "https://api.github.com/repos/$owner/$repo/git/trees/$branch?recursive=1"
+        val treeUrl = "${GitHostAdapter.apiBase(GitHostType.GITHUB, owner, repo)}/git/trees/$branch?recursive=1"
         val treeJson = githubFetch(treeUrl, token) ?: run {
             logger.error("Failed to fetch tree for section ${section.id}")
             return
@@ -88,7 +87,13 @@ class WasmSectionSyncService(private val pageRepository: PageRepository) {
 
         suspend fun githubFetch(url: String, token: String?, retryCount: Int = 0): String? {
             return try {
-                val response = jsFetch(url, token).await<JsAny>()
+                val fetchPromise = if (token != null) {
+                    val (headerName, headerValue) = GitHostAdapter.authHeader(GitHostType.GITHUB, token)
+                    jsFetchWithHeader(url, headerName, headerValue)
+                } else {
+                    jsFetchAnon(url)
+                }
+                val response = fetchPromise.await<JsAny>()
                 val status = jsResponseStatus(response)
                 if (status == 429) {
                     val retryAfter = jsResponseHeader(response, "Retry-After")?.toIntOrNull()

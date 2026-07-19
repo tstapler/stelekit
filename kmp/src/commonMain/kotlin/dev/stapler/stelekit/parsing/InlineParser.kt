@@ -7,6 +7,7 @@ class InlineParser(private val source: CharSequence) {
     private val lexer = Lexer(source)
     private var currentToken = lexer.nextToken()
 
+<<<<<<< HEAD
     fun parse(): List<InlineNode> = parseWithSpans().map { it.first }
 
     /**
@@ -26,22 +27,52 @@ class InlineParser(private val source: CharSequence) {
             val startPos = currentToken.start
             val node = parseExpression(0)
             val endPos = currentToken.start
+=======
+    fun parse(): List<InlineNode> = parseSlots().map { it.node }
+
+    /**
+     * Same as [parse] but also returns each top-level node's source offset range in
+     * [source]. Only top-level (depth-0) nodes are tracked — nested children (inside
+     * Bold/Italic/etc.) don't need offsets since suggestion/link annotations are only
+     * ever applied to top-level plain text.
+     */
+    fun parseWithRanges(): List<Pair<InlineNode, IntRange>> =
+        parseSlots().map { it.node to (it.start until it.end) }
+
+    private data class Slot(val node: InlineNode, val start: Int, val end: Int)
+
+    private fun parseSlots(): List<Slot> {
+        val slots = mutableListOf<Slot>()
+        while (currentToken.type != TokenType.EOF) {
+            val start = currentToken.start
+            val node = parseExpression(0)
+            val end = currentToken.start
+>>>>>>> main
             // Hard line break: trailing two spaces + newline
             if (node is TextNode && node.content == "\n") {
-                val prev = nodes.lastOrNull()
+                val prev = slots.lastOrNull()?.node
                 if (prev is TextNode && prev.content.endsWith("  ")) {
                     // Single node with trailing two spaces
+<<<<<<< HEAD
                     nodes[nodes.lastIndex] = TextNode(prev.content.dropLast(2))
                     endsExclusive[endsExclusive.lastIndex] -= 2
                     nodes.add(HardBreakNode)
                     starts.add(startPos)
                     endsExclusive.add(endPos)
+=======
+                    val prevSlot = slots[slots.lastIndex]
+                    slots[slots.lastIndex] =
+                        prevSlot.copy(node = TextNode(prev.content.dropLast(2)), end = prevSlot.end - 2)
+                    slots.add(Slot(HardBreakNode, prevSlot.end - 2, end))
+>>>>>>> main
                     continue
-                } else if (nodes.size >= 2 && prev is TextNode && prev.content.isBlank()) {
+                } else if (slots.size >= 2 && prev is TextNode && prev.content.isBlank()) {
                     // Previous node is whitespace — check if second-to-last also has trailing space
-                    val secondPrev = nodes[nodes.size - 2]
+                    val secondPrevSlot = slots[slots.size - 2]
+                    val secondPrev = secondPrevSlot.node
                     if (secondPrev is TextNode && secondPrev.content.endsWith(" ")) {
                         // Remove trailing space from secondPrev and remove the space-only prev node
+<<<<<<< HEAD
                         nodes[nodes.size - 2] = TextNode(secondPrev.content.dropLast(1))
                         endsExclusive[endsExclusive.size - 2] -= 1
                         nodes.removeAt(nodes.lastIndex)
@@ -62,15 +93,33 @@ class InlineParser(private val source: CharSequence) {
                         nodes.add(HardBreakNode)
                         starts.add(startPos)
                         endsExclusive.add(endPos)
+=======
+                        slots[slots.size - 2] =
+                            secondPrevSlot.copy(node = TextNode(secondPrev.content.dropLast(1)), end = secondPrevSlot.end - 1)
+                        slots.removeAt(slots.lastIndex)
+                        slots.add(Slot(HardBreakNode, secondPrevSlot.end - 1, end))
+                        continue
+                    } else if (secondPrev is TextNode && secondPrev.content.isBlank()) {
+                        // Both prev nodes are blank spaces — that counts as trailing two spaces
+                        slots.removeAt(slots.lastIndex)
+                        val removedSecond = slots.removeAt(slots.lastIndex)
+                        slots.add(Slot(HardBreakNode, removedSecond.start, end))
+>>>>>>> main
                         continue
                     }
                 }
             }
+<<<<<<< HEAD
             nodes.add(node)
             starts.add(startPos)
             endsExclusive.add(endPos)
         }
         return nodes.indices.map { i -> nodes[i] to (starts[i] until endsExclusive[i]) }
+=======
+            slots.add(Slot(node, start, end))
+        }
+        return slots
+>>>>>>> main
     }
 
     private fun parseExpression(precedence: Int): InlineNode {
@@ -321,6 +370,14 @@ class InlineParser(private val source: CharSequence) {
         }
 
         // Plain [ — try to parse [label](url)
+        // Cheap non-recursive lookahead first: bail out before paying for a full recursive
+        // label parse when there's no `](...)` ahead at all. Without this guard, text with
+        // many unmatched `[` (e.g. typing "[[MOP (" mid-link) is exponential — every `[`
+        // encountered while scanning for the label's `]` triggers a fresh recursive
+        // parseLink call that itself rescans the remaining text.
+        if (!hasMatchingLabelClose()) {
+            return TextNode("[")
+        }
         val labelSaved = lexer.saveState()
         val labelToken = currentToken
         val labelSb = StringBuilder()
@@ -350,6 +407,35 @@ class InlineParser(private val source: CharSequence) {
         lexer.restoreState(labelSaved)
         currentToken = labelToken
         return TextNode("[")
+    }
+
+    /**
+     * Scans forward from [currentToken] for `] ( ... )`, using raw token-type checks only
+     * (no recursive parsing), then restores lexer/token state. Bounded O(remaining tokens)
+     * per call with no fan-out, unlike the real label parse it guards.
+     */
+    private fun hasMatchingLabelClose(): Boolean {
+        val saved = lexer.saveState()
+        val savedToken = currentToken
+
+        while (currentToken.type != TokenType.R_BRACKET && currentToken.type != TokenType.EOF && currentToken.type != TokenType.NEWLINE) {
+            advance()
+        }
+        var found = false
+        if (currentToken.type == TokenType.R_BRACKET) {
+            advance()
+            if (currentToken.type == TokenType.L_PAREN) {
+                advance()
+                while (currentToken.type != TokenType.R_PAREN && currentToken.type != TokenType.EOF && currentToken.type != TokenType.NEWLINE) {
+                    advance()
+                }
+                found = currentToken.type == TokenType.R_PAREN
+            }
+        }
+
+        lexer.restoreState(saved)
+        currentToken = savedToken
+        return found
     }
 
     private fun parseBlockRef(_token: Token): InlineNode {

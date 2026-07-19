@@ -57,6 +57,12 @@ import dev.stapler.stelekit.tags.JournalScanEntry
 import dev.stapler.stelekit.tags.TagSuggestionViewModel
 import dev.stapler.stelekit.tags.TagSuggestionState
 import dev.stapler.stelekit.tags.WikiLinkExtractor
+import dev.stapler.stelekit.transfer.qrcode.QrTransferSettings
+import dev.stapler.stelekit.ui.transfer.QrEncodeScreen
+import dev.stapler.stelekit.ui.transfer.QrEncodeViewModel
+import dev.stapler.stelekit.ui.transfer.SendViaQrMenuItem
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import kotlin.time.Clock
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.map
@@ -100,6 +106,12 @@ fun PageView(
      * automatically once the conflict resolves.
      */
     hasDiskConflictPending: Boolean = false,
+    /**
+     * Story 3.1.4 — QR transfer feature flag. Null hides the "Send via QR" menu trigger entirely
+     * (mirrors [tagSuggestionViewModel]'s optional-wiring pattern); when present and
+     * [QrTransferSettings.enabled], the menu item appears and opens [QrEncodeScreen].
+     */
+    qrTransferSettings: QrTransferSettings? = null,
 ) {
     NavigationTracingEffect("PageView/${page.name}")
     val focusManager = LocalFocusManager.current
@@ -146,6 +158,9 @@ fun PageView(
     // GAP-010 (Story D.3.1): true while BlockList has an active block drag — suspends this
     // LazyColumn's own scrolling so blockBounds can never desynchronize mid-drag.
     var isBlockDragging by remember { mutableStateOf(false) }
+
+    // Story 3.1.4 — QR transfer sender overlay.
+    var showQrEncodeScreen by remember { mutableStateOf(false) }
 
     val blocks = allBlocks[page.uuid.value] ?: emptyList()
     val cutBlockUuids = if (blockClipboard.isCut) blockClipboard.entries.map { it.block.uuid.value }.toSet() else emptySet()
@@ -391,6 +406,16 @@ fun PageView(
                                     }
                                 )
                             }
+                            if (qrTransferSettings != null) {
+                                HorizontalDivider()
+                                SendViaQrMenuItem(
+                                    settings = qrTransferSettings,
+                                    onClick = {
+                                        exportMenuExpanded = false
+                                        showQrEncodeScreen = true
+                                    },
+                                )
+                            }
                         }
                     }
                 }
@@ -478,6 +503,7 @@ fun PageView(
                         )
                     },
                     onAutoSelectForDrag = { uuid -> blockStateManager.enterSelectionMode(BlockUuid(uuid)) },
+                    onDragStateChange = { isDragging -> isBlockDragging = isDragging },
                     onBlockSelectionChange = { uuid, range ->
                         blockStateManager.updateEditingSelection(if (uuid == editingBlockUuid?.value) range else null)
                     },
@@ -579,4 +605,32 @@ fun PageView(
     }
 
     } // CompositionLocalProvider(LocalGraphRootPath)
+
+    // Story 3.1.4 — QR transfer sender overlay, opened from the "Send via QR" menu action above.
+    if (showQrEncodeScreen && qrTransferSettings != null) {
+        val qrEncodeViewModel = remember(page.uuid) {
+            QrEncodeViewModel(
+                pageRepository = pageRepository,
+                blockRepository = blockRepository,
+                settings = qrTransferSettings,
+            )
+        }
+        DisposableEffect(qrEncodeViewModel) {
+            onDispose { qrEncodeViewModel.close() }
+        }
+        Dialog(
+            onDismissRequest = { showQrEncodeScreen = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            QrEncodeScreen(
+                pageUuid = page.uuid,
+                pageName = page.name,
+                blockCount = blocks.size,
+                viewModel = qrEncodeViewModel,
+                settings = qrTransferSettings,
+                onDismiss = { showQrEncodeScreen = false },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+    }
 }

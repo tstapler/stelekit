@@ -155,20 +155,6 @@ class BlockStateManager(
         writeActor?.execute { blockRepository.moveBlockDown(uuid) }
             ?: blockRepository.moveBlockDown(uuid)
 
-    // ---- Per-block content mutation lock ----
-    //
-    // insertTextAtCursor/insertLinkAtCursor/replaceSelectionWithLink/updateBlockContent each
-    // read-compute-write a block's content on `scope` (Dispatchers.Default — a real thread
-    // pool), so two calls for the *same* block fired in quick succession (e.g. accepting two
-    // suggested links back to back) can both read the same pre-update content and race to
-    // write, silently dropping one insertion. A keyed Mutex, mirroring GraphLoader.getFileLock,
-    // serializes the read-compute-write sequence per block without blocking unrelated blocks.
-    private val blockMutexesGuard = Mutex()
-    private val blockMutexes = mutableMapOf<String, Mutex>()
-
-    private suspend fun getBlockMutex(blockUuid: BlockUuid): Mutex =
-        blockMutexesGuard.withLock { blockMutexes.getOrPut(blockUuid.value) { Mutex() } }
-
     // ---- Active page sessions ----
 
     private val _activePageUuids = MutableStateFlow<Set<String>>(emptySet())
@@ -810,6 +796,26 @@ class BlockStateManager(
         _blocks.value.values.flatten().find { it.uuid == blockUuid }
             ?: blockRepository.getBlockByUuid(blockUuid).first().getOrNull()
 
+    // Per-block mutex guarding the read-modify-write sequence in the text/link insertion
+    // helpers below. Without this, two calls for the same block fired in quick succession
+    // (e.g. accepting two suggested tags before the first one's _blocks update lands) both
+    // read the same pre-insertion content and race to overwrite _blocks — the second write
+    // wins and silently drops the first insertion. Mirrors GraphLoader.getFileLock's
+    // guard-mutex + plain-map keyed-lock pattern.
+    //
+    // KNOWN LIMITATION: this mutex only serializes insertTextAtCursor / appendToBlock /
+    // insertLinkAtCursor / replaceSelectionWithLink against each other. It does NOT serialize
+    // them against updateBlockContent's direct callers — notably the per-keystroke
+    // onContentChange path in PageView.kt / JournalsView.kt — so a user typing while one of
+    // these helpers is landing can still race with it. Closing that gap requires wrapping the
+    // keystroke path in the same mutex and has its own latency/UX tradeoffs; it is tracked as
+    // follow-up work, not addressed here.
+    private val contentMutationMutexGuard = Mutex()
+    private val contentMutationMutexes = mutableMapOf<String, Mutex>()
+
+    private suspend fun contentMutationMutex(blockUuid: BlockUuid): Mutex =
+        contentMutationMutexGuard.withLock { contentMutationMutexes.getOrPut(blockUuid.value) { Mutex() } }
+
     /**
      * Inserts [text] at the cursor position for the given block.
      * Used for image attachment markdown insertion (`![alt](path)`).
@@ -819,13 +825,21 @@ class BlockStateManager(
      */
     override fun insertTextAtCursor(blockUuid: BlockUuid, text: String, overrideCursorIndex: Int?) {
         scope.launch {
+<<<<<<< HEAD
             getBlockMutex(blockUuid).withLock {
+=======
+            contentMutationMutex(blockUuid).withLock {
+>>>>>>> main
                 val block = findBlockOrNull(blockUuid) ?: return@withLock
                 val cursor = overrideCursorIndex ?: _editingCursorIndex.value ?: block.content.length
                 val safePos = cursor.coerceIn(0, block.content.length)
                 val newContent = block.content.substring(0, safePos) + text + block.content.substring(safePos)
                 val newVersion = block.version + 1
+<<<<<<< HEAD
                 doUpdateBlockContent(blockUuid, newContent, newVersion)
+=======
+                applyBlockContentUpdate(blockUuid, newContent, newVersion)
+>>>>>>> main
                 requestEditBlock(blockUuid, safePos + text.length)
             }
         }
@@ -833,13 +847,21 @@ class BlockStateManager(
 
     /**
      * Append [text] to the end of the block's current content.
-     * Safe to call from a non-editing context (no active cursor required).
-     * Internally delegates to insertTextAtCursor with overrideCursorIndex = block.content.length.
+     * Safe to call from a non-editing context (no active cursor required), and safe to call
+     * repeatedly in quick succession for the same block — each append is serialized behind
+     * [contentMutationMutex] and always appends to the *current* end, not a snapshot taken
+     * before an earlier pending append landed.
      */
     fun appendToBlock(blockUuid: BlockUuid, text: String) {
         scope.launch {
-            val block = findBlockOrNull(blockUuid) ?: return@launch
-            insertTextAtCursor(blockUuid, text, overrideCursorIndex = block.content.length)
+            contentMutationMutex(blockUuid).withLock {
+                val block = findBlockOrNull(blockUuid) ?: return@withLock
+                val safePos = block.content.length
+                val newContent = block.content + text
+                val newVersion = block.version + 1
+                applyBlockContentUpdate(blockUuid, newContent, newVersion)
+                requestEditBlock(blockUuid, safePos + text.length)
+            }
         }
     }
 
@@ -852,14 +874,22 @@ class BlockStateManager(
      */
     override fun insertLinkAtCursor(blockUuid: BlockUuid, pageName: String, overrideCursorIndex: Int?) {
         scope.launch {
+<<<<<<< HEAD
             getBlockMutex(blockUuid).withLock {
+=======
+            contentMutationMutex(blockUuid).withLock {
+>>>>>>> main
                 val block = findBlockOrNull(blockUuid) ?: return@withLock
                 val cursor = overrideCursorIndex ?: _editingCursorIndex.value ?: block.content.length
                 val linkText = "[[$pageName]]"
                 val safePos = cursor.coerceIn(0, block.content.length)
                 val newContent = block.content.substring(0, safePos) + linkText + block.content.substring(safePos)
                 val newVersion = block.version + 1
+<<<<<<< HEAD
                 doUpdateBlockContent(blockUuid, newContent, newVersion)
+=======
+                applyBlockContentUpdate(blockUuid, newContent, newVersion)
+>>>>>>> main
                 requestEditBlock(blockUuid, safePos + linkText.length)
             }
         }
@@ -880,14 +910,22 @@ class BlockStateManager(
             return
         }
         scope.launch {
+<<<<<<< HEAD
             getBlockMutex(blockUuid).withLock {
+=======
+            contentMutationMutex(blockUuid).withLock {
+>>>>>>> main
                 val block = findBlockOrNull(blockUuid) ?: return@withLock
                 val safeStart = selectionStart.coerceIn(0, block.content.length)
                 val safeEnd = selectionEnd.coerceIn(safeStart, block.content.length)
                 val linkText = "[[$pageName]]"
                 val newContent = block.content.substring(0, safeStart) + linkText + block.content.substring(safeEnd)
                 val newVersion = block.version + 1
+<<<<<<< HEAD
                 doUpdateBlockContent(blockUuid, newContent, newVersion)
+=======
+                applyBlockContentUpdate(blockUuid, newContent, newVersion)
+>>>>>>> main
                 requestEditBlock(blockUuid, safeStart + linkText.length)
             }
         }
@@ -946,12 +984,31 @@ class BlockStateManager(
      * reentrant).
      */
     override fun updateBlockContent(blockUuid: BlockUuid, newContent: String, newVersion: Long): Job = scope.launch {
+<<<<<<< HEAD
         getBlockMutex(blockUuid).withLock {
             doUpdateBlockContent(blockUuid, newContent, newVersion)
         }
     }
 
     private suspend fun doUpdateBlockContent(blockUuid: BlockUuid, newContent: String, newVersion: Long) {
+=======
+        applyBlockContentUpdate(blockUuid, newContent, newVersion)
+    }
+
+    /**
+     * Core body of [updateBlockContent]: read-check-apply-record, extracted so the
+     * mutex-guarded insertion helpers ([insertTextAtCursor], [appendToBlock],
+     * [insertLinkAtCursor], [replaceSelectionWithLink]) can call it directly as a plain suspend
+     * function from inside their own `withLock` block, instead of launching a sibling [Job] via
+     * [updateBlockContent] and `.join()`-ing it. A sibling job runs outside the mutex-holding
+     * coroutine: cancellation of the outer coroutine while suspended in `.join()` releases the
+     * mutex via `withLock`'s finally but leaves the inner write running unguarded, and
+     * `Job.join()` (unlike `Deferred.await()`) never rethrows the child's failure. Calling this
+     * directly keeps the write in the same coroutine that holds the mutex, so cancellation and
+     * exceptions propagate normally.
+     */
+    private suspend fun applyBlockContentUpdate(blockUuid: BlockUuid, newContent: String, newVersion: Long) {
+>>>>>>> main
         val block = findBlockOrNull(blockUuid) ?: return
         val oldContent = block.content
         val oldVersion = block.version

@@ -27,6 +27,7 @@ import dev.stapler.stelekit.performance.DebugBuildConfig
 import dev.stapler.stelekit.performance.FrameMetric
 import dev.stapler.stelekit.performance.DebugMenuState
 import dev.stapler.stelekit.platform.FileSystem
+import dev.stapler.stelekit.platform.HostAccessState
 import dev.stapler.stelekit.platform.google.DriveUploader
 import dev.stapler.stelekit.platform.google.GoogleAuthManager
 import dev.stapler.stelekit.ui.screens.git.ConflictResolutionScreen
@@ -51,6 +52,7 @@ import dev.stapler.stelekit.tags.TagSettings
 import dev.stapler.stelekit.sections.SectionState
 import dev.stapler.stelekit.ui.components.SectionPickerDialog
 import dev.stapler.stelekit.ui.components.SectionQuickTogglePanel
+import dev.stapler.stelekit.ui.components.settings.ReconciliationUiState
 import dev.stapler.stelekit.ui.components.settings.SettingsCategory
 import dev.stapler.stelekit.ui.components.settings.SettingsDialog
 import dev.stapler.stelekit.ui.onboarding.DeviceSetupWizard
@@ -111,6 +113,12 @@ internal fun GraphDialogLayer(
     selectedBlockUuids: Set<String> = emptySet(),
     tagSettings: TagSettings? = null,
     hasLlmKey: Boolean = false,
+    // web-local-folder-livesync (Task 3.1.1c): threaded from GraphContent's already-collected
+    // hostAccessState (Task 2.3.1c precedent) and from browser/Main.kt's onConnectHostDirectory —
+    // null/NotApplicable/false on JVM/Android/iOS, which keeps SettingsDialog's FolderSyncSettings
+    // call site un-rendered there.
+    hostAccessState: HostAccessState = HostAccessState.NotApplicable,
+    onConnectHostDirectory: (suspend () -> ReconciliationUiState)? = null,
 ) {
     val scope = rememberCoroutineScope()
 
@@ -183,6 +191,9 @@ internal fun GraphDialogLayer(
         onRenameSection = { id, newName -> viewModel.renameSection(id, newName) },
         onDeleteSection = { id -> viewModel.deleteSection(id) },
         onToggleSectionState = { id, state -> viewModel.setSectionState(id, state) },
+        hostAccessState = hostAccessState,
+        supportsNativeDirectoryPicker = fileSystem.supportsNativeDirectoryPicker,
+        onConnectHostDirectory = onConnectHostDirectory,
     )
 
     // key(gitSetupVisible) resets composition — and the remember inside — each time the dialog

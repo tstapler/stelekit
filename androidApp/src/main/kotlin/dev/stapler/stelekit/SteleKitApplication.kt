@@ -14,6 +14,7 @@ import dev.stapler.stelekit.platform.measurement.MeasurementDeviceRegistry
 import dev.stapler.stelekit.platform.measurement.ble.KableBleScanner
 import dev.stapler.stelekit.platform.ml.OnnxMonocularDepthEstimator
 import dev.stapler.stelekit.platform.security.CredentialStore
+import dev.stapler.stelekit.platform.sensor.AndroidCameraFrameSource
 import dev.stapler.stelekit.platform.sensor.AndroidCameraProvider
 import dev.stapler.stelekit.platform.sensor.AndroidMotionSensorProvider
 import dev.stapler.stelekit.platform.sensor.ARCoreDepthProvider
@@ -63,6 +64,9 @@ class SteleKitApplication : Application() {
             DriverFactory.setContext(this)
             CredentialStore.init(this)
             SensorModule.cameraProvider = AndroidCameraProvider(applicationContext)
+            // Re-wired in MainActivity.onCreate() with the real runtime-permission launcher,
+            // same as cameraProvider above — no Activity launcher is available yet at this point.
+            SensorModule.cameraFrameSource = AndroidCameraFrameSource(applicationContext)
             SensorModule.depthSensorProvider = ARCoreDepthProvider(applicationContext)
             SensorModule.motionSensorProvider = AndroidMotionSensorProvider(applicationContext)
             SensorModule.monocularDepthEstimator = OnnxMonocularDepthEstimator(applicationContext)

@@ -13,6 +13,7 @@ import dev.stapler.stelekit.platform.security.AndroidCredentialStoreCommitTest
 import dev.stapler.stelekit.platform.security.AndroidCredentialStoreFailsLoudTest
 import dev.stapler.stelekit.platform.sensor.ExifOrientationFixerTest
 import dev.stapler.stelekit.ui.LoadingStateTest
+import dev.stapler.stelekit.ui.transfer.QrDecodeViewModelBackgroundingTest
 import dev.stapler.stelekit.voice.AndroidSpeechRecognizerPermissionTest
 import org.junit.runner.RunWith
 import org.junit.runners.Suite
@@ -33,5 +34,6 @@ import org.junit.runners.Suite
     ExifOrientationFixerTest::class,
     LoadingStateTest::class,
     AndroidSpeechRecognizerPermissionTest::class,
+    QrDecodeViewModelBackgroundingTest::class,
 )
 class AllAndroidUnitTests

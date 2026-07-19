@@ -109,7 +109,9 @@ class PageNameIndex(
      *
      * Three-pass build with "first writer wins" priority:
      * 1. Exact canonical entries — highest priority.
-     * 2. Parenthetical alias entries (base of "X (Y)" → page "X (Y)") — if pattern not yet seen.
+     * 2. Parenthetical alias entries — both the base and the parenthesized content of
+     *    "X (Y)" → page "X (Y)" (e.g. "Master Operating Procedure (MOP)" is reachable by
+     *    typing either "Master Operating Procedure" or "MOP") — if pattern not yet seen.
      * 3. Stem variant entries — only if pattern not yet seen.
      */
     private fun buildEntries(pages: List<Pair<String, Boolean>>): List<AhoCorasickMatcher.TrieEntry> {
@@ -133,12 +135,11 @@ class PageNameIndex(
             }
         }
 
-        // Pass 2 — parenthetical aliases: "X (Y)" → alias "x" → canonical "X (Y)"
+        // Pass 2 — parenthetical aliases: "X (Y)" → alias "x" → canonical "X (Y)",
+        // and "X (Y)" → alias "y" → canonical "X (Y)" (e.g. the acronym in parens)
         for ((lower, canonical) in eligiblePages) {
-            val baseAlias = extractParentheticalBase(lower) ?: continue
-            if (baseAlias.length >= minNameLength && baseAlias !in stopwords && seenPatterns.add(baseAlias)) {
-                result += AhoCorasickMatcher.TrieEntry(baseAlias, canonical)
-            }
+            addAliasIfEligible(extractParentheticalBase(lower), canonical, seenPatterns, result)
+            addAliasIfEligible(extractParentheticalContent(lower), canonical, seenPatterns, result)
         }
 
         // Pass 3 — stem variants: single-word pages only (multi-word names produce nonsensical
@@ -156,12 +157,25 @@ class PageNameIndex(
         return result
     }
 
+    /** Registers [alias] as a [TrieEntry] pointing to [canonical] if it passes eligibility checks. */
+    private fun addAliasIfEligible(
+        alias: String?,
+        canonical: String,
+        seenPatterns: MutableSet<String>,
+        result: MutableList<AhoCorasickMatcher.TrieEntry>,
+    ) {
+        if (alias == null) return
+        if (alias.length >= minNameLength && alias !in stopwords && seenPatterns.add(alias)) {
+            result += AhoCorasickMatcher.TrieEntry(alias, canonical)
+        }
+    }
+
     companion object {
         const val MIN_NAME_LENGTH = 3
         const val MIN_STEM_BASE_LENGTH = 3
         const val REBUILD_DEBOUNCE_MS = 500L
 
-        private val PARENTHETICAL_REGEX = Regex("""^(.+)\s+\([^)]+\)\s*$""")
+        private val PARENTHETICAL_REGEX = Regex("""^(.+)\s+\(([^)]+)\)\s*$""")
 
         val DEFAULT_STOPWORDS: Set<String> = setOf(
             "the", "and", "for", "are", "but", "not", "you", "all", "can", "her",
@@ -177,6 +191,14 @@ class PageNameIndex(
          */
         internal fun extractParentheticalBase(lowercaseName: String): String? =
             PARENTHETICAL_REGEX.find(lowercaseName)?.groupValues?.get(1)?.trim()
+
+        /**
+         * Extracts the parenthesized content from a parenthetical page title — often an
+         * acronym or disambiguator. "master operating procedure (mop)" → "mop",
+         * "sam (carlton)" → "carlton". Returns null if the name does not follow "X (Y)".
+         */
+        internal fun extractParentheticalContent(lowercaseName: String): String? =
+            PARENTHETICAL_REGEX.find(lowercaseName)?.groupValues?.get(2)?.trim()
 
         /**
          * Generates inflected surface forms for [base] (already lowercase) via [EnglishInflector].

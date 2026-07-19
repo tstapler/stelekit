@@ -27,6 +27,9 @@ import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.migration.registerAllMigrations
 import dev.stapler.stelekit.db.SidecarManager
 import dev.stapler.stelekit.platform.DemoFileSystem
+import dev.stapler.stelekit.platform.HostAccessState
+import dev.stapler.stelekit.service.markdownImageLink
+import dev.stapler.stelekit.service.toMarkdown
 import dev.stapler.stelekit.export.ExportService
 import dev.stapler.stelekit.export.HtmlExporter
 import dev.stapler.stelekit.export.JsonExporter
@@ -47,6 +50,7 @@ import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.repository.*
 import dev.stapler.stelekit.ui.components.*
 import dev.stapler.stelekit.ui.components.git.GitDetectionBanner
+import dev.stapler.stelekit.ui.components.settings.ReconciliationUiState
 import dev.stapler.stelekit.ui.i18n.I18n
 import dev.stapler.stelekit.ui.i18n.LocalI18n
 import dev.stapler.stelekit.ui.i18n.t
@@ -194,6 +198,49 @@ fun StelekitApp(
      */
     googleAuthManager: dev.stapler.stelekit.platform.google.GoogleAuthManager? = null,
     requestCameraPermission: (suspend () -> Boolean)? = null,
+    /**
+     * Count of locally-dirty files not yet synced to the remote (web only). When non-null,
+     * [StelekitViewModel.syncState] upgrades an otherwise-[dev.stapler.stelekit.git.model.SyncState.Idle]
+     * state to [dev.stapler.stelekit.git.model.SyncState.LocalChangesPending] while this count is
+     * nonzero. Pass [dev.stapler.stelekit.platform.PlatformFileSystem.dirtyFileCountFlow] on web.
+     * When null (default — JVM/Android), git sync state is unaffected.
+     */
+    localChangesCountFlow: kotlinx.coroutines.flow.StateFlow<Int>? = null,
+    /**
+     * Current [HostAccessState] for the active graph's `web-local-folder-livesync` host directory
+     * connection (web only). Pass `PlatformFileSystem.hostDirectorySync.hostAccessStateFlow` on
+     * web. When null (default — JVM/Android/iOS), `FolderSyncStatusBadge` renders nothing.
+     */
+    hostAccessStateFlow: kotlinx.coroutines.flow.StateFlow<HostAccessState>? = null,
+    /**
+     * Count of edits queued for push to the connected host directory (web only). Pass
+     * `PlatformFileSystem.hostDirectorySync.hostWritePendingCountFlow` on web. When null (default
+     * — JVM/Android/iOS), `FolderSyncStatusBadge` treats the pending count as zero.
+     */
+    hostWritePendingCountFlow: kotlinx.coroutines.flow.StateFlow<Int>? = null,
+    /**
+     * Epic 4.4 (Task 4.4.1c): `true` while a write-through flush is stuck (transient failure,
+     * permission nominally still `Granted`) — web only. Pass
+     * `PlatformFileSystem.hostDirectorySync.hostWriteStuckFlow` on web. When null (default —
+     * JVM/Android/iOS), `FolderSyncStatusBadge` never renders the `SyncDegraded` row.
+     */
+    hostWriteStuckFlow: kotlinx.coroutines.flow.StateFlow<Boolean>? = null,
+    /**
+     * Called when the user taps `FolderSyncStatusBadge`'s reconnect/grant-access affordance (web
+     * only) — should invoke `PlatformFileSystem.hostDirectorySync.requestHostDirectoryAccess`.
+     * When null (default — JVM/Android/iOS), the badge's click affordance is disabled (it never
+     * renders on these platforms anyway, since [hostAccessStateFlow] stays null).
+     */
+    onReconnectHostDirectory: (() -> Unit)? = null,
+    /**
+     * Task 3.1.1c: "Enable live folder sync" affordance for an already-populated graph — invoked
+     * from `SettingsDialog`'s `FolderSyncSettings` section (web only). Should perform the real
+     * `showDirectoryPicker → HostDirectorySync.connectHostDirectory → runHostReconciliation`
+     * sequence and resolve to the terminal [ReconciliationUiState]. Pass a lambda wrapping
+     * `PlatformFileSystem.hostDirectorySync.connectHostDirectory` on web. When null (default —
+     * JVM/Android/iOS), `FolderSyncSettings`'s call site in `SettingsDialog` renders nothing.
+     */
+    onConnectHostDirectory: (suspend () -> ReconciliationUiState)? = null,
 ) {
     val platformSettings = remember { PlatformSettings() }
     val scope = rememberCoroutineScope()
@@ -359,6 +406,12 @@ fun StelekitApp(
             attachmentService = attachmentService,
             googleAuthManager = googleAuthManager,
             requestCameraPermission = requestCameraPermission,
+            localChangesCountFlow = localChangesCountFlow,
+            hostAccessStateFlow = hostAccessStateFlow,
+            hostWritePendingCountFlow = hostWritePendingCountFlow,
+            hostWriteStuckFlow = hostWriteStuckFlow,
+            onReconnectHostDirectory = onReconnectHostDirectory,
+            onConnectHostDirectory = onConnectHostDirectory,
         )
     }
 }
@@ -393,7 +446,21 @@ private fun GraphContent(
     attachmentService: dev.stapler.stelekit.service.MediaAttachmentService? = null,
     googleAuthManager: dev.stapler.stelekit.platform.google.GoogleAuthManager? = null,
     requestCameraPermission: (suspend () -> Boolean)? = null,
+    localChangesCountFlow: kotlinx.coroutines.flow.StateFlow<Int>? = null,
+    hostAccessStateFlow: kotlinx.coroutines.flow.StateFlow<HostAccessState>? = null,
+    hostWritePendingCountFlow: kotlinx.coroutines.flow.StateFlow<Int>? = null,
+    hostWriteStuckFlow: kotlinx.coroutines.flow.StateFlow<Boolean>? = null,
+    onReconnectHostDirectory: (() -> Unit)? = null,
+    onConnectHostDirectory: (suspend () -> ReconciliationUiState)? = null,
 ) {
+    // Epic 2.3 (Task 2.3.1c): resolved here (not passed as raw StateFlow into StelekitViewModel,
+    // unlike localChangesCountFlow) — FolderSyncStatusBadge is a pure sidebar-header composable,
+    // not part of syncState, so collectAsState() directly feeds its call site below.
+    val hostAccessState = hostAccessStateFlow?.collectAsState()?.value ?: HostAccessState.NotApplicable
+    val hostWritePendingCount = hostWritePendingCountFlow?.collectAsState()?.value ?: 0
+    // Epic 4.4 (Task 4.4.1c): SyncDegraded signal — see FolderSyncStatusBadge's state table.
+    val hostWriteStuck = hostWriteStuckFlow?.collectAsState()?.value ?: false
+
     CompositionLocalProvider(
         LocalSpanRecorder provides spanRecorder,
         LocalFileSystem provides fileSystem,
@@ -530,6 +597,15 @@ private fun GraphContent(
         effectiveFileSystem.setOnFlushPreWrite(graphLoader::preMarkFileWrite)
         effectiveFileSystem.setOnFlushComplete(graphLoader::markFileWrittenByUs)
         effectiveFileSystem.setOnFlushFailed(graphLoader::clearFilePendingWrite)
+        // web-local-folder-livesync Epic 3.2 (Task 3.2.2d): wires HostDirectorySync's
+        // reconciliation-conflict callback the same way as the three flush callbacks above —
+        // GraphLoader only exists here (per-active-graph, inside this composition), never in
+        // wasmJsMain's Main.kt, so this is where the plan's "after GraphLoader exists, wire the
+        // callback" instruction actually applies. No-op on every platform but wasmJs.
+        effectiveFileSystem.setOnHostConflict(graphLoader::emitExternalFileChange)
+        // web-local-folder-livesync Epic 4.4 (Task 4.4.1b): same wiring pattern, one call later —
+        // forwards write-through failures onto GraphLoader's existing writeErrors channel.
+        effectiveFileSystem.setOnHostWriteFailed(graphLoader::reportHostWriteFailure)
     }
 
     val graphWriter = remember(effectiveFileSystem, repos, graphLoader, sidecarManager) {
@@ -638,6 +714,7 @@ private fun GraphContent(
                 histogramWriter = repos.histogramWriter,
                 ringBuffer = repos.ringBuffer,
                 activeGitSyncService = graphManager.activeGitSyncService,
+                localChangesCountFlow = localChangesCountFlow,
                 activeGraphIdProvider = { graphManager.getActiveGraphId()?.value },
                 onDismissGitDetection = { graphId -> graphManager.setGitDetectionDismissed(GraphId(graphId), true) },
                 onSectionsLoaded = onSectionsLoaded,
@@ -678,9 +755,8 @@ private fun GraphContent(
                             graphContentLogger.warn("Image attachment failed: $err")
                         },
                         ifRight = { attachment: dev.stapler.stelekit.service.AttachmentResult ->
-                            val markdown = "![${attachment.displayName}](${attachment.relativePath})"
                             if (editingBlockUuid != null) {
-                                blockStateManager.insertTextAtCursor(editingBlockUuid, markdown)
+                                blockStateManager.insertTextAtCursor(editingBlockUuid, attachment.toMarkdown())
                             }
                         }
                     )
@@ -997,6 +1073,12 @@ private fun GraphContent(
     }
 
     val tagSettings = remember(platformSettings) { TagSettings(platformSettings) }
+    // Story 4.1.1: threads a real QrTransferSettings instance down to PageView's "Send via QR"
+    // menu (Story 3.1.4) — without this, qrTransferSettings stays null at every call site and the
+    // menu item never renders on any platform regardless of the flag's stored value.
+    val qrTransferSettings = remember(platformSettings) {
+        dev.stapler.stelekit.transfer.qrcode.QrTransferSettings(platformSettings)
+    }
     // Epic 8 Story 8.2: resolved through the unified registry instead of the old
     // buildLlmFormatterForTags(voiceSettings) (Anthropic/OpenAI-key-only) helper — this is the
     // fix for the original complaint that Android tag suggestion couldn't use on-device
@@ -1297,6 +1379,10 @@ private fun GraphContent(
                                 isDemoActive = activeGraphInfo?.isDemo == true,
                                 demoBannerDismissed = demoBannerDismissed,
                                 onDismissDemoBanner = { demoBannerDismissed = true },
+                                hostAccessState = hostAccessState,
+                                hostPendingWriteCount = hostWritePendingCount,
+                                hostWriteStuck = hostWriteStuck,
+                                onReconnectHostDirectory = onReconnectHostDirectory ?: {},
                                 onPageClick = { page ->
                                     viewModel.navigateTo(Screen.PageView(page))
                                     closeSidebarIfMobile()
@@ -1366,6 +1452,8 @@ private fun GraphContent(
                             var pendingCapturePageUuid by remember { mutableStateOf<String?>(null) }
                             var pendingCaptureBlockUuid by remember { mutableStateOf<dev.stapler.stelekit.model.BlockUuid?>(null) }
                             var isCaptureImporting by remember { mutableStateOf(false) }
+                            var showCameraViewfinder by remember { mutableStateOf(false) }
+                            var pendingCaptureNavigateAfterImport by remember { mutableStateOf(false) }
                             val activeGraphInfo2 = graphRegistry.graphs.firstOrNull { it.id == activeGraphId }
                             val showGitBanner = activeGraphInfo2?.detectedRepoRoot != null &&
                                 appState.gitConfig == null &&
@@ -1395,6 +1483,8 @@ private fun GraphContent(
                                 appState = appState,
                                 graphWriter = graphWriter,
                                 urlFetcher = urlFetcher,
+                                qrTransferSettings = qrTransferSettings,
+                                graphLoader = graphLoader,
                                 capabilities = dev.stapler.stelekit.ui.components.EditorCapabilities(
                                     onAttachImage = if (attachmentService != null) {
                                         { editingBlockUuid ->
@@ -1409,10 +1499,7 @@ private fun GraphContent(
                                                         graphContentLogger.warn("Image attachment failed: $err")
                                                     },
                                                     ifRight = { attachment: dev.stapler.stelekit.service.AttachmentResult ->
-                                                        val safeAlt = attachment.displayName.replace("]", "\\]")
-                                                        val safePath = attachment.relativePath.replace(")", "\\)")
-                                                        val markdown = "![${safeAlt}](${safePath})"
-                                                        blockStateManager.insertTextAtCursor(editingBlockUuid, markdown)
+                                                        blockStateManager.insertTextAtCursor(editingBlockUuid, attachment.toMarkdown())
                                                     }
                                                 )
                                             }
@@ -1434,11 +1521,9 @@ private fun GraphContent(
                                                                 graphContentLogger.warn("Drag-and-drop attachment failed: $err")
                                                             },
                                                             ifRight = { attachment: dev.stapler.stelekit.service.AttachmentResult ->
-                                                                val safeAlt = attachment.displayName.replace("]", "\\]")
-                                                                val safePath = attachment.relativePath.replace(")", "\\)")
                                                                 blockStateManager.addBlockWithContent(
                                                                     pageUuid = pageUuid,
-                                                                    content = "![${safeAlt}](${safePath})"
+                                                                    content = attachment.toMarkdown()
                                                                 )
                                                             }
                                                         )
@@ -1459,11 +1544,8 @@ private fun GraphContent(
                                                             graphContentLogger.warn("Clipboard paste failed: $err")
                                                         },
                                                         ifRight = { attachment: dev.stapler.stelekit.service.AttachmentResult ->
-                                                            val safeAlt = attachment.displayName.replace("]", "\\]")
-                                                            val safePath = attachment.relativePath.replace(")", "\\)")
-                                                            val markdown = "![${safeAlt}](${safePath})"
                                                             if (editingBlockUuid != null) {
-                                                                blockStateManager.insertTextAtCursor(editingBlockUuid, markdown)
+                                                                blockStateManager.insertTextAtCursor(editingBlockUuid, attachment.toMarkdown())
                                                             }
                                                         }
                                                     )
@@ -1482,25 +1564,16 @@ private fun GraphContent(
                                                         return@launch
                                                     }
                                                 }
-                                                // Resolve page UUID and editing block UUID before capturing —
-                                                // camera suspends for seconds, so we snapshot state at button-tap time.
+                                                // Snapshot page/block context before entering viewfinder —
+                                                // user may be in the editor and these will be stale once the dialog opens.
                                                 val pageUuid: String? =
                                                     (appState.currentScreen as? Screen.PageView)?.page?.uuid?.value
                                                         ?: appState.currentPage?.uuid?.value
-                                                val resolvedPageUuid = pageUuid
+                                                pendingCapturePageUuid = pageUuid
                                                     ?: repos.journalService.ensureTodayJournal().uuid.value
-                                                val capturedBlockUuid = blockStateManager.editingBlockUuid.value
-                                                when (val captured = SensorModule.cameraProvider.capturePhoto()) {
-                                                    is Either.Left -> {
-                                                        graphContentLogger.warn("Camera capture failed: ${captured.value.message}")
-                                                        viewModel.sendSnackbar(captured.value.toUiMessage())
-                                                    }
-                                                    is Either.Right -> {
-                                                        pendingCapturePageUuid = resolvedPageUuid
-                                                        pendingCaptureBlockUuid = capturedBlockUuid
-                                                        pendingCaptureFile = captured.value
-                                                    }
-                                                }
+                                                pendingCaptureBlockUuid = blockStateManager.editingBlockUuid.value
+                                                pendingCaptureNavigateAfterImport = false
+                                                showCameraViewfinder = true
                                             }
                                         }
                                     } else null,
@@ -1516,15 +1589,10 @@ private fun GraphContent(
                                                 }
                                             }
                                             val page = repos.journalService.ensureTodayJournal()
-                                            executeCaptureAndImport(
-                                                imageImportService = imageImportService,
-                                                getActiveGraphPath = { graphManager.getActiveGraphInfo()?.path },
-                                                pageUuid = page.uuid.value,
-                                                navigateAfterImport = true,
-                                                onSnackbar = { viewModel.sendSnackbar(it) },
-                                                onNavigate = { annUuid, pgUuid -> viewModel.navigateToAnnotationEditor(annUuid, pgUuid) },
-                                                onWarn = { graphContentLogger.warn(it) },
-                                            )
+                                            pendingCapturePageUuid = page.uuid.value
+                                            pendingCaptureBlockUuid = null
+                                            pendingCaptureNavigateAfterImport = true
+                                            showCameraViewfinder = true
                                         }
                                         Unit
                                     }
@@ -1535,6 +1603,16 @@ private fun GraphContent(
                                 perfQueryStats = perfQueryStats,
                                 tagSuggestionViewModel = tagSuggestionViewModel,
                             )
+                            if (showCameraViewfinder) {
+                                CameraViewfinderDialog(
+                                    onCapture = { file ->
+                                        pendingCaptureFile = file
+                                        showCameraViewfinder = false
+                                    },
+                                    onDismiss = { showCameraViewfinder = false },
+                                    onError = { msg -> viewModel.sendSnackbar(msg) },
+                                )
+                            }
                             val captureFile = pendingCaptureFile
                             val capturePageUuid = pendingCapturePageUuid
                             if (captureFile != null && capturePageUuid != null) {
@@ -1545,6 +1623,7 @@ private fun GraphContent(
                                         val file = captureFile
                                         val pageUuid = capturePageUuid
                                         val captureBlockUuid = pendingCaptureBlockUuid
+                                        val navigateAfterImport = pendingCaptureNavigateAfterImport
                                         isCaptureImporting = true
                                         scope.launch {
                                             val graphPath = graphManager.getActiveGraphInfo()?.path
@@ -1567,11 +1646,16 @@ private fun GraphContent(
                                                 viewModel.sendSnackbar(err.toUiMessage())
                                             }
                                             result?.onRight { annotation ->
-                                                val filename = annotation.filePath.substringAfterLast("/")
-                                                val safePath = "../assets/images/$filename".replace(")", "\\)")
-                                                val markdown = "![]($safePath)"
-                                                if (captureBlockUuid != null) {
-                                                    blockStateManager.insertTextAtCursor(captureBlockUuid, markdown)
+                                                if (navigateAfterImport) {
+                                                    viewModel.navigateToAnnotationEditor(annotation.uuid, pageUuid)
+                                                } else {
+                                                    val relPath = annotation.filePath.removePrefix("$graphPath/")
+                                                    if (captureBlockUuid != null) {
+                                                        blockStateManager.insertTextAtCursor(
+                                                            captureBlockUuid,
+                                                            markdownImageLink("", "../$relPath"),
+                                                        )
+                                                    }
                                                 }
                                             }
                                             isCaptureImporting = false
@@ -1701,6 +1785,8 @@ private fun GraphContent(
                             blockStateManager.blocksForPage(it.uuid.value)
                         } ?: emptyList(),
                         selectedBlockUuids = blockStateManager.selectedBlockUuids.collectAsState().value,
+                        hostAccessState = hostAccessState,
+                        onConnectHostDirectory = onConnectHostDirectory,
                     )
 
                     if (showAddGraphDialog) {

@@ -1984,6 +1984,7 @@ class BlockStateManagerTest {
     }
 
     /**
+<<<<<<< HEAD
      * TC-N4e: two links accepted back-to-back on the same block must not race.
      *
      * insertLinkAtCursor read-compute-writes a block's content without awaiting the previous
@@ -1994,6 +1995,19 @@ class BlockStateManagerTest {
      */
     @Test
     fun insertLinkAtCursor_twice_in_quick_succession_does_not_drop_either_link() = runTest {
+=======
+     * TC-N4e: two insertLinkAtCursor calls fired back-to-back for the same block (e.g.
+     * accepting two suggested page links before the first one's write settles) must not
+     * lose either insertion.
+     *
+     * Without the fix, insertLinkAtCursor's read-modify-write is not serialized per block:
+     * the second call's findBlockOrNull reads the same pre-insertion content the first call
+     * read (its _blocks update hasn't landed yet, since it's behind the delayed content
+     * write), so its computed newContent silently overwrites the first link on save.
+     */
+    @Test
+    fun insertLinkAtCursor_backToBackCalls_bothLinksSurvive() = runTest {
+>>>>>>> main
         val innerRepo = InMemoryBlockRepository()
         val delayedRepo = DelayedContentBlockRepository(innerRepo, contentDelayMs = 500L)
         val pageRepo = InMemoryPageRepository()
@@ -2002,7 +2016,11 @@ class BlockStateManagerTest {
         val actor = DatabaseWriteActor(delayedRepo, pageRepo, scope = scope)
 
         pageRepo.savePage(createPage())
+<<<<<<< HEAD
         innerRepo.saveBlock(createBlock("b1", content = "See ", position = "a0"))
+=======
+        innerRepo.saveBlock(createBlock("b1", content = "", position = "a0"))
+>>>>>>> main
         val manager = BlockStateManager(
             blockRepository = delayedRepo,
             graphLoader = graphLoader,
@@ -2012,6 +2030,7 @@ class BlockStateManagerTest {
         manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
+<<<<<<< HEAD
         // Both calls target the end of the block (no explicit cursor override needed since
         // there's no active edit); fired before either write settles.
         manager.insertLinkAtCursor(BlockUuid("b1"), "PageA", overrideCursorIndex = null)
@@ -2023,11 +2042,20 @@ class BlockStateManagerTest {
         val content = blocks.find { it.uuid.value == "b1" }?.content
         assertEquals("See [[PageA]][[PageB]]", content,
             "Both links must be present in insertion order — neither write may clobber the other")
+=======
+        manager.insertLinkAtCursor(BlockUuid("b1"), "PageA", overrideCursorIndex = 0)
+        manager.insertLinkAtCursor(BlockUuid("b1"), "PageB", overrideCursorIndex = 0)
+        advanceUntilIdle()
+
+        val content = manager.blocks.value[pageUuid]?.find { it.uuid.value == "b1" }?.content
+        assertEquals("[[PageB]][[PageA]]", content, "Both links must land, each inserted at cursor 0 in call order")
+>>>>>>> main
 
         actor.close()
     }
 
     /**
+<<<<<<< HEAD
      * TC-N4f: pressing Enter immediately after inserting a link must not split the link into
      * its own block. addNewBlock/splitBlock now take the same per-block content-mutation lock
      * as insertLinkAtCursor, so the Enter keypress's cursor-length read waits for the pending
@@ -2036,6 +2064,14 @@ class BlockStateManagerTest {
      */
     @Test
     fun addNewBlock_immediately_after_insertLinkAtCursor_keeps_link_with_original_block() = runTest {
+=======
+     * Same race as above but via appendToBlock (the "accept suggested tag" path used by
+     * SuggestionBottomSheet in PageView/JournalsView) — each accepted tag must land, and
+     * each must append to the *current* end, not a stale end-of-content snapshot.
+     */
+    @Test
+    fun appendToBlock_backToBackCalls_bothAppendsSurviveInOrder() = runTest {
+>>>>>>> main
         val innerRepo = InMemoryBlockRepository()
         val delayedRepo = DelayedContentBlockRepository(innerRepo, contentDelayMs = 500L)
         val pageRepo = InMemoryPageRepository()
@@ -2044,7 +2080,11 @@ class BlockStateManagerTest {
         val actor = DatabaseWriteActor(delayedRepo, pageRepo, scope = scope)
 
         pageRepo.savePage(createPage())
+<<<<<<< HEAD
         innerRepo.saveBlock(createBlock("b1", content = "See ", position = "a0"))
+=======
+        innerRepo.saveBlock(createBlock("b1", content = "notes", position = "a0"))
+>>>>>>> main
         val manager = BlockStateManager(
             blockRepository = delayedRepo,
             graphLoader = graphLoader,
@@ -2054,6 +2094,7 @@ class BlockStateManagerTest {
         manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
+<<<<<<< HEAD
         // Autocomplete inserts the link, then the user immediately hits Enter — addNewBlock
         // fires before the link's content write has settled into _blocks.
         manager.insertLinkAtCursor(BlockUuid("b1"), "PageA", overrideCursorIndex = null)
@@ -2067,6 +2108,14 @@ class BlockStateManagerTest {
         val newBlock = blocks.find { it.uuid.value != "b1" }
         assertEquals("", newBlock?.content,
             "The new block from Enter must be empty, not contain part of the link")
+=======
+        manager.appendToBlock(BlockUuid("b1"), " [[TagA]]")
+        manager.appendToBlock(BlockUuid("b1"), " [[TagB]]")
+        advanceUntilIdle()
+
+        val content = manager.blocks.value[pageUuid]?.find { it.uuid.value == "b1" }?.content
+        assertEquals("notes [[TagA]] [[TagB]]", content, "Both appends must land, in call order")
+>>>>>>> main
 
         actor.close()
     }
