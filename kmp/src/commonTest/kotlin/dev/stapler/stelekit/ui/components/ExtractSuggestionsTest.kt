@@ -203,7 +203,6 @@ class ExtractSuggestionsTest {
         assertEquals("Python", result[0].canonicalName)
     }
 
-<<<<<<< HEAD
     // ── Regression: link target text duplicated immediately outside its own brackets ──
     // A naive `indexOf(node.content, searchFrom)` fallback finds the copy of "abc" that
     // sits *inside* "[[abc]]" (since searchFrom never advanced past the link's raw markup),
@@ -230,19 +229,5 @@ class ExtractSuggestionsTest {
         assertEquals(7, result[0].start)
         assertEquals("abc", content.substring(result[1].start, result[1].end))
         assertEquals(18, result[1].start)
-=======
-    @Test
-    fun plainTextImmediatelyAfterWikiLink_repeatingLinkedText_notMisLocated() {
-        // Regression: indexOf(searchFrom) used to find "abc" *inside* the "[[abc]]"
-        // span (already consumed by the wiki link) instead of the real trailing "abc",
-        // because the wiki-link node never advanced the search cursor.
-        val content = "[[abc]]abc"
-        val result = extractSuggestions(content, matcher("abc"))
-        assertEquals(1, result.size)
-        val span = result[0]
-        assertEquals(7, span.start)
-        assertEquals(10, span.end)
-        assertEquals("abc", content.substring(span.start, span.end))
->>>>>>> main
     }
 }
