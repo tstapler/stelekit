@@ -804,12 +804,12 @@ class BlockStateManager(
     // guard-mutex + plain-map keyed-lock pattern.
     //
     // KNOWN LIMITATION: this mutex only serializes insertTextAtCursor / appendToBlock /
-    // insertLinkAtCursor / replaceSelectionWithLink against each other. It does NOT serialize
-    // them against updateBlockContent's direct callers — notably the per-keystroke
-    // onContentChange path in PageView.kt / JournalsView.kt — so a user typing while one of
-    // these helpers is landing can still race with it. Closing that gap requires wrapping the
-    // keystroke path in the same mutex and has its own latency/UX tradeoffs; it is tracked as
-    // follow-up work, not addressed here.
+    // insertLinkAtCursor / replaceSelectionWithLink / addNewBlock / splitBlock against each
+    // other. It does NOT serialize them against updateBlockContent's direct callers — notably
+    // the per-keystroke onContentChange path in PageView.kt / JournalsView.kt — so a user typing
+    // while one of these helpers is landing can still race with it. Closing that gap requires
+    // wrapping the keystroke path in the same mutex and has its own latency/UX tradeoffs; it is
+    // tracked as follow-up work, not addressed here.
     private val contentMutationMutexGuard = Mutex()
     private val contentMutationMutexes = mutableMapOf<String, Mutex>()
 

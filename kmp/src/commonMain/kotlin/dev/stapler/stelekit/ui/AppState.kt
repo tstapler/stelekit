@@ -39,7 +39,7 @@ sealed class Screen {
     data object Flashcards : Screen()
 
     @HelpPage(docs = AllPagesDocs::class)
-    data object AllPages : Screen()
+    data class AllPages(val conflictsOnly: Boolean = false) : Screen()
 
     @HelpExempt(reason = "Internal diagnostics screen; developer tooling only, not reachable from user nav")
     data object LibraryStats : Screen()

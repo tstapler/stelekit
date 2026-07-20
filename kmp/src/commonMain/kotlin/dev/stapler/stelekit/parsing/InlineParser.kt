@@ -18,9 +18,6 @@ class InlineParser(private val source: CharSequence) {
     fun parseWithRanges(): List<Pair<InlineNode, IntRange>> =
         parseSlots().map { it.node to (it.start until it.end) }
 
-    /** Alias for [parseWithRanges] — same top-level `[start, end)` span data. */
-    fun parseWithSpans(): List<Pair<InlineNode, IntRange>> = parseWithRanges()
-
     private data class Slot(val node: InlineNode, val start: Int, val end: Int)
 
     private fun parseSlots(): List<Slot> {
