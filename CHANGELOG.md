@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.71.3](https://github.com/tstapler/stelekit/compare/v0.71.2...v0.71.3) (2026-07-20)
+
+
+### Bug Fixes
+
+* **kmp:** resolve unmerged conflict markers committed to main in [#250](https://github.com/tstapler/stelekit/issues/250) ([693c5c4](https://github.com/tstapler/stelekit/commit/693c5c4e00ceb5bbb3589a25a6b5de00a1c22d45))
+* **kmp:** serialize block splits against concurrent content mutations ([a6a651f](https://github.com/tstapler/stelekit/commit/a6a651ff23670bc91812606e111d6c8d9175ff36))
+* **ui:** make unresolved-conflicts banner actually surface conflicted pages ([8b1a81f](https://github.com/tstapler/stelekit/commit/8b1a81f7e824f659e2d46b3fe6d90ea0fe153c8c))
+
 ## [0.71.2](https://github.com/tstapler/stelekit/compare/v0.71.1...v0.71.2) (2026-07-18)
 
 
