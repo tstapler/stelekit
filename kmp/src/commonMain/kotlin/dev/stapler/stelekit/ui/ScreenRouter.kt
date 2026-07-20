@@ -205,6 +205,7 @@ internal fun ScreenRouter(
                 onPageClick = { page -> viewModel.navigateTo(Screen.PageView(page)) },
                 onBulkDelete = { uuids -> viewModel.bulkDeletePages(uuids) },
                 conflictFilePaths = appState.pendingConflictFilePaths,
+                conflictsOnly = currentScreen.conflictsOnly,
             )
             is Screen.LibraryStats -> LibraryStatsScreen(viewModel = libraryStatsViewModel)
             is Screen.Notifications -> {

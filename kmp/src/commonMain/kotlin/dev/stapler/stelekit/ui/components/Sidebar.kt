@@ -198,7 +198,7 @@ fun LeftSidebar(
             if (pendingConflictFilePaths.isNotEmpty()) {
                 PendingConflictsBanner(
                     count = pendingConflictFilePaths.size,
-                    onClick = { onNavigate(Screen.AllPages) },
+                    onClick = { onNavigate(Screen.AllPages(conflictsOnly = true)) },
                     modifier = Modifier.padding(vertical = 4.dp),
                 )
             }
@@ -216,7 +216,7 @@ fun LeftSidebar(
                 val sectionLabel = sectionManifest?.sections?.find { it.id == defaultSection }?.displayName ?: "Work"
                 NavigationItem("New $sectionLabel Journal", Icons.Default.DateRange, false) { onNewSectionJournalEntry() }
             }
-            NavigationItem("All Pages", Icons.AutoMirrored.Filled.List, currentScreen is Screen.AllPages) { onNavigate(Screen.AllPages) }
+            NavigationItem("All Pages", Icons.AutoMirrored.Filled.List, currentScreen is Screen.AllPages) { onNavigate(Screen.AllPages()) }
             NavigationItem("Flashcards", Icons.Default.Style, currentScreen is Screen.Flashcards) { onNavigate(Screen.Flashcards) }
 
             Spacer(Modifier.height(4.dp))

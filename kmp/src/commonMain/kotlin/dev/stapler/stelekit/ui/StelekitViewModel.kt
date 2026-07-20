@@ -1226,7 +1226,7 @@ class StelekitViewModel(
         val newScreen = when (destination) {
             "journals" -> Screen.Journals
             "flashcards" -> Screen.Flashcards
-            "all-pages" -> Screen.AllPages
+            "all-pages" -> Screen.AllPages()
             "notifications" -> Screen.Notifications
             "logs" -> Screen.Logs
             else -> Screen.Journals

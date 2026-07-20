@@ -39,8 +39,10 @@ fun AllPagesScreen(
     onBulkDelete: (List<String>) -> Unit,
     modifier: Modifier = Modifier,
     conflictFilePaths: Set<String> = emptySet(),
+    conflictsOnly: Boolean = false,
 ) {
     NavigationTracingEffect("AllPages")
+    var showConflictsOnly by remember(conflictsOnly) { mutableStateOf(conflictsOnly) }
     val pages by viewModel.pages.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val selectedUuids by viewModel.selectedUuids.collectAsState()
@@ -49,6 +51,11 @@ fun AllPagesScreen(
     val sortAscending by viewModel.sortAscending.collectAsState()
     val filterQuery by viewModel.filterQuery.collectAsState()
     val pageTypeFilter by viewModel.pageTypeFilter.collectAsState()
+    val displayedPages = if (showConflictsOnly) {
+        pages.filter { it.page.filePath in conflictFilePaths }
+    } else {
+        pages
+    }
 
     var showDeleteDialog by remember { mutableStateOf(false) }
 
@@ -113,6 +120,13 @@ fun AllPagesScreen(
                     }
                 )
             }
+            if (conflictFilePaths.isNotEmpty()) {
+                FilterChip(
+                    selected = showConflictsOnly,
+                    onClick = { showConflictsOnly = !showConflictsOnly },
+                    label = { Text("⚠ ${conflictFilePaths.size} conflicts") }
+                )
+            }
         }
 
         // Column header row
@@ -124,7 +138,7 @@ fun AllPagesScreen(
         ) {
             if (isInSelectionMode) {
                 Checkbox(
-                    checked = selectedUuids.size == pages.size && pages.isNotEmpty(),
+                    checked = selectedUuids.size == displayedPages.size && displayedPages.isNotEmpty(),
                     onCheckedChange = { checked ->
                         if (checked) viewModel.selectAll() else viewModel.clearSelection()
                     },
@@ -178,13 +192,13 @@ fun AllPagesScreen(
                     CircularProgressIndicator()
                 }
             }
-            pages.isEmpty() -> {
+            displayedPages.isEmpty() -> {
                 Box(
                     modifier = Modifier.fillMaxWidth().weight(1f),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "No pages found.",
+                        text = if (showConflictsOnly) "No conflicted pages found." else "No pages found.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -192,7 +206,7 @@ fun AllPagesScreen(
             }
             else -> {
                 LazyColumn(modifier = Modifier.weight(1f)) {
-                    typedItems(items = pages, key = { it.page.uuid.asLazyKey() }) { row ->
+                    typedItems(items = displayedPages, key = { it.page.uuid.asLazyKey() }) { row ->
                         PageRowItem(
                             row = row,
                             isSelected = row.page.uuid.value in selectedUuids,
