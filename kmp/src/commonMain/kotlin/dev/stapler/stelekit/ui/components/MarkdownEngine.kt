@@ -67,20 +67,6 @@ private class RenderContext(
 // ── AST → AnnotatedString ──────────────────────────────────────────────────────
 
 /**
-<<<<<<< HEAD
- * Top-level (depth 0) render entry point. [nodesWithSpans] carries each node's exact
- * source span from [dev.stapler.stelekit.parsing.InlineParser.parseWithSpans] — using
- * the real span instead of re-deriving it via `indexOf` avoids mislocating a TextNode
- * whenever its content is duplicated inside a preceding node's raw markup
- * (e.g. `[[abc]]abc`, where a naive `indexOf("abc")` finds the copy inside the brackets).
- */
-private fun AnnotatedString.Builder.renderTopLevel(
-    nodesWithSpans: List<Pair<InlineNode, IntRange>>,
-    ctx: RenderContext,
-) {
-    // Merge consecutive adjacent TextNodes into runs so that multi-word
-    // page names (e.g. "Meeting Notes") are found across word/space token boundaries.
-=======
  * Renders the top-level (depth-0) node list using each node's exact source [IntRange]
  * (from [dev.stapler.stelekit.parsing.InlineParser.parseWithRanges]) rather than
  * re-deriving offsets via `indexOf`. Using exact ranges avoids mis-locating a TextNode
@@ -95,7 +81,6 @@ private fun AnnotatedString.Builder.renderTopLevel(
     slots: List<Pair<InlineNode, IntRange>>,
     ctx: RenderContext,
 ) {
->>>>>>> main
     var runOrigStart = -1
     val runContent = StringBuilder()
 
@@ -106,15 +91,9 @@ private fun AnnotatedString.Builder.renderTopLevel(
         runContent.clear()
     }
 
-<<<<<<< HEAD
-    for ((node, span) in nodesWithSpans) {
-        if (node is TextNode && node.content.isNotEmpty()) {
-            val origStart = span.first
-=======
     for ((node, range) in slots) {
         if (node is TextNode && node.content.isNotEmpty()) {
             val origStart = range.first
->>>>>>> main
             if (runOrigStart >= 0 && runOrigStart + runContent.length == origStart) {
                 runContent.append(node.content)
             } else {
@@ -124,11 +103,7 @@ private fun AnnotatedString.Builder.renderTopLevel(
             }
         } else {
             flushRun()
-<<<<<<< HEAD
-            renderNode(node, ctx)
-=======
             renderNode(node, ctx, depth = 0)
->>>>>>> main
         }
     }
     flushRun()
@@ -137,51 +112,42 @@ private fun AnnotatedString.Builder.renderTopLevel(
 private fun AnnotatedString.Builder.renderNodes(
     nodes: List<InlineNode>,
     ctx: RenderContext,
-<<<<<<< HEAD
-) {
-    for (node in nodes) renderNode(node, ctx)
-=======
     depth: Int,
 ) {
     for (node in nodes) renderNode(node, ctx, depth)
->>>>>>> main
 }
 
 private fun AnnotatedString.Builder.renderNode(
     node: InlineNode,
     ctx: RenderContext,
+    depth: Int,
 ) {
     when (node) {
         is TextNode -> {
-<<<<<<< HEAD
-            // Depth-0 TextNodes never reach here — renderTopLevel intercepts them to
-            // merge runs and resolve suggestion offsets via the real parse span.
-=======
             // Top-level (depth 0) TextNodes are rendered by renderTopLevel via
             // renderPlainText, using exact source ranges; this branch only sees
             // nested TextNode children (depth > 0), which render as plain appended text.
->>>>>>> main
             if (node.content.isNotEmpty()) append(node.content)
         }
 
         is BoldNode ->
             withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
-                renderNodes(node.children, ctx)
+                renderNodes(node.children, ctx, depth + 1)
             }
 
         is ItalicNode ->
             withStyle(SpanStyle(fontStyle = FontStyle.Italic)) {
-                renderNodes(node.children, ctx)
+                renderNodes(node.children, ctx, depth + 1)
             }
 
         is StrikeNode ->
             withStyle(SpanStyle(textDecoration = TextDecoration.LineThrough)) {
-                renderNodes(node.children, ctx)
+                renderNodes(node.children, ctx, depth + 1)
             }
 
         is HighlightNode ->
             withStyle(SpanStyle(background = Color(0xFFFFFF00).copy(alpha = 0.35f))) {
-                renderNodes(node.children, ctx)
+                renderNodes(node.children, ctx, depth + 1)
             }
 
         is CodeNode ->
@@ -252,7 +218,7 @@ private fun AnnotatedString.Builder.renderNode(
         is UrlLinkNode -> {
             val start = length
             withStyle(SpanStyle(color = ctx.linkColor, textDecoration = TextDecoration.Underline)) {
-                renderNodes(node.text, ctx)
+                renderNodes(node.text, ctx, depth + 1)
             }
             addStringAnnotation("link", node.url, start, length)
         }
@@ -318,7 +284,7 @@ private fun AnnotatedString.Builder.renderNode(
                 baselineShift = BaselineShift(-0.3f),
                 fontSize = 0.75.em
             )) {
-                renderNodes(node.children, ctx)
+                renderNodes(node.children, ctx, depth + 1)
             }
 
         is SuperscriptNode ->
@@ -326,7 +292,7 @@ private fun AnnotatedString.Builder.renderNode(
                 baselineShift = BaselineShift.Superscript,
                 fontSize = 0.75.em
             )) {
-                renderNodes(node.children, ctx)
+                renderNodes(node.children, ctx, depth + 1)
             }
 
         HardBreakNode -> append("\n")
@@ -447,11 +413,7 @@ fun parseMarkdownWithStyling(
     /** When true, wikilinks absent from [localPageNames] render as unavailable badges. */
     hasSectionFilter: Boolean = false,
 ): AnnotatedString {
-<<<<<<< HEAD
-    val nodesWithSpans = InlineParser(text).parseWithSpans()
-=======
     val slots = InlineParser(text).parseWithRanges()
->>>>>>> main
     val ctx = RenderContext(
         resolvedRefs = resolvedRefs,
         linkColor = linkColor,
@@ -464,11 +426,7 @@ fun parseMarkdownWithStyling(
     )
     return buildAnnotatedString {
         if (textColor != Color.Unspecified) pushStyle(SpanStyle(color = textColor))
-<<<<<<< HEAD
-        renderTopLevel(nodesWithSpans, ctx)
-=======
         renderTopLevel(slots, ctx)
->>>>>>> main
         if (textColor != Color.Unspecified) pop()
     }
 }
@@ -484,11 +442,7 @@ fun extractSuggestions(
     matcher: AhoCorasickMatcher?,
 ): List<AhoCorasickMatcher.MatchSpan> {
     if (matcher == null) return emptyList()
-<<<<<<< HEAD
-    val nodesWithSpans = InlineParser(content).parseWithSpans()
-=======
     val slots = InlineParser(content).parseWithRanges()
->>>>>>> main
     val result = mutableListOf<AhoCorasickMatcher.MatchSpan>()
 
     // Merge consecutive TextNodes (including spaces) into runs before searching,
@@ -529,15 +483,9 @@ fun extractSuggestions(
         runContent.clear()
     }
 
-<<<<<<< HEAD
-    for ((node, span) in nodesWithSpans) {
-        if (node is TextNode && node.content.isNotEmpty()) {
-            val nodeOrigStart = span.first
-=======
     for ((node, range) in slots) {
         if (node is TextNode && node.content.isNotEmpty()) {
             val nodeOrigStart = range.first
->>>>>>> main
             // Extend current run if adjacent, otherwise flush and start a new one
             if (runOrigStart >= 0 && runOrigStart + runContent.length == nodeOrigStart) {
                 runContent.append(node.content)
