@@ -238,4 +238,92 @@ class BlockItemGestureTest {
 
         assertEquals(1, startEditingCalls)
     }
+
+    /**
+     * Regression test for the same gesture-swallowing bug as
+     * [headingLongPress_withNullOnLongPressSelect_fallsBackToEditMode], but pinning
+     * [WikiLinkText]'s own copy of the fallback -- [BlockViewer] delegates its rendering to
+     * [WikiLinkText], which has an identical `onLongPressSelect?.invoke() ?: dispatchTap(tapOffset)`
+     * fallback that, prior to this test, had no direct coverage (only [HeadingBlock]'s copy
+     * did). This composes [WikiLinkText] directly for the same reason the heading test
+     * bypasses [BlockItem]: `onLongPressSelect = null` can't be expressed through [BlockItem]
+     * from jvmTest since `useLongPressForDrag()` is `false` on the JVM target.
+     */
+    @Test
+    fun wikiLinkTextLongPress_withNullOnLongPressSelect_fallsBackToEditMode() {
+        var startEditingCalls = 0
+        composeTestRule.setContent {
+            WikiLinkText(
+                text = "Plain block text",
+                textColor = Color.Black,
+                linkColor = Color.Blue,
+                onClick = { startEditingCalls++ },
+                onLongPressSelect = null,
+            )
+        }
+        composeTestRule.onNodeWithText("Plain block text").performTouchInput { longClick() }
+
+        assertEquals(1, startEditingCalls)
+    }
+
+    /**
+     * Regression coverage for [OrderedListItemBlock]'s number-marker `combinedClickable`
+     * (see [orderedListItemNumberMarker_tap_entersEditMode]): tapping the marker while the
+     * row is already in selection mode must toggle selection, not start editing -- mirrors
+     * [tapWhileInSelectionMode_togglesSelection_notEditMode] but for the marker's own
+     * recognizer rather than [WikiLinkText]'s.
+     */
+    @Test
+    fun orderedListItemNumberMarker_tapWhileInSelectionMode_togglesSelection_notEditMode() {
+        val recorder = Recorder()
+        composeTestRule.setContent {
+            BlockItem(
+                block = block(content = "1. Plain block text", blockType = BlockType.OrderedListItem(number = 1)),
+                isEditing = false,
+                isInSelectionMode = true,
+                onToggleSelect = { recorder.toggleSelectCalls++ },
+                onEnterSelectionMode = { recorder.enterSelectionModeCalls++ },
+                onStartEditing = { recorder.startEditingCalls++ },
+                onStopEditing = {},
+                onContentChange = { _, _ -> },
+                onLinkClick = { recorder.linkClicked = it },
+                onNewBlock = {},
+                onSplitBlock = { _, _ -> },
+            )
+        }
+        composeTestRule.onNodeWithText("1.").performClick()
+
+        assertEquals(1, recorder.toggleSelectCalls)
+        assertEquals(0, recorder.startEditingCalls)
+    }
+
+    /**
+     * Regression coverage for [OrderedListItemBlock]'s number-marker `combinedClickable`
+     * (see [orderedListItemNumberMarker_tap_entersEditMode]): a genuine long-press on the
+     * marker (`onLongPressSelect` non-null, as on the JVM target where
+     * `useLongPressForDrag()` is `false`) must enter selection mode, not start editing --
+     * mirrors [genuineLongPress_entersSelectionMode_notEditMode] but for the marker itself.
+     */
+    @Test
+    fun orderedListItemNumberMarker_longPress_entersSelectionMode_notEditMode() {
+        val recorder = Recorder()
+        composeTestRule.setContent {
+            BlockItem(
+                block = block(content = "1. Plain block text", blockType = BlockType.OrderedListItem(number = 1)),
+                isEditing = false,
+                onToggleSelect = { recorder.toggleSelectCalls++ },
+                onEnterSelectionMode = { recorder.enterSelectionModeCalls++ },
+                onStartEditing = { recorder.startEditingCalls++ },
+                onStopEditing = {},
+                onContentChange = { _, _ -> },
+                onLinkClick = { recorder.linkClicked = it },
+                onNewBlock = {},
+                onSplitBlock = { _, _ -> },
+            )
+        }
+        composeTestRule.onNodeWithText("1.").performTouchInput { longClick() }
+
+        assertEquals(1, recorder.enterSelectionModeCalls)
+        assertEquals(0, recorder.startEditingCalls)
+    }
 }

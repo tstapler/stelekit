@@ -2,7 +2,10 @@ package dev.stapler.stelekit.ui.components
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -33,7 +36,7 @@ internal fun OrderedListItemBlock(
         content.trimStart().dropWhile { it.isDigit() }.removePrefix(".").removePrefix(")").trimStart()
     }
 
-    Row(modifier = modifier) {
+    Row(modifier = modifier.height(IntrinsicSize.Min)) {
         // The number marker is a disjoint tap region from WikiLinkText below (fixed 32dp
         // width vs. weight(1f) for the rest of the row), so giving it its own
         // combinedClickable doesn't reintroduce a dueling-recognizer race -- it's a second
@@ -44,7 +47,7 @@ internal fun OrderedListItemBlock(
             text = "$number.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onBackground,
-            modifier = Modifier.width(32.dp).combinedClickable(
+            modifier = Modifier.width(32.dp).fillMaxHeight().combinedClickable(
                 onLongClick = onLongPressSelect,
                 onClick = { if (isInSelectionMode) onToggleSelect() else onStartEditing() },
             ),
