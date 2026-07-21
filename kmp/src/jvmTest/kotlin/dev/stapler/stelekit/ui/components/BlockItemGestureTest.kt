@@ -326,4 +326,38 @@ class BlockItemGestureTest {
         assertEquals(1, recorder.enterSelectionModeCalls)
         assertEquals(0, recorder.startEditingCalls)
     }
+
+    /**
+     * Regression test for the same gesture-swallowing bug as
+     * [headingLongPress_withNullOnLongPressSelect_fallsBackToEditMode] and
+     * [wikiLinkTextLongPress_withNullOnLongPressSelect_fallsBackToEditMode], but pinning
+     * [OrderedListItemBlock]'s number-marker `combinedClickable` (see
+     * [orderedListItemNumberMarker_longPress_entersSelectionMode_notEditMode]): unlike the
+     * other two call sites, `combinedClickable`'s `onLongClick` parameter is forwarded
+     * `onLongPressSelect` directly rather than through a wrapping lambda, so a null
+     * `onLongPressSelect` reaches Compose Foundation's own tap detector as a true `null` --
+     * it never registers a competing long-press branch in the first place, and a held/slow
+     * tap on the marker should resolve as an ordinary click rather than being silently
+     * swallowed. This composes [OrderedListItemBlock] directly for the same reason the other
+     * two null-fallback tests bypass [BlockItem]: `onLongPressSelect = null` can't be
+     * expressed through [BlockItem] from jvmTest since `useLongPressForDrag()` is `false` on
+     * the JVM target.
+     */
+    @Test
+    fun orderedListItemNumberMarker_longPress_withNullOnLongPressSelect_fallsBackToEditMode() {
+        var startEditingCalls = 0
+        composeTestRule.setContent {
+            OrderedListItemBlock(
+                content = "1. Plain block text",
+                number = 1,
+                linkColor = Color.Blue,
+                onStartEditing = { startEditingCalls++ },
+                onLinkClick = {},
+                onLongPressSelect = null,
+            )
+        }
+        composeTestRule.onNodeWithText("1.").performTouchInput { longClick() }
+
+        assertEquals(1, startEditingCalls)
+    }
 }
