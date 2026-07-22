@@ -87,6 +87,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.datetime.plus
 import arrow.core.Either
 import dev.stapler.stelekit.sections.SectionState
@@ -1634,13 +1635,24 @@ private fun GraphContent(
                                                 pendingCaptureBlockUuid = null
                                                 return@launch
                                             }
-                                            val result = imageImportService?.import(
-                                                tempFile = file,
-                                                graphPath = graphPath,
-                                                pageUuid = dev.stapler.stelekit.model.PageUuid(pageUuid),
-                                                source = ImageSource.CAMERA,
-                                                insertToJournalPage = false,
-                                            )
+                                            // ponytail: 20s timeout so a stalled save (blocked file
+                                            // IO, wedged DB write) can't leave isCaptureImporting
+                                            // stuck true forever.
+                                            val result = imageImportService?.let { service ->
+                                                withTimeoutOrNull(20_000L) {
+                                                    service.import(
+                                                        tempFile = file,
+                                                        graphPath = graphPath,
+                                                        pageUuid = dev.stapler.stelekit.model.PageUuid(pageUuid),
+                                                        source = ImageSource.CAMERA,
+                                                        insertToJournalPage = false,
+                                                    )
+                                                }
+                                            }
+                                            if (imageImportService != null && result == null) {
+                                                graphContentLogger.warn("Camera image import timed out")
+                                                viewModel.sendSnackbar("Image save timed out — try again")
+                                            }
                                             result?.onLeft { err ->
                                                 graphContentLogger.warn("Camera image import failed: ${err.message}")
                                                 viewModel.sendSnackbar(err.toUiMessage())

@@ -117,7 +117,10 @@ object ExifOrientationFixer {
             ).right()
         } catch (e: CancellationException) {
             throw e
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            // Throwable, not Exception — an OutOfMemoryError decoding a large bitmap must
+            // surface as a capture failure, not silently kill the process (CLAUDE.md:
+            // uncaught Throwables in a coroutine kill the Android process).
             DomainError.SensorError.CaptureFailed(
                 "ExifOrientationFixer failed for $inputPath: ${e.message ?: "unknown"}"
             ).left()

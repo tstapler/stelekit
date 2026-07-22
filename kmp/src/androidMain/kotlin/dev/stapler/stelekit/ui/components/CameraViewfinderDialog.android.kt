@@ -27,15 +27,18 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.model.ImageSensorData
 import dev.stapler.stelekit.platform.sensor.ExifOrientationFixer
 import dev.stapler.stelekit.platform.sensor.PlatformImageFile
 import dev.stapler.stelekit.platform.sensor.SensorModule
+import dev.stapler.stelekit.platform.sensor.snapshotSensorData
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import java.io.File
 import java.util.UUID
@@ -53,6 +56,7 @@ actual fun CameraViewfinderDialog(
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
     var isCapturing by remember { mutableStateOf(false) }
+    var captureJob by remember { mutableStateOf<Job?>(null) }
 
     val previewView = remember(context) { PreviewView(context) }
     val imageCapture = remember {
@@ -61,27 +65,52 @@ actual fun CameraViewfinderDialog(
             .build()
     }
 
+    val cancelCapture = {
+        captureJob?.cancel()
+        captureJob = null
+        isCapturing = false
+        onDismiss()
+    }
+
+    // DisposableEffect is keyed on lifecycleOwner only (rebinding the camera on every
+    // recomposition would be wrong) — rememberUpdatedState keeps onError current without
+    // restarting the effect.
+    val currentOnError by rememberUpdatedState(onError)
+
     DisposableEffect(lifecycleOwner) {
+        SensorModule.motionSensorProvider.startSensing()
         val future = ProcessCameraProvider.getInstance(context)
         var provider: ProcessCameraProvider? = null
         future.addListener({
-            provider = runCatching { future.get() }.getOrNull() ?: return@addListener
+            val result = runCatching { future.get() }
+            val obtained = result.getOrElse {
+                currentOnError(it.message ?: "Failed to start camera")
+                return@addListener
+            }
+            provider = obtained
             val preview = Preview.Builder().build().also {
                 it.setSurfaceProvider(previewView.surfaceProvider)
             }
-            provider!!.unbindAll()
-            provider!!.bindToLifecycle(
-                lifecycleOwner,
-                CameraSelector.DEFAULT_BACK_CAMERA,
-                preview,
-                imageCapture,
-            )
+            try {
+                obtained.unbindAll()
+                obtained.bindToLifecycle(
+                    lifecycleOwner,
+                    CameraSelector.DEFAULT_BACK_CAMERA,
+                    preview,
+                    imageCapture,
+                )
+            } catch (e: Throwable) {
+                currentOnError(e.message ?: "Failed to bind camera")
+            }
         }, ContextCompat.getMainExecutor(context))
-        onDispose { provider?.unbindAll() }
+        onDispose {
+            provider?.unbindAll()
+            SensorModule.motionSensorProvider.stopSensing()
+        }
     }
 
     Dialog(
-        onDismissRequest = { if (!isCapturing) onDismiss() },
+        onDismissRequest = { cancelCapture() },
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
         Box(
@@ -99,7 +128,7 @@ actual fun CameraViewfinderDialog(
                 horizontalArrangement = Arrangement.SpaceAround,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = { if (!isCapturing) onDismiss() }) {
+                IconButton(onClick = { cancelCapture() }) {
                     Icon(
                         Icons.Default.Close,
                         contentDescription = "Cancel",
@@ -116,7 +145,7 @@ actual fun CameraViewfinderDialog(
                         .border(4.dp, Color.White.copy(alpha = 0.6f), CircleShape)
                         .clickable(enabled = !isCapturing) {
                             isCapturing = true
-                            scope.launch {
+                            captureJob = scope.launch {
                                 try {
                                     val result = takePhotoAndProcess(context, imageCapture)
                                     result.fold(
@@ -125,6 +154,7 @@ actual fun CameraViewfinderDialog(
                                     )
                                 } finally {
                                     isCapturing = false
+                                    captureJob = null
                                 }
                             }
                         },
@@ -153,11 +183,14 @@ private suspend fun takePhotoAndProcess(
     val capturesDir = File(context.cacheDir, "captures").also { it.mkdirs() }
     val outputFile = File(capturesDir, "${UUID.randomUUID()}.jpg")
     val capturedAt = System.currentTimeMillis()
-    val sensorSnapshot = SensorModule.motionSensorProvider.sensorDataFlow.firstOrNull()
     val outputOptions = ImageCapture.OutputFileOptions.Builder(outputFile).build()
     val executor = Executors.newSingleThreadExecutor()
     return try {
+        // Bounds the whole pipeline (sensor snapshot + shutter + EXIF fix), not just the
+        // shutter call — EXIF processing on a large/rotated JPEG used to run unbounded
+        // after this timeout had already elapsed.
         withTimeout(10_000L) {
+            val sensorSnapshot = SensorModule.motionSensorProvider.snapshotSensorData()
             suspendCancellableCoroutine { cont ->
                 imageCapture.takePicture(
                     outputOptions,
@@ -173,35 +206,44 @@ private suspend fun takePhotoAndProcess(
                 )
                 cont.invokeOnCancellation { executor.shutdown() }
             }
-        }
-        if (!outputFile.exists()) return Result.failure(Exception("Capture succeeded but file is missing"))
-        val fixResult = ExifOrientationFixer.fixOrientation(outputFile.absolutePath)
-            .fold(
-                ifLeft = { return Result.failure(Exception("Photo processing failed")) },
+            if (!outputFile.exists()) {
+                return@withTimeout Result.failure<PlatformImageFile>(
+                    Exception("Capture succeeded but file is missing")
+                )
+            }
+            // Off the calling dispatcher — full-res bitmap decode/rotate/encode must not
+            // block the coroutine's current thread (Main, when launched from the UI).
+            val fixResult = withContext(PlatformDispatcher.IO) {
+                ExifOrientationFixer.fixOrientation(outputFile.absolutePath)
+            }.fold(
+                ifLeft = { return@withTimeout Result.failure<PlatformImageFile>(Exception("Photo processing failed")) },
                 ifRight = { it },
             )
-        val sensorData: ImageSensorData? = sensorSnapshot?.copy(
-            focalLengthMm = fixResult.focalLengthMm ?: sensorSnapshot.focalLengthMm,
-            focalLength35mmEq = fixResult.focalLength35mmEq ?: sensorSnapshot.focalLength35mmEq,
-            cameraMake = fixResult.cameraMake ?: sensorSnapshot.cameraMake,
-            cameraModel = fixResult.cameraModel ?: sensorSnapshot.cameraModel,
-        )
-        Result.success(PlatformImageFile(
-            path = fixResult.outputPath,
-            mimeType = "image/jpeg",
-            capturedAtMs = capturedAt,
-            focalLengthMm = fixResult.focalLengthMm,
-            focalLength35mmEq = fixResult.focalLength35mmEq,
-            cameraMake = fixResult.cameraMake,
-            cameraModel = fixResult.cameraModel,
-            sensorData = sensorData,
-        ))
+            val sensorData: ImageSensorData? = sensorSnapshot?.copy(
+                focalLengthMm = fixResult.focalLengthMm ?: sensorSnapshot.focalLengthMm,
+                focalLength35mmEq = fixResult.focalLength35mmEq ?: sensorSnapshot.focalLength35mmEq,
+                cameraMake = fixResult.cameraMake ?: sensorSnapshot.cameraMake,
+                cameraModel = fixResult.cameraModel ?: sensorSnapshot.cameraModel,
+            )
+            Result.success(PlatformImageFile(
+                path = fixResult.outputPath,
+                mimeType = "image/jpeg",
+                capturedAtMs = capturedAt,
+                focalLengthMm = fixResult.focalLengthMm,
+                focalLength35mmEq = fixResult.focalLength35mmEq,
+                cameraMake = fixResult.cameraMake,
+                cameraModel = fixResult.cameraModel,
+                sensorData = sensorData,
+            ))
+        }
     } catch (e: TimeoutCancellationException) {
         Result.failure(Exception("Camera timed out — try again"))
     } catch (e: CancellationException) {
         throw e
-    } catch (e: Exception) {
-        Result.failure(e)
+    } catch (e: Throwable) {
+        // Throwable, not Exception — an OutOfMemoryError decoding a large frame must
+        // surface as a capture failure, not kill the process or hang.
+        Result.failure(Exception(e.message ?: "Capture failed"))
     } finally {
         executor.shutdown()
     }

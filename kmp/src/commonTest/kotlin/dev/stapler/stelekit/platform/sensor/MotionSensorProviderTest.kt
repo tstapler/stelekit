@@ -1,10 +1,13 @@
 package dev.stapler.stelekit.platform.sensor
 
 import dev.stapler.stelekit.model.ImageSensorData
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -96,5 +99,42 @@ class MotionSensorProviderTest {
         assertEquals(null, data.bearingDeg)
         assertEquals(null, data.pitchDeg)
         assertEquals(null, data.rollDeg)
+    }
+
+    /**
+     * A fake mirroring the real pre-[MotionSensorProvider.startSensing] state: a
+     * [MutableSharedFlow] with no replay and nothing ever emitted into it, so any collector
+     * suspends forever without a bound. This is the exact hang [snapshotSensorData] guards
+     * against — see CameraViewfinderDialog.android.kt / AndroidCameraProvider.capturePhoto().
+     */
+    private class NeverEmittingMotionSensorProvider : MotionSensorProvider {
+        override val sensorDataFlow: Flow<ImageSensorData> = MutableSharedFlow()
+        override fun startSensing() {}
+        override fun stopSensing() {}
+    }
+
+    @Test
+    fun snapshotSensorData_shouldReturnNull_When_FlowNeverEmits() = runTest {
+        val provider = NeverEmittingMotionSensorProvider()
+
+        val result = provider.snapshotSensorData(timeoutMs = 500L)
+
+        assertNull(result, "must bound the snapshot instead of hanging when sensing was never started")
+    }
+
+    @Test
+    fun snapshotSensorData_shouldReturnLatestReading_When_FlowHasEmitted() = runTest {
+        val data = ImageSensorData(bearingDeg = 12.0)
+        val flow = MutableSharedFlow<ImageSensorData>(replay = 1)
+        flow.emit(data)
+        val provider = object : MotionSensorProvider {
+            override val sensorDataFlow: Flow<ImageSensorData> = flow
+            override fun startSensing() {}
+            override fun stopSensing() {}
+        }
+
+        val result = provider.snapshotSensorData(timeoutMs = 500L)
+
+        assertEquals(data, result)
     }
 }
