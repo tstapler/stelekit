@@ -3,9 +3,12 @@ package dev.stapler.stelekit.ui.components.settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -23,6 +26,8 @@ import dev.stapler.stelekit.performance.getDeviceInfo
 import dev.stapler.stelekit.platform.HostAccessState
 import dev.stapler.stelekit.sections.SectionManifest
 import dev.stapler.stelekit.sections.SectionState
+import dev.stapler.stelekit.ui.LocalWindowSizeClass
+import dev.stapler.stelekit.ui.isMobile
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
 import dev.stapler.stelekit.ui.i18n.Language
 import dev.stapler.stelekit.tags.TagSettings
@@ -95,201 +100,287 @@ fun SettingsDialog(
             onDismissRequest = onDismiss,
             properties = DialogProperties(usePlatformDefaultWidth = false)
         ) {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth(0.8f)
-                    .fillMaxHeight(0.8f),
-                shape = MaterialTheme.shapes.large,
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 6.dp
+            var selectedCategory by remember { mutableStateOf(initialCategory) }
+            // Mobile is a drill-down page (category list -> full-width detail), not a
+            // side-by-side pane — a fixed sidebar width leaves too little room for content
+            // on phone-sized screens and causes headings like "Tag Suggestions" to wrap
+            // mid-word. Deep links (e.g. initialCategory = LLM_PROVIDERS) skip the list.
+            var showingCategoryList by remember { mutableStateOf(initialCategory == SettingsCategory.GENERAL) }
+
+            val visibleCategories = remember(
+                onConnectGoogle, audiobookNotesSettingsContent, tagSettings,
+                onLibsqlDriverToggle, sectionManifest, llmProviderRegistry, llmSettings,
+                llmCredentialStore,
             ) {
-                var selectedCategory by remember { mutableStateOf(initialCategory) }
+                SettingsCategory.entries.filter { category ->
+                    when (category) {
+                        SettingsCategory.GOOGLE_ACCOUNT -> onConnectGoogle != null
+                        SettingsCategory.AUDIOBOOK_NOTES -> audiobookNotesSettingsContent != null
+                        SettingsCategory.TAG_SUGGESTIONS -> tagSettings != null
+                        SettingsCategory.DEVELOPER -> onLibsqlDriverToggle != null
+                        SettingsCategory.SECTIONS -> sectionManifest != null
+                        SettingsCategory.DEVICE_SUBSCRIPTIONS -> sectionManifest != null
+                        SettingsCategory.LLM_PROVIDERS ->
+                            llmProviderRegistry != null && llmSettings != null && llmCredentialStore != null
+                        else -> true
+                    }
+                }
+            }
 
-                Row(modifier = Modifier.fillMaxSize()) {
-                    // Sidebar
-                    Column(
-                        modifier = Modifier
-                            .width(200.dp)
-                            .fillMaxHeight()
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                            .padding(vertical = 16.dp)
-                    ) {
-                        Text(
-                            "Settings",
-                            style = MaterialTheme.typography.titleLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            @Composable
+            fun CategoryContent(category: SettingsCategory) {
+                when (category) {
+                    SettingsCategory.GENERAL -> {
+                        GeneralSettings(
+                            currentTheme = currentTheme,
+                            onThemeChange = onThemeChange,
+                            currentLanguage = currentLanguage,
+                            onLanguageChange = onLanguageChange,
+                            isLeftHanded = isLeftHanded,
+                            onLeftHandedChange = onLeftHandedChange
                         )
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        val visibleCategories = remember(
-                            onConnectGoogle, audiobookNotesSettingsContent, tagSettings,
-                            onLibsqlDriverToggle, sectionManifest, llmProviderRegistry, llmSettings,
-                            llmCredentialStore,
-                        ) {
-                            SettingsCategory.entries.filter { category ->
-                                when (category) {
-                                    SettingsCategory.GOOGLE_ACCOUNT -> onConnectGoogle != null
-                                    SettingsCategory.AUDIOBOOK_NOTES -> audiobookNotesSettingsContent != null
-                                    SettingsCategory.TAG_SUGGESTIONS -> tagSettings != null
-                                    SettingsCategory.DEVELOPER -> onLibsqlDriverToggle != null
-                                    SettingsCategory.SECTIONS -> sectionManifest != null
-                                    SettingsCategory.DEVICE_SUBSCRIPTIONS -> sectionManifest != null
-                                    SettingsCategory.LLM_PROVIDERS ->
-                                        llmProviderRegistry != null && llmSettings != null && llmCredentialStore != null
-                                    else -> true
-                                }
-                            }
-                        }
-                        visibleCategories.forEach { category ->
-                            CategoryItem(
-                                category = category,
-                                isSelected = selectedCategory == category,
-                                onClick = { selectedCategory = category }
+                        // web-local-folder-livesync Task 3.1.1c: no dedicated "Sync"
+                        // category exists in this dialog, so the affordance lives here —
+                        // GENERAL is the most discoverable home for a graph-wide toggle,
+                        // and FolderSyncSettings itself is a no-op render (returns
+                        // nothing) unless onConnectHostDirectory is non-null AND its own
+                        // hostAccessState/supportsNativeDirectoryPicker gate passes, so
+                        // this never adds an empty section to GENERAL on non-web
+                        // platforms or once already connected.
+                        if (onConnectHostDirectory != null) {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            FolderSyncSettings(
+                                hostAccessState = hostAccessState,
+                                supportsNativeDirectoryPicker = supportsNativeDirectoryPicker,
+                                onConnect = onConnectHostDirectory,
                             )
                         }
-
-                        Spacer(modifier = Modifier.weight(1f))
-
-                        val appVersion = remember { getDeviceInfo().appVersion }
-                        Text(
-                            "v$appVersion",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                    }
+                    SettingsCategory.EDITOR -> EditorSettings()
+                    SettingsCategory.PLUGINS -> PluginsSettings()
+                    SettingsCategory.ADVANCED -> AdvancedSettings(onReindex)
+                    SettingsCategory.VOICE -> if (voiceSettings != null && onRebuildVoicePipeline != null) {
+                        VoiceCaptureSettings(
+                            voiceSettings = voiceSettings,
+                            onRebuildPipeline = onRebuildVoicePipeline,
+                            deviceSttAvailable = deviceSttAvailable,
+                            deviceLlmAvailable = deviceLlmAvailable,
+                            onNavigateToAiProviders = {
+                                selectedCategory = SettingsCategory.LLM_PROVIDERS
+                                showingCategoryList = false
+                            },
                         )
                     }
-
-                    // Content
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                            .padding(24.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = selectedCategory.label,
-                                style = MaterialTheme.typography.headlineSmall
+                    SettingsCategory.AUDIOBOOK_NOTES -> audiobookNotesSettingsContent?.invoke()
+                    SettingsCategory.GOOGLE_ACCOUNT -> GoogleAccountSettings(
+                        isAuthenticated = isGoogleAuthenticated,
+                        connectedEmail = googleConnectedEmail,
+                        isConnecting = isGoogleConnecting,
+                        errorMessage = googleAuthError,
+                        onConnect = { onConnectGoogle?.invoke() },
+                        onDisconnect = { onDisconnectGoogle?.invoke() },
+                    )
+                    SettingsCategory.VAULT -> VaultSettings(
+                        isParanoidMode = isParanoidMode,
+                        isVaultUnlocked = isVaultUnlocked,
+                        onCreateVault = onCreateVault,
+                        onAddKeyslot = onAddKeyslot,
+                        onRemoveKeyslot = onRemoveKeyslot,
+                        onLockVault = onLockVault,
+                        onListActiveSlots = onListActiveSlots,
+                    )
+                    SettingsCategory.TAG_SUGGESTIONS -> if (tagSettings != null) {
+                        TagSuggestionSettings(
+                            tagSettings = tagSettings,
+                            hasLlmKey = hasLlmKey,
+                        )
+                    }
+                    SettingsCategory.DEVELOPER -> if (onLibsqlDriverToggle != null) {
+                        DeveloperSettings(
+                            isLibsqlDriverEnabled = isLibsqlDriverEnabled,
+                            onLibsqlDriverToggle = onLibsqlDriverToggle,
+                        )
+                    }
+                    SettingsCategory.SECTIONS -> {
+                        val canShowSections = sectionManifest != null &&
+                            onCreateSection != null && onRenameSection != null &&
+                            onDeleteSection != null
+                        if (canShowSections) {
+                            SectionsSettings(
+                                manifest = sectionManifest!!,
+                                onCreateSection = onCreateSection!!,
+                                onRenameSection = onRenameSection!!,
+                                onDeleteSection = onDeleteSection!!,
                             )
-                            IconButton(onClick = onDismiss) {
-                                Icon(Icons.Default.Close, contentDescription = "Close")
+                        }
+                    }
+                    SettingsCategory.DEVICE_SUBSCRIPTIONS -> if (sectionManifest != null &&
+                        onToggleSectionState != null
+                    ) {
+                        DeviceSubscriptionsPanel(
+                            manifest = sectionManifest,
+                            sectionStates = sectionStates,
+                            onToggleSection = onToggleSectionState,
+                        )
+                    }
+                    SettingsCategory.LLM_PROVIDERS -> if (llmProviderRegistry != null &&
+                        llmSettings != null && llmCredentialStore != null
+                    ) {
+                        LlmProviderSettings(
+                            registry = llmProviderRegistry,
+                            llmSettings = llmSettings,
+                            llmCredentialStore = llmCredentialStore,
+                            onCredentialsChange = onLlmCredentialsChange,
+                        )
+                    }
+                }
+            }
+
+            val isMobile = LocalWindowSizeClass.current.isMobile
+
+            if (isMobile) {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.surface,
+                ) {
+                    if (showingCategoryList) {
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Settings", style = MaterialTheme.typography.headlineSmall)
+                                IconButton(onClick = onDismiss) {
+                                    Icon(Icons.Default.Close, contentDescription = "Close")
+                                }
+                            }
+                            HorizontalDivider()
+                            LazyColumn(modifier = Modifier.weight(1f)) {
+                                items(visibleCategories) { category ->
+                                    CategoryItem(
+                                        category = category,
+                                        isSelected = false,
+                                        onClick = {
+                                            selectedCategory = category
+                                            showingCategoryList = false
+                                        }
+                                    )
+                                }
+                            }
+                            val appVersion = remember { getDeviceInfo().appVersion }
+                            Text(
+                                "v$appVersion",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                modifier = Modifier.padding(16.dp)
+                            )
+                        }
+                    } else {
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                IconButton(onClick = { showingCategoryList = true }) {
+                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                                }
+                                Text(
+                                    text = selectedCategory.label,
+                                    style = MaterialTheme.typography.titleLarge,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                IconButton(onClick = onDismiss) {
+                                    Icon(Icons.Default.Close, contentDescription = "Close")
+                                }
+                            }
+                            HorizontalDivider()
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .verticalScroll(rememberScrollState())
+                                    .padding(16.dp)
+                            ) {
+                                CategoryContent(selectedCategory)
                             }
                         }
-
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
-
+                    }
+                }
+            } else {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth(0.8f)
+                        .fillMaxHeight(0.8f),
+                    shape = MaterialTheme.shapes.large,
+                    color = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 6.dp
+                ) {
+                    Row(modifier = Modifier.fillMaxSize()) {
+                        // Sidebar
                         Column(
                             modifier = Modifier
-                                .fillMaxSize()
-                                .verticalScroll(rememberScrollState())
+                                .width(200.dp)
+                                .fillMaxHeight()
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                .padding(vertical = 16.dp)
                         ) {
-                            when (selectedCategory) {
-                                SettingsCategory.GENERAL -> {
-                                    GeneralSettings(
-                                        currentTheme = currentTheme,
-                                        onThemeChange = onThemeChange,
-                                        currentLanguage = currentLanguage,
-                                        onLanguageChange = onLanguageChange,
-                                        isLeftHanded = isLeftHanded,
-                                        onLeftHandedChange = onLeftHandedChange
-                                    )
-                                    // web-local-folder-livesync Task 3.1.1c: no dedicated "Sync"
-                                    // category exists in this dialog, so the affordance lives here —
-                                    // GENERAL is the most discoverable home for a graph-wide toggle,
-                                    // and FolderSyncSettings itself is a no-op render (returns
-                                    // nothing) unless onConnectHostDirectory is non-null AND its own
-                                    // hostAccessState/supportsNativeDirectoryPicker gate passes, so
-                                    // this never adds an empty section to GENERAL on non-web
-                                    // platforms or once already connected.
-                                    if (onConnectHostDirectory != null) {
-                                        Spacer(modifier = Modifier.height(16.dp))
-                                        FolderSyncSettings(
-                                            hostAccessState = hostAccessState,
-                                            supportsNativeDirectoryPicker = supportsNativeDirectoryPicker,
-                                            onConnect = onConnectHostDirectory,
-                                        )
-                                    }
-                                }
-                                SettingsCategory.EDITOR -> EditorSettings()
-                                SettingsCategory.PLUGINS -> PluginsSettings()
-                                SettingsCategory.ADVANCED -> AdvancedSettings(onReindex)
-                                SettingsCategory.VOICE -> if (voiceSettings != null && onRebuildVoicePipeline != null) {
-                                    VoiceCaptureSettings(
-                                        voiceSettings = voiceSettings,
-                                        onRebuildPipeline = onRebuildVoicePipeline,
-                                        deviceSttAvailable = deviceSttAvailable,
-                                        deviceLlmAvailable = deviceLlmAvailable,
-                                        onNavigateToAiProviders = { selectedCategory = SettingsCategory.LLM_PROVIDERS },
-                                    )
-                                }
-                                SettingsCategory.AUDIOBOOK_NOTES -> audiobookNotesSettingsContent?.invoke()
-                                SettingsCategory.GOOGLE_ACCOUNT -> GoogleAccountSettings(
-                                    isAuthenticated = isGoogleAuthenticated,
-                                    connectedEmail = googleConnectedEmail,
-                                    isConnecting = isGoogleConnecting,
-                                    errorMessage = googleAuthError,
-                                    onConnect = { onConnectGoogle?.invoke() },
-                                    onDisconnect = { onDisconnectGoogle?.invoke() },
+                            Text(
+                                "Settings",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                            )
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            visibleCategories.forEach { category ->
+                                CategoryItem(
+                                    category = category,
+                                    isSelected = selectedCategory == category,
+                                    onClick = { selectedCategory = category }
                                 )
-                                SettingsCategory.VAULT -> VaultSettings(
-                                    isParanoidMode = isParanoidMode,
-                                    isVaultUnlocked = isVaultUnlocked,
-                                    onCreateVault = onCreateVault,
-                                    onAddKeyslot = onAddKeyslot,
-                                    onRemoveKeyslot = onRemoveKeyslot,
-                                    onLockVault = onLockVault,
-                                    onListActiveSlots = onListActiveSlots,
+                            }
+
+                            Spacer(modifier = Modifier.weight(1f))
+
+                            val appVersion = remember { getDeviceInfo().appVersion }
+                            Text(
+                                "v$appVersion",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                            )
+                        }
+
+                        // Content
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .padding(24.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = selectedCategory.label,
+                                    style = MaterialTheme.typography.headlineSmall
                                 )
-                                SettingsCategory.TAG_SUGGESTIONS -> if (tagSettings != null) {
-                                    TagSuggestionSettings(
-                                        tagSettings = tagSettings,
-                                        hasLlmKey = hasLlmKey,
-                                    )
+                                IconButton(onClick = onDismiss) {
+                                    Icon(Icons.Default.Close, contentDescription = "Close")
                                 }
-                                SettingsCategory.DEVELOPER -> if (onLibsqlDriverToggle != null) {
-                                    DeveloperSettings(
-                                        isLibsqlDriverEnabled = isLibsqlDriverEnabled,
-                                        onLibsqlDriverToggle = onLibsqlDriverToggle,
-                                    )
-                                }
-                                SettingsCategory.SECTIONS -> {
-                                    val canShowSections = sectionManifest != null &&
-                                        onCreateSection != null && onRenameSection != null &&
-                                        onDeleteSection != null
-                                    if (canShowSections) {
-                                        SectionsSettings(
-                                            manifest = sectionManifest!!,
-                                            onCreateSection = onCreateSection!!,
-                                            onRenameSection = onRenameSection!!,
-                                            onDeleteSection = onDeleteSection!!,
-                                        )
-                                    }
-                                }
-                                SettingsCategory.DEVICE_SUBSCRIPTIONS -> if (sectionManifest != null &&
-                                    onToggleSectionState != null
-                                ) {
-                                    DeviceSubscriptionsPanel(
-                                        manifest = sectionManifest,
-                                        sectionStates = sectionStates,
-                                        onToggleSection = onToggleSectionState,
-                                    )
-                                }
-                                SettingsCategory.LLM_PROVIDERS -> if (llmProviderRegistry != null &&
-                                    llmSettings != null && llmCredentialStore != null
-                                ) {
-                                    LlmProviderSettings(
-                                        registry = llmProviderRegistry,
-                                        llmSettings = llmSettings,
-                                        llmCredentialStore = llmCredentialStore,
-                                        onCredentialsChange = onLlmCredentialsChange,
-                                    )
-                                }
+                            }
+
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
+
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .verticalScroll(rememberScrollState())
+                            ) {
+                                CategoryContent(selectedCategory)
                             }
                         }
                     }
