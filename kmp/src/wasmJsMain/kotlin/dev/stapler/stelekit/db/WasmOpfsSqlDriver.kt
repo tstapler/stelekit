@@ -7,12 +7,26 @@ import app.cash.sqldelight.db.SqlCursor
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.db.SqlPreparedStatement
 import kotlinx.coroutines.await
+import kotlinx.coroutines.sync.Mutex
 
 class WasmOpfsSqlDriver(private val workerScriptPath: String) : SqlDriver {
 
     private val worker: JsAny = createSqliteWorker(workerScriptPath)
     private var nextId = 0
     private val listeners = mutableMapOf<String, MutableSet<Query.Listener>>()
+
+    // Only one BEGIN can be in flight on the shared OPFS connection at a time. `transactionMutex`
+    // serializes unrelated concurrent transactions (e.g. warm reconcile racing an editor write);
+    // `currentTxn` lets genuinely nested transaction() calls within the same logical flow (which
+    // already hold the mutex from their enclosing transaction) skip sending a redundant BEGIN.
+    private val transactionMutex = Mutex()
+    private var currentTxn: WasmTransaction? = null
+
+    private inner class WasmTransaction(val enclosing: WasmTransaction?) : Transacter.Transaction() {
+        override val enclosingTransaction: Transacter.Transaction? = enclosing
+        override fun endTransaction(successful: Boolean): QueryResult<Unit> =
+            this@WasmOpfsSqlDriver.endTransaction(successful)
+    }
     var actualBackend: String = "unknown"
         private set
 
@@ -69,26 +83,35 @@ class WasmOpfsSqlDriver(private val workerScriptPath: String) : SqlDriver {
     }
 
     override fun newTransaction(): QueryResult<Transacter.Transaction> = QueryResult.AsyncValue {
-        val id = nextMsgId()
-        val promise = createWorkerResponsePromise(worker, id)
-        workerPostMessage(worker, buildTransactionBeginMessage(id))
-        @Suppress("UNUSED_VARIABLE") val _begin: JsAny = promise.await()
-        object : Transacter.Transaction() {
-            override val enclosingTransaction: Transacter.Transaction? = null
-            override fun endTransaction(successful: Boolean): QueryResult<Unit> =
-                this@WasmOpfsSqlDriver.endTransaction(successful)
+        val enclosing = currentTxn
+        if (enclosing == null) {
+            // Blocks here until any unrelated in-flight transaction commits/rolls back —
+            // this is what prevents a second BEGIN from ever reaching the shared connection.
+            transactionMutex.lock()
+            val id = nextMsgId()
+            val promise = createWorkerResponsePromise(worker, id)
+            workerPostMessage(worker, buildTransactionBeginMessage(id))
+            @Suppress("UNUSED_VARIABLE") val _begin: JsAny = promise.await()
         }
+        val txn = WasmTransaction(enclosing)
+        currentTxn = txn
+        txn
     }
 
     fun endTransaction(successful: Boolean): QueryResult<Unit> = QueryResult.AsyncValue {
-        val id = nextMsgId()
-        val promise = createWorkerResponsePromise(worker, id)
-        workerPostMessage(worker, buildTransactionEndMessage(id, successful))
-        @Suppress("UNUSED_VARIABLE") val _end: JsAny = promise.await()
+        val enclosing = currentTxn?.enclosing
+        currentTxn = enclosing
+        if (enclosing == null) {
+            val id = nextMsgId()
+            val promise = createWorkerResponsePromise(worker, id)
+            workerPostMessage(worker, buildTransactionEndMessage(id, successful))
+            @Suppress("UNUSED_VARIABLE") val _end: JsAny = promise.await()
+            transactionMutex.unlock()
+        }
         Unit
     }
 
-    override fun currentTransaction(): Transacter.Transaction? = null
+    override fun currentTransaction(): Transacter.Transaction? = currentTxn
 
     override fun addListener(vararg queryKeys: String, listener: Query.Listener) {
         queryKeys.forEach { key -> listeners.getOrPut(key) { mutableSetOf() }.add(listener) }
