@@ -144,6 +144,17 @@ internal suspend fun executeCaptureAndImport(
 }
 
 /**
+ * Runs [importOperation] bounded by [timeoutMs], returning `null` on timeout instead of
+ * hanging. Used by [dev.stapler.stelekit.ui.components.CapturePreviewDialog]'s onSave handler
+ * so a stalled [ImageImportService.import] (blocked file IO, wedged DB write) can't leave the
+ * importing spinner stuck forever.
+ */
+internal suspend fun <T> withImportTimeout(
+    timeoutMs: Long = 20_000L,
+    importOperation: suspend () -> T,
+): T? = withTimeoutOrNull(timeoutMs) { importOperation() }
+
+/**
  * Root Composable for the Logseq application.
  * Updated to use multi-graph support with GraphManager.
  */
@@ -1654,9 +1665,15 @@ private fun GraphContent(
                                             }
                                             // ponytail: 20s timeout so a stalled save (blocked file
                                             // IO, wedged DB write) can't leave isCaptureImporting
-                                            // stuck true forever.
+                                            // stuck true forever. Residual risk: if the timeout
+                                            // fires after the sidecar/DB write but before the
+                                            // block-insert step, the cancelled import can leave an
+                                            // orphaned ImageAnnotation with no visible block — same
+                                            // class of gap as any hard cancellation mid-pipeline,
+                                            // not specific to this guard. Out of scope here; would
+                                            // need ImageImportService's own step recovery hardened.
                                             val result = imageImportService?.let { service ->
-                                                withTimeoutOrNull(20_000L) {
+                                                withImportTimeout {
                                                     service.import(
                                                         tempFile = file,
                                                         graphPath = graphPath,

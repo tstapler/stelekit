@@ -78,7 +78,11 @@ actual fun CameraViewfinderDialog(
     val currentOnError by rememberUpdatedState(onError)
 
     DisposableEffect(lifecycleOwner) {
-        SensorModule.motionSensorProvider.startSensing()
+        try {
+            SensorModule.motionSensorProvider.startSensing()
+        } catch (e: Throwable) {
+            currentOnError(e.message ?: "Failed to start sensors")
+        }
         val future = ProcessCameraProvider.getInstance(context)
         var provider: ProcessCameraProvider? = null
         future.addListener({
@@ -242,8 +246,9 @@ private suspend fun takePhotoAndProcess(
         throw e
     } catch (e: Throwable) {
         // Throwable, not Exception — an OutOfMemoryError decoding a large frame must
-        // surface as a capture failure, not kill the process or hang.
-        Result.failure(Exception(e.message ?: "Capture failed"))
+        // surface as a capture failure, not kill the process or hang. Pass e through
+        // directly (not re-wrapped) so the original type/stack trace/cause chain survives.
+        Result.failure(e)
     } finally {
         executor.shutdown()
     }

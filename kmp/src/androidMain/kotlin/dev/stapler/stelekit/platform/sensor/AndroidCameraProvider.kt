@@ -74,7 +74,6 @@ class AndroidCameraProvider(
             if (!granted) return DomainError.SensorError.PermissionDenied("camera").left()
         }
 
-        SensorModule.motionSensorProvider.startSensing()
         return try {
             // 2. Obtain ProcessCameraProvider — bridge ListenableFuture to suspend
             val cameraProvider: ProcessCameraProvider = suspendCancellableCoroutine { cont ->
@@ -117,8 +116,14 @@ class AndroidCameraProvider(
             // after this timeout had already elapsed.
             withTimeout(10_000L) {
                 // 6. Snapshot sensor data at shutter time (Story 8.1.5). Timeout-guarded so a
-                // provider whose sensorDataFlow never emits (e.g. startSensing() wasn't
-                // called) cannot hang the capture indefinitely.
+                // provider whose sensorDataFlow never emits cannot hang the capture
+                // indefinitely. This class does not call startSensing()/stopSensing() itself:
+                // SensorModule.motionSensorProvider is a shared, non-reference-counted
+                // singleton, and this method currently has no reachable production caller
+                // (see App.kt's unused executeCaptureAndImport) — calling stop/start here
+                // would race an already-open CameraViewfinderDialog's own sensing session.
+                // ponytail: best-effort snapshot only; wire start/stop here (with reference
+                // counting) if/when this path gets a real UI caller.
                 val sensorSnapshot = SensorModule.motionSensorProvider.snapshotSensorData()
                 val capturedAt = System.currentTimeMillis()
 
@@ -207,8 +212,6 @@ class AndroidCameraProvider(
             DomainError.SensorError.CaptureFailed(
                 "CameraX capture failed: ${e.message ?: "unknown"}"
             ).left()
-        } finally {
-            SensorModule.motionSensorProvider.stopSensing()
         }
     }
 }
