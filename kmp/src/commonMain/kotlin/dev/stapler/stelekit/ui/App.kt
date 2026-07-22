@@ -717,6 +717,9 @@ private fun GraphContent(
                 localChangesCountFlow = localChangesCountFlow,
                 activeGraphIdProvider = { graphManager.getActiveGraphId()?.value },
                 onDismissGitDetection = { graphId -> graphManager.setGitDetectionDismissed(GraphId(graphId), true) },
+                onDismissBrowserOnlySyncBanner = { graphId ->
+                    graphManager.setBrowserOnlySyncBannerDismissed(GraphId(graphId), true)
+                },
                 onSectionsLoaded = onSectionsLoaded,
                 scope = viewModelScope,
             )
@@ -1458,6 +1461,11 @@ private fun GraphContent(
                             val showGitBanner = activeGraphInfo2?.detectedRepoRoot != null &&
                                 appState.gitConfig == null &&
                                 activeGraphInfo2.gitDetectionDismissed == false
+                            val showBrowserOnlySyncBanner = activeGraphInfo2 != null &&
+                                activeGraphInfo2.isDemo == false &&
+                                hostAccessState == HostAccessState.NotApplicable &&
+                                fileSystem.supportsNativeDirectoryPicker &&
+                                activeGraphInfo2.browserOnlySyncBannerDismissed == false
                             Column(modifier = Modifier.fillMaxSize()) {
                                 if (showGitBanner) {
                                     GitDetectionBanner(
@@ -1466,6 +1474,15 @@ private fun GraphContent(
                                         onDismiss = {
                                             val gid = activeGraphId ?: return@GitDetectionBanner
                                             viewModel.dismissGitDetection(gid.value)
+                                        },
+                                    )
+                                }
+                                if (showBrowserOnlySyncBanner) {
+                                    BrowserOnlySyncBanner(
+                                        onEnableSync = { viewModel.setSettingsVisible(true) },
+                                        onDismiss = {
+                                            val gid = activeGraphId ?: return@BrowserOnlySyncBanner
+                                            viewModel.dismissBrowserOnlySyncBanner(gid.value)
                                         },
                                     )
                                 }

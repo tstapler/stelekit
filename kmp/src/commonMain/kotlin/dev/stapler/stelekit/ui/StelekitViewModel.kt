@@ -132,6 +132,7 @@ class StelekitViewModel(
     private val localChangesCountFlow: StateFlow<Int>? = deps.localChangesCountFlow
     private val activeGraphIdProvider: () -> String? = deps.activeGraphIdProvider
     private val onDismissGitDetection: (suspend (graphId: String) -> Unit)? = deps.onDismissGitDetection
+    private val onDismissBrowserOnlySyncBanner: (suspend (graphId: String) -> Unit)? = deps.onDismissBrowserOnlySyncBanner
     private val onSectionsLoaded = deps.onSectionsLoaded
     private val spanEmitter = dev.stapler.stelekit.performance.SpanEmitter(deps.ringBuffer)
     // ── LLM approval-gated edit workflow (Epic 7) ──────────────────────────────
@@ -377,6 +378,13 @@ class StelekitViewModel(
     fun dismissGitDetection(graphId: String) {
         scope.launch {
             onDismissGitDetection?.invoke(graphId)
+        }
+    }
+
+    /** Dismisses the "not synced to disk" browser-only-storage banner for the given graph. */
+    fun dismissBrowserOnlySyncBanner(graphId: String) {
+        scope.launch {
+            onDismissBrowserOnlySyncBanner?.invoke(graphId)
         }
     }
 
