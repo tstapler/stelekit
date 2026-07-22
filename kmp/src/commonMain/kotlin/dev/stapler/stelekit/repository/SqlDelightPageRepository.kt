@@ -330,16 +330,9 @@ class SqlDelightPageRepository(
         }
     }
 
-    override fun countPages(): Flow<Either<DomainError, Long>> = flow {
-        try {
-            val count = queries.countPages().asFlow().mapToOne(PlatformDispatcher.DB).first()
-            emit(count.right())
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
-        }
-    }.flowOn(PlatformDispatcher.DB)
+    override fun countPages(): Flow<Either<DomainError, Long>> =
+        queries.countPages().asDbFlowOrNull(PlatformDispatcher.DB) { it }
+            .map { either -> either.fold({ it.left() }, { (it ?: 0L).right() }) }
 
     override suspend fun cacheEvictAll(): Unit = withContext(PlatformDispatcher.DB) {
         pageByUuidCache.invalidateAll()

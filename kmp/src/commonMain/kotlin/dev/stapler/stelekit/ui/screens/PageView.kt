@@ -23,8 +23,10 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.unit.dp
@@ -225,6 +227,7 @@ fun PageView(
     }
 
     val toolbarHeightDp = with(LocalDensity.current) { toolbarHeight.toDp() }
+    val clipboardManager = LocalClipboardManager.current
 
     // Provide the graph root path so that ImageBlock / rememberSteleKitImageLoader can resolve
     // relative Logseq asset paths (e.g. `../assets/image.png`).
@@ -358,6 +361,16 @@ fun PageView(
                                     onClick = {
                                         exportMenuExpanded = false
                                         viewModel.exportPage(formatId)
+                                    }
+                                )
+                            }
+                            if (page.filePath != null) {
+                                HorizontalDivider()
+                                DropdownMenuItem(
+                                    text = { Text("Copy path") },
+                                    onClick = {
+                                        exportMenuExpanded = false
+                                        clipboardManager.setText(AnnotatedString(page.filePath))
                                     }
                                 )
                             }
