@@ -105,7 +105,7 @@ fun SettingsDialog(
             // side-by-side pane — a fixed sidebar width leaves too little room for content
             // on phone-sized screens and causes headings like "Tag Suggestions" to wrap
             // mid-word. Deep links (e.g. initialCategory = LLM_PROVIDERS) skip the list.
-            var showingCategoryList by remember { mutableStateOf(initialCategory == SettingsCategory.GENERAL) }
+            var showingCategoryList by remember(initialCategory) { mutableStateOf(initialCategory == SettingsCategory.GENERAL) }
 
             val visibleCategories = remember(
                 onConnectGoogle, audiobookNotesSettingsContent, tagSettings,
@@ -260,6 +260,9 @@ fun SettingsDialog(
                                 items(visibleCategories) { category ->
                                     CategoryItem(
                                         category = category,
+                                        // Always false: this drill-down list has no persisted
+                                        // selection state — tapping a row navigates straight to
+                                        // the detail page (see showingCategoryList = false below).
                                         isSelected = false,
                                         onClick = {
                                             selectedCategory = category
