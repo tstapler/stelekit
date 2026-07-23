@@ -855,16 +855,23 @@ class HostDirectorySync(
         for (path in cacheAccess.keysUnder(opfsPath)) {
             if (path in hostVisitedPaths) continue
             val cacheBytes = cacheAccess.getBytes(path)
+            val cacheContent = if (cacheBytes == null) cacheAccess.get(path) else null
             val outcome = if (cacheBytes != null) {
                 classifyReconciliationBytes(null, cacheBytes)
             } else {
-                classifyReconciliation(null, cacheAccess.get(path))
+                classifyReconciliation(null, cacheContent)
             }
             if (outcome == ReconciliationOutcome.BrowserOnlyNeedsPush) {
                 browserOnlyNeedsPushCount++
-                val repoRelative = path.removePrefix("$opfsPath/")
-                hostWritePending[repoRelative] = DirtyEntry(DirtyOp.WRITE, Clock.System.now().toEpochMilliseconds())
-                updatePendingCount()
+                // Bug fix: this used to only mutate `hostWritePending`/bump the pending count
+                // directly, without ever driving a flush — nothing else scans `hostWritePending`
+                // on its own, so these entries sat forever showing "N changes syncing to <dir>"
+                // in the sidebar badge with no way to actually drain (see
+                // FolderSyncStatusBadge.kt's doc comment for that copy). Route through
+                // scheduleHostWriteThrough so the same enqueue+flush loop every other write uses
+                // actually pushes this content to the host directory and dequeues on success.
+                val payload = if (cacheBytes != null) HostWritePayload.Bytes(cacheBytes) else HostWritePayload.Text(cacheContent ?: "")
+                scheduleHostWriteThrough(path, payload)
             }
         }
 
