@@ -11,13 +11,14 @@ import androidx.core.content.ContextCompat
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
+import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.ImageSensorData
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import java.io.File
 import java.util.UUID
@@ -110,18 +111,28 @@ class AndroidCameraProvider(
             val capturesDir = File(context.cacheDir, "captures").also { it.mkdirs() }
             val outputFile = File(capturesDir, "${UUID.randomUUID()}.jpg")
 
-            // 6. Snapshot sensor data at shutter time (Story 8.1.5)
-            val sensorSnapshot = SensorModule.motionSensorProvider.sensorDataFlow.firstOrNull()
-            val capturedAt = System.currentTimeMillis()
+            // ponytail: 10s timeout bounds the whole pipeline (shutter + EXIF fix), not just
+            // takePicture() — EXIF processing on a large/rotated JPEG used to run unbounded
+            // after this timeout had already elapsed.
+            withTimeout(10_000L) {
+                // 6. Snapshot sensor data at shutter time (Story 8.1.5). Timeout-guarded so a
+                // provider whose sensorDataFlow never emits cannot hang the capture
+                // indefinitely. This class does not call startSensing()/stopSensing() itself:
+                // SensorModule.motionSensorProvider is a shared, non-reference-counted
+                // singleton, and this method currently has no reachable production caller
+                // (see App.kt's unused executeCaptureAndImport) — calling stop/start here
+                // would race an already-open CameraViewfinderDialog's own sensing session.
+                // ponytail: best-effort snapshot only; wire start/stop here (with reference
+                // counting) if/when this path gets a real UI caller.
+                val sensorSnapshot = SensorModule.motionSensorProvider.snapshotSensorData()
+                val capturedAt = System.currentTimeMillis()
 
-            delay(400L)
+                delay(400L)
 
-            // 7. Take the photo — bridge ImageCapture callback to a suspend function
-            val outputOptions = ImageCapture.OutputFileOptions.Builder(outputFile).build()
-            val executor = Executors.newSingleThreadExecutor()
-            try {
-                // ponytail: 10s timeout — CameraX takePicture can hang silently on some devices
-                withTimeout(10_000L) {
+                // 7. Take the photo — bridge ImageCapture callback to a suspend function
+                val outputOptions = ImageCapture.OutputFileOptions.Builder(outputFile).build()
+                val executor = Executors.newSingleThreadExecutor()
+                try {
                     suspendCancellableCoroutine { cont ->
                         imageCapture.takePicture(
                             outputOptions,
@@ -138,61 +149,66 @@ class AndroidCameraProvider(
                         )
                         cont.invokeOnCancellation { executor.shutdown() }
                     }
+                } finally {
+                    executor.shutdown()
+                    cameraProvider.unbindAll()
                 }
-            } finally {
-                executor.shutdown()
-                cameraProvider.unbindAll()
-            }
 
-            if (!outputFile.exists()) {
-                return DomainError.SensorError.CaptureFailed(
-                    "CameraX onImageSaved fired but file missing: ${outputFile.absolutePath}"
-                ).left()
-            }
+                if (!outputFile.exists()) {
+                    return@withTimeout DomainError.SensorError.CaptureFailed(
+                        "CameraX onImageSaved fired but file missing: ${outputFile.absolutePath}"
+                    ).left()
+                }
 
-            // 8. Fix EXIF orientation in-place and extract camera metadata
-            val fixResult = ExifOrientationFixer.fixOrientation(outputFile.absolutePath)
-                .fold(
-                    ifLeft = { return it.left() },
+                // 8. Fix EXIF orientation in-place and extract camera metadata. Off the
+                // calling dispatcher — full-res bitmap decode/rotate/encode must not block
+                // whichever thread capturePhoto() was invoked from.
+                val fixResult = withContext(PlatformDispatcher.IO) {
+                    ExifOrientationFixer.fixOrientation(outputFile.absolutePath)
+                }.fold(
+                    ifLeft = { return@withTimeout it.left() },
                     ifRight = { it },
                 )
 
-            // 9. Merge EXIF camera metadata into motion sensor snapshot
-            val sensorData: ImageSensorData? = if (sensorSnapshot != null) {
-                sensorSnapshot.copy(
-                    focalLengthMm = fixResult.focalLengthMm ?: sensorSnapshot.focalLengthMm,
-                    focalLength35mmEq = fixResult.focalLength35mmEq
-                        ?: sensorSnapshot.focalLength35mmEq,
-                    cameraMake = fixResult.cameraMake ?: sensorSnapshot.cameraMake,
-                    cameraModel = fixResult.cameraModel ?: sensorSnapshot.cameraModel,
-                )
-            } else if (fixResult.focalLengthMm != null || fixResult.cameraMake != null) {
-                // No live sensor data — build from EXIF metadata alone
-                ImageSensorData(
+                // 9. Merge EXIF camera metadata into motion sensor snapshot
+                val sensorData: ImageSensorData? = if (sensorSnapshot != null) {
+                    sensorSnapshot.copy(
+                        focalLengthMm = fixResult.focalLengthMm ?: sensorSnapshot.focalLengthMm,
+                        focalLength35mmEq = fixResult.focalLength35mmEq
+                            ?: sensorSnapshot.focalLength35mmEq,
+                        cameraMake = fixResult.cameraMake ?: sensorSnapshot.cameraMake,
+                        cameraModel = fixResult.cameraModel ?: sensorSnapshot.cameraModel,
+                    )
+                } else if (fixResult.focalLengthMm != null || fixResult.cameraMake != null) {
+                    // No live sensor data — build from EXIF metadata alone
+                    ImageSensorData(
+                        focalLengthMm = fixResult.focalLengthMm,
+                        focalLength35mmEq = fixResult.focalLength35mmEq,
+                        cameraMake = fixResult.cameraMake,
+                        cameraModel = fixResult.cameraModel,
+                    )
+                } else {
+                    null
+                }
+
+                PlatformImageFile(
+                    path = fixResult.outputPath,
+                    mimeType = "image/jpeg",
+                    capturedAtMs = capturedAt,
                     focalLengthMm = fixResult.focalLengthMm,
                     focalLength35mmEq = fixResult.focalLength35mmEq,
                     cameraMake = fixResult.cameraMake,
                     cameraModel = fixResult.cameraModel,
-                )
-            } else {
-                null
+                    sensorData = sensorData,
+                ).right()
             }
-
-            PlatformImageFile(
-                path = fixResult.outputPath,
-                mimeType = "image/jpeg",
-                capturedAtMs = capturedAt,
-                focalLengthMm = fixResult.focalLengthMm,
-                focalLength35mmEq = fixResult.focalLength35mmEq,
-                cameraMake = fixResult.cameraMake,
-                cameraModel = fixResult.cameraModel,
-                sensorData = sensorData,
-            ).right()
         } catch (e: TimeoutCancellationException) {
             DomainError.SensorError.CaptureFailed("Camera capture timed out").left()
         } catch (e: CancellationException) {
             throw e
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            // Throwable, not Exception — an OutOfMemoryError decoding a large frame must
+            // surface as a capture failure, not kill the process or hang.
             DomainError.SensorError.CaptureFailed(
                 "CameraX capture failed: ${e.message ?: "unknown"}"
             ).left()

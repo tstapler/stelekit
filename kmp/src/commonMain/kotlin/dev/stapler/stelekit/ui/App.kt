@@ -87,6 +87,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.datetime.plus
 import arrow.core.Either
 import dev.stapler.stelekit.sections.SectionState
@@ -141,6 +142,17 @@ internal suspend fun executeCaptureAndImport(
         }
     }
 }
+
+/**
+ * Runs [importOperation] bounded by [timeoutMs], returning `null` on timeout instead of
+ * hanging. Used by [dev.stapler.stelekit.ui.components.CapturePreviewDialog]'s onSave handler
+ * so a stalled [ImageImportService.import] (blocked file IO, wedged DB write) can't leave the
+ * importing spinner stuck forever.
+ */
+internal suspend fun <T> withImportTimeout(
+    timeoutMs: Long = 20_000L,
+    importOperation: suspend () -> T,
+): T? = withTimeoutOrNull(timeoutMs) { importOperation() }
 
 /**
  * Root Composable for the Logseq application.
@@ -1651,13 +1663,30 @@ private fun GraphContent(
                                                 pendingCaptureBlockUuid = null
                                                 return@launch
                                             }
-                                            val result = imageImportService?.import(
-                                                tempFile = file,
-                                                graphPath = graphPath,
-                                                pageUuid = dev.stapler.stelekit.model.PageUuid(pageUuid),
-                                                source = ImageSource.CAMERA,
-                                                insertToJournalPage = false,
-                                            )
+                                            // ponytail: 20s timeout so a stalled save (blocked file
+                                            // IO, wedged DB write) can't leave isCaptureImporting
+                                            // stuck true forever. Residual risk: if the timeout
+                                            // fires after the sidecar/DB write but before the
+                                            // block-insert step, the cancelled import can leave an
+                                            // orphaned ImageAnnotation with no visible block — same
+                                            // class of gap as any hard cancellation mid-pipeline,
+                                            // not specific to this guard. Out of scope here; would
+                                            // need ImageImportService's own step recovery hardened.
+                                            val result = imageImportService?.let { service ->
+                                                withImportTimeout {
+                                                    service.import(
+                                                        tempFile = file,
+                                                        graphPath = graphPath,
+                                                        pageUuid = dev.stapler.stelekit.model.PageUuid(pageUuid),
+                                                        source = ImageSource.CAMERA,
+                                                        insertToJournalPage = false,
+                                                    )
+                                                }
+                                            }
+                                            if (imageImportService != null && result == null) {
+                                                graphContentLogger.warn("Camera image import timed out")
+                                                viewModel.sendSnackbar("Image save timed out — try again")
+                                            }
                                             result?.onLeft { err ->
                                                 graphContentLogger.warn("Camera image import failed: ${err.message}")
                                                 viewModel.sendSnackbar(err.toUiMessage())
