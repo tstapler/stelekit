@@ -1513,6 +1513,17 @@ class StelekitViewModel(
 
                 val diskBlockContent = tryMatchDiskBlockContent(localBlocks, conflictBlockUuid, event.content)
 
+                // FileRegistry's change signal is a whole-file byte comparison, so it fires on
+                // any disk write to the page — including one that simply persisted this exact
+                // edit (e.g. our own debounced save landing, or a disk copy that already matches).
+                // Only surface the dialog when the specific block being protected actually differs
+                // from its disk counterpart; otherwise this reproduces as a "conflict" with no
+                // difference to show in "View full comparison".
+                if (diskBlockContent != null && diskBlockContent == localContent) {
+                    blockStateManager?.queuePageSave(currentPage.uuid.value)
+                    return@collect
+                }
+
                 _uiState.update { it.copy(
                     diskConflict = DiskConflict(
                         pageUuid = currentPage.uuid.value,
@@ -1554,6 +1565,15 @@ class StelekitViewModel(
             val latestDiskContent = _uiState.value.pendingConflicts[filePath]?.diskContent ?: pending.diskContent
 
             val diskBlockContent = tryMatchDiskBlockContent(allBlocksForPage, firstBlock?.uuid?.value ?: "", latestDiskContent)
+
+            // Same false-positive guard as observeExternalFileChanges: FileRegistry's whole-file
+            // hash compare can flag "changed" even when this block's disk content already matches
+            // what's in the DB (e.g. the disk write that triggered this was our own save landing).
+            if (diskBlockContent != null && diskBlockContent == (firstBlock?.content ?: "")) {
+                graphLoader.parseAndSavePage(FilePath(filePath), latestDiskContent, dev.stapler.stelekit.parsing.ParseMode.FULL)
+                clearPendingConflict(filePath)
+                return@launch
+            }
 
             _uiState.update { state ->
                 state.copy(diskConflict = DiskConflict(
