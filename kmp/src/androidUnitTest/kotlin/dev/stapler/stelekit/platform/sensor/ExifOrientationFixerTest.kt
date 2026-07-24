@@ -298,10 +298,15 @@ class ExifOrientationFixerTest {
      * (CameraViewfinderDialog.android.kt's takePhotoAndProcess and
      * AndroidCameraProvider.capturePhoto()) wrap it in
      * `withContext(PlatformDispatcher.IO) { ... }` so it never runs on the calling
-     * (Main) coroutine. This locks that dispatcher hop in — if either call site regresses
-     * to invoking [ExifOrientationFixer.fixOrientation] directly on the calling dispatcher,
-     * a version of this test against that call site would start executing on the caller's
-     * thread instead of an IO thread.
+     * (Main) coroutine.
+     *
+     * Scope note: this test exercises the same `withContext(PlatformDispatcher.IO) { ... }`
+     * pattern the production call sites use, but does not invoke either production call
+     * site directly (CameraX/`ImageCapture` aren't cheaply fakeable under Robolectric). It
+     * proves the pattern itself moves execution off the calling thread; it does NOT catch a
+     * regression where a production call site stops using this pattern. Full coverage of
+     * that would require exercising `takePhotoAndProcess`/`capturePhoto()` end-to-end — see
+     * validation.md's documented residual-risk note on why that's not currently automated.
      */
     @Test
     fun `fixOrientation wrapped in PlatformDispatcher IO runs off the calling thread`() = runBlocking {

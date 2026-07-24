@@ -1655,59 +1655,71 @@ private fun GraphContent(
                                         val navigateAfterImport = pendingCaptureNavigateAfterImport
                                         isCaptureImporting = true
                                         scope.launch {
-                                            val graphPath = graphManager.getActiveGraphInfo()?.path
-                                            if (graphPath == null) {
+                                            // Throwable (not just Exception) is caught below and the
+                                            // whole block runs in try/finally: an uncaught Throwable on
+                                            // this scope (a plain rememberCoroutineScope() with no
+                                            // CoroutineExceptionHandler) would otherwise kill the
+                                            // Android process and, even short of a crash, skip the
+                                            // isCaptureImporting reset — the exact "stuck spinner"
+                                            // class of hang this PR fixes, reintroduced one step
+                                            // downstream of the capture dialog itself.
+                                            try {
+                                                val graphPath = graphManager.getActiveGraphInfo()?.path
+                                                if (graphPath == null) {
+                                                    return@launch
+                                                }
+                                                // ponytail: 20s timeout so a stalled save (blocked file
+                                                // IO, wedged DB write) can't leave isCaptureImporting
+                                                // stuck true forever. Residual risk: if the timeout
+                                                // fires after the sidecar/DB write but before the
+                                                // block-insert step, the cancelled import can leave an
+                                                // orphaned ImageAnnotation with no visible block — same
+                                                // class of gap as any hard cancellation mid-pipeline,
+                                                // not specific to this guard. Out of scope here; would
+                                                // need ImageImportService's own step recovery hardened.
+                                                val result = imageImportService?.let { service ->
+                                                    withImportTimeout {
+                                                        service.import(
+                                                            tempFile = file,
+                                                            graphPath = graphPath,
+                                                            pageUuid = dev.stapler.stelekit.model.PageUuid(pageUuid),
+                                                            source = ImageSource.CAMERA,
+                                                            insertToJournalPage = false,
+                                                        )
+                                                    }
+                                                }
+                                                if (imageImportService != null && result == null) {
+                                                    graphContentLogger.warn("Camera image import timed out")
+                                                    viewModel.sendSnackbar("Image save timed out — try again")
+                                                }
+                                                result?.onLeft { err ->
+                                                    graphContentLogger.warn("Camera image import failed: ${err.message}")
+                                                    viewModel.sendSnackbar(err.toUiMessage())
+                                                }
+                                                result?.onRight { annotation ->
+                                                    if (navigateAfterImport) {
+                                                        viewModel.navigateToAnnotationEditor(annotation.uuid, pageUuid)
+                                                    } else {
+                                                        val relPath = annotation.filePath.removePrefix("$graphPath/")
+                                                        if (captureBlockUuid != null) {
+                                                            blockStateManager.insertTextAtCursor(
+                                                                captureBlockUuid,
+                                                                markdownImageLink("", "../$relPath"),
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            } catch (e: CancellationException) {
+                                                throw e
+                                            } catch (e: Throwable) {
+                                                graphContentLogger.warn("Camera image import crashed: ${e.message}", e)
+                                                viewModel.sendSnackbar("Image save failed — try again")
+                                            } finally {
                                                 isCaptureImporting = false
                                                 pendingCaptureFile = null
                                                 pendingCapturePageUuid = null
                                                 pendingCaptureBlockUuid = null
-                                                return@launch
                                             }
-                                            // ponytail: 20s timeout so a stalled save (blocked file
-                                            // IO, wedged DB write) can't leave isCaptureImporting
-                                            // stuck true forever. Residual risk: if the timeout
-                                            // fires after the sidecar/DB write but before the
-                                            // block-insert step, the cancelled import can leave an
-                                            // orphaned ImageAnnotation with no visible block — same
-                                            // class of gap as any hard cancellation mid-pipeline,
-                                            // not specific to this guard. Out of scope here; would
-                                            // need ImageImportService's own step recovery hardened.
-                                            val result = imageImportService?.let { service ->
-                                                withImportTimeout {
-                                                    service.import(
-                                                        tempFile = file,
-                                                        graphPath = graphPath,
-                                                        pageUuid = dev.stapler.stelekit.model.PageUuid(pageUuid),
-                                                        source = ImageSource.CAMERA,
-                                                        insertToJournalPage = false,
-                                                    )
-                                                }
-                                            }
-                                            if (imageImportService != null && result == null) {
-                                                graphContentLogger.warn("Camera image import timed out")
-                                                viewModel.sendSnackbar("Image save timed out — try again")
-                                            }
-                                            result?.onLeft { err ->
-                                                graphContentLogger.warn("Camera image import failed: ${err.message}")
-                                                viewModel.sendSnackbar(err.toUiMessage())
-                                            }
-                                            result?.onRight { annotation ->
-                                                if (navigateAfterImport) {
-                                                    viewModel.navigateToAnnotationEditor(annotation.uuid, pageUuid)
-                                                } else {
-                                                    val relPath = annotation.filePath.removePrefix("$graphPath/")
-                                                    if (captureBlockUuid != null) {
-                                                        blockStateManager.insertTextAtCursor(
-                                                            captureBlockUuid,
-                                                            markdownImageLink("", "../$relPath"),
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                            isCaptureImporting = false
-                                            pendingCaptureFile = null
-                                            pendingCapturePageUuid = null
-                                            pendingCaptureBlockUuid = null
                                         }
                                     },
                                     onDiscard = {
