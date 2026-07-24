@@ -96,6 +96,67 @@ class DiskConflictResolutionTest {
         ).also { viewModelRef = it }
     }
 
+    /** Like [makeViewModel] but also returns the [BlockStateManager] so tests can call [BlockStateManager.observePage]. */
+    private fun makeViewModelWithBsm(
+        pageRepo: FakePageRepository = FakePageRepository(listOf(testPage)),
+        blockRepo: FakeBlockRepository = FakeBlockRepository(
+            mapOf(testPageUuid to listOf(testBlock))
+        ),
+        graphLoader: GraphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+    ): Pair<StelekitViewModel, BlockStateManager> {
+        val scope = CoroutineScope(Dispatchers.Unconfined)
+        val searchRepo = InMemorySearchRepository()
+        @Suppress("DEPRECATION")
+        val graphWriter = GraphWriter(PlatformFileSystem(), pageRepository = pageRepo)
+        var viewModelRef: StelekitViewModel? = null
+        val bsm = BlockStateManager(
+            blockRepository = blockRepo,
+            graphLoader = graphLoader,
+            scope = scope,
+            graphWriter = graphWriter,
+            pageRepository = pageRepo,
+            graphPathProvider = { viewModelRef?.uiState?.value?.currentGraphPath ?: "" }
+        )
+        val vm = StelekitViewModel(
+            StelekitViewModelDependencies(
+                fileSystem = PlatformFileSystem(),
+                pageRepository = pageRepo,
+                blockRepository = blockRepo,
+                searchRepository = searchRepo,
+                graphLoader = graphLoader,
+                graphWriter = graphWriter,
+                platformSettings = InMemorySettings(),
+                scope = scope,
+                blockStateManager = bsm,
+            )
+        ).also { viewModelRef = it }
+        return vm to bsm
+    }
+
+    // ─── Journals screen: pages observed via BlockStateManager (not Screen.PageView) ─────
+
+    @Test
+    fun external_change_to_a_journal_page_observed_via_blockStateManager_is_not_treated_as_off_page() = runBlocking {
+        val pageRepo = FakePageRepository(listOf(testPage))
+        val blockRepo = FakeBlockRepository(mapOf(testPageUuid to listOf(testBlock)))
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val (vm, bsm) = makeViewModelWithBsm(pageRepo = pageRepo, blockRepo = blockRepo, graphLoader = graphLoader)
+        vm.startAutoSave()
+
+        // Simulate JournalsViewModel making today's journal page visible while the screen
+        // stays Screen.Journals (never becomes a Screen.PageView) — the scenario that used
+        // to make observeExternalFileChanges() treat every reload as "off-page" and suppress it.
+        bsm.observePage(testPage.uuid, isContentLoaded = true)
+
+        graphLoader.emitExternalFileChange(testFilePath, "- disk content")
+
+        assertNull(
+            vm.uiState.value.pendingConflicts[testFilePath],
+            "A page actively observed by BlockStateManager (e.g. a visible journal entry) must not be " +
+                "routed through the off-page suppression branch"
+        )
+    }
+
     @Test
     fun diskConflict_model_has_all_fields() {
         val conflict = DiskConflict(

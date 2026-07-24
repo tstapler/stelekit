@@ -1434,7 +1434,19 @@ class StelekitViewModel(
             graphLoader.externalFileChanges.collect { event ->
                 val state = _uiState.value
                 val editingBlockUuid = state.editingBlockId
-                val currentPage = (state.currentScreen as? Screen.PageView)?.page
+                // A page is "currently viewed" either via Screen.PageView, or by being one of
+                // the pages BlockStateManager is actively observing (e.g. journal entries visible
+                // on the Journals screen — that screen has no single Screen.PageView to match).
+                var currentPage = (state.currentScreen as? Screen.PageView)?.page
+                if (currentPage == null) {
+                    for (uuid in blockStateManager?.activePageUuids?.value ?: emptySet()) {
+                        val candidate = pageRepository.getPageByUuid(PageUuid(uuid)).first().getOrNull()
+                        if (candidate?.filePath == event.filePath) {
+                            currentPage = candidate
+                            break
+                        }
+                    }
+                }
                 if (currentPage == null || currentPage.filePath != event.filePath) {
                     // User is not currently viewing this page. Suppress auto-reimport so the
                     // DB keeps the user's edits, store the disk content, and notify via snackbar.
