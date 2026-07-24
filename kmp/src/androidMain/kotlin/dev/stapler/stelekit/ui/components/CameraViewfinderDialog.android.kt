@@ -28,6 +28,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
+import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.ImageSensorData
 import dev.stapler.stelekit.platform.sensor.ExifOrientationFixer
 import dev.stapler.stelekit.platform.sensor.PlatformImageFile
@@ -45,6 +46,8 @@ import java.util.UUID
 import java.util.concurrent.Executors
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+
+private val logger = Logger("CameraCapture")
 
 @Composable
 actual fun CameraViewfinderDialog(
@@ -81,14 +84,20 @@ actual fun CameraViewfinderDialog(
         try {
             SensorModule.motionSensorProvider.startSensing()
         } catch (e: Throwable) {
-            currentOnError(e.message ?: "Failed to start sensors")
+            // Raw exception text (CameraX/hardware internals, or an OutOfMemoryError's
+            // diagnostic message) must not reach the user-facing snackbar — log it and
+            // surface a generic message instead, matching the sanitization already applied
+            // to every other camera/import error path via DomainError.toUiMessage().
+            logger.warn("Failed to start sensors: ${e.message}", e)
+            currentOnError("Failed to start sensors")
         }
         val future = ProcessCameraProvider.getInstance(context)
         var provider: ProcessCameraProvider? = null
         future.addListener({
             val result = runCatching { future.get() }
             val obtained = result.getOrElse {
-                currentOnError(it.message ?: "Failed to start camera")
+                logger.warn("Failed to start camera: ${it.message}", it)
+                currentOnError("Failed to start camera")
                 return@addListener
             }
             provider = obtained
@@ -104,7 +113,8 @@ actual fun CameraViewfinderDialog(
                     imageCapture,
                 )
             } catch (e: Throwable) {
-                currentOnError(e.message ?: "Failed to bind camera")
+                logger.warn("Failed to bind camera: ${e.message}", e)
+                currentOnError("Failed to bind camera")
             }
         }, ContextCompat.getMainExecutor(context))
         onDispose {
@@ -154,8 +164,26 @@ actual fun CameraViewfinderDialog(
                                     val result = takePhotoAndProcess(context, imageCapture)
                                     result.fold(
                                         onSuccess = { file -> onCapture(file) },
-                                        onFailure = { err -> onError(err.message ?: "Capture failed"); onDismiss() },
+                                        onFailure = { err ->
+                                            // Raw exception text (which may be an
+                                            // OutOfMemoryError's diagnostic message, now that
+                                            // takePhotoAndProcess catches Throwable) must not
+                                            // reach the user-facing snackbar unsanitized.
+                                            logger.warn("Capture failed: ${err.message}", err)
+                                            onError("Capture failed")
+                                            onDismiss()
+                                        },
                                     )
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (e: Throwable) {
+                                    // Guards the caller-supplied onCapture/onError/onDismiss
+                                    // callbacks: an uncaught Throwable here would otherwise
+                                    // propagate on this scope (a plain
+                                    // rememberCoroutineScope() with no
+                                    // CoroutineExceptionHandler) and can kill the Android
+                                    // process.
+                                    logger.warn("Capture callback crashed: ${e.message}", e)
                                 } finally {
                                     isCapturing = false
                                     captureJob = null
@@ -193,6 +221,12 @@ private suspend fun takePhotoAndProcess(
         // Bounds the whole pipeline (sensor snapshot + shutter + EXIF fix), not just the
         // shutter call — EXIF processing on a large/rotated JPEG used to run unbounded
         // after this timeout had already elapsed.
+        // Note: cancellation is cooperative (Kotlin can only interrupt at a suspension
+        // point) — the EXIF fix's synchronous BitmapFactory decode/rotate/encode and a
+        // truly HAL-wedged takePicture() cannot be preempted mid-call. This timeout gives
+        // up and surfaces an error to the caller within ~10s in that case, but the
+        // underlying thread/camera binding may remain occupied until the native call
+        // eventually returns. Known residual risk, not preemptible from Kotlin.
         withTimeout(10_000L) {
             val sensorSnapshot = SensorModule.motionSensorProvider.snapshotSensorData()
             suspendCancellableCoroutine { cont ->

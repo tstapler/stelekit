@@ -75,46 +75,54 @@ class AndroidCameraProvider(
         }
 
         return try {
-            // 2. Obtain ProcessCameraProvider — bridge ListenableFuture to suspend
-            val cameraProvider: ProcessCameraProvider = suspendCancellableCoroutine { cont ->
-                val future = ProcessCameraProvider.getInstance(context)
-                val executor = ContextCompat.getMainExecutor(context)
-                future.addListener(
-                    {
-                        if (cont.isActive) {
-                            runCatching { future.get() }
-                                .onSuccess { cont.resume(it) }
-                                .onFailure { cont.resumeWithException(it) }
-                        }
-                    },
-                    executor,
-                )
-                cont.invokeOnCancellation { future.cancel(true) }
-            }
-
-            // 3. Build ImageCapture use case
-            val imageCapture = ImageCapture.Builder()
-                .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
-                .build()
-
-            // 4. Bind to ProcessLifecycleOwner — no Activity reference required.
-            // Use fully-qualified class to avoid the Glance bindToLifecycle extension clash.
-            val lifecycleOwner = androidx.lifecycle.ProcessLifecycleOwner.get()
-            cameraProvider.unbindAll()
-            cameraProvider.bindToLifecycle(
-                lifecycleOwner,
-                CameraSelector.DEFAULT_BACK_CAMERA,
-                imageCapture,
-            )
-
-            // 5. Prepare output file: cacheDir/captures/<uuid>.jpg
-            val capturesDir = File(context.cacheDir, "captures").also { it.mkdirs() }
-            val outputFile = File(capturesDir, "${UUID.randomUUID()}.jpg")
-
-            // ponytail: 10s timeout bounds the whole pipeline (shutter + EXIF fix), not just
-            // takePicture() — EXIF processing on a large/rotated JPEG used to run unbounded
-            // after this timeout had already elapsed.
+            // ponytail: 10s timeout bounds the whole pipeline — provider acquisition, bind,
+            // shutter, and EXIF fix — not just takePicture(). Previously getInstance()/
+            // bindToLifecycle() sat outside this block: a wedged ListenableFuture or a
+            // hardware bind that never resolves would hang capturePhoto() indefinitely, the
+            // same failure class this timeout exists to eliminate, just one stage earlier.
+            // Note: cancellation is cooperative (Kotlin can only interrupt at a suspension
+            // point) — the EXIF fix's synchronous BitmapFactory decode/rotate/encode and a
+            // truly HAL-wedged takePicture() cannot be preempted mid-call. This timeout gives
+            // up and surfaces an error to the caller within ~10s in that case, but the
+            // underlying thread/camera binding may remain occupied until the native call
+            // eventually returns. Known residual risk, not preemptible from Kotlin.
             withTimeout(10_000L) {
+                // 2. Obtain ProcessCameraProvider — bridge ListenableFuture to suspend
+                val cameraProvider: ProcessCameraProvider = suspendCancellableCoroutine { cont ->
+                    val future = ProcessCameraProvider.getInstance(context)
+                    val executor = ContextCompat.getMainExecutor(context)
+                    future.addListener(
+                        {
+                            if (cont.isActive) {
+                                runCatching { future.get() }
+                                    .onSuccess { cont.resume(it) }
+                                    .onFailure { cont.resumeWithException(it) }
+                            }
+                        },
+                        executor,
+                    )
+                    cont.invokeOnCancellation { future.cancel(true) }
+                }
+
+                // 3. Build ImageCapture use case
+                val imageCapture = ImageCapture.Builder()
+                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+                    .build()
+
+                // 4. Bind to ProcessLifecycleOwner — no Activity reference required.
+                // Use fully-qualified class to avoid the Glance bindToLifecycle extension clash.
+                val lifecycleOwner = androidx.lifecycle.ProcessLifecycleOwner.get()
+                cameraProvider.unbindAll()
+                cameraProvider.bindToLifecycle(
+                    lifecycleOwner,
+                    CameraSelector.DEFAULT_BACK_CAMERA,
+                    imageCapture,
+                )
+
+                // 5. Prepare output file: cacheDir/captures/<uuid>.jpg
+                val capturesDir = File(context.cacheDir, "captures").also { it.mkdirs() }
+                val outputFile = File(capturesDir, "${UUID.randomUUID()}.jpg")
+
                 // 6. Snapshot sensor data at shutter time (Story 8.1.5). Timeout-guarded so a
                 // provider whose sensorDataFlow never emits cannot hang the capture
                 // indefinitely. This class does not call startSensing()/stopSensing() itself:
