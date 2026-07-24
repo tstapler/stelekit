@@ -3,6 +3,9 @@ package dev.stapler.stelekit.platform.sensor
 import android.graphics.Bitmap
 import androidx.exifinterface.media.ExifInterface
 import arrow.core.Either
+import dev.stapler.stelekit.coroutines.PlatformDispatcher
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -13,6 +16,7 @@ import java.io.File
 import java.io.FileOutputStream
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 
 /**
@@ -284,5 +288,39 @@ class ExifOrientationFixerTest {
     fun `fixOrientation returns CaptureFailed for non-existent file`() {
         val result = ExifOrientationFixer.fixOrientation("/tmp/does_not_exist_abc123.jpg")
         assertIs<Either.Left<dev.stapler.stelekit.error.DomainError.SensorError.CaptureFailed>>(result)
+    }
+
+    // ── Dispatcher hop (hang-fix regression) ──────────────────────────────────
+
+    /**
+     * Regression test for the reviewed hang: [ExifOrientationFixer.fixOrientation] is a
+     * synchronous full-res bitmap decode/rotate/encode. Both production call sites
+     * (CameraViewfinderDialog.android.kt's takePhotoAndProcess and
+     * AndroidCameraProvider.capturePhoto()) wrap it in
+     * `withContext(PlatformDispatcher.IO) { ... }` so it never runs on the calling
+     * (Main) coroutine. This locks that dispatcher hop in — if either call site regresses
+     * to invoking [ExifOrientationFixer.fixOrientation] directly on the calling dispatcher,
+     * a version of this test against that call site would start executing on the caller's
+     * thread instead of an IO thread.
+     */
+    @Test
+    fun `fixOrientation wrapped in PlatformDispatcher IO runs off the calling thread`() = runBlocking {
+        val callingThread = Thread.currentThread()
+        val input = tempFolder.newFile("dispatcher_hop.jpg")
+        writeJpegWithOrientation(input, ExifInterface.ORIENTATION_ROTATE_90)
+
+        var executingThread: Thread? = null
+        val result = withContext(PlatformDispatcher.IO) {
+            executingThread = Thread.currentThread()
+            ExifOrientationFixer.fixOrientation(input.absolutePath)
+        }
+
+        assertIs<Either.Right<ExifOrientationFixer.FixResult>>(result)
+        assertNotEquals(
+            callingThread, executingThread,
+            "fixOrientation must run off the calling thread when dispatched via " +
+                "PlatformDispatcher.IO — a full-res decode/rotate/encode on the calling " +
+                "(Main) thread is the dispatcher-hop hang this test guards against",
+        )
     }
 }
