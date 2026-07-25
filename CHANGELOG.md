@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.71.5](https://github.com/tstapler/stelekit/compare/v0.71.4...v0.71.5) (2026-07-24)
+
+
+### Bug Fixes
+
+* **android:** harden camera capture hang fix (post-[#256](https://github.com/tstapler/stelekit/issues/256) review findings) ([#257](https://github.com/tstapler/stelekit/issues/257)) ([6369b87](https://github.com/tstapler/stelekit/commit/6369b87553355dcf7ae0d9199b4e91c7ff78a1ad))
+
 ## [0.71.4](https://github.com/tstapler/stelekit/compare/v0.71.3...v0.71.4) (2026-07-24)
 
 
