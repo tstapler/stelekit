@@ -648,6 +648,21 @@ class BlockConstructsSpec {
     }
 
     @Test
+    fun `bulleted fenced code block hands a non-property, non-bullet indented line to its children (tryConsumeIndentedProperty fallback)`() {
+        // Regression test for the shared tryConsumeIndentedProperty() speculative-parse
+        // helper: "  just some text" is indented past the code fence's level but is
+        // neither a "key:: value" property nor a bullet. tryConsumeIndentedProperty must
+        // fully restore the lexer/token state (including the leading INDENT) on its
+        // failed property match so parseBlocksAtLevel can re-parse the line from scratch
+        // as an ordinary child paragraph — not silently drop it or misparse it.
+        val doc = parse("- ```kotlin\nval x = 1\n```\n  just some text")
+        val code = doc.children[0] as CodeFenceBlockNode
+        assertEquals(1, code.children.size)
+        val child = code.children[0] as ParagraphBlockNode
+        assertEquals("just some text", (child.content[0] as TextNode).content.trim())
+    }
+
+    @Test
     fun `bulleted blockquote keeps a nested outline child alongside its own quote lines`() {
         val doc = parse("- > a quote\n  - child note")
         val bq = doc.children[0] as BlockquoteBlockNode
@@ -807,6 +822,17 @@ class BlockConstructsSpec {
     }
 
     @Test
+    fun `multi-line raw HTML block is a single node, not split into siblings`() {
+        // CommonMark §4.6 type-6 raw HTML blocks continue consuming lines until a
+        // blank line or EOF. A parser that only reads the opening tag's line would
+        // split "some content" and "</div>" off into their own sibling blocks.
+        val doc = parse("<div>\nsome content\n</div>")
+        assertEquals(1, doc.children.size, "Multi-line raw HTML must parse as one block, got: ${doc.children}")
+        val html = doc.children[0] as RawHtmlBlockNode
+        assertEquals("<div>\nsome content\n</div>", html.rawHtml.trim())
+    }
+
+    @Test
     fun `raw HTML block captures the opening tag line verbatim`() {
         val doc = parse("<div class=\"note\">")
         val html = doc.children[0] as RawHtmlBlockNode
@@ -861,6 +887,31 @@ class BlockConstructsSpec {
         val doc = parse("- <div>html</div>\n  id:: abc")
         val html = doc.children[0] as RawHtmlBlockNode
         assertEquals("abc", html.properties["id"]?.trim())
+    }
+
+    @Test
+    fun `nested bulleted heading carries the bullet's outline level as indentLevel`() {
+        val doc = parse("- parent\n  - # Nested Heading")
+        val root = doc.children[0] as BulletBlockNode
+        val heading = root.children[0] as HeadingBlockNode
+        assertEquals(1, heading.indentLevel)
+    }
+
+    @Test
+    fun `inline-only span tag is NOT classified as raw HTML (falls back to paragraph)`() {
+        // <span> is an inline HTML element, not one of the CommonMark §4.6 type-6
+        // block-level tags, so it must not be picked up by the BLOCK_HTML_TAGS check.
+        val doc = parse("<span>inline html</span>")
+        assertIs<ParagraphBlockNode>(doc.children[0], "Inline <span> must fall back to a paragraph, not RawHtmlBlockNode")
+    }
+
+    @Test
+    fun `DOCTYPE declaration is NOT classified as raw HTML (falls back to paragraph)`() {
+        // <!DOCTYPE html> is a type-7 HTML construct in CommonMark, not one of the
+        // recognized block tag names or an HTML comment, so BLOCK_HTML_TAGS must not
+        // match it.
+        val doc = parse("<!DOCTYPE html>")
+        assertIs<ParagraphBlockNode>(doc.children[0], "<!DOCTYPE html> must fall back to a paragraph, not RawHtmlBlockNode")
     }
 
     @Test
