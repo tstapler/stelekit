@@ -27,12 +27,15 @@ data class ParagraphBlockNode(
  * and as decoration on bullet blocks (e.g. `- ## TODO My heading`).
  *
  * [level] is 1–6 (number of leading `#` characters).
+ * [indentLevel] is the outline nesting depth (mirrors [BulletBlockNode.level]) for headings
+ * that decorate a bullet; top-level ATX headings default to 0.
  */
 data class HeadingBlockNode(
     val level: Int,
     override val content: List<InlineNode>,
     override val children: List<BlockNode> = emptyList(),
-    override val properties: Map<String, String> = emptyMap()
+    override val properties: Map<String, String> = emptyMap(),
+    val indentLevel: Int = 0
 ) : BlockNode()
 
 /**

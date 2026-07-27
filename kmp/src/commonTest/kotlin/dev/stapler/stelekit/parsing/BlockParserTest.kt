@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.parsing
 
 import dev.stapler.stelekit.parsing.ast.BulletBlockNode
+import dev.stapler.stelekit.parsing.ast.HeadingBlockNode
 import dev.stapler.stelekit.parsing.ast.TextNode
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -77,5 +78,67 @@ class BlockParserTest {
         assertEquals("Block 2", (block2.content[0] as TextNode).content.trim())
         assertEquals(1, block2.properties.size)
         assertEquals("value", block2.properties["prop"]?.trim())
+    }
+
+    @Test
+    fun `test top-level ATX heading`() {
+        val input = "# Core Definition"
+
+        val parser = BlockParser(input)
+        val doc = parser.parse()
+
+        assertEquals(1, doc.children.size)
+        val heading = doc.children[0] as HeadingBlockNode
+        assertEquals(1, heading.level)
+        assertEquals(0, heading.indentLevel)
+        assertEquals("Core Definition", (heading.content[0] as TextNode).content.trim())
+    }
+
+    @Test
+    fun `test bulleted ATX heading is classified as heading`() {
+        // Logseq decorates outline bullet items as headings this way (e.g. "- # Core Definition").
+        val input = "- # Core Definition"
+
+        val parser = BlockParser(input)
+        val doc = parser.parse()
+
+        assertEquals(1, doc.children.size)
+        val heading = doc.children[0] as HeadingBlockNode
+        assertEquals(1, heading.level)
+        assertEquals("Core Definition", (heading.content[0] as TextNode).content.trim())
+    }
+
+    @Test
+    fun `test nested bulleted heading preserves outline structure`() {
+        val input = """
+- ## Parent Heading
+  - Child bullet
+        """.trimIndent()
+
+        val parser = BlockParser(input)
+        val doc = parser.parse()
+
+        assertEquals(1, doc.children.size)
+        val heading = doc.children[0] as HeadingBlockNode
+        assertEquals(2, heading.level)
+        assertEquals(0, heading.indentLevel)
+        assertEquals("Parent Heading", (heading.content[0] as TextNode).content.trim())
+        assertEquals(1, heading.children.size, "Heading bullet should retain its child")
+
+        val child = heading.children[0] as BulletBlockNode
+        assertEquals("Child bullet", (child.content[0] as TextNode).content.trim())
+    }
+
+    @Test
+    fun `test bulleted tag is not misdetected as heading`() {
+        // "#tag" has no whitespace after the hash run, so it must NOT be treated as a heading.
+        val input = "- #tag some content"
+
+        val parser = BlockParser(input)
+        val doc = parser.parse()
+
+        assertEquals(1, doc.children.size)
+        val bullet = doc.children[0] as BulletBlockNode
+        assertEquals("#tag some content", (bullet.content[0] as TextNode).content.trim())
     }
 }

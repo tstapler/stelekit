@@ -39,7 +39,7 @@ class MarkdownParser {
         val level = when(block) {
             is BulletBlockNode -> block.level
             is ParagraphBlockNode -> 0
-            is HeadingBlockNode -> 0
+            is HeadingBlockNode -> block.indentLevel
             is CodeFenceBlockNode -> 0
             is BlockquoteBlockNode -> 0
             is OrderedListItemBlockNode -> block.level

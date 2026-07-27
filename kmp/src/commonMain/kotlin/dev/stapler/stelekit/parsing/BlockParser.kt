@@ -48,162 +48,20 @@ class BlockParser(private val source: CharSequence) {
         }
 
         // 1a. Check for ATX heading: # / ## / ### etc at line start
-        if (currentToken.type == TokenType.HASH) {
-            val hashLen = currentToken.end - currentToken.start
-            val headingLevel = hashLen.coerceIn(1, 6)
-            // Valid heading: hash run followed by WS, NEWLINE, or EOF
-            // Also reject if hashLen > 6 (e.g. ####### is not a heading)
-            if (hashLen <= 6) {
-                val next = peekToken(1)
-                if (next.type == TokenType.WS || next.type == TokenType.NEWLINE || next.type == TokenType.EOF) {
-                    advance() // consume HASH run
-                    if (currentToken.type == TokenType.WS) advance() // consume space
-                    val contentStr = parseLine()
-                    // Strip optional trailing # sequence and whitespace
-                    val stripped = contentStr.trimEnd('#').trimEnd()
-                    return HeadingBlockNode(
-                        level = headingLevel,
-                        content = listOf(TextNode(stripped))
-                    )
-                }
-            }
+        val topLevelHeadingLevel = tryConsumeAtxHeadingMarker()
+        if (topLevelHeadingLevel != null) {
+            val contentStr = parseLine()
+            // Strip optional trailing # sequence and whitespace
+            val stripped = contentStr.trimEnd('#').trimEnd()
+            return HeadingBlockNode(
+                level = topLevelHeadingLevel,
+                content = listOf(TextNode(stripped))
+            )
         }
 
-        // 1b. Check for fenced code block: ``` or ~~~
-        if (currentToken.type == TokenType.BACKTICK) {
-            val fenceLen = currentToken.end - currentToken.start
-            if (fenceLen >= 3) {
-                advance() // consume opening ```
-                // Optional language identifier on same line
-                val language = if (currentToken.type == TokenType.TEXT) {
-                    val lang = currentToken.text(source).toString().trim()
-                    parseLine() // consume rest of opening line (including lang token)
-                    lang
-                } else {
-                    parseLine() // consume newline
-                    null
-                }
-                // Collect body until matching ``` (same fence length) or EOF
-                val body = StringBuilder()
-                while (currentToken.type != TokenType.EOF) {
-                    if (currentToken.type == TokenType.BACKTICK) {
-                        val closeLen = currentToken.end - currentToken.start
-                        if (closeLen >= 3) {
-                            advance() // consume closing ```
-                            if (currentToken.type == TokenType.NEWLINE) advance()
-                            break
-                        }
-                    }
-                    if (currentToken.type == TokenType.NEWLINE) {
-                        body.append('\n')
-                        advance()
-                    } else {
-                        body.append(currentToken.text(source))
-                        advance()
-                    }
-                }
-                // Trim trailing newline from body
-                val rawContent = body.toString().trimEnd('\n')
-                return CodeFenceBlockNode(language = language, rawContent = rawContent)
-            }
-        }
-
-        // 1c. Check for tilde fenced code block: ~~~
-        if (currentToken.type == TokenType.TILDE) {
-            val fenceLen = currentToken.end - currentToken.start
-            if (fenceLen >= 3) {
-                advance() // consume opening ~~~
-                val language = if (currentToken.type == TokenType.TEXT) {
-                    val lang = currentToken.text(source).toString().trim()
-                    parseLine()
-                    lang
-                } else {
-                    parseLine()
-                    null
-                }
-                val body = StringBuilder()
-                while (currentToken.type != TokenType.EOF) {
-                    if (currentToken.type == TokenType.TILDE) {
-                        val closeLen = currentToken.end - currentToken.start
-                        if (closeLen >= 3) {
-                            advance()
-                            if (currentToken.type == TokenType.NEWLINE) advance()
-                            break
-                        }
-                    }
-                    if (currentToken.type == TokenType.NEWLINE) {
-                        body.append('\n')
-                        advance()
-                    } else {
-                        body.append(currentToken.text(source))
-                        advance()
-                    }
-                }
-                val rawContent = body.toString().trimEnd('\n')
-                return CodeFenceBlockNode(language = language, rawContent = rawContent)
-            }
-        }
-
-        // 1d. Check for thematic break from TEXT token: --- or ___
-        if (currentToken.type == TokenType.TEXT) {
-            val text = currentToken.text(source).toString()
-            if (text.matches(THEMATIC_BREAK_REGEX)) {
-                val next = peekToken(1)
-                if (next.type == TokenType.NEWLINE || next.type == TokenType.EOF) {
-                    advance() // consume ---
-                    if (currentToken.type == TokenType.NEWLINE) advance()
-                    return ThematicBreakBlockNode()
-                }
-            }
-        }
-
-        // 1e. Check for thematic break from STAR token: ***
-        if (currentToken.type == TokenType.STAR) {
-            val runLen = currentToken.end - currentToken.start
-            if (runLen >= 3) {
-                val next = peekToken(1)
-                if (next.type == TokenType.NEWLINE || next.type == TokenType.EOF) {
-                    advance() // consume ***
-                    if (currentToken.type == TokenType.NEWLINE) advance()
-                    return ThematicBreakBlockNode()
-                }
-            }
-        }
-
-        // 1f. Check for blockquote: > content
-        if (currentToken.type == TokenType.R_ANGLE) {
-            advance() // consume >
-            if (currentToken.type == TokenType.WS) advance() // optional space
-            return parseBlockquote(level)
-        }
-
-        // 1g. Check for ordered list: N. content
-        if (currentToken.type == TokenType.TEXT) {
-            val txt = currentToken.text(source).toString()
-            val numDotMatch = ORDERED_LIST_EXTRACT_REGEX.find(txt)
-            if (numDotMatch != null) {
-                val peekNext = peekToken(1)
-                if (peekNext.type == TokenType.WS || peekNext.type == TokenType.EOF || peekNext.type == TokenType.NEWLINE) {
-                    val number = numDotMatch.groupValues[1].toInt()
-                    advance() // consume "N."
-                    if (currentToken.type == TokenType.WS) advance() // consume space
-                    val contentStr = parseLine()
-                    val children = parseBlocksAtLevel(level + 1)
-                    return OrderedListItemBlockNode(
-                        number = number,
-                        content = listOf(TextNode(contentStr)),
-                        children = children,
-                        level = level
-                    )
-                }
-            }
-        }
-
-        // 1h. Check for GFM pipe table: starts with |
-        if (currentToken.type == TokenType.PIPE) {
-            val tableNode = tryParseTable()
-            if (tableNode != null) return tableNode
-        }
+        // 1b. Check for a fenced code block, blockquote, ordered list, thematic break, or
+        // GFM table at the top level.
+        tryConsumeNonHeadingConstruct(level)?.let { return it }
 
         // 2. Check for Bullet
         val isBullet = if (currentToken.type == TokenType.BULLET) {
@@ -211,6 +69,21 @@ class BlockParser(private val source: CharSequence) {
             true
         } else {
             false
+        }
+
+        // 2a. A bullet's content may itself be an ATX heading (e.g. "- # Core Definition"),
+        // which is how Logseq decorates outline items as headings. Detect it here so the
+        // bullet's outline structure (level/children) is preserved alongside heading styling.
+        val bulletHeadingLevel = if (isBullet) tryConsumeAtxHeadingMarker() else null
+
+        // 2b. A bullet's content may likewise be a fenced code block, blockquote, ordered
+        // list item, thematic break, or GFM table (e.g. "- ```kotlin", "- > quote",
+        // "- 1. item", "- ---", "- | a | b |"). These constructs were previously only
+        // detected before bullet-token consumption (see 1b above), so decorating a bullet
+        // with any of them fell through to plain bullet/paragraph parsing and rendered as
+        // literal Markdown text — the same structural bug already fixed for headings.
+        if (isBullet && bulletHeadingLevel == null) {
+            tryConsumeNonHeadingConstruct(level)?.let { return it }
         }
 
         // 3. Parse Content & Properties
@@ -263,18 +136,27 @@ class BlockParser(private val source: CharSequence) {
         // We already verified above that if we hit a bullet > level, it's a child.
         val children = parseBlocksAtLevel(level + 1)
 
-        val inlineContent = listOf(TextNode(contentBuilder.toString())) // Placeholder
-
-        return if (isBullet) {
-            BulletBlockNode(
-                content = inlineContent,
+        return when {
+            bulletHeadingLevel != null -> {
+                // Strip optional trailing # sequence and whitespace, mirroring the
+                // top-level ATX heading handling above.
+                val stripped = contentBuilder.toString().trimEnd('#').trimEnd()
+                HeadingBlockNode(
+                    level = bulletHeadingLevel,
+                    content = listOf(TextNode(stripped)),
+                    children = children,
+                    properties = properties,
+                    indentLevel = level
+                )
+            }
+            isBullet -> BulletBlockNode(
+                content = listOf(TextNode(contentBuilder.toString())),
                 children = children,
                 properties = properties,
                 level = level
             )
-        } else {
-            ParagraphBlockNode(
-                content = inlineContent,
+            else -> ParagraphBlockNode(
+                content = listOf(TextNode(contentBuilder.toString())),
                 children = children,
                 properties = properties
             )
@@ -469,6 +351,152 @@ class BlockParser(private val source: CharSequence) {
             if (next.type == TokenType.TEXT && isOrderedListMarker(next.text(source).toString())) return true
         }
         return false
+    }
+
+    /**
+     * If [currentToken] starts a valid ATX heading marker (a run of 1–6 `#` followed by
+     * whitespace, a newline, or EOF), consumes the `#` run and any single following space
+     * and returns the heading level (1–6). Otherwise leaves the token stream untouched and
+     * returns null.
+     */
+    private fun tryConsumeAtxHeadingMarker(): Int? {
+        if (currentToken.type != TokenType.HASH) return null
+        val hashLen = currentToken.end - currentToken.start
+        if (hashLen > 6) return null
+        val next = peekToken(1)
+        if (next.type != TokenType.WS && next.type != TokenType.NEWLINE && next.type != TokenType.EOF) return null
+
+        val headingLevel = hashLen.coerceIn(1, 6)
+        advance() // consume HASH run
+        if (currentToken.type == TokenType.WS) advance() // consume space
+        return headingLevel
+    }
+
+    /**
+     * Detects and parses a fenced code block, blockquote, ordered list item, thematic
+     * break, or GFM table starting at [currentToken]. Used both at the top level and
+     * (after bullet-token consumption) for the same constructs decorating a bullet's
+     * content — see the call sites in [parseBlock]. Returns null and leaves the token
+     * stream untouched if none of these constructs match.
+     */
+    private fun tryConsumeNonHeadingConstruct(level: Int): BlockNode? {
+        // Fenced code block: ```
+        if (currentToken.type == TokenType.BACKTICK) {
+            val fenceLen = currentToken.end - currentToken.start
+            if (fenceLen >= 3) {
+                return parseFencedCodeBlock(TokenType.BACKTICK)
+            }
+        }
+
+        // Fenced code block: ~~~
+        if (currentToken.type == TokenType.TILDE) {
+            val fenceLen = currentToken.end - currentToken.start
+            if (fenceLen >= 3) {
+                return parseFencedCodeBlock(TokenType.TILDE)
+            }
+        }
+
+        // Thematic break from TEXT token: --- or ___
+        if (currentToken.type == TokenType.TEXT) {
+            val text = currentToken.text(source).toString()
+            if (text.matches(THEMATIC_BREAK_REGEX)) {
+                val next = peekToken(1)
+                if (next.type == TokenType.NEWLINE || next.type == TokenType.EOF) {
+                    advance() // consume ---
+                    if (currentToken.type == TokenType.NEWLINE) advance()
+                    return ThematicBreakBlockNode()
+                }
+            }
+        }
+
+        // Thematic break from STAR token: ***
+        if (currentToken.type == TokenType.STAR) {
+            val runLen = currentToken.end - currentToken.start
+            if (runLen >= 3) {
+                val next = peekToken(1)
+                if (next.type == TokenType.NEWLINE || next.type == TokenType.EOF) {
+                    advance() // consume ***
+                    if (currentToken.type == TokenType.NEWLINE) advance()
+                    return ThematicBreakBlockNode()
+                }
+            }
+        }
+
+        // Blockquote: > content
+        if (currentToken.type == TokenType.R_ANGLE) {
+            advance() // consume >
+            if (currentToken.type == TokenType.WS) advance() // optional space
+            return parseBlockquote(level)
+        }
+
+        // Ordered list: N. content
+        if (currentToken.type == TokenType.TEXT) {
+            val txt = currentToken.text(source).toString()
+            val numDotMatch = ORDERED_LIST_EXTRACT_REGEX.find(txt)
+            if (numDotMatch != null) {
+                val peekNext = peekToken(1)
+                if (peekNext.type == TokenType.WS || peekNext.type == TokenType.EOF || peekNext.type == TokenType.NEWLINE) {
+                    val number = numDotMatch.groupValues[1].toInt()
+                    advance() // consume "N."
+                    if (currentToken.type == TokenType.WS) advance() // consume space
+                    val contentStr = parseLine()
+                    val children = parseBlocksAtLevel(level + 1)
+                    return OrderedListItemBlockNode(
+                        number = number,
+                        content = listOf(TextNode(contentStr)),
+                        children = children,
+                        level = level
+                    )
+                }
+            }
+        }
+
+        // GFM pipe table: starts with |
+        if (currentToken.type == TokenType.PIPE) {
+            val tableNode = tryParseTable()
+            if (tableNode != null) return tableNode
+        }
+
+        return null
+    }
+
+    /**
+     * Parses the body of a fenced code block whose opening fence token type is
+     * [fenceType] (BACKTICK for ``` ``` ```, TILDE for `~~~`). [currentToken] must be
+     * positioned on the opening fence token when this is called.
+     */
+    private fun parseFencedCodeBlock(fenceType: TokenType): CodeFenceBlockNode {
+        advance() // consume opening fence
+        val language = if (currentToken.type == TokenType.TEXT) {
+            val lang = currentToken.text(source).toString().trim()
+            parseLine() // consume rest of opening line (including lang token)
+            lang
+        } else {
+            parseLine() // consume newline
+            null
+        }
+        // Collect body until matching fence (same fence type, length >= 3) or EOF
+        val body = StringBuilder()
+        while (currentToken.type != TokenType.EOF) {
+            if (currentToken.type == fenceType) {
+                val closeLen = currentToken.end - currentToken.start
+                if (closeLen >= 3) {
+                    advance() // consume closing fence
+                    if (currentToken.type == TokenType.NEWLINE) advance()
+                    break
+                }
+            }
+            if (currentToken.type == TokenType.NEWLINE) {
+                body.append('\n')
+                advance()
+            } else {
+                body.append(currentToken.text(source))
+                advance()
+            }
+        }
+        // Trim trailing newline from body
+        val rawContent = body.toString().trimEnd('\n')
+        return CodeFenceBlockNode(language = language, rawContent = rawContent)
     }
 
     private fun peekToken(offset: Int): Token {

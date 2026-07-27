@@ -563,4 +563,60 @@ class BlockConstructsSpec {
         val doc = parse(input)
         assertFalse(doc.children.any { it is TableBlockNode }, "No separator row → not a table")
     }
+
+    // -------------------------------------------------------------------------
+    // BULLET-DECORATED CONSTRUCTS — regression coverage for the structural bug
+    // where a construct's marker was only detected BEFORE bullet-token
+    // consumption (never after), so decorating a bullet with it fell through
+    // to plain bullet/paragraph parsing and rendered as literal Markdown text.
+    // This is the same class of bug already fixed for ATX headings
+    // (see BlockParserTest's "bulleted ATX heading" tests); these tests cover
+    // the remaining constructs: fenced code blocks, blockquotes, ordered list
+    // items, thematic breaks, and GFM tables.
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `bulleted fenced code block is classified as CodeFenceBlockNode`() {
+        val doc = parse("- ```kotlin\nval x = 1\n```")
+        assertEquals(1, doc.children.size)
+        val code = doc.children[0] as CodeFenceBlockNode
+        assertEquals("kotlin", code.language)
+        assertEquals("val x = 1", code.rawContent)
+    }
+
+    @Test
+    fun `bulleted blockquote is classified as BlockquoteBlockNode`() {
+        val doc = parse("- > a quote")
+        assertEquals(1, doc.children.size)
+        val bq = doc.children[0] as BlockquoteBlockNode
+        val inner = bq.children[0] as ParagraphBlockNode
+        assertEquals("a quote", (inner.content[0] as TextNode).content.trim())
+    }
+
+    @Test
+    fun `bulleted ordered list item is classified as OrderedListItemBlockNode`() {
+        val doc = parse("- 1. first item")
+        assertEquals(1, doc.children.size)
+        val item = doc.children[0] as OrderedListItemBlockNode
+        assertEquals(1, item.number)
+        assertEquals("first item", (item.content[0] as TextNode).content.trim())
+    }
+
+    @Test
+    fun `bulleted thematic break is classified as ThematicBreakBlockNode`() {
+        val doc = parse("- ---")
+        assertEquals(1, doc.children.size)
+        assertIs<ThematicBreakBlockNode>(doc.children[0])
+    }
+
+    @Test
+    fun `bulleted table is classified as TableBlockNode`() {
+        val input = "- | Header 1 | Header 2 |\n|----------|----------|\n| Cell 1   | Cell 2   |"
+        val doc = parse(input)
+        assertEquals(1, doc.children.size)
+        val table = doc.children[0] as TableBlockNode
+        assertEquals(listOf("Header 1", "Header 2"), table.headers.map { it.trim() })
+        assertEquals(1, table.rows.size)
+        assertEquals(listOf("Cell 1", "Cell 2"), table.rows[0].map { it.trim() })
+    }
 }
