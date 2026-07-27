@@ -322,6 +322,81 @@ internal fun makeThrowingWritableHostRoot(errorMessage: String, permission: Stri
     """,
 )
 
+/**
+ * Builds a fake writable root whose `getFileHandle` calls reject with [errorMessage] for the
+ * first [failuresBeforeSuccess] calls (simulating a transient failure — quota blip, brief I/O
+ * error), then behaves exactly like [makeWritableHostRoot] (in-memory file storage) from the
+ * next call onward. Used to prove [HostDirectorySync.retryStuckHostWrites] actually recovers a
+ * stuck [HostDirectorySync.hostWritePending] entry once the underlying failure clears, rather
+ * than the entry sitting queued forever (BUG-2's reported symptom).
+ */
+internal fun makeFlakyWritableHostRoot(
+    failuresBeforeSuccess: Int,
+    errorMessage: String,
+    permission: String = "granted",
+): JsAny = js(
+    """
+    (function() {
+        var files = {};
+        var attemptCount = 0;
+        var createWritableCallCount = 0;
+        return {
+            kind: 'directory',
+            name: 'root',
+            getFileHandle: function(name, opts) {
+                attemptCount++;
+                if (attemptCount <= failuresBeforeSuccess) {
+                    return Promise.reject(new Error(errorMessage));
+                }
+                if (!(name in files)) {
+                    if (opts && opts.create) {
+                        files[name] = { content: null, buffer: null };
+                    } else {
+                        return Promise.reject(new Error('NotFoundError: no such file'));
+                    }
+                }
+                var entry = files[name];
+                return Promise.resolve({
+                    kind: 'file',
+                    name: name,
+                    getFile: function() {
+                        return Promise.resolve({
+                            lastModified: 0,
+                            size: 0,
+                            text: function() { return Promise.resolve(entry.content == null ? '' : entry.content); },
+                            arrayBuffer: function() { return Promise.resolve(entry.buffer || new ArrayBuffer(0)); }
+                        });
+                    },
+                    createWritable: function() {
+                        createWritableCallCount++;
+                        return Promise.resolve({
+                            write: function(data) {
+                                if (typeof data === 'string') { entry.content = data; } else { entry.buffer = data; }
+                                return Promise.resolve();
+                            },
+                            close: function() { return Promise.resolve(); }
+                        });
+                    }
+                });
+            },
+            removeEntry: function(name) {
+                if (!(name in files)) return Promise.reject(new Error('NotFoundError: no such entry'));
+                delete files[name];
+                return Promise.resolve();
+            },
+            queryPermission: function() { return Promise.resolve(permission); },
+            requestPermission: function() { return Promise.resolve(permission); },
+            _getContent: function(name) { return (files[name] && files[name].content != null) ? files[name].content : null; },
+            _hasFile: function(name) { return name in files; },
+            _createWritableCallCount: function() { return createWritableCallCount; },
+            _attemptCount: function() { return attemptCount; }
+        };
+    })()
+    """,
+)
+
+internal fun flakyRootAttemptCount(root: JsAny): Int = js("root._attemptCount()")
+
 internal fun writableRootSetContent(root: JsAny, name: String, content: String): Unit = js("root._setContent(name, content)")
 internal fun writableRootGetContent(root: JsAny, name: String): String? = js("root._getContent(name)")
 internal fun writableRootHasBuffer(root: JsAny, name: String): Boolean = js("root._hasBuffer(name)")

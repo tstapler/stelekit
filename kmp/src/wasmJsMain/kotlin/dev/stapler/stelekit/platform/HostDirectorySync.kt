@@ -313,6 +313,16 @@ class HostDirectorySync(
                     if (acquired == null) {
                         println("[SteleKit] HostDirectoryPoller tick skipped: poll lock held by another tab")
                     }
+                    // BUG fix: a transient flushHostWrite failure (handleFlushFailure's
+                    // "permission re-query still granted" branch) previously left repoRelative
+                    // queued in hostWritePending forever with nothing ever re-attempting it — the
+                    // queue only drained if the user happened to edit that exact file again
+                    // (a fresh scheduleHostWriteThrough call) or the host directory was fully
+                    // disconnected/reconnected (runHostReconciliation is one-shot, not periodic).
+                    // Retrying here piggybacks on this already-running per-tab timer, so a stuck
+                    // entry gets a fresh attempt every poll tick — effectivePollIntervalMs() acts
+                    // as the retry backoff — without adding a second timer loop.
+                    retryStuckHostWrites()
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Throwable) {
@@ -1171,6 +1181,40 @@ class HostDirectorySync(
                 throw e
             } catch (e: Throwable) {
                 handleFlushFailure(repoRelative, handle, e)
+            }
+        }
+    }
+
+    /**
+     * BUG fix (stuck folder-write recovery): re-attempts [flushHostWrite] for every
+     * [hostWritePending] entry not already owned by an in-flight [scheduleHostWriteThrough] flush
+     * cycle. Called once per [startHostDirectoryPolling] tick, so [effectivePollIntervalMs] is
+     * this retry's implicit backoff — no separate timer/backoff state needed.
+     *
+     * Mirrors [scheduleHostWriteThrough]'s own "claim ownership via [hostWriteInFlight], loop
+     * while [hostWriteDirtyDuringFlush], release in `finally`" shape so a write that arrives via
+     * [scheduleHostWriteThrough] *while* this retry owns the path coalesces into this attempt
+     * instead of racing a second concurrent flush for the same path. Safe to call when
+     * [hostWritePending] is empty (no-op) or when every entry is already in-flight (also a no-op)
+     * — this runs unconditionally every tick rather than gating on [hostWriteStuckFlow], since that
+     * flag reflects only the *most recently attempted* path, not every stuck path.
+     *
+     * Snapshots [hostWritePending]'s keys before iterating: [flushHostWrite] mutates
+     * [hostWritePending] (removing an entry on success), which would otherwise throw a
+     * `ConcurrentModificationException` mid-iteration.
+     */
+    internal suspend fun retryStuckHostWrites() {
+        if (hostDirHandle == null) return
+        val candidates = hostWritePending.keys.toList().filter { it !in hostWriteInFlight }
+        for (repoRelative in candidates) {
+            hostWriteInFlight += repoRelative
+            try {
+                do {
+                    flushHostWrite(repoRelative)
+                } while (repoRelative in hostWriteDirtyDuringFlush)
+            } finally {
+                hostWriteInFlight -= repoRelative
+                hostWriteCompletion.remove(repoRelative)?.complete(Unit)
             }
         }
     }

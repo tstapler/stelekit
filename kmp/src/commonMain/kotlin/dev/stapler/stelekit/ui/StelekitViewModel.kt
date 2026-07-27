@@ -193,6 +193,26 @@ class StelekitViewModel(
         _uiState.update { it.copy(pendingConflicts = it.pendingConflicts - filePath) }
     }
 
+    /**
+     * Drops any [PendingConflict] whose file path is no longer present in [livePaths].
+     *
+     * Deleting or renaming a page in-app already clears its entry directly (see
+     * [bulkDeletePages], [renamePage]), but pages can also disappear or move via paths this
+     * ViewModel doesn't observe directly — an external git pull/merge reconciled by
+     * `GraphLoader`, for instance. Without this, a stale key lingers in `pendingConflicts`
+     * forever (nothing else ever removes it), so the sidebar/All Pages conflict count drifts
+     * from reality: it reports N conflicts while the filtered list renders empty because no
+     * live page's `filePath` matches the stale key. Called whenever a full-graph page snapshot
+     * is available (see `AllPagesViewModel.allFilePaths`) so the comparison is against a
+     * complete — not partially-loaded — set of live paths.
+     */
+    fun reconcilePendingConflicts(livePaths: Set<String>) {
+        _uiState.update { state ->
+            val stale = state.pendingConflicts.keys - livePaths
+            if (stale.isEmpty()) state else state.copy(pendingConflicts = state.pendingConflicts - stale)
+        }
+    }
+
     private fun sanitizeErrorMessage(message: String?): String =
         message
             ?.replace(Regex("/[^\\s,;:]+"), "<path>")
@@ -1326,6 +1346,10 @@ class StelekitViewModel(
                     // Remove from disk if file path is known
                     page?.filePath?.takeIf { it.isNotBlank() }?.let { path ->
                         fileSystem.deleteFile(path)
+                        // A deleted page can never be resolved by re-navigating to it — drop any
+                        // stale conflict entry now so the sidebar/All Pages count doesn't outlive
+                        // the page it refers to.
+                        clearPendingConflict(path)
                     }
                 } catch (e: CancellationException) {
                     throw e
@@ -2488,6 +2512,10 @@ class StelekitViewModel(
                     }
                     val linkWord = if (result.updatedBlockCount == 1) "link" else "links"
                     notificationManager?.show("Renamed \"${page.name}\" → \"$trimmed\" (${result.updatedBlockCount} $linkWord updated)")
+                    // The rename moved the file to a new path — any conflict deferred against the
+                    // old path can never be resolved by navigating to it again (that path is gone),
+                    // so drop it rather than leave an orphaned entry in the sidebar/All Pages count.
+                    page.filePath?.takeIf { it.isNotBlank() }?.let { oldPath -> clearPendingConflict(oldPath) }
                     // Refresh page lists so sidebar and AllPages reflect the new name
                     loadMoreRegularPages(reset = true)
                 }
