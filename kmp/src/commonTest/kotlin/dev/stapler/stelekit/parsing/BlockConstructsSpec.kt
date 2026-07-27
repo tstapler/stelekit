@@ -720,4 +720,165 @@ class BlockConstructsSpec {
         assertEquals(1, doc.children.size)
         assertIs<BulletBlockNode>(doc.children[0], "Dashes followed by text must fall back to a plain bullet")
     }
+
+    // -------------------------------------------------------------------------
+    // INDENT LEVEL TRACKING — CodeFenceBlockNode, BlockquoteBlockNode,
+    // ThematicBreakBlockNode, TableBlockNode. Prior to this fix these four
+    // constructs always hardcoded indentLevel=0 (via MarkdownParser.convertBlock's
+    // `level = 0` branches), so any of them decorating a nested bullet lost their
+    // true outline nesting depth on conversion to ParsedBlock. Mirrors the
+    // HeadingBlockNode.indentLevel fix.
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `top-level fenced code block has indentLevel 0`() {
+        val doc = parse("```kotlin\nval x = 1\n```")
+        val code = doc.children[0] as CodeFenceBlockNode
+        assertEquals(0, code.indentLevel)
+    }
+
+    @Test
+    fun `bulleted fenced code block carries the bullet's outline level as indentLevel`() {
+        val doc = parse("- root\n  - ```kotlin\nval x = 1\n```")
+        val root = doc.children[0] as BulletBlockNode
+        val code = root.children[0] as CodeFenceBlockNode
+        assertEquals(1, code.indentLevel)
+    }
+
+    @Test
+    fun `top-level blockquote has indentLevel 0`() {
+        val doc = parse("> a quote")
+        val bq = doc.children[0] as BlockquoteBlockNode
+        assertEquals(0, bq.indentLevel)
+    }
+
+    @Test
+    fun `bulleted blockquote carries the bullet's outline level as indentLevel`() {
+        val doc = parse("- root\n  - > a quote")
+        val root = doc.children[0] as BulletBlockNode
+        val bq = root.children[0] as BlockquoteBlockNode
+        assertEquals(1, bq.indentLevel)
+    }
+
+    @Test
+    fun `top-level thematic break has indentLevel 0`() {
+        val doc = parse("---")
+        val brk = doc.children[0] as ThematicBreakBlockNode
+        assertEquals(0, brk.indentLevel)
+    }
+
+    @Test
+    fun `bulleted thematic break carries the bullet's outline level as indentLevel`() {
+        val doc = parse("- root\n  - ---")
+        val root = doc.children[0] as BulletBlockNode
+        val brk = root.children[0] as ThematicBreakBlockNode
+        assertEquals(1, brk.indentLevel)
+    }
+
+    @Test
+    fun `top-level table has indentLevel 0`() {
+        val input = "| A | B |\n|---|---|\n| 1 | 2 |"
+        val doc = parse(input)
+        val table = doc.children[0] as TableBlockNode
+        assertEquals(0, table.indentLevel)
+    }
+
+    @Test
+    fun `bulleted table carries the bullet's outline level as indentLevel`() {
+        val input = "- root\n  - | A | B |\n|---|---|\n| 1 | 2 |"
+        val doc = parse(input)
+        val root = doc.children[0] as BulletBlockNode
+        val table = root.children[0] as TableBlockNode
+        assertEquals(1, table.indentLevel)
+    }
+
+    // -------------------------------------------------------------------------
+    // RAW HTML BLOCKS — CommonMark §4.6. Previously RawHtmlBlockNode existed in
+    // the AST (and was fully wired through OutlinerParser, MarkdownParser, and
+    // BlockTypeMapper) but BlockParser never constructed one, so literal HTML
+    // fell through to plain paragraph/bullet parsing and rendered as inline
+    // text — the same class of bug as the original ATX-heading gap.
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `top-level HTML block tag is classified as RawHtmlBlockNode`() {
+        val doc = parse("<div>\nsome content\n</div>")
+        assertIs<RawHtmlBlockNode>(doc.children[0])
+    }
+
+    @Test
+    fun `raw HTML block captures the opening tag line verbatim`() {
+        val doc = parse("<div class=\"note\">")
+        val html = doc.children[0] as RawHtmlBlockNode
+        assertEquals("<div class=\"note\">", html.rawHtml.trim())
+    }
+
+    @Test
+    fun `HTML comment is classified as RawHtmlBlockNode`() {
+        val doc = parse("<!-- a comment -->")
+        assertIs<RawHtmlBlockNode>(doc.children[0])
+    }
+
+    @Test
+    fun `closing HTML tag alone is classified as RawHtmlBlockNode`() {
+        val doc = parse("</div>")
+        assertIs<RawHtmlBlockNode>(doc.children[0])
+    }
+
+    @Test
+    fun `bulleted HTML block tag is classified as RawHtmlBlockNode`() {
+        val doc = parse("- <div>inline html</div>")
+        assertEquals(1, doc.children.size)
+        assertIs<RawHtmlBlockNode>(doc.children[0])
+    }
+
+    @Test
+    fun `bulleted raw HTML block carries the bullet's outline level as indentLevel`() {
+        val doc = parse("- root\n  - <div>nested html</div>")
+        val root = doc.children[0] as BulletBlockNode
+        val html = root.children[0] as RawHtmlBlockNode
+        assertEquals(1, html.indentLevel)
+    }
+
+    @Test
+    fun `top-level raw HTML block has indentLevel 0`() {
+        val doc = parse("<div>top level</div>")
+        val html = doc.children[0] as RawHtmlBlockNode
+        assertEquals(0, html.indentLevel)
+    }
+
+    @Test
+    fun `bulleted raw HTML block keeps a nested outline child`() {
+        val doc = parse("- <div>html</div>\n  - child note")
+        val html = doc.children[0] as RawHtmlBlockNode
+        assertEquals(1, html.children.size)
+        val child = html.children[0] as BulletBlockNode
+        assertEquals("child note", (child.content[0] as TextNode).content.trim())
+    }
+
+    @Test
+    fun `bulleted raw HTML block parses a trailing property`() {
+        val doc = parse("- <div>html</div>\n  id:: abc")
+        val html = doc.children[0] as RawHtmlBlockNode
+        assertEquals("abc", html.properties["id"]?.trim())
+    }
+
+    @Test
+    fun `unrecognized angle-bracket text is NOT classified as raw HTML (falls back to paragraph)`() {
+        // Boundary case: "<3 not html" starts with '<' but the following token is not a
+        // recognized block-level tag name (nor an HTML comment), so it must fall through
+        // to plain paragraph parsing rather than being misclassified as RawHtmlBlockNode.
+        val doc = parse("<3 not html")
+        assertIs<ParagraphBlockNode>(doc.children[0], "Unrecognized angle-bracket text must fall back to a paragraph")
+    }
+
+    @Test
+    fun `MarkdownParser round-trips RawHtmlBlockNode content and indentLevel`() {
+        val page = dev.stapler.stelekit.parser.MarkdownParser().parsePage("- root\n  - <div>hi</div>")
+        val root = page.blocks[0]
+        val html = root.children[0]
+        assertEquals(dev.stapler.stelekit.model.BlockType.RawHtml, html.blockType)
+        assertEquals(1, html.level)
+        assertTrue(html.content.contains("<div>hi</div>"), "Raw HTML content must round-trip, got: ${html.content}")
+    }
 }

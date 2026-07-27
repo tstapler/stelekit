@@ -11,6 +11,19 @@ class BlockParser(private val source: CharSequence) {
         private val THEMATIC_BREAK_REGEX = Regex("---+|___+")
         private val TABLE_SEPARATOR_REGEX = Regex("-+")
         private val ORDERED_LIST_EXTRACT_REGEX = Regex("^(\\d+)\\.$")
+
+        // Block-level HTML tag names (CommonMark §4.6 type-6 tag list, trimmed to the
+        // subset relevant for a Markdown outliner). Case-insensitive.
+        private val BLOCK_HTML_TAGS = setOf(
+            "address", "article", "aside", "base", "basefont", "blockquote", "body",
+            "caption", "center", "col", "colgroup", "dd", "details", "dialog", "dir",
+            "div", "dl", "dt", "fieldset", "figcaption", "figure", "footer", "form",
+            "frame", "frameset", "h1", "h2", "h3", "h4", "h5", "h6", "head", "header",
+            "hr", "html", "iframe", "legend", "li", "link", "main", "menu", "menuitem",
+            "nav", "noframes", "ol", "optgroup", "option", "p", "param", "section",
+            "summary", "table", "tbody", "td", "tfoot", "th", "thead", "title", "tr",
+            "track", "ul", "script", "style", "pre", "textarea"
+        )
     }
 
     fun parse(): DocumentNode {
@@ -59,9 +72,9 @@ class BlockParser(private val source: CharSequence) {
             )
         }
 
-        // 1b. Check for a fenced code block, blockquote, ordered list, thematic break, or
-        // GFM table at the top level.
-        tryConsumeNonHeadingConstruct(level)?.let { return it }
+        // 1b. Check for a fenced code block, blockquote, ordered list, thematic break,
+        // GFM table, or raw HTML block at the top level.
+        tryConsumeNonHeadingConstruct(level, isBulletDecorated = false)?.let { return it }
 
         // 2. Check for Bullet
         val isBullet = if (currentToken.type == TokenType.BULLET) {
@@ -77,13 +90,14 @@ class BlockParser(private val source: CharSequence) {
         val bulletHeadingLevel = if (isBullet) tryConsumeAtxHeadingMarker() else null
 
         // 2b. A bullet's content may likewise be a fenced code block, blockquote, ordered
-        // list item, thematic break, or GFM table (e.g. "- ```kotlin", "- > quote",
-        // "- 1. item", "- ---", "- | a | b |"). These constructs were previously only
-        // detected before bullet-token consumption (see 1b above), so decorating a bullet
-        // with any of them fell through to plain bullet/paragraph parsing and rendered as
-        // literal Markdown text — the same structural bug already fixed for headings.
+        // list item, thematic break, GFM table, or raw HTML block (e.g. "- ```kotlin",
+        // "- > quote", "- 1. item", "- ---", "- | a | b |", "- <div>"). These constructs
+        // were previously only detected before bullet-token consumption (see 1b above), so
+        // decorating a bullet with any of them fell through to plain bullet/paragraph
+        // parsing and rendered as literal Markdown text — the same structural bug already
+        // fixed for headings.
         if (isBullet && bulletHeadingLevel == null) {
-            tryConsumeNonHeadingConstruct(level)?.let { return it }
+            tryConsumeNonHeadingConstruct(level, isBulletDecorated = true)?.let { return it }
         }
 
         // 3. Parse Content & Properties
@@ -163,7 +177,14 @@ class BlockParser(private val source: CharSequence) {
         }
     }
 
-    private fun parseBlockquote(_level: Int): BlockquoteBlockNode {
+    /**
+     * Parses a blockquote's own lines (the `> `-prefixed content, plus any `>`-prefixed
+     * continuation lines). [indentLevel] is the outline nesting depth of the bullet this
+     * blockquote decorates (0 for a top-level, non-bulleted blockquote) and is attached
+     * verbatim to the returned node so [MarkdownParser.convertBlock] can recover the
+     * blockquote's outline position — mirroring [HeadingBlockNode.indentLevel].
+     */
+    private fun parseBlockquote(indentLevel: Int): BlockquoteBlockNode {
         val innerBlocks = mutableListOf<BlockNode>()
         // Parse first line content
         val line = parseLine()
@@ -186,7 +207,7 @@ class BlockParser(private val source: CharSequence) {
                 }
             } else break
         }
-        return BlockquoteBlockNode(children = innerBlocks)
+        return BlockquoteBlockNode(children = innerBlocks, indentLevel = indentLevel)
     }
 
     private fun tryParseTable(): TableBlockNode? {
@@ -374,10 +395,15 @@ class BlockParser(private val source: CharSequence) {
 
     /**
      * Detects and parses a fenced code block, blockquote, ordered list item, thematic
-     * break, or GFM table starting at [currentToken]. Used both at the top level and
-     * (after bullet-token consumption) for the same constructs decorating a bullet's
-     * content — see the call sites in [parseBlock]. Returns null and leaves the token
-     * stream untouched if none of these constructs match.
+     * break, GFM table, or raw HTML block starting at [currentToken]. Used both at the
+     * top level and (after bullet-token consumption) for the same constructs decorating
+     * a bullet's content — see the call sites in [parseBlock]. Returns null and leaves
+     * the token stream untouched if none of these constructs match.
+     *
+     * [isBulletDecorated] indicates whether this construct is decorating a bullet ([level]
+     * is then the bullet's outline nesting depth) or standing at the top level (in which
+     * case the resulting node's `indentLevel` defaults to 0 regardless of [level]) —
+     * mirrors the [HeadingBlockNode.indentLevel] pattern.
      *
      * Each matched construct also collects any trailing property lines ("key:: value")
      * and outline children indented past [level] via [parseTrailingPropertiesAndChildren],
@@ -385,14 +411,16 @@ class BlockParser(private val source: CharSequence) {
      * this, a bullet decorated with one of these constructs would return immediately and
      * orphan its nested children/properties to the caller as mis-leveled siblings.
      */
-    private fun tryConsumeNonHeadingConstruct(level: Int): BlockNode? {
+    private fun tryConsumeNonHeadingConstruct(level: Int, isBulletDecorated: Boolean): BlockNode? {
+        val indentLevel = if (isBulletDecorated) level else 0
+
         // Fenced code block: ```
         if (currentToken.type == TokenType.BACKTICK) {
             val fenceLen = currentToken.end - currentToken.start
             if (fenceLen >= 3) {
                 val node = parseFencedCodeBlock(TokenType.BACKTICK)
                 val (properties, children) = parseTrailingPropertiesAndChildren(level)
-                return node.copy(properties = properties, children = children)
+                return node.copy(properties = properties, children = children, indentLevel = indentLevel)
             }
         }
 
@@ -402,7 +430,7 @@ class BlockParser(private val source: CharSequence) {
             if (fenceLen >= 3) {
                 val node = parseFencedCodeBlock(TokenType.TILDE)
                 val (properties, children) = parseTrailingPropertiesAndChildren(level)
-                return node.copy(properties = properties, children = children)
+                return node.copy(properties = properties, children = children, indentLevel = indentLevel)
             }
         }
 
@@ -415,7 +443,7 @@ class BlockParser(private val source: CharSequence) {
                     advance() // consume ---
                     if (currentToken.type == TokenType.NEWLINE) advance()
                     val (properties, children) = parseTrailingPropertiesAndChildren(level)
-                    return ThematicBreakBlockNode(properties = properties, children = children)
+                    return ThematicBreakBlockNode(properties = properties, children = children, indentLevel = indentLevel)
                 }
             }
         }
@@ -429,7 +457,7 @@ class BlockParser(private val source: CharSequence) {
                     advance() // consume ***
                     if (currentToken.type == TokenType.NEWLINE) advance()
                     val (properties, children) = parseTrailingPropertiesAndChildren(level)
-                    return ThematicBreakBlockNode(properties = properties, children = children)
+                    return ThematicBreakBlockNode(properties = properties, children = children, indentLevel = indentLevel)
                 }
             }
         }
@@ -438,7 +466,7 @@ class BlockParser(private val source: CharSequence) {
         if (currentToken.type == TokenType.R_ANGLE) {
             advance() // consume >
             if (currentToken.type == TokenType.WS) advance() // optional space
-            val bq = parseBlockquote(level)
+            val bq = parseBlockquote(indentLevel)
             // BlockquoteBlockNode.children already holds the quote's own continuation
             // paragraphs (see parseBlockquote); append outline children after them so
             // neither the quote's internal structure nor its nested outline items are lost.
@@ -474,7 +502,42 @@ class BlockParser(private val source: CharSequence) {
             val tableNode = tryParseTable()
             if (tableNode != null) {
                 val (properties, children) = parseTrailingPropertiesAndChildren(level)
-                return tableNode.copy(properties = properties, children = children)
+                return tableNode.copy(properties = properties, children = children, indentLevel = indentLevel)
+            }
+        }
+
+        // Raw HTML block: <div>, <!-- comment -->, etc. (CommonMark §4.6, type-6 tag subset)
+        if (currentToken.type == TokenType.L_ANGLE) {
+            val isComment = run {
+                val excl = peekToken(1)
+                val body = peekToken(2)
+                excl.type == TokenType.EXCLAMATION &&
+                    body.type == TokenType.TEXT &&
+                    body.text(source).startsWith("--")
+            }
+            val tagName = run {
+                // A closing tag ("</div>") lexes as a single TEXT token "/div" because '/'
+                // is not a special character — strip the leading slash before extracting
+                // the tag name so both opening and closing tags are recognized.
+                val nameToken = peekToken(1)
+                if (nameToken.type == TokenType.TEXT) {
+                    nameToken.text(source).toString()
+                        .removePrefix("/")
+                        .takeWhile { it.isLetterOrDigit() }
+                        .lowercase()
+                } else {
+                    null
+                }
+            }
+            if (isComment || (tagName != null && tagName in BLOCK_HTML_TAGS)) {
+                val rawLine = parseLine()
+                val (properties, children) = parseTrailingPropertiesAndChildren(level)
+                return RawHtmlBlockNode(
+                    rawHtml = rawLine,
+                    properties = properties,
+                    children = children,
+                    indentLevel = indentLevel
+                )
             }
         }
 
