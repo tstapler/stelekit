@@ -619,4 +619,105 @@ class BlockConstructsSpec {
         assertEquals(1, table.rows.size)
         assertEquals(listOf("Cell 1", "Cell 2"), table.rows[0].map { it.trim() })
     }
+
+    // -------------------------------------------------------------------------
+    // BULLET-DECORATED CONSTRUCTS — nested children & properties regression
+    // coverage. Fixing the classification bug above (returning the construct
+    // node immediately) originally left a second, more severe bug: any outline
+    // children or "key:: value" properties following the decorated bullet were
+    // silently reparented to the grandparent level instead of attaching to the
+    // construct itself, since the early return skipped parseBlock's shared
+    // step-3 handling entirely. These tests cover that data-loss regression.
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `bulleted fenced code block keeps a nested outline child`() {
+        val doc = parse("- ```kotlin\nval x = 1\n```\n  - child note")
+        assertEquals(1, doc.children.size)
+        val code = doc.children[0] as CodeFenceBlockNode
+        assertEquals(1, code.children.size)
+        val child = code.children[0] as BulletBlockNode
+        assertEquals("child note", (child.content[0] as TextNode).content.trim())
+    }
+
+    @Test
+    fun `bulleted fenced code block parses a trailing property`() {
+        val doc = parse("- ```kotlin\nval x = 1\n```\n  id:: abc")
+        val code = doc.children[0] as CodeFenceBlockNode
+        assertEquals("abc", code.properties["id"]?.trim())
+    }
+
+    @Test
+    fun `bulleted blockquote keeps a nested outline child alongside its own quote lines`() {
+        val doc = parse("- > a quote\n  - child note")
+        val bq = doc.children[0] as BlockquoteBlockNode
+        // First child is the quote's own paragraph content (existing behaviour).
+        assertIs<ParagraphBlockNode>(bq.children[0])
+        // Second child is the nested outline bullet — must not be dropped.
+        assertEquals(2, bq.children.size, "Outline child must be preserved alongside the quote's own paragraph")
+        val outlineChild = bq.children[1] as BulletBlockNode
+        assertEquals("child note", (outlineChild.content[0] as TextNode).content.trim())
+    }
+
+    @Test
+    fun `bulleted ordered list item keeps a nested outline child`() {
+        val doc = parse("- 1. first item\n  - child note")
+        val item = doc.children[0] as OrderedListItemBlockNode
+        assertEquals(1, item.children.size)
+        val child = item.children[0] as BulletBlockNode
+        assertEquals("child note", (child.content[0] as TextNode).content.trim())
+    }
+
+    @Test
+    fun `bulleted ordered list item parses a trailing property`() {
+        val doc = parse("- 1. first item\n  id:: xyz")
+        val item = doc.children[0] as OrderedListItemBlockNode
+        assertEquals("xyz", item.properties["id"]?.trim())
+    }
+
+    @Test
+    fun `bulleted thematic break keeps a nested outline child`() {
+        val doc = parse("- ---\n  - child note")
+        val brk = doc.children[0] as ThematicBreakBlockNode
+        assertEquals(1, brk.children.size)
+        val child = brk.children[0] as BulletBlockNode
+        assertEquals("child note", (child.content[0] as TextNode).content.trim())
+    }
+
+    @Test
+    fun `bulleted table keeps a nested outline child`() {
+        val input = "- | Header 1 | Header 2 |\n|----------|----------|\n| Cell 1   | Cell 2   |\n  - child note"
+        val doc = parse(input)
+        val table = doc.children[0] as TableBlockNode
+        assertEquals(1, table.children.size)
+        val child = table.children[0] as BulletBlockNode
+        assertEquals("child note", (child.content[0] as TextNode).content.trim())
+    }
+
+    @Test
+    fun `bulleted fenced code block resumes sibling parsing after its children`() {
+        val doc = parse("- ```kotlin\nval x = 1\n```\n  - child note\n- next sibling")
+        assertEquals(2, doc.children.size, "next sibling must be a root sibling, not nested under the code block")
+        assertIs<CodeFenceBlockNode>(doc.children[0])
+        val next = doc.children[1] as BulletBlockNode
+        assertEquals("next sibling", (next.content[0] as TextNode).content.trim())
+    }
+
+    @Test
+    fun `bulleted ordered list item without a space after the dot is NOT classified as an ordered list`() {
+        // Boundary case: "1.item" (no space) must not match the ordered-list marker,
+        // matching the top-level ORDERED_LIST_EXTRACT_REGEX + WS/EOF/NEWLINE guard.
+        val doc = parse("- 1.item not a list")
+        assertEquals(1, doc.children.size)
+        assertIs<BulletBlockNode>(doc.children[0], "Missing space after the dot must fall back to a plain bullet")
+    }
+
+    @Test
+    fun `bulleted dashes with trailing text are NOT classified as a thematic break`() {
+        // Boundary case: "---text" is not a bare thematic break line (no NEWLINE/EOF
+        // immediately after the run of dashes), so it must fall back to a plain bullet.
+        val doc = parse("- ---text")
+        assertEquals(1, doc.children.size)
+        assertIs<BulletBlockNode>(doc.children[0], "Dashes followed by text must fall back to a plain bullet")
+    }
 }

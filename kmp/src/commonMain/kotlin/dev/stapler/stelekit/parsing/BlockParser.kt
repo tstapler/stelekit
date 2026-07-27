@@ -378,13 +378,21 @@ class BlockParser(private val source: CharSequence) {
      * (after bullet-token consumption) for the same constructs decorating a bullet's
      * content — see the call sites in [parseBlock]. Returns null and leaves the token
      * stream untouched if none of these constructs match.
+     *
+     * Each matched construct also collects any trailing property lines ("key:: value")
+     * and outline children indented past [level] via [parseTrailingPropertiesAndChildren],
+     * mirroring how [parseBlock]'s shared step 3 handles headings and plain bullets. Without
+     * this, a bullet decorated with one of these constructs would return immediately and
+     * orphan its nested children/properties to the caller as mis-leveled siblings.
      */
     private fun tryConsumeNonHeadingConstruct(level: Int): BlockNode? {
         // Fenced code block: ```
         if (currentToken.type == TokenType.BACKTICK) {
             val fenceLen = currentToken.end - currentToken.start
             if (fenceLen >= 3) {
-                return parseFencedCodeBlock(TokenType.BACKTICK)
+                val node = parseFencedCodeBlock(TokenType.BACKTICK)
+                val (properties, children) = parseTrailingPropertiesAndChildren(level)
+                return node.copy(properties = properties, children = children)
             }
         }
 
@@ -392,7 +400,9 @@ class BlockParser(private val source: CharSequence) {
         if (currentToken.type == TokenType.TILDE) {
             val fenceLen = currentToken.end - currentToken.start
             if (fenceLen >= 3) {
-                return parseFencedCodeBlock(TokenType.TILDE)
+                val node = parseFencedCodeBlock(TokenType.TILDE)
+                val (properties, children) = parseTrailingPropertiesAndChildren(level)
+                return node.copy(properties = properties, children = children)
             }
         }
 
@@ -404,7 +414,8 @@ class BlockParser(private val source: CharSequence) {
                 if (next.type == TokenType.NEWLINE || next.type == TokenType.EOF) {
                     advance() // consume ---
                     if (currentToken.type == TokenType.NEWLINE) advance()
-                    return ThematicBreakBlockNode()
+                    val (properties, children) = parseTrailingPropertiesAndChildren(level)
+                    return ThematicBreakBlockNode(properties = properties, children = children)
                 }
             }
         }
@@ -417,7 +428,8 @@ class BlockParser(private val source: CharSequence) {
                 if (next.type == TokenType.NEWLINE || next.type == TokenType.EOF) {
                     advance() // consume ***
                     if (currentToken.type == TokenType.NEWLINE) advance()
-                    return ThematicBreakBlockNode()
+                    val (properties, children) = parseTrailingPropertiesAndChildren(level)
+                    return ThematicBreakBlockNode(properties = properties, children = children)
                 }
             }
         }
@@ -426,7 +438,12 @@ class BlockParser(private val source: CharSequence) {
         if (currentToken.type == TokenType.R_ANGLE) {
             advance() // consume >
             if (currentToken.type == TokenType.WS) advance() // optional space
-            return parseBlockquote(level)
+            val bq = parseBlockquote(level)
+            // BlockquoteBlockNode.children already holds the quote's own continuation
+            // paragraphs (see parseBlockquote); append outline children after them so
+            // neither the quote's internal structure nor its nested outline items are lost.
+            val (properties, outlineChildren) = parseTrailingPropertiesAndChildren(level)
+            return bq.copy(properties = properties, children = bq.children + outlineChildren)
         }
 
         // Ordered list: N. content
@@ -440,11 +457,12 @@ class BlockParser(private val source: CharSequence) {
                     advance() // consume "N."
                     if (currentToken.type == TokenType.WS) advance() // consume space
                     val contentStr = parseLine()
-                    val children = parseBlocksAtLevel(level + 1)
+                    val (properties, children) = parseTrailingPropertiesAndChildren(level)
                     return OrderedListItemBlockNode(
                         number = number,
                         content = listOf(TextNode(contentStr)),
                         children = children,
+                        properties = properties,
                         level = level
                     )
                 }
@@ -454,10 +472,49 @@ class BlockParser(private val source: CharSequence) {
         // GFM pipe table: starts with |
         if (currentToken.type == TokenType.PIPE) {
             val tableNode = tryParseTable()
-            if (tableNode != null) return tableNode
+            if (tableNode != null) {
+                val (properties, children) = parseTrailingPropertiesAndChildren(level)
+                return tableNode.copy(properties = properties, children = children)
+            }
         }
 
         return null
+    }
+
+    /**
+     * Collects property lines ("key:: value") and outline children immediately following
+     * a just-parsed non-heading construct (fenced code, blockquote, thematic break,
+     * ordered list item, or table), mirroring [parseBlock]'s shared step 3 handling for
+     * headings and plain bullets. A candidate property line is speculatively consumed past
+     * its leading INDENT; if it does not turn out to be a property, the lexer position is
+     * restored (INDENT included) so [parseBlocksAtLevel] sees the correct indent level and
+     * parses it as its own block instead.
+     */
+    private fun parseTrailingPropertiesAndChildren(level: Int): Pair<Map<String, String>, List<BlockNode>> {
+        val properties = mutableMapOf<String, String>()
+        while (currentToken.type != TokenType.EOF) {
+            val nextLevel = peekIndentLevel()
+            val nextIsBullet = peekIsBullet()
+            if (nextLevel <= level || nextIsBullet) break
+
+            val savedState = lexer.saveState()
+            val savedToken = currentToken
+            if (currentToken.type == TokenType.INDENT) advance()
+
+            val property = tryParseProperty()
+            if (property != null) {
+                properties[property.first] = property.second
+                if (currentToken.type == TokenType.NEWLINE) advance()
+            } else {
+                // Not a property line — restore (including the INDENT) and let
+                // parseBlocksAtLevel parse it as its own block at the correct level.
+                lexer.restoreState(savedState)
+                currentToken = savedToken
+                break
+            }
+        }
+        val children = parseBlocksAtLevel(level + 1)
+        return properties to children
     }
 
     /**
