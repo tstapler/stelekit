@@ -451,6 +451,18 @@ internal fun BlockItem(
                         onLongPressSelect = onLongPressSelect,
                         modifier = Modifier.weight(1f),
                     )
+                    is BlockType.RawHtml -> CodeFenceBlock(
+                        // Rendered like a code fence (monospace, no inline-markdown parsing)
+                        // per RawHtmlBlockNode's KDoc — raw HTML is passed through verbatim
+                        // and should not be interpreted as Markdown.
+                        content = block.content,
+                        language = "html",
+                        onStartEditing = onStartEditing,
+                        isInSelectionMode = isInSelectionMode,
+                        onToggleSelect = onToggleSelect,
+                        onLongPressSelect = onLongPressSelect,
+                        modifier = Modifier.weight(1f),
+                    )
                     else -> {
                         val imageData = remember(block.content) { extractSingleImageNode(block.content) }
                         if (imageData != null) {
@@ -465,7 +477,7 @@ internal fun BlockItem(
                                 modifier = Modifier.weight(1f),
                             )
                         } else {
-                            BlockViewer( // BULLET, PARAGRAPH, RAW_HTML, unknown
+                            BlockViewer( // BULLET, PARAGRAPH, unknown
                                 content = block.content,
                                 textColor = textColor,
                                 linkColor = linkColor,

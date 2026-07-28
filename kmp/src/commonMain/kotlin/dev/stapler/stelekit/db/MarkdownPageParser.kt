@@ -155,7 +155,14 @@ object MarkdownPageParser {
                 parentUuid = parentUuid?.let { BlockUuid(it) },
                 leftUuid = previousSiblingUuid?.let { BlockUuid(it) },
                 content = parsedBlock.content,
-                level = baseLevel,
+                // parsedBlock.level is the outline nesting depth computed from the source
+                // Markdown's own indentation (bullet/heading indent, etc. — see
+                // MarkdownParser.convertBlock / BlockNode.indentLevel). It agrees with
+                // baseLevel (the tree-recursion depth) for well-formed, contiguously
+                // indented documents, but baseLevel alone discards the indentLevel this
+                // parser computes for headings/code-fences/blockquotes/etc., so it must be
+                // read here for that value to ever reach storage.
+                level = parsedBlock.level,
                 position = positionKey,
                 createdAt = now,
                 updatedAt = now,
@@ -216,7 +223,9 @@ object MarkdownPageParser {
                     pageUuid = pageUuid,
                     parentUuid = parentUuid?.let { BlockUuid(it) },
                     content = parsedBlock.content,
-                    level = baseLevel,
+                    // See processParsedBlocks for why parsedBlock.level (not baseLevel) is
+                    // the value that must reach the persisted Block.level.
+                    level = parsedBlock.level,
                     position = stubPositionKey,
                     createdAt = now,
                     updatedAt = now,
