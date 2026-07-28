@@ -932,4 +932,47 @@ class BlockConstructsSpec {
         assertEquals(1, html.level)
         assertTrue(html.content.contains("<div>hi</div>"), "Raw HTML content must round-trip, got: ${html.content}")
     }
+
+    // -------------------------------------------------------------------------
+    // REGRESSION — PR #260 adversarial review findings.
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `non-bulleted fenced code block nested under a heading carries the true outline depth as indentLevel`() {
+        // Regression for tryConsumeNonHeadingConstruct hardcoding indentLevel=0 for any
+        // non-bullet-decorated construct, even when it is an outline child parsed via
+        // parseBlocksAtLevel(level + 1) at a nonzero depth. `level` is always the correct
+        // outline nesting depth (see the ATX heading path in parseBlock, which uses
+        // `indentLevel = level` unconditionally) — it must not be zeroed just because the
+        // construct itself isn't bullet-decorated.
+        val doc = parse("# Heading\n  ```kotlin\nval x = 1\n```")
+        val heading = doc.children[0] as HeadingBlockNode
+        val code = heading.children[0] as CodeFenceBlockNode
+        assertEquals(1, code.indentLevel, "Non-bulleted child construct must carry its true outline depth, not 0")
+    }
+
+    @Test
+    fun `raw HTML block continuation consumes lines indented deeper than the opening tag, not just equal`() {
+        // Regression: tryParseRawHtmlConstruct's continuation loop previously required
+        // peekIndentLevel() == level exactly, so any continuation line indented *deeper*
+        // than the construct's own level (e.g. naturally-indented nested markup, or a
+        // bulleted HTML block's content indented one level past the bullet) incorrectly
+        // terminated the block early instead of continuing to a blank line/EOF per
+        // CommonMark §4.6.
+        val doc = parse("- <div>\n  content\n  </div>")
+        assertEquals(1, doc.children.size, "Must parse as a single block, got: ${doc.children}")
+        val html = doc.children[0] as RawHtmlBlockNode
+        val lines = html.rawHtml.trim().lines().map { it.trim() }
+        assertEquals(listOf("<div>", "content", "</div>"), lines)
+        assertEquals(0, html.children.size, "No spurious child blocks should be produced")
+    }
+
+    @Test
+    fun `non-bulleted top-level raw HTML block consumes all indented continuation lines`() {
+        val doc = parse("<ul>\n  <li>foo</li>\n</ul>")
+        assertEquals(1, doc.children.size, "Must parse as a single block, got: ${doc.children}")
+        val html = doc.children[0] as RawHtmlBlockNode
+        val lines = html.rawHtml.trim().lines().map { it.trim() }
+        assertEquals(listOf("<ul>", "<li>foo</li>", "</ul>"), lines)
+    }
 }

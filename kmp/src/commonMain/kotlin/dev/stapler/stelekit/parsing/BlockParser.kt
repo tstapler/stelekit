@@ -400,10 +400,10 @@ class BlockParser(private val source: CharSequence) {
      * a bullet's content — see the call sites in [parseBlock]. Returns null and leaves
      * the token stream untouched if none of these constructs match.
      *
-     * [isBulletDecorated] indicates whether this construct is decorating a bullet ([level]
-     * is then the bullet's outline nesting depth) or standing at the top level (in which
-     * case the resulting node's `indentLevel` defaults to 0 regardless of [level]) —
-     * mirrors the [HeadingBlockNode.indentLevel] pattern.
+     * [isBulletDecorated] indicates whether this construct is decorating a bullet or
+     * standing as a non-bulleted construct; either way [level] is the correct outline
+     * nesting depth and is used directly as `indentLevel` — mirrors the
+     * [HeadingBlockNode.indentLevel] pattern.
      *
      * Each matched construct also collects any trailing property lines ("key:: value")
      * and outline children indented past [level] via [parseTrailingPropertiesAndChildren],
@@ -412,7 +412,7 @@ class BlockParser(private val source: CharSequence) {
      * orphan its nested children/properties to the caller as mis-leveled siblings.
      */
     private fun tryConsumeNonHeadingConstruct(level: Int, isBulletDecorated: Boolean): BlockNode? {
-        val indentLevel = if (isBulletDecorated) level else 0
+        val indentLevel = level
 
         tryParseFencedCodeConstruct(level, indentLevel)?.let { return it }
         tryParseThematicBreakConstruct(level, indentLevel)?.let { return it }
@@ -530,16 +530,19 @@ class BlockParser(private val source: CharSequence) {
         }
         if (!(isComment || (tagName != null && tagName in BLOCK_HTML_TAGS))) return null
 
-        // CommonMark §4.6 type-6 raw HTML blocks continue consuming lines at the
-        // *same* indentation as the opening line until a blank line or EOF — a
-        // single parseLine() call previously captured only the opening tag's line,
-        // splitting multi-line HTML (e.g. "<div>\ncontent\n</div>") into separate
-        // top-level sibling blocks instead of one raw HTML block. Lines indented
-        // *past* this construct's level (or bulleted) are left alone — those are
-        // this outliner's own nested properties/children (see the failing-without-
-        // this-guard cases: a bulleted raw HTML block's trailing "id:: value"
-        // property or nested "- child" bullet must NOT be swallowed as HTML text),
-        // handled below by parseTrailingPropertiesAndChildren as usual.
+        // CommonMark §4.6 type-6 raw HTML blocks continue consuming lines indented at
+        // or deeper than the opening line's level until a blank line or EOF — a single
+        // parseLine() call previously captured only the opening tag's line, splitting
+        // multi-line HTML (e.g. "<div>\ncontent\n</div>") into separate sibling blocks
+        // instead of one raw HTML block, and requiring exact-indent continuation lines
+        // broke on any deeper-indented (but still-inside) content like "  <li>...". The
+        // block ends when a line dedents shallower than this construct's level, or
+        // dedents back to exactly this level as a new sibling bullet (so a following
+        // "- next item" at the same depth is NOT swallowed as HTML text). A line indented
+        // *deeper* than this level that is itself a bullet (nested outline child) or a
+        // "key:: value" property line is likewise left alone — those belong to this
+        // outliner's own nested properties/children, handled below by
+        // parseTrailingPropertiesAndChildren, not to the raw HTML text.
         val htmlBuilder = StringBuilder(parseLine())
         while (currentToken.type != TokenType.EOF) {
             if (currentToken.type == TokenType.NEWLINE) {
@@ -548,7 +551,13 @@ class BlockParser(private val source: CharSequence) {
                 advance()
                 break
             }
-            if (peekIndentLevel() != level || peekIsBullet()) break
+            val nextIndent = peekIndentLevel()
+            if (nextIndent < level) break
+            if (nextIndent == level) {
+                if (peekIsBullet()) break
+            } else if (peekIsBullet() || peekIsIndentedProperty()) {
+                break
+            }
             htmlBuilder.append('\n')
             htmlBuilder.append(parseLine())
         }
@@ -617,6 +626,22 @@ class BlockParser(private val source: CharSequence) {
         lexer.restoreState(savedState)
         currentToken = savedToken
         return null
+    }
+
+    /**
+     * Non-consuming lookahead for [tryConsumeIndentedProperty]: reports whether the
+     * current (possibly INDENT-prefixed) line is a "key:: value" property line, without
+     * disturbing the lexer/token state either way. Used by [tryParseRawHtmlConstruct]'s
+     * continuation loop to tell a genuine trailing property line apart from raw HTML
+     * text that happens to be indented past the construct's own level.
+     */
+    private fun peekIsIndentedProperty(): Boolean {
+        val savedState = lexer.saveState()
+        val savedToken = currentToken
+        val isProperty = tryConsumeIndentedProperty() != null
+        lexer.restoreState(savedState)
+        currentToken = savedToken
+        return isProperty
     }
 
     /**
