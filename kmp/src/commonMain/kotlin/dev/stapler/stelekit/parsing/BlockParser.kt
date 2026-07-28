@@ -78,7 +78,7 @@ class BlockParser(private val source: CharSequence) {
 
         // 1b. Check for a fenced code block, blockquote, ordered list, thematic break,
         // GFM table, or raw HTML block at the top level.
-        tryConsumeNonHeadingConstruct(level, isBulletDecorated = false)?.let { return it }
+        tryConsumeNonHeadingConstruct(level)?.let { return it }
 
         // 2. Check for Bullet
         val isBullet = if (currentToken.type == TokenType.BULLET) {
@@ -101,7 +101,7 @@ class BlockParser(private val source: CharSequence) {
         // parsing and rendered as literal Markdown text — the same structural bug already
         // fixed for headings.
         if (isBullet && bulletHeadingLevel == null) {
-            tryConsumeNonHeadingConstruct(level, isBulletDecorated = true)?.let { return it }
+            tryConsumeNonHeadingConstruct(level)?.let { return it }
         }
 
         // 3. Parse Content & Properties
@@ -400,9 +400,8 @@ class BlockParser(private val source: CharSequence) {
      * a bullet's content — see the call sites in [parseBlock]. Returns null and leaves
      * the token stream untouched if none of these constructs match.
      *
-     * [isBulletDecorated] indicates whether this construct is decorating a bullet or
-     * standing as a non-bulleted construct; either way [level] is the correct outline
-     * nesting depth and is used directly as `indentLevel` — mirrors the
+     * [level] is the correct outline nesting depth whether this construct decorates a
+     * bullet or stands unbulleted, and is used directly as `indentLevel` — mirrors the
      * [HeadingBlockNode.indentLevel] pattern.
      *
      * Each matched construct also collects any trailing property lines ("key:: value")
@@ -411,7 +410,7 @@ class BlockParser(private val source: CharSequence) {
      * this, a bullet decorated with one of these constructs would return immediately and
      * orphan its nested children/properties to the caller as mis-leveled siblings.
      */
-    private fun tryConsumeNonHeadingConstruct(level: Int, isBulletDecorated: Boolean): BlockNode? {
+    private fun tryConsumeNonHeadingConstruct(level: Int): BlockNode? {
         val indentLevel = level
 
         tryParseFencedCodeConstruct(level, indentLevel)?.let { return it }
