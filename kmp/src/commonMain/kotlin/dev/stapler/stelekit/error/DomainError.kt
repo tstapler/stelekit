@@ -46,7 +46,7 @@ sealed interface DomainError {
         data class HttpError(val statusCode: Int, override val message: String) : NetworkError
         data class CircuitOpen(override val message: String = "Circuit breaker is open") : NetworkError
         data class Timeout(override val message: String) : NetworkError
-        data class RequestFailed(override val message: String) : NetworkError
+        data class RequestFailed(override val message: String, val retryable: Boolean = false) : NetworkError
     }
 
     sealed interface SensorError : DomainError {

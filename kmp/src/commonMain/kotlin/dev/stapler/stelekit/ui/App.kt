@@ -1106,6 +1106,7 @@ private fun GraphContent(
         else TagSuggestionEngine(
             pageNameIndex = viewModel.pageNameIndex,
             llmTagProvider = tagLlmProviderState.value?.let { LlmTagProvider(it.formatter) },
+            checkAvailability = tagLlmProviderState.value?.let { p -> { p.checkAvailability() } },
         )
     }
     // Epic 8 Story 8.4a straggler fix: TagSuggestionSettings' "hasLlmKey" gate used to read
