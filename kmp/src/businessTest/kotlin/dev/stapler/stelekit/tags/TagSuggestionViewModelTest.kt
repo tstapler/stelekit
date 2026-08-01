@@ -594,8 +594,12 @@ class TagSuggestionViewModelTest {
                 // Then: re-requesting block-A starts a *fresh* run (Pending(null), cold start) —
                 // it could NOT have started fresh if the old, supposedly-cancelled job had
                 // silently kept running and left a Stalled/Resolved result in the cache.
+                // timeoutMs bumped for the same reason as the block-B await above (real
+                // Dispatchers.Default + CI parallel-load contention) — this specific call was
+                // left at the 5000ms default during an earlier fix pass and observed flaking on
+                // CI (SLOW ~5.2s) even though the underlying transition is near-instantaneous.
                 vm.requestSuggestions("block-A", "Learning Kotlin today")
-                val blockAAgain = vm.awaitState {
+                val blockAAgain = vm.awaitState(timeoutMs = 15000) {
                     it is TagSuggestionState.Ready && it.blockUuid == "block-A" &&
                         it.llmStatus == LlmSuggestionStatus.Pending(null)
                 }
