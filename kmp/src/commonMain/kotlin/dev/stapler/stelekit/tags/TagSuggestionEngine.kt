@@ -4,6 +4,7 @@ import arrow.core.Either
 import arrow.core.right
 import dev.stapler.stelekit.domain.PageNameIndex
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.llm.LlmProviderAvailability
 
 class TagSuggestionEngine(
     private val pageNameIndex: PageNameIndex,
@@ -22,7 +23,7 @@ class TagSuggestionEngine(
      * checkAvailability() polling — never to trigger inference (see pitfall #2 in this
      * project's research/pitfalls.md).
      */
-    val checkAvailability: (suspend () -> dev.stapler.stelekit.llm.LlmProviderAvailability)? = null,
+    val checkAvailability: (suspend () -> LlmProviderAvailability)? = null,
 ) {
     companion object {
         /**

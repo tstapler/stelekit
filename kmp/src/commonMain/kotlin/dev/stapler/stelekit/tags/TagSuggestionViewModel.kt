@@ -139,10 +139,9 @@ class TagSuggestionViewModel(
         // Pre-mortem P1 #1/#2 fix: set ONCE per VM lifetime, the first time a retryable signal
         // is observed; a later relaunch (block-switch-and-return, manual retry) reuses this same
         // value rather than overwriting it with "now".
-        if (downloadFirstObservedAtMs == null) {
-            downloadFirstObservedAtMs = Clock.System.now().toEpochMilliseconds()
-        }
-        val elapsedSoFar = Clock.System.now().toEpochMilliseconds() - downloadFirstObservedAtMs!!
+        val observedAt = downloadFirstObservedAtMs
+            ?: Clock.System.now().toEpochMilliseconds().also { downloadFirstObservedAtMs = it }
+        val elapsedSoFar = Clock.System.now().toEpochMilliseconds() - observedAt
 
         // AC0: initial "Downloading..." caption is the SDK-sourced reason string already
         // produced by format() — reused verbatim — UNLESS this is a resumed poll that's already
