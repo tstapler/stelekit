@@ -252,7 +252,12 @@ class TagSuggestionViewModel(
                     }
                 }
             )
-            activeBlockUuid = null
+            // Only clear activeBlockUuid if it still refers to the block THIS job was launched
+            // for — otherwise a job for block A completing at the same moment the caller
+            // switches to block B (which synchronously set activeBlockUuid = "B" at the top of
+            // requestSuggestions()) could clobber B's assignment back to null, causing a
+            // spurious cancel-and-relaunch of B's still-in-flight poll on the next revisit.
+            if (activeBlockUuid == blockUuid) activeBlockUuid = null
         }
     }
 

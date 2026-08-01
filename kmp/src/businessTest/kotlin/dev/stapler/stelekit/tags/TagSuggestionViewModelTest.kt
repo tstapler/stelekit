@@ -516,19 +516,34 @@ class TagSuggestionViewModelTest {
         runTest(UnconfinedTestDispatcher()) {
             val indexScope = CoroutineScope(UnconfinedTestDispatcher())
             try {
-                val formatter = LlmFormatterProvider { _, _ ->
-                    LlmResult.Failure.OnDeviceUnavailable(
-                        "Downloading on-device model — this may take a few minutes",
-                        retryable = true,
-                    )
+                var checkAvailabilityCalls = 0
+                // block-B's content is distinguished so it resolves on the FIRST attempt (no
+                // polling of its own). This isolates checkAvailability() call growth during the
+                // real-time wait below to ONLY a leaked, should-be-cancelled block-A poll job —
+                // if block-B also polled, its own legitimate ticks would be indistinguishable
+                // from a leaked block-A tick and the test could not discriminate the two.
+                val formatter = LlmFormatterProvider { blockContent, _ ->
+                    if (blockContent.contains("block-B-marker")) {
+                        LlmResult.Success("Kotlin")
+                    } else {
+                        LlmResult.Failure.OnDeviceUnavailable(
+                            "Downloading on-device model — this may take a few minutes",
+                            retryable = true,
+                        )
+                    }
                 }
                 val engine = makeEngine(
                     indexScope,
                     vocabulary = listOf("Kotlin"),
                     formatter = formatter,
-                    checkAvailability = { LlmProviderAvailability.Preparing("still downloading") },
+                    checkAvailability = { checkAvailabilityCalls++; LlmProviderAvailability.Preparing("still downloading") },
                 )
-                val vm = TagSuggestionViewModel(engine)
+                // pollIntervalMs is overridden short (50ms) so the genuine real-time waits below
+                // (well under the real 4000ms production interval) are long enough to actually
+                // engage the poll loop. Without this override the bare-delay version of this test
+                // used the real 4000ms DEFAULT_POLL_INTERVAL_MS and could never observe a leaked
+                // tick regardless of whether the stale block-A job was actually cancelled.
+                val vm = TagSuggestionViewModel(engine, pollIntervalMs = 50L)
 
                 // Given: block-A stuck at Preparing forever (checkAvailability never resolves).
                 vm.requestSuggestions("block-A", "Learning Kotlin today")
@@ -544,12 +559,26 @@ class TagSuggestionViewModelTest {
                 // full-suite parallel test load real-thread-pool contention can push the real-time
                 // awaitState spin-poll past 5000ms even though the underlying cancel-and-relaunch is
                 // effectively instantaneous — confirmed via 3x isolated reruns, all passing in <2s.
-                vm.requestSuggestions("block-B", "Learning Kotlin today")
-                vm.awaitState(timeoutMs = 15000) { it is TagSuggestionState.Ready && it.blockUuid == "block-B" }
+                vm.requestSuggestions("block-B", "Learning Kotlin today, block-B-marker")
+                vm.awaitState(timeoutMs = 15000) {
+                    it is TagSuggestionState.Ready && it.blockUuid == "block-B" &&
+                        it.llmStatus == LlmSuggestionStatus.Resolved
+                }
+                val callsAfterSwitch = checkAvailabilityCalls
 
                 // Give the (should-be-cancelled) block-A poll job a chance to misbehave if it
-                // wasn't actually cancelled — well short of the real 4000ms production interval.
-                delay(200)
+                // wasn't actually cancelled — well short of the real 4000ms production interval,
+                // but several multiples of the 50ms pollIntervalMs override above. Genuine
+                // wall-clock wait (Dispatchers.Default, not the runTest virtual scheduler) — a
+                // bare delay() here would be virtualized to near-zero real time and could never
+                // observe a leaked tick.
+                withContext(Dispatchers.Default) { delay(200) }
+                assertEquals(
+                    callsAfterSwitch,
+                    checkAvailabilityCalls,
+                    "a leaked stale block-A poll job kept calling checkAvailability() after switching to " +
+                        "block-B, which resolves on its first attempt and never polls on its own",
+                )
 
                 // Then: re-requesting block-A starts a *fresh* run (Pending(null), cold start) —
                 // it could NOT have started fresh if the old, supposedly-cancelled job had
@@ -586,7 +615,13 @@ class TagSuggestionViewModelTest {
                     formatter = formatter,
                     checkAvailability = { checkAvailabilityCalls++; LlmProviderAvailability.Preparing("still downloading") },
                 )
-                val vm = TagSuggestionViewModel(engine)
+                // pollIntervalMs is overridden short (50ms) so that a genuine real-time wait
+                // below (well under the real 4000ms production interval) is still long enough
+                // to observe multiple poll ticks if close() failed to cancel the loop — without
+                // this override, the bare-delay version of this test used the real 4000ms
+                // DEFAULT_POLL_INTERVAL_MS and could never observe a tick regardless of whether
+                // close() actually cancelled anything.
+                val vm = TagSuggestionViewModel(engine, pollIntervalMs = 50L)
 
                 vm.requestSuggestions("block-abc123", "Learning Kotlin today")
                 vm.awaitState {
@@ -596,9 +631,10 @@ class TagSuggestionViewModelTest {
 
                 vm.close()
                 val countAtClose = checkAvailabilityCalls
-                // Give any not-actually-cancelled poll job a chance to tick and misbehave — well
-                // short of the real 4000ms production poll interval.
-                delay(200)
+                // Genuine wall-clock wait (Dispatchers.Default, not the runTest virtual
+                // scheduler) — a bare delay() here would be virtualized to near-zero real time
+                // and could never actually observe a leaked poll tick.
+                withContext(Dispatchers.Default) { delay(200) }
                 assertEquals(countAtClose, checkAvailabilityCalls, "close() must stop the poll loop, not merely detach from it")
             } finally {
                 indexScope.cancel()
@@ -835,5 +871,51 @@ class TagSuggestionViewModelTest {
 
         vm.close()
         indexScope.cancel()
+    }
+
+    // ─── DomainError.NetworkError.Timeout → Failed(retryable=true) pipeline ───
+
+    /**
+     * The `err is DomainError.NetworkError.Timeout -> Failed(retryable = true)` branch in
+     * requestSuggestions()'s ifLeft handler previously had no test proving the ViewModel/engine
+     * pipeline actually PRODUCES this state from a real timeout — existing UI tests only verify
+     * rendering of a hand-constructed Failed(retryable=true) state. This drives a genuine
+     * [LlmTagProvider] timeout (via a formatter that suspends past the provider's configured
+     * timeout) end to end through [TagSuggestionEngine] and [TagSuggestionViewModel].
+     */
+    @Test
+    fun `a genuine LLM timeout surfaces through the ViewModel as a retryable Failed status`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        val indexScope = CoroutineScope(testDispatcher)
+        try {
+            val repo = InMemoryPageRepository()
+            repo.savePage(makePage("1", "Kotlin"))
+            val index = PageNameIndex(repo, indexScope, rebuildDebounceMs = 0L)
+            // Suspends well past LlmTagProvider's 1-second timeout below. Under the shared
+            // testScheduler this is virtual time, so the test resolves instantly.
+            val formatter = LlmFormatterProvider { _, _ ->
+                delay(10_000)
+                LlmResult.Success("Kotlin")
+            }
+            val llmProvider = LlmTagProvider(formatter, timeoutSeconds = 1)
+            val engine = TagSuggestionEngine(
+                pageNameIndex = index,
+                llmTagProvider = llmProvider,
+                vocabularyProvider = { listOf("Kotlin") },
+            )
+            val vm = TagSuggestionViewModel(engine, dispatcher = testDispatcher)
+
+            vm.requestSuggestions("block-1", "I love Kotlin")
+            advanceUntilIdle()
+
+            val state = vm.state.value
+            assertIs<TagSuggestionState.Ready>(state)
+            val status = state.llmStatus
+            assertIs<LlmSuggestionStatus.Failed>(status)
+            assertTrue(status.retryable, "a real Timeout must surface as retryable, not the non-retryable default")
+            vm.close()
+        } finally {
+            indexScope.cancel()
+        }
     }
 }

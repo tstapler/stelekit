@@ -51,7 +51,7 @@ class LlmTagProvider(
                         result.code, result.message
                     ).left()
                     is LlmResult.Failure.NetworkError -> DomainError.NetworkError.RequestFailed(
-                        "Network error"
+                        "Network error", retryable = true
                     ).left()
                     // Reuses the RequestFailed error family (no genuinely distinct UI treatment
                     // is required yet) but preserves the on-device-specific reason string through

@@ -46,4 +46,34 @@ class LlmTagProviderTest {
             result.leftOrNull(),
         )
     }
+
+    /**
+     * Regression coverage for the same retryable-dropping bug class, this time triggered by a
+     * plain [LlmResult.Failure.NetworkError] rather than [LlmResult.Failure.OnDeviceUnavailable].
+     * A transient network error is a textbook retryable case — collapsing it to
+     * `retryable = false` reproduces this PR's "frozen, no way forward" bug for a different
+     * trigger (no retry button, and requestSuggestions' cache check treats it as terminal).
+     */
+    @Test
+    fun `suggestTags maps a NetworkError to a retryable RequestFailed`() = runTest {
+        val formatter = LlmFormatterProvider { _, _ -> LlmResult.Failure.NetworkError }
+        val provider = LlmTagProvider(formatter, timeoutSeconds = 5)
+
+        val result = provider.suggestTags(
+            TagSuggestionRequest(
+                blockUuid = "block-1",
+                blockContent = "Kotlin is great",
+                pageVocabulary = listOf("Kotlin"),
+            ),
+        )
+
+        assertTrue(result.isLeft())
+        assertEquals(
+            DomainError.NetworkError.RequestFailed(
+                message = "Network error",
+                retryable = true,
+            ),
+            result.leftOrNull(),
+        )
+    }
 }
