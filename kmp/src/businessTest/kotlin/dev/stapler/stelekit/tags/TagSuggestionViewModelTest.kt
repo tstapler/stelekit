@@ -387,15 +387,26 @@ class TagSuggestionViewModelTest {
                     }
                 }
                 // No checkAvailability probe wired — runLlmSuggest returns the first retryable
-                // failure directly as Stalled, so retryLastRequest (not the poll loop) is what
-                // drives the second attempt.
+                // failure directly, with no poll loop ever running. Since it never reaches
+                // TagAvailabilityPoller's own STALLED_REASON terminal, it maps to a retryable
+                // Failed (preserving the real SDK message and still offering a Retry button) —
+                // NOT Stalled, which is reserved specifically for the poll loop's own deadline
+                // signal (see the ifLeft handler in requestSuggestions()). retryLastRequest
+                // (not the poll loop) is what drives the second attempt here either way.
                 val engine = makeEngine(indexScope, vocabulary = listOf("Kotlin"), formatter = formatter)
                 val vm = TagSuggestionViewModel(engine)
 
                 vm.requestSuggestions("block-retry1", "Learning Kotlin today")
-                val stalled = vm.awaitState { it is TagSuggestionState.Ready && it.llmStatus is LlmSuggestionStatus.Stalled }
+                val stalled = vm.awaitState {
+                    it is TagSuggestionState.Ready &&
+                        (it.llmStatus as? LlmSuggestionStatus.Failed)?.retryable == true
+                }
                 assertIs<TagSuggestionState.Ready>(stalled)
                 assertEquals("block-retry1", stalled.blockUuid)
+                assertEquals(
+                    "Downloading on-device model — this may take a few minutes",
+                    (stalled.llmStatus as LlmSuggestionStatus.Failed).message,
+                )
 
                 vm.retryLastRequest()
                 val resolved = vm.awaitState { it is TagSuggestionState.Ready && it.llmStatus == LlmSuggestionStatus.Resolved }

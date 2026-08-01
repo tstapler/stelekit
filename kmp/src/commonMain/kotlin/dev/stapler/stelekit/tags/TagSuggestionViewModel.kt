@@ -226,14 +226,23 @@ class TagSuggestionViewModel(
 
             runLlmSuggest(blockContent, alreadyLinkedTerms, allowPolling, onStatusUpdate).fold(
                 ifLeft = { err ->
-                    // Stalled is reserved for the on-device-availability signal specifically.
-                    // DomainError.NetworkError.Timeout is a different, also-plausibly-transient
+                    // Stalled is reserved for the poll loop's OWN deadline-reached terminal
+                    // signal specifically — identified by its distinctive STALLED_REASON message,
+                    // not merely by `retryable == true`. Any other retryable RequestFailed (a
+                    // NetworkError, an OnDeviceUnavailable surfaced without polling ever starting
+                    // because allowPolling=false or no probe is wired, or a TOCTOU retry-after-
+                    // Available failure) is a genuinely different condition — mapping it to
+                    // Stalled would discard its real message and render it as the on-device
+                    // "taking longer than expected" caption, which is misleading. DomainError.
+                    // NetworkError.Timeout is likewise its own distinct, plausibly-transient
                     // condition (a completed-but-slow network round-trip, not a model-download
-                    // wait) and gets its own retryable Failed rather than being folded into
-                    // Stalled's "still downloading" framing.
+                    // wait).
                     val status = when {
+                        err is DomainError.NetworkError.RequestFailed &&
+                            err.message == TagAvailabilityPoller.STALLED_REASON ->
+                            LlmSuggestionStatus.Stalled(retryable = err.retryable)
                         err is DomainError.NetworkError.RequestFailed && err.retryable ->
-                            LlmSuggestionStatus.Stalled(retryable = true)
+                            LlmSuggestionStatus.Failed(message = err.message, retryable = true)
                         err is DomainError.NetworkError.Timeout ->
                             LlmSuggestionStatus.Failed(message = err.message, retryable = true)
                         else ->
