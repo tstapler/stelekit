@@ -565,13 +565,16 @@ class TagSuggestionViewModelTest {
                 }
 
                 // When: user switches to block-B before block-A's poll loop resolves or hits deadline.
-                // timeoutMs bumped from the 5000ms default: this test constructs the VM with real
-                // Dispatchers.Default (no injected test dispatcher, matching production), so under
-                // full-suite parallel test load real-thread-pool contention can push the real-time
-                // awaitState spin-poll past 5000ms even though the underlying cancel-and-relaunch is
-                // effectively instantaneous — confirmed via 3x isolated reruns, all passing in <2s.
+                // This test constructs the VM with real Dispatchers.Default (matching production,
+                // deliberately — an earlier attempt to run it on a shared virtual-time test
+                // scheduler introduced its own, worse timing complexity, since block-A's endless
+                // 50ms poll loop competes for scheduler cycles even though it never resolves). The
+                // timeout here is a generous, one-time safety margin — not a tight bound — chosen
+                // to comfortably absorb GitHub Actions CI's real thread-pool contention (observed
+                // repeatedly landing the underlying, near-instantaneous transition at 5-15+ real
+                // seconds under CI load vs. <2s locally in isolation every time it's been checked).
                 vm.requestSuggestions("block-B", "Learning Kotlin today, block-B-marker")
-                vm.awaitState(timeoutMs = 15000) {
+                vm.awaitState(timeoutMs = 60000) {
                     it is TagSuggestionState.Ready && it.blockUuid == "block-B" &&
                         it.llmStatus == LlmSuggestionStatus.Resolved
                 }
@@ -594,12 +597,8 @@ class TagSuggestionViewModelTest {
                 // Then: re-requesting block-A starts a *fresh* run (Pending(null), cold start) —
                 // it could NOT have started fresh if the old, supposedly-cancelled job had
                 // silently kept running and left a Stalled/Resolved result in the cache.
-                // timeoutMs bumped for the same reason as the block-B await above (real
-                // Dispatchers.Default + CI parallel-load contention) — this specific call was
-                // left at the 5000ms default during an earlier fix pass and observed flaking on
-                // CI (SLOW ~5.2s) even though the underlying transition is near-instantaneous.
                 vm.requestSuggestions("block-A", "Learning Kotlin today")
-                val blockAAgain = vm.awaitState(timeoutMs = 15000) {
+                val blockAAgain = vm.awaitState(timeoutMs = 60000) {
                     it is TagSuggestionState.Ready && it.blockUuid == "block-A" &&
                         it.llmStatus == LlmSuggestionStatus.Pending(null)
                 }
