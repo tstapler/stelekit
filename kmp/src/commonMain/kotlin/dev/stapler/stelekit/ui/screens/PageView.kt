@@ -600,6 +600,7 @@ fun PageView(
                     }
                 },
                 onDismiss = { tagSuggestionViewModel.dismiss() },
+                onRetry = { tagSuggestionViewModel.retryLastRequest() },
             )
         }
     }

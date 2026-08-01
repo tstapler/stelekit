@@ -15,11 +15,17 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import dev.stapler.stelekit.tags.LlmSuggestionStatus
 import dev.stapler.stelekit.tags.TagSuggestionState
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -28,6 +34,7 @@ fun SuggestionBottomSheet(
     state: TagSuggestionState,
     onAcceptTag: (blockUuid: String, term: String) -> Unit,
     onDismiss: () -> Unit,
+    onRetry: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val isVisible = state is TagSuggestionState.Ready || state is TagSuggestionState.Loading
@@ -77,26 +84,82 @@ fun SuggestionBottomSheet(
                 }
                 is TagSuggestionState.Ready -> {
                     val allSuggestions = state.localSuggestions + state.llmSuggestions
-                    val isLlmLoading = state.llmPending
 
                     TagChipRow(
                         suggestions = allSuggestions,
-                        isLlmLoading = isLlmLoading,
-                        llmError = state.llmError,
-                        onAccept = { suggestion ->
-                            onAcceptTag(state.blockUuid, suggestion.term)
-                        },
+                        llmStatus = state.llmStatus,
+                        onAccept = { suggestion -> onAcceptTag(state.blockUuid, suggestion.term) },
                         onDismiss = { /* dismiss silently */ },
                         modifier = Modifier.padding(top = 8.dp),
                     )
 
-                    if (state.llmError != null) {
-                        Text(
-                            text = state.llmError,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.padding(top = 8.dp),
-                        )
+                    when (val status = state.llmStatus) {
+                        is LlmSuggestionStatus.Pending -> status.caption?.let { caption ->
+                            Text(
+                                text = caption,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier
+                                    .padding(top = 8.dp)
+                                    .semantics { liveRegion = LiveRegionMode.Polite },
+                            )
+                        }
+                        is LlmSuggestionStatus.Stalled -> {
+                            Column(
+                                modifier = Modifier
+                                    .padding(top = 8.dp)
+                                    .semantics(mergeDescendants = true) {},
+                            ) {
+                                Text(
+                                    text = "Taking longer than expected.",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.tertiary,
+                                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                                )
+                                Text(
+                                    text = "Tap Retry to check again, or keep typing the tag yourself.",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                // Structurally absent (an `if`, not enabled=false) when not retryable — a
+                                // disabled-but-visible button reads as broken to screen readers.
+                                if (status.retryable) {
+                                    TextButton(
+                                        onClick = onRetry,
+                                        modifier = Modifier.semantics { contentDescription = "Retry downloading tags" },
+                                    ) {
+                                        Text("Retry")
+                                    }
+                                }
+                            }
+                        }
+                        is LlmSuggestionStatus.Failed -> {
+                            Column(
+                                modifier = Modifier
+                                    .padding(top = 8.dp)
+                                    .semantics(mergeDescendants = true) {},
+                            ) {
+                                Text(
+                                    text = status.message,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                                )
+                                // Structurally absent (an `if`, not enabled=false) when not retryable — same
+                                // accessibility rule as the Stalled branch above (a disabled-but-visible
+                                // button reads as broken to screen readers). Retryable Failed (e.g. a
+                                // DomainError.NetworkError.Timeout) needs this exactly like Stalled does.
+                                if (status.retryable) {
+                                    TextButton(
+                                        onClick = onRetry,
+                                        modifier = Modifier.semantics { contentDescription = "Retry downloading tags" },
+                                    ) {
+                                        Text("Retry")
+                                    }
+                                }
+                            }
+                        }
+                        LlmSuggestionStatus.NotStarted, LlmSuggestionStatus.Resolved -> Unit
                     }
                 }
                 else -> Unit
