@@ -539,8 +539,13 @@ class TagSuggestionViewModelTest {
                 }
 
                 // When: user switches to block-B before block-A's poll loop resolves or hits deadline.
+                // timeoutMs bumped from the 5000ms default: this test constructs the VM with real
+                // Dispatchers.Default (no injected test dispatcher, matching production), so under
+                // full-suite parallel test load real-thread-pool contention can push the real-time
+                // awaitState spin-poll past 5000ms even though the underlying cancel-and-relaunch is
+                // effectively instantaneous — confirmed via 3x isolated reruns, all passing in <2s.
                 vm.requestSuggestions("block-B", "Learning Kotlin today")
-                vm.awaitState { it is TagSuggestionState.Ready && it.blockUuid == "block-B" }
+                vm.awaitState(timeoutMs = 15000) { it is TagSuggestionState.Ready && it.blockUuid == "block-B" }
 
                 // Give the (should-be-cancelled) block-A poll job a chance to misbehave if it
                 // wasn't actually cancelled — well short of the real 4000ms production interval.
