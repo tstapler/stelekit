@@ -953,6 +953,11 @@ class BlockStateManager(
     /**
      * Optimistically update block content. Updates local state immediately,
      * marks the block as dirty, and persists to DB asynchronously.
+     *
+     * Does not acquire the per-block lock itself — callers that already hold it
+     * (insertTextAtCursor, insertLinkAtCursor, replaceSelectionWithLink) call
+     * [applyBlockContentUpdate] directly instead of going through this Job-launching entry
+     * point (see the KNOWN LIMITATION note above [contentMutationMutex]).
      */
     override fun updateBlockContent(blockUuid: BlockUuid, newContent: String, newVersion: Long): Job = scope.launch {
         applyBlockContentUpdate(blockUuid, newContent, newVersion)
@@ -1194,7 +1199,7 @@ class BlockStateManager(
     override fun outdentBlock(blockUuid: BlockUuid): Job = scope.launch {
         val pageUuid = getPageUuidForBlock(blockUuid) ?: return@launch
         val before = takePageSnapshot(pageUuid)
-        writeOutdentBlock(blockUuid)
+        writeOutdentBlock(blockUuid).onLeft { err -> logger.error("outdentBlock: DB write failed for $blockUuid: $err") }
         refreshBlocksForPage(blockUuid)
         val after = takePageSnapshot(pageUuid)
         record(

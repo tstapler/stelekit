@@ -622,6 +622,16 @@ class GraphManager(
         saveRegistry()
     }
 
+    suspend fun setBrowserOnlySyncBannerDismissed(graphId: GraphId, dismissed: Boolean) {
+        val registry = _graphRegistry.value
+        val updatedGraphs = registry.graphs.map { g ->
+            if (g.id == graphId) g.copy(browserOnlySyncBannerDismissed = dismissed)
+            else g
+        }
+        _graphRegistry.value = registry.copy(graphs = updatedGraphs)
+        saveRegistry()
+    }
+
     private fun checkGitignoreForDatabase(graphPath: String) {
         val gitignorePath = "$graphPath/.gitignore"
         if (!fileSystem.fileExists(gitignorePath)) {

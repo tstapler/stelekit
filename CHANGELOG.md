@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.71.5](https://github.com/tstapler/stelekit/compare/v0.71.4...v0.71.5) (2026-07-24)
+
+
+### Bug Fixes
+
+* **android:** harden camera capture hang fix (post-[#256](https://github.com/tstapler/stelekit/issues/256) review findings) ([#257](https://github.com/tstapler/stelekit/issues/257)) ([6369b87](https://github.com/tstapler/stelekit/commit/6369b87553355dcf7ae0d9199b4e91c7ff78a1ad))
+
+## [0.71.4](https://github.com/tstapler/stelekit/compare/v0.71.3...v0.71.4) (2026-07-24)
+
+
+### Bug Fixes
+
+* **android:** prevent camera capture dialog from hanging forever ([#256](https://github.com/tstapler/stelekit/issues/256)) ([e5b8d12](https://github.com/tstapler/stelekit/commit/e5b8d127060e34f59f27de515e15e316723521f4))
+* **db:** serialize wasm SQLite transactions to prevent nested-transaction crash ([eb27c6d](https://github.com/tstapler/stelekit/commit/eb27c6d5606311a64b7ef2a886bba949baecfabe))
+* **journals:** live-reload today's page on disk change ([3e56056](https://github.com/tstapler/stelekit/commit/3e56056318623eb7e1e522205e946728f98a2988))
+* **sync:** drain reconciliation-queued browser-only writes instead of leaving them stuck ([9f3f19a](https://github.com/tstapler/stelekit/commit/9f3f19a69cc4884e88cbbf8989bff22f6163955a))
+* **ui:** fix All Pages staleness, add browser-only sync banner, web back button, and copy path ([8dc8104](https://github.com/tstapler/stelekit/commit/8dc8104550d79c40d4190a49cfc478eda8fbdbb1))
+* **ui:** fix mobile modal sizing in settings and page-link search ([#255](https://github.com/tstapler/stelekit/issues/255)) ([24856e1](https://github.com/tstapler/stelekit/commit/24856e14d16896e956f488e63829a9c71d3dfc89))
+* **ui:** resolve tap-vs-selection gesture race on block rows ([#253](https://github.com/tstapler/stelekit/issues/253)) ([2015b5e](https://github.com/tstapler/stelekit/commit/2015b5edb0fa4e5840fa8ca9e4c6322e94d8cd96))
+* **ui:** suppress false-positive disk-conflict dialog when block content matches ([51aee91](https://github.com/tstapler/stelekit/commit/51aee91f4f1056bf5e0ad8b880ee2009b9d899ff))
+
+## [0.71.3](https://github.com/tstapler/stelekit/compare/v0.71.2...v0.71.3) (2026-07-20)
+
+
+### Bug Fixes
+
+* **kmp:** resolve unmerged conflict markers committed to main in [#250](https://github.com/tstapler/stelekit/issues/250) ([693c5c4](https://github.com/tstapler/stelekit/commit/693c5c4e00ceb5bbb3589a25a6b5de00a1c22d45))
+* **kmp:** serialize block splits against concurrent content mutations ([a6a651f](https://github.com/tstapler/stelekit/commit/a6a651ff23670bc91812606e111d6c8d9175ff36))
+* **ui:** make unresolved-conflicts banner actually surface conflicted pages ([8b1a81f](https://github.com/tstapler/stelekit/commit/8b1a81f7e824f659e2d46b3fe6d90ea0fe153c8c))
+
 ## [0.71.2](https://github.com/tstapler/stelekit/compare/v0.71.1...v0.71.2) (2026-07-18)
 
 

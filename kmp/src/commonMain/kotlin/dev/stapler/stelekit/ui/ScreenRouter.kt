@@ -200,13 +200,24 @@ internal fun ScreenRouter(
                 NavigationTracingEffect("Flashcards")
                 FlashcardsScreen(blockStateManager)
             }
-            is Screen.AllPages -> AllPagesScreen(
-                viewModel = allPagesViewModel,
-                onPageClick = { page -> viewModel.navigateTo(Screen.PageView(page)) },
-                onBulkDelete = { uuids -> viewModel.bulkDeletePages(uuids) },
-                conflictFilePaths = appState.pendingConflictFilePaths,
-                conflictsOnly = currentScreen.conflictsOnly,
-            )
+            is Screen.AllPages -> {
+                // Reconcile against the full-graph snapshot whenever it's loaded: pages can be
+                // deleted/renamed via paths that don't run through the ViewModel (e.g. an
+                // external git pull/merge reconciled by GraphLoader), which would otherwise leave
+                // a stale key in pendingConflicts forever — see reconcilePendingConflicts().
+                val isLoading by allPagesViewModel.isLoading.collectAsState()
+                val livePaths by allPagesViewModel.allFilePaths.collectAsState()
+                LaunchedEffect(isLoading, livePaths) {
+                    if (!isLoading) viewModel.reconcilePendingConflicts(livePaths)
+                }
+                AllPagesScreen(
+                    viewModel = allPagesViewModel,
+                    onPageClick = { page -> viewModel.navigateTo(Screen.PageView(page)) },
+                    onBulkDelete = { uuids -> viewModel.bulkDeletePages(uuids) },
+                    conflictFilePaths = appState.pendingConflictFilePaths,
+                    conflictsOnly = currentScreen.conflictsOnly,
+                )
+            }
             is Screen.LibraryStats -> LibraryStatsScreen(viewModel = libraryStatsViewModel)
             is Screen.Notifications -> {
                 NavigationTracingEffect("Notifications")

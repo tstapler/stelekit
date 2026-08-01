@@ -132,6 +132,7 @@ class StelekitViewModel(
     private val localChangesCountFlow: StateFlow<Int>? = deps.localChangesCountFlow
     private val activeGraphIdProvider: () -> String? = deps.activeGraphIdProvider
     private val onDismissGitDetection: (suspend (graphId: String) -> Unit)? = deps.onDismissGitDetection
+    private val onDismissBrowserOnlySyncBanner: (suspend (graphId: String) -> Unit)? = deps.onDismissBrowserOnlySyncBanner
     private val onSectionsLoaded = deps.onSectionsLoaded
     private val spanEmitter = dev.stapler.stelekit.performance.SpanEmitter(deps.ringBuffer)
     // ── LLM approval-gated edit workflow (Epic 7) ──────────────────────────────
@@ -190,6 +191,26 @@ class StelekitViewModel(
     /** Marks [filePath]'s deferred conflict as resolved — called from the tail of each resolver. */
     private fun clearPendingConflict(filePath: String) {
         _uiState.update { it.copy(pendingConflicts = it.pendingConflicts - filePath) }
+    }
+
+    /**
+     * Drops any [PendingConflict] whose file path is no longer present in [livePaths].
+     *
+     * Deleting or renaming a page in-app already clears its entry directly (see
+     * [bulkDeletePages], [renamePage]), but pages can also disappear or move via paths this
+     * ViewModel doesn't observe directly — an external git pull/merge reconciled by
+     * `GraphLoader`, for instance. Without this, a stale key lingers in `pendingConflicts`
+     * forever (nothing else ever removes it), so the sidebar/All Pages conflict count drifts
+     * from reality: it reports N conflicts while the filtered list renders empty because no
+     * live page's `filePath` matches the stale key. Called whenever a full-graph page snapshot
+     * is available (see `AllPagesViewModel.allFilePaths`) so the comparison is against a
+     * complete — not partially-loaded — set of live paths.
+     */
+    fun reconcilePendingConflicts(livePaths: Set<String>) {
+        _uiState.update { state ->
+            val stale = state.pendingConflicts.keys - livePaths
+            if (stale.isEmpty()) state else state.copy(pendingConflicts = state.pendingConflicts - stale)
+        }
     }
 
     private fun sanitizeErrorMessage(message: String?): String =
@@ -377,6 +398,13 @@ class StelekitViewModel(
     fun dismissGitDetection(graphId: String) {
         scope.launch {
             onDismissGitDetection?.invoke(graphId)
+        }
+    }
+
+    /** Dismisses the "not synced to disk" browser-only-storage banner for the given graph. */
+    fun dismissBrowserOnlySyncBanner(graphId: String) {
+        scope.launch {
+            onDismissBrowserOnlySyncBanner?.invoke(graphId)
         }
     }
 
@@ -1318,6 +1346,10 @@ class StelekitViewModel(
                     // Remove from disk if file path is known
                     page?.filePath?.takeIf { it.isNotBlank() }?.let { path ->
                         fileSystem.deleteFile(path)
+                        // A deleted page can never be resolved by re-navigating to it — drop any
+                        // stale conflict entry now so the sidebar/All Pages count doesn't outlive
+                        // the page it refers to.
+                        clearPendingConflict(path)
                     }
                 } catch (e: CancellationException) {
                     throw e
@@ -1426,7 +1458,19 @@ class StelekitViewModel(
             graphLoader.externalFileChanges.collect { event ->
                 val state = _uiState.value
                 val editingBlockUuid = state.editingBlockId
-                val currentPage = (state.currentScreen as? Screen.PageView)?.page
+                // A page is "currently viewed" either via Screen.PageView, or by being one of
+                // the pages BlockStateManager is actively observing (e.g. journal entries visible
+                // on the Journals screen — that screen has no single Screen.PageView to match).
+                var currentPage = (state.currentScreen as? Screen.PageView)?.page
+                if (currentPage == null) {
+                    for (uuid in blockStateManager?.activePageUuids?.value ?: emptySet()) {
+                        val candidate = pageRepository.getPageByUuid(PageUuid(uuid)).first().getOrNull()
+                        if (candidate?.filePath == event.filePath) {
+                            currentPage = candidate
+                            break
+                        }
+                    }
+                }
                 if (currentPage == null || currentPage.filePath != event.filePath) {
                     // User is not currently viewing this page. Suppress auto-reimport so the
                     // DB keeps the user's edits, store the disk content, and notify via snackbar.
@@ -1505,6 +1549,17 @@ class StelekitViewModel(
 
                 val diskBlockContent = tryMatchDiskBlockContent(localBlocks, conflictBlockUuid, event.content)
 
+                // FileRegistry's change signal is a whole-file byte comparison, so it fires on
+                // any disk write to the page — including one that simply persisted this exact
+                // edit (e.g. our own debounced save landing, or a disk copy that already matches).
+                // Only surface the dialog when the specific block being protected actually differs
+                // from its disk counterpart; otherwise this reproduces as a "conflict" with no
+                // difference to show in "View full comparison".
+                if (diskBlockContent != null && diskBlockContent == localContent) {
+                    blockStateManager?.queuePageSave(currentPage.uuid.value)
+                    return@collect
+                }
+
                 _uiState.update { it.copy(
                     diskConflict = DiskConflict(
                         pageUuid = currentPage.uuid.value,
@@ -1546,6 +1601,15 @@ class StelekitViewModel(
             val latestDiskContent = _uiState.value.pendingConflicts[filePath]?.diskContent ?: pending.diskContent
 
             val diskBlockContent = tryMatchDiskBlockContent(allBlocksForPage, firstBlock?.uuid?.value ?: "", latestDiskContent)
+
+            // Same false-positive guard as observeExternalFileChanges: FileRegistry's whole-file
+            // hash compare can flag "changed" even when this block's disk content already matches
+            // what's in the DB (e.g. the disk write that triggered this was our own save landing).
+            if (diskBlockContent != null && diskBlockContent == (firstBlock?.content ?: "")) {
+                graphLoader.parseAndSavePage(FilePath(filePath), latestDiskContent, dev.stapler.stelekit.parsing.ParseMode.FULL)
+                clearPendingConflict(filePath)
+                return@launch
+            }
 
             _uiState.update { state ->
                 state.copy(diskConflict = DiskConflict(
@@ -2448,6 +2512,10 @@ class StelekitViewModel(
                     }
                     val linkWord = if (result.updatedBlockCount == 1) "link" else "links"
                     notificationManager?.show("Renamed \"${page.name}\" → \"$trimmed\" (${result.updatedBlockCount} $linkWord updated)")
+                    // The rename moved the file to a new path — any conflict deferred against the
+                    // old path can never be resolved by navigating to it again (that path is gone),
+                    // so drop it rather than leave an orphaned entry in the sidebar/All Pages count.
+                    page.filePath?.takeIf { it.isNotBlank() }?.let { oldPath -> clearPendingConflict(oldPath) }
                     // Refresh page lists so sidebar and AllPages reflect the new name
                     loadMoreRegularPages(reset = true)
                 }

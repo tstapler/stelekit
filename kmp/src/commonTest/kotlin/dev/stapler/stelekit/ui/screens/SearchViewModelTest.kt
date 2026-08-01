@@ -13,16 +13,18 @@ import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.SearchRepository
 import dev.stapler.stelekit.repository.SearchRequest
 import dev.stapler.stelekit.repository.SearchResult
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlin.time.Clock
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class SearchViewModelTest {
 
     class FakeSearchRepository : SearchRepository {
@@ -72,7 +74,7 @@ class SearchViewModelTest {
     @Test
     fun testSearch() = runTest {
         val repo = FakeSearchRepository()
-        val viewModel = SearchViewModel(repo, CoroutineScope(Dispatchers.Unconfined))
+        val viewModel = SearchViewModel(repo, TestScope(testScheduler))
 
         // Initial state
         assertEquals("", viewModel.uiState.value.query)
@@ -83,5 +85,14 @@ class SearchViewModelTest {
 
         // Check if query updated
         assertEquals("test", viewModel.uiState.value.query)
+
+        // Let the debounced search coroutine run and collect the fake repository's
+        // SearchResult (one page + one block, see FakeSearchRepository above), then
+        // verify the composed results list actually reflects that data — not just
+        // that the query string was recorded.
+        advanceUntilIdle()
+        val results = viewModel.uiState.value.results
+        assertTrue(results.any { it is SearchResultItem.PageItem && it.page.name == "Test Page" })
+        assertTrue(results.any { it is SearchResultItem.BlockItem && it.block.content == "This is a test block" })
     }
 }

@@ -267,6 +267,39 @@ class HostDirectorySyncWriteThroughTest {
         testScope.cancel()
     }
 
+    // ── BUG-2 regression: stuck-write recovery (retryStuckHostWrites) ──────────────────────────
+
+    @Test
+    fun retryStuckHostWrites_should_EventuallyFlushAndDequeue_When_FirstAttemptFailsTransientlyAndSecondCallSucceeds() = runTest {
+        val opfsPath = freshOpfsPath()
+        // A transient (non-NotFoundError) failure with permission still "granted" on re-query is
+        // exactly handleFlushFailure's SyncDegraded branch: _hostWriteStuckFlow is set true and
+        // the entry is deliberately left queued. Before this fix, nothing ever re-attempted it.
+        val root = makeFlakyWritableHostRoot(failuresBeforeSuccess = 1, errorMessage = "QuotaExceededError: disk quota blip")
+        val testScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val sync = newSync(opfsPath, FakeCacheAccess(), testScope, root)
+
+        var failureCount = 0
+        sync.onHostWriteFailed = { failureCount++ }
+
+        sync.scheduleHostWriteThrough("$opfsPath/Foo.md", HostWritePayload.Text("hello"))
+
+        awaitCondition { failureCount >= 1 }
+        assertTrue("Foo.md" in sync.hostWritePending, "must stay queued after the transient failure")
+        assertTrue(sync.hostWriteStuckFlow.value, "transient failure with permission still granted must flip SyncDegraded")
+
+        // Simulates the next startHostDirectoryPolling tick invoking the retry.
+        sync.retryStuckHostWrites()
+
+        awaitCondition { "Foo.md" !in sync.hostWritePending }
+        assertFalse("Foo.md" in sync.hostWritePending, "retry must dequeue once the underlying failure clears")
+        assertEquals("hello", writableRootGetContent(root, "Foo.md"))
+        assertEquals(2, flakyRootAttemptCount(root), "exactly one failed attempt then one successful retry")
+        assertFalse(sync.hostWriteStuckFlow.value, "SyncDegraded must clear once the retry succeeds")
+
+        testScope.cancel()
+    }
+
     @Test
     fun hostDirectorySync_should_ConstructWithNoHostDirHandle_When_NeverConnected() = runTest {
         // Regression guard: HostDirectorySync itself never assumes a non-null hostDirHandle at
