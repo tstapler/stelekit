@@ -54,10 +54,11 @@ class ErrorStateNoDeadEndTest {
                         blockUuid = "block-1",
                         localSuggestions = emptyList(),
                         llmSuggestions = emptyList(),
-                        llmError = errorMessage,
+                        llmStatus = dev.stapler.stelekit.tags.LlmSuggestionStatus.Failed(message = errorMessage, retryable = false),
                     ),
                     onAcceptTag = { _, _ -> },
                     onDismiss = { dismissed = true },
+                    onRetry = {},
                 )
             }
         }
