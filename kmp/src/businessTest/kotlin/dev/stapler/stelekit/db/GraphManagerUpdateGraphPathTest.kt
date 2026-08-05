@@ -212,6 +212,31 @@ class GraphManagerUpdateGraphPathTest {
     }
 
     @Test
+    fun `updateGraphPath rolls back the wal rename when a shm sidecar rename fails`() = runTest {
+        val oldId = newManager(StubFileSystem()).graphIdFromPath("/old/path")
+        val oldDbPath = DriverFactory().getDatabaseUrl(oldId.value).substringAfter("jdbc:sqlite:")
+
+        val fs = FailingRenameFileSystem(failingPaths = setOf("$oldDbPath-shm"))
+        val graphManager = newManager(fs)
+        graphManager.addGraph("/old/path")
+        fs.existingPaths.add(oldDbPath)
+        fs.existingPaths.add("$oldDbPath-wal")
+        fs.existingPaths.add("$oldDbPath-shm")
+        fs.existingDirectories.add("/new/path")
+
+        val result = graphManager.updateGraphPath(oldId, "/new/path")
+
+        assertEquals(UpdateGraphPathResult.DatabaseMoveFailed, result)
+        // Both the main DB file and the already-renamed WAL sidecar must be rolled back —
+        // otherwise the WAL data would be stranded at the new path while the DB stays old.
+        assertTrue(fs.fileExists(oldDbPath), "main db file must be rolled back after a shm rename failure")
+        assertTrue(fs.fileExists("$oldDbPath-wal"), "wal sidecar must be rolled back after a shm rename failure")
+        val registry = graphManager.graphRegistry.value
+        assertTrue(registry.graphIds.contains(oldId))
+        assertEquals("/old/path", registry.graphs.first { it.id == oldId }.path)
+    }
+
+    @Test
     fun `updateGraphPath moves the active graph and updates the active graph pointer`() = runTest {
         val fs = StubFileSystem()
         val graphManager = newManager(fs)
