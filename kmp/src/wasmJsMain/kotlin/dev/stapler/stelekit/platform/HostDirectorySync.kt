@@ -483,12 +483,26 @@ class HostDirectorySync(
      * (closing the gap identified in `research/architecture.md` §0, where the local `dirHandle`
      * previously went out of scope at the end of `pickDirectoryAsync()`), then best-effort
      * persists the handle to IndexedDB so a future session (Epic 2.2) can offer to resume it.
+     *
+     * Bug fix: this used to leave [hostDirHandle] retained but inert — the poller/observer were
+     * never started and [hostAccessStateFlow] never left [HostAccessState.NotApplicable] — so a
+     * freshly-imported graph had no live sync at all until the tab was reloaded (routing through
+     * [reconnectHostDirectory]) or the user re-ran the connect flow from Settings. Now mirrors
+     * [connectHostDirectory]'s success path so live sync starts immediately after the initial
+     * import, same as every other path that attaches a handle.
      */
     suspend fun attachFreshHandle(dirHandle: JsAny, opfsPath: String) {
         hostDirHandle = dirHandle
         hostGraphOpfsPath = opfsPath
         val dirName = opfsPath.substringAfterLast("/")
         persistHostHandle(graphIdProvider(), dirName, dirHandle)
+        scope.launch {
+            val granted = requestStoragePersistence()
+            println("[SteleKit] storage.persist(): granted=$granted")
+        }
+        startHostDirectoryPolling()
+        startHostChangeObserver(dirHandle)
+        setHostAccessState(HostAccessState.Granted)
     }
 
     /**
@@ -675,15 +689,14 @@ class HostDirectorySync(
      * [lookupPersistedHandle] (independent of whatever [reconnectHostDirectory] cached earlier this
      * session), then calls [requestHandlePermission] (the *requesting*, prompt-showing variant —
      * distinct from [reconnectHostDirectory]'s silent `queryHandlePermission`):
-     * - `"granted"`: sets [hostDirHandle]/[hostGraphOpfsPath], resolves to [HostAccessState.Granted].
+     * - `"granted"`: sets [hostDirHandle]/[hostGraphOpfsPath], launches [runHostReconciliation]
+     *   and [requestStoragePersistence] non-blocking (same wiring as [reconnectHostDirectory]'s
+     *   granted branch — a click-triggered resume must reconcile too, otherwise files added on
+     *   host disk while permission was `"prompt"` stay invisible forever), resolves to
+     *   [HostAccessState.Granted].
      * - anything else (`"denied"`, or a thrown/caught interop failure, which
      *   [requestHandlePermission] itself already normalizes to `"denied"`): resolves to
      *   [HostAccessState.Denied] — **no retry loop**; the user must click again to re-attempt.
-     *
-     * Does not itself launch [runHostReconciliation] or [requestStoragePersistence] — this task's
-     * acceptance criteria (Story 2.2.2) scope this method to the permission handshake only; Epic
-     * 2.4's `storage.persist()` wiring is scoped to [reconnectHostDirectory]/[connectHostDirectory]
-     * (Task 2.4.1a) alone.
      */
     suspend fun requestHostDirectoryAccess(graphId: String): HostAccessState {
         val found = lookupPersistedHandle(graphId)
@@ -702,6 +715,17 @@ class HostDirectorySync(
         val result = if (permission == "granted") {
             hostDirHandle = handle
             hostGraphOpfsPath = opfsPath
+            // Bug fix: mirror reconnectHostDirectory's granted branch — without this, a user who
+            // clicks "Reconnect folder" gets HostAccessState.Granted but the OPFS cache is never
+            // reconciled against the host directory, so files added on disk since the last granted
+            // session (e.g. after a tab restart reset permission to "prompt") stay invisible.
+            scope.launch { runHostReconciliation(handle, opfsPath) }
+            scope.launch {
+                val granted = requestStoragePersistence()
+                println("[SteleKit] storage.persist(): granted=$granted")
+            }
+            startHostDirectoryPolling()
+            scope.launch { startHostChangeObserver(handle) }
             HostAccessState.Granted
         } else {
             mapPermissionResultToAccessState(permission)

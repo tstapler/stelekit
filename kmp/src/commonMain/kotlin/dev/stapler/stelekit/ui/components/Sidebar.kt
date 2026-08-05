@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.*
@@ -38,6 +39,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -99,6 +101,7 @@ fun LeftSidebar(
     hostWriteStuck: Boolean = false,
     onReconnectHostDirectory: () -> Unit = {},
     onCloneGraph: () -> Unit = {},
+    onUpdateGraphPath: (String, String) -> Unit = { _, _ -> },
     gitSyncedGraphId: String? = null,
     onNewSectionJournalEntry: (() -> Unit)? = null,
     sectionManifest: SectionManifest? = null,
@@ -148,6 +151,7 @@ fun LeftSidebar(
                 onAddGraph = onAddGraph,
                 onRemoveGraph = onRemoveGraph,
                 onCloneGraph = onCloneGraph,
+                onUpdateGraphPath = onUpdateGraphPath,
                 gitSyncedGraphId = gitSyncedGraphId,
                 isDemoActive = isDemoActive,
             )
@@ -343,13 +347,15 @@ fun GraphSwitcher(
     onAddGraph: () -> Unit,
     onRemoveGraph: (String) -> Unit,
     onCloneGraph: () -> Unit = {},
+    onUpdateGraphPath: (String, String) -> Unit = { _, _ -> },
     gitSyncedGraphId: String? = null,
     isDemoActive: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
     var graphToRemove by remember { mutableStateOf<GraphInfo?>(null) }
-    
+    var graphToEdit by remember { mutableStateOf<GraphInfo?>(null) }
+
     Column(modifier = modifier) {
         // Current graph button
         Surface(
@@ -410,6 +416,9 @@ fun GraphSwitcher(
                             },
                             onRemove = if (availableGraphs.size > 1) {
                                 { graphToRemove = graph }
+                            } else null,
+                            onEditPath = if (!graph.isDemo) {
+                                { graphToEdit = graph }
                             } else null
                         )
                     },
@@ -478,6 +487,50 @@ fun GraphSwitcher(
             }
         )
     }
+
+    // Edit-path dialog: lets the user re-point a tracked graph at a new folder.
+    val editingGraph = graphToEdit
+    if (editingGraph != null) {
+        var newPath by remember(editingGraph.id.value) { mutableStateOf(editingGraph.path) }
+        AlertDialog(
+            onDismissRequest = { graphToEdit = null },
+            title = { Text("Edit Graph Path") },
+            text = {
+                Column {
+                    Text(
+                        "Move \"${editingGraph.displayName}\" to a different folder. " +
+                            "The graph's database will be migrated to the new location.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = newPath,
+                        onValueChange = { newPath = it },
+                        label = { Text("Graph path") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onUpdateGraphPath(editingGraph.id.value, newPath)
+                        graphToEdit = null
+                    },
+                    enabled = newPath.isNotBlank() && newPath != editingGraph.path,
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { graphToEdit = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 }
 
 /**
@@ -490,6 +543,7 @@ fun GraphItem(
     isSynced: Boolean = false,
     onSelect: () -> Unit,
     onRemove: (() -> Unit)? = null,
+    onEditPath: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -510,12 +564,36 @@ fun GraphItem(
                 tint = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = graph.displayName,
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (isActive) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f)
-            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = graph.displayName,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (isActive) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = graph.path,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = (if (isActive) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
+                        .copy(alpha = 0.6f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (onEditPath != null) {
+                IconButton(
+                    onClick = onEditPath,
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = "Edit graph path",
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
             if (isSynced) {
                 Icon(
                     imageVector = Icons.Default.Sync,

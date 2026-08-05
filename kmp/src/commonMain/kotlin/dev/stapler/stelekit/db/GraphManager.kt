@@ -46,6 +46,17 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 
+/** Outcome of [GraphManager.updateGraphPath]. */
+sealed interface UpdateGraphPathResult {
+    data class Success(val newId: GraphId) : UpdateGraphPathResult
+    data object GraphNotFound : UpdateGraphPathResult
+    data object DemoGraphImmutable : UpdateGraphPathResult
+    data object PathNotFound : UpdateGraphPathResult
+    data object PathUnchanged : UpdateGraphPathResult
+    data object AlreadyTracked : UpdateGraphPathResult
+    data object DatabaseMoveFailed : UpdateGraphPathResult
+}
+
 /**
  * Manages multiple graphs and their respective database connections.
  * Replaces the Repositories singleton with per-graph RepositorySets.
@@ -372,13 +383,117 @@ class GraphManager(
 
         val updatedGraphs = registry.graphs.toMutableList()
         updatedGraphs[graphIndex] = updatedGraphs[graphIndex].copy(displayName = newName)
-        
+
         val updated = registry.copy(graphs = updatedGraphs)
         _graphRegistry.value = updated
         saveRegistry()
         return true
     }
-    
+
+    /**
+     * Moves a graph to a new filesystem [newPath]. Because [GraphId] is derived from
+     * sha256(canonicalPath), this re-keys the graph's identity: the SQLite DB (+ WAL/SHM
+     * sidecars), the telemetry DB, and any stored git credentials are renamed/re-keyed from
+     * the old id to the new one, then the registry entry is replaced in place. If the graph
+     * being moved is currently active, it is reopened under the new id via [switchGraph].
+     */
+    suspend fun updateGraphPath(id: GraphId, newPath: String): UpdateGraphPathResult {
+        val registry = _graphRegistry.value
+        val graphIndex = registry.graphs.indexOfFirst { it.id == id }
+        if (graphIndex == -1) return UpdateGraphPathResult.GraphNotFound
+        val graphInfo = registry.graphs[graphIndex]
+        if (graphInfo.isDemo) return UpdateGraphPathResult.DemoGraphImmutable
+
+        val expandedNewPath = fileSystem.expandTilde(newPath)
+        val newId = graphIdFromPath(expandedNewPath)
+        if (newId == id) return UpdateGraphPathResult.PathUnchanged
+        if (registry.graphIds.contains(newId)) return UpdateGraphPathResult.AlreadyTracked
+
+        val pathExists = withContext(PlatformDispatcher.IO) { fileSystem.directoryExists(expandedNewPath) }
+        if (!pathExists) return UpdateGraphPathResult.PathNotFound
+
+        val moved = withContext(PlatformDispatcher.IO) { moveGraphFilesAndCredentials(id, newId) }
+        if (!moved) return UpdateGraphPathResult.DatabaseMoveFailed
+
+        val displayName = fileSystem.displayNameForPath(expandedNewPath)
+        val updatedInfo = graphInfo.copy(
+            id = newId,
+            path = expandedNewPath,
+            displayName = displayName,
+            // The new folder may not share the old repo root — force re-detection.
+            detectedRepoRoot = null,
+            detectedWikiSubdir = null,
+            gitDetectionDismissed = false,
+        )
+        val updatedGraphs = registry.graphs.toMutableList()
+        updatedGraphs[graphIndex] = updatedInfo
+        _graphRegistry.value = registry.copy(graphs = updatedGraphs)
+        saveRegistry()
+
+        if (registry.activeGraphId == id) {
+            switchGraph(newId)
+        }
+
+        coroutineScope.launch(PlatformDispatcher.IO) {
+            val detected = detectGitRoot(expandedNewPath)
+            if (detected != null) {
+                updateGraphInfoDetection(newId, detected.first, detected.second)
+            }
+        }
+
+        return UpdateGraphPathResult.Success(newId)
+    }
+
+    /**
+     * Renames the on-disk DB (+ WAL/SHM), telemetry DB, and credential-store entries from
+     * [oldId] to [newId]. Returns false only if the main DB file exists but could not be
+     * renamed — telemetry and credential migration are best-effort and never fail the move.
+     */
+    private fun moveGraphFilesAndCredentials(oldId: GraphId, newId: GraphId): Boolean {
+        val oldDbPath = driverFactory.getDatabaseUrl(oldId.value).substringAfter("jdbc:sqlite:")
+        val newDbPath = driverFactory.getDatabaseUrl(newId.value).substringAfter("jdbc:sqlite:")
+        var dbMoved = true
+        if (fileSystem.fileExists(oldDbPath)) {
+            dbMoved = fileSystem.renameFile(oldDbPath, newDbPath)
+            if (dbMoved) {
+                fileSystem.renameFile("$oldDbPath-wal", "$newDbPath-wal")
+                fileSystem.renameFile("$oldDbPath-shm", "$newDbPath-shm")
+            }
+        }
+        if (!dbMoved) return false
+
+        try {
+            val oldTelemetryPath = driverFactory.getTelemetryDatabaseUrl(oldId.value).substringAfter("jdbc:sqlite:")
+            val newTelemetryPath = driverFactory.getTelemetryDatabaseUrl(newId.value).substringAfter("jdbc:sqlite:")
+            if (fileSystem.fileExists(oldTelemetryPath)) {
+                fileSystem.renameFile(oldTelemetryPath, newTelemetryPath)
+                fileSystem.renameFile("$oldTelemetryPath-wal", "$newTelemetryPath-wal")
+                fileSystem.renameFile("$oldTelemetryPath-shm", "$newTelemetryPath-shm")
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Non-critical — telemetry data loss should not block the path move
+        }
+
+        try {
+            val cs = dev.stapler.stelekit.platform.security.CredentialStore()
+            for (prefix in listOf("git_https_token_", "git_ssh_passphrase_")) {
+                val value = cs.retrieve("$prefix${oldId.value}")
+                if (value != null) {
+                    cs.store("$prefix${newId.value}", value)
+                    cs.delete("$prefix${oldId.value}")
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Non-critical — credential migration failure should not block the path move
+        }
+
+        return true
+    }
+
     /**
      * Switch to a different graph.
      * Closes the current database connection and opens a new one for the target graph.

@@ -1,0 +1,159 @@
+package dev.stapler.stelekit.db
+
+import dev.stapler.stelekit.model.GraphId
+import dev.stapler.stelekit.platform.FileSystem
+import dev.stapler.stelekit.platform.Settings
+import dev.stapler.stelekit.repository.GraphBackend
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertIs
+import kotlin.test.assertTrue
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.test.runTest
+
+class GraphManagerUpdateGraphPathTest {
+    private class StubSettings : Settings {
+        private val store = mutableMapOf<String, String>()
+        override fun getBoolean(key: String, defaultValue: Boolean) = store[key]?.toBoolean() ?: defaultValue
+        override fun putBoolean(key: String, value: Boolean) { store[key] = value.toString() }
+        override fun getString(key: String, defaultValue: String) = store.getOrDefault(key, defaultValue)
+        override fun putString(key: String, value: String) { store[key] = value }
+        override fun containsKey(key: String) = store.containsKey(key)
+    }
+
+    private open class StubFileSystem : FileSystem {
+        val renamedPaths = mutableListOf<Pair<String, String>>()
+        var existingPaths = mutableSetOf<String>()
+        var existingDirectories = mutableSetOf<String>()
+
+        override fun getDefaultGraphPath() = "/tmp"
+        override fun expandTilde(path: String) = path
+        override fun readFile(path: String): String? = null
+        override fun writeFile(path: String, content: String) = true
+        override fun listFiles(path: String) = emptyList<String>()
+        override fun listDirectories(path: String) = emptyList<String>()
+        override fun fileExists(path: String) = existingPaths.contains(path)
+        override fun directoryExists(path: String) = existingDirectories.contains(path)
+        override fun createDirectory(path: String) = true
+        override fun deleteFile(path: String) = true
+        override fun pickDirectory(): String? = null
+        override fun getLastModifiedTime(path: String): Long? = null
+        override fun startExternalChangeDetection(scope: CoroutineScope, onChange: () -> Unit) {}
+        override fun stopExternalChangeDetection() {}
+        override fun renameFile(from: String, to: String): Boolean {
+            renamedPaths.add(from to to)
+            existingPaths.remove(from)
+            existingPaths.add(to)
+            return true
+        }
+    }
+
+    private fun newManager(fs: StubFileSystem) = GraphManager(
+        platformSettings = StubSettings(),
+        driverFactory = DriverFactory(),
+        fileSystem = fs,
+        defaultBackend = GraphBackend.IN_MEMORY,
+    )
+
+    @Test
+    fun `updateGraphPath recomputes id and renames the db file`() = runTest {
+        val fs = StubFileSystem()
+        val graphManager = newManager(fs)
+        val oldId = graphManager.addGraph("/old/path")
+        val oldDbPath = DriverFactory().getDatabaseUrl(oldId.value).substringAfter("jdbc:sqlite:")
+        fs.existingPaths.add(oldDbPath)
+        fs.existingDirectories.add("/new/path")
+
+        val result = graphManager.updateGraphPath(oldId, "/new/path")
+
+        val success = assertIs<UpdateGraphPathResult.Success>(result)
+        val newId = success.newId
+        assertTrue(newId != oldId, "moving a graph must re-key its GraphId")
+
+        val newDbPath = DriverFactory().getDatabaseUrl(newId.value).substringAfter("jdbc:sqlite:")
+        assertTrue(fs.renamedPaths.any { it.first == oldDbPath && it.second == newDbPath })
+
+        val registry = graphManager.graphRegistry.value
+        assertFalse(registry.graphIds.contains(oldId))
+        assertTrue(registry.graphIds.contains(newId))
+        assertEquals("/new/path", registry.graphs.first { it.id == newId }.path)
+    }
+
+    @Test
+    fun `updateGraphPath is a no-op when the db file does not exist`() = runTest {
+        val fs = StubFileSystem()
+        val graphManager = newManager(fs)
+        val oldId = graphManager.addGraph("/old/path")
+        fs.existingDirectories.add("/new/path")
+
+        val result = graphManager.updateGraphPath(oldId, "/new/path")
+
+        val success = assertIs<UpdateGraphPathResult.Success>(result)
+        assertTrue(fs.renamedPaths.isEmpty(), "no db file existed, so nothing should be renamed")
+        assertTrue(graphManager.graphRegistry.value.graphIds.contains(success.newId))
+    }
+
+    @Test
+    fun `updateGraphPath fails when the target path does not exist`() = runTest {
+        val fs = StubFileSystem()
+        val graphManager = newManager(fs)
+        val oldId = graphManager.addGraph("/old/path")
+
+        val result = graphManager.updateGraphPath(oldId, "/missing/path")
+
+        assertEquals(UpdateGraphPathResult.PathNotFound, result)
+    }
+
+    @Test
+    fun `updateGraphPath returns GraphNotFound for an unknown id`() = runTest {
+        val fs = StubFileSystem()
+        val graphManager = newManager(fs)
+
+        val result = graphManager.updateGraphPath(GraphId("unknown"), "/new/path")
+
+        assertEquals(UpdateGraphPathResult.GraphNotFound, result)
+    }
+
+    @Test
+    fun `updateGraphPath refuses to move the demo graph`() = runTest {
+        val fs = StubFileSystem()
+        fs.existingDirectories.add("/new/path")
+        val graphManager = newManager(fs)
+        val demoId = graphManager.addDemoGraph()
+
+        val result = graphManager.updateGraphPath(demoId, "/new/path")
+
+        assertEquals(UpdateGraphPathResult.DemoGraphImmutable, result)
+    }
+
+    @Test
+    fun `updateGraphPath is a no-op when the path is unchanged`() = runTest {
+        val fs = StubFileSystem()
+        val graphManager = newManager(fs)
+        val oldId = graphManager.addGraph("/same/path")
+
+        val result = graphManager.updateGraphPath(oldId, "/same/path")
+
+        assertEquals(UpdateGraphPathResult.PathUnchanged, result)
+    }
+
+    @Test
+    fun `updateGraphPath refuses a path already tracked by another graph`() = runTest {
+        val fs = StubFileSystem()
+        fs.existingDirectories.add("/other/path")
+        val graphManager = newManager(fs)
+        graphManager.addGraph("/first/path")
+        val secondId = graphManager.addGraph("/other/path")
+        val firstAgainId = graphManager.addGraph("/first/path")
+
+        // addGraph is idempotent by id, so re-derive the first graph's id directly.
+        val firstId = graphManager.graphRegistry.value.graphs.first { it.path == "/first/path" }.id
+        assertEquals(firstId, firstAgainId)
+
+        val result = graphManager.updateGraphPath(firstId, "/other/path")
+
+        assertEquals(UpdateGraphPathResult.AlreadyTracked, result)
+        assertTrue(secondId != firstId)
+    }
+}
