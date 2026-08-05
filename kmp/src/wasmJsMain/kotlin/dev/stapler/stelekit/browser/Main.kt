@@ -69,8 +69,32 @@ private fun registerBeforeUnloadWarning(): Unit = js(
     """
 )
 
+// Browsers natively treat Tab/Shift+Tab as focus-traversal keys, moving focus off the Compose
+// canvas before Compose's own key-event pipeline (e.g. BlockEditor's onPreviewKeyEvent) ever
+// sees them — Shift+Tab in particular can jump focus backward to some other focusable element
+// on the page, so outdent silently never fires. On desktop this doesn't happen because
+// ComposePanel (AWT) disables focus-traversal keys on itself; Compose for Web installs no such
+// override, so we must call preventDefault() ourselves. This listener runs on `window` in the
+// capture phase — before Skiko's own canvas listener in the bubble phase — and only cancels the
+// browser's default action; it does not stop propagation, so Compose still receives and handles
+// the same keydown event normally. The `event.target` check (capture phase does not change
+// `target`, only propagation order) scopes this to the Skiko canvas so Tab still behaves normally
+// for any other focusable element on the page (e.g. browser chrome, future non-Compose widgets).
+private fun preventBrowserTabFocusTraversal(): Unit = js(
+    """
+    (function() {
+        window.addEventListener("keydown", function(event) {
+            if (event.key === "Tab" && event.target && event.target.tagName === "CANVAS") {
+                event.preventDefault();
+            }
+        }, true);
+    })()
+    """
+)
+
 @OptIn(ExperimentalComposeUiApi::class)
 fun main() {
+    preventBrowserTabFocusTraversal()
     val scope = MainScope()
     scope.launch(CoroutineExceptionHandler { _, throwable ->
         println("[SteleKit] Fatal startup error: ${throwable.message}")

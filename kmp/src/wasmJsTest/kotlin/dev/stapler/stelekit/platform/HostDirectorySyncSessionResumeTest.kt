@@ -14,6 +14,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 // js() calls must be top-level functions in Kotlin/Wasm — not inside a class or companion object,
 // and (unlike Kotlin/JS) cannot close over a surrounding function's local variables — only their
@@ -114,6 +115,20 @@ private fun restoreShowDirectoryPickerForSessionResumeTest(original: JsAny?): Un
 )
 
 // emptyRootDir() (an empty fake FileSystemDirectoryHandle) is shared from HostDirectoryTestFixtures.kt.
+
+/** Mirrors [HostDirectorySyncReconciliationTest.kt]'s private `withGrantedPermission` — stamps
+ * `queryPermission`/`requestPermission` (both resolving `"granted"`) onto a walkable
+ * `rootDir(...)`-built fixture, so a single fake satisfies both `requestHostDirectoryAccess`'s
+ * permission check and the `runHostReconciliation` walk it launches on the granted branch. */
+private fun withGrantedPermissionForSessionResumeTest(dirHandle: JsAny): JsAny = js(
+    """
+    (function() {
+        dirHandle.queryPermission = function(opts) { return Promise.resolve('granted'); };
+        dirHandle.requestPermission = function(opts) { return Promise.resolve('granted'); };
+        return dirHandle;
+    })()
+    """,
+)
 
 /**
  * Epic 2.5 (Story 2.5.2): coverage for `HostDirectorySync.reconnectHostDirectory`'s dispatch
@@ -223,6 +238,44 @@ class HostDirectorySyncSessionResumeTest {
         assertEquals(HostAccessState.Granted, sync.hostAccessStateFlow.value)
         assertNotNull(sync.hostDirHandle)
         assertEquals("/stelekit/g", sync.hostGraphOpfsPath)
+        testScope.cancel()
+    }
+
+    // Regression coverage (code-review finding): the test above only asserts state/handle/
+    // opfsPath, all of which are set synchronously before the granted branch's `scope.launch {
+    // runHostReconciliation(...) }` even starts — a regression that deleted that launch call
+    // would leave it green. This test instead uses a walkable `rootDir(...)` fixture (stamped
+    // with granted permissions, mirroring HostDirectorySyncReconciliationTest.kt's
+    // `withGrantedPermission`) and waits real wall-clock time for the launched, non-blocking
+    // reconciliation to land a host-only file in the cache — proof it actually ran, not just that
+    // permission was granted.
+    @Test
+    fun requestHostDirectoryAccess_should_ActuallyRunReconciliation_When_UserAllowsNativePrompt() = runTest {
+        val opfsPath = "/stelekit/g"
+        val cache = FakeCacheAccess()
+        val testScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val sync = newSync("g", cache, testScope)
+        val handle = withGrantedPermissionForSessionResumeTest(
+            rootDir(Dir("pages", listOf(TextFile("New.md", "new content")))),
+        )
+        sync.lookupPersistedHandle = { handle to opfsPath }
+
+        val state = sync.requestHostDirectoryAccess("g")
+
+        // Granted resolves immediately, without waiting on the launched reconciliation — same
+        // non-blocking-launch contract reconnectHostDirectory's equivalent test documents.
+        assertEquals(HostAccessState.Granted, state)
+        assertNotNull(sync.hostDirHandle)
+
+        // Give the launched (scope.launch, non-blocking) reconciliation real wall-clock time to
+        // finish before asserting its outcome — it runs on testScope's real Dispatchers.Default.
+        withContext(Dispatchers.Default) { delay(300) }
+
+        assertTrue(
+            cache.textStore["$opfsPath/pages/New.md"] == "new content",
+            "New.md should have landed in the cache — proof runHostReconciliation actually ran, " +
+                "not just that permission was requested and granted",
+        )
         testScope.cancel()
     }
 

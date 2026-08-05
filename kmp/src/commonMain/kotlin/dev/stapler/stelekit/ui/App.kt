@@ -1429,6 +1429,26 @@ private fun GraphContent(
                                     closeSidebarIfMobile()
                                 },
                                 onRemoveGraph = { scope.launch { graphManager.removeGraph(GraphId(it)) } },
+                                onUpdateGraphPath = { id, newPath ->
+                                    scope.launch {
+                                        when (val result = graphManager.updateGraphPath(GraphId(id), newPath)) {
+                                            is dev.stapler.stelekit.db.UpdateGraphPathResult.Success ->
+                                                viewModel.sendSnackbar("Graph moved to $newPath")
+                                            dev.stapler.stelekit.db.UpdateGraphPathResult.GraphNotFound ->
+                                                viewModel.sendSnackbar("Graph not found")
+                                            dev.stapler.stelekit.db.UpdateGraphPathResult.DemoGraphImmutable ->
+                                                viewModel.sendSnackbar("The demo graph's path cannot be changed")
+                                            dev.stapler.stelekit.db.UpdateGraphPathResult.PathNotFound ->
+                                                viewModel.sendSnackbar("Folder \"$newPath\" does not exist")
+                                            dev.stapler.stelekit.db.UpdateGraphPathResult.PathUnchanged ->
+                                                Unit
+                                            dev.stapler.stelekit.db.UpdateGraphPathResult.AlreadyTracked ->
+                                                viewModel.sendSnackbar("That folder is already tracked as another graph")
+                                            dev.stapler.stelekit.db.UpdateGraphPathResult.DatabaseMoveFailed ->
+                                                viewModel.sendSnackbar("Failed to move the graph's database — check file permissions")
+                                        }
+                                    }
+                                },
                                 onCollapse = { viewModel.toggleSidebar() },
                                 syncState = syncState,
                                 onSyncClick = {
