@@ -456,8 +456,8 @@ class GraphManager(
         if (fileSystem.fileExists(oldDbPath)) {
             dbMoved = fileSystem.renameFile(oldDbPath, newDbPath)
             if (dbMoved) {
-                fileSystem.renameFile("$oldDbPath-wal", "$newDbPath-wal")
-                fileSystem.renameFile("$oldDbPath-shm", "$newDbPath-shm")
+                dbMoved = renameSidecarIfPresent("$oldDbPath-wal", "$newDbPath-wal") &&
+                    renameSidecarIfPresent("$oldDbPath-shm", "$newDbPath-shm")
             }
         }
         if (!dbMoved) return false
@@ -466,9 +466,11 @@ class GraphManager(
             val oldTelemetryPath = driverFactory.getTelemetryDatabaseUrl(oldId.value).substringAfter("jdbc:sqlite:")
             val newTelemetryPath = driverFactory.getTelemetryDatabaseUrl(newId.value).substringAfter("jdbc:sqlite:")
             if (fileSystem.fileExists(oldTelemetryPath)) {
-                fileSystem.renameFile(oldTelemetryPath, newTelemetryPath)
-                fileSystem.renameFile("$oldTelemetryPath-wal", "$newTelemetryPath-wal")
-                fileSystem.renameFile("$oldTelemetryPath-shm", "$newTelemetryPath-shm")
+                val telemetryMoved = fileSystem.renameFile(oldTelemetryPath, newTelemetryPath)
+                if (telemetryMoved) {
+                    renameSidecarIfPresent("$oldTelemetryPath-wal", "$newTelemetryPath-wal")
+                    renameSidecarIfPresent("$oldTelemetryPath-shm", "$newTelemetryPath-shm")
+                }
             }
         } catch (e: CancellationException) {
             throw e
@@ -492,6 +494,17 @@ class GraphManager(
         }
 
         return true
+    }
+
+    /**
+     * Renames a WAL/SHM sidecar file if it exists at [oldPath]. Sidecars only exist when a WAL
+     * checkpoint hasn't run, so a missing sidecar is not a failure. Returns false only when the
+     * sidecar existed but the rename itself failed — callers that must not silently lose
+     * uncommitted WAL data should treat that as a failed move.
+     */
+    private fun renameSidecarIfPresent(oldPath: String, newPath: String): Boolean {
+        if (!fileSystem.fileExists(oldPath)) return true
+        return fileSystem.renameFile(oldPath, newPath)
     }
 
     /**

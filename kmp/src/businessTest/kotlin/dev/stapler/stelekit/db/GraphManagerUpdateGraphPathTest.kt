@@ -49,6 +49,17 @@ class GraphManagerUpdateGraphPathTest {
         }
     }
 
+    /** [StubFileSystem] variant whose [renameFile] fails for any path in [failingPaths]. */
+    private class FailingRenameFileSystem(private val failingPaths: Set<String>) : StubFileSystem() {
+        override fun renameFile(from: String, to: String): Boolean {
+            if (from in failingPaths) return false
+            renamedPaths.add(from to to)
+            existingPaths.remove(from)
+            existingPaths.add(to)
+            return true
+        }
+    }
+
     private fun newManager(fs: StubFileSystem) = GraphManager(
         platformSettings = StubSettings(),
         driverFactory = DriverFactory(),
@@ -155,5 +166,48 @@ class GraphManagerUpdateGraphPathTest {
 
         assertEquals(UpdateGraphPathResult.AlreadyTracked, result)
         assertTrue(secondId != firstId)
+    }
+
+    @Test
+    fun `updateGraphPath fails when the db file rename fails`() = runTest {
+        val oldId = newManager(StubFileSystem()).graphIdFromPath("/old/path")
+        val oldDbPath = DriverFactory().getDatabaseUrl(oldId.value).substringAfter("jdbc:sqlite:")
+
+        val fs = FailingRenameFileSystem(failingPaths = setOf(oldDbPath))
+        val graphManager = newManager(fs)
+        graphManager.addGraph("/old/path")
+        fs.existingPaths.add(oldDbPath)
+        fs.existingDirectories.add("/new/path")
+
+        val result = graphManager.updateGraphPath(oldId, "/new/path")
+
+        assertEquals(UpdateGraphPathResult.DatabaseMoveFailed, result)
+        // Registry must be untouched — the graph should still be tracked under its original id/path.
+        val registry = graphManager.graphRegistry.value
+        assertTrue(registry.graphIds.contains(oldId))
+        assertEquals("/old/path", registry.graphs.first { it.id == oldId }.path)
+    }
+
+    @Test
+    fun `updateGraphPath moves the active graph and updates the active graph pointer`() = runTest {
+        val fs = StubFileSystem()
+        val graphManager = newManager(fs)
+        val oldId = graphManager.addGraph("/old/path")
+        graphManager.switchGraph(oldId)
+        assertEquals(oldId, graphManager.graphRegistry.value.activeGraphId)
+
+        val oldDbPath = DriverFactory().getDatabaseUrl(oldId.value).substringAfter("jdbc:sqlite:")
+        fs.existingPaths.add(oldDbPath)
+        fs.existingDirectories.add("/new/path")
+
+        val result = graphManager.updateGraphPath(oldId, "/new/path")
+
+        val success = assertIs<UpdateGraphPathResult.Success>(result)
+        val newId = success.newId
+        assertEquals(
+            newId,
+            graphManager.graphRegistry.value.activeGraphId,
+            "moving the active graph must repoint activeGraphId to the new id",
+        )
     }
 }
