@@ -77,12 +77,14 @@ private fun registerBeforeUnloadWarning(): Unit = js(
 // override, so we must call preventDefault() ourselves. This listener runs on `window` in the
 // capture phase — before Skiko's own canvas listener in the bubble phase — and only cancels the
 // browser's default action; it does not stop propagation, so Compose still receives and handles
-// the same keydown event normally.
+// the same keydown event normally. The `event.target` check (capture phase does not change
+// `target`, only propagation order) scopes this to the Skiko canvas so Tab still behaves normally
+// for any other focusable element on the page (e.g. browser chrome, future non-Compose widgets).
 private fun preventBrowserTabFocusTraversal(): Unit = js(
     """
     (function() {
         window.addEventListener("keydown", function(event) {
-            if (event.key === "Tab") {
+            if (event.key === "Tab" && event.target && event.target.tagName === "CANVAS") {
                 event.preventDefault();
             }
         }, true);
