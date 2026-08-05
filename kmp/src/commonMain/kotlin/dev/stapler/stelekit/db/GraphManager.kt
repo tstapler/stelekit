@@ -428,10 +428,15 @@ class GraphManager(
         val updatedGraphs = registry.graphs.toMutableList()
         updatedGraphs[graphIndex] = updatedInfo
         _graphRegistry.value = registry.copy(graphs = updatedGraphs)
-        saveRegistry()
 
         if (registry.activeGraphId == id) {
+            // Defer persistence to switchGraph(), which saves the re-keyed graph list together
+            // with the updated activeGraphId in one write. Saving here first would leave a crash
+            // window where the on-disk registry has the graph re-keyed but activeGraphId still
+            // pointing at the now-nonexistent old id, breaking startup auto-restore.
             switchGraph(newId)
+        } else {
+            saveRegistry()
         }
 
         coroutineScope.launch(PlatformDispatcher.IO) {

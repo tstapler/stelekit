@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.db
 
 import dev.stapler.stelekit.model.GraphId
+import dev.stapler.stelekit.model.GraphRegistry
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.repository.GraphBackend
@@ -11,6 +12,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
 
 class GraphManagerUpdateGraphPathTest {
     private class StubSettings : Settings {
@@ -20,6 +22,23 @@ class GraphManagerUpdateGraphPathTest {
         override fun getString(key: String, defaultValue: String) = store.getOrDefault(key, defaultValue)
         override fun putString(key: String, value: String) { store[key] = value }
         override fun containsKey(key: String) = store.containsKey(key)
+    }
+
+    /** [StubSettings] variant that records every persisted registry snapshot, in order. */
+    private class RecordingSettings : Settings {
+        private val delegate = StubSettings()
+        private val json = Json { ignoreUnknownKeys = true }
+        val savedRegistries = mutableListOf<GraphRegistry>()
+        override fun getBoolean(key: String, defaultValue: Boolean) = delegate.getBoolean(key, defaultValue)
+        override fun putBoolean(key: String, value: Boolean) = delegate.putBoolean(key, value)
+        override fun getString(key: String, defaultValue: String) = delegate.getString(key, defaultValue)
+        override fun putString(key: String, value: String) {
+            delegate.putString(key, value)
+            if (key == "graph_registry") {
+                savedRegistries.add(json.decodeFromString(GraphRegistry.serializer(), value))
+            }
+        }
+        override fun containsKey(key: String) = delegate.containsKey(key)
     }
 
     private open class StubFileSystem : FileSystem {
@@ -60,8 +79,8 @@ class GraphManagerUpdateGraphPathTest {
         }
     }
 
-    private fun newManager(fs: StubFileSystem) = GraphManager(
-        platformSettings = StubSettings(),
+    private fun newManager(fs: StubFileSystem, settings: Settings = StubSettings()) = GraphManager(
+        platformSettings = settings,
         driverFactory = DriverFactory(),
         fileSystem = fs,
         defaultBackend = GraphBackend.IN_MEMORY,
@@ -257,5 +276,35 @@ class GraphManagerUpdateGraphPathTest {
             graphManager.graphRegistry.value.activeGraphId,
             "moving the active graph must repoint activeGraphId to the new id",
         )
+    }
+
+    @Test
+    fun `updateGraphPath never persists a registry where activeGraphId points at a re-keyed-away id`() = runTest {
+        val fs = StubFileSystem()
+        val settings = RecordingSettings()
+        val graphManager = newManager(fs, settings)
+        val oldId = graphManager.addGraph("/old/path")
+        graphManager.switchGraph(oldId)
+        settings.savedRegistries.clear()
+
+        val oldDbPath = DriverFactory().getDatabaseUrl(oldId.value).substringAfter("jdbc:sqlite:")
+        fs.existingPaths.add(oldDbPath)
+        fs.existingDirectories.add("/new/path")
+
+        graphManager.updateGraphPath(oldId, "/new/path")
+
+        // Every disk write observed during the move must be internally consistent: if a crash
+        // happened right after any one of them, startup auto-restore must still find the active
+        // graph. A snapshot with the graph re-keyed but activeGraphId still pointing at the old,
+        // now-nonexistent id would break that.
+        assertTrue(settings.savedRegistries.isNotEmpty(), "expected at least one registry save")
+        for (snapshot in settings.savedRegistries) {
+            val activeId = snapshot.activeGraphId ?: continue
+            assertTrue(
+                snapshot.graphIds.contains(activeId),
+                "persisted registry has activeGraphId=$activeId but graphs=${snapshot.graphIds} — " +
+                    "would break startup auto-restore if the process crashed right after this save",
+            )
+        }
     }
 }
