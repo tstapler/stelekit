@@ -456,8 +456,14 @@ class GraphManager(
         if (fileSystem.fileExists(oldDbPath)) {
             dbMoved = fileSystem.renameFile(oldDbPath, newDbPath)
             if (dbMoved) {
-                dbMoved = renameSidecarIfPresent("$oldDbPath-wal", "$newDbPath-wal") &&
+                val sidecarsMoved = renameSidecarIfPresent("$oldDbPath-wal", "$newDbPath-wal") &&
                     renameSidecarIfPresent("$oldDbPath-shm", "$newDbPath-shm")
+                if (!sidecarsMoved) {
+                    // Roll back the main DB file so the registry's old path stays valid —
+                    // reporting failure must not orphan the DB at a path nothing references.
+                    fileSystem.renameFile(newDbPath, oldDbPath)
+                    dbMoved = false
+                }
             }
         }
         if (!dbMoved) return false
