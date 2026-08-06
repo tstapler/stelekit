@@ -9,6 +9,17 @@ import kotlinx.coroutines.await
 // js() calls must be top-level functions in Kotlin/Wasm — not inside a class or companion object.
 
 /**
+ * Test-observation hook for the [HostDirectorySync] startup-ordering race fix
+ * (buffer-then-flush pattern, see `HostDirectorySync.onHostConflict`/`flushPendingHostConflicts`).
+ * Mirrors the buffer's live size onto `window.__stelekit_pending_host_conflicts` so an e2e spec
+ * can poll it during boot and observe it rise above zero (conflicts arriving before `App.kt`
+ * wires the real callback) and then drop back to zero (the flush replaying them) — the exact
+ * sequence the fix guarantees but that boot logs alone don't distinguish from "no conflicts ever
+ * buffered."
+ */
+internal fun mirrorPendingHostConflictCount(count: Int): Unit = js("window.__stelekit_pending_host_conflicts = count")
+
+/**
  * `web-local-folder-livesync` (Epic 1.5) browser interop primitives — IndexedDB
  * `FileSystemDirectoryHandle` persistence, `queryPermission()`/`requestPermission()`, the
  * `FileSystemObserver` construction/observe surface, `File.lastModified`/`size` accessors, the

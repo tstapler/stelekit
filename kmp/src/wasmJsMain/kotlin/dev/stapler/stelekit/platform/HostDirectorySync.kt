@@ -217,9 +217,13 @@ class HostDirectorySync(
      */
     internal var onHostConflict: (path: String, hostContent: String) -> Unit = { path, hostContent ->
         pendingHostConflicts += path to hostContent
+        mirrorPendingHostConflictCount(pendingHostConflicts.size)
     }
 
     private val pendingHostConflicts = mutableListOf<Pair<String, String>>()
+
+    /** Test-observation seam: lets Playwright/e2e specs assert the race window buffered, then drained. */
+    internal val pendingHostConflictCount: Int get() = pendingHostConflicts.size
 
     /**
      * Replays any conflicts that arrived while [onHostConflict] was still its buffering default
@@ -230,6 +234,7 @@ class HostDirectorySync(
         if (pendingHostConflicts.isEmpty()) return
         val buffered = pendingHostConflicts.toList()
         pendingHostConflicts.clear()
+        mirrorPendingHostConflictCount(0)
         buffered.forEach { (path, hostContent) -> callback(path, hostContent) }
     }
 
