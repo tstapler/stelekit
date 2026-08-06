@@ -497,7 +497,12 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
      * [HostDirectorySync.onHostConflict]'s doc comment for the full rationale).
      */
     override fun setOnHostConflict(callback: ((path: String, hostContent: String) -> Unit)?) {
-        hostDirectorySync.onHostConflict = callback ?: { _, _ -> }
+        val resolved = callback ?: { _, _ -> }
+        hostDirectorySync.onHostConflict = resolved
+        // Replays any conflicts the silent-resume reconciliation walk found before App.kt's
+        // composition got far enough to wire a real callback — see onHostConflict's doc comment
+        // in HostDirectorySync.kt for why that window exists and used to lose conflicts silently.
+        hostDirectorySync.flushPendingHostConflicts(resolved)
     }
 
     /**

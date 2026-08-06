@@ -204,8 +204,34 @@ class HostDirectorySync(
      * established convention for wiring a `GraphLoader` callback into the platform layer without
      * `HostDirectorySync`/`PlatformFileSystem` importing `GraphLoader` directly (architecture-review.md
      * Blocker 1's independence goal). See [PlatformFileSystem]'s `setOnHostConflict` override.
+     *
+     * `reconnectHostDirectory`'s silent-resume path launches [runHostReconciliation]
+     * non-blocking (Story 3.4.2) at app boot, before `Main.kt` even calls `ComposeViewport` —
+     * well before `App.kt`'s composition can construct a `GraphLoader` and wire the real
+     * callback via `setOnHostConflict`. Any conflict the walk finds in that window used to be
+     * dispatched straight into this no-op default and lost forever — no snackbar, no sidebar
+     * badge, nothing — because [runHostReconciliation] never revisits an already-visited path
+     * on a later poll ([hostModTimes]/[hostFileSizes] mark it "seen" either way. The default
+     * now buffers into [pendingHostConflicts] instead of discarding; [flushPendingHostConflicts]
+     * replays the buffer the moment a real callback is set.
      */
-    internal var onHostConflict: (path: String, hostContent: String) -> Unit = { _, _ -> }
+    internal var onHostConflict: (path: String, hostContent: String) -> Unit = { path, hostContent ->
+        pendingHostConflicts += path to hostContent
+    }
+
+    private val pendingHostConflicts = mutableListOf<Pair<String, String>>()
+
+    /**
+     * Replays any conflicts that arrived while [onHostConflict] was still its buffering default
+     * (see that property's doc comment), then clears the buffer. Called from
+     * `PlatformFileSystem.setOnHostConflict` immediately after it assigns the real callback.
+     */
+    internal fun flushPendingHostConflicts(callback: (path: String, hostContent: String) -> Unit) {
+        if (pendingHostConflicts.isEmpty()) return
+        val buffered = pendingHostConflicts.toList()
+        pendingHostConflicts.clear()
+        buffered.forEach { (path, hostContent) -> callback(path, hostContent) }
+    }
 
     /**
      * Task 3.1.2b: the last [ReconciliationSummary] produced by [runHostReconciliation], read by
@@ -326,7 +352,22 @@ class HostDirectorySync(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Throwable) {
+                    // Bug fix: a poll tick can fail because the browser silently demoted this
+                    // handle's permission back to "prompt" (e.g. after the tab was backgrounded) —
+                    // previously this branch only println'd and looped again next tick, leaving
+                    // hostAccessStateFlow stuck at Granted forever. `FolderSyncStatusBadge` then
+                    // kept showing "Synced to <dir>" even though every subsequent tick was failing
+                    // the same way, silently, with no reconciliation ever running again. Re-query
+                    // the handle's actual permission here and mirror it into hostAccessStateFlow so
+                    // the badge honestly falls back to "Reconnect folder"/"Grant access".
                     println("[SteleKit] HostDirectoryPoller tick failed: ${e.message}")
+                    val handleForRequery = hostDirHandle
+                    if (handleForRequery != null) {
+                        val permission = queryHandlePermission(handleForRequery)
+                        if (permission != "granted") {
+                            setHostAccessState(mapPermissionResultToAccessState(permission))
+                        }
+                    }
                 }
             }
         }
