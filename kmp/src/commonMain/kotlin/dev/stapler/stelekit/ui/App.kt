@@ -1499,6 +1499,10 @@ private fun GraphContent(
                                 hostAccessState == HostAccessState.NotApplicable &&
                                 fileSystem.supportsNativeDirectoryPicker &&
                                 activeGraphInfo2.browserOnlySyncBannerDismissed == false
+                            var hostReconnectBannerDismissedFor by remember { mutableStateOf<String?>(null) }
+                            val showHostReconnectBanner = activeGraphInfo2 != null &&
+                                (hostAccessState is HostAccessState.PromptNeeded || hostAccessState is HostAccessState.Denied) &&
+                                hostReconnectBannerDismissedFor != activeGraphId?.value
                             Column(modifier = Modifier.fillMaxSize()) {
                                 if (showGitBanner) {
                                     GitDetectionBanner(
@@ -1516,6 +1520,15 @@ private fun GraphContent(
                                         onDismiss = {
                                             val gid = activeGraphId ?: return@BrowserOnlySyncBanner
                                             viewModel.dismissBrowserOnlySyncBanner(gid.value)
+                                        },
+                                    )
+                                }
+                                if (showHostReconnectBanner) {
+                                    HostReconnectBanner(
+                                        state = hostAccessState,
+                                        onReconnect = { onReconnectHostDirectory?.invoke() },
+                                        onDismiss = {
+                                            hostReconnectBannerDismissedFor = activeGraphId?.value
                                         },
                                     )
                                 }
