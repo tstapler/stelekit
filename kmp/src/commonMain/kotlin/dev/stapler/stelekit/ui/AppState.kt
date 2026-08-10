@@ -18,6 +18,7 @@ import dev.stapler.stelekit.vault.VaultError
 import dev.stapler.stelekit.vault.VaultNamespace
 import dev.stapler.stelekit.asset.AssetUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.SectionId
 import dev.stapler.stelekit.sections.SectionManifest
 import dev.stapler.stelekit.sections.SectionState
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
@@ -102,7 +103,7 @@ data class AppState(
     val onboardingCompleted: Boolean = false,
     val currentScreen: Screen = Screen.Journals,
     val currentPage: Page? = null,
-    val currentGraphPath: String = "",
+    val currentGraphPath: String? = null,
     val commandPaletteVisible: Boolean = false,
     val searchDialogVisible: Boolean = false,
     val searchDialogInitialQuery: String = "",
@@ -180,7 +181,7 @@ data class AppState(
     // Section support
     val currentManifest: SectionManifest? = null,
     val currentSectionStates: Map<String, SectionState> = emptyMap(),
-    val defaultSection: String = "",
+    val defaultSection: SectionId = SectionId.Global,
     val deviceSetupComplete: Boolean = false,
     val sectionPickerVisible: Boolean = false,
     val sectionPickerPage: Page? = null,

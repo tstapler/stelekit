@@ -472,9 +472,10 @@ class StelekitViewModel(
             return
         }
 
+        val graphPath = _uiState.value.currentGraphPath ?: return
+
         llmSuggestionInbox.remove(id)
 
-        val graphPath = _uiState.value.currentGraphPath
         scope.launch {
             val result = llmSuggestionWriter.materializeAndWrite(suggestion, graphPath)
             result.onLeft { error ->
@@ -488,7 +489,7 @@ class StelekitViewModel(
     private var recentPageUuids: MutableList<String> = mutableListOf()
 
     private val recentPagesKey: String
-        get() = "recent_pages_${_uiState.value.currentGraphPath}"
+        get() = "recent_pages_${_uiState.value.currentGraphPath.orEmpty()}"
 
     // Resolved Page objects for the recent-pages list, keyed by UUID and bounded by
     // recentPageUuids (≤20 entries). Replaces the former cachedAllPages field, which
@@ -530,10 +531,10 @@ class StelekitViewModel(
         AppState(
             isLoading = true,
             onboardingCompleted = platformSettings.getBoolean("onboardingCompleted", false),
-            currentGraphPath = platformSettings.getString("lastGraphPath", ""),
+            currentGraphPath = platformSettings.getString("lastGraphPath", "").ifEmpty { null },
             isLeftHanded = platformSettings.getBoolean("isLeftHanded", false),
             isLibsqlDriverEnabled = platformSettings.getBoolean("db.libsql.enabled", false),
-            defaultSection = platformSettings.getString("defaultSection", ""),
+            defaultSection = SectionId.fromDbString(platformSettings.getString("defaultSection", "")),
             deviceSetupComplete = platformSettings.getBoolean("deviceSetupComplete", false),
             currentSectionStates = platformSettings.getSectionStates(),
         )
@@ -555,7 +556,7 @@ class StelekitViewModel(
         val path = _uiState.value.currentGraphPath
         val onboarded = _uiState.value.onboardingCompleted
         logger.info("init: lastGraphPath='$path' onboardingCompleted=$onboarded")
-        if (path.isNotEmpty() && onboarded) {
+        if (path != null && onboarded) {
             loadGraph(path)
         }
         
@@ -673,9 +674,8 @@ class StelekitViewModel(
 
     @OptIn(DirectRepositoryWrite::class)
     fun triggerReindex() {
-        val path = _uiState.value.currentGraphPath
-        if (path.isEmpty()) return
-        
+        val path = _uiState.value.currentGraphPath ?: return
+
         scope.launch {
             logger.info("Manually triggering re-index for $path")
             _uiState.update { it.copy(statusMessage = "Clearing database...") }
@@ -816,7 +816,7 @@ class StelekitViewModel(
                     platformSettings.putString("graph_registry", "")
                     _uiState.update {
                         it.copy(
-                            currentGraphPath = "",
+                            currentGraphPath = null,
                             onboardingCompleted = false,
                             isLoading = false,
                             isFullyLoaded = true,
@@ -1375,8 +1375,7 @@ class StelekitViewModel(
             val isJournal = pageName.matches(Regex("^\\d{4}[-_]\\d{2}[-_]\\d{2}$"))
 
             // Story 5.8: assign new non-journal pages to the default section when set
-            val currentDefaultSection = _uiState.value.defaultSection
-            val sectionId = if (!isJournal && currentDefaultSection.isNotEmpty()) SectionId.Named(currentDefaultSection) else SectionId.Global
+            val sectionId = if (!isJournal) _uiState.value.defaultSection else SectionId.Global
 
             val newPage = Page(
                 uuid = PageUuid(uuid),
@@ -2267,7 +2266,7 @@ class StelekitViewModel(
                     action = { navigateTo(Screen.GlobalUnlinkedReferences) }
                 )
 
-                if (_uiState.value.currentGraphPath.isNotEmpty()) {
+                if (_uiState.value.currentGraphPath != null) {
                     legacyCommands += Command(
                         id = "import.paste-text",
                         label = "Import text as new page",
@@ -2508,7 +2507,7 @@ class StelekitViewModel(
     fun renamePage(page: Page, newName: String) {
         val trimmed = newName.trim()
         if (trimmed.isBlank() || trimmed == page.name) return
-        val graphPath = _uiState.value.currentGraphPath
+        val graphPath = _uiState.value.currentGraphPath ?: return
         scope.launch {
             _uiState.update { it.copy(renameDialogBusy = true, renameDialogError = null) }
             // Guard: reject rename if a page with the target name already exists.
@@ -2654,7 +2653,7 @@ class StelekitViewModel(
         journalPathPrefix: String,
     ) {
         val manifest = _uiState.value.currentManifest ?: SectionManifest()
-        val graphPath = _uiState.value.currentGraphPath
+        val graphPath = _uiState.value.currentGraphPath ?: return
         val newSection = SectionDefinition(
             id = id,
             displayName = displayName,
@@ -2673,7 +2672,7 @@ class StelekitViewModel(
 
     fun renameSection(id: String, newDisplayName: String) {
         val manifest = _uiState.value.currentManifest ?: return
-        val graphPath = _uiState.value.currentGraphPath
+        val graphPath = _uiState.value.currentGraphPath ?: return
         val updated = manifest.copy(
             sections = manifest.sections.map { if (it.id == id) it.copy(displayName = newDisplayName) else it }
         )
@@ -2687,7 +2686,7 @@ class StelekitViewModel(
 
     fun deleteSection(id: String) {
         val manifest = _uiState.value.currentManifest ?: return
-        val graphPath = _uiState.value.currentGraphPath
+        val graphPath = _uiState.value.currentGraphPath ?: return
         val updated = manifest.copy(sections = manifest.sections.filter { it.id != id })
         scope.launch {
             sectionManifestWriter.write(graphPath, updated).fold(
@@ -2703,7 +2702,7 @@ class StelekitViewModel(
 
     fun setDefaultSection(sectionId: String) {
         platformSettings.putString("defaultSection", sectionId)
-        _uiState.update { it.copy(defaultSection = sectionId) }
+        _uiState.update { it.copy(defaultSection = SectionId.fromDbString(sectionId)) }
     }
 
     fun setSectionState(sectionId: String, state: SectionState) {
@@ -2724,7 +2723,7 @@ class StelekitViewModel(
         _uiState.update {
             it.copy(
                 deviceSetupComplete = true,
-                defaultSection = defaultSection,
+                defaultSection = SectionId.fromDbString(defaultSection),
                 currentSectionStates = sectionStates,
                 deviceSetupWizardVisible = false,
             )

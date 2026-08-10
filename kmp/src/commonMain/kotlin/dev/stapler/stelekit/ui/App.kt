@@ -760,7 +760,7 @@ private fun GraphContent(
             viewModel.registerAttachImageCallback {
                 scope.launch {
                     val editingBlockUuid = blockStateManager.editingBlockUuid.value
-                    val graphRoot = viewModel.uiState.value.currentGraphPath
+                    val graphRoot = viewModel.uiState.value.currentGraphPath ?: return@launch
                     val result = attachmentService.pickAndAttach(
                         graphRoot = graphRoot,
                         pageRelativePath = ""
@@ -786,7 +786,7 @@ private fun GraphContent(
     // active graph. For paranoid-mode graphs, loading is deferred until after unlock so the
     // CryptoLayer is in place before any file reads.
     LaunchedEffect(Unit) {
-        if (!isParanoidMode && viewModel.uiState.value.currentGraphPath.isEmpty()) {
+        if (!isParanoidMode && viewModel.uiState.value.currentGraphPath == null) {
             val path = graphManager.getActiveGraphInfo()?.path
             if (!path.isNullOrEmpty()) {
                 viewModel.setGraphPath(path)
@@ -816,7 +816,7 @@ private fun GraphContent(
     // After successful vault unlock, inject CryptoLayer into loader/writer then load graph.
     LaunchedEffect(vaultState) {
         val state = vaultState
-        if (state is VaultState.Unlocked && isParanoidMode && viewModel.uiState.value.currentGraphPath.isEmpty()) {
+        if (state is VaultState.Unlocked && isParanoidMode && viewModel.uiState.value.currentGraphPath == null) {
             val path = graphManager.getActiveGraphInfo()?.path ?: return@LaunchedEffect
             viewModel.setGraphPath(path)
         }
@@ -1468,7 +1468,7 @@ private fun GraphContent(
                                     { viewModel.newSectionJournalForToday(activeSectionIds[0]) }
                                 } else null,
                                 sectionManifest = appState.currentManifest,
-                                defaultSection = appState.defaultSection,
+                                defaultSection = appState.defaultSection.toDbString(),
                                 onSectionIndicatorClick = { viewModel.setSectionQuickToggleVisible(true) },
                             )
                         },
@@ -1551,8 +1551,8 @@ private fun GraphContent(
                                 capabilities = dev.stapler.stelekit.ui.components.EditorCapabilities(
                                     onAttachImage = if (attachmentService != null) {
                                         { editingBlockUuid ->
-                                            val graphRoot = appState.currentGraphPath
                                             scope.launch {
+                                                val graphRoot = appState.currentGraphPath ?: return@launch
                                                 val result = attachmentService.pickAndAttach(
                                                     graphRoot = graphRoot,
                                                     pageRelativePath = ""
@@ -1572,7 +1572,7 @@ private fun GraphContent(
                                         { files ->
                                             val graphRoot = appState.currentGraphPath
                                             val pageUuid = (appState.currentScreen as? Screen.PageView)?.page?.uuid
-                                            if (pageUuid != null) {
+                                            if (pageUuid != null && graphRoot != null) {
                                                 scope.launch {
                                                     files.forEach { file ->
                                                         val result = attachmentService.attachFilePath(
@@ -1598,8 +1598,8 @@ private fun GraphContent(
                                     onPasteImage = if (attachmentService != null) {
                                         { editingBlockUuid ->
                                             if (attachmentService.hasClipboardImage()) {
-                                                val graphRoot = appState.currentGraphPath
                                                 scope.launch {
+                                                    val graphRoot = appState.currentGraphPath ?: return@launch
                                                     val result = attachmentService.pasteFromClipboard(graphRoot)
                                                         ?: return@launch
                                                     result.fold(
@@ -1773,7 +1773,7 @@ private fun GraphContent(
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     StatusBarContent(
-                                        isEncrypted = encryptionManager.isEncryptionEnabled(appState.currentGraphPath),
+                                        isEncrypted = encryptionManager.isEncryptionEnabled(appState.currentGraphPath.orEmpty()),
                                         statusMessage = appState.statusMessage,
                                         activeGraphName = activeGraphInfo?.displayName ?: "",
                                         pluginCount = pluginHost.getAllPlugins().size,
