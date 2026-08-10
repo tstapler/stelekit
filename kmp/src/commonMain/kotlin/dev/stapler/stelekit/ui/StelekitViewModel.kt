@@ -1473,12 +1473,42 @@ class StelekitViewModel(
                 }
                 if (currentPage == null || currentPage.filePath != event.filePath) {
                     // User is not currently viewing this page, so there is no in-progress edit
-                    // session for it (BlockStateManager only tracks blocks for viewed pages) —
-                    // it's safe to apply the disk content directly rather than stashing it in
-                    // pendingConflicts, which is wiped on reload and never actually persisted.
+                    // session for it (BlockStateManager only tracks blocks for viewed pages).
+                    // Apply the disk content directly so it is never lost on reload — but first
+                    // snapshot the first block's current content into pendingConflicts, so that
+                    // if the user later navigates here, checkAndShowPendingConflict() can still
+                    // offer a review/undo dialog for what the auto-apply overwrote.
                     event.suppress()
-                    clearPendingConflict(event.filePath)
-                    graphLoader.applyExternalFileChange(FilePath(event.filePath), event.content)
+                    val pageName = event.filePath
+                        .substringAfterLast('/').removeSuffix(".md").replace("_", " ")
+                    val existing = state.pendingConflicts[event.filePath]
+                    val previousContent = existing?.previousContent ?: run {
+                        val existingPage = pageRepository.getPageByName(pageName).first().getOrNull()
+                        existingPage?.let { p ->
+                            blockRepository.getBlocksForPage(p.uuid).first().getOrNull()
+                                ?.minByOrNull { it.position }?.content
+                        } ?: ""
+                    }
+                    if (existing == null || existing.diskContent != event.content) {
+                        _uiState.update { it.copy(
+                            pendingConflicts = it.pendingConflicts + (event.filePath to PendingConflict(
+                                filePath = event.filePath,
+                                pageName = pageName,
+                                diskContent = event.content,
+                                previousContent = previousContent,
+                            ))
+                        )}
+                        if (existing == null) {
+                            sendSnackbar("\"$pageName\" was updated from disk — open it to review")
+                        }
+                    }
+                    // Fire-and-forget: the pendingConflicts entry above is the durable record of
+                    // this change, so callers observing UI state don't need to wait on the DB
+                    // write landing. Not awaited here so a slow/queued write can't stall the
+                    // shared collector coroutine and delay processing of the next file event.
+                    scope.launch {
+                        graphLoader.applyExternalFileChange(FilePath(event.filePath), event.content)
+                    }
                     return@collect
                 }
 
@@ -1587,15 +1617,14 @@ class StelekitViewModel(
             val allBlocksForPage = blockRepository.getBlocksForPage(screen.page.uuid)
                 .first().getOrNull() ?: emptyList()
             val firstBlock = allBlocksForPage.minByOrNull { it.position }
-            val latestDiskContent = _uiState.value.pendingConflicts[filePath]?.diskContent ?: pending.diskContent
+            val latestPending = _uiState.value.pendingConflicts[filePath] ?: pending
 
-            val diskBlockContent = tryMatchDiskBlockContent(allBlocksForPage, firstBlock?.uuid?.value ?: "", latestDiskContent)
-
-            // Same false-positive guard as observeExternalFileChanges: FileRegistry's whole-file
-            // hash compare can flag "changed" even when this block's disk content already matches
-            // what's in the DB (e.g. the disk write that triggered this was our own save landing).
-            if (diskBlockContent != null && diskBlockContent == (firstBlock?.content ?: "")) {
-                graphLoader.parseAndSavePage(FilePath(filePath), latestDiskContent, dev.stapler.stelekit.parsing.ParseMode.FULL)
+            // The disk content was already auto-applied to the DB at detection time (see
+            // observeExternalFileChanges), so firstBlock now holds the disk content, not the
+            // user's prior content — that prior content only survives in previousContent.
+            // If they're equal, the "conflict" was a false positive (e.g. our own save landing
+            // on disk) and there's nothing to review.
+            if (latestPending.previousContent == latestPending.diskContent) {
                 clearPendingConflict(filePath)
                 return@launch
             }
@@ -1606,9 +1635,9 @@ class StelekitViewModel(
                     pageName = screen.page.name,
                     filePath = filePath,
                     editingBlockUuid = firstBlock?.uuid?.value ?: "",
-                    localContent = firstBlock?.content ?: "",
-                    diskContent = latestDiskContent,
-                    diskBlockContent = diskBlockContent,
+                    localContent = latestPending.previousContent,
+                    diskContent = latestPending.diskContent,
+                    diskBlockContent = firstBlock?.content,
                 ))
             }
         }
@@ -1658,17 +1687,32 @@ class StelekitViewModel(
     }
 
     /**
-     * Resolve disk conflict: keep the user's in-progress edits and re-queue a
-     * save so the local version wins on disk.
+     * Resolve disk conflict: keep the user's local content and write it back over the
+     * disk version that was applied to the DB.
+     *
+     * For the off-page-then-navigate path, the DB and BlockStateManager already hold the
+     * auto-applied disk content by the time this runs — [DiskConflict.localContent] is
+     * sourced from a pre-overwrite snapshot ([PendingConflict.previousContent]), not from
+     * live BlockStateManager state, so it must be written back explicitly rather than
+     * assumed to already be sitting in BlockStateManager's dirty state.
      */
+    @OptIn(DirectRepositoryWrite::class)
     fun keepLocalChanges() {
         val conflict = _uiState.value.diskConflict ?: return
         _uiState.update { it.copy(diskConflict = null) }
-        // Re-queue a save for the current page so local content overwrites the disk file
-        val currentPage = (uiState.value.currentScreen as? Screen.PageView)?.page ?: return
-        val bsm = blockStateManager ?: return
         scope.launch {
-            bsm.queuePageSave(currentPage.uuid.value)
+            if (conflict.editingBlockUuid.isNotBlank()) {
+                val block = blockRepository.getBlockByUuid(BlockUuid(conflict.editingBlockUuid)).first().getOrNull()
+                if (block != null) {
+                    val updatedBlock = block.copy(content = conflict.localContent, updatedAt = kotlin.time.Clock.System.now())
+                    val saveResult = writeActor?.execute { blockRepository.saveBlock(updatedBlock) }
+                        ?: blockRepository.saveBlock(updatedBlock)
+                    saveResult.onLeft { error ->
+                        logger.error("keepLocalChanges failed to save block for page ${conflict.pageUuid}: ${error.message}")
+                    }
+                }
+            }
+            blockStateManager?.savePageNow(conflict.pageUuid)
             clearPendingConflict(conflict.filePath)
         }
     }
@@ -1707,12 +1751,6 @@ class StelekitViewModel(
     @OptIn(DirectRepositoryWrite::class)
     fun manualResolve() {
         val conflict = _uiState.value.diskConflict ?: return
-        if (conflict.editingBlockUuid.isBlank()) {
-            // No specific block to merge into — fall back to accepting the local version
-            _uiState.update { it.copy(diskConflict = null) }
-            clearPendingConflict(conflict.filePath)
-            return
-        }
         _uiState.update { it.copy(diskConflict = null) }
         scope.launch {
             val conflictContent = buildString {

@@ -228,12 +228,15 @@ data class DiskConflict(
 )
 
 /**
- * A disk conflict detected while the user was NOT viewing the affected page.
- * Stored until the user navigates to that page, at which point [DiskConflict] is
- * built from current DB blocks and the captured disk content.
+ * A disk conflict detected while the user was NOT viewing the affected page. The disk
+ * content is applied to the DB immediately (so it is never lost even if the user never
+ * opens the page), but [previousContent] preserves what the first block held right before
+ * that overwrite, so [DiskConflict] can still offer an undo/review affordance if the user
+ * navigates to the page later.
  */
 data class PendingConflict(
     val filePath: String,
     val pageName: String,
     val diskContent: String,
+    val previousContent: String,
 )
