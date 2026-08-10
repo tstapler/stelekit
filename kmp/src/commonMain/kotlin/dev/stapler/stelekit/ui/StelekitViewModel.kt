@@ -1584,7 +1584,7 @@ class StelekitViewModel(
                         pageUuid = currentPage.uuid.value,
                         pageName = currentPage.name,
                         filePath = event.filePath,
-                        editingBlockUuid = conflictBlockUuid,
+                        editingBlockUuid = BlockUuid(conflictBlockUuid),
                         localContent = localContent,
                         diskContent = event.content,
                         diskBlockContent = diskBlockContent
@@ -1634,7 +1634,7 @@ class StelekitViewModel(
                     pageUuid = screen.page.uuid.value,
                     pageName = screen.page.name,
                     filePath = filePath,
-                    editingBlockUuid = firstBlock?.uuid?.value ?: "",
+                    editingBlockUuid = firstBlock?.uuid,
                     localContent = latestPending.previousContent,
                     diskContent = latestPending.diskContent,
                     diskBlockContent = firstBlock?.content,
@@ -1701,8 +1701,8 @@ class StelekitViewModel(
         val conflict = _uiState.value.diskConflict ?: return
         _uiState.update { it.copy(diskConflict = null) }
         scope.launch {
-            if (conflict.editingBlockUuid.isNotBlank()) {
-                val block = blockRepository.getBlockByUuid(BlockUuid(conflict.editingBlockUuid)).first().getOrNull()
+            if (conflict.editingBlockUuid != null) {
+                val block = blockRepository.getBlockByUuid(conflict.editingBlockUuid).first().getOrNull()
                 if (block != null) {
                     val updatedBlock = block.copy(content = conflict.localContent, updatedAt = kotlin.time.Clock.System.now())
                     val saveResult = writeActor?.execute { blockRepository.saveBlock(updatedBlock) }
@@ -1764,18 +1764,19 @@ class StelekitViewModel(
                 if (!diskSideText.endsWith("\n")) appendLine()
                 append(">>>>>>> Disk")
             }
-            val blockResult = blockRepository.getBlockByUuid(BlockUuid(conflict.editingBlockUuid ?: return@launch)).first()
+            val blockUuid = conflict.editingBlockUuid ?: return@launch
+            val blockResult = blockRepository.getBlockByUuid(blockUuid).first()
             val block = blockResult.getOrNull() ?: return@launch
             val updatedBlock = block.copy(content = conflictContent, updatedAt = kotlin.time.Clock.System.now())
             val saveResult = writeActor?.execute { blockRepository.saveBlock(updatedBlock) }
                 ?: blockRepository.saveBlock(updatedBlock)
             saveResult.onLeft { error ->
-                logger.error("manualResolve failed to save block ${conflict.editingBlockUuid}: ${error.message}")
+                logger.error("manualResolve failed to save block $blockUuid: ${error.message}")
                 sendSnackbar("Could not save your merge — try again (${error.message})")
                 return@launch
             }
             // Focus the block so the user can start editing immediately
-            requestEditBlock(BlockUuid(conflict.editingBlockUuid), 0)
+            requestEditBlock(blockUuid, 0)
             if (ConflictMarkerDetector.hasConflictMarkers(updatedBlock.content)) {
                 sendSnackbar("Conflict markers inserted — remove <<<<<<<, =======, >>>>>>> to let \"${conflict.pageName}\" sync again")
             }

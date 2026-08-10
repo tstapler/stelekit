@@ -221,7 +221,11 @@ data class DiskConflict(
     val pageUuid: String,
     val pageName: String,
     val filePath: String,
-    val editingBlockUuid: String,
+    // Null when the pending-conflict page has no blocks yet — e.g. the auto-apply write in
+    // observeExternalFileChanges() is fire-and-forget, so navigating to a brand-new page before
+    // that write lands leaves checkAndShowPendingConflict() with no block to point at. Model this
+    // as null rather than a sentinel so callers are forced to handle "no target block" explicitly.
+    val editingBlockUuid: BlockUuid?,
     val localContent: String,
     val diskContent: String,
     val diskBlockContent: String? = null

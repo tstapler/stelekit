@@ -180,14 +180,14 @@ class DiskConflictResolutionTest {
             pageUuid = "page-1",
             pageName = "My Page",
             filePath = "/path/to/page.md",
-            editingBlockUuid = "block-1",
+            editingBlockUuid = BlockUuid("block-1"),
             localContent = "user typed this",
             diskContent = "- disk has this\n"
         )
         assertEquals("page-1", conflict.pageUuid)
         assertEquals("My Page", conflict.pageName)
         assertEquals("/path/to/page.md", conflict.filePath)
-        assertEquals("block-1", conflict.editingBlockUuid)
+        assertEquals(BlockUuid("block-1"), conflict.editingBlockUuid)
         assertEquals("user typed this", conflict.localContent)
         assertEquals("- disk has this\n", conflict.diskContent)
     }
@@ -370,13 +370,13 @@ class DiskConflictResolutionTest {
         )
 
         // The page has exactly one block, so checkAndShowPendingConflict() resolves
-        // editingBlockUuid to that block's uuid (non-blank), forcing manualResolve()'s main
+        // editingBlockUuid to that block's uuid (non-null), forcing manualResolve()'s main
         // branch (writes conflict markers) rather than the early-return branch.
         val conflict = vm.uiState.value.diskConflict
         assertNotNull(conflict)
-        assertTrue(
-            conflict.editingBlockUuid.isNotBlank(),
-            "Non-empty page must resolve to a non-blank editingBlockUuid, forcing manualResolve()'s main branch"
+        assertNotNull(
+            conflict.editingBlockUuid,
+            "Non-empty page must resolve to a non-null editingBlockUuid, forcing manualResolve()'s main branch"
         )
 
         vm.manualResolve()
