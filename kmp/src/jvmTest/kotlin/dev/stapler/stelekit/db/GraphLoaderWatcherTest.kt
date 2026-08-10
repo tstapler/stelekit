@@ -197,6 +197,13 @@ class GraphLoaderWatcherTest {
      * class of bug: a real file, on real disk, edited by something other than GraphWriter
      * (no markFileWrittenByUs call — exactly what a second device/editor/sync tool does),
      * must be picked up by the real watcher and reflected in the block repository.
+     *
+     * Gap this closes: every other test of this path (GraphFileWatcherTest,
+     * ExternalChangeConflictTest, DiskConflictResolutionTest, and the other tests in this
+     * file) injects the change into a fake in-memory FileSystem — none of them write real
+     * bytes to a real file and let the real poll loop discover it. A regression in the real
+     * disk-read/mtime-compare path (as opposed to the in-memory simulation of it) could ship
+     * with every one of those tests still green.
      */
     @Test
     fun external_disk_edit_not_made_by_app_propagates_to_repository() = runBlocking {

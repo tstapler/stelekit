@@ -23,8 +23,15 @@ import kotlin.test.assertTrue
 /**
  * Regression coverage for [SafChangeDetector]'s FileObserver fast path — used when the graph
  * folder is direct local/internal storage (MANAGE_EXTERNAL_STORAGE granted, realGraphPath !=
- * null), which is what a graph on plain internal storage uses. This path previously had zero
- * test coverage anywhere in the codebase.
+ * null), which is what a graph on plain internal storage uses.
+ *
+ * Gap this closes: before this test, [SafChangeDetector] — the class actually responsible for
+ * detecting external disk changes on Android (FileObserver/inotify, ContentObserver, the 30s
+ * SAF poll, and the foreground-resume trigger) — had zero test coverage of any kind, on any
+ * branch. No androidUnitTest or instrumented test referenced it. That meant a change to this
+ * exact mechanism could regress silently; only GraphFileWatcher's common 5s poll fallback
+ * (untested against real disk here too, but covered on JVM by GraphLoaderWatcherTest) offered
+ * any safety net.
  *
  * Robolectric's ShadowFileObserver is backed by a real java.nio.file.WatchService (inotify on
  * Linux), so a real external write to a real temp directory here exercises the same code path
