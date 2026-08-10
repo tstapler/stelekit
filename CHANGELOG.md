@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.72.0](https://github.com/tstapler/stelekit/compare/v0.71.5...v0.72.0) (2026-08-10)
+
+
+### Features
+
+* **graphs:** support moving a graph's folder, fix host-reconnect + wasmjs CI ([#261](https://github.com/tstapler/stelekit/issues/261)) ([0fb66b1](https://github.com/tstapler/stelekit/commit/0fb66b1a74c85be56990d1c58080ddf3742c013b))
+* **host-sync:** add prominent banner for silent folder permission loss ([d966138](https://github.com/tstapler/stelekit/commit/d96613861b2d873a036e0d33edf660594f36d9f4))
+
+
+### Bug Fixes
+
+* **host-sync:** auto-apply host file changes for pages not currently open ([6683ab5](https://github.com/tstapler/stelekit/commit/6683ab5f7059b563a6a46e23b515fd6cf7b57edd))
+* **host-sync:** buffer host-conflict callbacks lost to startup race ([ea4deea](https://github.com/tstapler/stelekit/commit/ea4deeab45c21ea9e4de76f4b6ffe425d416087b))
+* **parser:** detect bulleted headings and other block constructs correctly ([#260](https://github.com/tstapler/stelekit/issues/260)) ([b9376b2](https://github.com/tstapler/stelekit/commit/b9376b2b1986ec42b5fc02dcf39869c91c744f4d))
+* **tags:** auto-resolve on-device LLM tag suggestions that freeze on Downloading... ([#262](https://github.com/tstapler/stelekit/issues/262)) ([1d0fdfa](https://github.com/tstapler/stelekit/commit/1d0fdfae6c43a900801fcc197e42fb2bc9219391))
+* **tests:** move JVM-only transfer tests out of commonTest to unblock wasmJs compilation ([01d39d3](https://github.com/tstapler/stelekit/commit/01d39d345314f21337352eec1018667490a8664d))
+* **ui,sync:** reconcile stale pendingConflicts entries and retry stuck host writes ([7abb2da](https://github.com/tstapler/stelekit/commit/7abb2daf5eae190fd45e84a5f7efca84f6177c2f))
+
 ## [0.71.5](https://github.com/tstapler/stelekit/compare/v0.71.4...v0.71.5) (2026-07-24)
 
 
