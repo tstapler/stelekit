@@ -8,6 +8,7 @@ import dev.stapler.stelekit.git.model.DirtyEntry
 import dev.stapler.stelekit.git.model.DirtyOp
 import dev.stapler.stelekit.git.model.HostHandleEnvelope
 import dev.stapler.stelekit.git.model.gitApiJson
+import dev.stapler.stelekit.logging.Logger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -67,6 +68,15 @@ class HostDirectorySync(
     private val cacheAccess: CacheAccess,
     private val scope: CoroutineScope,
 ) {
+    /**
+     * Routes host-sync diagnostics through the app's in-app "App Logs" screen
+     * ([dev.stapler.stelekit.logging.LogManager]), not just the browser devtools console — every
+     * `println` in this file used to be devtools-only, which meant permission-state transitions,
+     * poller/observer failures, and reconciliation summaries were invisible to a user diagnosing a
+     * sync issue from inside the app itself.
+     */
+    private val logger = Logger("HostDirectorySync")
+
     // ── Epic 2.1 (Story 2.1.1): retain the freshly picked handle + persist it to IndexedDB ────
     // `internal` rather than `private`: HostDirectorySyncHandleRetentionTest.kt (wasmJsTest, friend
     // source set of wasmJsMain) asserts on these directly per validation.md's acceptance criteria
@@ -93,7 +103,7 @@ class HostDirectorySync(
     private fun setHostAccessState(newState: HostAccessState) {
         val old = _hostAccessStateFlow.value
         if (old != newState) {
-            println("[SteleKit] host access state: $old -> $newState")
+            logger.info("host access state: $old -> $newState")
         }
         _hostAccessStateFlow.value = newState
     }
@@ -342,7 +352,7 @@ class HostDirectorySync(
                         pollHostDirectoryOnce(handle, opfsPath)
                     }
                     if (acquired == null) {
-                        println("[SteleKit] HostDirectoryPoller tick skipped: poll lock held by another tab")
+                        logger.debug("HostDirectoryPoller tick skipped: poll lock held by another tab")
                     }
                     // BUG fix: a transient flushHostWrite failure (handleFlushFailure's
                     // "permission re-query still granted" branch) previously left repoRelative
@@ -365,7 +375,7 @@ class HostDirectorySync(
                     // the same way, silently, with no reconciliation ever running again. Re-query
                     // the handle's actual permission here and mirror it into hostAccessStateFlow so
                     // the badge honestly falls back to "Reconnect folder"/"Grant access".
-                    println("[SteleKit] HostDirectoryPoller tick failed: ${e.message}")
+                    logger.warn("HostDirectoryPoller tick failed: ${e.message}", e)
                     val handleForRequery = hostDirHandle
                     if (handleForRequery != null) {
                         val permission = queryHandlePermission(handleForRequery)
@@ -408,7 +418,7 @@ class HostDirectorySync(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
-            println("[SteleKit] FileSystemObserver setup failed: ${e.message}")
+            logger.warn("FileSystemObserver setup failed: ${e.message}", e)
             observerConfirmedActive = false
         }
     }
@@ -436,13 +446,13 @@ class HostDirectorySync(
                 val record = jsRecordsGet(records, i)
                 val type = changeRecordType(record)
                 val relativePath = changeRecordRelativePath(record).joinToString("/")
-                println("[SteleKit] FileSystemObserver record: type=$type path=$relativePath")
+                logger.debug("FileSystemObserver record: type=$type path=$relativePath")
             }
             pollHostDirectoryOnce(handle, opfsPath)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
-            println("[SteleKit] handleObserverRecords failed: ${e.message}")
+            logger.warn("handleObserverRecords failed: ${e.message}", e)
         }
     }
 
@@ -479,12 +489,12 @@ class HostDirectorySync(
                         pollHostDirectoryOnce(handle, opfsPath)
                     }
                     if (acquired == null) {
-                        println("[SteleKit] visibility-regain poll skipped: poll lock held by another tab")
+                        logger.debug("visibility-regain poll skipped: poll lock held by another tab")
                     }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Throwable) {
-                    println("[SteleKit] visibility-regain poll failed: ${e.message}")
+                    logger.warn("visibility-regain poll failed: ${e.message}", e)
                 }
             }
         }
@@ -544,7 +554,7 @@ class HostDirectorySync(
         persistHostHandle(graphIdProvider(), dirName, dirHandle)
         scope.launch {
             val granted = requestStoragePersistence()
-            println("[SteleKit] storage.persist(): granted=$granted")
+            logger.debug("storage.persist(): granted=$granted")
         }
         startHostDirectoryPolling()
         startHostChangeObserver(dirHandle)
@@ -582,7 +592,7 @@ class HostDirectorySync(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
-            println("[SteleKit] persistHostHandle failed for graphId=$graphId: ${e.message}")
+            logger.warn("persistHostHandle failed for graphId=$graphId: ${e.message}", e)
         }
     }
 
@@ -613,7 +623,7 @@ class HostDirectorySync(
     } catch (e: CancellationException) {
         throw e
     } catch (e: Throwable) {
-        println("[SteleKit] lookupPersistedHandle failed for graphId=$graphId: ${e.message}")
+        logger.warn("lookupPersistedHandle failed for graphId=$graphId: ${e.message}", e)
         null
     }
 
@@ -659,7 +669,7 @@ class HostDirectorySync(
             persistHostHandle(graphIdProvider(), dirName, dirHandle)
             scope.launch {
                 val granted = requestStoragePersistence()
-                println("[SteleKit] storage.persist(): granted=$granted")
+                logger.debug("storage.persist(): granted=$granted")
             }
             // Epic 5.1/5.2: start the poller + (browser-permitting) the FileSystemObserver fast
             // path now that the handle is retained — mirrors reconnectHostDirectory's wiring below.
@@ -669,7 +679,7 @@ class HostDirectorySync(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
-            println("[SteleKit] connectHostDirectory failed for '$existingOpfsPath': ${e.message}")
+            logger.warn("connectHostDirectory failed for '$existingOpfsPath': ${e.message}", e)
             HostAccessState.NotApplicable
         }
         setHostAccessState(result)
@@ -710,7 +720,7 @@ class HostDirectorySync(
             scope.launch { runHostReconciliation(handle, opfsPath) }
             scope.launch {
                 val granted = requestStoragePersistence()
-                println("[SteleKit] storage.persist(): granted=$granted")
+                logger.debug("storage.persist(): granted=$granted")
             }
             // Epic 5.1/5.2: same wiring as connectHostDirectory — launched non-blocking
             // (startHostChangeObserver is suspend) so session-resume startup latency/UI
@@ -768,7 +778,7 @@ class HostDirectorySync(
             scope.launch { runHostReconciliation(handle, opfsPath) }
             scope.launch {
                 val granted = requestStoragePersistence()
-                println("[SteleKit] storage.persist(): granted=$granted")
+                logger.debug("storage.persist(): granted=$granted")
             }
             startHostDirectoryPolling()
             scope.launch { startHostChangeObserver(handle) }
@@ -848,7 +858,7 @@ class HostDirectorySync(
                         } else {
                             val hostBytes = readOpfsFileAsBytes(entry)
                             if (hostBytes == null) {
-                                println("[SteleKit] runHostReconciliation: failed to read '$path' from host, skipping")
+                                logger.warn("runHostReconciliation: failed to read '$path' from host, skipping")
                             } else {
                                 val cacheBytes = cacheAccess.getBytes(path)
                                 when (classifyReconciliationBytes(hostBytes, cacheBytes)) {
@@ -896,7 +906,7 @@ class HostDirectorySync(
                         } else {
                             val hostContent = readOpfsFile(entry)
                             if (hostContent == null) {
-                                println("[SteleKit] runHostReconciliation: failed to read '$path' from host, skipping")
+                                logger.warn("runHostReconciliation: failed to read '$path' from host, skipping")
                             } else {
                                 val cacheContent = cacheAccess.get(path)
                                 when (classifyReconciliation(hostContent, cacheContent)) {
@@ -962,8 +972,8 @@ class HostDirectorySync(
             browserOnlyNeedsPush = browserOnlyNeedsPushCount,
         )
         lastReconciliationSummary = summary
-        println(
-            "[SteleKit] reconciliation: ${summary.identical} identical, ${summary.hostChangedConflict} conflict, " +
+        logger.info(
+            "reconciliation: ${summary.identical} identical, ${summary.hostChangedConflict} conflict, " +
                 "${summary.hostOnlyNew} host-only, ${summary.browserOnlyNeedsPush} browser-only",
         )
         return summary
@@ -1378,15 +1388,15 @@ class HostDirectorySync(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
-            println("[SteleKit] renameHostFile: failed to verify '$to' after write: ${e.message}")
+            logger.warn("renameHostFile: failed to verify '$to' after write: ${e.message}", e)
             false
         }
 
         if (verified) {
             scheduleHostWriteThrough(from, HostWritePayload.Delete).await()
         } else {
-            println(
-                "[SteleKit] renameHostFile: verification failed for '$to', leaving '$from' in place " +
+            logger.warn(
+                "renameHostFile: verification failed for '$to', leaving '$from' in place " +
                     "(fail-safe, not fail-destructive)",
             )
         }
@@ -1411,8 +1421,8 @@ class HostDirectorySync(
         for (otherPath in cacheAccess.keysUnder(opfsPath)) {
             if (otherPath == path) continue
             if (matches(otherPath)) {
-                println(
-                    "[SteleKit] reconciliation: possible stale-rename duplicate: " +
+                logger.info(
+                    "reconciliation: possible stale-rename duplicate: " +
                         "${path.removePrefix("$opfsPath/")} matches content of ${otherPath.removePrefix("$opfsPath/")}",
                 )
                 return

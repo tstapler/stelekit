@@ -1472,24 +1472,13 @@ class StelekitViewModel(
                     }
                 }
                 if (currentPage == null || currentPage.filePath != event.filePath) {
-                    // User is not currently viewing this page. Suppress auto-reimport so the
-                    // DB keeps the user's edits, store the disk content, and notify via snackbar.
-                    val existing = state.pendingConflicts[event.filePath]
+                    // User is not currently viewing this page, so there is no in-progress edit
+                    // session for it (BlockStateManager only tracks blocks for viewed pages) —
+                    // it's safe to apply the disk content directly rather than stashing it in
+                    // pendingConflicts, which is wiped on reload and never actually persisted.
                     event.suppress()
-                    if (existing == null || existing.diskContent != event.content) {
-                        val pageName = event.filePath
-                            .substringAfterLast('/').removeSuffix(".md").replace("_", " ")
-                        _uiState.update { it.copy(
-                            pendingConflicts = it.pendingConflicts + (event.filePath to PendingConflict(
-                                filePath = event.filePath,
-                                pageName = pageName,
-                                diskContent = event.content,
-                            ))
-                        )}
-                        if (existing == null) {
-                            sendSnackbar("\"$pageName\" was modified on disk — open it to review")
-                        }
-                    }
+                    clearPendingConflict(event.filePath)
+                    graphLoader.applyExternalFileChange(FilePath(event.filePath), event.content)
                     return@collect
                 }
 

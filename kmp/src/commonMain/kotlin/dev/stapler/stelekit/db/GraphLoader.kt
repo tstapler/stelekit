@@ -1731,6 +1731,13 @@ class GraphLoader(
         priority: DatabaseWriteActor.Priority,
     ) = parseAndSavePage(filePath, content, mode, priority, forceReload = false)
 
+    override suspend fun applyExternalFileChange(
+        filePath: FilePath,
+        content: String,
+        mode: ParseMode,
+        priority: DatabaseWriteActor.Priority,
+    ) = parseAndSavePage(filePath, content, mode, priority, forceReload = true)
+
     private suspend fun parseAndSavePage(
         filePath: FilePath,
         content: String,
