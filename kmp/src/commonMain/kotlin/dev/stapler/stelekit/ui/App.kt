@@ -560,17 +560,17 @@ private fun GraphContent(
         graphManager.registerVaultCredentialStore(vaultCredentialStore)
     }
 
-    val sidecarManager = remember(activeGraphPath, fileSystem) {
+    val sidecarManager = remember(activeGraphPath, effectiveFileSystem) {
         val graphPath = activeGraphPath.ifEmpty { null }
-        if (graphPath != null) SidecarManager(fileSystem, graphPath) else null
+        if (graphPath != null) SidecarManager(effectiveFileSystem, graphPath) else null
     }
-    val imageSidecarManager = remember(activeGraphPath, fileSystem) {
-        if (activeGraphPath.isNotEmpty()) dev.stapler.stelekit.db.sidecar.ImageSidecarManager(fileSystem) else null
+    val imageSidecarManager = remember(activeGraphPath, effectiveFileSystem) {
+        if (activeGraphPath.isNotEmpty()) dev.stapler.stelekit.db.sidecar.ImageSidecarManager(effectiveFileSystem) else null
     }
     val imageImportService = remember(imageSidecarManager) {
         if (imageSidecarManager != null && activeGraphPath.isNotEmpty()) {
             dev.stapler.stelekit.db.ImageImportService(
-                fileSystem = fileSystem,
+                fileSystem = effectiveFileSystem,
                 imageAnnotationRepository = repos.imageAnnotationRepository,
                 blockRepository = repos.blockRepository,
                 sidecarManager = imageSidecarManager,
@@ -589,7 +589,7 @@ private fun GraphContent(
                 ?.isNotEmpty() == true
             if (!hasExisting) {
                 dev.stapler.stelekit.db.sidecar.ImageSidecarIndexer(
-                    fileSystem = fileSystem,
+                    fileSystem = effectiveFileSystem,
                     imageAnnotationRepository = repos.imageAnnotationRepository,
                     measurementAnnotationRepository = repos.measurementAnnotationRepository,
                 ).rebuildFromSidecars(activeGraphPath)
@@ -706,10 +706,10 @@ private fun GraphContent(
     val onSectionsLoaded = remember(repos) {
         dev.stapler.stelekit.sections.platformSectionSyncCallback(repos.pageRepository)
     }
-    val viewModel = remember(fileSystem, repos, platformSettings, graphLoader, graphWriter, blockStateManager, exportService, graphManager, viewModelScope) {
+    val viewModel = remember(effectiveFileSystem, repos, platformSettings, graphLoader, graphWriter, blockStateManager, exportService, graphManager, viewModelScope) {
         StelekitViewModel(
             StelekitViewModelDependencies(
-                fileSystem = fileSystem,
+                fileSystem = effectiveFileSystem,
                 pageRepository = repos.pageRepository,
                 blockRepository = repos.blockRepository,
                 searchRepository = repos.searchRepository,

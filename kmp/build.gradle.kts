@@ -694,6 +694,15 @@ tasks.named<Test>("jvmTest") {
         "stelekit.sq.file",
         file("src/commonMain/sqldelight/dev/stapler/stelekit/db/SteleDatabase.sq").absolutePath
     )
+    // Lets GraphContentDemoFileSystemWiringTest statically verify the effectiveFileSystem
+    // wiring in App.kt without mounting the composable (mounting StelekitApp/GraphContent end
+    // to end crashes SkikoComposeUiTest with "Unsupported concurrent change during composition"
+    // even with no demo graph involved — a pre-existing test-harness limitation, not a bug in
+    // App.kt itself).
+    systemProperty(
+        "stelekit.appkt.file",
+        file("src/commonMain/kotlin/dev/stapler/stelekit/ui/App.kt").absolutePath
+    )
 
     // BlockHound is installed programmatically via BlockHoundTestBase.installBlockHound().
     // The -javaagent approach (reactor.blockhound:blockhound) crashes on Java 21+ due to
