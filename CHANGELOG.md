@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.72.1](https://github.com/tstapler/stelekit/compare/v0.72.0...v0.72.1) (2026-08-11)
+
+
+### Bug Fixes
+
+* **android:** normalize whitespace artifacts in share-capture text ([#269](https://github.com/tstapler/stelekit/issues/269)) ([e9a82d9](https://github.com/tstapler/stelekit/commit/e9a82d9a5cfb48819aae33eb1e96f64ce58d3a71))
+* **demo-graph:** wire effectiveFileSystem into all demo-graph consumers ([fb89b2b](https://github.com/tstapler/stelekit/commit/fb89b2ba873ec72867c4d29d3ce18e77b298190f))
+* **sync:** persist off-page host-directory changes to DB immediately ([9824a1c](https://github.com/tstapler/stelekit/commit/9824a1cd7b1b75d155e62eff3191b961f81988e6))
+* **types:** replace empty-string sentinels with nullable types for absence ([6cd7490](https://github.com/tstapler/stelekit/commit/6cd7490f0159728529c68585c6c8ae8f0c413ffc))
+* **ui:** make DiskConflict.editingBlockUuid null instead of a "" sentinel ([e54ecc3](https://github.com/tstapler/stelekit/commit/e54ecc385233962574d333e9c43958c457036ed3))
+* **web:** show real app version instead of hardcoded "dev" ([785f4c2](https://github.com/tstapler/stelekit/commit/785f4c26c12ce6e1b2ea8464ee54a219b1f31afa))
+
 ## [0.72.0](https://github.com/tstapler/stelekit/compare/v0.71.5...v0.72.0) (2026-08-10)
 
 
