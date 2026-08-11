@@ -86,7 +86,7 @@ jobs:
       # To enable regression detection: download artifacts from a baseline CI run,
       # commit to kmp/src/androidUnitTest/snapshots/images/, then switch to verifyRoborazziDebug.
       - name: Run Android tests and build APK
-        run: ./gradlew :kmp:testDebugUnitTest :kmp:recordRoborazziDebug :androidApp:assembleDebug --no-daemon --build-cache
+        run: ./gradlew :kmp:testDebugUnitTest :androidApp:testDebugUnitTest :kmp:recordRoborazziDebug :androidApp:assembleDebug --no-daemon --build-cache
 
       - uses: actions/upload-artifact@v4
         if: always()
