@@ -176,6 +176,13 @@ class CaptureActivity : ComponentActivity() {
         private const val KEY_TILE_PROMPTED = "pref_tile_prompt_shown"
 
         // Compiled once — Regex construction is not free, and this runs on every share intent.
+        //
+        // KNOWN LIMITATION (see project_plans/android-share-capture-whitespace/implementation/
+        // plan.md "Scope Decision"): this collapses leading indentation too, with no
+        // line-position exemption. If a captured block's raw content is ever re-parsed through
+        // MarkdownPreprocessor/OutlinerPipeline, embedded list nesting inside shared text will
+        // not survive. Deliberate, deferred tradeoff — not yet verified against real re-parse
+        // paths.
         private val SPACE_TAB_RUN = Regex("[ \t]{2,}")
         private val BLANK_LINE_RUN = Regex("\n[ \t]*(?:\n[ \t]*)+")
 

@@ -161,6 +161,12 @@ class CaptureShareTextTest {
         assertEquals("line one\nline two", normalize("line one\r\nline two"))
     }
 
+    @Test
+    fun `lone carriage return normalizes to a bare newline`() {
+        // Old-Mac line ending, not part of a \r\n pair — the second .replace('\r', '\n') step.
+        assertEquals("a\nb", normalize("a\rb"))
+    }
+
     // --- Single line break preserved (AC4) ---
 
     @Test
