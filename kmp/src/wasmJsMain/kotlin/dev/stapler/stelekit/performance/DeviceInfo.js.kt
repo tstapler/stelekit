@@ -18,5 +18,5 @@ actual fun getDeviceInfo(): DeviceInfo = DeviceInfo(
     osVersion = "unknown",
     deviceModel = "unknown",
     availableRamMb = 0L,
-    appVersion = "dev"
+    appVersion = WASM_APP_VERSION
 )
