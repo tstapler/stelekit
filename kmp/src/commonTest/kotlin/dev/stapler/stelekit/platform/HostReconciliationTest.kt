@@ -1,5 +1,13 @@
 package dev.stapler.stelekit.platform
 
+import io.kotest.property.Arb
+import io.kotest.property.arbitrary.byte
+import io.kotest.property.arbitrary.byteArray
+import io.kotest.property.arbitrary.int
+import io.kotest.property.arbitrary.orNull
+import io.kotest.property.arbitrary.string
+import io.kotest.property.checkAll
+import kotlinx.coroutines.test.runTest
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -115,10 +123,10 @@ class HostReconciliationTest {
 
     // ── Property-based coverage ─────────────────────────────────────────────
     //
-    // No property-testing library (e.g. kotest-property) is on the classpath for this
-    // multiplatform module, so these hand-roll the same idea with a seeded `Random`: generate many
-    // varied inputs and assert invariants that must hold for *all* of them, rather than fixed
-    // examples. The seed is fixed so failures reproduce deterministically across CI runs.
+    // kotest-property's Arb/checkAll drives the Unicode/byte-array agreement checks below. The
+    // remaining tests hand-roll the same idea with a seeded `Random` for cases (structural
+    // symmetry, swap invariants) that are easier to express as an explicit loop than as an Arb
+    // combinator. The seed is fixed so failures reproduce deterministically across CI runs.
 
     private val propertyIterations = 200
 
@@ -241,14 +249,11 @@ class HostReconciliationTest {
     }
 
     @Test
-    fun classifyReconciliation_and_classifyReconciliationBytes_should_Agree_AcrossManyRandomUnicodeStringPairs() {
-        val random = Random(48)
-        repeat(propertyIterations) {
-            val includeHost = random.nextBoolean()
-            val includeCache = random.nextBoolean()
-            val hostText = if (includeHost) randomUnicodeString(random, 48) else null
-            val cacheText = if (includeCache) randomUnicodeString(random, 48) else null
-
+    fun classifyReconciliation_and_classifyReconciliationBytes_should_Agree_AcrossManyRandomUnicodeStringPairs() = runTest {
+        checkAll(
+            Arb.string(0, 48).orNull(),
+            Arb.string(0, 48).orNull(),
+        ) { hostText, cacheText ->
             val stringResult = classifyReconciliation(hostText, cacheText)
             val bytesResult = classifyReconciliationBytes(
                 hostText?.encodeToByteArray(),
@@ -260,6 +265,21 @@ class HostReconciliationTest {
                 bytesResult,
                 "UTF-8 round-trip disagreement for hostText=$hostText cacheText=$cacheText",
             )
+        }
+    }
+
+    @Test
+    fun classifyReconciliationBytes_should_MatchEqualityDefinition_AcrossManyRandomByteArrayPairs() = runTest {
+        checkAll(
+            Arb.byteArray(Arb.int(0, 32), Arb.byte()),
+            Arb.byteArray(Arb.int(0, 32), Arb.byte()),
+        ) { host, cache ->
+            val expected = if (host.contentEquals(cache)) {
+                ReconciliationOutcome.Identical
+            } else {
+                ReconciliationOutcome.HostChangedConflict
+            }
+            assertEquals(expected, classifyReconciliationBytes(host, cache))
         }
     }
 

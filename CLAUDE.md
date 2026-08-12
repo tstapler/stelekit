@@ -392,11 +392,43 @@ When a workflow is called via `workflow_call`, `github.event_name` inside the ca
 
 ## Testing Infrastructure
 
-See `kmp/TESTING_README.md` for the full testing guide. Test source sets:
-- `commonTest` — shared utilities
-- `businessTest` — business logic without UI
-- `jvmTest` — JVM UI + integration tests (uses Roborazzi for screenshot tests)
-- `androidUnitTest` — Android local unit tests
+See `kmp/TESTING_README.md` for the exploratory/performance testing guide (jank detection,
+profiling, SLO alerts). Test source sets:
+- `commonTest` — shared utilities, and the default home for any test that only touches
+  `commonMain` code (pure functions, domain models, parsers) — see kotest guidance below
+- `businessTest` — business logic without UI (depends on `commonTest`)
+- `jvmTest` — JVM UI + integration tests (uses Roborazzi for screenshot tests; also runs
+  everything in `businessTest`)
+- `androidUnitTest` — Android local unit tests (Robolectric)
+- `iosTest` — iOS-target tests
+- `wasmJsTest` — Web (WASM/JS) tests, only compiled when `-PenableJs=true`
+
+### Testing best practices
+
+- **Test pure logic in `commonMain`/`commonTest`, not per-platform.** If a function doesn't
+  touch a platform API, it belongs in `commonMain` with its test in `commonTest` — one test
+  run covers JVM, Android, iOS, and wasmJs simultaneously instead of four copies drifting
+  apart. `HostReconciliation.kt` / `HostReconciliationTest.kt` is the reference example.
+- **Prefer property-based tests over enumerating examples** for pure functions with a large or
+  structured input space (parsers, classifiers, encoders, anything with an equality/symmetry
+  invariant). `kotest-property` is on the classpath in `commonTest` — use `Arb`/`checkAll`
+  (wrapped in `runTest { }` from `kotlinx-coroutines-test`) to assert invariants across many
+  generated inputs rather than a fixed example table. Keep a handful of example-based `@Test`s
+  alongside for the obvious/named cases — property tests are for edge cases you wouldn't think
+  to enumerate, not a replacement for readable baseline coverage.
+- **`kotest-assertions-core` and `kotest-property` are plain KMP libraries, not the Kotest Spec
+  runner.** They're used from ordinary `kotlin.test`-annotated `@Test` functions (no
+  `StringSpec`/`FunSpec`, no Kotest Gradle plugin, no KSP) — this project deliberately did not
+  adopt the Kotest test framework/runner because its wasmJs support is feature-limited
+  (annotation-based config doesn't work there) and JUnit5 (`kotlin.test`) already covers every
+  target this project builds for.
+- **Root-cause failing tests before loosening assertions.** A flaky or failing test is a signal,
+  not an obstacle — see the "No fix without root cause" rule; don't add tolerances, retries, or
+  `@Ignore` to make a red test green without first stating why it's red.
+- **Regression tests for structural invariants** (e.g. the SQLDelight/`MigrationRunner` sync
+  check, the `@DirectSqlWrite` write-gating enforcement, the bounded-read audits) belong in
+  `businessTest` or `jvmTest` next to the mechanism they guard — see the existing examples
+  referenced throughout this file's architecture sections above.
 
 ## Release Process
 

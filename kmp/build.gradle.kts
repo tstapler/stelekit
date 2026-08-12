@@ -148,6 +148,12 @@ kotlin {
                 implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.10.0")
                 // Okio FakeFileSystem — in-memory file system for asset tests
                 implementation("com.squareup.okio:okio-fakefilesystem:3.17.0")
+                // kotest assertions + property testing — pure KMP libraries usable from plain
+                // kotlin.test @Test functions (no Kotest Spec runner/KSP plugin needed), so they
+                // work unchanged on every target including wasmJs. See CLAUDE.md's "Testing
+                // Infrastructure" section for usage guidance.
+                implementation("io.kotest:kotest-assertions-core:6.2.4")
+                implementation("io.kotest:kotest-property:6.2.4")
             }
         }
 
