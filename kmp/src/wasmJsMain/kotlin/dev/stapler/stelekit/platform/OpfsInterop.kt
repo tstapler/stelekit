@@ -50,6 +50,15 @@ internal fun getEntryName(entry: JsAny): String = js("entry.name")
 internal fun isFileEntry(entry: JsAny): Boolean = js("entry.kind === 'file'")
 internal fun isDirectoryEntry(entry: JsAny): Boolean = js("entry.kind === 'directory'")
 
+/**
+ * Host/OPFS directory walks (`importUserDirToCache`, `runHostReconciliation`,
+ * `pollHostDirectoryOnce`) must not treat dotfiles/dot-directories as graph content — a connected
+ * host directory is frequently a git repo, and without this guard `.git/logs/HEAD`,
+ * `.git/MERGE_RR`, `.DS_Store`, and tool scratch dirs like `.playwright-mcp/` get walked, read,
+ * and classified by stale-rename-duplicate detection right alongside real markdown pages.
+ */
+internal fun isIgnoredHostEntryName(name: String): Boolean = name.startsWith(".")
+
 private fun fileHandleGetFile(handle: JsAny): kotlin.js.Promise<JsAny> = js("handle.getFile()")
 private fun fileText(file: JsAny): kotlin.js.Promise<JsAny> = js("file.text()")
 private fun jsStringValue(v: JsAny): String = js("String(v)")

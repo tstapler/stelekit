@@ -266,6 +266,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         val entries = listOpfsEntries(dirHandle)
         for (entry in entries) {
             val name = getEntryName(entry)
+            if (isIgnoredHostEntryName(name)) continue
             val path = "$currentPath/$name"
             if (isFileEntry(entry)) {
                 if (isImageFile(name)) {
@@ -490,6 +491,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         println("[SteleKit] importUserDirToCache: ${entries.size} entries in '$currentPath'")
         for (entry in entries) {
             val name = getEntryName(entry)
+            if (isIgnoredHostEntryName(name)) continue
             val path = "$currentPath/$name"
             when {
                 isFileEntry(entry) && isImageFile(name) -> {

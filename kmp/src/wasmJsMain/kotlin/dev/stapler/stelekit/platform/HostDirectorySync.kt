@@ -846,6 +846,7 @@ class HostDirectorySync(
         suspend fun walk(handle: JsAny, currentPath: String) {
             for (entry in listOpfsEntries(handle)) {
                 val name = getEntryName(entry)
+                if (isIgnoredHostEntryName(name)) continue
                 val path = "$currentPath/$name"
                 when {
                     isFileEntry(entry) && path.endsWith(".md.stek") -> {
@@ -919,6 +920,11 @@ class HostDirectorySync(
                                         hostOnlyNewCount++
                                         cacheAccess.set(path, hostContent)
                                         cacheAccess.writeOpfsMirror(path, hostContent)
+                                        // A host-only file is new to the app's DB too — without this
+                                        // call the cache/OPFS mirror gets the content but the DB/UI
+                                        // never learns about it, so it silently doesn't appear until
+                                        // some other write touches the same page.
+                                        onHostConflict(path.removePrefix("$opfsPath/"), hostContent)
                                         // Task 7.1.2a: log-only stale-rename-duplicate check — see
                                         // logPossibleStaleRenameDuplicate's doc comment.
                                         logPossibleStaleRenameDuplicate(path, opfsPath) { otherPath ->
@@ -1040,6 +1046,7 @@ class HostDirectorySync(
         suspend fun walk(handle: JsAny, currentPath: String) {
             for (entry in listOpfsEntries(handle)) {
                 val name = getEntryName(entry)
+                if (isIgnoredHostEntryName(name)) continue
                 val path = "$currentPath/$name"
                 when {
                     isFileEntry(entry) -> visit(entry, path)
