@@ -196,10 +196,16 @@ class HostDirectorySyncCrossTabTest {
 
         sharedScope.advanceTimeBy(10_000)
         sharedScope.runCurrent()
-        // Real Web Locks settlement is Promise-driven, not governed by the virtual clock — give
-        // any pending real microtask/macrotask a moment to actually resume the losing side's
-        // coroutine before asserting the final count.
-        awaitCondition(timeoutMs = 1000) { tickCounterValue(tickCounter) >= 1 }
+        // Real Web Locks settlement is Promise-driven, not governed by the virtual clock — the
+        // winning tab's navigator.locks.request() Promise resolves asynchronously in real time,
+        // and its continuation (resumed via sharedScope's StandardTestDispatcher) only actually
+        // executes once something calls runCurrent() again; a single runCurrent() right after
+        // advanceTimeBy() only drains what was already queued synchronously, not this later
+        // real-time resumption. Poll runCurrent() here so it gets drained as soon as it lands.
+        awaitCondition(timeoutMs = 1000) {
+            sharedScope.runCurrent()
+            tickCounterValue(tickCounter) >= 1
+        }
 
         assertEquals(
             1,
@@ -269,9 +275,14 @@ class HostDirectorySyncCrossTabTest {
         scopeB.advanceTimeBy(10_000)
         scopeB.runCurrent()
         // Real Web Locks settlement is Promise-driven, not governed by scopeB's virtual clock —
-        // give any pending real microtask a moment to actually resume B's coroutine before
-        // asserting the "not yet converged" state below.
-        withContext(Dispatchers.Default) { delay(150) }
+        // B's tryWithLock Promise resolves asynchronously in real time, and its continuation
+        // (resumed via scopeB's StandardTestDispatcher) only actually executes once something
+        // calls scopeB.runCurrent() again. A bare real-time delay does not drive scopeB's virtual
+        // scheduler forward by itself, so poll runCurrent() here instead of merely waiting.
+        awaitCondition(timeoutMs = 500) {
+            scopeB.runCurrent()
+            false
+        }
 
         // (a) Immediately after tick N, B's own state must NOT yet reflect A's change — proving
         // convergence genuinely depends on B's own next tick running, not a coincidence of shared
@@ -286,7 +297,10 @@ class HostDirectorySyncCrossTabTest {
         // later than tick N.
         scopeB.advanceTimeBy(10_000)
         scopeB.runCurrent()
-        awaitCondition(timeoutMs = 2000) { cacheB.get(fullPath) == "changed-by-A" }
+        awaitCondition(timeoutMs = 2000) {
+            scopeB.runCurrent()
+            cacheB.get(fullPath) == "changed-by-A"
+        }
 
         // (b) By B's own next un-contended tick, B's state now matches A's post-change result.
         assertEquals("changed-by-A", cacheB.get(fullPath), "B must converge to A's change on its own next un-contended tick")

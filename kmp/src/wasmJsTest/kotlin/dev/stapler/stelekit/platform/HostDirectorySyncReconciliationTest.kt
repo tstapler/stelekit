@@ -115,6 +115,21 @@ class HostDirectorySyncReconciliationTest {
         scope = scope,
     )
 
+    // scheduleHostWriteThrough enqueues into hostWritePending inside its own scope.launch (see
+    // HostDirectorySync.scheduleHostWriteThrough's doc comment) — genuinely async against `sync`'s
+    // real Dispatchers.Default scope here, not the virtual test dispatcher runTest uses for this
+    // function's own body. Mirrors the awaitCondition pattern already established in
+    // HostDirectorySyncWriteThroughTest.kt / PlatformFileSystemHostSyncDelegationTest.kt /
+    // HostDirectorySyncMigrationReconciliationTest.kt for this exact race, rather than asserting
+    // synchronously right after runHostReconciliation/connectHostDirectory returns.
+    private suspend fun awaitCondition(timeoutMs: Long = 2000, stepMs: Long = 10, block: () -> Boolean) {
+        var waited = 0L
+        while (!block() && waited < timeoutMs) {
+            withContext(Dispatchers.Default) { delay(stepMs) }
+            waited += stepMs
+        }
+    }
+
     // ── connectHostDirectory (Story 3.1.1, Critical Finding) ───────────────────────────────────
 
     @Test
@@ -232,12 +247,19 @@ class HostDirectorySyncReconciliationTest {
         // A.md: untouched.
         assertEquals("same", cache.textStore["$opfsPath/pages/A.md"])
         // B.md: exactly one conflict callback, cache not silently overwritten.
-        assertEquals(listOf("pages/B.md" to "host new version"), onHostConflictCalls)
         assertEquals("old version", cache.textStore["$opfsPath/pages/B.md"])
-        // C.md: imported into cache and scheduled for an OPFS mirror write.
+        // C.md: imported into cache and scheduled for an OPFS mirror write. HostOnlyNew also
+        // invokes onHostConflict (see HostDirectorySync.runHostReconciliation's "a host-only file
+        // is new to the app's DB too" comment) so the DB/UI learns about it — the same callback
+        // HostChangedConflict uses, so both B.md and C.md appear here, in host-walk order.
+        assertEquals(
+            listOf("pages/B.md" to "host new version", "pages/C.md" to "new content"),
+            onHostConflictCalls,
+        )
         assertEquals("new content", cache.textStore["$opfsPath/pages/C.md"])
         assertTrue(cache.mirrorWrites.contains("$opfsPath/pages/C.md" to "new content"))
         // D.md: appears in hostWritePending.
+        awaitCondition { sync.hostWritePending.containsKey("pages/D.md") }
         assertTrue(sync.hostWritePending.containsKey("pages/D.md"))
         testScope.cancel()
     }
@@ -285,6 +307,7 @@ class HostDirectorySyncReconciliationTest {
         val summary = sync.runHostReconciliation(emptyRootDir(), opfsPath)
 
         assertEquals(2, summary.browserOnlyNeedsPush)
+        awaitCondition { sync.hostWritePending.containsKey("pages/OnlyA.md") && sync.hostWritePending.containsKey("pages/OnlyB.md") }
         assertTrue(sync.hostWritePending.containsKey("pages/OnlyA.md"))
         assertTrue(sync.hostWritePending.containsKey("pages/OnlyB.md"))
         assertFalse(sync.hostWritePending.containsKey("pages/Unrelated.md"))
@@ -445,6 +468,7 @@ class HostDirectorySyncReconciliationTest {
         val summary = sync.runHostReconciliation(emptyRootDir(), opfsPath)
 
         assertEquals(1, summary.browserOnlyNeedsPush)
+        awaitCondition { sync.hostWritePending.containsKey("pages/Draft.md") }
         val entry = sync.hostWritePending["pages/Draft.md"]
         assertNotNull(entry)
         assertEquals(DirtyOp.WRITE, entry.op)
@@ -514,6 +538,7 @@ class HostDirectorySyncReconciliationTest {
 
         sync.runHostReconciliation(emptyRootDir(), opfsPath)
 
+        awaitCondition { sync.hostWritePending.containsKey("pages/Draft.md") }
         assertTrue(sync.hostWritePending.containsKey("pages/Draft.md"))
         testScope.cancel()
     }

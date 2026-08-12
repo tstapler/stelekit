@@ -660,6 +660,12 @@ class HostDirectorySync(
      * function's return.
      */
     suspend fun connectHostDirectory(existingOpfsPath: String): HostAccessState {
+        // runHostReconciliation now sets hostGraphOpfsPath unconditionally as soon as it starts
+        // (see its own doc comment) so hostWritePending is keyed correctly even when this function
+        // hasn't set the field yet. Snapshot the prior value so a failure below can restore it
+        // exactly, rather than blindly nulling it out and clobbering an already-connected graph's
+        // field if this call is, e.g., a failed reconnect attempt to a different path.
+        val priorOpfsPath = hostGraphOpfsPath
         val result = try {
             val dirHandle = showDirectoryPicker()
             runHostReconciliation(dirHandle, existingOpfsPath)
@@ -680,6 +686,9 @@ class HostDirectorySync(
             throw e
         } catch (e: Throwable) {
             logger.warn("connectHostDirectory failed for '$existingOpfsPath': ${e.message}", e)
+            // Restore the pre-call value (see comment above) so this function's "failure leaves
+            // nothing changed" contract still holds.
+            hostGraphOpfsPath = priorOpfsPath
             HostAccessState.NotApplicable
         }
         setHostAccessState(result)
@@ -829,6 +838,17 @@ class HostDirectorySync(
      * [lastReconciliationSummary] for UI wiring that runs after [connectHostDirectory] resolves.
      */
     suspend fun runHostReconciliation(dirHandle: JsAny, opfsPath: String): ReconciliationSummary {
+        // Bug fix: the BrowserOnlyNeedsPush branch below calls scheduleHostWriteThrough(path, ...),
+        // which keys hostWritePending by repoRelativePath(path) — a strip against the *field*
+        // hostGraphOpfsPath, not this function's local opfsPath parameter. reconnectHostDirectory/
+        // requestHostDirectoryAccess already set the field before launching this function, so this
+        // was masked there, but connectHostDirectory's blocking flow deliberately calls this
+        // function *before* setting the field (so a mid-walk failure leaves it untouched — see that
+        // function's own doc comment) and this function is also called directly by tests with no
+        // field set at all. Set it here unconditionally so hostWritePending's keys are always
+        // correctly stripped regardless of caller; connectHostDirectory's catch block below resets
+        // it back to null on failure to preserve its existing "leaves nothing changed" contract.
+        hostGraphOpfsPath = opfsPath
         var identicalCount = 0
         var hostChangedConflictCount = 0
         var hostOnlyNewCount = 0

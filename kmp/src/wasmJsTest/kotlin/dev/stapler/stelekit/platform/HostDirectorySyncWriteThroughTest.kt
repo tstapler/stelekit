@@ -98,9 +98,12 @@ class HostDirectorySyncWriteThroughTest {
 
         // Rapid succession, synchronously back-to-back — before either flush has a chance to run.
         sync.scheduleHostWriteThrough("$opfsPath/Foo.md", HostWritePayload.Text("v1"))
-        sync.scheduleHostWriteThrough("$opfsPath/Foo.md", HostWritePayload.Text("v2"))
-
-        awaitCondition { "Foo.md" !in sync.hostWritePending }
+        // scheduleHostWriteThrough's map/queue updates happen asynchronously inside its own
+        // scope.launch — awaiting the returned completion Deferred (rather than polling
+        // hostWritePending's absence, which is racy: the map is empty both *before* the launch
+        // has run and *after* a successful flush) is the race-free way to know the flush ran.
+        val completion = sync.scheduleHostWriteThrough("$opfsPath/Foo.md", HostWritePayload.Text("v2"))
+        completion.await()
         assertEquals("v2", writableRootGetContent(root, "Foo.md"), "must reflect the latest content, not v1")
         assertEquals(1, writableRootCreateWritableCallCount(root), "exactly one host write, not two separate writes")
 
@@ -118,9 +121,11 @@ class HostDirectorySyncWriteThroughTest {
         val sync = newSync(opfsPath, FakeCacheAccess(), testScope, root)
         sync.hostContentHashes["$opfsPath/Foo.md"] = "original content".hashCode()
 
-        sync.scheduleHostWriteThrough("$opfsPath/Foo.md", HostWritePayload.Text("browser edit"))
+        // See CollapseToOneWriteOfLatestContent's comment: await the returned completion Deferred,
+        // not hostWritePending's absence, which is racy against scheduleHostWriteThrough's own
+        // async scope.launch not having run yet.
+        sync.scheduleHostWriteThrough("$opfsPath/Foo.md", HostWritePayload.Text("browser edit")).await()
 
-        awaitCondition { "Foo.md" !in sync.hostWritePending }
         assertEquals("browser edit", writableRootGetContent(root, "Foo.md"))
         assertEquals("browser edit".hashCode(), sync.hostContentHashes["$opfsPath/Foo.md"])
 
@@ -163,9 +168,11 @@ class HostDirectorySyncWriteThroughTest {
         val sync = newSync(opfsPath, FakeCacheAccess(), testScope, root)
         // Deliberately no hostContentHashes baseline — bytes payloads never consult it anyway.
 
-        sync.scheduleHostWriteThrough("$opfsPath/Secret.md.stek", HostWritePayload.Bytes(byteArrayOf(1, 2, 3, 4)))
+        // See CollapseToOneWriteOfLatestContent's comment: await the returned completion Deferred,
+        // not hostWritePending's absence, which is racy against scheduleHostWriteThrough's own
+        // async scope.launch not having run yet.
+        sync.scheduleHostWriteThrough("$opfsPath/Secret.md.stek", HostWritePayload.Bytes(byteArrayOf(1, 2, 3, 4))).await()
 
-        awaitCondition { "Secret.md.stek" !in sync.hostWritePending }
         assertTrue(writableRootHasBuffer(root, "Secret.md.stek"), "must write via writableWriteBuffer, not writableWrite")
         assertEquals(1, writableRootCreateWritableCallCount(root))
 
@@ -206,9 +213,11 @@ class HostDirectorySyncWriteThroughTest {
         val testScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val sync = newSync(opfsPath, FakeCacheAccess(), testScope, root)
 
-        sync.scheduleHostWriteThrough("$opfsPath/Foo.md", HostWritePayload.Text("hi"))
+        // See CollapseToOneWriteOfLatestContent's comment: await the returned completion Deferred,
+        // not hostWritePending's absence, which is racy against scheduleHostWriteThrough's own
+        // async scope.launch not having run yet.
+        sync.scheduleHostWriteThrough("$opfsPath/Foo.md", HostWritePayload.Text("hi")).await()
 
-        awaitCondition { "Foo.md" !in sync.hostWritePending }
         assertEquals("hi", writableRootGetContent(root, "Foo.md"))
         assertEquals(1, writableRootCreateWritableCallCount(root))
 

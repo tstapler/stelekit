@@ -7,7 +7,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -62,6 +64,20 @@ class HostDirectorySyncMigrationReconciliationTest {
         scope = scope,
     )
 
+    // scheduleHostWriteThrough enqueues into hostWritePending inside its own scope.launch (see
+    // HostDirectorySync.scheduleHostWriteThrough's doc comment) — genuinely async against `sync`'s
+    // real Dispatchers.Default scope here, not the virtual test dispatcher runTest uses for this
+    // function's own body. Mirrors the awaitCondition pattern already established in
+    // HostDirectorySyncWriteThroughTest.kt / PlatformFileSystemHostSyncDelegationTest.kt for this
+    // exact race, rather than asserting synchronously right after runHostReconciliation returns.
+    private suspend fun awaitCondition(timeoutMs: Long = 2000, stepMs: Long = 10, block: () -> Boolean) {
+        var waited = 0L
+        while (!block() && waited < timeoutMs) {
+            withContext(Dispatchers.Default) { delay(stepMs) }
+            waited += stepMs
+        }
+    }
+
     @Test
     fun runHostReconciliation_should_ClassifyAllFourOutcomesCorrectly_When_ReconcilingARealisticMixedStateGraphAtTheUpgradeBoundary() = runTest {
         val opfsPath = "/stelekit/upgrade-graph"
@@ -113,9 +129,15 @@ class HostDirectorySyncMigrationReconciliationTest {
 
         // EditedBoth.md: the core Critical Finding assertion — onHostConflict fires exactly once
         // with the host content, and the browser's edit in `cache` is left completely untouched
-        // (never silently overwritten by the host's divergent version).
+        // (never silently overwritten by the host's divergent version). NewOnDisk.md also fires
+        // onHostConflict (see below) — its HostOnlyNew branch reuses the same callback to notify
+        // the DB/UI of the new page, per HostDirectorySync.runHostReconciliation's doc comment
+        // ("A host-only file is new to the app's DB too").
         assertEquals(
-            listOf("pages/EditedBoth.md" to "host-side edit — landed via git pull before opt-in"),
+            listOf(
+                "pages/EditedBoth.md" to "host-side edit — landed via git pull before opt-in",
+                "pages/NewOnDisk.md" to "page added on disk before live sync was enabled",
+            ),
             onHostConflictCalls,
         )
         assertEquals("browser-side edit", cache.textStore["$opfsPath/pages/EditedBoth.md"])
@@ -132,6 +154,7 @@ class HostDirectorySyncMigrationReconciliationTest {
         )
 
         // BrowserDraft.md: enqueued for push to the host — not lost.
+        awaitCondition { sync.hostWritePending.containsKey("pages/BrowserDraft.md") }
         assertTrue(sync.hostWritePending.containsKey("pages/BrowserDraft.md"))
 
         // Secret.md.stek: classified via the bytes-aware path (Blocker 4) — the text-typed
@@ -176,9 +199,13 @@ class HostDirectorySyncMigrationReconciliationTest {
         assertEquals("/stelekit/$graphName", opfsPath)
         assertEquals("# root", fs.readFile("/stelekit/$graphName/Root.md"))
         assertEquals("# foo", fs.readFile("/stelekit/$graphName/pages/Foo.md"))
-        // No host directory connection was ever established — this is exactly today's
-        // pre-live-sync behavior, byte for byte.
+        // connectHostDirectory itself is never invoked — but HostDirectorySync.attachFreshHandle
+        // (called from pickDirectoryAsync, see its doc comment's "Bug fix" note) now mirrors
+        // connectHostDirectory's success path so live sync starts immediately after the initial
+        // import, the same as every other path that attaches a handle. The original "nothing
+        // changes unless connectHostDirectory is called" claim predates that fix; the handle is
+        // retained AND live sync is granted, not left inert.
         assertNotNull(fs.hostDirectorySync.hostDirHandle)
-        assertEquals(HostAccessState.NotApplicable, fs.hostDirectorySync.hostAccessStateFlow.value)
+        assertEquals(HostAccessState.Granted, fs.hostDirectorySync.hostAccessStateFlow.value)
     }
 }
