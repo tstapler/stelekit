@@ -154,6 +154,7 @@ fun LeftSidebar(
                 onUpdateGraphPath = onUpdateGraphPath,
                 gitSyncedGraphId = gitSyncedGraphId,
                 isDemoActive = isDemoActive,
+                hostAccessState = hostAccessState,
             )
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
@@ -350,6 +351,9 @@ fun GraphSwitcher(
     onUpdateGraphPath: (String, String) -> Unit = { _, _ -> },
     gitSyncedGraphId: String? = null,
     isDemoActive: Boolean = false,
+    /** Epic 2.3: host-directory connection state for [activeGraphId] only — used to show a
+     * "linked to local folder" indicator distinct from the graph's internal OPFS path. */
+    hostAccessState: HostAccessState = HostAccessState.NotApplicable,
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -379,7 +383,7 @@ fun GraphSwitcher(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    imageVector = Icons.Default.Folder,
+                    imageVector = if (hostAccessState == HostAccessState.Granted) Icons.Default.FolderOpen else Icons.Default.Folder,
                     contentDescription = null,
                     modifier = Modifier.size(20.dp),
                     tint = MaterialTheme.colorScheme.primary
@@ -391,6 +395,14 @@ fun GraphSwitcher(
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                     modifier = Modifier.weight(1f)
                 )
+                if (hostAccessState == HostAccessState.Granted) {
+                    Icon(
+                        imageVector = Icons.Default.Link,
+                        contentDescription = "Connected to local folder",
+                        modifier = Modifier.size(14.dp).padding(end = 4.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
                 Icon(
                     imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                     contentDescription = if (expanded) "Collapse" else "Expand"
@@ -410,6 +422,7 @@ fun GraphSwitcher(
                             graph = graph,
                             isActive = graph.id.value == activeGraphId,
                             isSynced = graph.id.value == gitSyncedGraphId,
+                            isHostConnected = graph.id.value == activeGraphId && hostAccessState == HostAccessState.Granted,
                             onSelect = {
                                 onGraphSelected(graph.id.value)
                                 expanded = false
@@ -541,6 +554,10 @@ fun GraphItem(
     graph: GraphInfo,
     isActive: Boolean,
     isSynced: Boolean = false,
+    /** Epic 2.3: true when this graph is the active graph and it currently has a granted
+     * host-directory connection — shown as a distinct badge from [graph.path]'s OPFS path,
+     * which alone gives no indication the graph is backed by a live local folder. */
+    isHostConnected: Boolean = false,
     onSelect: () -> Unit,
     onRemove: (() -> Unit)? = null,
     onEditPath: (() -> Unit)? = null,
@@ -593,6 +610,14 @@ fun GraphItem(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+            }
+            if (isHostConnected) {
+                Icon(
+                    imageVector = Icons.Default.Link,
+                    contentDescription = "Connected to local folder",
+                    modifier = Modifier.size(14.dp).padding(end = 2.dp),
+                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                )
             }
             if (isSynced) {
                 Icon(
