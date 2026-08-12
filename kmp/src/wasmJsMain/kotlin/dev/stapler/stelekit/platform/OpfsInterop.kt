@@ -4,7 +4,16 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.await
 
 internal fun showDirectoryPickerSupported(): Boolean = js("typeof window.showDirectoryPicker === 'function'")
-private fun showDirectoryPickerPromise(): kotlin.js.Promise<JsAny> = js("window.showDirectoryPicker()")
+
+/**
+ * Invokes `window.showDirectoryPicker()` synchronously. This raw JS call must happen within (or
+ * as close as possible to) the synchronous call stack of a browser click/pointerup event, since
+ * the picker requires "transient user activation" and throws `SecurityError` if the browser no
+ * longer considers the call gesture-initiated. Callers that need the picker triggered from a
+ * Compose `onClick` should call this directly in the click handler — not from inside a
+ * `scope.launch { ... }` coroutine, which may dispatch the call after activation has expired.
+ */
+internal fun showDirectoryPickerPromise(): kotlin.js.Promise<JsAny> = js("window.showDirectoryPicker()")
 internal suspend fun showDirectoryPicker(): JsAny = showDirectoryPickerPromise().await()
 
 private fun opfsRootPromise(): kotlin.js.Promise<JsAny> = js("navigator.storage.getDirectory()")

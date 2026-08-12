@@ -447,10 +447,27 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
 
     actual override fun pickDirectory(): String? = null
     override val supportsNativeDirectoryPicker: Boolean get() = showDirectoryPickerSupported()
+
+    private var pendingDirectoryPicker: kotlin.js.Promise<JsAny>? = null
+    private var lastPickerError: String? = null
+
+    override fun requestDirectoryPickerNow() {
+        if (!showDirectoryPickerSupported()) return
+        pendingDirectoryPicker = showDirectoryPickerPromise()
+    }
+
+    override fun consumeLastPickerError(): String? {
+        val error = lastPickerError
+        lastPickerError = null
+        return error
+    }
+
     actual override suspend fun pickDirectoryAsync(): String? {
         if (!showDirectoryPickerSupported()) return null
+        val promise = pendingDirectoryPicker ?: showDirectoryPickerPromise()
+        pendingDirectoryPicker = null
         return try {
-            val dirHandle = showDirectoryPicker()
+            val dirHandle = promise.await<JsAny>()
             val name = getEntryName(dirHandle)
             val opfsPath = "$homeDir/$name"
             println("[SteleKit] pickDirectory: importing '$name' → '$opfsPath'")
@@ -461,6 +478,9 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             opfsPath
         } catch (e: Throwable) {
             println("[SteleKit] showDirectoryPicker: ${e.message}")
+            if (e.message?.contains("abort", ignoreCase = true) != true) {
+                lastPickerError = e.message ?: "Failed to open the folder picker."
+            }
             null
         }
     }

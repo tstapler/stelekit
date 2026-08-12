@@ -337,8 +337,10 @@ fun StelekitApp(
                 folderPickError = "Folder selected but permission not granted. Try choosing the folder again."
             }
         } else {
-            appLogger.info("onFolderPicked: picker returned null (cancelled or folder type not supported)")
-            folderPickError = "No folder was selected. Please choose a local folder on your device (not Google Drive or cloud storage)."
+            val pickerError = fileSystem.consumeLastPickerError()
+            appLogger.info("onFolderPicked: picker returned null (cancelled, failed, or folder type not supported): $pickerError")
+            folderPickError = pickerError
+                ?: "No folder was selected. Please choose a local folder on your device (not Google Drive or cloud storage)."
         }
     }
 
@@ -353,14 +355,14 @@ fun StelekitApp(
                 // Permission was revoked — show recovery screen
                 PermissionRecoveryScreen(
                     folderName = fileSystem.getLibraryDisplayName(),
-                    onReconnectFolder = { scope.launch { onFolderPicked() } },
-                    onChooseDifferentFolder = { scope.launch { onFolderPicked() } },
+                    onReconnectFolder = { fileSystem.requestDirectoryPickerNow(); scope.launch { onFolderPicked() } },
+                    onChooseDifferentFolder = { fileSystem.requestDirectoryPickerNow(); scope.launch { onFolderPicked() } },
                     errorMessage = folderPickError,
                 )
             } else {
                 // First launch — no folder chosen yet
                 LibrarySetupScreen(
-                    onChooseFolder = { scope.launch { onFolderPicked() } },
+                    onChooseFolder = { fileSystem.requestDirectoryPickerNow(); scope.launch { onFolderPicked() } },
                     errorMessage = folderPickError
                 )
             }
@@ -1414,6 +1416,10 @@ private fun GraphContent(
                                 },
                                 onAddGraph = {
                                     if (fileSystem.supportsNativeDirectoryPicker) {
+                                        // Must call synchronously here, before scope.launch, so the
+                                        // browser's showDirectoryPicker() runs within this click's
+                                        // transient user activation (see requestDirectoryPickerNow doc).
+                                        fileSystem.requestDirectoryPickerNow()
                                         scope.launch {
                                             val selectedPath = fileSystem.pickDirectoryAsync()
                                             println("[SteleKit] onAddGraph: picker returned '$selectedPath'")
@@ -1421,6 +1427,11 @@ private fun GraphContent(
                                                 val newGraphId = graphManager.addGraph(selectedPath)
                                                 println("[SteleKit] onAddGraph: addGraph='$newGraphId', switching...")
                                                 graphManager.switchGraph(newGraphId)
+                                            } else {
+                                                val pickerError = fileSystem.consumeLastPickerError()
+                                                if (pickerError != null) {
+                                                    viewModel.sendSnackbar("Couldn't open folder picker: $pickerError")
+                                                }
                                             }
                                         }
                                     } else {

@@ -17,6 +17,25 @@ interface FileSystem {
     fun pickDirectory(): String?
     val supportsNativeDirectoryPicker: Boolean get() = true
     suspend fun pickDirectoryAsync(): String? = pickDirectory()
+
+    /**
+     * Synchronously kicks off the native directory picker so the platform call happens inside the
+     * caller's click-handler call stack rather than after a `scope.launch` dispatch. Must be called
+     * directly from a Compose `onClick` before any `scope.launch { pickDirectoryAsync() }` — on the
+     * wasmJs actual, deferring `window.showDirectoryPicker()` past the click's synchronous stack
+     * risks losing the browser's "transient user activation" and failing with `SecurityError`.
+     * No-op on every platform except the wasmJs actual, which is the only one with this constraint.
+     */
+    fun requestDirectoryPickerNow() { /* no-op */ }
+
+    /**
+     * Returns (and clears) the message from the last [pickDirectoryAsync] failure that was NOT a
+     * user cancellation, or null if the last attempt was cancelled/succeeded/hasn't run. Lets
+     * callers distinguish "user closed the picker" (show nothing) from a real failure (surface it)
+     * without changing [pickDirectoryAsync]'s existing null-on-any-failure return contract.
+     * No-op on every platform except the wasmJs actual.
+     */
+    fun consumeLastPickerError(): String? = null
     fun getLastModifiedTime(path: String): Long?
 
     /**
