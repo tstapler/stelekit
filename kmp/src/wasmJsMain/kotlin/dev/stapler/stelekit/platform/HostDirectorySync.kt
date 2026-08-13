@@ -32,6 +32,34 @@ import kotlin.time.Clock
  * see `HostDirectorySyncConstructionTest.kt`). */
 private const val HOME_DIR = "/stelekit"
 
+/**
+ * Smart constructor enforcing the invariant a plain `String` cannot express: every path handed to
+ * [HostDirectorySync.onHostConflict] must be graph-rooted (prefixed by the graph's OPFS root, e.g.
+ * `"/stelekit/g/journals/2026_08_12.md"`), never repo-relative (e.g. `"journals/2026_08_12.md"`).
+ * `GraphLoader`'s `path.contains("/journals/")` journal-detection idiom silently misclassifies the
+ * repo-relative form — see `HostDirectorySyncReconciliationTest.runHostReconciliation_should_PreserveFullGraphRootedPath_When_HostChangedConflictIsUnderJournalsDirectory`
+ * for the regression this closes. [of] fails fast at the mistake site instead of letting a
+ * mis-rooted path travel silently downstream. `opfsPath = null` skips validation, for call sites
+ * (buffering-only tests) where graph-rootedness isn't the property under test.
+ */
+internal class GraphRootedPath private constructor(val value: String) {
+    override fun toString(): String = value
+
+    override fun equals(other: Any?): Boolean = other is GraphRootedPath && other.value == value
+
+    override fun hashCode(): Int = value.hashCode()
+
+    companion object {
+        fun of(candidate: String, opfsPath: String?): GraphRootedPath {
+            require(opfsPath == null || candidate.startsWith(opfsPath)) {
+                "Expected a path rooted at graph root '$opfsPath', got '$candidate' — " +
+                    "did you mean to pass the repo-relative form instead?"
+            }
+            return GraphRootedPath(candidate)
+        }
+    }
+}
+
 // ── Epic 5.1 (Task 5.1.2b): HostDirectoryPoller backoff multipliers ───────────────────────────
 /** Widens [HostDirectorySync.effectivePollIntervalMs] while [HostDirectorySync.isTabHidden]. */
 private const val HIDDEN_POLL_BACKOFF_MULTIPLIER = 6L
@@ -225,12 +253,12 @@ class HostDirectorySync(
      * now buffers into [pendingHostConflicts] instead of discarding; [flushPendingHostConflicts]
      * replays the buffer the moment a real callback is set.
      */
-    internal var onHostConflict: (path: String, hostContent: String) -> Unit = { path, hostContent ->
+    internal var onHostConflict: (path: GraphRootedPath, hostContent: String) -> Unit = { path, hostContent ->
         pendingHostConflicts += path to hostContent
         mirrorPendingHostConflictCount(pendingHostConflicts.size)
     }
 
-    private val pendingHostConflicts = mutableListOf<Pair<String, String>>()
+    private val pendingHostConflicts = mutableListOf<Pair<GraphRootedPath, String>>()
 
     /** Test-observation seam: lets Playwright/e2e specs assert the race window buffered, then drained. */
     internal val pendingHostConflictCount: Int get() = pendingHostConflicts.size
@@ -240,7 +268,7 @@ class HostDirectorySync(
      * (see that property's doc comment), then clears the buffer. Called from
      * `PlatformFileSystem.setOnHostConflict` immediately after it assigns the real callback.
      */
-    internal fun flushPendingHostConflicts(callback: (path: String, hostContent: String) -> Unit) {
+    internal fun flushPendingHostConflicts(callback: (path: GraphRootedPath, hostContent: String) -> Unit) {
         if (pendingHostConflicts.isEmpty()) return
         val buffered = pendingHostConflicts.toList()
         pendingHostConflicts.clear()
@@ -934,7 +962,12 @@ class HostDirectorySync(
                                     ReconciliationOutcome.Identical -> identicalCount++
                                     ReconciliationOutcome.HostChangedConflict -> {
                                         hostChangedConflictCount++
-                                        onHostConflict(path.removePrefix("$opfsPath/"), hostContent)
+                                        // Pass the full OPFS path (not stripped of opfsPath) — GraphLoader's
+                                        // journal detection matches on the "/journals/" substring, which a
+                                        // graph-root-relative path (e.g. "journals/foo.md") lacks. This must
+                                        // stay consistent with the "$graphPath/journals/..." form every other
+                                        // load path already uses.
+                                        onHostConflict(GraphRootedPath.of(path, opfsPath), hostContent)
                                     }
                                     ReconciliationOutcome.HostOnlyNew -> {
                                         hostOnlyNewCount++
@@ -944,7 +977,7 @@ class HostDirectorySync(
                                         // call the cache/OPFS mirror gets the content but the DB/UI
                                         // never learns about it, so it silently doesn't appear until
                                         // some other write touches the same page.
-                                        onHostConflict(path.removePrefix("$opfsPath/"), hostContent)
+                                        onHostConflict(GraphRootedPath.of(path, opfsPath), hostContent)
                                         // Task 7.1.2a: log-only stale-rename-duplicate check — see
                                         // logPossibleStaleRenameDuplicate's doc comment.
                                         logPossibleStaleRenameDuplicate(path, opfsPath) { otherPath ->
@@ -1250,7 +1283,9 @@ class HostDirectorySync(
                         val currentHostContent = readOpfsFile(fileHandle)
                         val knownHash = hostContentHashes[fullPath]
                         if (currentHostContent != null && knownHash != null && currentHostContent.hashCode() != knownHash) {
-                            onHostConflict(repoRelative, currentHostContent)
+                            // Full path, not repoRelative — GraphLoader's journal detection matches
+                            // on "/journals/", which a graph-root-relative path lacks.
+                            onHostConflict(GraphRootedPath.of(fullPath, opfsPath), currentHostContent)
                             return@withLock
                         }
                         val writable: JsAny = fileHandleCreateWritable(fileHandle).await()

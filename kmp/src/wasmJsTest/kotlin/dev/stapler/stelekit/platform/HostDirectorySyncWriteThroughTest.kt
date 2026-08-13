@@ -144,12 +144,12 @@ class HostDirectorySyncWriteThroughTest {
 
         var conflictPath: String? = null
         var conflictContent: String? = null
-        sync.onHostConflict = { path, content -> conflictPath = path; conflictContent = content }
+        sync.onHostConflict = { path, content -> conflictPath = path.value; conflictContent = content }
 
         sync.scheduleHostWriteThrough("$opfsPath/Foo.md", HostWritePayload.Text("browser edit"))
 
         awaitCondition { conflictPath != null }
-        assertEquals("Foo.md", conflictPath)
+        assertEquals("$opfsPath/Foo.md", conflictPath)
         assertEquals("external edit", conflictContent)
         // Never overwritten with the browser's pending content.
         assertEquals("external edit", writableRootGetContent(root, "Foo.md"))

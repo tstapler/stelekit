@@ -174,7 +174,9 @@ interface FileSystem {
     /**
      * Registers a callback invoked when the web-local-folder-livesync reconciliation pass
      * (`HostDirectorySync.runHostReconciliation`, Epic 3.2) classifies a path as
-     * `ReconciliationOutcome.HostChangedConflict` — `(repoRelativePath, hostContent) -> Unit`.
+     * `ReconciliationOutcome.HostChangedConflict` — `(fullGraphRootedPath, hostContent) -> Unit`.
+     * The path is graph-rooted (e.g. `"/stelekit/g/journals/2026_08_12.md"`), not repo-relative,
+     * so `GraphLoader`'s `path.contains("/journals/")` journal-detection idiom still matches.
      * Wired from `App.kt` to `graphLoader::emitExternalFileChange` at the same point the existing
      * write-behind flush callbacks (`setOnFlushPreWrite`/`setOnFlushComplete`/`setOnFlushFailed`)
      * are wired, so `HostDirectorySync`/`PlatformFileSystem` never import `GraphLoader` directly

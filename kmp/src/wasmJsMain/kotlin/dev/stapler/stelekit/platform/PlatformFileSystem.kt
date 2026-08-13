@@ -520,11 +520,15 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
      */
     override fun setOnHostConflict(callback: ((path: String, hostContent: String) -> Unit)?) {
         val resolved = callback ?: { _, _ -> }
-        hostDirectorySync.onHostConflict = resolved
+        // Unwraps GraphRootedPath at this boundary — the common FileSystem/GraphLoader contract
+        // stays plain String (see GraphRootedPath's doc comment for why the type only exists
+        // inside HostDirectorySync internals).
+        val adapted: (GraphRootedPath, String) -> Unit = { path, hostContent -> resolved(path.value, hostContent) }
+        hostDirectorySync.onHostConflict = adapted
         // Replays any conflicts the silent-resume reconciliation walk found before App.kt's
         // composition got far enough to wire a real callback — see onHostConflict's doc comment
         // in HostDirectorySync.kt for why that window exists and used to lose conflicts silently.
-        hostDirectorySync.flushPendingHostConflicts(resolved)
+        hostDirectorySync.flushPendingHostConflicts(adapted)
     }
 
     /**

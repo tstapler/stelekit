@@ -113,7 +113,7 @@ class HostDirectorySyncMigrationReconciliationTest {
         )
 
         val onHostConflictCalls = mutableListOf<Pair<String, String>>()
-        sync.onHostConflict = { path, content -> onHostConflictCalls += path to content }
+        sync.onHostConflict = { path, content -> onHostConflictCalls += path.value to content }
 
         val summary = sync.runHostReconciliation(host, opfsPath)
 
@@ -135,8 +135,8 @@ class HostDirectorySyncMigrationReconciliationTest {
         // ("A host-only file is new to the app's DB too").
         assertEquals(
             listOf(
-                "pages/EditedBoth.md" to "host-side edit — landed via git pull before opt-in",
-                "pages/NewOnDisk.md" to "page added on disk before live sync was enabled",
+                "$opfsPath/pages/EditedBoth.md" to "host-side edit — landed via git pull before opt-in",
+                "$opfsPath/pages/NewOnDisk.md" to "page added on disk before live sync was enabled",
             ),
             onHostConflictCalls,
         )
