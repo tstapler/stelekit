@@ -82,7 +82,10 @@ object MarkdownPageParser {
         val updatedAt = if (fileModTime != null && fileModTime != 0L) {
             Instant.fromEpochMilliseconds(fileModTime)
         } else {
-            now
+            // An unresolved fileModTime (e.g. wasmJs before host reconciliation has populated
+            // hostModTimes) is not evidence the file just changed — stamping `now` here made
+            // every page's Modified column show the exact same startup timestamp on every load.
+            existingPage?.updatedAt ?: now
         }
         val createdAt = existingPage?.createdAt ?: updatedAt
 
