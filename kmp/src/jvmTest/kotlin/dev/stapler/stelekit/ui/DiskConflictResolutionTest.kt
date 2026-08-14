@@ -739,10 +739,7 @@ class DiskConflictResolutionTest {
             "stelekit_rename_conflict_test_"
         ).toFile()
         try {
-            val pagesDir = java.io.File(tempDir, "pages")
-            pagesDir.mkdirs()
-            val filePath = java.io.File(pagesDir, "ConflictPage.md").absolutePath
-            java.io.File(filePath).writeText("- Some content")
+            val filePath = java.io.File(java.io.File(tempDir, "pages"), "ConflictPage.md").absolutePath
 
             val page = Page(
                 uuid = PageUuid(testPageUuid),
@@ -763,7 +760,9 @@ class DiskConflictResolutionTest {
             val pageRepo = FakePageRepository(listOf(page))
             val blockRepo = FakeBlockRepository(mapOf(testPageUuid to listOf(block)))
             val graphLoader = testGraphLoader(pageRepo, blockRepo)
-            val fs = PlatformFileSystem.withRoot(tempDir.absolutePath)
+            // Real disk I/O here made the withTimeout(2_000) below flaky under CI load; only
+            // ViewModel state is asserted, so an in-memory fake is deterministic and sufficient.
+            val fs = FakeFileSystem()
             @Suppress("DEPRECATION")
             val graphWriter = GraphWriter(fs, pageRepository = pageRepo)
             val scope = CoroutineScope(Dispatchers.Unconfined)
