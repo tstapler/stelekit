@@ -17,6 +17,11 @@ kt_jvm_library(
         "dev/stapler/stelekit/sections/SectionFilterTest.kt",
         "dev/stapler/stelekit/sections/SectionManifestParserTest.kt",
     ],
+    # Friend (not just deps) access to jvm_main_lib is required: SectionManifestParserTest
+    # references the internal `TOML_PARSING_SUPPORTED` expect/actual declaration, which is
+    # only visible across a kt_jvm_library boundary via `associates`, mirroring the same
+    # attribute on //kmp/src/jvmTest/kotlin:jvm_tests.
+    associates = ["//kmp/src/jvmMain/kotlin:jvm_main_lib"],
     deps = [
         "//kmp/src/jvmMain/kotlin:jvm_main_lib",
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
