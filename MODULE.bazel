@@ -74,7 +74,11 @@ http_archive(
     # InfoZip 6.0 has K&R-style time declarations that conflict with modern
     # glibc headers.  Guard them so they only apply on truly ancient platforms.
     patch_cmds = [
-        "sed -i 's/   struct tm \\*gmtime(), \\*localtime();/#if !defined(__GLIBC__) \\&\\& !defined(linux)\\n   struct tm *gmtime(), *localtime();\\n#endif/' unix/unxcfg.h",
+        # python3 -c (not sed -i) because BSD sed (macOS) requires an explicit
+        # backup-suffix argument that GNU sed's `-i` syntax doesn't use — python3
+        # is preinstalled on both macOS and Linux CI runners and its in-place
+        # file rewrite is identical on both platforms.
+        "python3 -c 'p=\"unix/unxcfg.h\"; s=open(p).read(); old=\"   struct tm *gmtime(), *localtime();\"; guarded=\"#if !defined(__GLIBC__) && !defined(linux)\\n\" + old + \"\\n#endif\"; s = s.replace(old, guarded, 1); open(p, \"w\").write(s)'",
     ],
 )
 
