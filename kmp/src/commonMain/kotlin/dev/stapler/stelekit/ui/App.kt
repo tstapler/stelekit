@@ -620,6 +620,10 @@ private fun GraphContent(
         // web-local-folder-livesync Epic 4.4 (Task 4.4.1b): same wiring pattern, one call later —
         // forwards write-through failures onto GraphLoader's existing writeErrors channel.
         effectiveFileSystem.setOnHostWriteFailed(graphLoader::reportHostWriteFailure)
+        // Feeds the disk-IO SLO (SloChecker): emits "file.write.deferred" spans for each
+        // write-behind SAF flush so Android's deferred-write latency is tracked, not just
+        // the near-instant markDirty enqueue.
+        effectiveFileSystem.setSpanEmitter(repos.spanEmitter)
     }
 
     val graphWriter = remember(effectiveFileSystem, repos, graphLoader, sidecarManager) {
@@ -637,6 +641,7 @@ private fun GraphContent(
             onPreWriteConflict = { filePath, _, diskContent ->
                 graphLoader.emitExternalFileChange(filePath, diskContent)
             },
+            spanEmitter = repos.spanEmitter,
         )
     }
 
