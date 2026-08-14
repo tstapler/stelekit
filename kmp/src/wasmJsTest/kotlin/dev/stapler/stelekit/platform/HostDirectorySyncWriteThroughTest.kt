@@ -9,6 +9,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlin.random.Random
@@ -305,6 +306,50 @@ class HostDirectorySyncWriteThroughTest {
         assertEquals("hello", writableRootGetContent(root, "Foo.md"))
         assertEquals(2, flakyRootAttemptCount(root), "exactly one failed attempt then one successful retry")
         assertFalse(sync.hostWriteStuckFlow.value, "SyncDegraded must clear once the retry succeeds")
+
+        testScope.cancel()
+    }
+
+    @Test
+    fun pollHostDirectoryOnce_should_AutomaticallyRepollAndUpdateCache_When_ExternalPollWasSuppressedDuringInFlightWrite() = runTest {
+        // Regression for the bug where an external edit landing on a path while its own write
+        // is in flight was silently dropped: pollHostDirectoryOnce's suppression guard skips
+        // hostModTimes/hostFileSizes/cache updates for any hostWriteInFlight path, and without
+        // repollIfSuppressedDuringFlush firing once the write finishes, nothing else would ever
+        // revisit that path. This drives the real race: schedule a write that fails once (so it's
+        // pending but not yet in flight), start retryStuckHostWrites in the background, wait for
+        // its flush to actually claim hostWriteInFlight and block mid-attempt, manually poll to
+        // prove the suppression guard skips the path, then release the flush and assert the cache
+        // becomes current WITHOUT the test itself calling pollHostDirectoryOnce again. The local
+        // write physically overwrites the injected "external edit" once the gate opens, so the
+        // final assertion proves the automatic repoll fires and reflects current on-disk content —
+        // it does not by itself demonstrate that a concurrent external edit's content survives.
+        val opfsPath = freshOpfsPath()
+        val root = makeWritableEnumerableHostRoot(failuresBeforeSuccess = 1, errorMessage = "Error: transient I/O blip")
+        val cacheAccess = FakeCacheAccess()
+        val testScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val sync = newSync(opfsPath, cacheAccess, testScope, root)
+
+        var failureCount = 0
+        sync.onHostWriteFailed = { failureCount++ }
+
+        val path = "$opfsPath/Foo.md"
+        sync.scheduleHostWriteThrough(path, HostWritePayload.Text("v1"))
+        awaitCondition { failureCount >= 1 }
+
+        testScope.launch { sync.retryStuckHostWrites() }
+        awaitCondition { writableEnumerableRootAttemptCount(root) >= 2 }
+
+        writableEnumerableRootSetContent(root, "Foo.md", "external edit", 999)
+
+        sync.pollHostDirectoryOnce(root, opfsPath)
+        assertNull(cacheAccess.get(path), "poll must suppress a path whose write is in flight, not read stale/half-written content")
+
+        openWritableEnumerableRootGate(root)
+
+        awaitCondition { "Foo.md" !in sync.hostWritePending }
+        awaitCondition { cacheAccess.get(path) != null }
+        assertEquals("v1", cacheAccess.get(path), "repoll after flush completion must reflect the file's current on-disk content")
 
         testScope.cancel()
     }

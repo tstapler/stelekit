@@ -155,6 +155,19 @@ class HostDirectorySync(
     private val hostWriteInFlight = mutableSetOf<String>()
 
     /**
+     * Repo-relative paths [pollHostDirectoryOnce]'s own-write suppression (HostDirectorySync.kt's
+     * `visit` doc comment, Task 5.1.1c) skipped entirely while owned by [hostWriteInFlight] — an
+     * external change landing on the same path during that window is otherwise lost forever,
+     * since the skip never refreshes [hostModTimes]/[hostFileSizes]/the cache and there's no
+     * second chance to notice it. [repollIfSuppressedDuringFlush], called from both
+     * [scheduleHostWriteThrough]'s and [retryStuckHostWrites]'s `finally` blocks (either can own
+     * the in-flight flush that cleared [hostWriteInFlight] for a path), re-polls any path recorded
+     * here once its own flush clears, bounding the loss window to "one extra poll" rather than
+     * "silently dropped."
+     */
+    private val hostWriteSuppressedDuringFlush = mutableSetOf<String>()
+
+    /**
      * Paths that received a new [scheduleHostWriteThrough] call while already in
      * [hostWriteInFlight] — a set (not a scalar), since multiple paths can be independently
      * mid-flush concurrently, unlike [PlatformFileSystem]'s single marker-write scheduler.
@@ -1072,12 +1085,20 @@ class HostDirectorySync(
      * 4.1 — a concurrent [flushHostWrite] already owns that path) is skipped entirely this tick —
      * neither its baseline nor its cache entry is touched — so the poller never races a
      * concurrent host write and misclassifies the app's own in-progress write as an external
-     * change.
+     * change. The skip is recorded in [hostWriteSuppressedDuringFlush]; whichever of
+     * [scheduleHostWriteThrough] or [retryStuckHostWrites] owns the in-flight flush re-polls the
+     * path (via [repollIfSuppressedDuringFlush]) once it clears [hostWriteInFlight], so a genuine
+     * external edit that lands during the suppression window is picked up on the very next tick
+     * instead of being silently lost until some unrelated future change to the same path happens
+     * to retrigger it.
      */
     suspend fun pollHostDirectoryOnce(dirHandle: JsAny, opfsPath: String) {
         suspend fun visit(entry: JsAny, path: String) {
             val repoRelative = path.removePrefix("$opfsPath/")
-            if (repoRelative in hostWriteInFlight) return
+            if (repoRelative in hostWriteInFlight) {
+                hostWriteSuppressedDuringFlush += repoRelative
+                return
+            }
 
             val file = getOpfsFile(entry)
             val mtime = fileLastModified(file)
@@ -1213,6 +1234,7 @@ class HostDirectorySync(
                 } finally {
                     hostWriteInFlight -= repoRelative
                     hostWriteCompletion.remove(repoRelative)?.complete(Unit)
+                    repollIfSuppressedDuringFlush(repoRelative)
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -1357,7 +1379,24 @@ class HostDirectorySync(
             } finally {
                 hostWriteInFlight -= repoRelative
                 hostWriteCompletion.remove(repoRelative)?.complete(Unit)
+                repollIfSuppressedDuringFlush(repoRelative)
             }
+        }
+    }
+
+    /**
+     * Shared by [scheduleHostWriteThrough] and [retryStuckHostWrites]'s `finally` blocks — both
+     * clear [hostWriteInFlight] for a path independently, so both must also check
+     * [hostWriteSuppressedDuringFlush] or a path whose in-flight ownership passes through
+     * [retryStuckHostWrites] (a "stuck" write under repeated retry) reopens the exact silent-loss
+     * window this mechanism exists to close.
+     */
+    private suspend fun repollIfSuppressedDuringFlush(repoRelative: String) {
+        if (!hostWriteSuppressedDuringFlush.remove(repoRelative)) return
+        val handle = hostDirHandle
+        val rootOpfsPath = hostGraphOpfsPath
+        if (handle != null && rootOpfsPath != null) {
+            pollHostDirectoryOnce(handle, rootOpfsPath)
         }
     }
 
