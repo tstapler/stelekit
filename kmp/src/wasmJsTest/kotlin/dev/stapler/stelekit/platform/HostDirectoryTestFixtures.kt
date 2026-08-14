@@ -402,3 +402,125 @@ internal fun writableRootGetContent(root: JsAny, name: String): String? = js("ro
 internal fun writableRootHasBuffer(root: JsAny, name: String): Boolean = js("root._hasBuffer(name)")
 internal fun writableRootHasFile(root: JsAny, name: String): Boolean = js("root._hasFile(name)")
 internal fun writableRootCreateWritableCallCount(root: JsAny): Int = js("root._createWritableCallCount()")
+
+// ── Suppression/repoll regression fixture — writable AND enumerable over one shared store ──────
+//
+// pollHostDirectoryOnce (read path, values()-based traversal) and flushHostWrite (write path,
+// getFileHandle/createWritable) are exercised against two disjoint fixture families above because
+// no existing fixture supports both. Reproducing HostDirectorySync's own-write-suppression +
+// automatic repoll (the private hostWriteInFlight/hostWriteSuppressedDuringFlush mechanism)
+// requires driving a real poll and a real flush against the SAME backing file at once, so this
+// fixture merges both surfaces over one `files` map, adds a per-file settable `mtime` (the other
+// writable fixtures hardcode lastModified/size to 0), and adds a gate that getFileHandle's
+// returned promise blocks on — so a test can pause a flush mid-flight, poll while it's suppressed,
+// then release the flush and observe the automatic repoll pick up the current on-disk state.
+
+/**
+ * Builds a fake root that is simultaneously writable ([getFileHandle]/`createWritable`/
+ * `removeEntry`, mirroring [makeWritableHostRoot]) and enumerable (`values()`, mirroring
+ * [fakeDirEntry]'s async-iterator shape) over one shared in-memory `files` store. Each file has a
+ * settable `mtime` (plain JS number — `OpfsInterop.fileLastModified`/`fileSize` read it via
+ * `BigInt(file.lastModified)`), incremented on every successful write.
+ *
+ * `getFileHandle`'s success path (after any [failuresBeforeSuccess] transient failures, mirroring
+ * [makeFlakyWritableHostRoot]) blocks on an internal gate before resolving, released by
+ * [openWritableEnumerableRootGate] — letting a test suspend a flush mid-flight to force the
+ * suppression race deterministically.
+ */
+internal fun makeWritableEnumerableHostRoot(
+    failuresBeforeSuccess: Int = 0,
+    errorMessage: String = "Error: transient I/O blip",
+): JsAny = js(
+    """
+    (function() {
+        var files = {};
+        var attemptCount = 0;
+        var gateOpen = false;
+        var gateWaiters = [];
+        function awaitGate() {
+            if (gateOpen) return Promise.resolve();
+            return new Promise(function(resolve) { gateWaiters.push(resolve); });
+        }
+        function fileHandleFor(name) {
+            var entry = files[name];
+            return {
+                kind: 'file',
+                name: name,
+                getFile: function() {
+                    return Promise.resolve({
+                        lastModified: entry.mtime,
+                        size: entry.content == null ? 0 : entry.content.length,
+                        text: function() { return Promise.resolve(entry.content == null ? '' : entry.content); },
+                        arrayBuffer: function() { return Promise.resolve(entry.buffer || new ArrayBuffer(0)); }
+                    });
+                },
+                createWritable: function() {
+                    return Promise.resolve({
+                        write: function(data) {
+                            if (typeof data === 'string') { entry.content = data; } else { entry.buffer = data; }
+                            entry.mtime = entry.mtime + 1;
+                            return Promise.resolve();
+                        },
+                        close: function() { return Promise.resolve(); }
+                    });
+                }
+            };
+        }
+        return {
+            kind: 'directory',
+            name: 'root',
+            getFileHandle: function(name, opts) {
+                attemptCount++;
+                if (attemptCount <= failuresBeforeSuccess) {
+                    return Promise.reject(new Error(errorMessage));
+                }
+                if (!(name in files)) {
+                    if (opts && opts.create) {
+                        files[name] = { content: null, buffer: null, mtime: 0 };
+                    } else {
+                        return Promise.reject(new Error('NotFoundError: no such file'));
+                    }
+                }
+                return awaitGate().then(function() { return fileHandleFor(name); });
+            },
+            removeEntry: function(name) {
+                if (!(name in files)) return Promise.reject(new Error('NotFoundError: no such entry'));
+                delete files[name];
+                return Promise.resolve();
+            },
+            queryPermission: function() { return Promise.resolve('granted'); },
+            requestPermission: function() { return Promise.resolve('granted'); },
+            values: function() {
+                var names = Object.keys(files);
+                var idx = 0;
+                return {
+                    next: function() {
+                        if (idx < names.length) {
+                            return Promise.resolve({ done: false, value: fileHandleFor(names[idx++]) });
+                        }
+                        return Promise.resolve({ done: true, value: undefined });
+                    }
+                };
+            },
+            _setContent: function(name, content, mtime) {
+                if (!files[name]) files[name] = { content: null, buffer: null, mtime: 0 };
+                files[name].content = content;
+                files[name].mtime = mtime;
+            },
+            _getContent: function(name) { return (files[name] && files[name].content != null) ? files[name].content : null; },
+            _attemptCount: function() { return attemptCount; },
+            _openGate: function() {
+                gateOpen = true;
+                gateWaiters.forEach(function(resolve) { resolve(); });
+                gateWaiters = [];
+            }
+        };
+    })()
+    """,
+)
+
+internal fun writableEnumerableRootAttemptCount(root: JsAny): Int = js("root._attemptCount()")
+internal fun writableEnumerableRootSetContent(root: JsAny, name: String, content: String, mtime: Int): Unit =
+    js("root._setContent(name, content, mtime)")
+internal fun writableEnumerableRootGetContent(root: JsAny, name: String): String? = js("root._getContent(name)")
+internal fun openWritableEnumerableRootGate(root: JsAny): Unit = js("root._openGate()")
