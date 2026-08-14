@@ -507,7 +507,6 @@ internal fun makeWritableEnumerableHostRoot(
                 files[name].content = content;
                 files[name].mtime = mtime;
             },
-            _getContent: function(name) { return (files[name] && files[name].content != null) ? files[name].content : null; },
             _attemptCount: function() { return attemptCount; },
             _openGate: function() {
                 gateOpen = true;
@@ -522,5 +521,4 @@ internal fun makeWritableEnumerableHostRoot(
 internal fun writableEnumerableRootAttemptCount(root: JsAny): Int = js("root._attemptCount()")
 internal fun writableEnumerableRootSetContent(root: JsAny, name: String, content: String, mtime: Int): Unit =
     js("root._setContent(name, content, mtime)")
-internal fun writableEnumerableRootGetContent(root: JsAny, name: String): String? = js("root._getContent(name)")
 internal fun openWritableEnumerableRootGate(root: JsAny): Unit = js("root._openGate()")

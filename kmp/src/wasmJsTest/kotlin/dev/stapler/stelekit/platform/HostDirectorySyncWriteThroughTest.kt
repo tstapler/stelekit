@@ -320,7 +320,10 @@ class HostDirectorySyncWriteThroughTest {
         // pending but not yet in flight), start retryStuckHostWrites in the background, wait for
         // its flush to actually claim hostWriteInFlight and block mid-attempt, manually poll to
         // prove the suppression guard skips the path, then release the flush and assert the cache
-        // becomes current WITHOUT the test itself calling pollHostDirectoryOnce again.
+        // becomes current WITHOUT the test itself calling pollHostDirectoryOnce again. The local
+        // write physically overwrites the injected "external edit" once the gate opens, so the
+        // final assertion proves the automatic repoll fires and reflects current on-disk content —
+        // it does not by itself demonstrate that a concurrent external edit's content survives.
         val opfsPath = freshOpfsPath()
         val root = makeWritableEnumerableHostRoot(failuresBeforeSuccess = 1, errorMessage = "Error: transient I/O blip")
         val cacheAccess = FakeCacheAccess()
