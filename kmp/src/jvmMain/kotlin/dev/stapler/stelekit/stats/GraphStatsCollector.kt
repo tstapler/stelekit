@@ -32,40 +32,17 @@ class GraphStatsCollector {
         val hashtags: Int,
     )
 
+    private data class JournalEntry(val scan: FileScan, val date: String?)
+
     fun collect(graphDir: File): GraphStatsReport {
         val pagesDir    = File(graphDir, "pages")
         val journalsDir = File(graphDir, "journals")
-
-        fun pageNameFromFile(f: File): String =
-            f.nameWithoutExtension
-                .replace('%', '/')
-                .replace('_', ' ')
-
-        fun scan(file: File, name: String): FileScan {
-            val content = runCatching { file.readText() }.getOrElse { return FileScan(name, 0, 0, emptyList(), 0) }
-            val lines   = content.lines()
-            var blocks          = 0
-            var blocksWithLinks = 0
-            var hashtags        = 0
-            val outgoing        = mutableListOf<String>()
-
-            for (line in lines) {
-                if (!blockLineRegex.containsMatchIn(line)) continue
-                blocks++
-                val links = wikiLinkRegex.findAll(line).map { it.groupValues[1].trim() }.filter { it.isNotEmpty() && it != name }.toList()
-                if (links.isNotEmpty()) { blocksWithLinks++; outgoing += links }
-                hashtags += hashtagRegex.findAll(line).count()
-            }
-
-            return FileScan(name, blocks, blocksWithLinks, outgoing.distinct(), hashtags)
-        }
 
         // Scan pages
         val pages = (pagesDir.listFiles { f -> f.extension == "md" } ?: emptyArray())
             .map { scan(it, pageNameFromFile(it)) }
 
         // Scan journals, extract dates
-        data class JournalEntry(val scan: FileScan, val date: String?)
         val journals = (journalsDir.listFiles { f -> f.extension == "md" } ?: emptyArray())
             .map { f ->
                 val m    = journalDateRegex.find(f.nameWithoutExtension)
@@ -86,17 +63,10 @@ class GraphStatsCollector {
         val blocksWithLinks = allScans.sumOf { it.blocksWithLinks }
         val blockLinkDensity = if (totalBlocks > 0) blocksWithLinks.toFloat() / totalBlocks else 0f
 
-        // Per-page connectivity
-        fun connectivity(s: FileScan) = PageConnectivity(s.name, incomingCount[s.name] ?: 0, s.outgoing.size)
-
-        val pageConnectivity = pages.map { connectivity(it) }
+        val pageConnectivity = pages.map { connectivity(it, incomingCount) }
 
         val topByIncoming = pageConnectivity.sortedByDescending { it.incomingLinks }.take(15)
         val topByOutgoing = pageConnectivity.sortedByDescending { it.outgoingLinks }.take(15)
-
-        // Histograms — bucket anything > 20 into the "20" bin for display
-        fun histogram(values: Iterable<Int>): Map<Int, Int> =
-            values.groupingBy { it.coerceAtMost(20) }.eachCount().toSortedMap()
 
         val incomingHistogram = histogram(pageConnectivity.map { it.incomingLinks })
         val outgoingHistogram = histogram(pageConnectivity.map { it.outgoingLinks })
@@ -184,14 +154,46 @@ class GraphStatsCollector {
     }
 
     private fun daysBetween(a: String, b: String): Int {
-        fun epochDay(s: String): Long {
-            val (y, m, d) = s.split("-").map { it.toInt() }
-            // Julian Day Number formula
-            val jdn = (1461L * (y + 4800 + (m - 14) / 12)) / 4 +
-                (367L * (m - 2 - 12 * ((m - 14) / 12))) / 12 -
-                (3L * ((y + 4900 + (m - 14) / 12) / 100)) / 4 + d - 32075
-            return jdn
-        }
         return (epochDay(b) - epochDay(a)).toInt()
+    }
+
+    private fun pageNameFromFile(f: File): String =
+        f.nameWithoutExtension
+            .replace('%', '/')
+            .replace('_', ' ')
+
+    private fun scan(file: File, name: String): FileScan {
+        val content = runCatching { file.readText() }.getOrElse { return FileScan(name, 0, 0, emptyList(), 0) }
+        val lines   = content.lines()
+        var blocks          = 0
+        var blocksWithLinks = 0
+        var hashtags        = 0
+        val outgoing        = mutableListOf<String>()
+
+        for (line in lines) {
+            if (!blockLineRegex.containsMatchIn(line)) continue
+            blocks++
+            val links = wikiLinkRegex.findAll(line).map { it.groupValues[1].trim() }.filter { it.isNotEmpty() && it != name }.toList()
+            if (links.isNotEmpty()) { blocksWithLinks++; outgoing += links }
+            hashtags += hashtagRegex.findAll(line).count()
+        }
+
+        return FileScan(name, blocks, blocksWithLinks, outgoing.distinct(), hashtags)
+    }
+
+    // Per-page connectivity
+    private fun connectivity(s: FileScan, incomingCount: Map<String, Int>) = PageConnectivity(s.name, incomingCount[s.name] ?: 0, s.outgoing.size)
+
+    // Histograms — bucket anything > 20 into the "20" bin for display
+    private fun histogram(values: Iterable<Int>): Map<Int, Int> =
+        values.groupingBy { it.coerceAtMost(20) }.eachCount().toSortedMap()
+
+    private fun epochDay(s: String): Long {
+        val (y, m, d) = s.split("-").map { it.toInt() }
+        // Julian Day Number formula
+        val jdn = (1461L * (y + 4800 + (m - 14) / 12)) / 4 +
+            (367L * (m - 2 - 12 * ((m - 14) / 12))) / 12 -
+            (3L * ((y + 4900 + (m - 14) / 12) / 100)) / 4 + d - 32075
+        return jdn
     }
 }
