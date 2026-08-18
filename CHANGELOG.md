@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.73.0](https://github.com/tstapler/stelekit/compare/v0.72.1...v0.73.0) (2026-08-18)
+
+
+### Features
+
+* **slo:** add platform-aware disk-IO thresholds and span instrumentation ([676211e](https://github.com/tstapler/stelekit/commit/676211e02d3ed41440557190b1b4f23267767669))
+
+
+### Bug Fixes
+
+* **bazel:** grant common_test_fixtures friend access to jvm_main_lib ([#272](https://github.com/tstapler/stelekit/issues/272)) ([671eccd](https://github.com/tstapler/stelekit/commit/671eccdd8117210a483d1417abb86f4305a358b3))
+* **bazel:** use python3 instead of sed for unxcfg.h patch in MODULE.bazel ([936759b](https://github.com/tstapler/stelekit/commit/936759b68a7538856cfe1206900bfd57e4837316))
+* **bazel:** vendor rules_android to remove CI network fetch flakiness ([0093858](https://github.com/tstapler/stelekit/commit/0093858263ef71cb5f3b26104cd2361e90665217))
+* **git:** always encode GitRefUpdateRequest.force ([c41310f](https://github.com/tstapler/stelekit/commit/c41310f1613593abb3739442da340199181b85f9))
+* **sync:** enforce graph-rooted paths in HostDirectorySync via GraphRootedPath ([2f19507](https://github.com/tstapler/stelekit/commit/2f195073210a509bc6557ad1ae5bd25acf5ad82f))
+* **sync:** preserve existing updatedAt when file mtime is unresolved ([43912e3](https://github.com/tstapler/stelekit/commit/43912e315bac4f0bce5a84aecca3c2f73afe39f1))
+* **sync:** re-poll host path after own-write suppression clears ([#271](https://github.com/tstapler/stelekit/issues/271)) ([79724e1](https://github.com/tstapler/stelekit/commit/79724e1f812ff651d3542eb1d3adb2421ed35896))
+* **ui:** show full timestamp in All Pages modified/created columns ([f9e6acf](https://github.com/tstapler/stelekit/commit/f9e6acf2ad462aee06aed339d831b7c42c16859b))
+* **web:** propagate FileSystemObserver errors instead of swallowing them ([c64a874](https://github.com/tstapler/stelekit/commit/c64a874ed13b17735965bfef7c20b37ddbb4da5e))
+* **web:** show host-directory connection status in graph switcher ([6f86a1e](https://github.com/tstapler/stelekit/commit/6f86a1e5241a50801f0f1feff0762d7ffa90279a))
+* **web:** skip dotfiles/dot-dirs during host-directory walks, notify DB on host-only-new files ([6cdf224](https://github.com/tstapler/stelekit/commit/6cdf224653f080c56c05a567c6c855c3d5f79d40))
+* **web:** surface local-folder picker errors and cross-tab OPFS lock contention ([44f5134](https://github.com/tstapler/stelekit/commit/44f51343637c723e0a9ef757aa18e4e5c626b6da))
+
 ## [0.72.1](https://github.com/tstapler/stelekit/compare/v0.72.0...v0.72.1) (2026-08-11)
 
 
