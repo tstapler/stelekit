@@ -382,8 +382,20 @@ class HostDirectorySync(
         hostPollJob = scope.launch {
             while (isActive) {
                 delay(effectivePollIntervalMs())
-                val handle = hostDirHandle ?: continue
-                val opfsPath = hostGraphOpfsPath ?: continue
+                val handle = hostDirHandle
+                val opfsPath = hostGraphOpfsPath
+                if (handle == null || opfsPath == null) {
+                    // Previously a silent `?: continue` — indistinguishable in logs from a
+                    // healthy connection between ticks. A permanently-null handle/path here
+                    // (e.g. connectHostDirectory never completed, or a reconnect cleared state
+                    // without restarting polling) makes every tick a no-op forever, which reads
+                    // to the user as "external changes never sync" rather than "delayed."
+                    logger.warn(
+                        "HostDirectoryPoller tick skipped: hostDirHandle=${handle != null} " +
+                            "hostGraphOpfsPath=${opfsPath != null}",
+                    )
+                    continue
+                }
                 try {
                     // Epic 6.2 (Task 6.2.1b): leader-for-one-tick — a `null` result means another
                     // tab already holds this graph's poll lock for this tick; that is a silent
@@ -440,11 +452,12 @@ class HostDirectorySync(
      * recursively when the browser supports it, so external changes are detected roughly one
      * event-loop tick after they happen instead of waiting for the next timer tick. Sets
      * [observerConfirmedActive] `true` only when both construction and `observe()` complete
-     * without throwing; `false` when unsupported or either step fails. [observeHandle] itself
-     * already catches and logs its own failures rather than throwing (`HostDirectoryInterop.kt`),
-     * so in practice only `newFileSystemObserver`'s construction step can drive the `false` branch
-     * here — a limitation of that existing interop function's signature, not a gap introduced by
-     * this method.
+     * without throwing; `false` when unsupported or either step fails. [observeHandle] propagates
+     * a failing `observe()` call (it does not swallow it) so a real-world failure — e.g. a
+     * browser that supports the `FileSystemObserver` constructor but rejects `recursive: true`
+     * observation for a local-disk handle obtained via `showDirectoryPicker()` — is caught here
+     * and correctly demotes [observerConfirmedActive] to `false` instead of leaving a false
+     * "healthy" signal in place for the life of the connection.
      */
     private suspend fun startHostChangeObserver(handle: JsAny) {
         if (!fileSystemObserverSupported()) {

@@ -138,13 +138,7 @@ private fun observePromise(observer: JsAny, handle: JsAny, recursive: Boolean): 
     js("observer.observe(handle, { recursive: recursive })")
 
 internal suspend fun observeHandle(observer: JsAny, handle: JsAny, recursive: Boolean = true) {
-    try {
-        observePromise(observer, handle, recursive).await()
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Throwable) {
-        println("[SteleKit] FileSystemObserver.observe failed: ${e.message}")
-    }
+    observePromise(observer, handle, recursive).await<JsAny>()
 }
 
 internal fun changeRecordType(record: JsAny): String = js("record.type")
