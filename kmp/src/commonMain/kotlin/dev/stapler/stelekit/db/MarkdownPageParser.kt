@@ -106,7 +106,11 @@ object MarkdownPageParser {
         if (parsedPage.blocks.isNotEmpty()) {
             val firstBlock = parsedPage.blocks.first()
             if (firstBlock.content.trim().isEmpty() && firstBlock.properties.isNotEmpty()) {
-                page = page.copy(properties = firstBlock.properties)
+                page = page.copy(
+                    properties = firstBlock.properties.mapValues { (_, value) ->
+                        dev.stapler.stelekit.model.Validation.sanitizeContent(value)
+                    },
+                )
                 firstBlockSkipped = true
             }
         }
@@ -118,7 +122,7 @@ object MarkdownPageParser {
         properties.toMutableMap().apply {
             scheduled?.let { put("scheduled", it) }
             deadline?.let { put("deadline", it) }
-        }
+        }.mapValues { (_, value) -> dev.stapler.stelekit.model.Validation.sanitizeContent(value) }
 
     /**
      * Recursively processes [parsedBlocks] into a flat [destinationList] of [Block]s,
@@ -157,7 +161,7 @@ object MarkdownPageParser {
                 pageUuid = pageUuid,
                 parentUuid = parentUuid?.let { BlockUuid(it) },
                 leftUuid = previousSiblingUuid?.let { BlockUuid(it) },
-                content = parsedBlock.content,
+                content = dev.stapler.stelekit.model.Validation.sanitizeContent(parsedBlock.content),
                 // parsedBlock.level is the outline nesting depth computed from the source
                 // Markdown's own indentation (bullet/heading indent, etc. — see
                 // MarkdownParser.convertBlock / BlockNode.indentLevel). It agrees with
@@ -225,7 +229,7 @@ object MarkdownPageParser {
                     uuid = blockUuid,
                     pageUuid = pageUuid,
                     parentUuid = parentUuid?.let { BlockUuid(it) },
-                    content = parsedBlock.content,
+                    content = dev.stapler.stelekit.model.Validation.sanitizeContent(parsedBlock.content),
                     // See processParsedBlocks for why parsedBlock.level (not baseLevel) is
                     // the value that must reach the persisted Block.level.
                     level = parsedBlock.level,

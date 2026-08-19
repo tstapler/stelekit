@@ -40,6 +40,14 @@ object Validation {
         return validateString(content, MAX_CONTENT_LENGTH, allowWhitespace = true)
     }
 
+    /**
+     * Strips control characters that [validateContent] would otherwise reject (C0/C1 codes other
+     * than `\n`/`\r`/`\t`). Parsed file content can carry these from pasted PDF/OCR text; stripping
+     * before construction lets the block load instead of aborting the whole page/graph parse.
+     */
+    fun sanitizeContent(content: String): String =
+        content.filterNot { (it.code in 0x00..0x1F || it.code in 0x80..0x9F) && it != '\n' && it != '\r' && it != '\t' }
+
     fun validateUuid(uuid: String?): String {
         val validated = validateString(uuid, 36)
         require(validated.isNotBlank()) { "UUID cannot be blank" }

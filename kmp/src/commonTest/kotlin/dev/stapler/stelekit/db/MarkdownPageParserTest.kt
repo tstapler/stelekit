@@ -189,6 +189,66 @@ class MarkdownPageParserTest {
         assertEquals(0L, destination[0].version, "Version must remain 0 when prior version is 0, even if content changed")
     }
 
+    @Test
+    fun processParsedBlocks_strips_restricted_control_characters_from_content_instead_of_throwing() {
+        val block = parsedBlock(content = "helloworld", properties = mapOf("note" to "badvalue"))
+        val path = "/graph/pages/note.md"
+
+        val destination = mutableListOf<dev.stapler.stelekit.model.Block>()
+        MarkdownPageParser.processParsedBlocks(
+            parsedBlocks = listOf(block),
+            pagePath = path,
+            pageUuid = PageUuid("00000000-0000-0000-0000-000000000001"),
+            parentUuid = null,
+            baseLevel = 0,
+            now = fixedNow,
+            destinationList = destination,
+            mode = ParseMode.FULL,
+        )
+
+        assertEquals(1, destination.size)
+        assertEquals("helloworld", destination[0].content)
+        assertEquals("badvalue", destination[0].properties["note"])
+    }
+
+    @Test
+    fun createStubBlocks_strips_restricted_control_characters_from_content_instead_of_throwing() {
+        val block = parsedBlock(content = "helloworld", properties = mapOf("note" to "badvalue"))
+        val path = "/graph/pages/note.md"
+
+        val destination = mutableListOf<dev.stapler.stelekit.model.Block>()
+        MarkdownPageParser.createStubBlocks(
+            parsedBlocks = listOf(block),
+            pagePath = path,
+            pageUuid = PageUuid("00000000-0000-0000-0000-000000000001"),
+            parentUuid = null,
+            baseLevel = 0,
+            now = fixedNow,
+            destination = destination,
+        )
+
+        assertEquals(1, destination.size)
+        assertEquals("helloworld", destination[0].content)
+        assertEquals("badvalue", destination[0].properties["note"])
+    }
+
+    @Test
+    fun buildPageModel_strips_restricted_control_characters_from_first_block_properties() {
+        val result = MarkdownPageParser.buildPageModel(
+            filePath = "/graph/pages/note.md",
+            name = "note",
+            isJournal = false,
+            journalDate = null,
+            existingPage = null,
+            now = fixedNow,
+            mode = ParseMode.FULL,
+            parsedPage = pageWithFirstPropertyBlock(mapOf("title" to "badtitle")),
+            fileModTime = null,
+        )
+
+        assertEquals("badtitle", result.page.properties["title"])
+    }
+
     // -------------------------------------------------------------------------
     // buildPageModel — returning PageBuildResult
     // -------------------------------------------------------------------------
