@@ -149,8 +149,9 @@ object MarkdownPageParser {
             val blockUuid = BlockUuid(blockUuidStr)
             val currentVersion = existingVersions[blockUuid] ?: 0L
             val oldContent = existingContent[blockUuid]
+            val sanitizedContent = dev.stapler.stelekit.model.Validation.sanitizeContent(parsedBlock.content)
 
-            val versionToSave = if (oldContent == parsedBlock.content) currentVersion else {
+            val versionToSave = if (oldContent == sanitizedContent) currentVersion else {
                 if (currentVersion > 0) currentVersion + 1 else 0L
             }
 
@@ -161,7 +162,7 @@ object MarkdownPageParser {
                 pageUuid = pageUuid,
                 parentUuid = parentUuid?.let { BlockUuid(it) },
                 leftUuid = previousSiblingUuid?.let { BlockUuid(it) },
-                content = dev.stapler.stelekit.model.Validation.sanitizeContent(parsedBlock.content),
+                content = sanitizedContent,
                 // parsedBlock.level is the outline nesting depth computed from the source
                 // Markdown's own indentation (bullet/heading indent, etc. — see
                 // MarkdownParser.convertBlock / BlockNode.indentLevel). It agrees with
@@ -176,7 +177,7 @@ object MarkdownPageParser {
                 version = versionToSave,
                 properties = parsedBlock.mergedProperties(),
                 isLoaded = mode == ParseMode.FULL,
-                contentHash = ContentHasher.sha256ForContent(parsedBlock.content),
+                contentHash = ContentHasher.sha256ForContent(sanitizedContent),
                 blockType = parsedBlock.blockType
             )
 
@@ -223,13 +224,14 @@ object MarkdownPageParser {
             val blockUuid = BlockUuid(blockUuidStr)
             val stubPositionKey = dev.stapler.stelekit.util.FractionalIndexing.generateKeyBetween(stubPrevPosition, null)
             stubPrevPosition = stubPositionKey
+            val sanitizedContent = dev.stapler.stelekit.model.Validation.sanitizeContent(parsedBlock.content)
 
             destination.add(
                 Block(
                     uuid = blockUuid,
                     pageUuid = pageUuid,
                     parentUuid = parentUuid?.let { BlockUuid(it) },
-                    content = dev.stapler.stelekit.model.Validation.sanitizeContent(parsedBlock.content),
+                    content = sanitizedContent,
                     // See processParsedBlocks for why parsedBlock.level (not baseLevel) is
                     // the value that must reach the persisted Block.level.
                     level = parsedBlock.level,
@@ -238,7 +240,7 @@ object MarkdownPageParser {
                     updatedAt = now,
                     properties = parsedBlock.mergedProperties(),
                     isLoaded = false,
-                    contentHash = ContentHasher.sha256ForContent(parsedBlock.content),
+                    contentHash = ContentHasher.sha256ForContent(sanitizedContent),
                     blockType = parsedBlock.blockType
                 )
             )

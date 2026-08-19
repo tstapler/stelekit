@@ -36,15 +36,18 @@ object Validation {
         return validated
     }
 
+    /**
+     * Validates content, silently stripping restricted control characters (C0/C1 codes other than
+     * `\n`/`\r`/`\t`) rather than throwing. Parsed file content — and any other content that ends
+     * up in a [Page]/[Block]/[Property]/[Notification] — can carry these from pasted PDF/OCR text;
+     * stripping here means a single malformed value degrades instead of aborting construction (and,
+     * for parser call sites, the whole page/graph load).
+     */
     fun validateContent(content: String?): String {
-        return validateString(content, MAX_CONTENT_LENGTH, allowWhitespace = true)
+        require(content != null) { "Input cannot be null" }
+        return validateString(sanitizeContent(content), MAX_CONTENT_LENGTH, allowWhitespace = true)
     }
 
-    /**
-     * Strips control characters that [validateContent] would otherwise reject (C0/C1 codes other
-     * than `\n`/`\r`/`\t`). Parsed file content can carry these from pasted PDF/OCR text; stripping
-     * before construction lets the block load instead of aborting the whole page/graph parse.
-     */
     fun sanitizeContent(content: String): String =
         content.filterNot { (it.code in 0x00..0x1F || it.code in 0x80..0x9F) && it != '\n' && it != '\r' && it != '\t' }
 
