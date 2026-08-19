@@ -11,6 +11,10 @@ object Validation {
     private const val MAX_NAME_LENGTH = 255
     private const val MAX_CONTENT_LENGTH = 10000000
 
+    /** C0 (0x00-0x1F) and C1 (0x80-0x9F) control codes, excluding `\n`/`\r`/`\t`. */
+    private fun isRestrictedControlChar(c: Char): Boolean =
+        (c.code in 0x00..0x1F || c.code in 0x80..0x9F) && c != '\n' && c != '\r' && c != '\t'
+
     fun validateString(input: String?, maxLength: Int = MAX_STRING_LENGTH, allowWhitespace: Boolean = false): String {
         require(input != null) { "Input cannot be null" }
         require(input.length <= maxLength) { "Input exceeds maximum length of $maxLength" }
@@ -18,7 +22,7 @@ object Validation {
         if (!allowWhitespace) {
             require(!input.any { it.code in 0x00..0x1F || it.code in 0x80..0x9F }) { "Input contains control characters" }
         } else {
-            require(!input.any { (it.code in 0x00..0x1F || it.code in 0x80..0x9F) && it != '\n' && it != '\r' && it != '\t' }) { "Input contains restricted control characters" }
+            require(!input.any(::isRestrictedControlChar)) { "Input contains restricted control characters" }
         }
         return input.trim()
     }
@@ -49,7 +53,7 @@ object Validation {
     }
 
     fun sanitizeContent(content: String): String =
-        content.filterNot { (it.code in 0x00..0x1F || it.code in 0x80..0x9F) && it != '\n' && it != '\r' && it != '\t' }
+        content.filterNot(::isRestrictedControlChar)
 
     fun validateUuid(uuid: String?): String {
         val validated = validateString(uuid, 36)

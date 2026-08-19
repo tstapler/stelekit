@@ -191,7 +191,7 @@ class MarkdownPageParserTest {
 
     @Test
     fun processParsedBlocks_strips_restricted_control_characters_from_content_instead_of_throwing() {
-        val block = parsedBlock(content = "helloworld", properties = mapOf("note" to "badvalue"))
+        val block = parsedBlock(content = "hello\u000Cworld", properties = mapOf("note" to "bad\u0001value"))
         val path = "/graph/pages/note.md"
 
         val destination = mutableListOf<dev.stapler.stelekit.model.Block>()
@@ -213,7 +213,7 @@ class MarkdownPageParserTest {
 
     @Test
     fun createStubBlocks_strips_restricted_control_characters_from_content_instead_of_throwing() {
-        val block = parsedBlock(content = "helloworld", properties = mapOf("note" to "badvalue"))
+        val block = parsedBlock(content = "hello\u000Cworld", properties = mapOf("note" to "bad\u0001value"))
         val path = "/graph/pages/note.md"
 
         val destination = mutableListOf<dev.stapler.stelekit.model.Block>()
@@ -242,7 +242,7 @@ class MarkdownPageParserTest {
             existingPage = null,
             now = fixedNow,
             mode = ParseMode.FULL,
-            parsedPage = pageWithFirstPropertyBlock(mapOf("title" to "badtitle")),
+            parsedPage = pageWithFirstPropertyBlock(mapOf("title" to "bad\u0001title")),
             fileModTime = null,
         )
 
