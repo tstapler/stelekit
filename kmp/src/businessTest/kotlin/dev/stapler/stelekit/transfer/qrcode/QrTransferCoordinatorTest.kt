@@ -20,6 +20,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -28,6 +29,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -75,9 +77,20 @@ class QrTransferCoordinatorTest {
      * Yields after each emit so the diagnostics coroutine and any test collector get a fair
      * scheduling chance between chunks on `Dispatchers.Default` — this loop is otherwise CPU-bound
      * and would starve other coroutines on a single-threaded test dispatcher.
+     *
+     * [waitForDiagnostics], if given, is awaited before the first chunk is emitted. The data path
+     * and diagnostics coroutines have no ordering guarantee between them (`currentHint` is a plain
+     * `@Volatile` field with no happens-before edge to `FragmentAdmitted` emission) — a bare
+     * `yield()` only offers the diagnostics coroutine a *chance* to run, which CI's scheduling
+     * pressure has shown is not reliable. Tests asserting on a specific hint value must gate chunk
+     * emission on that hint having actually been observed.
      */
-    private fun fakeReceiver(encoder: FountainEncoder): FrameTransportReceiver = object : FrameTransportReceiver {
+    private fun fakeReceiver(
+        encoder: FountainEncoder,
+        waitForDiagnostics: CompletableDeferred<Unit>? = null,
+    ): FrameTransportReceiver = object : FrameTransportReceiver {
         override fun frames(): Flow<ByteArray> = flow {
+            waitForDiagnostics?.await()
             for (chunk in encoder.parts()) {
                 emit(ChunkFrameCodec.encode(chunk))
                 kotlinx.coroutines.yield()
@@ -89,15 +102,22 @@ class QrTransferCoordinatorTest {
      * A fake [QrScanner] (Bug 3 fix — an actual injected instance, not a `scan` function
      * reference): [decodeResult] drives [QrScanner.decode]; [frames] drives [QrScanner.frameStream]
      * — a single benign frame by default, enough to exercise the diagnostics path once, then idle.
+     *
+     * [diagnosticsProcessed], if given, completes once [frames] has finished emitting. Flow's cold
+     * back-pressure means `emit()` doesn't return until the downstream collector (`runDiagnostics`,
+     * which calls `updateHint` synchronously) has processed that value, so completion here is a
+     * reliable signal that `currentHint` already reflects this scanner's output.
      */
     private fun fakeQrScanner(
         decodeResult: ScanResult = ScanResult.NoCodeDetected,
         frames: Flow<Either<DomainError.SensorError, CameraFrame>> = flow {
             emit(CameraFrame(luminanceBytes = ByteArray(4) { 200.toByte() }, width = 2, height = 2, rotationDegrees = 0).right())
         },
+        diagnosticsProcessed: CompletableDeferred<Unit>? = null,
     ): QrScanner = object : QrScanner {
         override fun decode(frame: CameraFrame): ScanResult = decodeResult
-        override fun frameStream(): Flow<Either<DomainError.SensorError, CameraFrame>> = frames
+        override fun frameStream(): Flow<Either<DomainError.SensorError, CameraFrame>> =
+            if (diagnosticsProcessed != null) frames.onCompletion { diagnosticsProcessed.complete(Unit) } else frames
     }
 
     /**
@@ -215,12 +235,17 @@ class QrTransferCoordinatorTest {
         val encoder = FountainCodec.encoder(TransferId(7), envelopeBytes, maxFragmentBytes = 12).getOrNull()!!
         val (importService, _) = buildImportService()
 
+        // The diagnostics and data-path coroutines have no ordering guarantee (see fakeReceiver's
+        // doc comment) — gate chunk emission on the diagnostics frame having actually been
+        // processed so the WrongCode hint is deterministically observed before any
+        // FragmentAdmitted event, instead of racing on `Dispatchers.Default` scheduling.
+        val diagnosticsProcessed = CompletableDeferred<Unit>()
         val coordinator = QrTransferCoordinator(
-            frameTransportReceiver = fakeReceiver(encoder),
+            frameTransportReceiver = fakeReceiver(encoder, waitForDiagnostics = diagnosticsProcessed),
             qrImportService = importService,
             // Fake diagnostics scanner: ALWAYS reports a foreign QR, regardless of the real frame
             // content — its output must never feed ChunkBuffer, only the hint.
-            qrScanner = fakeQrScanner(ScanResult.NotSteleKitCode),
+            qrScanner = fakeQrScanner(ScanResult.NotSteleKitCode, diagnosticsProcessed = diagnosticsProcessed),
         )
         val recorder = EventRecorder(coordinator, this)
 
