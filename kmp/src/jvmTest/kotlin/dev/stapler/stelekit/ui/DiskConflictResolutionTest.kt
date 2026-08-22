@@ -796,6 +796,15 @@ class DiskConflictResolutionTest {
                 )
             ).also { viewModelRef = it }
             vm.setGraphPath(tempDir.absolutePath)
+            // setGraphPath's loadGraph() launches on `scope` but hops onto a real
+            // Dispatchers.Default via withContext(Dispatchers.Default) { loadGraphProgressive(...) },
+            // escaping this test's Unconfined scope's inline-execution guarantee. Without waiting
+            // for it here, that background coroutine's onProgress/onFullyLoaded callbacks
+            // (statusMessage = "Ready" / "Graph loaded completely.") can fire after renamePage()
+            // below and clobber its "Renamed '...'" statusMessage — a race distinct from the one
+            // renamePage()?.join() guards against, only reproducible under real-dispatcher
+            // scheduling pressure (i.e. the AllJvmTests aggregate suite, never standalone).
+            withTimeout(2_000) { vm.uiState.first { it.isFullyLoaded } }
             vm.startAutoSave()
 
             // Deferred conflict on the page's current path while it's not open.
