@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.74.0](https://github.com/tstapler/stelekit/compare/v0.73.0...v0.74.0) (2026-08-22)
+
+
+### Features
+
+* fix paranoid-mode DB sync gap, add git commit to settings version ([b8dcae6](https://github.com/tstapler/stelekit/commit/b8dcae6069ff8377ef44c173e42f16dff061fc92))
+
+
+### Bug Fixes
+
+* **parser:** sanitize restricted control chars instead of aborting page load ([#274](https://github.com/tstapler/stelekit/issues/274)) ([1528d06](https://github.com/tstapler/stelekit/commit/1528d06500fe52842787c367b2398000640f6fb2))
+* **test:** synchronize on coordinator events, not flow completion ([#276](https://github.com/tstapler/stelekit/issues/276)) ([c4bf074](https://github.com/tstapler/stelekit/commit/c4bf074d52b7242cf658386307a247ac54794981))
+
 ## [0.73.0](https://github.com/tstapler/stelekit/compare/v0.72.1...v0.73.0) (2026-08-18)
 
 
