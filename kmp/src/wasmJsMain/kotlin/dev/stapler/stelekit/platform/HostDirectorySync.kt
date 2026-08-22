@@ -290,6 +290,37 @@ class HostDirectorySync(
     }
 
     /**
+     * Bytes-aware sibling of [onHostConflict] for `.md.stek` (paranoid-mode) content — fired from
+     * the `.md.stek` branch's `ReconciliationOutcome.HostOnlyNew` case so a new encrypted
+     * host-directory file is surfaced to the DB/UI the same way its plaintext counterpart already
+     * is, instead of only landing in OPFS/cache. String-typed [onHostConflict] can't carry
+     * ciphertext (that's exactly what the `.md.stek HostChangedConflict` branch's doc comment
+     * explains adversarial-review.md Blocker 4 forbids), so this callback carries raw
+     * [ByteArray] instead and lets the caller (`GraphLoader`, the only holder of [CryptoLayer])
+     * decrypt before forwarding to [emitExternalFileChange]. Mirrors [onHostConflict]'s
+     * buffering-default pattern for the identical app-boot race window — see that property's doc
+     * comment.
+     */
+    internal var onHostBytesConflict: (path: GraphRootedPath, hostBytes: ByteArray) -> Unit = { path, hostBytes ->
+        pendingHostBytesConflicts += path to hostBytes
+        mirrorPendingHostBytesConflictCount(pendingHostBytesConflicts.size)
+    }
+
+    private val pendingHostBytesConflicts = mutableListOf<Pair<GraphRootedPath, ByteArray>>()
+
+    /** Test-observation seam, mirrors [pendingHostConflictCount]. */
+    internal val pendingHostBytesConflictCount: Int get() = pendingHostBytesConflicts.size
+
+    /** Mirrors [flushPendingHostConflicts] for the bytes-aware buffer. */
+    internal fun flushPendingHostBytesConflicts(callback: (path: GraphRootedPath, hostBytes: ByteArray) -> Unit) {
+        if (pendingHostBytesConflicts.isEmpty()) return
+        val buffered = pendingHostBytesConflicts.toList()
+        pendingHostBytesConflicts.clear()
+        mirrorPendingHostBytesConflictCount(0)
+        buffered.forEach { (path, hostBytes) -> callback(path, hostBytes) }
+    }
+
+    /**
      * Task 3.1.2b: the last [ReconciliationSummary] produced by [runHostReconciliation], read by
      * UI wiring (`FolderSyncSettings`'s `onConnect` callback) after [connectHostDirectory]
      * resolves, so the reconciliation summary screen can show real per-category counts rather
@@ -957,6 +988,7 @@ class HostDirectorySync(
                                         logPossibleStaleRenameDuplicate(path, opfsPath) { otherPath ->
                                             cacheAccess.getBytes(otherPath)?.contentEquals(hostBytes) == true
                                         }
+                                        onHostBytesConflict(GraphRootedPath.of(path, opfsPath), hostBytes)
                                     }
                                     ReconciliationOutcome.BrowserOnlyNeedsPush -> {
                                         // Unreachable: hostBytes is non-null in this branch (the walk

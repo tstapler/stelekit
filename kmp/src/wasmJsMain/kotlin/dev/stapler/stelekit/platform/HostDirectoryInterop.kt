@@ -20,6 +20,15 @@ import kotlinx.coroutines.await
 internal fun mirrorPendingHostConflictCount(count: Int): Unit = js("window.__stelekit_pending_host_conflicts = count")
 
 /**
+ * Bytes-aware sibling of [mirrorPendingHostConflictCount] for `HostDirectorySync.onHostBytesConflict`/
+ * `flushPendingHostBytesConflicts` (`.md.stek` paranoid-mode `HostOnlyNew` notifications). Kept as
+ * a separate `window.__stelekit_pending_host_bytes_conflicts` global rather than folding into the
+ * plaintext counter so an e2e spec asserting on one mechanism isn't perturbed by unrelated traffic
+ * on the other.
+ */
+internal fun mirrorPendingHostBytesConflictCount(count: Int): Unit = js("window.__stelekit_pending_host_bytes_conflicts = count")
+
+/**
  * `web-local-folder-livesync` (Epic 1.5) browser interop primitives — IndexedDB
  * `FileSystemDirectoryHandle` persistence, `queryPermission()`/`requestPermission()`, the
  * `FileSystemObserver` construction/observe surface, `File.lastModified`/`size` accessors, the

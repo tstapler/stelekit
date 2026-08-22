@@ -425,6 +425,31 @@ class GraphLoader(
     }
 
     /**
+     * Bytes-aware sibling of [emitExternalFileChange] for paranoid-mode (`.md.stek`) host-directory
+     * sync notifications — decrypts [hostBytes] via [cryptoLayer] (same AAD derivation as
+     * [readFileDecrypted]) before forwarding as a synthetic external-file-change event. Wired from
+     * `App.kt` via `FileSystem.setOnHostBytesConflict`. Silently drops the notification if
+     * [cryptoLayer] is unset or decryption fails — a stale/missing key here means the UI cannot
+     * show correct content anyway, and [readFileDecrypted]'s own read path already logs the cause.
+     */
+    fun emitExternalFileChangeBytes(filePath: String, hostBytes: ByteArray) {
+        val layer = cryptoLayer
+        if (layer == null) {
+            emitExternalFileChange(filePath, hostBytes.decodeToString())
+            return
+        }
+        if (currentGraphPath.isEmpty()) {
+            logger.error("emitExternalFileChangeBytes: cryptoLayer is set but graphPath is empty — refusing to decrypt (wrong AAD)")
+            return
+        }
+        val relPath = relativePathFor(filePath)
+        when (val result = layer.decrypt(relPath, hostBytes)) {
+            is Either.Right -> emitExternalFileChange(filePath, result.value.decodeToString())
+            is Either.Left -> logger.warn("emitExternalFileChangeBytes: decryption failed for $filePath: ${result.value.message}")
+        }
+    }
+
+    /**
      * Epic 4.4 (Task 4.4.1b, web-local-folder-livesync): forwards a host-directory write-through
      * failure onto this graph's existing [writeErrors] channel — reuses the same [WriteError]
      * surface every other write-failure path already emits through rather than adding a second

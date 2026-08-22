@@ -271,9 +271,9 @@ fun SettingsDialog(
                                     )
                                 }
                             }
-                            val appVersion = remember { getDeviceInfo().appVersion }
+                            val deviceInfo = remember { getDeviceInfo() }
                             Text(
-                                "v$appVersion",
+                                versionLabel(deviceInfo.appVersion, deviceInfo.gitCommit),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                                 modifier = Modifier.padding(16.dp)
@@ -346,9 +346,9 @@ fun SettingsDialog(
 
                             Spacer(modifier = Modifier.weight(1f))
 
-                            val appVersion = remember { getDeviceInfo().appVersion }
+                            val deviceInfo = remember { getDeviceInfo() }
                             Text(
-                                "v$appVersion",
+                                versionLabel(deviceInfo.appVersion, deviceInfo.gitCommit),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
@@ -463,3 +463,6 @@ private fun DeveloperSettings(
         )
     }
 }
+
+private fun versionLabel(appVersion: String, gitCommit: String): String =
+    if (gitCommit == "unknown") "v$appVersion" else "v$appVersion ($gitCommit)"

@@ -617,6 +617,9 @@ private fun GraphContent(
         // wasmJsMain's Main.kt, so this is where the plan's "after GraphLoader exists, wire the
         // callback" instruction actually applies. No-op on every platform but wasmJs.
         effectiveFileSystem.setOnHostConflict(graphLoader::emitExternalFileChange)
+        // Bytes-aware sibling for `.md.stek` (paranoid-mode) HostOnlyNew content — see
+        // FileSystem.setOnHostBytesConflict and GraphLoader.emitExternalFileChangeBytes.
+        effectiveFileSystem.setOnHostBytesConflict(graphLoader::emitExternalFileChangeBytes)
         // web-local-folder-livesync Epic 4.4 (Task 4.4.1b): same wiring pattern, one call later —
         // forwards write-through failures onto GraphLoader's existing writeErrors channel.
         effectiveFileSystem.setOnHostWriteFailed(graphLoader::reportHostWriteFailure)

@@ -6,13 +6,15 @@ expect class DeviceInfo(
     osVersion: String,
     deviceModel: String,
     availableRamMb: Long,
-    appVersion: String
+    appVersion: String,
+    gitCommit: String
 ) {
     val platform: String
     val osVersion: String
     val deviceModel: String
     val availableRamMb: Long
     val appVersion: String
+    val gitCommit: String
 }
 
 expect fun getDeviceInfo(): DeviceInfo
