@@ -823,7 +823,7 @@ class DiskConflictResolutionTest {
             // the AllJvmTests aggregate suite (heavier real-dispatcher scheduling pressure) and
             // never standalone. Join the returned Job explicitly instead of depending on inline
             // Unconfined resumption.
-            vm.renamePage(page, "RenamedPage")?.join()
+            withTimeout(2_000) { vm.renamePage(page, "RenamedPage")?.join() }
             assertEquals(false, vm.uiState.value.renameDialogBusy)
             assertTrue(vm.uiState.value.statusMessage?.contains("Renamed") == true)
 
