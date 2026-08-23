@@ -780,6 +780,14 @@ class StelekitViewModel(
                                 logger.info("Graph fully loaded")
                                 _uiState.update { it.copy(isFullyLoaded = true, statusMessage = "Graph loaded completely.") }
 
+                                // On warm start, onPhase1Complete's eager ensureTodayJournal() can
+                                // race loadJournalsImmediate's disk scan and create a filePath=null
+                                // duplicate for today before the externally-synced file is parsed.
+                                // ensureTodayJournal() already merges duplicates for the same date;
+                                // re-running it now (disk scan guaranteed done) heals that duplicate
+                                // within this session instead of waiting for next launch/midnight.
+                                scope.launch { journalService.ensureTodayJournal() }
+
                                 // Start background full-indexing only after loadDirectory(METADATA_ONLY)
                                 // has finished. Launching this earlier races with the batch loader:
                                 // both paths generate identical deterministic UUIDs and interleaved
