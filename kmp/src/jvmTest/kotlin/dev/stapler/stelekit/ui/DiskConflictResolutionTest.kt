@@ -764,7 +764,11 @@ class DiskConflictResolutionTest {
             // ViewModel state is asserted, so an in-memory fake is deterministic and sufficient.
             val fs = FakeFileSystem()
             @Suppress("DEPRECATION")
-            val graphWriter = GraphWriter(fs, pageRepository = pageRepo)
+            // Unconfined: fs is a zero-latency fake, so no real disk I/O needs bounding. The
+            // production default (PlatformDispatcher.IO) is a real dispatch onto the JVM-wide
+            // Dispatchers.IO pool, whose scheduling latency under CI's maxParallelForks CPU
+            // contention could exceed the withTimeout budget below even with instant fake work.
+            val graphWriter = GraphWriter(fs, pageRepository = pageRepo, ioDispatcher = Dispatchers.Unconfined)
             val scope = CoroutineScope(Dispatchers.Unconfined)
             val writeActor = dev.stapler.stelekit.db.DatabaseWriteActor(blockRepo, pageRepo, scope = scope)
             val searchRepo = InMemorySearchRepository()
@@ -792,16 +796,36 @@ class DiskConflictResolutionTest {
                 )
             ).also { viewModelRef = it }
             vm.setGraphPath(tempDir.absolutePath)
+            // setGraphPath's loadGraph() launches on `scope` but hops onto a real
+            // Dispatchers.Default via withContext(Dispatchers.Default) { loadGraphProgressive(...) },
+            // escaping this test's Unconfined scope's inline-execution guarantee. Without waiting
+            // for it here, that background coroutine's onProgress/onFullyLoaded callbacks
+            // (statusMessage = "Ready" / "Graph loaded completely.") can fire after renamePage()
+            // below and clobber its "Renamed '...'" statusMessage — a race distinct from the one
+            // renamePage()?.join() guards against, only reproducible under real-dispatcher
+            // scheduling pressure (i.e. the AllJvmTests aggregate suite, never standalone).
+            withTimeout(2_000) { vm.uiState.first { it.isFullyLoaded } }
             vm.startAutoSave()
 
             // Deferred conflict on the page's current path while it's not open.
             graphLoader.emitExternalFileChange(filePath, "- disk content")
             assertNotNull(vm.uiState.value.pendingConflicts[filePath])
 
-            vm.renamePage(page, "RenamedPage")
-            withTimeout(2_000) {
-                vm.uiState.first { it.renameDialogBusy == false && it.statusMessage?.contains("Renamed") == true }
-            }
+            // renamePage() is fire-and-forget (launches on vm.scope and returns immediately).
+            // Relying on Dispatchers.Unconfined to resolve it inline before the assertions below
+            // is not a real guarantee: startAutoSave() above routes GraphWriter's debounce/save
+            // scope onto its own real Dispatchers.Default-backed ownedScope (see
+            // GraphWriter.startAutoSave(debounceMs)), and the pending external-file-change applied
+            // just above is itself a separate fire-and-forget launch on vm.scope
+            // (observeExternalFileChanges' "apply disk content directly" branch) — so renamePage's
+            // saveMutex.withLock can genuinely contend with unrelated in-flight work rather than
+            // resolving synchronously. That race is exactly what made this test flaky only under
+            // the AllJvmTests aggregate suite (heavier real-dispatcher scheduling pressure) and
+            // never standalone. Join the returned Job explicitly instead of depending on inline
+            // Unconfined resumption.
+            withTimeout(2_000) { vm.renamePage(page, "RenamedPage")?.join() }
+            assertEquals(false, vm.uiState.value.renameDialogBusy)
+            assertTrue(vm.uiState.value.statusMessage?.contains("Renamed") == true)
 
             assertNull(
                 vm.uiState.value.pendingConflicts[filePath],

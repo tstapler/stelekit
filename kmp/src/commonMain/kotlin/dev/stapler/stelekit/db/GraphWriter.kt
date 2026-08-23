@@ -80,6 +80,13 @@ class GraphWriter(
     private val onPreWriteConflict: (suspend (filePath: String, pendingContent: String, diskContent: String) -> Unit)? = null,
     /** Emits "file.write"/"file.rename"/"file.delete" spans for the disk-IO SLO. Null disables. */
     private val spanEmitter: dev.stapler.stelekit.performance.SpanEmitter? = null,
+    /**
+     * Dispatcher used for all [fileSystem] calls. Defaults to [PlatformDispatcher.IO] in
+     * production. Tests that inject a zero-latency [FileSystem] fake (no real disk I/O to bound)
+     * should override this with [Dispatchers.Unconfined] so assertions don't race the real,
+     * CI-contended [Dispatchers.IO] thread pool shared across concurrently-forked test JVMs.
+     */
+    private val ioDispatcher: CoroutineDispatcher = PlatformDispatcher.IO,
 ) : GraphWriterPort {
     /**
      * Backing field for the CryptoLayer used to encrypt files in paranoid mode.
@@ -231,7 +238,7 @@ class GraphWriter(
         val spanStart = dev.stapler.stelekit.performance.HistogramWriter.epochMs()
         val renameResult =
         // IO boundary: all fileSystem calls must run on PlatformDispatcher.IO on Android.
-        withContext(PlatformDispatcher.IO) {
+        withContext(ioDispatcher) {
         val oldPath = page.filePath
         if (oldPath.isNullOrBlank()) {
             logger.error("Cannot rename page with no file path: ${page.name}")
@@ -311,7 +318,7 @@ class GraphWriter(
             logger.error("Failed to write new file during rename: $newPath")
             return@withContext false
         }
-        } // end withContext(PlatformDispatcher.IO)
+        } // end withContext(ioDispatcher)
         spanEmitter?.emit(
             name = "file.rename",
             startMs = spanStart,
@@ -327,7 +334,7 @@ class GraphWriter(
         val spanStart = dev.stapler.stelekit.performance.HistogramWriter.epochMs()
         val deleteResult =
         // IO boundary: all fileSystem calls must run on PlatformDispatcher.IO on Android.
-        withContext(PlatformDispatcher.IO) {
+        withContext(ioDispatcher) {
         val path = page.filePath
         if (path.isNullOrBlank()) {
             logger.error("Cannot delete page with no file path: ${page.name}")
@@ -350,7 +357,7 @@ class GraphWriter(
             logger.error("Failed to delete page file: $path")
         }
         success
-        } // end withContext(PlatformDispatcher.IO)
+        } // end withContext(ioDispatcher)
         spanEmitter?.emit(
             name = "file.delete",
             startMs = spanStart,
@@ -380,7 +387,7 @@ class GraphWriter(
             // IO BOUNDARY: All filesystem calls below this line run on PlatformDispatcher.IO.
             // Adding any fileSystem.* call outside this withContext block will cause SAF Binder IPC
             // to block a Default dispatcher thread, reintroducing the Android insert lag.
-            withContext(PlatformDispatcher.IO) {
+            withContext(ioDispatcher) {
             // Capture cryptoLayer and graphPath once at lock entry — also used by getPageFilePath so
             // the file extension (.md.stek vs .md) is consistent with all subsequent encrypt/decrypt calls.
             val capturedCryptoLayer = cryptoLayer
@@ -585,7 +592,7 @@ class GraphWriter(
                 logger.error("Failed to write file: $filePath", e)
             }
             succeeded
-            } // end withContext(PlatformDispatcher.IO)
+            } // end withContext(ioDispatcher)
         }
 
     private fun buildMarkdown(page: Page, blocks: List<Block>): String =
@@ -632,7 +639,7 @@ class GraphWriter(
         newRelativePath: String,
     ) {
         try {
-            val content = withContext(PlatformDispatcher.IO) { fileSystem.readFile(filePath) } ?: return
+            val content = withContext(ioDispatcher) { fileSystem.readFile(filePath) } ?: return
             if (!content.contains(oldRelativePath)) return
             val escaped = Regex.escape(oldRelativePath)
             val updated = content
@@ -642,7 +649,7 @@ class GraphWriter(
                 .replace(Regex("\\[$escaped\\]")) { "[$newRelativePath]" }
             if (updated == content) return
             onPreWrite?.invoke(filePath)
-            withContext(PlatformDispatcher.IO) { fileSystem.writeFile(filePath, updated) }
+            withContext(ioDispatcher) { fileSystem.writeFile(filePath, updated) }
             onFileWritten?.invoke(filePath)
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
@@ -662,7 +669,7 @@ class GraphWriter(
         page: Page,
         newSectionId: SectionId,
         newPathPrefix: String,
-    ): Either<DomainError, Page> = withContext(PlatformDispatcher.IO) {
+    ): Either<DomainError, Page> = withContext(ioDispatcher) {
         try {
             val oldPath = page.filePath
             val capturedCryptoLayer = cryptoLayer
