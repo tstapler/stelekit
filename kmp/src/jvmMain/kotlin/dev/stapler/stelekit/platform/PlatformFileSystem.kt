@@ -2,9 +2,24 @@ package dev.stapler.stelekit.platform
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.awt.AWTKeyStroke
+import java.awt.KeyboardFocusManager
+import java.awt.event.KeyEvent
 import java.util.concurrent.CompletableFuture
 import javax.swing.JFileChooser
 import javax.swing.SwingUtilities
+
+/**
+ * Restores standard Tab/Shift+Tab focus traversal within this dialog's own component subtree.
+ * Needed because the desktop entry point (Main.kt) clears the JVM-wide default focus traversal
+ * keys so Compose's BlockEditor can own Tab/Shift+Tab — without a local override here, that empty
+ * default would propagate down into JFileChooser's Swing widgets too, breaking Tab navigation
+ * between its path field, file list, and buttons.
+ */
+internal fun JFileChooser.restoreDefaultTabTraversal() {
+    setFocusTraversalKeys(KeyboardFocusManager.FORWARD_TRAVERSAL_KEYS, setOf(AWTKeyStroke.getAWTKeyStroke(KeyEvent.VK_TAB, 0)))
+    setFocusTraversalKeys(KeyboardFocusManager.BACKWARD_TRAVERSAL_KEYS, setOf(AWTKeyStroke.getAWTKeyStroke(KeyEvent.VK_TAB, KeyEvent.SHIFT_DOWN_MASK)))
+}
 
 actual class PlatformFileSystem actual constructor() : JvmFileSystemBase(), FileSystem {
 
@@ -50,6 +65,7 @@ actual class PlatformFileSystem actual constructor() : JvmFileSystemBase(), File
         SwingUtilities.invokeLater {
             val chooser = JFileChooser()
             chooser.fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
+            chooser.restoreDefaultTabTraversal()
             val result = chooser.showOpenDialog(null)
             future.complete(if (result == JFileChooser.APPROVE_OPTION) chooser.selectedFile.absolutePath else null)
         }
@@ -84,6 +100,7 @@ actual class PlatformFileSystem actual constructor() : JvmFileSystemBase(), File
                 SwingUtilities.invokeLater {
                     val chooser = JFileChooser()
                     chooser.fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
+                    chooser.restoreDefaultTabTraversal()
                     val result = chooser.showOpenDialog(null)
                     future.complete(if (result == JFileChooser.APPROVE_OPTION) chooser.selectedFile.absolutePath else null)
                 }
@@ -113,6 +130,7 @@ actual class PlatformFileSystem actual constructor() : JvmFileSystemBase(), File
                         fileSelectionMode = JFileChooser.FILES_ONLY
                         dialogTitle = "Select SSH Key File"
                         isMultiSelectionEnabled = false
+                        restoreDefaultTabTraversal()
                     }
                     future.complete(
                         if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION)
@@ -131,6 +149,7 @@ actual class PlatformFileSystem actual constructor() : JvmFileSystemBase(), File
             SwingUtilities.invokeLater {
                 val chooser = JFileChooser()
                 chooser.selectedFile = java.io.File(getDownloadsPath(), suggestedName)
+                chooser.restoreDefaultTabTraversal()
                 val result = chooser.showSaveDialog(null)
                 future.complete(if (result == JFileChooser.APPROVE_OPTION) chooser.selectedFile.absolutePath else null)
             }

@@ -57,6 +57,16 @@ build:ci --experimental_repository_downloader_retries=5
 # (disk-cache, repository-cache, external-cache inputs) which uses GitHub Actions
 # native cache — no third-party service required.  See .github/workflows/bazel-ci.yml.
 
+# ── Vendored external repos ───────────────────────────────────────────────────
+# rules_android@0.7.1's BCR source.json lists a single download URL with no
+# mirror, and Bazel does not retry UnrecoverableHttpException (TLS/cert
+# failures) — so a cold repository-cache (e.g. after GitHub's 10GB/repo cache
+# eviction) can fail the whole build on a one-off cert blip with no fallback.
+# Vendoring it (`bazel vendor --vendor_dir=vendor --repo='@@rules_android+'`)
+# removes the network fetch for this repo entirely; re-run that command and
+# commit the result after bumping the rules_android version in MODULE.bazel.
+common --vendor_dir=vendor
+
 # ── Remote HTTP cache (bazel-cache-proxy) ─────────────────────────────────────
 # Enable with --config=remote-cache.  CI starts bazel-cache-proxy on port 9090
 # backed by the GHA cache API; all jobs on the same PR share the cache.

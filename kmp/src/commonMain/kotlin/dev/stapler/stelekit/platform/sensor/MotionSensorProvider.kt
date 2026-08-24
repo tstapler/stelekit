@@ -3,6 +3,8 @@ package dev.stapler.stelekit.platform.sensor
 import dev.stapler.stelekit.model.ImageSensorData
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Abstraction over platform motion and location sensors.
@@ -60,6 +62,19 @@ interface MotionSensorProvider {
      */
     fun stopSensing()
 }
+
+/**
+ * Snapshot the most recent sensor reading, bounded by [timeoutMs].
+ *
+ * A camera capture path must never hang waiting on sensor data. If [startSensing] was never
+ * called (or the provider is otherwise stalled), [sensorDataFlow] never emits and a bare
+ * `sensorDataFlow.firstOrNull()` would suspend forever. This returns `null` instead once
+ * [timeoutMs] elapses. Shared by both Android capture call sites
+ * ([dev.stapler.stelekit.ui.components.CameraViewfinderDialog] and [AndroidCameraProvider])
+ * so the bound can't drift between the two.
+ */
+suspend fun MotionSensorProvider.snapshotSensorData(timeoutMs: Long = 500L): ImageSensorData? =
+    withTimeoutOrNull(timeoutMs) { sensorDataFlow.firstOrNull() }
 
 /**
  * No-op motion sensor provider for JVM desktop and WASM targets.

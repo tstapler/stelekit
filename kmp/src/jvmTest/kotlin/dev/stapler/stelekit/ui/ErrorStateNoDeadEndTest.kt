@@ -54,10 +54,11 @@ class ErrorStateNoDeadEndTest {
                         blockUuid = "block-1",
                         localSuggestions = emptyList(),
                         llmSuggestions = emptyList(),
-                        llmError = errorMessage,
+                        llmStatus = dev.stapler.stelekit.tags.LlmSuggestionStatus.Failed(message = errorMessage, retryable = false),
                     ),
                     onAcceptTag = { _, _ -> },
                     onDismiss = { dismissed = true },
+                    onRetry = {},
                 )
             }
         }
@@ -89,7 +90,7 @@ class ErrorStateNoDeadEndTest {
             pageUuid = "page-1",
             pageName = "Groceries",
             filePath = "/graph/pages/groceries.md",
-            editingBlockUuid = "block-1",
+            editingBlockUuid = dev.stapler.stelekit.model.BlockUuid("block-1"),
             localContent = "- Buy milk (edited)",
             diskContent = "- Buy milk and eggs",
         )

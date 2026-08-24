@@ -21,7 +21,7 @@ object AppStateOptics {
     val onboardingCompleted: Lens<AppState, Boolean> = Lens(get = { it.onboardingCompleted }, set = { s, v -> s.copy(onboardingCompleted = v) })
     val currentScreen: Lens<AppState, Screen> = Lens(get = { it.currentScreen }, set = { s, v -> s.copy(currentScreen = v) })
     val currentPage: Lens<AppState, Page?> = Lens(get = { it.currentPage }, set = { s, v -> s.copy(currentPage = v) })
-    val currentGraphPath: Lens<AppState, String> = Lens(get = { it.currentGraphPath }, set = { s, v -> s.copy(currentGraphPath = v) })
+    val currentGraphPath: Lens<AppState, String?> = Lens(get = { it.currentGraphPath }, set = { s, v -> s.copy(currentGraphPath = v) })
     val commandPaletteVisible: Lens<AppState, Boolean> = Lens(get = { it.commandPaletteVisible }, set = { s, v -> s.copy(commandPaletteVisible = v) })
     val searchDialogVisible: Lens<AppState, Boolean> = Lens(get = { it.searchDialogVisible }, set = { s, v -> s.copy(searchDialogVisible = v) })
     val commands: Lens<AppState, List<Command>> = Lens(get = { it.commands }, set = { s, v -> s.copy(commands = v) })

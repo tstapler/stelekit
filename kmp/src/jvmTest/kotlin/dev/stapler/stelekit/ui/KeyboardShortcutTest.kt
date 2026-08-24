@@ -360,6 +360,8 @@ class KeyboardShortcutTest {
         searchResults: List<SearchResultItem> = emptyList(),
         onNewBlock: (String) -> Unit = {},
         onSplitBlock: (String, Int) -> Unit = { _, _ -> },
+        onIndent: () -> Unit = {},
+        onOutdent: () -> Unit = {},
     ) {
         BlockEditor(
             textFieldValue = textState,
@@ -382,14 +384,76 @@ class KeyboardShortcutTest {
             onSplitBlock = onSplitBlock,
             onMergeBlock = {},
             onBackspace = {},
-            onIndent = {},
-            onOutdent = {},
+            onIndent = onIndent,
+            onOutdent = onOutdent,
             onMoveUp = {},
             onMoveDown = {},
             onFocusUp = {},
             onFocusDown = {},
             modifier = Modifier.testTag("editor"),
         )
+    }
+
+    // ------------------------------------------------------------------------------------
+    // Tab / Shift+Tab indent-dedent dispatch
+    // ------------------------------------------------------------------------------------
+
+    @Test
+    fun `Shift+Tab fires onOutdent, not onIndent`() {
+        var textState by mutableStateOf(TextFieldValue("Buy milk"))
+        var indentCalled = false
+        var outdentCalled = false
+
+        composeTestRule.setContent {
+            BlockEditorHarness(
+                textState = textState,
+                onTextChanged = { textState = it },
+                onIndent = { indentCalled = true },
+                onOutdent = { outdentCalled = true },
+            )
+        }
+
+        composeTestRule.onNodeWithTag("editor").performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag("editor").performKeyInput {
+            withKeyDown(Key.ShiftLeft) {
+                keyDown(Key.Tab)
+                keyUp(Key.Tab)
+            }
+        }
+        composeTestRule.waitForIdle()
+
+        assertTrue(outdentCalled, "Shift+Tab should dedent the focused block via onOutdent")
+        assertFalse(indentCalled, "Shift+Tab must not also fire onIndent")
+    }
+
+    @Test
+    fun `Plain Tab still fires onIndent (no regression from Shift+Tab fix)`() {
+        var textState by mutableStateOf(TextFieldValue("Buy milk"))
+        var indentCalled = false
+        var outdentCalled = false
+
+        composeTestRule.setContent {
+            BlockEditorHarness(
+                textState = textState,
+                onTextChanged = { textState = it },
+                onIndent = { indentCalled = true },
+                onOutdent = { outdentCalled = true },
+            )
+        }
+
+        composeTestRule.onNodeWithTag("editor").performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag("editor").performKeyInput {
+            keyDown(Key.Tab)
+            keyUp(Key.Tab)
+        }
+        composeTestRule.waitForIdle()
+
+        assertTrue(indentCalled, "Plain Tab should still indent the focused block via onIndent")
+        assertFalse(outdentCalled, "Plain Tab must not fire onOutdent")
     }
 
     @Test

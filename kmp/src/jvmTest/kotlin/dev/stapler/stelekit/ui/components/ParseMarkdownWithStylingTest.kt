@@ -199,6 +199,17 @@ class ParseMarkdownWithStylingTest {
         assertEquals("Meeting Notes", content.substring(result[0].start, result[0].end))
     }
 
+    // Regression: link target duplicated immediately outside its own brackets. Offsets must
+    // resolve via the parser's real span, not `indexOf`, which finds the copy inside "[[abc]]".
+    @Test
+    fun pageNameAfterIdenticalWikiLink_annotationOffsetIsAfterTheLink() {
+        val content = "[[abc]]abc"
+        val result = annotatedSuggestions(content, matcher("abc"))
+        assertEquals(1, result.size)
+        assertEquals(7, result[0].start)
+        assertEquals(10, result[0].end)
+    }
+
     // ── Case-insensitivity and canonical form ─────────────────────────────────
 
     @Test
