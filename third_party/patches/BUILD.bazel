@@ -3,4 +3,5 @@ exports_files([
     "rules_android_unzip.patch",
     "rules_android_zip.patch",
     "rules_android_zip_action.patch",
+    "libsql_ffi_cargo_manifest_dir.patch",
 ])

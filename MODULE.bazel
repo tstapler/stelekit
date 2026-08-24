@@ -477,13 +477,29 @@ crate.from_cargo(
 # pre-generated bindings file that ships in the crate's own source tree
 # (bundled/bindings/bindgen.rs, or bundled/bindings/session_bindgen.rs with
 # the "session" feature) via `cp` from CARGO_MANIFEST_DIR, then compiles the
-# vendored sqlite3 amalgamation under bundled/src/. rules_rust's Cargo build
-# script sandbox only exposes files explicitly wired in — it does not expose
-# arbitrary non-.rs source-tree files by default — so without this annotation
-# the `cp` fails with "No such file or directory" and the build script panics.
+# vendored sqlite3 amalgamation under bundled/src/. Two separate fixes are
+# needed here, not one:
+#   1. build_script_data_glob exposes bundled/** to the build script's
+#      *runtime* runfiles (rules_rust's Cargo build script sandbox only wires
+#      in files explicitly declared via `data`/`compile_data`/`srcs`).
+#   2. build.rs reads CARGO_MANIFEST_DIR via the compile-time `env!()` macro,
+#      not `std::env::var()`. rules_rust's rustc.bzl sets CARGO_MANIFEST_DIR
+#      to a path scoped to the *compile* action's own sandbox instance
+#      (${pwd}-substituted at that action's execution time); `env!()` bakes
+#      that ephemeral path into the compiled build-script binary. When the
+#      binary is later executed as a separate "run" action (a different
+#      sandbox instance), that baked-in path no longer exists, so the `cp`
+#      fails with "No such file or directory" regardless of fix #1 — rules_rust
+#      only sets a *correct*, runfiles-backed CARGO_MANIFEST_DIR for the run
+#      action's environment, which env!() can never see. The patch below
+#      switches build.rs to the runtime std::env::var() lookup so it picks up
+#      that correct, run-action-scoped value (which fix #1 makes point at a
+#      runfiles tree that actually contains bundled/**).
 crate.annotation(
     crate = "libsql-ffi",
     version = "*",
     build_script_data_glob = ["bundled/**"],
+    patches = ["//third_party/patches:libsql_ffi_cargo_manifest_dir.patch"],
+    patch_args = ["-p1"],
 )
 use_repo(crate, "crates")
