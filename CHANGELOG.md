@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.74.0](https://github.com/tstapler/stelekit/compare/v0.73.0...v0.74.0) (2026-08-23)
+
+
+### Features
+
+* fix paranoid-mode DB sync gap, add git commit to settings version ([b8dcae6](https://github.com/tstapler/stelekit/commit/b8dcae6069ff8377ef44c173e42f16dff061fc92))
+* **sync:** shared event-driven rescan scheduler for Android and web ([8e8eff4](https://github.com/tstapler/stelekit/commit/8e8eff489070949393fa293cc0d6163d254fce11))
+
+
+### Bug Fixes
+
+* **android:** heal today-journal duplicate from warm-start Phase-1 race ([d38dd92](https://github.com/tstapler/stelekit/commit/d38dd92a68bd5e9ea8f59cd38dcf7db0e720f686))
+* **db:** emit write-actor invalidation after op() completes, not before ([74afc62](https://github.com/tstapler/stelekit/commit/74afc62fd5e37357cfe73880fe1ac8b2c2ac2a0e))
+* **parser:** sanitize restricted control chars instead of aborting page load ([#274](https://github.com/tstapler/stelekit/issues/274)) ([1528d06](https://github.com/tstapler/stelekit/commit/1528d06500fe52842787c367b2398000640f6fb2))
+* **test:** make DiskConflictResolutionTest rename assertion deterministic ([#277](https://github.com/tstapler/stelekit/issues/277)) ([4be9651](https://github.com/tstapler/stelekit/commit/4be9651462bb38e778e509112712f7b3280dc64b))
+* **test:** synchronize on coordinator events, not flow completion ([#276](https://github.com/tstapler/stelekit/issues/276)) ([c4bf074](https://github.com/tstapler/stelekit/commit/c4bf074d52b7242cf658386307a247ac54794981))
+
 ## [0.73.0](https://github.com/tstapler/stelekit/compare/v0.72.1...v0.73.0) (2026-08-18)
 
 
