@@ -76,6 +76,7 @@ data class StelekitViewModelDependencies(
     val activeGitSyncService: StateFlow<GitSyncService?> = MutableStateFlow(null),
     val activeGraphIdProvider: () -> String? = { null },
     val onDismissGitDetection: (suspend (graphId: String) -> Unit)? = null,
+    val onDismissBrowserOnlySyncBanner: (suspend (graphId: String) -> Unit)? = null,
     /**
      * Count of locally-dirty files not yet synced to the remote (web only — see
      * [dev.stapler.stelekit.platform.PlatformFileSystem.dirtyFileCountFlow]). When null

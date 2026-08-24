@@ -67,7 +67,7 @@ actual fun PlatformBottomBar(
                         when (item) {
                             BottomNavItem.SEARCH    -> onSearch()
                             BottomNavItem.JOURNALS  -> onNavigate(Screen.Journals)
-                            BottomNavItem.ALL_PAGES -> onNavigate(Screen.AllPages)
+                            BottomNavItem.ALL_PAGES -> onNavigate(Screen.AllPages())
                             BottomNavItem.MENU      -> onToggleSidebar()
                         }
                     },
@@ -84,7 +84,7 @@ actual fun PlatformBottomBar(
                         when (item) {
                             BottomNavItem.SEARCH    -> onSearch()
                             BottomNavItem.JOURNALS  -> onNavigate(Screen.Journals)
-                            BottomNavItem.ALL_PAGES -> onNavigate(Screen.AllPages)
+                            BottomNavItem.ALL_PAGES -> onNavigate(Screen.AllPages())
                             BottomNavItem.MENU      -> onToggleSidebar()
                         }
                     },

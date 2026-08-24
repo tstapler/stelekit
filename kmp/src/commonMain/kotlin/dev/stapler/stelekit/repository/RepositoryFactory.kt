@@ -362,7 +362,7 @@ class RepositoryFactoryImpl(
         searchRingBuffer = ringBuffer
 
         val sloChecker = if (histogramWriter != null && scope != null) {
-            SloChecker(histogramWriter, spanEmitter, scope)
+            SloChecker(histogramWriter, spanEmitter, scope, SloChecker.thresholdsFor(platform))
         } else null
 
         // Register a log sink that bridges ERROR logs into spans

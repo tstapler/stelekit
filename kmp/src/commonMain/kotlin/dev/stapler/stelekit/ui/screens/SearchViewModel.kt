@@ -256,7 +256,11 @@ class SearchViewModel(
                                 it is SearchResultItem.PageItem &&
                                     it.page.name.equals(query, ignoreCase = true)
                             }
-                            val withCreate = if (!exactPageMatch && query.isNotBlank() && !searchResult.hasMore) {
+                            // Page search always completes before this point (block search is what
+                            // drives hasMore) — gating on !hasMore delayed this until block search
+                            // also finished, so the row popped in and reflowed the list after the
+                            // user had already started tapping the (until-then) top item.
+                            val withCreate = if (!exactPageMatch && query.isNotBlank()) {
                                 listOf(SearchResultItem.CreatePageItem(query)) + items
                             } else {
                                 items

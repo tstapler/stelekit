@@ -13,6 +13,10 @@ fdroid/.venv/
 /bazel-*
 /.bazel/
 
+# bazel vendor's machine-local symlink into the repo cache — everything else
+# under /vendor (VENDOR.bazel, the marker files, vendored repo sources) is committed.
+/vendor/bazel-external
+
 # --------------------
 # Gradle
 # --------------------

@@ -122,7 +122,7 @@ class BottomNavScreenshotTest {
 
     @Test
     fun bottomNav_rendersWithoutCrashing_whenCurrentScreenIsAllPages() {
-        renderBottomNav(currentScreen = Screen.AllPages)
+        renderBottomNav(currentScreen = Screen.AllPages())
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithText("Pages").assertIsDisplayed()
         composeTestRule.onNodeWithText("Search").assertIsDisplayed()
@@ -151,7 +151,7 @@ class BottomNavScreenshotTest {
 
     @Test
     fun bottomNav_screenshot_light_pagesSelected() {
-        renderBottomNav(currentScreen = Screen.AllPages, themeMode = StelekitThemeMode.LIGHT)
+        renderBottomNav(currentScreen = Screen.AllPages(), themeMode = StelekitThemeMode.LIGHT)
         composeTestRule.waitForIdle()
         composeTestRule.onRoot()
             .captureRoboImage("build/outputs/roborazzi/bottom_nav_light_pages.png")

@@ -175,6 +175,17 @@ class CaptureActivity : ComponentActivity() {
         private const val PREFS_NAME = "stelekit_capture_prefs"
         private const val KEY_TILE_PROMPTED = "pref_tile_prompt_shown"
 
+        // Compiled once — Regex construction is not free, and this runs on every share intent.
+        //
+        // KNOWN LIMITATION (see project_plans/android-share-capture-whitespace/implementation/
+        // plan.md "Scope Decision"): this collapses leading indentation too, with no
+        // line-position exemption. If a captured block's raw content is ever re-parsed through
+        // MarkdownPreprocessor/OutlinerPipeline, embedded list nesting inside shared text will
+        // not survive. Deliberate, deferred tradeoff — not yet verified against real re-parse
+        // paths.
+        private val SPACE_TAB_RUN = Regex("[ \t]{2,}")
+        private val BLANK_LINE_RUN = Regex("\n[ \t]*(?:\n[ \t]*)+")
+
         /**
          * Combines share intent text sources into a single string.
          *
@@ -193,11 +204,25 @@ class CaptureActivity : ComponentActivity() {
                 ?: extraText?.takeIf { it.isNotBlank() }
                 ?: ""
             val title = subject?.takeIf { it.isNotBlank() }
-            return when {
-                title != null && body.isNotBlank() && title != body -> "$title\n$body"
-                body.isNotBlank() -> body
-                else -> title ?: ""
-            }
+            return normalizeShareWhitespace(
+                when {
+                    title != null && body.isNotBlank() && title != body -> "$title\n$body"
+                    body.isNotBlank() -> body
+                    else -> title ?: ""
+                }
+            )
+        }
+
+        /**
+         * Normalizes whitespace artifacts common in browser/HTML-aware share payloads.
+         * Order is fixed: unify line endings -> normalize NBSP -> collapse space/tab runs ->
+         * collapse blank-line runs. A single `\n` between two content lines is left untouched.
+         */
+        internal fun normalizeShareWhitespace(text: String): String {
+            val unifiedLineEndings = text.replace("\r\n", "\n").replace('\r', '\n')
+            val nbspNormalized = unifiedLineEndings.replace('\u00A0', ' ')
+            val spacesCollapsed = nbspNormalized.replace(SPACE_TAB_RUN, " ")
+            return spacesCollapsed.replace(BLANK_LINE_RUN, "\n\n")
         }
     }
 }

@@ -98,6 +98,7 @@ class TagInsertionFlagshipUiTest : ComposeUITestBase() {
                         blockStateManager.appendToBlock(BlockUuid(uuid), " [[$term]]")
                     },
                     onDismiss = { tagSuggestionViewModel.dismiss() },
+                    onRetry = { tagSuggestionViewModel.retryLastRequest() },
                 )
             }
         }

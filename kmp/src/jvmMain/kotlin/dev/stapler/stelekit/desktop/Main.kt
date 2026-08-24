@@ -30,6 +30,7 @@ import dev.stapler.stelekit.performance.OtelExporterConfig
 import dev.stapler.stelekit.performance.OtelLogSink
 import dev.stapler.stelekit.performance.OtelSpanRecorder
 import io.opentelemetry.api.trace.Tracer
+import java.awt.KeyboardFocusManager
 import javax.swing.UIManager
 
 fun main() {
@@ -61,6 +62,19 @@ fun main() {
     val logger = Logger("DesktopMain")
     logger.info("Log file: ${dev.stapler.stelekit.logging.FileLogSink.currentLogPath()}")
     
+    // AWT's default KeyboardFocusManager treats Tab/Shift+Tab as forward/backward focus
+    // traversal keys and consumes them before they ever reach a component's key listeners.
+    // Compose owns all Tab/Shift+Tab handling itself (BlockEditor's onPreviewKeyEvent), so
+    // clearing the default traversal keystrokes lets both reach Compose uninterrupted. This
+    // is JVM-wide, so the standalone JFileChooser dialogs (PlatformFileSystem.kt,
+    // DesktopFilePicker.kt) explicitly restore their own local Tab/Shift+Tab traversal keys
+    // via JFileChooser.restoreDefaultTabTraversal() — otherwise they'd inherit this empty
+    // default too and lose Tab navigation between their fields/list/buttons.
+    KeyboardFocusManager.getCurrentKeyboardFocusManager()
+        .setDefaultFocusTraversalKeys(KeyboardFocusManager.FORWARD_TRAVERSAL_KEYS, emptySet())
+    KeyboardFocusManager.getCurrentKeyboardFocusManager()
+        .setDefaultFocusTraversalKeys(KeyboardFocusManager.BACKWARD_TRAVERSAL_KEYS, emptySet())
+
     application {
         try {
             val defaults = UIManager.getDefaults()
