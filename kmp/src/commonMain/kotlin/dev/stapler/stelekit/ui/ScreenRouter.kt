@@ -110,7 +110,7 @@ internal fun ScreenRouter(
         FatalErrorScreen(
             message = appState.fatalError,
             onDismiss = { viewModel.clearFatalError() },
-            onRetry = { viewModel.loadGraph(appState.currentGraphPath) },
+            onRetry = { viewModel.loadGraph(appState.currentGraphPath.orEmpty()) },
         )
         return
     }
@@ -153,7 +153,7 @@ internal fun ScreenRouter(
                 blockRepository = repos.blockRepository,
                 pageRepository = repos.pageRepository,
                 blockStateManager = blockStateManager,
-                currentGraphPath = appState.currentGraphPath,
+                currentGraphPath = appState.currentGraphPath.orEmpty(),
                 onToggleFavorite = { viewModel.toggleFavorite(it) },
                 onRefresh = { viewModel.refreshCurrentPage() },
                 onLinkClick = { viewModel.navigateToPageByName(it) },
@@ -175,7 +175,7 @@ internal fun ScreenRouter(
                 viewModel = journalsViewModel,
                 isDebugMode = appState.isDebugMode,
                 onLinkClick = { viewModel.navigateToPageByName(it) },
-                graphPath = appState.currentGraphPath,
+                graphPath = appState.currentGraphPath.orEmpty(),
                 searchViewModel = searchViewModel,
                 onSearchPages = { query -> viewModel.searchPages(query) },
                 suggestionMatcher = suggestionMatcher,
@@ -245,12 +245,12 @@ internal fun ScreenRouter(
                 pageRepository = repos.pageRepository,
                 blockRepository = repos.blockRepository,
                 writeActor = repos.writeActor,
-                graphPath = appState.currentGraphPath,
+                graphPath = appState.currentGraphPath.orEmpty(),
                 suggestionMatcher = suggestionMatcher,
                 onNavigateTo = { viewModel.navigateTo(it) },
             )
             is Screen.Import -> {
-                val graphPath = appState.currentGraphPath
+                val graphPath = appState.currentGraphPath.orEmpty()
                 val importViewModel = remember(graphPath) {
                     dev.stapler.stelekit.ui.screens.ImportViewModel(
                         pageRepository = repos.pageRepository,
@@ -360,7 +360,7 @@ internal fun ScreenRouter(
                         imageAnnotationRepository = repos.imageAnnotationRepository,
                         blockRepository = repos.blockRepository,
                         writeActor = repos.writeActor,
-                        graphPath = appState.currentGraphPath,
+                        graphPath = appState.currentGraphPath.orEmpty(),
                     )
                 }
                 val annotateScope = rememberCoroutineScope()

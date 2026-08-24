@@ -183,7 +183,7 @@ class DeviceProfileTest {
 
         vm.completeDeviceSetup("acme-work", states)
 
-        assertEquals("acme-work", vm.uiState.value.defaultSection)
+        assertEquals(SectionId.Named("acme-work"), vm.uiState.value.defaultSection)
         assertEquals(SectionState.ACTIVE, vm.uiState.value.currentSectionStates["acme-work"])
         assertEquals(SectionState.REMOVED, vm.uiState.value.currentSectionStates["personal"])
         assertEquals(SectionState.REMOVED, vm.uiState.value.currentSectionStates["health"])
@@ -222,7 +222,7 @@ class DeviceProfileTest {
 
         vm.completeDeviceSetup("", sections.associate { it.id to SectionState.ACTIVE })
 
-        assertEquals("", vm.uiState.value.defaultSection)
+        assertEquals(SectionId.Global, vm.uiState.value.defaultSection)
         sections.forEach { s ->
             assertEquals(SectionState.ACTIVE, vm.uiState.value.currentSectionStates[s.id],
                 "${s.id} must be ACTIVE")

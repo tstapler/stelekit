@@ -129,7 +129,7 @@ private fun dev.stapler.stelekit.db.Git_config.toGitConfig() =
     dev.stapler.stelekit.git.model.GitConfig(
         graphId = graph_id,
         repoRoot = repo_root,
-        wikiSubdir = wiki_subdir,
+        wikiSubdir = wiki_subdir.ifEmpty { null },
         remoteName = remote_name,
         remoteBranch = remote_branch,
         authType = runCatching {

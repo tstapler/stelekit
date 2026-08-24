@@ -115,6 +115,21 @@ class HostDirectorySyncReconciliationTest {
         scope = scope,
     )
 
+    // scheduleHostWriteThrough enqueues into hostWritePending inside its own scope.launch (see
+    // HostDirectorySync.scheduleHostWriteThrough's doc comment) — genuinely async against `sync`'s
+    // real Dispatchers.Default scope here, not the virtual test dispatcher runTest uses for this
+    // function's own body. Mirrors the awaitCondition pattern already established in
+    // HostDirectorySyncWriteThroughTest.kt / PlatformFileSystemHostSyncDelegationTest.kt /
+    // HostDirectorySyncMigrationReconciliationTest.kt for this exact race, rather than asserting
+    // synchronously right after runHostReconciliation/connectHostDirectory returns.
+    private suspend fun awaitCondition(timeoutMs: Long = 2000, stepMs: Long = 10, block: () -> Boolean) {
+        var waited = 0L
+        while (!block() && waited < timeoutMs) {
+            withContext(Dispatchers.Default) { delay(stepMs) }
+            waited += stepMs
+        }
+    }
+
     // ── connectHostDirectory (Story 3.1.1, Critical Finding) ───────────────────────────────────
 
     @Test
@@ -221,7 +236,7 @@ class HostDirectorySyncReconciliationTest {
         )
 
         val onHostConflictCalls = mutableListOf<Pair<String, String>>()
-        sync.onHostConflict = { path, content -> onHostConflictCalls += path to content }
+        sync.onHostConflict = { path, content -> onHostConflictCalls += path.value to content }
 
         val summary = sync.runHostReconciliation(host, opfsPath)
 
@@ -232,13 +247,54 @@ class HostDirectorySyncReconciliationTest {
         // A.md: untouched.
         assertEquals("same", cache.textStore["$opfsPath/pages/A.md"])
         // B.md: exactly one conflict callback, cache not silently overwritten.
-        assertEquals(listOf("pages/B.md" to "host new version"), onHostConflictCalls)
         assertEquals("old version", cache.textStore["$opfsPath/pages/B.md"])
-        // C.md: imported into cache and scheduled for an OPFS mirror write.
+        // C.md: imported into cache and scheduled for an OPFS mirror write. HostOnlyNew also
+        // invokes onHostConflict (see HostDirectorySync.runHostReconciliation's "a host-only file
+        // is new to the app's DB too" comment) so the DB/UI learns about it — the same callback
+        // HostChangedConflict uses, so both B.md and C.md appear here, in host-walk order.
+        assertEquals(
+            listOf("$opfsPath/pages/B.md" to "host new version", "$opfsPath/pages/C.md" to "new content"),
+            onHostConflictCalls,
+        )
         assertEquals("new content", cache.textStore["$opfsPath/pages/C.md"])
         assertTrue(cache.mirrorWrites.contains("$opfsPath/pages/C.md" to "new content"))
         // D.md: appears in hostWritePending.
+        awaitCondition { sync.hostWritePending.containsKey("pages/D.md") }
         assertTrue(sync.hostWritePending.containsKey("pages/D.md"))
+        testScope.cancel()
+    }
+
+    // Regression test for the bug reported against the "All Pages" screen: journal pages synced
+    // via HostDirectorySync appeared to never receive host-side edits because onHostConflict was
+    // stripping the opfsPath prefix, handing GraphLoader's `path.contains("/journals/")` idiom
+    // (used throughout GraphLoader.kt/MarkdownPageParser.kt) a graph-root-relative path instead of
+    // the full graph-rooted path it requires — silently mis-classifying every journal conflict as
+    // an ordinary page. Must fail against the pre-fix `onHostConflict(path.removePrefix(...))`
+    // call, since the relative form "journals/2026_08_12.md" does not contain "/journals/".
+    @Test
+    fun runHostReconciliation_should_PreserveFullGraphRootedPath_When_HostChangedConflictIsUnderJournalsDirectory() = runTest {
+        val opfsPath = "/stelekit/g"
+        val cache = FakeCacheAccess()
+        cache.textStore["$opfsPath/journals/2026_08_12.md"] = "browser draft for today"
+        val testScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val sync = newSync("g", cache, testScope)
+
+        val host = rootDir(Dir("journals", listOf(TextFile("2026_08_12.md", "host-side edit"))))
+
+        val onHostConflictCalls = mutableListOf<Pair<String, String>>()
+        sync.onHostConflict = { path, content -> onHostConflictCalls += path.value to content }
+
+        sync.runHostReconciliation(host, opfsPath)
+
+        assertEquals(1, onHostConflictCalls.size)
+        val (conflictPath, conflictContent) = onHostConflictCalls.single()
+        assertEquals("$opfsPath/journals/2026_08_12.md", conflictPath)
+        assertTrue(
+            conflictPath.contains("/journals/"),
+            "onHostConflict must receive a graph-rooted path so GraphLoader's journal-detection " +
+                "idiom still matches — got $conflictPath",
+        )
+        assertEquals("host-side edit", conflictContent)
         testScope.cancel()
     }
 
@@ -254,7 +310,7 @@ class HostDirectorySyncReconciliationTest {
         val host = rootDir(Dir("pages", listOf(BytesFile("Secret.md.stek", hostBytes))))
 
         val onHostConflictCalls = mutableListOf<Pair<String, String>>()
-        sync.onHostConflict = { path, content -> onHostConflictCalls += path to content }
+        sync.onHostConflict = { path, content -> onHostConflictCalls += path.value to content }
 
         val summary = sync.runHostReconciliation(host, opfsPath)
 
@@ -285,6 +341,7 @@ class HostDirectorySyncReconciliationTest {
         val summary = sync.runHostReconciliation(emptyRootDir(), opfsPath)
 
         assertEquals(2, summary.browserOnlyNeedsPush)
+        awaitCondition { sync.hostWritePending.containsKey("pages/OnlyA.md") && sync.hostWritePending.containsKey("pages/OnlyB.md") }
         assertTrue(sync.hostWritePending.containsKey("pages/OnlyA.md"))
         assertTrue(sync.hostWritePending.containsKey("pages/OnlyB.md"))
         assertFalse(sync.hostWritePending.containsKey("pages/Unrelated.md"))
@@ -401,12 +458,12 @@ class HostDirectorySyncReconciliationTest {
         val host = rootDir(Dir("pages", listOf(TextFile("Foo.md", "host version"))))
         var callCount = 0
         var lastArgs: Pair<String, String>? = null
-        sync.onHostConflict = { path, content -> callCount++; lastArgs = path to content }
+        sync.onHostConflict = { path, content -> callCount++; lastArgs = path.value to content }
 
         sync.runHostReconciliation(host, opfsPath)
 
         assertEquals(1, callCount)
-        assertEquals("pages/Foo.md" to "host version", lastArgs)
+        assertEquals("$opfsPath/pages/Foo.md" to "host version", lastArgs)
         // Never overwritten.
         assertEquals("browser version", cache.textStore["$opfsPath/pages/Foo.md"])
         testScope.cancel()
@@ -445,6 +502,7 @@ class HostDirectorySyncReconciliationTest {
         val summary = sync.runHostReconciliation(emptyRootDir(), opfsPath)
 
         assertEquals(1, summary.browserOnlyNeedsPush)
+        awaitCondition { sync.hostWritePending.containsKey("pages/Draft.md") }
         val entry = sync.hostWritePending["pages/Draft.md"]
         assertNotNull(entry)
         assertEquals(DirtyOp.WRITE, entry.op)
@@ -514,6 +572,7 @@ class HostDirectorySyncReconciliationTest {
 
         sync.runHostReconciliation(emptyRootDir(), opfsPath)
 
+        awaitCondition { sync.hostWritePending.containsKey("pages/Draft.md") }
         assertTrue(sync.hostWritePending.containsKey("pages/Draft.md"))
         testScope.cancel()
     }
@@ -570,7 +629,7 @@ class HostDirectorySyncReconciliationTest {
         sync.lookupPersistedHandle = { host to opfsPath }
 
         val onHostConflictCalls = mutableListOf<Pair<String, String>>()
-        sync.onHostConflict = { path, content -> onHostConflictCalls += path to content }
+        sync.onHostConflict = { path, content -> onHostConflictCalls += path.value to content }
 
         val state = sync.reconnectHostDirectory("g")
         assertEquals(HostAccessState.Granted, state)
@@ -581,7 +640,7 @@ class HostDirectorySyncReconciliationTest {
         // already proves — onHostConflict invoked exactly once, cache never silently overwritten —
         // now proven identically for the silent-resume entry point (Blocker 3's core claim: both
         // entry points share this data-loss protection, not just the one-time connect flow).
-        assertEquals(listOf("pages/B.md" to "host new version"), onHostConflictCalls)
+        assertEquals(listOf("$opfsPath/pages/B.md" to "host new version"), onHostConflictCalls)
         assertEquals("old version", cache.textStore["$opfsPath/pages/B.md"])
         testScope.cancel()
     }

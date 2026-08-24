@@ -1,5 +1,58 @@
 # Changelog
 
+## [0.73.0](https://github.com/tstapler/stelekit/compare/v0.72.1...v0.73.0) (2026-08-18)
+
+
+### Features
+
+* **slo:** add platform-aware disk-IO thresholds and span instrumentation ([676211e](https://github.com/tstapler/stelekit/commit/676211e02d3ed41440557190b1b4f23267767669))
+
+
+### Bug Fixes
+
+* **bazel:** grant common_test_fixtures friend access to jvm_main_lib ([#272](https://github.com/tstapler/stelekit/issues/272)) ([671eccd](https://github.com/tstapler/stelekit/commit/671eccdd8117210a483d1417abb86f4305a358b3))
+* **bazel:** use python3 instead of sed for unxcfg.h patch in MODULE.bazel ([936759b](https://github.com/tstapler/stelekit/commit/936759b68a7538856cfe1206900bfd57e4837316))
+* **bazel:** vendor rules_android to remove CI network fetch flakiness ([0093858](https://github.com/tstapler/stelekit/commit/0093858263ef71cb5f3b26104cd2361e90665217))
+* **git:** always encode GitRefUpdateRequest.force ([c41310f](https://github.com/tstapler/stelekit/commit/c41310f1613593abb3739442da340199181b85f9))
+* **sync:** enforce graph-rooted paths in HostDirectorySync via GraphRootedPath ([2f19507](https://github.com/tstapler/stelekit/commit/2f195073210a509bc6557ad1ae5bd25acf5ad82f))
+* **sync:** preserve existing updatedAt when file mtime is unresolved ([43912e3](https://github.com/tstapler/stelekit/commit/43912e315bac4f0bce5a84aecca3c2f73afe39f1))
+* **sync:** re-poll host path after own-write suppression clears ([#271](https://github.com/tstapler/stelekit/issues/271)) ([79724e1](https://github.com/tstapler/stelekit/commit/79724e1f812ff651d3542eb1d3adb2421ed35896))
+* **ui:** show full timestamp in All Pages modified/created columns ([f9e6acf](https://github.com/tstapler/stelekit/commit/f9e6acf2ad462aee06aed339d831b7c42c16859b))
+* **web:** propagate FileSystemObserver errors instead of swallowing them ([c64a874](https://github.com/tstapler/stelekit/commit/c64a874ed13b17735965bfef7c20b37ddbb4da5e))
+* **web:** show host-directory connection status in graph switcher ([6f86a1e](https://github.com/tstapler/stelekit/commit/6f86a1e5241a50801f0f1feff0762d7ffa90279a))
+* **web:** skip dotfiles/dot-dirs during host-directory walks, notify DB on host-only-new files ([6cdf224](https://github.com/tstapler/stelekit/commit/6cdf224653f080c56c05a567c6c855c3d5f79d40))
+* **web:** surface local-folder picker errors and cross-tab OPFS lock contention ([44f5134](https://github.com/tstapler/stelekit/commit/44f51343637c723e0a9ef757aa18e4e5c626b6da))
+
+## [0.72.1](https://github.com/tstapler/stelekit/compare/v0.72.0...v0.72.1) (2026-08-11)
+
+
+### Bug Fixes
+
+* **android:** normalize whitespace artifacts in share-capture text ([#269](https://github.com/tstapler/stelekit/issues/269)) ([e9a82d9](https://github.com/tstapler/stelekit/commit/e9a82d9a5cfb48819aae33eb1e96f64ce58d3a71))
+* **demo-graph:** wire effectiveFileSystem into all demo-graph consumers ([fb89b2b](https://github.com/tstapler/stelekit/commit/fb89b2ba873ec72867c4d29d3ce18e77b298190f))
+* **sync:** persist off-page host-directory changes to DB immediately ([9824a1c](https://github.com/tstapler/stelekit/commit/9824a1cd7b1b75d155e62eff3191b961f81988e6))
+* **types:** replace empty-string sentinels with nullable types for absence ([6cd7490](https://github.com/tstapler/stelekit/commit/6cd7490f0159728529c68585c6c8ae8f0c413ffc))
+* **ui:** make DiskConflict.editingBlockUuid null instead of a "" sentinel ([e54ecc3](https://github.com/tstapler/stelekit/commit/e54ecc385233962574d333e9c43958c457036ed3))
+* **web:** show real app version instead of hardcoded "dev" ([785f4c2](https://github.com/tstapler/stelekit/commit/785f4c26c12ce6e1b2ea8464ee54a219b1f31afa))
+
+## [0.72.0](https://github.com/tstapler/stelekit/compare/v0.71.5...v0.72.0) (2026-08-10)
+
+
+### Features
+
+* **graphs:** support moving a graph's folder, fix host-reconnect + wasmjs CI ([#261](https://github.com/tstapler/stelekit/issues/261)) ([0fb66b1](https://github.com/tstapler/stelekit/commit/0fb66b1a74c85be56990d1c58080ddf3742c013b))
+* **host-sync:** add prominent banner for silent folder permission loss ([d966138](https://github.com/tstapler/stelekit/commit/d96613861b2d873a036e0d33edf660594f36d9f4))
+
+
+### Bug Fixes
+
+* **host-sync:** auto-apply host file changes for pages not currently open ([6683ab5](https://github.com/tstapler/stelekit/commit/6683ab5f7059b563a6a46e23b515fd6cf7b57edd))
+* **host-sync:** buffer host-conflict callbacks lost to startup race ([ea4deea](https://github.com/tstapler/stelekit/commit/ea4deeab45c21ea9e4de76f4b6ffe425d416087b))
+* **parser:** detect bulleted headings and other block constructs correctly ([#260](https://github.com/tstapler/stelekit/issues/260)) ([b9376b2](https://github.com/tstapler/stelekit/commit/b9376b2b1986ec42b5fc02dcf39869c91c744f4d))
+* **tags:** auto-resolve on-device LLM tag suggestions that freeze on Downloading... ([#262](https://github.com/tstapler/stelekit/issues/262)) ([1d0fdfa](https://github.com/tstapler/stelekit/commit/1d0fdfae6c43a900801fcc197e42fb2bc9219391))
+* **tests:** move JVM-only transfer tests out of commonTest to unblock wasmJs compilation ([01d39d3](https://github.com/tstapler/stelekit/commit/01d39d345314f21337352eec1018667490a8664d))
+* **ui,sync:** reconcile stale pendingConflicts entries and retry stuck host writes ([7abb2da](https://github.com/tstapler/stelekit/commit/7abb2daf5eae190fd45e84a5f7efca84f6177c2f))
+
 ## [0.71.5](https://github.com/tstapler/stelekit/compare/v0.71.4...v0.71.5) (2026-07-24)
 
 

@@ -9,6 +9,26 @@ import kotlinx.coroutines.await
 // js() calls must be top-level functions in Kotlin/Wasm — not inside a class or companion object.
 
 /**
+ * Test-observation hook for the [HostDirectorySync] startup-ordering race fix
+ * (buffer-then-flush pattern, see `HostDirectorySync.onHostConflict`/`flushPendingHostConflicts`).
+ * Mirrors the buffer's live size onto `window.__stelekit_pending_host_conflicts` so an e2e spec
+ * can poll it during boot and observe it rise above zero (conflicts arriving before `App.kt`
+ * wires the real callback) and then drop back to zero (the flush replaying them) — the exact
+ * sequence the fix guarantees but that boot logs alone don't distinguish from "no conflicts ever
+ * buffered."
+ */
+internal fun mirrorPendingHostConflictCount(count: Int): Unit = js("window.__stelekit_pending_host_conflicts = count")
+
+/**
+ * Bytes-aware sibling of [mirrorPendingHostConflictCount] for `HostDirectorySync.onHostBytesConflict`/
+ * `flushPendingHostBytesConflicts` (`.md.stek` paranoid-mode `HostOnlyNew` notifications). Kept as
+ * a separate `window.__stelekit_pending_host_bytes_conflicts` global rather than folding into the
+ * plaintext counter so an e2e spec asserting on one mechanism isn't perturbed by unrelated traffic
+ * on the other.
+ */
+internal fun mirrorPendingHostBytesConflictCount(count: Int): Unit = js("window.__stelekit_pending_host_bytes_conflicts = count")
+
+/**
  * `web-local-folder-livesync` (Epic 1.5) browser interop primitives — IndexedDB
  * `FileSystemDirectoryHandle` persistence, `queryPermission()`/`requestPermission()`, the
  * `FileSystemObserver` construction/observe surface, `File.lastModified`/`size` accessors, the
@@ -127,13 +147,7 @@ private fun observePromise(observer: JsAny, handle: JsAny, recursive: Boolean): 
     js("observer.observe(handle, { recursive: recursive })")
 
 internal suspend fun observeHandle(observer: JsAny, handle: JsAny, recursive: Boolean = true) {
-    try {
-        observePromise(observer, handle, recursive).await()
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Throwable) {
-        println("[SteleKit] FileSystemObserver.observe failed: ${e.message}")
-    }
+    observePromise(observer, handle, recursive).await<JsAny>()
 }
 
 internal fun changeRecordType(record: JsAny): String = js("record.type")

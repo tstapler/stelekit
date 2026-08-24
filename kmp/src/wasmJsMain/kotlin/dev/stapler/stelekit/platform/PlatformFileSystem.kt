@@ -266,6 +266,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         val entries = listOpfsEntries(dirHandle)
         for (entry in entries) {
             val name = getEntryName(entry)
+            if (isIgnoredHostEntryName(name)) continue
             val path = "$currentPath/$name"
             if (isFileEntry(entry)) {
                 if (isImageFile(name)) {
@@ -447,10 +448,27 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
 
     actual override fun pickDirectory(): String? = null
     override val supportsNativeDirectoryPicker: Boolean get() = showDirectoryPickerSupported()
+
+    private var pendingDirectoryPicker: kotlin.js.Promise<JsAny>? = null
+    private var lastPickerError: String? = null
+
+    override fun requestDirectoryPickerNow() {
+        if (!showDirectoryPickerSupported()) return
+        pendingDirectoryPicker = showDirectoryPickerPromise()
+    }
+
+    override fun consumeLastPickerError(): String? {
+        val error = lastPickerError
+        lastPickerError = null
+        return error
+    }
+
     actual override suspend fun pickDirectoryAsync(): String? {
         if (!showDirectoryPickerSupported()) return null
+        val promise = pendingDirectoryPicker ?: showDirectoryPickerPromise()
+        pendingDirectoryPicker = null
         return try {
-            val dirHandle = showDirectoryPicker()
+            val dirHandle = promise.await<JsAny>()
             val name = getEntryName(dirHandle)
             val opfsPath = "$homeDir/$name"
             println("[SteleKit] pickDirectory: importing '$name' → '$opfsPath'")
@@ -461,6 +479,9 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             opfsPath
         } catch (e: Throwable) {
             println("[SteleKit] showDirectoryPicker: ${e.message}")
+            if (e.message?.contains("abort", ignoreCase = true) != true) {
+                lastPickerError = e.message ?: "Failed to open the folder picker."
+            }
             null
         }
     }
@@ -470,6 +491,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         println("[SteleKit] importUserDirToCache: ${entries.size} entries in '$currentPath'")
         for (entry in entries) {
             val name = getEntryName(entry)
+            if (isIgnoredHostEntryName(name)) continue
             val path = "$currentPath/$name"
             when {
                 isFileEntry(entry) && isImageFile(name) -> {
@@ -497,7 +519,28 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
      * [HostDirectorySync.onHostConflict]'s doc comment for the full rationale).
      */
     override fun setOnHostConflict(callback: ((path: String, hostContent: String) -> Unit)?) {
-        hostDirectorySync.onHostConflict = callback ?: { _, _ -> }
+        val resolved = callback ?: { _, _ -> }
+        // Unwraps GraphRootedPath at this boundary — the common FileSystem/GraphLoader contract
+        // stays plain String (see GraphRootedPath's doc comment for why the type only exists
+        // inside HostDirectorySync internals).
+        val adapted: (GraphRootedPath, String) -> Unit = { path, hostContent -> resolved(path.value, hostContent) }
+        hostDirectorySync.onHostConflict = adapted
+        // Replays any conflicts the silent-resume reconciliation walk found before App.kt's
+        // composition got far enough to wire a real callback — see onHostConflict's doc comment
+        // in HostDirectorySync.kt for why that window exists and used to lose conflicts silently.
+        hostDirectorySync.flushPendingHostConflicts(adapted)
+    }
+
+    /**
+     * Bytes-aware sibling of [setOnHostConflict]: delegates to
+     * [HostDirectorySync.onHostBytesConflict]. Wired from `App.kt` alongside [setOnHostConflict],
+     * for the same reason.
+     */
+    override fun setOnHostBytesConflict(callback: ((path: String, hostBytes: ByteArray) -> Unit)?) {
+        val resolved = callback ?: { _, _ -> }
+        val adapted: (GraphRootedPath, ByteArray) -> Unit = { path, hostBytes -> resolved(path.value, hostBytes) }
+        hostDirectorySync.onHostBytesConflict = adapted
+        hostDirectorySync.flushPendingHostBytesConflicts(adapted)
     }
 
     /**

@@ -66,7 +66,15 @@ class HostDirectorySyncReconciliationBenchmarkTest {
         // Chrome/CI-runner variance, while still being tight enough to catch a real regression
         // (e.g. the pre-filter silently being bypassed, which would blow the steady-state budget
         // by roughly the first-pass budget).
-        val FIRST_PASS_BUDGET = 8.seconds
+        //
+        // FIRST_PASS_BUDGET measured, real-browser (headless Chrome via wasmJsBrowserTest, this
+        // dev machine): 8.47s and 11.11s across two consecutive runs, both already over the
+        // previous 8s placeholder — confirming the class doc comment's own "PLACEHOLDER, needs
+        // real-browser confirmation" note. No production hot-path code changed in this area (only
+        // an unrelated field-assignment fix outside runHostReconciliation's per-file walk), so this
+        // is a threshold recalibration, not a regression being papered over. 15s keeps headroom
+        // above the worst observed run instead of sitting right at the boundary.
+        val FIRST_PASS_BUDGET = 15.seconds
         val STEADY_STATE_BUDGET = 1.seconds
     }
 

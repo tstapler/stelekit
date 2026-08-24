@@ -17,6 +17,25 @@ interface FileSystem {
     fun pickDirectory(): String?
     val supportsNativeDirectoryPicker: Boolean get() = true
     suspend fun pickDirectoryAsync(): String? = pickDirectory()
+
+    /**
+     * Synchronously kicks off the native directory picker so the platform call happens inside the
+     * caller's click-handler call stack rather than after a `scope.launch` dispatch. Must be called
+     * directly from a Compose `onClick` before any `scope.launch { pickDirectoryAsync() }` — on the
+     * wasmJs actual, deferring `window.showDirectoryPicker()` past the click's synchronous stack
+     * risks losing the browser's "transient user activation" and failing with `SecurityError`.
+     * No-op on every platform except the wasmJs actual, which is the only one with this constraint.
+     */
+    fun requestDirectoryPickerNow() { /* no-op */ }
+
+    /**
+     * Returns (and clears) the message from the last [pickDirectoryAsync] failure that was NOT a
+     * user cancellation, or null if the last attempt was cancelled/succeeded/hasn't run. Lets
+     * callers distinguish "user closed the picker" (show nothing) from a real failure (surface it)
+     * without changing [pickDirectoryAsync]'s existing null-on-any-failure return contract.
+     * No-op on every platform except the wasmJs actual.
+     */
+    fun consumeLastPickerError(): String? = null
     fun getLastModifiedTime(path: String): Long?
 
     /**
@@ -119,6 +138,13 @@ interface FileSystem {
      */
     fun setOnFlushFailed(callback: (suspend (String) -> Unit)?) {}
 
+    /**
+     * Registers the [dev.stapler.stelekit.performance.SpanEmitter] used to emit a
+     * "file.write.deferred" span for each write-behind SAF flush, feeding the disk-IO SLO
+     * ([dev.stapler.stelekit.performance.SloChecker]). No-op on platforms without write-behind.
+     */
+    fun setSpanEmitter(spanEmitter: dev.stapler.stelekit.performance.SpanEmitter?) {}
+
     /** Updates the shadow copy after a SAF write. No-op on non-SAF file systems. */
     fun updateShadow(path: String, content: String) { /* no-op */ }
 
@@ -154,16 +180,30 @@ interface FileSystem {
 
     /**
      * Registers a callback invoked when the web-local-folder-livesync reconciliation pass
-     * (`HostDirectorySync.runHostReconciliation`, Epic 3.2) classifies a path as
-     * `ReconciliationOutcome.HostChangedConflict` — `(repoRelativePath, hostContent) -> Unit`.
-     * Wired from `App.kt` to `graphLoader::emitExternalFileChange` at the same point the existing
-     * write-behind flush callbacks (`setOnFlushPreWrite`/`setOnFlushComplete`/`setOnFlushFailed`)
-     * are wired, so `HostDirectorySync`/`PlatformFileSystem` never import `GraphLoader` directly
-     * (architecture-review.md Blocker 1's independence goal — matches the precedent those three
-     * callbacks already established). No-op on every platform except the wasmJs actual, which is
-     * the only one with a concept of a host directory to reconcile against.
+     * (`HostDirectorySync.runHostReconciliation`, Epic 3.2) classifies a plaintext path as
+     * `ReconciliationOutcome.HostChangedConflict` OR `HostOnlyNew` — `(fullGraphRootedPath,
+     * hostContent) -> Unit`. The path is graph-rooted (e.g. `"/stelekit/g/journals/2026_08_12.md"`),
+     * not repo-relative, so `GraphLoader`'s `path.contains("/journals/")` journal-detection idiom
+     * still matches. Wired from `App.kt` to `graphLoader::emitExternalFileChange` at the same point
+     * the existing write-behind flush callbacks (`setOnFlushPreWrite`/`setOnFlushComplete`/
+     * `setOnFlushFailed`) are wired, so `HostDirectorySync`/`PlatformFileSystem` never import
+     * `GraphLoader` directly (architecture-review.md Blocker 1's independence goal — matches the
+     * precedent those three callbacks already established). No-op on every platform except the
+     * wasmJs actual, which is the only one with a concept of a host directory to reconcile against.
      */
     fun setOnHostConflict(callback: ((path: String, hostContent: String) -> Unit)?) { /* no-op */ }
+
+    /**
+     * Bytes-aware sibling of [setOnHostConflict] for `.md.stek` (paranoid-mode) content — fires
+     * when `HostDirectorySync.runHostReconciliation`'s `.md.stek` branch classifies a path as
+     * `ReconciliationOutcome.HostOnlyNew` — `(fullGraphRootedPath, hostBytes) -> Unit`. Ciphertext
+     * can't round-trip through [setOnHostConflict]'s `String` parameter (adversarial-review.md
+     * Blocker 4), so this callback carries raw bytes; the wired implementation must decrypt via
+     * `GraphLoader`'s `CryptoLayer` before forwarding to `emitExternalFileChange`. `.md.stek`
+     * `HostChangedConflict` intentionally does NOT fire this callback (out of scope — Epic 3.1-3.3).
+     * No-op on every platform except the wasmJs actual.
+     */
+    fun setOnHostBytesConflict(callback: ((path: String, hostBytes: ByteArray) -> Unit)?) { /* no-op */ }
 
     /**
      * Registers a callback invoked when a web-local-folder-livesync write-through flush
