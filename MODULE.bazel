@@ -472,4 +472,18 @@ crate.from_cargo(
     cargo_lockfile = "//native/libsql:Cargo.lock",
     manifests = ["//native/libsql:Cargo.toml"],
 )
+
+# libsql-ffi's build.rs (no LIBSQL_DEV set, the default/CI path) copies a
+# pre-generated bindings file that ships in the crate's own source tree
+# (bundled/bindings/bindgen.rs, or bundled/bindings/session_bindgen.rs with
+# the "session" feature) via `cp` from CARGO_MANIFEST_DIR, then compiles the
+# vendored sqlite3 amalgamation under bundled/src/. rules_rust's Cargo build
+# script sandbox only exposes files explicitly wired in — it does not expose
+# arbitrary non-.rs source-tree files by default — so without this annotation
+# the `cp` fails with "No such file or directory" and the build script panics.
+crate.annotation(
+    crate = "libsql-ffi",
+    version = "*",
+    build_script_data_glob = ["bundled/**"],
+)
 use_repo(crate, "crates")
