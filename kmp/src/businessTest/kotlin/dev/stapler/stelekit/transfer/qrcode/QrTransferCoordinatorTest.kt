@@ -121,7 +121,7 @@ class QrTransferCoordinatorTest {
      */
     private class EventRecorder(coordinator: QrTransferCoordinator, scope: CoroutineScope) {
         private val channel = Channel<CoordinatorEvent>(Channel.UNLIMITED)
-        private val job: Job = scope.launch { coordinator.events.collect { channel.send(it) } }
+        private val job: Job = scope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) { coordinator.events.collect { channel.send(it) } }
 
         suspend fun awaitEvent(timeoutMs: Long = 5_000, predicate: (CoordinatorEvent) -> Boolean): CoordinatorEvent =
             withTimeout(timeoutMs) { channel.receiveAsFlow().first(predicate) }
