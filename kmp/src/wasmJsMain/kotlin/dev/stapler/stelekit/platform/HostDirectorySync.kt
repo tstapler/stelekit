@@ -3,6 +3,9 @@
 
 package dev.stapler.stelekit.platform
 
+import dev.stapler.stelekit.db.ChangeDetectionScheduler
+import dev.stapler.stelekit.db.RescanOutcome
+import dev.stapler.stelekit.db.RescanReason
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.model.DirtyEntry
 import dev.stapler.stelekit.git.model.DirtyOp
@@ -60,12 +63,9 @@ internal class GraphRootedPath private constructor(val value: String) {
     }
 }
 
-// ── Epic 5.1 (Task 5.1.2b): HostDirectoryPoller backoff multipliers ───────────────────────────
-/** Widens [HostDirectorySync.effectivePollIntervalMs] while [HostDirectorySync.isTabHidden]. */
-private const val HIDDEN_POLL_BACKOFF_MULTIPLIER = 6L
-
-/** Widens [HostDirectorySync.effectivePollIntervalMs] while [HostDirectorySync.observerConfirmedActive]. */
-private const val OBSERVER_HEALTHY_POLL_BACKOFF_MULTIPLIER = 6L
+// Epic 5.1 (Task 5.1.2b)'s HIDDEN_POLL_BACKOFF_MULTIPLIER/OBSERVER_HEALTHY_POLL_BACKOFF_MULTIPLIER
+// (both 6x) now live as ChangeDetectionScheduler.BACKOFF_MULTIPLIER, shared with the
+// Android/JVM platform's GraphFileWatcher — see effectivePollIntervalMs()'s doc comment below.
 
 /**
  * Epic 1.6 (architecture-review.md Blocker 1 remediation): standalone collaborator that owns all
@@ -290,6 +290,37 @@ class HostDirectorySync(
     }
 
     /**
+     * Bytes-aware sibling of [onHostConflict] for `.md.stek` (paranoid-mode) content — fired from
+     * the `.md.stek` branch's `ReconciliationOutcome.HostOnlyNew` case so a new encrypted
+     * host-directory file is surfaced to the DB/UI the same way its plaintext counterpart already
+     * is, instead of only landing in OPFS/cache. String-typed [onHostConflict] can't carry
+     * ciphertext (that's exactly what the `.md.stek HostChangedConflict` branch's doc comment
+     * explains adversarial-review.md Blocker 4 forbids), so this callback carries raw
+     * [ByteArray] instead and lets the caller (`GraphLoader`, the only holder of [CryptoLayer])
+     * decrypt before forwarding to [emitExternalFileChange]. Mirrors [onHostConflict]'s
+     * buffering-default pattern for the identical app-boot race window — see that property's doc
+     * comment.
+     */
+    internal var onHostBytesConflict: (path: GraphRootedPath, hostBytes: ByteArray) -> Unit = { path, hostBytes ->
+        pendingHostBytesConflicts += path to hostBytes
+        mirrorPendingHostBytesConflictCount(pendingHostBytesConflicts.size)
+    }
+
+    private val pendingHostBytesConflicts = mutableListOf<Pair<GraphRootedPath, ByteArray>>()
+
+    /** Test-observation seam, mirrors [pendingHostConflictCount]. */
+    internal val pendingHostBytesConflictCount: Int get() = pendingHostBytesConflicts.size
+
+    /** Mirrors [flushPendingHostConflicts] for the bytes-aware buffer. */
+    internal fun flushPendingHostBytesConflicts(callback: (path: GraphRootedPath, hostBytes: ByteArray) -> Unit) {
+        if (pendingHostBytesConflicts.isEmpty()) return
+        val buffered = pendingHostBytesConflicts.toList()
+        pendingHostBytesConflicts.clear()
+        mirrorPendingHostBytesConflictCount(0)
+        buffered.forEach { (path, hostBytes) -> callback(path, hostBytes) }
+    }
+
+    /**
      * Task 3.1.2b: the last [ReconciliationSummary] produced by [runHostReconciliation], read by
      * UI wiring (`FolderSyncSettings`'s `onConnect` callback) after [connectHostDirectory]
      * resolves, so the reconciliation summary screen can show real per-category counts rather
@@ -313,27 +344,85 @@ class HostDirectorySync(
     internal val hostFileSizes: MutableMap<String, Long> = mutableMapOf()
 
     // ── Epic 5.1 (Story 5.1.2)/5.2 (Story 5.2.2): HostDirectoryPoller + observer state ─────────
-    /** The currently-running timer loop, if any — see [startHostDirectoryPolling]/[stopHostDirectoryPolling]. */
-    private var hostPollJob: Job? = null
+    /**
+     * The **base** poll interval (Task 5.1.2a) — used as-is only when the tab is visible *and*
+     * `FileSystemObserver` is not confirmed active; the timer loop never reads this directly,
+     * only [effectivePollIntervalMs] (via [scheduler]). Default confirmed by Epic 5.5's
+     * large-graph benchmark — see `HostDirectoryPollerBenchmarkTest`'s class doc comment for the
+     * measured numbers this default is based on.
+     */
+    private var hostPollIntervalMs: Long = 10_000L
+
+    /**
+     * Owns the "when do we rescan the host directory" triggering/backoff decision — shared with
+     * the Android/JVM platform's `GraphFileWatcher` (see [ChangeDetectionScheduler]'s class doc
+     * comment). [startHostDirectoryPolling] starts it; [handleObserverRecords] and the
+     * visibility-regain loop in [init] both call [ChangeDetectionScheduler.hint] instead of
+     * polling directly, so a stale first look (the host directory handle momentarily lagging a
+     * write) gets a short bounded burst of fast follow-up rescans instead of waiting for the next
+     * unrelated signal or the full poll interval — closing the same "external file doesn't load
+     * for a long time" gap this fix closes on Android.
+     *
+     * `onRescan` below reproduces each trigger's *exact* prior per-source behavior rather than a
+     * single unified one, since the three original call sites were NOT symmetric: Timer ticks are
+     * `WebLock`-guarded and also drive [retryStuckHostWrites] (matching the original timer loop's
+     * body); Signal/FollowUp rescans are deliberately **not** `WebLock`-guarded, matching
+     * [handleObserverRecords]'s original unlocked behavior; Resume (visibility-regain) **is**
+     * `WebLock`-guarded, matching that loop's original behavior. See [runLockedRescan]/
+     * [runTimerTriggeredRescan].
+     */
+    private val scheduler = ChangeDetectionScheduler(baseIntervalMs = hostPollIntervalMs) { reason ->
+        val handle = hostDirHandle
+        val opfsPath = hostGraphOpfsPath
+        if (handle == null || opfsPath == null) {
+            // Previously a silent `?: continue` in the timer loop alone — indistinguishable in
+            // logs from a healthy connection between ticks. A permanently-null handle/path here
+            // (e.g. connectHostDirectory never completed, or a reconnect cleared state without
+            // restarting polling) makes every tick a no-op forever, which reads to the user as
+            // "external changes never sync" rather than "delayed."
+            logger.warn(
+                "HostDirectoryPoller tick skipped: hostDirHandle=${handle != null} " +
+                    "hostGraphOpfsPath=${opfsPath != null}",
+            )
+            RescanOutcome(foundChange = false)
+        } else {
+            when (reason) {
+                RescanReason.Timer -> runTimerTriggeredRescan(handle, opfsPath)
+                RescanReason.Resume -> runLockedRescan(handle, opfsPath, "visibility-regain poll")
+                RescanReason.Signal, RescanReason.FollowUp ->
+                    RescanOutcome(foundChange = pollHostDirectoryOnce(handle, opfsPath))
+            }
+        }
+    }
 
     /**
      * Kept current by the dedicated tracking loop in [init]. `internal` (not `private`) — mirrors
      * this class's established "internal for direct test assertion/injection" convention (see
      * [hostWriteDirtyDuringFlush]/[hostContentHashes]) so [HostDirectoryPollerBenchmarkTest]'s
      * Story 5.5.2 virtual-time tests can force the hidden-tab case directly rather than driving a
-     * real `document.visibilityState` transition. Read by [effectivePollIntervalMs].
+     * real `document.visibilityState` transition. Forwarded to [scheduler] so
+     * [effectivePollIntervalMs] reflects it immediately, including when a test sets this field
+     * directly before ever calling [startHostDirectoryPolling].
      */
     internal var isTabHidden = false
+        set(value) {
+            field = value
+            scheduler.setSlow(value)
+        }
 
     /**
      * Set `true` the instant [startHostChangeObserver]'s `FileSystemObserver` construction +
      * `observe()` (Task 5.2.2a) complete without throwing; left `true` for the life of the
      * connection (ADR-002's "fast path" framing — never re-demoted to primary on a quiet period).
      * Stays `false` when `fileSystemObserverSupported()` is `false` or construction/`observe()`
-     * throws. `internal` for the same Story 5.5.2 testability reason as [isTabHidden]. Read by
-     * [effectivePollIntervalMs].
+     * throws. `internal` for the same Story 5.5.2 testability reason as [isTabHidden]. Forwarded
+     * to [scheduler] — see that field's doc comment.
      */
     internal var observerConfirmedActive = false
+        set(value) {
+            field = value
+            scheduler.setObserverHealthy(value)
+        }
 
     /**
      * Retained so a future feature-detect-gated teardown has something to disconnect — not
@@ -342,31 +431,17 @@ class HostDirectorySync(
     private var hostChangeObserver: JsAny? = null
 
     /**
-     * The **base** poll interval (Task 5.1.2a) — used as-is only when the tab is visible *and*
-     * `FileSystemObserver` is not confirmed active; the timer loop never reads this directly,
-     * only [effectivePollIntervalMs]. Default confirmed by Epic 5.5's large-graph benchmark — see
-     * `HostDirectoryPollerBenchmarkTest`'s class doc comment for the measured numbers this default
-     * is based on.
-     */
-    private var hostPollIntervalMs: Long = 10_000L
-
-    /**
      * Task 5.1.2b: the actual delay [startHostDirectoryPolling]'s timer loop sleeps for on its
-     * next tick — `hostPollIntervalMs * backoffMultiplier`, where `backoffMultiplier` is `maxOf`
-     * (never the product) of [HIDDEN_POLL_BACKOFF_MULTIPLIER] (applied when [isTabHidden]) and
-     * [OBSERVER_HEALTHY_POLL_BACKOFF_MULTIPLIER] (applied when [observerConfirmedActive]) — the
-     * two backoff reasons do not compound (Story 5.1.2's third acceptance criterion). Recomputed
-     * fresh on every call, never cached, so a visibility/observer-health change takes effect
-     * starting the very next tick, not retroactively. `internal` so
-     * [HostDirectoryPollerBenchmarkTest] can assert the computed value directly.
+     * next tick — delegates to [ChangeDetectionScheduler.effectiveIntervalMs], which applies
+     * `hostPollIntervalMs * backoffMultiplier`, where `backoffMultiplier` is 6x (never compounded)
+     * when [isTabHidden] and/or [observerConfirmedActive] — the two backoff reasons do not
+     * compound (Story 5.1.2's third acceptance criterion; see [ChangeDetectionScheduler]'s
+     * `effectiveIntervalMs` for the shared implementation). Recomputed fresh on every call, never
+     * cached, so a visibility/observer-health change takes effect starting the very next tick, not
+     * retroactively. `internal` so [HostDirectoryPollerBenchmarkTest] can assert the computed
+     * value directly.
      */
-    internal fun effectivePollIntervalMs(): Long {
-        val multiplier = maxOf(
-            if (isTabHidden) HIDDEN_POLL_BACKOFF_MULTIPLIER else 1L,
-            if (observerConfirmedActive) OBSERVER_HEALTHY_POLL_BACKOFF_MULTIPLIER else 1L,
-        )
-        return hostPollIntervalMs * multiplier
-    }
+    internal fun effectivePollIntervalMs(): Long = scheduler.effectiveIntervalMs()
 
     /**
      * Task 5.1.2a: starts the timer loop that keeps [hostModTimes]/[hostFileSizes]/cache current
@@ -378,61 +453,66 @@ class HostDirectorySync(
      * [hostDirHandle]/[hostGraphOpfsPath] (Story 5.5.2's virtual-time benchmarks).
      */
     internal fun startHostDirectoryPolling() {
-        hostPollJob?.cancel()
-        hostPollJob = scope.launch {
-            while (isActive) {
-                delay(effectivePollIntervalMs())
-                val handle = hostDirHandle ?: continue
-                val opfsPath = hostGraphOpfsPath ?: continue
-                try {
-                    // Epic 6.2 (Task 6.2.1b): leader-for-one-tick — a `null` result means another
-                    // tab already holds this graph's poll lock for this tick; that is a silent
-                    // skip (OPFS is cross-tab-shared, so this tab's own next tick, or its next
-                    // `cache` read, sees the winner's result), never an error or user-visible event.
-                    val acquired = WebLock.tryWithLock(FolderSyncLockNaming.pollLockNameFor(graphIdProvider())) {
-                        pollHostDirectoryOnce(handle, opfsPath)
-                    }
-                    if (acquired == null) {
-                        logger.debug("HostDirectoryPoller tick skipped: poll lock held by another tab")
-                    }
-                    // BUG fix: a transient flushHostWrite failure (handleFlushFailure's
-                    // "permission re-query still granted" branch) previously left repoRelative
-                    // queued in hostWritePending forever with nothing ever re-attempting it — the
-                    // queue only drained if the user happened to edit that exact file again
-                    // (a fresh scheduleHostWriteThrough call) or the host directory was fully
-                    // disconnected/reconnected (runHostReconciliation is one-shot, not periodic).
-                    // Retrying here piggybacks on this already-running per-tab timer, so a stuck
-                    // entry gets a fresh attempt every poll tick — effectivePollIntervalMs() acts
-                    // as the retry backoff — without adding a second timer loop.
-                    retryStuckHostWrites()
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Throwable) {
-                    // Bug fix: a poll tick can fail because the browser silently demoted this
-                    // handle's permission back to "prompt" (e.g. after the tab was backgrounded) —
-                    // previously this branch only println'd and looped again next tick, leaving
-                    // hostAccessStateFlow stuck at Granted forever. `FolderSyncStatusBadge` then
-                    // kept showing "Synced to <dir>" even though every subsequent tick was failing
-                    // the same way, silently, with no reconciliation ever running again. Re-query
-                    // the handle's actual permission here and mirror it into hostAccessStateFlow so
-                    // the badge honestly falls back to "Reconnect folder"/"Grant access".
-                    logger.warn("HostDirectoryPoller tick failed: ${e.message}", e)
-                    val handleForRequery = hostDirHandle
-                    if (handleForRequery != null) {
-                        val permission = queryHandlePermission(handleForRequery)
-                        if (permission != "granted") {
-                            setHostAccessState(mapPermissionResultToAccessState(permission))
-                        }
-                    }
-                }
-            }
-        }
+        scheduler.start(scope)
     }
 
     /** Stops the timer loop started by [startHostDirectoryPolling] — called when [hostDirHandle] is disconnected. */
     internal fun stopHostDirectoryPolling() {
-        hostPollJob?.cancel()
-        hostPollJob = null
+        scheduler.stop()
+    }
+
+    /**
+     * Epic 6.2 (Task 6.2.1b): leader-for-one-tick — a `null` [WebLock.tryWithLock] result means
+     * another tab already holds this graph's poll lock for this tick; that is a silent skip (OPFS
+     * is cross-tab-shared, so this tab's own next tick, or its next `cache` read, sees the
+     * winner's result), never an error or user-visible event. Shared by [runTimerTriggeredRescan]
+     * (Timer) and the visibility-regain loop's [ChangeDetectionScheduler] hint (Resume) — the two
+     * original call sites that were already `WebLock`-guarded before this dispatch. [logPrefix]
+     * reproduces each original call site's exact log text (`"HostDirectoryPoller tick"` /
+     * `"visibility-regain poll"`).
+     */
+    private suspend fun runLockedRescan(handle: JsAny, opfsPath: String, logPrefix: String): RescanOutcome {
+        var changed = false
+        val acquired = WebLock.tryWithLock(FolderSyncLockNaming.pollLockNameFor(graphIdProvider())) {
+            changed = pollHostDirectoryOnce(handle, opfsPath)
+        }
+        if (acquired == null) {
+            logger.debug("$logPrefix skipped: poll lock held by another tab")
+        }
+        return RescanOutcome(foundChange = changed)
+    }
+
+    /**
+     * Reproduces the original timer loop's tick body exactly: [runLockedRescan] (the `WebLock`
+     * critical section), then unconditionally — even on a lost lock race —
+     * [retryStuckHostWrites] (BUG fix, unchanged: a transient `flushHostWrite` failure previously
+     * left `repoRelative` queued in `hostWritePending` forever with nothing re-attempting it;
+     * retrying here piggybacks on this already-running per-tab timer tick —
+     * [effectivePollIntervalMs] acts as the retry backoff — without a second timer loop). The
+     * outer catch (permission re-query + [hostAccessStateFlow] update on a failing tick) is also
+     * unchanged from the original timer loop.
+     */
+    private suspend fun runTimerTriggeredRescan(handle: JsAny, opfsPath: String): RescanOutcome = try {
+        val outcome = runLockedRescan(handle, opfsPath, "HostDirectoryPoller tick")
+        retryStuckHostWrites()
+        outcome
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        // Bug fix (unchanged): a poll tick can fail because the browser silently demoted this
+        // handle's permission back to "prompt" (e.g. after the tab was backgrounded) — re-query
+        // the handle's actual permission here and mirror it into hostAccessStateFlow so the badge
+        // honestly falls back to "Reconnect folder"/"Grant access" instead of leaving
+        // hostAccessStateFlow stuck at Granted with every subsequent tick failing the same way.
+        logger.warn("HostDirectoryPoller tick failed: ${e.message}", e)
+        val handleForRequery = hostDirHandle
+        if (handleForRequery != null) {
+            val permission = queryHandlePermission(handleForRequery)
+            if (permission != "granted") {
+                setHostAccessState(mapPermissionResultToAccessState(permission))
+            }
+        }
+        RescanOutcome(foundChange = false)
     }
 
     /**
@@ -440,11 +520,12 @@ class HostDirectorySync(
      * recursively when the browser supports it, so external changes are detected roughly one
      * event-loop tick after they happen instead of waiting for the next timer tick. Sets
      * [observerConfirmedActive] `true` only when both construction and `observe()` complete
-     * without throwing; `false` when unsupported or either step fails. [observeHandle] itself
-     * already catches and logs its own failures rather than throwing (`HostDirectoryInterop.kt`),
-     * so in practice only `newFileSystemObserver`'s construction step can drive the `false` branch
-     * here — a limitation of that existing interop function's signature, not a gap introduced by
-     * this method.
+     * without throwing; `false` when unsupported or either step fails. [observeHandle] propagates
+     * a failing `observe()` call (it does not swallow it) so a real-world failure — e.g. a
+     * browser that supports the `FileSystemObserver` constructor but rejects `recursive: true`
+     * observation for a local-disk handle obtained via `showDirectoryPicker()` — is caught here
+     * and correctly demotes [observerConfirmedActive] to `false` instead of leaving a false
+     * "healthy" signal in place for the life of the connection.
      */
     private suspend fun startHostChangeObserver(handle: JsAny) {
         if (!fileSystemObserverSupported()) {
@@ -467,20 +548,22 @@ class HostDirectorySync(
     /**
      * Task 5.2.2b: dispatch entry point for [startHostChangeObserver]'s `FileSystemObserver`
      * callback. Iterates [records] (a plain JS array) via [jsRecordsLength]/[jsRecordsGet], reading
-     * each record's [changeRecordType]/[changeRecordRelativePath] for observability — but for
-     * every record type this batch contains (`"appeared"`/`"modified"`/`"disappeared"`/`"moved"`
-     * *and* `"errored"`), the actual remediation is the same single full-tree
-     * [pollHostDirectoryOnce] call below, run once per callback invocation rather than once per
-     * record. A targeted single-file variant scoped to `relativePathComponents` would be a tighter
-     * v1, but the full walk is an acceptable simplification here (per the plan) — its own
-     * mtime/size pre-filter (Task 5.1.1b) already makes a redundant full-tree walk cheap for every
-     * path except the one(s) that actually changed; see `HostDirectoryPollerBenchmarkTest` for the
-     * measured per-tick cost this relies on. Never lets an exception escape uncaught — a broken
-     * observer callback must not silently stop future change delivery.
+     * each record's [changeRecordType]/[changeRecordRelativePath] for observability, then hints
+     * [scheduler] (`RescanReason.Signal`) rather than polling directly — the scheduler's own
+     * unlocked Signal branch (see that field's doc comment) reproduces this callback's original
+     * unlocked [pollHostDirectoryOnce] behavior, run once per callback invocation rather than once
+     * per record (a targeted single-file variant scoped to `relativePathComponents` would be a
+     * tighter v1, but the full walk is an acceptable simplification here per the plan — its own
+     * mtime/size pre-filter, Task 5.1.1b, already makes a redundant full-tree walk cheap for every
+     * path except the one(s) that actually changed). A stale first look now also earns a short
+     * bounded burst of fast follow-up rescans (the scheduler's own contribution — see that field's
+     * doc comment) instead of only the next unrelated signal or full poll interval. Never lets an
+     * exception escape uncaught — a broken observer callback must not silently stop future change
+     * delivery.
      */
     private suspend fun handleObserverRecords(records: JsAny) {
-        val handle = hostDirHandle ?: return
-        val opfsPath = hostGraphOpfsPath ?: return
+        hostDirHandle ?: return
+        hostGraphOpfsPath ?: return
         try {
             val count = jsRecordsLength(records)
             for (i in 0 until count) {
@@ -489,7 +572,7 @@ class HostDirectorySync(
                 val relativePath = changeRecordRelativePath(record).joinToString("/")
                 logger.debug("FileSystemObserver record: type=$type path=$relativePath")
             }
-            pollHostDirectoryOnce(handle, opfsPath)
+            scheduler.hint(RescanReason.Signal)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
@@ -517,26 +600,14 @@ class HostDirectorySync(
         // Epic 5.3 (Task 5.3.1a): visibility-regain immediate recheck — independent of the timer
         // loop's own steady-state cadence (Story 5.1.2's effectivePollIntervalMs/isTabHidden
         // backoff) and independent of PlatformFileSystem's unrelated hidden-flush loop (git
-        // dirty-marker flush on tab hide, PlatformFileSystem.kt:99-108).
+        // dirty-marker flush on tab hide, PlatformFileSystem.kt:99-108). Hints scheduler
+        // (RescanReason.Resume) rather than polling directly — runLockedRescan reproduces this
+        // loop's original WebLock-guarded behavior exactly (see scheduler's doc comment).
         scope.launch {
             while (isActive) {
                 jsVisibilityVisiblePromise().await<JsAny?>()
-                val handle = hostDirHandle ?: continue
-                val opfsPath = hostGraphOpfsPath ?: continue
-                try {
-                    // Epic 6.2 (Task 6.2.1b): same leader-for-one-tick lock as the timer loop above
-                    // — a `null` result (another tab already owns this tick) is a silent skip.
-                    val acquired = WebLock.tryWithLock(FolderSyncLockNaming.pollLockNameFor(graphIdProvider())) {
-                        pollHostDirectoryOnce(handle, opfsPath)
-                    }
-                    if (acquired == null) {
-                        logger.debug("visibility-regain poll skipped: poll lock held by another tab")
-                    }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Throwable) {
-                    logger.warn("visibility-regain poll failed: ${e.message}", e)
-                }
+                if (hostDirHandle == null || hostGraphOpfsPath == null) continue
+                scheduler.hint(RescanReason.Resume)
             }
         }
     }
@@ -944,6 +1015,7 @@ class HostDirectorySync(
                                         logPossibleStaleRenameDuplicate(path, opfsPath) { otherPath ->
                                             cacheAccess.getBytes(otherPath)?.contentEquals(hostBytes) == true
                                         }
+                                        onHostBytesConflict(GraphRootedPath.of(path, opfsPath), hostBytes)
                                     }
                                     ReconciliationOutcome.BrowserOnlyNeedsPush -> {
                                         // Unreachable: hostBytes is non-null in this branch (the walk
@@ -1091,8 +1163,17 @@ class HostDirectorySync(
      * external edit that lands during the suppression window is picked up on the very next tick
      * instead of being silently lost until some unrelated future change to the same path happens
      * to retrigger it.
+     *
+     * Returns `true` iff any visited path's mtime/size differed from its known baseline (i.e. its
+     * cache entry was refreshed) — a signal [ChangeDetectionScheduler] uses to decide whether a
+     * Signal/Resume-triggered rescan needs a bounded follow-up burst (see [scheduler]'s doc
+     * comment). A path skipped via the own-write-suppression guard does not count as a change
+     * here — it isn't a discovery gap the follow-up-burst mechanism needs to chase; the write
+     * that's suppressing it already knows to re-poll via [repollIfSuppressedDuringFlush].
      */
-    suspend fun pollHostDirectoryOnce(dirHandle: JsAny, opfsPath: String) {
+    suspend fun pollHostDirectoryOnce(dirHandle: JsAny, opfsPath: String): Boolean {
+        var anyChanged = false
+
         suspend fun visit(entry: JsAny, path: String) {
             val repoRelative = path.removePrefix("$opfsPath/")
             if (repoRelative in hostWriteInFlight) {
@@ -1105,6 +1186,7 @@ class HostDirectorySync(
             val size = fileSize(file)
             val unchanged = hostModTimes[path] == mtime && hostFileSizes[path] == size
             if (!unchanged) {
+                anyChanged = true
                 if (path.endsWith(".md.stek")) {
                     val bytes = readOpfsFileAsBytes(entry)
                     if (bytes != null) cacheAccess.setBytes(path, bytes)
@@ -1130,6 +1212,7 @@ class HostDirectorySync(
         }
 
         walk(dirHandle, opfsPath)
+        return anyChanged
     }
 
     /**

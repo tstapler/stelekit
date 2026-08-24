@@ -532,6 +532,18 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     }
 
     /**
+     * Bytes-aware sibling of [setOnHostConflict]: delegates to
+     * [HostDirectorySync.onHostBytesConflict]. Wired from `App.kt` alongside [setOnHostConflict],
+     * for the same reason.
+     */
+    override fun setOnHostBytesConflict(callback: ((path: String, hostBytes: ByteArray) -> Unit)?) {
+        val resolved = callback ?: { _, _ -> }
+        val adapted: (GraphRootedPath, ByteArray) -> Unit = { path, hostBytes -> resolved(path.value, hostBytes) }
+        hostDirectorySync.onHostBytesConflict = adapted
+        hostDirectorySync.flushPendingHostBytesConflicts(adapted)
+    }
+
+    /**
      * Epic 4.4 (Task 4.4.1b): delegates to [HostDirectorySync.onHostWriteFailed]. Wired from
      * `App.kt` alongside [setOnHostConflict], for the same reason — `GraphLoader` only exists
      * later, per-active-graph, inside `App.kt`'s composition.

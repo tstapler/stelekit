@@ -95,6 +95,14 @@ rsync -a kmp/build/generated/sqldelight/code/TelemetryDatabase/commonMain/ kmp/s
 # README sync is not covered by ciCheck — run separately:
 # bash scripts/generate-readme.sh && git diff --exit-code README.md
 
+# Run wasmJs tests in a real headless browser (not just compiled — CI only compiles wasmJs
+# test sources today, see ci.yml's "Compile wasmJs test sources" step comment).
+./gradlew :kmp:wasmJsBrowserTest
+# If this fails with "No provider for framework:mocha" / "Cannot load webpack": Kotlin's
+# shared web-tooling installer defaults to Yarn Berry's `pnpm` node linker, which Karma's
+# plugin auto-discovery can't see through (isolated node_modules). Fix once per machine:
+./scripts/fix-wasm-karma-tooling.sh
+
 # Lint all GitHub Actions workflow files (mirrors the workflow-lint CI job)
 # Install once: curl -sSfL https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz | tar -xz -C ~/.local/bin actionlint
 actionlint -color

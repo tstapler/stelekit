@@ -456,6 +456,14 @@ fun resolveAppVersion(): String = (findProperty("appVersion") as? String)?.remov
     ?: rootProject.file("version.txt").takeIf { it.exists() }?.readText()?.trim()
     ?: "dev"
 
+// Short commit SHA of the checkout being built, for display alongside the version tag in
+// Settings — lets us tell which exact commit a running build (especially the web deploy) is
+// actually serving. Falls back to "unknown" outside a git checkout (e.g. a source tarball).
+fun resolveGitCommit(): String = providers.exec {
+    commandLine("git", "rev-parse", "--short=8", "HEAD")
+    isIgnoreExitValue = true
+}.standardOutput.asText.getOrElse("unknown").trim().ifEmpty { "unknown" }
+
 // wasmJs has no JVM system-property equivalent to pass the resolved version at runtime (unlike
 // the JVM target — see the "run" task's -Dapp.version below), so it is baked in at compile time
 // via a generated Kotlin constant instead. Consumed by DeviceInfo.js.kt.
@@ -464,7 +472,9 @@ val generateWasmVersionInfo by tasks.registering {
     description = "Generates a Kotlin constant with the resolved app version for the wasmJs target."
     val outputDir = layout.buildDirectory.dir("generated/version/wasmJsMain/kotlin")
     val version = resolveAppVersion()
+    val gitCommit = resolveGitCommit()
     inputs.property("appVersion", version)
+    inputs.property("gitCommit", gitCommit)
     outputs.dir(outputDir)
     doLast {
         val outFile = outputDir.get().asFile.resolve("dev/stapler/stelekit/performance/WasmVersionInfo.kt")
@@ -475,6 +485,7 @@ val generateWasmVersionInfo by tasks.registering {
             package dev.stapler.stelekit.performance
 
             internal const val WASM_APP_VERSION: String = "$version"
+            internal const val WASM_GIT_COMMIT: String = "$gitCommit"
 
             """.trimIndent()
         )
@@ -1071,6 +1082,7 @@ compose.desktop {
             packageVersion = if ((parts.firstOrNull()?.toIntOrNull() ?: 1) == 0)
                 "1.${parts.drop(1).joinToString(".")}" else rawVersion
             jvmArgs("-Dapp.version=$rawVersion")
+            jvmArgs("-Dapp.gitCommit=${resolveGitCommit()}")
             modules("java.sql")
             macOS {
                 iconFile.set(project.file("src/jvmMain/resources/icons/icon.icns"))
@@ -1282,6 +1294,7 @@ afterEvaluate {
         // with the resolved JDK 21 binary instead.
         setExecutable(jdk21Launcher.get().executablePath.asFile.absolutePath)
         systemProperty("app.version", resolvedAppVersion)
+        systemProperty("app.gitCommit", resolveGitCommit())
 
         // Dev/test launches must never point at the real default graph path — running
         // alongside an already-open real install (or repeated dev sessions) lets independent

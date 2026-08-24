@@ -60,6 +60,7 @@ import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlin.time.Clock
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -778,6 +779,14 @@ class StelekitViewModel(
                             onFullyLoaded = {
                                 logger.info("Graph fully loaded")
                                 _uiState.update { it.copy(isFullyLoaded = true, statusMessage = "Graph loaded completely.") }
+
+                                // On warm start, onPhase1Complete's eager ensureTodayJournal() can
+                                // race loadJournalsImmediate's disk scan and create a filePath=null
+                                // duplicate for today before the externally-synced file is parsed.
+                                // ensureTodayJournal() already merges duplicates for the same date;
+                                // re-running it now (disk scan guaranteed done) heals that duplicate
+                                // within this session instead of waiting for next launch/midnight.
+                                scope.launch { journalService.ensureTodayJournal() }
 
                                 // Start background full-indexing only after loadDirectory(METADATA_ONLY)
                                 // has finished. Launching this earlier races with the batch loader:
@@ -2504,11 +2513,11 @@ class StelekitViewModel(
         _uiState.update { it.copy(renameDialogPage = null, renameDialogBusy = false, renameDialogError = null) }
     }
 
-    fun renamePage(page: Page, newName: String) {
+    fun renamePage(page: Page, newName: String): Job? {
         val trimmed = newName.trim()
-        if (trimmed.isBlank() || trimmed == page.name) return
-        val graphPath = _uiState.value.currentGraphPath ?: return
-        scope.launch {
+        if (trimmed.isBlank() || trimmed == page.name) return null
+        val graphPath = _uiState.value.currentGraphPath ?: return null
+        return scope.launch {
             _uiState.update { it.copy(renameDialogBusy = true, renameDialogError = null) }
             // Guard: reject rename if a page with the target name already exists.
             val existing = pageRepository.getPageByName(trimmed).first().getOrNull()
