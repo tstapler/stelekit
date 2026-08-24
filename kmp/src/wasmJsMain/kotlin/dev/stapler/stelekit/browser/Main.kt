@@ -8,7 +8,6 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.window.ComposeViewport
 import kotlinx.browser.document
 import dev.stapler.stelekit.db.DriverFactory
-import dev.stapler.stelekit.db.GraphLockedElsewhereException
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.git.GitHostAdapter
 import dev.stapler.stelekit.git.WasmGitRepository
@@ -17,7 +16,6 @@ import dev.stapler.stelekit.git.model.GitHostConfig
 import dev.stapler.stelekit.git.resolve
 import dev.stapler.stelekit.platform.DemoFileSystem
 import dev.stapler.stelekit.platform.FileSystem
-import dev.stapler.stelekit.platform.HostAccessState
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.sync.WasmSectionSyncService
@@ -25,7 +23,6 @@ import dev.stapler.stelekit.repository.GraphBackend
 import dev.stapler.stelekit.model.DEMO_GRAPH_ID
 import dev.stapler.stelekit.service.WasmMediaAttachmentService
 import dev.stapler.stelekit.ui.StelekitApp
-import dev.stapler.stelekit.ui.components.settings.ReconciliationUiState
 import kotlinx.browser.localStorage
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.MainScope
@@ -34,30 +31,6 @@ import kotlinx.coroutines.launch
 private fun markSteleKitReady(): Unit = js("window.__stelekit_ready = true")
 private fun markGraphDialogCapable(capable: Boolean): Unit = js("window.__stelekit_native_graph_picker = capable")
 private fun markDriverBackend(backend: String): Unit = js("window.__stelekit_driver_backend = backend")
-
-/**
- * Replaces the `#loading` overlay's content with [message] and flags `window.__stelekit_boot_error`
- * so index.html's own 8-second auto-hide timeout leaves it visible — used when startup must abort
- * before `ComposeViewport` ever mounts (e.g. [GraphLockedElsewhereException]), since there is no
- * Compose UI/snackbar available yet to surface the error through.
- */
-private fun showBootError(message: String): Unit = js(
-    """
-    (function() {
-        window.__stelekit_boot_error = true;
-        var loading = document.getElementById('loading');
-        if (!loading) return;
-        loading.innerHTML = '';
-        var p = document.createElement('p');
-        p.style.fontSize = '15px';
-        p.style.maxWidth = '420px';
-        p.style.textAlign = 'center';
-        p.style.padding = '0 16px';
-        p.textContent = message;
-        loading.appendChild(p);
-    })()
-    """
-)
 
 // Story 5.1.3: `beforeunload` warning gated on PlatformFileSystem.dirtyFileCountFlow.
 //
@@ -94,32 +67,8 @@ private fun registerBeforeUnloadWarning(): Unit = js(
     """
 )
 
-// Browsers natively treat Tab/Shift+Tab as focus-traversal keys, moving focus off the Compose
-// canvas before Compose's own key-event pipeline (e.g. BlockEditor's onPreviewKeyEvent) ever
-// sees them — Shift+Tab in particular can jump focus backward to some other focusable element
-// on the page, so outdent silently never fires. On desktop this doesn't happen because
-// ComposePanel (AWT) disables focus-traversal keys on itself; Compose for Web installs no such
-// override, so we must call preventDefault() ourselves. This listener runs on `window` in the
-// capture phase — before Skiko's own canvas listener in the bubble phase — and only cancels the
-// browser's default action; it does not stop propagation, so Compose still receives and handles
-// the same keydown event normally. The `event.target` check (capture phase does not change
-// `target`, only propagation order) scopes this to the Skiko canvas so Tab still behaves normally
-// for any other focusable element on the page (e.g. browser chrome, future non-Compose widgets).
-private fun preventBrowserTabFocusTraversal(): Unit = js(
-    """
-    (function() {
-        window.addEventListener("keydown", function(event) {
-            if (event.key === "Tab" && event.target && event.target.tagName === "CANVAS") {
-                event.preventDefault();
-            }
-        }, true);
-    })()
-    """
-)
-
 @OptIn(ExperimentalComposeUiApi::class)
 fun main() {
-    preventBrowserTabFocusTraversal()
     val scope = MainScope()
     scope.launch(CoroutineExceptionHandler { _, throwable ->
         println("[SteleKit] Fatal startup error: ${throwable.message}")
@@ -177,14 +126,6 @@ fun main() {
 
         // preload() must run after GitHub config is wired; directoryExists() requires preload().
         opfsFileSystem.preload(opfsGraphPath)
-
-        // Epic 2.2 (Task 2.2.1c): silently resume a previously-connected host directory, if any —
-        // its own sequential startup step, matching this function's existing "config wiring →
-        // preload → driver → ..." step ordering. A no-op (resolves to NotApplicable) for the vast
-        // majority of users who have never connected a host directory.
-        val hostAccessState = opfsFileSystem.hostDirectorySync.reconnectHostDirectory(graphId)
-        println("[SteleKit] reconnectHostDirectory('$graphId'): $hostAccessState")
-
         val isNewUser = !opfsFileSystem.directoryExists(opfsGraphPath)
 
         val driverFactory = DriverFactory()
@@ -201,12 +142,6 @@ fun main() {
                 markDriverBackend("opfs")
                 GraphBackend.SQLDELIGHT
             }
-        } catch (e: GraphLockedElsewhereException) {
-            // Do NOT fall back to the demo graph here — that would silently hide a real,
-            // recoverable "open it in that other tab instead" situation from the user.
-            println("[SteleKit] ${e.message}")
-            showBootError(e.message ?: "This graph is already open in another browser tab.")
-            return@launch
         } catch (e: Throwable) {
             println("[SteleKit] SQLite driver init failed, loading demo graph: ${e.message}")
             markDriverBackend("memory")
@@ -260,33 +195,6 @@ fun main() {
                 attachmentService = WasmMediaAttachmentService(fileSystem),
                 gitRepository = wasmGitRepository,
                 localChangesCountFlow = opfsFileSystem.dirtyFileCountFlow,
-                hostAccessStateFlow = opfsFileSystem.hostDirectorySync.hostAccessStateFlow,
-                hostWritePendingCountFlow = opfsFileSystem.hostDirectorySync.hostWritePendingCountFlow,
-                hostWriteStuckFlow = opfsFileSystem.hostDirectorySync.hostWriteStuckFlow,
-                onReconnectHostDirectory = {
-                    scope.launch { opfsFileSystem.hostDirectorySync.requestHostDirectoryAccess(graphId) }
-                },
-                // Task 3.1.1c: "Enable live folder sync" — wired the same way the badge's flows
-                // above are, straight to HostDirectorySync.connectHostDirectory. Its own internal
-                // showDirectoryPicker → runHostReconciliation sequence already leaves hostDirHandle
-                // unset on any failure, so a non-Granted result here always means "nothing changed."
-                // lastReconciliationSummary is stashed by runHostReconciliation on the same call,
-                // so it is always fresh when result == Granted.
-                onConnectHostDirectory = connectHostDirectory@{
-                    val result = opfsFileSystem.hostDirectorySync.connectHostDirectory(opfsGraphPath)
-                    val summary = opfsFileSystem.hostDirectorySync.lastReconciliationSummary
-                    if (result != HostAccessState.Granted || summary == null) {
-                        return@connectHostDirectory ReconciliationUiState.Failed(
-                            "Couldn't finish comparing your files"
-                        )
-                    }
-                    ReconciliationUiState.Summary(
-                        identical = summary.identical,
-                        hostChangedConflict = summary.hostChangedConflict,
-                        hostOnlyNew = summary.hostOnlyNew,
-                        browserOnlyNeedsPush = summary.browserOnlyNeedsPush,
-                    )
-                },
             )
         }
     }

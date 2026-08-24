@@ -271,7 +271,7 @@ class BlockInsertBenchmarkTest {
             )
 
             assertTrue(
-                p99 <= 90L,
+                p99 <= 50L,
                 "TC-10 (NFR-1): JVM P99 insert latency ${p99}ms exceeds 50ms budget. " +
                     "A regression in the DB write path has been introduced.",
             )

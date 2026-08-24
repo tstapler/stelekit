@@ -39,7 +39,7 @@ fun DiskConflictDialog(
             ) {
                 Text(
                     "\"${conflict.pageName}\" was changed externally while you were " +
-                        if (conflict.editingBlockUuid != null) "editing." else "away.",
+                        if (conflict.editingBlockUuid.isNotBlank()) "editing." else "away.",
                     style = MaterialTheme.typography.bodyMedium
                 )
 

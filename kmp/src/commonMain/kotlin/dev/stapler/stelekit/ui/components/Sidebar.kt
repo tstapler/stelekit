@@ -27,7 +27,6 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.*
@@ -39,7 +38,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -49,7 +47,6 @@ import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.GraphInfo
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.git.model.SyncState
-import dev.stapler.stelekit.platform.HostAccessState
 import dev.stapler.stelekit.sections.SectionManifest
 import dev.stapler.stelekit.ui.LocalWindowSizeClass
 import dev.stapler.stelekit.ui.Screen
@@ -92,16 +89,7 @@ fun LeftSidebar(
     onGitSetup: () -> Unit = {},
     isGitConfigured: Boolean = false,
     onAuthError: (() -> Unit)? = null,
-    /** Epic 2.3: current web-local-folder-livesync [HostAccessState]. [HostAccessState.NotApplicable]
-     * (the default) renders [FolderSyncStatusBadge] as nothing — matches every non-web platform. */
-    hostAccessState: HostAccessState = HostAccessState.NotApplicable,
-    hostPendingWriteCount: Int = 0,
-    /** Epic 4.4 (Task 4.4.1c): true while a write-through flush is stuck mid-`Granted` — drives
-     * [FolderSyncStatusBadge]'s `SyncDegraded` row (ux.md Surface 3, row 3). */
-    hostWriteStuck: Boolean = false,
-    onReconnectHostDirectory: () -> Unit = {},
     onCloneGraph: () -> Unit = {},
-    onUpdateGraphPath: (String, String) -> Unit = { _, _ -> },
     gitSyncedGraphId: String? = null,
     onNewSectionJournalEntry: (() -> Unit)? = null,
     sectionManifest: SectionManifest? = null,
@@ -151,10 +139,8 @@ fun LeftSidebar(
                 onAddGraph = onAddGraph,
                 onRemoveGraph = onRemoveGraph,
                 onCloneGraph = onCloneGraph,
-                onUpdateGraphPath = onUpdateGraphPath,
                 gitSyncedGraphId = gitSyncedGraphId,
                 isDemoActive = isDemoActive,
-                hostAccessState = hostAccessState,
             )
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
@@ -188,22 +174,10 @@ fun LeftSidebar(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
             )
 
-            // Epic 2.3 (Story 2.3.1): sibling badge for the web-local-folder-livesync host
-            // directory connection — distinct subsystem from the git SyncStatusBadge above,
-            // renders nothing (NotApplicable) on every non-web platform.
-            FolderSyncStatusBadge(
-                state = hostAccessState,
-                dirName = currentGraphName.ifEmpty { null },
-                pendingWriteCount = hostPendingWriteCount,
-                hostWriteStuck = hostWriteStuck,
-                onReconnect = onReconnectHostDirectory,
-                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-            )
-
             if (pendingConflictFilePaths.isNotEmpty()) {
                 PendingConflictsBanner(
                     count = pendingConflictFilePaths.size,
-                    onClick = { onNavigate(Screen.AllPages(conflictsOnly = true)) },
+                    onClick = { onNavigate(Screen.AllPages) },
                     modifier = Modifier.padding(vertical = 4.dp),
                 )
             }
@@ -221,7 +195,7 @@ fun LeftSidebar(
                 val sectionLabel = sectionManifest?.sections?.find { it.id == defaultSection }?.displayName ?: "Work"
                 NavigationItem("New $sectionLabel Journal", Icons.Default.DateRange, false) { onNewSectionJournalEntry() }
             }
-            NavigationItem("All Pages", Icons.AutoMirrored.Filled.List, currentScreen is Screen.AllPages) { onNavigate(Screen.AllPages()) }
+            NavigationItem("All Pages", Icons.AutoMirrored.Filled.List, currentScreen is Screen.AllPages) { onNavigate(Screen.AllPages) }
             NavigationItem("Flashcards", Icons.Default.Style, currentScreen is Screen.Flashcards) { onNavigate(Screen.Flashcards) }
 
             Spacer(Modifier.height(4.dp))
@@ -348,17 +322,12 @@ fun GraphSwitcher(
     onAddGraph: () -> Unit,
     onRemoveGraph: (String) -> Unit,
     onCloneGraph: () -> Unit = {},
-    onUpdateGraphPath: (String, String) -> Unit = { _, _ -> },
     gitSyncedGraphId: String? = null,
     isDemoActive: Boolean = false,
-    /** Epic 2.3: host-directory connection state for [activeGraphId] only — used to show a
-     * "linked to local folder" indicator distinct from the graph's internal OPFS path. */
-    hostAccessState: HostAccessState = HostAccessState.NotApplicable,
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
     var graphToRemove by remember { mutableStateOf<GraphInfo?>(null) }
-    var graphToEdit by remember { mutableStateOf<GraphInfo?>(null) }
 
     Column(modifier = modifier) {
         // Current graph button
@@ -383,7 +352,7 @@ fun GraphSwitcher(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    imageVector = if (hostAccessState == HostAccessState.Granted) Icons.Default.FolderOpen else Icons.Default.Folder,
+                    imageVector = Icons.Default.Folder,
                     contentDescription = null,
                     modifier = Modifier.size(20.dp),
                     tint = MaterialTheme.colorScheme.primary
@@ -395,14 +364,6 @@ fun GraphSwitcher(
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                     modifier = Modifier.weight(1f)
                 )
-                if (hostAccessState == HostAccessState.Granted) {
-                    Icon(
-                        imageVector = Icons.Default.Link,
-                        contentDescription = "Connected to local folder",
-                        modifier = Modifier.size(14.dp).padding(end = 4.dp),
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
-                }
                 Icon(
                     imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                     contentDescription = if (expanded) "Collapse" else "Expand"
@@ -422,16 +383,12 @@ fun GraphSwitcher(
                             graph = graph,
                             isActive = graph.id.value == activeGraphId,
                             isSynced = graph.id.value == gitSyncedGraphId,
-                            isHostConnected = graph.id.value == activeGraphId && hostAccessState == HostAccessState.Granted,
                             onSelect = {
                                 onGraphSelected(graph.id.value)
                                 expanded = false
                             },
                             onRemove = if (availableGraphs.size > 1) {
                                 { graphToRemove = graph }
-                            } else null,
-                            onEditPath = if (!graph.isDemo) {
-                                { graphToEdit = graph }
                             } else null
                         )
                     },
@@ -500,50 +457,6 @@ fun GraphSwitcher(
             }
         )
     }
-
-    // Edit-path dialog: lets the user re-point a tracked graph at a new folder.
-    val editingGraph = graphToEdit
-    if (editingGraph != null) {
-        var newPath by remember(editingGraph.id.value) { mutableStateOf(editingGraph.path) }
-        AlertDialog(
-            onDismissRequest = { graphToEdit = null },
-            title = { Text("Edit Graph Path") },
-            text = {
-                Column {
-                    Text(
-                        "Move \"${editingGraph.displayName}\" to a different folder. " +
-                            "The graph's database will be migrated to the new location.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    OutlinedTextField(
-                        value = newPath,
-                        onValueChange = { newPath = it },
-                        label = { Text("Graph path") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        onUpdateGraphPath(editingGraph.id.value, newPath)
-                        graphToEdit = null
-                    },
-                    enabled = newPath.isNotBlank() && newPath != editingGraph.path,
-                ) {
-                    Text("Save")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { graphToEdit = null }) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
 }
 
 /**
@@ -554,13 +467,8 @@ fun GraphItem(
     graph: GraphInfo,
     isActive: Boolean,
     isSynced: Boolean = false,
-    /** Epic 2.3: true when this graph is the active graph and it currently has a granted
-     * host-directory connection — shown as a distinct badge from [graph.path]'s OPFS path,
-     * which alone gives no indication the graph is backed by a live local folder. */
-    isHostConnected: Boolean = false,
     onSelect: () -> Unit,
     onRemove: (() -> Unit)? = null,
-    onEditPath: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -581,44 +489,12 @@ fun GraphItem(
                 tint = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(modifier = Modifier.width(8.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = graph.displayName,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (isActive) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = graph.path,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = (if (isActive) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
-                        .copy(alpha = 0.6f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            if (onEditPath != null) {
-                IconButton(
-                    onClick = onEditPath,
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Edit,
-                        contentDescription = "Edit graph path",
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-            if (isHostConnected) {
-                Icon(
-                    imageVector = Icons.Default.Link,
-                    contentDescription = "Connected to local folder",
-                    modifier = Modifier.size(14.dp).padding(end = 2.dp),
-                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
-                )
-            }
+            Text(
+                text = graph.displayName,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (isActive) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f)
+            )
             if (isSynced) {
                 Icon(
                     imageVector = Icons.Default.Sync,

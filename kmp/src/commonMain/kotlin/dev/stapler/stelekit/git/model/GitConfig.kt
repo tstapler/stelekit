@@ -9,7 +9,7 @@ import kotlinx.serialization.Serializable
 data class GitConfig(
     val graphId: String,
     val repoRoot: String,
-    val wikiSubdir: String?,
+    val wikiSubdir: String,
     val remoteName: String = "origin",
     val remoteBranch: String = "main",
     val authType: GitAuthType,
@@ -23,6 +23,6 @@ data class GitConfig(
     val llmApiKeyRef: String? = null,
 )
 
-val GitConfig.wikiRoot: String get() = if (wikiSubdir.isNullOrEmpty()) repoRoot else "$repoRoot/$wikiSubdir"
+val GitConfig.wikiRoot: String get() = if (wikiSubdir.isEmpty()) repoRoot else "$repoRoot/$wikiSubdir"
 
 enum class GitAuthType { NONE, SSH_KEY, HTTPS_TOKEN, GITHUB_OAUTH }

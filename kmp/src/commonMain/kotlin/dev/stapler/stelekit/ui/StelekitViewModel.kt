@@ -60,7 +60,6 @@ import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlin.time.Clock
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -133,7 +132,6 @@ class StelekitViewModel(
     private val localChangesCountFlow: StateFlow<Int>? = deps.localChangesCountFlow
     private val activeGraphIdProvider: () -> String? = deps.activeGraphIdProvider
     private val onDismissGitDetection: (suspend (graphId: String) -> Unit)? = deps.onDismissGitDetection
-    private val onDismissBrowserOnlySyncBanner: (suspend (graphId: String) -> Unit)? = deps.onDismissBrowserOnlySyncBanner
     private val onSectionsLoaded = deps.onSectionsLoaded
     private val spanEmitter = dev.stapler.stelekit.performance.SpanEmitter(deps.ringBuffer)
     // ── LLM approval-gated edit workflow (Epic 7) ──────────────────────────────
@@ -192,26 +190,6 @@ class StelekitViewModel(
     /** Marks [filePath]'s deferred conflict as resolved — called from the tail of each resolver. */
     private fun clearPendingConflict(filePath: String) {
         _uiState.update { it.copy(pendingConflicts = it.pendingConflicts - filePath) }
-    }
-
-    /**
-     * Drops any [PendingConflict] whose file path is no longer present in [livePaths].
-     *
-     * Deleting or renaming a page in-app already clears its entry directly (see
-     * [bulkDeletePages], [renamePage]), but pages can also disappear or move via paths this
-     * ViewModel doesn't observe directly — an external git pull/merge reconciled by
-     * `GraphLoader`, for instance. Without this, a stale key lingers in `pendingConflicts`
-     * forever (nothing else ever removes it), so the sidebar/All Pages conflict count drifts
-     * from reality: it reports N conflicts while the filtered list renders empty because no
-     * live page's `filePath` matches the stale key. Called whenever a full-graph page snapshot
-     * is available (see `AllPagesViewModel.allFilePaths`) so the comparison is against a
-     * complete — not partially-loaded — set of live paths.
-     */
-    fun reconcilePendingConflicts(livePaths: Set<String>) {
-        _uiState.update { state ->
-            val stale = state.pendingConflicts.keys - livePaths
-            if (stale.isEmpty()) state else state.copy(pendingConflicts = state.pendingConflicts - stale)
-        }
     }
 
     private fun sanitizeErrorMessage(message: String?): String =
@@ -402,13 +380,6 @@ class StelekitViewModel(
         }
     }
 
-    /** Dismisses the "not synced to disk" browser-only-storage banner for the given graph. */
-    fun dismissBrowserOnlySyncBanner(graphId: String) {
-        scope.launch {
-            onDismissBrowserOnlySyncBanner?.invoke(graphId)
-        }
-    }
-
     // --- LLM approval-gated edit workflow (Epic 7) ---
 
     /** Live pending-suggestion map — exposed for the review screen. */
@@ -473,10 +444,9 @@ class StelekitViewModel(
             return
         }
 
-        val graphPath = _uiState.value.currentGraphPath ?: return
-
         llmSuggestionInbox.remove(id)
 
+        val graphPath = _uiState.value.currentGraphPath
         scope.launch {
             val result = llmSuggestionWriter.materializeAndWrite(suggestion, graphPath)
             result.onLeft { error ->
@@ -490,7 +460,7 @@ class StelekitViewModel(
     private var recentPageUuids: MutableList<String> = mutableListOf()
 
     private val recentPagesKey: String
-        get() = "recent_pages_${_uiState.value.currentGraphPath.orEmpty()}"
+        get() = "recent_pages_${_uiState.value.currentGraphPath}"
 
     // Resolved Page objects for the recent-pages list, keyed by UUID and bounded by
     // recentPageUuids (≤20 entries). Replaces the former cachedAllPages field, which
@@ -532,10 +502,10 @@ class StelekitViewModel(
         AppState(
             isLoading = true,
             onboardingCompleted = platformSettings.getBoolean("onboardingCompleted", false),
-            currentGraphPath = platformSettings.getString("lastGraphPath", "").ifEmpty { null },
+            currentGraphPath = platformSettings.getString("lastGraphPath", ""),
             isLeftHanded = platformSettings.getBoolean("isLeftHanded", false),
             isLibsqlDriverEnabled = platformSettings.getBoolean("db.libsql.enabled", false),
-            defaultSection = SectionId.fromDbString(platformSettings.getString("defaultSection", "")),
+            defaultSection = platformSettings.getString("defaultSection", ""),
             deviceSetupComplete = platformSettings.getBoolean("deviceSetupComplete", false),
             currentSectionStates = platformSettings.getSectionStates(),
         )
@@ -557,7 +527,7 @@ class StelekitViewModel(
         val path = _uiState.value.currentGraphPath
         val onboarded = _uiState.value.onboardingCompleted
         logger.info("init: lastGraphPath='$path' onboardingCompleted=$onboarded")
-        if (path != null && onboarded) {
+        if (path.isNotEmpty() && onboarded) {
             loadGraph(path)
         }
         
@@ -675,7 +645,8 @@ class StelekitViewModel(
 
     @OptIn(DirectRepositoryWrite::class)
     fun triggerReindex() {
-        val path = _uiState.value.currentGraphPath ?: return
+        val path = _uiState.value.currentGraphPath
+        if (path.isEmpty()) return
 
         scope.launch {
             logger.info("Manually triggering re-index for $path")
@@ -780,14 +751,6 @@ class StelekitViewModel(
                                 logger.info("Graph fully loaded")
                                 _uiState.update { it.copy(isFullyLoaded = true, statusMessage = "Graph loaded completely.") }
 
-                                // On warm start, onPhase1Complete's eager ensureTodayJournal() can
-                                // race loadJournalsImmediate's disk scan and create a filePath=null
-                                // duplicate for today before the externally-synced file is parsed.
-                                // ensureTodayJournal() already merges duplicates for the same date;
-                                // re-running it now (disk scan guaranteed done) heals that duplicate
-                                // within this session instead of waiting for next launch/midnight.
-                                scope.launch { journalService.ensureTodayJournal() }
-
                                 // Start background full-indexing only after loadDirectory(METADATA_ONLY)
                                 // has finished. Launching this earlier races with the batch loader:
                                 // both paths generate identical deterministic UUIDs and interleaved
@@ -825,7 +788,7 @@ class StelekitViewModel(
                     platformSettings.putString("graph_registry", "")
                     _uiState.update {
                         it.copy(
-                            currentGraphPath = null,
+                            currentGraphPath = "",
                             onboardingCompleted = false,
                             isLoading = false,
                             isFullyLoaded = true,
@@ -1263,7 +1226,7 @@ class StelekitViewModel(
         val newScreen = when (destination) {
             "journals" -> Screen.Journals
             "flashcards" -> Screen.Flashcards
-            "all-pages" -> Screen.AllPages()
+            "all-pages" -> Screen.AllPages
             "notifications" -> Screen.Notifications
             "logs" -> Screen.Logs
             else -> Screen.Journals
@@ -1355,10 +1318,6 @@ class StelekitViewModel(
                     // Remove from disk if file path is known
                     page?.filePath?.takeIf { it.isNotBlank() }?.let { path ->
                         fileSystem.deleteFile(path)
-                        // A deleted page can never be resolved by re-navigating to it — drop any
-                        // stale conflict entry now so the sidebar/All Pages count doesn't outlive
-                        // the page it refers to.
-                        clearPendingConflict(path)
                     }
                 } catch (e: CancellationException) {
                     throw e
@@ -1384,7 +1343,8 @@ class StelekitViewModel(
             val isJournal = pageName.matches(Regex("^\\d{4}[-_]\\d{2}[-_]\\d{2}$"))
 
             // Story 5.8: assign new non-journal pages to the default section when set
-            val sectionId = if (!isJournal) _uiState.value.defaultSection else SectionId.Global
+            val currentDefaultSection = _uiState.value.defaultSection
+            val sectionId = if (!isJournal && currentDefaultSection.isNotEmpty()) SectionId.Named(currentDefaultSection) else SectionId.Global
 
             val newPage = Page(
                 uuid = PageUuid(uuid),
@@ -1466,56 +1426,25 @@ class StelekitViewModel(
             graphLoader.externalFileChanges.collect { event ->
                 val state = _uiState.value
                 val editingBlockUuid = state.editingBlockId
-                // A page is "currently viewed" either via Screen.PageView, or by being one of
-                // the pages BlockStateManager is actively observing (e.g. journal entries visible
-                // on the Journals screen — that screen has no single Screen.PageView to match).
-                var currentPage = (state.currentScreen as? Screen.PageView)?.page
-                if (currentPage == null) {
-                    for (uuid in blockStateManager?.activePageUuids?.value ?: emptySet()) {
-                        val candidate = pageRepository.getPageByUuid(PageUuid(uuid)).first().getOrNull()
-                        if (candidate?.filePath == event.filePath) {
-                            currentPage = candidate
-                            break
-                        }
-                    }
-                }
+                val currentPage = (state.currentScreen as? Screen.PageView)?.page
                 if (currentPage == null || currentPage.filePath != event.filePath) {
-                    // User is not currently viewing this page, so there is no in-progress edit
-                    // session for it (BlockStateManager only tracks blocks for viewed pages).
-                    // Apply the disk content directly so it is never lost on reload — but first
-                    // snapshot the first block's current content into pendingConflicts, so that
-                    // if the user later navigates here, checkAndShowPendingConflict() can still
-                    // offer a review/undo dialog for what the auto-apply overwrote.
-                    event.suppress()
-                    val pageName = event.filePath
-                        .substringAfterLast('/').removeSuffix(".md").replace("_", " ")
+                    // User is not currently viewing this page. Suppress auto-reimport so the
+                    // DB keeps the user's edits, store the disk content, and notify via snackbar.
                     val existing = state.pendingConflicts[event.filePath]
-                    val previousContent = existing?.previousContent ?: run {
-                        val existingPage = pageRepository.getPageByName(pageName).first().getOrNull()
-                        existingPage?.let { p ->
-                            blockRepository.getBlocksForPage(p.uuid).first().getOrNull()
-                                ?.minByOrNull { it.position }?.content
-                        } ?: ""
-                    }
+                    event.suppress()
                     if (existing == null || existing.diskContent != event.content) {
+                        val pageName = event.filePath
+                            .substringAfterLast('/').removeSuffix(".md").replace("_", " ")
                         _uiState.update { it.copy(
                             pendingConflicts = it.pendingConflicts + (event.filePath to PendingConflict(
                                 filePath = event.filePath,
                                 pageName = pageName,
                                 diskContent = event.content,
-                                previousContent = previousContent,
                             ))
                         )}
                         if (existing == null) {
-                            sendSnackbar("\"$pageName\" was updated from disk — open it to review")
+                            sendSnackbar("\"$pageName\" was modified on disk — open it to review")
                         }
-                    }
-                    // Fire-and-forget: the pendingConflicts entry above is the durable record of
-                    // this change, so callers observing UI state don't need to wait on the DB
-                    // write landing. Not awaited here so a slow/queued write can't stall the
-                    // shared collector coroutine and delay processing of the next file event.
-                    scope.launch {
-                        graphLoader.applyExternalFileChange(FilePath(event.filePath), event.content)
                     }
                     return@collect
                 }
@@ -1576,23 +1505,12 @@ class StelekitViewModel(
 
                 val diskBlockContent = tryMatchDiskBlockContent(localBlocks, conflictBlockUuid, event.content)
 
-                // FileRegistry's change signal is a whole-file byte comparison, so it fires on
-                // any disk write to the page — including one that simply persisted this exact
-                // edit (e.g. our own debounced save landing, or a disk copy that already matches).
-                // Only surface the dialog when the specific block being protected actually differs
-                // from its disk counterpart; otherwise this reproduces as a "conflict" with no
-                // difference to show in "View full comparison".
-                if (diskBlockContent != null && diskBlockContent == localContent) {
-                    blockStateManager?.queuePageSave(currentPage.uuid.value)
-                    return@collect
-                }
-
                 _uiState.update { it.copy(
                     diskConflict = DiskConflict(
                         pageUuid = currentPage.uuid.value,
                         pageName = currentPage.name,
                         filePath = event.filePath,
-                        editingBlockUuid = BlockUuid(conflictBlockUuid),
+                        editingBlockUuid = conflictBlockUuid,
                         localContent = localContent,
                         diskContent = event.content,
                         diskBlockContent = diskBlockContent
@@ -1625,27 +1543,19 @@ class StelekitViewModel(
             val allBlocksForPage = blockRepository.getBlocksForPage(screen.page.uuid)
                 .first().getOrNull() ?: emptyList()
             val firstBlock = allBlocksForPage.minByOrNull { it.position }
-            val latestPending = _uiState.value.pendingConflicts[filePath] ?: pending
+            val latestDiskContent = _uiState.value.pendingConflicts[filePath]?.diskContent ?: pending.diskContent
 
-            // The disk content was already auto-applied to the DB at detection time (see
-            // observeExternalFileChanges), so firstBlock now holds the disk content, not the
-            // user's prior content — that prior content only survives in previousContent.
-            // If they're equal, the "conflict" was a false positive (e.g. our own save landing
-            // on disk) and there's nothing to review.
-            if (latestPending.previousContent == latestPending.diskContent) {
-                clearPendingConflict(filePath)
-                return@launch
-            }
+            val diskBlockContent = tryMatchDiskBlockContent(allBlocksForPage, firstBlock?.uuid?.value ?: "", latestDiskContent)
 
             _uiState.update { state ->
                 state.copy(diskConflict = DiskConflict(
                     pageUuid = screen.page.uuid.value,
                     pageName = screen.page.name,
                     filePath = filePath,
-                    editingBlockUuid = firstBlock?.uuid,
-                    localContent = latestPending.previousContent,
-                    diskContent = latestPending.diskContent,
-                    diskBlockContent = firstBlock?.content,
+                    editingBlockUuid = firstBlock?.uuid?.value ?: "",
+                    localContent = firstBlock?.content ?: "",
+                    diskContent = latestDiskContent,
+                    diskBlockContent = diskBlockContent,
                 ))
             }
         }
@@ -1695,32 +1605,17 @@ class StelekitViewModel(
     }
 
     /**
-     * Resolve disk conflict: keep the user's local content and write it back over the
-     * disk version that was applied to the DB.
-     *
-     * For the off-page-then-navigate path, the DB and BlockStateManager already hold the
-     * auto-applied disk content by the time this runs — [DiskConflict.localContent] is
-     * sourced from a pre-overwrite snapshot ([PendingConflict.previousContent]), not from
-     * live BlockStateManager state, so it must be written back explicitly rather than
-     * assumed to already be sitting in BlockStateManager's dirty state.
+     * Resolve disk conflict: keep the user's in-progress edits and re-queue a
+     * save so the local version wins on disk.
      */
-    @OptIn(DirectRepositoryWrite::class)
     fun keepLocalChanges() {
         val conflict = _uiState.value.diskConflict ?: return
         _uiState.update { it.copy(diskConflict = null) }
+        // Re-queue a save for the current page so local content overwrites the disk file
+        val currentPage = (uiState.value.currentScreen as? Screen.PageView)?.page ?: return
+        val bsm = blockStateManager ?: return
         scope.launch {
-            if (conflict.editingBlockUuid != null) {
-                val block = blockRepository.getBlockByUuid(conflict.editingBlockUuid).first().getOrNull()
-                if (block != null) {
-                    val updatedBlock = block.copy(content = conflict.localContent, updatedAt = kotlin.time.Clock.System.now())
-                    val saveResult = writeActor?.execute { blockRepository.saveBlock(updatedBlock) }
-                        ?: blockRepository.saveBlock(updatedBlock)
-                    saveResult.onLeft { error ->
-                        logger.error("keepLocalChanges failed to save block for page ${conflict.pageUuid}: ${error.message}")
-                    }
-                }
-            }
-            blockStateManager?.savePageNow(conflict.pageUuid)
+            bsm.queuePageSave(currentPage.uuid.value)
             clearPendingConflict(conflict.filePath)
         }
     }
@@ -1759,6 +1654,12 @@ class StelekitViewModel(
     @OptIn(DirectRepositoryWrite::class)
     fun manualResolve() {
         val conflict = _uiState.value.diskConflict ?: return
+        if (conflict.editingBlockUuid.isBlank()) {
+            // No specific block to merge into — fall back to accepting the local version
+            _uiState.update { it.copy(diskConflict = null) }
+            clearPendingConflict(conflict.filePath)
+            return
+        }
         _uiState.update { it.copy(diskConflict = null) }
         scope.launch {
             val conflictContent = buildString {
@@ -1772,19 +1673,18 @@ class StelekitViewModel(
                 if (!diskSideText.endsWith("\n")) appendLine()
                 append(">>>>>>> Disk")
             }
-            val blockUuid = conflict.editingBlockUuid ?: return@launch
-            val blockResult = blockRepository.getBlockByUuid(blockUuid).first()
+            val blockResult = blockRepository.getBlockByUuid(BlockUuid(conflict.editingBlockUuid ?: return@launch)).first()
             val block = blockResult.getOrNull() ?: return@launch
             val updatedBlock = block.copy(content = conflictContent, updatedAt = kotlin.time.Clock.System.now())
             val saveResult = writeActor?.execute { blockRepository.saveBlock(updatedBlock) }
                 ?: blockRepository.saveBlock(updatedBlock)
             saveResult.onLeft { error ->
-                logger.error("manualResolve failed to save block $blockUuid: ${error.message}")
+                logger.error("manualResolve failed to save block ${conflict.editingBlockUuid}: ${error.message}")
                 sendSnackbar("Could not save your merge — try again (${error.message})")
                 return@launch
             }
             // Focus the block so the user can start editing immediately
-            requestEditBlock(blockUuid, 0)
+            requestEditBlock(BlockUuid(conflict.editingBlockUuid), 0)
             if (ConflictMarkerDetector.hasConflictMarkers(updatedBlock.content)) {
                 sendSnackbar("Conflict markers inserted — remove <<<<<<<, =======, >>>>>>> to let \"${conflict.pageName}\" sync again")
             }
@@ -2275,7 +2175,7 @@ class StelekitViewModel(
                     action = { navigateTo(Screen.GlobalUnlinkedReferences) }
                 )
 
-                if (_uiState.value.currentGraphPath != null) {
+                if (_uiState.value.currentGraphPath.isNotEmpty()) {
                     legacyCommands += Command(
                         id = "import.paste-text",
                         label = "Import text as new page",
@@ -2513,11 +2413,11 @@ class StelekitViewModel(
         _uiState.update { it.copy(renameDialogPage = null, renameDialogBusy = false, renameDialogError = null) }
     }
 
-    fun renamePage(page: Page, newName: String): Job? {
+    fun renamePage(page: Page, newName: String) {
         val trimmed = newName.trim()
-        if (trimmed.isBlank() || trimmed == page.name) return null
-        val graphPath = _uiState.value.currentGraphPath ?: return null
-        return scope.launch {
+        if (trimmed.isBlank() || trimmed == page.name) return
+        val graphPath = _uiState.value.currentGraphPath
+        scope.launch {
             _uiState.update { it.copy(renameDialogBusy = true, renameDialogError = null) }
             // Guard: reject rename if a page with the target name already exists.
             val existing = pageRepository.getPageByName(trimmed).first().getOrNull()
@@ -2548,10 +2448,6 @@ class StelekitViewModel(
                     }
                     val linkWord = if (result.updatedBlockCount == 1) "link" else "links"
                     notificationManager?.show("Renamed \"${page.name}\" → \"$trimmed\" (${result.updatedBlockCount} $linkWord updated)")
-                    // The rename moved the file to a new path — any conflict deferred against the
-                    // old path can never be resolved by navigating to it again (that path is gone),
-                    // so drop it rather than leave an orphaned entry in the sidebar/All Pages count.
-                    page.filePath?.takeIf { it.isNotBlank() }?.let { oldPath -> clearPendingConflict(oldPath) }
                     // Refresh page lists so sidebar and AllPages reflect the new name
                     loadMoreRegularPages(reset = true)
                 }
@@ -2662,7 +2558,7 @@ class StelekitViewModel(
         journalPathPrefix: String,
     ) {
         val manifest = _uiState.value.currentManifest ?: SectionManifest()
-        val graphPath = _uiState.value.currentGraphPath ?: return
+        val graphPath = _uiState.value.currentGraphPath
         val newSection = SectionDefinition(
             id = id,
             displayName = displayName,
@@ -2681,7 +2577,7 @@ class StelekitViewModel(
 
     fun renameSection(id: String, newDisplayName: String) {
         val manifest = _uiState.value.currentManifest ?: return
-        val graphPath = _uiState.value.currentGraphPath ?: return
+        val graphPath = _uiState.value.currentGraphPath
         val updated = manifest.copy(
             sections = manifest.sections.map { if (it.id == id) it.copy(displayName = newDisplayName) else it }
         )
@@ -2695,7 +2591,7 @@ class StelekitViewModel(
 
     fun deleteSection(id: String) {
         val manifest = _uiState.value.currentManifest ?: return
-        val graphPath = _uiState.value.currentGraphPath ?: return
+        val graphPath = _uiState.value.currentGraphPath
         val updated = manifest.copy(sections = manifest.sections.filter { it.id != id })
         scope.launch {
             sectionManifestWriter.write(graphPath, updated).fold(
@@ -2711,7 +2607,7 @@ class StelekitViewModel(
 
     fun setDefaultSection(sectionId: String) {
         platformSettings.putString("defaultSection", sectionId)
-        _uiState.update { it.copy(defaultSection = SectionId.fromDbString(sectionId)) }
+        _uiState.update { it.copy(defaultSection = sectionId) }
     }
 
     fun setSectionState(sectionId: String, state: SectionState) {
@@ -2732,7 +2628,7 @@ class StelekitViewModel(
         _uiState.update {
             it.copy(
                 deviceSetupComplete = true,
-                defaultSection = SectionId.fromDbString(defaultSection),
+                defaultSection = defaultSection,
                 currentSectionStates = sectionStates,
                 deviceSetupWizardVisible = false,
             )

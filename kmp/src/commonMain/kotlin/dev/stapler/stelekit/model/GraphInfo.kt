@@ -24,7 +24,6 @@ data class GraphInfo(
     val detectedRepoRoot: String? = null,
     val detectedWikiSubdir: String? = null,
     val gitDetectionDismissed: Boolean = false,
-    val browserOnlySyncBannerDismissed: Boolean = false,
     val isDemo: Boolean = false,
 )
 

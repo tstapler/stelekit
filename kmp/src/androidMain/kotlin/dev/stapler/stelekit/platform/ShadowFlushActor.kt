@@ -27,17 +27,9 @@ internal class ShadowFlushActor(
     private val onPreFlush: (suspend (safPath: String) -> Unit)? = null,
     private val onFlushed: (suspend (safPath: String) -> Unit)? = null,
     private val onFlushFailed: (suspend (safPath: String) -> Unit)? = null,
-    private val spanEmitter: dev.stapler.stelekit.performance.SpanEmitter? = null,
 ) {
     companion object {
         private const val TAG = "ShadowFlushActor"
-    }
-
-    /** Redacts [this] to an opaque hash-derived token — SAF paths can contain user directory names. */
-    private fun String.redactPath(): String {
-        if (isEmpty()) return this
-        val hash = dev.stapler.stelekit.util.ContentHasher.sha256ForContent(this).take(8)
-        return "<redacted:$hash>"
     }
 
     /** Drain all pending dirty pages to SAF. Suspends until the queue is empty or all retries exhausted. */
@@ -74,13 +66,7 @@ internal class ShadowFlushActor(
             onPreFlush?.invoke(safPath)
             writeStarted = true
 
-            val writeSpanStart = dev.stapler.stelekit.performance.HistogramWriter.epochMs()
             val ok = fileSystem.writeFile(safPath, content)
-            spanEmitter?.emit(
-                name = "file.write.deferred",
-                startMs = writeSpanStart,
-                attrs = mapOf("path" to safPath.redactPath()),
-            )
             if (ok) {
                 writeSucceeded = true
                 queue.dequeue(safPath)

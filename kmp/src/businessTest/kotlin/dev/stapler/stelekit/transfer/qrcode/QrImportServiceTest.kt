@@ -133,16 +133,20 @@ class QrImportServiceTest {
     }
 
     @Test
-    fun import_should_SanitizeAndSucceed_When_ContentContainsRestrictedControlChars() = runBlocking {
-        // MarkdownPageParser sanitizes restricted control characters (e.g. a null byte)
-        // before constructing Block/Page rather than aborting the whole import — see
-        // Validation.sanitizeContent. The imported page should succeed instead of failing.
+    fun import_should_ReturnMarkdownParseFailed_When_OutlinerPipelineCannotParse() = runBlocking {
+        // The block content contains a null byte, which Block's own Validation.validateContent
+        // rejects during GraphLoader.importMarkdownString's block-construction tail. Caught there
+        // and surfaced as a distinct terminal Left — never treated as success.
         val (service, _, _) = buildService()
 
         val result = service.import("- bad\u0000content\n", PageName("Bad Content Page"))
 
-        assertTrue(result.isRight())
-        assertEquals("Bad Content Page", result.getOrNull()?.value)
+        assertTrue(result.isLeft())
+        val error = result.leftOrNull()
+        assertTrue(
+            error is DomainError.QrTransferError.MarkdownParseFailed,
+            "expected MarkdownParseFailed, got $error",
+        )
     }
 
     @Test

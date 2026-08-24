@@ -44,11 +44,9 @@ class SqlDelightPageRepository(
     }
 
     override suspend fun saveAll(entities: List<DomainPage>): List<DomainPage> {
-        database.transaction {
-            entities.forEach { entity ->
-                val pageEntity = entity.toDbPage()
-                database.pagesQueries.insert(pageEntity)
-            }
+        entities.forEach { entity ->
+            val pageEntity = entity.toDbPage()
+            database.pagesQueries.insert(pageEntity)
         }
         return entities
     }

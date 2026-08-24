@@ -13,7 +13,6 @@ import dev.stapler.stelekit.repository.InMemoryPageRepository
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -28,7 +27,6 @@ import java.io.File
  * 2. Content-hash guard prevents re-parse when only mtime changes
  * 3. GraphWriter's onFileWritten callback calls markFileWrittenByUs
  * 4. ExternalFileChange data class has correct structure
- * 5. A genuine external (non-app) disk edit propagates into the repository
  */
 class GraphLoaderWatcherTest {
 
@@ -187,65 +185,6 @@ class GraphLoaderWatcherTest {
             val content = fileSystem.readFile(filePath)
             assertNotNull(content, "Should be able to read the file back")
             assertTrue(content.contains("Hello"), "File should contain the block content")
-        } finally {
-            graphDir.deleteRecursively()
-        }
-    }
-
-    /**
-     * End-to-end regression coverage for the "edits made outside the app never show up"
-     * class of bug: a real file, on real disk, edited by something other than GraphWriter
-     * (no markFileWrittenByUs call — exactly what a second device/editor/sync tool does),
-     * must be picked up by the real watcher and reflected in the block repository.
-     *
-     * Gap this closes: every other test of this path (GraphFileWatcherTest,
-     * ExternalChangeConflictTest, DiskConflictResolutionTest, and the other tests in this
-     * file) injects the change into a fake in-memory FileSystem — none of them write real
-     * bytes to a real file and let the real poll loop discover it. A regression in the real
-     * disk-read/mtime-compare path (as opposed to the in-memory simulation of it) could ship
-     * with every one of those tests still green.
-     */
-    @Test
-    fun external_disk_edit_not_made_by_app_propagates_to_repository() = runBlocking {
-        val graphDir = tempGraphDir()
-        try {
-            val fileSystem = PlatformFileSystem()
-            fileSystem.registerGraphRoot(graphDir.absolutePath)
-            val pageRepo = InMemoryPageRepository()
-            val blockRepo = InMemoryBlockRepository()
-            // Fast poll so the test doesn't wait out the production 5s interval.
-            val loader = GraphLoader(fileSystem, pageRepo, blockRepo, watcherPollIntervalMs = 100L)
-
-            val pagePath = File(graphDir, "pages/Watched.md").absolutePath
-            File(pagePath).writeText("- Original content\n")
-
-            loader.loadGraph(graphDir.absolutePath) {}
-
-            val page = pageRepo.getAllPagesSnapshot().getOrNull()
-                ?.firstOrNull { it.name.contains("Watched", ignoreCase = true) }
-            assertNotNull(page, "Seed page should have loaded")
-            val blocksBefore = blockRepo.getBlocksForPage(page.uuid).first().getOrNull().orEmpty()
-            assertTrue(blocksBefore.any { it.content.contains("Original content") })
-
-            // Simulate an external editor/sync tool: write straight to disk with no app
-            // involvement, so markFileWrittenByUs is never called for this write.
-            delay(50)
-            File(pagePath).writeText("- Externally edited content\n")
-
-            withTimeout(3_000L) {
-                while (true) {
-                    val blocks = blockRepo.getBlocksForPage(page.uuid).first().getOrNull().orEmpty()
-                    if (blocks.any { it.content.contains("Externally edited content") }) break
-                    delay(50)
-                }
-            }
-
-            val blocksAfter = blockRepo.getBlocksForPage(page.uuid).first().getOrNull().orEmpty()
-            assertTrue(
-                blocksAfter.any { it.content.contains("Externally edited content") },
-                "External on-disk edit should propagate into the block repository, got: " +
-                    blocksAfter.map { it.content },
-            )
         } finally {
             graphDir.deleteRecursively()
         }

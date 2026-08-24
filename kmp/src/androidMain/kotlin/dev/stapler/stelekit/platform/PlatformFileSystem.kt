@@ -735,12 +735,6 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     private var onFlushComplete: (suspend (String) -> Unit)? = null
     private var onFlushPreWrite: (suspend (String) -> Unit)? = null
     private var onFlushFailed: (suspend (String) -> Unit)? = null
-    private var spanEmitter: dev.stapler.stelekit.performance.SpanEmitter? = null
-
-    /** Registers the [dev.stapler.stelekit.performance.SpanEmitter] used to instrument write-behind SAF flushes. */
-    override fun setSpanEmitter(spanEmitter: dev.stapler.stelekit.performance.SpanEmitter?) {
-        this.spanEmitter = spanEmitter
-    }
 
     /**
      * Registers a callback invoked after each successful write-behind SAF flush.
@@ -787,7 +781,6 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             onPreFlush = onFlushPreWrite,
             onFlushed = onFlushComplete,
             onFlushFailed = onFlushFailed,
-            spanEmitter = spanEmitter,
         ).flush()
     }
 

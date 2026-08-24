@@ -21,7 +21,6 @@ class SloChecker(
     private val histogramWriter: HistogramWriter,
     private val spanEmitter: SpanEmitter,
     scope: CoroutineScope,
-    private val thresholds: List<SloThreshold> = DEFAULT_THRESHOLDS,
 ) {
     companion object {
         val DEFAULT_THRESHOLDS = listOf(
@@ -35,40 +34,6 @@ class SloChecker(
             SloThreshold("sql.delete",      150L),
             SloThreshold("db.queue_wait",   500L),
         )
-
-        // Android SAF (Storage Access Framework) I/O goes through Binder IPC and, for
-        // write-behind flushes, a batched background actor — both add latency that direct
-        // JVM/desktop filesystem calls don't have. A flat threshold would either false-positive
-        // on every Android write or mask real slowness on desktop.
-        //
-        // Desktop numbers are anchored to a measured local write+fsync/rename benchmark
-        // (p99 ≈130ms / ≈32ms on this dev machine's disk), doubled-to-tripled for headroom.
-        // Android numbers are anchored to this repo's own CI benchmark history
-        // (benchmarks/android-history/*.json: safPerFileMs 0.13-0.63ms/file, worst observed
-        // safOverhead 19ms across a ~20-file batch) — but that's an emulator, not the slow
-        // real-world hardware this SLO exists to catch, so these carry a large deliberate
-        // margin and are meant to be tightened once field p99 data (via this same SloChecker)
-        // shows real headroom, rather than trusted as final.
-        val DESKTOP_DISK_THRESHOLDS = listOf(
-            SloThreshold("file.write",           300L),
-            SloThreshold("file.write.deferred",  300L),
-            SloThreshold("file.rename",          100L),
-            SloThreshold("file.delete",          100L),
-        )
-        val ANDROID_DISK_THRESHOLDS = listOf(
-            SloThreshold("file.write",           800L),
-            SloThreshold("file.write.deferred", 1_500L),
-            SloThreshold("file.rename",          500L),
-            SloThreshold("file.delete",          400L),
-        )
-
-        /** Picks disk-IO thresholds by [platform] (from [getDeviceInfo]'s `platform` field). */
-        fun diskThresholdsFor(platform: String): List<SloThreshold> =
-            if (platform == "Android") ANDROID_DISK_THRESHOLDS else DESKTOP_DISK_THRESHOLDS
-
-        /** [DEFAULT_THRESHOLDS] plus device-appropriate disk-IO thresholds for [platform]. */
-        fun thresholdsFor(platform: String): List<SloThreshold> =
-            DEFAULT_THRESHOLDS + diskThresholdsFor(platform)
     }
 
     init {
@@ -83,7 +48,7 @@ class SloChecker(
 
     private fun check() {
         val nowMs = HistogramWriter.epochMs()
-        for (threshold in thresholds) {
+        for (threshold in DEFAULT_THRESHOLDS) {
             val summary = histogramWriter.queryPercentiles(threshold.operationName) ?: continue
             if (summary.sampleCount < 5) continue  // not enough data to judge
 

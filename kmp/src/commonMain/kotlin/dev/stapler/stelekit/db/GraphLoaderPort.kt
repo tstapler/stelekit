@@ -101,21 +101,6 @@ interface GraphLoaderPort {
     )
 
     /**
-     * Force-parses [content] into the database, bypassing the mtime freshness guard that
-     * [parseAndSavePage] applies. Used to auto-apply a host-directory change for a page that
-     * isn't currently open — the OPFS mirror's mtime is not updated when a conflicting host
-     * change is detected, so the normal guard would otherwise silently skip the reload. The
-     * default implementation falls back to plain [parseAndSavePage]; [GraphLoader] overrides
-     * this to bypass the guard.
-     */
-    suspend fun applyExternalFileChange(
-        filePath: FilePath,
-        content: String,
-        mode: ParseMode = ParseMode.FULL,
-        priority: DatabaseWriteActor.Priority = DatabaseWriteActor.Priority.HIGH,
-    ) = parseAndSavePage(filePath, content, mode, priority)
-
-    /**
      * Creates (or re-parses) the journal file for [sectionId] on [date] and returns the Page.
      * Creates the directory and empty file if absent. sectionId = "" for the global journal.
      */

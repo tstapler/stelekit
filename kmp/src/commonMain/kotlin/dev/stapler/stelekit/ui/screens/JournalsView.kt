@@ -350,7 +350,6 @@ fun JournalsView(
                     )
                 },
                 onDismiss = { tagSuggestionViewModel.dismiss() },
-                onRetry = { tagSuggestionViewModel.retryLastRequest() },
             )
         }
     }

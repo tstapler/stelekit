@@ -33,12 +33,6 @@ class SectionManifestParserTest {
         val manifest = SectionManifestParser(fs).parse("/graph").getOrNull()
 
         assertNotNull(manifest)
-        if (!TOML_PARSING_SUPPORTED) {
-            // ktoml doesn't support Kotlin/Wasm (SectionManifestTomlDecoder.js.kt) — the parser
-            // documents falling back to an empty manifest rather than parsing on this platform.
-            assertTrue(manifest.sections.isEmpty(), "Expected empty fallback manifest on this platform")
-            return
-        }
         assertEquals(1, manifest.version)
         assertEquals(2, manifest.sections.size)
 
@@ -84,8 +78,7 @@ class SectionManifestParserTest {
         val fs = FakeFileSystem().apply { writeFile("/graph/${SectionManifest.FILENAME}", toml) }
         val result = SectionManifestParser(fs).parse("/graph")
         assertTrue(result.isRight(), "Parse should succeed despite unknown fields; got: $result")
-        val expectedSections = if (TOML_PARSING_SUPPORTED) 1 else 0
-        assertEquals(expectedSections, result.getOrNull()!!.sections.size)
+        assertEquals(1, result.getOrNull()!!.sections.size)
     }
 
     @Test
@@ -104,10 +97,6 @@ class SectionManifestParserTest {
         val manifest = SectionManifestParser(fs).parse("/graph").getOrNull()
 
         assertNotNull(manifest)
-        if (!TOML_PARSING_SUPPORTED) {
-            assertTrue(manifest.sections.isEmpty(), "Expected empty fallback manifest on this platform")
-            return
-        }
         assertEquals("normal", manifest.sections[0].sensitivity)
     }
 }

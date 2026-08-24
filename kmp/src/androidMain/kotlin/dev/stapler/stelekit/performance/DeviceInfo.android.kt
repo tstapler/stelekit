@@ -10,8 +10,7 @@ actual class DeviceInfo actual constructor(
     actual val osVersion: String,
     actual val deviceModel: String,
     actual val availableRamMb: Long,
-    actual val appVersion: String,
-    actual val gitCommit: String
+    actual val appVersion: String
 )
 
 actual fun getDeviceInfo(): DeviceInfo = DeviceInfo(
@@ -25,12 +24,5 @@ actual fun getDeviceInfo(): DeviceInfo = DeviceInfo(
     appVersion = runCatching {
         val ctx = SteleKitContext.context
         ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName ?: "unknown"
-    }.getOrDefault("unknown"),
-    // "git_commit_hash" is a resValue defined in :androidApp (the final app module), not :kmp
-    // itself — looked up by name since :kmp's R class has no reference to it.
-    gitCommit = runCatching {
-        val ctx = SteleKitContext.context
-        val resId = ctx.resources.getIdentifier("git_commit_hash", "string", ctx.packageName)
-        if (resId != 0) ctx.getString(resId) else "unknown"
     }.getOrDefault("unknown")
 )

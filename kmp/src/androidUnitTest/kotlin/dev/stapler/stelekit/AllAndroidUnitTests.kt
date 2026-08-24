@@ -5,7 +5,6 @@ import dev.stapler.stelekit.platform.LegacyPathValidationTest
 import dev.stapler.stelekit.platform.PlatformFileSystemPickerTest
 import dev.stapler.stelekit.platform.PlatformFileSystemSafTest
 import dev.stapler.stelekit.platform.PlatformFileSystemUriLogicTest
-import dev.stapler.stelekit.platform.SafChangeDetectorFileObserverTest
 import dev.stapler.stelekit.platform.SafPermissionPersistenceTest
 import dev.stapler.stelekit.platform.SafPermissionStateTransitionTest
 import dev.stapler.stelekit.platform.ShadowFileCacheTest
@@ -26,7 +25,6 @@ import org.junit.runners.Suite
     PlatformFileSystemPickerTest::class,
     PlatformFileSystemSafTest::class,
     PlatformFileSystemUriLogicTest::class,
-    SafChangeDetectorFileObserverTest::class,
     SafPermissionPersistenceTest::class,
     SafPermissionStateTransitionTest::class,
     ShadowFileCacheTest::class,

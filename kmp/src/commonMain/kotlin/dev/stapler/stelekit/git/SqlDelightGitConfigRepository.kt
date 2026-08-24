@@ -54,7 +54,7 @@ class SqlDelightGitConfigRepository(
                 database.steleDatabaseQueries.insertOrReplaceGitConfig(
                     graph_id = config.graphId,
                     repo_root = config.repoRoot,
-                    wiki_subdir = config.wikiSubdir.orEmpty(),
+                    wiki_subdir = config.wikiSubdir,
                     remote_name = config.remoteName,
                     remote_branch = config.remoteBranch,
                     auth_type = config.authType.name,
@@ -96,7 +96,7 @@ class SqlDelightGitConfigRepository(
     private fun Git_config.toModel(): GitConfig = GitConfig(
         graphId = graph_id,
         repoRoot = repo_root,
-        wikiSubdir = wiki_subdir.ifEmpty { null },
+        wikiSubdir = wiki_subdir,
         remoteName = remote_name,
         remoteBranch = remote_branch,
         authType = runCatching { GitAuthType.valueOf(auth_type) }.getOrDefault(GitAuthType.NONE),

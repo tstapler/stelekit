@@ -1,11 +1,6 @@
 package dev.stapler.stelekit.ui.components
 
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -19,7 +14,6 @@ import androidx.compose.ui.unit.dp
  * Renders an ordered list item (e.g. `1. Text`) with a numeric marker
  * and inline markdown support via [WikiLinkText].
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun OrderedListItemBlock(
     content: String,
@@ -36,21 +30,12 @@ internal fun OrderedListItemBlock(
         content.trimStart().dropWhile { it.isDigit() }.removePrefix(".").removePrefix(")").trimStart()
     }
 
-    Row(modifier = modifier.height(IntrinsicSize.Min)) {
-        // The number marker is a disjoint tap region from WikiLinkText below (fixed 32dp
-        // width vs. weight(1f) for the rest of the row), so giving it its own
-        // combinedClickable doesn't reintroduce a dueling-recognizer race -- it's a second
-        // recognizer over different pixels, not the same ones. Previously this label had no
-        // gesture handling of its own (was only covered by the row-level `clickable` this
-        // fix's consolidation removed without replacing), so tapping it silently did nothing.
+    Row(modifier = modifier) {
         Text(
             text = "$number.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onBackground,
-            modifier = Modifier.width(32.dp).fillMaxHeight().combinedClickable(
-                onLongClick = onLongPressSelect,
-                onClick = { if (isInSelectionMode) onToggleSelect() else onStartEditing() },
-            ),
+            modifier = Modifier.width(32.dp),
         )
         WikiLinkText(
             text = strippedContent,

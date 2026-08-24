@@ -219,10 +219,7 @@ fun SearchDialog(
                     if (showingEmpty && uiState.recentPages.isNotEmpty()) {
                         // Show recent pages list
                         LazyColumn(
-                            modifier = (if (isMobile) Modifier.fillMaxSize() else Modifier.heightIn(max = 300.dp)).fillMaxWidth(),
-                            // Top inset so the first row clears the card's rounded corner/shadow
-                            // instead of sitting flush against it (was rendering half-hidden).
-                            contentPadding = PaddingValues(top = 8.dp)
+                            modifier = (if (isMobile) Modifier.fillMaxSize() else Modifier.heightIn(max = 300.dp)).fillMaxWidth()
                         ) {
                             item {
                                 Text(
@@ -268,11 +265,7 @@ fun SearchDialog(
                                 Column(modifier = if (isMobile) Modifier.fillMaxSize() else Modifier) {
                                     LazyColumn(
                                         state = listState,
-                                        modifier = (if (isMobile) Modifier.weight(1f) else Modifier.heightIn(max = 400.dp)).fillMaxWidth(),
-                                        // Same top inset as the recent-pages list above — keeps the
-                                        // first row (often the "Create page" item) fully clear of the
-                                        // card's rounded corner/shadow so it isn't visually cut off.
-                                        contentPadding = PaddingValues(top = 8.dp)
+                                        modifier = (if (isMobile) Modifier.weight(1f) else Modifier.heightIn(max = 400.dp)).fillMaxWidth()
                                     ) {
                                         itemsIndexed(uiState.results) { index, item ->
                                             when (item) {
@@ -519,7 +512,6 @@ fun SearchResultRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 48.dp)
             .background(if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) else Color.Transparent)
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 8.dp),

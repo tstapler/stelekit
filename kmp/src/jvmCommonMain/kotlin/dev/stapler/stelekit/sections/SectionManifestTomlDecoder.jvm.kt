@@ -11,5 +11,3 @@ internal actual fun decodeSectionManifestToml(content: String): SectionManifest?
 
 internal actual fun encodeSectionManifestToml(manifest: SectionManifest): String =
     sectionToml.encodeToString(serializer<SectionManifest>(), manifest)
-
-internal actual val TOML_PARSING_SUPPORTED: Boolean = true

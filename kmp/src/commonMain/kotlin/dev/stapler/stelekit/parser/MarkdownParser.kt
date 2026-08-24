@@ -39,13 +39,13 @@ class MarkdownParser {
         val level = when(block) {
             is BulletBlockNode -> block.level
             is ParagraphBlockNode -> 0
-            is HeadingBlockNode -> block.indentLevel
-            is CodeFenceBlockNode -> block.indentLevel
-            is BlockquoteBlockNode -> block.indentLevel
+            is HeadingBlockNode -> 0
+            is CodeFenceBlockNode -> 0
+            is BlockquoteBlockNode -> 0
             is OrderedListItemBlockNode -> block.level
-            is ThematicBreakBlockNode -> block.indentLevel
-            is TableBlockNode -> block.indentLevel
-            is RawHtmlBlockNode -> block.indentLevel
+            is ThematicBreakBlockNode -> 0
+            is TableBlockNode -> 0
+            is RawHtmlBlockNode -> 0
         }
 
         val blockType = when (block) {
@@ -85,7 +85,6 @@ class MarkdownParser {
             is BlockquoteBlockNode -> {
                 block.children.map { child -> "> ${reconstructContent(child.content)}" }.joinToString("\n")
             }
-            is RawHtmlBlockNode -> block.rawHtml
             else -> reconstructContent(block.content)
         }
         

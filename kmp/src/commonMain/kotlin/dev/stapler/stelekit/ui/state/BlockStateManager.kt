@@ -804,12 +804,12 @@ class BlockStateManager(
     // guard-mutex + plain-map keyed-lock pattern.
     //
     // KNOWN LIMITATION: this mutex only serializes insertTextAtCursor / appendToBlock /
-    // insertLinkAtCursor / replaceSelectionWithLink / addNewBlock / splitBlock against each
-    // other. It does NOT serialize them against updateBlockContent's direct callers — notably
-    // the per-keystroke onContentChange path in PageView.kt / JournalsView.kt — so a user typing
-    // while one of these helpers is landing can still race with it. Closing that gap requires
-    // wrapping the keystroke path in the same mutex and has its own latency/UX tradeoffs; it is
-    // tracked as follow-up work, not addressed here.
+    // insertLinkAtCursor / replaceSelectionWithLink against each other. It does NOT serialize
+    // them against updateBlockContent's direct callers — notably the per-keystroke
+    // onContentChange path in PageView.kt / JournalsView.kt — so a user typing while one of
+    // these helpers is landing can still race with it. Closing that gap requires wrapping the
+    // keystroke path in the same mutex and has its own latency/UX tradeoffs; it is tracked as
+    // follow-up work, not addressed here.
     private val contentMutationMutexGuard = Mutex()
     private val contentMutationMutexes = mutableMapOf<String, Mutex>()
 
@@ -953,11 +953,6 @@ class BlockStateManager(
     /**
      * Optimistically update block content. Updates local state immediately,
      * marks the block as dirty, and persists to DB asynchronously.
-     *
-     * Does not acquire the per-block lock itself — callers that already hold it
-     * (insertTextAtCursor, insertLinkAtCursor, replaceSelectionWithLink) call
-     * [applyBlockContentUpdate] directly instead of going through this Job-launching entry
-     * point (see the KNOWN LIMITATION note above [contentMutationMutex]).
      */
     override fun updateBlockContent(blockUuid: BlockUuid, newContent: String, newVersion: Long): Job = scope.launch {
         applyBlockContentUpdate(blockUuid, newContent, newVersion)
@@ -1199,7 +1194,7 @@ class BlockStateManager(
     override fun outdentBlock(blockUuid: BlockUuid): Job = scope.launch {
         val pageUuid = getPageUuidForBlock(blockUuid) ?: return@launch
         val before = takePageSnapshot(pageUuid)
-        writeOutdentBlock(blockUuid).onLeft { err -> logger.error("outdentBlock: DB write failed for $blockUuid: $err") }
+        writeOutdentBlock(blockUuid)
         refreshBlocksForPage(blockUuid)
         val after = takePageSnapshot(pageUuid)
         record(
@@ -1240,11 +1235,6 @@ class BlockStateManager(
             ?.position
 
     override fun addNewBlock(currentBlockUuid: BlockUuid): Job = scope.launch {
-        // Held for the whole split (read-through-write) so a concurrent link/text insertion on
-        // currentBlockUuid can't land between the content read here and writeSplitBlock below —
-        // otherwise cursorPosition is computed against stale content length and the split point
-        // lands mid-insertion. Mirrors insertTextAtCursor/insertLinkAtCursor/etc.
-        contentMutationMutex(currentBlockUuid).withLock {
         val sourceBlock = findBlockOrNull(currentBlockUuid) ?: return@launch
         val pageUuidStr = sourceBlock.pageUuid.value
         val before = takePageSnapshot(pageUuidStr)
@@ -1292,20 +1282,14 @@ class BlockStateManager(
             }
             requestEditBlock(currentBlockUuid, cursorPosition)
         }
-        }
     }
 
     override fun splitBlock(blockUuid: BlockUuid, cursorPosition: Int): Job = scope.launch {
-        // See addNewBlock: held for the whole split so a concurrent link/text insertion on
-        // blockUuid can't land between the content read here and writeSplitBlock below.
-        contentMutationMutex(blockUuid).withLock {
         val pageUuid = getPageUuidForBlock(blockUuid) ?: return@launch
         val before = takePageSnapshot(pageUuid)
 
-        // Optimistic: split _blocks in-memory and move focus immediately, re-read via
-        // findBlockOrNull (not a bare _blocks lookup) so we see the latest optimistic content
-        // even if a concurrent insert just landed while we were waiting for the lock above.
-        val sourceBlock = findBlockOrNull(blockUuid) ?: return@launch
+        // Optimistic: split _blocks in-memory and move focus immediately
+        val sourceBlock = _blocks.value[pageUuid]?.find { it.uuid == blockUuid } ?: return@launch
         val clampedCursor = cursorPosition.coerceIn(0, sourceBlock.content.length)
         val firstPart = sourceBlock.content.substring(0, clampedCursor).trim()
         val secondPart = sourceBlock.content.substring(clampedCursor).trim()
@@ -1354,7 +1338,6 @@ class BlockStateManager(
                 state + (pageUuid to pageBlocks)
             }
             requestEditBlock(blockUuid, clampedCursor)
-        }
         }
     }
 

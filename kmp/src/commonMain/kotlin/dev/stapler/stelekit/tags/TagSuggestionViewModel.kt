@@ -1,14 +1,9 @@
 package dev.stapler.stelekit.tags
 
-import arrow.core.Either
-import arrow.core.left
-import dev.stapler.stelekit.error.DomainError
-import dev.stapler.stelekit.llm.LlmProviderAvailability
 import dev.stapler.stelekit.llm.PendingLlmSuggestion
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.util.UuidGenerator
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -43,14 +38,10 @@ data class JournalScanEntry(
 class TagSuggestionViewModel(
     private val engine: TagSuggestionEngine,
     private val onPropose: ((PendingLlmSuggestion) -> Unit)? = null,
-    private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
-    private val pollDeadlineMs: Long = TagAvailabilityPoller.DEFAULT_POLL_DEADLINE_MS,
-    private val pollIntervalMs: Long = TagAvailabilityPoller.DEFAULT_POLL_INTERVAL_MS,
-    private val pollEscalationThresholdMs: Long = TagAvailabilityPoller.CAPTION_ESCALATION_THRESHOLD_MS,
 ) {
     private val logger = Logger("TagSuggestionViewModel")
     private val scope = CoroutineScope(
-        SupervisorJob() + dispatcher +
+        SupervisorJob() + Dispatchers.Default +
         CoroutineExceptionHandler { _, e ->
             if (e !is CancellationException) {
                 logger.error("Uncaught error: ${e::class.simpleName}: ${e.message}")
@@ -76,128 +67,21 @@ class TagSuggestionViewModel(
     /** True when an LLM provider is wired — controls scan button visibility. */
     val hasLlmProvider: Boolean get() = engine.hasLlmProvider
 
-    /**
-     * Session-scoped "when did this VM instance first observe the on-device model as
-     * not-yet-available" timestamp (pre-mortem P1 #1/#2 fix). Set ONCE by [runLlmSuggest]
-     * the first time a retryable-unavailable signal is observed; NEVER reset by a
-     * block-switch or [retryLastRequest]; only cleared back to null when [engine].llmSuggest()
-     * actually succeeds.
-     */
-    private var downloadFirstObservedAtMs: Long? = null
-
-    /** Test-only accessor — lets tests assert the suggestionJob coroutine itself terminates on
-     * its own once the poll deadline elapses, without weakening suggestionJob's private visibility. */
-    internal val isSuggestionJobActiveForTest: Boolean
-        get() = suggestionJob?.isActive == true
-
-    private data class LastRequest(
-        val blockUuid: String,
-        val blockContent: String,
-        val alreadyLinkedTerms: Set<String>,
-        val allowPolling: Boolean,
-    )
-    private var lastRequest: LastRequest? = null
-
     /** Warm up the on-device model. Called at app start so first real request is never cold. */
     fun preload() {
         scope.launch { engine.preload() }
     }
 
-    /**
-     * Single call site for both requestSuggestions() (allowPolling=true) and scanEntries()
-     * (allowPolling=false) — FR-7's literal, greppable implementation. Pitfall #2: only
-     * TagAvailabilityPoller.pollUntilAvailable's checkAvailability probe is called on every
-     * poll tick — engine.llmSuggest() (which calls format(), which can trigger the AICore
-     * download) is called at most twice: once for the first attempt, once more after Available
-     * is observed.
-     *
-     * Pre-mortem P1 #1/#2: [downloadFirstObservedAtMs] is set once (never reset by a relaunch)
-     * and threaded into pollUntilAvailable as startedAtOverride, so a block-switch-and-return or
-     * a manual retry resumes the existing elapsed-time budget instead of restarting the
-     * escalation/deadline clock from zero.
-     */
-    private suspend fun runLlmSuggest(
-        blockContent: String,
-        alreadyLinkedTerms: Set<String>,
-        allowPolling: Boolean,
-        onStatusUpdate: (LlmSuggestionStatus) -> Unit,
-    ): Either<DomainError, List<TagSuggestion>> {
-        val firstAttempt = engine.llmSuggest(blockContent, alreadyLinkedTerms)
-        if (firstAttempt is Either.Right) {
-            // Model actually produced a result — the download (if any was in flight) is over.
-            // Clear the session-scoped tracking so a *future* stall starts a fresh clock rather
-            // than inheriting this resolved cycle's origin.
-            downloadFirstObservedAtMs = null
-            return firstAttempt
-        }
-        if (!allowPolling) return firstAttempt
-
-        val probe = engine.checkAvailability ?: return firstAttempt
-        val failure = (firstAttempt as Either.Left).value as? DomainError.NetworkError.RequestFailed
-        if (failure == null || !failure.retryable) return firstAttempt
-
-        // Pre-mortem P1 #1/#2 fix: set ONCE per VM lifetime, the first time a retryable signal
-        // is observed; a later relaunch (block-switch-and-return, manual retry) reuses this same
-        // value rather than overwriting it with "now".
-        val observedAt = downloadFirstObservedAtMs
-            ?: Clock.System.now().toEpochMilliseconds().also { downloadFirstObservedAtMs = it }
-        val elapsedSoFar = Clock.System.now().toEpochMilliseconds() - observedAt
-
-        // AC0: initial "Downloading..." caption is the SDK-sourced reason string already
-        // produced by format() — reused verbatim — UNLESS this is a resumed poll that's already
-        // past the escalation threshold, in which case show the escalated caption immediately
-        // rather than a cold-start string the user has already seen once this session.
-        val initialCaption = if (elapsedSoFar >= pollEscalationThresholdMs) {
-            TagAvailabilityPoller.ESCALATED_WAIT_CAPTION
-        } else {
-            failure.message
-        }
-        onStatusUpdate(LlmSuggestionStatus.Pending(initialCaption))
-
-        val resolved = TagAvailabilityPoller.pollUntilAvailable(
-            checkAvailability = probe,
-            onStatusUpdate = onStatusUpdate,
-            deadlineMs = pollDeadlineMs,
-            intervalMs = pollIntervalMs,
-            escalationThresholdMs = pollEscalationThresholdMs,
-            startedAtOverride = downloadFirstObservedAtMs,
-        )
-        return when (resolved) {
-            is LlmProviderAvailability.Available -> {
-                val retried = engine.llmSuggest(blockContent, alreadyLinkedTerms) // AC1: auto re-run
-                if (retried is Either.Right) downloadFirstObservedAtMs = null
-                retried
-            }
-            is LlmProviderAvailability.Unavailable ->
-                // Note: resolved.reason is threaded through DomainError.NetworkError.RequestFailed.message
-                // here but is NOT what the UI displays — LlmSuggestionStatus.Stalled has no
-                // message field (only `retryable`); the terminal caption is UI-owned copy.
-                DomainError.NetworkError.RequestFailed(resolved.reason, retryable = resolved.retryable).left()
-            is LlmProviderAvailability.Preparing ->
-                // Unreachable — pollUntilAvailable's contract never returns Preparing — kept
-                // for exhaustiveness on the sealed LlmProviderAvailability `when`.
-                DomainError.NetworkError.RequestFailed("Taking longer than expected", retryable = true).left()
-        }
-    }
-
-    fun requestSuggestions(
-        blockUuid: String,
-        blockContent: String,
-        alreadyLinkedTerms: Set<String> = emptySet(),
-        allowPolling: Boolean = true,
-    ) {
-        lastRequest = LastRequest(blockUuid, blockContent, alreadyLinkedTerms, allowPolling)
-
+    fun requestSuggestions(blockUuid: String, blockContent: String, alreadyLinkedTerms: Set<String> = emptySet()) {
         val cached = cache[blockUuid]
         if (cached != null) {
             _state.value = cached
-            val activelyRunning = activeBlockUuid == blockUuid && cached.llmStatus is LlmSuggestionStatus.Pending
-            if (activelyRunning) return
-            val terminal = cached.llmStatus == LlmSuggestionStatus.Resolved ||
-                (cached.llmStatus as? LlmSuggestionStatus.Failed)?.retryable == false
-            if (terminal) return
-            // NotStarted, Stalled, retryable Failed, or a Pending job that was cancelled
-            // (block switch) all fall through to re-run — this is also the FR-3 retry path.
+            // If LLM is already running in the background for this block, restore state and wait —
+            // don't restart the job. The background job will update _state and cache when done.
+            if (cached.llmPending && activeBlockUuid == blockUuid) return
+            // Fully resolved — nothing more to do.
+            if (!cached.llmPending) return
+            // Pending but job was cancelled (user switched to another block) — fall through to re-run.
         }
 
         // Cancel the previous job only if it's for a different block.
@@ -211,68 +95,33 @@ class TagSuggestionViewModel(
                 blockUuid = blockUuid,
                 localSuggestions = localSuggestions,
                 llmSuggestions = emptyList(),
-                llmStatus = if (engine.hasLlmProvider) LlmSuggestionStatus.Pending() else LlmSuggestionStatus.Resolved,
+                llmPending = engine.hasLlmProvider,
             )
             cache[blockUuid] = initial
             _state.value = initial
 
-            val onStatusUpdate: (LlmSuggestionStatus) -> Unit = { status ->
-                cache[blockUuid]?.let { cache[blockUuid] = it.copy(llmStatus = status) }
-                _state.update { current ->
-                    if (current is TagSuggestionState.Ready && current.blockUuid == blockUuid) current.copy(llmStatus = status)
-                    else current
-                }
-            }
-
-            runLlmSuggest(blockContent, alreadyLinkedTerms, allowPolling, onStatusUpdate).fold(
+            engine.llmSuggest(blockContent, alreadyLinkedTerms).fold(
                 ifLeft = { err ->
-                    // Stalled is reserved for the poll loop's OWN deadline-reached terminal
-                    // signal specifically — identified by its distinctive STALLED_REASON message,
-                    // not merely by `retryable == true`. Any other retryable RequestFailed (a
-                    // NetworkError, an OnDeviceUnavailable surfaced without polling ever starting
-                    // because allowPolling=false or no probe is wired, or a TOCTOU retry-after-
-                    // Available failure) is a genuinely different condition — mapping it to
-                    // Stalled would discard its real message and render it as the on-device
-                    // "taking longer than expected" caption, which is misleading. DomainError.
-                    // NetworkError.Timeout is likewise its own distinct, plausibly-transient
-                    // condition (a completed-but-slow network round-trip, not a model-download
-                    // wait).
-                    val status = when {
-                        err is DomainError.NetworkError.RequestFailed &&
-                            err.message == TagAvailabilityPoller.STALLED_REASON ->
-                            LlmSuggestionStatus.Stalled(retryable = err.retryable)
-                        err is DomainError.NetworkError.RequestFailed && err.retryable ->
-                            LlmSuggestionStatus.Failed(message = err.message, retryable = true)
-                        err is DomainError.NetworkError.Timeout ->
-                            LlmSuggestionStatus.Failed(message = err.message, retryable = true)
-                        else ->
-                            LlmSuggestionStatus.Failed(message = err.message, retryable = false)
-                    }
-                    onStatusUpdate(status)
-                },
-                ifRight = { llmSuggestions ->
-                    cache[blockUuid]?.let {
-                        cache[blockUuid] = it.copy(llmSuggestions = llmSuggestions, llmStatus = LlmSuggestionStatus.Resolved)
-                    }
+                    val updated = cache[blockUuid]?.copy(llmError = err.message, llmPending = false)
+                    if (updated != null) cache[blockUuid] = updated
                     _state.update { current ->
                         if (current is TagSuggestionState.Ready && current.blockUuid == blockUuid) {
-                            current.copy(llmSuggestions = llmSuggestions, llmStatus = LlmSuggestionStatus.Resolved)
+                            current.copy(llmError = err.message, llmPending = false)
+                        } else current
+                    }
+                },
+                ifRight = { llmSuggestions ->
+                    val updated = cache[blockUuid]?.copy(llmSuggestions = llmSuggestions, llmPending = false)
+                    if (updated != null) cache[blockUuid] = updated
+                    _state.update { current ->
+                        if (current is TagSuggestionState.Ready && current.blockUuid == blockUuid) {
+                            current.copy(llmSuggestions = llmSuggestions, llmPending = false)
                         } else current
                     }
                 }
             )
-            // Only clear activeBlockUuid if it still refers to the block THIS job was launched
-            // for — otherwise a job for block A completing at the same moment the caller
-            // switches to block B (which synchronously set activeBlockUuid = "B" at the top of
-            // requestSuggestions()) could clobber B's assignment back to null, causing a
-            // spurious cancel-and-relaunch of B's still-in-flight poll on the next revisit.
-            if (activeBlockUuid == blockUuid) activeBlockUuid = null
+            activeBlockUuid = null
         }
-    }
-
-    /** FR-3 manual-retry call target — re-invokes the most recent requestSuggestions() call. No-op if none yet. */
-    fun retryLastRequest() {
-        lastRequest?.let { requestSuggestions(it.blockUuid, it.blockContent, it.alreadyLinkedTerms, it.allowPolling) }
     }
 
     /** Scan a batch of journal entries sequentially, proposing results to the inbox when done. */
@@ -284,16 +133,14 @@ class TagSuggestionViewModel(
             val proposals = mutableListOf<PendingLlmSuggestion>()
             entries.forEachIndexed { index, entry ->
                 _scanState.value = BulkScanState.Scanning(index, entries.size)
-                // FR-7: bulk scan never polls — a stalled on-device model must not block the
-                // whole scan for up to pollDeadlineMs per entry (Story 4.3, AC7).
-                runLlmSuggest(entry.fullContent, entry.alreadyLinked, allowPolling = false) { }.fold(
+                engine.llmSuggest(entry.fullContent, entry.alreadyLinked).fold(
                     ifLeft = { /* skip — continue to next entry */ },
                     ifRight = { suggestions ->
                         cache[entry.targetBlockUuid] = TagSuggestionState.Ready(
                             blockUuid = entry.targetBlockUuid,
                             localSuggestions = engine.directMatch(entry.fullContent),
                             llmSuggestions = suggestions,
-                            llmStatus = LlmSuggestionStatus.Resolved,
+                            llmPending = false,
                         )
                         if (suggestions.isNotEmpty()) {
                             proposals += PendingLlmSuggestion.TagChange(

@@ -36,7 +36,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import dev.stapler.stelekit.tags.LlmSuggestionStatus
 import dev.stapler.stelekit.ui.components.tags.TagChipRow
 import dev.stapler.stelekit.voice.VoiceCaptureState
 import kotlinx.coroutines.delay
@@ -193,7 +192,8 @@ fun VoiceCaptureButton(
                 if (state.suggestedTags.isNotEmpty() && onAcceptTag != null) {
                     TagChipRow(
                         suggestions = state.suggestedTags.filter { !it.autoApplied },
-                        llmStatus = LlmSuggestionStatus.Resolved,
+                        isLlmLoading = false,
+                        llmError = null,
                         onAccept = { suggestion -> onAcceptTag(suggestion.term) },
                         onDismiss = { /* dismiss silently */ },
                     )
