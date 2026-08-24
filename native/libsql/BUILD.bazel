@@ -17,7 +17,7 @@ load("@crates//:defs.bzl", "all_crate_deps")
 #
 # Cross-compile for a specific target with:
 #   bazel build //native/libsql:stelekit_libsql \
-#     --platforms=@rust_toolchains//aarch64-apple-darwin
+#     --platforms=//native/libsql:aarch64-apple-darwin
 #
 # The resulting library must be placed in kmp/src/jvmMain/resources/native/<os-arch>/
 # so the JVM can find and load it at runtime via NativeLibLoader.
@@ -45,4 +45,44 @@ filegroup(
         "Cargo.lock",
     ],
     visibility = ["//visibility:public"],
+)
+
+platform(
+    name = "x86_64-apple-darwin",
+    constraint_values = [
+        "@platforms//os:macos",
+        "@platforms//cpu:x86_64",
+    ],
+)
+
+platform(
+    name = "aarch64-apple-darwin",
+    constraint_values = [
+        "@platforms//os:macos",
+        "@platforms//cpu:aarch64",
+    ],
+)
+
+platform(
+    name = "x86_64-unknown-linux-gnu",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+)
+
+platform(
+    name = "aarch64-unknown-linux-gnu",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:aarch64",
+    ],
+)
+
+platform(
+    name = "x86_64-pc-windows-msvc",
+    constraint_values = [
+        "@platforms//os:windows",
+        "@platforms//cpu:x86_64",
+    ],
 )

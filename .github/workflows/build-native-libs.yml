@@ -115,9 +115,9 @@ jobs:
       - name: Build via Bazel
         run: |
           bazel build //native/libsql:stelekit_libsql \
-            --platforms=@rust_toolchains//${{ matrix.bazel-platform }}
+            --platforms=//native/libsql:${{ matrix.bazel-platform }}
           OUTFILE=$(bazel cquery \
-            --platforms=@rust_toolchains//${{ matrix.bazel-platform }} \
+            --platforms=//native/libsql:${{ matrix.bazel-platform }} \
             --output=files \
             //native/libsql:stelekit_libsql)
           echo "outfile=$OUTFILE" >> "$GITHUB_ENV"
@@ -160,9 +160,9 @@ jobs:
       - name: Build via Bazel
         run: |
           bazel build //native/libsql:stelekit_libsql \
-            --platforms=@rust_toolchains//${{ matrix.bazel-platform }}
+            --platforms=//native/libsql:${{ matrix.bazel-platform }}
           OUTFILE=$(bazel cquery \
-            --platforms=@rust_toolchains//${{ matrix.bazel-platform }} \
+            --platforms=//native/libsql:${{ matrix.bazel-platform }} \
             --output=files \
             //native/libsql:stelekit_libsql)
           echo "outfile=$OUTFILE" >> "$GITHUB_ENV"
@@ -194,9 +194,9 @@ jobs:
         shell: bash
         run: |
           bazel build //native/libsql:stelekit_libsql \
-            --platforms=@rust_toolchains//x86_64-pc-windows-msvc
+            --platforms=//native/libsql:x86_64-pc-windows-msvc
           OUTFILE=$(bazel cquery \
-            --platforms=@rust_toolchains//x86_64-pc-windows-msvc \
+            --platforms=//native/libsql:x86_64-pc-windows-msvc \
             --output=files \
             //native/libsql:stelekit_libsql)
           echo "outfile=$OUTFILE" >> "$GITHUB_ENV"

@@ -460,3 +460,4 @@ crate.from_cargo(
     manifests = ["//native/libsql:Cargo.toml"],
 )
 use_repo(crate, "crates")
+bazel_dep(name = "platforms", version = "0.0.10")
