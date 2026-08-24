@@ -15,6 +15,12 @@ module(
 
 bazel_dep(name = "rules_kotlin", version = "2.3.20")
 
+# @platforms is transitively pulled in by other deps (rules_rust, rules_android, etc.)
+# but bzlmod only exposes a repo under a bare name (@platforms) to modules that declare
+# it directly — needed here so native/libsql/platforms/BUILD.bazel's platform() targets
+# can reference @platforms//cpu:* and @platforms//os:* constraint_values.
+bazel_dep(name = "platforms", version = "1.0.0")
+
 # Patch rules_kotlin to add common_srcs support for Kotlin Multiplatform (KMP) compilation.
 # common_srcs enables -Xcommon-sources, allowing expect/actual to work when commonMain and
 # jvmMain sources are compiled together in a single kt_jvm_library.
@@ -443,7 +449,10 @@ rust.toolchain(
     # Cross-compilation targets shipped with the toolchain.
     # Build for a specific target with:
     #   bazel build //native/libsql:stelekit_libsql \
-    #     --platforms=@rules_rust//rust/platform:<triple>
+    #     --platforms=//native/libsql/platforms:<triple>
+    # (NOT @rules_rust//rust/platform:<triple> — those are config_setting()s,
+    # not platform()s, and don't provide PlatformInfo. See
+    # native/libsql/platforms/BUILD.bazel for the real platform() targets.)
     extra_target_triples = [
         "aarch64-apple-darwin",
         "aarch64-linux-android",

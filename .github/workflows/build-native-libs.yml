@@ -115,9 +115,9 @@ jobs:
       - name: Build via Bazel
         run: |
           bazel build //native/libsql:stelekit_libsql \
-            --platforms=@rules_rust//rust/platform:${{ matrix.bazel-platform }}
+            --platforms=//native/libsql/platforms:${{ matrix.bazel-platform }}
           OUTFILE=$(bazel cquery \
-            --platforms=@rules_rust//rust/platform:${{ matrix.bazel-platform }} \
+            --platforms=//native/libsql/platforms:${{ matrix.bazel-platform }} \
             --output=files \
             //native/libsql:stelekit_libsql)
           echo "outfile=$OUTFILE" >> "$GITHUB_ENV"
@@ -160,9 +160,9 @@ jobs:
       - name: Build via Bazel
         run: |
           bazel build //native/libsql:stelekit_libsql \
-            --platforms=@rules_rust//rust/platform:${{ matrix.bazel-platform }}
+            --platforms=//native/libsql/platforms:${{ matrix.bazel-platform }}
           OUTFILE=$(bazel cquery \
-            --platforms=@rules_rust//rust/platform:${{ matrix.bazel-platform }} \
+            --platforms=//native/libsql/platforms:${{ matrix.bazel-platform }} \
             --output=files \
             //native/libsql:stelekit_libsql)
           echo "outfile=$OUTFILE" >> "$GITHUB_ENV"
@@ -194,9 +194,9 @@ jobs:
         shell: bash
         run: |
           bazel build //native/libsql:stelekit_libsql \
-            --platforms=@rules_rust//rust/platform:x86_64-pc-windows-msvc
+            --platforms=//native/libsql/platforms:x86_64-pc-windows-msvc
           OUTFILE=$(bazel cquery \
-            --platforms=@rules_rust//rust/platform:x86_64-pc-windows-msvc \
+            --platforms=//native/libsql/platforms:x86_64-pc-windows-msvc \
             --output=files \
             //native/libsql:stelekit_libsql)
           echo "outfile=$OUTFILE" >> "$GITHUB_ENV"
@@ -235,12 +235,16 @@ jobs:
         with:
           targets: ${{ matrix.rust-target }}
 
-      - uses: Swatinem/rust-cache@9d47c6ad4b02e050ecd3e5b93e1c5c2bc85e1bd7
+      # Pin was corrupted (9d47c6ad4b02e050 + garbled suffix, no matching commit —
+      # GitHub API returns 422 "No commit found for SHA"). Correct SHA for v2.9.2.
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: native/libsql
           key: ${{ matrix.rust-target }}
 
-      - uses: android-actions/setup-android@00854ea68c109d98b75d0d3c39cd2e94c8e5ae78
+      # Pin was corrupted (00854ea68c109d98 + garbled suffix, no matching commit —
+      # GitHub API returns 422 "No commit found for SHA"). Correct SHA for v4.0.1.
+      - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
 
       - name: Install cargo-ndk
         run: cargo install cargo-ndk --version "^3" --locked
@@ -270,25 +274,25 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       # JVM Desktop artifacts
-      - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f9f2ef63f
+      - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
         with: { name: native-jvm-linux-x86_64,   path: _dl/jvm/linux-x86_64   }
-      - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f9f2ef63f
+      - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
         with: { name: native-jvm-linux-aarch64,  path: _dl/jvm/linux-aarch64  }
-      - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f9f2ef63f
+      - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
         with: { name: native-jvm-macos-aarch64,  path: _dl/jvm/macos-aarch64  }
-      - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f9f2ef63f
+      - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
         with: { name: native-jvm-macos-x86_64,   path: _dl/jvm/macos-x86_64   }
-      - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f9f2ef63f
+      - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
         with: { name: native-jvm-windows-x86_64, path: _dl/jvm/windows-x86_64 }
 
       # Android ABI artifacts
-      - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f9f2ef63f
+      - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
         with: { name: native-android-arm64-v8a,    path: _dl/android/arm64-v8a    }
-      - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f9f2ef63f
+      - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
         with: { name: native-android-armeabi-v7a,  path: _dl/android/armeabi-v7a  }
-      - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f9f2ef63f
+      - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
         with: { name: native-android-x86_64,       path: _dl/android/x86_64       }
-      - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f9f2ef63f
+      - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
         with: { name: native-android-x86,          path: _dl/android/x86          }
 
       - name: Place JVM resources
