@@ -78,11 +78,10 @@ data class GitRefResponse(
     @SerialName("object") val obj: GitRefObject,
 )
 
-@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class GitRefUpdateRequest(
     val sha: String,
-    @EncodeDefault val force: Boolean = false,
+    val force: Boolean = false,
 )
 
 @Serializable

@@ -110,7 +110,7 @@ internal fun ScreenRouter(
         FatalErrorScreen(
             message = appState.fatalError,
             onDismiss = { viewModel.clearFatalError() },
-            onRetry = { viewModel.loadGraph(appState.currentGraphPath.orEmpty()) },
+            onRetry = { viewModel.loadGraph(appState.currentGraphPath) },
         )
         return
     }
@@ -153,7 +153,7 @@ internal fun ScreenRouter(
                 blockRepository = repos.blockRepository,
                 pageRepository = repos.pageRepository,
                 blockStateManager = blockStateManager,
-                currentGraphPath = appState.currentGraphPath.orEmpty(),
+                currentGraphPath = appState.currentGraphPath,
                 onToggleFavorite = { viewModel.toggleFavorite(it) },
                 onRefresh = { viewModel.refreshCurrentPage() },
                 onLinkClick = { viewModel.navigateToPageByName(it) },
@@ -175,7 +175,7 @@ internal fun ScreenRouter(
                 viewModel = journalsViewModel,
                 isDebugMode = appState.isDebugMode,
                 onLinkClick = { viewModel.navigateToPageByName(it) },
-                graphPath = appState.currentGraphPath.orEmpty(),
+                graphPath = appState.currentGraphPath,
                 searchViewModel = searchViewModel,
                 onSearchPages = { query -> viewModel.searchPages(query) },
                 suggestionMatcher = suggestionMatcher,
@@ -200,24 +200,12 @@ internal fun ScreenRouter(
                 NavigationTracingEffect("Flashcards")
                 FlashcardsScreen(blockStateManager)
             }
-            is Screen.AllPages -> {
-                // Reconcile against the full-graph snapshot whenever it's loaded: pages can be
-                // deleted/renamed via paths that don't run through the ViewModel (e.g. an
-                // external git pull/merge reconciled by GraphLoader), which would otherwise leave
-                // a stale key in pendingConflicts forever — see reconcilePendingConflicts().
-                val isLoading by allPagesViewModel.isLoading.collectAsState()
-                val livePaths by allPagesViewModel.allFilePaths.collectAsState()
-                LaunchedEffect(isLoading, livePaths) {
-                    if (!isLoading) viewModel.reconcilePendingConflicts(livePaths)
-                }
-                AllPagesScreen(
-                    viewModel = allPagesViewModel,
-                    onPageClick = { page -> viewModel.navigateTo(Screen.PageView(page)) },
-                    onBulkDelete = { uuids -> viewModel.bulkDeletePages(uuids) },
-                    conflictFilePaths = appState.pendingConflictFilePaths,
-                    conflictsOnly = currentScreen.conflictsOnly,
-                )
-            }
+            is Screen.AllPages -> AllPagesScreen(
+                viewModel = allPagesViewModel,
+                onPageClick = { page -> viewModel.navigateTo(Screen.PageView(page)) },
+                onBulkDelete = { uuids -> viewModel.bulkDeletePages(uuids) },
+                conflictFilePaths = appState.pendingConflictFilePaths,
+            )
             is Screen.LibraryStats -> LibraryStatsScreen(viewModel = libraryStatsViewModel)
             is Screen.Notifications -> {
                 NavigationTracingEffect("Notifications")
@@ -245,12 +233,12 @@ internal fun ScreenRouter(
                 pageRepository = repos.pageRepository,
                 blockRepository = repos.blockRepository,
                 writeActor = repos.writeActor,
-                graphPath = appState.currentGraphPath.orEmpty(),
+                graphPath = appState.currentGraphPath,
                 suggestionMatcher = suggestionMatcher,
                 onNavigateTo = { viewModel.navigateTo(it) },
             )
             is Screen.Import -> {
-                val graphPath = appState.currentGraphPath.orEmpty()
+                val graphPath = appState.currentGraphPath
                 val importViewModel = remember(graphPath) {
                     dev.stapler.stelekit.ui.screens.ImportViewModel(
                         pageRepository = repos.pageRepository,
@@ -360,7 +348,7 @@ internal fun ScreenRouter(
                         imageAnnotationRepository = repos.imageAnnotationRepository,
                         blockRepository = repos.blockRepository,
                         writeActor = repos.writeActor,
-                        graphPath = appState.currentGraphPath.orEmpty(),
+                        graphPath = appState.currentGraphPath,
                     )
                 }
                 val annotateScope = rememberCoroutineScope()

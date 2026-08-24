@@ -51,13 +51,13 @@ class LlmTagProvider(
                         result.code, result.message
                     ).left()
                     is LlmResult.Failure.NetworkError -> DomainError.NetworkError.RequestFailed(
-                        "Network error", retryable = true
+                        "Network error"
                     ).left()
                     // Reuses the RequestFailed error family (no genuinely distinct UI treatment
                     // is required yet) but preserves the on-device-specific reason string through
                     // to the caller rather than collapsing it to a generic message.
                     is LlmResult.Failure.OnDeviceUnavailable -> DomainError.NetworkError.RequestFailed(
-                        result.reason, retryable = result.retryable
+                        result.reason
                     ).left()
                     // Epic 5 (iOS on-device): guardrail content rejection. Tag suggestion has no
                     // dedicated DomainError case for this yet (contract intentionally unchanged

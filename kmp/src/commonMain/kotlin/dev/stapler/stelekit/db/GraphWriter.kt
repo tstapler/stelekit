@@ -78,15 +78,6 @@ class GraphWriter(
      * ([diskContent]). The write has already been aborted when this is called.
      */
     private val onPreWriteConflict: (suspend (filePath: String, pendingContent: String, diskContent: String) -> Unit)? = null,
-    /** Emits "file.write"/"file.rename"/"file.delete" spans for the disk-IO SLO. Null disables. */
-    private val spanEmitter: dev.stapler.stelekit.performance.SpanEmitter? = null,
-    /**
-     * Dispatcher used for all [fileSystem] calls. Defaults to [PlatformDispatcher.IO] in
-     * production. Tests that inject a zero-latency [FileSystem] fake (no real disk I/O to bound)
-     * should override this with [Dispatchers.Unconfined] so assertions don't race the real,
-     * CI-contended [Dispatchers.IO] thread pool shared across concurrently-forked test JVMs.
-     */
-    private val ioDispatcher: CoroutineDispatcher = PlatformDispatcher.IO,
 ) : GraphWriterPort {
     /**
      * Backing field for the CryptoLayer used to encrypt files in paranoid mode.
@@ -99,14 +90,6 @@ class GraphWriter(
     override fun closeAndClearCryptoLayer() { cryptoLayer?.close(); cryptoLayer = null }
 
     private val logger = Logger("GraphWriter")
-
-    /** Redacts [this] to an opaque hash-derived token in paranoid (encrypted) mode; passes through otherwise. */
-    private fun String.redactPath(): String {
-        if (isEmpty() || cryptoLayer == null) return this
-        val hash = dev.stapler.stelekit.util.ContentHasher.sha256ForContent(this).take(8)
-        return "<redacted:$hash>"
-    }
-
     private val saveMutex = Mutex()
     // Tracks the disk-content hash of the most recently detected conflict per file.
     // Cleared on a successful write so only the first save after an external change logs
@@ -235,10 +218,8 @@ class GraphWriter(
      * Returns true if successful, false otherwise.
      */
     override suspend fun renamePage(page: Page, newName: String, graphPath: String): Boolean = saveMutex.withLock {
-        val spanStart = dev.stapler.stelekit.performance.HistogramWriter.epochMs()
-        val renameResult =
         // IO boundary: all fileSystem calls must run on PlatformDispatcher.IO on Android.
-        withContext(ioDispatcher) {
+        withContext(PlatformDispatcher.IO) {
         val oldPath = page.filePath
         if (oldPath.isNullOrBlank()) {
             logger.error("Cannot rename page with no file path: ${page.name}")
@@ -318,23 +299,15 @@ class GraphWriter(
             logger.error("Failed to write new file during rename: $newPath")
             return@withContext false
         }
-        } // end withContext(ioDispatcher)
-        spanEmitter?.emit(
-            name = "file.rename",
-            startMs = spanStart,
-            attrs = mapOf("path" to (page.filePath ?: "").redactPath()),
-        )
-        renameResult
+        } // end withContext(PlatformDispatcher.IO)
     }
 
     /**
      * Delete a page file.
      */
     override suspend fun deletePage(page: Page): Boolean = saveMutex.withLock {
-        val spanStart = dev.stapler.stelekit.performance.HistogramWriter.epochMs()
-        val deleteResult =
         // IO boundary: all fileSystem calls must run on PlatformDispatcher.IO on Android.
-        withContext(ioDispatcher) {
+        withContext(PlatformDispatcher.IO) {
         val path = page.filePath
         if (path.isNullOrBlank()) {
             logger.error("Cannot delete page with no file path: ${page.name}")
@@ -357,13 +330,7 @@ class GraphWriter(
             logger.error("Failed to delete page file: $path")
         }
         success
-        } // end withContext(ioDispatcher)
-        spanEmitter?.emit(
-            name = "file.delete",
-            startMs = spanStart,
-            attrs = mapOf("path" to (page.filePath ?: "").redactPath()),
-        )
-        deleteResult
+        } // end withContext(PlatformDispatcher.IO)
     }
 
     /**
@@ -387,7 +354,7 @@ class GraphWriter(
             // IO BOUNDARY: All filesystem calls below this line run on PlatformDispatcher.IO.
             // Adding any fileSystem.* call outside this withContext block will cause SAF Binder IPC
             // to block a Default dispatcher thread, reintroducing the Android insert lag.
-            withContext(ioDispatcher) {
+            withContext(PlatformDispatcher.IO) {
             // Capture cryptoLayer and graphPath once at lock entry — also used by getPageFilePath so
             // the file extension (.md.stek vs .md) is consistent with all subsequent encrypt/decrypt calls.
             val capturedCryptoLayer = cryptoLayer
@@ -503,25 +470,21 @@ class GraphWriter(
                     saga(
                         action = {
                             if (cryptoLayerNow != null) {
-                                val writeSpanStart = dev.stapler.stelekit.performance.HistogramWriter.epochMs()
                                 val relPath = relativeFilePath(filePath, capturedGraphPath)
                                 val encryptedBytes = cryptoLayerNow.encrypt(relPath, content.encodeToByteArray())
                                 if (!fileSystem.writeFileBytes(filePath, encryptedBytes)) {
                                     error("writeFileBytes returned false for: $filePath")
                                 }
                                 fileSystem.updateShadow(filePath, content)
-                                spanEmitter?.emit("file.write", writeSpanStart, attrs = mapOf("path" to filePath.redactPath()))
                             } else {
                                 // Try write-behind first (zero Binder IPC on Android); falls back to direct SAF write.
                                 val wroteViaShadow = fileSystem.markDirty(filePath, content)
                                 if (!wroteViaShadow) {
-                                    val writeSpanStart = dev.stapler.stelekit.performance.HistogramWriter.epochMs()
                                     if (!fileSystem.writeFile(filePath, content)) {
                                         error("writeFile returned false for: $filePath")
                                     }
                                     // Keep shadow in sync after a direct SAF write
                                     fileSystem.updateShadow(filePath, content)
-                                    spanEmitter?.emit("file.write", writeSpanStart, attrs = mapOf("path" to filePath.redactPath()))
                                 }
                             }
                         },
@@ -592,7 +555,7 @@ class GraphWriter(
                 logger.error("Failed to write file: $filePath", e)
             }
             succeeded
-            } // end withContext(ioDispatcher)
+            } // end withContext(PlatformDispatcher.IO)
         }
 
     private fun buildMarkdown(page: Page, blocks: List<Block>): String =
@@ -639,7 +602,7 @@ class GraphWriter(
         newRelativePath: String,
     ) {
         try {
-            val content = withContext(ioDispatcher) { fileSystem.readFile(filePath) } ?: return
+            val content = withContext(PlatformDispatcher.IO) { fileSystem.readFile(filePath) } ?: return
             if (!content.contains(oldRelativePath)) return
             val escaped = Regex.escape(oldRelativePath)
             val updated = content
@@ -649,7 +612,7 @@ class GraphWriter(
                 .replace(Regex("\\[$escaped\\]")) { "[$newRelativePath]" }
             if (updated == content) return
             onPreWrite?.invoke(filePath)
-            withContext(ioDispatcher) { fileSystem.writeFile(filePath, updated) }
+            withContext(PlatformDispatcher.IO) { fileSystem.writeFile(filePath, updated) }
             onFileWritten?.invoke(filePath)
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
@@ -669,7 +632,7 @@ class GraphWriter(
         page: Page,
         newSectionId: SectionId,
         newPathPrefix: String,
-    ): Either<DomainError, Page> = withContext(ioDispatcher) {
+    ): Either<DomainError, Page> = withContext(PlatformDispatcher.IO) {
         try {
             val oldPath = page.filePath
             val capturedCryptoLayer = cryptoLayer
@@ -753,7 +716,6 @@ class GraphWriter(
             onClearPendingWrite: (suspend (String) -> Unit)? = null,
             checkPreWriteConflict: (suspend (String, String) -> Boolean)? = null,
             onPreWriteConflict: (suspend (String, String, String) -> Unit)? = null,
-            spanEmitter: dev.stapler.stelekit.performance.SpanEmitter? = null,
         ): Resource<GraphWriter> = resource {
             val writer = GraphWriter(
                 fileSystem = fileSystem,
@@ -767,7 +729,6 @@ class GraphWriter(
                 onClearPendingWrite = onClearPendingWrite,
                 checkPreWriteConflict = checkPreWriteConflict,
                 onPreWriteConflict = onPreWriteConflict,
-                spanEmitter = spanEmitter,
             )
             onRelease {
                 try { writer.flush() } catch (_: Exception) { /* best-effort flush */ }

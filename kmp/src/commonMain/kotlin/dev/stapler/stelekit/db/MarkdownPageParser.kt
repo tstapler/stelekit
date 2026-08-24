@@ -82,10 +82,7 @@ object MarkdownPageParser {
         val updatedAt = if (fileModTime != null && fileModTime != 0L) {
             Instant.fromEpochMilliseconds(fileModTime)
         } else {
-            // An unresolved fileModTime (e.g. wasmJs before host reconciliation has populated
-            // hostModTimes) is not evidence the file just changed — stamping `now` here made
-            // every page's Modified column show the exact same startup timestamp on every load.
-            existingPage?.updatedAt ?: now
+            now
         }
         val createdAt = existingPage?.createdAt ?: updatedAt
 
@@ -106,11 +103,7 @@ object MarkdownPageParser {
         if (parsedPage.blocks.isNotEmpty()) {
             val firstBlock = parsedPage.blocks.first()
             if (firstBlock.content.trim().isEmpty() && firstBlock.properties.isNotEmpty()) {
-                page = page.copy(
-                    properties = firstBlock.properties.mapValues { (_, value) ->
-                        dev.stapler.stelekit.model.Validation.sanitizeContent(value)
-                    },
-                )
+                page = page.copy(properties = firstBlock.properties)
                 firstBlockSkipped = true
             }
         }
@@ -122,7 +115,7 @@ object MarkdownPageParser {
         properties.toMutableMap().apply {
             scheduled?.let { put("scheduled", it) }
             deadline?.let { put("deadline", it) }
-        }.mapValues { (_, value) -> dev.stapler.stelekit.model.Validation.sanitizeContent(value) }
+        }
 
     /**
      * Recursively processes [parsedBlocks] into a flat [destinationList] of [Block]s,
@@ -149,9 +142,8 @@ object MarkdownPageParser {
             val blockUuid = BlockUuid(blockUuidStr)
             val currentVersion = existingVersions[blockUuid] ?: 0L
             val oldContent = existingContent[blockUuid]
-            val sanitizedContent = dev.stapler.stelekit.model.Validation.sanitizeContent(parsedBlock.content)
 
-            val versionToSave = if (oldContent == sanitizedContent) currentVersion else {
+            val versionToSave = if (oldContent == parsedBlock.content) currentVersion else {
                 if (currentVersion > 0) currentVersion + 1 else 0L
             }
 
@@ -162,22 +154,15 @@ object MarkdownPageParser {
                 pageUuid = pageUuid,
                 parentUuid = parentUuid?.let { BlockUuid(it) },
                 leftUuid = previousSiblingUuid?.let { BlockUuid(it) },
-                content = sanitizedContent,
-                // parsedBlock.level is the outline nesting depth computed from the source
-                // Markdown's own indentation (bullet/heading indent, etc. — see
-                // MarkdownParser.convertBlock / BlockNode.indentLevel). It agrees with
-                // baseLevel (the tree-recursion depth) for well-formed, contiguously
-                // indented documents, but baseLevel alone discards the indentLevel this
-                // parser computes for headings/code-fences/blockquotes/etc., so it must be
-                // read here for that value to ever reach storage.
-                level = parsedBlock.level,
+                content = parsedBlock.content,
+                level = baseLevel,
                 position = positionKey,
                 createdAt = now,
                 updatedAt = now,
                 version = versionToSave,
                 properties = parsedBlock.mergedProperties(),
                 isLoaded = mode == ParseMode.FULL,
-                contentHash = ContentHasher.sha256ForContent(sanitizedContent),
+                contentHash = ContentHasher.sha256ForContent(parsedBlock.content),
                 blockType = parsedBlock.blockType
             )
 
@@ -224,23 +209,20 @@ object MarkdownPageParser {
             val blockUuid = BlockUuid(blockUuidStr)
             val stubPositionKey = dev.stapler.stelekit.util.FractionalIndexing.generateKeyBetween(stubPrevPosition, null)
             stubPrevPosition = stubPositionKey
-            val sanitizedContent = dev.stapler.stelekit.model.Validation.sanitizeContent(parsedBlock.content)
 
             destination.add(
                 Block(
                     uuid = blockUuid,
                     pageUuid = pageUuid,
                     parentUuid = parentUuid?.let { BlockUuid(it) },
-                    content = sanitizedContent,
-                    // See processParsedBlocks for why parsedBlock.level (not baseLevel) is
-                    // the value that must reach the persisted Block.level.
-                    level = parsedBlock.level,
+                    content = parsedBlock.content,
+                    level = baseLevel,
                     position = stubPositionKey,
                     createdAt = now,
                     updatedAt = now,
                     properties = parsedBlock.mergedProperties(),
                     isLoaded = false,
-                    contentHash = ContentHasher.sha256ForContent(sanitizedContent),
+                    contentHash = ContentHasher.sha256ForContent(parsedBlock.content),
                     blockType = parsedBlock.blockType
                 )
             )

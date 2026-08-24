@@ -235,12 +235,12 @@ jobs:
         with:
           targets: ${{ matrix.rust-target }}
 
-      - uses: Swatinem/rust-cache@9d47c6ad4b02e050ecd3e5b93e1c5c2bc85e1bd7
+      - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native/libsql
           key: ${{ matrix.rust-target }}
 
-      - uses: android-actions/setup-android@00854ea68c109d98b75d0d3c39cd2e94c8e5ae78
+      - uses: android-actions/setup-android@v3
 
       - name: Install cargo-ndk
         run: cargo install cargo-ndk --version "^3" --locked

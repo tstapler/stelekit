@@ -1,4 +1,0 @@
-module java.base {
-  exports a.b;
-  exports c.d;
-}

@@ -46,17 +46,6 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 
-/** Outcome of [GraphManager.updateGraphPath]. */
-sealed interface UpdateGraphPathResult {
-    data class Success(val newId: GraphId) : UpdateGraphPathResult
-    data object GraphNotFound : UpdateGraphPathResult
-    data object DemoGraphImmutable : UpdateGraphPathResult
-    data object PathNotFound : UpdateGraphPathResult
-    data object PathUnchanged : UpdateGraphPathResult
-    data object AlreadyTracked : UpdateGraphPathResult
-    data object DatabaseMoveFailed : UpdateGraphPathResult
-}
-
 /**
  * Manages multiple graphs and their respective database connections.
  * Replaces the Repositories singleton with per-graph RepositorySets.
@@ -391,136 +380,6 @@ class GraphManager(
     }
 
     /**
-     * Moves a graph to a new filesystem [newPath]. Because [GraphId] is derived from
-     * sha256(canonicalPath), this re-keys the graph's identity: the SQLite DB (+ WAL/SHM
-     * sidecars), the telemetry DB, and any stored git credentials are renamed/re-keyed from
-     * the old id to the new one, then the registry entry is replaced in place. If the graph
-     * being moved is currently active, it is reopened under the new id via [switchGraph].
-     */
-    suspend fun updateGraphPath(id: GraphId, newPath: String): UpdateGraphPathResult {
-        val registry = _graphRegistry.value
-        val graphIndex = registry.graphs.indexOfFirst { it.id == id }
-        if (graphIndex == -1) return UpdateGraphPathResult.GraphNotFound
-        val graphInfo = registry.graphs[graphIndex]
-        if (graphInfo.isDemo) return UpdateGraphPathResult.DemoGraphImmutable
-
-        val expandedNewPath = fileSystem.expandTilde(newPath)
-        val newId = graphIdFromPath(expandedNewPath)
-        if (newId == id) return UpdateGraphPathResult.PathUnchanged
-        if (registry.graphIds.contains(newId)) return UpdateGraphPathResult.AlreadyTracked
-
-        val pathExists = withContext(PlatformDispatcher.IO) { fileSystem.directoryExists(expandedNewPath) }
-        if (!pathExists) return UpdateGraphPathResult.PathNotFound
-
-        val moved = withContext(PlatformDispatcher.IO) { moveGraphFilesAndCredentials(id, newId) }
-        if (!moved) return UpdateGraphPathResult.DatabaseMoveFailed
-
-        val displayName = fileSystem.displayNameForPath(expandedNewPath)
-        val updatedInfo = graphInfo.copy(
-            id = newId,
-            path = expandedNewPath,
-            displayName = displayName,
-            // The new folder may not share the old repo root — force re-detection.
-            detectedRepoRoot = null,
-            detectedWikiSubdir = null,
-            gitDetectionDismissed = false,
-        )
-        val updatedGraphs = registry.graphs.toMutableList()
-        updatedGraphs[graphIndex] = updatedInfo
-        _graphRegistry.value = registry.copy(graphs = updatedGraphs)
-
-        if (registry.activeGraphId == id) {
-            // Defer persistence to switchGraph(), which saves the re-keyed graph list together
-            // with the updated activeGraphId in one write. Saving here first would leave a crash
-            // window where the on-disk registry has the graph re-keyed but activeGraphId still
-            // pointing at the now-nonexistent old id, breaking startup auto-restore.
-            switchGraph(newId)
-        } else {
-            saveRegistry()
-        }
-
-        coroutineScope.launch(PlatformDispatcher.IO) {
-            val detected = detectGitRoot(expandedNewPath)
-            if (detected != null) {
-                updateGraphInfoDetection(newId, detected.first, detected.second)
-            }
-        }
-
-        return UpdateGraphPathResult.Success(newId)
-    }
-
-    /**
-     * Renames the on-disk DB (+ WAL/SHM), telemetry DB, and credential-store entries from
-     * [oldId] to [newId]. Returns false only if the main DB file exists but could not be
-     * renamed — telemetry and credential migration are best-effort and never fail the move.
-     */
-    private fun moveGraphFilesAndCredentials(oldId: GraphId, newId: GraphId): Boolean {
-        val oldDbPath = driverFactory.getDatabaseUrl(oldId.value).substringAfter("jdbc:sqlite:")
-        val newDbPath = driverFactory.getDatabaseUrl(newId.value).substringAfter("jdbc:sqlite:")
-        var dbMoved = true
-        if (fileSystem.fileExists(oldDbPath)) {
-            dbMoved = fileSystem.renameFile(oldDbPath, newDbPath)
-            if (dbMoved) {
-                val walMoved = renameSidecarIfPresent("$oldDbPath-wal", "$newDbPath-wal")
-                val shmMoved = walMoved && renameSidecarIfPresent("$oldDbPath-shm", "$newDbPath-shm")
-                if (!shmMoved) {
-                    // Roll back everything that succeeded so far so the registry's old path
-                    // stays valid — reporting failure must not strand the DB or a sidecar at a
-                    // path nothing references, which would otherwise still risk losing WAL data.
-                    if (walMoved) fileSystem.renameFile("$newDbPath-wal", "$oldDbPath-wal")
-                    fileSystem.renameFile(newDbPath, oldDbPath)
-                    dbMoved = false
-                }
-            }
-        }
-        if (!dbMoved) return false
-
-        try {
-            val oldTelemetryPath = driverFactory.getTelemetryDatabaseUrl(oldId.value).substringAfter("jdbc:sqlite:")
-            val newTelemetryPath = driverFactory.getTelemetryDatabaseUrl(newId.value).substringAfter("jdbc:sqlite:")
-            if (fileSystem.fileExists(oldTelemetryPath)) {
-                val telemetryMoved = fileSystem.renameFile(oldTelemetryPath, newTelemetryPath)
-                if (telemetryMoved) {
-                    renameSidecarIfPresent("$oldTelemetryPath-wal", "$newTelemetryPath-wal")
-                    renameSidecarIfPresent("$oldTelemetryPath-shm", "$newTelemetryPath-shm")
-                }
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            // Non-critical — telemetry data loss should not block the path move
-        }
-
-        try {
-            val cs = dev.stapler.stelekit.platform.security.CredentialStore()
-            for (prefix in listOf("git_https_token_", "git_ssh_passphrase_")) {
-                val value = cs.retrieve("$prefix${oldId.value}")
-                if (value != null) {
-                    cs.store("$prefix${newId.value}", value)
-                    cs.delete("$prefix${oldId.value}")
-                }
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            // Non-critical — credential migration failure should not block the path move
-        }
-
-        return true
-    }
-
-    /**
-     * Renames a WAL/SHM sidecar file if it exists at [oldPath]. Sidecars only exist when a WAL
-     * checkpoint hasn't run, so a missing sidecar is not a failure. Returns false only when the
-     * sidecar existed but the rename itself failed — callers that must not silently lose
-     * uncommitted WAL data should treat that as a failed move.
-     */
-    private fun renameSidecarIfPresent(oldPath: String, newPath: String): Boolean {
-        if (!fileSystem.fileExists(oldPath)) return true
-        return fileSystem.renameFile(oldPath, newPath)
-    }
-
-    /**
      * Switch to a different graph.
      * Closes the current database connection and opens a new one for the target graph.
      */
@@ -757,16 +616,6 @@ class GraphManager(
         val registry = _graphRegistry.value
         val updatedGraphs = registry.graphs.map { g ->
             if (g.id == graphId) g.copy(gitDetectionDismissed = dismissed)
-            else g
-        }
-        _graphRegistry.value = registry.copy(graphs = updatedGraphs)
-        saveRegistry()
-    }
-
-    suspend fun setBrowserOnlySyncBannerDismissed(graphId: GraphId, dismissed: Boolean) {
-        val registry = _graphRegistry.value
-        val updatedGraphs = registry.graphs.map { g ->
-            if (g.id == graphId) g.copy(browserOnlySyncBannerDismissed = dismissed)
             else g
         }
         _graphRegistry.value = registry.copy(graphs = updatedGraphs)

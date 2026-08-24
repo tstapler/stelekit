@@ -158,7 +158,7 @@ class JvmGitRepository(
                 openGit(config.repoRoot).use { git ->
                     val statusResult = git.status()
                         .also { cmd ->
-                            if (!config.wikiSubdir.isNullOrEmpty()) {
+                            if (config.wikiSubdir.isNotEmpty()) {
                                 cmd.addPath(config.wikiSubdir)
                             }
                         }
@@ -185,7 +185,7 @@ class JvmGitRepository(
         withContext(PlatformDispatcher.IO) {
             try {
                 openGit(config.repoRoot).use { git ->
-                    val pattern = if (config.wikiSubdir.isNullOrEmpty()) "." else "${config.wikiSubdir}/"
+                    val pattern = if (config.wikiSubdir.isEmpty()) "." else "${config.wikiSubdir}/"
                     git.add().addFilepattern(pattern).call()
                     // Also stage deletions
                     git.add().setUpdate(true).addFilepattern(pattern).call()
@@ -236,7 +236,7 @@ class JvmGitRepository(
                     val conflictFiles = if (hasConflicts) {
                         mergeResult.conflicts?.keys?.map { filePath ->
                             val absolutePath = "${config.repoRoot}/$filePath"
-                            val wikiRelPath = if (!config.wikiSubdir.isNullOrEmpty() &&
+                            val wikiRelPath = if (config.wikiSubdir.isNotEmpty() &&
                                 filePath.startsWith("${config.wikiSubdir}/")) {
                                 filePath.removePrefix("${config.wikiSubdir}/")
                             } else {
@@ -281,7 +281,7 @@ class JvmGitRepository(
                         emptyList()
                     }
 
-                    val wikiChangedFiles = if (!config.wikiSubdir.isNullOrEmpty()) {
+                    val wikiChangedFiles = if (config.wikiSubdir.isNotEmpty()) {
                         changedFiles.filter { it.startsWith("${config.repoRoot}/${config.wikiSubdir}/") }
                     } else {
                         changedFiles

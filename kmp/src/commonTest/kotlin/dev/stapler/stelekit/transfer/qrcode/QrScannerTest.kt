@@ -14,17 +14,11 @@ import kotlin.test.assertIs
  *
  * Exercises the real [QrCodec] actual (available on JVM/Android in v1 — see ADR-003/ADR-005) via
  * [QrScanner], not a reimplementation of its two-step composition.
- *
- * On iOS and wasmJs, [QrCodec.decode] is documented to deliberately throw [NotImplementedError]
- * (receive is deferred to Epic 4.4 on iOS; out of scope for v1 on Web per ADR-005) — [QrCodec.encode]
- * is also deferred on wasmJs. [withDecodeDeferredAllowance] accepts that specific, documented
- * exception as a passing outcome on those platforms while still failing on any other exception or
- * assertion mismatch, so real JVM/Android decode behavior is not weakened.
  */
 class QrScannerTest {
 
     @Test
-    fun decode_should_ReturnDecoded_When_FrameContainsValidSteleKitChunk() = withDecodeDeferredAllowance {
+    fun decode_should_ReturnDecoded_When_FrameContainsValidSteleKitChunk() {
         val chunk = FountainChunk(
             transferId = TransferId(1),
             chunkIndex = ChunkIndex(0),
@@ -42,7 +36,7 @@ class QrScannerTest {
     }
 
     @Test
-    fun decode_should_ReturnNotSteleKitCode_When_QrFoundButBytesFailChunkFrameCodec() = withDecodeDeferredAllowance {
+    fun decode_should_ReturnNotSteleKitCode_When_QrFoundButBytesFailChunkFrameCodec() {
         // A real QR is present and decodes fine at the QrCodec layer, but its bytes are not a
         // valid SteleKit wire frame (bad magic byte) — ChunkFrameCodec.decode must reject it.
         val garbage = byteArrayOf(0x00, 0x01, 0x02, 0x03, 0x04)
@@ -54,22 +48,13 @@ class QrScannerTest {
     }
 
     @Test
-    fun decode_should_ReturnNoCodeDetected_When_FrameHasNoQrCodeAtAll() = withDecodeDeferredAllowance {
+    fun decode_should_ReturnNoCodeDetected_When_FrameHasNoQrCodeAtAll() {
         // Uniform luminance (no QR pattern present at all).
         val blank = CameraFrame(luminanceBytes = ByteArray(64) { 255.toByte() }, width = 8, height = 8, rotationDegrees = 0)
 
         val result = QrScanner.decode(blank)
 
         assertIs<ScanResult.NoCodeDetected>(result)
-    }
-
-    /** See class KDoc — accepts the documented deferred-decode [NotImplementedError] on iOS/wasmJs. */
-    private fun withDecodeDeferredAllowance(block: () -> Unit) {
-        try {
-            block()
-        } catch (e: NotImplementedError) {
-            // Documented platform contract, not a bug — see QrCodec.ios.kt / QrCodec.wasmJs.kt.
-        }
     }
 
     private fun ByteArray.toCameraFrame(): CameraFrame {

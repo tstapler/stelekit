@@ -8,8 +8,7 @@ actual class DeviceInfo actual constructor(
     actual val osVersion: String,
     actual val deviceModel: String,
     actual val availableRamMb: Long,
-    actual val appVersion: String,
-    actual val gitCommit: String
+    actual val appVersion: String
 )
 
 actual fun getDeviceInfo(): DeviceInfo = DeviceInfo(
@@ -17,6 +16,5 @@ actual fun getDeviceInfo(): DeviceInfo = DeviceInfo(
     osVersion = System.getProperty("os.version") ?: "unknown",
     deviceModel = System.getProperty("os.arch") ?: "unknown",
     availableRamMb = Runtime.getRuntime().maxMemory() / (1024 * 1024),
-    appVersion = System.getProperty("app.version") ?: "dev",
-    gitCommit = System.getProperty("app.gitCommit") ?: "unknown"
+    appVersion = System.getProperty("app.version") ?: "dev"
 )

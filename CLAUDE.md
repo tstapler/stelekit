@@ -95,14 +95,6 @@ rsync -a kmp/build/generated/sqldelight/code/TelemetryDatabase/commonMain/ kmp/s
 # README sync is not covered by ciCheck — run separately:
 # bash scripts/generate-readme.sh && git diff --exit-code README.md
 
-# Run wasmJs tests in a real headless browser (not just compiled — CI only compiles wasmJs
-# test sources today, see ci.yml's "Compile wasmJs test sources" step comment).
-./gradlew :kmp:wasmJsBrowserTest
-# If this fails with "No provider for framework:mocha" / "Cannot load webpack": Kotlin's
-# shared web-tooling installer defaults to Yarn Berry's `pnpm` node linker, which Karma's
-# plugin auto-discovery can't see through (isolated node_modules). Fix once per machine:
-./scripts/fix-wasm-karma-tooling.sh
-
 # Lint all GitHub Actions workflow files (mirrors the workflow-lint CI job)
 # Install once: curl -sSfL https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz | tar -xz -C ~/.local/bin actionlint
 actionlint -color
@@ -400,54 +392,11 @@ When a workflow is called via `workflow_call`, `github.event_name` inside the ca
 
 ## Testing Infrastructure
 
-See `kmp/TESTING_README.md` for the exploratory/performance testing guide (jank detection,
-profiling, SLO alerts). Test source sets:
-- `commonTest` — shared utilities, and the default home for any test that only touches
-  `commonMain` code (pure functions, domain models, parsers) — see kotest guidance below
-- `businessTest` — business logic without UI (depends on `commonTest`)
-- `jvmTest` — JVM UI + integration tests (uses Roborazzi for screenshot tests; also runs
-  everything in `businessTest`)
-- `androidUnitTest` — Android local unit tests (Robolectric)
-- `iosTest` — iOS-target tests
-- `wasmJsTest` — Web (WASM/JS) tests, only compiled when `-PenableJs=true`
-
-### Testing best practices
-
-- **Test pure logic in `commonMain`/`commonTest`, not per-platform.** If a function doesn't
-  touch a platform API, it belongs in `commonMain` with its test in `commonTest` — one test
-  run covers JVM, Android, iOS, and wasmJs simultaneously instead of four copies drifting
-  apart. `HostReconciliation.kt` / `HostReconciliationTest.kt` is the reference example.
-- **Prefer property-based tests over enumerating examples** for pure functions with a large or
-  structured input space (parsers, classifiers, encoders, anything with an equality/symmetry
-  invariant). `kotest-property` is on the classpath in `commonTest` — use `Arb`/`checkAll`
-  (wrapped in `runTest { }` from `kotlinx-coroutines-test`) to assert invariants across many
-  generated inputs rather than a fixed example table. Keep a handful of example-based `@Test`s
-  alongside for the obvious/named cases — property tests are for edge cases you wouldn't think
-  to enumerate, not a replacement for readable baseline coverage.
-- **`kotest-assertions-core` and `kotest-property` are plain KMP libraries, not the Kotest Spec
-  runner.** They're used from ordinary `kotlin.test`-annotated `@Test` functions (no
-  `StringSpec`/`FunSpec`, no Kotest Gradle plugin, no KSP) — this project deliberately did not
-  adopt the Kotest test framework/runner because its wasmJs support is feature-limited
-  (annotation-based config doesn't work there) and JUnit5 (`kotlin.test`) already covers every
-  target this project builds for.
-- **Root-cause failing tests before loosening assertions.** A flaky or failing test is a signal,
-  not an obstacle — see the "No fix without root cause" rule; don't add tolerances, retries, or
-  `@Ignore` to make a red test green without first stating why it's red.
-- **Regression tests for structural invariants** (e.g. the SQLDelight/`MigrationRunner` sync
-  check, the `@DirectSqlWrite` write-gating enforcement, the bounded-read audits) belong in
-  `businessTest` or `jvmTest` next to the mechanism they guard — see the existing examples
-  referenced throughout this file's architecture sections above.
-
-## Release Process
-
-Releases are managed by [Release Please](https://github.com/googleapis/release-please) (`.github/workflows/release.yml`), driven by Conventional Commits on `main`. There is no manual version bump — `version.txt` and `CHANGELOG.md` are only ever edited by the bot.
-
-1. **Every push to `main`** runs the `release-please` job, which opens or updates a single standing PR titled `chore(main): release X.Y.Z` (find it with `gh pr list --search "head:release-please"`). It aggregates every `fix:`/`feat:` commit since the last release into `CHANGELOG.md`, bumps `version.txt`, and computes the next semver bump from the commit types (`fix:` → patch, `feat:` → minor, `!`/`BREAKING CHANGE:` → major).
-2. **This PR is docs/config-only** (`version.txt`, `CHANGELOG.md`, `.release-please-manifest.json`) — it never contains source changes, so it does not need the adversarial code-review gate; the source changes it summarizes were already reviewed in their own commits/PRs.
-3. **Merging that PR is what cuts the release.** On merge, `release-please` sets `release_created=true` and the same workflow run builds and publishes: Android release APK, Desktop (Linux/Windows/macOS) distributables, a GitHub Release tagged `vX.Y.Z`, the Homebrew formula, and the F-Droid index.
-4. **The website redeploys independently of releases.** `.github/workflows/pages.yml` triggers on every push to `main` (not just release merges) and rebuilds/deploys the wasmJs web app via `./gradlew :kmp:wasmJsBrowserDistribution -PenableJs=true` — it does **not** pass `-PappVersion`, so the web build's version string always falls back to whatever is currently committed in `version.txt`. This means a plain push to `main` (before any release PR is merged) already ships the latest web app under the previous version number.
-5. **To force an immediate release without waiting for a release-please PR merge**, use `workflow_dispatch` on `release.yml` with an explicit `version` input (e.g. `v1.2.3`) — this skips Release Please and builds/publishes immediately: `gh workflow run release.yml -f version=v1.2.3`.
-6. **App version at runtime** is resolved by the shared `resolveAppVersion()` function in `kmp/build.gradle.kts`: explicit `-PappVersion` (used by CI release builds, sourced from the release tag) → committed `version.txt` (local/dev builds and the web deploy) → `"dev"` fallback. JVM/Desktop reads it via `-Dapp.version` system property (`DeviceInfo.jvm.kt`); wasmJs has no runtime system-property equivalent, so it's baked in at compile time by the `generateWasmVersionInfo` Gradle task into a generated `WASM_APP_VERSION` constant consumed by `DeviceInfo.js.kt`.
+See `kmp/TESTING_README.md` for the full testing guide. Test source sets:
+- `commonTest` — shared utilities
+- `businessTest` — business logic without UI
+- `jvmTest` — JVM UI + integration tests (uses Roborazzi for screenshot tests)
+- `androidUnitTest` — Android local unit tests
 
 ## Key Files
 

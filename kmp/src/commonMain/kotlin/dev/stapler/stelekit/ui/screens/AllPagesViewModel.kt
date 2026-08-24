@@ -60,12 +60,6 @@ class AllPagesViewModel(
         .map { it.isNotEmpty() }
         .stateIn(scope, SharingStarted.Eagerly, false)
 
-    // Full set of known file paths, unfiltered by search/type — used to reconcile stale
-    // conflict entries (AppState.pendingConflicts) against pages that actually still exist.
-    val allFilePaths: StateFlow<Set<String>> = _allRows
-        .map { rows -> rows.mapNotNull { it.page.filePath?.takeIf { p -> p.isNotBlank() } }.toSet() }
-        .stateIn(scope, SharingStarted.Eagerly, emptySet())
-
     val pages: StateFlow<List<PageRow>> = combine(
         combine(_allRows, _filterQuery.debounce(300)) { rows, query -> Pair(rows, query) },
         combine(_sortColumn, _sortAscending, _pageTypeFilter) { col, asc, typeFilter -> Triple(col, asc, typeFilter) }
