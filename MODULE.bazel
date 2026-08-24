@@ -456,6 +456,14 @@ rust.toolchain(
     extra_target_triples = [
         "aarch64-apple-darwin",
         "aarch64-linux-android",
+        # CI's "JVM Linux (aarch64)" job cross-compiles from an x86_64
+        # ubuntu-latest exec platform (see build-native-libs.yml) — without
+        # this, toolchain resolution fails with "No matching toolchains
+        # found for types: @@rules_rust+//rust:toolchain_type" because
+        # DEFAULT_TOOLCHAIN_TRIPLES only registers a *native* aarch64-linux
+        # toolchain (used when actually running on an aarch64 host), not a
+        # cross toolchain exec'd from x86_64.
+        "aarch64-unknown-linux-gnu",
         "x86_64-apple-darwin",
         "x86_64-linux-android",
         "x86_64-pc-windows-msvc",
@@ -466,11 +474,38 @@ use_repo(rust, "rust_toolchains")
 
 register_toolchains("@rust_toolchains//:all")
 
+# Bazel's default autoconfigured cc_toolchain (local_config_cc) is
+# native-only and cannot cross-compile to aarch64-linux from an x86_64 exec
+# platform — rust_shared_library's transitive cc deps (e.g.
+# @@rules_rust+//ffi/cc/allocator_library:cc_allocator_library) need a real
+# cc_toolchain for @@bazel_tools//tools/cpp:toolchain_type on that target.
+# See toolchains/cross_aarch64_linux/BUILD.bazel for the toolchain
+# definition, which shells out to the aarch64-linux-gnu-gcc cross-compiler
+# build-native-libs.yml already installs for the Rust linker.
+register_toolchains("//toolchains/cross_aarch64_linux:aarch64_linux_toolchain")
+
 crate = use_extension("@rules_rust//crate_universe:extensions.bzl", "crate")
 crate.from_cargo(
     name = "crates",
     cargo_lockfile = "//native/libsql:Cargo.lock",
     manifests = ["//native/libsql:Cargo.toml"],
+    # crate_universe's own default (SUPPORTED_PLATFORM_TRIPLES in
+    # crates_repository.bzl) omits x86_64-apple-darwin, which makes every
+    # generated crate target_compatible_with select() fall through to
+    # @platforms//:incompatible on that platform — CI's "JVM macOS
+    # (x86_64)" job cross-compiles from an arm64 macos-latest host to
+    # x86_64-apple-darwin and fails with "Target ... is incompatible and
+    # cannot be built" (root cause: @@rules_rust++crate+crates__jni-0.21.1
+    # has no x86_64-apple-darwin arm in its target_compatible_with select).
+    # List every triple actually built via --platforms= in
+    # build-native-libs.yml.
+    supported_platform_triples = [
+        "aarch64-apple-darwin",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-msvc",
+        "x86_64-unknown-linux-gnu",
+    ],
 )
 
 # libsql-ffi's build.rs (no LIBSQL_DEV set, the default/CI path) copies a
