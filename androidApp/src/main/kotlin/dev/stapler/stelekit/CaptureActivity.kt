@@ -200,29 +200,32 @@ class CaptureActivity : ComponentActivity() {
             subject: String?,
         ): String {
             // takeIf { isNotBlank() } prevents an empty/blank source from blocking fallbacks
-            val body = clipText?.takeIf { it.isNotBlank() }
-                ?: extraText?.takeIf { it.isNotBlank() }
-                ?: ""
-            val title = subject?.takeIf { it.isNotBlank() }
-            return normalizeShareWhitespace(
-                when {
-                    title != null && body.isNotBlank() && title != body -> "$title\n$body"
-                    body.isNotBlank() -> body
-                    else -> title ?: ""
-                }
+            val body = normalizeShareWhitespace(
+                clipText?.takeIf { it.isNotBlank() }
+                    ?: extraText?.takeIf { it.isNotBlank() }
+                    ?: ""
             )
+            // Normalized before the equality check below, so whitespace-only differences
+            // between subject and body (e.g. double-space vs single-space) don't defeat dedup.
+            val title = subject?.takeIf { it.isNotBlank() }?.let { normalizeShareWhitespace(it) }
+            return when {
+                title != null && body.isNotBlank() && title != body -> "$title\n$body"
+                body.isNotBlank() -> body
+                else -> title ?: ""
+            }
         }
 
         /**
          * Normalizes whitespace artifacts common in browser/HTML-aware share payloads.
          * Order is fixed: unify line endings -> normalize NBSP -> collapse space/tab runs ->
-         * collapse blank-line runs. A single `\n` between two content lines is left untouched.
+         * collapse blank-line runs -> trim leading/trailing whitespace. A single `\n` between
+         * two content lines is left untouched.
          */
         internal fun normalizeShareWhitespace(text: String): String {
             val unifiedLineEndings = text.replace("\r\n", "\n").replace('\r', '\n')
             val nbspNormalized = unifiedLineEndings.replace('\u00A0', ' ')
             val spacesCollapsed = nbspNormalized.replace(SPACE_TAB_RUN, " ")
-            return spacesCollapsed.replace(BLANK_LINE_RUN, "\n\n")
+            return spacesCollapsed.replace(BLANK_LINE_RUN, "\n\n").trim()
         }
     }
 }
