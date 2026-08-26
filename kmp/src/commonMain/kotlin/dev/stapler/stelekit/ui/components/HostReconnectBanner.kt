@@ -48,10 +48,10 @@ import dev.stapler.stelekit.platform.HostAccessState
 @Composable
 fun HostReconnectBanner(
     state: HostAccessState,
-    degraded: Boolean = false,
     onReconnect: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
+    degraded: Boolean = false,
 ) {
     val message = when {
         degraded ->
