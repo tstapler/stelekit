@@ -1519,8 +1519,17 @@ private fun GraphContent(
                                 fileSystem.supportsNativeDirectoryPicker &&
                                 activeGraphInfo2.browserOnlySyncBannerDismissed == false
                             var hostReconnectBannerDismissedFor by remember { mutableStateOf<String?>(null) }
+                            // SyncDegraded: permission still reads as Granted, but the write-through
+                            // queue is stuck — the startup log line ("reconnectHostDirectory(...):
+                            // Granted") looks like sync is working, and nothing else prints a warning,
+                            // so this condition was previously visible only in the small sidebar badge.
+                            val hostSyncDegraded = hostAccessState is HostAccessState.Granted &&
+                                hostWriteStuck &&
+                                hostWritePendingCount > 0
                             val showHostReconnectBanner = activeGraphInfo2 != null &&
-                                (hostAccessState is HostAccessState.PromptNeeded || hostAccessState is HostAccessState.Denied) &&
+                                (hostAccessState is HostAccessState.PromptNeeded ||
+                                    hostAccessState is HostAccessState.Denied ||
+                                    hostSyncDegraded) &&
                                 hostReconnectBannerDismissedFor != activeGraphId?.value
                             Column(modifier = Modifier.fillMaxSize()) {
                                 if (showGitBanner) {
@@ -1545,6 +1554,7 @@ private fun GraphContent(
                                 if (showHostReconnectBanner) {
                                     HostReconnectBanner(
                                         state = hostAccessState,
+                                        degraded = hostSyncDegraded,
                                         onReconnect = { onReconnectHostDirectory?.invoke() },
                                         onDismiss = {
                                             hostReconnectBannerDismissedFor = activeGraphId?.value
