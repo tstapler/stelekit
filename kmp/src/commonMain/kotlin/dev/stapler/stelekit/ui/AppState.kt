@@ -139,8 +139,6 @@ data class AppState(
     // Pending conflicts — files changed externally while the user was on a different page.
     // Keyed by filePath; shown as a dialog when the user next navigates to that page.
     val pendingConflicts: Map<String, PendingConflict> = emptyMap(),
-    // Write error — non-null when a background DB write failed persistently
-    val indexingError: String? = null,
     // Fatal error — non-null when a Throwable-level crash was caught and converted to a
     // recoverable state. Shown on the error report screen so the user can copy the message.
     val fatalError: String? = null,
