@@ -1436,7 +1436,6 @@ class StelekitViewModel(
     fun startAutoSave() {
         graphWriter.startAutoSave()
         observeExternalFileChanges()
-        observeWriteErrors()
         logger.info("Auto-save started")
     }
 
@@ -1652,46 +1651,8 @@ class StelekitViewModel(
         return true
     }
 
-    /**
-     * Collects [GraphLoader.writeErrors] and surfaces a dismissable error banner in
-     * the UI so the user can see that data failed to persist and trigger a retry.
-     */
-    private fun observeWriteErrors() {
-        scope.launch {
-            graphLoader.writeErrors.collect { error ->
-                val pageName = error.filePath.substringAfterLast("/").removeSuffix(".md")
-                val message = if (error.blockCount > 0) {
-                    "Failed to save ${error.blockCount} blocks from '$pageName'. Tap to retry indexing."
-                } else {
-                    "Failed to save page '$pageName'. Tap to retry indexing."
-                }
-                _uiState.update { it.copy(indexingError = message) }
-            }
-        }
-    }
-
-    fun dismissIndexingError() {
-        _uiState.update { it.copy(indexingError = null) }
-    }
-
     fun clearFatalError() {
         _uiState.update { it.copy(fatalError = null) }
-    }
-
-    fun retryIndexing() {
-        _uiState.update { it.copy(indexingError = null) }
-        scope.launch {
-            _indexingProgress.value = IndexingState.InProgress("Re-indexing...")
-            try {
-                graphLoader.indexRemainingPages { /* progress updates can be ignored here */ }
-                _indexingProgress.value = IndexingState.Complete
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                _indexingProgress.value = IndexingState.Idle
-                throw e
-            } catch (e: Exception) {
-                _indexingProgress.value = IndexingState.Idle
-            }
-        }
     }
 
     /**

@@ -23,38 +23,52 @@ import dev.stapler.stelekit.platform.HostAccessState
 
 /**
  * Top-of-app banner shown when the browser has silently lost (or never re-confirmed) permission to
- * the connected host folder — [HostAccessState.PromptNeeded] or [HostAccessState.Denied]. Mirrors
- * [BrowserOnlySyncBanner]'s structure, but for a different underlying condition: here the graph
- * *was* connected to live folder sync, but no file is being read from or written to disk until the
- * user re-grants permission, because a browser can silently drop a `FileSystemDirectoryHandle`
- * permission grant across restarts and only a real user gesture can re-request it (see
- * [dev.stapler.stelekit.platform.HostDirectorySync.requestHostDirectoryAccess]).
+ * the connected host folder — [HostAccessState.PromptNeeded] or [HostAccessState.Denied] — or when
+ * permission is nominally intact but writes are stuck ([degraded], the `SyncDegraded` condition:
+ * [HostAccessState.Granted] with a stuck write-through queue). Mirrors [BrowserOnlySyncBanner]'s
+ * structure, but for a different underlying condition: here the graph *was* connected to live
+ * folder sync, but nothing typed in SteleKit is reaching disk — either because a browser can
+ * silently drop a `FileSystemDirectoryHandle` permission grant across restarts and only a real user
+ * gesture can re-request it (see
+ * [dev.stapler.stelekit.platform.HostDirectorySync.requestHostDirectoryAccess]), or because the
+ * write-through queue is stuck while permission itself still reads as granted.
  *
  * Until now this state was only surfaced via [FolderSyncStatusBadge], a small sidebar badge — easy
- * to miss, which let host-folder edits go silently unsynced for an entire session. This banner is
- * additive, not a replacement: the sidebar badge still renders the same state.
+ * to miss, which let edits typed in SteleKit go silently unsynced to disk for an entire session
+ * while the startup log line (`reconnectHostDirectory(...): Granted`) looked like sync was working.
+ * This banner is additive, not a replacement: the sidebar badge still renders the same state.
  *
  * Callers gate visibility on [state] being [HostAccessState.PromptNeeded] or
- * [HostAccessState.Denied]; [onReconnect] must invoke
- * `PlatformFileSystem.hostDirectorySync.requestHostDirectoryAccess` from this button's click
- * handler so the browser sees the required transient user activation.
+ * [HostAccessState.Denied], or on [degraded] being `true` (`state` is [HostAccessState.Granted] and
+ * `HostDirectorySync.hostWriteStuckFlow` is `true` with a nonzero pending-write count). [onReconnect]
+ * must invoke `PlatformFileSystem.hostDirectorySync.requestHostDirectoryAccess` from this button's
+ * click handler so the browser sees the required transient user activation; for [degraded] this is
+ * a harmless re-confirmation (permission is already granted) that also nudges a retry.
  */
 @Composable
 fun HostReconnectBanner(
     state: HostAccessState,
+    degraded: Boolean = false,
     onReconnect: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val message = when (state) {
-        is HostAccessState.Denied ->
-            "Folder access was declined. Changes made outside SteleKit will not appear here " +
-                "until you grant access again."
+    val message = when {
+        degraded ->
+            "Notes typed here aren't reaching your synced folder on disk. They're still saved " +
+                "in the browser, but won't be on disk until this reconnects."
+        state is HostAccessState.Denied ->
+            "Folder access was declined. Nothing you type here will be saved to disk — only in " +
+                "the browser — until you grant access again."
         else ->
-            "This browser needs permission to reconnect to your synced folder. Changes made " +
-                "outside SteleKit will not appear here until you reconnect."
+            "This browser needs permission to reconnect to your synced folder. Nothing you type " +
+                "here will be saved to disk — only in the browser — until you reconnect."
     }
-    val buttonLabel = if (state is HostAccessState.Denied) "Grant access" else "Reconnect folder"
+    val buttonLabel = when {
+        degraded -> "Retry sync"
+        state is HostAccessState.Denied -> "Grant access"
+        else -> "Reconnect folder"
+    }
 
     Surface(
         color = MaterialTheme.colorScheme.errorContainer,

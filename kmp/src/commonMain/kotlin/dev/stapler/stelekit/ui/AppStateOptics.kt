@@ -46,7 +46,6 @@ object AppStateOptics {
     val isGraphSwitching: Lens<AppState, Boolean> = Lens(get = { it.isGraphSwitching }, set = { s, v -> s.copy(isGraphSwitching = v) })
     val diskConflict: Lens<AppState, DiskConflict?> = Lens(get = { it.diskConflict }, set = { s, v -> s.copy(diskConflict = v) })
     val pendingConflicts: Lens<AppState, Map<String, PendingConflict>> = Lens(get = { it.pendingConflicts }, set = { s, v -> s.copy(pendingConflicts = v) })
-    val indexingError: Lens<AppState, String?> = Lens(get = { it.indexingError }, set = { s, v -> s.copy(indexingError = v) })
     val renameDialogPage: Lens<AppState, Page?> = Lens(get = { it.renameDialogPage }, set = { s, v -> s.copy(renameDialogPage = v) })
     val renameDialogBusy: Lens<AppState, Boolean> = Lens(get = { it.renameDialogBusy }, set = { s, v -> s.copy(renameDialogBusy = v) })
     val renameDialogError: Lens<AppState, String?> = Lens(get = { it.renameDialogError }, set = { s, v -> s.copy(renameDialogError = v) })
