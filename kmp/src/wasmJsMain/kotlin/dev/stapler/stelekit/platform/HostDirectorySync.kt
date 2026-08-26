@@ -1513,6 +1513,9 @@ class HostDirectorySync(
      */
     private suspend fun handleFlushFailure(repoRelative: String, handle: JsAny, e: Throwable) {
         val message = e.message ?: "unknown"
+        // Bug fix: this was the only path a stuck write ever took, and it never logged the actual
+        // exception — the console showed a healthy "Granted" state while writes failed silently.
+        logger.warn("flushHostWrite failed for '$repoRelative': $message", e)
         if (message.contains("NotFoundError", ignoreCase = true)) {
             setHostAccessState(HostAccessState.Disconnected(message))
             // Epic 5.1/5.2: the stored handle no longer resolves — stop polling/treating the
