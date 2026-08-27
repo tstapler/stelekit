@@ -1238,12 +1238,16 @@ class HostDirectorySync(
      * Bug fix: returns `null` (rather than the unchanged absolute [path]) when [hostGraphOpfsPath]
      * is unset or doesn't match — an absolute path treated as repo-relative produces a leading `/`
      * that [resolveHostEntry]'s `split("/")` turns into an empty first segment, and
-     * `getDirectoryHandle(dir, "", create)` fails every time with "Name is not allowed". Worse,
+     * `getDirectoryHandle(dir, "", create)` fails every time with "Name is not allowed" — this
+     * exact error was observed live in production, confirming the mechanism. Worse,
      * [scheduleHostWriteThrough] used to cache that broken value as the permanent
-     * [hostWritePending]/[hostWriteInFlight] key for the path, so one unlucky call at a moment
-     * [hostGraphOpfsPath] was transiently unset poisoned that page's sync forever, deterministically
-     * failing on every retry for the rest of the session even after [hostGraphOpfsPath] was correct
-     * again.
+     * [hostWritePending]/[hostWriteInFlight] key for the path, so one call that hit a
+     * [hostGraphOpfsPath] mismatch poisoned that page's sync forever, deterministically failing on
+     * every retry for the rest of the session even after [hostGraphOpfsPath] was correct again.
+     * (What specifically caused [hostGraphOpfsPath] to mismatch in the observed incident — every
+     * known assignment site sets it synchronously before returning, and the failing write happened
+     * well after `reconnectHostDirectory` had already completed — is not confirmed; this fix
+     * removes the failure mode regardless of its trigger.)
      */
     private fun repoRelativePath(path: String): String? {
         val opfsPath = hostGraphOpfsPath ?: return null
