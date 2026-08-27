@@ -1518,10 +1518,23 @@ private fun GraphContent(
                                 hostAccessState == HostAccessState.NotApplicable &&
                                 fileSystem.supportsNativeDirectoryPicker &&
                                 activeGraphInfo2.browserOnlySyncBannerDismissed == false
-                            var hostReconnectBannerDismissedFor by remember { mutableStateOf<String?>(null) }
+                            // SyncDegraded: permission still reads as Granted, but the write-through
+                            // queue is stuck — the startup log line ("reconnectHostDirectory(...):
+                            // Granted") looks like sync is working, and nothing else prints a warning,
+                            // so this condition was previously visible only in the small sidebar badge.
+                            val hostSyncDegraded = hostAccessState is HostAccessState.Granted &&
+                                hostWriteStuck &&
+                                hostWritePendingCount > 0
+                            // Keyed by (graphId, condition kind), not just graphId: dismissing the
+                            // banner for one failure kind (e.g. Denied) must not suppress it for a
+                            // later, unrelated one (e.g. SyncDegraded) on the same graph.
+                            var hostReconnectBannerDismissedFor by remember { mutableStateOf<Pair<String?, String?>?>(null) }
+                            val hostReconnectBannerConditionKind = if (hostSyncDegraded) "degraded" else hostAccessState::class.simpleName
                             val showHostReconnectBanner = activeGraphInfo2 != null &&
-                                (hostAccessState is HostAccessState.PromptNeeded || hostAccessState is HostAccessState.Denied) &&
-                                hostReconnectBannerDismissedFor != activeGraphId?.value
+                                (hostAccessState is HostAccessState.PromptNeeded ||
+                                    hostAccessState is HostAccessState.Denied ||
+                                    hostSyncDegraded) &&
+                                hostReconnectBannerDismissedFor != (activeGraphId?.value to hostReconnectBannerConditionKind)
                             Column(modifier = Modifier.fillMaxSize()) {
                                 if (showGitBanner) {
                                     GitDetectionBanner(
@@ -1545,9 +1558,11 @@ private fun GraphContent(
                                 if (showHostReconnectBanner) {
                                     HostReconnectBanner(
                                         state = hostAccessState,
+                                        degraded = hostSyncDegraded,
                                         onReconnect = { onReconnectHostDirectory?.invoke() },
                                         onDismiss = {
-                                            hostReconnectBannerDismissedFor = activeGraphId?.value
+                                            hostReconnectBannerDismissedFor =
+                                                activeGraphId?.value to hostReconnectBannerConditionKind
                                         },
                                     )
                                 }

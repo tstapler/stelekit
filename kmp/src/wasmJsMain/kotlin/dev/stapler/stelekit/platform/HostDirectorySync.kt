@@ -131,7 +131,11 @@ class HostDirectorySync(
     private fun setHostAccessState(newState: HostAccessState) {
         val old = _hostAccessStateFlow.value
         if (old != newState) {
-            logger.info("host access state: $old -> $newState")
+            // Diagnostic: hostGraphOpfsPath included because "Granted" alone doesn't reveal which
+            // OPFS root the connected handle resolves against — a mismatch here (vs. the graph's
+            // own OPFS path, printed separately by Main.kt's opfsGraphPath log) is exactly what
+            // makes every write silently defer forever (see repoRelativePath's doc comment).
+            logger.info("host access state: $old -> $newState (hostGraphOpfsPath=$hostGraphOpfsPath)")
         }
         _hostAccessStateFlow.value = newState
     }
@@ -1234,9 +1238,24 @@ class HostDirectorySync(
     // ── Epic 4.1-4.4: write-through queue, coalescing flush scheduler, failure surfacing ──────
 
     /** Repo-relative key derivation matching [runHostReconciliation]'s existing convention. */
-    private fun repoRelativePath(path: String): String {
-        val opfsPath = hostGraphOpfsPath
-        return if (opfsPath != null && path.startsWith("$opfsPath/")) path.removePrefix("$opfsPath/") else path
+    /**
+     * Bug fix: returns `null` (rather than the unchanged absolute [path]) when [hostGraphOpfsPath]
+     * is unset or doesn't match — an absolute path treated as repo-relative produces a leading `/`
+     * that [resolveHostEntry]'s `split("/")` turns into an empty first segment, and
+     * `getDirectoryHandle(dir, "", create)` fails every time with "Name is not allowed" — this
+     * exact error was observed live in production, confirming the mechanism. Worse,
+     * [scheduleHostWriteThrough] used to cache that broken value as the permanent
+     * [hostWritePending]/[hostWriteInFlight] key for the path, so one call that hit a
+     * [hostGraphOpfsPath] mismatch poisoned that page's sync forever, deterministically failing on
+     * every retry for the rest of the session even after [hostGraphOpfsPath] was correct again.
+     * (What specifically caused [hostGraphOpfsPath] to mismatch in the observed incident — every
+     * known assignment site sets it synchronously before returning, and the failing write happened
+     * well after `reconnectHostDirectory` had already completed — is not confirmed; this fix
+     * removes the failure mode regardless of its trigger.)
+     */
+    private fun repoRelativePath(path: String): String? {
+        val opfsPath = hostGraphOpfsPath ?: return null
+        return if (path.startsWith("$opfsPath/")) path.removePrefix("$opfsPath/") else null
     }
 
     private fun dirtyOpFor(payload: HostWritePayload): DirtyOp =
@@ -1293,6 +1312,14 @@ class HostDirectorySync(
      */
     fun scheduleHostWriteThrough(path: String, payload: HostWritePayload): Deferred<Unit> {
         val repoRelative = repoRelativePath(path)
+        if (repoRelative == null) {
+            // Bug fix: hostGraphOpfsPath is unset/mismatched right now — never enqueue under an
+            // absolute-path key (see repoRelativePath's doc comment for why that key is fatal).
+            // Reconciliation's BrowserOnlyNeedsPush pass picks this path up correctly once
+            // hostGraphOpfsPath is valid again, so dropping this attempt here is safe, not silent.
+            logger.warn("scheduleHostWriteThrough: no valid host-relative path for '$path' yet, deferring to reconciliation")
+            return CompletableDeferred(Unit)
+        }
         val opfsWriteDeferred = cacheAccess.opfsWriteDeferredFor(path)
         val completion = hostWriteCompletion.getOrPut(repoRelative) { CompletableDeferred() }
         scope.launch {
@@ -1513,6 +1540,9 @@ class HostDirectorySync(
      */
     private suspend fun handleFlushFailure(repoRelative: String, handle: JsAny, e: Throwable) {
         val message = e.message ?: "unknown"
+        // Bug fix: this was the only path a stuck write ever took, and it never logged the actual
+        // exception — the console showed a healthy "Granted" state while writes failed silently.
+        logger.warn("flushHostWrite failed for '$repoRelative': $message", e)
         if (message.contains("NotFoundError", ignoreCase = true)) {
             setHostAccessState(HostAccessState.Disconnected(message))
             // Epic 5.1/5.2: the stored handle no longer resolves — stop polling/treating the
@@ -1564,16 +1594,21 @@ class HostDirectorySync(
         scheduleHostWriteThrough(to, HostWritePayload.Text(content)).await()
 
         val repoRelativeTo = repoRelativePath(to)
-        val verified = try {
-            val (dir, fileName) = resolveHostEntry(handle, repoRelativeTo, create = false)
-            val fileHandle = getFileHandle(dir, fileName, false)
-            val readBack = readOpfsFile(fileHandle)
-            readBack != null && readBack.hashCode() == content.hashCode() && readBack == content
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Throwable) {
-            logger.warn("renameHostFile: failed to verify '$to' after write: ${e.message}", e)
+        val verified = if (repoRelativeTo == null) {
+            logger.warn("renameHostFile: no valid host-relative path for '$to', skipping verification")
             false
+        } else {
+            try {
+                val (dir, fileName) = resolveHostEntry(handle, repoRelativeTo, create = false)
+                val fileHandle = getFileHandle(dir, fileName, false)
+                val readBack = readOpfsFile(fileHandle)
+                readBack != null && readBack.hashCode() == content.hashCode() && readBack == content
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                logger.warn("renameHostFile: failed to verify '$to' after write: ${e.message}", e)
+                false
+            }
         }
 
         if (verified) {

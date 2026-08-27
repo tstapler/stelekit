@@ -111,6 +111,38 @@ class HostDirectorySyncWriteThroughTest {
         testScope.cancel()
     }
 
+    // ── Bug fix regression: hostGraphOpfsPath unset/mismatched at schedule-time (production
+    // incident — a page's write-through was permanently stuck failing "Name is not allowed" on
+    // every retry after one call happened while hostGraphOpfsPath was transiently null) ─────────
+
+    @Test
+    fun scheduleHostWriteThrough_should_NeverEnqueueUnderAnAbsolutePathKey_When_HostGraphOpfsPathIsUnsetAtScheduleTime() = runTest {
+        val opfsPath = freshOpfsPath()
+        val root = makeWritableHostRoot()
+        val testScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val sync = newSync(opfsPath, FakeCacheAccess(), testScope, root)
+        sync.hostGraphOpfsPath = null // simulates the race window this bug depended on
+
+        val absolutePath = "$opfsPath/Foo.md"
+        sync.scheduleHostWriteThrough(absolutePath, HostWritePayload.Text("hello")).await()
+
+        // Must not have attempted a write at all (no poisoned absolute-path directory-handle lookup
+        // was even tried), and must not have cached the absolute path as a pending-write key —
+        // that permanent, wrong key is what made the original bug un-recoverable without a reload.
+        assertEquals(0, writableRootCreateWritableCallCount(root))
+        assertTrue(sync.hostWritePending.isEmpty(), "must not enqueue under any key, least of all the absolute path")
+
+        // Once hostGraphOpfsPath becomes valid, a fresh schedule call for the same path must
+        // succeed normally under the correct repo-relative key — confirms this isn't a permanent
+        // block, just a deferral until the race window closes.
+        sync.hostGraphOpfsPath = opfsPath
+        sync.scheduleHostWriteThrough(absolutePath, HostWritePayload.Text("hello")).await()
+        assertEquals("hello", writableRootGetContent(root, "Foo.md"))
+        assertTrue(sync.hostWritePending.isEmpty())
+
+        testScope.cancel()
+    }
+
     // ── Story 4.2.1: freshness check (Task 4.5.1b) ──────────────────────────────────────────────
 
     @Test

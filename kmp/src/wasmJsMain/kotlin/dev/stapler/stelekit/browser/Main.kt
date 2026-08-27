@@ -197,7 +197,13 @@ fun main() {
         // preload → driver → ..." step ordering. A no-op (resolves to NotApplicable) for the vast
         // majority of users who have never connected a host directory.
         val hostAccessState = opfsFileSystem.hostDirectorySync.reconnectHostDirectory(graphId)
-        println("[SteleKit] reconnectHostDirectory('$graphId'): $hostAccessState")
+        // Diagnostic: opfsGraphPath printed alongside hostGraphOpfsPath (logged by
+        // HostDirectorySync.setHostAccessState) so a persisted-envelope mismatch between the two is
+        // directly visible in the console instead of only inferred from a later silent-defer warning.
+        println(
+            "[SteleKit] reconnectHostDirectory('$graphId'): $hostAccessState " +
+                "(opfsGraphPath=$opfsGraphPath, hostGraphOpfsPath=${opfsFileSystem.hostDirectorySync.hostGraphOpfsPath})",
+        )
 
         val isNewUser = !opfsFileSystem.directoryExists(opfsGraphPath)
 
