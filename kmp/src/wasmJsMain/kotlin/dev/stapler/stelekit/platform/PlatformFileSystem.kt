@@ -27,6 +27,22 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     private val blobUrlCache = mutableMapOf<String, String>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+    /**
+     * The "open temporarily" flow's storage mode: [cache]/[bytesCache]/[dirtySet] behave exactly
+     * as in persistent mode (checked out files can be read, edited, and pushed via git normally
+     * for the rest of this session), but nothing is ever mirrored to OPFS — no directory preload
+     * on [preload], no `.stele-dirty-set.json` checkpoint, no per-write OPFS persistence. Closing
+     * or reloading the tab discards everything. Set once via [markEphemeral] immediately after
+     * construction, before [preload] — this can't be a constructor parameter without breaking the
+     * `expect class PlatformFileSystem()` no-arg contract shared with JVM/Android/iOS.
+     */
+    private var ephemeral = false
+
+    /** Must be called immediately after construction, before [preload] — see [ephemeral]'s doc. */
+    fun markEphemeral() {
+        ephemeral = true
+    }
+
     // ── Epic 2.1/2.2: dirty-file tracking + .stele-dirty-set.json checkpoint ──────────────────
     private val dirtySet = mutableMapOf<String, DirtyEntry>()
     private val _dirtyFileCountFlow = MutableStateFlow(0)
@@ -128,8 +144,23 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         }
     }
 
+    /**
+     * The OPFS path this instance is actually preloaded/storing content under
+     * (`"$homeDir/$graphId"`) — the graph's opened folder, i.e. what `GraphInfo.path` and
+     * `GitConfig.wikiRoot` mean on every other platform. The write-back engine
+     * (`WasmGitWriteService`/`WasmGitRepository`) uses this directly instead of deriving it from
+     * `GitConfig.repoRoot`, so local storage addressing never depends on what the user typed into
+     * the git-sync wizard's "Local repository root path" field — that field is free to name the
+     * actual git top level (which may sit above this folder when `wikiSubdir` is set), matching
+     * native-platform semantics instead of requiring `repoRoot` to literally equal this path.
+     */
+    fun graphRootPath(): String = "$homeDir/$graphId"
+
     suspend fun preload(graphPath: String) {
         graphId = graphPath.removePrefix("$homeDir/").substringBefore("/").ifEmpty { graphId }
+        // Ephemeral graphs start empty by definition — there is nothing in OPFS to load (they're
+        // never written there) and no dirty-set checkpoint to restore.
+        if (ephemeral) return
         try {
             loadOpfsDirectory(graphPath)
         } catch (e: Throwable) {
@@ -216,6 +247,9 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     }
 
     private fun scheduleMarkerWrite() {
+        // Ephemeral graphs have nothing to resume across a reload (a reload IS a fresh session),
+        // so there is no checkpoint to write.
+        if (ephemeral) return
         if (markerWriteInFlight) {
             markerWriteDirty = true
             return
@@ -318,7 +352,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         val rawUrl = "https://raw.githubusercontent.com/$owner/$repo/$branch/$repoRelative"
         val content = WasmSectionSyncService.githubFetch(rawUrl, token) ?: return null
         cache[path] = content
-        scope.launch { opfsWriteFile(path, content) }
+        if (!ephemeral) scope.launch { opfsWriteFile(path, content) }
         return content
     }
     actual override fun fileExists(path: String): Boolean = cache.containsKey(path) || blobUrlCache.containsKey(path)
@@ -343,11 +377,13 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         }
         cache[path] = content
         recordDirty(path, DirtyOp.WRITE)
-        opfsWriteInFlight[path] = scope.async {
-            try {
-                opfsWriteFile(path, content)
-            } finally {
-                opfsWriteInFlight.remove(path)
+        if (!ephemeral) {
+            opfsWriteInFlight[path] = scope.async {
+                try {
+                    opfsWriteFile(path, content)
+                } finally {
+                    opfsWriteInFlight.remove(path)
+                }
             }
         }
         // Epic 4.3 (Task 4.3.1a): the fourth independent effect (web-local-folder-livesync) —
@@ -377,7 +413,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     fun applyRemoteContent(path: String, content: String): Boolean {
         if (path.startsWith(DOWNLOAD_PREFIX)) return false
         cache[path] = content
-        scope.launch { opfsWriteFile(path, content) }
+        if (!ephemeral) scope.launch { opfsWriteFile(path, content) }
         return true
     }
 
@@ -391,11 +427,13 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         if (path.startsWith(DOWNLOAD_PREFIX)) return false
         bytesCache[path] = data
         recordDirty(path, DirtyOp.WRITE)
-        opfsWriteInFlight[path] = scope.async {
-            try {
-                opfsWriteFileBytes(path, data.toJsArrayBuffer())
-            } finally {
-                opfsWriteInFlight.remove(path)
+        if (!ephemeral) {
+            opfsWriteInFlight[path] = scope.async {
+                try {
+                    opfsWriteFileBytes(path, data.toJsArrayBuffer())
+                } finally {
+                    opfsWriteInFlight.remove(path)
+                }
             }
         }
         // Epic 4.3 (Task 4.3.1b): same one-line delegation as writeFile, for paranoid-mode bytes.
@@ -417,7 +455,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         cache.remove(path)
         bytesCache.remove(path)
         recordDirty(path, DirtyOp.DELETE)
-        scope.launch { opfsDeleteFile(path) }
+        if (!ephemeral) scope.launch { opfsDeleteFile(path) }
         // Epic 4.3 (Task 4.3.1c): same one-line delegation, dispatches to flushHostWrite's
         // HostWritePayload.Delete branch (dirRemoveEntry against hostDirHandle).
         if (hostDirectorySync.hostDirHandle != null) {

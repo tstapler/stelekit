@@ -1881,6 +1881,8 @@ private fun GraphContent(
                             }
                         } else null,
                         graphPath = activeGraphPath,
+                        detectedRepoRoot = graphRegistry.graphs.firstOrNull { it.id == activeGraphId }?.detectedRepoRoot,
+                        detectedWikiSubdir = graphRegistry.graphs.firstOrNull { it.id == activeGraphId }?.detectedWikiSubdir,
                         onCloneComplete = { newGraphId ->
                             scope.launch { graphManager.switchGraph(GraphId(newGraphId)) }
                         },

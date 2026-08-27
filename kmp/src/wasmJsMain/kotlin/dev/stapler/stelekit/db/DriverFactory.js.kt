@@ -53,6 +53,23 @@ actual class DriverFactory actual constructor() {
         cachedDriver = driver
         return driver
     }
+
+    /**
+     * The "open temporarily" flow's driver: a plain in-memory sqlite3 database, never OPFS-backed,
+     * gone the moment this tab closes or reloads. Skips [WebLock.tryAcquireLeader] entirely — that
+     * lock exists to serialize access to a *shared* OPFS resource other tabs could also open; an
+     * in-memory database private to this JS realm has no such resource to contend over, and one
+     * ephemeral session should never be blocked by (or block) another.
+     */
+    suspend fun createEphemeralDriverAsync(): WasmOpfsSqlDriver {
+        check(cachedDriver == null) { "createEphemeralDriverAsync() called twice" }
+        val driver = WasmOpfsSqlDriver(workerScriptPath = "./sqlite-stelekit-worker.js")
+        driver.init(dbPath = "", mode = "ephemeral")
+        SteleDatabase.Schema.create(driver).await()
+        MigrationRunner.applyAll(driver)
+        cachedDriver = driver
+        return driver
+    }
 }
 
 actual fun createTelemetryDatabaseInMemory(): TelemetryDatabase =

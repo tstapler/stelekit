@@ -18,6 +18,7 @@ import dev.stapler.stelekit.git.resolve
 import dev.stapler.stelekit.platform.DemoFileSystem
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.HostAccessState
+import dev.stapler.stelekit.platform.EphemeralSettingsMode
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.sync.WasmSectionSyncService
@@ -27,6 +28,7 @@ import dev.stapler.stelekit.service.WasmMediaAttachmentService
 import dev.stapler.stelekit.ui.StelekitApp
 import dev.stapler.stelekit.ui.components.settings.ReconciliationUiState
 import kotlinx.browser.localStorage
+import kotlinx.browser.window
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
@@ -125,6 +127,18 @@ fun main() {
         println("[SteleKit] Fatal startup error: ${throwable.message}")
         // ComposeViewport will not be mounted — the loading overlay remains visible
     }) {
+        // The "open temporarily" flow (Sidebar's GraphSwitcher → startEphemeralSession()) reloads
+        // into this exact URL — a fresh page load is required because DriverFactory caches exactly
+        // one SQLite driver for the lifetime of the page (see createEphemeralDriverAsync's KDoc),
+        // so an in-place mode switch isn't possible once the normal boot path below has already
+        // created a persistent one. This is a genuinely separate boot sequence, not a variant of
+        // the normal one below — it skips OPFS, localStorage/PlatformSettings, and host-directory
+        // sync entirely rather than threading an "ephemeral" flag through that whole sequence.
+        if (window.location.search.contains("mode=ephemeral")) {
+            runEphemeralSession()
+            return@launch
+        }
+
         // Allow E2E tests to open a named OPFS graph via localStorage override.
         // Tests set window.localStorage['__stelekit_test_graph'] = 'name' before loading.
         val graphId = localStorage.getItem("__stelekit_test_graph") ?: "default"
@@ -289,5 +303,74 @@ fun main() {
                 },
             )
         }
+    }
+}
+
+/**
+ * The "open temporarily" boot sequence: a graph that lives entirely in memory for the lifetime of
+ * this tab. [EphemeralSettingsMode.enable] is called first, before anything else touches
+ * [PlatformSettings] — `persistWebGitCredentials`/`GitCredentialConnectionStore` (reached if the
+ * user configures git sync this session) both instantiate `PlatformSettings()` directly with no
+ * injection seam, so this flag is what keeps a temporary session's credentials out of permanent
+ * `localStorage` rather than requiring every credential-persistence call site to know about
+ * ephemeral mode individually.
+ *
+ * Deliberately does not reuse the normal boot path's returning-user/demo-fallback/host-directory
+ * logic above — none of it applies to a graph that starts empty every time and is never persisted:
+ * there is no OPFS content to preload, no `lastGraphPath` to migrate, and connecting a host
+ * directory would reintroduce exactly the persistent side channel this mode exists to avoid.
+ */
+@OptIn(ExperimentalComposeUiApi::class)
+private suspend fun runEphemeralSession() {
+    EphemeralSettingsMode.enable()
+
+    val fileSystem = PlatformFileSystem()
+    fileSystem.markEphemeral()
+    val graphPath = "/stelekit/ephemeral"
+    fileSystem.preload(graphPath)
+
+    val configResolver: suspend (GitConfig) -> GitHostConfig? = resolver@{ config ->
+        val owner = PlatformFileSystem.githubOwner
+        val repo = PlatformFileSystem.githubRepo
+        if (owner.isEmpty() || repo.isEmpty()) return@resolver null
+        val remoteUrl = "https://github.com/$owner/$repo"
+        GitHostAdapter.resolve(config, remoteUrl, PlatformFileSystem.githubToken ?: "")
+    }
+    val wasmGitRepository = WasmGitRepository.withDefaultClient(fileSystem, configResolver)
+
+    val driverFactory = DriverFactory()
+    driverFactory.createEphemeralDriverAsync()
+    markDriverBackend("memory-ephemeral")
+
+    // platformSettings is now backed by EphemeralSettingsMode's in-memory map (enabled above),
+    // so the graph registry this constructs/persists internally never reaches localStorage either.
+    val graphManager = GraphManager(
+        platformSettings = PlatformSettings(),
+        driverFactory = driverFactory,
+        fileSystem = fileSystem,
+        defaultBackend = GraphBackend.SQLDELIGHT,
+    )
+    val ephemeralGraphId = graphManager.addGraph(graphPath)
+    graphManager.switchGraph(ephemeralGraphId)
+
+    markSteleKitReady()
+    markGraphDialogCapable(false)
+
+    ComposeViewport(document.body!!) {
+        StelekitApp(
+            fileSystem = fileSystem,
+            graphPath = graphPath,
+            graphManager = graphManager,
+            attachmentService = WasmMediaAttachmentService(fileSystem),
+            gitRepository = wasmGitRepository,
+            localChangesCountFlow = fileSystem.dirtyFileCountFlow,
+            hostAccessStateFlow = fileSystem.hostDirectorySync.hostAccessStateFlow,
+            hostWritePendingCountFlow = fileSystem.hostDirectorySync.hostWritePendingCountFlow,
+            hostWriteStuckFlow = fileSystem.hostDirectorySync.hostWriteStuckFlow,
+            onReconnectHostDirectory = {},
+            onConnectHostDirectory = {
+                ReconciliationUiState.Failed("Connecting a local folder isn't available in a temporary session")
+            },
+        )
     }
 }
