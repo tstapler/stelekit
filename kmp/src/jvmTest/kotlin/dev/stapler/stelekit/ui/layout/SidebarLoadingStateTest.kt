@@ -127,7 +127,7 @@ class SidebarLoadingStateTest {
 
         composeTestRule.onNodeWithText("All Pages").performClick()
 
-        assertEquals(Screen.AllPages, navigatedTo, "clicking All Pages must navigate immediately after phase 1")
+        assertEquals(Screen.AllPages(), navigatedTo, "clicking All Pages must navigate immediately after phase 1")
     }
 
     @Test

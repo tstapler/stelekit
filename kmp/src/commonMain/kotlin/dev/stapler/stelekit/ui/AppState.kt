@@ -18,6 +18,7 @@ import dev.stapler.stelekit.vault.VaultError
 import dev.stapler.stelekit.vault.VaultNamespace
 import dev.stapler.stelekit.asset.AssetUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.SectionId
 import dev.stapler.stelekit.sections.SectionManifest
 import dev.stapler.stelekit.sections.SectionState
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
@@ -39,7 +40,7 @@ sealed class Screen {
     data object Flashcards : Screen()
 
     @HelpPage(docs = AllPagesDocs::class)
-    data object AllPages : Screen()
+    data class AllPages(val conflictsOnly: Boolean = false) : Screen()
 
     @HelpExempt(reason = "Internal diagnostics screen; developer tooling only, not reachable from user nav")
     data object LibraryStats : Screen()
@@ -102,7 +103,7 @@ data class AppState(
     val onboardingCompleted: Boolean = false,
     val currentScreen: Screen = Screen.Journals,
     val currentPage: Page? = null,
-    val currentGraphPath: String = "",
+    val currentGraphPath: String? = null,
     val commandPaletteVisible: Boolean = false,
     val searchDialogVisible: Boolean = false,
     val searchDialogInitialQuery: String = "",
@@ -138,8 +139,6 @@ data class AppState(
     // Pending conflicts — files changed externally while the user was on a different page.
     // Keyed by filePath; shown as a dialog when the user next navigates to that page.
     val pendingConflicts: Map<String, PendingConflict> = emptyMap(),
-    // Write error — non-null when a background DB write failed persistently
-    val indexingError: String? = null,
     // Fatal error — non-null when a Throwable-level crash was caught and converted to a
     // recoverable state. Shown on the error report screen so the user can copy the message.
     val fatalError: String? = null,
@@ -180,7 +179,7 @@ data class AppState(
     // Section support
     val currentManifest: SectionManifest? = null,
     val currentSectionStates: Map<String, SectionState> = emptyMap(),
-    val defaultSection: String = "",
+    val defaultSection: SectionId = SectionId.Global,
     val deviceSetupComplete: Boolean = false,
     val sectionPickerVisible: Boolean = false,
     val sectionPickerPage: Page? = null,
@@ -221,19 +220,26 @@ data class DiskConflict(
     val pageUuid: String,
     val pageName: String,
     val filePath: String,
-    val editingBlockUuid: String,
+    // Null when the pending-conflict page has no blocks yet — e.g. the auto-apply write in
+    // observeExternalFileChanges() is fire-and-forget, so navigating to a brand-new page before
+    // that write lands leaves checkAndShowPendingConflict() with no block to point at. Model this
+    // as null rather than a sentinel so callers are forced to handle "no target block" explicitly.
+    val editingBlockUuid: BlockUuid?,
     val localContent: String,
     val diskContent: String,
     val diskBlockContent: String? = null
 )
 
 /**
- * A disk conflict detected while the user was NOT viewing the affected page.
- * Stored until the user navigates to that page, at which point [DiskConflict] is
- * built from current DB blocks and the captured disk content.
+ * A disk conflict detected while the user was NOT viewing the affected page. The disk
+ * content is applied to the DB immediately (so it is never lost even if the user never
+ * opens the page), but [previousContent] preserves what the first block held right before
+ * that overwrite, so [DiskConflict] can still offer an undo/review affordance if the user
+ * navigates to the page later.
  */
 data class PendingConflict(
     val filePath: String,
     val pageName: String,
     val diskContent: String,
+    val previousContent: String,
 )

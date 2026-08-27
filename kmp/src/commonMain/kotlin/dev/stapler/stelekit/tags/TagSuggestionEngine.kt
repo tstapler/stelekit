@@ -4,6 +4,7 @@ import arrow.core.Either
 import arrow.core.right
 import dev.stapler.stelekit.domain.PageNameIndex
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.llm.LlmProviderAvailability
 
 class TagSuggestionEngine(
     private val pageNameIndex: PageNameIndex,
@@ -14,6 +15,15 @@ class TagSuggestionEngine(
      * In App.kt, wire as: vocabularyProvider = { pageNameIndex.vocabularyNames() }
      */
     private val vocabularyProvider: () -> List<String> = { pageNameIndex.vocabularyNames() },
+    /**
+     * Lightweight, SDK-independent availability probe. Null when no provider is wired (fast
+     * path, cloud-only providers) or the provider offers no availability check. Narrow
+     * function type — not the full `LlmProvider` — so `LlmTagProvider`'s own contract stays
+     * unchanged. `TagSuggestionViewModel.runLlmSuggest` uses this ONLY for lightweight
+     * checkAvailability() polling — never to trigger inference (see pitfall #2 in this
+     * project's research/pitfalls.md).
+     */
+    val checkAvailability: (suspend () -> LlmProviderAvailability)? = null,
 ) {
     companion object {
         /**

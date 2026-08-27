@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.ui
 
+import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.model.Block
@@ -61,12 +62,28 @@ class DiskConflictResolutionTest {
         updatedAt = now
     )
 
+    /**
+     * Test [GraphLoader] with an Unconfined-scoped [DatabaseWriteActor] injected so DB writes
+     * triggered through it (parseAndSavePage, applyExternalFileChange) complete synchronously
+     * within the test's Unconfined dispatcher, instead of racing against the real
+     * Default-dispatcher scope GraphLoader falls back to when no actor is injected.
+     */
+    private fun testGraphLoader(
+        pageRepo: FakePageRepository,
+        blockRepo: FakeBlockRepository,
+    ): GraphLoader = GraphLoader(
+        FakeFileSystem(),
+        pageRepo,
+        blockRepo,
+        externalWriteActor = DatabaseWriteActor(blockRepo, pageRepo, scope = CoroutineScope(Dispatchers.Unconfined)),
+    )
+
     private fun makeViewModel(
         pageRepo: FakePageRepository = FakePageRepository(listOf(testPage)),
         blockRepo: FakeBlockRepository = FakeBlockRepository(
             mapOf(testPageUuid to listOf(testBlock))
         ),
-        graphLoader: GraphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        graphLoader: GraphLoader = testGraphLoader(pageRepo, blockRepo)
     ): StelekitViewModel {
         val scope = CoroutineScope(Dispatchers.Unconfined)
         val searchRepo = InMemorySearchRepository()
@@ -96,20 +113,81 @@ class DiskConflictResolutionTest {
         ).also { viewModelRef = it }
     }
 
+    /** Like [makeViewModel] but also returns the [BlockStateManager] so tests can call [BlockStateManager.observePage]. */
+    private fun makeViewModelWithBsm(
+        pageRepo: FakePageRepository = FakePageRepository(listOf(testPage)),
+        blockRepo: FakeBlockRepository = FakeBlockRepository(
+            mapOf(testPageUuid to listOf(testBlock))
+        ),
+        graphLoader: GraphLoader = testGraphLoader(pageRepo, blockRepo)
+    ): Pair<StelekitViewModel, BlockStateManager> {
+        val scope = CoroutineScope(Dispatchers.Unconfined)
+        val searchRepo = InMemorySearchRepository()
+        @Suppress("DEPRECATION")
+        val graphWriter = GraphWriter(PlatformFileSystem(), pageRepository = pageRepo)
+        var viewModelRef: StelekitViewModel? = null
+        val bsm = BlockStateManager(
+            blockRepository = blockRepo,
+            graphLoader = graphLoader,
+            scope = scope,
+            graphWriter = graphWriter,
+            pageRepository = pageRepo,
+            graphPathProvider = { viewModelRef?.uiState?.value?.currentGraphPath ?: "" }
+        )
+        val vm = StelekitViewModel(
+            StelekitViewModelDependencies(
+                fileSystem = PlatformFileSystem(),
+                pageRepository = pageRepo,
+                blockRepository = blockRepo,
+                searchRepository = searchRepo,
+                graphLoader = graphLoader,
+                graphWriter = graphWriter,
+                platformSettings = InMemorySettings(),
+                scope = scope,
+                blockStateManager = bsm,
+            )
+        ).also { viewModelRef = it }
+        return vm to bsm
+    }
+
+    // ─── Journals screen: pages observed via BlockStateManager (not Screen.PageView) ─────
+
+    @Test
+    fun external_change_to_a_journal_page_observed_via_blockStateManager_is_not_treated_as_off_page() = runBlocking {
+        val pageRepo = FakePageRepository(listOf(testPage))
+        val blockRepo = FakeBlockRepository(mapOf(testPageUuid to listOf(testBlock)))
+        val graphLoader = testGraphLoader(pageRepo, blockRepo)
+        val (vm, bsm) = makeViewModelWithBsm(pageRepo = pageRepo, blockRepo = blockRepo, graphLoader = graphLoader)
+        vm.startAutoSave()
+
+        // Simulate JournalsViewModel making today's journal page visible while the screen
+        // stays Screen.Journals (never becomes a Screen.PageView) — the scenario that used
+        // to make observeExternalFileChanges() treat every reload as "off-page" and suppress it.
+        bsm.observePage(testPage.uuid, isContentLoaded = true)
+
+        graphLoader.emitExternalFileChange(testFilePath, "- disk content")
+
+        assertNull(
+            vm.uiState.value.pendingConflicts[testFilePath],
+            "A page actively observed by BlockStateManager (e.g. a visible journal entry) must not be " +
+                "routed through the off-page suppression branch"
+        )
+    }
+
     @Test
     fun diskConflict_model_has_all_fields() {
         val conflict = DiskConflict(
             pageUuid = "page-1",
             pageName = "My Page",
             filePath = "/path/to/page.md",
-            editingBlockUuid = "block-1",
+            editingBlockUuid = BlockUuid("block-1"),
             localContent = "user typed this",
             diskContent = "- disk has this\n"
         )
         assertEquals("page-1", conflict.pageUuid)
         assertEquals("My Page", conflict.pageName)
         assertEquals("/path/to/page.md", conflict.filePath)
-        assertEquals("block-1", conflict.editingBlockUuid)
+        assertEquals(BlockUuid("block-1"), conflict.editingBlockUuid)
         assertEquals("user typed this", conflict.localContent)
         assertEquals("- disk has this\n", conflict.diskContent)
     }
@@ -152,7 +230,7 @@ class DiskConflictResolutionTest {
     fun pendingConflict_is_created_and_survives_navigation_to_the_conflicting_page(): Unit = runBlocking {
         val pageRepo = FakePageRepository(listOf(testPage))
         val blockRepo = FakeBlockRepository(mapOf(testPageUuid to listOf(testBlock)))
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val graphLoader = testGraphLoader(pageRepo, blockRepo)
         val vm = makeViewModel(pageRepo = pageRepo, blockRepo = blockRepo, graphLoader = graphLoader)
         vm.startAutoSave()
 
@@ -176,10 +254,34 @@ class DiskConflictResolutionTest {
     }
 
     @Test
+    fun off_page_disk_change_is_persisted_to_the_db_even_if_the_page_is_never_opened() = runBlocking {
+        val pageRepo = FakePageRepository(listOf(testPage))
+        val blockRepo = FakeBlockRepository(mapOf(testPageUuid to listOf(testBlock)))
+        val graphLoader = testGraphLoader(pageRepo, blockRepo)
+        val vm = makeViewModel(pageRepo = pageRepo, blockRepo = blockRepo, graphLoader = graphLoader)
+        vm.startAutoSave()
+
+        // Default screen is Journals — the page is never opened, so this only exercises
+        // the off-page auto-apply path (observeExternalFileChanges' pendingConflicts branch),
+        // not checkAndShowPendingConflict()/navigateTo(). Before the fix, off-page changes were
+        // only stashed in the ephemeral pendingConflicts UI state and never reached the DB —
+        // a reload before the user opened the page would silently lose the disk content.
+        graphLoader.emitExternalFileChange(testFilePath, "- disk content")
+
+        val persistedBlocks = blockRepo.getBlocksForPage(PageUuid(testPageUuid)).first().getOrNull()
+        assertNotNull(persistedBlocks)
+        assertTrue(
+            persistedBlocks.any { it.content == "disk content" },
+            "The off-page disk change must be written through to the DB immediately, " +
+                "not merely recorded in ephemeral pendingConflicts state"
+        )
+    }
+
+    @Test
     fun keepLocalChanges_clears_the_pendingConflicts_entry() = runBlocking {
         val pageRepo = FakePageRepository(listOf(testPage))
         val blockRepo = FakeBlockRepository(mapOf(testPageUuid to listOf(testBlock)))
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val graphLoader = testGraphLoader(pageRepo, blockRepo)
         val vm = makeViewModel(pageRepo = pageRepo, blockRepo = blockRepo, graphLoader = graphLoader)
         vm.startAutoSave()
 
@@ -196,7 +298,7 @@ class DiskConflictResolutionTest {
     fun acceptDiskVersion_clears_the_pendingConflicts_entry(): Unit = runBlocking {
         val pageRepo = FakePageRepository(listOf(testPage))
         val blockRepo = FakeBlockRepository(mapOf(testPageUuid to listOf(testBlock)))
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val graphLoader = testGraphLoader(pageRepo, blockRepo)
         val vm = makeViewModel(pageRepo = pageRepo, blockRepo = blockRepo, graphLoader = graphLoader)
         vm.startAutoSave()
 
@@ -219,7 +321,7 @@ class DiskConflictResolutionTest {
     fun saveAsNewBlock_clears_the_pendingConflicts_entry(): Unit = runBlocking {
         val pageRepo = FakePageRepository(listOf(testPage))
         val blockRepo = FakeBlockRepository(mapOf(testPageUuid to listOf(testBlock)))
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val graphLoader = testGraphLoader(pageRepo, blockRepo)
         val vm = makeViewModel(pageRepo = pageRepo, blockRepo = blockRepo, graphLoader = graphLoader)
         vm.startAutoSave()
 
@@ -242,7 +344,7 @@ class DiskConflictResolutionTest {
     fun manualResolve_clears_pendingConflicts_entry_main_branch() = runBlocking {
         val pageRepo = FakePageRepository(listOf(testPage))
         val blockRepo = FakeBlockRepository(mapOf(testPageUuid to listOf(testBlock)))
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val graphLoader = testGraphLoader(pageRepo, blockRepo)
         val vm = makeViewModel(pageRepo = pageRepo, blockRepo = blockRepo, graphLoader = graphLoader)
         vm.startAutoSave()
 
@@ -268,13 +370,13 @@ class DiskConflictResolutionTest {
         )
 
         // The page has exactly one block, so checkAndShowPendingConflict() resolves
-        // editingBlockUuid to that block's uuid (non-blank), forcing manualResolve()'s main
+        // editingBlockUuid to that block's uuid (non-null), forcing manualResolve()'s main
         // branch (writes conflict markers) rather than the early-return branch.
         val conflict = vm.uiState.value.diskConflict
         assertNotNull(conflict)
-        assertTrue(
-            conflict.editingBlockUuid.isNotBlank(),
-            "Non-empty page must resolve to a non-blank editingBlockUuid, forcing manualResolve()'s main branch"
+        assertNotNull(
+            conflict.editingBlockUuid,
+            "Non-empty page must resolve to a non-null editingBlockUuid, forcing manualResolve()'s main branch"
         )
 
         vm.manualResolve()
@@ -286,36 +388,13 @@ class DiskConflictResolutionTest {
         )
     }
 
-    @Test
-    fun manualResolve_clears_pendingConflicts_entry_early_return_branch() = runBlocking {
-        val pageRepo = FakePageRepository(listOf(testPage))
-        // Zero blocks on the page — checkAndShowPendingConflict() will resolve
-        // editingBlockUuid to "" (no firstBlock to fall back to), forcing the early-return
-        // branch of manualResolve().
-        val blockRepo = FakeBlockRepository(mapOf(testPageUuid to emptyList()))
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val vm = makeViewModel(pageRepo = pageRepo, blockRepo = blockRepo, graphLoader = graphLoader)
-        vm.startAutoSave()
-
-        graphLoader.emitExternalFileChange(testFilePath, "- disk content")
-        vm.navigateTo(Screen.PageView(testPage))
-        val conflict = vm.uiState.value.diskConflict
-        assertNotNull(conflict)
-        assertTrue(conflict.editingBlockUuid.isBlank(), "Empty page should resolve to a blank editingBlockUuid")
-
-        vm.manualResolve()
-
-        assertNull(vm.uiState.value.diskConflict, "The synchronous early-return clear must still fire")
-        assertNull(vm.uiState.value.pendingConflicts[testFilePath])
-    }
-
     // ─── Story 6.1.1b: coverage gaps ─────────────────────────────────────────
 
     @Test
     fun diskConflict_diskBlockContent_wiring_matches_local_block_position_on_disk() = runBlocking {
         val pageRepo = FakePageRepository(listOf(testPage))
         val blockRepo = FakeBlockRepository(mapOf(testPageUuid to listOf(testBlock)))
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val graphLoader = testGraphLoader(pageRepo, blockRepo)
         val vm = makeViewModel(pageRepo = pageRepo, blockRepo = blockRepo, graphLoader = graphLoader)
         vm.startAutoSave()
         vm.navigateTo(Screen.PageView(testPage))
@@ -338,7 +417,7 @@ class DiskConflictResolutionTest {
     fun pendingConflict_diskBlockContent_wiring_matches_first_block_position_via_checkAndShowPendingConflict() = runBlocking {
         val pageRepo = FakePageRepository(listOf(testPage))
         val blockRepo = FakeBlockRepository(mapOf(testPageUuid to listOf(testBlock)))
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val graphLoader = testGraphLoader(pageRepo, blockRepo)
         val vm = makeViewModel(pageRepo = pageRepo, blockRepo = blockRepo, graphLoader = graphLoader)
         vm.startAutoSave()
 
@@ -374,7 +453,7 @@ class DiskConflictResolutionTest {
     fun showDiskConflictFullView_and_hideDiskConflictFullView_toggle_flag_without_clearing_diskConflict() = runBlocking {
         val pageRepo = FakePageRepository(listOf(testPage))
         val blockRepo = FakeBlockRepository(mapOf(testPageUuid to listOf(testBlock)))
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val graphLoader = testGraphLoader(pageRepo, blockRepo)
         val vm = makeViewModel(pageRepo = pageRepo, blockRepo = blockRepo, graphLoader = graphLoader)
         vm.startAutoSave()
         vm.navigateTo(Screen.PageView(testPage))
@@ -398,7 +477,7 @@ class DiskConflictResolutionTest {
     fun manualResolve_main_branch_emits_snackbar_naming_the_page() = runBlocking {
         val pageRepo = FakePageRepository(listOf(testPage))
         val blockRepo = FakeBlockRepository(mapOf(testPageUuid to listOf(testBlock)))
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val graphLoader = testGraphLoader(pageRepo, blockRepo)
         val vm = makeViewModel(pageRepo = pageRepo, blockRepo = blockRepo, graphLoader = graphLoader)
         vm.startAutoSave()
         vm.navigateTo(Screen.PageView(testPage))
@@ -417,36 +496,10 @@ class DiskConflictResolutionTest {
     }
 
     @Test
-    fun manualResolve_early_return_branch_emits_no_snackbar() = runBlocking {
-        val pageRepo = FakePageRepository(listOf(testPage))
-        val blockRepo = FakeBlockRepository(mapOf(testPageUuid to emptyList()))
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val vm = makeViewModel(pageRepo = pageRepo, blockRepo = blockRepo, graphLoader = graphLoader)
-        vm.startAutoSave()
-
-        graphLoader.emitExternalFileChange(testFilePath, "- disk content")
-        // Drain the "modified on disk" snackbar sent when the pending conflict was first
-        // recorded — it is unrelated to manualResolve() and would otherwise be mistaken for
-        // the conflict-markers snackbar this test is checking for.
-        withTimeout(1_000) { vm.snackbarEvents.first() }
-
-        vm.navigateTo(Screen.PageView(testPage))
-        val conflict = vm.uiState.value.diskConflict
-        assertNotNull(conflict)
-        assertTrue(conflict.editingBlockUuid.isBlank())
-
-        vm.manualResolve()
-
-        assertNull(vm.uiState.value.diskConflict)
-        val noSnackbar = withTimeoutOrNull(200) { vm.snackbarEvents.first() }
-        assertNull(noSnackbar, "The early-return branch must not write conflict markers, so no snackbar should fire")
-    }
-
-    @Test
     fun manualResolve_persists_conflict_markers_containing_matched_diskBlockContent() = runBlocking {
         val pageRepo = FakePageRepository(listOf(testPage))
         val blockRepo = FakeBlockRepository(mapOf(testPageUuid to listOf(testBlock)))
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val graphLoader = testGraphLoader(pageRepo, blockRepo)
         val vm = makeViewModel(pageRepo = pageRepo, blockRepo = blockRepo, graphLoader = graphLoader)
         vm.startAutoSave()
         vm.navigateTo(Screen.PageView(testPage))
@@ -487,7 +540,7 @@ class DiskConflictResolutionTest {
     fun manualResolve_persists_fallback_excerpt_when_diskBlockContent_has_no_match() = runBlocking {
         val pageRepo = FakePageRepository(listOf(testPage))
         val blockRepo = FakeBlockRepository(mapOf(testPageUuid to listOf(testBlock)))
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val graphLoader = testGraphLoader(pageRepo, blockRepo)
         val vm = makeViewModel(pageRepo = pageRepo, blockRepo = blockRepo, graphLoader = graphLoader)
         vm.startAutoSave()
         vm.navigateTo(Screen.PageView(testPage))
@@ -547,7 +600,7 @@ class DiskConflictResolutionTest {
         val blockRepo = FakeBlockRepository(
             mapOf(testPageUuid to listOf(testBlock), otherPageUuid to listOf(otherBlock))
         )
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val graphLoader = testGraphLoader(pageRepo, blockRepo)
         val vm = makeViewModel(pageRepo = pageRepo, blockRepo = blockRepo, graphLoader = graphLoader)
         vm.startAutoSave()
 
@@ -577,7 +630,7 @@ class DiskConflictResolutionTest {
     fun latest_pending_content_wins_over_an_earlier_superseded_external_change() = runBlocking {
         val pageRepo = FakePageRepository(listOf(testPage))
         val blockRepo = FakeBlockRepository(mapOf(testPageUuid to listOf(testBlock)))
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val graphLoader = testGraphLoader(pageRepo, blockRepo)
         val vm = makeViewModel(pageRepo = pageRepo, blockRepo = blockRepo, graphLoader = graphLoader)
         vm.startAutoSave()
 
@@ -606,7 +659,7 @@ class DiskConflictResolutionTest {
         // session.
         val pageRepo = FakePageRepository(listOf(testPage))
         val blockRepo = FakeBlockRepository(mapOf(testPageUuid to listOf(testBlock)))
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val graphLoader = testGraphLoader(pageRepo, blockRepo)
         val vm = makeViewModel(pageRepo = pageRepo, blockRepo = blockRepo, graphLoader = graphLoader)
         vm.startAutoSave()
         vm.navigateTo(Screen.PageView(testPage))
@@ -631,5 +684,155 @@ class DiskConflictResolutionTest {
         assertNotNull(secondConflict)
         assertEquals("- well formed content", secondConflict.diskContent)
         assertEquals("well formed content", secondConflict.diskBlockContent)
+    }
+
+    // ─── BUG-1: pendingConflicts stale-key reconciliation ───────────────────
+
+    @Test
+    fun reconcilePendingConflicts_drops_a_stale_key_not_present_in_livePaths_but_keeps_a_live_one() = runBlocking {
+        val otherFilePath = "/tmp/test-graph/pages/OtherPage.md"
+        val pageRepo = FakePageRepository(listOf(testPage))
+        val blockRepo = FakeBlockRepository(mapOf(testPageUuid to listOf(testBlock)))
+        val graphLoader = testGraphLoader(pageRepo, blockRepo)
+        val vm = makeViewModel(pageRepo = pageRepo, blockRepo = blockRepo, graphLoader = graphLoader)
+        vm.startAutoSave()
+
+        // Two deferred conflicts, neither page currently open.
+        graphLoader.emitExternalFileChange(testFilePath, "- disk content")
+        graphLoader.emitExternalFileChange(otherFilePath, "- other disk content")
+        assertNotNull(vm.uiState.value.pendingConflicts[testFilePath])
+        assertNotNull(vm.uiState.value.pendingConflicts[otherFilePath])
+
+        // Only testFilePath is still a live page's filePath — otherFilePath is stale
+        // (e.g. the page behind it was deleted/renamed via a path this ViewModel never observed,
+        // such as an external git pull reconciled by GraphLoader).
+        vm.reconcilePendingConflicts(livePaths = setOf(testFilePath))
+
+        assertNotNull(vm.uiState.value.pendingConflicts[testFilePath], "live path's conflict must survive reconciliation")
+        assertNull(vm.uiState.value.pendingConflicts[otherFilePath], "stale path's conflict must be dropped")
+    }
+
+    @Test
+    fun bulkDeletePages_clears_the_pendingConflicts_entry_for_the_deleted_pages_file_path() = runBlocking {
+        val pageRepo = FakePageRepository(listOf(testPage))
+        val blockRepo = FakeBlockRepository(mapOf(testPageUuid to listOf(testBlock)))
+        val graphLoader = testGraphLoader(pageRepo, blockRepo)
+        val vm = makeViewModel(pageRepo = pageRepo, blockRepo = blockRepo, graphLoader = graphLoader)
+        vm.startAutoSave()
+
+        // Deferred conflict on testPage while it's not the currently open page.
+        graphLoader.emitExternalFileChange(testFilePath, "- disk content")
+        assertNotNull(vm.uiState.value.pendingConflicts[testFilePath])
+
+        vm.bulkDeletePages(listOf(testPageUuid))
+
+        assertNull(
+            vm.uiState.value.pendingConflicts[testFilePath],
+            "deleting the page must drop its pendingConflicts entry — it can never be resolved again"
+        )
+    }
+
+    @Test
+    fun renamePage_clears_the_pendingConflicts_entry_for_the_old_file_path() = runBlocking {
+        val tempDir = kotlin.io.path.createTempDirectory(
+            kotlin.io.path.Path(System.getProperty("user.home")),
+            "stelekit_rename_conflict_test_"
+        ).toFile()
+        try {
+            val filePath = java.io.File(java.io.File(tempDir, "pages"), "ConflictPage.md").absolutePath
+
+            val page = Page(
+                uuid = PageUuid(testPageUuid),
+                name = "ConflictPage",
+                filePath = filePath,
+                createdAt = now,
+                updatedAt = now
+            )
+            val block = Block(
+                uuid = BlockUuid(testBlockUuid),
+                pageUuid = PageUuid(testPageUuid),
+                content = "Some content",
+                level = 0,
+                position = "a0",
+                createdAt = now,
+                updatedAt = now
+            )
+            val pageRepo = FakePageRepository(listOf(page))
+            val blockRepo = FakeBlockRepository(mapOf(testPageUuid to listOf(block)))
+            val graphLoader = testGraphLoader(pageRepo, blockRepo)
+            // Real disk I/O here made the withTimeout(2_000) below flaky under CI load; only
+            // ViewModel state is asserted, so an in-memory fake is deterministic and sufficient.
+            val fs = FakeFileSystem()
+            @Suppress("DEPRECATION")
+            // Unconfined: fs is a zero-latency fake, so no real disk I/O needs bounding. The
+            // production default (PlatformDispatcher.IO) is a real dispatch onto the JVM-wide
+            // Dispatchers.IO pool, whose scheduling latency under CI's maxParallelForks CPU
+            // contention could exceed the withTimeout budget below even with instant fake work.
+            val graphWriter = GraphWriter(fs, pageRepository = pageRepo, ioDispatcher = Dispatchers.Unconfined)
+            val scope = CoroutineScope(Dispatchers.Unconfined)
+            val writeActor = dev.stapler.stelekit.db.DatabaseWriteActor(blockRepo, pageRepo, scope = scope)
+            val searchRepo = InMemorySearchRepository()
+            var viewModelRef: StelekitViewModel? = null
+            val bsm = BlockStateManager(
+                blockRepository = blockRepo,
+                graphLoader = graphLoader,
+                scope = scope,
+                graphWriter = graphWriter,
+                pageRepository = pageRepo,
+                graphPathProvider = { viewModelRef?.uiState?.value?.currentGraphPath ?: "" }
+            )
+            val vm = StelekitViewModel(
+                StelekitViewModelDependencies(
+                    fileSystem = fs,
+                    pageRepository = pageRepo,
+                    blockRepository = blockRepo,
+                    searchRepository = searchRepo,
+                    graphLoader = graphLoader,
+                    graphWriter = graphWriter,
+                    platformSettings = InMemorySettings(),
+                    scope = scope,
+                    blockStateManager = bsm,
+                    writeActor = writeActor,
+                )
+            ).also { viewModelRef = it }
+            vm.setGraphPath(tempDir.absolutePath)
+            // setGraphPath's loadGraph() launches on `scope` but hops onto a real
+            // Dispatchers.Default via withContext(Dispatchers.Default) { loadGraphProgressive(...) },
+            // escaping this test's Unconfined scope's inline-execution guarantee. Without waiting
+            // for it here, that background coroutine's onProgress/onFullyLoaded callbacks
+            // (statusMessage = "Ready" / "Graph loaded completely.") can fire after renamePage()
+            // below and clobber its "Renamed '...'" statusMessage — a race distinct from the one
+            // renamePage()?.join() guards against, only reproducible under real-dispatcher
+            // scheduling pressure (i.e. the AllJvmTests aggregate suite, never standalone).
+            withTimeout(2_000) { vm.uiState.first { it.isFullyLoaded } }
+            vm.startAutoSave()
+
+            // Deferred conflict on the page's current path while it's not open.
+            graphLoader.emitExternalFileChange(filePath, "- disk content")
+            assertNotNull(vm.uiState.value.pendingConflicts[filePath])
+
+            // renamePage() is fire-and-forget (launches on vm.scope and returns immediately).
+            // Relying on Dispatchers.Unconfined to resolve it inline before the assertions below
+            // is not a real guarantee: startAutoSave() above routes GraphWriter's debounce/save
+            // scope onto its own real Dispatchers.Default-backed ownedScope (see
+            // GraphWriter.startAutoSave(debounceMs)), and the pending external-file-change applied
+            // just above is itself a separate fire-and-forget launch on vm.scope
+            // (observeExternalFileChanges' "apply disk content directly" branch) — so renamePage's
+            // saveMutex.withLock can genuinely contend with unrelated in-flight work rather than
+            // resolving synchronously. That race is exactly what made this test flaky only under
+            // the AllJvmTests aggregate suite (heavier real-dispatcher scheduling pressure) and
+            // never standalone. Join the returned Job explicitly instead of depending on inline
+            // Unconfined resumption.
+            withTimeout(2_000) { vm.renamePage(page, "RenamedPage")?.join() }
+            assertEquals(false, vm.uiState.value.renameDialogBusy)
+            assertTrue(vm.uiState.value.statusMessage?.contains("Renamed") == true)
+
+            assertNull(
+                vm.uiState.value.pendingConflicts[filePath],
+                "renaming the page must drop the old path's pendingConflicts entry — that path is gone"
+            )
+        } finally {
+            tempDir.deleteRecursively()
+        }
     }
 }

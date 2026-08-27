@@ -20,12 +20,15 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
@@ -74,11 +77,30 @@ class QrTransferCoordinatorTest {
      * Yields after each emit so the diagnostics coroutine and any test collector get a fair
      * scheduling chance between chunks on `Dispatchers.Default` — this loop is otherwise CPU-bound
      * and would starve other coroutines on a single-threaded test dispatcher.
+     *
+     * [resumeAfterFirstChunk], if given, is awaited after the first chunk is emitted, pausing the
+     * rest of the sequence. The data path and diagnostics coroutines have no ordering guarantee
+     * between them (`currentHint` is a plain `@Volatile` field with no happens-before edge to
+     * `FragmentAdmitted` emission), and both sides' collectors sit behind `.conflate()` in
+     * production — so neither a cold-Flow back-pressure argument nor a bare `yield()` reliably
+     * orders diagnostics before data. Tests asserting on a specific hint value must instead gate
+     * remaining chunk emission on the coordinator's own `ScanHintUpdated` event, which `updateHint`
+     * emits synchronously and unconditionally after writing `currentHint` — see the failing test
+     * this parameter exists for.
      */
-    private fun fakeReceiver(encoder: FountainEncoder): FrameTransportReceiver = object : FrameTransportReceiver {
+    private fun fakeReceiver(
+        encoder: FountainEncoder,
+        resumeAfterFirstChunk: CompletableDeferred<Unit>? = null,
+    ): FrameTransportReceiver = object : FrameTransportReceiver {
         override fun frames(): Flow<ByteArray> = flow {
-            for (chunk in encoder.parts()) {
-                emit(ChunkFrameCodec.encode(chunk))
+            val parts = encoder.parts().iterator()
+            if (resumeAfterFirstChunk != null && parts.hasNext()) {
+                emit(ChunkFrameCodec.encode(parts.next()))
+                kotlinx.coroutines.yield()
+                resumeAfterFirstChunk.await()
+            }
+            while (parts.hasNext()) {
+                emit(ChunkFrameCodec.encode(parts.next()))
                 kotlinx.coroutines.yield()
             }
         }
@@ -88,15 +110,28 @@ class QrTransferCoordinatorTest {
      * A fake [QrScanner] (Bug 3 fix — an actual injected instance, not a `scan` function
      * reference): [decodeResult] drives [QrScanner.decode]; [frames] drives [QrScanner.frameStream]
      * — a single benign frame by default, enough to exercise the diagnostics path once, then idle.
+     *
+     * [waitBeforeEmitting], if given, is awaited before [frames] starts emitting — used to hold the
+     * diagnostics decode off until a test has confirmed (via a real coordinator event) that a
+     * precondition it depends on, such as an active session, is already in place.
      */
     private fun fakeQrScanner(
         decodeResult: ScanResult = ScanResult.NoCodeDetected,
         frames: Flow<Either<DomainError.SensorError, CameraFrame>> = flow {
             emit(CameraFrame(luminanceBytes = ByteArray(4) { 200.toByte() }, width = 2, height = 2, rotationDegrees = 0).right())
         },
+        waitBeforeEmitting: CompletableDeferred<Unit>? = null,
     ): QrScanner = object : QrScanner {
         override fun decode(frame: CameraFrame): ScanResult = decodeResult
-        override fun frameStream(): Flow<Either<DomainError.SensorError, CameraFrame>> = frames
+        override fun frameStream(): Flow<Either<DomainError.SensorError, CameraFrame>> =
+            if (waitBeforeEmitting != null) {
+                flow {
+                    waitBeforeEmitting.await()
+                    emitAll(frames)
+                }
+            } else {
+                frames
+            }
     }
 
     /**
@@ -116,15 +151,65 @@ class QrTransferCoordinatorTest {
      * A [Channel] has real queueing semantics — every emitted event is buffered regardless of
      * whether a consumer is currently reading — so subscribing exactly once, before
      * [QrTransferCoordinator.start] is even called, and draining sequentially via
-     * [awaitEvent]/[awaitTerminal] afterward can never miss an event no matter how the two ends
-     * are scheduled.
+     * [awaitEvent]/[awaitTerminal] afterward avoids the resubscription race above.
+     *
+     * **This alone is not sufficient** — a SECOND, distinct race remains, and was the actual
+     * cause of a later CI-only flake here (`AssertionError: expected a Reassembling event, got
+     * [Success(...)]`): constructing this class only *schedules* its collector coroutine
+     * (`scope.launch { ... }`, not run synchronously); if the coordinator's `start()` — called by
+     * the test immediately after construction — runs to completion on `Dispatchers.Default`
+     * before this collector's launch actually gets dispatched, the collector's first subscription
+     * to the `replay = 1` `events` flow attaches AFTER the early milestone events already fired,
+     * so it only ever sees the single most recent replayed event. See the `CoroutineStart.UNDISPATCHED`
+     * comment on [job] for the fix — this class's constructor must fully register its subscription
+     * before returning, not just enqueue a coroutine that will eventually do so.
      */
     private class EventRecorder(coordinator: QrTransferCoordinator, scope: CoroutineScope) {
         private val channel = Channel<CoordinatorEvent>(Channel.UNLIMITED)
-        private val job: Job = scope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) { coordinator.events.collect { channel.send(it) } }
+
+        // CoroutineStart.UNDISPATCHED (root-cause fix): a plain `scope.launch { ... }` only
+        // SCHEDULES the collector coroutine — it does not guarantee `coordinator.events.collect`
+        // has actually subscribed to the SharedFlow before this constructor returns. `events` is
+        // `replay = 1`: if the coordinator's `start()` (called by the test immediately after
+        // constructing this recorder) runs its whole pipeline — FragmentAdmitted, Reassembling,
+        // Importing, Success — before this launched coroutine gets its first turn on the
+        // dispatcher, the late-attaching subscriber only receives the single most recent replayed
+        // event (Success) via the replay cache; every earlier event emitted before it subscribed
+        // is invisible to it, even though the coordinator emitted them correctly. This is
+        // invisible on a slow/idle scheduler (the collector reliably wins the race to subscribe
+        // before the pipeline finishes) but reliably manifests as "expected a Reassembling event,
+        // got [Success(...)]" once producer and collector are close enough in speed that ordering
+        // isn't guaranteed (e.g. CI's shared/contended runners, or a synthetic frame source with
+        // no artificial delay). `UNDISPATCHED` runs the coroutine body synchronously up to its
+        // first real suspension point, so the SharedFlow subscription (registered before
+        // `collect` ever suspends waiting for a value) is guaranteed live by the time this
+        // constructor returns — the collector can never lose this race, regardless of scheduler
+        // pressure. See stelekit CI history for this file's prior lost-event race (a different
+        // race than this one — that one was about repeated `.first {}` resubscription; this is
+        // about the FIRST subscription's timing relative to `start()`).
+        private val job: Job = scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            coordinator.events.collect { channel.send(it) }
+        }
 
         suspend fun awaitEvent(timeoutMs: Long = 5_000, predicate: (CoordinatorEvent) -> Boolean): CoordinatorEvent =
             withTimeout(timeoutMs) { channel.receiveAsFlow().first(predicate) }
+
+        /**
+         * Like [awaitEvent], but returns every event seen up to and including the match — plain
+         * [awaitEvent] silently drops non-matching events via `Flow.first`, which loses them for a
+         * later [awaitTerminal] call. Use this when a test needs to synchronize on an intermediate
+         * event (e.g. `ScanHintUpdated`) without discarding earlier events it still needs to assert
+         * on (e.g. `FragmentAdmitted`).
+         */
+        suspend fun awaitEventCollecting(timeoutMs: Long = 5_000, predicate: (CoordinatorEvent) -> Boolean): List<CoordinatorEvent> =
+            withTimeout(timeoutMs) {
+                val seen = mutableListOf<CoordinatorEvent>()
+                channel.receiveAsFlow().first { event ->
+                    seen.add(event)
+                    predicate(event)
+                }
+                seen
+            }
 
         /** Drains events until a terminal (Success/Failed) event, returning everything seen. */
         suspend fun awaitTerminal(timeoutMs: Long = 5_000): List<CoordinatorEvent> = withTimeout(timeoutMs) {
@@ -181,17 +266,38 @@ class QrTransferCoordinatorTest {
         val encoder = FountainCodec.encoder(TransferId(7), envelopeBytes, maxFragmentBytes = 12).getOrNull()!!
         val (importService, _) = buildImportService()
 
+        // The diagnostics and data-path coroutines have no ordering guarantee (see fakeReceiver's
+        // doc comment), and both sit behind `.conflate()` in production, so no Flow-buffering
+        // argument can order them deterministically. Instead, synchronize on the coordinator's own
+        // events: let the first chunk create a session, then hold diagnostics off until that
+        // session exists (`updateHint` only emits `ScanHintUpdated` once `session != null`), then
+        // hold the remaining chunks off until `ScanHintUpdated(hint = WrongCode)` is actually
+        // observed — at which point `currentHint` is guaranteed already written, since `updateHint`
+        // writes the field before emitting the event, on the same coroutine, with no suspension
+        // in between.
+        val sessionReady = CompletableDeferred<Unit>()
+        val hintApplied = CompletableDeferred<Unit>()
         val coordinator = QrTransferCoordinator(
-            frameTransportReceiver = fakeReceiver(encoder),
+            frameTransportReceiver = fakeReceiver(encoder, resumeAfterFirstChunk = hintApplied),
             qrImportService = importService,
             // Fake diagnostics scanner: ALWAYS reports a foreign QR, regardless of the real frame
             // content — its output must never feed ChunkBuffer, only the hint.
-            qrScanner = fakeQrScanner(ScanResult.NotSteleKitCode),
+            qrScanner = fakeQrScanner(ScanResult.NotSteleKitCode, waitBeforeEmitting = sessionReady),
         )
         val recorder = EventRecorder(coordinator, this)
 
         coordinator.start()
-        val events = recorder.awaitTerminal()
+
+        val untilFirstFragment = recorder.awaitEventCollecting { it is CoordinatorEvent.FragmentAdmitted }
+        sessionReady.complete(Unit)
+
+        val untilHintApplied = recorder.awaitEventCollecting {
+            it is CoordinatorEvent.ScanHintUpdated && it.hint == ScanHint.WrongCode
+        }
+        hintApplied.complete(Unit)
+
+        val remaining = recorder.awaitTerminal()
+        val events = untilFirstFragment + untilHintApplied + remaining
 
         // Reassembly must still succeed despite the WrongCode diagnostics hint — the fake scan
         // function's output never reached ChunkBuffer (it only ever influences `hint`).

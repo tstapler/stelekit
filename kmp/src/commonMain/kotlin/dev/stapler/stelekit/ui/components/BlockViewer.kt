@@ -16,6 +16,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
@@ -155,20 +156,74 @@ fun WikiLinkText(
         return Triple(parts[0], contentStart, contentEnd)
     }
 
+    // Shared tap-dispatch logic (selection toggle > annotation priority chain > onClick).
+    // Used by onTap directly, and by onLongPress as a fallback when neither a suggestion
+    // span nor a genuine row-level long-press applies (see onLongPress below), so that on
+    // platforms where onLongPressSelect is null (Android -- see useLongPressForDrag), a
+    // held/slow tap still resolves as an ordinary tap instead of being silently swallowed:
+    // detectTapGestures treats any gesture that outlasts the long-press timeout as "handled"
+    // by onLongPress once onLongPress is non-null, regardless of what that lambda does, so
+    // onTap would never fire for that gesture without this fallback.
+    fun dispatchTap(tapOffset: Offset) {
+        if (isInSelectionMode) {
+            onToggleSelect()
+            return
+        }
+        val layout = textLayoutResult ?: run { onClick(); return }
+        val offset = layout.getOffsetForPosition(tapOffset)
+        val annotations = annotatedString.getStringAnnotations(start = offset, end = offset)
+
+        // Priority: Wiki Link > Cross-section Unavailable > Tag > Page Suggestion > Markdown Link > URL > Image > Default
+        val wikiLink = annotations.firstOrNull { it.tag == WIKI_LINK_TAG }
+        val crossSectionUnavailable = annotations.firstOrNull { it.tag == CROSS_SECTION_UNAVAILABLE_TAG }
+        val tag = annotations.firstOrNull { it.tag == TAG_TAG }
+        val suggestion = annotations.firstOrNull { it.tag == PAGE_SUGGESTION_TAG }
+        val link = annotations.firstOrNull { it.tag == "link" }
+        val url = annotations.firstOrNull { it.tag == "url" }
+        val image = annotations.firstOrNull { it.tag == "image" }
+
+        when {
+            wikiLink != null -> onLinkClick(wikiLink.item)
+            // FR-14: unavailable cross-section link — show tooltip, do NOT navigate
+            crossSectionUnavailable != null -> onUnavailableLinkTap()
+            tag != null -> onLinkClick(tag.item)
+            suggestion != null -> {
+                val decoded = decodeSuggestionAnnotation(suggestion.item)
+                if (decoded != null) {
+                    onSuggestionClick(decoded.first, decoded.second, decoded.third)
+                }
+            }
+            link != null -> onUrlClick(link.item)
+            url != null -> onUrlClick(url.item)
+            image != null -> onUrlClick(image.item)
+            else -> onClick()
+        }
+    }
+
     BasicText(
         text = annotatedString,
         style = MaterialTheme.typography.bodyMedium.copy(color = textColor),
         onTextLayout = { textLayoutResult = it },
         modifier = modifier
             .padding(vertical = 4.dp)
-            .pointerInput(annotatedString) {
+            // isInSelectionMode is a key (not just annotatedString) so this coroutine
+            // relaunches -- and picks up the current isInSelectionMode/onToggleSelect/
+            // onLongPressSelect closures -- whenever selection mode toggles without the
+            // block's own content changing. Without this, a long-press that enters
+            // selection mode leaves the running coroutine's onTap closure pinned to the
+            // stale isInSelectionMode=false it captured at launch, so the very next tap
+            // (meant to toggle selection) falls through to onClick/link dispatch instead --
+            // reintroducing the tap-vs-selection race this fix exists to eliminate.
+            .pointerInput(annotatedString, isInSelectionMode) {
                 detectTapGestures(
                     onLongPress = { tapOffset ->
-                        val layout = textLayoutResult ?: run { onLongPressSelect?.invoke(); return@detectTapGestures }
-                        val offset = layout.getOffsetForPosition(tapOffset)
-                        val suggestion = annotatedString
-                            .getStringAnnotations(PAGE_SUGGESTION_TAG, offset, offset)
-                            .firstOrNull()
+                        val layout = textLayoutResult
+                        val suggestion = if (layout != null) {
+                            val offset = layout.getOffsetForPosition(tapOffset)
+                            annotatedString.getStringAnnotations(PAGE_SUGGESTION_TAG, offset, offset).firstOrNull()
+                        } else {
+                            null
+                        }
                         if (suggestion != null) {
                             val decoded = decodeSuggestionAnnotation(suggestion.item)
                             if (decoded != null) {
@@ -176,44 +231,13 @@ fun WikiLinkText(
                                 return@detectTapGestures
                             }
                         }
-                        // Not over a suggestion span — this is a genuine row-level long-press.
-                        onLongPressSelect?.invoke()
+                        // Not over a suggestion span: either a genuine row-level long-press
+                        // (enters selection mode) or, on platforms that suppress row-level
+                        // long-press-to-select (Android), this must still resolve as an
+                        // ordinary tap so a held/slow tap doesn't silently do nothing.
+                        onLongPressSelect?.invoke() ?: dispatchTap(tapOffset)
                     },
-                    onTap = { tapOffset ->
-                        if (isInSelectionMode) {
-                            onToggleSelect()
-                            return@detectTapGestures
-                        }
-                        val layout = textLayoutResult ?: run { onClick(); return@detectTapGestures }
-                        val offset = layout.getOffsetForPosition(tapOffset)
-                        val annotations = annotatedString.getStringAnnotations(start = offset, end = offset)
-
-                        // Priority: Wiki Link > Cross-section Unavailable > Tag > Page Suggestion > Markdown Link > URL > Image > Default
-                        val wikiLink = annotations.firstOrNull { it.tag == WIKI_LINK_TAG }
-                        val crossSectionUnavailable = annotations.firstOrNull { it.tag == CROSS_SECTION_UNAVAILABLE_TAG }
-                        val tag = annotations.firstOrNull { it.tag == TAG_TAG }
-                        val suggestion = annotations.firstOrNull { it.tag == PAGE_SUGGESTION_TAG }
-                        val link = annotations.firstOrNull { it.tag == "link" }
-                        val url = annotations.firstOrNull { it.tag == "url" }
-                        val image = annotations.firstOrNull { it.tag == "image" }
-
-                        when {
-                            wikiLink != null -> onLinkClick(wikiLink.item)
-                            // FR-14: unavailable cross-section link — show tooltip, do NOT navigate
-                            crossSectionUnavailable != null -> onUnavailableLinkTap()
-                            tag != null -> onLinkClick(tag.item)
-                            suggestion != null -> {
-                                val decoded = decodeSuggestionAnnotation(suggestion.item)
-                                if (decoded != null) {
-                                    onSuggestionClick(decoded.first, decoded.second, decoded.third)
-                                }
-                            }
-                            link != null -> onUrlClick(link.item)
-                            url != null -> onUrlClick(url.item)
-                            image != null -> onUrlClick(image.item)
-                            else -> onClick()
-                        }
-                    }
+                    onTap = { tapOffset -> dispatchTap(tapOffset) }
                 )
             }
             .pointerInput("rightClick", annotatedString) {

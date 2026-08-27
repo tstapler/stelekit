@@ -144,7 +144,7 @@ class AndroidGitRepository(
                 openGit(config.repoRoot).use { git ->
                     val statusResult = git.status()
                         .also { cmd ->
-                            if (config.wikiSubdir.isNotEmpty()) {
+                            if (!config.wikiSubdir.isNullOrEmpty()) {
                                 cmd.addPath(config.wikiSubdir)
                             }
                         }
@@ -167,7 +167,7 @@ class AndroidGitRepository(
         withContext(PlatformDispatcher.IO) {
             try {
                 openGit(config.repoRoot).use { git ->
-                    val pattern = if (config.wikiSubdir.isEmpty()) "." else "${config.wikiSubdir}/"
+                    val pattern = if (config.wikiSubdir.isNullOrEmpty()) "." else "${config.wikiSubdir}/"
                     git.add().addFilepattern(pattern).call()
                     git.add().setUpdate(true).addFilepattern(pattern).call()
                     Unit.right()
@@ -215,7 +215,7 @@ class AndroidGitRepository(
                     val conflictFiles = if (hasConflicts) {
                         mergeResult.conflicts?.keys?.map { filePath ->
                             val absolutePath = "${config.repoRoot}/$filePath"
-                            val wikiRelPath = if (config.wikiSubdir.isNotEmpty() &&
+                            val wikiRelPath = if (!config.wikiSubdir.isNullOrEmpty() &&
                                 filePath.startsWith("${config.wikiSubdir}/")) {
                                 filePath.removePrefix("${config.wikiSubdir}/")
                             } else {
@@ -259,7 +259,7 @@ class AndroidGitRepository(
                         emptyList()
                     }
 
-                    val wikiChangedFiles = if (config.wikiSubdir.isNotEmpty()) {
+                    val wikiChangedFiles = if (!config.wikiSubdir.isNullOrEmpty()) {
                         changedFiles.filter { it.startsWith("${config.repoRoot}/${config.wikiSubdir}/") }
                     } else {
                         changedFiles
