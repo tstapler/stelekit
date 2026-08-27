@@ -1234,9 +1234,24 @@ class HostDirectorySync(
     // ── Epic 4.1-4.4: write-through queue, coalescing flush scheduler, failure surfacing ──────
 
     /** Repo-relative key derivation matching [runHostReconciliation]'s existing convention. */
-    private fun repoRelativePath(path: String): String {
-        val opfsPath = hostGraphOpfsPath
-        return if (opfsPath != null && path.startsWith("$opfsPath/")) path.removePrefix("$opfsPath/") else path
+    /**
+     * Bug fix: returns `null` (rather than the unchanged absolute [path]) when [hostGraphOpfsPath]
+     * is unset or doesn't match — an absolute path treated as repo-relative produces a leading `/`
+     * that [resolveHostEntry]'s `split("/")` turns into an empty first segment, and
+     * `getDirectoryHandle(dir, "", create)` fails every time with "Name is not allowed" — this
+     * exact error was observed live in production, confirming the mechanism. Worse,
+     * [scheduleHostWriteThrough] used to cache that broken value as the permanent
+     * [hostWritePending]/[hostWriteInFlight] key for the path, so one call that hit a
+     * [hostGraphOpfsPath] mismatch poisoned that page's sync forever, deterministically failing on
+     * every retry for the rest of the session even after [hostGraphOpfsPath] was correct again.
+     * (What specifically caused [hostGraphOpfsPath] to mismatch in the observed incident — every
+     * known assignment site sets it synchronously before returning, and the failing write happened
+     * well after `reconnectHostDirectory` had already completed — is not confirmed; this fix
+     * removes the failure mode regardless of its trigger.)
+     */
+    private fun repoRelativePath(path: String): String? {
+        val opfsPath = hostGraphOpfsPath ?: return null
+        return if (path.startsWith("$opfsPath/")) path.removePrefix("$opfsPath/") else null
     }
 
     private fun dirtyOpFor(payload: HostWritePayload): DirtyOp =
@@ -1293,6 +1308,14 @@ class HostDirectorySync(
      */
     fun scheduleHostWriteThrough(path: String, payload: HostWritePayload): Deferred<Unit> {
         val repoRelative = repoRelativePath(path)
+        if (repoRelative == null) {
+            // Bug fix: hostGraphOpfsPath is unset/mismatched right now — never enqueue under an
+            // absolute-path key (see repoRelativePath's doc comment for why that key is fatal).
+            // Reconciliation's BrowserOnlyNeedsPush pass picks this path up correctly once
+            // hostGraphOpfsPath is valid again, so dropping this attempt here is safe, not silent.
+            logger.warn("scheduleHostWriteThrough: no valid host-relative path for '$path' yet, deferring to reconciliation")
+            return CompletableDeferred(Unit)
+        }
         val opfsWriteDeferred = cacheAccess.opfsWriteDeferredFor(path)
         val completion = hostWriteCompletion.getOrPut(repoRelative) { CompletableDeferred() }
         scope.launch {
@@ -1567,16 +1590,21 @@ class HostDirectorySync(
         scheduleHostWriteThrough(to, HostWritePayload.Text(content)).await()
 
         val repoRelativeTo = repoRelativePath(to)
-        val verified = try {
-            val (dir, fileName) = resolveHostEntry(handle, repoRelativeTo, create = false)
-            val fileHandle = getFileHandle(dir, fileName, false)
-            val readBack = readOpfsFile(fileHandle)
-            readBack != null && readBack.hashCode() == content.hashCode() && readBack == content
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Throwable) {
-            logger.warn("renameHostFile: failed to verify '$to' after write: ${e.message}", e)
+        val verified = if (repoRelativeTo == null) {
+            logger.warn("renameHostFile: no valid host-relative path for '$to', skipping verification")
             false
+        } else {
+            try {
+                val (dir, fileName) = resolveHostEntry(handle, repoRelativeTo, create = false)
+                val fileHandle = getFileHandle(dir, fileName, false)
+                val readBack = readOpfsFile(fileHandle)
+                readBack != null && readBack.hashCode() == content.hashCode() && readBack == content
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                logger.warn("renameHostFile: failed to verify '$to' after write: ${e.message}", e)
+                false
+            }
         }
 
         if (verified) {
