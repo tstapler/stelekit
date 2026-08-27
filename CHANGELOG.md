@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.75.0](https://github.com/tstapler/stelekit/compare/v0.74.0...v0.75.0) (2026-08-27)
+
+
+### Features
+
+* **git-sync:** reusable credentials, web wikiSubdir support, ephemeral web mode ([bce8825](https://github.com/tstapler/stelekit/commit/bce8825cd6c51fe9b5721a44654e27add668da0b))
+
+
+### Bug Fixes
+
+* **fdroid:** seed repo icon at the path fdroid update actually checks ([1bd4d2c](https://github.com/tstapler/stelekit/commit/1bd4d2ca672f35861103f8f62b1e42b9b5a69cd3))
+* **test:** deflake disk-conflict rename tests ([5582771](https://github.com/tstapler/stelekit/commit/558277130aad25a262dd06bc11add401d4089ef3))
+* **web:** never enqueue a host write under an unstripped absolute path ([#283](https://github.com/tstapler/stelekit/issues/283)) ([7becc23](https://github.com/tstapler/stelekit/commit/7becc238c89627625e2a389df9ace401980689d2))
+* **web:** reorder HostReconnectBanner params to satisfy Detekt ComposableParamOrder ([5dbf015](https://github.com/tstapler/stelekit/commit/5dbf01500d77b01cbd5d698545ea668d52ebad76))
+* **web:** surface SyncDegraded folder-sync failures in a top banner ([#282](https://github.com/tstapler/stelekit/issues/282)) ([1efdd77](https://github.com/tstapler/stelekit/commit/1efdd771171d5342b07c37279f5a3b85ff866021))
+
 ## [0.74.0](https://github.com/tstapler/stelekit/compare/v0.73.0...v0.74.0) (2026-08-23)
 
 
