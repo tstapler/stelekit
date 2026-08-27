@@ -131,7 +131,11 @@ class HostDirectorySync(
     private fun setHostAccessState(newState: HostAccessState) {
         val old = _hostAccessStateFlow.value
         if (old != newState) {
-            logger.info("host access state: $old -> $newState")
+            // Diagnostic: hostGraphOpfsPath included because "Granted" alone doesn't reveal which
+            // OPFS root the connected handle resolves against — a mismatch here (vs. the graph's
+            // own OPFS path, printed separately by Main.kt's opfsGraphPath log) is exactly what
+            // makes every write silently defer forever (see repoRelativePath's doc comment).
+            logger.info("host access state: $old -> $newState (hostGraphOpfsPath=$hostGraphOpfsPath)")
         }
         _hostAccessStateFlow.value = newState
     }
