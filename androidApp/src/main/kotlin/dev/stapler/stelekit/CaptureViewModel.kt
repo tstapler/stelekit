@@ -31,6 +31,7 @@ import dev.stapler.stelekit.util.UuidGenerator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.ClosedSendChannelException
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -43,6 +44,8 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.time.Clock
 
 class CaptureViewModel(app: Application) : AndroidViewModel(app) {
@@ -120,6 +123,27 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
     private var savedContext: SavedCaptureContext? = null
 
     /**
+     * Serializes the post-save read-modify-write cycle in [acceptSuggestionPostSave]/
+     * [acceptExistingLinkPostSave] against each other. Without this, two chip accepts tapped
+     * within the same post-save "Done" window both capture the same stale [savedContext]
+     * snapshot, build their updated block from the same pre-accept `content`, and whichever
+     * write finishes last silently discards the other's link (lost update) even though the UI
+     * already shows both chips as accepted. Never acquired by [save]/[performSave] — those must
+     * stay lock-free (a prior repair pass fixed a save()-blocking regression; re-locking save()
+     * here would reintroduce it).
+     */
+    private val postSaveWriteMutex = Mutex()
+
+    /**
+     * Tracks the in-flight LLM enrichment call so a new debounced scan (Fix 5, MAJOR) cancels
+     * any enrichment still running for a superseded text — `scope.launch { coordinator.enhance
+     * (...) }` is not a structural child of the `collectLatest` body it's launched from, so
+     * collectLatest superseding its current iteration does NOT cancel an already-launched
+     * enrichment call on its own.
+     */
+    private var enrichJob: Job? = null
+
+    /**
      * One-shot event stream for a failed chip accept (pre-save stub-page write, post-save
      * graph-identity mismatch, `ClosedSendChannelException`, block-write failure, or markdown-
      * flush failure) — a [SharedFlow], not a [StateFlow], so the same message is never re-fired
@@ -155,7 +179,11 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
                                 if (coordinator.supportsEnrichment) {
                                     val textHash = text.hashCode()
                                     val localSuggestions = outcome.result.topicSuggestions
-                                    scope.launch {
+                                    // Fix 5: cancel any enrichment call still running for a
+                                    // superseded text — collectLatest's own cancellation doesn't
+                                    // reach this launch since it's not a structural child.
+                                    enrichJob?.cancel()
+                                    enrichJob = scope.launch {
                                         val enriched = coordinator.enhance(freeText, localSuggestions)
                                         // Discard-if-stale-by-hash (mirrors ImportViewModel.kt:244,250).
                                         if (_captureText.value.hashCode() != textHash) return@launch
@@ -166,6 +194,7 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
                                                     topicSuggestions = mergeBySource(
                                                         current.result.topicSuggestions,
                                                         enriched,
+                                                        current.confirmFirstNames,
                                                     ),
                                                 ),
                                             )
@@ -221,13 +250,26 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
      * Non-destructively merges LLM-enriched suggestions onto the local set. Compares terms
      * normalized (trimmed, lowercased) so e.g. local "Kotlin" suppresses an AI-sourced
      * "kotlin " duplicate. Never clears/replaces the local suggestions.
+     *
+     * Also excludes any enriched suggestion whose normalized term matches [excludedTerms] (the
+     * current `confirmFirstNames` — Fix 4, CRITICAL): the local scan already filters against
+     * `confirmFirstNames` via `ImportService.scan`/`TopicExtractor.extract`'s `existingNames`
+     * param, but the async LLM enrichment path bypassed that check entirely. An enriched term
+     * colliding with a pending confirm-first chip's term would otherwise put two
+     * `CaptureChipItem`s with the identical `term` into `CaptureActivity`'s
+     * `LazyRow(items(pendingChips, key = { it.term }))`, crashing on the duplicate key.
      */
     private fun mergeBySource(
         local: List<TopicSuggestion>,
         enriched: List<TopicSuggestion>,
+        excludedTerms: List<String>,
     ): List<TopicSuggestion> {
         val localTermsNormalized = local.map { it.term.trim().lowercase() }.toSet()
-        return local + enriched.filter { it.term.trim().lowercase() !in localTermsNormalized }
+        val excludedTermsNormalized = excludedTerms.map { it.trim().lowercase() }.toSet()
+        return local + enriched.filter {
+            val normalized = it.term.trim().lowercase()
+            normalized !in localTermsNormalized && normalized !in excludedTermsNormalized
+        }
     }
 
     fun save() {
@@ -331,12 +373,15 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
         // ImportViewModel.onSuggestionAccepted()'s precedent exactly: the state update that
         // determines what save() will persist must never wait on I/O.
         markAccepted(term)
-        val ctx = savedContext
+        // Only used to pick pre-save vs. post-save branch at tap time — the post-save branch
+        // re-reads the live savedContext itself, under postSaveWriteMutex (Fix 2: a captured
+        // snapshot here would let two concurrent post-save accepts race on stale content).
+        val isPostSave = savedContext != null
         scope.launch {
-            if (ctx == null) {
+            if (!isPostSave) {
                 createStubPage(term) // pre-save: async, unguarded, no mutex with save()
             } else {
-                acceptSuggestionPostSave(ctx, term) // post-save, Epic 4.2
+                acceptSuggestionPostSave(term) // post-save, Epic 4.2
             }
         }
     }
@@ -414,8 +459,8 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun acceptExistingLink(term: String) {
         markAccepted(term) // synchronous fold — same helper acceptSuggestion() uses
-        val ctx = savedContext ?: return // pre-save: the fold above was the whole job
-        scope.launch { acceptExistingLinkPostSave(ctx, term) } // Epic 4.2
+        if (savedContext == null) return // pre-save: the fold above was the whole job
+        scope.launch { acceptExistingLinkPostSave(term) } // Epic 4.2
     }
 
     /** Confirm-first sibling of [dismissSuggestion] — no coroutine/write involved. */
@@ -457,13 +502,21 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Post-save new-page chip accept: re-checks stub-page existence through [ctx]'s captured
-     * [PageRepository] (never a freshly-fetched "active" repository set — FM-5), creates the
-     * stub if needed, then delegates to the shared second-write helper.
+     * Post-save new-page chip accept: re-checks stub-page existence through [savedContext]'s
+     * captured [PageRepository] (never a freshly-fetched "active" repository set — FM-5),
+     * creates the stub if needed, then performs the shared second write.
+     *
+     * The whole read-modify-write cycle — reading [savedContext], the stub check/creation, and
+     * the second write — runs under [postSaveWriteMutex] (Fix 2, BLOCKER): [savedContext] is
+     * read fresh *inside* the lock, never trusted from a snapshot captured before the lock was
+     * acquired, so a second chip accept tapped while this one is still in flight serializes
+     * behind it and builds its updated block from the *result* of this write, not a stale copy —
+     * otherwise whichever write finished last would silently discard the other's link.
      */
-    private suspend fun acceptSuggestionPostSave(ctx: SavedCaptureContext, term: String) {
-        if (!graphStillActive(ctx, term)) return
-        if (!ensureStubPage(ctx.pageRepository, ctx.writer, ctx.graphPath, term)) return
+    private suspend fun acceptSuggestionPostSave(term: String) = postSaveWriteMutex.withLock {
+        val ctx = savedContext ?: return@withLock
+        if (!graphStillActive(ctx, term)) return@withLock
+        if (!ensureStubPage(ctx.pageRepository, ctx.writer, ctx.graphPath, term)) return@withLock
         writeLinkedBlockPostSave(ctx, term)
     }
 
@@ -471,10 +524,12 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
      * Post-save confirm-first chip accept: skips the stub-existence-check/creation entirely —
      * the coordinator's `scan()` already confirmed the page exists before ever putting [term]
      * in `confirmFirstNames`, so re-verifying or re-creating it here would be redundant, not
-     * defensive.
+     * defensive. Same [postSaveWriteMutex]-guarded fresh-read-of-[savedContext] discipline as
+     * [acceptSuggestionPostSave] — see its doc for why.
      */
-    private suspend fun acceptExistingLinkPostSave(ctx: SavedCaptureContext, term: String) {
-        if (!graphStillActive(ctx, term)) return
+    private suspend fun acceptExistingLinkPostSave(term: String) = postSaveWriteMutex.withLock {
+        val ctx = savedContext ?: return@withLock
+        if (!graphStillActive(ctx, term)) return@withLock
         writeLinkedBlockPostSave(ctx, term)
     }
 
@@ -484,6 +539,9 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
      * `writeActor`/`blockRepository` (never a freshly-fetched "active" repo set), flushes the
      * markdown file via [ctx]'s captured [GraphWriter], and updates [savedContext] so a second
      * chip accept in the same window still works against the latest block/blocks snapshot.
+     *
+     * Callers only ([acceptSuggestionPostSave]/[acceptExistingLinkPostSave]) — always invoked
+     * with [ctx] read fresh under [postSaveWriteMutex], never a stale tap-time snapshot.
      */
     private suspend fun writeLinkedBlockPostSave(ctx: SavedCaptureContext, term: String) {
         val updatedBlock = ctx.block.copy(

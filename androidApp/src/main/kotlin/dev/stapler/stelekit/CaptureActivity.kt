@@ -273,10 +273,15 @@ internal sealed interface CaptureChipItem {
     data class ExistingLink(override val term: String) : CaptureChipItem
 }
 
-/** Spelled-out confidence word at the same 0.7/0.4 thresholds as `ImportScreen.kt:551-554`. */
+// Shared with CaptureSuggestionChip's dotColor below — same 0.7/0.4 thresholds as
+// `ImportScreen.kt:551-554` (a separate, pre-existing, out-of-scope copy there).
+private const val CONFIDENCE_HIGH_THRESHOLD = 0.7f
+private const val CONFIDENCE_MEDIUM_THRESHOLD = 0.4f
+
+/** Spelled-out confidence word at the same thresholds as `ImportScreen.kt:551-554`. */
 internal fun confidenceWord(confidence: Float): String = when {
-    confidence >= 0.7f -> "high"
-    confidence >= 0.4f -> "medium"
+    confidence >= CONFIDENCE_HIGH_THRESHOLD -> "high"
+    confidence >= CONFIDENCE_MEDIUM_THRESHOLD -> "medium"
     else -> "low"
 }
 
@@ -585,8 +590,8 @@ internal fun CaptureSuggestionChip(
                 when (kind) {
                     CaptureChipKind.NEW_PAGE -> {
                         val dotColor = when {
-                            (confidence ?: 0f) >= 0.7f -> MaterialTheme.colorScheme.primary
-                            (confidence ?: 0f) >= 0.4f -> MaterialTheme.colorScheme.secondary
+                            (confidence ?: 0f) >= CONFIDENCE_HIGH_THRESHOLD -> MaterialTheme.colorScheme.primary
+                            (confidence ?: 0f) >= CONFIDENCE_MEDIUM_THRESHOLD -> MaterialTheme.colorScheme.secondary
                             else -> MaterialTheme.colorScheme.error
                         }
                         Box(

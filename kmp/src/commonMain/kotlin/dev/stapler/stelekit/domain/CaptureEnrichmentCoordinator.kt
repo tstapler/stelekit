@@ -5,6 +5,7 @@ package dev.stapler.stelekit.domain
 
 import dev.stapler.stelekit.llm.LlmFeature
 import dev.stapler.stelekit.llm.LlmProviderRegistry
+import dev.stapler.stelekit.llm.LlmSettings
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.repository.PageRepository
 import kotlinx.coroutines.CancellationException
@@ -126,24 +127,46 @@ class CaptureEnrichmentCoordinator(
         private val logger = Logger("CaptureEnrichmentCoordinator")
 
         /**
-         * Resolves a [TopicEnricher] from [registry]: the first available provider for
-         * [LlmFeature.CAPTURE_ENRICHMENT] wraps its formatter in a [ClaudeTopicEnricher] (the
-         * class name is historical; its field is a generic `LlmFormatterProvider`, so this
-         * works for Anthropic, OpenAI, and the on-device ML Kit tier identically); no available
-         * provider falls back to [NoOpTopicEnricher].
+         * Resolves a [TopicEnricher] from [registry], honoring [llmSettings]'s per-feature
+         * selection for [LlmFeature.CAPTURE_ENRICHMENT] with the same precedence
+         * `VoicePipelineFactory.buildVoicePipeline` uses for `VOICE_FORMATTING` (security fix —
+         * this coordinator previously ignored the user's per-feature "Disabled"/specific-provider
+         * setting entirely and always fell back to `availableForFeature(...).firstOrNull()`,
+         * silently re-enabling enrichment — and potentially routing capture text to an
+         * unintended provider — after the user explicitly disabled it for this feature):
+         *
+         *  1. [LlmProviderRegistry.DISABLED_SENTINEL] selected -> `null` (no enrichment).
+         *  2. A specific provider id selected -> resolved via [LlmProviderRegistry.find] (never
+         *     falls back to Auto, even if that id is not currently available/found).
+         *  3. Unset ("Auto", or [llmSettings] is `null`) -> the first available provider for
+         *     [LlmFeature.CAPTURE_ENRICHMENT], preserving this function's pre-fix behavior for
+         *     callers that don't pass settings.
+         *
+         * The resolved provider's formatter wraps in a [ClaudeTopicEnricher] (the class name is
+         * historical; its field is a generic `LlmFormatterProvider`, so this works for
+         * Anthropic, OpenAI, and the on-device ML Kit tier identically); no resolved provider
+         * falls back to [NoOpTopicEnricher].
          *
          * Logs the resolution outcome (pre-mortem.md failure #4) so "no provider configured"
          * (expected default) is distinguishable from "provider present but not currently usable"
          * from an `adb logcat` pull, without adding new telemetry.
          */
-        suspend fun resolveTopicEnricher(registry: LlmProviderRegistry): TopicEnricher {
-            val provider = registry.availableForFeature(LlmFeature.CAPTURE_ENRICHMENT).firstOrNull()
+        suspend fun resolveTopicEnricher(
+            registry: LlmProviderRegistry,
+            llmSettings: LlmSettings? = null,
+        ): TopicEnricher {
+            val provider = when (val selectedId = llmSettings?.getSelectedProviderId(LlmFeature.CAPTURE_ENRICHMENT)) {
+                LlmProviderRegistry.DISABLED_SENTINEL -> null
+                null -> registry.availableForFeature(LlmFeature.CAPTURE_ENRICHMENT).firstOrNull()
+                else -> registry.find(selectedId)
+            }
             logger.debug(
                 if (provider != null) {
                     "TopicEnricher resolved: provider '${provider.id}' available"
                 } else {
                     "TopicEnricher resolved: no provider available for CAPTURE_ENRICHMENT " +
-                        "(empty registry, or configured provider not currently AVAILABLE)"
+                        "(empty registry, disabled, unresolvable selected id, or configured " +
+                        "provider not currently AVAILABLE)"
                 },
             )
             return provider?.let { ClaudeTopicEnricher(it.formatter) } ?: NoOpTopicEnricher()

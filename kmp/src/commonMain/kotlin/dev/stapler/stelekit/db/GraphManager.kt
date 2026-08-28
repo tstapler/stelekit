@@ -109,12 +109,40 @@ class GraphManager(
     private val coordinatorMutex = Mutex()
     private var coordinatorFor: Pair<GraphId, Deferred<CaptureEnrichmentCoordinator>>? = null
 
+    /**
+     * Evicts the memoized [CaptureEnrichmentCoordinator] cache entry for [graphId] if it's the
+     * currently cached one — called from [switchGraph] and [removeGraph] alongside the
+     * `activeGraphJobs.remove(id)?.cancel()` call that tears down the [CoroutineScope] the
+     * coordinator (and its [dev.stapler.stelekit.domain.PageNameIndex]'s `stateIn`/collector)
+     * was built on. Without this, a coordinator whose construction already completed survives
+     * as a silently-frozen zombie tied to a cancelled scope — switching away and back to the
+     * same graph would keep returning it, and suggestions would never update again for that
+     * graph. Guarded by the same [coordinatorMutex] every other `coordinatorFor` access uses.
+     *
+     * Dispatched on [coroutineScope] (fire-and-forget) rather than acquired synchronously:
+     * [switchGraph]/[removeGraph] are not `suspend`, and this class's commonMain code is built
+     * for wasmJs too, where a blocking acquire (`runBlocking`) is not safe to use — see
+     * `RepositoryFactory.kt`'s "WASM/JS skips PRAGMA" precedent for the same constraint.
+     * [coordinatorMutex] is documented to be held only for a quick map read/insert, never across
+     * a suspension point, so this eviction is queued and lands promptly.
+     */
+    private fun evictCoordinatorFor(graphId: GraphId) {
+        coroutineScope.launch {
+            coordinatorMutex.withLock {
+                if (coordinatorFor?.first == graphId) coordinatorFor = null
+            }
+        }
+    }
+
     // Same construction recipe App.kt:490-500 uses for the Compose tree's registry — CaptureActivity
     // never runs that composition, so GraphManager builds its own equivalent, self-contained.
+    // A single shared instance (not re-constructed per call) so getOrCreateEnrichmentCoordinator()
+    // can pass the same LlmSettings into resolveTopicEnricher() for per-feature provider selection.
+    private val llmSettings: LlmSettings by lazy { LlmSettings(platformSettings) }
     private val llmProviderRegistry: LlmProviderRegistry by lazy {
         buildLlmProviderRegistry(
             LlmCredentialStore(CredentialStore()),
-            LlmSettings(platformSettings),
+            llmSettings,
         )
     }
 
@@ -372,7 +400,8 @@ class GraphManager(
     fun removeGraph(id: GraphId): Boolean {
         // Cancel any active coroutines for this graph
         activeGraphJobs.remove(id)?.cancel()
-        
+        evictCoordinatorFor(id)
+
         val registry = _graphRegistry.value
         val graphIndex = registry.graphs.indexOfFirst { it.id == id }
         if (graphIndex == -1) return false
@@ -563,7 +592,10 @@ class GraphManager(
         // and checking only (a) lets the second call cancel the first init scope → crash.
         val currentGraphId = registry.activeGraphId
         if (currentGraphId == id && (_activeRepositorySet.value != null || activeGraphJobs.containsKey(id))) return
-        currentGraphId?.let { activeGraphJobs.remove(it)?.cancel() }
+        currentGraphId?.let {
+            activeGraphJobs.remove(it)?.cancel()
+            evictCoordinatorFor(it)
+        }
 
         // Shutdown any git sync service from the previous graph
         _activeGitSyncService.value?.shutdown()
@@ -757,7 +789,7 @@ class GraphManager(
             val scope = activeGraphJobs[graphId] ?: return@withLock null
             val existing = coordinatorFor?.takeIf { it.first == graphId }?.second
             val deferred = existing ?: scope.async(start = CoroutineStart.LAZY) {
-                val topicEnricher = CaptureEnrichmentCoordinator.resolveTopicEnricher(llmProviderRegistry)
+                val topicEnricher = CaptureEnrichmentCoordinator.resolveTopicEnricher(llmProviderRegistry, llmSettings)
                 CaptureEnrichmentCoordinator(repoSet.pageRepository, scope, topicEnricher)
             }.also { coordinatorFor = graphId to it }
             graphId to deferred
