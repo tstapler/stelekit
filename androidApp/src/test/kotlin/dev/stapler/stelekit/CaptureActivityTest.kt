@@ -566,14 +566,29 @@ class CaptureActivityTest {
      * `hasAccessibilityFocus` (CaptureActivity.kt) is `hasFocusWithinSheet && accessibilityManager
      * ?.isTouchExplorationEnabled == true` — Robolectric's `ShadowAccessibilityManager` drives the
      * touch-exploration half deterministically; `hasFocusWithinSheet` is real Compose focus
-     * (`onFocusEvent` on the sheet's `focusGroup()`), driven here by moving focus onto the text
-     * field via `requestFocus()` (a real focus change, not a stand-in for one).
+     * (`onFocusEvent` on the sheet's `focusGroup()`), driven here by moving focus onto a
+     * suggestion chip via `requestFocus()` (a real focus change, not a stand-in for one).
+     *
+     * Two chips are used (not one): `hasAccessibilityFocus` is a plain expression re-evaluated
+     * only when `CaptureScreen` itself recomposes, so proving "resumes once the signal clears"
+     * needs a real, Compose-observed state change alongside the shadow mutation (mutating the
+     * shadow alone doesn't retroactively notify Compose of anything — matching how the real
+     * accessibility-service-toggle event would itself need to reach Compose via some observed
+     * state). Dismissing a *second*, unfocused chip is that state change (`scanState`'s
+     * `StateFlow` drives `pendingChips`) without dismissing the *last* chip — which would instead
+     * take the unrelated "zero pending chips" immediate-finish path (Task 4.3.1a), not the timer.
      */
     @Test
     fun postSaveDoneWindow_accessibilityFocusPresent_autoFinishTimerPaused() {
         val vm = newViewModel()
         vm.updateText("hello")
-        setScanState(vm, readyState(text = "hello", topicSuggestions = listOf(suggestion("Zettelkasten", 0.9f))))
+        setScanState(
+            vm,
+            readyState(
+                text = "hello",
+                topicSuggestions = listOf(suggestion("Zettelkasten", 0.9f), suggestion("SecondTerm", 0.5f)),
+            ),
+        )
         var savedCount = 0
         val app = ApplicationProvider.getApplicationContext<Application>()
         val accessibilityManager =
@@ -582,46 +597,44 @@ class CaptureActivityTest {
 
         composeRule.mainClock.autoAdvance = false
         composeRule.setContent { MaterialTheme { CaptureScreen(vm, onSaved = { savedCount++ }, onDismiss = {}) } }
-
-        // Establish Compose focus inside the sheet (the text field) BEFORE the Done window even
-        // starts, and let it settle — this sidesteps any ambiguity about whether
-        // `hasAccessibilityFocus` is already true at the exact moment `isDone` flips (which is
-        // what actually (re)starts `LaunchedEffect(isDone, resetKey, hasAccessibilityFocus)`).
-        // Focus-requesting is a real state change (not click-dispatch), so it settles under a
-        // paused clock like any other state-driven recomposition.
-        composeRule.onNodeWithText("hello").requestFocus()
-        composeRule.mainClock.advanceTimeBy(500)
-        println(
-            "DEBUG focused=" +
-                composeRule.onNodeWithText("hello").fetchSemanticsNode().config
-                    .getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Focused) +
-                " touchExploration=" + accessibilityManager.isTouchExplorationEnabled,
-        )
-
-        // Now enter the Done window — `hasAccessibilityFocus` is already true by this point.
         setSaveState(vm, CaptureViewModel.SaveState.Saved)
+
+        // Establish Compose focus inside the sheet on the "Zettelkasten" chip — NOT the text
+        // field, which becomes `enabled = false` the instant `isDone` flips true (Task 4.3.1a;
+        // also covered by `postSaveDoneWindow_textFieldDisabled_noSilentKeystrokeDiscard` above)
+        // and so cannot durably hold focus during the Done window at all: a disabled component
+        // drops focus as a side effect, which would flip `hasFocusWithinSheet` back to false right
+        // as the window starts. The chip tray stays enabled/interactive throughout the Done window
+        // (only the button row is replaced by "✓ Saved" — the chips themselves are unaffected), so
+        // it's the only durable in-sheet focus target while `isDone` is true. Focus-requesting is
+        // a real state change (not click-dispatch), so it settles under a paused clock like any
+        // other state-driven recomposition.
+        composeRule.onNodeWithContentDescription(
+            "Suggested page, Zettelkasten, confidence high. Double-tap to accept.",
+        ).requestFocus()
+        composeRule.mainClock.advanceTimeBy(500)
 
         // Paused: well past the ~2.75s window's normal deadline, the timer must never have fired
         // because `LaunchedEffect(isDone, resetKey, hasAccessibilityFocus)`'s guard
         // (`if (isDone && !hasAccessibilityFocus)`) never entered the `delay()` branch at all.
-        for (i in 1..11) {
-            composeRule.mainClock.advanceTimeBy(500)
-            val stillFocused = composeRule.onNodeWithText("hello").fetchSemanticsNode().config
-                .getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Focused)
-            println(
-                "DEBUG t=${i * 500}ms savedCount=$savedCount focused=$stillFocused " +
-                    "touchExploration=${accessibilityManager.isTouchExplorationEnabled}",
-            )
-        }
+        composeRule.mainClock.advanceTimeBy(5_500) // cumulative 6_000ms since entering the window
         assertEquals(
             "the auto-finish timer must be paused (never started), not merely running slower, " +
                 "while accessibility focus is present",
             0, savedCount,
         )
 
-        // Clearing the signal resumes the timer from a full, fresh duration (Task 4.3.1c: resume,
-        // not "credit" for time already elapsed while paused).
+        // Clearing the signal + dismissing the OTHER ("SecondTerm") chip: "Zettelkasten" stays
+        // both focused and in the tray, so this is neither a focus change nor a
+        // zero-pending-chips finish — it forces the recomposition needed to re-read
+        // `isTouchExplorationEnabled`, now false, while leaving `hasFocusWithinSheet` true.
         shadowOf(accessibilityManager).setTouchExplorationEnabled(false)
+        val secondChipNode = composeRule.onNodeWithContentDescription(
+            "Suggested page, SecondTerm, confidence medium. Double-tap to accept.",
+        ).fetchSemanticsNode()
+        secondChipNode.config.getOrNull(SemanticsActions.CustomActions)
+            ?.first { it.label == "Dismiss suggestion" }?.action?.invoke()
+
         composeRule.mainClock.advanceTimeBy(2_000)
         assertEquals("must not fire before a fresh ~2.75s window elapses after resuming", 0, savedCount)
         composeRule.mainClock.advanceTimeBy(2_000) // cumulative 4_000ms since resuming
