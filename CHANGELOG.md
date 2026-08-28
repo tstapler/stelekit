@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.76.0](https://github.com/tstapler/stelekit/compare/v0.75.0...v0.76.0) (2026-08-28)
+
+
+### Features
+
+* **capture:** auto-link + tag-suggest content captured via Android share sheet ([#288](https://github.com/tstapler/stelekit/issues/288)) ([4997932](https://github.com/tstapler/stelekit/commit/4997932445b407b5b0200d8c8675a57694ed0640))
+
+
+### Bug Fixes
+
+* **android:** close code-review gaps in whitespace normalization ([#281](https://github.com/tstapler/stelekit/issues/281)) ([06aa0ca](https://github.com/tstapler/stelekit/commit/06aa0ca709dcc6ab5deff72b541c8daca0347540))
+* **ci:** cap Gradle/Kotlin heap for CI runners to stop intermittent OOMs ([#287](https://github.com/tstapler/stelekit/issues/287)) ([a4ea6a7](https://github.com/tstapler/stelekit/commit/a4ea6a7236029a37e46339e3ded3bd53bdac2609))
+* **ci:** repair build-native-libs workflow (rules_rust platform + stale pinned Action SHAs) ([#279](https://github.com/tstapler/stelekit/issues/279)) ([e55da33](https://github.com/tstapler/stelekit/commit/e55da337fb553db98379b1fba26218f34f5317a8))
+* **ci:** stop F-Droid repo fallback from reverting to stale manual builds ([0e1b341](https://github.com/tstapler/stelekit/commit/0e1b3419b9e21a2f8e39c2daaf1c2d458b4be2da))
+* **git:** diagnose SAF git-sync failures and add log export ([d372e76](https://github.com/tstapler/stelekit/commit/d372e76b0e18f6646ffcee016e9aef0afd71a9c2))
+
 ## [0.75.0](https://github.com/tstapler/stelekit/compare/v0.74.0...v0.75.0) (2026-08-27)
 
 
