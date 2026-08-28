@@ -412,7 +412,21 @@ class AndroidGitRepository(
     // ── Private helpers ───────────────────────────────────────────────────────
 
     /** Resolves saf:// URIs to real filesystem paths for JGit's File-based API. */
-    private fun resolveForJGit(path: String): String = pathResolver(path) ?: path
+    private fun resolveForJGit(path: String): String {
+        val resolved = pathResolver(path)
+        if (resolved == null && path.startsWith("saf://")) {
+            // JGit only knows java.io.File — a SAF content:// grant alone can't back that, so this
+            // path is unusable for git sync unless "All files access" is granted (Android Settings >
+            // Apps > SteleKit > Permissions > All files access), which unlocks resolveSafToRealPath()
+            // (see PlatformFileSystem.resolveSafToRealPath). Falling through to the raw saf:// string
+            // below is what produces the cryptic "repository not found: /saf:/content%3A..." error.
+            logger.warn(
+                "Cannot resolve SAF path to a real file for JGit — grant \"All files access\" " +
+                    "to SteleKit in Android Settings to use git sync with this folder. path=$path"
+            )
+        }
+        return resolved ?: path
+    }
 
     private fun openGit(repoRoot: String): Git = Git.open(File(resolveForJGit(repoRoot)))
 

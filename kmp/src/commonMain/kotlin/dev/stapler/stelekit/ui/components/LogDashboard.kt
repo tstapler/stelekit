@@ -11,6 +11,7 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,6 +23,8 @@ import androidx.compose.ui.unit.sp
 import dev.stapler.stelekit.logging.LogEntry
 import dev.stapler.stelekit.logging.LogLevel
 import dev.stapler.stelekit.logging.LogManager
+import dev.stapler.stelekit.ui.rememberShareProvider
+import kotlin.time.Clock
 import kotlinx.coroutines.launch
 
 @Composable
@@ -33,6 +36,7 @@ fun LogDashboard(
     var searchQuery by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
+    val shareProvider = rememberShareProvider()
 
     val filteredLogs = remember(logs, filterLevel, searchQuery) {
         logs.filter { entry ->
@@ -120,6 +124,20 @@ fun LogDashboard(
                         )
                     }
                 }
+            }
+
+            // Export (share the currently filtered logs as a text file)
+            IconButton(onClick = {
+                scope.launch {
+                    val body = filteredLogs.asReversed().joinToString("\n\n") { it.toExportText() }
+                    shareProvider.saveToFile(
+                        content = body,
+                        suggestedName = "stelekit-logs-${Clock.System.now().epochSeconds}",
+                        extension = "txt",
+                    )
+                }
+            }) {
+                Icon(Icons.Default.Share, contentDescription = "Export Logs")
             }
 
             // Clear
@@ -213,6 +231,11 @@ fun LogItem(log: LogEntry) {
                 }
             }
         }
+}
+
+private fun LogEntry.toExportText(): String {
+    val header = "${timestamp} [$level] $tag: $message"
+    return if (throwable != null) "$header\n${throwable.stackTraceToString()}" else header
 }
 
 @Composable
