@@ -612,8 +612,9 @@ internal fun CaptureSuggestionChip(
             // unlike the accept region above — an explicit Modifier.size(48.dp) is needed here to
             // guarantee the minimum touch target (minimumInteractiveComponentSize() alone depends
             // on LocalMinimumInteractiveComponentEnforcement, unreliable under a bare
-            // MaterialTheme wrapper).
-            modifier = Modifier.size(48.dp).minimumInteractiveComponentSize(),
+            // MaterialTheme wrapper). minimumInteractiveComponentSize() is deliberately omitted —
+            // it would be a no-op after an exact 48dp size is already applied.
+            modifier = Modifier.size(48.dp),
         ) {
             ComposeIcon(
                 imageVector = Icons.Default.Close,

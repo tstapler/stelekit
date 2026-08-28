@@ -158,6 +158,34 @@ class CaptureEnrichmentCoordinatorTest {
         }
     }
 
+    // Story/pre-mortem follow-up: scan() must degrade like enhance() does — a Throwable from the
+    // underlying scan work (e.g. an OutOfMemoryError under memory pressure, mirroring
+    // PageNameIndex's own matcher-build guard) must not propagate and kill the caller's
+    // collectLatest. Uses the coordinator's scanFn seam (defaults to the real ImportService.scan)
+    // since the real matcher/ImportService call graph has no other reachable fault-injection
+    // point — AhoCorasickMatcher/TrieEntry validate on construction and can't be built malformed.
+    @Test
+    fun scan_scanFnThrows_degradesToMatcherNotReadyInsteadOfPropagating() = runBlocking {
+        val pageRepo = InMemoryPageRepository()
+        pageRepo.savePage(makePage("p1", "Kotlin Multiplatform"))
+        val scope = CoroutineScope(Dispatchers.Default)
+        try {
+            val coordinator = CaptureEnrichmentCoordinator(
+                pageRepo,
+                scope,
+                NoOpTopicEnricher(),
+                scanFn = { _, _, _ -> throw IllegalStateException("boom") },
+            )
+            coordinator.awaitMatcher()
+
+            val outcome = coordinator.scan("Reading about Kotlin Multiplatform")
+
+            assertEquals(ScanOutcome.MatcherNotReady, outcome)
+        } finally {
+            scope.cancel()
+        }
+    }
+
     // -------------------------------------------------------------------------
     // scan() — matcher-not-ready cases (no background build needed, TestDispatcher is fine)
     // -------------------------------------------------------------------------

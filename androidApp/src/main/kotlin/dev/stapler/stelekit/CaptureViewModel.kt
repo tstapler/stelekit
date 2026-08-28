@@ -13,7 +13,6 @@ import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.domain.CaptureEnrichmentCoordinator
 import dev.stapler.stelekit.domain.ImportService
-import dev.stapler.stelekit.domain.NoOpTopicEnricher
 import dev.stapler.stelekit.domain.ScanOutcome
 import dev.stapler.stelekit.domain.ScanResult
 import dev.stapler.stelekit.domain.TopicSuggestion
@@ -102,6 +101,10 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
      * accept (Epic 4.2) can write through the exact same graph/repositories instead of
      * re-resolving "the active graph" (which may have changed by then — ADR-002's scope
      * boundary).
+     *
+     * Note: [writer]/[writeActor]/[pageRepository]/[blockRepository] don't override
+     * `equals`/`hashCode`, so the generated `equals()` falls back to reference equality on those
+     * four fields — this class does not have full structural equality despite being a data class.
      */
     private data class SavedCaptureContext(
         val block: Block,
@@ -149,7 +152,7 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
                         when (val outcome = coordinator.scan(freeText)) {
                             is ScanOutcome.Success -> {
                                 _scanState.value = ScanState.Ready(text, outcome.result, outcome.confirmFirstNames)
-                                if (coordinator.topicEnricher !is NoOpTopicEnricher) {
+                                if (coordinator.supportsEnrichment) {
                                     val textHash = text.hashCode()
                                     val localSuggestions = outcome.result.topicSuggestions
                                     scope.launch {
@@ -343,21 +346,42 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
         val graphManager = steleApp.graphManager ?: return
         val repoSet = graphManager.getActiveRepositorySet() ?: return
         val graphPath = graphManager.getActiveGraphInfo()?.path ?: return
-        val existing = repoSet.pageRepository.getPageByName(term).first().getOrNull()
-        if (existing != null) return // already exists — markAccepted() already folded the link
+        val writer = GraphWriter(steleApp.fileSystem, writeActor = repoSet.writeActor)
+        // Deliberately not reverting markAccepted()'s fold on failure — see Story 4.1.1's AC: the
+        // link stays; only the stub page failed to materialize.
+        ensureStubPage(repoSet.pageRepository, writer, graphPath, term)
+    }
+
+    /**
+     * Shared by the pre-save ([createStubPage]) and post-save ([acceptSuggestionPostSave]) accept
+     * paths: creates a stub [Page] for [term] if one doesn't already exist. Returns `true` if a
+     * page exists (pre-existing or newly created), `false` if creation failed — in which case the
+     * failure is already logged and reported via [_chipFailure]; the caller decides what to do
+     * next (the pre-save path does nothing further, the post-save path aborts before the second
+     * write).
+     */
+    private suspend fun ensureStubPage(
+        pageRepository: PageRepository,
+        writer: GraphWriter,
+        graphPath: String,
+        term: String,
+    ): Boolean {
+        val existing = pageRepository.getPageByName(term).first().getOrNull()
+        if (existing != null) return true // already exists — markAccepted() already folded the link
         val stubPage = Page(
             uuid = PageUuid(UuidGenerator.generateV7()),
             name = term,
             createdAt = Clock.System.now(),
             updatedAt = Clock.System.now(),
         )
-        val writer = GraphWriter(steleApp.fileSystem, writeActor = repoSet.writeActor)
-        writer.savePage(stubPage, emptyList(), graphPath).onLeft {
-            logger.error("Stub page save failed for '$term': $it")
-            _chipFailure.tryEmit("Couldn't create page for \"$term\"")
-            // Deliberately not reverting markAccepted()'s fold — see Story 4.1.1's AC: the
-            // link stays; only the stub page failed to materialize.
-        }
+        return writer.savePage(stubPage, emptyList(), graphPath).fold(
+            { error ->
+                logger.error("Stub page save failed for '$term': $error")
+                _chipFailure.tryEmit("Couldn't create page for \"$term\"")
+                false
+            },
+            { true },
+        )
     }
 
     /**
@@ -439,20 +463,7 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
      */
     private suspend fun acceptSuggestionPostSave(ctx: SavedCaptureContext, term: String) {
         if (!graphStillActive(ctx, term)) return
-        val existing = ctx.pageRepository.getPageByName(term).first().getOrNull()
-        if (existing == null) {
-            val stubPage = Page(
-                uuid = PageUuid(UuidGenerator.generateV7()),
-                name = term,
-                createdAt = Clock.System.now(),
-                updatedAt = Clock.System.now(),
-            )
-            ctx.writer.savePage(stubPage, emptyList(), ctx.graphPath).onLeft {
-                logger.error("Post-save stub page save failed for '$term': $it")
-                _chipFailure.tryEmit("Couldn't create page for \"$term\"")
-                return
-            }
-        }
+        if (!ensureStubPage(ctx.pageRepository, ctx.writer, ctx.graphPath, term)) return
         writeLinkedBlockPostSave(ctx, term)
     }
 
@@ -501,6 +512,7 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
         ctx.writer.savePage(ctx.page, updatedBlocks, ctx.graphPath).onLeft {
             logger.error("Post-save markdown flush failed for '$term': $it")
             _chipFailure.tryEmit("Couldn't link \"$term\"")
+            return
         }
         savedContext = ctx.copy(block = updatedBlock, blocks = updatedBlocks)
         markAccepted(term)

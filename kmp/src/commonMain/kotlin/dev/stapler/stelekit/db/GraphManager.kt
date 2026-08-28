@@ -5,9 +5,14 @@
 package dev.stapler.stelekit.db
 
 import arrow.core.Either
+import dev.stapler.stelekit.domain.CaptureEnrichmentCoordinator
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.GitAuth
 import dev.stapler.stelekit.git.GitRepository
+import dev.stapler.stelekit.llm.LlmCredentialStore
+import dev.stapler.stelekit.llm.LlmProviderRegistry
+import dev.stapler.stelekit.llm.LlmSettings
+import dev.stapler.stelekit.llm.buildLlmProviderRegistry
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.migration.ChangeApplier
 import dev.stapler.stelekit.migration.ChangelogRepository
@@ -24,6 +29,7 @@ import dev.stapler.stelekit.model.GraphRegistry
 import dev.stapler.stelekit.vault.VaultManager
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.Settings
+import dev.stapler.stelekit.platform.security.CredentialStore
 import dev.stapler.stelekit.repository.GraphBackend
 import dev.stapler.stelekit.repository.RepositorySet
 import dev.stapler.stelekit.util.ContentHasher
@@ -101,14 +107,14 @@ class GraphManager(
     // guards only the cache read/insert below, never the Deferred.await() — see
     // getOrCreateEnrichmentCoordinator().
     private val coordinatorMutex = Mutex()
-    private var coordinatorFor: Pair<GraphId, Deferred<dev.stapler.stelekit.domain.CaptureEnrichmentCoordinator>>? = null
+    private var coordinatorFor: Pair<GraphId, Deferred<CaptureEnrichmentCoordinator>>? = null
 
     // Same construction recipe App.kt:490-500 uses for the Compose tree's registry — CaptureActivity
     // never runs that composition, so GraphManager builds its own equivalent, self-contained.
-    private val llmProviderRegistry: dev.stapler.stelekit.llm.LlmProviderRegistry by lazy {
-        dev.stapler.stelekit.llm.buildLlmProviderRegistry(
-            dev.stapler.stelekit.llm.LlmCredentialStore(dev.stapler.stelekit.platform.security.CredentialStore()),
-            dev.stapler.stelekit.llm.LlmSettings(platformSettings),
+    private val llmProviderRegistry: LlmProviderRegistry by lazy {
+        buildLlmProviderRegistry(
+            LlmCredentialStore(CredentialStore()),
+            LlmSettings(platformSettings),
         )
     }
 
@@ -732,7 +738,7 @@ class GraphManager(
     fun getActiveRepositorySet(): RepositorySet? = _activeRepositorySet.value
 
     /**
-     * Returns the current graph's memoized [dev.stapler.stelekit.domain.CaptureEnrichmentCoordinator],
+     * Returns the current graph's memoized [CaptureEnrichmentCoordinator],
      * building it once per [GraphId] (race-safe against concurrent callers). Returns `null` if
      * there is no active graph, no active [RepositorySet], or no [activeGraphJobs] scope yet
      * (mirrors the "no active graph" guard shape used elsewhere in this class, e.g.
@@ -744,16 +750,15 @@ class GraphManager(
      * during construction is evicted from the cache so the next call attempts a fresh
      * construction instead of replaying the same failure forever.
      */
-    suspend fun getOrCreateEnrichmentCoordinator(): dev.stapler.stelekit.domain.CaptureEnrichmentCoordinator? {
+    suspend fun getOrCreateEnrichmentCoordinator(): CaptureEnrichmentCoordinator? {
         val (graphId, deferred) = coordinatorMutex.withLock {
             val graphId = _graphRegistry.value.activeGraphId ?: return@withLock null
             val repoSet = _activeRepositorySet.value ?: return@withLock null
             val scope = activeGraphJobs[graphId] ?: return@withLock null
             val existing = coordinatorFor?.takeIf { it.first == graphId }?.second
             val deferred = existing ?: scope.async(start = CoroutineStart.LAZY) {
-                val topicEnricher = dev.stapler.stelekit.domain.CaptureEnrichmentCoordinator
-                    .resolveTopicEnricher(llmProviderRegistry)
-                dev.stapler.stelekit.domain.CaptureEnrichmentCoordinator(repoSet.pageRepository, scope, topicEnricher)
+                val topicEnricher = CaptureEnrichmentCoordinator.resolveTopicEnricher(llmProviderRegistry)
+                CaptureEnrichmentCoordinator(repoSet.pageRepository, scope, topicEnricher)
             }.also { coordinatorFor = graphId to it }
             graphId to deferred
         } ?: return null

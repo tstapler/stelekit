@@ -24,8 +24,21 @@ class CaptureEnrichmentCoordinator(
     pageRepository: PageRepository,
     scope: CoroutineScope,
     val topicEnricher: TopicEnricher,
+    // Defaults to the real ImportService.scan — overridable only for tests, so scan()'s
+    // Throwable guard is exercisable deterministically. There is no other fault-injection point
+    // in the real call graph: AhoCorasickMatcher/TrieEntry validate on construction (can't be
+    // built malformed), and PageNameIndex already guards its own matcher-build path separately.
+    private val scanFn: (text: String, matcher: AhoCorasickMatcher, existingNames: Set<String>) -> ScanResult =
+        ImportService::scan,
 ) {
     val pageNameIndex: PageNameIndex = PageNameIndex(pageRepository, scope)
+
+    /**
+     * `true` when a real (non-[NoOpTopicEnricher]) enricher is available — the external-facing
+     * signal callers should use to decide whether calling [enhance] is worthwhile, without
+     * leaking the [NoOpTopicEnricher] sentinel type itself across the domain/ViewModel boundary.
+     */
+    val supportsEnrichment: Boolean get() = topicEnricher !is NoOpTopicEnricher
 
     private val logger = Logger("CaptureEnrichmentCoordinator")
 
@@ -34,26 +47,35 @@ class CaptureEnrichmentCoordinator(
      *
      * Returns [ScanOutcome.MatcherNotReady] immediately (no timeout wait) if
      * [PageNameIndex.matcher] hasn't been built yet, [ScanOutcome.TimedOut] if the scan doesn't
-     * complete within [budgetMs], or [ScanOutcome.Success] otherwise.
+     * complete within [budgetMs], or [ScanOutcome.Success] otherwise. Any [Throwable] raised while
+     * scanning (mirrors [enhance]'s guard) degrades to [ScanOutcome.MatcherNotReady] rather than
+     * propagating, so a single scan failure never kills the caller's collector.
      */
     suspend fun scan(text: String, budgetMs: Long = 500): ScanOutcome {
         val matcher = pageNameIndex.matcher.value ?: return ScanOutcome.MatcherNotReady
-        val outcome = withTimeoutOrNull(budgetMs) {
-            withContext(Dispatchers.Default) {
-                val raw = ImportService.scan(text, matcher, pageNameIndex.vocabularyNames().toSet())
-                val (autoApply, confirmFirst) = partitionForAutoApply(raw.matchedPageNames)
-                val adjusted = if (confirmFirst.isEmpty()) {
-                    raw
-                } else {
-                    raw.copy(
-                        linkedText = ImportService.insertWikiLinks(text, autoApply),
-                        matchedPageNames = autoApply,
-                    )
+        return try {
+            val outcome = withTimeoutOrNull(budgetMs) {
+                withContext(Dispatchers.Default) {
+                    val raw = scanFn(text, matcher, pageNameIndex.vocabularyNames().toSet())
+                    val (autoApply, confirmFirst) = partitionForAutoApply(raw.matchedPageNames)
+                    val adjusted = if (confirmFirst.isEmpty()) {
+                        raw
+                    } else {
+                        raw.copy(
+                            linkedText = ImportService.insertWikiLinks(text, autoApply),
+                            matchedPageNames = autoApply,
+                        )
+                    }
+                    ScanOutcome.Success(adjusted, confirmFirst)
                 }
-                ScanOutcome.Success(adjusted, confirmFirst)
             }
+            outcome ?: ScanOutcome.TimedOut
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            logger.warn("Scan failed — degrading to MatcherNotReady: ${e::class.simpleName}: ${e.message}")
+            ScanOutcome.MatcherNotReady
         }
-        return outcome ?: ScanOutcome.TimedOut
     }
 
     // Pre-mortem.md P1 #2: a matched canonical page name auto-applies (kept in linkedText,

@@ -53,6 +53,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -362,6 +363,13 @@ class CaptureViewModelTest {
             writeFileCallCount++
             return true
         }
+    }
+
+    /** A [FileSystem] whose [writeFile] always fails — used to force [GraphWriter.savePage] to
+     * return a [DomainError.DatabaseError.WriteFailed] deterministically (markdown-flush
+     * failure), independent of the DB write, which goes through a real [DatabaseWriteActor]. */
+    private class FailingWriteFileSystem : StubFileSystem() {
+        override fun writeFile(path: String, content: String) = false
     }
 
     /**
@@ -1073,6 +1081,84 @@ class CaptureViewModelTest {
             "Graph switched during save — please retry",
             emitted.single(),
         )
+    }
+
+    @Test
+    @Config(sdk = [29], application = SteleKitApplication::class)
+    fun `acceptExistingLink_postSaveMarkdownFlushFails_chipNotMarkedAcceptedAndSavedContextUnchanged`() {
+        // Regression test: writeLinkedBlockPostSave()'s DB write can succeed while the
+        // subsequent markdown-flush write fails. Before the fix, that failure path logged/
+        // emitted a chip failure but still fell through to `savedContext = ctx.copy(block =
+        // updatedBlock, ...)` — silently swapping in a block whose link content was never
+        // durably flushed to disk, contradicting the "Couldn't link" failure it just reported.
+        // (The chip itself folding away in the tray is unrelated and correct: markAccepted()
+        // already ran synchronously at tap time, before this async write even started — see
+        // `acceptSuggestion_asyncStubFails...`'s "must not revert the already-folded link".)
+        val (app, graphManager) = newWiredApplication()
+        val graphPath = openTestGraph(graphManager)
+        val viewModel = CaptureViewModel(app)
+
+        // Real save() first so the block/page genuinely exist in the DB — the second write is a
+        // real UPDATE through the real writeActor, isolating the failure to the markdown flush.
+        viewModel.updateText("Reading about Zettelkasten today")
+        viewModel.save()
+        awaitSaveState(viewModel)
+        assertEquals(CaptureViewModel.SaveState.Saved, viewModel.saveState.value)
+
+        val ctxBefore = readSavedContext(viewModel)!!
+        val blockBefore = ctxBefore.javaClass.getDeclaredField("block").apply { isAccessible = true }
+            .get(ctxBefore) as Block
+        val pageBefore = ctxBefore.javaClass.getDeclaredField("page").apply { isAccessible = true }
+            .get(ctxBefore) as Page
+        @Suppress("UNCHECKED_CAST")
+        val blocksBefore = ctxBefore.javaClass.getDeclaredField("blocks").apply { isAccessible = true }
+            .get(ctxBefore) as List<Block>
+
+        val repoSet = graphManager.getActiveRepositorySet()!!
+        // Same writeActor (real DB write succeeds), but a writer whose filesystem always fails
+        // to write — forces ctx.writer.savePage(...) to return Left deterministically.
+        val failingWriter = GraphWriter(FailingWriteFileSystem(), writeActor = repoSet.writeActor)
+        val ctx = newSavedCaptureContext(
+            block = blockBefore,
+            page = pageBefore,
+            blocks = blocksBefore,
+            graphPath = graphPath,
+            graphId = graphManager.getActiveGraphId()!!,
+            writer = failingWriter,
+            writeActor = repoSet.writeActor,
+            pageRepository = repoSet.pageRepository,
+            blockRepository = repoSet.blockRepository,
+        )
+        setSavedContext(viewModel, ctx)
+
+        viewModel.updateText(blockBefore.content)
+        setScanState(
+            viewModel,
+            CaptureViewModel.ScanState.Ready(
+                text = viewModel.captureText.value,
+                result = ScanResult(linkedText = viewModel.captureText.value, matchedPageNames = emptyList()),
+                confirmFirstNames = listOf("Zettelkasten"),
+            ),
+        )
+
+        val (job, emitted) = collectChipFailures(viewModel)
+        viewModel.acceptExistingLink("Zettelkasten")
+
+        awaitCondition { emitted.isNotEmpty() }
+        job.cancel()
+
+        assertEquals(listOf("Couldn't link \"Zettelkasten\""), emitted)
+
+        // savedContext must be the EXACT SAME object set before the accept — proves the
+        // `savedContext = ctx.copy(...)` reassignment line was never reached, i.e. the
+        // markdown-flush failure's `return` fired before it (SavedCaptureContext carries
+        // collaborator fields without value equality — see its KDoc — so identity, not
+        // structural equality, is the precise check here).
+        assertSame(
+            "savedContext must not be reassigned on a failed markdown flush",
+            ctx, readSavedContext(viewModel),
+        )
+        assertFalse(blockBefore.content.contains("[[Zettelkasten]]"))
     }
 
     // ---- Story 5.2.6: chip-accept/save race — save() must not await the slower write ------
