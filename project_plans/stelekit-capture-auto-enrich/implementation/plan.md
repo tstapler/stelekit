@@ -27,7 +27,8 @@
 | `GraphManager.getOrCreateEnrichmentCoordinator()` | Suspend method on `GraphManager` that returns the memoized `CaptureEnrichmentCoordinator` for the currently active graph, race-safely constructing one on first call. Returns `null` if there is no active graph/repository set/graph scope yet. | Mutex-guarded, memoized `Deferred`, keyed by `GraphId`, scoped to `activeGraphJobs[graphId]` |
 | `CaptureViewModel.ScanState` | Sealed type replacing a nullable-`ScanResult` + boolean-flag design: `NotReady` (no usable scan yet — cold start, still debouncing, or budget exceeded) or `Ready(text, result)` (a `ScanResult` computed for the exact `text` it was scanned against). | Nested in `CaptureViewModel`, mirrors the existing `SaveState` nesting pattern in the same file |
 | `CaptureViewModel.SavedCaptureContext` | Private data class retained on `CaptureViewModel` after a successful `performSave()`: `block`, `page`, `blocks`, `graphPath`, `graphId` (the `GraphId` `performSave()` wrote to), `writer` (the exact `GraphWriter` instance `performSave()` constructed), `writeActor`, `pageRepository`, `blockRepository` (the originating graph's repositories, captured at save time — never re-fetched from "the active graph" later). Enables AC #9's post-save second write without a new `GraphWriter`, and lets `acceptSuggestionPostSave()` detect a graph switch during the post-save window instead of silently reading/writing against the wrong graph. | Private, capture-local — not a general edit-after-save mechanism (ADR-002's job to bound); `graphId`/`pageRepository`/`blockRepository` close the graph-identity gap architecture-review.md and adversarial-review.md both flagged as a BLOCKER |
-| `CaptureEnrichmentCoordinator.ScanOutcome` | Sealed type nested in `CaptureEnrichmentCoordinator`, replacing `scan()`'s nullable `ScanResult?` return: `MatcherNotReady` (matcher not built yet) / `TimedOut` (budget exceeded) / `Success(result: ScanResult)`. Distinguishes the two "no result" cases the old signature collapsed, so the "scan budget exceeded (debug)" log line in the Observability Plan is actually implementable. | `kmp/src/commonMain/kotlin/dev/stapler/stelekit/domain/CaptureEnrichmentCoordinator.kt`; `CaptureViewModel.ScanState` still collapses both non-success cases to `NotReady` for save-time behavior (AC #4 unaffected) |
+| `CaptureEnrichmentCoordinator.ScanOutcome` | Sealed type nested in `CaptureEnrichmentCoordinator`, replacing `scan()`'s nullable `ScanResult?` return: `MatcherNotReady` (matcher not built yet) / `TimedOut` (budget exceeded) / `Success(result: ScanResult, confirmFirstNames: List<String>)`. Distinguishes the two "no result" cases the old signature collapsed, so the "scan budget exceeded (debug)" log line in the Observability Plan is actually implementable. `confirmFirstNames` is the precision-floor partition — see next row. | `kmp/src/commonMain/kotlin/dev/stapler/stelekit/domain/CaptureEnrichmentCoordinator.kt`; `CaptureViewModel.ScanState` still collapses both non-success cases to `NotReady` for save-time behavior (AC #4 unaffected) |
+| Auto-apply / confirm-first partition | Capture-specific precision floor on `ImportService.scan()`'s `matchedPageNames`, applied inside `CaptureEnrichmentCoordinator.scan()` only (`ImportService`/`AhoCorasickMatcher`/`PageNameIndex` are untouched — this is a policy applied to their output, not a change to matching itself). A matched canonical page name **auto-applies** into `linkedText` if it is multi-word (contains a space) OR single-word with length ≥ 6 characters; otherwise it is **confirm-first**: withheld from `linkedText`/`matchedPageNames` and surfaced instead as an "existing page" chip in the same tray Epic 3.1 already renders for new-page suggestions. Closes pre-mortem.md failure #2 (P1): short/generic existing page names ("Today", "Ideas", "1:1") no longer get silently rewritten into `[[links]]` with zero confirmation. | `CaptureEnrichmentCoordinator.kt` (`partitionForAutoApply()`, Task 1.1.1b); consumed by `CaptureViewModel.ScanState.Ready.confirmFirstNames` (Task 2.1.1a) and rendered by Epic 3.1's tray (Task 3.1.2a) |
 | `LlmFeature.CAPTURE_ENRICHMENT` | New enum entry on the existing `LlmFeature` sealed set (`VOICE_FORMATTING`, `TAG_SUGGESTION`, `GRAPH_EDIT_SYNTHESIS`), used to resolve an available `LlmProvider` for capture's opt-in tier via `LlmProviderRegistry.availableForFeature(...)`. | `kmp/src/commonMain/kotlin/dev/stapler/stelekit/llm/LlmFeature.kt` |
 | `CaptureSuggestionChip` | Private `@Composable` in `CaptureActivity.kt` — a scaled-down `[confidence dot][term][×]` chip reusing `ImportScreen.kt`'s `TopicSuggestionChip` anatomy at reduced size, no "linked" persistence state, no Accept-All. | Rendered inside a `LazyRow`, capped at 4 visible |
 | `acceptSuggestion(term, isPostSave)` | `CaptureViewModel` method handling both AC #2's pre-save accept (throwaway `GraphWriter.savePage` + fold into pending text) and AC #9's post-save accept (reuses `SavedCaptureContext`'s `writer`/`writeActor` for a second write). | Single entry point, branches internally on whether `savedContext` is set |
@@ -49,7 +50,9 @@
 | Auto-link visualization | Read-only, non-editable preview line below the text field | UX research §3b, adapted; Import's own `ReviewStage` precedent (raw editable input vs. separate linked preview) | Rewrite `linkedText` directly into the editable `OutlinedTextField.value` while the user types | No existing code in this repo rewrites a live edit buffer mid-composition; doing so risks cursor-position loss / interrupted typing with no precedent to copy. A read-only caption gives the same "recognized" signal without that risk, and keeps AC #5's responsiveness budget measured against real text-field interaction only |
 | `StelekitViewModel.pageNameIndex` de-duplication | Left unchanged — no cross-ViewModel cache in v1 | `research/architecture.md` Q1 | Rewire `StelekitViewModel` to source `pageNameIndex` from `GraphManager.getOrCreateEnrichmentCoordinator()` | Changes `StelekitViewModel`'s scope ownership (a lifecycle change interacting with `App.kt`'s `key(activeGraphId)` teardown/rebuild), outside this feature's "additive wiring, not a refactor" constraint. Flagged as a follow-up (PF-7), not a v1 blocker |
 | `LlmProviderRegistry` resolution for capture | `GraphManager` builds its own registry lazily via `buildLlmProviderRegistry(LlmCredentialStore(CredentialStore()), LlmSettings(platformSettings))` — the same recipe `App.kt:490-500` uses, self-contained (no new constructor param) | `GraphManager`'s existing `platformSettings: Settings` field already matches `LlmSettings`'s constructor type | Pass an `LlmProviderRegistry` in from `CaptureActivity`/`CaptureViewModel` | `CaptureActivity` has no access to the Compose-tree-scoped registry `App.kt` builds (it never runs `App.kt`'s composition) — `GraphManager` already holds every dependency needed to build an equivalent registry itself, avoiding a second, divergent construction site |
-| `CaptureViewModel.save()` / `acceptSuggestion()` ordering | Shared `Mutex` (`saveOpMutex`) serializes the two entry points end-to-end — whichever starts first runs to completion before the other proceeds | adversarial-review.md Blocker #2 | Re-check `savedContext` immediately before the final write inside `acceptSuggestion()`'s pre-save branch, then re-route to the post-save path if a save landed mid-flight | Both entry points are independent `scope.launch { }` bodies with no shared-state guard today; wrapping each entire body in one `Mutex.withLock { }` is a smaller, more obviously-correct diff than restructuring the pre-save branch to detect a save that completed mid-accept and switch code paths — same idiom this file already uses elsewhere in the codebase (`coordinatorMutex`, Task 1.2.1a; `GraphWriter.saveMutex`) |
+| `CaptureViewModel.save()` / `acceptSuggestion()` ordering | Synchronous, immediate state fold on accept (`markAccepted()` — shared by both `acceptSuggestion()` and `acceptExistingLink()` — runs to completion with no suspension point before any I/O is even launched), matching `ImportViewModel.onSuggestionAccepted()`'s established precedent; the async stub-page/second-write work is launched separately afterward, with no mutex shared against `save()` | `ImportViewModel.onSuggestionAccepted()` (`ui/screens/ImportViewModel.kt:309-321`, plain synchronous `_state.update`, no `scope.launch`); cross-artifact consistency check (superseding the shared-`Mutex` design below) | Shared `Mutex` (`saveOpMutex`) serializing `save()` and `acceptSuggestion()` end-to-end (original Blocker #2 fix) | The mutex version wrapped `acceptSuggestion()`'s *entire* body — including the unbounded `GraphWriter.savePage` disk write for the stub page — in the same lock `save()` waits on, so a fast chip-tap-then-Save could make `save()` block on disk I/O, directly contradicting requirements.md AC #4/#5 ("Save is never blocked by enrichment... never a precondition for it") and `design/ux.md` UX AC #2 ("no spinner-wait, no disabled state tied to scan progress"). The synchronous-fold approach closes the original race (a `save()` reading `_scanState` before an accept's link-fold landed) without introducing any suspension point between the tap and the fold — Kotlin's single-dispatcher execution model means a `save()` queued on the same dispatcher immediately after always observes the already-folded state, no lock required. |
+| Auto-apply / confirm-first precision floor for AC #1's write path | Length/word-count partition (multi-word, or single-word ≥6 chars, auto-applies; shorter single-word matches become confirm-first chips) applied inside `CaptureEnrichmentCoordinator.scan()`, not `PageNameIndex`/`AhoCorasickMatcher` | pre-mortem.md failure #2 (P1) | Minimum-length gate inside `PageNameIndex`/`AhoCorasickMatcher` itself (the matcher-index level, where `MIN_NAME_LENGTH`/`DEFAULT_STOPWORDS` already live) | `PageNameIndex.MIN_NAME_LENGTH`/`DEFAULT_STOPWORDS` govern what counts as an indexable page name for *matching* at all, shared by Import and capture alike — narrowing that would silently change Import's matching behavior too, an out-of-scope regression risk. The auto-apply/confirm-first split is a decision about *what to do with a match already found*, specific to capture's no-review auto-write path; it belongs as a policy layer in the coordinator, not a change to the shared matcher/index |
+| P1 #3 (Observability/Risk Control) response | No new feature flag or debug-log-ring-buffer abstraction; existing `Logger("CaptureViewModel")`/`Logger("CaptureEnrichmentCoordinator")` calls plus standard `adb logcat` are sufficient | pre-mortem.md failure #3 (P1) | `Settings`-backed on/off gate for the auto-link write path specifically | Failure #3's stated rationale for a flag was explicitly failure #2's blast radius ("given #2's blast radius..."); the auto-apply/confirm-first partition above removes exactly that blast radius — the highest-risk case (silent auto-link of a short/generic name) is now review-gated, not silently written. Adding a flag on top would still violate the plan's existing "no new abstractions beyond what the task requires" constraint (Risk Control section) for a risk that's already substantially mitigated |
 | `CaptureEnrichmentCoordinator.scan()` return type | Sealed `ScanOutcome` (type-driven design: keep "not ready" and "timed out" distinguishable) | architecture-review.md Concern (Epic 1.1) | Nullable `ScanResult?` (original plan) | A nullable return collapsed two distinguishable failure modes into one signal, making the Observability Plan's promised "budget exceeded (debug)" log line unimplementable and hiding a systematic slow-scan regression behind ordinary cold-start `NotReady` |
 | `acceptSuggestionPostSave()` graph-identity check | Compare `ctx.graphId` to `GraphManager.getActiveGraphId()` at entry; short-circuit to an isolated, logged failure on mismatch, and read/write only through `ctx`'s captured repositories/writer — never a freshly-fetched "active" `RepositorySet` | architecture-review.md Blocker, adversarial-review.md Blocker #1, ADR-002 (constraint added) | Rely on the existing `ClosedSendChannelException` guard alone to detect a graph switch | That exception only fires if the actor's channel happens to be closed — it does not fire for every way a graph switch can leave `ctx`'s captured repositories stale (e.g. the newly-active graph happens to have its own live, open `writeActor` too) |
 
@@ -67,7 +70,7 @@ N/A — no schema or data changes. No new SQLDelight tables, no `MigrationRunner
 
 ## Risk Control
 
-- **Feature flag**: none. The local heuristic tier is always-on per requirements ("this is the default state, not a degraded state"); the LLM tier is already self-gating via `LlmProviderRegistry.availableForFeature(...)` returning an empty list when nothing is configured. Adding a separate flag would violate the "no new abstractions beyond what the task requires" constraint.
+- **Feature flag**: none. The local heuristic tier is always-on per requirements ("this is the default state, not a degraded state"); the LLM tier is already self-gating via `LlmProviderRegistry.availableForFeature(...)` returning an empty list when nothing is configured. Adding a separate flag would violate the "no new abstractions beyond what the task requires" constraint. Pre-mortem.md's P1 #3 raised a `Settings`-backed toggle for the auto-link write path specifically, motivated by P1 #2's blast radius (silent auto-link of short/generic page names); the auto-apply/confirm-first precision floor added for P1 #2 (Epic 1.1, Pattern Decisions table) substantially reduces that blast radius by review-gating exactly the highest-risk case, so the flag suggestion is superseded rather than adopted. The already-planned `Logger("CaptureViewModel")`/`Logger("CaptureEnrichmentCoordinator")` calls (Observability Plan) are retrievable via standard `adb logcat` from an affected device — no separate debug-log-ring-buffer abstraction is needed beyond what's already planned.
 - **Rollback procedure**: revert the wiring commit(s). `CaptureViewModel.performSave()`'s core write (one `saveBlock` + one `savePage`) is structurally unchanged by this feature — enrichment wraps around it, per the requirements' explicit constraint — so a revert restores today's exact save behavior with no data-shape cleanup required.
 - **Staged rollout**: none specified by requirements/research. Standard PR review + `bazel test //kmp:jvm_tests` / `./gradlew ciCheck` gate per repo convention.
 
@@ -124,6 +127,9 @@ Phase 5: Tests
   - *Given* a matcher is ready, *When* `scan("I'm reading about Kotlin Multiplatform")` is called and page "Kotlin Multiplatform" exists, *Then* it returns `ScanOutcome.Success(ScanResult(linkedText = "I'm reading about [[Kotlin Multiplatform]]", matchedPageNames = ["Kotlin Multiplatform"], topicSuggestions = [...]))` within the 500ms budget.
   - *Given* a matcher is ready but the scan takes longer than `budgetMs`, *When* `scan(...)` is called, *Then* it returns `ScanOutcome.TimedOut` — distinguishable from `MatcherNotReady` at the call site, so `Logger("CaptureEnrichmentCoordinator")` can log budget-exceeded at `debug` (Observability Plan) without conflating it with cold start.
 - Uses `pageNameIndex.vocabularyNames().toSet()` as `existingNames` for `ImportService.scan(text, matcher, existingNames)` — **not** a second `pageRepository.getPageNameEntries().first()` call — since the coordinator already owns the built index (`PageNameIndex.vocabularyNames()` returns exactly this projection).
+- **Auto-apply/confirm-first precision floor (pre-mortem.md P1 failure #2)**: `ImportService.scan()`'s raw `matchedPageNames` has no review step and no length guard — on a real personal wiki with short/generic page names ("Today", "Ideas", "1:1"), that silently rewrites ordinary prose into wrong `[[links]]`. `scan()` partitions the raw matches via `partitionForAutoApply()`: a canonical name **auto-applies** (kept in `linkedText`/`matchedPageNames`, unchanged behavior) if it is multi-word (contains a space) OR single-word with length ≥ 6 characters; otherwise it is **confirm-first** — withheld from `linkedText` entirely and returned separately as `ScanOutcome.Success.confirmFirstNames` for the chip tray (Epic 3.1) to surface as a reviewable "confirm existing link" chip (Epic 4.1). `linkedText` is recomputed via `ImportService.insertWikiLinks(text, autoApplyNames)` against the *original* `text` (never post-processed from the fully-linked `raw.linkedText`) so a confirm-first name's brackets are never present in the saved text at all, not stripped back out. This is a capture-specific policy applied to `ImportService.scan()`'s output — `ImportService`, `AhoCorasickMatcher`, and `PageNameIndex` (including its own `MIN_NAME_LENGTH`/`DEFAULT_STOPWORDS` matcher-level floor) are unmodified, so Import's own auto-link-on-review behavior is unaffected.
+  - *Given* pages "Today" (single word, 5 chars) and "Kotlin Multiplatform" (multi-word) both exist, *When* `scan("Today I read about Kotlin Multiplatform")` is called, *Then* `ScanOutcome.Success.result.linkedText == "Today I read about [[Kotlin Multiplatform]]"` (only the multi-word match is auto-linked), `result.matchedPageNames == ["Kotlin Multiplatform"]`, and `confirmFirstNames == ["Today"]` — "Today" is never silently linked, only offered as a confirm-first candidate.
+  - *Given* page "Zettelkasten" exists (single word, ≥6 chars), *When* `scan("Reading about Zettelkasten")` is called, *Then* it auto-applies exactly as before this fix (`linkedText == "Reading about [[Zettelkasten]]"`, `confirmFirstNames` empty) — the precision floor changes behavior only for short single-word matches, not the common case.
 - `enhance()` sanitizes whatever the resolved `TopicEnricher` returns before it reaches the chip tray: blank/whitespace-only terms are dropped, confidence is clamped to `0f..1f`, and duplicate terms (compared trimmed + lowercased, first-seen wins) are deduped — matching PF-8's requirement that the LLM tier degrade identically to `NoOpTopicEnricher` on *any* malformed-output failure mode, not just a thrown `Throwable` (adversarial-review.md Concern, AC #3).
   - *Given* `topicEnricher.enhance(...)` returns normally with `[TopicSuggestion(term = "  ", confidence = 47f, ...), TopicSuggestion(term = "Kotlin", confidence = 0.9f, ...), TopicSuggestion(term = "kotlin", confidence = 0.3f, ...)]`, *When* `coordinator.enhance(...)` processes it, *Then* the blank-term entry is dropped, the surviving `"Kotlin"` entry's confidence is clamped to `1f`, and only one `"Kotlin"`/`"kotlin"` entry survives — no garbage ever reaches `mergeBySource()` or a stub-page write.
 
@@ -138,24 +144,50 @@ Phase 5: Tests
   sealed interface ScanOutcome {
       data object MatcherNotReady : ScanOutcome
       data object TimedOut : ScanOutcome
-      data class Success(val result: ScanResult) : ScanOutcome
+      data class Success(
+          val result: ScanResult,
+          // Precision floor (pre-mortem.md P1 #2): single-word matches <6 chars, withheld
+          // from `result.linkedText`/`result.matchedPageNames` and offered for review instead
+          // of silently auto-linked. See Task 1.1.1b's `partitionForAutoApply()`.
+          val confirmFirstNames: List<String> = emptyList(),
+      ) : ScanOutcome
   }
   ```
 - Files: `kmp/src/commonMain/kotlin/dev/stapler/stelekit/domain/CaptureEnrichmentCoordinator.kt`
 
-##### Task 1.1.1b: Add `scan()` with matcher-null short-circuit and budget timeout (~4 min)
-- `suspend fun scan(text: String, budgetMs: Long = 500): ScanOutcome`:
+##### Task 1.1.1b: Add `scan()` with matcher-null short-circuit, budget timeout, and the auto-apply/confirm-first precision floor (~7 min)
+- `suspend fun scan(text: String, budgetMs: Long = 500): ScanOutcome`. The raw `ImportService.scan()` result is partitioned before it's wrapped in `ScanOutcome.Success` — `linkedText` is *recomputed* from the original `text` using only the auto-apply subset, never post-processed from `raw.linkedText` (that would risk stripping/corrupting a confirm-first term's brackets rather than never inserting them):
   ```kotlin
   suspend fun scan(text: String, budgetMs: Long = 500): ScanOutcome {
       val matcher = pageNameIndex.matcher.value ?: return ScanOutcome.MatcherNotReady
-      val result = withTimeoutOrNull(budgetMs) {
+      val outcome = withTimeoutOrNull(budgetMs) {
           withContext(Dispatchers.Default) {
-              ImportService.scan(text, matcher, pageNameIndex.vocabularyNames().toSet())
+              val raw = ImportService.scan(text, matcher, pageNameIndex.vocabularyNames().toSet())
+              val (autoApply, confirmFirst) = partitionForAutoApply(raw.matchedPageNames)
+              val adjusted = if (confirmFirst.isEmpty()) {
+                  raw
+              } else {
+                  raw.copy(
+                      linkedText = ImportService.insertWikiLinks(text, autoApply),
+                      matchedPageNames = autoApply,
+                  )
+              }
+              ScanOutcome.Success(adjusted, confirmFirst)
           }
       }
-      return result?.let { ScanOutcome.Success(it) } ?: ScanOutcome.TimedOut
+      return outcome ?: ScanOutcome.TimedOut
   }
+
+  // Pre-mortem.md P1 #2: a matched canonical page name auto-applies (kept in linkedText,
+  // unchanged behavior) only if it's multi-word or a single word of reasonable length.
+  // Short single-word matches ("Today", "Ideas") are confirm-first — never silently
+  // written, only offered as a chip. Policy lives here, not in PageNameIndex/AhoCorasickMatcher,
+  // since it governs what to do with a match already found, not what counts as matchable —
+  // narrowing PageNameIndex.MIN_NAME_LENGTH itself would also change Import's behavior.
+  private fun partitionForAutoApply(names: List<String>): Pair<List<String>, List<String>> =
+      names.partition { it.contains(' ') || it.length >= MIN_AUTO_APPLY_SINGLE_WORD_LENGTH }
   ```
+- Add `const val MIN_AUTO_APPLY_SINGLE_WORD_LENGTH = 6` to the class's `companion object` — Task 1.1.2b also adds a `companion object { }` (`resolveTopicEnricher`) to this same class; implement whichever task lands first and add the other's member to the existing block rather than declaring two `companion object`s (Kotlin permits only one per class).
 - Files: `kmp/src/commonMain/kotlin/dev/stapler/stelekit/domain/CaptureEnrichmentCoordinator.kt`
 
 ##### Task 1.1.1c: Add `enhance()` with 8s timeout + `Throwable` guard (PF-1) + output sanitization (AC #3) (~6 min)
@@ -329,7 +361,14 @@ Phase 5: Tests
   ```kotlin
   sealed interface ScanState {
       data object NotReady : ScanState
-      data class Ready(val text: String, val result: dev.stapler.stelekit.domain.ScanResult) : ScanState
+      data class Ready(
+          val text: String,
+          val result: dev.stapler.stelekit.domain.ScanResult,
+          // Confirm-first bucket from the auto-apply precision floor (pre-mortem.md P1 #2,
+          // Task 1.1.1b) — short single-word matches withheld from `result.linkedText`,
+          // rendered as "confirm existing link" chips (Epic 3.1) instead of silently linked.
+          val confirmFirstNames: List<String> = emptyList(),
+      ) : ScanState
   }
   private val _scanState = MutableStateFlow<ScanState>(ScanState.NotReady)
   val scanState: StateFlow<ScanState> = _scanState.asStateFlow()
@@ -382,7 +421,7 @@ Phase 5: Tests
                       val (_, freeText) = splitImagePrefix(text)  // Story 2.1.3
                       when (val outcome = coordinator.scan(freeText)) {
                           is dev.stapler.stelekit.domain.CaptureEnrichmentCoordinator.ScanOutcome.Success ->
-                              _scanState.value = ScanState.Ready(text, outcome.result)
+                              _scanState.value = ScanState.Ready(text, outcome.result, outcome.confirmFirstNames)
                           dev.stapler.stelekit.domain.CaptureEnrichmentCoordinator.ScanOutcome.MatcherNotReady ->
                               _scanState.value = ScanState.NotReady
                           dev.stapler.stelekit.domain.CaptureEnrichmentCoordinator.ScanOutcome.TimedOut -> {
@@ -521,10 +560,9 @@ Phase 5: Tests
   ```
 - Files: `androidApp/src/main/kotlin/dev/stapler/stelekit/CaptureViewModel.kt`
 
-##### Task 2.3.1b: Add `saveOpMutex` and serialize `save()` against `acceptSuggestion()` (Blocker #2) (~4 min)
-- Add `private val saveOpMutex = Mutex()` next to `savedContext` (Task 2.3.2a). Wrap `save()`'s entire `scope.launch { }` body (the `performSave()` call, the `_saveState` update, and Task 2.3.2b's `savedContext = it` assignment) in `saveOpMutex.withLock { ... }` — matched by an identical wrap around `acceptSuggestion()`'s body (Task 4.1.1a). This closes the pre-save-accept/Save race (adversarial-review.md Blocker #2): whichever of `save()`/`acceptSuggestion()` starts first now runs to completion — including every mutation it makes to `_scanState`/`savedContext` — before the other is allowed to begin. `save()` can therefore never persist a block that's missing an accept already in flight, and `acceptSuggestion()` can never commit to its pre-save branch based on a `savedContext` snapshot a concurrent `save()` is about to invalidate. A `Mutex` around each whole method body is the chosen fix over re-checking `savedContext` mid-`acceptSuggestion()` (see Pattern Decisions table) — smaller diff, same idiom this file already uses for `coordinatorMutex`/`GraphWriter.saveMutex`.
-  - *Given* the user taps a suggestion chip's Accept region and then immediately taps Save, *When* `acceptSuggestion()` acquires `saveOpMutex` first, *Then* `save()`'s `scope.launch { }` blocks on `saveOpMutex.withLock { }` until the accept's stub-page write and `markAccepted()` link-fold have both completed and updated `_scanState`, so the subsequent `save()` snapshots `_scanState` *after* the link fold and persists a block that includes the accepted `[[link]]` — never a stale, unlinked snapshot.
-- Add `import kotlinx.coroutines.sync.Mutex` and `import kotlinx.coroutines.sync.withLock` if not already present.
+##### Task 2.3.1b: No mutex needed — `save()` reads `_scanState.value` as a plain, atomic `StateFlow` read (supersedes the earlier `saveOpMutex` fix) (~1 min)
+- **Cross-artifact consistency check finding**: an earlier repair pass wrapped `save()`'s entire body in `saveOpMutex.withLock { }`, matched by an identical wrap in `acceptSuggestion()` (Task 4.1.1a), to close a race where `save()` could read `_scanState` before a concurrent `acceptSuggestion()`'s link-fold had landed. That fix over-corrected: `acceptSuggestion()`'s critical section included the unbounded `GraphWriter.savePage` disk write for the stub page, so `save()` could now block waiting for that I/O — directly contradicting requirements.md AC #4/#5 ("Save is never blocked by enrichment") and `design/ux.md` UX AC #2 ("no spinner-wait"). Task 4.1.1a below fixes this at the source (accept's state fold is now synchronous and precedes any I/O, following `ImportViewModel.onSuggestionAccepted()`'s established pattern — `ui/screens/ImportViewModel.kt:309-321`, a plain synchronous `_state.update` with no `scope.launch` around it at all) — which means `save()` no longer needs a lock to see a consistent, already-folded `_scanState.value`: by the time any `save()` call runs, on the same single dispatcher, any prior `acceptSuggestion()`/`acceptExistingLink()` tap's synchronous fold has already completed (there is no suspension point between the tap and the fold for a subsequent call to race past). Remove `saveOpMutex` — do not add it. `save()`'s existing `val current = _scanState.value` (Task 2.3.1a) is already correct and needs no wrapping.
+  - *Given* the user taps a suggestion chip's Accept region and then immediately taps Save, *When* `onAccept`'s click handler calls `viewModel.acceptSuggestion(term)`, *Then* the `[[term]]` link-fold into `_scanState` happens synchronously inside that call, before it returns — so a `save()` invoked on the very next line (even before `acceptSuggestion()`'s async stub-page write has resolved) already observes the folded `_scanState.value` and persists a block that includes the accepted `[[link]]`, with no lock and no suspension window in which a stale read is possible.
 - Files: `androidApp/src/main/kotlin/dev/stapler/stelekit/CaptureViewModel.kt`
 
 #### Story 2.3.2: Retain `SavedCaptureContext` after a successful save (AC #9 prerequisite)
@@ -582,19 +620,26 @@ Phase 5: Tests
 
 **Files**: `androidApp/src/main/kotlin/dev/stapler/stelekit/CaptureActivity.kt`
 
-##### Task 3.1.1a: Add `CaptureSuggestionChip` private composable (~5 min)
-- New private `@Composable fun CaptureSuggestionChip(suggestion: TopicSuggestion, onAccept: () -> Unit, onDismiss: () -> Unit)` below `CaptureScreen` in the same file, structurally copying `ImportScreen.kt:551-606`'s `Row`/`Box`/`Icon` shape at reduced `padding`/`8.dp` dot size, with:
+##### Task 3.1.1a: Add `CaptureSuggestionChip` private composable — takes an explicit chip kind for the new-page/existing-link visual distinction (~6 min)
+- New private `@Composable fun CaptureSuggestionChip(term: String, confidence: Float?, kind: CaptureChipKind, onAccept: () -> Unit, onDismiss: () -> Unit)` below `CaptureScreen` in the same file, structurally copying `ImportScreen.kt:551-606`'s `Row`/`Box`/`Icon` shape at reduced `padding`/`8.dp` dot size. `confidence` is nullable because confirm-first "existing link" chips (Fix for pre-mortem.md P1 #2, Story 4.1.4) have no meaningful confidence score — they're an exact index match, not a heuristic guess; when `confidence == null` the confidence dot is omitted entirely rather than rendering a fake value.
+  ```kotlin
+  private enum class CaptureChipKind { NEW_PAGE, EXISTING_LINK }
+  ```
+  `kind` selects the chip's leading icon only — per AC #6's distinguishability requirement, resolved with a different icon (not a different color scheme, to keep the anatomy copy from `ImportScreen.kt` minimal): `Icons.Outlined.AddCircleOutline` (or equivalent "new" glyph) for `NEW_PAGE`, `Icons.Outlined.Link` for `EXISTING_LINK`, rendered where the confidence dot sits for `NEW_PAGE` chips (a small leading icon precedes the term either way — `EXISTING_LINK` chips just don't also show a confidence dot next to it).
   ```kotlin
   Modifier.semantics {
-      contentDescription = "Suggested page, ${suggestion.term}, " +
-          "confidence ${confidenceWord(suggestion.confidence)}. Double-tap to accept."
+      contentDescription = when (kind) {
+          CaptureChipKind.NEW_PAGE -> "Suggested page, $term, " +
+              "confidence ${confidenceWord(confidence ?: 0f)}. Double-tap to accept."
+          CaptureChipKind.EXISTING_LINK -> "Existing page, $term. Double-tap to link."
+      }
       customActions = listOf(
           CustomAccessibilityAction("Dismiss suggestion") { onDismiss(); true },
       )
   }
   ```
-  on the chip's root, giving TalkBack an equivalent affordance to the sighted `×` tap via the actions menu without changing the default double-tap action (still accept). Apply `Modifier.minimumInteractiveComponentSize()` to **both** `IconButton`s copied from the `ImportScreen.kt:551-620` anatomy — the accept region (`ImportScreen.kt:607-610`'s checkmark `IconButton`, `Modifier.size(20.dp)`) and the dismiss `×` `IconButton` — not only the dismiss one.
-- Add a private `confidenceWord(confidence: Float): String` helper (`"high"`/`"medium"`/`"low"` at the same 0.7/0.4 thresholds as `ImportScreen.kt:132-136`).
+  on the chip's root, giving TalkBack an equivalent affordance to the sighted `×` tap via the actions menu without changing the default double-tap action (still accept), and a distinct announcement for `EXISTING_LINK` chips that doesn't claim a "confidence" that doesn't apply. Apply `Modifier.minimumInteractiveComponentSize()` to **both** `IconButton`s copied from the `ImportScreen.kt:551-620` anatomy — the accept region (`ImportScreen.kt:607-610`'s checkmark `IconButton`, `Modifier.size(20.dp)`) and the dismiss `×` `IconButton` — not only the dismiss one.
+- Add a private `confidenceWord(confidence: Float): String` helper (`"high"`/`"medium"`/`"low"` at the same 0.7/0.4 thresholds as `ImportScreen.kt:132-136`) — used only for `NEW_PAGE` chips.
 - Add imports: `androidx.compose.ui.semantics.customActions`, `androidx.compose.ui.semantics.CustomAccessibilityAction`.
 - Files: `androidApp/src/main/kotlin/dev/stapler/stelekit/CaptureActivity.kt`
 
@@ -603,35 +648,52 @@ Phase 5: Tests
 **As a** user, **I want** at most 3–4 suggestions shown with no "Show more" control, **so that** the tray never competes with Save for my attention.
 
 **Acceptance Criteria**:
-- The tray renders only when `pendingSuggestions.isNotEmpty()` (no empty-state UI); `pendingSuggestions` is derived from `scanState` **gated on the same staleness check `save()`'s `textToSave` computation already uses (Story 2.3.1)**: only a `ScanState.Ready` whose `text` equals the current `captureText` contributes suggestions — a `Ready` computed against superseded text is treated as `NotReady` for tray-rendering purposes, exactly like it already is for save. Non-stale suggestions are filtered (`!dismissed && !accepted`), sorted by descending confidence, and capped at 4 — extras beyond 4 are silently truncated, no disclosure affordance (per requirements' explicit rejection of Accept-All-scale UI).
-  - *Given* a scan produces 7 local suggestions with varying confidence, *When* the tray renders, *Then* exactly the top 4 by confidence appear in the `LazyRow`, and there is no "Show 3 more" button anywhere in the composable tree.
-  - *Given* `scanState == ScanState.Ready(text = "old text", result = ...)` but the user has since typed further so `captureText.value == "old text plus more"` (the scan for the new text hasn't landed yet), *When* the tray computes `pendingSuggestions`, *Then* it evaluates to empty — the stale `Ready`'s suggestions never render, even for the up-to-one-debounce-cycle window before the new scan resolves (closes `design/ux.md` Surface 3 / Cross-Check Finding #1: the tray must not show suggestions computed against text the user has already edited away from).
+- The tray renders only when the combined chip list is non-empty (no empty-state UI); chips are derived from `scanState` **gated on the same staleness check `save()`'s `textToSave` computation already uses (Story 2.3.1)**: only a `ScanState.Ready` whose `text` equals the current `captureText` contributes chips — a `Ready` computed against superseded text is treated as `NotReady` for tray-rendering purposes, exactly like it already is for save. The tray combines **two buckets** into one capped, ordered list: confirm-first "existing link" chips from `confirmFirstNames` (Fix for pre-mortem.md P1 #2 — Task 1.1.1b's precision floor withheld these from auto-linking, so the tray is their only path into the saved text) and new-page chips from `topicSuggestions` filtered `!dismissed && !accepted`. Existing-link chips are placed first (an exact index match is higher-certainty than a heuristic new-page guess), followed by new-page chips sorted by descending confidence; the combined list is capped at 4 total — extras beyond 4 are silently truncated, no disclosure affordance (per requirements' explicit rejection of Accept-All-scale UI).
+  - *Given* a scan produces 7 local new-page suggestions with varying confidence and zero confirm-first names, *When* the tray renders, *Then* exactly the top 4 by confidence appear in the `LazyRow`, and there is no "Show 3 more" button anywhere in the composable tree — unchanged from before this fix.
+  - *Given* a scan produces `confirmFirstNames = ["Today"]` and 3 new-page suggestions, *When* the tray renders, *Then* all 4 chips appear (the "Today" existing-link chip first, then the 3 new-page chips) — the combined cap is 4 total, not 4-per-bucket.
+  - *Given* `scanState == ScanState.Ready(text = "old text", result = ..., confirmFirstNames = ["Today"])` but the user has since typed further so `captureText.value == "old text plus more"` (the scan for the new text hasn't landed yet), *When* the tray computes its chip list, *Then* it evaluates to empty — the stale `Ready`'s chips (from either bucket) never render, even for the up-to-one-debounce-cycle window before the new scan resolves (closes `design/ux.md` Surface 3 / Cross-Check Finding #1: the tray must not show suggestions computed against text the user has already edited away from).
 - `Modifier.semantics { liveRegion = LiveRegionMode.Polite }` on the tray container (not `Assertive`), so TalkBack announces new suggestions only at a natural pause, never interrupting active typing.
 
 **Files**: `androidApp/src/main/kotlin/dev/stapler/stelekit/CaptureActivity.kt`
 
-##### Task 3.1.2a: Add the tray `LazyRow` to `CaptureScreen`, below the text field (~5 min)
-- Insert between the existing `OutlinedTextField` block and the `Row` of Dismiss/Save buttons (`CaptureActivity.kt:321-322`). `captureText` is already collected earlier in `CaptureScreen` (`CaptureActivity.kt:236`) — reuse it, don't re-declare it. The `takeIf { it.text == captureText }` gate is the staleness check (same idiom `design/ux.md` Surface 3 recommends, mirroring `textToSave`'s gate in Task 2.3.1a):
+##### Task 3.1.2a: Add the tray `LazyRow` to `CaptureScreen`, below the text field — combining both chip buckets (~7 min)
+- Insert between the existing `OutlinedTextField` block and the `Row` of Dismiss/Save buttons (`CaptureActivity.kt:321-322`). `captureText` is already collected earlier in `CaptureScreen` (`CaptureActivity.kt:236`) — reuse it, don't re-declare it. The `takeIf { it.text == captureText }` gate is the staleness check (same idiom `design/ux.md` Surface 3 recommends, mirroring `textToSave`'s gate in Task 2.3.1a). A small private rendering-only wrapper (`CaptureChipItem`) unifies the two buckets for the `LazyRow`'s `items(...)` call without touching the shared `TopicSuggestion` domain type:
   ```kotlin
+  private sealed interface CaptureChipItem {
+      val term: String
+      data class NewPage(override val term: String, val confidence: Float) : CaptureChipItem
+      data class ExistingLink(override val term: String) : CaptureChipItem
+  }
+
   val scanState by viewModel.scanState.collectAsState()
-  val pendingSuggestions = (scanState as? CaptureViewModel.ScanState.Ready)
-      ?.takeIf { it.text == captureText }
-      ?.result?.topicSuggestions
+  val readyState = (scanState as? CaptureViewModel.ScanState.Ready)?.takeIf { it.text == captureText }
+  val existingLinkChips: List<CaptureChipItem> = readyState?.confirmFirstNames
+      ?.map { CaptureChipItem.ExistingLink(it) }
+      .orEmpty()
+  val newPageChips: List<CaptureChipItem> = readyState?.result?.topicSuggestions
       ?.filterNot { it.dismissed || it.accepted }
       ?.sortedByDescending { it.confidence }
-      ?.take(4)
+      ?.map { CaptureChipItem.NewPage(it.term, it.confidence) }
       .orEmpty()
-  if (pendingSuggestions.isNotEmpty()) {
+  val pendingChips = (existingLinkChips + newPageChips).take(4)
+  if (pendingChips.isNotEmpty()) {
       LazyRow(
           modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
           horizontalArrangement = Arrangement.spacedBy(8.dp),
       ) {
-          items(pendingSuggestions, key = { it.term }) { suggestion ->
-              CaptureSuggestionChip(
-                  suggestion = suggestion,
-                  onAccept = { viewModel.acceptSuggestion(suggestion.term) },
-                  onDismiss = { viewModel.dismissSuggestion(suggestion.term) },
-              )
+          items(pendingChips, key = { it.term }) { chip ->
+              when (chip) {
+                  is CaptureChipItem.NewPage -> CaptureSuggestionChip(
+                      term = chip.term, confidence = chip.confidence, kind = CaptureChipKind.NEW_PAGE,
+                      onAccept = { viewModel.acceptSuggestion(chip.term) },
+                      onDismiss = { viewModel.dismissSuggestion(chip.term) },
+                  )
+                  is CaptureChipItem.ExistingLink -> CaptureSuggestionChip(
+                      term = chip.term, confidence = null, kind = CaptureChipKind.EXISTING_LINK,
+                      onAccept = { viewModel.acceptExistingLink(chip.term) },
+                      onDismiss = { viewModel.dismissExistingLinkSuggestion(chip.term) },
+                  )
+              }
           }
       }
       Spacer(Modifier.height(8.dp))
@@ -669,8 +731,9 @@ Phase 5: Tests
 **As a** user, **I want** to see which existing pages my capture will link to, **so that** I can catch an obviously-wrong auto-link before saving, without the app rewriting what I'm actively typing.
 
 **Acceptance Criteria**:
-- When `scanState is ScanState.Ready` and `result.linkedText != freeText` (at least one auto-link applied), render a small read-only caption below the text field showing the linked form; otherwise render nothing (no empty-state).
+- When `scanState is ScanState.Ready` and `result.linkedText != freeText` (at least one auto-link applied), render a small read-only caption below the text field showing the linked form; otherwise render nothing (no empty-state). Because `result.linkedText` (Task 1.1.1b) now only ever contains the auto-apply bucket — confirm-first matches (pre-mortem.md P1 #2) are withheld from it entirely — this caption never shows a bracketed confirm-first term; those surface only as tray chips (Story 3.1.2), never as an already-applied-looking preview.
   - *Given* `scanState == ScanState.Ready(text = "Reading about Kotlin Multiplatform", result = ScanResult(linkedText = "Reading about [[Kotlin Multiplatform]]", ...))`, *When* `CaptureScreen` renders, *Then* a `Text` composable shows `"Reading about [[Kotlin Multiplatform]]"` in a muted/secondary style, and the `OutlinedTextField`'s own `value` remains the unmodified `captureText` the user is editing — the field is never overwritten by `linkedText`.
+  - *Given* `scanState == ScanState.Ready(text = "Notes for Today", result = ScanResult(linkedText = "Notes for Today", ...), confirmFirstNames = ["Today"])` (a confirm-first-only match, no auto-applies), *When* `CaptureScreen` renders, *Then* no preview caption renders at all (`result.linkedText == freeText`) — "Today" appears only as a confirm chip in the tray, never as bracketed text below the field.
 
 **Files**: `androidApp/src/main/kotlin/dev/stapler/stelekit/CaptureActivity.kt`
 
@@ -703,58 +766,99 @@ Phase 5: Tests
 **As a** user, **I want** tapping a suggestion chip before I've saved to create the page and link it in, **so that** my capture lands already-connected to the graph.
 
 **Acceptance Criteria**:
-- `CaptureViewModel.acceptSuggestion(term: String)`, when `savedContext == null` (pre-save), constructs a throwaway `GraphWriter(fileSystem, writeActor = repoSet.writeActor)` and calls `writer.savePage(Page(name = term, ...), emptyList(), graphPath)`; on `Either.Left`, logs and returns without throwing (AC #7) — matches Given-When-Then under AC #2/#7 above.
-- On success, `_scanState` is updated so the accepted term's `[[link]]` is folded into the text that will be saved (via `ImportService.insertWikiLinks`), and the suggestion is marked `accepted = true` so it stops rendering as a pending chip (Task 3.1.2a's filter already excludes `accepted`).
-- The entire method body runs inside `saveOpMutex.withLock { }` (Task 2.3.1b), so an in-flight `save()` and an in-flight `acceptSuggestion()` can never interleave (adversarial-review.md Blocker #2) — see Task 2.3.1b's Given-When-Then for the race this closes.
+- **Synchronous-fold-then-async-write** (cross-artifact consistency fix, supersedes the earlier `saveOpMutex` design — see Pattern Decisions table and Task 2.3.1b): `CaptureViewModel.acceptSuggestion(term: String)`'s *first* action, before any `suspend`/`launch`/I/O, is a synchronous call to `markAccepted(term)` — folding the `[[term]]` link into `_scanState` and removing the suggestion from the pending chip list, with no suspension point between the tap and this update, exactly matching `ImportViewModel.onSuggestionAccepted()`'s pattern (`ui/screens/ImportViewModel.kt:309-321`: a plain synchronous `_state.update`, not wrapped in `scope.launch` at all). Only *after* that synchronous fold does `acceptSuggestion()` launch a separate, unguarded `scope.launch { }` to perform the actual stub-page `GraphWriter.savePage(...)` write asynchronously (pre-save) or the post-save second write (Epic 4.2) — this async part shares no mutex with `save()`.
+- If the async stub-page write fails (`Either.Left`), it is logged and surfaced via Story 4.1.3's chip-failure snackbar (AC #7) — but the already-folded `[[link]]` is **not** reverted. A link to a not-yet-created page is not "silent page creation" (no page was created); it's an unlinked reference the user can create later, the same as any other `[[link]]` to a nonexistent page elsewhere in this app.
+- `save()` needs no lock to observe the folded state: because the fold in `markAccepted()` is synchronous and precedes any suspension, any `save()` call issued after a chip tap — even one queued immediately after on the same dispatcher — already sees the folded `_scanState.value` (Task 2.3.1b).
 
 **Files**: `androidApp/src/main/kotlin/dev/stapler/stelekit/CaptureViewModel.kt`
 
-##### Task 4.1.1a: Add `acceptSuggestion()` pre-save branch, serialized via `saveOpMutex` (Blocker #2), isolated `Either.Left` handling (~6 min)
+##### Task 4.1.1a: Add `acceptSuggestion()` — synchronous fold first, async stub-page write second, isolated `Either.Left` handling (~6 min)
 - ```kotlin
   fun acceptSuggestion(term: String) {
+      // Synchronous, immediate — no suspension point between the tap and this fold.
+      // Matches ImportViewModel.onSuggestionAccepted()'s precedent exactly: the state
+      // update that determines what save() will persist must never wait on I/O.
+      markAccepted(term)
+      val ctx = savedContext
       scope.launch {
-          saveOpMutex.withLock {
-              val ctx = savedContext
-              if (ctx == null) {
-                  val steleApp = getApplication<SteleKitApplication>()
-                  val graphManager = steleApp.graphManager ?: return@withLock
-                  val repoSet = graphManager.getActiveRepositorySet() ?: return@withLock
-                  val graphPath = graphManager.getActiveGraphInfo()?.path ?: return@withLock
-                  val existing = repoSet.pageRepository.getPageByName(term).first().getOrNull()
-                  if (existing == null) {
-                      val stubPage = dev.stapler.stelekit.model.Page(
-                          uuid = dev.stapler.stelekit.model.PageUuid(UuidGenerator.generateV7()),
-                          name = term, createdAt = Clock.System.now(), updatedAt = Clock.System.now(),
-                      )
-                      val writer = GraphWriter(steleApp.fileSystem, writeActor = repoSet.writeActor)
-                      writer.savePage(stubPage, emptyList(), graphPath).onLeft {
-                          logger.error("Stub page save failed for '$term': $it")
-                          return@withLock
-                      }
-                  }
-                  markAccepted(term)
-              } else {
-                  acceptSuggestionPostSave(ctx, term)  // Epic 4.2
-              }
+          if (ctx == null) {
+              createStubPage(term)  // pre-save: async, unguarded, no mutex with save()
+          } else {
+              acceptSuggestionPostSave(ctx, term)  // post-save, Epic 4.2
           }
       }
   }
+
+  private suspend fun createStubPage(term: String) {
+      val steleApp = getApplication<SteleKitApplication>()
+      val graphManager = steleApp.graphManager ?: return
+      val repoSet = graphManager.getActiveRepositorySet() ?: return
+      val graphPath = graphManager.getActiveGraphInfo()?.path ?: return
+      val existing = repoSet.pageRepository.getPageByName(term).first().getOrNull()
+      if (existing != null) return  // already exists — markAccepted() already folded the link
+      val stubPage = dev.stapler.stelekit.model.Page(
+          uuid = dev.stapler.stelekit.model.PageUuid(UuidGenerator.generateV7()),
+          name = term, createdAt = Clock.System.now(), updatedAt = Clock.System.now(),
+      )
+      val writer = GraphWriter(steleApp.fileSystem, writeActor = repoSet.writeActor)
+      writer.savePage(stubPage, emptyList(), graphPath).onLeft {
+          logger.error("Stub page save failed for '$term': $it")
+          _chipFailure.tryEmit("Couldn't create page for \"$term\"")
+          // Deliberately not reverting markAccepted()'s fold — see Story 4.1.1's AC:
+          // the link stays; only the stub page failed to materialize.
+      }
+  }
   ```
-- Note: `return@launch` from the original draft is replaced with `return@withLock` throughout, since every early-return now needs to release the mutex (which `withLock` does automatically) rather than just exiting the coroutine.
+- Note: this replaces the earlier draft's `saveOpMutex.withLock { }` wrapper entirely — `acceptSuggestion()` is no longer serialized against `save()` by a lock, because `markAccepted(term)` running to completion synchronously, before `scope.launch` is even called, is what makes the race impossible (Task 2.3.1b).
 - Files: `androidApp/src/main/kotlin/dev/stapler/stelekit/CaptureViewModel.kt`
 
-##### Task 4.1.1b: Add `markAccepted()` to fold the link into pending `_scanState` (~4 min)
-- ```kotlin
+##### Task 4.1.1b: Add `markAccepted()` to fold the link into pending `_scanState` — synchronous, no suspension point (~4 min)
+- Called as the *first* statement of both `acceptSuggestion()` (Task 4.1.1a) and `acceptExistingLink()` (Task 4.1.4a below) — must stay a plain synchronous function (no `suspend`) so it can run before either caller's `scope.launch { }`. Also clears the term from `confirmFirstNames` (Fix for pre-mortem.md P1 #2) since a confirm-first chip accept has no `TopicSuggestion` entry to mark — removing from `confirmFirstNames` is what makes the tray (Task 3.1.2a) stop rendering it; `- term` on a list that doesn't contain it is a no-op, so this is safe to call unconditionally for either chip kind:
+  ```kotlin
   private fun markAccepted(term: String) {
       _scanState.update { state ->
           if (state !is ScanState.Ready) return@update state
           val updatedSuggestions = state.result.topicSuggestions.map {
               if (it.term == term) it.copy(accepted = true) else it
           }
-          state.copy(result = state.result.copy(
-              linkedText = ImportService.insertWikiLinks(state.result.linkedText, listOf(term)),
-              topicSuggestions = updatedSuggestions,
-          ))
+          state.copy(
+              result = state.result.copy(
+                  linkedText = ImportService.insertWikiLinks(state.result.linkedText, listOf(term)),
+                  topicSuggestions = updatedSuggestions,
+              ),
+              confirmFirstNames = state.confirmFirstNames - term,
+          )
+      }
+  }
+  ```
+- Files: `androidApp/src/main/kotlin/dev/stapler/stelekit/CaptureViewModel.kt`
+
+#### Story 4.1.4: `acceptExistingLink()` — confirm-first chip accept (AC #1, #2, #6; pre-mortem.md P1 #2)
+
+**As a** user, **I want** a short, generic existing-page match ("Today") to require my confirmation before it's linked, **so that** ordinary prose isn't silently rewritten.
+
+**Acceptance Criteria**:
+- `CaptureViewModel.acceptExistingLink(term: String)` folds the `[[term]]` link synchronously via the same `markAccepted(term)` used by `acceptSuggestion()` (Task 4.1.1b) — no suspension point, matching Fix #1's pattern. Unlike `acceptSuggestion()`, it performs **no stub-page creation**: the page already exists (that's exactly why the coordinator put it in `confirmFirstNames` rather than the new-page `topicSuggestions` bucket), so pre-save there is nothing left to do after the fold.
+- Post-save (`savedContext != null`), it still needs the second write to persist the fold into the already-saved block (AC #9) — it launches `scope.launch { acceptExistingLinkPostSave(ctx, term) }` (Epic 4.2), which reuses the same second-write machinery as `acceptSuggestionPostSave()` minus the stub-existence-check/creation step (the existence check already happened during `scan()`).
+- `dismissExistingLinkSuggestion(term: String)` removes `term` from `confirmFirstNames` synchronously, no coroutine/write involved — the confirm-first sibling of `dismissSuggestion()` (Task 4.1.2a).
+  - *Given* `scanState.confirmFirstNames == ["Today"]` and the user taps the "Today" confirm chip's Accept region *before* Save, *When* `acceptExistingLink("Today")` runs, *Then* `_scanState.value.result.linkedText` gains `[[Today]]` synchronously, `confirmFirstNames` no longer contains `"Today"`, and no `GraphWriter.savePage` call happens for "Today" at all (only `acceptSuggestion()`'s new-page path ever creates a stub page).
+  - *Given* the same chip is tapped *after* Save (`savedContext != null`), *When* `acceptExistingLink("Today")` runs, *Then* the synchronous fold happens immediately as above, and a second `writeActor.saveBlock(...)` call (Epic 4.2) persists the folded link into the already-saved block — with no stub-page `savePage` call preceding it.
+  - *Given* the user instead taps the "Today" chip's dismiss `×`, *When* `dismissExistingLinkSuggestion("Today")` runs, *Then* `confirmFirstNames` no longer contains `"Today"`, `_scanState.value.result.linkedText` is unchanged (no `[[Today]]` inserted), and no write of any kind happens.
+
+**Files**: `androidApp/src/main/kotlin/dev/stapler/stelekit/CaptureViewModel.kt`
+
+##### Task 4.1.4a: Add `acceptExistingLink()` and `dismissExistingLinkSuggestion()` (~4 min)
+- ```kotlin
+  fun acceptExistingLink(term: String) {
+      markAccepted(term)  // synchronous fold — same helper acceptSuggestion() uses
+      val ctx = savedContext ?: return  // pre-save: the fold above was the whole job
+      scope.launch { acceptExistingLinkPostSave(ctx, term) }  // Epic 4.2
+  }
+
+  fun dismissExistingLinkSuggestion(term: String) {
+      _scanState.update { state ->
+          if (state !is ScanState.Ready) return@update state
+          state.copy(confirmFirstNames = state.confirmFirstNames - term)
       }
   }
   ```
@@ -811,9 +915,9 @@ Phase 5: Tests
   writer.savePage(stubPage, emptyList(), graphPath).onLeft {
       logger.error("Stub page save failed for '$term': $it")
       _chipFailure.tryEmit("Couldn't create page for \"$term\"")
-      return@withLock
   }
   ```
+- No `saveOpMutex`/`withLock` wraps this call (removed by Fix #1) — `onLeft {}`'s lambda already terminates naturally after logging/emitting, so no early-return statement is needed here.
 - Files: `androidApp/src/main/kotlin/dev/stapler/stelekit/CaptureViewModel.kt`
 
 ##### Task 4.1.3c: Collect `chipFailure` in `CaptureScreen` via the existing `snackbarHostState` (~3 min)
@@ -831,29 +935,36 @@ Phase 5: Tests
 
 ### Epic 4.2: Post-save write-back (AC #9)
 
-**Goal**: Exactly the 5-step sequence from `research/architecture.md` Q2, with PF-5's `ClosedSendChannelException` guard.
+**Goal**: Exactly the 5-step sequence from `research/architecture.md` Q2, with PF-5's `ClosedSendChannelException` guard. Factored so the confirm-first path (Fix for pre-mortem.md P1 #2, Story 4.1.4) can reuse the same second-write machinery without repeating the stub-existence-check/creation step it doesn't need.
 
-#### Story 4.2.1: `acceptSuggestionPostSave()` — second write on the same `writer`/`writeActor`
+#### Story 4.2.1: `acceptSuggestionPostSave()` / `acceptExistingLinkPostSave()` — second write on the same `writer`/`writeActor`
 
-**As a** user who already tapped Save, **I want** to still be able to accept a pending chip, **so that** I don't lose the enrichment opportunity just because I saved quickly.
+**As a** user who already tapped Save, **I want** to still be able to accept a pending chip (new-page or confirm-existing-link), **so that** I don't lose the enrichment opportunity just because I saved quickly.
 
 **Acceptance Criteria**:
-- `acceptSuggestionPostSave(ctx: SavedCaptureContext, term: String)` first compares `ctx.graphId` against `GraphManager.getActiveGraphId()`; on a mismatch it short-circuits to a logged, isolated "suggestion not applied — graph changed" failure and does **not** touch any repository or writer (Blocker #1 — the exact ADR-002 constraint 1 violation architecture-review.md and adversarial-review.md both flagged). Only if the graph is still current does it re-check `ctx.pageRepository.getPageByName(term)` immediately before creating the stub (FM-5 — the post-save window is unbounded, per PF-4, so this re-check matters more here than in Import's bounded review screen) — **never** a freshly-fetched "active" `RepositorySet`. It then does exactly: (1) `ctx.writer.savePage(stubPage, ...)` isolated per AC #7, (2) build `updatedBlock = ctx.block.copy(content = ImportService.insertWikiLinks(ctx.block.content, listOf(term)))`, (3) `ctx.writeActor?.saveBlock(updatedBlock)` (falling back to `ctx.blockRepository` if `writeActor` is null) wrapped in the same `try { } catch (e: ClosedSendChannelException) { ... }` guard `performSave()`'s first write already has, with a **distinct**, non-"please retry" message (PF-5), (4) `ctx.writer.savePage(ctx.page, updatedBlocks, ctx.graphPath)`, (5) `savedContext = ctx.copy(block = updatedBlock, blocks = updatedBlocks)` so a second chip accept in the same window still works.
-  - *Given* `savedContext = SavedCaptureContext(block = Block(uuid = BlockUuid("b1"), content = "Reading about Kotlin"), graphId = GraphId("g1"), ..., writer = W, writeActor = A, pageRepository = P)` and the active graph is still `GraphId("g1")` when the user taps a "Multiplatform" chip, *When* `acceptSuggestionPostSave` runs, *Then* the existence check goes through `P.getPageByName("Multiplatform")` (never a freshly-fetched repo set), `A.saveBlock(Block(uuid = BlockUuid("b1"), content = "Reading about [[Multiplatform]] Kotlin"))` is called exactly once (same `BlockUuid`, same actor instance `A`), and `W.savePage(...)` is called exactly once more on the same `GraphWriter` instance `W`.
-  - *Given* the same `savedContext` (`graphId = GraphId("g1")`) but the user has since switched the active graph to `GraphId("g2")` before tapping the chip, *When* `acceptSuggestionPostSave` runs, *Then* it detects `GraphManager.getActiveGraphId() == GraphId("g2") != ctx.graphId`, logs a "suggestion not applied — graph changed" failure, and returns immediately — `g2`'s `pageRepository` is never queried and `g1`'s block/page are never touched from this call.
+- Both entry points first compare `ctx.graphId` against `GraphManager.getActiveGraphId()`; on a mismatch they short-circuit to a logged, isolated "suggestion not applied — graph changed" failure and do **not** touch any repository or writer (Blocker #1 — the exact ADR-002 constraint 1 violation architecture-review.md and adversarial-review.md both flagged). This check is factored into a shared private helper (`graphStillActive(ctx, term): Boolean`) so both paths enforce it identically.
+- `acceptSuggestionPostSave(ctx, term)` (new-page chips): after the identity check, re-checks `ctx.pageRepository.getPageByName(term)` immediately before creating the stub (FM-5 — the post-save window is unbounded, per PF-4) — **never** a freshly-fetched "active" `RepositorySet` — then creates the stub page (`ctx.writer.savePage`, isolated per AC #7), then delegates to the shared second-write helper below.
+- `acceptExistingLinkPostSave(ctx, term)` (confirm-first chips, Story 4.1.4): after the identity check, delegates **directly** to the shared second-write helper — **no** existence check and **no** stub-page creation, since the coordinator's `scan()` (Task 1.1.1b) already confirmed the page exists before ever putting `term` in `confirmFirstNames`; re-creating a stub for a page already known to exist would be redundant work, not a correctness requirement.
+- The shared `writeLinkedBlockPostSave(ctx, term)` helper does exactly the remaining steps of the original 5-step sequence: (1) build `updatedBlock = ctx.block.copy(content = ImportService.insertWikiLinks(ctx.block.content, listOf(term)))`, (2) `ctx.writeActor?.saveBlock(updatedBlock)` (falling back to `ctx.blockRepository` if `writeActor` is null) wrapped in the same `try { } catch (e: ClosedSendChannelException) { ... }` guard `performSave()`'s first write already has, with a **distinct**, non-"please retry" message (PF-5), (3) `ctx.writer.savePage(ctx.page, updatedBlocks, ctx.graphPath)`, (4) `savedContext = ctx.copy(block = updatedBlock, blocks = updatedBlocks)` so a second chip accept in the same window still works, (5) `markAccepted(term)` to keep tray state in sync.
+  - *Given* `savedContext = SavedCaptureContext(block = Block(uuid = BlockUuid("b1"), content = "Reading about Kotlin"), graphId = GraphId("g1"), ..., writer = W, writeActor = A, pageRepository = P)` and the active graph is still `GraphId("g1")` when the user taps a "Multiplatform" new-page chip, *When* `acceptSuggestionPostSave` runs, *Then* the existence check goes through `P.getPageByName("Multiplatform")` (never a freshly-fetched repo set), `A.saveBlock(Block(uuid = BlockUuid("b1"), content = "Reading about [[Multiplatform]] Kotlin"))` is called exactly once (same `BlockUuid`, same actor instance `A`), and `W.savePage(...)` is called exactly once more on the same `GraphWriter` instance `W`.
+  - *Given* the same `savedContext` but the user taps a "Today" confirm-first chip (page already exists) instead, *When* `acceptExistingLinkPostSave` runs, *Then* `P.getPageByName("Today")` is never called and `W.savePage(stubPage, ...)` for a stub is never called — only the shared `writeLinkedBlockPostSave` steps run (one `A.saveBlock(...)`, one `W.savePage(ctx.page, ...)` flush).
+  - *Given* the same `savedContext` (`graphId = GraphId("g1")`) but the user has since switched the active graph to `GraphId("g2")` before tapping either kind of chip, *When* the corresponding post-save method runs, *Then* it detects `GraphManager.getActiveGraphId() == GraphId("g2") != ctx.graphId`, logs a "suggestion not applied — graph changed" failure, and returns immediately — `g2`'s `pageRepository` is never queried and `g1`'s block/page are never touched from this call.
   - *Given* a `ClosedSendChannelException` is thrown from `ctx.writeActor.saveBlock(...)` (the actor's channel was closed by a graph switch that happened to race past the identity check above), *When* it is caught, *Then* the surfaced error message is distinct from `performSave()`'s `"Graph switched during save — please retry"` (e.g. `"Suggestion could not be applied — the graph changed"`) and the already-saved block content is left untouched (no retry of the *original* save is implied).
 
 **Files**: `androidApp/src/main/kotlin/dev/stapler/stelekit/CaptureViewModel.kt`
 
-##### Task 4.2.1a: Add `acceptSuggestionPostSave()` — graph-identity guard, then pre-accept existence re-check via `ctx.pageRepository` (~6 min)
+##### Task 4.2.1a: Add the shared graph-identity guard + `acceptSuggestionPostSave()`'s stub-existence re-check (~6 min)
 - ```kotlin
-  private suspend fun acceptSuggestionPostSave(ctx: SavedCaptureContext, term: String) {
+  private fun graphStillActive(ctx: SavedCaptureContext, term: String): Boolean {
       val graphManager = getApplication<SteleKitApplication>().graphManager
-      if (graphManager?.getActiveGraphId() != ctx.graphId) {
-          logger.error("Suggestion '$term' not applied — active graph changed since save")
-          _chipFailure.tryEmit("Couldn't link \"$term\" — the graph changed")
-          return
-      }
+      if (graphManager?.getActiveGraphId() == ctx.graphId) return true
+      logger.error("Suggestion '$term' not applied — active graph changed since save")
+      _chipFailure.tryEmit("Couldn't link \"$term\" — the graph changed")
+      return false
+  }
+
+  private suspend fun acceptSuggestionPostSave(ctx: SavedCaptureContext, term: String) {
+      if (!graphStillActive(ctx, term)) return
       val existing = ctx.pageRepository.getPageByName(term).first().getOrNull()
       if (existing == null) {
           val stubPage = dev.stapler.stelekit.model.Page(
@@ -866,40 +977,42 @@ Phase 5: Tests
               return
           }
       }
-      // Task 4.2.1b continues here (second saveBlock + savePage)
+      writeLinkedBlockPostSave(ctx, term)  // Task 4.2.1b
   }
   ```
-- The graph-identity guard is the Blocker #1 fix: it replaces the old draft's `steleApp.graphManager?.getActiveRepositorySet()` fetch (which queried whatever graph happened to be active *now*, not the one `ctx` was captured for) with a comparison against `ctx.graphId`, plus reads that go through `ctx.pageRepository` exclusively from this point on.
-- The two `_chipFailure.tryEmit(...)` calls are Task 4.1.3a's channel (defined earlier in this file, ahead of Phase 4 in implementation order) — see Story 4.1.3.
+- The graph-identity guard is the Blocker #1 fix: it replaces the old draft's `steleApp.graphManager?.getActiveRepositorySet()` fetch (which queried whatever graph happened to be active *now*, not the one `ctx` was captured for) with a comparison against `ctx.graphId`, plus reads that go through `ctx.pageRepository` exclusively from this point on. Factoring it into `graphStillActive()` lets `acceptExistingLinkPostSave()` (Task 4.2.1d) reuse it verbatim.
+- The `_chipFailure.tryEmit(...)` calls are Task 4.1.3a's channel (defined earlier in this file, ahead of Phase 4 in implementation order) — see Story 4.1.3.
 - Files: `androidApp/src/main/kotlin/dev/stapler/stelekit/CaptureViewModel.kt`
 
-##### Task 4.2.1b: Second `saveBlock()` with `ClosedSendChannelException` guard, distinct message (~5 min)
-- Append to `acceptSuggestionPostSave()`:
-  ```kotlin
-  val updatedBlock = ctx.block.copy(
-      content = ImportService.insertWikiLinks(ctx.block.content, listOf(term)),
-      updatedAt = Clock.System.now(),
-  )
-  val writeResult = try {
-      if (ctx.writeActor != null) ctx.writeActor.saveBlock(updatedBlock)
-      else { @OptIn(DirectRepositoryWrite::class) ctx.blockRepository.saveBlock(updatedBlock) }
-  } catch (e: ClosedSendChannelException) {
-      logger.error("Suggestion '$term' not applied — graph changed during post-save write")
-      _chipFailure.tryEmit("Couldn't link \"$term\" — the graph changed")
-      return
-  }
-  writeResult.onLeft {
-      logger.error("Post-save block write failed for '$term': $it")
-      _chipFailure.tryEmit("Couldn't link \"$term\"")
-      return
+##### Task 4.2.1b: Add the shared `writeLinkedBlockPostSave()` — second `saveBlock()` with `ClosedSendChannelException` guard, distinct message (~5 min)
+- ```kotlin
+  private suspend fun writeLinkedBlockPostSave(ctx: SavedCaptureContext, term: String) {
+      val updatedBlock = ctx.block.copy(
+          content = ImportService.insertWikiLinks(ctx.block.content, listOf(term)),
+          updatedAt = Clock.System.now(),
+      )
+      val writeResult = try {
+          if (ctx.writeActor != null) ctx.writeActor.saveBlock(updatedBlock)
+          else { @OptIn(DirectRepositoryWrite::class) ctx.blockRepository.saveBlock(updatedBlock) }
+      } catch (e: ClosedSendChannelException) {
+          logger.error("Suggestion '$term' not applied — graph changed during post-save write")
+          _chipFailure.tryEmit("Couldn't link \"$term\" — the graph changed")
+          return
+      }
+      writeResult.onLeft {
+          logger.error("Post-save block write failed for '$term': $it")
+          _chipFailure.tryEmit("Couldn't link \"$term\"")
+          return
+      }
+      // Task 4.2.1c continues here (writer.savePage flush + savedContext update)
   }
   ```
 - Note: the `writeActor == null` fallback now goes through `ctx.blockRepository` (captured in `SavedCaptureContext`, Task 2.3.2a) instead of a freshly-fetched "active" repo set — the same graph-identity fix as the existence check in Task 4.2.1a applies symmetrically here, since a fresh fetch would have the identical wrong-graph failure mode.
-- The two `_chipFailure.tryEmit(...)` calls reuse Task 4.1.3a's channel (Story 4.1.3) — same pattern as Task 4.2.1a, message text matches PF-5's distinct-from-save-retry requirement.
+- Both `_chipFailure.tryEmit(...)` calls reuse Task 4.1.3a's channel (Story 4.1.3) — same pattern as Task 4.2.1a, message text matches PF-5's distinct-from-save-retry requirement. Shared by both `acceptSuggestionPostSave()` and `acceptExistingLinkPostSave()`.
 - Files: `androidApp/src/main/kotlin/dev/stapler/stelekit/CaptureViewModel.kt`
 
 ##### Task 4.2.1c: Flush via `ctx.writer.savePage()` and update `savedContext` (~4 min)
-- Append to `acceptSuggestionPostSave()`:
+- Append to `writeLinkedBlockPostSave()`:
   ```kotlin
   val updatedBlocks = ctx.blocks.map { if (it.uuid == updatedBlock.uuid) updatedBlock else it }
   ctx.writer.savePage(ctx.page, updatedBlocks, ctx.graphPath).onLeft {
@@ -909,6 +1022,16 @@ Phase 5: Tests
   savedContext = ctx.copy(block = updatedBlock, blocks = updatedBlocks)
   markAccepted(term)
   ```
+- Files: `androidApp/src/main/kotlin/dev/stapler/stelekit/CaptureViewModel.kt`
+
+##### Task 4.2.1d: Add `acceptExistingLinkPostSave()` — confirm-first chips skip the stub-existence-check/creation entirely (~3 min) (pre-mortem.md P1 #2)
+- ```kotlin
+  private suspend fun acceptExistingLinkPostSave(ctx: SavedCaptureContext, term: String) {
+      if (!graphStillActive(ctx, term)) return
+      writeLinkedBlockPostSave(ctx, term)
+  }
+  ```
+- Called from `CaptureViewModel.acceptExistingLink()` (Task 4.1.4a) once `savedContext != null`. No existence check, no stub `Page`/`savePage` call — the coordinator already established `term` names an existing page before ever surfacing it as a confirm-first chip (Task 1.1.1b's `partitionForAutoApply()`), so re-verifying or re-creating it here would be redundant, not defensive.
 - Files: `androidApp/src/main/kotlin/dev/stapler/stelekit/CaptureViewModel.kt`
 
 ---
@@ -1000,11 +1123,13 @@ Covered by **Task 1.2.2a** (`GraphManagerEnrichmentCoordinatorTest`). One additi
 - *Given* a matcher that is ready but a scan body artificially delayed past `budgetMs`, *When* `coordinator.scan(text, budgetMs = 10)` is called, *Then* it returns `ScanOutcome.TimedOut` — distinguishable from `MatcherNotReady` by type, not just by both being `null`.
 - *Given* `topicEnricher.enhance()` throws (a fake `TopicEnricher` that throws `RuntimeException`), *When* `coordinator.enhance(text, local)` is called, *Then* it returns `local` unchanged and does not propagate the exception.
 - *Given* `topicEnricher.enhance()` returns normally with `[TopicSuggestion(term = "", confidence = 5f, ...), TopicSuggestion(term = "Dup", confidence = 0.5f, ...), TopicSuggestion(term = "dup", confidence = 0.9f, ...)]`, *When* `coordinator.enhance(text, local)` is called, *Then* the returned list has no blank-term entry, all confidences are within `0f..1f`, and exactly one `"Dup"`/`"dup"` entry survives (Task 1.1.1c's `sanitize()`, AC #3).
+- **Auto-apply/confirm-first precision floor (pre-mortem.md P1 #2)**: *Given* pages `"Today"` (single word, 5 chars) and `"Kotlin Multiplatform"` (multi-word) both exist in the matcher's vocabulary, *When* `coordinator.scan("Today I read about Kotlin Multiplatform")` is called, *Then* the returned `ScanOutcome.Success.result.linkedText == "Today I read about [[Kotlin Multiplatform]]"` (only the multi-word match is bracketed), `result.matchedPageNames == ["Kotlin Multiplatform"]`, and `confirmFirstNames == ["Today"]` — the short single-word match never appears inside `linkedText`'s brackets, only in the separate `confirmFirstNames` list.
+- *Given* page `"Zettelkasten"` (single word, ≥6 chars) exists, *When* `coordinator.scan("Reading about Zettelkasten")` is called, *Then* `linkedText == "Reading about [[Zettelkasten]]"` and `confirmFirstNames` is empty — the floor does not change behavior for single words at or above the length threshold.
 
 **Files**: `kmp/src/commonTest/kotlin/dev/stapler/stelekit/domain/CaptureEnrichmentCoordinatorTest.kt` (new)
 
-##### Task 5.1.1a: Write `CaptureEnrichmentCoordinatorTest` (~6 min)
-- Model after `kmp/src/commonTest/kotlin/dev/stapler/stelekit/domain/PageNameIndexTest.kt`'s fake `PageRepository` setup; add a fake `TopicEnricher` that throws, and a fake `TopicEnricher` that returns malformed output, for the `sanitize()` case.
+##### Task 5.1.1a: Write `CaptureEnrichmentCoordinatorTest` (~8 min)
+- Model after `kmp/src/commonTest/kotlin/dev/stapler/stelekit/domain/PageNameIndexTest.kt`'s fake `PageRepository` setup; add a fake `TopicEnricher` that throws, and a fake `TopicEnricher` that returns malformed output, for the `sanitize()` case. Add the two `partitionForAutoApply()` cases above (short-single-word-withheld, long-single-word-unaffected) as their own test methods — this is the regression test pre-mortem.md's P1 #2 explicitly asks for ("add a regression test asserting a short/common existing page name is *not* auto-linked without review").
 - Files: `kmp/src/commonTest/kotlin/dev/stapler/stelekit/domain/CaptureEnrichmentCoordinatorTest.kt`
 
 ### Epic 5.2: `CaptureViewModel` regression tests
@@ -1058,13 +1183,16 @@ Covered by **Task 1.2.2a** (`GraphManagerEnrichmentCoordinatorTest`). One additi
 ##### Task 5.2.5a: Add the graph-identity-mismatch test with fake `pageRepository`/`writer`/`writeActor` spies asserting zero invocations (~5 min)
 - Files: `androidApp/src/test/kotlin/dev/stapler/stelekit/CaptureViewModelTest.kt`
 
-#### Story 5.2.6: `save()` / `acceptSuggestion()` serialization test (Blocker #2)
+#### Story 5.2.6: `save()` sees a synchronously-folded accept and never blocks on the async stub-page write (supersedes the earlier mutex-serialization test, cross-artifact consistency fix)
 
-**Acceptance Criteria**: *Given* a controllable-delay fake stub-page write inside `acceptSuggestion()`'s pre-save branch, *When* `acceptSuggestion(term)` is launched and `save()` is launched immediately after (before the accept's write completes), *Then* `save()`'s persisted `textToSave` includes the accepted term's `[[link]]` — proving `saveOpMutex` (Task 2.3.1b) served the accept to completion (including its `markAccepted()` link-fold) before `save()`'s `_scanState` snapshot was taken, not the stale, unlinked text a naive race would produce.
+**Acceptance Criteria**:
+- *Given* a controllable-delay fake stub-page write inside `acceptSuggestion()`'s async branch (`createStubPage()`, Task 4.1.1a), *When* `acceptSuggestion(term)` is called and `save()` is called immediately after (synchronously, on the next line — no `delay`/`yield` between them), *Then* `save()`'s persisted `textToSave` already includes the accepted term's `[[link]]` — proving `markAccepted(term)`'s synchronous fold (Task 4.1.1b) completed and updated `_scanState` before `acceptSuggestion()` even returned, with no suspension window in which `save()` could observe a stale, unlinked snapshot. This is the same guarantee the old `saveOpMutex` test asserted, now achieved with no lock.
+- *Given* the same setup, *When* `save()` is called while the stub-page write's artificial delay is still in flight (deliberately never resolved for this assertion, via a `CompletableDeferred` the test controls), *Then* `save()` still completes (`_saveState.value` reaches `Saved`) without waiting for that delay to resolve — proving the new design does not merely move the blocking risk elsewhere: `save()` observably does not wait on the async stub-page write at all, closing the exact AC #4/#5 regression the `saveOpMutex` design introduced (this assertion is what the old test could not make, since the old design's whole point was to make `save()` wait).
 
 **Files**: `androidApp/src/test/kotlin/dev/stapler/stelekit/CaptureViewModelTest.kt`
 
-##### Task 5.2.6a: Add the chip-tap-then-Save race test with a `TestDispatcher`-controlled delay on the stub-page write (~6 min)
+##### Task 5.2.6a: Add the chip-tap-then-immediate-Save test, asserting both the synchronous fold and the non-blocking property (~7 min)
+- Use a fake stub-page write path gated by a `CompletableDeferred<Unit>` the test never completes (or completes only after asserting `save()` already finished) to prove `save()` does not suspend on it. Assert (1) `textToSave`/the persisted block content contains the accepted `[[term]]`, and (2) `save()`'s `_saveState.value` reaches `Saved` while the stub-page `CompletableDeferred` is still incomplete.
 - Files: `androidApp/src/test/kotlin/dev/stapler/stelekit/CaptureViewModelTest.kt`
 
 #### Story 5.2.7: Scan collector survives a `Throwable` (Blocker #3)
@@ -1099,3 +1227,18 @@ Covered by **Task 1.2.2a** (`GraphManagerEnrichmentCoordinatorTest`). One additi
 
 ##### Task 5.2.9a: Add the consolidated AC #6 negative-case test with a spy `HapticFeedback` (~6 min)
 - Files: `androidApp/src/test/kotlin/dev/stapler/stelekit/CaptureActivityTest.kt`
+
+#### Story 5.2.10: Confirm-first chip accept/dismiss regression tests (pre-mortem.md P1 #2)
+
+**As a** maintainer, **I want** `CaptureViewModel`-level coverage of the confirm-first accept/dismiss paths, **so that** the precision floor's UI-facing half (not just the coordinator's partition logic, Story 5.1.1) is enforced.
+
+**Acceptance Criteria**:
+- *Given* `_scanState.value == ScanState.Ready(text = "...", result = ..., confirmFirstNames = listOf("Today"))` pre-save (`savedContext == null`), *When* `acceptExistingLink("Today")` is called, *Then* `_scanState.value`'s `result.linkedText` gains `[[Today]]` synchronously (assertable immediately after the call returns, no `advanceUntilIdle()` needed for this part), `confirmFirstNames` no longer contains `"Today"`, and no `GraphWriter.savePage`/stub-page write is ever invoked (verified via a spy writer asserting zero invocations) — distinguishing this from `acceptSuggestion()`'s new-page path, which always attempts a stub write.
+- *Given* the same pre-save state, *When* `dismissExistingLinkSuggestion("Today")` is called instead, *Then* `confirmFirstNames` no longer contains `"Today"`, `result.linkedText` is unchanged, and no write of any kind is invoked.
+- *Given* a successful `performSave()` populated `savedContext` and `_scanState.value.confirmFirstNames == listOf("Today")`, *When* `acceptExistingLink("Today")` is called, *Then* the synchronous fold happens immediately as in the pre-save case, and exactly one `writeActor.saveBlock(...)` call follows (via `acceptExistingLinkPostSave()`/`writeLinkedBlockPostSave()`, Task 4.2.1d) — with zero `writer.savePage(stubPage, ...)` calls for a stub page, verified via the same spy writer.
+- *Given* a scan result containing both a confirm-first name and new-page suggestions, *When* the tray's combined chip list is computed (Task 3.1.2a's logic, exercised directly or via a Compose test), *Then* the confirm-first chip renders with `CaptureChipKind.EXISTING_LINK` and the new-page chips render with `CaptureChipKind.NEW_PAGE`, and the combined, capped list respects the 4-chip total (not 4-per-bucket).
+
+**Files**: `androidApp/src/test/kotlin/dev/stapler/stelekit/CaptureViewModelTest.kt`
+
+##### Task 5.2.10a: Add confirm-first accept (pre-save and post-save) and dismiss tests with a spy `GraphWriter`/`DatabaseWriteActor` asserting zero stub-page invocations (~7 min)
+- Files: `androidApp/src/test/kotlin/dev/stapler/stelekit/CaptureViewModelTest.kt`
