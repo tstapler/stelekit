@@ -19,8 +19,20 @@ wouldn't surface.
 
 ## P1 Items (address before implementation)
 
-- [ ] Failure #2 — Add a minimum-match-confidence/term-length floor (or an equivalent review-gate) specifically for the *auto-apply* `[[link]]` write path in `CaptureEnrichmentCoordinator.scan()`/`ImportService.scan()` usage, distinct from the already-reviewed chip-suggestion path; document the threshold and add a regression test for a short/common existing page name not being silently auto-linked.
-- [ ] Failure #3 — Given #2's blast radius and the log-only/no-flag Observability + Risk Control posture, add at least a retrievable on-device debug log path for the planned `Logger` lines, and reconsider scoping a minimal `Settings`-backed on/off gate for the auto-link write path specifically (not the whole feature) as a cheaper rollback lever than a full release revert.
+- [x] Failure #2 — Addressed in `implementation/plan.md`: added an auto-apply/confirm-first
+  partition (`partitionForAutoApply()`, Task 1.1.1b) — multi-word matches, or single-word
+  matches ≥6 characters, auto-apply unchanged; shorter single-word matches are withheld from
+  `linkedText` and instead surface as a reviewed "confirm existing link" chip reusing the
+  existing suggestion-chip UI (Epic 3.1/3.2, Task 4.1.4a). Regression tests: Story 5.1.1
+  (coordinator-level partition test, e.g. "Today" withheld vs. "Kotlin Multiplatform" unaffected)
+  and Story 5.2.10 (`CaptureViewModel`-level accept/dismiss coverage).
+- [x] Failure #3 — Addressed in `implementation/plan.md`'s Risk Control section: Failure #2's
+  precision floor substantially reduces the blast radius that motivated the flag suggestion
+  (the highest-risk case — silent auto-link of short/generic names — is now review-gated, not
+  silently written), so the existing "no feature flag" decision stands, with this reasoning now
+  stated explicitly. The already-planned `Logger("CaptureViewModel")`/
+  `Logger("CaptureEnrichmentCoordinator")` calls are retrievable via standard `adb logcat` —
+  no separate debug-log abstraction was added, per the "no new abstractions" constraint.
 
 ## Summary
 
