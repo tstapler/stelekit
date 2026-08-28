@@ -93,7 +93,9 @@ class CaptureShareTextTest {
     @Test
     fun `leading indentation is collapsed per AC1 as written`() {
         // Deliberate: see plan.md's Scope Decision — AC1 is global, no line-position exemption.
-        assertEquals(" indented line", normalize("  indented line"))
+        // The collapsed run sits at the very start of the string, so the trailing .trim() strips
+        // it entirely (edge whitespace removal, not a per-line exemption).
+        assertEquals("indented line", normalize("  indented line"))
     }
 
     @Test
@@ -188,5 +190,26 @@ class CaptureShareTextTest {
             "Example Page Title\n\nBody text here.\nSecond line.",
             normalize(payload),
         )
+    }
+
+    // --- Regression: dedup must normalize before comparing (code review bug 1) ---
+
+    @Test
+    fun `whitespace-only difference between subject and body still dedups`() {
+        // subject has a double space, body has a single space \u2014 raw strings differ, but once
+        // both sides are normalized independently they are equal and must not be duplicated.
+        assertEquals("Example Page", build(null, "Example Page", "Example  Page"))
+    }
+
+    // --- Regression: leading/trailing whitespace runs must be fully trimmed (code review bug 2) ---
+
+    @Test
+    fun `trailing blank-line run is fully trimmed, not collapsed to a surviving blank line`() {
+        assertEquals("Foo", normalize("Foo\n\n\n"))
+    }
+
+    @Test
+    fun `leading and trailing blank-line runs are trimmed while an internal one is collapsed`() {
+        assertEquals("Foo\n\nBar", normalize("\n\nFoo\n\n\nBar\n\n"))
     }
 }
