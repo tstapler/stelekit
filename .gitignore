@@ -158,8 +158,11 @@ e2e/test-results/
 
 # --------------------
 # Legacy Capacitor app (replaced by KMP androidApp/)
+# Anchored to repo root: an unanchored "android/" also matched nested paths
+# like vendor/rules_android+/toolchains/android/, silently excluding that
+# vendored Bazel toolchain package from every commit.
 # --------------------
-android/
+/android/
 
 # --------------------
 # F-Droid repo signing keystore and generated index (secrets in GitHub Actions)
