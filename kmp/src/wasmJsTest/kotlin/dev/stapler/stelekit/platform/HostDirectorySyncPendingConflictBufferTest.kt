@@ -48,10 +48,10 @@ class HostDirectorySyncPendingConflictBufferTest {
 
         assertEquals(0, sync.pendingHostConflictCount)
 
-        sync.onHostConflict("pages/Foo.md", "host content")
+        sync.onHostConflict(GraphRootedPath.of("pages/Foo.md", null), "host content")
         assertEquals(1, sync.pendingHostConflictCount)
 
-        sync.onHostConflict("pages/Bar.md", "other host content")
+        sync.onHostConflict(GraphRootedPath.of("pages/Bar.md", null), "other host content")
         assertEquals(2, sync.pendingHostConflictCount)
 
         testScope.cancel()
@@ -62,12 +62,12 @@ class HostDirectorySyncPendingConflictBufferTest {
         val testScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val sync = newSync(testScope)
 
-        sync.onHostConflict("pages/Foo.md", "foo content")
-        sync.onHostConflict("pages/Bar.md", "bar content")
+        sync.onHostConflict(GraphRootedPath.of("pages/Foo.md", null), "foo content")
+        sync.onHostConflict(GraphRootedPath.of("pages/Bar.md", null), "bar content")
         assertEquals(2, sync.pendingHostConflictCount)
 
         val replayed = mutableListOf<Pair<String, String>>()
-        sync.flushPendingHostConflicts { path, hostContent -> replayed += path to hostContent }
+        sync.flushPendingHostConflicts { path, hostContent -> replayed += path.value to hostContent }
 
         assertEquals(listOf("pages/Foo.md" to "foo content", "pages/Bar.md" to "bar content"), replayed)
         assertEquals(0, sync.pendingHostConflictCount)
@@ -95,9 +95,9 @@ class HostDirectorySyncPendingConflictBufferTest {
         val sync = newSync(testScope)
 
         val delivered = mutableListOf<Pair<String, String>>()
-        sync.onHostConflict = { path, hostContent -> delivered += path to hostContent }
+        sync.onHostConflict = { path, hostContent -> delivered += path.value to hostContent }
 
-        sync.onHostConflict("pages/Foo.md", "foo content")
+        sync.onHostConflict(GraphRootedPath.of("pages/Foo.md", null), "foo content")
 
         assertEquals(listOf("pages/Foo.md" to "foo content"), delivered)
         assertEquals(0, sync.pendingHostConflictCount)

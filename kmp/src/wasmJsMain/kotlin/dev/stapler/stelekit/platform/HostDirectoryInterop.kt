@@ -20,6 +20,15 @@ import kotlinx.coroutines.await
 internal fun mirrorPendingHostConflictCount(count: Int): Unit = js("window.__stelekit_pending_host_conflicts = count")
 
 /**
+ * Bytes-aware sibling of [mirrorPendingHostConflictCount] for `HostDirectorySync.onHostBytesConflict`/
+ * `flushPendingHostBytesConflicts` (`.md.stek` paranoid-mode `HostOnlyNew` notifications). Kept as
+ * a separate `window.__stelekit_pending_host_bytes_conflicts` global rather than folding into the
+ * plaintext counter so an e2e spec asserting on one mechanism isn't perturbed by unrelated traffic
+ * on the other.
+ */
+internal fun mirrorPendingHostBytesConflictCount(count: Int): Unit = js("window.__stelekit_pending_host_bytes_conflicts = count")
+
+/**
  * `web-local-folder-livesync` (Epic 1.5) browser interop primitives — IndexedDB
  * `FileSystemDirectoryHandle` persistence, `queryPermission()`/`requestPermission()`, the
  * `FileSystemObserver` construction/observe surface, `File.lastModified`/`size` accessors, the
@@ -138,13 +147,7 @@ private fun observePromise(observer: JsAny, handle: JsAny, recursive: Boolean): 
     js("observer.observe(handle, { recursive: recursive })")
 
 internal suspend fun observeHandle(observer: JsAny, handle: JsAny, recursive: Boolean = true) {
-    try {
-        observePromise(observer, handle, recursive).await()
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Throwable) {
-        println("[SteleKit] FileSystemObserver.observe failed: ${e.message}")
-    }
+    observePromise(observer, handle, recursive).await<JsAny>()
 }
 
 internal fun changeRecordType(record: JsAny): String = js("record.type")

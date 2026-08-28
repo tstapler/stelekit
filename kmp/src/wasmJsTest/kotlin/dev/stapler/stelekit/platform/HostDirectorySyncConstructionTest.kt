@@ -91,8 +91,11 @@ class HostDirectorySyncConstructionTest {
         fakeCacheAccess.set("/stelekit/g/pages/A.md", "a")
         fakeCacheAccess.set("/stelekit/g/pages/B.md", "b")
         fakeCacheAccess.set("/stelekit/g/other/C.md", "c")
+        // keysUnder is documented (CacheAccess.keysUnder) as covering "cache keys (text or
+        // bytes)" — Secret.md.stek (setBytes'd above, under the same "pages" prefix) is
+        // therefore expected here alongside the two plain-text keys.
         assertEquals(
-            setOf("/stelekit/g/pages/A.md", "/stelekit/g/pages/B.md"),
+            setOf("/stelekit/g/pages/A.md", "/stelekit/g/pages/B.md", "/stelekit/g/pages/Secret.md.stek"),
             fakeCacheAccess.keysUnder("/stelekit/g/pages"),
         )
 

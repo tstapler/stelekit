@@ -4,7 +4,16 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.await
 
 internal fun showDirectoryPickerSupported(): Boolean = js("typeof window.showDirectoryPicker === 'function'")
-private fun showDirectoryPickerPromise(): kotlin.js.Promise<JsAny> = js("window.showDirectoryPicker()")
+
+/**
+ * Invokes `window.showDirectoryPicker()` synchronously. This raw JS call must happen within (or
+ * as close as possible to) the synchronous call stack of a browser click/pointerup event, since
+ * the picker requires "transient user activation" and throws `SecurityError` if the browser no
+ * longer considers the call gesture-initiated. Callers that need the picker triggered from a
+ * Compose `onClick` should call this directly in the click handler — not from inside a
+ * `scope.launch { ... }` coroutine, which may dispatch the call after activation has expired.
+ */
+internal fun showDirectoryPickerPromise(): kotlin.js.Promise<JsAny> = js("window.showDirectoryPicker()")
 internal suspend fun showDirectoryPicker(): JsAny = showDirectoryPickerPromise().await()
 
 private fun opfsRootPromise(): kotlin.js.Promise<JsAny> = js("navigator.storage.getDirectory()")
@@ -40,6 +49,15 @@ internal suspend fun listOpfsEntries(dirHandle: JsAny): List<JsAny> {
 internal fun getEntryName(entry: JsAny): String = js("entry.name")
 internal fun isFileEntry(entry: JsAny): Boolean = js("entry.kind === 'file'")
 internal fun isDirectoryEntry(entry: JsAny): Boolean = js("entry.kind === 'directory'")
+
+/**
+ * Host/OPFS directory walks (`importUserDirToCache`, `runHostReconciliation`,
+ * `pollHostDirectoryOnce`) must not treat dotfiles/dot-directories as graph content — a connected
+ * host directory is frequently a git repo, and without this guard `.git/logs/HEAD`,
+ * `.git/MERGE_RR`, `.DS_Store`, and tool scratch dirs like `.playwright-mcp/` get walked, read,
+ * and classified by stale-rename-duplicate detection right alongside real markdown pages.
+ */
+internal fun isIgnoredHostEntryName(name: String): Boolean = name.startsWith(".")
 
 private fun fileHandleGetFile(handle: JsAny): kotlin.js.Promise<JsAny> = js("handle.getFile()")
 private fun fileText(file: JsAny): kotlin.js.Promise<JsAny> = js("file.text()")

@@ -713,7 +713,14 @@ class GraphManager(
     fun getActiveRepositorySet(): RepositorySet? = _activeRepositorySet.value
     
     private suspend fun detectGitRoot(graphPath: String): Pair<String, String>? {
-        if (graphPath.startsWith("content://")) return null
+        // Android SAF-opened graphs are "saf://{encodedTreeUri}/{relativePath}" (see
+        // PlatformFileSystem.toSafRoot), never a literal "content://" prefix — this check never
+        // matched a real SAF path. Walking such a path with the POSIX '/'-splitting logic below is
+        // also structurally pointless: a SAF grant is scoped to exactly the folder the user picked,
+        // so a `.git` above that folder is invisible to this app regardless of path-parsing
+        // correctness — bail out explicitly instead of relying on the loop terminating safely once
+        // it works its way back to (and then past) the "saf://" scheme delimiter.
+        if (graphPath.startsWith("saf://") || graphPath.startsWith("content://")) return null
         return withContext(PlatformDispatcher.IO) {
             try {
                 val normalizedPath = graphPath.replace('\\', '/')

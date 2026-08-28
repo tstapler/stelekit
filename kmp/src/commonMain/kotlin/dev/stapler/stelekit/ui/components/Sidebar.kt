@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -50,6 +51,9 @@ import dev.stapler.stelekit.model.GraphInfo
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.platform.HostAccessState
+import dev.stapler.stelekit.platform.isCurrentSessionEphemeral
+import dev.stapler.stelekit.platform.isEphemeralWebModeAvailable
+import dev.stapler.stelekit.platform.startEphemeralSession
 import dev.stapler.stelekit.sections.SectionManifest
 import dev.stapler.stelekit.ui.LocalWindowSizeClass
 import dev.stapler.stelekit.ui.Screen
@@ -154,6 +158,7 @@ fun LeftSidebar(
                 onUpdateGraphPath = onUpdateGraphPath,
                 gitSyncedGraphId = gitSyncedGraphId,
                 isDemoActive = isDemoActive,
+                hostAccessState = hostAccessState,
             )
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
@@ -350,6 +355,9 @@ fun GraphSwitcher(
     onUpdateGraphPath: (String, String) -> Unit = { _, _ -> },
     gitSyncedGraphId: String? = null,
     isDemoActive: Boolean = false,
+    /** Epic 2.3: host-directory connection state for [activeGraphId] only — used to show a
+     * "linked to local folder" indicator distinct from the graph's internal OPFS path. */
+    hostAccessState: HostAccessState = HostAccessState.NotApplicable,
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -379,7 +387,7 @@ fun GraphSwitcher(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    imageVector = Icons.Default.Folder,
+                    imageVector = if (hostAccessState == HostAccessState.Granted) Icons.Default.FolderOpen else Icons.Default.Folder,
                     contentDescription = null,
                     modifier = Modifier.size(20.dp),
                     tint = MaterialTheme.colorScheme.primary
@@ -391,6 +399,14 @@ fun GraphSwitcher(
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                     modifier = Modifier.weight(1f)
                 )
+                if (hostAccessState == HostAccessState.Granted) {
+                    Icon(
+                        imageVector = Icons.Default.Link,
+                        contentDescription = "Connected to local folder",
+                        modifier = Modifier.size(14.dp).padding(end = 4.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
                 Icon(
                     imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                     contentDescription = if (expanded) "Collapse" else "Expand"
@@ -410,6 +426,7 @@ fun GraphSwitcher(
                             graph = graph,
                             isActive = graph.id.value == activeGraphId,
                             isSynced = graph.id.value == gitSyncedGraphId,
+                            isHostConnected = graph.id.value == activeGraphId && hostAccessState == HostAccessState.Granted,
                             onSelect = {
                                 onGraphSelected(graph.id.value)
                                 expanded = false
@@ -417,7 +434,10 @@ fun GraphSwitcher(
                             onRemove = if (availableGraphs.size > 1) {
                                 { graphToRemove = graph }
                             } else null,
-                            onEditPath = if (!graph.isDemo) {
+                            // Re-pointing an ephemeral graph at a real folder would defeat the
+                            // whole point of the mode — an ephemeral session only ever has this
+                            // one graph, so gating on the session (not per-graph) is sufficient.
+                            onEditPath = if (!graph.isDemo && !isCurrentSessionEphemeral()) {
                                 { graphToEdit = graph }
                             } else null
                         )
@@ -432,7 +452,9 @@ fun GraphSwitcher(
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
-            DropdownMenuItem(
+            // Not offered inside an already-ephemeral session — connecting a local OPFS folder
+            // would introduce the exact persistent storage side channel that mode exists to avoid.
+            if (!isCurrentSessionEphemeral()) DropdownMenuItem(
                 text = {
                     Row(
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
@@ -461,6 +483,28 @@ fun GraphSwitcher(
                 onClick = { onCloneGraph(); expanded = false },
                 contentPadding = PaddingValues(0.dp),
             )
+
+            if (isEphemeralWebModeAvailable() && !isCurrentSessionEphemeral()) {
+                DropdownMenuItem(
+                    text = {
+                        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Bolt, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Open temporarily...", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                            }
+                            Text(
+                                "Checked-out files live in memory only — nothing is saved on this computer",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(start = 26.dp),
+                            )
+                        }
+                    },
+                    onClick = { startEphemeralSession(); expanded = false },
+                    contentPadding = PaddingValues(0.dp),
+                )
+            }
         }
     }
     
@@ -541,6 +585,10 @@ fun GraphItem(
     graph: GraphInfo,
     isActive: Boolean,
     isSynced: Boolean = false,
+    /** Epic 2.3: true when this graph is the active graph and it currently has a granted
+     * host-directory connection — shown as a distinct badge from [graph.path]'s OPFS path,
+     * which alone gives no indication the graph is backed by a live local folder. */
+    isHostConnected: Boolean = false,
     onSelect: () -> Unit,
     onRemove: (() -> Unit)? = null,
     onEditPath: (() -> Unit)? = null,
@@ -593,6 +641,14 @@ fun GraphItem(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+            }
+            if (isHostConnected) {
+                Icon(
+                    imageVector = Icons.Default.Link,
+                    contentDescription = "Connected to local folder",
+                    modifier = Modifier.size(14.dp).padding(end = 2.dp),
+                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                )
             }
             if (isSynced) {
                 Icon(
