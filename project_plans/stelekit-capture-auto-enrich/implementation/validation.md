@@ -20,7 +20,7 @@ journal with `linkedText` (not raw text) — zero additional taps beyond today's
 | AC #1: auto-link before write | `kmp/src/commonTest/kotlin/dev/stapler/stelekit/domain/CaptureEnrichmentCoordinatorTest.kt` | `scan_matcherNotBuilt_returnsMatcherNotReadyImmediately` | Unit | Error path — cold-start matcher `null`, no `withTimeoutOrNull` wait, fast-path `MatcherNotReady` |
 | AC #1: auto-link before write | `androidApp/src/test/kotlin/dev/stapler/stelekit/CaptureViewModelTest.kt` | `save_scanStateReadyMatchesCaptureText_persistsLinkedTextNotRawText` | Integration | `save()` persists `ScanState.Ready.result.linkedText`, not raw `captureText`, when text matches (Story 2.3.1) |
 | AC #1: auto-link before write (formalizes plan's `onNewIntent` staleness test, PF-6) | `androidApp/src/test/kotlin/dev/stapler/stelekit/CaptureViewModelTest.kt` | `collectLatest_secondShareIntentSupersedesInFlightScan_onlyLatestResultReachesScanState` | Integration | A scan in flight for share-intent A's text is cancelled/superseded when intent B's text arrives before A resolves; A's result never lands in `_scanState` (Story 5.2.1) |
-| AC #1: auto-link before write (formalizes plan's image-only-share test) | `androidApp/src/test/kotlin/dev/stapler/stelekit/CaptureViewModelTest.kt` | `scan_imageOnlyShareNoCaption_neverScansRawImagePathPrefix` | Integration | `captureText == "[image: <path>]\n"` → `splitImagePrefix` yields empty `freeText`; `coordinator.scan("")` short-circuits to `NotReady`, path string never reaches `AhoCorasickMatcher` (Story 5.2.2) |
+| AC #1: auto-link before write (formalizes plan's image-only-share test) | `androidApp/src/test/kotlin/dev/stapler/stelekit/CaptureViewModelTest.kt` | `scan_imageOnlyShareNoCaption_neverScansRawImagePathPrefix` | Integration | `captureText == "[image: <path>]"` (no trailing `\n` — `CaptureActivity`'s `.trim()` strips it when `shareContent.text` is empty, Story 2.1.3's fixed `IMAGE_PREFIX_REGEX`) → `splitImagePrefix` yields empty `freeText`; `coordinator.scan("")` short-circuits to `NotReady`, path string never reaches `AhoCorasickMatcher` (Story 5.2.2) |
 | AC #2: chip tray, accept creates stub page (no silent creation) | `androidApp/src/test/kotlin/dev/stapler/stelekit/CaptureViewModelTest.kt` | `acceptSuggestion_preSaveWithFakeGraphWriter_savesStubPageAndMarksAccepted` | Unit | Happy path — fake `writer`/`repoSet`, tap accept → `GraphWriter.savePage` called once, `markAccepted()` folds `[[link]]` into pending `_scanState` (Task 4.1.1a/4.1.1b) |
 | AC #2: chip tray, accept creates stub page (no silent creation) | `androidApp/src/test/kotlin/dev/stapler/stelekit/CaptureViewModelTest.kt` | `dismissSuggestion_setsDismissedTrue_noWriteInvoked` | Unit | Error/negative path — `dismissSuggestion()` never calls `GraphWriter.savePage`; proves no code path silently creates a page without an explicit accept tap (Task 4.1.2a) |
 | AC #2: chip tray, accept creates stub page (no silent creation) | `androidApp/src/test/kotlin/dev/stapler/stelekit/CaptureViewModelTest.kt` | `acceptSuggestion_preSave_realGraphWriterPersistsStubPageFile` | Integration | Real `SteleKitApplication`/`GraphManager`/`GraphWriter` (Robolectric, per Phase 5's "do not override `Application`" note) — accepted stub page is actually written to the graph's markdown file, same path `ImportViewModel.confirmImport()` uses |
@@ -57,6 +57,20 @@ integration test; every Phase-5-sketched regression test (`GraphManagerEnrichmen
 (Story 5.2.5), `ClosedSendChannelException` race (Story 5.2.4), save/accept race (Story 5.2.6),
 scan-survives-`Throwable` (Story 5.2.7), AC#5 responsiveness (Story 5.2.8), AC#6 negative cases
 (Story 5.2.9)) is formalized above rather than duplicated.
+
+**Known limitation tested — bare-URL `EXTRA_TEXT`** (pre-mortem.md failure #5, P2): many share
+sheets (browser "Share" on an article) send only the bare URL as `EXTRA_TEXT`, not article
+prose. Against a bare URL, `PageNameIndex` matching has nothing to match and
+`TopicExtractor`'s noun-phrase heuristic has no prose to extract from, so the flagship "share an
+article" scenario can legitimately produce zero auto-links and zero/minimal suggestion chips.
+This is the honest expected behavior, not an undefined case — add a test row asserting it
+explicitly rather than leaving it implicit: `scan_bareUrlExtraText_producesNoAutoLinksAndNoOrMinimalSuggestions`
+(`kmp/src/commonTest/kotlin/dev/stapler/stelekit/domain/CaptureEnrichmentCoordinatorTest.kt`,
+Unit) — *Given* `captureText == "https://example.com/some-article"` and no existing page name
+appears verbatim in the URL string, *When* `coordinator.scan(...)` runs, *Then*
+`result.linkedText == captureText` (no auto-links) and `result.topicSuggestions` is empty or
+near-empty, documenting the expected (if unhelpful) v1 behavior rather than pretending it's
+untested.
 
 ## UX Acceptance Tests
 
@@ -114,6 +128,19 @@ steps per `design/ux.md`'s own statement that these "cannot be confirmed from so
   modes, reduced-motion) that `design/ux.md` itself flags as unverifiable from source.
 
 ## Coverage Targets and How to Measure
+
+**Chip-tray adoption is not measurable post-ship, and this is an accepted v1 tradeoff, not an
+oversight.** Pre-mortem.md failure #1 (P2) flags that the chip tray — this feature's only
+value-add beyond auto-linking — could go largely unused, and asks at minimum for an explicit
+note here on whether that's acceptable for a v1 ship gate. It is: `plan.md`'s Observability Plan
+and Risk Control sections both already establish "no metrics, log-only" as the deliberate scope
+for this feature (matching the existing `llm-service`/`TagSuggestionEngine` precedent, and the
+plan's own "no new abstractions beyond what the task requires" constraint) — adding a
+chip-tap-rate counter would mean adding new instrumentation specifically to measure this
+feature, which the plan already declined to do for good reason. Consequence: whether the chip
+tray gets used at all cannot be answered from telemetry after ship; it can only be inferred
+indirectly (bug reports, anecdote) — accepted here as the tradeoff for staying within the
+existing observability scope, not a gap left unaddressed.
 
 | Stack | Coverage command | Target |
 |---|---|---|

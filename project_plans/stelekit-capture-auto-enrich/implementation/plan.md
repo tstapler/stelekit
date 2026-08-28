@@ -64,7 +64,7 @@ N/A — no schema or data changes. No new SQLDelight tables, no `MigrationRunner
 
 ## Observability Plan
 
-- **Logs**: `Logger("CaptureEnrichmentCoordinator")` logs matcher-build/`Throwable` degradation (mirrors `PageNameIndex.matcher`'s own logging) and enrichment timeout/failure at `error`/`warn`. `Logger("CaptureViewModel")` (new) logs: per-`collectLatest`-iteration scan failure (`warn`, Task 2.1.2b, Blocker #3), scan budget exceeded distinct from matcher-not-ready (`debug`, `ScanOutcome.TimedOut` vs `MatcherNotReady`, Task 2.1.2b), stub-page save failures per accepted suggestion with the term and `DomainError` (`error`, AC #7), a graph-identity mismatch at the top of `acceptSuggestionPostSave()` ("suggestion not applied — active graph changed since save", `error`, Task 4.2.1a, Blocker #1), post-save `writeActor.saveBlock`/`writer.savePage` failures with a distinct "suggestion not applied" message (`error`, PF-5), and `ClosedSendChannelException` catches on both the pre-save and post-save write (`warn`).
+- **Logs**: `Logger("CaptureEnrichmentCoordinator")` logs matcher-build/`Throwable` degradation (mirrors `PageNameIndex.matcher`'s own logging) and enrichment timeout/failure at `error`/`warn`; it also logs the `TopicEnricher` resolution outcome at `debug` in `resolveTopicEnricher()` (Task 1.1.2b, pre-mortem.md failure #4) — distinguishing "no provider registered for `CAPTURE_ENRICHMENT`" from "a provider was present but `checkEligible()` did not return `AVAILABLE`," so an `adb logcat` pull from an affected device can tell those two cases apart instead of both looking like silent `NoOpTopicEnricher` fallback. `Logger("CaptureViewModel")` (new) logs: per-`collectLatest`-iteration scan failure (`warn`, Task 2.1.2b, Blocker #3), scan budget exceeded distinct from matcher-not-ready (`debug`, `ScanOutcome.TimedOut` vs `MatcherNotReady`, Task 2.1.2b), stub-page save failures per accepted suggestion with the term and `DomainError` (`error`, AC #7), a graph-identity mismatch at the top of `acceptSuggestionPostSave()` ("suggestion not applied — active graph changed since save", `error`, Task 4.2.1a, Blocker #1), post-save `writeActor.saveBlock`/`writer.savePage` failures with a distinct "suggestion not applied" message (`error`, PF-5), and `ClosedSendChannelException` catches on both the pre-save and post-save write (`warn`).
 - **Metrics**: none new. No existing capture-specific telemetry event API surfaced in research; adding one is out of scope for this feature (would be new instrumentation not requested by requirements.md).
 - **Alerts**: N/A — mobile client feature, no server-side alerting surface.
 
@@ -94,11 +94,15 @@ Phase 2: CaptureViewModel Scan Pipeline
   Epic 2.3 Save-time resolution + SavedCaptureContext ───┤
                                               │           │
                                               ▼           ▼
-Phase 3: Chip Tray UI                Phase 4: Accept/Dismiss
-  Epic 3.1 Chip + tray (AC#2,6) ──┐    Epic 4.1 Pre-save accept (AC#2,7)
-  Epic 3.2 Auto-link preview      │    Epic 4.2 Post-save write-back (AC#9) ← needs 2.3
-  (AC#1,6)                        │    Epic 4.3 Post-save "Done" window (AC#9)
-                                   └──────────┘
+Phase 3: Chip Tray UI                             Phase 4: Accept/Dismiss
+  Epic 3.1 Chip + tray (AC#2,6)                     Epic 4.1 Pre-save accept (AC#2,7) ──┐
+    Task 3.1.1a CaptureSuggestionChip  ◄─────────┐  Epic 4.2 Post-save write-back      │
+    Task 3.1.2a LazyRow/chip-tap wiring ◄────────┼──(AC#9) ← needs 2.3                 │
+      (calls acceptSuggestion/dismissSuggestion/  │  Epic 4.3 Post-save "Done" window   │
+       acceptExistingLink/                        │  (AC#9)                             │
+       dismissExistingLinkSuggestion —             │                                     │
+       defined only in Epic 4.1, not parallel)     └─────────────────────────────────────┘
+  Epic 3.2 Auto-link preview (AC#1,6)
                                               │
                                               ▼
 Phase 5: Tests
@@ -107,6 +111,19 @@ Phase 5: Tests
             + graph-identity guard, save/accept race, scan-survives-Throwable,
             AC#5 no-await, AC#6 negative cases)
 ```
+
+**Ordering note (triad review, Engineering lens)**: the diagram above corrects an earlier draft
+that showed Phase 3 and Phase 4 as parallel/independent. They are not: Task 3.1.2a's chip tray
+(`CaptureActivity.kt`) calls `viewModel.acceptSuggestion(...)`, `viewModel.dismissSuggestion(...)`,
+`viewModel.acceptExistingLink(...)`, and `viewModel.dismissExistingLinkSuggestion(...)` directly
+from each chip's `onAccept`/`onDismiss` — all four are `CaptureViewModel` methods defined in
+Epic 4.1 (Tasks 4.1.1a, 4.1.2a, 4.1.4a), not Phase 3. An implementer building strictly in phase
+order (finishing all of Phase 3 before starting Phase 4) will hit unresolved-reference compile
+errors on Task 3.1.2a. **Epic 4.1's `CaptureViewModel`-side accept/dismiss methods must land
+before (or alongside) Task 3.1.2a** — Epic 4.2/4.3 have no such inversion and may still follow
+Epic 3.1/3.2 as the diagram's vertical ordering already implies. This does not require
+renumbering phases; it only means Task 4.1.1a/4.1.2a/4.1.4a should be implemented before or
+together with Task 3.1.2a, not strictly after all of Phase 3.
 
 ---
 
@@ -237,12 +254,27 @@ Phase 5: Tests
 - Files: `kmp/src/commonMain/kotlin/dev/stapler/stelekit/llm/LlmFeature.kt`
 
 ##### Task 1.1.2b: Add `CaptureEnrichmentCoordinator.Companion.resolveTopicEnricher()` (~4 min)
-- ```kotlin
+- **Log the resolution outcome** (pre-mortem.md failure #4 — distinguish "no provider
+  configured" from "provider present but not currently usable"): an empty
+  `availableForFeature(...)` list means no provider is registered for this feature at all,
+  which is the expected, non-error default state per requirements.md; a non-empty list whose
+  entries were filtered out upstream by `checkEligible()` returning something other than
+  `AVAILABLE` is a different, debuggable condition (a configured provider that isn't currently
+  usable) — worth being able to tell apart from an `adb logcat` pull without adding new
+  telemetry.
+  ```kotlin
   companion object {
-      suspend fun resolveTopicEnricher(registry: LlmProviderRegistry): TopicEnricher =
-          registry.availableForFeature(LlmFeature.CAPTURE_ENRICHMENT).firstOrNull()
-              ?.let { ClaudeTopicEnricher(it.formatter) }
-              ?: NoOpTopicEnricher()
+      private val logger = Logger("CaptureEnrichmentCoordinator")
+
+      suspend fun resolveTopicEnricher(registry: LlmProviderRegistry): TopicEnricher {
+          val provider = registry.availableForFeature(LlmFeature.CAPTURE_ENRICHMENT).firstOrNull()
+          logger.debug(
+              if (provider != null) "TopicEnricher resolved: provider '${provider.id}' available"
+              else "TopicEnricher resolved: no provider available for CAPTURE_ENRICHMENT " +
+                  "(empty registry, or configured provider not currently AVAILABLE)",
+          )
+          return provider?.let { ClaudeTopicEnricher(it.formatter) } ?: NoOpTopicEnricher()
+      }
   }
   ```
 - Files: `kmp/src/commonMain/kotlin/dev/stapler/stelekit/domain/CaptureEnrichmentCoordinator.kt`
@@ -455,19 +487,20 @@ Phase 5: Tests
 
 **Acceptance Criteria**:
 - `CaptureViewModel` splits the composite `captureText` (`"[image: <path>]\n<freeText>"`, exactly the format `CaptureActivity.kt:82,120` produces) into `(imagePrefix: String?, freeText: String)` before scanning, and scans only `freeText`.
-  - *Given* `captureText.value == "[image: /data/user/0/dev.stapler.stelekit/cache/share_1700000000000.jpg]\n"` (bare image share, no caption), *When* the scan coroutine runs, *Then* `splitImagePrefix(...)` returns `("[image: /data/user/0/dev.stapler.stelekit/cache/share_1700000000000.jpg]\n", "")`, and `coordinator.scan("")` is never called (blank free text short-circuits to `NotReady`, same as any blank capture) — no `AhoCorasickMatcher.findAll` call ever sees the file path.
-  - *Given* `captureText.value == "[image: /data/.../share_123.jpg]\nGreat article about Kotlin Multiplatform"`, *When* the scan runs, *Then* `freeText == "Great article about Kotlin Multiplatform"` is what's scanned, and the auto-linked result is recombined as `"[image: /data/.../share_123.jpg]\nGreat article about [[Kotlin Multiplatform]]"` before it's used as `textToSave` (Task 2.3.1).
+  - *Given* a bare image share with no caption (`shareContent.text == ""`), *When* `CaptureActivity.kt:82`/`:120` builds `captureText` via `"[image: ${path}]\n${shareContent.text}".trim()`, *Then* the `.trim()` call strips the trailing `\n` (since there's nothing after it), leaving `captureText.value == "[image: /data/user/0/dev.stapler.stelekit/cache/share_1700000000000.jpg]"` — **no trailing newline at all**. `splitImagePrefix(...)` must still match this exact string: `IMAGE_PREFIX_REGEX` (below) is anchored `(?:\n|$)` specifically so the bare-image case (no caption, no trailing `\n`) matches on end-of-string, not just the with-caption case (trailing `\n` present). Given that, `splitImagePrefix(...)` returns `("[image: /data/user/0/dev.stapler.stelekit/cache/share_1700000000000.jpg]", "")`, and `coordinator.scan("")` is never called (blank free text short-circuits to `NotReady`, same as any blank capture) — no `AhoCorasickMatcher.findAll` call ever sees the file path. (A regex requiring a literal trailing `\n` — the original draft's `Regex("""^\[image: .*?]\n""")` — would **fail to match** this trimmed, no-caption string at all, leaving the raw `[image: <path>]` prefix in `freeText` and defeating the entire point of this story; this is the bug Task 2.1.3a's fix below closes.)
+  - *Given* `captureText.value == "[image: /data/.../share_123.jpg]\nGreat article about Kotlin Multiplatform"` (caption present, `.trim()` has no effect since there's trailing text after the `\n`), *When* the scan runs, *Then* `freeText == "Great article about Kotlin Multiplatform"` is what's scanned, and the auto-linked result is recombined as `"[image: /data/.../share_123.jpg]\nGreat article about [[Kotlin Multiplatform]]"` before it's used as `textToSave` (Task 2.3.1).
 
 **Files**: `androidApp/src/main/kotlin/dev/stapler/stelekit/CaptureViewModel.kt`
 
 ##### Task 2.1.3a: Add `splitImagePrefix()` helper (~3 min)
-- ```kotlin
+- **Bug fix (found in triad review, Engineering lens)**: the regex must match end-of-string as well as a trailing `\n`, not just `\n` — `CaptureActivity.kt:82,120`'s `.trim()` call strips the trailing `\n` in the bare-image-no-caption case (`shareContent.text == ""`), leaving `captureText == "[image: <path>]"` with no trailing newline. A regex anchored only on `\n` would silently fail to match that string, leaving the raw file path in `freeText` and reaching the matcher/scan — exactly what this story exists to prevent. Verified against both cases: `"[image: /data/.../share_123.jpg]\nGreat article..."` matches on the `\n` branch; `"[image: /data/.../share_123.jpg]"` (no trailing text) matches on the `$` branch since there's only one `]` in the string.
+  ```kotlin
   private fun splitImagePrefix(text: String): Pair<String?, String> {
       val match = IMAGE_PREFIX_REGEX.find(text) ?: return null to text
       return match.value to text.removePrefix(match.value)
   }
   companion object {
-      private val IMAGE_PREFIX_REGEX = Regex("""^\[image: .*?]\n""")
+      private val IMAGE_PREFIX_REGEX = Regex("""^\[image: .*?](?:\n|$)""")
   }
   ```
 - Files: `androidApp/src/main/kotlin/dev/stapler/stelekit/CaptureViewModel.kt`
@@ -738,6 +771,12 @@ Phase 5: Tests
 **Files**: `androidApp/src/main/kotlin/dev/stapler/stelekit/CaptureActivity.kt`
 
 ##### Task 3.2.1a: Add the read-only preview caption (~4 min)
+- **Reduced-motion note** (`design/ux.md` AC #26): when adding the ~150ms fade-in for this
+  caption (and the chip tray's own fade-in, Task 3.1.2a), check
+  `LocalAccessibilityManager`'s reduced-motion/"remove animations" signal on this Compose/
+  Material3 version and degrade to an instant appear rather than animating when it's set —
+  verify the exact API at implementation time (likely covered by Compose's platform-level
+  animation-duration scaling with no bespoke code needed, but confirm rather than assume).
 - Below the `OutlinedTextField`, before the suggestion tray:
   ```kotlin
   val readyState = scanState as? CaptureViewModel.ScanState.Ready
@@ -1079,8 +1118,8 @@ Phase 5: Tests
 - Each chip's `onAccept`/`onDismiss` callback also does `resetKey++` when `isDone` is true, so the second `LaunchedEffect` restarts.
 - Files: `androidApp/src/main/kotlin/dev/stapler/stelekit/CaptureActivity.kt`
 
-##### Task 4.3.1c: Pause on accessibility focus; scrim tap always finishes during the "Done" window (real code change, not verify-only) (~5 min)
-- Track `hasAccessibilityFocus` via `Modifier.onFocusEvent { ... }` (or the accessibility-focus callback available on this Compose/Material3 version — verify exact API at implementation time) on the sheet's root `Surface`; wire into Task 4.3.1b's second `LaunchedEffect` key.
+##### Task 4.3.1c: Pause on accessibility focus; scrim tap always finishes during the "Done" window (real code change, not verify-only) (~10 min)
+- Track `hasAccessibilityFocus` via `Modifier.onFocusEvent { ... }` (or the accessibility-focus callback available on this Compose/Material3 version — verify exact API at implementation time) on the sheet's root `Surface`; wire into Task 4.3.1b's second `LaunchedEffect` key. **This is a known-hard corner, not a routine "wire up a callback" task** (triad review, Engineering lens: the original ~5 min estimate was optimistic) — Compose's semantics tree has no simple built-in signal that distinguishes accessibility focus (TalkBack's explore-by-touch cursor) from ordinary input focus (`Modifier.onFocusEvent`'s own `FocusState`), so this likely requires combining `Modifier.onFocusEvent`/`LocalAccessibilityManager` with a check for whether an accessibility service is actually active, not a single off-the-shelf API call. Verify the exact mechanism at implementation time as already noted; budget accordingly.
 - **This is a real code change, not verification-only** (architecture-review.md Concern, Epic 4.3): the existing scrim `clickable { if (captureText.isBlank()) onDismiss() else viewModel.save() }` (`CaptureActivity.kt:274`) has no branch for the "Done" window at all. During that window `captureText` is still non-blank, so an unmodified scrim tap would call `viewModel.save()` again instead of finishing immediately — directly contradicting Story 4.3.1's own AC ("a tap on the scrim... finishes immediately regardless of pending chips"). Update the scrim's `clickable` to add the `isDone` branch first:
   ```kotlin
   clickable {

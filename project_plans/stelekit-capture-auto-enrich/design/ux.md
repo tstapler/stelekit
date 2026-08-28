@@ -87,21 +87,41 @@ chip tray). This is a one-line `if` condition, not a new mechanism.
 
 ## Surface 3 — 1–4 pending suggestion chips (plan Epic 3.1, AC #2/#6)
 
+Two chip kinds share this tray (plan Fix for pre-mortem.md P1 #2, Task 1.1.1b's auto-apply/
+confirm-first precision floor): **new-page suggestions** (`CaptureChipKind.NEW_PAGE`, unchanged
+from the original design — a heuristic candidate with a confidence score) and **existing-link
+confirmations** (`CaptureChipKind.EXISTING_LINK`, new). An existing-page match that is
+single-word and shorter than 6 characters ("Today", "Ideas") is withheld from auto-linking
+(Surface 2) and instead surfaces here as a chip the user must explicitly confirm before it's
+folded into `linkedText` — see "Design rationale" below.
+
 ```
-│  │ Reading about [[Kotlin          │ │  (preview line, if present)
-│  │ Multiplatform]] today           │ │
-│  │ ┌────┐┌──────────┐┌──────┐      │ │ ← LazyRow, capped at 4, sorted
-│  │ │●Zet││●Note-taki││●KMP  │      │ │   by confidence, silent truncation
-│  │ │kast││ng      × │└──────┘      │ │   beyond 4 (no "show more")
-│  │ │en ×│└──────────┘              │ │
-│  │ └────┘                          │ │
+│  │ Reading about [[Kotlin          │ │  (preview line, if present — auto-
+│  │ Multiplatform]] today           │ │   applied matches only)
+│  │ ┌──────┐┌────┐┌──────────┐      │ │ ← LazyRow, existing-link chips
+│  │ │⛓Today││●Zet││●Note-taki│      │ │   first, then new-page chips by
+│  │ │     ×│kast││ng      × │      │ │   confidence, combined cap 4,
+│  │ └──────┘│en ×│└──────────┘      │ │   silent truncation (no "show more")
+│  │          └────┘                  │ │
 │  │                    [Dismiss][Save]│ │
 ```
 
-Each chip: `[● confidence dot][term][×]`, structurally copied from `ImportScreen.kt:551-620`'s
-`TopicSuggestionChip` at reduced padding (plan Task 3.1.1a). Confidence-dot color mapping
-(unchanged from Import, `ImportScreen.kt:551-554`): ≥0.7 → `colorScheme.primary`, ≥0.4 →
-`colorScheme.secondary`, else → `colorScheme.error`.
+**New-page chip**: `[● confidence dot][term][×]`, structurally copied from
+`ImportScreen.kt:551-620`'s `TopicSuggestionChip` at reduced padding (plan Task 3.1.1a).
+Confidence-dot color mapping (unchanged from Import, `ImportScreen.kt:551-554`): ≥0.7 →
+`colorScheme.primary`, ≥0.4 → `colorScheme.secondary`, else → `colorScheme.error`.
+
+**Existing-link confirm chip** (new, Task 3.1.1a): `[🔗 icon][term][×]` — no confidence dot
+(`confidence == null` for this kind; it's an exact index match, not a heuristic guess, so
+showing a confidence tier would misrepresent it). Distinguished from a new-page chip by icon
+only, not a new color scheme, per the Pattern Decisions table's "reuse the copied anatomy"
+constraint: `Icons.Outlined.Link` (a link/chain glyph) in the leading-icon slot where the
+confidence dot would otherwise sit, versus `Icons.Outlined.AddCircleOutline` for `NEW_PAGE`
+chips (plan.md picks this pairing explicitly in Task 3.1.1a — both are placeholder Material
+icon choices, so a final icon asset pick belongs in an implementation-time design pass, not this
+doc). Its `contentDescription` is `"Existing page, <term>. Double-tap to link."` — deliberately
+not "confidence <word>," since a confirm-first chip carries no confidence score to report (see
+AC #21).
 
 **Interaction flow, per chip**:
 - **Tap the term/dot region → accept**: haptic `HapticFeedbackType.Confirm` fires synchronously
@@ -113,6 +133,25 @@ Each chip: `[● confidence dot][term][×]`, structurally copied from `ImportScr
 - **Live region**: `Modifier.semantics { liveRegion = LiveRegionMode.Polite }` on the tray
   container — new suggestions are announced by TalkBack only at the next natural pause, never
   interrupting active typing (Task 3.1.2a).
+
+**Combined cap and ordering** (Task 3.1.2a): the tray is one `LazyRow` over one combined,
+capped list, not two independently-capped buckets. Existing-link confirm chips are placed
+first, unconditionally — an exact index match is higher-certainty than a heuristic new-page
+guess — followed by new-page chips sorted by descending confidence. The combined list is then
+capped at **4 total**: e.g. 1 existing-link chip + 3 new-page chips, or 0 existing-link chips +
+4 new-page chips, never 4-per-bucket (8 visible). Truncation beyond 4 is silent, matching AC #9's
+existing "no disclosure control" rule.
+
+**Design rationale — why some existing-page matches require confirmation**: a page name that's
+a single common word under 6 characters ("Today", "Ideas") is exactly the kind of match most
+likely to be a false positive — ordinary prose mentions "today" far more often than it means to
+reference that specific page. Auto-linking a match like that with zero review step risks
+littering a journal entry with wrong backlinks the user never asked for and may not notice until
+much later, browsing that page's "Linked References." Multi-word and longer single-word matches
+carry enough specificity that this false-positive risk is low, so those still auto-apply exactly
+as before. Requiring one confirming tap only for the risky, generic-name case keeps the common
+case (a real, specific page mention) frictionless while adding a review step exactly where it's
+needed.
 
 **Edge case — rapid re-share (`onNewIntent`)**: per `research/ux.md` §4 and plan Task 2.1.2b's
 `collectLatest`, a new share intent's text supersedes the in-flight scan; the *previous* tray
@@ -335,12 +374,21 @@ gap).
 8. **Suggestion tray never displaces the text field** — only the button row shifts down when the
    tray/preview appear; the text field's position and focus are never disturbed mid-type
    (research §5, ranked #2 failure mode; Surface 2/3).
-9. **Chip cap is 3–4 visible, no disclosure control** — truncation beyond the cap is silent, by
-   descending confidence; no "Show more" affordance anywhere in the capture sheet (Surface 3).
+9. **Chip cap is 4 visible total, combined across both chip kinds, no disclosure control** —
+   the tray is one combined, capped list: existing-link confirm chips first (unconditionally),
+   then new-page chips by descending confidence, capped at 4 total (not 4-per-kind); truncation
+   beyond the cap is silent — no "Show more" affordance anywhere in the capture sheet (Surface 3).
 10. **Auto-applied links are communicated inline via `[[bracket]]` syntax** in a read-only
-    preview line, never by rewriting the live editable field's content (Surface 2).
-11. **Auto-applied links carry no chip/tray affordance** — they are not tappable, dismissible, or
-    otherwise interactive; only new-page suggestions render as chips (AC #6; Surface 2 vs. 3).
+    preview line, never by rewriting the live editable field's content (Surface 2). This applies
+    only to matches that clear the auto-apply precision floor (Surface 3's "Design rationale") —
+    a confirm-first existing-link match is never shown pre-applied in this preview.
+11. **Auto-applied links carry no chip/tray affordance; existing-link matches that require
+    confirmation do.** Two kinds of link-related affordance exist: (a) auto-applied links
+    (multi-word matches, or single-word matches ≥6 characters) render only in the read-only
+    preview line — not tappable, dismissible, or otherwise interactive; (b) existing-link
+    confirm-first matches (single-word, <6 characters) render as tappable, dismissible chips in
+    the tray, distinguished from new-page suggestion chips only by icon (`EXISTING_LINK` vs.
+    `NEW_PAGE`, Surface 3) (AC #6; Surface 2 vs. 3).
 
 ### Post-save "Done" window (AC #9)
 
@@ -380,9 +428,12 @@ gap).
     at implementation time that `minimumInteractiveComponentSize()` (or equivalent explicit
     padding) is applied to **both** `IconButton`s copied from `ImportScreen.kt:596-617`, not only
     the dismiss one (Surface 7's Flag).
-21. **Chip `contentDescription` is exactly**: `"Suggested page, <term>, confidence
-    <high|medium|low>. Double-tap to accept."` — confidence spelled out as a word at the 0.7/0.4
-    thresholds (matching `ImportScreen.kt:551-554`), never a numeric score, never color-only
+21. **Chip `contentDescription` is exactly one of two formats, by chip kind**:
+    - `NEW_PAGE` chips: `"Suggested page, <term>, confidence <high|medium|low>. Double-tap to
+      accept."` — confidence spelled out as a word at the 0.7/0.4 thresholds (matching
+      `ImportScreen.kt:551-554`), never a numeric score, never color-only.
+    - `EXISTING_LINK` chips: `"Existing page, <term>. Double-tap to link."` — no confidence
+      clause, since a confirm-first match carries no confidence score to report (Surface 3).
     (Surface 7).
 22. **A screen-reader-reachable dismiss action exists** for every chip — via a `customActions`
     semantics entry (e.g. "Dismiss suggestion") surfaced in TalkBack's actions menu, not only via
@@ -426,6 +477,7 @@ gap).
 | 6 | Preview-line (Epic 3.2) staleness handling not specified — could show a `[[link]]` preview for text the user has already edited past | Minor gap, same shape as Finding 1 | Surface 2 |
 | 7 | AC's suggested "4.5:1" contrast threshold is the text-contrast SC (1.4.3); the confidence dot is a non-text graphical indicator, so SC 1.4.11 (3:1) is the correct bar | Correction, not a blocker | AC #25 |
 | 8 | `secondary`/`error` colors (medium/low confidence dots) are unthemed M3 defaults in dark/stone mode — not sourced from this repo's `Theme.kt`, contrast unverifiable from source | Verification requirement, not a code gap | AC #25 |
+| 9 | This doc had zero mention of `CaptureChipKind.EXISTING_LINK` (the confirm-first existing-link chip, plan Fix for pre-mortem.md P1 #2, Task 1.1.1b/3.1.1a/3.1.2a), added to `plan.md` after this doc's original draft. Closed in this pass: Surface 3's wireframe/anatomy note, AC #9/#11/#21, and a new "Design rationale" paragraph | Documentation staleness, now closed | Surface 3, AC #9/#11/#21 |
 
 None of findings 1–6 require new abstractions — each is a one-condition gate, a semantics
 addition, or a `Modifier` parameter, consistent with the plan's own "no new abstractions beyond
