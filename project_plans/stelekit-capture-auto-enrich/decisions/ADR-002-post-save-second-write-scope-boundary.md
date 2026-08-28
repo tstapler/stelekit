@@ -62,6 +62,22 @@ constraints, enforced by `CaptureViewModel.acceptSuggestionPostSave()`
 5. It is bounded in time by the post-save "Done" window's own auto-finish timer
    (`research/ux.md` §3c, ~2.5–3s, resettable, paused on accessibility focus) — once
    the sheet finishes, no further second write can occur for that capture session.
+6. **It must verify, before doing anything else, that the active graph is still the
+   one `performSave()` wrote to** — compare `SavedCaptureContext.graphId` (captured at
+   save time) against `GraphManager.getActiveGraphId()` at the top of
+   `acceptSuggestionPostSave()`, and degrade to the same "suggestion not applied"
+   failure as constraint 4 on a mismatch, before reading or writing anything.
+   `SavedCaptureContext` also carries the originating graph's `pageRepository`/
+   `blockRepository` for this reason: every read/write this method performs must go
+   through those captured references, never through a freshly-fetched "currently
+   active" `RepositorySet`, since "active" can silently mean a different graph by the
+   time an unbounded post-save window ends in a tap. This closes a gap constraint 1's
+   original wording didn't make operational — "never read from disk [for anything but
+   the one block/page]" is satisfied by *which* repository is queried, not just *what*
+   is queried for, and an existence check against the wrong graph's `pageRepository`
+   would have violated the spirit of constraint 1 while technically querying "by page
+   name" as intended. (Identified as a BLOCKER by both `implementation/architecture-review.md`
+   and `implementation/adversarial-review.md`.)
 
 ## Rationale
 
@@ -100,7 +116,13 @@ independently of process death.
 
 - `CaptureViewModel.SavedCaptureContext` is the single mechanism through which this
   boundary is enforced — its existence is both necessary and sufficient evidence that
-  constraints 2 and 3 hold (see the plan's Story 2.3.2, Story 4.2.1).
+  constraints 2 and 3 hold (see the plan's Story 2.3.2, Story 4.2.1). It is *not*, on
+  its own, sufficient evidence that constraint 6 holds: a `SavedCaptureContext` that
+  still exists only proves a save happened at some point, not that the graph it was
+  captured for is still the active one — that is exactly why constraint 6 requires an
+  explicit `graphId` comparison at the top of `acceptSuggestionPostSave()`, rather than
+  treating `savedContext != null` as sufficient (adversarial-review.md Minor, on an
+  earlier draft of this ADR that conflated the two).
 - No other class or write path in this codebase needs to change to honor this ADR —
   `GraphWriter`/`DatabaseWriteActor` are used exactly as designed, just from a second
   call site under the constraints above.
