@@ -3,6 +3,13 @@
 **Date**: 2026-08-27
 **Verdict**: CLEAN
 
+> **Historical note**: this review pre-dates a later plan.md revision that removed the
+> `saveOpMutex` design mentioned below in favor of a synchronous-fold pattern (plan.md's
+> Pattern Decisions table, "Remove `saveOpMutex` — do not add it"). References to
+> `saveOpMutex` here describe a superseded design, not the shipped code — see
+> `CaptureViewModel.acceptSuggestion()`/`save()` and `validation.md`'s
+> `acceptSuggestionThenSave_synchronousFoldWinsRace_...` test for the actual final design.
+
 **Constitution check**: `docs/adr/ADR-000-architecture-constitution.md` does not exist in this
 repository (`docs/adr/` runs ADR-001…ADR-017, no ADR-000). No constitution section applies.
 

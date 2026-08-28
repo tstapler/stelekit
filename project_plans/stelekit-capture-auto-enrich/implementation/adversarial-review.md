@@ -3,6 +3,13 @@
 **Date**: 2026-08-27
 **Verdict**: CLEAN
 
+> **Historical note**: this review pre-dates a later plan.md revision that removed the
+> `saveOpMutex` design mentioned below in favor of a synchronous-fold pattern (plan.md's
+> Pattern Decisions table, "Remove `saveOpMutex` — do not add it"). References to
+> `saveOpMutex` here describe a superseded design, not the shipped code — see
+> `CaptureViewModel.acceptSuggestion()`/`save()` and `validation.md`'s
+> `acceptSuggestionThenSave_synchronousFoldWinsRace_...` test for the actual final design.
+
 ## Resolved since prior review
 
 - **Blocker 1 (graph-identity gap)** — genuinely fixed. `SavedCaptureContext` (Task
