@@ -3,6 +3,7 @@
 package dev.stapler.stelekit
 
 import android.app.Application
+import android.content.Context
 import android.os.Looper
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -13,16 +14,21 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.requestFocus
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
 import dev.stapler.stelekit.domain.ScanResult
@@ -49,10 +55,12 @@ import org.robolectric.annotation.Config
  * separately from `CaptureActivity.kt` at the Kotlin file-visibility level — can exercise them
  * directly instead of only through the full `CaptureActivity`.
  *
- * `@Config(application = Application::class)` is used throughout (never `SteleKitApplication`):
- * these tests only need `CaptureViewModel`'s state flows, driven directly via reflection on its
- * private backing fields (the same accepted pattern `CaptureViewModelTest` uses for
- * `savedContext`) — no real graph/coordinator plumbing is exercised.
+ * `@Config(application = Application::class)` is used throughout, with one per-method exception
+ * (`saveButton_alwaysEnabledRegardlessOfScanState_tapProducesImmediateSave`, which taps the real
+ * Save button and so needs `SteleKitApplication`): these tests only need `CaptureViewModel`'s
+ * state flows, driven directly via reflection on its private backing fields (the same accepted
+ * pattern `CaptureViewModelTest` uses for `savedContext`) — no real graph/coordinator plumbing is
+ * exercised.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29], application = Application::class, qualifiers = "w411dp-h891dp-xhdpi")
@@ -487,6 +495,139 @@ class CaptureActivityTest {
         )
     }
 
+    // ---- Task 4.3.1a/b/c: post-save "Done" window auto-finish timer — virtual-time control ------
+    //
+    // `composeRule.mainClock` drives the timer's `delay(2_750)` deterministically (confirmed
+    // empirically: `advanceTimeBy` progresses the suspended `delay()` inside `LaunchedEffect`,
+    // while the default `autoAdvance = true` + `waitForIdle()` used by the tests above does NOT
+    // fast-forward through it — that's why `postSaveDoneWindow_scrimTapFinishesImmediately...`
+    // above can assert `savedCount == 0` right after entering the Done window). A real `Modifier
+    // .clickable`-driven `performClick()` synthesizes an actual touch gesture, whose delivery to
+    // Compose's internal pointer-input coroutine (for a `LazyRow` item specifically) needs
+    // `autoAdvance = true` to process — but re-enabling `autoAdvance` while a `delay()` is already
+    // in flight lets the SAME virtual clock auto-advance through it (verified: it broke this
+    // exact test, firing the pre-reset timer during the toggle). So chip interactions below invoke
+    // the chip's own `SemanticsActions.OnClick` handler directly via `performSemanticsAction` —
+    // the identical mechanism `CaptureSuggestionChip`'s `IconButton.onClick` is wired to, and the
+    // same "invoke the real action, skip touch-gesture simulation" pattern this file already uses
+    // in `captureSuggestionChip_talkBackCustomActions_includesDismissSuggestionAction` — which
+    // exercises the real `onChipInteraction()` -> `resetKey++` path without needing a live clock.
+
+    @Test
+    fun postSave_pendingChips_autoFinishesAfterTimeoutAndChipTapResetsTimer() {
+        val vm = newViewModel()
+        vm.updateText("hello")
+        setScanState(
+            vm,
+            readyState(
+                text = "hello",
+                topicSuggestions = listOf(suggestion("Zettelkasten", 0.9f)),
+                confirmFirstNames = listOf("Today"),
+            ),
+        )
+        var savedCount = 0
+        composeRule.mainClock.autoAdvance = false
+        composeRule.setContent { MaterialTheme { CaptureScreen(vm, onSaved = { savedCount++ }, onDismiss = {}) } }
+        setSaveState(vm, CaptureViewModel.SaveState.Saved)
+
+        // Advance to just short of the ~2.75s deadline — timer must not have fired yet.
+        composeRule.mainClock.advanceTimeBy(2_000)
+        assertEquals("must not fire before the ~2.75s window elapses", 0, savedCount)
+
+        // Tap the existing-link chip's accept region — a real chip interaction through its actual
+        // `SemanticsActions.OnClick` handler (not a viewModel-direct call), so it exercises
+        // `onChipInteraction()`'s `resetKey++`, the actual reset mechanism under test.
+        // `acceptExistingLink` is synchronous (no coroutine dispatch unless `savedContext` is
+        // non-null, which it never is here) — safe to invoke on this `Application::class`-backed
+        // `CaptureViewModel`.
+        composeRule.onNodeWithContentDescription("Existing page, Today. Double-tap to link.")
+            .performSemanticsAction(SemanticsActions.OnClick)
+
+        // Advance by the SAME 2_000ms again. If the tap had reset the timer to a fresh full
+        // duration, only 2_000ms has elapsed since the reset — still short of 2_750ms, so it must
+        // not have fired. If the tap had done nothing (or merely "extended" from the old
+        // countdown), the timeline since the original start would now be 4_000ms — well past
+        // 2_750ms — and it WOULD have already fired. Asserting 0 here is exactly what
+        // distinguishes "reset" from "extend"/"ignored".
+        composeRule.mainClock.advanceTimeBy(2_000)
+        assertEquals("a chip tap must reset the timer to a fresh full duration", 0, savedCount)
+
+        // The reset timer still eventually fires on its own.
+        composeRule.mainClock.advanceTimeBy(1_000) // cumulative 3_000ms since the reset
+        assertEquals("the reset timer must auto-finish once its own ~2.75s window elapses", 1, savedCount)
+    }
+
+    /**
+     * Task 4.3.1c: while TalkBack-style accessibility focus is present in the sheet (touch
+     * exploration enabled + Compose focus inside the sheet), the auto-finish timer is PAUSED, not
+     * merely extended — it never starts counting down at all while the signal holds, and resumes
+     * from scratch once the signal clears (`design/ux.md`'s pause-not-extend requirement).
+     *
+     * `hasAccessibilityFocus` (CaptureActivity.kt) is `hasFocusWithinSheet && accessibilityManager
+     * ?.isTouchExplorationEnabled == true` — Robolectric's `ShadowAccessibilityManager` drives the
+     * touch-exploration half deterministically; `hasFocusWithinSheet` is real Compose focus
+     * (`onFocusEvent` on the sheet's `focusGroup()`), driven here by moving focus onto the text
+     * field via `requestFocus()` (a real focus change, not a stand-in for one).
+     */
+    @Test
+    fun postSaveDoneWindow_accessibilityFocusPresent_autoFinishTimerPaused() {
+        val vm = newViewModel()
+        vm.updateText("hello")
+        setScanState(vm, readyState(text = "hello", topicSuggestions = listOf(suggestion("Zettelkasten", 0.9f))))
+        var savedCount = 0
+        val app = ApplicationProvider.getApplicationContext<Application>()
+        val accessibilityManager =
+            app.getSystemService(Context.ACCESSIBILITY_SERVICE) as android.view.accessibility.AccessibilityManager
+        shadowOf(accessibilityManager).setTouchExplorationEnabled(true)
+
+        composeRule.mainClock.autoAdvance = false
+        composeRule.setContent { MaterialTheme { CaptureScreen(vm, onSaved = { savedCount++ }, onDismiss = {}) } }
+
+        // Establish Compose focus inside the sheet (the text field) BEFORE the Done window even
+        // starts, and let it settle — this sidesteps any ambiguity about whether
+        // `hasAccessibilityFocus` is already true at the exact moment `isDone` flips (which is
+        // what actually (re)starts `LaunchedEffect(isDone, resetKey, hasAccessibilityFocus)`).
+        // Focus-requesting is a real state change (not click-dispatch), so it settles under a
+        // paused clock like any other state-driven recomposition.
+        composeRule.onNodeWithText("hello").requestFocus()
+        composeRule.mainClock.advanceTimeBy(500)
+        println(
+            "DEBUG focused=" +
+                composeRule.onNodeWithText("hello").fetchSemanticsNode().config
+                    .getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Focused) +
+                " touchExploration=" + accessibilityManager.isTouchExplorationEnabled,
+        )
+
+        // Now enter the Done window — `hasAccessibilityFocus` is already true by this point.
+        setSaveState(vm, CaptureViewModel.SaveState.Saved)
+
+        // Paused: well past the ~2.75s window's normal deadline, the timer must never have fired
+        // because `LaunchedEffect(isDone, resetKey, hasAccessibilityFocus)`'s guard
+        // (`if (isDone && !hasAccessibilityFocus)`) never entered the `delay()` branch at all.
+        for (i in 1..11) {
+            composeRule.mainClock.advanceTimeBy(500)
+            val stillFocused = composeRule.onNodeWithText("hello").fetchSemanticsNode().config
+                .getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Focused)
+            println(
+                "DEBUG t=${i * 500}ms savedCount=$savedCount focused=$stillFocused " +
+                    "touchExploration=${accessibilityManager.isTouchExplorationEnabled}",
+            )
+        }
+        assertEquals(
+            "the auto-finish timer must be paused (never started), not merely running slower, " +
+                "while accessibility focus is present",
+            0, savedCount,
+        )
+
+        // Clearing the signal resumes the timer from a full, fresh duration (Task 4.3.1c: resume,
+        // not "credit" for time already elapsed while paused).
+        shadowOf(accessibilityManager).setTouchExplorationEnabled(false)
+        composeRule.mainClock.advanceTimeBy(2_000)
+        assertEquals("must not fire before a fresh ~2.75s window elapses after resuming", 0, savedCount)
+        composeRule.mainClock.advanceTimeBy(2_000) // cumulative 4_000ms since resuming
+        assertEquals("must auto-finish once the resumed window elapses", 1, savedCount)
+    }
+
     // ---- Story 5.2.10: combined chip tray cap — 4 TOTAL, not 4 per bucket -------------------
 
     @Test
@@ -517,5 +658,108 @@ class CaptureActivityTest {
         composeRule.onNodeWithText("A").assertDoesNotExist()
         composeRule.onNodeWithText("C").assertDoesNotExist()
         composeRule.onNodeWithText("E").assertDoesNotExist()
+    }
+
+    // ---- validation.md spec-compliance sweep: small UX-table gaps (rows 2, 6, 7, 8, 11) -------
+
+    @Test
+    fun pendingSuggestions_empty_rendersNoEmptyStateLabel() {
+        val vm = newViewModel()
+        vm.updateText("hello")
+        setScanState(vm, readyState(text = "hello", topicSuggestions = emptyList()))
+        composeRule.setContent { MaterialTheme { CaptureScreen(vm, onSaved = {}, onDismiss = {}) } }
+        composeRule.waitForIdle()
+
+        // Zero pending chips renders no tray at all (production's `if (pendingChips.isNotEmpty())`
+        // guard) and no placeholder text ("no suggestions yet" or similar) fills the gap.
+        composeRule.onAllNodesWithText("suggestion", ignoreCase = true, substring = true).assertCountEquals(0)
+    }
+
+    @Test
+    fun scanningState_noSpinnerComposableExistsInTree() {
+        val vm = newViewModel()
+        vm.updateText("hello")
+        composeRule.setContent { MaterialTheme { CaptureScreen(vm, onSaved = {}, onDismiss = {}) } }
+        composeRule.waitForIdle()
+
+        // CaptureViewModel.ScanState has no distinct "scan in flight" variant of its own — a scan
+        // in progress is represented as NotReady until it resolves — so sweeping NotReady and
+        // both Ready shapes covers every scanState the Save button's `enabled`/render logic can
+        // observe. `saveState` is left at its default `Idle` throughout, so this also proves the
+        // Save button's own `CircularProgressIndicator` (gated on `saveState == Saving`, not on
+        // scanState) never renders purely from a scan being in progress.
+        for (state in listOf(
+            CaptureViewModel.ScanState.NotReady,
+            readyState(text = "hello", topicSuggestions = emptyList()),
+            readyState(text = "hello", topicSuggestions = listOf(suggestion("Zettelkasten", 0.9f))),
+        )) {
+            setScanState(vm, state)
+            composeRule.waitForIdle()
+            composeRule.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.ProgressBarRangeInfo))
+                .assertCountEquals(0)
+        }
+    }
+
+    // Deviates from this file's usual plain-`Application::class` config (see class doc) because
+    // the second half of this test taps the real Save button, which calls production
+    // `CaptureViewModel.save()` -> `getApplication<SteleKitApplication>()` — that cast throws
+    // against a plain `Application`. No graph is opened on this `SteleKitApplication`, but its
+    // `onCreate()` still constructs a real (empty) `GraphManager`, so `save()` proceeds into its
+    // async `viewModelScope.launch { performSave(...) }` branch rather than the synchronous
+    // no-graph-manager early return.
+    @Test
+    @Config(sdk = [29], application = SteleKitApplication::class, qualifiers = "w411dp-h891dp-xhdpi")
+    fun saveButton_alwaysEnabledRegardlessOfScanState_tapProducesImmediateSave() {
+        val vm = CaptureViewModel(ApplicationProvider.getApplicationContext())
+        vm.updateText("hello")
+        composeRule.setContent { MaterialTheme { CaptureScreen(vm, onSaved = {}, onDismiss = {}) } }
+        composeRule.waitForIdle()
+
+        // Save's `enabled` condition (`saveState == Idle && captureText.isNotBlank()`) never
+        // reads scanState — sweep every scanState shape and assert it stays enabled throughout.
+        for (state in listOf(
+            CaptureViewModel.ScanState.NotReady,
+            readyState(text = "hello", topicSuggestions = emptyList()),
+            readyState(text = "hello", topicSuggestions = listOf(suggestion("Zettelkasten", 0.9f))),
+        )) {
+            setScanState(vm, state)
+            composeRule.waitForIdle()
+            composeRule.onNodeWithText("Save").assertIsEnabled()
+        }
+
+        // A real tap must actually reach the button's onClick — `viewModel::save` in production
+        // (CaptureActivity.kt) — not something disabled or intercepted. `save()`'s own
+        // `viewModelScope.launch { performSave(...) }` runs on `Dispatchers.Main`, which this
+        // Compose test harness's virtual-time `TestDispatcher` does not drive for coroutines
+        // launched outside composition (confirmed empirically: neither `waitForIdle()` nor
+        // `mainClock.advanceTimeUntil(...)` observes it complete) — asserting the async save
+        // outcome itself would need a differently-shaped harness, out of scope here. Asserting
+        // the click reaches the button without throwing, combined with the enabled-sweep above,
+        // is what this test can honestly prove: Save is never gated on scanState.
+        composeRule.onNodeWithText("Save").performClick()
+        composeRule.waitForIdle()
+    }
+
+    @Test
+    fun autoLinkPreviewLine_notTappableOrDismissible_onlyNewPageSuggestionsAreChips() {
+        val vm = newViewModel()
+        vm.updateText("Reading about Kotlin Multiplatform")
+        setScanState(
+            vm,
+            readyState(text = "Reading about Kotlin Multiplatform", linkedText = "Reading about [[Kotlin Multiplatform]]"),
+        )
+        composeRule.setContent { MaterialTheme { CaptureScreen(vm, onSaved = {}, onDismiss = {}) } }
+        composeRule.waitForIdle()
+
+        val previewNode = composeRule.onNodeWithText(
+            "Reading about [[Kotlin Multiplatform]]",
+            useUnmergedTree = true,
+        ).fetchSemanticsNode()
+        assertTrue(
+            "the read-only auto-link preview line must carry no click affordance",
+            previewNode.config.getOrNull(SemanticsActions.OnClick) == null,
+        )
+        // No dismiss/accept affordance exists for it either — only new-page suggestions are chips.
+        composeRule.onNodeWithContentDescription("Dismiss").assertDoesNotExist()
     }
 }

@@ -6,6 +6,7 @@ import android.app.Application
 import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
 import arrow.core.Either
+import arrow.core.getOrElse
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.GraphManager
@@ -42,6 +43,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.launch
@@ -838,6 +840,110 @@ class CaptureViewModelTest {
             .get(ctxAfter) as Block
         assertEquals("the second write must update the SAME block, not a new one", blockUuidBefore, blockAfter.uuid)
         assertTrue(blockAfter.content.contains("[[Zettelkasten]]"))
+    }
+
+    // ---- AC #7 integration: a failed post-save chip write never touches the original save ----
+
+    @Test
+    @Config(sdk = [29], application = SteleKitApplication::class)
+    fun `acceptSuggestion_stubPageWriteFails_blockWriteAndMarkdownFlushUnaffected`() {
+        val (app, graphManager) = newWiredApplication()
+        val graphPath = openTestGraph(graphManager)
+        val viewModel = CaptureViewModel(app)
+
+        // Drive a REAL save() to completion first — unlike the pre-save failure-isolation test
+        // above (savedContext == null, acceptSuggestion() never reaches performSave() at all),
+        // this proves the original capture's block write and markdown flush (Bug-1/Bug-8
+        // mitigations in performSave()) survive a subsequent chip-accept failure untouched.
+        val originalText = "Reading about Zettelkasten today"
+        viewModel.updateText(originalText)
+        viewModel.save()
+        awaitSaveState(viewModel)
+        assertEquals(CaptureViewModel.SaveState.Saved, viewModel.saveState.value)
+
+        val ctxBefore = readSavedContext(viewModel)!!
+        val blockBefore = ctxBefore.javaClass.getDeclaredField("block").apply { isAccessible = true }
+            .get(ctxBefore) as Block
+        val pageBefore = ctxBefore.javaClass.getDeclaredField("page").apply { isAccessible = true }
+            .get(ctxBefore) as Page
+
+        val journalFile = File(graphPath, "journals/${FileUtils.sanitizeFileName(pageBefore.name)}.md")
+        assertTrue("journal markdown must exist after save(): ${journalFile.absolutePath}", journalFile.exists())
+        val journalContentAfterSave = journalFile.readText()
+        assertTrue(journalContentAfterSave.contains(originalText))
+
+        val repoSet = graphManager.getActiveRepositorySet()!!
+        fun blocksOnDisk() = runBlocking {
+            repoSet.blockRepository.getBlocksForPage(pageBefore.uuid).first()
+                .getOrElse { error("Failed to read blocks: $it") }
+        }
+        // ensureTodayJournal() seeds a blank placeholder block for a brand-new journal page, so
+        // there are two blocks after save() (the placeholder + our new one) — look up ours by
+        // uuid rather than assuming it's the page's only block.
+        val blocksAfterSave = blocksOnDisk()
+        assertEquals(originalText, blocksAfterSave.single { it.uuid == blockBefore.uuid }.content)
+
+        // Force the accepted chip's stub-page write to fail: corrupt "pages/" into a plain file
+        // (same technique as `acceptSuggestion_preSaveStubWriteFails_...` above) so
+        // acceptSuggestionPostSave()'s `ctx.writer.savePage(stubPage, ...)` call for the new term
+        // page genuinely fails on disk. Journal writes live under "journals/", not "pages/", so
+        // this cannot retroactively corrupt what save() already flushed.
+        val pagesPath = File(graphPath, "pages")
+        pagesPath.parentFile?.mkdirs()
+        pagesPath.createNewFile()
+
+        setScanState(
+            viewModel,
+            CaptureViewModel.ScanState.Ready(
+                text = viewModel.captureText.value,
+                result = ScanResult(
+                    linkedText = viewModel.captureText.value,
+                    matchedPageNames = emptyList(),
+                    topicSuggestions = listOf(TopicSuggestion("Zettelkasten", 0.8f, TopicSuggestion.Source.LOCAL)),
+                ),
+            ),
+        )
+
+        val (job, emitted) = collectChipFailures(viewModel)
+        viewModel.acceptSuggestion("Zettelkasten")
+
+        awaitCondition { emitted.isNotEmpty() }
+        job.cancel()
+
+        // (a) the chip failure is isolated/surfaced — same guarantee the pre-save test covers.
+        assertEquals(listOf("Couldn't create page for \"Zettelkasten\""), emitted)
+
+        // (b) the original block, as persisted by performSave(), is untouched: the stub-page
+        // write failure returns from acceptSuggestionPostSave() before writeLinkedBlockPostSave()
+        // is ever reached, so the original save's block write is never re-invoked.
+        val blocksAfterFailure = blocksOnDisk()
+        assertEquals(
+            "the failed chip-accept write must not add or remove any block on the original page",
+            blocksAfterSave.size, blocksAfterFailure.size,
+        )
+        val blockAfterFailure = blocksAfterFailure.single { it.uuid == blockBefore.uuid }
+        assertEquals(
+            "original block content must remain exactly what performSave() wrote — " +
+                "no [[Zettelkasten]] inserted by the failed chip-accept path",
+            originalText, blockAfterFailure.content,
+        )
+
+        // (c) the original save's markdown flush is untouched on disk.
+        assertEquals(
+            "journal markdown on disk must be unchanged by the failed chip-accept path",
+            journalContentAfterSave, journalFile.readText(),
+        )
+
+        // (d) the in-memory savedContext snapshot captured by performSave() was not mutated
+        // either — it is only updated on a successful writeLinkedBlockPostSave(), never reached.
+        val ctxAfter = readSavedContext(viewModel)!!
+        val blockAfter = ctxAfter.javaClass.getDeclaredField("block").apply { isAccessible = true }
+            .get(ctxAfter) as Block
+        assertEquals(
+            "savedContext's captured block must be untouched by the failed chip-accept path",
+            blockBefore.content, blockAfter.content,
+        )
+        assertFalse(blockAfter.content.contains("[[Zettelkasten]]"))
     }
 
     @Test
