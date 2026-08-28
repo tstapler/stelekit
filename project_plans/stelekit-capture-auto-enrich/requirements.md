@@ -189,7 +189,13 @@ Activity, not a long-lived screen).
 - A shared article/URL, sent through the Android share sheet, lands in today's
   journal with existing-page mentions already linked and at least the local-heuristic
   suggestion chips available — with zero additional taps beyond today's flow when the
-  user just hits Save.
+  user just hits Save. **Known v1 limitation**: `CaptureActivity` only ever reads
+  `EXTRA_TEXT`/`EXTRA_SUBJECT`/clipData (see `implementation/pre-mortem.md` failure #5)
+  — no article-body fetch. When the sharing app's "Share" action sends only a bare URL
+  (common for some share targets), there is no prose for the matcher/extractor to work
+  against, so this scenario honestly produces zero auto-links and zero/minimal chips;
+  `implementation/validation.md` documents and tests this expected behavior rather than
+  treating it as undefined.
 - No regression in `CaptureActivity`'s existing golden-path tests or perceived launch
   responsiveness.
 - No regression in `ImportViewModel`/`TagSuggestionEngine` behavior — this is additive

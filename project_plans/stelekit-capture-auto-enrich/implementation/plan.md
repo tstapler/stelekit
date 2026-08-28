@@ -777,9 +777,12 @@ together with Task 3.1.2a, not strictly after all of Phase 3.
   Material3 version and degrade to an instant appear rather than animating when it's set —
   verify the exact API at implementation time (likely covered by Compose's platform-level
   animation-duration scaling with no bespoke code needed, but confirm rather than assume).
-- Below the `OutlinedTextField`, before the suggestion tray:
+- Below the `OutlinedTextField`, before the suggestion tray. Gated on `readyState.text == captureText`
+  (the same staleness check Task 3.1.2a's chip tray already applies) — without it, this caption could
+  keep showing a `[[link]]` preview computed against text the user has since typed past, for longer
+  than one debounce cycle during continuous typing (design/ux.md Cross-Check Finding #6):
   ```kotlin
-  val readyState = scanState as? CaptureViewModel.ScanState.Ready
+  val readyState = (scanState as? CaptureViewModel.ScanState.Ready)?.takeIf { it.text == captureText }
   if (readyState != null && readyState.result.linkedText != readyState.text) {
       Text(
           text = readyState.result.linkedText,

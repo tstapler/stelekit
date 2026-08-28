@@ -467,18 +467,20 @@ gap).
 
 ## Cross-Check Findings Summary (plan vs. research vs. this doc)
 
-| # | Finding | Severity | Where |
-|---|---|---|---|
-| 1 | Chip tray's `pendingSuggestions` is not gated on `scanState.text == captureText.value`, unlike `save()`'s staleness check — can show suggestions computed against superseded text for one debounce cycle | Real gap | Surface 3 |
-| 2 | No visible failure signal for a failed chip accept (`onLeft { logger.error(...) }` only) — contradicts `research/ux.md` §4's explicit "must not silently revert with no signal" | Real gap (AC #7's literal text is satisfied by logging; the UX bar research set is not) | Surface 6 |
-| 3 | No screen-reader-reachable dismiss action — chip semantics only expose "Double-tap to accept" | Real accessibility parity gap | Surface 7 |
-| 4 | Touch-target fix (`minimumInteractiveComponentSize()`) named only for the dismiss `IconButton` in plan Task 3.1.1a; the accept `IconButton` (copied from `ImportScreen.kt:607-610`, `size(20.dp)`) needs the identical fix | Real gap if literally read; likely just under-specified wording | Surface 7 |
-| 5 | Post-save "Done" window leaves the text field's enabled/editable state unspecified — an editable-but-inert field is a soft dead end for input, distinct from the sheet-exit dead end AC #9 already covers | Recommendation, not yet a decision in plan.md | Surface 5 |
-| 6 | Preview-line (Epic 3.2) staleness handling not specified — could show a `[[link]]` preview for text the user has already edited past | Minor gap, same shape as Finding 1 | Surface 2 |
-| 7 | AC's suggested "4.5:1" contrast threshold is the text-contrast SC (1.4.3); the confidence dot is a non-text graphical indicator, so SC 1.4.11 (3:1) is the correct bar | Correction, not a blocker | AC #25 |
-| 8 | `secondary`/`error` colors (medium/low confidence dots) are unthemed M3 defaults in dark/stone mode — not sourced from this repo's `Theme.kt`, contrast unverifiable from source | Verification requirement, not a code gap | AC #25 |
-| 9 | This doc had zero mention of `CaptureChipKind.EXISTING_LINK` (the confirm-first existing-link chip, plan Fix for pre-mortem.md P1 #2, Task 1.1.1b/3.1.1a/3.1.2a), added to `plan.md` after this doc's original draft. Closed in this pass: Surface 3's wireframe/anatomy note, AC #9/#11/#21, and a new "Design rationale" paragraph | Documentation staleness, now closed | Surface 3, AC #9/#11/#21 |
+| # | Finding | Severity | Where | Status |
+|---|---|---|---|---|
+| 1 | Chip tray's `pendingSuggestions` is not gated on `scanState.text == captureText.value`, unlike `save()`'s staleness check — can show suggestions computed against superseded text for one debounce cycle | Real gap | Surface 3 | **Closed** — plan.md Task 3.1.2a gates the combined tray on `readyState.text == captureText` |
+| 2 | No visible failure signal for a failed chip accept (`onLeft { logger.error(...) }` only) — contradicts `research/ux.md` §4's explicit "must not silently revert with no signal" | Real gap (AC #7's literal text is satisfied by logging; the UX bar research set is not) | Surface 6 | **Closed** — plan.md Story 4.1.3 adds a `chipFailure` `SharedFlow` surfaced via the existing `snackbarHostState` |
+| 3 | No screen-reader-reachable dismiss action — chip semantics only expose "Double-tap to accept" | Real accessibility parity gap | Surface 7 | **Closed** — plan.md Task 3.1.1a adds a `customActions` "Dismiss suggestion" semantics entry |
+| 4 | Touch-target fix (`minimumInteractiveComponentSize()`) named only for the dismiss `IconButton` in plan Task 3.1.1a; the accept `IconButton` (copied from `ImportScreen.kt:607-610`, `size(20.dp)`) needs the identical fix | Real gap if literally read; likely just under-specified wording | Surface 7 | **Closed** — plan.md Task 3.1.1a now explicitly applies it to both `IconButton`s |
+| 5 | Post-save "Done" window leaves the text field's enabled/editable state unspecified — an editable-but-inert field is a soft dead end for input, distinct from the sheet-exit dead end AC #9 already covers | Recommendation, not yet a decision in plan.md | Surface 5 | **Closed** — plan.md Task 4.3.1d sets `enabled = !isDone` for the duration of the Done window |
+| 6 | Preview-line (Epic 3.2) staleness handling not specified — could show a `[[link]]` preview for text the user has already edited past | Minor gap, same shape as Finding 1 | Surface 2 | **Closed** — plan.md Task 3.2.1a now gates the caption on `readyState.text == captureText`, matching Finding 1's fix |
+| 7 | AC's suggested "4.5:1" contrast threshold is the text-contrast SC (1.4.3); the confidence dot is a non-text graphical indicator, so SC 1.4.11 (3:1) is the correct bar | Correction, not a blocker | AC #25 | Correction applied in this doc; no plan.md change needed |
+| 8 | `secondary`/`error` colors (medium/low confidence dots) are unthemed M3 defaults in dark/stone mode — not sourced from this repo's `Theme.kt`, contrast unverifiable from source | Verification requirement, not a code gap | AC #25 | Open — task-time QA verification, not a doc/plan gap |
+| 9 | This doc had zero mention of `CaptureChipKind.EXISTING_LINK` (the confirm-first existing-link chip, plan Fix for pre-mortem.md P1 #2, Task 1.1.1b/3.1.1a/3.1.2a), added to `plan.md` after this doc's original draft. Closed in this pass: Surface 3's wireframe/anatomy note, AC #9/#11/#21, and a new "Design rationale" paragraph | Documentation staleness, now closed | Surface 3, AC #9/#11/#21 | **Closed** |
 
-None of findings 1–6 require new abstractions — each is a one-condition gate, a semantics
-addition, or a `Modifier` parameter, consistent with the plan's own "no new abstractions beyond
-what the task requires" constraint.
+All of findings 1–6 and 9 are closed as of this revision. Findings 7 and 8 are corrections/
+verification notes, not gaps requiring a plan.md change. None of the closed findings required
+new abstractions — each was a one-condition gate, a semantics addition, or a `Modifier`
+parameter, consistent with the plan's own "no new abstractions beyond what the task requires"
+constraint.
