@@ -30,9 +30,11 @@ import dev.stapler.stelekit.util.ContentHasher
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -40,6 +42,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.time.Clock
 import kotlinx.serialization.encodeToString
@@ -92,6 +96,21 @@ class GraphManager(
 
     // Track active coroutines for cleanup during graph switches
     private val activeGraphJobs = mutableMapOf<GraphId, CoroutineScope>()
+
+    // Memoized per-graph CaptureEnrichmentCoordinator construction (Epic 1.2). coordinatorMutex
+    // guards only the cache read/insert below, never the Deferred.await() — see
+    // getOrCreateEnrichmentCoordinator().
+    private val coordinatorMutex = Mutex()
+    private var coordinatorFor: Pair<GraphId, Deferred<dev.stapler.stelekit.domain.CaptureEnrichmentCoordinator>>? = null
+
+    // Same construction recipe App.kt:490-500 uses for the Compose tree's registry — CaptureActivity
+    // never runs that composition, so GraphManager builds its own equivalent, self-contained.
+    private val llmProviderRegistry: dev.stapler.stelekit.llm.LlmProviderRegistry by lazy {
+        dev.stapler.stelekit.llm.buildLlmProviderRegistry(
+            dev.stapler.stelekit.llm.LlmCredentialStore(dev.stapler.stelekit.platform.security.CredentialStore()),
+            dev.stapler.stelekit.llm.LlmSettings(platformSettings),
+        )
+    }
 
     // Git sync service for the currently active graph.
     // Set externally via registerGitSyncService() after GraphLoader/GraphWriter are wired.
@@ -711,7 +730,45 @@ class GraphManager(
         _graphRegistry.value.graphs.map { it.id }.toSet()
     
     fun getActiveRepositorySet(): RepositorySet? = _activeRepositorySet.value
-    
+
+    /**
+     * Returns the current graph's memoized [dev.stapler.stelekit.domain.CaptureEnrichmentCoordinator],
+     * building it once per [GraphId] (race-safe against concurrent callers). Returns `null` if
+     * there is no active graph, no active [RepositorySet], or no [activeGraphJobs] scope yet
+     * (mirrors the "no active graph" guard shape used elsewhere in this class, e.g.
+     * `CaptureViewModel.performSave()`).
+     *
+     * [coordinatorMutex] is held only long enough to read/insert the memoized [Deferred] — never
+     * across the `await()` that actually constructs the coordinator — so a slow construction for
+     * one graph never blocks a concurrent call for a *different* graph. A [Deferred] that fails
+     * during construction is evicted from the cache so the next call attempts a fresh
+     * construction instead of replaying the same failure forever.
+     */
+    suspend fun getOrCreateEnrichmentCoordinator(): dev.stapler.stelekit.domain.CaptureEnrichmentCoordinator? {
+        val (graphId, deferred) = coordinatorMutex.withLock {
+            val graphId = _graphRegistry.value.activeGraphId ?: return@withLock null
+            val repoSet = _activeRepositorySet.value ?: return@withLock null
+            val scope = activeGraphJobs[graphId] ?: return@withLock null
+            val existing = coordinatorFor?.takeIf { it.first == graphId }?.second
+            val deferred = existing ?: scope.async(start = CoroutineStart.LAZY) {
+                val topicEnricher = dev.stapler.stelekit.domain.CaptureEnrichmentCoordinator
+                    .resolveTopicEnricher(llmProviderRegistry)
+                dev.stapler.stelekit.domain.CaptureEnrichmentCoordinator(repoSet.pageRepository, scope, topicEnricher)
+            }.also { coordinatorFor = graphId to it }
+            graphId to deferred
+        } ?: return null
+        return try {
+            deferred.await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            coordinatorMutex.withLock {
+                if (coordinatorFor?.first == graphId) coordinatorFor = null
+            }
+            throw e
+        }
+    }
+
     private suspend fun detectGitRoot(graphPath: String): Pair<String, String>? {
         // Android SAF-opened graphs are "saf://{encodedTreeUri}/{relativePath}" (see
         // PlatformFileSystem.toSafRoot), never a literal "content://" prefix — this check never
