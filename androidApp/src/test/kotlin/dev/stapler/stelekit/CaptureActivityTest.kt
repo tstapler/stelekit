@@ -444,4 +444,78 @@ class CaptureActivityTest {
 
         composeRule.onNodeWithText("Couldn't create page for \"Zettelkasten\"").assertExists()
     }
+
+    // ---- Story 5.2.9: AC #6 consolidated negative cases — no haptic on auto-link, dismiss ----
+    // never confirm-shaped ------------------------------------------------------------------
+
+    @Test
+    fun previewLineRenderAndChipDismiss_neverFireConfirmHaptic() {
+        val recorded = mutableListOf<HapticFeedbackType>()
+        val spy = object : HapticFeedback {
+            override fun performHapticFeedback(hapticFeedbackType: HapticFeedbackType) {
+                recorded += hapticFeedbackType
+            }
+        }
+        val vm = newViewModel()
+        vm.updateText("Reading about Kotlin Multiplatform")
+        setScanState(
+            vm,
+            readyState(
+                text = "Reading about Kotlin Multiplatform",
+                linkedText = "Reading about [[Kotlin Multiplatform]]",
+                topicSuggestions = listOf(suggestion("Zettelkasten", 0.9f)),
+            ),
+        )
+        composeRule.setContent {
+            CompositionLocalProvider(LocalHapticFeedback provides spy) {
+                MaterialTheme { CaptureScreen(vm, onSaved = {}, onDismiss = {}) }
+            }
+        }
+        composeRule.waitForIdle()
+
+        // The read-only auto-link preview line rendering must fire no haptic at all.
+        assertTrue(
+            "auto-applied links must never fire a haptic on render, got: $recorded",
+            recorded.isEmpty(),
+        )
+
+        // Dismissing the pending new-page chip must not fire the Confirm haptic either.
+        composeRule.onNodeWithContentDescription("Dismiss").performClick()
+        assertFalse(
+            "dismiss must never be confirm-shaped, got: $recorded",
+            recorded.contains(HapticFeedbackType.Confirm),
+        )
+    }
+
+    // ---- Story 5.2.10: combined chip tray cap — 4 TOTAL, not 4 per bucket -------------------
+
+    @Test
+    fun pendingSuggestions_confirmFirstPlusNewPageExceedingCap_cappedAtFourTotalNotPerBucket() {
+        val vm = newViewModel()
+        val newPageTerms = listOf("A" to 0.1f, "B" to 0.9f, "C" to 0.3f, "D" to 0.8f, "E" to 0.5f)
+        setScanState(
+            vm,
+            readyState(
+                text = "hello",
+                topicSuggestions = newPageTerms.map { suggestion(it.first, it.second) },
+                confirmFirstNames = listOf("Today", "Ideas"),
+            ),
+        )
+        composeRule.setContent { MaterialTheme { CaptureScreen(vm, onSaved = {}, onDismiss = {}) } }
+        vm.updateText("hello")
+        composeRule.waitForIdle()
+
+        // 2 confirm-first (rendered first) + top 2 new-page by confidence (B=0.9, D=0.8) = 4 total.
+        composeRule.onNodeWithContentDescription("Existing page, Today. Double-tap to link.").assertExists()
+        composeRule.onNodeWithContentDescription("Existing page, Ideas. Double-tap to link.").assertExists()
+        composeRule.onNodeWithText("B").assertExists()
+        composeRule.onNodeWithText("D").assertExists()
+
+        // The remaining 3 new-page candidates must be silently truncated — the cap is 4 total,
+        // not 4-per-bucket (which would have let all 5 new-page chips render alongside the 2
+        // confirm-first chips).
+        composeRule.onNodeWithText("A").assertDoesNotExist()
+        composeRule.onNodeWithText("C").assertDoesNotExist()
+        composeRule.onNodeWithText("E").assertDoesNotExist()
+    }
 }

@@ -13,6 +13,7 @@ import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.domain.CaptureEnrichmentCoordinator
 import dev.stapler.stelekit.domain.NoOpTopicEnricher
 import dev.stapler.stelekit.domain.ScanResult
+import dev.stapler.stelekit.domain.TopicEnricher
 import dev.stapler.stelekit.domain.TopicSuggestion
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.Block
@@ -34,6 +35,7 @@ import java.time.Duration
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -169,21 +171,37 @@ class CaptureViewModelTest {
      * no Keystore provider registered there. `topicEnricher` is a plain [NoOpTopicEnricher], so
      * this path is never touched.
      */
-    private fun seedRealCoordinator(graphManager: GraphManager): CaptureEnrichmentCoordinator {
+    private fun seedRealCoordinator(
+        graphManager: GraphManager,
+        topicEnricher: TopicEnricher = NoOpTopicEnricher(),
+    ): CaptureEnrichmentCoordinator {
         val graphId = graphManager.getActiveGraphId()!!
         val repoSet = graphManager.getActiveRepositorySet()!!
         val coordinatorScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-        val coordinator = CaptureEnrichmentCoordinator(repoSet.pageRepository, coordinatorScope, NoOpTopicEnricher())
+        val coordinator = CaptureEnrichmentCoordinator(repoSet.pageRepository, coordinatorScope, topicEnricher)
         GraphManager::class.java.getDeclaredField("coordinatorFor").apply {
             isAccessible = true
         }.set(graphManager, graphId to CompletableDeferred(coordinator))
         return coordinator
     }
 
+    /** Reflectively overwrites `coordinatorFor` with an arbitrary (graphId, Deferred) pair —
+     * used to seed a deliberately incomplete/failed Deferred for race/failure-injection tests
+     * (Story 5.2.1, 5.2.7, 5.2.8), mirroring GraphManagerEnrichmentCoordinatorTest's pattern. */
+    private fun setCoordinatorFor(graphManager: GraphManager, graphId: GraphId, deferred: Deferred<CaptureEnrichmentCoordinator>) {
+        GraphManager::class.java.getDeclaredField("coordinatorFor").apply {
+            isAccessible = true
+        }.set(graphManager, graphId to deferred)
+    }
+
     /** Saves a multi-word page (guaranteed auto-apply, not confirm-first) and waits — real wall
      * time, since [dev.stapler.stelekit.domain.PageNameIndex] rebuilds on its own background
      * scope, not Robolectric's shadowed main looper — until the coordinator's matcher is built. */
-    private fun seedPageAndAwaitMatcher(graphManager: GraphManager, pageName: String) {
+    private fun seedPageAndAwaitMatcher(
+        graphManager: GraphManager,
+        pageName: String,
+        topicEnricher: TopicEnricher = NoOpTopicEnricher(),
+    ): CaptureEnrichmentCoordinator {
         val repoSet = graphManager.getActiveRepositorySet()!!
         val now = Clock.System.now()
         runBlocking {
@@ -201,10 +219,10 @@ class CaptureViewModelTest {
                 repoSet.pageRepository.savePage(page)
             }
         }
-        val coordinator = seedRealCoordinator(graphManager)
+        val coordinator = seedRealCoordinator(graphManager, topicEnricher)
         val deadline = System.currentTimeMillis() + 5_000
         while (System.currentTimeMillis() < deadline) {
-            if (coordinator.pageNameIndex.matcher.value != null) return
+            if (coordinator.pageNameIndex.matcher.value != null) return coordinator
             Thread.sleep(25)
         }
         error("Matcher never became ready for '$pageName'")
@@ -1011,5 +1029,346 @@ class CaptureViewModelTest {
         )
 
         gate.complete(Unit) // release the still-pending stub write so it doesn't leak past the test
+    }
+
+    // ---- Story 5.2.1: onNewIntent stale-scan test (PF-6) -----------------------------------
+
+    @Test
+    @Config(sdk = [29], application = SteleKitApplication::class)
+    fun `collectLatest_secondShareIntentSupersedesInFlightScan_onlyLatestResultReachesScanState`() {
+        val (app, graphManager) = newWiredApplication()
+        openTestGraph(graphManager)
+        val graphId = graphManager.getActiveGraphId()!!
+
+        // Pre-build a real, matcher-ready coordinator (real PageRepository/PageNameIndex) OFF to
+        // the side, before ever wiring it into GraphManager's memoization cache — this is the
+        // coordinator intent B will eventually resolve to.
+        val readyCoordinator = seedPageAndAwaitMatcher(graphManager, "Kotlin Multiplatform")
+
+        // Now replace the cache with a deliberately incomplete Deferred: getOrCreateEnrichmentCoordinator()'s
+        // deferred.await() (GraphManager.kt) is a genuine, real production suspension point — no
+        // fake/subclass of the (non-open) CaptureEnrichmentCoordinator is needed to construct the
+        // race deterministically.
+        val stuckDeferred = CompletableDeferred<CaptureEnrichmentCoordinator>()
+        setCoordinatorFor(graphManager, graphId, stuckDeferred)
+
+        val viewModel = CaptureViewModel(app)
+
+        // Intent A's text arrives first; once the debounce fires, collectLatest's block suspends
+        // awaiting the coordinator Deferred, never reaching coordinator.scan() or _scanState.
+        viewModel.initializeText("Intent A text, should never be observed")
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(350))
+        Thread.sleep(150) // let the suspended await() actually register
+        assertEquals(
+            "A's in-flight scan must not have applied anything yet",
+            CaptureViewModel.ScanState.NotReady,
+            viewModel.scanState.value,
+        )
+
+        // Intent B supersedes A before A's coordinator resolution ever completes — mirrors
+        // CaptureActivity.onNewIntent's real sequence: field cleared, then re-initialized.
+        viewModel.updateText("")
+        viewModel.initializeText("Reading about Kotlin Multiplatform")
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(350))
+        Thread.sleep(150) // let collectLatest cancel A's suspended await() and start B's
+
+        // Only now resolve the coordinator — if A's coroutine were still alive it would resume
+        // here too, but collectLatest's cancellation (triggered by B superseding A above) must
+        // have already torn it down.
+        stuckDeferred.complete(readyCoordinator)
+
+        awaitScanState { viewModel.scanState.value is CaptureViewModel.ScanState.Ready }
+
+        val ready = viewModel.scanState.value as CaptureViewModel.ScanState.Ready
+        assertEquals(
+            "only intent B's text may ever reach _scanState",
+            "Reading about Kotlin Multiplatform",
+            ready.text,
+        )
+        assertTrue(ready.result.linkedText.contains("[[Kotlin Multiplatform]]"))
+    }
+
+    // ---- Story 5.2.3: AC #9 post-save write path — reused writer/writeActor, fakes/spies ---
+
+    @Test
+    @Config(sdk = [29], application = SteleKitApplication::class)
+    fun `acceptSuggestion_postSaveWithFakeSavedContext_reusesCapturedWriterAndWriteActor`() {
+        val (app, graphManager) = newWiredApplication()
+        openTestGraph(graphManager)
+        val repoSet = graphManager.getActiveRepositorySet()!!
+        val viewModel = CaptureViewModel(app)
+
+        val countingPages = CountingPageRepository(repoSet.pageRepository)
+        val countingBlocks = CountingBlockRepository(repoSet.blockRepository)
+        val countingFileSystem = CountingFileSystem()
+        // Real writeActor (DB write) + counting-file-system-backed GraphWriter (markdown flush) —
+        // both captured exactly once, at construction, and never re-resolved from graphManager.
+        val fakeWriter = GraphWriter(countingFileSystem, writeActor = repoSet.writeActor)
+
+        val now = Clock.System.now()
+        val page = repoSet.journalService.let { runBlocking { it.ensureTodayJournal() } }
+        val block = Block(
+            uuid = BlockUuid(UuidGenerator.generateV7()),
+            pageUuid = page.uuid,
+            content = "Reading about Zettelkasten today",
+            position = "a0",
+            createdAt = now,
+            updatedAt = now,
+        )
+        runBlocking { repoSet.writeActor!!.saveBlock(block) }
+
+        val ctx = newSavedCaptureContext(
+            block = block,
+            page = page,
+            blocks = listOf(block),
+            graphPath = graphManager.getActiveGraphInfo()!!.path,
+            graphId = graphManager.getActiveGraphId()!!,
+            writer = fakeWriter,
+            writeActor = repoSet.writeActor,
+            pageRepository = countingPages,
+            blockRepository = countingBlocks,
+        )
+        setSavedContext(viewModel, ctx)
+
+        viewModel.updateText(block.content)
+        setScanState(
+            viewModel,
+            CaptureViewModel.ScanState.Ready(
+                text = block.content,
+                result = ScanResult(
+                    linkedText = block.content,
+                    matchedPageNames = emptyList(),
+                    topicSuggestions = listOf(TopicSuggestion("Zettelkasten", 0.8f, TopicSuggestion.Source.LOCAL)),
+                ),
+            ),
+        )
+
+        viewModel.acceptSuggestion("Zettelkasten")
+
+        // Poll until the fold is fully persisted (not just "a file write happened") — writeFile()
+        // incrementing is not itself proof that writeLinkedBlockPostSave()'s subsequent
+        // savedContext reassignment (the very next line) has executed yet.
+        awaitCondition {
+            val c = readSavedContext(viewModel)!!
+            val b = c.javaClass.getDeclaredField("block").apply { isAccessible = true }.get(c)
+            (b!!.javaClass.getMethod("getContent").invoke(b) as String).contains("[[Zettelkasten]]")
+        }
+
+        // Exactly one additional saveBlock/savePage pair: a stub-page file write for the new page,
+        // then the markdown flush of the block's own page — both through the SAME fakeWriter.
+        assertEquals("exactly one stub-page-existence check", 1, countingPages.getPageByNameCallCount)
+        assertEquals(
+            "exactly one additional write pair (stub page create + markdown flush), same writer reused",
+            2,
+            countingFileSystem.writeFileCallCount,
+        )
+
+        val ctxAfter = readSavedContext(viewModel)!!
+        val writerAfter = ctxAfter.javaClass.getDeclaredField("writer").apply { isAccessible = true }.get(ctxAfter)
+        val writeActorAfter = ctxAfter.javaClass.getDeclaredField("writeActor").apply { isAccessible = true }.get(ctxAfter)
+        assertTrue("the exact fakeWriter instance from performSave() must be reused", writerAfter === fakeWriter)
+        assertTrue("the exact writeActor instance from performSave() must be reused", writeActorAfter === repoSet.writeActor)
+
+        val blockAfter = ctxAfter.javaClass.getDeclaredField("block").apply { isAccessible = true }.get(ctxAfter)
+        val content = blockAfter!!.javaClass.getMethod("getContent").invoke(blockAfter) as String
+        assertTrue(content.contains("[[Zettelkasten]]"))
+    }
+
+    // ---- Story 5.2.7: scan collector survives a Throwable (Blocker #3) ---------------------
+
+    /**
+     * `CaptureEnrichmentCoordinator` is a concrete (non-`open`) class with no injectable failure
+     * seam for `scan()` itself, and `PageNameIndex` already swallows a `Throwable` from
+     * `PageRepository.getPageNameEntries()` internally (degrades to a `null` matcher — see
+     * `PageNameIndex.kt`'s own `.catch { }` guard), so a throwing repository never lets a
+     * `Throwable` escape `coordinator.scan()`; it just yields `ScanOutcome.MatcherNotReady`,
+     * which is not what this story needs to exercise. The genuinely reachable seam is
+     * `GraphManager.getOrCreateEnrichmentCoordinator()`'s `deferred.await()` (real production
+     * code, same mechanism `GraphManagerEnrichmentCoordinatorTest`'s eviction test already
+     * exercises): a `Deferred` that completed exceptionally throws there, landing in the exact
+     * same per-iteration `try/catch` (Task 2.1.2b) this story is about — the throw site differs
+     * from a literal `coordinator.scan()` call, but the mechanism under test (the collectLatest
+     * body's blanket per-iteration catch keeping the collector alive across ANY Throwable in its
+     * try block) is identical either way.
+     */
+    @Test
+    @Config(sdk = [29], application = SteleKitApplication::class)
+    fun `collectLatest_scanThrowsOnFirstAttempt_secondTextChangeStillProducesReadyState`() {
+        val (app, graphManager) = newWiredApplication()
+        openTestGraph(graphManager)
+        val graphId = graphManager.getActiveGraphId()!!
+        val goodCoordinator = seedPageAndAwaitMatcher(graphManager, "Kotlin Multiplatform")
+
+        val failedDeferred = CompletableDeferred<CaptureEnrichmentCoordinator>()
+        failedDeferred.completeExceptionally(OutOfMemoryError("simulated OOM during scan"))
+        setCoordinatorFor(graphManager, graphId, failedDeferred)
+
+        val viewModel = CaptureViewModel(app)
+
+        // First attempt: coordinator resolution throws — must degrade to NotReady without
+        // crashing or killing the collector.
+        viewModel.updateText("first attempt should fail")
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(350))
+        Thread.sleep(150)
+        assertEquals(CaptureViewModel.ScanState.NotReady, viewModel.scanState.value)
+
+        // Re-seed a healthy coordinator for the second attempt.
+        setCoordinatorFor(graphManager, graphId, CompletableDeferred(goodCoordinator))
+
+        // Second (distinct) text change: the collector must still be alive and produce a normal
+        // Ready result — proving the per-iteration try/catch, not just the CoroutineExceptionHandler,
+        // is what kept collectLatest running.
+        viewModel.updateText("Reading about Kotlin Multiplatform")
+        awaitScanState { viewModel.scanState.value is CaptureViewModel.ScanState.Ready }
+
+        val ready = viewModel.scanState.value as CaptureViewModel.ScanState.Ready
+        assertTrue(ready.result.linkedText.contains("[[Kotlin Multiplatform]]"))
+    }
+
+    // ---- Story 5.2.8: AC #5 — save() never suspends on coordinator/scan work ---------------
+
+    @Test
+    @Config(sdk = [29], application = SteleKitApplication::class)
+    fun `save_scanInFlightAgainstStuckCoordinator_completesWithoutAwaitingScan`() {
+        val (app, graphManager) = newWiredApplication()
+        openTestGraph(graphManager)
+        val graphId = graphManager.getActiveGraphId()!!
+
+        // A coordinator resolution the test deliberately never resolves — a scan that never
+        // completes, in flight for as long as the test runs.
+        val stuckDeferred = CompletableDeferred<CaptureEnrichmentCoordinator>()
+        setCoordinatorFor(graphManager, graphId, stuckDeferred)
+
+        val viewModel = CaptureViewModel(app)
+
+        viewModel.updateText("Some capture text while a scan is stuck")
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(350))
+        Thread.sleep(150) // let collectLatest actually reach and suspend on the stuck await()
+        assertEquals(CaptureViewModel.ScanState.NotReady, viewModel.scanState.value)
+
+        viewModel.save()
+        awaitSaveState(viewModel)
+
+        assertEquals(
+            "save() must complete without ever awaiting the stuck coordinator/scan work",
+            CaptureViewModel.SaveState.Saved,
+            viewModel.saveState.value,
+        )
+        assertFalse("the coordinator resolution must still be unresolved", stuckDeferred.isCompleted)
+
+        stuckDeferred.completeExceptionally(java.util.concurrent.CancellationException("test cleanup"))
+    }
+
+    // ---- Story 5.2.10: confirm-first chip post-save accept — zero stub-page writes ---------
+
+    @Test
+    @Config(sdk = [29], application = SteleKitApplication::class)
+    fun `acceptExistingLink_postSaveSuccess_reusesWriterWithZeroStubPageWrites`() {
+        val (app, graphManager) = newWiredApplication()
+        openTestGraph(graphManager)
+        val repoSet = graphManager.getActiveRepositorySet()!!
+        val viewModel = CaptureViewModel(app)
+
+        val countingPages = CountingPageRepository(repoSet.pageRepository)
+        val countingFileSystem = CountingFileSystem()
+        val fakeWriter = GraphWriter(countingFileSystem, writeActor = repoSet.writeActor)
+
+        val now = Clock.System.now()
+        val page = runBlocking { repoSet.journalService.ensureTodayJournal() }
+        val block = Block(
+            uuid = BlockUuid(UuidGenerator.generateV7()),
+            pageUuid = page.uuid,
+            content = "Check out Today for details",
+            position = "a0",
+            createdAt = now,
+            updatedAt = now,
+        )
+        runBlocking { repoSet.writeActor!!.saveBlock(block) }
+
+        val ctx = newSavedCaptureContext(
+            block = block,
+            page = page,
+            blocks = listOf(block),
+            graphPath = graphManager.getActiveGraphInfo()!!.path,
+            graphId = graphManager.getActiveGraphId()!!,
+            writer = fakeWriter,
+            writeActor = repoSet.writeActor,
+            pageRepository = countingPages,
+            blockRepository = repoSet.blockRepository,
+        )
+        setSavedContext(viewModel, ctx)
+
+        viewModel.updateText(block.content)
+        setScanState(
+            viewModel,
+            CaptureViewModel.ScanState.Ready(
+                text = block.content,
+                result = ScanResult(linkedText = block.content, matchedPageNames = emptyList()),
+                confirmFirstNames = listOf("Today"),
+            ),
+        )
+
+        viewModel.acceptExistingLink("Today")
+
+        awaitCondition {
+            val c = readSavedContext(viewModel)!!
+            val b = c.javaClass.getDeclaredField("block").apply { isAccessible = true }.get(c)
+            (b!!.javaClass.getMethod("getContent").invoke(b) as String).contains("[[Today]]")
+        }
+
+        // Confirm-first accept never re-checks or creates a stub page — the coordinator already
+        // confirmed the page exists before offering it in confirmFirstNames.
+        assertEquals("confirm-first accept must never check page existence", 0, countingPages.getPageByNameCallCount)
+        assertEquals(
+            "confirm-first accept writes only the markdown flush, never a stub-page file",
+            1,
+            countingFileSystem.writeFileCallCount,
+        )
+    }
+
+    // ---- AC #3: enhance() fire-and-forget merge path, end-to-end with a fake TopicEnricher --
+
+    private class FakeTopicEnricher(private val result: suspend () -> List<TopicSuggestion>) : TopicEnricher {
+        override suspend fun enhance(rawText: String, localSuggestions: List<TopicSuggestion>) = result()
+    }
+
+    /**
+     * Exercises the fire-and-forget `enhance()` merge path end-to-end without ever touching
+     * `LlmProviderRegistry`/`ClaudeTopicEnricher`/`AndroidCredentialStore` (which throws
+     * `NoSuchAlgorithmException` under Robolectric — no `AndroidKeyStore` provider). A fake
+     * `TopicEnricher` (the plain `fun interface`) is wired directly into a real
+     * `CaptureEnrichmentCoordinator`, the same way `seedRealCoordinator`/`seedPageAndAwaitMatcher`
+     * already inject `NoOpTopicEnricher` — proving the merge/discard-if-stale/non-destructive
+     * behavior with production `CaptureViewModel` code, just a simpler enrichment tier.
+     */
+    @Test
+    @Config(sdk = [29], application = SteleKitApplication::class)
+    fun `enhance_llmProviderConfigured_mergesEnrichedSuggestionsNonDestructivelyIntoScanState`() {
+        val (app, graphManager) = newWiredApplication()
+        openTestGraph(graphManager)
+        val enricher = FakeTopicEnricher {
+            listOf(TopicSuggestion("Zettelkasten", 0.8f, TopicSuggestion.Source.AI_ENHANCED))
+        }
+        seedPageAndAwaitMatcher(graphManager, "Kotlin Multiplatform", topicEnricher = enricher)
+        val viewModel = CaptureViewModel(app)
+
+        viewModel.updateText("Reading about Kotlin Multiplatform")
+        awaitScanState { viewModel.scanState.value is CaptureViewModel.ScanState.Ready }
+
+        // Wait for the fire-and-forget enhance() coroutine's merge to land on top of the local
+        // scan result already in _scanState.
+        awaitCondition {
+            val ready = viewModel.scanState.value as? CaptureViewModel.ScanState.Ready
+            ready?.result?.topicSuggestions?.any { it.term == "Zettelkasten" } == true
+        }
+
+        val ready = viewModel.scanState.value as CaptureViewModel.ScanState.Ready
+        val zettel = ready.result.topicSuggestions.single { it.term == "Zettelkasten" }
+        assertEquals(TopicSuggestion.Source.AI_ENHANCED, zettel.source)
+        // Non-destructive: the local auto-link result from the matcher hit is untouched.
+        assertTrue(
+            "AI-sourced suggestions must be appended, never replacing the local scan result",
+            ready.result.linkedText.contains("[[Kotlin Multiplatform]]"),
+        )
     }
 }

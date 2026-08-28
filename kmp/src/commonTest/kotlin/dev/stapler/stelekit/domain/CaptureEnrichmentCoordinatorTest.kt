@@ -189,6 +189,29 @@ class CaptureEnrichmentCoordinatorTest {
         }
     }
 
+    // Story 5.1.1's remaining AC (not yet exercised above): a READY matcher whose scan body is
+    // delayed past budgetMs must return ScanOutcome.TimedOut, distinguishable by type from
+    // MatcherNotReady above (same budgetMs = 0, but this time with pages seeded and the matcher
+    // actually built). withTimeoutOrNull(timeMillis) returns null without ever invoking the block
+    // when timeMillis <= 0 (kotlinx.coroutines documented behavior) — the cheapest deterministic
+    // way to force scan()'s `outcome ?: ScanOutcome.TimedOut` fallback without a flaky real delay.
+    @Test
+    fun scan_matcherReadyButBudgetZero_returnsTimedOut() = runBlocking {
+        val pageRepo = InMemoryPageRepository()
+        pageRepo.savePage(makePage("p1", "Kotlin Multiplatform"))
+        val scope = CoroutineScope(Dispatchers.Default)
+        try {
+            val coordinator = makeCoordinator(scope, pageRepo)
+            coordinator.awaitMatcher()
+
+            val outcome = coordinator.scan("Reading about Kotlin Multiplatform", budgetMs = 0)
+            assertIs<ScanOutcome.TimedOut>(outcome, "expected TimedOut, got: $outcome")
+            Unit
+        } finally {
+            scope.cancel()
+        }
+    }
+
     // -------------------------------------------------------------------------
     // enhance()
     // -------------------------------------------------------------------------
