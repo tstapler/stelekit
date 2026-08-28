@@ -3,12 +3,15 @@
 
 package dev.stapler.stelekit.domain
 
+import dev.stapler.stelekit.llm.LlmFeature
 import dev.stapler.stelekit.llm.LlmProvider
 import dev.stapler.stelekit.llm.LlmProviderAvailability
 import dev.stapler.stelekit.llm.LlmProviderKind
 import dev.stapler.stelekit.llm.LlmProviderRegistry
+import dev.stapler.stelekit.llm.LlmSettings
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
+import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.repository.InMemoryPageRepository
 import dev.stapler.stelekit.voice.LlmFormatterProvider
 import dev.stapler.stelekit.voice.LlmResult
@@ -134,6 +137,31 @@ class CaptureEnrichmentCoordinatorTest {
             val success = assertIs<ScanOutcome.Success>(outcome)
             assertEquals("Reading about [[Zettelkasten]]", success.result.linkedText)
             assertTrue(success.confirmFirstNames.isEmpty())
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    // Boundary case for MIN_AUTO_APPLY_SINGLE_WORD_LENGTH (6): the 5-char case above
+    // (confirm-first) and 12-char case (auto-apply) don't exercise the ">=" floor itself — a
+    // mutation flipping it to ">" (or the constant to 7) would slip through undetected without
+    // this exactly-6-char case.
+    @Test
+    fun scan_singleWordExactlySixChars_autoLinksAtTheFloor() = runBlocking {
+        val pageRepo = InMemoryPageRepository()
+        pageRepo.savePage(makePage("p1", "Kotlin")) // exactly 6 chars
+        val scope = CoroutineScope(Dispatchers.Default)
+        try {
+            val coordinator = makeCoordinator(scope, pageRepo)
+            coordinator.awaitMatcher()
+
+            val outcome = coordinator.scan("Reading about Kotlin")
+            val success = assertIs<ScanOutcome.Success>(outcome)
+            assertEquals("Reading about [[Kotlin]]", success.result.linkedText)
+            assertTrue(
+                success.confirmFirstNames.isEmpty(),
+                "a 6-char single-word match must auto-apply, not confirm-first",
+            )
         } finally {
             scope.cancel()
         }
@@ -324,10 +352,21 @@ class CaptureEnrichmentCoordinatorTest {
         override val id: String,
         override val kind: LlmProviderKind,
         private val availability: LlmProviderAvailability,
+        formatterResponseJson: String = "unused",
     ) : LlmProvider {
         override val displayName: String = id
-        override val formatter: LlmFormatterProvider = LlmFormatterProvider { _, _ -> LlmResult.Success("unused") }
+        override val formatter: LlmFormatterProvider = LlmFormatterProvider { _, _ -> LlmResult.Success(formatterResponseJson) }
         override suspend fun checkAvailability(): LlmProviderAvailability = availability
+    }
+
+    /** In-memory [Settings] fake — mirrors `VoicePipelineFactoryTest.MapSettings`. */
+    private class MapSettings : Settings {
+        private val map = mutableMapOf<String, Any>()
+        override fun getBoolean(key: String, defaultValue: Boolean) = map[key] as? Boolean ?: defaultValue
+        override fun putBoolean(key: String, value: Boolean) { map[key] = value }
+        override fun getString(key: String, defaultValue: String) = map[key] as? String ?: defaultValue
+        override fun putString(key: String, value: String) { map[key] = value }
+        override fun containsKey(key: String) = map.containsKey(key)
     }
 
     @Test
@@ -347,5 +386,48 @@ class CaptureEnrichmentCoordinatorTest {
         val enricher = CaptureEnrichmentCoordinator.resolveTopicEnricher(registry)
 
         assertIs<NoOpTopicEnricher>(enricher)
+    }
+
+    // Fix 1 (security) regression: resolveTopicEnricher() must honor LlmSettings' per-feature
+    // CAPTURE_ENRICHMENT selection instead of always falling back to the first available provider.
+
+    @Test
+    fun resolveTopicEnricher_featureDisabled_returnsNoOpEvenWhenProviderAvailable() = runTest {
+        // A provider IS available for CAPTURE_ENRICHMENT — proves the disabled sentinel takes
+        // precedence over availableForFeature().firstOrNull(), not just that an empty registry
+        // degrades to NoOp (already covered above).
+        val provider = FakeProvider("android-ondevice", LlmProviderKind.ON_DEVICE, LlmProviderAvailability.Available)
+        val registry = LlmProviderRegistry(listOf(provider))
+        val llmSettings = LlmSettings(MapSettings())
+        llmSettings.setSelectedProviderId(LlmFeature.CAPTURE_ENRICHMENT, LlmProviderRegistry.DISABLED_SENTINEL)
+
+        val enricher = CaptureEnrichmentCoordinator.resolveTopicEnricher(registry, llmSettings)
+
+        assertIs<NoOpTopicEnricher>(enricher)
+    }
+
+    @Test
+    fun resolveTopicEnricher_specificProviderSelected_resolvesThatExactProviderNotFirstAvailable() = runTest {
+        // Two available providers, each with a distinguishable formatter response — proves the
+        // SECOND (non-first) provider was actually wired in via LlmProviderRegistry.find(), not
+        // coincidentally the first one availableForFeature() would have returned.
+        val first = FakeProvider(
+            "first-provider", LlmProviderKind.ON_DEVICE, LlmProviderAvailability.Available,
+            formatterResponseJson = """[{"term":"FromFirstProvider","confidence":0.9}]""",
+        )
+        val second = FakeProvider(
+            "second-provider", LlmProviderKind.REMOTE, LlmProviderAvailability.Available,
+            formatterResponseJson = """[{"term":"FromSecondProvider","confidence":0.9}]""",
+        )
+        val registry = LlmProviderRegistry(listOf(first, second))
+        val llmSettings = LlmSettings(MapSettings())
+        llmSettings.setSelectedProviderId(LlmFeature.CAPTURE_ENRICHMENT, "second-provider")
+
+        val enricher = CaptureEnrichmentCoordinator.resolveTopicEnricher(registry, llmSettings)
+        val claude = assertIs<ClaudeTopicEnricher>(enricher)
+        val result = claude.enhance("text", emptyList())
+
+        assertEquals(1, result.size)
+        assertEquals("FromSecondProvider", result[0].term)
     }
 }

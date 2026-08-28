@@ -100,16 +100,13 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
     val scanState: StateFlow<ScanState> = _scanState.asStateFlow()
 
     /**
-     * Snapshot of what a successful [save] just wrote, retained so a later post-save chip
-     * accept (Epic 4.2) can write through the exact same graph/repositories instead of
-     * re-resolving "the active graph" (which may have changed by then — ADR-002's scope
-     * boundary).
-     *
-     * Note: [writer]/[writeActor]/[pageRepository]/[blockRepository] don't override
-     * `equals`/`hashCode`, so the generated `equals()` falls back to reference equality on those
-     * four fields — this class does not have full structural equality despite being a data class.
+     * Snapshot of what a successful [save] just wrote, so a post-save chip accept (Epic 4.2)
+     * reuses the same graph/repositories instead of re-resolving "the active graph" (ADR-002's
+     * scope boundary). `internal` (not `private`) so tests can access it directly — see
+     * `CaptureActivityTest`'s KDoc. Note: [writer]/[writeActor]/[pageRepository]/
+     * [blockRepository] lack `equals`/`hashCode`, so equality here is reference-only on those.
      */
-    private data class SavedCaptureContext(
+    internal data class SavedCaptureContext(
         val block: Block,
         val page: Page,
         val blocks: List<Block>,
@@ -121,6 +118,14 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
         val blockRepository: BlockRepository,
     )
     private var savedContext: SavedCaptureContext? = null
+
+    /**
+     * Test-only accessor for [savedContext] — `internal` visibility avoids reflection in tests
+     * (mirrors `FountainDecoder.mixedPartsCountForTest`'s `*ForTest` pattern).
+     */
+    internal var savedContextForTest: SavedCaptureContext?
+        get() = savedContext
+        set(value) { savedContext = value }
 
     /**
      * Serializes the post-save read-modify-write cycle in [acceptSuggestionPostSave]/
@@ -400,10 +405,8 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
     /**
      * Shared by the pre-save ([createStubPage]) and post-save ([acceptSuggestionPostSave]) accept
      * paths: creates a stub [Page] for [term] if one doesn't already exist. Returns `true` if a
-     * page exists (pre-existing or newly created), `false` if creation failed — in which case the
-     * failure is already logged and reported via [_chipFailure]; the caller decides what to do
-     * next (the pre-save path does nothing further, the post-save path aborts before the second
-     * write).
+     * page exists (pre-existing or newly created), `false` if creation failed — already logged
+     * and reported via [_chipFailure]; the caller decides what to do next.
      */
     private suspend fun ensureStubPage(
         pageRepository: PageRepository,

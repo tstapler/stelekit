@@ -770,17 +770,11 @@ class GraphManager(
     fun getActiveRepositorySet(): RepositorySet? = _activeRepositorySet.value
 
     /**
-     * Returns the current graph's memoized [CaptureEnrichmentCoordinator],
-     * building it once per [GraphId] (race-safe against concurrent callers). Returns `null` if
-     * there is no active graph, no active [RepositorySet], or no [activeGraphJobs] scope yet
-     * (mirrors the "no active graph" guard shape used elsewhere in this class, e.g.
-     * `CaptureViewModel.performSave()`).
-     *
-     * [coordinatorMutex] is held only long enough to read/insert the memoized [Deferred] — never
-     * across the `await()` that actually constructs the coordinator — so a slow construction for
-     * one graph never blocks a concurrent call for a *different* graph. A [Deferred] that fails
-     * during construction is evicted from the cache so the next call attempts a fresh
-     * construction instead of replaying the same failure forever.
+     * Returns the current graph's memoized [CaptureEnrichmentCoordinator] (built once per
+     * [GraphId], race-safe); `null` if there's no active graph/[RepositorySet]/scope yet.
+     * [coordinatorMutex] guards only the cache read/insert, never the `await()` itself, so a
+     * slow construction for one graph never blocks a concurrent call for a different graph — and
+     * a [Deferred] that fails is evicted so the next call retries instead of replaying the failure.
      */
     suspend fun getOrCreateEnrichmentCoordinator(): CaptureEnrichmentCoordinator? {
         val (graphId, deferred) = coordinatorMutex.withLock {

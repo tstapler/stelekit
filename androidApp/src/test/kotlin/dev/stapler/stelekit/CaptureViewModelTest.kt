@@ -34,12 +34,14 @@ import dev.stapler.stelekit.util.UuidGenerator
 import java.io.File
 import java.time.Duration
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emitAll
@@ -256,24 +258,16 @@ class CaptureViewModelTest {
         }
     }
 
-    @Suppress("UNCHECKED_CAST")
-    private fun readSavedContext(viewModel: CaptureViewModel): Any? {
-        val field = CaptureViewModel::class.java.getDeclaredField("savedContext")
-        field.isAccessible = true
-        return field.get(viewModel)
+    // SavedCaptureContext is `internal` (not `private`) specifically so this same-module test
+    // file can read/write/construct it directly — no reflection, mirrors CaptureActivityTest's
+    // `internal`-for-tests pattern for CaptureScreen/CaptureSuggestionChip/etc.
+    private fun readSavedContext(viewModel: CaptureViewModel): CaptureViewModel.SavedCaptureContext? =
+        viewModel.savedContextForTest
+
+    private fun setSavedContext(viewModel: CaptureViewModel, ctx: CaptureViewModel.SavedCaptureContext?) {
+        viewModel.savedContextForTest = ctx
     }
 
-    private fun setSavedContext(viewModel: CaptureViewModel, ctx: Any?) {
-        val field = CaptureViewModel::class.java.getDeclaredField("savedContext")
-        field.isAccessible = true
-        field.set(viewModel, ctx)
-    }
-
-    /**
-     * Constructs a `CaptureViewModel.SavedCaptureContext` (private nested data class) via
-     * reflection, for tests that need to seed a post-save state (Epic 4.2) without driving
-     * a full [CaptureViewModel.save] first.
-     */
     private fun newSavedCaptureContext(
         block: Block,
         page: Page,
@@ -284,19 +278,9 @@ class CaptureViewModelTest {
         writeActor: DatabaseWriteActor?,
         pageRepository: PageRepository,
         blockRepository: BlockRepository,
-    ): Any {
-        val cls = Class.forName("dev.stapler.stelekit.CaptureViewModel\$SavedCaptureContext")
-        // Two constructors exist at the bytecode level: the real 9-arg one, and a public
-        // synthetic 10-arg one (extra trailing DefaultConstructorMarker) Kotlin generates
-        // alongside it — declaredConstructors' order is unspecified, so select explicitly.
-        // graphId's ABI parameter type is the unboxed `String` (GraphId is a value class),
-        // not `GraphId` itself — pass graphId.value, not the wrapper.
-        val ctor = cls.declaredConstructors.first { it.parameterCount == 9 }
-        ctor.isAccessible = true
-        return ctor.newInstance(
-            block, page, blocks, graphPath, graphId.value, writer, writeActor, pageRepository, blockRepository,
-        )
-    }
+    ): CaptureViewModel.SavedCaptureContext = CaptureViewModel.SavedCaptureContext(
+        block, page, blocks, graphPath, graphId, writer, writeActor, pageRepository, blockRepository,
+    )
 
     /** Reflectively overwrites the private `_scanState` backing [MutableStateFlow]'s value. */
     @Suppress("UNCHECKED_CAST")
@@ -382,7 +366,13 @@ class CaptureViewModelTest {
         private val delegate: PageRepository,
         private val gate: CompletableDeferred<Unit>,
     ) : PageRepository by delegate {
+        // Observable proof the gated call has actually started (and is suspended on the gate)
+        // before a test fires a second, racing call — used by the postSaveWriteMutex race test.
+        @Volatile var callCount = 0
+            private set
+
         override fun getPageByName(name: String): Flow<Either<DomainError, Page?>> = flow {
+            callCount++
             gate.await()
             emitAll(delegate.getPageByName(name))
         }
@@ -445,8 +435,7 @@ class CaptureViewModelTest {
         assertEquals(CaptureViewModel.SaveState.Saved, viewModel.saveState.value)
         val saved = readSavedContext(viewModel)
         assertNotNull(saved)
-        val block = saved!!.javaClass.getDeclaredField("block").apply { isAccessible = true }.get(saved)
-        val content = block!!.javaClass.getMethod("getContent").invoke(block) as String
+        val content = saved!!.block.content
         assertTrue(
             "persisted block content must contain the linked text, not raw: $content",
             content.contains("[[Kotlin Multiplatform]]"),
@@ -493,8 +482,7 @@ class CaptureViewModelTest {
 
         assertEquals(CaptureViewModel.SaveState.Saved, viewModel.saveState.value)
         val saved = readSavedContext(viewModel)!!
-        val block = saved.javaClass.getDeclaredField("block").apply { isAccessible = true }.get(saved)
-        val content = block!!.javaClass.getMethod("getContent").invoke(block) as String
+        val content = saved.block.content
         assertEquals(
             "stale Ready state must be ignored — raw current text (unlinked) is saved instead",
             "Notes on Kotlin Multiplatform plus more typed just now",
@@ -573,8 +561,7 @@ class CaptureViewModelTest {
 
         assertEquals(CaptureViewModel.SaveState.Saved, viewModel.saveState.value)
         val saved = readSavedContext(viewModel)!!
-        val block = saved.javaClass.getDeclaredField("block").apply { isAccessible = true }.get(saved)
-        val content = block!!.javaClass.getMethod("getContent").invoke(block) as String
+        val content = saved.block.content
         assertTrue(
             "saved text must recombine the image prefix with the linked free text: $content",
             content.startsWith("[image: /data/user/0/dev.stapler.stelekit/cache/share_1.jpg]\n") &&
@@ -593,7 +580,7 @@ class CaptureViewModelTest {
             TopicSuggestion("note-taking", 0.9f, TopicSuggestion.Source.AI_ENHANCED),
         )
 
-        val merged = invokeMergeBySource(local, enriched)
+        val merged = invokeMergeBySource(local, enriched, excludedTerms = emptyList())
 
         assertEquals(2, merged.size)
         assertTrue(merged.any { it.term == "Note-taking" })
@@ -604,6 +591,31 @@ class CaptureViewModelTest {
         )
     }
 
+    // Fix 4 (critical) regression: an enriched suggestion whose normalized term matches a pending
+    // confirm-first chip's term (excludedTerms == current confirmFirstNames) must be dropped too —
+    // not just local-term duplicates — or two CaptureChipItems with the identical term reach the
+    // chip LazyRow's duplicate-key check and crash it.
+    @Test
+    fun `mergeBySource_dropsEnrichedSuggestionMatchingExcludedConfirmFirstTerm`() {
+        val local = listOf(TopicSuggestion("Note-taking", 0.5f, TopicSuggestion.Source.LOCAL))
+        val enriched = listOf(
+            // Case/whitespace-insensitive match against an excluded (confirm-first) term.
+            TopicSuggestion(" today ", 0.7f, TopicSuggestion.Source.AI_ENHANCED),
+            TopicSuggestion("Zettelkasten", 0.8f, TopicSuggestion.Source.AI_ENHANCED),
+        )
+
+        val merged = invokeMergeBySource(local, enriched, excludedTerms = listOf("Today"))
+
+        assertTrue(
+            "the non-overlapping enriched term must still be appended",
+            merged.any { it.term == "Zettelkasten" },
+        )
+        assertFalse(
+            "an enriched term colliding with a pending confirm-first chip's term must be dropped",
+            merged.any { it.term.trim().lowercase() == "today" },
+        )
+    }
+
     // mergeBySource is intentionally `private` (plan.md Task 2.2.1b); reflection lets this test
     // exercise the merge logic in isolation without standing up a real LLM provider registry
     // (which GraphManager resolves internally and is not injectable from CaptureViewModel).
@@ -611,6 +623,7 @@ class CaptureViewModelTest {
     private fun invokeMergeBySource(
         local: List<TopicSuggestion>,
         enriched: List<TopicSuggestion>,
+        excludedTerms: List<String>,
     ): List<TopicSuggestion> {
         val app: Application = ApplicationProvider.getApplicationContext()
         val viewModel = CaptureViewModel(app)
@@ -618,9 +631,10 @@ class CaptureViewModelTest {
             "mergeBySource",
             List::class.java,
             List::class.java,
+            List::class.java,
         )
         method.isAccessible = true
-        return method.invoke(viewModel, local, enriched) as List<TopicSuggestion>
+        return method.invoke(viewModel, local, enriched, excludedTerms) as List<TopicSuggestion>
     }
 
     // ---- Epic 4.1: pre-save chip accept/dismiss --------------------------------------------
@@ -814,9 +828,7 @@ class CaptureViewModelTest {
         assertEquals(CaptureViewModel.SaveState.Saved, viewModel.saveState.value)
 
         val ctxBefore = readSavedContext(viewModel)!!
-        val blockBefore = ctxBefore.javaClass.getDeclaredField("block").apply { isAccessible = true }
-            .get(ctxBefore) as Block
-        val blockUuidBefore = blockBefore.uuid
+        val blockUuidBefore = ctxBefore.block.uuid
 
         setScanState(
             viewModel,
@@ -837,15 +849,10 @@ class CaptureViewModelTest {
         assertTrue("stub page file must be written to disk: ${stubFile.absolutePath}", stubFile.exists())
 
         awaitCondition {
-            val ctx = readSavedContext(viewModel)!!
-            val block = ctx.javaClass.getDeclaredField("block").apply { isAccessible = true }.get(ctx)
-            val content = block!!.javaClass.getMethod("getContent").invoke(block) as String
-            content.contains("[[Zettelkasten]]")
+            readSavedContext(viewModel)!!.block.content.contains("[[Zettelkasten]]")
         }
 
-        val ctxAfter = readSavedContext(viewModel)!!
-        val blockAfter = ctxAfter.javaClass.getDeclaredField("block").apply { isAccessible = true }
-            .get(ctxAfter) as Block
+        val blockAfter = readSavedContext(viewModel)!!.block
         assertEquals("the second write must update the SAME block, not a new one", blockUuidBefore, blockAfter.uuid)
         assertTrue(blockAfter.content.contains("[[Zettelkasten]]"))
     }
@@ -870,10 +877,8 @@ class CaptureViewModelTest {
         assertEquals(CaptureViewModel.SaveState.Saved, viewModel.saveState.value)
 
         val ctxBefore = readSavedContext(viewModel)!!
-        val blockBefore = ctxBefore.javaClass.getDeclaredField("block").apply { isAccessible = true }
-            .get(ctxBefore) as Block
-        val pageBefore = ctxBefore.javaClass.getDeclaredField("page").apply { isAccessible = true }
-            .get(ctxBefore) as Page
+        val blockBefore = ctxBefore.block
+        val pageBefore = ctxBefore.page
 
         val journalFile = File(graphPath, "journals/${FileUtils.sanitizeFileName(pageBefore.name)}.md")
         assertTrue("journal markdown must exist after save(): ${journalFile.absolutePath}", journalFile.exists())
@@ -944,9 +949,7 @@ class CaptureViewModelTest {
 
         // (d) the in-memory savedContext snapshot captured by performSave() was not mutated
         // either — it is only updated on a successful writeLinkedBlockPostSave(), never reached.
-        val ctxAfter = readSavedContext(viewModel)!!
-        val blockAfter = ctxAfter.javaClass.getDeclaredField("block").apply { isAccessible = true }
-            .get(ctxAfter) as Block
+        val blockAfter = readSavedContext(viewModel)!!.block
         assertEquals(
             "savedContext's captured block must be untouched by the failed chip-accept path",
             blockBefore.content, blockAfter.content,
@@ -1106,13 +1109,9 @@ class CaptureViewModelTest {
         assertEquals(CaptureViewModel.SaveState.Saved, viewModel.saveState.value)
 
         val ctxBefore = readSavedContext(viewModel)!!
-        val blockBefore = ctxBefore.javaClass.getDeclaredField("block").apply { isAccessible = true }
-            .get(ctxBefore) as Block
-        val pageBefore = ctxBefore.javaClass.getDeclaredField("page").apply { isAccessible = true }
-            .get(ctxBefore) as Page
-        @Suppress("UNCHECKED_CAST")
-        val blocksBefore = ctxBefore.javaClass.getDeclaredField("blocks").apply { isAccessible = true }
-            .get(ctxBefore) as List<Block>
+        val blockBefore = ctxBefore.block
+        val pageBefore = ctxBefore.page
+        val blocksBefore = ctxBefore.blocks
 
         val repoSet = graphManager.getActiveRepositorySet()!!
         // Same writeActor (real DB write succeeds), but a writer whose filesystem always fails
@@ -1213,8 +1212,7 @@ class CaptureViewModelTest {
         )
 
         val saved = readSavedContext(viewModel)!!
-        val block = saved.javaClass.getDeclaredField("block").apply { isAccessible = true }.get(saved)
-        val content = block!!.javaClass.getMethod("getContent").invoke(block) as String
+        val content = saved.block.content
         assertTrue(
             "the persisted block must contain the accepted link despite the race",
             content.contains("[[Zettelkasten]]"),
@@ -1341,9 +1339,7 @@ class CaptureViewModelTest {
         // incrementing is not itself proof that writeLinkedBlockPostSave()'s subsequent
         // savedContext reassignment (the very next line) has executed yet.
         awaitCondition {
-            val c = readSavedContext(viewModel)!!
-            val b = c.javaClass.getDeclaredField("block").apply { isAccessible = true }.get(c)
-            (b!!.javaClass.getMethod("getContent").invoke(b) as String).contains("[[Zettelkasten]]")
+            readSavedContext(viewModel)!!.block.content.contains("[[Zettelkasten]]")
         }
 
         // Exactly one additional saveBlock/savePage pair: a stub-page file write for the new page,
@@ -1356,14 +1352,12 @@ class CaptureViewModelTest {
         )
 
         val ctxAfter = readSavedContext(viewModel)!!
-        val writerAfter = ctxAfter.javaClass.getDeclaredField("writer").apply { isAccessible = true }.get(ctxAfter)
-        val writeActorAfter = ctxAfter.javaClass.getDeclaredField("writeActor").apply { isAccessible = true }.get(ctxAfter)
-        assertTrue("the exact fakeWriter instance from performSave() must be reused", writerAfter === fakeWriter)
-        assertTrue("the exact writeActor instance from performSave() must be reused", writeActorAfter === repoSet.writeActor)
-
-        val blockAfter = ctxAfter.javaClass.getDeclaredField("block").apply { isAccessible = true }.get(ctxAfter)
-        val content = blockAfter!!.javaClass.getMethod("getContent").invoke(blockAfter) as String
-        assertTrue(content.contains("[[Zettelkasten]]"))
+        assertTrue("the exact fakeWriter instance from performSave() must be reused", ctxAfter.writer === fakeWriter)
+        assertTrue(
+            "the exact writeActor instance from performSave() must be reused",
+            ctxAfter.writeActor === repoSet.writeActor,
+        )
+        assertTrue(ctxAfter.block.content.contains("[[Zettelkasten]]"))
     }
 
     // ---- Story 5.2.7: scan collector survives a Throwable (Blocker #3) ---------------------
@@ -1503,9 +1497,7 @@ class CaptureViewModelTest {
         viewModel.acceptExistingLink("Today")
 
         awaitCondition {
-            val c = readSavedContext(viewModel)!!
-            val b = c.javaClass.getDeclaredField("block").apply { isAccessible = true }.get(c)
-            (b!!.javaClass.getMethod("getContent").invoke(b) as String).contains("[[Today]]")
+            readSavedContext(viewModel)!!.block.content.contains("[[Today]]")
         }
 
         // Confirm-first accept never re-checks or creates a stub page — the coordinator already
@@ -1561,6 +1553,148 @@ class CaptureViewModelTest {
         assertTrue(
             "AI-sourced suggestions must be appended, never replacing the local scan result",
             ready.result.linkedText.contains("[[Kotlin Multiplatform]]"),
+        )
+    }
+
+    // ---- Fix 2 (blocker) regression: postSaveWriteMutex — no lost update on concurrent accepts --
+
+    @Test
+    @Config(sdk = [29], application = SteleKitApplication::class)
+    fun `concurrentPostSaveChipAccepts_forDifferentTerms_bothLinksPersistedWithNoLostUpdate`() {
+        val (app, graphManager) = newWiredApplication()
+        openTestGraph(graphManager)
+        val repoSet = graphManager.getActiveRepositorySet()!!
+        val viewModel = CaptureViewModel(app)
+
+        // Gate the stub-page-existence check ("Zettelkasten" chip accept only) so its write is
+        // still in flight — holding postSaveWriteMutex — when the second chip ("Today") is
+        // accepted. Without the mutex serializing the two read-modify-write cycles, whichever
+        // write finishes last would silently discard the other's link.
+        val gate = CompletableDeferred<Unit>()
+        val gatedPageRepository = GatedPageRepository(repoSet.pageRepository, gate)
+        val writer = GraphWriter(CountingFileSystem(), writeActor = repoSet.writeActor)
+
+        val now = Clock.System.now()
+        val page = runBlocking { repoSet.journalService.ensureTodayJournal() }
+        val originalText = "Reading about Zettelkasten and Today"
+        val block = Block(
+            uuid = BlockUuid(UuidGenerator.generateV7()),
+            pageUuid = page.uuid,
+            content = originalText,
+            position = "a0",
+            createdAt = now,
+            updatedAt = now,
+        )
+        runBlocking { repoSet.writeActor!!.saveBlock(block) }
+
+        val ctx = newSavedCaptureContext(
+            block = block,
+            page = page,
+            blocks = listOf(block),
+            graphPath = graphManager.getActiveGraphInfo()!!.path,
+            graphId = graphManager.getActiveGraphId()!!,
+            writer = writer,
+            writeActor = repoSet.writeActor,
+            pageRepository = gatedPageRepository,
+            blockRepository = repoSet.blockRepository,
+        )
+        setSavedContext(viewModel, ctx)
+
+        viewModel.updateText(originalText)
+        setScanState(
+            viewModel,
+            CaptureViewModel.ScanState.Ready(
+                text = originalText,
+                result = ScanResult(
+                    linkedText = originalText,
+                    matchedPageNames = emptyList(),
+                    topicSuggestions = listOf(TopicSuggestion("Zettelkasten", 0.8f, TopicSuggestion.Source.LOCAL)),
+                ),
+                confirmFirstNames = listOf("Today"),
+            ),
+        )
+
+        // Term 1 (new-page chip): acceptSuggestionPostSave() acquires postSaveWriteMutex, then
+        // suspends inside ensureStubPage()'s gated getPageByName() call — still holding the lock.
+        viewModel.acceptSuggestion("Zettelkasten")
+        awaitCondition { gatedPageRepository.callCount > 0 }
+
+        // Term 2 (confirm-first chip): acceptExistingLinkPostSave() has no stub check of its own,
+        // so it would reach its write immediately unless postSaveWriteMutex correctly serializes
+        // it behind the still-in-flight term-1 call.
+        viewModel.acceptExistingLink("Today")
+
+        // While term 1 is still gated, term 2 must be blocked behind the mutex, not racing ahead.
+        Thread.sleep(200)
+        assertFalse(
+            "term 2 must be blocked behind postSaveWriteMutex while term 1 is still in flight",
+            readSavedContext(viewModel)!!.block.content.contains("[[Today]]"),
+        )
+
+        gate.complete(Unit)
+
+        awaitCondition(timeoutMs = 10_000) {
+            val content = readSavedContext(viewModel)!!.block.content
+            content.contains("[[Zettelkasten]]") && content.contains("[[Today]]")
+        }
+
+        val finalContent = readSavedContext(viewModel)!!.block.content
+        assertTrue(
+            "both accepted terms' links must be persisted — no lost update: $finalContent",
+            finalContent.contains("[[Zettelkasten]]") && finalContent.contains("[[Today]]"),
+        )
+    }
+
+    // ---- Fix 5 (major) regression: in-flight enrichment Job is cancelled on rapid re-scan -----
+
+    /** Suspends forever (via [awaitCancellation]) so a test can deterministically observe
+     * whether a given `enhance()` call was ever actually cancelled, per call. */
+    private class CancelObservingTopicEnricher : TopicEnricher {
+        val callStartedSignals = CopyOnWriteArrayList<CompletableDeferred<Unit>>()
+        val callCancelledSignals = CopyOnWriteArrayList<CompletableDeferred<Boolean>>()
+
+        override suspend fun enhance(rawText: String, localSuggestions: List<TopicSuggestion>): List<TopicSuggestion> {
+            val started = CompletableDeferred<Unit>()
+            val cancelled = CompletableDeferred<Boolean>()
+            callStartedSignals.add(started)
+            callCancelledSignals.add(cancelled)
+            started.complete(Unit)
+            return try {
+                awaitCancellation()
+            } catch (e: CancellationException) {
+                cancelled.complete(true)
+                throw e
+            }
+        }
+    }
+
+    @Test
+    @Config(sdk = [29], application = SteleKitApplication::class)
+    fun `enrichJob_cancelledOnRapidRescan_firstInFlightEnrichmentCallIsActuallyCancelled`() {
+        val (app, graphManager) = newWiredApplication()
+        openTestGraph(graphManager)
+        val enricher = CancelObservingTopicEnricher()
+        seedPageAndAwaitMatcher(graphManager, "Kotlin Multiplatform", topicEnricher = enricher)
+        val viewModel = CaptureViewModel(app)
+
+        viewModel.updateText("Reading about Kotlin Multiplatform")
+        awaitScanState { viewModel.scanState.value is CaptureViewModel.ScanState.Ready }
+        // Confirm the first enhance() call actually started (and is suspended on awaitCancellation()).
+        awaitCondition { enricher.callStartedSignals.size == 1 }
+
+        // A second, rapid text change fires a new debounced scan before the first enrichment call
+        // ever completes — Fix 5 must cancel the first enrichment Job outright, not just let it
+        // run to completion and rely on the (separate) staleness-by-hash guard to discard it.
+        viewModel.updateText("Reading about Kotlin Multiplatform some more")
+        awaitScanState {
+            (viewModel.scanState.value as? CaptureViewModel.ScanState.Ready)?.text ==
+                "Reading about Kotlin Multiplatform some more"
+        }
+        awaitCondition { enricher.callCancelledSignals.getOrNull(0)?.isCompleted == true }
+
+        assertTrue(
+            "the first in-flight enrichment call must actually be cancelled, not merely superseded",
+            enricher.callCancelledSignals[0].getCompleted(),
         )
     }
 }

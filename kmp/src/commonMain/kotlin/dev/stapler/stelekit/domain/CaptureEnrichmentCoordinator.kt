@@ -44,13 +44,11 @@ class CaptureEnrichmentCoordinator(
     private val logger = Logger("CaptureEnrichmentCoordinator")
 
     /**
-     * Scans [text] for known page-name matches, bounded to [budgetMs].
-     *
-     * Returns [ScanOutcome.MatcherNotReady] immediately (no timeout wait) if
-     * [PageNameIndex.matcher] hasn't been built yet, [ScanOutcome.TimedOut] if the scan doesn't
-     * complete within [budgetMs], or [ScanOutcome.Success] otherwise. Any [Throwable] raised while
-     * scanning (mirrors [enhance]'s guard) degrades to [ScanOutcome.MatcherNotReady] rather than
-     * propagating, so a single scan failure never kills the caller's collector.
+     * Scans [text] for known page-name matches, bounded to [budgetMs]. Returns
+     * [ScanOutcome.MatcherNotReady] immediately if [PageNameIndex.matcher] isn't built yet,
+     * [ScanOutcome.TimedOut] past [budgetMs], or [ScanOutcome.Success] otherwise. Any [Throwable]
+     * (mirrors [enhance]'s guard) degrades to [ScanOutcome.MatcherNotReady] instead of
+     * propagating, so one scan failure never kills the caller's collector.
      */
     suspend fun scan(text: String, budgetMs: Long = 500): ScanOutcome {
         val matcher = pageNameIndex.matcher.value ?: return ScanOutcome.MatcherNotReady
@@ -79,12 +77,10 @@ class CaptureEnrichmentCoordinator(
         }
     }
 
-    // Pre-mortem.md P1 #2: a matched canonical page name auto-applies (kept in linkedText,
-    // unchanged behavior) only if it's multi-word or a single word of reasonable length.
-    // Short single-word matches ("Today", "Ideas") are confirm-first — never silently
-    // written, only offered as a chip. Policy lives here, not in PageNameIndex/AhoCorasickMatcher,
-    // since it governs what to do with a match already found, not what counts as matchable —
-    // narrowing PageNameIndex.MIN_NAME_LENGTH itself would also change Import's behavior.
+    // Pre-mortem.md P1 #2: a matched page name auto-applies only if multi-word or a single word
+    // of reasonable length; short single-word matches ("Today") are confirm-first chips instead
+    // of silently written. Policy lives here (not PageNameIndex/AhoCorasickMatcher) since it
+    // governs what to do with an already-found match, not what counts as matchable.
     private fun partitionForAutoApply(names: List<String>): Pair<List<String>, List<String>> =
         names.partition { it.contains(' ') || it.length >= MIN_AUTO_APPLY_SINGLE_WORD_LENGTH }
 
@@ -127,29 +123,11 @@ class CaptureEnrichmentCoordinator(
         private val logger = Logger("CaptureEnrichmentCoordinator")
 
         /**
-         * Resolves a [TopicEnricher] from [registry], honoring [llmSettings]'s per-feature
-         * selection for [LlmFeature.CAPTURE_ENRICHMENT] with the same precedence
-         * `VoicePipelineFactory.buildVoicePipeline` uses for `VOICE_FORMATTING` (security fix —
-         * this coordinator previously ignored the user's per-feature "Disabled"/specific-provider
-         * setting entirely and always fell back to `availableForFeature(...).firstOrNull()`,
-         * silently re-enabling enrichment — and potentially routing capture text to an
-         * unintended provider — after the user explicitly disabled it for this feature):
-         *
-         *  1. [LlmProviderRegistry.DISABLED_SENTINEL] selected -> `null` (no enrichment).
-         *  2. A specific provider id selected -> resolved via [LlmProviderRegistry.find] (never
-         *     falls back to Auto, even if that id is not currently available/found).
-         *  3. Unset ("Auto", or [llmSettings] is `null`) -> the first available provider for
-         *     [LlmFeature.CAPTURE_ENRICHMENT], preserving this function's pre-fix behavior for
-         *     callers that don't pass settings.
-         *
-         * The resolved provider's formatter wraps in a [ClaudeTopicEnricher] (the class name is
-         * historical; its field is a generic `LlmFormatterProvider`, so this works for
-         * Anthropic, OpenAI, and the on-device ML Kit tier identically); no resolved provider
-         * falls back to [NoOpTopicEnricher].
-         *
-         * Logs the resolution outcome (pre-mortem.md failure #4) so "no provider configured"
-         * (expected default) is distinguishable from "provider present but not currently usable"
-         * from an `adb logcat` pull, without adding new telemetry.
+         * Resolves a [TopicEnricher] honoring [llmSettings]'s per-feature CAPTURE_ENRICHMENT
+         * selection, mirroring `VoicePipelineFactory`'s VOICE_FORMATTING precedence:
+         * [LlmProviderRegistry.DISABLED_SENTINEL] -> no enrichment; a specific id -> resolved via
+         * [LlmProviderRegistry.find] only (no Auto fallback); unset -> first available provider.
+         * Security fix: this previously ignored a user's explicit "Disabled" setting entirely.
          */
         suspend fun resolveTopicEnricher(
             registry: LlmProviderRegistry,

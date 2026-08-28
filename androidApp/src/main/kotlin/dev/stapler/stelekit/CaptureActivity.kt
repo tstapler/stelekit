@@ -533,12 +533,10 @@ internal fun CaptureScreen(
 }
 
 /**
- * Compact suggestion chip — `[leading icon/dot][term][×]` at reduced scale, structurally
- * copied from `ImportScreen.kt:551-620`'s `TopicSuggestionChip` (plan.md Task 3.1.1a). The
- * accept region (dot/icon + term) and the dismiss `×` are two independently 48×48dp-minimum
- * tap targets (`minimumInteractiveComponentSize()`, AC #20), merged into a single TalkBack
- * node whose default double-tap action is accept and whose `customActions` exposes dismiss
- * (AC #22).
+ * Compact suggestion chip — `[leading icon/dot][term][×]`, structurally copied from
+ * `ImportScreen.kt:551-620`'s `TopicSuggestionChip` (plan.md Task 3.1.1a). The accept region
+ * and dismiss `×` are two independent 48×48dp-minimum tap targets, merged into one TalkBack
+ * node whose default double-tap action is accept and whose `customActions` exposes dismiss.
  */
 @Composable
 internal fun CaptureSuggestionChip(
@@ -613,12 +611,10 @@ internal fun CaptureSuggestionChip(
         }
         IconButton(
             onClick = onDismiss,
-            // AC #20: the dismiss icon's fixed-size content never exceeds 48dp on its own, so —
-            // unlike the accept region above — an explicit Modifier.size(48.dp) is needed here to
-            // guarantee the minimum touch target (minimumInteractiveComponentSize() alone depends
-            // on LocalMinimumInteractiveComponentEnforcement, unreliable under a bare
-            // MaterialTheme wrapper). minimumInteractiveComponentSize() is deliberately omitted —
-            // it would be a no-op after an exact 48dp size is already applied.
+            // AC #20: unlike the accept region above, this icon's fixed-size content never
+            // exceeds 48dp on its own, so an explicit Modifier.size(48.dp) is needed to guarantee
+            // the minimum touch target — minimumInteractiveComponentSize() is omitted since it
+            // would be a no-op after an exact 48dp size is already applied.
             modifier = Modifier.size(48.dp),
         ) {
             ComposeIcon(

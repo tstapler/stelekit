@@ -17,10 +17,12 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlin.test.assertTrue
 
 /**
  * Regression coverage for `GraphManager.getOrCreateEnrichmentCoordinator()` (Epic 1.2,
@@ -159,5 +161,47 @@ class GraphManagerEnrichmentCoordinatorTest {
         } finally {
             stuckCaller.cancel()
         }
+    }
+
+    // Fix 3 (blocker) regression: switchGraph()/removeGraph() must evict the memoized
+    // coordinator entry for the graph being torn down, so a coordinator tied to a cancelled
+    // CoroutineScope isn't handed back when switching back to the same graph later.
+    @Test
+    fun getOrCreateEnrichmentCoordinator_afterSwitchAwayAndBack_evictsStaleCoordinator() = runTest {
+        val graphManager = newGraphManager()
+        graphManager.openGraph("/test/graph-evict-a")
+        val graphAId = graphManager.getActiveGraphId()
+        assertNotNull(graphAId)
+
+        val firstCoordinator = withContext(Dispatchers.Default) {
+            withTimeout(5_000) { graphManager.getOrCreateEnrichmentCoordinator() }
+        }
+        assertNotNull(firstCoordinator)
+
+        // Switching away from A dispatches eviction of A's cache entry as a launched coroutine
+        // under coordinatorMutex (not synchronous with switchGraph() itself) — poll for it to
+        // actually land before switching back, per this class's KDoc on evictCoordinatorFor().
+        graphManager.openGraph("/test/graph-evict-b")
+        withContext(Dispatchers.Default) {
+            withTimeout(5_000) {
+                while ((coordinatorForField(graphManager).get(graphManager) as? Pair<*, *>)?.first == graphAId) {
+                    delay(20)
+                }
+            }
+        }
+
+        graphManager.switchGraph(graphAId)
+        graphManager.awaitPendingMigration()
+
+        val secondCoordinator = withContext(Dispatchers.Default) {
+            withTimeout(5_000) { graphManager.getOrCreateEnrichmentCoordinator() }
+        }
+        assertNotNull(secondCoordinator)
+
+        assertTrue(
+            firstCoordinator !== secondCoordinator,
+            "coordinator returned after switching away and back to the same graph must not be " +
+                "the stale instance tied to the cancelled scope",
+        )
     }
 }
