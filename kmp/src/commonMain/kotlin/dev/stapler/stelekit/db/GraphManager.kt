@@ -5,9 +5,14 @@
 package dev.stapler.stelekit.db
 
 import arrow.core.Either
+import dev.stapler.stelekit.domain.CaptureEnrichmentCoordinator
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.GitAuth
 import dev.stapler.stelekit.git.GitRepository
+import dev.stapler.stelekit.llm.LlmCredentialStore
+import dev.stapler.stelekit.llm.LlmProviderRegistry
+import dev.stapler.stelekit.llm.LlmSettings
+import dev.stapler.stelekit.llm.buildLlmProviderRegistry
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.migration.ChangeApplier
 import dev.stapler.stelekit.migration.ChangelogRepository
@@ -24,15 +29,18 @@ import dev.stapler.stelekit.model.GraphRegistry
 import dev.stapler.stelekit.vault.VaultManager
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.Settings
+import dev.stapler.stelekit.platform.security.CredentialStore
 import dev.stapler.stelekit.repository.GraphBackend
 import dev.stapler.stelekit.repository.RepositorySet
 import dev.stapler.stelekit.util.ContentHasher
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -40,6 +48,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.time.Clock
 import kotlinx.serialization.encodeToString
@@ -92,6 +102,49 @@ class GraphManager(
 
     // Track active coroutines for cleanup during graph switches
     private val activeGraphJobs = mutableMapOf<GraphId, CoroutineScope>()
+
+    // Memoized per-graph CaptureEnrichmentCoordinator construction (Epic 1.2). coordinatorMutex
+    // guards only the cache read/insert below, never the Deferred.await() — see
+    // getOrCreateEnrichmentCoordinator().
+    private val coordinatorMutex = Mutex()
+    private var coordinatorFor: Pair<GraphId, Deferred<CaptureEnrichmentCoordinator>>? = null
+
+    /**
+     * Evicts the memoized [CaptureEnrichmentCoordinator] cache entry for [graphId] if it's the
+     * currently cached one — called from [switchGraph] and [removeGraph] alongside the
+     * `activeGraphJobs.remove(id)?.cancel()` call that tears down the [CoroutineScope] the
+     * coordinator (and its [dev.stapler.stelekit.domain.PageNameIndex]'s `stateIn`/collector)
+     * was built on. Without this, a coordinator whose construction already completed survives
+     * as a silently-frozen zombie tied to a cancelled scope — switching away and back to the
+     * same graph would keep returning it, and suggestions would never update again for that
+     * graph. Guarded by the same [coordinatorMutex] every other `coordinatorFor` access uses.
+     *
+     * Dispatched on [coroutineScope] (fire-and-forget) rather than acquired synchronously:
+     * [switchGraph]/[removeGraph] are not `suspend`, and this class's commonMain code is built
+     * for wasmJs too, where a blocking acquire (`runBlocking`) is not safe to use — see
+     * `RepositoryFactory.kt`'s "WASM/JS skips PRAGMA" precedent for the same constraint.
+     * [coordinatorMutex] is documented to be held only for a quick map read/insert, never across
+     * a suspension point, so this eviction is queued and lands promptly.
+     */
+    private fun evictCoordinatorFor(graphId: GraphId) {
+        coroutineScope.launch {
+            coordinatorMutex.withLock {
+                if (coordinatorFor?.first == graphId) coordinatorFor = null
+            }
+        }
+    }
+
+    // Same construction recipe App.kt:490-500 uses for the Compose tree's registry — CaptureActivity
+    // never runs that composition, so GraphManager builds its own equivalent, self-contained.
+    // A single shared instance (not re-constructed per call) so getOrCreateEnrichmentCoordinator()
+    // can pass the same LlmSettings into resolveTopicEnricher() for per-feature provider selection.
+    private val llmSettings: LlmSettings by lazy { LlmSettings(platformSettings) }
+    private val llmProviderRegistry: LlmProviderRegistry by lazy {
+        buildLlmProviderRegistry(
+            LlmCredentialStore(CredentialStore()),
+            llmSettings,
+        )
+    }
 
     // Git sync service for the currently active graph.
     // Set externally via registerGitSyncService() after GraphLoader/GraphWriter are wired.
@@ -347,7 +400,8 @@ class GraphManager(
     fun removeGraph(id: GraphId): Boolean {
         // Cancel any active coroutines for this graph
         activeGraphJobs.remove(id)?.cancel()
-        
+        evictCoordinatorFor(id)
+
         val registry = _graphRegistry.value
         val graphIndex = registry.graphs.indexOfFirst { it.id == id }
         if (graphIndex == -1) return false
@@ -538,7 +592,10 @@ class GraphManager(
         // and checking only (a) lets the second call cancel the first init scope → crash.
         val currentGraphId = registry.activeGraphId
         if (currentGraphId == id && (_activeRepositorySet.value != null || activeGraphJobs.containsKey(id))) return
-        currentGraphId?.let { activeGraphJobs.remove(it)?.cancel() }
+        currentGraphId?.let {
+            activeGraphJobs.remove(it)?.cancel()
+            evictCoordinatorFor(it)
+        }
 
         // Shutdown any git sync service from the previous graph
         _activeGitSyncService.value?.shutdown()
@@ -711,7 +768,38 @@ class GraphManager(
         _graphRegistry.value.graphs.map { it.id }.toSet()
     
     fun getActiveRepositorySet(): RepositorySet? = _activeRepositorySet.value
-    
+
+    /**
+     * Returns the current graph's memoized [CaptureEnrichmentCoordinator] (built once per
+     * [GraphId], race-safe); `null` if there's no active graph/[RepositorySet]/scope yet.
+     * [coordinatorMutex] guards only the cache read/insert, never the `await()` itself, so a
+     * slow construction for one graph never blocks a concurrent call for a different graph — and
+     * a [Deferred] that fails is evicted so the next call retries instead of replaying the failure.
+     */
+    suspend fun getOrCreateEnrichmentCoordinator(): CaptureEnrichmentCoordinator? {
+        val (graphId, deferred) = coordinatorMutex.withLock {
+            val graphId = _graphRegistry.value.activeGraphId ?: return@withLock null
+            val repoSet = _activeRepositorySet.value ?: return@withLock null
+            val scope = activeGraphJobs[graphId] ?: return@withLock null
+            val existing = coordinatorFor?.takeIf { it.first == graphId }?.second
+            val deferred = existing ?: scope.async(start = CoroutineStart.LAZY) {
+                val topicEnricher = CaptureEnrichmentCoordinator.resolveTopicEnricher(llmProviderRegistry, llmSettings)
+                CaptureEnrichmentCoordinator(repoSet.pageRepository, scope, topicEnricher)
+            }.also { coordinatorFor = graphId to it }
+            graphId to deferred
+        } ?: return null
+        return try {
+            deferred.await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            coordinatorMutex.withLock {
+                if (coordinatorFor?.first == graphId) coordinatorFor = null
+            }
+            throw e
+        }
+    }
+
     private suspend fun detectGitRoot(graphPath: String): Pair<String, String>? {
         // Android SAF-opened graphs are "saf://{encodedTreeUri}/{relativePath}" (see
         // PlatformFileSystem.toSafRoot), never a literal "content://" prefix — this check never

@@ -81,6 +81,13 @@ android {
         compose = true
     }
 
+    testOptions {
+        // Required for Robolectric to resolve the merged manifest (debugImplementation's
+        // androidx.compose.ui:ui-test-manifest AndroidManifest.xml, which declares the
+        // ComponentActivity createComposeRule() launches) — CaptureActivityTest.kt.
+        unitTests.isIncludeAndroidResources = true
+    }
+
     lint {
         // LogDetector causes an OOM (Metaspace) when analyzing AndroidLogSink.kt —
         // this is a known lint tooling bug triggered by certain Kotlin when-expressions.
@@ -108,6 +115,9 @@ dependencies {
     implementation(platform("androidx.compose:compose-bom:2024.09.02"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")
+    // CaptureSuggestionChip's leading icons (plan.md Task 3.1.1a) — Icons.Outlined.Link isn't in
+    // the core material-icons-core artifact already pulled in transitively by material3.
+    implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.glance:glance-appwidget:1.1.1")
     implementation("androidx.glance:glance-material3:1.1.1")
     implementation("androidx.car.app:app:1.7.0")
@@ -117,6 +127,11 @@ dependencies {
     testImplementation("org.robolectric:robolectric:4.13")
     testImplementation("androidx.test.ext:junit:1.2.1")
     testImplementation("androidx.test:core:1.6.1")
+    // CaptureActivityTest.kt — Robolectric Compose UI tests (createComposeRule) and virtual-time
+    // control over the post-save "Done" window's auto-finish timer.
+    testImplementation("androidx.compose.ui:ui-test-junit4:1.10.6")
+    testImplementation("androidx.compose.ui:ui-test-manifest:1.10.6")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4:1.10.6")
