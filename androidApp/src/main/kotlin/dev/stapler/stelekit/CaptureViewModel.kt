@@ -12,6 +12,7 @@ import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.domain.CaptureEnrichmentCoordinator
+import dev.stapler.stelekit.domain.ImportService
 import dev.stapler.stelekit.domain.NoOpTopicEnricher
 import dev.stapler.stelekit.domain.ScanOutcome
 import dev.stapler.stelekit.domain.ScanResult
@@ -21,6 +22,7 @@ import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
@@ -31,12 +33,16 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.ClosedSendChannelException
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlin.time.Clock
 
@@ -109,6 +115,15 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
         val blockRepository: BlockRepository,
     )
     private var savedContext: SavedCaptureContext? = null
+
+    /**
+     * One-shot event stream for a failed chip accept (pre-save stub-page write, post-save
+     * graph-identity mismatch, `ClosedSendChannelException`, block-write failure, or markdown-
+     * flush failure) — a [SharedFlow], not a [StateFlow], so the same message is never re-fired
+     * on recomposition/config change (Story 4.1.3).
+     */
+    private val _chipFailure = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val chipFailure: SharedFlow<String> = _chipFailure.asSharedFlow()
 
     init {
         scope.launch {
@@ -299,6 +314,196 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
             pageRepository = repoSet.pageRepository,
             blockRepository = repoSet.blockRepository,
         )
+    }
+
+    // ---- Epic 4.1: pre-save chip accept/dismiss --------------------------------------------
+
+    /**
+     * Folds `[[term]]` into the pending [_scanState] synchronously (no suspension point between
+     * the tap and this fold — Story 4.1.1/4.1.4), then creates the stub page (pre-save) or
+     * performs the second write (post-save) asynchronously in its own [scope.launch].
+     */
+    fun acceptSuggestion(term: String) {
+        // Synchronous, immediate — no suspension point between the tap and this fold. Matches
+        // ImportViewModel.onSuggestionAccepted()'s precedent exactly: the state update that
+        // determines what save() will persist must never wait on I/O.
+        markAccepted(term)
+        val ctx = savedContext
+        scope.launch {
+            if (ctx == null) {
+                createStubPage(term) // pre-save: async, unguarded, no mutex with save()
+            } else {
+                acceptSuggestionPostSave(ctx, term) // post-save, Epic 4.2
+            }
+        }
+    }
+
+    private suspend fun createStubPage(term: String) {
+        val steleApp = getApplication<SteleKitApplication>()
+        val graphManager = steleApp.graphManager ?: return
+        val repoSet = graphManager.getActiveRepositorySet() ?: return
+        val graphPath = graphManager.getActiveGraphInfo()?.path ?: return
+        val existing = repoSet.pageRepository.getPageByName(term).first().getOrNull()
+        if (existing != null) return // already exists — markAccepted() already folded the link
+        val stubPage = Page(
+            uuid = PageUuid(UuidGenerator.generateV7()),
+            name = term,
+            createdAt = Clock.System.now(),
+            updatedAt = Clock.System.now(),
+        )
+        val writer = GraphWriter(steleApp.fileSystem, writeActor = repoSet.writeActor)
+        writer.savePage(stubPage, emptyList(), graphPath).onLeft {
+            logger.error("Stub page save failed for '$term': $it")
+            _chipFailure.tryEmit("Couldn't create page for \"$term\"")
+            // Deliberately not reverting markAccepted()'s fold — see Story 4.1.1's AC: the
+            // link stays; only the stub page failed to materialize.
+        }
+    }
+
+    /**
+     * Folds `[[term]]` into the pending [_scanState], synchronously, no suspension point.
+     * Also clears [term] from `confirmFirstNames` (a confirm-first chip accept has no
+     * [TopicSuggestion] entry to mark — `- term` on a list that doesn't contain it is a no-op,
+     * so this is safe to call unconditionally for either chip kind).
+     */
+    private fun markAccepted(term: String) {
+        _scanState.update { state ->
+            if (state !is ScanState.Ready) return@update state
+            val updatedSuggestions = state.result.topicSuggestions.map {
+                if (it.term == term) it.copy(accepted = true) else it
+            }
+            state.copy(
+                result = state.result.copy(
+                    linkedText = ImportService.insertWikiLinks(state.result.linkedText, listOf(term)),
+                    topicSuggestions = updatedSuggestions,
+                ),
+                confirmFirstNames = state.confirmFirstNames - term,
+            )
+        }
+    }
+
+    /**
+     * Confirm-first chip accept (Story 4.1.4, pre-mortem.md P1 #2): folds `[[term]]` the same
+     * way [acceptSuggestion] does, but never creates a stub page — the page already exists,
+     * which is exactly why the coordinator put it in `confirmFirstNames` rather than the
+     * new-page `topicSuggestions` bucket.
+     */
+    fun acceptExistingLink(term: String) {
+        markAccepted(term) // synchronous fold — same helper acceptSuggestion() uses
+        val ctx = savedContext ?: return // pre-save: the fold above was the whole job
+        scope.launch { acceptExistingLinkPostSave(ctx, term) } // Epic 4.2
+    }
+
+    /** Confirm-first sibling of [dismissSuggestion] — no coroutine/write involved. */
+    fun dismissExistingLinkSuggestion(term: String) {
+        _scanState.update { state ->
+            if (state !is ScanState.Ready) return@update state
+            state.copy(confirmFirstNames = state.confirmFirstNames - term)
+        }
+    }
+
+    /** Dismisses a suggestion chip — synchronous, no coroutine/write involved. */
+    fun dismissSuggestion(term: String) {
+        _scanState.update { state ->
+            if (state !is ScanState.Ready) return@update state
+            state.copy(
+                result = state.result.copy(
+                    topicSuggestions = state.result.topicSuggestions.map {
+                        if (it.term == term) it.copy(dismissed = true) else it
+                    },
+                ),
+            )
+        }
+    }
+
+    // ---- Epic 4.2: post-save write-back ------------------------------------------------------
+
+    /**
+     * Shared graph-identity guard (Blocker #1 fix): compares [ctx]'s captured [GraphId] against
+     * the currently-active graph, short-circuiting before any repository/writer call on a
+     * mismatch — [ctx]'s graph may no longer be the active one by the time a post-save chip is
+     * tapped (ADR-002's scope boundary).
+     */
+    private fun graphStillActive(ctx: SavedCaptureContext, term: String): Boolean {
+        val graphManager = getApplication<SteleKitApplication>().graphManager
+        if (graphManager?.getActiveGraphId() == ctx.graphId) return true
+        logger.error("Suggestion '$term' not applied — active graph changed since save")
+        _chipFailure.tryEmit("Couldn't link \"$term\" — the graph changed")
+        return false
+    }
+
+    /**
+     * Post-save new-page chip accept: re-checks stub-page existence through [ctx]'s captured
+     * [PageRepository] (never a freshly-fetched "active" repository set — FM-5), creates the
+     * stub if needed, then delegates to the shared second-write helper.
+     */
+    private suspend fun acceptSuggestionPostSave(ctx: SavedCaptureContext, term: String) {
+        if (!graphStillActive(ctx, term)) return
+        val existing = ctx.pageRepository.getPageByName(term).first().getOrNull()
+        if (existing == null) {
+            val stubPage = Page(
+                uuid = PageUuid(UuidGenerator.generateV7()),
+                name = term,
+                createdAt = Clock.System.now(),
+                updatedAt = Clock.System.now(),
+            )
+            ctx.writer.savePage(stubPage, emptyList(), ctx.graphPath).onLeft {
+                logger.error("Post-save stub page save failed for '$term': $it")
+                _chipFailure.tryEmit("Couldn't create page for \"$term\"")
+                return
+            }
+        }
+        writeLinkedBlockPostSave(ctx, term)
+    }
+
+    /**
+     * Post-save confirm-first chip accept: skips the stub-existence-check/creation entirely —
+     * the coordinator's `scan()` already confirmed the page exists before ever putting [term]
+     * in `confirmFirstNames`, so re-verifying or re-creating it here would be redundant, not
+     * defensive.
+     */
+    private suspend fun acceptExistingLinkPostSave(ctx: SavedCaptureContext, term: String) {
+        if (!graphStillActive(ctx, term)) return
+        writeLinkedBlockPostSave(ctx, term)
+    }
+
+    /**
+     * Shared second-write machinery for both post-save accept paths: rewrites the already-saved
+     * block's content with `[[term]]` inserted, persists it through [ctx]'s captured
+     * `writeActor`/`blockRepository` (never a freshly-fetched "active" repo set), flushes the
+     * markdown file via [ctx]'s captured [GraphWriter], and updates [savedContext] so a second
+     * chip accept in the same window still works against the latest block/blocks snapshot.
+     */
+    private suspend fun writeLinkedBlockPostSave(ctx: SavedCaptureContext, term: String) {
+        val updatedBlock = ctx.block.copy(
+            content = ImportService.insertWikiLinks(ctx.block.content, listOf(term)),
+            updatedAt = Clock.System.now(),
+        )
+        val writeResult = try {
+            if (ctx.writeActor != null) {
+                ctx.writeActor.saveBlock(updatedBlock)
+            } else {
+                @OptIn(DirectRepositoryWrite::class)
+                ctx.blockRepository.saveBlock(updatedBlock)
+            }
+        } catch (e: ClosedSendChannelException) {
+            logger.error("Suggestion '$term' not applied — graph changed during post-save write")
+            _chipFailure.tryEmit("Couldn't link \"$term\" — the graph changed")
+            return
+        }
+        writeResult.onLeft {
+            logger.error("Post-save block write failed for '$term': $it")
+            _chipFailure.tryEmit("Couldn't link \"$term\"")
+            return
+        }
+
+        val updatedBlocks = ctx.blocks.map { if (it.uuid == updatedBlock.uuid) updatedBlock else it }
+        ctx.writer.savePage(ctx.page, updatedBlocks, ctx.graphPath).onLeft {
+            logger.error("Post-save markdown flush failed for '$term': $it")
+            _chipFailure.tryEmit("Couldn't link \"$term\"")
+        }
+        savedContext = ctx.copy(block = updatedBlock, blocks = updatedBlocks)
+        markAccepted(term)
     }
 
     companion object {

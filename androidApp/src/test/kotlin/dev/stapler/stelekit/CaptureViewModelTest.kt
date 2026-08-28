@@ -5,28 +5,49 @@ package dev.stapler.stelekit
 import android.app.Application
 import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
+import arrow.core.Either
+import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.GraphManager
+import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.domain.CaptureEnrichmentCoordinator
 import dev.stapler.stelekit.domain.NoOpTopicEnricher
+import dev.stapler.stelekit.domain.ScanResult
 import dev.stapler.stelekit.domain.TopicSuggestion
+import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.Settings
+import dev.stapler.stelekit.repository.BlockRepository
+import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.GraphBackend
+import dev.stapler.stelekit.repository.PageRepository
+import dev.stapler.stelekit.util.FileUtils
 import dev.stapler.stelekit.util.UuidGenerator
 import java.io.File
 import java.time.Duration
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.onSubscription
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlin.time.Clock
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -219,6 +240,124 @@ class CaptureViewModelTest {
         val field = CaptureViewModel::class.java.getDeclaredField("savedContext")
         field.isAccessible = true
         return field.get(viewModel)
+    }
+
+    private fun setSavedContext(viewModel: CaptureViewModel, ctx: Any?) {
+        val field = CaptureViewModel::class.java.getDeclaredField("savedContext")
+        field.isAccessible = true
+        field.set(viewModel, ctx)
+    }
+
+    /**
+     * Constructs a `CaptureViewModel.SavedCaptureContext` (private nested data class) via
+     * reflection, for tests that need to seed a post-save state (Epic 4.2) without driving
+     * a full [CaptureViewModel.save] first.
+     */
+    private fun newSavedCaptureContext(
+        block: Block,
+        page: Page,
+        blocks: List<Block>,
+        graphPath: String,
+        graphId: GraphId,
+        writer: GraphWriter,
+        writeActor: DatabaseWriteActor?,
+        pageRepository: PageRepository,
+        blockRepository: BlockRepository,
+    ): Any {
+        val cls = Class.forName("dev.stapler.stelekit.CaptureViewModel\$SavedCaptureContext")
+        // Two constructors exist at the bytecode level: the real 9-arg one, and a public
+        // synthetic 10-arg one (extra trailing DefaultConstructorMarker) Kotlin generates
+        // alongside it — declaredConstructors' order is unspecified, so select explicitly.
+        // graphId's ABI parameter type is the unboxed `String` (GraphId is a value class),
+        // not `GraphId` itself — pass graphId.value, not the wrapper.
+        val ctor = cls.declaredConstructors.first { it.parameterCount == 9 }
+        ctor.isAccessible = true
+        return ctor.newInstance(
+            block, page, blocks, graphPath, graphId.value, writer, writeActor, pageRepository, blockRepository,
+        )
+    }
+
+    /** Reflectively overwrites the private `_scanState` backing [MutableStateFlow]'s value. */
+    @Suppress("UNCHECKED_CAST")
+    private fun setScanState(viewModel: CaptureViewModel, state: CaptureViewModel.ScanState) {
+        val field = CaptureViewModel::class.java.getDeclaredField("_scanState")
+        field.isAccessible = true
+        (field.get(viewModel) as MutableStateFlow<CaptureViewModel.ScanState>).value = state
+    }
+
+    /** Generic poll loop for async work that resumes on a real background dispatcher. */
+    private fun awaitCondition(timeoutMs: Long = 5_000, condition: () -> Boolean) {
+        val looper = shadowOf(Looper.getMainLooper())
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (!condition() && System.currentTimeMillis() < deadline) {
+            looper.idle()
+            Thread.sleep(10)
+        }
+    }
+
+    /**
+     * Starts a background collector on [CaptureViewModel.chipFailure] and blocks (via
+     * [onSubscription]) until it has actually attached, so a subsequent `tryEmit` from the
+     * view model is guaranteed to be observed rather than racing collector startup.
+     */
+    private fun collectChipFailures(viewModel: CaptureViewModel): Pair<Job, MutableList<String>> {
+        val emitted = CopyOnWriteArrayList<String>()
+        val started = CompletableDeferred<Unit>()
+        val job = CoroutineScope(Dispatchers.Default).launch {
+            viewModel.chipFailure.onSubscription { started.complete(Unit) }.collect { emitted.add(it) }
+        }
+        runBlocking { started.await() }
+        return job to emitted
+    }
+
+    /** Counts calls to [getPageByName] while delegating everything else to a real repository. */
+    private class CountingPageRepository(private val delegate: PageRepository) : PageRepository by delegate {
+        var getPageByNameCallCount = 0
+            private set
+
+        override fun getPageByName(name: String): Flow<Either<DomainError, Page?>> {
+            getPageByNameCallCount++
+            return delegate.getPageByName(name)
+        }
+    }
+
+    /** Counts calls to [saveBlock] while delegating everything else to a real repository. */
+    private class CountingBlockRepository(private val delegate: BlockRepository) : BlockRepository by delegate {
+        var saveBlockCallCount = 0
+            private set
+
+        @OptIn(DirectRepositoryWrite::class)
+        override suspend fun saveBlock(block: Block): Either<DomainError, Unit> {
+            saveBlockCallCount++
+            return delegate.saveBlock(block)
+        }
+    }
+
+    /** Counts [writeFile] calls; used to prove a [GraphWriter] built on it was never touched. */
+    private open class CountingFileSystem : StubFileSystem() {
+        var writeFileCallCount = 0
+            private set
+
+        override fun writeFile(path: String, content: String): Boolean {
+            writeFileCallCount++
+            return true
+        }
+    }
+
+    /**
+     * A [PageRepository] delegate whose [getPageByName] suspends on [gate] before delegating —
+     * used to prove `save()` completes without awaiting a slower, unrelated async chip-accept
+     * write (Story 5.2.6). `getPageByName` is the only suspend point `createStubPage()` awaits
+     * before its own (real) `GraphWriter.savePage` write.
+     */
+    private class GatedPageRepository(
+        private val delegate: PageRepository,
+        private val gate: CompletableDeferred<Unit>,
+    ) : PageRepository by delegate {
+        override fun getPageByName(name: String): Flow<Either<DomainError, Page?>> = flow {
+            gate.await()
+            emitAll(delegate.getPageByName(name))
+        }
     }
 
     // ---- Existing coverage ---------------------------------------------------------------
@@ -454,5 +593,423 @@ class CaptureViewModelTest {
         )
         method.isAccessible = true
         return method.invoke(viewModel, local, enriched) as List<TopicSuggestion>
+    }
+
+    // ---- Epic 4.1: pre-save chip accept/dismiss --------------------------------------------
+
+    @Test
+    @Config(sdk = [29], application = SteleKitApplication::class)
+    fun `acceptSuggestion_preSave_realGraphWriterPersistsStubPageFile`() {
+        val (app, graphManager) = newWiredApplication()
+        val graphPath = openTestGraph(graphManager)
+        val viewModel = CaptureViewModel(app)
+
+        viewModel.updateText("Reading about Zettelkasten today")
+        setScanState(
+            viewModel,
+            CaptureViewModel.ScanState.Ready(
+                text = viewModel.captureText.value,
+                result = ScanResult(
+                    linkedText = viewModel.captureText.value,
+                    matchedPageNames = emptyList(),
+                    topicSuggestions = listOf(TopicSuggestion("Zettelkasten", 0.8f, TopicSuggestion.Source.LOCAL)),
+                ),
+            ),
+        )
+
+        viewModel.acceptSuggestion("Zettelkasten")
+
+        // Synchronous fold — observable with no suspension/idling between the tap and this read.
+        val ready = viewModel.scanState.value as CaptureViewModel.ScanState.Ready
+        assertTrue(ready.result.linkedText.contains("[[Zettelkasten]]"))
+        assertTrue(ready.result.topicSuggestions.single { it.term == "Zettelkasten" }.accepted)
+
+        val stubFile = File(graphPath, "pages/${FileUtils.sanitizeFileName("Zettelkasten")}.md")
+        awaitCondition { stubFile.exists() }
+        assertTrue("stub page file must be written to disk: ${stubFile.absolutePath}", stubFile.exists())
+    }
+
+    @Test
+    fun `dismissSuggestion_setsDismissedTrue_noWriteInvoked`() {
+        val app: Application = ApplicationProvider.getApplicationContext()
+        val viewModel = CaptureViewModel(app)
+        viewModel.updateText("Reading about Zettelkasten today")
+        setScanState(
+            viewModel,
+            CaptureViewModel.ScanState.Ready(
+                text = viewModel.captureText.value,
+                result = ScanResult(
+                    linkedText = viewModel.captureText.value,
+                    matchedPageNames = emptyList(),
+                    topicSuggestions = listOf(TopicSuggestion("Zettelkasten", 0.8f, TopicSuggestion.Source.LOCAL)),
+                ),
+            ),
+        )
+
+        // No graphManager is wired on this plain-Application config — if dismissSuggestion()
+        // touched any write path it would NPE/throw here; reaching the assertions below with no
+        // exception, on top of the state staying exactly as expected, is itself proof no write
+        // was ever attempted.
+        viewModel.dismissSuggestion("Zettelkasten")
+
+        val ready = viewModel.scanState.value as CaptureViewModel.ScanState.Ready
+        val suggestion = ready.result.topicSuggestions.single { it.term == "Zettelkasten" }
+        assertTrue(suggestion.dismissed)
+        assertFalse(suggestion.accepted)
+        assertFalse(
+            "dismiss must never fold a link into linkedText",
+            ready.result.linkedText.contains("[[Zettelkasten]]"),
+        )
+    }
+
+    // ---- Story 4.1.4: acceptExistingLink() / dismissExistingLinkSuggestion() --------------
+
+    @Test
+    fun `acceptExistingLink_preSave_foldsLinkSynchronouslyWithNoStubPageWrite`() {
+        val app: Application = ApplicationProvider.getApplicationContext()
+        val viewModel = CaptureViewModel(app)
+        viewModel.updateText("Check out Today for details")
+        setScanState(
+            viewModel,
+            CaptureViewModel.ScanState.Ready(
+                text = viewModel.captureText.value,
+                result = ScanResult(linkedText = viewModel.captureText.value, matchedPageNames = emptyList()),
+                confirmFirstNames = listOf("Today"),
+            ),
+        )
+
+        // Pre-save (savedContext == null): acceptExistingLink() returns immediately after the
+        // fold with no scope.launch at all — nothing here can reach a GraphWriter, so this plain
+        // Application (no graphManager wired) completing without exception is itself proof no
+        // stub-page write is ever attempted for a confirm-first chip.
+        viewModel.acceptExistingLink("Today")
+
+        val ready = viewModel.scanState.value as CaptureViewModel.ScanState.Ready
+        assertTrue(ready.result.linkedText.contains("[[Today]]"))
+        assertFalse("Today" in ready.confirmFirstNames)
+    }
+
+    @Test
+    fun `dismissExistingLinkSuggestion_removesFromConfirmFirstNames_noFoldNoWrite`() {
+        val app: Application = ApplicationProvider.getApplicationContext()
+        val viewModel = CaptureViewModel(app)
+        viewModel.updateText("Check out Today for details")
+        setScanState(
+            viewModel,
+            CaptureViewModel.ScanState.Ready(
+                text = viewModel.captureText.value,
+                result = ScanResult(linkedText = viewModel.captureText.value, matchedPageNames = emptyList()),
+                confirmFirstNames = listOf("Today"),
+            ),
+        )
+
+        viewModel.dismissExistingLinkSuggestion("Today")
+
+        val ready = viewModel.scanState.value as CaptureViewModel.ScanState.Ready
+        assertFalse("Today" in ready.confirmFirstNames)
+        assertFalse(
+            "dismissing a confirm-first chip must never insert the link",
+            ready.result.linkedText.contains("[[Today]]"),
+        )
+    }
+
+    // ---- Story 4.1.3: chip-failure isolation + snackbar signal (AC #7) --------------------
+
+    @Test
+    @Config(sdk = [29], application = SteleKitApplication::class)
+    fun `acceptSuggestion_preSaveStubWriteFails_isolatedFailureEmitsChipFailureOtherChipsUnaffected`() {
+        val (app, graphManager) = newWiredApplication()
+        val graphPath = openTestGraph(graphManager)
+        // Force the real stub-page write to genuinely fail: the app's fileSystem is a real
+        // PlatformFileSystem (a final class — cannot be swapped for a fake), so instead make
+        // "pages/" a plain FILE rather than a directory. legacyWriteFile's parentDir.mkdirs()
+        // silently no-ops against an existing file, and the subsequent File.writeText() throws
+        // (caught, returns false) — a genuine on-disk failure, not a simulated one.
+        val pagesPath = File(graphPath, "pages")
+        pagesPath.parentFile?.mkdirs()
+        pagesPath.createNewFile()
+        val viewModel = CaptureViewModel(app)
+
+        viewModel.updateText("Reading about Zettelkasten and Multiplatform today")
+        setScanState(
+            viewModel,
+            CaptureViewModel.ScanState.Ready(
+                text = viewModel.captureText.value,
+                result = ScanResult(
+                    linkedText = viewModel.captureText.value,
+                    matchedPageNames = emptyList(),
+                    topicSuggestions = listOf(
+                        TopicSuggestion("Zettelkasten", 0.8f, TopicSuggestion.Source.LOCAL),
+                        TopicSuggestion("Multiplatform", 0.6f, TopicSuggestion.Source.LOCAL),
+                    ),
+                ),
+            ),
+        )
+
+        val (job, emitted) = collectChipFailures(viewModel)
+        viewModel.acceptSuggestion("Zettelkasten")
+
+        // Synchronous fold happens regardless of the as-yet-unresolved async write outcome.
+        val readyAfterAccept = viewModel.scanState.value as CaptureViewModel.ScanState.Ready
+        assertTrue(readyAfterAccept.result.linkedText.contains("[[Zettelkasten]]"))
+
+        awaitCondition { emitted.isNotEmpty() }
+        job.cancel()
+
+        assertEquals(listOf("Couldn't create page for \"Zettelkasten\""), emitted)
+
+        val finalState = viewModel.scanState.value as CaptureViewModel.ScanState.Ready
+        val zettel = finalState.result.topicSuggestions.single { it.term == "Zettelkasten" }
+        val multi = finalState.result.topicSuggestions.single { it.term == "Multiplatform" }
+        assertTrue("a failed async write must not revert the already-folded link", zettel.accepted)
+        assertTrue(finalState.result.linkedText.contains("[[Zettelkasten]]"))
+        assertFalse("other pending suggestion must be unaffected by the failure", multi.accepted)
+        assertFalse(multi.dismissed)
+        assertFalse(
+            "other pending suggestion's term must not be folded in",
+            finalState.result.linkedText.contains("[[Multiplatform]]"),
+        )
+    }
+
+    // ---- Epic 4.2: post-save write-back -----------------------------------------------------
+
+    @Test
+    @Config(sdk = [29], application = SteleKitApplication::class)
+    fun `acceptSuggestion_postSaveWithRealSavedContext_reusesCapturedWriterAndPersistsSecondWrite`() {
+        val (app, graphManager) = newWiredApplication()
+        val graphPath = openTestGraph(graphManager)
+        val viewModel = CaptureViewModel(app)
+
+        viewModel.updateText("Reading about Zettelkasten today")
+        viewModel.save()
+        awaitSaveState(viewModel)
+        assertEquals(CaptureViewModel.SaveState.Saved, viewModel.saveState.value)
+
+        val ctxBefore = readSavedContext(viewModel)!!
+        val blockBefore = ctxBefore.javaClass.getDeclaredField("block").apply { isAccessible = true }
+            .get(ctxBefore) as Block
+        val blockUuidBefore = blockBefore.uuid
+
+        setScanState(
+            viewModel,
+            CaptureViewModel.ScanState.Ready(
+                text = viewModel.captureText.value,
+                result = ScanResult(
+                    linkedText = viewModel.captureText.value,
+                    matchedPageNames = emptyList(),
+                    topicSuggestions = listOf(TopicSuggestion("Zettelkasten", 0.8f, TopicSuggestion.Source.LOCAL)),
+                ),
+            ),
+        )
+
+        viewModel.acceptSuggestion("Zettelkasten")
+
+        val stubFile = File(graphPath, "pages/${FileUtils.sanitizeFileName("Zettelkasten")}.md")
+        awaitCondition { stubFile.exists() }
+        assertTrue("stub page file must be written to disk: ${stubFile.absolutePath}", stubFile.exists())
+
+        awaitCondition {
+            val ctx = readSavedContext(viewModel)!!
+            val block = ctx.javaClass.getDeclaredField("block").apply { isAccessible = true }.get(ctx)
+            val content = block!!.javaClass.getMethod("getContent").invoke(block) as String
+            content.contains("[[Zettelkasten]]")
+        }
+
+        val ctxAfter = readSavedContext(viewModel)!!
+        val blockAfter = ctxAfter.javaClass.getDeclaredField("block").apply { isAccessible = true }
+            .get(ctxAfter) as Block
+        assertEquals("the second write must update the SAME block, not a new one", blockUuidBefore, blockAfter.uuid)
+        assertTrue(blockAfter.content.contains("[[Zettelkasten]]"))
+    }
+
+    @Test
+    @Config(sdk = [29], application = SteleKitApplication::class)
+    fun `acceptSuggestion_postSaveGraphIdMismatch_neverTouchesRepositoryOrWriter`() {
+        val (app, graphManager) = newWiredApplication()
+        openTestGraph(graphManager)
+        val repoSet = graphManager.getActiveRepositorySet()!!
+        val viewModel = CaptureViewModel(app)
+
+        val countingPages = CountingPageRepository(repoSet.pageRepository)
+        val countingBlocks = CountingBlockRepository(repoSet.blockRepository)
+        val countingFileSystem = CountingFileSystem()
+        val fakeWriter = GraphWriter(countingFileSystem, writeActor = null)
+
+        val now = Clock.System.now()
+        val page = Page(
+            uuid = PageUuid(UuidGenerator.generateV7()), name = "2026-08-27",
+            createdAt = now, updatedAt = now,
+        )
+        val block = Block(
+            uuid = BlockUuid(UuidGenerator.generateV7()),
+            pageUuid = page.uuid,
+            content = "Reading about Zettelkasten today",
+            position = "a0",
+            createdAt = now,
+            updatedAt = now,
+        )
+        val ctx = newSavedCaptureContext(
+            block = block,
+            page = page,
+            blocks = listOf(block),
+            graphPath = graphManager.getActiveGraphInfo()!!.path,
+            // Deliberately does not match the real active graph id — simulates the user
+            // switching graphs in the window between save() and a post-save chip tap.
+            graphId = GraphId("mismatched-graph-id"),
+            writer = fakeWriter,
+            writeActor = null,
+            pageRepository = countingPages,
+            blockRepository = countingBlocks,
+        )
+        setSavedContext(viewModel, ctx)
+
+        viewModel.updateText("Reading about Zettelkasten today")
+        setScanState(
+            viewModel,
+            CaptureViewModel.ScanState.Ready(
+                text = viewModel.captureText.value,
+                result = ScanResult(
+                    linkedText = viewModel.captureText.value,
+                    matchedPageNames = emptyList(),
+                    topicSuggestions = listOf(TopicSuggestion("Zettelkasten", 0.8f, TopicSuggestion.Source.LOCAL)),
+                ),
+            ),
+        )
+
+        val (job, emitted) = collectChipFailures(viewModel)
+        viewModel.acceptSuggestion("Zettelkasten")
+
+        awaitCondition { emitted.isNotEmpty() }
+        job.cancel()
+
+        assertEquals(listOf("Couldn't link \"Zettelkasten\" — the graph changed"), emitted)
+        assertEquals(0, countingPages.getPageByNameCallCount)
+        assertEquals(0, countingBlocks.saveBlockCallCount)
+        assertEquals(0, countingFileSystem.writeFileCallCount)
+    }
+
+    @Test
+    @Config(sdk = [29], application = SteleKitApplication::class)
+    fun `acceptExistingLink_postSaveActorChannelClosed_closedSendChannelExceptionCaughtWithDistinctMessage`() {
+        val (app, graphManager) = newWiredApplication()
+        openTestGraph(graphManager)
+        val repoSet = graphManager.getActiveRepositorySet()!!
+        val viewModel = CaptureViewModel(app)
+
+        val now = Clock.System.now()
+        val page = Page(
+            uuid = PageUuid(UuidGenerator.generateV7()), name = "2026-08-27",
+            createdAt = now, updatedAt = now,
+        )
+        val block = Block(
+            uuid = BlockUuid(UuidGenerator.generateV7()),
+            pageUuid = page.uuid,
+            content = "Check out Today for details",
+            position = "a0",
+            createdAt = now,
+            updatedAt = now,
+        )
+        val writer = GraphWriter(app.fileSystem, writeActor = repoSet.writeActor)
+        val ctx = newSavedCaptureContext(
+            block = block,
+            page = page,
+            blocks = listOf(block),
+            graphPath = graphManager.getActiveGraphInfo()!!.path,
+            graphId = graphManager.getActiveGraphId()!!,
+            writer = writer,
+            writeActor = repoSet.writeActor,
+            pageRepository = repoSet.pageRepository,
+            blockRepository = repoSet.blockRepository,
+        )
+        setSavedContext(viewModel, ctx)
+
+        viewModel.updateText("Check out Today for details")
+        setScanState(
+            viewModel,
+            CaptureViewModel.ScanState.Ready(
+                text = viewModel.captureText.value,
+                result = ScanResult(linkedText = viewModel.captureText.value, matchedPageNames = emptyList()),
+                confirmFirstNames = listOf("Today"),
+            ),
+        )
+
+        // Simulate a graph-switch race closing the actor's channel between the identity guard
+        // passing and the actual saveBlock() send.
+        repoSet.writeActor!!.close()
+
+        val (job, emitted) = collectChipFailures(viewModel)
+        viewModel.acceptExistingLink("Today")
+
+        awaitCondition { emitted.isNotEmpty() }
+        job.cancel()
+
+        assertEquals(listOf("Couldn't link \"Today\" — the graph changed"), emitted)
+        assertNotEquals(
+            "must be distinct from performSave()'s own ClosedSendChannelException message",
+            "Graph switched during save — please retry",
+            emitted.single(),
+        )
+    }
+
+    // ---- Story 5.2.6: chip-accept/save race — save() must not await the slower write ------
+
+    @Test
+    @Config(sdk = [29], application = SteleKitApplication::class)
+    fun `acceptSuggestionThenSave_synchronousFoldWinsRace_saveCompletesWithoutAwaitingSlowerStubWrite`() {
+        val (app, graphManager) = newWiredApplication()
+        openTestGraph(graphManager)
+        val viewModel = CaptureViewModel(app)
+
+        val gate = CompletableDeferred<Unit>()
+        // The app's fileSystem is a real PlatformFileSystem (a final class — cannot be swapped
+        // for a fake), so gate one layer up instead: createStubPage()'s existence check
+        // (repoSet.pageRepository.getPageByName) is the only suspend point before the stub
+        // write, and PageRepository IS an interface — wrap it to block there. save()'s own
+        // journal write goes through the SAME RepositorySet's journalService/blockRepository/
+        // writeActor (untouched by this copy), so it is never gated.
+        val repoSet = graphManager.getActiveRepositorySet()!!
+        val gatedRepoSet = repoSet.copy(pageRepository = GatedPageRepository(repoSet.pageRepository, gate))
+        val activeRepositorySetField = GraphManager::class.java.getDeclaredField("_activeRepositorySet")
+            .apply { isAccessible = true }
+        @Suppress("UNCHECKED_CAST")
+        (activeRepositorySetField.get(graphManager) as MutableStateFlow<Any?>).value = gatedRepoSet
+
+        viewModel.updateText("Reading about Zettelkasten today")
+        setScanState(
+            viewModel,
+            CaptureViewModel.ScanState.Ready(
+                text = viewModel.captureText.value,
+                result = ScanResult(
+                    linkedText = viewModel.captureText.value,
+                    matchedPageNames = emptyList(),
+                    topicSuggestions = listOf(TopicSuggestion("Zettelkasten", 0.8f, TopicSuggestion.Source.LOCAL)),
+                ),
+            ),
+        )
+
+        viewModel.acceptSuggestion("Zettelkasten")
+        // Synchronous fold already landed before scope.launch even runs — save() issued right
+        // after already observes it, with no lock/mutex needed between the two calls.
+        val readyAfterAccept = viewModel.scanState.value as CaptureViewModel.ScanState.Ready
+        assertTrue(readyAfterAccept.result.linkedText.contains("[[Zettelkasten]]"))
+
+        viewModel.save()
+        awaitSaveState(viewModel)
+
+        assertEquals(CaptureViewModel.SaveState.Saved, viewModel.saveState.value)
+        assertFalse(
+            "save() must complete without waiting on the deliberately-slow stub-page write",
+            gate.isCompleted,
+        )
+
+        val saved = readSavedContext(viewModel)!!
+        val block = saved.javaClass.getDeclaredField("block").apply { isAccessible = true }.get(saved)
+        val content = block!!.javaClass.getMethod("getContent").invoke(block) as String
+        assertTrue(
+            "the persisted block must contain the accepted link despite the race",
+            content.contains("[[Zettelkasten]]"),
+        )
+
+        gate.complete(Unit) // release the still-pending stub write so it doesn't leak past the test
     }
 }
