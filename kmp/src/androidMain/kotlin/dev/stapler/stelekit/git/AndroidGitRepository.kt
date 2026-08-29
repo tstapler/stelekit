@@ -297,7 +297,14 @@ class AndroidGitRepository(
 
                     val conflictFiles = if (hasConflicts) {
                         mergeResult.conflicts?.keys?.map { filePath ->
-                            val absolutePath = worktree?.toUserFacingPath("${config.repoRoot}/$filePath")
+                            // filePath is git-relative (e.g. "pages/foo.md"), relative to whatever
+                            // directory JGit actually opened — the shadow worktree root in
+                            // shadow-mirror mode, not config.repoRoot (the SAF root string).
+                            // toUserFacingPath() strips worktreeRootPath, so it must be given a
+                            // shadow-absolute path, never a repoRoot-prefixed one (fixed after
+                            // Phase 3 review flagged the repoRoot-prefixed form as a no-op strip
+                            // that doubled the SAF root in the returned path).
+                            val absolutePath = worktree?.toUserFacingPath("${worktree.worktreeRootPath}/$filePath")
                                 ?: "${config.repoRoot}/$filePath"
                             val wikiRelPath = if (!config.wikiSubdir.isNullOrEmpty() &&
                                 filePath.startsWith("${config.wikiSubdir}/")) {
@@ -376,7 +383,8 @@ class AndroidGitRepository(
                     }
 
                     val wikiChangedFiles = wikiChangedGitRelativePaths.map { relPath ->
-                        worktree?.toUserFacingPath("${config.repoRoot}/$relPath") ?: "${config.repoRoot}/$relPath"
+                        // See conflictFiles above: relPath is shadow-relative, not repoRoot-relative.
+                        worktree?.toUserFacingPath("${worktree.worktreeRootPath}/$relPath") ?: "${config.repoRoot}/$relPath"
                     }
 
                     MergeResult(
