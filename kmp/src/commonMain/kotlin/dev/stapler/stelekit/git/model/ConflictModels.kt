@@ -5,6 +5,13 @@ package dev.stapler.stelekit.git.model
 
 import kotlinx.serialization.Serializable
 
+/**
+ * @property filePath A platform-internal working-tree path. May be shadow-absolute on Android in
+ * shadow-mirror mode — never assume it is directly SAF/filesystem-openable without going through
+ * the platform's [dev.stapler.stelekit.git.GitRepository] implementation.
+ * @property wikiRelativePath Always safe to display/write against the user-facing wiki root,
+ * regardless of platform.
+ */
 data class ConflictFile(
     val filePath: String,
     val wikiRelativePath: String,

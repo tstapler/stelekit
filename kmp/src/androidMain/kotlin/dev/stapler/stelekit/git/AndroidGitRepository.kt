@@ -226,6 +226,7 @@ class AndroidGitRepository(
     override suspend fun merge(config: GitConfig): Either<DomainError.GitError, MergeResult> =
         withContext(PlatformDispatcher.IO) {
             try {
+                val worktree = shadowWorktreeFor(config.repoRoot)
                 openGit(config).use { git ->
                     val repo = git.repository
                     val remoteRef = repo.resolve("${config.remoteName}/${config.remoteBranch}")
@@ -244,7 +245,8 @@ class AndroidGitRepository(
 
                     val conflictFiles = if (hasConflicts) {
                         mergeResult.conflicts?.keys?.map { filePath ->
-                            val absolutePath = "${config.repoRoot}/$filePath"
+                            val absolutePath = worktree?.toUserFacingPath("${config.repoRoot}/$filePath")
+                                ?: "${config.repoRoot}/$filePath"
                             val wikiRelPath = if (!config.wikiSubdir.isNullOrEmpty() &&
                                 filePath.startsWith("${config.wikiSubdir}/")) {
                                 filePath.removePrefix("${config.wikiSubdir}/")
@@ -293,7 +295,7 @@ class AndroidGitRepository(
                         changedFiles.filter { it.startsWith("${config.repoRoot}/${config.wikiSubdir}/") }
                     } else {
                         changedFiles
-                    }
+                    }.map { worktree?.toUserFacingPath(it) ?: it }
 
                     MergeResult(
                         hasConflicts = hasConflicts,
@@ -373,6 +375,7 @@ class AndroidGitRepository(
         side: MergeSide,
     ): Either<DomainError.GitError, Unit> = withContext(PlatformDispatcher.IO) {
         try {
+            val worktree = shadowWorktreeFor(config.repoRoot)
             openGit(config).use { git ->
                 val stage = when (side) {
                     MergeSide.LOCAL -> org.eclipse.jgit.api.CheckoutCommand.Stage.OURS
@@ -380,7 +383,10 @@ class AndroidGitRepository(
                 }
                 git.checkout()
                     .setStage(stage)
-                    .addPath(filePath.removePrefix("${config.repoRoot}/"))
+                    .addPath(
+                        worktree?.toGitRelativePath(filePath)
+                            ?: filePath.removePrefix("${config.repoRoot}/")
+                    )
                     .call()
                 Unit.right()
             }
@@ -394,8 +400,12 @@ class AndroidGitRepository(
     override suspend fun markResolved(config: GitConfig, filePath: String): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
             try {
+                val worktree = shadowWorktreeFor(config.repoRoot)
                 openGit(config).use { git ->
-                    git.add().addFilepattern(filePath.removePrefix("${config.repoRoot}/")).call()
+                    git.add().addFilepattern(
+                        worktree?.toGitRelativePath(filePath)
+                            ?: filePath.removePrefix("${config.repoRoot}/")
+                    ).call()
                     Unit.right()
                 }
             } catch (e: CancellationException) {
