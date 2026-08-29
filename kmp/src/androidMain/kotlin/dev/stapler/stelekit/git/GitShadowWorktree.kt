@@ -62,6 +62,19 @@ class GitShadowWorktree(
     private val manifestFile = File(worktreeRoot, MANIFEST_FILE_NAME)
     private val json = Json { ignoreUnknownKeys = true }
 
+    // ── Write-back queue (shadow → SAF direction, plan.md Epic 3.1/3.2) ────────────────────────
+
+    /**
+     * Durable queue of git-relative paths pending write-back to SAF, sibling of [worktreeRoot]
+     * (`context.filesDir/graphs/$shadowKey/.writeback-queue`) — dot-prefixed and outside the git
+     * working tree, so it's never mistaken for tracked wiki content or accidentally committed.
+     * Lazily created per instance; consumed by `AndroidGitRepository`'s `merge()`/`checkoutFile()`
+     * (Tasks 3.2.1a/3.2.2a) via [GitShadowFlushActor].
+     */
+    val writeBackQueue: GitWriteBackQueue by lazy {
+        GitWriteBackQueue(File(worktreeRoot.parentFile, WRITE_BACK_QUEUE_FILE_NAME))
+    }
+
     // ── Orphan sweep — last-used marker (plan.md Task 6.1.1a) ──────────────────────────────────
 
     /**
@@ -97,6 +110,24 @@ class GitShadowWorktree(
             target
         } else {
             Log.w(TAG, "safeWorktreeFile: path escape blocked for '$relativePath'")
+            null
+        }
+    }
+
+    /**
+     * Reads a single file's content from the shadow tree by git-relative [relativePath], or null
+     * if the file doesn't exist or [relativePath] resolves outside [worktreeRoot]. Used by
+     * [GitShadowFlushActor] to read content that needs writing back to SAF (Task 3.1.2a).
+     */
+    internal fun readShadowFile(relativePath: String): String? {
+        val file = safeWorktreeFile(relativePath) ?: return null
+        if (!file.exists()) return null
+        return try {
+            file.readText()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "readShadowFile: failed to read '$relativePath'", e)
             null
         }
     }
@@ -253,6 +284,32 @@ class GitShadowWorktree(
     }
 
     /**
+     * Returns the sync manifest's recorded `safMtime` for [relativePath], or null if no entry
+     * exists (e.g. a file created only in the shadow tree, never yet synced from SAF). Used by
+     * [GitShadowFlushActor]'s concurrent-edit detection (Task 3.1.2a/3.1.2b).
+     */
+    internal fun manifestSafMtimeFor(relativePath: String): Long? =
+        readManifest().entries.firstOrNull { it.relativePath == relativePath }?.safMtime
+
+    /**
+     * Updates (inserting if absent) the manifest entry for [relativePath] with a fresh
+     * [safMtime]/[safSize] after a successful write-back, mirroring `ShadowFlushActor.kt:91-93`'s
+     * `stampMtime` pattern so a later [isFresh]/[ensureFresh] check doesn't see this entry as
+     * stale. Read-modify-write against the manifest file — callers must already hold
+     * `GitWorktreeLocks.lockFor(shadowKey)` (true of both [syncFromSafRoot] and
+     * `GitShadowFlushActor.flush()`) to avoid a lost update racing a concurrent SAF→shadow sync.
+     */
+    internal fun updateManifestEntry(relativePath: String, safMtime: Long, safSize: Long) {
+        val manifest = readManifest()
+        val updated = manifest.entries.filterNot { it.relativePath == relativePath } +
+            SyncManifestEntry(relativePath, safMtime, safSize)
+        writeManifest(SyncManifest(updated))
+        if (safMtime > 0L) {
+            safeWorktreeFile(relativePath)?.setLastModified(safMtime)
+        }
+    }
+
+    /**
      * Returns true when the shadow worktree's manifest matches the current recursive SAF listing
      * (mtime per entry, and entry count — catching additions/deletions). Returns false on the
      * first mismatch or a missing manifest.
@@ -288,6 +345,7 @@ class GitShadowWorktree(
         private const val TAG = "GitShadowWorktree"
         private const val MANIFEST_FILE_NAME = ".sync-manifest.json"
         private const val LAST_USED_FILE_NAME = ".last-used"
+        private const val WRITE_BACK_QUEUE_FILE_NAME = ".writeback-queue"
 
         /** Default grace period for [sweepOrphans] — 60 days. */
         private const val DEFAULT_MAX_AGE_MILLIS = 60L * 24 * 60 * 60 * 1000

@@ -315,7 +315,9 @@ class AndroidGitRepository(
                         emptyList()
                     }
 
-                    val changedFiles = try {
+                    // Git-relative paths (e.g. "pages/foo.md"), pre-mapping to SAF-facing form —
+                    // this is what GitWriteBackQueue/GitShadowFlushActor operate on (Task 3.2.1a).
+                    val changedGitRelativePaths = try {
                         val headAfter = repo.resolve("HEAD")
                         if (headAfter != null) {
                             val revWalk = org.eclipse.jgit.revwalk.RevWalk(repo)
@@ -326,8 +328,7 @@ class AndroidGitRepository(
                             )
                             diffFormatter.setRepository(repo)
                             val files = if (parentCommit != null) {
-                                diffFormatter.scan(parentCommit.tree, headCommit.tree)
-                                    .map { "${config.repoRoot}/${it.newPath}" }
+                                diffFormatter.scan(parentCommit.tree, headCommit.tree).map { it.newPath }
                             } else {
                                 emptyList()
                             }
@@ -343,11 +344,40 @@ class AndroidGitRepository(
                         emptyList()
                     }
 
-                    val wikiChangedFiles = if (!config.wikiSubdir.isNullOrEmpty()) {
-                        changedFiles.filter { it.startsWith("${config.repoRoot}/${config.wikiSubdir}/") }
+                    val wikiChangedGitRelativePaths = if (!config.wikiSubdir.isNullOrEmpty()) {
+                        changedGitRelativePaths.filter { it.startsWith("${config.wikiSubdir}/") }
                     } else {
-                        changedFiles
-                    }.map { worktree?.toUserFacingPath(it) ?: it }
+                        changedGitRelativePaths
+                    }
+
+                    // Task 3.2.1a: write changed files back to SAF before returning MergeResult —
+                    // this ordering guarantees GitSyncService.sync()'s subsequent reloadFiles()
+                    // (which runs on the caller's mapped/SAF paths) reads content that is
+                    // actually on disk in SAF.
+                    if (worktree != null && wikiChangedGitRelativePaths.isNotEmpty()) {
+                        wikiChangedGitRelativePaths.forEach { worktree.writeBackQueue.enqueue(it) }
+                        val flushErrors = GitShadowFlushActor(
+                            fileSystem, worktree, worktree.writeBackQueue, config.repoRoot,
+                        ).flush().flushErrors()
+
+                        // Task 3.2.1b: a concurrent SAF edit is surfaced distinctly, not masked
+                        // as a generic FetchFailed.
+                        flushErrors.filterIsInstance<DomainError.GitError.WorkingTreeConcurrentEditDetected>()
+                            .firstOrNull()
+                            ?.let { return@withContext it.left() }
+
+                        // A transient write-back failure is logged and left queued for retry on
+                        // the next sync's drain — it must not fail a merge that already
+                        // succeeded in the shadow tree.
+                        flushErrors.filterIsInstance<DomainError.GitError.WorkingTreeWriteBackFailed>()
+                            .forEach {
+                                logger.warn("merge: write-back failed for ${it.path}, will retry on next sync")
+                            }
+                    }
+
+                    val wikiChangedFiles = wikiChangedGitRelativePaths.map { relPath ->
+                        worktree?.toUserFacingPath("${config.repoRoot}/$relPath") ?: "${config.repoRoot}/$relPath"
+                    }
 
                     MergeResult(
                         hasConflicts = hasConflicts,
@@ -428,6 +458,8 @@ class AndroidGitRepository(
     ): Either<DomainError.GitError, Unit> = withContext(PlatformDispatcher.IO) {
         try {
             val worktree = shadowWorktreeFor(config.repoRoot)
+            val gitRelativePath = worktree?.toGitRelativePath(filePath)
+                ?: filePath.removePrefix("${config.repoRoot}/")
             openGit(config).use { git ->
                 val stage = when (side) {
                     MergeSide.LOCAL -> org.eclipse.jgit.api.CheckoutCommand.Stage.OURS
@@ -435,11 +467,27 @@ class AndroidGitRepository(
                 }
                 git.checkout()
                     .setStage(stage)
-                    .addPath(
-                        worktree?.toGitRelativePath(filePath)
-                            ?: filePath.removePrefix("${config.repoRoot}/")
-                    )
+                    .addPath(gitRelativePath)
                     .call()
+
+                // Task 3.2.2a: write the checked-out content back to SAF before returning —
+                // otherwise resolveConflictBySide()'s side-based choice never reaches SAF.
+                if (worktree != null) {
+                    worktree.writeBackQueue.enqueue(gitRelativePath)
+                    val flushErrors = GitShadowFlushActor(
+                        fileSystem, worktree, worktree.writeBackQueue, config.repoRoot,
+                    ).flush().flushErrors()
+
+                    flushErrors.filterIsInstance<DomainError.GitError.WorkingTreeConcurrentEditDetected>()
+                        .firstOrNull()
+                        ?.let { return@withContext it.left() }
+
+                    flushErrors.filterIsInstance<DomainError.GitError.WorkingTreeWriteBackFailed>()
+                        .forEach {
+                            logger.warn("checkoutFile: write-back failed for ${it.path}, will retry on next sync")
+                        }
+                }
+
                 Unit.right()
             }
         } catch (e: CancellationException) {
@@ -502,6 +550,14 @@ class AndroidGitRepository(
         }
 
     // ── Private helpers ───────────────────────────────────────────────────────
+
+    /**
+     * Extracts the [DomainError.GitError] values out of a [GitShadowFlushActor.flush] result
+     * list's failed entries, for `merge()`/`checkoutFile()` (Tasks 3.2.1b/3.2.2a) to route
+     * distinctly by error type instead of masking a write-back failure as a generic error.
+     */
+    private fun List<Either<DomainError.GitError, Unit>>.flushErrors(): List<DomainError.GitError> =
+        mapNotNull { (it as? Either.Left)?.value }
 
     /**
      * Resolves saf:// URIs to real filesystem paths for JGit's File-based API. Tries the fast
