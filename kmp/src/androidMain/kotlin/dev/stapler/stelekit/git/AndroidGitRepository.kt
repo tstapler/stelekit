@@ -47,7 +47,11 @@ class AndroidGitRepository(
     private val sshKeyProvider: (() -> ByteArray)? = null,
     credentialAccess: CredentialAccess = CredentialStore(),
     private val pathResolver: (String) -> String? = { null },
-    private val fileSystem: FileSystem,
+    // Public (not internal/private): `MainActivityGitRepositoryWiringTest` (`:androidApp` module,
+    // a different Gradle module) must read this back to assert it's reference-identical to the
+    // app's real fileSystem instance — Kotlin's `internal` doesn't extend across a
+    // `project(":kmp")` dependency edge, so only `public` compiles there (plan.md Task 5.1.2a).
+    val fileSystem: FileSystem,
 ) : GitRepository {
 
     private val logger = Logger("AndroidGitRepository")
@@ -69,7 +73,13 @@ class AndroidGitRepository(
         // used graph's shadow tree — no per-call-site opt-in required.
         return shadowWorktrees.getOrPut(key) {
             GitShadowWorktree(context, key, repoRoot, fileSystem)
-        }.also { it.touchLastUsed() }
+        }.also {
+            it.touchLastUsed()
+            // Task 5.2.1c: keep PlatformFileSystem's write-behind flush lock-key in sync with the
+            // git side's shadowKey derivation on every real resolution, so a concurrent flush for
+            // this graph contends on the same GitWorktreeLocks Mutex as syncFromSafRoot().
+            fileSystem.setGitShadowKeyProvider { GitShadowWorktree.shadowKeyForSafPath(repoRoot) }
+        }
     }
 
     /**

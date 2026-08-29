@@ -10,6 +10,7 @@ import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.withLock
 
 actual class PlatformFileSystem actual constructor() : FileSystem {
     private var context: Context? = null
@@ -736,6 +737,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     private var onFlushPreWrite: (suspend (String) -> Unit)? = null
     private var onFlushFailed: (suspend (String) -> Unit)? = null
     private var spanEmitter: dev.stapler.stelekit.performance.SpanEmitter? = null
+    private var gitShadowKeyProvider: (() -> String?)? = null
 
     /** Registers the [dev.stapler.stelekit.performance.SpanEmitter] used to instrument write-behind SAF flushes. */
     override fun setSpanEmitter(spanEmitter: dev.stapler.stelekit.performance.SpanEmitter?) {
@@ -770,6 +772,15 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         onFlushFailed = callback
     }
 
+    /**
+     * Registers the provider for the git shadow-worktree lock key — see [GitWorktreeLocks] and
+     * [flushPendingWrites]. Set by `AndroidGitRepository.shadowWorktreeFor` on every real
+     * shadow-worktree resolution (plan.md Task 5.2.1c).
+     */
+    override fun setGitShadowKeyProvider(provider: (() -> String?)?) {
+        gitShadowKeyProvider = provider
+    }
+
     override fun markDirty(path: String, content: String): Boolean {
         val queue = writeBehindQueue ?: return false
         if (!path.startsWith("saf://")) return false
@@ -779,7 +790,23 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         return true
     }
 
+    // Task 5.2.1c: when a git shadow worktree is configured for the active graph, serialize this
+    // flush against GitShadowWorktree.syncFromSafRoot() on the same GitWorktreeLocks Mutex — both
+    // sides mutate the same underlying SAF files. Known accepted limitation: gitShadowKeyProvider
+    // is a single app-wide closure (see AndroidGitRepository.shadowWorktreeFor), so there is a
+    // brief staleness window across a graph switch before the new graph's first git operation
+    // re-sets it — documented in plan.md Task 5.2.1c, not fixed here. No lock at all (unchanged
+    // behavior) when git sync was never configured for this graph.
     override suspend fun flushPendingWrites() {
+        val key = gitShadowKeyProvider?.invoke()
+        if (key != null) {
+            GitWorktreeLocks.lockFor(key).withLock { flushPendingWritesLocked() }
+        } else {
+            flushPendingWritesLocked()
+        }
+    }
+
+    private suspend fun flushPendingWritesLocked() {
         val queue = writeBehindQueue ?: return
         val cache = shadowCache ?: return
         ShadowFlushActor(

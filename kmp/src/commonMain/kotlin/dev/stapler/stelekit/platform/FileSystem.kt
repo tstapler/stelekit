@@ -177,6 +177,16 @@ interface FileSystem {
      */
     fun setSpanEmitter(spanEmitter: dev.stapler.stelekit.performance.SpanEmitter?) {}
 
+    /**
+     * Registers a provider for the Android SAF shadow-git-worktree lock key (`GitShadowWorktree`'s
+     * `shadowKey`), so [flushPendingWrites] can serialize against a concurrent git shadow-worktree
+     * sync for the same graph (`GitWorktreeLocks`, plan.md Task 5.2.1c). Follows the same
+     * cross-layer callback pattern as [setOnFlushComplete]/[setOnFlushPreWrite]/[setOnFlushFailed]/
+     * [setSpanEmitter] above — `PlatformFileSystem` has no `GitConfig`/`repoRoot` in scope to
+     * derive this key itself. No-op on platforms without a git shadow worktree.
+     */
+    fun setGitShadowKeyProvider(provider: (() -> String?)?) {}
+
     /** Updates the shadow copy after a SAF write. No-op on non-SAF file systems. */
     fun updateShadow(path: String, content: String) { /* no-op */ }
 

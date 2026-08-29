@@ -7,8 +7,10 @@ import android.content.Context
 import android.util.Log
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.platform.FileSystem
+import dev.stapler.stelekit.platform.GitWorktreeLocks
 import dev.stapler.stelekit.util.ContentHasher
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -132,7 +134,18 @@ class GitShadowWorktree(
      * mtime+size staleness check) are skipped. Shadow-tracked files no longer present in the SAF
      * listing are deleted (handles SAF-side deletions). Writes the sync manifest once at the end.
      */
+    // Task 5.2.1b: acquires the lock inside syncFromSafRoot() itself (not just ensureFresh()),
+    // so every direct caller — ensureFresh, post-init/clone sync, and future post-abort
+    // reconciliation — is covered automatically without needing its own wrap, and contends with
+    // PlatformFileSystem's write-behind flush on the same GitWorktreeLocks Mutex (Task 5.2.1c).
     suspend fun syncFromSafRoot(
+        listRecursive: suspend (String) -> List<Pair<String, Long>>,
+        readSafFile: suspend (String) -> String?,
+    ): Unit = GitWorktreeLocks.lockFor(shadowKey).withLock {
+        syncFromSafRootLocked(listRecursive, readSafFile)
+    }
+
+    private suspend fun syncFromSafRootLocked(
         listRecursive: suspend (String) -> List<Pair<String, Long>>,
         readSafFile: suspend (String) -> String?,
     ) = withContext(PlatformDispatcher.IO) {
