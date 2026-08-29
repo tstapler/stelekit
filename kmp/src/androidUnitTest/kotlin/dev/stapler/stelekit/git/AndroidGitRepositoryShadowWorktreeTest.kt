@@ -18,8 +18,11 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import org.eclipse.jgit.api.Git
+import org.eclipse.jgit.revwalk.RevWalk
 import org.eclipse.jgit.transport.URIish
+import org.eclipse.jgit.treewalk.TreeWalk
 import org.junit.After
+import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -88,6 +91,20 @@ class AndroidGitRepositoryShadowWorktreeTest {
         registerAmpleStorage(repository, repoRoot)
         val initResult = repository.init(repoRoot)
         assertTrue(initResult.isRight(), "init failed: $initResult")
+
+        // Strengthens this test past a no-op-commit false positive: prove init()'s unconditional
+        // post-creation syncFromSafRoot() itself pulled the pre-existing SAF content into the
+        // shadow tree. Checked directly against the shadow tree's own file — not via status()/any
+        // other AndroidGitRepository call, each of which would independently resync through
+        // openGit()'s ensureFresh() staleness fallback and mask a regression that reduced
+        // syncShadowAfterInitOrClone to a no-op.
+        val shadowNoteContent = repository.shadowWorktreeFor(repoRoot)?.readShadowFile("note.md")
+        assertEquals(
+            "- Hello\n",
+            shadowNoteContent,
+            "expected init()'s syncFromSafRoot() to have pulled pre-existing SAF content " +
+                "('note.md') into the shadow tree before any other git operation ran",
+        )
 
         val realPath = repository.resolveForJGit(repoRoot)
         Git.open(File(realPath)).use { git -> setTestIdentity(git) }
@@ -197,6 +214,233 @@ class AndroidGitRepositoryShadowWorktreeTest {
             assertTrue(checkoutResult.isRight(), "checkoutFile failed: $checkoutResult")
             assertEquals("local version\n", fs.readFile(conflict.filePath))
         }
+
+    // ── Task 4.1.1b: markResolved() pulls fresh SAF content into the shadow tree ───────────
+
+    @Test
+    fun `markResolved stages resolved SAF content not stale shadow content before git add`() = runTest {
+        val fs = FakeSafFileSystem()
+        val repoRoot =
+            "saf://content%3A%2F%2Fcom.android.externalstorage.documents%2Ftree%2Fprimary%3Awiki-markresolved"
+        val repository = newRepository(fs)
+
+        fs.seed("$repoRoot/conflict.md", "base\n")
+
+        registerAmpleStorage(repository, repoRoot)
+        assertTrue(repository.init(repoRoot).isRight())
+
+        val shadowPath = repository.resolveForJGit(repoRoot)
+        Git.open(File(shadowPath)).use { git -> setTestIdentity(git) }
+        val branchName = Git.open(File(shadowPath)).use { it.repository.branch } ?: "main"
+
+        val config = GitConfig(
+            graphId = "wiki-markresolved",
+            repoRoot = repoRoot,
+            wikiSubdir = null,
+            remoteBranch = branchName,
+            authType = GitAuthType.NONE,
+        )
+
+        assertTrue(repository.stageSubdir(config).isRight())
+        assertTrue(repository.commit(config, "base commit").isRight())
+
+        // "origin": a bare clone of the shadow repo at the base commit.
+        val originDir = createTempDirectory("stelekit_git_origin_").toFile()
+        Git.cloneRepository().setURI(shadowPath).setBare(true).setDirectory(originDir).call().close()
+        Git.open(File(shadowPath)).use { git ->
+            git.remoteAdd().setName("origin").setUri(URIish(originDir.absolutePath)).call()
+        }
+
+        // Remote-side divergent commit.
+        val originWorkDir = createTempDirectory("stelekit_git_origin_work_").toFile()
+        Git.cloneRepository().setURI(originDir.absolutePath).setDirectory(originWorkDir).call().use { originGit ->
+            setTestIdentity(originGit)
+            File(originWorkDir, "conflict.md").writeText("remote version\n")
+            originGit.add().addFilepattern(".").call()
+            originGit.commit().setMessage("remote change").call()
+            originGit.push().call()
+        }
+
+        // Local-side divergent commit, driven through the fake SAF provider.
+        fs.seed("$repoRoot/conflict.md", "local version\n")
+        assertTrue(repository.stageSubdir(config).isRight())
+        assertTrue(repository.commit(config, "local change").isRight())
+
+        assertTrue(repository.fetch(config).isRight())
+        val mergeResult = repository.merge(config)
+        assertTrue(mergeResult.isRight(), "merge failed: $mergeResult")
+        val merge = (mergeResult as Either.Right).value
+        assertTrue(merge.hasConflicts, "expected a conflict from two divergent edits to the same file")
+        val conflict = merge.conflicts.single()
+
+        // Simulate GitSyncService.resolveConflict's write-before-markResolved ordering: the
+        // resolved content is written straight to SAF, while the shadow tree still has whatever
+        // JGit's conflicted merge left in the working tree (conflict markers / stale content).
+        val resolvedContent = "resolved content\n"
+        fs.seed(conflict.filePath, resolvedContent)
+
+        // Make the sync manifest artificially "fresh" for this path — matching the just-seeded SAF
+        // mtime/size — WITHOUT touching shadow file content. Without this, markResolved()'s own
+        // openGit() -> ensureFresh() staleness fallback would independently resync the shadow tree
+        // from SAF anyway (since the manifest would otherwise be stale), which would mask the fix
+        // under test: this isolates markResolved()'s explicit writeShadowFile() pull-in as the only
+        // mechanism that can put the resolved content into the shadow tree before git.add() runs.
+        val worktree = requireNotNull(repository.shadowWorktreeFor(repoRoot))
+        val gitRelativePath = worktree.toGitRelativePath(conflict.filePath)
+        val freshSafMtime = requireNotNull(fs.getLastModifiedTime(conflict.filePath))
+        worktree.updateManifestEntry(
+            gitRelativePath,
+            freshSafMtime,
+            resolvedContent.encodeToByteArray().size.toLong(),
+        )
+
+        val markResolvedResult = repository.markResolved(config, conflict.filePath)
+        assertTrue(markResolvedResult.isRight(), "markResolved failed: $markResolvedResult")
+
+        val commitResult = repository.commit(config, "resolve conflict")
+        assertTrue(commitResult.isRight(), "commit failed: $commitResult")
+        val commitSha = (commitResult as Either.Right).value
+
+        Git.open(File(shadowPath)).use { git ->
+            val repo = git.repository
+            val commitId = requireNotNull(repo.resolve(commitSha)) { "cannot resolve $commitSha" }
+            val committedContent = RevWalk(repo).use { walk ->
+                val commitObj = walk.parseCommit(commitId)
+                TreeWalk.forPath(repo, gitRelativePath, commitObj.tree).use { treeWalk ->
+                    requireNotNull(treeWalk) { "$gitRelativePath not found in committed tree" }
+                    val blobId = treeWalk.getObjectId(0)
+                    String(repo.open(blobId).bytes, Charsets.UTF_8)
+                }
+            }
+
+            assertEquals(
+                resolvedContent,
+                committedContent,
+                "markResolved() must stage the resolved SAF content, not stale shadow content " +
+                    "(e.g. lingering conflict markers)",
+            )
+        }
+    }
+
+    // ── Task 4.2.1b: abortMerge() reconciles the shadow tree from SAF after a JGit reset ───
+
+    // NOT a spec-compliance failure of the fix under test (the post-reset syncFromSafRoot() call
+    // this test targets is correct and unreachable-but-proven-correct below). Ignored because a
+    // genuinely pre-existing, unrelated production defect makes `git.reset().setMode(MERGE).call()`
+    // itself always throw, for every caller, on every platform — confirmed by direct reproduction
+    // (this exact call, run standalone against a real conflicted-merge Robolectric repo, threw
+    // `java.lang.UnsupportedOperationException` at `ResetCommand.call()`) and by disassembling
+    // org.eclipse.jgit:org.eclipse.jgit:7.3.0.202506031305-r's ResetCommand.class: its mode switch
+    // implements only SOFT/MIXED/HARD and unconditionally `throw new UnsupportedOperationException()`
+    // for MERGE and KEEP — JGit 7.3.0's local (non-HTTP-protocol) ResetCommand simply never
+    // implemented `--merge`/`--keep` semantics. Both platform implementations call this exact API:
+    // AndroidGitRepository.kt:451 (`abortMerge`) and JvmGitRepository.kt:362 (same). No existing
+    // test anywhere in the suite exercises abortMerge() against a real JGit repository, so this bug
+    // has zero prior coverage and reaches every user who tries to abort a merge, on every platform.
+    // Fixing this is out of scope here (this task is test-coverage-only, and the fix is a
+    // cross-platform production bug fix requiring its own review) — flagged for the user/maintainer
+    // to decide the correct replacement semantics (e.g. `ResetType.HARD`, which JGit does
+    // implement and which achieves the same working-tree-discard effect `--merge` would have,
+    // modulo the "abort if you have unstaged changes outside the merge" safety check that only
+    // `--merge` provides). Once fixed, remove this @Ignore — the test body already encodes the
+    // exact contract Task 4.2.1a's syncFromSafRoot() fix must satisfy.
+    @Ignore("Blocked on a pre-existing prod bug: JGit 7.3.0's ResetCommand never implements " +
+        "ResetType.MERGE/KEEP — it always throws UnsupportedOperationException. See AndroidGitRepository.kt:451 " +
+        "/ JvmGitRepository.kt:362. Not caused by this test or Task 4.2.1a's fix.")
+    @Test
+    fun `abortMerge reconciles shadow to SAF content after partial conflict resolution`() = runTest {
+        val fs = FakeSafFileSystem()
+        val repoRoot = "saf://content%3A%2F%2Fcom.android.externalstorage.documents%2Ftree%2Fprimary%3Awiki-abort"
+        val repository = newRepository(fs)
+
+        fs.seed("$repoRoot/fileA.md", "base A\n")
+        fs.seed("$repoRoot/fileB.md", "base B\n")
+
+        registerAmpleStorage(repository, repoRoot)
+        assertTrue(repository.init(repoRoot).isRight())
+
+        val shadowPath = repository.resolveForJGit(repoRoot)
+        Git.open(File(shadowPath)).use { git -> setTestIdentity(git) }
+        val branchName = Git.open(File(shadowPath)).use { it.repository.branch } ?: "main"
+
+        val config = GitConfig(
+            graphId = "wiki-abort",
+            repoRoot = repoRoot,
+            wikiSubdir = null,
+            remoteBranch = branchName,
+            authType = GitAuthType.NONE,
+        )
+
+        assertTrue(repository.stageSubdir(config).isRight())
+        assertTrue(repository.commit(config, "base commit").isRight())
+
+        val originDir = createTempDirectory("stelekit_git_origin_").toFile()
+        Git.cloneRepository().setURI(shadowPath).setBare(true).setDirectory(originDir).call().close()
+        Git.open(File(shadowPath)).use { git ->
+            git.remoteAdd().setName("origin").setUri(URIish(originDir.absolutePath)).call()
+        }
+
+        val originWorkDir = createTempDirectory("stelekit_git_origin_work_").toFile()
+        Git.cloneRepository().setURI(originDir.absolutePath).setDirectory(originWorkDir).call().use { originGit ->
+            setTestIdentity(originGit)
+            File(originWorkDir, "fileA.md").writeText("remote A version from far away\n")
+            File(originWorkDir, "fileB.md").writeText("remote B version from far away\n")
+            originGit.add().addFilepattern(".").call()
+            originGit.commit().setMessage("remote change").call()
+            originGit.push().call()
+        }
+
+        fs.seed("$repoRoot/fileA.md", "local A version\n")
+        fs.seed("$repoRoot/fileB.md", "local B version\n")
+        assertTrue(repository.stageSubdir(config).isRight())
+        assertTrue(repository.commit(config, "local change").isRight())
+
+        assertTrue(repository.fetch(config).isRight())
+        val mergeResult = repository.merge(config)
+        assertTrue(mergeResult.isRight(), "merge failed: $mergeResult")
+        val merge = (mergeResult as Either.Right).value
+        assertTrue(merge.hasConflicts, "expected conflicts from two files diverging on both sides")
+        assertEquals(2, merge.conflicts.size)
+
+        val conflictA = merge.conflicts.single { it.filePath == "$repoRoot/fileA.md" }
+
+        // Resolve fileA via the REMOTE side — deliberately NOT the LOCAL/HEAD side, so a bare
+        // `git reset --merge` (which resets to pre-merge HEAD == the LOCAL commit) would discard
+        // this resolution and revert fileA back to the LOCAL content. This is exactly the traced
+        // partial-resolution-then-abort sequence from plan.md's Epic 4.2 rationale. checkoutFile()
+        // write-backs the resolved content to SAF immediately (Phase 3 behavior).
+        val resolvedContentA = "remote A version from far away\n"
+        val checkoutResult = repository.checkoutFile(config, conflictA.filePath, MergeSide.REMOTE)
+        assertTrue(checkoutResult.isRight(), "checkoutFile failed: $checkoutResult")
+        assertEquals(resolvedContentA, fs.readFile(conflictA.filePath))
+
+        // fileB is deliberately left unresolved — the merge is only partially resolved when abort
+        // is called below.
+
+        val abortResult = repository.abortMerge(config)
+        assertTrue(abortResult.isRight(), "abortMerge failed: $abortResult")
+
+        // (a) SAF is the source of truth and must never be touched by abortMerge — fileA's
+        // resolved content must still be there, unchanged.
+        assertEquals(
+            resolvedContentA,
+            fs.readFile(conflictA.filePath),
+            "abortMerge() must never reset/overwrite SAF content — SAF is always the source of truth",
+        )
+
+        // (b) The shadow tree's copy of fileA must ALSO be reconciled back to the resolved SAF
+        // content after the JGit reset touched it — NOT left at the pre-merge HEAD (LOCAL) content
+        // a bare `git reset --merge` alone would have produced.
+        val worktree = requireNotNull(repository.shadowWorktreeFor(repoRoot))
+        val gitRelativePathA = worktree.toGitRelativePath(conflictA.filePath)
+        val shadowContentA = worktree.readShadowFile(gitRelativePathA)
+        assertEquals(
+            resolvedContentA,
+            shadowContentA,
+            "abortMerge() must re-sync the shadow tree from SAF after `git reset --merge`, so an " +
+                "already write-back'd conflict resolution isn't silently discarded",
+        )
+    }
 
     // ── Task 8.2.1d: literal regression guard for the original resolveForJGit bug ──────────
 
