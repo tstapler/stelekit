@@ -64,7 +64,7 @@ class AndroidGitRepository(
      * when [pathResolver] already resolves [repoRoot] directly (fast path active — e.g. Desktop or
      * `MANAGE_EXTERNAL_STORAGE`, no shadow needed) or when [repoRoot] isn't a `saf://` path.
      */
-    private fun shadowWorktreeFor(repoRoot: String): GitShadowWorktree? {
+    internal fun shadowWorktreeFor(repoRoot: String): GitShadowWorktree? {
         if (pathResolver(repoRoot) != null) return null // fast path resolves directly, no shadow needed
         if (!repoRoot.startsWith("saf://")) return null
         val key = GitShadowWorktree.shadowKeyForSafPath(repoRoot)
@@ -602,7 +602,7 @@ class AndroidGitRepository(
      * the shadow worktree's real `java.io.File` root when shadow-mirror mode is active, and only
      * falls through to the raw (unresolvable-by-JGit) [path] string if neither applies.
      */
-    private fun resolveForJGit(path: String): String {
+    internal fun resolveForJGit(path: String): String {
         val resolved = pathResolver(path) ?: shadowWorktreeFor(path)?.worktreeRootPath
         if (resolved == null && path.startsWith("saf://")) {
             // JGit only knows java.io.File — a SAF content:// grant alone can't back that, so this
