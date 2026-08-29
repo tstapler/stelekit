@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.git
 
+import android.content.Context
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
@@ -14,6 +15,7 @@ import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.git.model.ConflictFile
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
+import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.security.CredentialAccess
 import dev.stapler.stelekit.platform.security.CredentialStore
 import kotlinx.coroutines.CancellationException
@@ -33,16 +35,39 @@ import java.io.File
  * jsch for SSH key format support (ED25519/ECDSA/OpenSSH).
  * All I/O runs on PlatformDispatcher.IO.
  *
+ * @param context Used to derive the per-graph shadow-worktree storage root
+ *                (`context.filesDir/graphs/$shadowKey/gitshadow`) for SAF-only users who lack
+ *                `MANAGE_EXTERNAL_STORAGE` — see [GitShadowWorktree] and ADR-018.
  * @param sshKeyProvider Optional provider for SSH private key bytes, used for
  *                       configurable key loading (from user-configured path or Android storage).
+ * @param fileSystem Used to list/read SAF content for shadow-worktree sync (`ensureFresh`).
  */
 class AndroidGitRepository(
+    private val context: Context,
     private val sshKeyProvider: (() -> ByteArray)? = null,
     credentialAccess: CredentialAccess = CredentialStore(),
     private val pathResolver: (String) -> String? = { null },
+    private val fileSystem: FileSystem,
 ) : GitRepository {
 
     private val logger = Logger("AndroidGitRepository")
+
+    private val shadowWorktrees = java.util.concurrent.ConcurrentHashMap<String, GitShadowWorktree>()
+
+    /**
+     * Resolves (or lazily creates and caches) the shadow worktree for *this call's* [repoRoot] —
+     * never a value captured once at construction time (plan.md design decision #6). Returns null
+     * when [pathResolver] already resolves [repoRoot] directly (fast path active — e.g. Desktop or
+     * `MANAGE_EXTERNAL_STORAGE`, no shadow needed) or when [repoRoot] isn't a `saf://` path.
+     */
+    private fun shadowWorktreeFor(repoRoot: String): GitShadowWorktree? {
+        if (pathResolver(repoRoot) != null) return null // fast path resolves directly, no shadow needed
+        if (!repoRoot.startsWith("saf://")) return null
+        val key = GitShadowWorktree.shadowKeyForSafPath(repoRoot)
+        return shadowWorktrees.getOrPut(key) {
+            GitShadowWorktree(context, key, repoRoot, fileSystem)
+        }
+    }
 
     @Volatile var credentialAccess: CredentialAccess = credentialAccess
         internal set
@@ -56,7 +81,9 @@ class AndroidGitRepository(
     override suspend fun init(repoRoot: String): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
             try {
-                Git.init().setDirectory(File(resolveForJGit(repoRoot))).call().close()
+                Git.init().setDirectory(File(resolveForJGit(repoRoot))).call().use { git ->
+                    syncShadowAfterInitOrClone(repoRoot, git)
+                }
                 Unit.right()
             } catch (e: CancellationException) {
                 throw e
@@ -90,7 +117,9 @@ class AndroidGitRepository(
                 })
 
             configureAuth(cmd, auth, preResolvedToken)
-            cmd.call().close()
+            cmd.call().use { git ->
+                syncShadowAfterInitOrClone(localPath, git)
+            }
             Unit.right()
         } catch (e: TransportException) {
             DomainError.GitError.AuthFailed(e.message ?: "Authentication failed").left()
@@ -104,7 +133,7 @@ class AndroidGitRepository(
     override suspend fun fetch(config: GitConfig): Either<DomainError.GitError, FetchResult> =
         withContext(PlatformDispatcher.IO) {
             try {
-                openGit(config.repoRoot).use { git ->
+                openGit(config, requiresFreshWorkingTree = false).use { git ->
                     val repo = git.repository
                     val headBefore = repo.resolve("HEAD")
 
@@ -142,7 +171,7 @@ class AndroidGitRepository(
     override suspend fun status(config: GitConfig): Either<DomainError.GitError, GitStatus> =
         withContext(PlatformDispatcher.IO) {
             try {
-                openGit(config.repoRoot).use { git ->
+                openGit(config).use { git ->
                     val statusResult = git.status()
                         .also { cmd ->
                             if (!config.wikiSubdir.isNullOrEmpty()) {
@@ -167,7 +196,7 @@ class AndroidGitRepository(
     override suspend fun stageSubdir(config: GitConfig): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
             try {
-                openGit(config.repoRoot).use { git ->
+                openGit(config).use { git ->
                     val pattern = if (config.wikiSubdir.isNullOrEmpty()) "." else "${config.wikiSubdir}/"
                     git.add().addFilepattern(pattern).call()
                     git.add().setUpdate(true).addFilepattern(pattern).call()
@@ -183,7 +212,7 @@ class AndroidGitRepository(
     override suspend fun commit(config: GitConfig, message: String): Either<DomainError.GitError, String> =
         withContext(PlatformDispatcher.IO) {
             try {
-                openGit(config.repoRoot).use { git ->
+                openGit(config).use { git ->
                     val commit = git.commit().setMessage(message).call()
                     commit.name.right()
                 }
@@ -197,7 +226,7 @@ class AndroidGitRepository(
     override suspend fun merge(config: GitConfig): Either<DomainError.GitError, MergeResult> =
         withContext(PlatformDispatcher.IO) {
             try {
-                openGit(config.repoRoot).use { git ->
+                openGit(config).use { git ->
                     val repo = git.repository
                     val remoteRef = repo.resolve("${config.remoteName}/${config.remoteBranch}")
                         ?: return@withContext DomainError.GitError.FetchFailed(
@@ -282,7 +311,7 @@ class AndroidGitRepository(
     override suspend fun push(config: GitConfig): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
             try {
-                openGit(config.repoRoot).use { git ->
+                openGit(config, requiresFreshWorkingTree = false).use { git ->
                     git.push()
                         .setRemote(config.remoteName)
                         .also { configureTransport(it, config) }
@@ -301,7 +330,7 @@ class AndroidGitRepository(
     override suspend fun log(config: GitConfig, maxCount: Int): Either<DomainError.GitError, List<GitCommit>> =
         withContext(PlatformDispatcher.IO) {
             try {
-                openGit(config.repoRoot).use { git ->
+                openGit(config, requiresFreshWorkingTree = false).use { git ->
                     val commits = git.log()
                         .setMaxCount(maxCount)
                         .call()
@@ -325,7 +354,7 @@ class AndroidGitRepository(
     override suspend fun abortMerge(config: GitConfig): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
             try {
-                openGit(config.repoRoot).use { git ->
+                openGit(config, requiresFreshWorkingTree = false).use { git ->
                     git.reset()
                         .setMode(org.eclipse.jgit.api.ResetCommand.ResetType.MERGE)
                         .call()
@@ -344,7 +373,7 @@ class AndroidGitRepository(
         side: MergeSide,
     ): Either<DomainError.GitError, Unit> = withContext(PlatformDispatcher.IO) {
         try {
-            openGit(config.repoRoot).use { git ->
+            openGit(config).use { git ->
                 val stage = when (side) {
                     MergeSide.LOCAL -> org.eclipse.jgit.api.CheckoutCommand.Stage.OURS
                     MergeSide.REMOTE -> org.eclipse.jgit.api.CheckoutCommand.Stage.THEIRS
@@ -365,7 +394,7 @@ class AndroidGitRepository(
     override suspend fun markResolved(config: GitConfig, filePath: String): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
             try {
-                openGit(config.repoRoot).use { git ->
+                openGit(config).use { git ->
                     git.add().addFilepattern(filePath.removePrefix("${config.repoRoot}/")).call()
                     Unit.right()
                 }
@@ -379,7 +408,7 @@ class AndroidGitRepository(
     override suspend fun hasDetachedHead(config: GitConfig): Boolean =
         withContext(PlatformDispatcher.IO) {
             try {
-                openGit(config.repoRoot).use { git ->
+                openGit(config, requiresFreshWorkingTree = false).use { git ->
                     val fullBranch = git.repository.fullBranch ?: return@use false
                     !fullBranch.startsWith("refs/heads/")
                 }
@@ -412,9 +441,14 @@ class AndroidGitRepository(
 
     // ── Private helpers ───────────────────────────────────────────────────────
 
-    /** Resolves saf:// URIs to real filesystem paths for JGit's File-based API. */
+    /**
+     * Resolves saf:// URIs to real filesystem paths for JGit's File-based API. Tries the fast
+     * path ([pathResolver], e.g. `MANAGE_EXTERNAL_STORAGE` or Desktop) first, then falls back to
+     * the shadow worktree's real `java.io.File` root when shadow-mirror mode is active, and only
+     * falls through to the raw (unresolvable-by-JGit) [path] string if neither applies.
+     */
     private fun resolveForJGit(path: String): String {
-        val resolved = pathResolver(path)
+        val resolved = pathResolver(path) ?: shadowWorktreeFor(path)?.worktreeRootPath
         if (resolved == null && path.startsWith("saf://")) {
             // JGit only knows java.io.File — a SAF content:// grant alone can't back that, so this
             // path is unusable for git sync unless "All files access" is granted (Android Settings >
@@ -429,7 +463,40 @@ class AndroidGitRepository(
         return resolved ?: path
     }
 
-    private fun openGit(repoRoot: String): Git = Git.open(File(resolveForJGit(repoRoot)))
+    /**
+     * Single choke point for every working-tree-touching JGit call. When [requiresFreshWorkingTree]
+     * is true (the default), runs the shadow worktree's freshness precondition — a structural
+     * enforcement, not a documented calling convention (plan.md design decision #4) — before
+     * opening the repository. Callers that don't read working-tree content before acting (`fetch`,
+     * `log`, `push`, `hasDetachedHead`) or that need a *post-op* reconciliation instead of a pre-op
+     * check (`abortMerge`) pass `requiresFreshWorkingTree = false`.
+     */
+    private suspend fun openGit(config: GitConfig, requiresFreshWorkingTree: Boolean = true): Git {
+        if (requiresFreshWorkingTree) {
+            shadowWorktreeFor(config.repoRoot)?.ensureFresh(
+                listRecursive = { root -> fileSystem.listFilesRecursiveWithModTimes(root) },
+                readSafFile = { relPath -> fileSystem.readFile("${config.repoRoot}/$relPath") },
+            )
+        }
+        return Git.open(File(resolveForJGit(config.repoRoot)))
+    }
+
+    /**
+     * After a successful `init()`/`clone()`, when shadow-mirror mode is active for [repoRoot],
+     * pulls any pre-existing SAF markdown into the freshly created/cloned shadow tree
+     * unconditionally (bypassing the freshness check — there is no prior manifest yet) so it's
+     * present before the user's first `status()`/`commit()`, and disables file-mode tracking
+     * (pitfall §2.4 — SAF documents carry no Unix permissions). No-op when shadow-mirror mode
+     * isn't active for this [repoRoot] (Desktop / `MANAGE_EXTERNAL_STORAGE` fast path).
+     */
+    private suspend fun syncShadowAfterInitOrClone(repoRoot: String, git: Git) {
+        val worktree = shadowWorktreeFor(repoRoot) ?: return
+        worktree.syncFromSafRoot(
+            listRecursive = { root -> fileSystem.listFilesRecursiveWithModTimes(root) },
+            readSafFile = { relPath -> fileSystem.readFile("$repoRoot/$relPath") },
+        )
+        worktree.disableFileModeTracking(git.repository)
+    }
 
     private fun buildJschSessionFactory(keyPath: String, passphrase: String? = null): JschConfigSessionFactory {
         return object : JschConfigSessionFactory() {

@@ -47,6 +47,38 @@ interface FileSystem {
     fun listFilesWithModTimes(path: String): List<Pair<String, Long>> =
         listFiles(path).map { name -> name to (getLastModifiedTime("$path/$name") ?: 0L) }
 
+    /**
+     * Recursively lists every file under [path] (relative to [path], using `/` separators),
+     * paired with its last-modified timestamp. Excludes any directory literally named `.git`
+     * at the root of the walk (git metadata has no SAF-side counterpart to mirror).
+     *
+     * Default implementation recurses using [listFiles]/[listDirectories]/[getLastModifiedTime] —
+     * sufficient for every platform's `FileSystem` actual, including Android's SAF-backed
+     * `PlatformFileSystem` (those three primitives are already SAF-aware there). Declared with a
+     * default body so only Android's shadow-worktree git sync (the sole current caller) needs to
+     * reason about this; `JvmFileSystem`/iOS/wasmJs actuals need zero changes to keep compiling
+     * (see stelekit's Android git shadow-worktree plan, Phase 1).
+     */
+    suspend fun listFilesRecursiveWithModTimes(path: String): List<Pair<String, Long>> {
+        val result = mutableListOf<Pair<String, Long>>()
+
+        fun walk(dir: String, relPrefix: String) {
+            for (fileName in listFiles(dir)) {
+                val relPath = if (relPrefix.isEmpty()) fileName else "$relPrefix/$fileName"
+                val mtime = getLastModifiedTime("$dir/$fileName") ?: 0L
+                result += relPath to mtime
+            }
+            for (dirName in listDirectories(dir)) {
+                if (relPrefix.isEmpty() && dirName == ".git") continue
+                val relPath = if (relPrefix.isEmpty()) dirName else "$relPrefix/$dirName"
+                walk("$dir/$dirName", relPath)
+            }
+        }
+
+        walk(path, "")
+        return result
+    }
+
     fun hasStoragePermission(): Boolean = true
     fun getLibraryDisplayName(): String? = null
     /** Human-readable name for a given graph path. Defaults to the last path segment. */
