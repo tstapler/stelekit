@@ -22,14 +22,15 @@ import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.api.MergeCommand
 import org.eclipse.jgit.api.errors.TransportException
 import org.eclipse.jgit.merge.MergeStrategy
-import org.eclipse.jgit.transport.JschConfigSessionFactory
-import org.eclipse.jgit.transport.OpenSshConfig
+import org.eclipse.jgit.transport.ssh.jsch.JschConfigSessionFactory
+import org.eclipse.jgit.transport.ssh.jsch.OpenSshConfig
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider
 import org.eclipse.jgit.util.FS
 import java.io.File
 
 /**
- * Android implementation of GitRepository using JGit 5.13.x + mwiede/jsch for SSH.
+ * Android implementation of GitRepository using JGit 7.3.0 (matches Desktop) + mwiede/jsch fork of
+ * jsch for SSH key format support (ED25519/ECDSA/OpenSSH).
  * All I/O runs on PlatformDispatcher.IO.
  *
  * @param sshKeyProvider Optional provider for SSH private key bytes, used for
