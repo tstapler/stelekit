@@ -30,6 +30,7 @@ import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.platform.security.CredentialStore
 import dev.stapler.stelekit.git.AndroidGitRepository
+import dev.stapler.stelekit.git.GitShadowWorktree
 import dev.stapler.stelekit.git.GitSyncServiceRegistry
 import dev.stapler.stelekit.service.rememberAndroidMediaAttachmentService
 import dev.stapler.stelekit.ui.StelekitApp
@@ -49,7 +50,9 @@ import dev.stapler.stelekit.platform.sensor.AndroidCameraFrameSource
 import dev.stapler.stelekit.platform.sensor.AndroidCameraProvider
 import dev.stapler.stelekit.platform.sensor.SensorModule
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 class MainActivity : ComponentActivity() {
@@ -297,6 +300,17 @@ class MainActivity : ComponentActivity() {
                 AndroidGitRepository(pathResolver = { PlatformFileSystem.resolveSafToRealPath(it, ctx) })
             }
             val attachmentService = rememberAndroidMediaAttachmentService(this@MainActivity, fileSystem)
+
+            // One-shot startup orphan sweep (plan.md Phase 6, Epic 6.1) — deletes long-unused
+            // shadow git worktrees. Self-contained: no GraphManager/GitConfigRepository lookup
+            // needed (see GitShadowWorktree.sweepOrphans doc), so it can run unconditionally here
+            // regardless of which graph (if any) is active. sweepOrphans() does blocking file I/O
+            // and is intentionally not suspend, so the Dispatchers.IO switch happens here.
+            LaunchedEffect(Unit) {
+                withContext(Dispatchers.IO) {
+                    GitShadowWorktree.sweepOrphans(this@MainActivity.applicationContext)
+                }
+            }
 
             // Keep GitSyncServiceRegistry in sync so GitSyncWorker can reach the active service
             // even when the process was revived by WorkManager without the UI being foregrounded.

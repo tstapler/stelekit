@@ -60,6 +60,27 @@ class GitShadowWorktree(
     private val manifestFile = File(worktreeRoot, MANIFEST_FILE_NAME)
     private val json = Json { ignoreUnknownKeys = true }
 
+    // ── Orphan sweep — last-used marker (plan.md Task 6.1.1a) ──────────────────────────────────
+
+    /**
+     * Updates this shadow tree's `.last-used` marker mtime to now. A sibling of [worktreeRoot]
+     * (`context.filesDir/graphs/$shadowKey/.last-used`), never inside the git working tree itself,
+     * so it's never accidentally tracked/committed by JGit. Called by
+     * `AndroidGitRepository.shadowWorktreeFor()` on every real resolution, so [sweepOrphans]'s
+     * staleness check reflects actual usage without any per-call-site opt-in.
+     */
+    fun touchLastUsed() {
+        try {
+            val marker = File(worktreeRoot.parentFile, LAST_USED_FILE_NAME)
+            if (!marker.exists()) marker.createNewFile()
+            marker.setLastModified(System.currentTimeMillis())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "touchLastUsed: failed to update '$LAST_USED_FILE_NAME' marker", e)
+        }
+    }
+
     // ── Path-traversal guard (ported from ShadowFileCache.safeShadowFile) ──────────────────────
 
     /**
@@ -253,9 +274,51 @@ class GitShadowWorktree(
     companion object {
         private const val TAG = "GitShadowWorktree"
         private const val MANIFEST_FILE_NAME = ".sync-manifest.json"
+        private const val LAST_USED_FILE_NAME = ".last-used"
+
+        /** Default grace period for [sweepOrphans] — 60 days. */
+        private const val DEFAULT_MAX_AGE_MILLIS = 60L * 24 * 60 * 60 * 1000
 
         /** Same hash basis as `GraphManager.graphIdFromPath()` — see plan.md design decision #1. */
         fun shadowKeyForSafPath(repoRoot: String): String =
             ContentHasher.sha256(repoRoot).take(16)
+
+        /**
+         * Startup orphan sweep (plan.md Phase 6, Epic 6.1). Deletes any `gitshadow` shadow-tree
+         * directory under `context.filesDir/graphs/&#42;/gitshadow` whose sibling `.last-used` marker
+         * ([touchLastUsed]) is older than [maxAgeMillis]. A `gitshadow` directory with no marker
+         * yet — e.g. a fresh clone that crashed before its first real git operation, or one
+         * created before this sweep shipped — is exempt from deletion this pass: ambiguous
+         * absence is never treated as evidence of staleness.
+         *
+         * Deliberately a purely local, per-directory mtime check with no `GraphManager`/
+         * `GitConfigRepository` involvement — see plan.md's Epic 6.1 rationale for why an earlier
+         * registered-handler design keyed off the live graph registry was rejected (that lookup
+         * is only ever scoped to the *currently active* graph, so it would silently miss inactive
+         * graphs' shadow trees and delete live, unpushed data on next startup).
+         *
+         * Performs blocking file I/O and is intentionally NOT a suspend function (zero coroutine
+         * dependencies of its own) — callers must invoke it off the main thread, e.g. from
+         * `Dispatchers.IO` (see `MainActivity.kt`'s startup wiring, Task 6.1.1c).
+         */
+        fun sweepOrphans(context: Context, maxAgeMillis: Long = DEFAULT_MAX_AGE_MILLIS) {
+            val graphsDir = File(context.filesDir, "graphs")
+            val graphDirs = graphsDir.listFiles { file -> file.isDirectory } ?: return
+            val now = System.currentTimeMillis()
+            for (graphDir in graphDirs) {
+                val shadowDir = File(graphDir, "gitshadow")
+                if (!shadowDir.isDirectory) continue
+                val marker = File(graphDir, LAST_USED_FILE_NAME)
+                if (!marker.exists()) continue // ambiguous absence — never eagerly delete
+                val age = now - marker.lastModified()
+                if (age > maxAgeMillis) {
+                    try {
+                        shadowDir.deleteRecursively()
+                    } catch (e: Exception) {
+                        Log.w(TAG, "sweepOrphans: failed to delete orphaned '${shadowDir.path}'", e)
+                    }
+                }
+            }
+        }
     }
 }

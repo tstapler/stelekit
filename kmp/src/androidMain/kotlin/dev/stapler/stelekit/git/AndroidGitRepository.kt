@@ -64,9 +64,47 @@ class AndroidGitRepository(
         if (pathResolver(repoRoot) != null) return null // fast path resolves directly, no shadow needed
         if (!repoRoot.startsWith("saf://")) return null
         val key = GitShadowWorktree.shadowKeyForSafPath(repoRoot)
+        // .also { touchLastUsed() } refreshes the orphan-sweep liveness signal (Task 6.1.1a) on
+        // every real resolution, so GitShadowWorktree.sweepOrphans() never deletes an actively
+        // used graph's shadow tree — no per-call-site opt-in required.
         return shadowWorktrees.getOrPut(key) {
             GitShadowWorktree(context, key, repoRoot, fileSystem)
-        }
+        }.also { it.touchLastUsed() }
+    }
+
+    /**
+     * Storage-space guard (plan.md Phase 6, Epic 6.2). Returns a [DomainError.GitError.WorkingTreeSyncFailed]
+     * when [worktree] is non-null (shadow-mirror mode active) and its filesystem has less than
+     * [MIN_SHADOW_FREE_BYTES] available, so `init()`/`clone()` can fail fast with a diagnosable
+     * typed error instead of a raw JGit I/O exception mid-clone. Returns null (proceed) when
+     * [worktree] is null (fast path, no shadow needed) or storage is sufficient.
+     *
+     * Threshold rationale (Task 6.2.0a): the plan's full empirical measurement — materializing
+     * `SyntheticGraphGenerator`'s XLARGE fixture (7 978 pages) via a throwaway JVM
+     * `git init` + 20 incremental commits and recording actual `.git` object-store growth — was
+     * NOT performed for this pass; it's deferred as a documented follow-up (see plan.md Task
+     * 6.2.0a) rather than blocking this phase, since standing up that throwaway benchmark harness
+     * isn't essential to shipping the guard itself and no fabricated byte counts should stand in
+     * for it. In its place, [MIN_SHADOW_FREE_BYTES] is a conservative *estimate*: a typical
+     * markdown wiki page runs a few KB, so a working tree at XLARGE's page count is plausibly in
+     * the tens of MB; an actively-edited `.git` object store (blob history across incremental
+     * commits, pre-gc packfiles) commonly runs several times the working-tree content size — a
+     * 3-5x multiplier is a reasonable order-of-magnitude planning basis. 200 MB comfortably covers
+     * that multiple with headroom for continued graph growth, without being large enough to
+     * needlessly block low-storage devices that have plenty of room for a wiki-scale repo.
+     */
+    private fun insufficientShadowStorageError(
+        worktree: GitShadowWorktree?,
+        path: String,
+    ): DomainError.GitError.WorkingTreeSyncFailed? {
+        if (worktree == null) return null
+        val available = android.os.StatFs(worktree.worktreeRootPath).availableBytes
+        if (available >= MIN_SHADOW_FREE_BYTES) return null
+        return DomainError.GitError.WorkingTreeSyncFailed(
+            "clone",
+            path,
+            "Insufficient storage for git shadow clone",
+        )
     }
 
     @Volatile var credentialAccess: CredentialAccess = credentialAccess
@@ -81,6 +119,8 @@ class AndroidGitRepository(
     override suspend fun init(repoRoot: String): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
             try {
+                val worktree = shadowWorktreeFor(repoRoot)
+                insufficientShadowStorageError(worktree, repoRoot)?.let { return@withContext it.left() }
                 Git.init().setDirectory(File(resolveForJGit(repoRoot))).call().use { git ->
                     syncShadowAfterInitOrClone(repoRoot, git)
                 }
@@ -99,6 +139,8 @@ class AndroidGitRepository(
         onProgress: (String) -> Unit,
     ): Either<DomainError.GitError, Unit> = withContext(PlatformDispatcher.IO) {
         try {
+            val worktree = shadowWorktreeFor(localPath)
+            insufficientShadowStorageError(worktree, localPath)?.let { return@withContext it.left() }
             // Resolve suspend credentials before entering JGit's synchronous territory
             val preResolvedToken: String? = if (auth is GitAuth.HttpsToken) auth.tokenProvider() else null
             val job = coroutineContext[kotlinx.coroutines.Job]
@@ -581,5 +623,10 @@ class AndroidGitRepository(
             }
             is GitAuth.None -> { /* no auth */ }
         }
+    }
+
+    companion object {
+        /** See [insufficientShadowStorageError] for the sizing rationale (plan.md Task 6.2.0a/6.2.1a). */
+        private const val MIN_SHADOW_FREE_BYTES = 200L * 1024 * 1024 // 200 MB
     }
 }
