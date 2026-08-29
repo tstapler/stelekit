@@ -22,7 +22,6 @@ import org.eclipse.jgit.revwalk.RevWalk
 import org.eclipse.jgit.transport.URIish
 import org.eclipse.jgit.treewalk.TreeWalk
 import org.junit.After
-import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -324,29 +323,14 @@ class AndroidGitRepositoryShadowWorktreeTest {
 
     // ── Task 4.2.1b: abortMerge() reconciles the shadow tree from SAF after a JGit reset ───
 
-    // NOT a spec-compliance failure of the fix under test (the post-reset syncFromSafRoot() call
-    // this test targets is correct and unreachable-but-proven-correct below). Ignored because a
-    // genuinely pre-existing, unrelated production defect makes `git.reset().setMode(MERGE).call()`
-    // itself always throw, for every caller, on every platform — confirmed by direct reproduction
-    // (this exact call, run standalone against a real conflicted-merge Robolectric repo, threw
-    // `java.lang.UnsupportedOperationException` at `ResetCommand.call()`) and by disassembling
-    // org.eclipse.jgit:org.eclipse.jgit:7.3.0.202506031305-r's ResetCommand.class: its mode switch
-    // implements only SOFT/MIXED/HARD and unconditionally `throw new UnsupportedOperationException()`
-    // for MERGE and KEEP — JGit 7.3.0's local (non-HTTP-protocol) ResetCommand simply never
-    // implemented `--merge`/`--keep` semantics. Both platform implementations call this exact API:
-    // AndroidGitRepository.kt:451 (`abortMerge`) and JvmGitRepository.kt:362 (same). No existing
-    // test anywhere in the suite exercises abortMerge() against a real JGit repository, so this bug
-    // has zero prior coverage and reaches every user who tries to abort a merge, on every platform.
-    // Fixing this is out of scope here (this task is test-coverage-only, and the fix is a
-    // cross-platform production bug fix requiring its own review) — flagged for the user/maintainer
-    // to decide the correct replacement semantics (e.g. `ResetType.HARD`, which JGit does
-    // implement and which achieves the same working-tree-discard effect `--merge` would have,
-    // modulo the "abort if you have unstaged changes outside the merge" safety check that only
-    // `--merge` provides). Once fixed, remove this @Ignore — the test body already encodes the
-    // exact contract Task 4.2.1a's syncFromSafRoot() fix must satisfy.
-    @Ignore("Blocked on a pre-existing prod bug: JGit 7.3.0's ResetCommand never implements " +
-        "ResetType.MERGE/KEEP — it always throws UnsupportedOperationException. See AndroidGitRepository.kt:451 " +
-        "/ JvmGitRepository.kt:362. Not caused by this test or Task 4.2.1a's fix.")
+    // Previously blocked by a real, pre-existing production bug: JGit 7.3.0's ResetCommand never
+    // implemented ResetType.MERGE/KEEP (confirmed by disassembling ResetCommand.class — its mode
+    // switch implements only SOFT/MIXED/HARD and unconditionally throws UnsupportedOperationException
+    // for MERGE/KEEP). AndroidGitRepository.abortMerge() now uses ResetType.HARD instead — HARD's
+    // merge-state cleanup (MERGE_HEAD/MERGE_MSG removal, RepositoryState MERGING -> SAFE) is
+    // unconditional on any ResetType other than SOFT, so it correctly aborts the in-progress merge
+    // (empirically confirmed against a real conflicted merge). See AndroidGitRepository.kt's
+    // abortMerge() comment for the full rationale.
     @Test
     fun `abortMerge reconciles shadow to SAF content after partial conflict resolution`() = runTest {
         val fs = FakeSafFileSystem()

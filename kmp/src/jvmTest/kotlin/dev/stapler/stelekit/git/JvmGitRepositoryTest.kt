@@ -87,4 +87,89 @@ class JvmGitRepositoryTest {
         // indirection exists on Desktop (that's an Android-only concept in this project).
         assertEquals(tempDir.absolutePath, config.repoRoot)
     }
+
+    private fun setIdentity(git: Git) {
+        val storedConfig = git.repository.config
+        storedConfig.setString("user", null, "name", "Stelekit Test")
+        storedConfig.setString("user", null, "email", "stelekit-test@example.com")
+        storedConfig.save()
+    }
+
+    /**
+     * Regression test for a real, pre-existing production bug this project's testing surfaced:
+     * JGit 7.3.0's `ResetCommand` never implemented `ResetType.MERGE`/`KEEP` at all (confirmed by
+     * disassembling `ResetCommand.class` — its mode switch implements only SOFT/MIXED/HARD and
+     * unconditionally throws `UnsupportedOperationException` for MERGE/KEEP). `abortMerge()` used
+     * `ResetType.MERGE` on both platforms, so calling it always threw — on every platform, with
+     * zero prior test coverage anywhere in the suite. Fixed by switching to `ResetType.HARD`,
+     * whose merge-state cleanup (`MERGE_HEAD`/`MERGE_MSG` removal, `RepositoryState` MERGING ->
+     * SAFE) is unconditional on any `ResetType` other than SOFT, so it correctly aborts the
+     * in-progress merge (empirically confirmed against a real conflicted merge before landing).
+     */
+    @Test
+    fun `abortMerge resets a conflicted merge back to pre-merge HEAD content and clears merge state`() = runTest {
+        assertTrue(repository.init(config.repoRoot).isRight())
+        Git.open(File(config.repoRoot)).use { git -> setIdentity(git) }
+
+        File(config.repoRoot, "shared.md").writeText("base\n")
+        assertTrue(repository.stageSubdir(config).isRight())
+        assertTrue(repository.commit(config, "base commit").isRight())
+
+        val originDir = createTempDirectory("stelekit_jvm_git_origin_").toFile()
+        Git.cloneRepository().setURI(config.repoRoot).setBare(true).setDirectory(originDir).call().close()
+        Git.open(File(config.repoRoot)).use { git ->
+            git.remoteAdd().setName("origin")
+                .setUri(org.eclipse.jgit.transport.URIish(originDir.absolutePath))
+                .call()
+        }
+
+        val originWorkDir = createTempDirectory("stelekit_jvm_git_origin_work_").toFile()
+        Git.cloneRepository().setURI(originDir.absolutePath).setDirectory(originWorkDir).call().use { originGit ->
+            setIdentity(originGit)
+            File(originWorkDir, "shared.md").writeText("remote change\n")
+            originGit.add().addFilepattern(".").call()
+            originGit.commit().setMessage("remote change").call()
+            originGit.push().call()
+        }
+
+        File(config.repoRoot, "shared.md").writeText("local change\n")
+        assertTrue(repository.stageSubdir(config).isRight())
+        assertTrue(repository.commit(config, "local change").isRight())
+
+        assertTrue(repository.fetch(config).isRight())
+        val mergeResult = repository.merge(config)
+        assertTrue(mergeResult.isRight(), "merge failed: $mergeResult")
+        assertTrue((mergeResult as Either.Right).value.hasConflicts, "expected a conflict")
+
+        Git.open(File(config.repoRoot)).use { git ->
+            assertEquals(
+                org.eclipse.jgit.lib.RepositoryState.MERGING,
+                git.repository.repositoryState,
+                "expected MERGING state during the conflict",
+            )
+        }
+
+        val abortResult = repository.abortMerge(config)
+        assertTrue(abortResult.isRight(), "abortMerge failed: $abortResult")
+
+        Git.open(File(config.repoRoot)).use { git ->
+            assertEquals(
+                org.eclipse.jgit.lib.RepositoryState.SAFE,
+                git.repository.repositoryState,
+                "expected merge state cleared after abortMerge",
+            )
+        }
+        assertEquals(
+            "local change\n",
+            File(config.repoRoot, "shared.md").readText(),
+            "expected working tree reset to pre-merge (local) HEAD content",
+        )
+
+        val statusResult = repository.status(config)
+        assertTrue(statusResult.isRight(), "status failed: $statusResult")
+        assertFalse(
+            (statusResult as Either.Right).value.hasLocalChanges,
+            "expected a clean working tree after abortMerge",
+        )
+    }
 }

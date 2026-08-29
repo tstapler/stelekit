@@ -358,8 +358,19 @@ class JvmGitRepository(
         withContext(PlatformDispatcher.IO) {
             try {
                 openGit(config.repoRoot).use { git ->
+                    // ResetType.HARD, not MERGE: JGit 7.3.0's ResetCommand never implements
+                    // ResetType.MERGE/KEEP at all — both throw UnsupportedOperationException
+                    // unconditionally (verified by disassembling ResetCommand.class: its ResetType
+                    // switch routes MERGE and KEEP to the same throw; only HARD/MIXED/SOFT are
+                    // implemented). HARD's merge-state cleanup (MERGE_HEAD/MERGE_MSG removal,
+                    // RepositoryState MERGING -> SAFE) is unconditional on any ResetType other than
+                    // SOFT, so HARD correctly aborts the in-progress merge — empirically confirmed
+                    // against a real conflicted merge. See AndroidGitRepository.abortMerge()'s
+                    // matching comment for the full rationale (this platform has no shadow-worktree
+                    // reconciliation step to add, since Desktop reads/writes the real working tree
+                    // directly).
                     git.reset()
-                        .setMode(org.eclipse.jgit.api.ResetCommand.ResetType.MERGE)
+                        .setMode(org.eclipse.jgit.api.ResetCommand.ResetType.HARD)
                         .call()
                     Unit.right()
                 }

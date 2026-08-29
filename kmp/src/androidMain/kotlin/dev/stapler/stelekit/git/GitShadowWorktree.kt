@@ -194,13 +194,15 @@ class GitShadowWorktree(
     suspend fun syncFromSafRoot(
         listRecursive: suspend (String) -> List<Pair<String, Long>>,
         readSafFile: suspend (String) -> String?,
+        force: Boolean = false,
     ): Unit = GitWorktreeLocks.lockFor(shadowKey).withLock {
-        syncFromSafRootLocked(listRecursive, readSafFile)
+        syncFromSafRootLocked(listRecursive, readSafFile, force)
     }
 
     private suspend fun syncFromSafRootLocked(
         listRecursive: suspend (String) -> List<Pair<String, Long>>,
         readSafFile: suspend (String) -> String?,
+        force: Boolean,
     ) = withContext(PlatformDispatcher.IO) {
         val listing = listRecursive(safRoot).filterNot { (relativePath, _) ->
             relativePath == ".git" || relativePath.startsWith(".git/")
@@ -223,7 +225,15 @@ class GitShadowWorktree(
             // read below, computing a real safSize — the Termux-while-backgrounded case
             // (stale-looking mtime, changed size) can't be caught before that read without
             // widening the listRecursive callback, which the plan deliberately keeps narrow.
-            if (shadowFile.exists() && !isEntryStale(shadowFile, safMtime, shadowFile.length())) {
+            //
+            // [force] bypasses this skip entirely. It exists because the skip's premise — the
+            // shadow file's own on-disk mtime only ever advances via this method's own writes,
+            // which stamp it to exactly safMtime — breaks when a JGit working-tree write (e.g.
+            // abortMerge()'s git.reset(HARD)) touches the shadow file directly: JGit stamps a
+            // fresh "now" mtime unrelated to safMtime, which is almost always >= the SAF-recorded
+            // mtime, so the skip wrongly treats genuinely-stale content as fresh (found via a
+            // failing abortMerge regression test — see AndroidGitRepository.abortMerge()).
+            if (!force && shadowFile.exists() && !isEntryStale(shadowFile, safMtime, shadowFile.length())) {
                 manifestEntries += SyncManifestEntry(relativePath, safMtime, shadowFile.length())
                 continue
             }

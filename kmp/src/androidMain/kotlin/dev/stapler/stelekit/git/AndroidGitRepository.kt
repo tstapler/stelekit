@@ -447,21 +447,38 @@ class AndroidGitRepository(
         withContext(PlatformDispatcher.IO) {
             try {
                 openGit(config, requiresFreshWorkingTree = false).use { git ->
+                    // ResetType.HARD, not MERGE: JGit 7.3.0's ResetCommand never implements
+                    // ResetType.MERGE/KEEP at all — both throw UnsupportedOperationException
+                    // unconditionally (verified by disassembling ResetCommand.class: its ResetType
+                    // switch routes MERGE and KEEP to the same throw; only HARD/MIXED/SOFT are
+                    // implemented). This is a real, pre-existing JGit-library limitation, not
+                    // something introduced by this project. HARD's merge-state cleanup
+                    // (MERGE_HEAD/MERGE_MSG removal, RepositoryState MERGING -> SAFE) is
+                    // unconditional on any ResetType other than SOFT, so HARD correctly aborts the
+                    // in-progress merge — empirically confirmed against a real conflicted merge.
+                    // The one semantic gap vs. real `git reset --merge` is that HARD discards ANY
+                    // uncommitted local edit, not just ones that differ from pre-merge HEAD; that
+                    // gap is covered by this method's own post-reset SAF reconciliation below, since
+                    // SAF (not the shadow tree) is this app's source of truth for uncommitted work.
                     git.reset()
-                        .setMode(org.eclipse.jgit.api.ResetCommand.ResetType.MERGE)
+                        .setMode(org.eclipse.jgit.api.ResetCommand.ResetType.HARD)
                         .call()
 
-                    // Task 4.2.1a: `git reset --merge` rewrites shadow-tree files that differ
+                    // Task 4.2.1a: the HARD reset above rewrites shadow-tree files that differ
                     // from pre-merge HEAD, but SAF — not the mid-abort JGit state — must remain
                     // the source of truth for any already write-back'd resolution content (see
                     // plan.md Epic 4.2's traced partial-resolveConflictBySide()-then-abort
                     // sequence). Re-sync unconditionally (not gated by isFresh()) since the reset
                     // itself just invalidated the manifest's assumptions about shadow content.
+                    // force = true: the reset just stamped a fresh "now" mtime on every file it
+                    // touched, which the ordinary per-file mtime-skip would misread as "already
+                    // fresh" — see GitShadowWorktree.syncFromSafRoot()'s [force] doc for why.
                     val worktree = shadowWorktreeFor(config.repoRoot)
                     if (worktree != null) {
                         worktree.syncFromSafRoot(
                             listRecursive = { root -> fileSystem.listFilesRecursiveWithModTimes(root) },
                             readSafFile = { relPath -> fileSystem.readFile("${config.repoRoot}/$relPath") },
+                            force = true,
                         )
                     }
 
