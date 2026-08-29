@@ -508,6 +508,9 @@ class GitSyncService(
             ).left()
         }
 
+        // filePath here is written to SAF just above via fileSystem.writeFile — markResolved()
+        // (AndroidGitRepository, shadow-mirror mode) pulls that SAF content into the shadow tree
+        // before staging; same ordering as resolveConflict().
         gitRepository.markResolved(config, filePath).onLeft { return@withContext it.left() }
 
         val message = buildCommitMessage(config, isMerge = true)

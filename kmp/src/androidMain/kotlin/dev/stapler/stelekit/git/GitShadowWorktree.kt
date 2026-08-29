@@ -132,6 +132,28 @@ class GitShadowWorktree(
         }
     }
 
+    /**
+     * Writes [content] to the shadow tree at git-relative [relativePath], creating parent
+     * directories as needed, mirroring [syncFromSafRootLocked]'s own shadow-file write. Returns
+     * true on success, false if [relativePath] resolves outside [worktreeRoot] or the write fails.
+     * Used by `AndroidGitRepository.markResolved()` (Task 4.1.1a) to pull fresh SAF content into
+     * the shadow tree immediately before `git.add()`, so a manual conflict resolution already
+     * written to SAF by the caller doesn't get staged from stale shadow content.
+     */
+    internal fun writeShadowFile(relativePath: String, content: String): Boolean {
+        val file = safeWorktreeFile(relativePath) ?: return false
+        return try {
+            file.parentFile?.mkdirs()
+            file.writeText(content)
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "writeShadowFile: failed to write '$relativePath'", e)
+            false
+        }
+    }
+
     // ── GitWorktreePathMapper ────────────────────────────────────────────────────────────────
 
     override fun toUserFacingPath(shadowAbsolutePath: String): String {

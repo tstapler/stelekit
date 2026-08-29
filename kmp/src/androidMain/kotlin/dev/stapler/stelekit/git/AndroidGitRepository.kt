@@ -450,6 +450,21 @@ class AndroidGitRepository(
                     git.reset()
                         .setMode(org.eclipse.jgit.api.ResetCommand.ResetType.MERGE)
                         .call()
+
+                    // Task 4.2.1a: `git reset --merge` rewrites shadow-tree files that differ
+                    // from pre-merge HEAD, but SAF — not the mid-abort JGit state — must remain
+                    // the source of truth for any already write-back'd resolution content (see
+                    // plan.md Epic 4.2's traced partial-resolveConflictBySide()-then-abort
+                    // sequence). Re-sync unconditionally (not gated by isFresh()) since the reset
+                    // itself just invalidated the manifest's assumptions about shadow content.
+                    val worktree = shadowWorktreeFor(config.repoRoot)
+                    if (worktree != null) {
+                        worktree.syncFromSafRoot(
+                            listRecursive = { root -> fileSystem.listFilesRecursiveWithModTimes(root) },
+                            readSafFile = { relPath -> fileSystem.readFile("${config.repoRoot}/$relPath") },
+                        )
+                    }
+
                     Unit.right()
                 }
             } catch (e: CancellationException) {
@@ -509,11 +524,25 @@ class AndroidGitRepository(
         withContext(PlatformDispatcher.IO) {
             try {
                 val worktree = shadowWorktreeFor(config.repoRoot)
+                val gitRelativePath = worktree?.toGitRelativePath(filePath)
+                    ?: filePath.removePrefix("${config.repoRoot}/")
+
+                // Task 4.1.1a: the caller (GitSyncService.resolveConflict/applyJournalMerge)
+                // already wrote the resolved content straight to SAF via fileSystem.writeFile
+                // before calling markResolved() — but nothing has told the shadow tree about it,
+                // so without this pull-then-stage step git.add() below would stage whatever is
+                // still in the shadow copy (stale content, possibly still containing conflict
+                // markers). Pull the current SAF content into the shadow tree first.
+                if (worktree != null) {
+                    val safContent = fileSystem.readFile(filePath)
+                        ?: return@withContext DomainError.GitError.CommitFailed(
+                            "Cannot refresh shadow before staging: $filePath"
+                        ).left()
+                    worktree.writeShadowFile(gitRelativePath, safContent)
+                }
+
                 openGit(config).use { git ->
-                    git.add().addFilepattern(
-                        worktree?.toGitRelativePath(filePath)
-                            ?: filePath.removePrefix("${config.repoRoot}/")
-                    ).call()
+                    git.add().addFilepattern(gitRelativePath).call()
                     Unit.right()
                 }
             } catch (e: CancellationException) {
