@@ -10,6 +10,9 @@ import dev.stapler.stelekit.git.model.DirtyEntry
 import dev.stapler.stelekit.git.model.DirtyOp
 import dev.stapler.stelekit.git.model.GitLabCommitAction
 import dev.stapler.stelekit.git.model.GitTreeEntry
+import dev.stapler.stelekit.git.merge.Diff3
+import dev.stapler.stelekit.git.merge.hasConflicts
+import dev.stapler.stelekit.git.merge.toTwoWayConflictMarkerText
 import dev.stapler.stelekit.git.model.PendingCommit
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
@@ -578,14 +581,20 @@ class WasmGitWriteServiceAlgorithmsTest {
         assertEquals(emptySet(), bothEmpty.nonOverlapping)
     }
 
-    // ── TC-3.3.2-A: buildConflictFiles (pulled forward) ──────────────────────────────────────
+    // ── TC-3.3.2-A: buildConflictFiles fallback shape (no local/base/remote content available) ──
 
-    private fun modelledBuildConflictFiles(conflictingPaths: Set<String>): List<ConflictFile> =
+    /**
+     * Models `buildConflictFile`'s fallback branch — reached when [WasmGitWriteService] can't
+     * fetch all three sides (local read fails, base/remote HTTP fetch fails, or the path is
+     * GitLab's [WasmGitWriteService.UNKNOWN_CONFLICT_PATH] sentinel). The real function still
+     * always surfaces the path as a conflict; it just can't offer line-level resolution for it.
+     */
+    private fun modelledBuildConflictFilesFallback(conflictingPaths: Set<String>): List<ConflictFile> =
         conflictingPaths.map { path -> ConflictFile(filePath = path, wikiRelativePath = path, hunks = emptyList()) }
 
     @Test
-    fun `TC-3_3_2-A buildConflictFiles maps each conflicting path to a ConflictFile with empty hunks`() {
-        val result = modelledBuildConflictFiles(setOf("pages/Foo.md", "journals/2026_07_15.md"))
+    fun `TC-3_3_2-A buildConflictFiles fallback maps each conflicting path to a ConflictFile with empty hunks`() {
+        val result = modelledBuildConflictFilesFallback(setOf("pages/Foo.md", "journals/2026_07_15.md"))
 
         assertEquals(2, result.size)
         val foo = result.single { it.filePath == "pages/Foo.md" }
@@ -595,6 +604,74 @@ class WasmGitWriteServiceAlgorithmsTest {
         val journal = result.single { it.filePath == "journals/2026_07_15.md" }
         assertEquals("journals/2026_07_15.md", journal.wikiRelativePath)
         assertTrue(journal.hunks.isEmpty())
+    }
+
+    // ── buildConflictFile: real diff3-integrated decision tree ──────────────────────────────
+
+    /**
+     * Models `WasmGitWriteService.buildConflictFile`'s decision tree exactly — using the real
+     * (commonMain, importable-from-commonTest) [dev.stapler.stelekit.git.merge.Diff3] and
+     * [ConflictResolver], with fake stand-ins only for the three HTTP/filesystem reads the real
+     * function makes (`localContent`/`baseContent`/`remoteContent`), which is the only part
+     * `WasmGitWriteService`'s wasmJsMain-only dependencies (`PlatformFileSystem`, Ktor) prevent
+     * testing directly from commonTest — see this file's class doc.
+     */
+    private fun modelledBuildConflictFile(
+        path: String,
+        localContent: String?,
+        baseContent: String?,
+        remoteContent: String?,
+    ): ConflictFile {
+        val fallback = ConflictFile(filePath = path, wikiRelativePath = path, hunks = emptyList())
+        if (localContent == null || baseContent == null || remoteContent == null) return fallback
+
+        val chunks = Diff3.merge(baseContent.lines(), localContent.lines(), remoteContent.lines())
+        val markerText = chunks.toTwoWayConflictMarkerText()
+        val hunks = if (chunks.hasConflicts()) {
+            ConflictResolver().parseConflictFile(path, markerText, wikiRoot = "").let {
+                (it as? Either.Right)?.value?.hunks
+            } ?: emptyList()
+        } else {
+            emptyList()
+        }
+        return ConflictFile(filePath = path, wikiRelativePath = path, hunks = hunks, rawContent = markerText)
+    }
+
+    @Test
+    fun `buildConflictFile returns fallback when any of local base remote content is unavailable`() {
+        assertTrue(modelledBuildConflictFile("f.md", null, "base", "remote").hunks.isEmpty())
+        assertTrue(modelledBuildConflictFile("f.md", "local", null, "remote").hunks.isEmpty())
+        assertTrue(modelledBuildConflictFile("f.md", "local", "base", null).hunks.isEmpty())
+        assertNull(modelledBuildConflictFile("f.md", null, "base", "remote").rawContent)
+    }
+
+    @Test
+    fun `buildConflictFile produces real hunks when local and remote diverge on the same region`() {
+        val base = "A\nB\nC"
+        val local = "A\nX\nC" // substituted B -> X
+        val remote = "A\nB\nY\nC" // kept B, inserted Y after it — overlaps local's edit region
+
+        val result = modelledBuildConflictFile("f.md", local, base, remote)
+
+        assertEquals(1, result.hunks.size)
+        assertEquals(listOf("X"), result.hunks.single().localLines)
+        assertEquals(listOf("B", "Y"), result.hunks.single().remoteLines)
+        assertTrue(result.rawContent?.contains("<<<<<<<") == true)
+    }
+
+    @Test
+    fun `buildConflictFile has no hunks when the path-level conflict does not actually overlap at the line level`() {
+        // Both sides touched the same file, so the path-level partition still flags it as
+        // conflicting — but the edits are on different, non-overlapping regions, so a real
+        // three-way merge finds nothing to ask the user about.
+        val base = "A\nB\nC"
+        val local = "A\nX\nC" // changed B -> X
+        val remote = "A\nX\nC\nD" // same B -> X change, plus appended D
+
+        val result = modelledBuildConflictFile("f.md", local, base, remote)
+
+        assertTrue(result.hunks.isEmpty(), "expected no hunks for a non-overlapping same-file touch: ${result.hunks}")
+        assertEquals("A\nX\nC\nD", result.rawContent)
     }
 
     // ── TC-3.3.2-B: deleted-locally-but-edited-remotely edge case ───────────────────────────

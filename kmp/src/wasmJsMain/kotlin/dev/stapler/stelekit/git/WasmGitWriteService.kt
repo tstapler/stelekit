@@ -25,6 +25,9 @@ import dev.stapler.stelekit.git.model.GitLabCommitRequest
 import dev.stapler.stelekit.git.model.GitLabCommitResponse
 import dev.stapler.stelekit.git.model.GitLabCompareResponse
 import dev.stapler.stelekit.git.model.GitLabTreeEntry
+import dev.stapler.stelekit.git.merge.Diff3
+import dev.stapler.stelekit.git.merge.hasConflicts
+import dev.stapler.stelekit.git.merge.toTwoWayConflictMarkerText
 import dev.stapler.stelekit.git.model.GitRefResponse
 import dev.stapler.stelekit.git.model.GitRefUpdateRequest
 import dev.stapler.stelekit.git.model.GitTreeEntry
@@ -865,15 +868,59 @@ class WasmGitWriteService(
     }
 
     /**
-     * Task 3.3.2a (pulled forward): maps each conflicting path to a [ConflictFile] with empty
-     * hunks (Pattern Decision "Conflict representation" — no code path reads `hunks` for this
-     * per-file, accept/reject conflict UX). Public — not yet called from within this class (the
-     * `MergeConflict` this file returns only carries `conflictPaths: List<String>`); Epic 4.1's
-     * `WasmGitRepository` is expected to call this when translating a `Left(MergeConflict)` into
-     * `GitRepository.merge()`'s `MergeResult(hasConflicts = true, conflicts = ...)` contract.
+     * Maps each conflicting path to a [ConflictFile] with real, line-level hunks — this platform
+     * has no local JGit-produced working tree with conflict-marker files (content is fetched via
+     * the GitHub/GitLab REST API), so unlike Android/Desktop's `merge()`, which reads markers
+     * JGit already wrote, this fetches the base/local/remote content itself and runs a real
+     * three-way merge ([dev.stapler.stelekit.git.merge.Diff3]) to produce the same
+     * `<<<<<<< / ======= / >>>>>>>` marker text [ConflictResolver.parseConflictFile] already
+     * parses — plugging into the exact same downstream hunk-resolution UI other platforms use.
+     *
+     * Note: this only changes what's *shown* for a path already flagged conflicting — it does
+     * NOT change [merge]/[mergeGitLab]'s path-level conflict *detection* (any path touched on
+     * both sides still always surfaces as a conflict, even when Diff3 finds the two edits don't
+     * actually overlap at the line level). Broadening detection to skip surfacing genuinely
+     * non-overlapping line-level changes as a conflict at all is a separate, larger behavior
+     * change (silently auto-merging content that currently always pauses for user review) and is
+     * deliberately out of scope here.
      */
-    fun buildConflictFiles(conflictingPaths: Set<String>): List<ConflictFile> =
-        conflictingPaths.map { path -> ConflictFile(filePath = path, wikiRelativePath = path, hunks = emptyList()) }
+    suspend fun buildConflictFiles(
+        config: GitConfig,
+        hostConfig: GitHostConfig,
+        conflictingPaths: Set<String>,
+    ): List<ConflictFile> = conflictingPaths.map { path ->
+        buildConflictFile(config, hostConfig, path)
+    }
+
+    private suspend fun buildConflictFile(
+        config: GitConfig,
+        hostConfig: GitHostConfig,
+        path: String,
+    ): ConflictFile {
+        val fallback = ConflictFile(filePath = path, wikiRelativePath = path, hunks = emptyList())
+        // UNKNOWN_CONFLICT_PATH (GitLab's generic 409/422 case with no specific path) has nothing
+        // real to fetch content for — degrade to the whole-file-only fallback immediately.
+        if (path == UNKNOWN_CONFLICT_PATH) return fallback
+
+        val apiPath = config.toApiPath(path)
+        val localContent = fileSystem.readFile(path) ?: return fallback
+        val baseContent = fetchRemoteFileContent(hostConfig, apiPath, fileSystem.getBaseSha()).getOrNull() ?: return fallback
+        // hostConfig.branch works as a ref for both hosts' raw-content APIs (same convention
+        // checkoutFile's REMOTE-side resolution already uses) — no extra ref-sha fetch needed.
+        val remoteContent = fetchRemoteFileContent(hostConfig, apiPath, hostConfig.branch).getOrNull() ?: return fallback
+
+        val chunks = Diff3.merge(baseContent.lines(), localContent.lines(), remoteContent.lines())
+        val markerText = chunks.toTwoWayConflictMarkerText(localLabel = "local", remoteLabel = hostConfig.branch)
+        // Diff3 finding no actual line-level overlap (despite the path-level partition flagging
+        // both sides as touching this file) still surfaces as a conflict per this function's doc
+        // — hunks stay empty and the whole-file "Keep mine"/"Use remote" pick degrades safely.
+        val hunks = if (chunks.hasConflicts()) {
+            ConflictResolver().parseConflictFile(path, markerText, wikiRoot = "").getOrNull()?.hunks ?: emptyList()
+        } else {
+            emptyList()
+        }
+        return ConflictFile(filePath = path, wikiRelativePath = path, hunks = hunks, rawContent = markerText)
+    }
 
     /**
      * BLOCKER fix (web-git-writeback architecture review): fetches the set of repo-relative
