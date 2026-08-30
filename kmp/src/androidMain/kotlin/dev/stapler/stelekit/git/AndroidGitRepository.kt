@@ -15,6 +15,7 @@ import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.git.model.ConflictFile
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
+import dev.stapler.stelekit.git.model.wikiRoot
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.security.CredentialAccess
 import dev.stapler.stelekit.platform.security.CredentialStore
@@ -312,10 +313,43 @@ class AndroidGitRepository(
                             } else {
                                 filePath
                             }
+
+                            // Read the real conflict-marker content JGit just wrote into the
+                            // working tree — the shadow tree in shadow-mirror mode, the real
+                            // repoRoot-relative file otherwise (mirrors JvmGitRepository, which
+                            // has no shadow indirection at all) — and parse it into hunks for
+                            // line-level resolution instead of forcing every conflict through a
+                            // blunt whole-file pick-a-side. Falls back to an empty hunk list (UI
+                            // resolves this one file whole) for binary content, rename-only
+                            // conflicts, or anything else parseConflictFile can't handle.
+                            val markerContent = worktree?.readShadowFile(filePath)
+                                ?: runCatching {
+                                    File(resolveForJGit(config.repoRoot), filePath).readText()
+                                }.getOrNull()
+                            val hunks = markerContent?.let {
+                                ConflictResolver().parseConflictFile(absolutePath, it, config.wikiRoot)
+                                    .getOrNull()?.hunks
+                            } ?: emptyList()
+
+                            // Best-effort: also write the marker content back to SAF (through the
+                            // same write-back actor Phase 3's clean-merge path uses, so a
+                            // concurrent SAF edit is detected rather than clobbered) so the file
+                            // is externally visible with real conflict markers, matching what a
+                            // direct-filesystem git working tree already shows for free. Resolution
+                            // itself never depends on this succeeding — it uses the markerContent
+                            // captured above via ConflictFile.rawContent, not a later SAF re-read.
+                            if (worktree != null && markerContent != null) {
+                                worktree.writeBackQueue.enqueue(filePath)
+                                GitShadowFlushActor(
+                                    fileSystem, worktree, worktree.writeBackQueue, config.repoRoot,
+                                ).flush()
+                            }
+
                             ConflictFile(
                                 filePath = absolutePath,
                                 wikiRelativePath = wikiRelPath,
-                                hunks = emptyList(),
+                                hunks = hunks,
+                                rawContent = markerContent,
                             )
                         } ?: emptyList()
                     } else {

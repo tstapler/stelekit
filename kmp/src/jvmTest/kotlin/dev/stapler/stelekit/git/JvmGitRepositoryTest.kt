@@ -96,6 +96,62 @@ class JvmGitRepositoryTest {
     }
 
     /**
+     * merge() must parse the real conflict-marker content JGit wrote directly into the working
+     * tree into hunks (via [ConflictResolver.parseConflictFile]) for line-level resolution,
+     * instead of always shipping an empty hunk list — the pre-existing gap the conflict-resolution
+     * project closes. `JvmGitRepositoryTest` had zero merge-conflict coverage at all before this.
+     */
+    @Test
+    fun `merge conflict reports real conflict marker content parsed into hunks`() = runTest {
+        assertTrue(repository.init(config.repoRoot).isRight())
+        Git.open(File(config.repoRoot)).use { git -> setIdentity(git) }
+        val baseBranch = Git.open(File(config.repoRoot)).use { it.repository.branch }
+        val mergeConfig = config.copy(remoteBranch = baseBranch)
+
+        File(config.repoRoot, "conflict.md").writeText("base\n")
+        assertTrue(repository.stageSubdir(mergeConfig).isRight())
+        assertTrue(repository.commit(mergeConfig, "base commit").isRight())
+
+        val originDir = createTempDirectory("stelekit_jvm_git_merge_origin_").toFile()
+        Git.cloneRepository().setURI(config.repoRoot).setBare(true).setDirectory(originDir).call().close()
+        Git.open(File(config.repoRoot)).use { git ->
+            git.remoteAdd().setName("origin")
+                .setUri(org.eclipse.jgit.transport.URIish(originDir.absolutePath))
+                .call()
+        }
+
+        val originWorkDir = createTempDirectory("stelekit_jvm_git_merge_origin_work_").toFile()
+        Git.cloneRepository().setURI(originDir.absolutePath).setDirectory(originWorkDir).call().use { originGit ->
+            setIdentity(originGit)
+            File(originWorkDir, "conflict.md").writeText("remote version\n")
+            originGit.add().addFilepattern(".").call()
+            originGit.commit().setMessage("remote change").call()
+            originGit.push().call()
+        }
+
+        File(config.repoRoot, "conflict.md").writeText("local version\n")
+        assertTrue(repository.stageSubdir(mergeConfig).isRight())
+        assertTrue(repository.commit(mergeConfig, "local change").isRight())
+
+        assertTrue(repository.fetch(mergeConfig).isRight())
+        val mergeResult = repository.merge(mergeConfig)
+        assertTrue(mergeResult.isRight(), "merge failed: $mergeResult")
+        val merge = (mergeResult as Either.Right).value
+        assertTrue(merge.hasConflicts)
+        assertEquals(1, merge.conflicts.size)
+
+        val conflict = merge.conflicts.single()
+        assertEquals(1, conflict.hunks.size, "expected exactly one conflicting hunk")
+        val hunk = conflict.hunks.single()
+        assertEquals(listOf("local version"), hunk.localLines)
+        assertEquals(listOf("remote version"), hunk.remoteLines)
+        assertTrue(
+            conflict.rawContent?.contains("<<<<<<<") == true,
+            "ConflictFile.rawContent must carry the real conflict-marker content, got: ${conflict.rawContent}",
+        )
+    }
+
+    /**
      * Regression test for a real, pre-existing production bug this project's testing surfaced:
      * JGit 7.3.0's `ResetCommand` never implemented `ResetType.MERGE`/`KEEP` at all (confirmed by
      * disassembling `ResetCommand.class` — its mode switch implements only SOFT/MIXED/HARD and

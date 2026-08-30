@@ -207,6 +207,26 @@ class AndroidGitRepositoryShadowWorktreeTest {
             )
             assertEquals("$repoRoot/conflict.md", conflict.filePath)
 
+            // merge() must parse the real conflict-marker content JGit wrote into the shadow tree
+            // into hunks the UI can resolve line by line, instead of always shipping an empty
+            // hunk list (the pre-existing gap this project's conflict-resolution work closes).
+            assertEquals(1, conflict.hunks.size, "expected exactly one conflicting hunk")
+            val hunk = conflict.hunks.single()
+            assertEquals(listOf("local version"), hunk.localLines)
+            assertEquals(listOf("remote version"), hunk.remoteLines)
+            assertTrue(
+                conflict.rawContent?.contains("<<<<<<<") == true,
+                "ConflictFile.rawContent must carry the real conflict-marker content, got: ${conflict.rawContent}",
+            )
+
+            // The marker content must also have been best-effort written back to SAF, so the
+            // conflicted file is visible with real markers outside the app too (matching what a
+            // direct-filesystem git working tree already shows for free).
+            assertTrue(
+                fs.readFile(conflict.filePath)?.contains("<<<<<<<") == true,
+                "expected conflict markers to be written back to SAF, got: ${fs.readFile(conflict.filePath)}",
+            )
+
             // Task 8.2.1c: resolve via checkoutFile(LOCAL) and confirm the fake SAF provider's
             // content was updated to match what was checked out.
             val checkoutResult = repository.checkoutFile(config, conflict.filePath, MergeSide.LOCAL)

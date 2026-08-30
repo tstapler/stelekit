@@ -12,6 +12,7 @@ import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.git.model.ConflictFile
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
+import dev.stapler.stelekit.git.model.wikiRoot
 import dev.stapler.stelekit.platform.security.CredentialAccess
 import dev.stapler.stelekit.platform.security.CredentialStore
 import kotlin.concurrent.Volatile
@@ -242,10 +243,21 @@ class JvmGitRepository(
                             } else {
                                 filePath
                             }
+                            // JGit already wrote real conflict-marker content directly into the
+                            // working tree at absolutePath (Desktop has no shadow indirection) —
+                            // parse it into hunks for line-level resolution. Falls back to an
+                            // empty hunk list (UI resolves this one file whole) for binary content,
+                            // rename-only conflicts, or anything else that isn't marker-parseable.
+                            val markerContent = runCatching { File(absolutePath).readText() }.getOrNull()
+                            val hunks = markerContent?.let {
+                                ConflictResolver().parseConflictFile(absolutePath, it, config.wikiRoot)
+                                    .getOrNull()?.hunks
+                            } ?: emptyList()
                             ConflictFile(
                                 filePath = absolutePath,
                                 wikiRelativePath = wikiRelPath,
-                                hunks = emptyList(), // parsed by ConflictResolver later
+                                hunks = hunks,
+                                rawContent = markerContent,
                             )
                         } ?: emptyList()
                     } else {

@@ -252,11 +252,11 @@ internal fun GraphDialogLayer(
 
         ConflictResolutionScreen(
             conflicts = conflictFiles,
-            onResolve = { fileResolutions ->
+            onResolve = { sideResolutions, hunkResolutions ->
                 val id = activeGraphId ?: return@ConflictResolutionScreen arrow.core.Either.Left(
                     dev.stapler.stelekit.error.DomainError.GitError.CommitFailed("No active graph")
                 )
-                gitSyncService?.resolveConflictBySide(id, fileResolutions)
+                gitSyncService?.resolveConflicts(id, conflictFiles, sideResolutions, hunkResolutions)
                     ?: arrow.core.Either.Left(
                         dev.stapler.stelekit.error.DomainError.GitError.CommitFailed("Git sync not available")
                     )

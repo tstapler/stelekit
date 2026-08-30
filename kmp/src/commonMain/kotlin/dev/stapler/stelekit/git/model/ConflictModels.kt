@@ -11,11 +11,20 @@ import kotlinx.serialization.Serializable
  * the platform's [dev.stapler.stelekit.git.GitRepository] implementation.
  * @property wikiRelativePath Always safe to display/write against the user-facing wiki root,
  * regardless of platform.
+ * @property hunks Parsed conflict-marker sections for line-level resolution. Empty when the file
+ * couldn't be parsed as a text-based conflict (binary content, a rename-only conflict, or no
+ * conflict markers at all) — the UI falls back to whole-file resolution for such files.
+ * @property rawContent The conflict-marker file content exactly as JGit produced it at merge
+ * time (`git.merge()`), captured so resolution doesn't depend on re-reading it back from SAF —
+ * a write-back of this content to SAF (Android shadow-mirror mode) is best-effort and may lose a
+ * race against a concurrent user edit, whereas this captured copy is always available. Null only
+ * when hunks is also empty (nothing to resolve at the hunk level for this file).
  */
 data class ConflictFile(
     val filePath: String,
     val wikiRelativePath: String,
     val hunks: List<ConflictHunk>,
+    val rawContent: String? = null,
 )
 
 data class ConflictHunk(
