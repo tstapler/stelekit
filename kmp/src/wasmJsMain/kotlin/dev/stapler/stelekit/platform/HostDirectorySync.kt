@@ -187,7 +187,7 @@ class HostDirectorySync(
      * [scheduleHostWriteThrough]'s doc comment for the full "exactly one write of the latest
      * content" rationale (Story 4.1.1's coalescing acceptance criterion).
      */
-    private val hostWriteLatestPayload = mutableMapOf<String, HostWritePayload>()
+    internal val hostWriteLatestPayload = mutableMapOf<String, HostWritePayload>()
 
     /**
      * Epic 7.1 (Task 7.1.1a): completion signal for [scheduleHostWriteThrough]'s in-flight flush
@@ -662,12 +662,20 @@ class HostDirectorySync(
      * [reconnectHostDirectory]) or the user re-ran the connect flow from Settings. Now mirrors
      * [connectHostDirectory]'s success path so live sync starts immediately after the initial
      * import, same as every other path that attaches a handle.
+     *
+     * Bug fix: persists keyed by [dirName] — the graph actually being attached — not
+     * [graphIdProvider]. This runs from `PlatformFileSystem.pickDirectoryAsync()` before the
+     * caller has registered/switched to the new graph in `GraphManager`, so `graphIdProvider()`
+     * still resolves to whichever graph was previously active; keying the envelope off it there
+     * silently persisted the new handle under the wrong graph's id, and
+     * [reconnectHostDirectory]/[requestHostDirectoryAccess] — both keyed by the *actual* active
+     * graph id on lookup — would never find it again in a later session.
      */
     suspend fun attachFreshHandle(dirHandle: JsAny, opfsPath: String) {
         hostDirHandle = dirHandle
         hostGraphOpfsPath = opfsPath
         val dirName = opfsPath.substringAfterLast("/")
-        persistHostHandle(graphIdProvider(), dirName, dirHandle)
+        persistHostHandle(dirName, dirName, dirHandle)
         scope.launch {
             val granted = requestStoragePersistence()
             logger.debug("storage.persist(): granted=$granted")
@@ -809,6 +817,49 @@ class HostDirectorySync(
         }
         setHostAccessState(result)
         return result
+    }
+
+    /**
+     * Tears down this instance's connection to whichever graph it was last wired to, before
+     * [PlatformFileSystem.switchActiveGraph] reconnects it against a newly-active graph.
+     *
+     * Without this, switching from a host-connected graph A to graph B left [hostDirHandle]/
+     * [hostGraphOpfsPath] pointing at A: [reconnectHostDirectory] only overwrites them on its
+     * `"granted"` branch, so a graph B with no persisted host handle of its own (the common case)
+     * would resolve to [HostAccessState.NotApplicable] while the poller/observer kept running
+     * against A's directory under B's now-active tab — the root cause this fix addresses (see
+     * `hostGraphOpfsPath`'s mismatch diagnostic added in the previous commit).
+     *
+     * Bug fix: also drops [hostWritePending]/[hostWriteLatestPayload]/[hostWriteDirtyDuringFlush]/
+     * [hostWriteSuppressedDuringFlush] — all keyed by *repo-relative* path, which two different
+     * graphs' files can share (e.g. `journals/2026_09_01.md`). Left in place, B's poller would
+     * later call [retryStuckHostWrites], which iterates [hostWritePending] and would write A's
+     * stale [hostWriteLatestPayload] content into B's real host directory under that shared
+     * relative path — genuine cross-graph data corruption, not just a stale write. Safe to drop:
+     * the corresponding edit already landed in OPFS/the database (the source of truth) before ever
+     * reaching this queue, and reconnecting graph A later re-populates its host-write queue via
+     * [runHostReconciliation]'s `BrowserOnlyNeedsPush` pass, same as any other dropped write in this
+     * class. Deliberately does NOT touch [hostWriteInFlight]/[hostWriteCompletion] — those are owned
+     * by whichever coroutine is still actively running inside [flushHostWrite] for a path, and that
+     * coroutine's own `finally` block (not this function) is what completes/clears them; clearing a
+     * [hostWriteCompletion] entry here would leave a caller's `.await()` (e.g. [renameHostFile])
+     * hanging forever with nothing left to complete it. Also leaves [hostContentHashes]/
+     * [hostModTimes]/[hostFileSizes] alone — those are keyed by full absolute path, so they cannot
+     * collide across graphs; clearing them would only force unnecessary re-hashing on next connect.
+     */
+    internal fun disconnectForGraphSwitch() {
+        stopHostDirectoryPolling()
+        hostChangeObserver?.let { disconnectObserver(it) }
+        hostChangeObserver = null
+        observerConfirmedActive = false
+        hostDirHandle = null
+        hostGraphOpfsPath = null
+        hostWritePending.clear()
+        hostWriteLatestPayload.clear()
+        hostWriteDirtyDuringFlush.clear()
+        hostWriteSuppressedDuringFlush.clear()
+        updatePendingCount()
+        setHostAccessState(HostAccessState.NotApplicable)
     }
 
     // ── Epic 2.2 (Story 2.2.1): reconnectHostDirectory — silent resume, always reconciling ────
@@ -1382,9 +1433,25 @@ class HostDirectorySync(
      * (`GitWriteLock.kt:47-55`) a lock should cover only the actual critical section, never be
      * widened to include independent preflight checks. Uses [graphIdProvider] (the live value),
      * never a captured/stale `graphId`, matching every other lock-name derivation in this class.
+     *
+     * Bug fix: [handle] and [opfsPath] are both snapshotted together here, at the very first line,
+     * and used consistently for the rest of this call — never re-read from the live
+     * [hostDirHandle]/[hostGraphOpfsPath] fields after a suspension point. `switchActiveGraph`
+     * (`PlatformFileSystem.kt`) can call [disconnectForGraphSwitch] and reconnect this same
+     * `HostDirectorySync` instance to a *different* graph while this coroutine is suspended
+     * (`opfsWriteDeferred?.await()` in [scheduleHostWriteThrough], the permission-check `await()`
+     * below, or any `await()` inside the write itself). The previous code captured [handle] once
+     * but re-read `hostGraphOpfsPath` live mid-function — so a write already in flight for the old
+     * graph would still write to the old graph's real directory (via the stably-captured `handle`)
+     * but compute `fullPath`/bookkeeping keys against the *new* graph's `opfsPath`, corrupting the
+     * new graph's `hostContentHashes`/`hostModTimes` freshness baseline and routing a stale
+     * conflict through [onHostConflict] tagged with a path that doesn't belong to either graph's
+     * real content. Snapshotting both together keeps this call self-consistently scoped to
+     * whichever graph was active when it started.
      */
     private suspend fun flushHostWrite(repoRelative: String) {
         val handle = hostDirHandle ?: return
+        val opfsPath = hostGraphOpfsPath
 
         // Task 4.2.3a: proactive permission check — *before* any write attempt is made, not only
         // reactively after one has already failed (research/pitfalls.md §1.1).
@@ -1401,7 +1468,6 @@ class HostDirectorySync(
             val payload = hostWriteLatestPayload[repoRelative] ?: return@withLock
             hostWriteDirtyDuringFlush -= repoRelative
 
-            val opfsPath = hostGraphOpfsPath
             val fullPath = if (opfsPath != null) "$opfsPath/$repoRelative" else repoRelative
 
             try {
