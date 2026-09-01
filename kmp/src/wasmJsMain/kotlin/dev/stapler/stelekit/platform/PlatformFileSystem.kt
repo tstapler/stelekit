@@ -41,7 +41,9 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     // recordDirty()/scheduleMarkerWrite() calls while one is in flight coalesces into exactly
     // one trailing write of the latest state, launched the instant the in-flight write completes.
     private var markerWriteInFlight = false
-    private var markerWriteDirty = false
+
+    /** Latest snapshot queued while a write is in flight — see [scheduleMarkerWrite]'s doc comment. */
+    private var pendingMarkerWrite: DirtySetMarker? = null
 
     // ── Epic 1.7 (Story 1.7.1): per-path in-flight OPFS-write tracking ────────────────────────
     // Populated when writeFile/writeFileBytes launches its OPFS-persisting write, self-cleans on
@@ -128,6 +130,18 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         }
     }
 
+    /**
+     * Bug fix: the graph currently wired to [hostDirectorySync] — read by `Main.kt`'s
+     * `onReconnectHostDirectory`/`onConnectHostDirectory` UI callbacks, which used to close over
+     * the boot-time `graphId`/`opfsGraphPath` locals instead. Those never advanced when
+     * `graphManager.graphRegistry`'s collector called [switchActiveGraph] for a newly-active graph,
+     * so clicking "Reconnect folder"/"Enable live folder sync" while viewing a *different* graph
+     * than the one active at page load would look up/reconcile the wrong graph's host connection
+     * entirely (same root cause this file's other fixes address, just for the manual entry points).
+     */
+    fun currentGraphId(): String = graphId
+    fun currentGraphPath(): String = "$homeDir/$graphId"
+
     suspend fun preload(graphPath: String) {
         graphId = graphPath.removePrefix("$homeDir/").substringBefore("/").ifEmpty { graphId }
         try {
@@ -172,10 +186,21 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
 
     /** Crash-safe: absent or malformed marker leaves the dirty set empty, never throws. */
     private suspend fun restoreDirtySetMarker() {
+        // Bug fix: clear the *previous* graph's in-memory dirtySet/baseSha/pendingCommit
+        // unconditionally, before attempting to load this graph's own marker — these are single
+        // shared fields, and `preload()`/`switchActiveGraph()` now re-run this per graph switch,
+        // not just once at boot. The old code only cleared/overwrote them inside the `try` block
+        // *after* a successful read, so switching to a graph that has never had a dirty-marker file
+        // written (a brand-new or never-edited graph — the common case) hit the `?: return` below
+        // and silently left the previous graph's state in place, now mislabeled under this graph's
+        // own graphId.
+        dirtySet.clear()
+        _dirtyFileCountFlow.value = 0
+        baseSha = ""
+        pendingCommit = PendingCommit.None
         try {
             val raw = opfsReadFileAtPath(markerPath()) ?: return
             val marker = gitApiJson.decodeFromString<DirtySetMarker>(raw)
-            dirtySet.clear()
             dirtySet.putAll(marker.dirtyFiles)
             _dirtyFileCountFlow.value = dirtySet.size
             baseSha = marker.baseSha
@@ -245,37 +270,50 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         scheduleMarkerWrite()
     }
 
+    /**
+     * Bug fix: snapshots [graphId]/[dirtySet]/[baseSha]/[pendingCommit] synchronously, right here at
+     * schedule time, rather than [writeMarkerNow] reading those fields live when the launched
+     * coroutine actually runs. Every caller of [scheduleMarkerWrite] has already applied its own
+     * mutation to those fields by the time it calls this — capturing now means the write always
+     * persists exactly the state that was true when scheduled, tagged with the graph that was
+     * active then. Without this, `switchActiveGraph()` re-running [preload]/[restoreDirtySetMarker]
+     * for a *different* graph while an old graph's marker write was still in-flight (or merely
+     * queued via [pendingMarkerWrite]) could execute with the live fields already flipped to the new
+     * graph — persisting the wrong graph's dirty content under the wrong graph's marker path, a
+     * disk-level cross-graph corruption (not just an in-memory race).
+     */
     private fun scheduleMarkerWrite() {
-        if (markerWriteInFlight) {
-            markerWriteDirty = true
-            return
-        }
-        markerWriteInFlight = true
-        scope.launch {
-            writeMarkerNow()
-            while (markerWriteDirty) {
-                markerWriteDirty = false
-                writeMarkerNow()
-            }
-            markerWriteInFlight = false
-        }
-    }
-
-    private suspend fun writeMarkerNow() {
-        val marker = DirtySetMarker(
+        val snapshot = DirtySetMarker(
             graphId = graphId,
             baseSha = baseSha,
             pendingCommit = pendingCommit,
             checkpointedAtMillis = Clock.System.now().toEpochMilliseconds(),
             dirtyFiles = dirtySet.toMap(),
         )
+        if (markerWriteInFlight) {
+            pendingMarkerWrite = snapshot
+            return
+        }
+        markerWriteInFlight = true
+        scope.launch {
+            writeMarkerNow(snapshot)
+            while (true) {
+                val next = pendingMarkerWrite ?: break
+                pendingMarkerWrite = null
+                writeMarkerNow(next)
+            }
+            markerWriteInFlight = false
+        }
+    }
+
+    private suspend fun writeMarkerNow(marker: DirtySetMarker) {
         val encoded = try {
             gitApiJson.encodeToString(marker)
         } catch (e: Throwable) {
             println("[SteleKit] dirty-set marker encode failed: ${e.message}")
             return
         }
-        opfsWriteFile(markerPath(), encoded)
+        opfsWriteFile("$homeDir/${marker.graphId}/.stele-dirty-set.json", encoded)
     }
 
     private suspend fun loadOpfsDirectory(graphPath: String) {

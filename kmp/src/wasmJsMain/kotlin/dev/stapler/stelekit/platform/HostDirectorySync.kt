@@ -829,6 +829,23 @@ class HostDirectorySync(
      * would resolve to [HostAccessState.NotApplicable] while the poller/observer kept running
      * against A's directory under B's now-active tab — the root cause this fix addresses (see
      * `hostGraphOpfsPath`'s mismatch diagnostic added in the previous commit).
+     *
+     * Bug fix: also drops [hostWritePending]/[hostWriteLatestPayload]/[hostWriteDirtyDuringFlush]/
+     * [hostWriteSuppressedDuringFlush] — all keyed by *repo-relative* path, which two different
+     * graphs' files can share (e.g. `journals/2026_09_01.md`). Left in place, B's poller would
+     * later call [retryStuckHostWrites], which iterates [hostWritePending] and would write A's
+     * stale [hostWriteLatestPayload] content into B's real host directory under that shared
+     * relative path — genuine cross-graph data corruption, not just a stale write. Safe to drop:
+     * the corresponding edit already landed in OPFS/the database (the source of truth) before ever
+     * reaching this queue, and reconnecting graph A later re-populates its host-write queue via
+     * [runHostReconciliation]'s `BrowserOnlyNeedsPush` pass, same as any other dropped write in this
+     * class. Deliberately does NOT touch [hostWriteInFlight]/[hostWriteCompletion] — those are owned
+     * by whichever coroutine is still actively running inside [flushHostWrite] for a path, and that
+     * coroutine's own `finally` block (not this function) is what completes/clears them; clearing a
+     * [hostWriteCompletion] entry here would leave a caller's `.await()` (e.g. [renameHostFile])
+     * hanging forever with nothing left to complete it. Also leaves [hostContentHashes]/
+     * [hostModTimes]/[hostFileSizes] alone — those are keyed by full absolute path, so they cannot
+     * collide across graphs; clearing them would only force unnecessary re-hashing on next connect.
      */
     internal fun disconnectForGraphSwitch() {
         stopHostDirectoryPolling()
@@ -837,6 +854,11 @@ class HostDirectorySync(
         observerConfirmedActive = false
         hostDirHandle = null
         hostGraphOpfsPath = null
+        hostWritePending.clear()
+        hostWriteLatestPayload.clear()
+        hostWriteDirtyDuringFlush.clear()
+        hostWriteSuppressedDuringFlush.clear()
+        updatePendingCount()
         setHostAccessState(HostAccessState.NotApplicable)
     }
 
@@ -1411,9 +1433,25 @@ class HostDirectorySync(
      * (`GitWriteLock.kt:47-55`) a lock should cover only the actual critical section, never be
      * widened to include independent preflight checks. Uses [graphIdProvider] (the live value),
      * never a captured/stale `graphId`, matching every other lock-name derivation in this class.
+     *
+     * Bug fix: [handle] and [opfsPath] are both snapshotted together here, at the very first line,
+     * and used consistently for the rest of this call — never re-read from the live
+     * [hostDirHandle]/[hostGraphOpfsPath] fields after a suspension point. `switchActiveGraph`
+     * (`PlatformFileSystem.kt`) can call [disconnectForGraphSwitch] and reconnect this same
+     * `HostDirectorySync` instance to a *different* graph while this coroutine is suspended
+     * (`opfsWriteDeferred?.await()` in [scheduleHostWriteThrough], the permission-check `await()`
+     * below, or any `await()` inside the write itself). The previous code captured [handle] once
+     * but re-read `hostGraphOpfsPath` live mid-function — so a write already in flight for the old
+     * graph would still write to the old graph's real directory (via the stably-captured `handle`)
+     * but compute `fullPath`/bookkeeping keys against the *new* graph's `opfsPath`, corrupting the
+     * new graph's `hostContentHashes`/`hostModTimes` freshness baseline and routing a stale
+     * conflict through [onHostConflict] tagged with a path that doesn't belong to either graph's
+     * real content. Snapshotting both together keeps this call self-consistently scoped to
+     * whichever graph was active when it started.
      */
     private suspend fun flushHostWrite(repoRelative: String) {
         val handle = hostDirHandle ?: return
+        val opfsPath = hostGraphOpfsPath
 
         // Task 4.2.3a: proactive permission check — *before* any write attempt is made, not only
         // reactively after one has already failed (research/pitfalls.md §1.1).
@@ -1430,7 +1468,6 @@ class HostDirectorySync(
             val payload = hostWriteLatestPayload[repoRelative] ?: return@withLock
             hostWriteDirtyDuringFlush -= repoRelative
 
-            val opfsPath = hostGraphOpfsPath
             val fullPath = if (opfsPath != null) "$opfsPath/$repoRelative" else repoRelative
 
             try {

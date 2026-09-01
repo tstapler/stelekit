@@ -286,8 +286,15 @@ fun main() {
                 hostAccessStateFlow = opfsFileSystem.hostDirectorySync.hostAccessStateFlow,
                 hostWritePendingCountFlow = opfsFileSystem.hostDirectorySync.hostWritePendingCountFlow,
                 hostWriteStuckFlow = opfsFileSystem.hostDirectorySync.hostWriteStuckFlow,
+                // Bug fix: read the CURRENT active graph via opfsFileSystem.currentGraphId()/
+                // currentGraphPath() at click time, not the boot-time graphId/opfsGraphPath locals
+                // — graphManager.graphRegistry's collector (below) can have switched opfsFileSystem
+                // to a different graph since page load, and these callbacks must act on whichever
+                // graph the user is actually looking at when they click.
                 onReconnectHostDirectory = {
-                    scope.launch { opfsFileSystem.hostDirectorySync.requestHostDirectoryAccess(graphId) }
+                    scope.launch {
+                        opfsFileSystem.hostDirectorySync.requestHostDirectoryAccess(opfsFileSystem.currentGraphId())
+                    }
                 },
                 // Task 3.1.1c: "Enable live folder sync" — wired the same way the badge's flows
                 // above are, straight to HostDirectorySync.connectHostDirectory. Its own internal
@@ -296,7 +303,7 @@ fun main() {
                 // lastReconciliationSummary is stashed by runHostReconciliation on the same call,
                 // so it is always fresh when result == Granted.
                 onConnectHostDirectory = connectHostDirectory@{
-                    val result = opfsFileSystem.hostDirectorySync.connectHostDirectory(opfsGraphPath)
+                    val result = opfsFileSystem.hostDirectorySync.connectHostDirectory(opfsFileSystem.currentGraphPath())
                     val summary = opfsFileSystem.hostDirectorySync.lastReconciliationSummary
                     if (result != HostAccessState.Granted || summary == null) {
                         return@connectHostDirectory ReconciliationUiState.Failed(
