@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.78.1](https://github.com/tstapler/stelekit/compare/v0.78.0...v0.78.1) (2026-09-01)
+
+
+### Bug Fixes
+
+* **web:** follow GraphManager's active graph in host-directory sync ([#293](https://github.com/tstapler/stelekit/issues/293)) ([4157104](https://github.com/tstapler/stelekit/commit/4157104767a3b0d7b6c6da3c15521429ad47de3f))
+
 ## [0.78.0](https://github.com/tstapler/stelekit/compare/v0.77.0...v0.78.0) (2026-09-01)
 
 
