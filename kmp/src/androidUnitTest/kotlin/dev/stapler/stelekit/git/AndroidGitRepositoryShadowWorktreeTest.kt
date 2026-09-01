@@ -8,6 +8,7 @@ import androidx.test.core.app.ApplicationProvider
 import arrow.core.Either
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
+import dev.stapler.stelekit.git.model.HunkResolution
 import dev.stapler.stelekit.git.testsupport.FakeCredentialAccess
 import dev.stapler.stelekit.git.testsupport.FakeSafFileSystem
 import java.io.File
@@ -18,6 +19,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import org.eclipse.jgit.api.Git
+import org.eclipse.jgit.lib.RepositoryState
 import org.eclipse.jgit.revwalk.RevWalk
 import org.eclipse.jgit.transport.URIish
 import org.eclipse.jgit.treewalk.TreeWalk
@@ -243,6 +245,109 @@ class AndroidGitRepositoryShadowWorktreeTest {
             assertTrue(checkoutResult.isRight(), "checkoutFile failed: $checkoutResult")
             assertEquals("- local version\n", fs.readFile(conflict.filePath))
         }
+
+    /**
+     * SAF write-back end-to-end: the prior test proves conflict *detection* writes real marker
+     * content to the fake SAF provider; this proves conflict *resolution* writes the final
+     * resolved content back to SAF and clears git's own conflicted index state — the actual gap,
+     * since [dev.stapler.stelekit.git.GitSyncService.resolveConflicts]'s hunk-resolution branch
+     * (`ConflictResolver().applyResolutions` → `fileSystem.writeFile` → `markResolved` →
+     * `commit`) had no coverage against a real [AndroidGitRepository]/SAF provider, only against
+     * [dev.stapler.stelekit.git.GitSyncServiceTest]'s stub. Mirrors that branch's exact steps —
+     * `fs.writeFile` (the real `FileSystem.writeFile` override, not the test-only `fs.seed`
+     * shortcut the next test below uses) is what actually exercises the SAF write path.
+     */
+    @Test
+    fun `resolving a hunk writes the final content to SAF and clears the conflict`() = runTest {
+        val fs = FakeSafFileSystem()
+        val repoRoot =
+            "saf://content%3A%2F%2Fcom.android.externalstorage.documents%2Ftree%2Fprimary%3Awiki-resolve"
+        val repository = newRepository(fs)
+
+        fs.seed("$repoRoot/conflict.md", "- base\n")
+
+        registerAmpleStorage(repository, repoRoot)
+        assertTrue(repository.init(repoRoot).isRight())
+
+        val shadowPath = repository.resolveForJGit(repoRoot)
+        Git.open(File(shadowPath)).use { git -> setTestIdentity(git) }
+        val branchName = Git.open(File(shadowPath)).use { it.repository.branch } ?: "main"
+
+        val config = GitConfig(
+            graphId = "wiki-resolve",
+            repoRoot = repoRoot,
+            wikiSubdir = null,
+            remoteBranch = branchName,
+            authType = GitAuthType.NONE,
+        )
+
+        assertTrue(repository.stageSubdir(config).isRight())
+        assertTrue(repository.commit(config, "base commit").isRight())
+
+        val originDir = createTempDirectory("stelekit_git_resolve_origin_").toFile()
+        Git.cloneRepository().setURI(shadowPath).setBare(true).setDirectory(originDir).call().close()
+        Git.open(File(shadowPath)).use { git ->
+            git.remoteAdd().setName("origin").setUri(URIish(originDir.absolutePath)).call()
+        }
+
+        val originWorkDir = createTempDirectory("stelekit_git_resolve_origin_work_").toFile()
+        Git.cloneRepository().setURI(originDir.absolutePath).setDirectory(originWorkDir).call().use { originGit ->
+            setTestIdentity(originGit)
+            File(originWorkDir, "conflict.md").writeText("- remote version\n")
+            originGit.add().addFilepattern(".").call()
+            originGit.commit().setMessage("remote change").call()
+            originGit.push().call()
+        }
+
+        fs.seed("$repoRoot/conflict.md", "- local version\n")
+        assertTrue(repository.stageSubdir(config).isRight())
+        assertTrue(repository.commit(config, "local change").isRight())
+
+        assertTrue(repository.fetch(config).isRight())
+        val mergeResult = repository.merge(config)
+        assertTrue(mergeResult.isRight(), "merge failed: $mergeResult")
+        val conflict = (mergeResult as Either.Right).value.conflicts.single()
+        val hunk = conflict.hunks.single()
+
+        Git.open(File(shadowPath)).use {
+            assertEquals(RepositoryState.MERGING, it.repository.repositoryState, "expected a genuine in-progress merge conflict")
+        }
+
+        // Mirrors GitSyncService.resolveConflicts()'s hunk-resolution branch exactly, against the
+        // real AndroidGitRepository/SAF provider instead of GitSyncServiceTest's StubGitRepository.
+        val resolvedContent = ConflictResolver().applyResolutions(
+            conflict.rawContent!!,
+            listOf(hunk.copy(resolution = HunkResolution.AcceptLocal)),
+        ).let { (it as Either.Right).value }
+        assertTrue(fs.writeFile(conflict.filePath, resolvedContent))
+        assertTrue(repository.markResolved(config, conflict.filePath).isRight())
+        val commitResult = repository.commit(config, "resolve conflict")
+        assertTrue(commitResult.isRight(), "commit failed: $commitResult")
+
+        assertEquals(resolvedContent, fs.readFile(conflict.filePath))
+        Git.open(File(shadowPath)).use {
+            assertEquals(
+                RepositoryState.SAFE,
+                it.repository.repositoryState,
+                "expected the merge-conflict state to be cleared after resolve + commit",
+            )
+        }
+        // NOT a global-clean-tree assertion: GitSyncService.resolveConflicts()'s real production
+        // path never re-stages the whole tree after resolving (only markResolved(filePath) for
+        // each resolved path, then one commit) — so `.sync-manifest.json` bookkeeping the shadow
+        // worktree updated during this resolution (e.g. via markResolved's/status's own freshness
+        // check) legitimately stays modified-but-uncommitted; that's a pre-existing characteristic
+        // of the shadow-worktree write-back mechanism, unrelated to conflict resolution. What
+        // write-back must guarantee is that the file the user just resolved is no longer modified
+        // or conflicted.
+        val statusResult = repository.status(config)
+        assertTrue(statusResult.isRight(), "status failed: $statusResult")
+        val wikiRelativeConflictPath = conflict.filePath.removePrefix("$repoRoot/")
+        assertFalse(
+            (statusResult as Either.Right).value.modifiedFiles.any { it.endsWith(wikiRelativeConflictPath) },
+            "expected the resolved file to no longer be modified, got: ${statusResult.value}",
+        )
+    }
 
     // ── Task 4.1.1b: markResolved() pulls fresh SAF content into the shadow tree ───────────
 

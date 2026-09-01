@@ -5,6 +5,8 @@ package dev.stapler.stelekit.git
 import arrow.core.Either
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
+import dev.stapler.stelekit.git.model.HunkResolution
+import org.eclipse.jgit.lib.RepositoryState
 import java.io.File
 import kotlin.io.path.createTempDirectory
 import kotlin.test.AfterTest
@@ -154,6 +156,83 @@ class JvmGitRepositoryTest {
             conflict.rawContent?.contains("<<<<<<<") == true,
             "ConflictFile.rawContent must carry the real conflict-marker content, got: ${conflict.rawContent}",
         )
+    }
+
+    /**
+     * SAF/disk write-back end-to-end: the prior test proves conflict *detection* writes real
+     * marker content where the app can read it; this proves conflict *resolution* writes the
+     * final resolved content back to the real working-tree file and clears git's own conflicted
+     * index state — the actual gap, since [dev.stapler.stelekit.git.GitSyncService.resolveConflicts]'s
+     * hunk-resolution branch (`ConflictResolver().applyResolutions` → `fileSystem.writeFile` →
+     * `markResolved` → `commit`) had no coverage against a real [GitRepository], only against
+     * [dev.stapler.stelekit.git.GitSyncServiceTest]'s stub. Mirrors that branch's exact steps
+     * directly against [JvmGitRepository] (JVM has no `FileSystem` write-back indirection to
+     * exercise — `File(filePath).writeText(...)` IS the real write-back here, same as production).
+     */
+    @Test
+    fun `resolving a hunk writes the final content to the real working-tree file and clears the conflict`() = runTest {
+        assertTrue(repository.init(config.repoRoot).isRight())
+        Git.open(File(config.repoRoot)).use { git -> setIdentity(git) }
+        val baseBranch = Git.open(File(config.repoRoot)).use { it.repository.branch }
+        val mergeConfig = config.copy(remoteBranch = baseBranch)
+
+        File(config.repoRoot, "conflict.md").writeText("- base\n")
+        assertTrue(repository.stageSubdir(mergeConfig).isRight())
+        assertTrue(repository.commit(mergeConfig, "base commit").isRight())
+
+        val originDir = createTempDirectory("stelekit_jvm_git_resolve_origin_").toFile()
+        Git.cloneRepository().setURI(config.repoRoot).setBare(true).setDirectory(originDir).call().close()
+        Git.open(File(config.repoRoot)).use { git ->
+            git.remoteAdd().setName("origin")
+                .setUri(org.eclipse.jgit.transport.URIish(originDir.absolutePath))
+                .call()
+        }
+
+        val originWorkDir = createTempDirectory("stelekit_jvm_git_resolve_origin_work_").toFile()
+        Git.cloneRepository().setURI(originDir.absolutePath).setDirectory(originWorkDir).call().use { originGit ->
+            setIdentity(originGit)
+            File(originWorkDir, "conflict.md").writeText("- remote version\n")
+            originGit.add().addFilepattern(".").call()
+            originGit.commit().setMessage("remote change").call()
+            originGit.push().call()
+        }
+
+        File(config.repoRoot, "conflict.md").writeText("- local version\n")
+        assertTrue(repository.stageSubdir(mergeConfig).isRight())
+        assertTrue(repository.commit(mergeConfig, "local change").isRight())
+
+        assertTrue(repository.fetch(mergeConfig).isRight())
+        val mergeResult = repository.merge(mergeConfig)
+        assertTrue(mergeResult.isRight(), "merge failed: $mergeResult")
+        val conflict = (mergeResult as Either.Right).value.conflicts.single()
+        val hunk = conflict.hunks.single()
+
+        Git.open(File(config.repoRoot)).use {
+            assertEquals(RepositoryState.MERGING, it.repository.repositoryState, "expected a genuine in-progress merge conflict")
+        }
+
+        // Mirrors GitSyncService.resolveConflicts()'s hunk-resolution branch exactly, against the
+        // real repository instead of GitSyncServiceTest's StubGitRepository.
+        val resolvedContent = ConflictResolver().applyResolutions(
+            conflict.rawContent!!,
+            listOf(hunk.copy(resolution = HunkResolution.AcceptLocal)),
+        ).let { (it as Either.Right).value }
+        File(conflict.filePath).writeText(resolvedContent)
+        assertTrue(repository.markResolved(mergeConfig, conflict.filePath).isRight())
+        val commitResult = repository.commit(mergeConfig, "resolve conflict")
+        assertTrue(commitResult.isRight(), "commit failed: $commitResult")
+
+        assertEquals(resolvedContent, File(config.repoRoot, "conflict.md").readText())
+        Git.open(File(config.repoRoot)).use {
+            assertEquals(
+                RepositoryState.SAFE,
+                it.repository.repositoryState,
+                "expected the merge-conflict state to be cleared after resolve + commit",
+            )
+        }
+        val statusResult = repository.status(mergeConfig)
+        assertTrue(statusResult.isRight(), "status failed: $statusResult")
+        assertFalse((statusResult as Either.Right).value.hasLocalChanges, "expected a clean tree after the resolve commit")
     }
 
     /**
