@@ -55,7 +55,7 @@ jobs:
       needs_build: ${{ steps.hash.outputs.needs_build }}
       source_hash: ${{ steps.hash.outputs.source_hash }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - id: hash
         name: Compare source hash to .inputs-hash
@@ -99,14 +99,14 @@ jobs:
             # aarch64 cross-linker required for Bazel's C link step.
             linker-pkg: gcc-aarch64-linux-gnu
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Install cross-linker
         if: matrix.linker-pkg != ''
         run: sudo apt-get install -y ${{ matrix.linker-pkg }}
 
       - name: Cache Bazel disk cache
-        uses: actions/cache@v4
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684
         with:
           path: ~/.cache/bazel-disk-cache
           key: bazel-${{ runner.os }}-${{ matrix.bazel-platform }}-${{ needs.check.outputs.source_hash }}
@@ -148,10 +148,10 @@ jobs:
             resource-dir: macos-x86_64
             lib-name: libstelekit_libsql.dylib
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Cache Bazel disk cache
-        uses: actions/cache@v4
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684
         with:
           path: ~/.cache/bazel-disk-cache
           key: bazel-${{ runner.os }}-${{ matrix.bazel-platform }}-${{ needs.check.outputs.source_hash }}
@@ -181,10 +181,10 @@ jobs:
     needs: check
     if: needs.check.outputs.needs_build == 'true'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Cache Bazel disk cache
-        uses: actions/cache@v4
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684
         with:
           path: ~/.cache/bazel-disk-cache
           key: bazel-${{ runner.os }}-x86_64-pc-windows-msvc-${{ needs.check.outputs.source_hash }}
@@ -229,7 +229,7 @@ jobs:
           - abi: x86
             rust-target: i686-linux-android
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -267,7 +267,7 @@ jobs:
       - build-android
     if: needs.check.outputs.needs_build == 'true'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       # JVM Desktop artifacts
       - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f9f2ef63f
