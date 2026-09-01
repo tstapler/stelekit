@@ -187,7 +187,7 @@ class HostDirectorySync(
      * [scheduleHostWriteThrough]'s doc comment for the full "exactly one write of the latest
      * content" rationale (Story 4.1.1's coalescing acceptance criterion).
      */
-    private val hostWriteLatestPayload = mutableMapOf<String, HostWritePayload>()
+    internal val hostWriteLatestPayload = mutableMapOf<String, HostWritePayload>()
 
     /**
      * Epic 7.1 (Task 7.1.1a): completion signal for [scheduleHostWriteThrough]'s in-flight flush
