@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.78.0](https://github.com/tstapler/stelekit/compare/v0.77.0...v0.78.0) (2026-09-01)
+
+
+### Features
+
+* **git:** surface duplicate block::id warnings in conflict resolution ([97d0953](https://github.com/tstapler/stelekit/commit/97d095393de6d91a42075d9e3e2b845377b62a90))
+
 ## [0.77.0](https://github.com/tstapler/stelekit/compare/v0.76.0...v0.77.0) (2026-09-01)
 
 
