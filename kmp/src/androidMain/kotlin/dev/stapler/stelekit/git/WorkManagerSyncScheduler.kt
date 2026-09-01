@@ -14,6 +14,7 @@ import androidx.work.WorkerParameters
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
+import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.security.CredentialStore
 import kotlinx.coroutines.CancellationException
 import java.util.concurrent.TimeUnit
@@ -112,7 +113,16 @@ class GitSyncWorker(
                 ?: run { driver.close(); return Result.success() }
 
             val config = row.toGitConfig()
-            val gitRepository = AndroidGitRepository()
+            // A throwaway, uninitialized PlatformFileSystem() is deliberately fine here (unlike
+            // MainActivity's construction site — see buildGitRepository): fetch() only updates
+            // remote-tracking refs and never touches the working tree, so no ensureFresh/shadow
+            // write-back happens on this call path even though resolveForJGit's shadowWorktreeFor
+            // still correctly targets the shadow directory. The user's next foreground merge()
+            // call is what surfaces fetched changes into SAF (plan.md Task 5.1.2b).
+            val gitRepository = AndroidGitRepository(
+                context = applicationContext,
+                fileSystem = PlatformFileSystem(),
+            )
             gitRepository.fetch(config)
 
             driver.close()

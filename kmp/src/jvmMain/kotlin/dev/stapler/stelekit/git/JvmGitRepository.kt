@@ -12,6 +12,7 @@ import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.git.model.ConflictFile
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
+import dev.stapler.stelekit.git.model.wikiRoot
 import dev.stapler.stelekit.platform.security.CredentialAccess
 import dev.stapler.stelekit.platform.security.CredentialStore
 import kotlin.concurrent.Volatile
@@ -242,10 +243,31 @@ class JvmGitRepository(
                             } else {
                                 filePath
                             }
+                            // JGit already wrote real conflict-marker content directly into the
+                            // working tree at absolutePath (Desktop has no shadow indirection).
+                            // For markdown, prefer re-deriving that content via the block-aware
+                            // merge (tryBlockAwareConflict) over JGit's own line-level markers —
+                            // see that function's doc. Falls back to JGit's line-level marker
+                            // content, parsed the same way, for non-markdown/unparseable files.
+                            val jgitMarkerContent = runCatching { File(absolutePath).readText() }.getOrNull()
+                            val blockAware = tryBlockAwareConflict(repo, filePath, absolutePath, config.wikiRoot)
+                            val markerContent = blockAware?.markerText ?: jgitMarkerContent
+                            val hunks = blockAware?.hunks ?: markerContent?.let {
+                                ConflictResolver().parseConflictFile(absolutePath, it, config.wikiRoot)
+                                    .getOrNull()?.hunks
+                            } ?: emptyList()
+                            // Keep the working-tree file in sync with what the app will resolve
+                            // against — otherwise a block-merge conflict re-derivation would be
+                            // invisible to anything reading the file directly off disk.
+                            if (blockAware != null) {
+                                runCatching { File(absolutePath).writeText(blockAware.markerText) }
+                            }
                             ConflictFile(
                                 filePath = absolutePath,
                                 wikiRelativePath = wikiRelPath,
-                                hunks = emptyList(), // parsed by ConflictResolver later
+                                hunks = hunks,
+                                rawContent = markerContent,
+                                duplicateBlockIds = blockAware?.duplicateBlockIds ?: emptyList(),
                             )
                         } ?: emptyList()
                     } else {
@@ -358,8 +380,19 @@ class JvmGitRepository(
         withContext(PlatformDispatcher.IO) {
             try {
                 openGit(config.repoRoot).use { git ->
+                    // ResetType.HARD, not MERGE: JGit 7.3.0's ResetCommand never implements
+                    // ResetType.MERGE/KEEP at all — both throw UnsupportedOperationException
+                    // unconditionally (verified by disassembling ResetCommand.class: its ResetType
+                    // switch routes MERGE and KEEP to the same throw; only HARD/MIXED/SOFT are
+                    // implemented). HARD's merge-state cleanup (MERGE_HEAD/MERGE_MSG removal,
+                    // RepositoryState MERGING -> SAFE) is unconditional on any ResetType other than
+                    // SOFT, so HARD correctly aborts the in-progress merge — empirically confirmed
+                    // against a real conflicted merge. See AndroidGitRepository.abortMerge()'s
+                    // matching comment for the full rationale (this platform has no shadow-worktree
+                    // reconciliation step to add, since Desktop reads/writes the real working tree
+                    // directly).
                     git.reset()
-                        .setMode(org.eclipse.jgit.api.ResetCommand.ResetType.MERGE)
+                        .setMode(org.eclipse.jgit.api.ResetCommand.ResetType.HARD)
                         .call()
                     Unit.right()
                 }

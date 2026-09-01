@@ -397,12 +397,23 @@ class GitSyncService(
         }
 
     /**
-     * Applies conflict resolutions to disk, marks files as resolved, and completes
-     * the merge commit. Used by the ConflictResolutionScreen "Finish Merge" flow.
+     * Resolves a merge's conflicted files — some whole-file (accept local or remote entirely via
+     * [sideResolutions]), some at the hunk level ([hunkResolutions], each file's line-by-line
+     * choices) — then completes the merge with a single commit covering every resolved file.
+     * A file must appear in exactly one of the two maps. Used by the ConflictResolutionScreen
+     * "Finish Merge" flow.
+     *
+     * [conflicts] is the same list the caller received from [SyncState.ConflictPending] — for
+     * files in [hunkResolutions], its [ConflictFile.rawContent] is used to reconstruct the
+     * resolved file rather than re-reading the working tree, since a hunk-resolution's source
+     * content was already captured at merge time (see [ConflictFile.rawContent]'s doc for why a
+     * fresh read here would be unreliable in Android's shadow-mirror mode).
      */
-    suspend fun resolveConflict(
+    suspend fun resolveConflicts(
         graphId: String,
-        resolution: ConflictResolution,
+        conflicts: List<ConflictFile>,
+        sideResolutions: Map<String, MergeSide> = emptyMap(),
+        hunkResolutions: Map<String, List<dev.stapler.stelekit.git.model.ConflictHunk>> = emptyMap(),
     ): Either<DomainError.GitError, Unit> = withContext(PlatformDispatcher.IO) {
         val config = when (val result = configRepository.getConfig(graphId)) {
             is Either.Left -> return@withContext DomainError.GitError.CommitFailed(
@@ -411,14 +422,20 @@ class GitSyncService(
             is Either.Right -> result.value
         } ?: return@withContext DomainError.GitError.CommitFailed("No git config for $graphId").left()
 
+        for ((filePath, side) in sideResolutions) {
+            gitRepository.checkoutFile(config, filePath, side).onLeft { return@withContext it.left() }
+            gitRepository.markResolved(config, filePath).onLeft { return@withContext it.left() }
+        }
+
         val resolver = ConflictResolver()
-        for ((filePath, hunks) in resolution.fileResolutions) {
-            val content = fileSystem.readFile(filePath)
+        val conflictsByPath = conflicts.associateBy { it.filePath }
+        for ((filePath, hunks) in hunkResolutions) {
+            val originalContent = conflictsByPath[filePath]?.rawContent ?: fileSystem.readFile(filePath)
                 ?: return@withContext DomainError.GitError.CommitFailed(
                     "Cannot read conflicted file: $filePath"
                 ).left()
 
-            val resolvedContent = when (val r = resolver.applyResolutions(content, hunks)) {
+            val resolvedContent = when (val r = resolver.applyResolutions(originalContent, hunks)) {
                 is Either.Left -> return@withContext r.value.left()
                 is Either.Right -> r.value
             }
@@ -433,47 +450,10 @@ class GitSyncService(
             gitRepository.markResolved(config, filePath).onLeft { return@withContext it.left() }
         }
 
-        // Commit the merge
         val message = buildCommitMessage(config, isMerge = true)
         gitRepository.commit(config, message).onLeft { return@withContext it.left() }
 
-        // Reload resolved files
-        val resolvedPaths = resolution.fileResolutions.keys.toList()
-        graphLoader.beginGitMerge(resolvedPaths)
-        try {
-            graphLoader.reloadFiles(resolvedPaths.map { FilePath(it) })
-        } finally {
-            graphLoader.endGitMerge()
-        }
-
-        _syncState.value = SyncState.Idle
-        Unit.right()
-    }
-
-    /**
-     * Resolves each conflicting file by accepting either the local or remote side,
-     * then commits the merge. Simpler than [resolveConflict] — no hunk-level parsing needed.
-     */
-    suspend fun resolveConflictBySide(
-        graphId: String,
-        fileResolutions: Map<String, MergeSide>,
-    ): Either<DomainError.GitError, Unit> = withContext(PlatformDispatcher.IO) {
-        val config = when (val result = configRepository.getConfig(graphId)) {
-            is Either.Left -> return@withContext DomainError.GitError.CommitFailed(
-                result.value.message
-            ).left()
-            is Either.Right -> result.value
-        } ?: return@withContext DomainError.GitError.CommitFailed("No git config for $graphId").left()
-
-        for ((filePath, side) in fileResolutions) {
-            gitRepository.checkoutFile(config, filePath, side).onLeft { return@withContext it.left() }
-            gitRepository.markResolved(config, filePath).onLeft { return@withContext it.left() }
-        }
-
-        val message = buildCommitMessage(config, isMerge = true)
-        gitRepository.commit(config, message).onLeft { return@withContext it.left() }
-
-        val resolvedPaths = fileResolutions.keys.toList()
+        val resolvedPaths = (sideResolutions.keys + hunkResolutions.keys).toList()
         graphLoader.beginGitMerge(resolvedPaths)
         try {
             graphLoader.reloadFiles(resolvedPaths.map { FilePath(it) })
@@ -508,6 +488,9 @@ class GitSyncService(
             ).left()
         }
 
+        // filePath here is written to SAF just above via fileSystem.writeFile — markResolved()
+        // (AndroidGitRepository, shadow-mirror mode) pulls that SAF content into the shadow tree
+        // before staging; same ordering as resolveConflict().
         gitRepository.markResolved(config, filePath).onLeft { return@withContext it.left() }
 
         val message = buildCommitMessage(config, isMerge = true)
@@ -591,11 +574,3 @@ class GitSyncService(
         const val DEFAULT_RATE_LIMIT_RETRY_SECONDS = 60
     }
 }
-
-/**
- * Resolution data passed to [GitSyncService.resolveConflict].
- * Maps file path → list of resolved hunks.
- */
-data class ConflictResolution(
-    val fileResolutions: Map<String, List<dev.stapler.stelekit.git.model.ConflictHunk>>,
-)

@@ -398,13 +398,19 @@ class WasmGitWriteServiceMockedIntegrationTest {
         }
         val client = HttpClient(engine) { install(ContentNegotiation) { json(gitApiJson) } }
         val writeService = WasmGitWriteService(client, fileSystem)
+        val config = GitConfig(
+            graphId = graphId,
+            repoRoot = "/stelekit/$graphId",
+            wikiSubdir = "",
+            authType = GitAuthType.NONE,
+        )
 
         val fetchResult = writeService.fetch(gitLabHostConfig, baseSha = "8f3c1a9")
         assertEquals(FetchResult(hasRemoteChanges = true, remoteCommitCount = 1), fetchResult.getOrNull())
 
         // Local dirty set is {"pages/Foo.md"}, remote diff is {"pages/Bar.md"} — disjoint, so
         // this must auto-merge (non-conflicting) with no tree-rebuild step (Story 3.2.2 AC).
-        val mergeResult = writeService.mergeGitLab(gitLabHostConfig, baseSha = "8f3c1a9")
+        val mergeResult = writeService.mergeGitLab(config, gitLabHostConfig, baseSha = "8f3c1a9")
         assertEquals(
             MergeResult(hasConflicts = false, conflicts = emptyList(), changedFiles = listOf("pages/Bar.md")),
             mergeResult.getOrNull(),
@@ -423,8 +429,14 @@ class WasmGitWriteServiceMockedIntegrationTest {
         }
         val client = HttpClient(engine) { install(ContentNegotiation) { json(gitApiJson) } }
         val writeService = WasmGitWriteService(client, fileSystem)
+        val config = GitConfig(
+            graphId = graphId,
+            repoRoot = "/stelekit/$graphId",
+            wikiSubdir = "",
+            authType = GitAuthType.NONE,
+        )
 
-        val mergeResult = writeService.mergeGitLab(gitLabHostConfig, baseSha = "8f3c1a9")
+        val mergeResult = writeService.mergeGitLab(config, gitLabHostConfig, baseSha = "8f3c1a9")
 
         assertEquals(
             Either.Left(DomainError.GitError.MergeConflict(conflictCount = 1, conflictPaths = listOf("pages/Foo.md"))),
@@ -692,5 +704,176 @@ class WasmGitWriteServiceMockedIntegrationTest {
         assertEquals(9, blobAttempts, "8 files + 1 retried 429 attempt = 9 total blob POST attempts")
         assertTrue(maxInFlight <= 3, "no more than 3 concurrent blob POSTs, observed max was $maxInFlight")
         assertTrue(maxInFlight >= 2, "must show genuine overlap, not an accidentally-sequential pass (observed max was $maxInFlight)")
+    }
+
+    // ── wikiSubdir support (previously silently ignored on web — see toApiPath/toLocalPathOrNull) ──
+    //
+    // These graphs are opened at "/stelekit/$graphId" (the OPFS folder — the wiki), while the git
+    // repo's real top level is one level up: `wikiSubdir = "notes"`. Local paths stay bare
+    // ("pages/Foo.md"); every request that crosses the API boundary must carry the "notes/" prefix.
+
+    @Test
+    fun `wikiSubdir commit() (GitHub) prefixes tree entries with wikiSubdir while reading local content from the bare path`() = runTest {
+        val graphId = freshGraphId()
+        val fileSystem = PlatformFileSystem()
+        fileSystem.preload("/stelekit/$graphId")
+        fileSystem.writeFile("/stelekit/$graphId/pages/Foo.md", "# Foo\n")
+
+        val engine = MockEngine { request ->
+            when {
+                request.url.encodedPath.endsWith("/git/blobs") ->
+                    jsonResponse("""{"sha":"blob-sha-1"}""", HttpStatusCode.Created)
+                request.url.encodedPath.endsWith("/git/trees") -> {
+                    val body = requestBodyText(request)
+                    assertTrue(body.contains("notes/pages/Foo.md"), "tree entry must carry the wikiSubdir prefix: $body")
+                    assertTrue(!body.contains("\"path\":\"pages/Foo.md\""), "tree entry must not be bare-local-relative: $body")
+                    jsonResponse("""{"sha":"tree-sha-1"}""", HttpStatusCode.Created)
+                }
+                request.url.encodedPath.endsWith("/git/commits") -> jsonResponse("""{"sha":"commit-sha-1"}""", HttpStatusCode.Created)
+                else -> error("unexpected request to ${request.url}")
+            }
+        }
+        val client = HttpClient(engine) { install(ContentNegotiation) { json(gitApiJson) } }
+        val writeService = WasmGitWriteService(client, fileSystem)
+        val config = GitConfig(
+            graphId = graphId,
+            repoRoot = "/stelekit/$graphId-repo-root",
+            wikiSubdir = "notes",
+            authType = GitAuthType.GITHUB_OAUTH,
+        )
+
+        val result = writeService.commit(config, hostConfig, baseSha = "8f3c1a9", message = "SteleKit: 2026-07-15")
+
+        assertEquals(Either.Right(Unit), result)
+    }
+
+    @Test
+    fun `wikiSubdir mergeGitHub() ignores a remote change outside wikiSubdir and auto-merges one inside it to the bare local path`() = runTest {
+        val graphId = freshGraphId()
+        val fileSystem = PlatformFileSystem()
+        fileSystem.preload("/stelekit/$graphId")
+        fileSystem.writeFile("/stelekit/$graphId/pages/Foo.md", "# Foo\n")
+
+        val engine = MockEngine { request ->
+            when {
+                request.method == HttpMethod.Get && request.url.encodedPath.endsWith("/git/ref/heads/main") ->
+                    jsonResponse("""{"object":{"sha":"c0ffee2"}}""")
+                request.url.encodedPath.contains("/compare/") ->
+                    // One change inside wikiSubdir (relevant), one outside it (must be ignored —
+                    // neither auto-merged nor treated as conflicting).
+                    jsonResponse("""{"ahead_by":2,"files":[{"filename":"notes/pages/Bar.md"},{"filename":"README.md"}]}""")
+                request.url.host == "raw.githubusercontent.com" -> {
+                    assertEquals(
+                        "/tstapler/steno-wiki/c0ffee2/notes/pages/Bar.md",
+                        request.url.encodedPath,
+                        "remote fetch must use the repo-relative (wikiSubdir-prefixed) path",
+                    )
+                    respond(content = "# Bar (remote)\n", status = HttpStatusCode.OK)
+                }
+                request.url.encodedPath.endsWith("/git/blobs") ->
+                    jsonResponse("""{"sha":"blob-sha-1"}""", HttpStatusCode.Created)
+                request.url.encodedPath.endsWith("/git/trees") -> {
+                    val body = requestBodyText(request)
+                    assertTrue(body.contains("notes/pages/Bar.md"), "merged tree entry must carry the wikiSubdir prefix: $body")
+                    assertTrue(!body.contains("README.md"), "out-of-scope remote path must never reach the tree: $body")
+                    jsonResponse("""{"sha":"tree-sha-merge"}""", HttpStatusCode.Created)
+                }
+                request.url.encodedPath.endsWith("/git/commits") -> jsonResponse("""{"sha":"merge-commit-sha"}""", HttpStatusCode.Created)
+                else -> error("unexpected request to ${request.url}")
+            }
+        }
+        val client = HttpClient(engine) { install(ContentNegotiation) { json(gitApiJson) } }
+        val writeService = WasmGitWriteService(client, fileSystem)
+        val config = GitConfig(
+            graphId = graphId,
+            repoRoot = "/stelekit/$graphId-repo-root",
+            wikiSubdir = "notes",
+            authType = GitAuthType.GITHUB_OAUTH,
+        )
+
+        val result = writeService.merge(config, hostConfig, baseSha = "8f3c1a9")
+
+        assertEquals(
+            MergeResult(hasConflicts = false, conflicts = emptyList(), changedFiles = listOf("pages/Bar.md")),
+            result.getOrNull(),
+            "changedFiles must report the bare local path, not the wikiSubdir-prefixed API path",
+        )
+        assertEquals(
+            "# Bar (remote)\n",
+            fileSystem.readFile("/stelekit/$graphId/pages/Bar.md"),
+            "auto-merged content must land at the bare local OPFS path, not under a 'notes/' subfolder",
+        )
+    }
+
+    @Test
+    fun `wikiSubdir checkoutFile(REMOTE) fetches the wikiSubdir-prefixed API path and writes to the bare local path`() = runTest {
+        val graphId = freshGraphId()
+        val fileSystem = PlatformFileSystem()
+        fileSystem.preload("/stelekit/$graphId")
+        fileSystem.writeFile("/stelekit/$graphId/pages/Foo.md", "# Foo (local)\n")
+        fileSystem.clearDirtySet(newBaseSha = "8f3c1a9")
+
+        val engine = MockEngine { request ->
+            assertEquals("/tstapler/steno-wiki/c0ffee2/notes/pages/Foo.md", request.url.encodedPath)
+            respond(content = "# Foo (remote)\n", status = HttpStatusCode.OK)
+        }
+        val client = HttpClient(engine) { install(ContentNegotiation) { json(gitApiJson) } }
+        val writeService = WasmGitWriteService(client, fileSystem)
+        val config = GitConfig(
+            graphId = graphId,
+            repoRoot = "/stelekit/$graphId-repo-root",
+            wikiSubdir = "notes",
+            authType = GitAuthType.GITHUB_OAUTH,
+        )
+
+        val result = writeService.checkoutFile(
+            config,
+            hostConfig,
+            filePath = "pages/Foo.md",
+            remoteRef = "c0ffee2",
+            side = MergeSide.REMOTE,
+        )
+
+        assertEquals(Either.Right(Unit), result)
+        assertEquals("# Foo (remote)\n", fileSystem.readFile("/stelekit/$graphId/pages/Foo.md"))
+    }
+
+    @Test
+    fun `wikiSubdir pushViaGitLab prefixes action file_path with wikiSubdir and classifies existence via the wikiSubdir-prefixed tree path`() = runTest {
+        val graphId = freshGraphId()
+        val fileSystem = PlatformFileSystem()
+        fileSystem.preload("/stelekit/$graphId")
+        fileSystem.writeFile("/stelekit/$graphId/pages/NewPage.md", "# New\n")
+
+        val config = GitConfig(
+            graphId = graphId,
+            repoRoot = "/stelekit/$graphId-repo-root",
+            wikiSubdir = "notes",
+            authType = GitAuthType.NONE,
+        )
+
+        val engine = MockEngine { req ->
+            when {
+                req.url.encodedPath.endsWith("/repository/tree") ->
+                    jsonResponse("""[{"path":"notes/pages/Existing.md"}]""")
+                req.url.encodedPath.endsWith("/repository/commits") -> {
+                    val body = requestBodyText(req)
+                    assertTrue(body.contains("\"file_path\":\"notes/pages/NewPage.md\""), "commits POST body was: $body")
+                    assertTrue(body.contains("\"action\":\"create\""), "commits POST body was: $body")
+                    jsonResponse("""{"id":"newcommitsha"}""", HttpStatusCode.Created)
+                }
+                else -> error("unexpected path: ${req.url.encodedPath}")
+            }
+        }
+        val client = HttpClient(engine) { install(ContentNegotiation) { json(gitApiJson) } }
+        val writeService = WasmGitWriteService(client, fileSystem)
+
+        val pushResult = writeService.push(
+            gitLabHostConfig,
+            PendingCommit.None,
+            WasmGitWriteService.GitLabPushContext(config = config, baseSha = "8f3c1a9", message = "SteleKit: 2026-07-15"),
+        )
+
+        assertEquals(Either.Right(Unit), pushResult)
     }
 }

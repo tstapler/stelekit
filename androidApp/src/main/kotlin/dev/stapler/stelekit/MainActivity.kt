@@ -26,10 +26,12 @@ import dev.stapler.stelekit.llm.LlmProviderAvailability
 import dev.stapler.stelekit.llm.LlmProviderKind
 import dev.stapler.stelekit.llm.LlmSettings
 import dev.stapler.stelekit.llm.buildLlmProviderRegistry
+import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.platform.security.CredentialStore
 import dev.stapler.stelekit.git.AndroidGitRepository
+import dev.stapler.stelekit.git.GitShadowWorktree
 import dev.stapler.stelekit.git.GitSyncServiceRegistry
 import dev.stapler.stelekit.service.rememberAndroidMediaAttachmentService
 import dev.stapler.stelekit.ui.StelekitApp
@@ -49,7 +51,9 @@ import dev.stapler.stelekit.platform.sensor.AndroidCameraFrameSource
 import dev.stapler.stelekit.platform.sensor.AndroidCameraProvider
 import dev.stapler.stelekit.platform.sensor.SensorModule
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 class MainActivity : ComponentActivity() {
@@ -292,11 +296,19 @@ class MainActivity : ComponentActivity() {
                 rebuildVoicePipeline()
             }
             val spanRecorder = remember { createAndroidSpanRecorder() }
-            val gitRepository = remember {
-                val ctx = this@MainActivity.applicationContext
-                AndroidGitRepository(pathResolver = { PlatformFileSystem.resolveSafToRealPath(it, ctx) })
-            }
+            val gitRepository = remember { buildGitRepository(applicationContext, app.fileSystem) }
             val attachmentService = rememberAndroidMediaAttachmentService(this@MainActivity, fileSystem)
+
+            // One-shot startup orphan sweep (plan.md Phase 6, Epic 6.1) — deletes long-unused
+            // shadow git worktrees. Self-contained: no GraphManager/GitConfigRepository lookup
+            // needed (see GitShadowWorktree.sweepOrphans doc), so it can run unconditionally here
+            // regardless of which graph (if any) is active. sweepOrphans() does blocking file I/O
+            // and is intentionally not suspend, so the Dispatchers.IO switch happens here.
+            LaunchedEffect(Unit) {
+                withContext(Dispatchers.IO) {
+                    GitShadowWorktree.sweepOrphans(this@MainActivity.applicationContext)
+                }
+            }
 
             // Keep GitSyncServiceRegistry in sync so GitSyncWorker can reach the active service
             // even when the process was revived by WorkManager without the UI being foregrounded.
@@ -415,3 +427,23 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_BENCHMARK_GRAPH_PATH = "benchmark_graph_path"
     }
 }
+
+/**
+ * Builds the real [AndroidGitRepository] used by the foreground UI path.
+ *
+ * Extracted to a top-level `internal fun` (mirroring `CaptureActivity.kt`'s
+ * `internal fun`/composable precedent for `CaptureActivityTest.kt`) so
+ * [MainActivityGitRepositoryWiringTest] can exercise the exact construction call site
+ * `MainActivity`'s `remember { }` block calls, rather than a parallel/tautological one.
+ *
+ * [fileSystem] must be the caller's real, `.init()`-ed [SteleKitApplication.fileSystem] instance
+ * (the one with `setWriteBehindQueue` wired) — this function does not choose which instance,
+ * only wires whatever it is given. `pathResolver`'s `MANAGE_EXTERNAL_STORAGE` fast-path logic is
+ * unchanged from what previously lived inline at this call site.
+ */
+internal fun buildGitRepository(context: Context, fileSystem: FileSystem): AndroidGitRepository =
+    AndroidGitRepository(
+        context = context,
+        pathResolver = { path -> PlatformFileSystem.resolveSafToRealPath(path, context) },
+        fileSystem = fileSystem,
+    )

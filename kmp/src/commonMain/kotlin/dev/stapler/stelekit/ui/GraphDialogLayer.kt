@@ -102,6 +102,12 @@ internal fun GraphDialogLayer(
     activeGraphId: String? = null,
     onCloneAndAdd: (suspend (url: String, localPath: String, auth: dev.stapler.stelekit.git.GitAuth, onProgress: (String) -> Unit) -> Either<DomainError.GitError, String>)? = null,
     graphPath: String = "",
+    // Auto-detected by GraphManager.detectGitRoot() (walks up from graphPath looking for `.git`);
+    // threaded through so GitSetupScreen can prefill Step2RepoPath instead of discarding detection
+    // the app already surfaced via GitDetectionBanner. Null/empty (e.g. Android SAF paths, which
+    // detectGitRoot can't inspect) falls back to the wizard's own graphPath-based default.
+    detectedRepoRoot: String? = null,
+    detectedWikiSubdir: String? = null,
     onCloneComplete: ((String) -> Unit)? = null,
     onAuthError: (() -> Unit)? = null,
     shareProvider: ShareProvider? = null,
@@ -204,22 +210,37 @@ internal fun GraphDialogLayer(
             gitSyncService != null && gitRepository != null && gitConfigRepository != null
         if (canShowGitSetup) {
             val deviceFlowClient = remember { GitHubDeviceFlowClient.withDefaultClient() }
-            GitSetupScreen(
-                graphId = activeGraphId ?: "",
-                gitRepository = gitRepository,
-                gitConfigRepository = gitConfigRepository,
-                gitSyncService = gitSyncService,
-                fileSystem = fileSystem,
-                onDismiss = { viewModel.dismissGitSetup() },
-                onSave = { viewModel.dismissGitSetup() },
-                onCloneAndAdd = onCloneAndAdd,
-                graphPath = graphPath,
-                onCloneComplete = onCloneComplete,
-                initialStep = appState.gitSetupInitialStep,
-                initialUseExistingClone = !appState.gitSetupOpenForClone,
-                existingConfig = null,
-                deviceFlowClient = deviceFlowClient,
-            )
+            // Previously always null, discarding a graph's saved GitConfig every time the wizard
+            // reopened — re-editing sync settings silently reset auth type, branch, and poll
+            // interval to their defaults. Loaded once per open (keyed on activeGraphId, inside the
+            // already gitSetupVisible-keyed composition) rather than reactively, matching this
+            // dialog's existing "fresh state per open" pattern (see the class doc above).
+            var existingConfig by remember(activeGraphId) { mutableStateOf<dev.stapler.stelekit.git.model.GitConfig?>(null) }
+            var existingConfigLoaded by remember(activeGraphId) { mutableStateOf(false) }
+            LaunchedEffect(activeGraphId) {
+                existingConfig = activeGraphId?.let { id -> gitConfigRepository.getConfig(id).getOrNull() }
+                existingConfigLoaded = true
+            }
+            if (existingConfigLoaded) {
+                GitSetupScreen(
+                    graphId = activeGraphId ?: "",
+                    gitRepository = gitRepository,
+                    gitConfigRepository = gitConfigRepository,
+                    gitSyncService = gitSyncService,
+                    fileSystem = fileSystem,
+                    onDismiss = { viewModel.dismissGitSetup() },
+                    onSave = { viewModel.dismissGitSetup() },
+                    onCloneAndAdd = onCloneAndAdd,
+                    graphPath = graphPath,
+                    onCloneComplete = onCloneComplete,
+                    initialStep = appState.gitSetupInitialStep,
+                    initialUseExistingClone = !appState.gitSetupOpenForClone,
+                    existingConfig = existingConfig,
+                    detectedRepoRoot = detectedRepoRoot,
+                    detectedWikiSubdir = detectedWikiSubdir,
+                    deviceFlowClient = deviceFlowClient,
+                )
+            }
         }
     }
 
@@ -231,11 +252,11 @@ internal fun GraphDialogLayer(
 
         ConflictResolutionScreen(
             conflicts = conflictFiles,
-            onResolve = { fileResolutions ->
+            onResolve = { sideResolutions, hunkResolutions ->
                 val id = activeGraphId ?: return@ConflictResolutionScreen arrow.core.Either.Left(
                     dev.stapler.stelekit.error.DomainError.GitError.CommitFailed("No active graph")
                 )
-                gitSyncService?.resolveConflictBySide(id, fileResolutions)
+                gitSyncService?.resolveConflicts(id, conflictFiles, sideResolutions, hunkResolutions)
                     ?: arrow.core.Either.Left(
                         dev.stapler.stelekit.error.DomainError.GitError.CommitFailed("Git sync not available")
                     )

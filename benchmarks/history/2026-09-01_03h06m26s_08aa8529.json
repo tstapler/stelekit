@@ -1,0 +1,122 @@
+{
+  "timestamp": "2026-09-01 03:06:26 UTC",
+  "gitSha": "08aa8529",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 1,
+  "phase2Ms": 0,
+  "phase3Ms": 1,
+  "totalMs": 2,
+  "jankBaselineP50Ms": 1,
+  "jankBaselineP95Ms": 16,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.06,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 633,
+      "pct": 37.7
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 133,
+      "pct": 7.9
+    },
+    {
+      "frame": "java.util.LinkedHashMap$Entry_[k]",
+      "samples": 108,
+      "pct": 6.4
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 98,
+      "pct": 5.8
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 79,
+      "pct": 4.7
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 61,
+      "pct": 3.6
+    },
+    {
+      "frame": "dev.stapler.stelekit.parsing.lexer.Token_[k]",
+      "samples": 41,
+      "pct": 2.4
+    },
+    {
+      "frame": "java.nio.DirectByteBuffer_[k]",
+      "samples": 39,
+      "pct": 2.3
+    },
+    {
+      "frame": "java.util.HashMap$Node[]_[k]",
+      "samples": 33,
+      "pct": 2.0
+    },
+    {
+      "frame": "java.util.Arrays$ArrayItr_[k]",
+      "samples": 29,
+      "pct": 1.7
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 42740,
+      "pct": 97.8
+    },
+    {
+      "frame": "/tmp/sqlite-3.51.3.0-43b9582c-d6fe-4c42-b6bc-4fbb84123014-libsqlitejdbc.so",
+      "samples": 352,
+      "pct": 0.8
+    },
+    {
+      "frame": "__libc_pwrite",
+      "samples": 157,
+      "pct": 0.4
+    },
+    {
+      "frame": "fsync",
+      "samples": 75,
+      "pct": 0.2
+    },
+    {
+      "frame": "SR_handler",
+      "samples": 43,
+      "pct": 0.1
+    },
+    {
+      "frame": "pthread_cond_signal",
+      "samples": 39,
+      "pct": 0.1
+    },
+    {
+      "frame": "clock_nanosleep",
+      "samples": 27,
+      "pct": 0.1
+    },
+    {
+      "frame": "pread",
+      "samples": 7,
+      "pct": 0.0
+    },
+    {
+      "frame": "__xstat64",
+      "samples": 5,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/util/HashMap.putVal_[j]",
+      "samples": 5,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": []
+}

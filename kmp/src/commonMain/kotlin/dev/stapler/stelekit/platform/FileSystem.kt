@@ -47,6 +47,38 @@ interface FileSystem {
     fun listFilesWithModTimes(path: String): List<Pair<String, Long>> =
         listFiles(path).map { name -> name to (getLastModifiedTime("$path/$name") ?: 0L) }
 
+    /**
+     * Recursively lists every file under [path] (relative to [path], using `/` separators),
+     * paired with its last-modified timestamp. Excludes any directory literally named `.git`
+     * at the root of the walk (git metadata has no SAF-side counterpart to mirror).
+     *
+     * Default implementation recurses using [listFiles]/[listDirectories]/[getLastModifiedTime] —
+     * sufficient for every platform's `FileSystem` actual, including Android's SAF-backed
+     * `PlatformFileSystem` (those three primitives are already SAF-aware there). Declared with a
+     * default body so only Android's shadow-worktree git sync (the sole current caller) needs to
+     * reason about this; `JvmFileSystem`/iOS/wasmJs actuals need zero changes to keep compiling
+     * (see stelekit's Android git shadow-worktree plan, Phase 1).
+     */
+    suspend fun listFilesRecursiveWithModTimes(path: String): List<Pair<String, Long>> {
+        val result = mutableListOf<Pair<String, Long>>()
+
+        fun walk(dir: String, relPrefix: String) {
+            for (fileName in listFiles(dir)) {
+                val relPath = if (relPrefix.isEmpty()) fileName else "$relPrefix/$fileName"
+                val mtime = getLastModifiedTime("$dir/$fileName") ?: 0L
+                result += relPath to mtime
+            }
+            for (dirName in listDirectories(dir)) {
+                if (relPrefix.isEmpty() && dirName == ".git") continue
+                val relPath = if (relPrefix.isEmpty()) dirName else "$relPrefix/$dirName"
+                walk("$dir/$dirName", relPath)
+            }
+        }
+
+        walk(path, "")
+        return result
+    }
+
     fun hasStoragePermission(): Boolean = true
     fun getLibraryDisplayName(): String? = null
     /** Human-readable name for a given graph path. Defaults to the last path segment. */
@@ -144,6 +176,16 @@ interface FileSystem {
      * ([dev.stapler.stelekit.performance.SloChecker]). No-op on platforms without write-behind.
      */
     fun setSpanEmitter(spanEmitter: dev.stapler.stelekit.performance.SpanEmitter?) {}
+
+    /**
+     * Registers a provider for the Android SAF shadow-git-worktree lock key (`GitShadowWorktree`'s
+     * `shadowKey`), so [flushPendingWrites] can serialize against a concurrent git shadow-worktree
+     * sync for the same graph (`GitWorktreeLocks`, plan.md Task 5.2.1c). Follows the same
+     * cross-layer callback pattern as [setOnFlushComplete]/[setOnFlushPreWrite]/[setOnFlushFailed]/
+     * [setSpanEmitter] above — `PlatformFileSystem` has no `GitConfig`/`repoRoot` in scope to
+     * derive this key itself. No-op on platforms without a git shadow worktree.
+     */
+    fun setGitShadowKeyProvider(provider: (() -> String?)?) {}
 
     /** Updates the shadow copy after a SAF write. No-op on non-SAF file systems. */
     fun updateShadow(path: String, content: String) { /* no-op */ }

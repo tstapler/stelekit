@@ -1,5 +1,65 @@
 # Changelog
 
+## [0.78.0](https://github.com/tstapler/stelekit/compare/v0.77.0...v0.78.0) (2026-09-01)
+
+
+### Features
+
+* **git:** surface duplicate block::id warnings in conflict resolution ([97d0953](https://github.com/tstapler/stelekit/commit/97d095393de6d91a42075d9e3e2b845377b62a90))
+
+## [0.77.0](https://github.com/tstapler/stelekit/compare/v0.76.0...v0.77.0) (2026-09-01)
+
+
+### Features
+
+* **android-git:** add GitShadowWorktree core and wire ensureFresh into AndroidGitRepository.openGit ([874e980](https://github.com/tstapler/stelekit/commit/874e9803380f76cd2d56734d840bfd6c96e006b7))
+* **android-git:** remap shadow-tree paths to SAF-facing paths at the AndroidGitRepository boundary ([adc5880](https://github.com/tstapler/stelekit/commit/adc588022f83c903b9249ca96bd228203f588a88))
+* **android-git:** shadow-to-SAF write-back queue and actor for merge/checkoutFile ([b06ec3f](https://github.com/tstapler/stelekit/commit/b06ec3f1c51a8afdb659fff139e1f84455d03c8a))
+* **android-git:** time-based shadow-tree orphan sweep and pre-clone storage guard ([26075e2](https://github.com/tstapler/stelekit/commit/26075e22a7f1e79468dd7352cc566d5ca3bf2f46))
+* **android-git:** wire real construction sites and cross-subsystem mutual exclusion ([7c87684](https://github.com/tstapler/stelekit/commit/7c87684095faeeff985c3a4de49b83d5458f3a99))
+* **git:** block-aware three-way merge for markdown conflicts ([08aa852](https://github.com/tstapler/stelekit/commit/08aa8529503f46ec53694e5efa9d457d26451615))
+* **git:** hunk-level merge conflict resolution ([26de2c9](https://github.com/tstapler/stelekit/commit/26de2c940f2bf7961e4c31d590e42cecaec6b935))
+* **git:** real diff3 three-way merge, replacing two unsafe heuristics ([aa6383c](https://github.com/tstapler/stelekit/commit/aa6383c903efd1b921d500709400673e5ecd65bd))
+
+
+### Bug Fixes
+
+* **android-git:** markResolved pulls fresh SAF content before staging, abortMerge reconciles shadow to SAF ([abaaf4c](https://github.com/tstapler/stelekit/commit/abaaf4ce73ed79e5d10abda6c01af56232109bca))
+* **android-git:** merge() must map shadow-relative paths, not repoRoot-prefixed ones ([6f1fcd3](https://github.com/tstapler/stelekit/commit/6f1fcd39f8bb4b79aee327598b3235a129709e84))
+* **git:** abortMerge() uses ResetType.HARD — JGit never implemented MERGE/KEEP ([5f1b4cf](https://github.com/tstapler/stelekit/commit/5f1b4cfe5538ba218f540676a45b92ec73d75ce8))
+
+## [0.76.0](https://github.com/tstapler/stelekit/compare/v0.75.0...v0.76.0) (2026-08-28)
+
+
+### Features
+
+* **capture:** auto-link + tag-suggest content captured via Android share sheet ([#288](https://github.com/tstapler/stelekit/issues/288)) ([4997932](https://github.com/tstapler/stelekit/commit/4997932445b407b5b0200d8c8675a57694ed0640))
+
+
+### Bug Fixes
+
+* **android:** close code-review gaps in whitespace normalization ([#281](https://github.com/tstapler/stelekit/issues/281)) ([06aa0ca](https://github.com/tstapler/stelekit/commit/06aa0ca709dcc6ab5deff72b541c8daca0347540))
+* **ci:** cap Gradle/Kotlin heap for CI runners to stop intermittent OOMs ([#287](https://github.com/tstapler/stelekit/issues/287)) ([a4ea6a7](https://github.com/tstapler/stelekit/commit/a4ea6a7236029a37e46339e3ded3bd53bdac2609))
+* **ci:** repair build-native-libs workflow (rules_rust platform + stale pinned Action SHAs) ([#279](https://github.com/tstapler/stelekit/issues/279)) ([e55da33](https://github.com/tstapler/stelekit/commit/e55da337fb553db98379b1fba26218f34f5317a8))
+* **ci:** stop F-Droid repo fallback from reverting to stale manual builds ([0e1b341](https://github.com/tstapler/stelekit/commit/0e1b3419b9e21a2f8e39c2daaf1c2d458b4be2da))
+* **git:** diagnose SAF git-sync failures and add log export ([d372e76](https://github.com/tstapler/stelekit/commit/d372e76b0e18f6646ffcee016e9aef0afd71a9c2))
+
+## [0.75.0](https://github.com/tstapler/stelekit/compare/v0.74.0...v0.75.0) (2026-08-27)
+
+
+### Features
+
+* **git-sync:** reusable credentials, web wikiSubdir support, ephemeral web mode ([bce8825](https://github.com/tstapler/stelekit/commit/bce8825cd6c51fe9b5721a44654e27add668da0b))
+
+
+### Bug Fixes
+
+* **fdroid:** seed repo icon at the path fdroid update actually checks ([1bd4d2c](https://github.com/tstapler/stelekit/commit/1bd4d2ca672f35861103f8f62b1e42b9b5a69cd3))
+* **test:** deflake disk-conflict rename tests ([5582771](https://github.com/tstapler/stelekit/commit/558277130aad25a262dd06bc11add401d4089ef3))
+* **web:** never enqueue a host write under an unstripped absolute path ([#283](https://github.com/tstapler/stelekit/issues/283)) ([7becc23](https://github.com/tstapler/stelekit/commit/7becc238c89627625e2a389df9ace401980689d2))
+* **web:** reorder HostReconnectBanner params to satisfy Detekt ComposableParamOrder ([5dbf015](https://github.com/tstapler/stelekit/commit/5dbf01500d77b01cbd5d698545ea668d52ebad76))
+* **web:** surface SyncDegraded folder-sync failures in a top banner ([#282](https://github.com/tstapler/stelekit/issues/282)) ([1efdd77](https://github.com/tstapler/stelekit/commit/1efdd771171d5342b07c37279f5a3b85ff866021))
+
 ## [0.74.0](https://github.com/tstapler/stelekit/compare/v0.73.0...v0.74.0) (2026-08-23)
 
 

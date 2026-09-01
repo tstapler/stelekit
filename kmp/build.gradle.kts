@@ -138,6 +138,11 @@ kotlin {
                 // ktoml — TOML parsing for .stele-sections manifest (excluded from wasmJs:
                 // ktoml generates WASM bytecode that fails wasm-opt validation)
                 implementation("com.akuleshov7:ktoml-core:0.7.1")
+                // JGit core — both jvmMain and androidMain already depend on this exact artifact
+                // independently (for the ssh transport variants, which do differ per-platform);
+                // hoisted here too so the shared block-aware-conflict helper
+                // (BlockAwareConflict.kt) can live once instead of duplicated per platform.
+                implementation("org.eclipse.jgit:org.eclipse.jgit:7.3.0.202506031305-r")
             }
         }
 
@@ -321,8 +326,9 @@ kotlin {
                 // JGit 7.x — Android git operations (matches Bazel-resolved version; desugaring handles Java 11 APIs)
                 implementation("org.eclipse.jgit:org.eclipse.jgit:7.3.0.202506031305-r")
                 // JGit SSH/JSch integration module (provides JschConfigSessionFactory)
+                // Version now matches core (7.3.0.202506031305-r) — no more version skew.
                 // Excludes com.jcraft:jsch so the mwiede fork below is the sole jsch on classpath
-                implementation("org.eclipse.jgit:org.eclipse.jgit.ssh.jsch:5.13.3.202401111512-r") {
+                implementation("org.eclipse.jgit:org.eclipse.jgit.ssh.jsch:7.3.0.202506031305-r") {
                     exclude(group = "com.jcraft", module = "jsch")
                 }
                 // mwiede/jsch fork — ED25519/ECDSA/OpenSSH key support for Android SSH

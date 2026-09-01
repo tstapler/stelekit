@@ -170,26 +170,29 @@ jobs:
         with:
           name: fdroid-content
           path: fdroid-content/
-      # Fallback: restore from the most recent successful fdroid.yml run.
+      # Fallback: restore the most recent fdroid-content artifact repo-wide.
+      # release.yml invokes fdroid.yml as a reusable workflow call, so builds
+      # triggered by a real release are attributed to release.yml's run, not
+      # fdroid.yml's — `gh run list --workflow fdroid.yml` can never see them,
+      # only standalone `workflow_dispatch` runs. That previously made this
+      # fallback resurrect a stale manual-dispatch build and silently drop the
+      # latest release from the deployed F-Droid repo. `gh run download` with
+      # no run id searches artifacts by name across the whole repo instead
+      # (same pattern as the app-dist fallback above), so it picks up the
+      # newest fdroid-content regardless of which workflow produced it.
       - id: download-fdroid-fallback
-        name: Restore fdroid content (last successful fdroid run)
+        name: Restore fdroid content (latest available, fallback)
         if: steps.download-fdroid.outcome == 'failure'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          LAST_RUN=$(gh run list --workflow fdroid.yml --status success --limit 1 \
-            --json databaseId --jq '.[0].databaseId // empty')
-          if [ -n "$LAST_RUN" ]; then
-            gh run download "$LAST_RUN" --name fdroid-content --dir fdroid-content/ || true
-            # upload-artifact@v4 strips the common path prefix (fdroid/) when
-            # multiple paths share it, so the artifact lands at repo/ not fdroid/repo/.
-            [ -d fdroid-content/repo ] && \
-              echo "Restored fdroid-content from run $LAST_RUN" || \
-              echo "Download succeeded but repo/ missing in run $LAST_RUN"
-          else
-            echo "No previous successful fdroid run found; fdroid content will be absent"
-          fi
+          gh run download --name fdroid-content --dir fdroid-content/ || true
+          # upload-artifact@v4 strips the common path prefix (fdroid/) when
+          # multiple paths share it, so the artifact lands at repo/ not fdroid/repo/.
+          [ -d fdroid-content/repo ] && \
+            echo "Restored latest available fdroid-content" || \
+            echo "Download succeeded but repo/ missing; fdroid content will be absent"
 
       - uses: actions/configure-pages@v5
       - uses: actions/setup-node@v4
