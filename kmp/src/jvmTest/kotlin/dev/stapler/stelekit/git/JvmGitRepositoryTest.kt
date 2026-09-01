@@ -100,6 +100,11 @@ class JvmGitRepositoryTest {
      * tree into hunks (via [ConflictResolver.parseConflictFile]) for line-level resolution,
      * instead of always shipping an empty hunk list — the pre-existing gap the conflict-resolution
      * project closes. `JvmGitRepositoryTest` had zero merge-conflict coverage at all before this.
+     *
+     * Uses a single-bullet page (not raw unbulleted text) because merge() now re-derives `.md`
+     * conflicts via the block-aware merge ([tryBlockAwareConflict]) before falling back to JGit's
+     * raw line markers — see that function's doc — and the block serializer always canonicalizes
+     * a block back out with a `- ` prefix, mirroring [LogseqPageSerializer]'s own on-save format.
      */
     @Test
     fun `merge conflict reports real conflict marker content parsed into hunks`() = runTest {
@@ -108,7 +113,7 @@ class JvmGitRepositoryTest {
         val baseBranch = Git.open(File(config.repoRoot)).use { it.repository.branch }
         val mergeConfig = config.copy(remoteBranch = baseBranch)
 
-        File(config.repoRoot, "conflict.md").writeText("base\n")
+        File(config.repoRoot, "conflict.md").writeText("- base\n")
         assertTrue(repository.stageSubdir(mergeConfig).isRight())
         assertTrue(repository.commit(mergeConfig, "base commit").isRight())
 
@@ -123,13 +128,13 @@ class JvmGitRepositoryTest {
         val originWorkDir = createTempDirectory("stelekit_jvm_git_merge_origin_work_").toFile()
         Git.cloneRepository().setURI(originDir.absolutePath).setDirectory(originWorkDir).call().use { originGit ->
             setIdentity(originGit)
-            File(originWorkDir, "conflict.md").writeText("remote version\n")
+            File(originWorkDir, "conflict.md").writeText("- remote version\n")
             originGit.add().addFilepattern(".").call()
             originGit.commit().setMessage("remote change").call()
             originGit.push().call()
         }
 
-        File(config.repoRoot, "conflict.md").writeText("local version\n")
+        File(config.repoRoot, "conflict.md").writeText("- local version\n")
         assertTrue(repository.stageSubdir(mergeConfig).isRight())
         assertTrue(repository.commit(mergeConfig, "local change").isRight())
 
@@ -143,12 +148,75 @@ class JvmGitRepositoryTest {
         val conflict = merge.conflicts.single()
         assertEquals(1, conflict.hunks.size, "expected exactly one conflicting hunk")
         val hunk = conflict.hunks.single()
-        assertEquals(listOf("local version"), hunk.localLines)
-        assertEquals(listOf("remote version"), hunk.remoteLines)
+        assertEquals(listOf("- local version"), hunk.localLines)
+        assertEquals(listOf("- remote version"), hunk.remoteLines)
         assertTrue(
             conflict.rawContent?.contains("<<<<<<<") == true,
             "ConflictFile.rawContent must carry the real conflict-marker content, got: ${conflict.rawContent}",
         )
+    }
+
+    /**
+     * End-to-end (real JGit merge, not the pure [dev.stapler.stelekit.git.merge.BlockDiff3Test]
+     * unit coverage) check that a one-sided reparent and an unrelated, non-adjacent edit reach
+     * `merge()` cleanly through the real JGit path when a genuine two-sided-unchanged block (`C`)
+     * separates them.
+     *
+     * Empirically found while writing this test (via an earlier, wrong version that put the edit
+     * on the block immediately adjacent to the reparented one): a reparented block cannot itself
+     * serve as an anchor, since [dev.stapler.stelekit.git.merge.BlockDiff3]'s key intentionally
+     * includes nesting `level` — reparenting IS a content-relevant change, by design (see that
+     * class's doc). With no unchanged block between a reparent and a nearby edit, both regions
+     * collapse into one ungrouped span and conflict — the exact same outcome JGit's own line diff
+     * already produces for that shape, not a regression. This test instead places an untouched
+     * block between the two edits, which both algorithms treat as a valid split point.
+     */
+    @Test
+    fun `merge auto-resolves a reparented block and a distant edit separated by an untouched block`() = runTest {
+        assertTrue(repository.init(config.repoRoot).isRight())
+        Git.open(File(config.repoRoot)).use { git -> setIdentity(git) }
+        val baseBranch = Git.open(File(config.repoRoot)).use { it.repository.branch }
+        val mergeConfig = config.copy(remoteBranch = baseBranch)
+
+        File(config.repoRoot, "page.md").writeText("- A\n- B\n- C\n- D\n")
+        assertTrue(repository.stageSubdir(mergeConfig).isRight())
+        assertTrue(repository.commit(mergeConfig, "base commit").isRight())
+
+        val originDir = createTempDirectory("stelekit_jvm_git_merge_origin2_").toFile()
+        Git.cloneRepository().setURI(config.repoRoot).setBare(true).setDirectory(originDir).call().close()
+        Git.open(File(config.repoRoot)).use { git ->
+            git.remoteAdd().setName("origin")
+                .setUri(org.eclipse.jgit.transport.URIish(originDir.absolutePath))
+                .call()
+        }
+
+        // remote reparents B under A only; C and D untouched.
+        val originWorkDir = createTempDirectory("stelekit_jvm_git_merge_origin_work2_").toFile()
+        Git.cloneRepository().setURI(originDir.absolutePath).setDirectory(originWorkDir).call().use { originGit ->
+            setIdentity(originGit)
+            File(originWorkDir, "page.md").writeText("- A\n\t- B\n- C\n- D\n")
+            originGit.add().addFilepattern(".").call()
+            originGit.commit().setMessage("reparent B").call()
+            originGit.push().call()
+        }
+
+        // local edits D only; A/B/C untouched — C separates the two edited regions.
+        File(config.repoRoot, "page.md").writeText("- A\n- B\n- C\n- D edited\n")
+        assertTrue(repository.stageSubdir(mergeConfig).isRight())
+        assertTrue(repository.commit(mergeConfig, "edit D").isRight())
+
+        assertTrue(repository.fetch(mergeConfig).isRight())
+        val mergeResult = repository.merge(mergeConfig)
+        assertTrue(mergeResult.isRight(), "merge failed: $mergeResult")
+        val merge = (mergeResult as Either.Right).value
+        assertFalse(
+            merge.hasConflicts,
+            "expected a reparent and a distant edit, separated by an untouched block, to auto-resolve: $merge",
+        )
+
+        val merged = File(config.repoRoot, "page.md").readText()
+        assertTrue(merged.contains("\t- B"), "expected B reparented under A in merged content, got: $merged")
+        assertTrue(merged.contains("- D edited"), "expected local's edit to D preserved, got: $merged")
     }
 
     /**

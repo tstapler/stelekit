@@ -244,15 +244,24 @@ class JvmGitRepository(
                                 filePath
                             }
                             // JGit already wrote real conflict-marker content directly into the
-                            // working tree at absolutePath (Desktop has no shadow indirection) —
-                            // parse it into hunks for line-level resolution. Falls back to an
-                            // empty hunk list (UI resolves this one file whole) for binary content,
-                            // rename-only conflicts, or anything else that isn't marker-parseable.
-                            val markerContent = runCatching { File(absolutePath).readText() }.getOrNull()
-                            val hunks = markerContent?.let {
+                            // working tree at absolutePath (Desktop has no shadow indirection).
+                            // For markdown, prefer re-deriving that content via the block-aware
+                            // merge (tryBlockAwareConflict) over JGit's own line-level markers —
+                            // see that function's doc. Falls back to JGit's line-level marker
+                            // content, parsed the same way, for non-markdown/unparseable files.
+                            val jgitMarkerContent = runCatching { File(absolutePath).readText() }.getOrNull()
+                            val blockAware = tryBlockAwareConflict(repo, filePath, absolutePath, config.wikiRoot)
+                            val markerContent = blockAware?.markerText ?: jgitMarkerContent
+                            val hunks = blockAware?.hunks ?: markerContent?.let {
                                 ConflictResolver().parseConflictFile(absolutePath, it, config.wikiRoot)
                                     .getOrNull()?.hunks
                             } ?: emptyList()
+                            // Keep the working-tree file in sync with what the app will resolve
+                            // against — otherwise a block-merge conflict re-derivation would be
+                            // invisible to anything reading the file directly off disk.
+                            if (blockAware != null) {
+                                runCatching { File(absolutePath).writeText(blockAware.markerText) }
+                            }
                             ConflictFile(
                                 filePath = absolutePath,
                                 wikiRelativePath = wikiRelPath,

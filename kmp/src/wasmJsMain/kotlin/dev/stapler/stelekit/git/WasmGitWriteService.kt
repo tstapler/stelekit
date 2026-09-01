@@ -27,6 +27,7 @@ import dev.stapler.stelekit.git.model.GitLabCompareResponse
 import dev.stapler.stelekit.git.model.GitLabTreeEntry
 import dev.stapler.stelekit.git.merge.Diff3
 import dev.stapler.stelekit.git.merge.hasConflicts
+import dev.stapler.stelekit.git.merge.mergeMarkdownBlocks
 import dev.stapler.stelekit.git.merge.toTwoWayConflictMarkerText
 import dev.stapler.stelekit.git.model.GitRefResponse
 import dev.stapler.stelekit.git.model.GitRefUpdateRequest
@@ -909,12 +910,34 @@ class WasmGitWriteService(
         // checkoutFile's REMOTE-side resolution already uses) — no extra ref-sha fetch needed.
         val remoteContent = fetchRemoteFileContent(hostConfig, apiPath, hostConfig.branch).getOrNull() ?: return fallback
 
-        val chunks = Diff3.merge(baseContent.lines(), localContent.lines(), remoteContent.lines())
-        val markerText = chunks.toTwoWayConflictMarkerText(localLabel = "local", remoteLabel = hostConfig.branch)
-        // Diff3 finding no actual line-level overlap (despite the path-level partition flagging
-        // both sides as touching this file) still surfaces as a conflict per this function's doc
-        // — hunks stay empty and the whole-file "Keep mine"/"Use remote" pick degrades safely.
-        val hunks = if (chunks.hasConflicts()) {
+        // Page/journal markdown gets the block-aware merge (BlockDiff3) — it aligns whole
+        // outline blocks by content instead of raw text lines, so a conflict never splits a
+        // block in half and a block moved to a different parent (unlike a plain line edit)
+        // registers as a real change instead of silently vanishing. Any other .md-adjacent file
+        // this repo tracks (or a block parse failure — defensive at this API-content boundary)
+        // falls back to the line-level Diff3 already in use.
+        val blockResult = if (path.endsWith(".md")) {
+            runCatching {
+                mergeMarkdownBlocks(baseContent, localContent, remoteContent)
+            }.getOrNull()
+        } else {
+            null
+        }
+
+        val markerText: String
+        val hasConflicts: Boolean
+        if (blockResult != null) {
+            markerText = blockResult.toTwoWayConflictMarkerText(localLabel = "local", remoteLabel = hostConfig.branch)
+            hasConflicts = blockResult.hasConflicts()
+        } else {
+            val chunks = Diff3.merge(baseContent.lines(), localContent.lines(), remoteContent.lines())
+            markerText = chunks.toTwoWayConflictMarkerText(localLabel = "local", remoteLabel = hostConfig.branch)
+            hasConflicts = chunks.hasConflicts()
+        }
+        // Finding no actual overlap (despite the path-level partition flagging both sides as
+        // touching this file) still surfaces as a conflict per this function's doc — hunks stay
+        // empty and the whole-file "Keep mine"/"Use remote" pick degrades safely.
+        val hunks = if (hasConflicts) {
             ConflictResolver().parseConflictFile(path, markerText, wikiRoot = "").getOrNull()?.hunks ?: emptyList()
         } else {
             emptyList()

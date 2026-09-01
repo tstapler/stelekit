@@ -317,19 +317,29 @@ class AndroidGitRepository(
                             // Read the real conflict-marker content JGit just wrote into the
                             // working tree — the shadow tree in shadow-mirror mode, the real
                             // repoRoot-relative file otherwise (mirrors JvmGitRepository, which
-                            // has no shadow indirection at all) — and parse it into hunks for
-                            // line-level resolution instead of forcing every conflict through a
-                            // blunt whole-file pick-a-side. Falls back to an empty hunk list (UI
-                            // resolves this one file whole) for binary content, rename-only
-                            // conflicts, or anything else parseConflictFile can't handle.
-                            val markerContent = worktree?.readShadowFile(filePath)
+                            // has no shadow indirection at all). For markdown, prefer re-deriving
+                            // that content via the block-aware merge (tryBlockAwareConflict) over
+                            // JGit's own line-level markers — see that function's doc. Falls back
+                            // to JGit's line-level marker content, parsed the same way, for
+                            // non-markdown/unparseable files or binary/rename-only conflicts.
+                            val jgitMarkerContent = worktree?.readShadowFile(filePath)
                                 ?: runCatching {
                                     File(resolveForJGit(config.repoRoot), filePath).readText()
                                 }.getOrNull()
-                            val hunks = markerContent?.let {
+                            val blockAware = tryBlockAwareConflict(repo, filePath, absolutePath, config.wikiRoot)
+                            val markerContent = blockAware?.markerText ?: jgitMarkerContent
+                            val hunks = blockAware?.hunks ?: markerContent?.let {
                                 ConflictResolver().parseConflictFile(absolutePath, it, config.wikiRoot)
                                     .getOrNull()?.hunks
                             } ?: emptyList()
+
+                            // Keep the shadow tree (and, best-effort, SAF) in sync with what the
+                            // app will resolve against — mirrors the pre-existing write-back below,
+                            // now seeded with the block-merge text instead of JGit's own when one
+                            // was derived.
+                            if (worktree != null && blockAware != null) {
+                                worktree.writeShadowFile(filePath, blockAware.markerText)
+                            }
 
                             // Best-effort: also write the marker content back to SAF (through the
                             // same write-back actor Phase 3's clean-merge path uses, so a

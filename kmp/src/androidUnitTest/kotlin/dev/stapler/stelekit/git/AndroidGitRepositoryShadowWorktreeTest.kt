@@ -136,7 +136,11 @@ class AndroidGitRepositoryShadowWorktreeTest {
             val repoRoot = "saf://content%3A%2F%2Fcom.android.externalstorage.documents%2Ftree%2Fprimary%3Awiki-merge"
             val repository = newRepository(fs)
 
-            fs.seed("$repoRoot/conflict.md", "base\n")
+            // Bulleted single-block content: merge() now re-derives `.md` conflicts via the
+            // block-aware merge (tryBlockAwareConflict) before falling back to JGit's raw line
+            // markers — see that function's doc — and its serializer always canonicalizes a
+            // block back out with a `- ` prefix, mirroring LogseqPageSerializer's on-save format.
+            fs.seed("$repoRoot/conflict.md", "- base\n")
 
             registerAmpleStorage(repository, repoRoot)
             val initResult = repository.init(repoRoot)
@@ -173,7 +177,7 @@ class AndroidGitRepositoryShadowWorktreeTest {
             val originWorkDir = createTempDirectory("stelekit_git_origin_work_").toFile()
             Git.cloneRepository().setURI(originDir.absolutePath).setDirectory(originWorkDir).call().use { originGit ->
                 setTestIdentity(originGit)
-                File(originWorkDir, "conflict.md").writeText("remote version\n")
+                File(originWorkDir, "conflict.md").writeText("- remote version\n")
                 originGit.add().addFilepattern(".").call()
                 originGit.commit().setMessage("remote change").call()
                 originGit.push().call()
@@ -181,7 +185,7 @@ class AndroidGitRepositoryShadowWorktreeTest {
 
             // Local-side divergent commit, driven through the fake SAF provider (mirrors a real
             // edit made through the app), not by touching the shadow tree directly.
-            fs.seed("$repoRoot/conflict.md", "local version\n")
+            fs.seed("$repoRoot/conflict.md", "- local version\n")
             assertTrue(repository.stageSubdir(config).isRight())
             assertTrue(repository.commit(config, "local change").isRight())
 
@@ -210,10 +214,13 @@ class AndroidGitRepositoryShadowWorktreeTest {
             // merge() must parse the real conflict-marker content JGit wrote into the shadow tree
             // into hunks the UI can resolve line by line, instead of always shipping an empty
             // hunk list (the pre-existing gap this project's conflict-resolution work closes).
+            // For markdown, this now goes through the block-aware merge (tryBlockAwareConflict)
+            // rather than JGit's own line-level markers — see that function's doc — hence the
+            // canonicalized `- ` prefix on both sides below.
             assertEquals(1, conflict.hunks.size, "expected exactly one conflicting hunk")
             val hunk = conflict.hunks.single()
-            assertEquals(listOf("local version"), hunk.localLines)
-            assertEquals(listOf("remote version"), hunk.remoteLines)
+            assertEquals(listOf("- local version"), hunk.localLines)
+            assertEquals(listOf("- remote version"), hunk.remoteLines)
             assertTrue(
                 conflict.rawContent?.contains("<<<<<<<") == true,
                 "ConflictFile.rawContent must carry the real conflict-marker content, got: ${conflict.rawContent}",
@@ -228,10 +235,13 @@ class AndroidGitRepositoryShadowWorktreeTest {
             )
 
             // Task 8.2.1c: resolve via checkoutFile(LOCAL) and confirm the fake SAF provider's
-            // content was updated to match what was checked out.
+            // content was updated to match what was checked out. checkoutFile reads straight from
+            // git's LOCAL blob (unaffected by the block-aware re-derivation above, which only
+            // touches conflict-marker display/resolution content, not git object content), so the
+            // original unbulleted seed content round-trips here verbatim.
             val checkoutResult = repository.checkoutFile(config, conflict.filePath, MergeSide.LOCAL)
             assertTrue(checkoutResult.isRight(), "checkoutFile failed: $checkoutResult")
-            assertEquals("local version\n", fs.readFile(conflict.filePath))
+            assertEquals("- local version\n", fs.readFile(conflict.filePath))
         }
 
     // ── Task 4.1.1b: markResolved() pulls fresh SAF content into the shadow tree ───────────

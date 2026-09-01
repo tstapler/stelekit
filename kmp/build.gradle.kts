@@ -138,6 +138,11 @@ kotlin {
                 // ktoml — TOML parsing for .stele-sections manifest (excluded from wasmJs:
                 // ktoml generates WASM bytecode that fails wasm-opt validation)
                 implementation("com.akuleshov7:ktoml-core:0.7.1")
+                // JGit core — both jvmMain and androidMain already depend on this exact artifact
+                // independently (for the ssh transport variants, which do differ per-platform);
+                // hoisted here too so the shared block-aware-conflict helper
+                // (BlockAwareConflict.kt) can live once instead of duplicated per platform.
+                implementation("org.eclipse.jgit:org.eclipse.jgit:7.3.0.202506031305-r")
             }
         }
 
