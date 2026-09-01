@@ -29,6 +29,7 @@ import dev.stapler.stelekit.ui.components.settings.ReconciliationUiState
 import kotlinx.browser.localStorage
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 private fun markSteleKitReady(): Unit = js("window.__stelekit_ready = true")
@@ -253,6 +254,22 @@ fun main() {
         graphManager.addDemoGraph()
         if (isNewUser || useDemoFallback) {
             graphManager.switchGraph(DEMO_GRAPH_ID)
+        }
+
+        // Bug fix: opfsFileSystem's graphId/hostDirectorySync were only ever wired to the boot-time
+        // graph above (opfsGraphPath/reconnectHostDirectory) — GraphManager's multi-graph switcher
+        // (the sidebar graph dropdown) can activate a different graph at any time afterward, and
+        // nothing told opfsFileSystem. Keep it in sync for the life of the session; skips the demo
+        // graph (never OPFS-backed) and no-ops in demo-fallback mode (no real fileSystem to update).
+        if (!useDemoFallback) {
+            scope.launch {
+                graphManager.graphRegistry.collect { registry ->
+                    val activeId = registry.activeGraphId ?: return@collect
+                    if (activeId == DEMO_GRAPH_ID) return@collect
+                    val info = registry.graphs.firstOrNull { it.id == activeId } ?: return@collect
+                    opfsFileSystem.switchActiveGraph(info.path)
+                }
+            }
         }
 
         markSteleKitReady()

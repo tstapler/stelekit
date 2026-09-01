@@ -138,6 +138,36 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         restoreDirtySetMarker()
     }
 
+    /**
+     * Re-points this [PlatformFileSystem] (and its composed [hostDirectorySync]) at [graphPath]
+     * after `GraphManager.switchGraph()` changes the active graph.
+     *
+     * Bug fix: [graphId] — read by [hostDirectorySync] via `graphIdProvider` for every
+     * persisted-handle lookup, poll/write lock name, and write-through path check — used to be set
+     * only once, by [preload] at startup. Switching graphs via `GraphManager`'s multi-graph
+     * registry (e.g. the graph switcher) never called back into this class, so `graphId` stayed
+     * pinned to whichever graph was active at page load: every write for a *different* active
+     * graph (an absolute path under that graph's own root) failed `HostDirectorySync`'s
+     * `repoRelativePath` prefix check against the stale `hostGraphOpfsPath`, so
+     * `scheduleHostWriteThrough` silently dropped it ("no valid host-relative path") — the graph
+     * looked idle/unsynced no matter what was edited.
+     *
+     * No-ops if [graphPath] resolves to the already-active graph. Otherwise disconnects any host
+     * directory connection for the previous graph first ([HostDirectorySync.disconnectForGraphSwitch]
+     * — a graph with no host connection of its own must never keep polling/observing the prior
+     * graph's directory), reloads this graph's own OPFS content/dirty-marker via [preload], then
+     * attempts to silently resume this graph's own persisted host connection, if any, via
+     * [HostDirectorySync.reconnectHostDirectory] — mirroring what [preload]/`reconnectHostDirectory`
+     * already do together at startup, just re-run per switch instead of once.
+     */
+    suspend fun switchActiveGraph(graphPath: String) {
+        val newGraphId = graphPath.removePrefix("$homeDir/").substringBefore("/")
+        if (newGraphId == graphId) return
+        hostDirectorySync.disconnectForGraphSwitch()
+        preload(graphPath)
+        hostDirectorySync.reconnectHostDirectory(newGraphId)
+    }
+
     private fun markerPath(): String = "$homeDir/$graphId/.stele-dirty-set.json"
 
     /** Crash-safe: absent or malformed marker leaves the dirty set empty, never throws. */

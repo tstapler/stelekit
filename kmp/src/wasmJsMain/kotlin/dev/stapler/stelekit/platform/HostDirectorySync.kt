@@ -662,12 +662,20 @@ class HostDirectorySync(
      * [reconnectHostDirectory]) or the user re-ran the connect flow from Settings. Now mirrors
      * [connectHostDirectory]'s success path so live sync starts immediately after the initial
      * import, same as every other path that attaches a handle.
+     *
+     * Bug fix: persists keyed by [dirName] — the graph actually being attached — not
+     * [graphIdProvider]. This runs from `PlatformFileSystem.pickDirectoryAsync()` before the
+     * caller has registered/switched to the new graph in `GraphManager`, so `graphIdProvider()`
+     * still resolves to whichever graph was previously active; keying the envelope off it there
+     * silently persisted the new handle under the wrong graph's id, and
+     * [reconnectHostDirectory]/[requestHostDirectoryAccess] — both keyed by the *actual* active
+     * graph id on lookup — would never find it again in a later session.
      */
     suspend fun attachFreshHandle(dirHandle: JsAny, opfsPath: String) {
         hostDirHandle = dirHandle
         hostGraphOpfsPath = opfsPath
         val dirName = opfsPath.substringAfterLast("/")
-        persistHostHandle(graphIdProvider(), dirName, dirHandle)
+        persistHostHandle(dirName, dirName, dirHandle)
         scope.launch {
             val granted = requestStoragePersistence()
             logger.debug("storage.persist(): granted=$granted")
@@ -809,6 +817,27 @@ class HostDirectorySync(
         }
         setHostAccessState(result)
         return result
+    }
+
+    /**
+     * Tears down this instance's connection to whichever graph it was last wired to, before
+     * [PlatformFileSystem.switchActiveGraph] reconnects it against a newly-active graph.
+     *
+     * Without this, switching from a host-connected graph A to graph B left [hostDirHandle]/
+     * [hostGraphOpfsPath] pointing at A: [reconnectHostDirectory] only overwrites them on its
+     * `"granted"` branch, so a graph B with no persisted host handle of its own (the common case)
+     * would resolve to [HostAccessState.NotApplicable] while the poller/observer kept running
+     * against A's directory under B's now-active tab — the root cause this fix addresses (see
+     * `hostGraphOpfsPath`'s mismatch diagnostic added in the previous commit).
+     */
+    internal fun disconnectForGraphSwitch() {
+        stopHostDirectoryPolling()
+        hostChangeObserver?.let { disconnectObserver(it) }
+        hostChangeObserver = null
+        observerConfirmedActive = false
+        hostDirHandle = null
+        hostGraphOpfsPath = null
+        setHostAccessState(HostAccessState.NotApplicable)
     }
 
     // ── Epic 2.2 (Story 2.2.1): reconnectHostDirectory — silent resume, always reconciling ────
