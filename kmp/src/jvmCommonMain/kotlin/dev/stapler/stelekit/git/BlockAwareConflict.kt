@@ -1,5 +1,7 @@
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.git.merge.DuplicateBlockId
+import dev.stapler.stelekit.git.merge.findDuplicateBlockIds
 import dev.stapler.stelekit.git.merge.hasConflicts
 import dev.stapler.stelekit.git.merge.mergeMarkdownBlocks
 import dev.stapler.stelekit.git.merge.toTwoWayConflictMarkerText
@@ -7,8 +9,16 @@ import dev.stapler.stelekit.git.model.ConflictHunk
 import org.eclipse.jgit.dircache.DirCacheEntry
 import org.eclipse.jgit.lib.Repository
 
-/** [markerText] is ready to write back to the working tree; [hunks] is ready for [ConflictFile.hunks]. */
-data class BlockAwareConflictResolution(val markerText: String, val hunks: List<ConflictHunk>)
+/**
+ * [markerText] is ready to write back to the working tree; [hunks] is ready for
+ * [dev.stapler.stelekit.git.model.ConflictFile.hunks]; [duplicateBlockIds] is ready for
+ * [dev.stapler.stelekit.git.model.ConflictFile.duplicateBlockIds].
+ */
+data class BlockAwareConflictResolution(
+    val markerText: String,
+    val hunks: List<ConflictHunk>,
+    val duplicateBlockIds: List<DuplicateBlockId>,
+)
 
 /**
  * Shared by [dev.stapler.stelekit.git.AndroidGitRepository] and
@@ -49,7 +59,7 @@ fun tryBlockAwareConflict(
     } else {
         emptyList()
     }
-    return BlockAwareConflictResolution(markerText, hunks)
+    return BlockAwareConflictResolution(markerText, hunks, chunks.findDuplicateBlockIds())
 }
 
 /** The base/local/remote blob content for [path]'s three unmerged stages, or null if any stage is missing/unreadable. */

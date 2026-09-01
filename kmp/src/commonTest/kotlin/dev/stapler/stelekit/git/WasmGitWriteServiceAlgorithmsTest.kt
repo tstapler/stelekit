@@ -11,6 +11,7 @@ import dev.stapler.stelekit.git.model.DirtyOp
 import dev.stapler.stelekit.git.model.GitLabCommitAction
 import dev.stapler.stelekit.git.model.GitTreeEntry
 import dev.stapler.stelekit.git.merge.Diff3
+import dev.stapler.stelekit.git.merge.findDuplicateBlockIds
 import dev.stapler.stelekit.git.merge.hasConflicts
 import dev.stapler.stelekit.git.merge.mergeMarkdownBlocks
 import dev.stapler.stelekit.git.merge.toTwoWayConflictMarkerText
@@ -654,7 +655,13 @@ class WasmGitWriteServiceAlgorithmsTest {
         } else {
             emptyList()
         }
-        return ConflictFile(filePath = path, wikiRelativePath = path, hunks = hunks, rawContent = markerText)
+        return ConflictFile(
+            filePath = path,
+            wikiRelativePath = path,
+            hunks = hunks,
+            rawContent = markerText,
+            duplicateBlockIds = blockResult?.findDuplicateBlockIds() ?: emptyList(),
+        )
     }
 
     @Test
@@ -713,6 +720,36 @@ class WasmGitWriteServiceAlgorithmsTest {
         // canonicalization; content is preserved verbatim, unlike the `.md` case above.
         assertEquals(listOf("X"), result.hunks.single().localLines)
         assertEquals(listOf("B", "Y"), result.hunks.single().remoteLines)
+    }
+
+    @Test
+    fun `buildConflictFile surfaces duplicateBlockIds even when the merge itself is conflict-free`() {
+        // local leaves the page untouched; remote appends a new block that happens to reuse an
+        // existing id:: — a clean, no-conflict merge (nothing for the whole-file/hunk UI to flag)
+        // that would otherwise silently ship two blocks sharing one id — invisible to a plain
+        // line-level merge, and invisible to the conflict list itself without duplicateBlockIds.
+        val base = "- first\n  id:: dup\n- second\n  id:: other\n"
+        val local = base
+        val remote = "- first\n  id:: dup\n- second\n  id:: other\n- third\n  id:: dup\n"
+
+        val result = modelledBuildConflictFile("f.md", local, base, remote)
+
+        assertTrue(result.hunks.isEmpty(), "expected a clean auto-merge with nothing to review: ${result.hunks}")
+        assertTrue(
+            result.duplicateBlockIds.any { it.id == "dup" && it.occurrences >= 2 },
+            "expected a duplicate 'dup' id to be surfaced despite the clean merge, got: ${result.duplicateBlockIds}",
+        )
+    }
+
+    @Test
+    fun `buildConflictFile never populates duplicateBlockIds for a non-markdown path`() {
+        val base = "- first\n  id:: dup\n- second\n  id:: other\n"
+        val local = base
+        val remote = "- first\n  id:: dup\n- second\n  id:: other\n- third\n  id:: dup\n"
+
+        val result = modelledBuildConflictFile("f.txt", local, base, remote)
+
+        assertTrue(result.duplicateBlockIds.isEmpty())
     }
 
     // ── TC-3.3.2-B: deleted-locally-but-edited-remotely edge case ───────────────────────────

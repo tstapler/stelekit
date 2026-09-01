@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.git.model
 
+import dev.stapler.stelekit.git.merge.DuplicateBlockId
 import kotlinx.serialization.Serializable
 
 /**
@@ -19,12 +20,19 @@ import kotlinx.serialization.Serializable
  * a write-back of this content to SAF (Android shadow-mirror mode) is best-effort and may lose a
  * race against a concurrent user edit, whereas this captured copy is always available. Null only
  * when hunks is also empty (nothing to resolve at the hunk level for this file).
+ * @property duplicateBlockIds `id::` values reused by more than one distinct block across this
+ * file's merge inputs, from [dev.stapler.stelekit.git.merge.BlockDiff3]'s block-aware merge — see
+ * [dev.stapler.stelekit.git.merge.findDuplicateBlockIds]'s doc. Always empty when this conflict
+ * went through the line-level fallback instead (non-markdown path, or a block-parse failure).
+ * Informational only: resolving the conflict normally does not clear a duplicate id, since the
+ * two colliding blocks may both survive into the merged result.
  */
 data class ConflictFile(
     val filePath: String,
     val wikiRelativePath: String,
     val hunks: List<ConflictHunk>,
     val rawContent: String? = null,
+    val duplicateBlockIds: List<DuplicateBlockId> = emptyList(),
 )
 
 data class ConflictHunk(

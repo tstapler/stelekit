@@ -151,16 +151,23 @@ data class DuplicateBlockId(val id: String, val occurrences: Int)
  * merge can't fix on its own — block-ref lookups elsewhere in the app resolve by `id::`, so a
  * collision would make one of the two blocks unreachable by reference. Surfaced as a warning for
  * the caller to show, not auto-resolved.
+ *
+ * A [BlockDiff3Chunk.Conflict]'s `local`/`remote` blocks are counted as at most one occurrence
+ * per distinct id, not two: those are competing edits of the *same* logical block (that's exactly
+ * why they landed in one conflict chunk together — see [BlockDiff3]'s anchor-matching doc), not
+ * two independently-existing blocks. Counting both sides there would flag every ordinary same-id
+ * content conflict as a duplicate, which it isn't.
  */
 fun List<BlockDiff3Chunk>.findDuplicateBlockIds(): List<DuplicateBlockId> {
-    val allBlocks = flatMap { chunk ->
+    val idOccurrences = flatMap { chunk ->
         when (chunk) {
-            is BlockDiff3Chunk.Stable -> chunk.blocks
-            is BlockDiff3Chunk.Conflict -> chunk.local + chunk.remote
+            is BlockDiff3Chunk.Stable -> chunk.blocks.mapNotNull { it.properties["id"]?.takeIf(String::isNotBlank) }
+            is BlockDiff3Chunk.Conflict -> (chunk.local + chunk.remote)
+                .mapNotNull { it.properties["id"]?.takeIf(String::isNotBlank) }
+                .distinct()
         }
     }
-    return allBlocks.mapNotNull { it.properties["id"]?.takeIf(String::isNotBlank) }
-        .groupingBy { it }.eachCount()
+    return idOccurrences.groupingBy { it }.eachCount()
         .filterValues { it > 1 }
         .map { (id, count) -> DuplicateBlockId(id, count) }
 }

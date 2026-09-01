@@ -267,6 +267,7 @@ class JvmGitRepository(
                                 wikiRelativePath = wikiRelPath,
                                 hunks = hunks,
                                 rawContent = markerContent,
+                                duplicateBlockIds = blockAware?.duplicateBlockIds ?: emptyList(),
                             )
                         } ?: emptyList()
                     } else {

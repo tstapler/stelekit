@@ -119,6 +119,23 @@ class BlockDiff3Test {
     }
 
     @Test
+    fun `findDuplicateBlockIds does not flag an ordinary same-id conflict as a duplicate`() {
+        // local and remote both edited the SAME id-tagged block differently — a normal content
+        // conflict (see the id-tracking tests above), not two distinct blocks sharing an id.
+        val base = listOf(blk("original", id = "b1"))
+        val local = listOf(blk("local edit", id = "b1"))
+        val remote = listOf(blk("remote edit", id = "b1"))
+
+        val chunks = BlockDiff3.merge(base, local, remote)
+
+        assertTrue(chunks.hasConflicts(), "expected a real conflict to set up this regression case")
+        assertTrue(
+            chunks.findDuplicateBlockIds().none { it.id == "b1" },
+            "the two sides of one ordinary conflict must not be reported as a duplicate: ${chunks.findDuplicateBlockIds()}",
+        )
+    }
+
+    @Test
     fun `toTwoWayConflictMarkerText round trips through ConflictResolver parseConflictFile`() {
         val base = listOf(blk("A"), blk("B"), blk("C"))
         val local = listOf(blk("A"), blk("X"), blk("C"))

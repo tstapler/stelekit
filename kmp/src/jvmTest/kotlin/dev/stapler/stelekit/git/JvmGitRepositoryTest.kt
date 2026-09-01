@@ -157,6 +157,67 @@ class JvmGitRepositoryTest {
     }
 
     /**
+     * End-to-end check that [dev.stapler.stelekit.git.merge.findDuplicateBlockIds] reaches
+     * [dev.stapler.stelekit.git.model.ConflictFile.duplicateBlockIds] through a real JGit merge —
+     * and that an ordinary same-id conflict (both sides editing block "second", id `other`, into
+     * different content) does NOT itself get flagged as a duplicate, alongside a genuine
+     * independent one (local separately adds a new block reusing id `dup`).
+     */
+    @Test
+    fun `merge surfaces a real duplicate block id without flagging the ordinary conflict's own two sides`() = runTest {
+        assertTrue(repository.init(config.repoRoot).isRight())
+        Git.open(File(config.repoRoot)).use { git -> setIdentity(git) }
+        val baseBranch = Git.open(File(config.repoRoot)).use { it.repository.branch }
+        val mergeConfig = config.copy(remoteBranch = baseBranch)
+
+        File(config.repoRoot, "dup.md").writeText("- first\n\tid:: dup\n- second\n\tid:: other\n")
+        assertTrue(repository.stageSubdir(mergeConfig).isRight())
+        assertTrue(repository.commit(mergeConfig, "base commit").isRight())
+
+        val originDir = createTempDirectory("stelekit_jvm_git_merge_origin3_").toFile()
+        Git.cloneRepository().setURI(config.repoRoot).setBare(true).setDirectory(originDir).call().close()
+        Git.open(File(config.repoRoot)).use { git ->
+            git.remoteAdd().setName("origin")
+                .setUri(org.eclipse.jgit.transport.URIish(originDir.absolutePath))
+                .call()
+        }
+
+        // remote edits "second"'s content only, keeping its id.
+        val originWorkDir = createTempDirectory("stelekit_jvm_git_merge_origin_work3_").toFile()
+        Git.cloneRepository().setURI(originDir.absolutePath).setDirectory(originWorkDir).call().use { originGit ->
+            setIdentity(originGit)
+            File(originWorkDir, "dup.md").writeText("- first\n\tid:: dup\n- second remote\n\tid:: other\n")
+            originGit.add().addFilepattern(".").call()
+            originGit.commit().setMessage("edit second on remote").call()
+            originGit.push().call()
+        }
+
+        // local edits "second"'s content too (a real conflict with remote's edit), and separately
+        // adds a new block that happens to reuse "dup" — an independent, genuine duplicate.
+        File(config.repoRoot, "dup.md").writeText(
+            "- first\n\tid:: dup\n- second local\n\tid:: other\n- local extra\n\tid:: dup\n",
+        )
+        assertTrue(repository.stageSubdir(mergeConfig).isRight())
+        assertTrue(repository.commit(mergeConfig, "edit second and add duplicate on local").isRight())
+
+        assertTrue(repository.fetch(mergeConfig).isRight())
+        val mergeResult = repository.merge(mergeConfig)
+        assertTrue(mergeResult.isRight(), "merge failed: $mergeResult")
+        val merge = (mergeResult as Either.Right).value
+        assertTrue(merge.hasConflicts, "expected a real conflict from both sides editing 'second' differently")
+
+        val conflict = merge.conflicts.single()
+        assertTrue(
+            conflict.duplicateBlockIds.any { it.id == "dup" && it.occurrences >= 2 },
+            "expected the genuine 'dup' duplicate to be surfaced, got: ${conflict.duplicateBlockIds}",
+        )
+        assertTrue(
+            conflict.duplicateBlockIds.none { it.id == "other" },
+            "the two sides of the ordinary 'second' conflict must not be reported as a duplicate: ${conflict.duplicateBlockIds}",
+        )
+    }
+
+    /**
      * End-to-end (real JGit merge, not the pure [dev.stapler.stelekit.git.merge.BlockDiff3Test]
      * unit coverage) check that a one-sided reparent and an unrelated, non-adjacent edit reach
      * `merge()` cleanly through the real JGit path when a genuine two-sided-unchanged block (`C`)

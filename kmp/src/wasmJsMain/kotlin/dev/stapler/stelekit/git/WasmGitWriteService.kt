@@ -26,6 +26,7 @@ import dev.stapler.stelekit.git.model.GitLabCommitResponse
 import dev.stapler.stelekit.git.model.GitLabCompareResponse
 import dev.stapler.stelekit.git.model.GitLabTreeEntry
 import dev.stapler.stelekit.git.merge.Diff3
+import dev.stapler.stelekit.git.merge.findDuplicateBlockIds
 import dev.stapler.stelekit.git.merge.hasConflicts
 import dev.stapler.stelekit.git.merge.mergeMarkdownBlocks
 import dev.stapler.stelekit.git.merge.toTwoWayConflictMarkerText
@@ -942,7 +943,13 @@ class WasmGitWriteService(
         } else {
             emptyList()
         }
-        return ConflictFile(filePath = path, wikiRelativePath = path, hunks = hunks, rawContent = markerText)
+        return ConflictFile(
+            filePath = path,
+            wikiRelativePath = path,
+            hunks = hunks,
+            rawContent = markerText,
+            duplicateBlockIds = blockResult?.findDuplicateBlockIds() ?: emptyList(),
+        )
     }
 
     /**
