@@ -297,8 +297,8 @@ fun main() {
                 attachmentService = WasmMediaAttachmentService(fileSystem),
                 gitRepository = wasmGitRepository,
                 localChangesCountFlow = opfsFileSystem.dirtyFileCountFlow,
-                hostAccessStateFlow = opfsFileSystem.hostDirectorySync.hostAccessStateFlow,
-                hostWritePendingCountFlow = opfsFileSystem.hostDirectorySync.hostWritePendingCountFlow,
+                hostAccessStateFlow = opfsFileSystem.hostAccessStateFlow,
+                hostWritePendingCountFlow = opfsFileSystem.hostWritePendingCountFlow,
                 hostWriteStuckFlow = opfsFileSystem.hostDirectorySync.hostWriteStuckFlow,
                 // Bug fix: read the CURRENT active graph via opfsFileSystem.currentGraphId()/
                 // graphRootPath() at click time, not the boot-time graphId/opfsGraphPath locals
@@ -394,8 +394,8 @@ private suspend fun runEphemeralSession() {
             attachmentService = WasmMediaAttachmentService(fileSystem),
             gitRepository = wasmGitRepository,
             localChangesCountFlow = fileSystem.dirtyFileCountFlow,
-            hostAccessStateFlow = fileSystem.hostDirectorySync.hostAccessStateFlow,
-            hostWritePendingCountFlow = fileSystem.hostDirectorySync.hostWritePendingCountFlow,
+            hostAccessStateFlow = fileSystem.hostAccessStateFlow,
+            hostWritePendingCountFlow = fileSystem.hostWritePendingCountFlow,
             hostWriteStuckFlow = fileSystem.hostDirectorySync.hostWriteStuckFlow,
             onReconnectHostDirectory = {},
             onConnectHostDirectory = {

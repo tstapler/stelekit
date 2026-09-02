@@ -60,8 +60,24 @@ class GraphScopedSession<Id : Any, T : SessionLifecycle>(
     private val mutex = Mutex()
 
     private var currentId: Id? = null
-    private var current: T? = null
+    private var _current: T? = null
     private val pending = mutableMapOf<Id, CompletableDeferred<T>>()
+
+    /**
+     * The active session, or `null` if [switchTo] has never successfully completed. Read-only —
+     * every mutation goes through [switchTo]'s own mutex-guarded swap. Not itself mutex-guarded
+     * (a plain volatile-free read of a `var` set only inside the lock): callers that need a
+     * value guaranteed consistent with a specific `switchTo` call already hold a reference to
+     * that call's return value instead of re-reading this property.
+     */
+    val currentOrNull: T? get() = _current
+
+    /**
+     * Same as [currentOrNull], but throws [IllegalStateException] instead of returning `null`.
+     * Use only at call sites whose contract already requires an active session to exist (a
+     * `null` here is a real programming error at that point, not a state to tolerate).
+     */
+    val current: T get() = checkNotNull(_current) { "GraphScopedSession.current read before any switchTo call completed" }
 
     /**
      * Returns the active session for [id], constructing one via [factory] if [id] is not already
@@ -75,7 +91,7 @@ class GraphScopedSession<Id : Any, T : SessionLifecycle>(
         var deferred: CompletableDeferred<T>? = null
 
         mutex.withLock {
-            val activeSession = current
+            val activeSession = _current
             if (currentId == id && activeSession != null) {
                 return activeSession
             }
@@ -103,8 +119,8 @@ class GraphScopedSession<Id : Any, T : SessionLifecycle>(
 
             // Step 3 (locked): swap the new session in.
             val oldSession = mutex.withLock {
-                val old = current
-                current = newSession
+                val old = _current
+                _current = newSession
                 currentId = id
                 old
             }

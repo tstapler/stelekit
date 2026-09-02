@@ -87,7 +87,7 @@ internal class GraphRootedPath private constructor(val value: String) {
  * `project_plans/web-local-folder-livesync/implementation/plan.md` builds its fields/methods onto
  * this class, never back onto `PlatformFileSystem`.
  */
-class HostDirectorySync(
+internal class HostDirectorySync(
     /**
      * Epic 1.1 (Story 1.1.1): captured once at construction, never a live closure — `graphId`
      * is retired in favor of this plain [OpfsGraphSlug] value. `HostDirectorySync` is now the
@@ -105,7 +105,31 @@ class HostDirectorySync(
      * deterministic `TestScope`/dispatcher instead of a real one.
      */
     scopeOverride: CoroutineScope? = null,
+    /**
+     * Epic 2.2 (Story 2.2.1/2.2.2): every UI-facing callback this instance can fire, bundled so
+     * `PlatformFileSystem.buildGraphSyncSession` supplies all five at once from its own
+     * `PlatformFileSystem`-owned fields instead of five separate constructor params accreting
+     * over time. `onHostConflict`/`onHostBytesConflict`/`onHostWriteFailed` are nullable — a
+     * `null` here means "keep this instance's own buffering/no-op default" (see each field's own
+     * doc comment below), since those three have meaningful non-identity defaults that a fresh
+     * `Callbacks()` must not clobber before `PlatformFileSystem` has any real callback to supply
+     * (e.g. at app boot, before a `GraphLoader` exists). `onAccessStateChanged`/
+     * `onPendingCountChanged` have no such buffering need, so they default straight to no-ops.
+     */
+    callbacks: Callbacks = Callbacks(),
 ) : SessionLifecycle {
+
+    /** See [callbacks]'s parameter doc comment. */
+    data class Callbacks(
+        val onAccessStateChanged: (HostAccessState) -> Unit = {},
+        val onPendingCountChanged: (Int) -> Unit = {},
+        val onHostConflict: ((path: GraphRootedPath, hostContent: String) -> Unit)? = null,
+        val onHostBytesConflict: ((path: GraphRootedPath, hostBytes: ByteArray) -> Unit)? = null,
+        val onHostWriteFailed: ((error: DomainError.FileSystemError.WriteFailed) -> Unit)? = null,
+    )
+
+    private val onAccessStateChanged = callbacks.onAccessStateChanged
+    private val onPendingCountChanged = callbacks.onPendingCountChanged
     /**
      * Epic 1.1 (Story 1.1.1/1.1.2): owned internally rather than externally injected — the whole
      * instance is the per-graph session unit, so its own scope's lifetime is exactly this
@@ -177,6 +201,7 @@ class HostDirectorySync(
             logger.info("host access state: $old -> $newState (hostGraphOpfsPath=$hostGraphOpfsPath)")
         }
         _hostAccessStateFlow.value = newState
+        onAccessStateChanged(newState)
     }
 
     /**
@@ -190,7 +215,9 @@ class HostDirectorySync(
     val hostWritePendingCountFlow: StateFlow<Int> = _hostWritePendingCountFlow.asStateFlow()
 
     private fun updatePendingCount() {
-        _hostWritePendingCountFlow.value = hostWritePending.size
+        val count = hostWritePending.size
+        _hostWritePendingCountFlow.value = count
+        onPendingCountChanged(count)
     }
 
     // ── Epic 4.1 (Task 4.1.1a): per-path write-through coalescing state ───────────────────────
@@ -273,7 +300,8 @@ class HostDirectorySync(
      * `writeErrors` channel — no new error surface. Defaults to a no-op so production code that
      * never wires a graph (or tests) still compiles and runs safely.
      */
-    internal var onHostWriteFailed: (error: DomainError.FileSystemError.WriteFailed) -> Unit = {}
+    internal var onHostWriteFailed: (error: DomainError.FileSystemError.WriteFailed) -> Unit =
+        callbacks.onHostWriteFailed ?: {}
 
     // ── Epic 3.2 (Task 3.2.2a/c): reconciliation dispatch collaborators ───────────────────────
     /**
@@ -309,10 +337,11 @@ class HostDirectorySync(
      * now buffers into [pendingHostConflicts] instead of discarding; [flushPendingHostConflicts]
      * replays the buffer the moment a real callback is set.
      */
-    internal var onHostConflict: (path: GraphRootedPath, hostContent: String) -> Unit = { path, hostContent ->
-        pendingHostConflicts += path to hostContent
-        mirrorPendingHostConflictCount(pendingHostConflicts.size)
-    }
+    internal var onHostConflict: (path: GraphRootedPath, hostContent: String) -> Unit = callbacks.onHostConflict
+        ?: { path, hostContent ->
+            pendingHostConflicts += path to hostContent
+            mirrorPendingHostConflictCount(pendingHostConflicts.size)
+        }
 
     private val pendingHostConflicts = mutableListOf<Pair<GraphRootedPath, String>>()
 
@@ -344,10 +373,11 @@ class HostDirectorySync(
      * buffering-default pattern for the identical app-boot race window — see that property's doc
      * comment.
      */
-    internal var onHostBytesConflict: (path: GraphRootedPath, hostBytes: ByteArray) -> Unit = { path, hostBytes ->
-        pendingHostBytesConflicts += path to hostBytes
-        mirrorPendingHostBytesConflictCount(pendingHostBytesConflicts.size)
-    }
+    internal var onHostBytesConflict: (path: GraphRootedPath, hostBytes: ByteArray) -> Unit =
+        callbacks.onHostBytesConflict ?: { path, hostBytes ->
+            pendingHostBytesConflicts += path to hostBytes
+            mirrorPendingHostBytesConflictCount(pendingHostBytesConflicts.size)
+        }
 
     private val pendingHostBytesConflicts = mutableListOf<Pair<GraphRootedPath, ByteArray>>()
 
