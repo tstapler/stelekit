@@ -152,9 +152,9 @@ internal suspend fun observeHandle(observer: JsAny, handle: JsAny, recursive: Bo
 
 /**
  * Stops a previously-started [FileSystemObserver] from delivering further change records.
- * Needed when switching the active graph (`HostDirectorySync.disconnectForGraphSwitch`) so a
- * still-live observer from the old graph's host directory cannot fire callbacks against the
- * new graph's `hostDirHandle`/`hostGraphOpfsPath` after they're reassigned.
+ * Needed when switching the active graph (`HostDirectorySync.close`) so a still-live observer
+ * from the old, now-discarded graph's `HostDirectorySync` instance cannot keep firing callbacks
+ * or keep that instance alive via its own captured closure.
  */
 internal fun disconnectObserver(observer: JsAny): Unit = js("observer.disconnect()")
 

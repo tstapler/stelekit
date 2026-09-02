@@ -3,13 +3,12 @@
 
 package dev.stapler.stelekit.platform
 
-import dev.stapler.stelekit.git.model.DirtyEntry
-import dev.stapler.stelekit.git.model.DirtyOp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlin.random.Random
@@ -17,16 +16,19 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 // js() calls must be top-level functions in Kotlin/Wasm — see HostDirectoryTestFixtures.kt for
 // makeWritableHostRoot/writableRoot* accessors this file uses.
 
 /**
- * Regression coverage for the two confirmed cross-graph data-corruption bugs an adversarial
- * review surfaced in `disconnectForGraphSwitch`/`flushHostWrite` (PR #293, round 2): switching
- * `PlatformFileSystem`'s active graph re-targets a single long-lived `HostDirectorySync` instance
- * at a different graph's directory, and neither the write-queue nor an already-suspended write
- * cleanly separated old-graph state from new-graph state.
+ * Epic 1.1 (Story 1.1.2): regression coverage for `HostDirectorySync` becoming a per-graph
+ * `SessionLifecycle` — a graph switch now discards the whole instance via `close()` and constructs
+ * a fresh one, rather than resetting one long-lived instance in place. This is the structural fix
+ * for the two confirmed cross-graph data-corruption bugs an adversarial review originally surfaced
+ * in `disconnectForGraphSwitch`/`flushHostWrite` (PR #293, round 2) — with no shared mutable state
+ * left between two `HostDirectorySync` instances, neither the write-queue nor an already-suspended
+ * write can reach across a switch to begin with.
  */
 class HostDirectorySyncGraphSwitchTest {
 
@@ -37,17 +39,13 @@ class HostDirectorySyncGraphSwitchTest {
         cacheAccess: FakeCacheAccess,
         scope: CoroutineScope,
         rootHandle: JsAny,
-    ): HostDirectorySync {
-        val graphId = opfsPath.substringAfterLast("/")
-        val sync = HostDirectorySync(
-            graphIdProvider = { graphId },
-            cacheAccess = cacheAccess,
-            scope = scope,
-        )
-        sync.hostDirHandle = rootHandle
-        sync.hostGraphOpfsPath = opfsPath
-        return sync
-    }
+    ): HostDirectorySync = connectedSync(
+        graphId = OpfsGraphSlug(opfsPath.substringAfterLast("/")),
+        opfsPath = opfsPath,
+        rootHandle = rootHandle,
+        cacheAccess = cacheAccess,
+        scope = scope,
+    )
 
     private suspend fun awaitCondition(timeoutMs: Long = 2000, stepMs: Long = 10, block: () -> Boolean) {
         var waited = 0L
@@ -58,30 +56,59 @@ class HostDirectorySyncGraphSwitchTest {
     }
 
     @Test
-    fun disconnectForGraphSwitch_should_ClearRepoRelativeWriteQueues_When_SwitchingAwayFromAConnectedGraph() = runTest {
+    fun close_should_StopThePollerAndCancelTheScope_When_CalledOnAConnectedInstance() = runTest {
         val opfsPathA = freshOpfsPath("a")
         val rootA = makeWritableHostRoot()
         val testScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val sync = newSync(opfsPathA, FakeCacheAccess(), testScope, rootA)
+        sync.startHostDirectoryPolling()
 
-        // Given: graph A has a write still queued (never reached the front of the flush loop).
-        sync.hostWritePending["Foo.md"] = DirtyEntry(DirtyOp.WRITE, 0L)
-        sync.hostWriteLatestPayload["Foo.md"] = HostWritePayload.Text("stale-A-content")
-        sync.hostWriteDirtyDuringFlush.add("Foo.md")
+        sync.close()
 
-        // When: the user switches to a different graph B (no host connection of its own).
-        sync.disconnectForGraphSwitch()
+        assertFalse(testScope.isActive, "close() must cancel this instance's own scope")
+    }
 
-        // Then: A's repo-relative-keyed write-queue state is gone — otherwise, once B's own poller
-        // starts, retryStuckHostWrites() would iterate hostWritePending and write A's stale
-        // hostWriteLatestPayload content into B's real host directory under the same relative path
-        // ("Foo.md" easily collides across two unrelated graphs).
-        assertFalse("Foo.md" in sync.hostWritePending)
-        assertNull(sync.hostWriteLatestPayload["Foo.md"])
-        assertFalse("Foo.md" in sync.hostWriteDirtyDuringFlush)
-        assertEquals(0, sync.hostWritePendingCountFlow.value)
+    @Test
+    fun close_should_LetAnInFlightHostWriteCompletionSettleHarmlessly_When_TheOpfsWriteWasAlreadyDispatchedBeforeClose() = runTest {
+        // Task 1.1.2c: gate-based (never delay()) reproduction of "a browser-side OPFS write was
+        // already dispatched before close() is called, and its completion callback settles
+        // afterward" — proves flushHostWrite's existing entry-time handle/opfsPath snapshot still
+        // resolves hostWriteCompletion correctly against journal-a's own state once the instance
+        // has already been discarded, and never touches a subsequently-constructed journal-b
+        // instance (there is no shared mutable state left for it to reach across instances).
+        val opfsPathA = freshOpfsPath("journal-a")
+        val gatedRoot = makeWritableEnumerableHostRoot()
+        val testScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val syncA = newSync(opfsPathA, FakeCacheAccess(), testScope, gatedRoot)
+
+        val completionDeferred = syncA.scheduleHostWriteThrough("$opfsPathA/Foo.md", HostWritePayload.Text("A-content"))
+        // Wait until flushHostWrite has captured handle/opfsPath at entry and is suspended on the
+        // fixture's gate inside getFileHandle — simulating a dispatched-but-not-yet-settled write.
+        awaitCondition { writableEnumerableRootAttemptCount(gatedRoot) >= 1 }
+        assertFalse(completionDeferred.isCompleted, "the write must still be in flight at this point")
+
+        // When: close() is called on syncA (simulating a graph switch to journal-b) while the
+        // OPFS write is still suspended, then the gate is released, letting the write settle.
+        syncA.close()
+        val opfsPathB = freshOpfsPath("journal-b")
+        val syncB = connectedSync(
+            graphId = OpfsGraphSlug(opfsPathB.substringAfterLast("/")),
+            opfsPath = opfsPathB,
+            rootHandle = makeWritableHostRoot(),
+            cacheAccess = FakeCacheAccess(),
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+        )
+        openWritableEnumerableRootGate(gatedRoot)
+
+        // Then: the flush settles against syncA's own entry-captured state — never throwing into
+        // an unhandled context — and syncB (constructed after close()) is never touched by it.
+        awaitCondition { completionDeferred.isCompleted }
+        assertTrue(completionDeferred.isCompleted)
+        assertEquals("A-content".hashCode(), syncA.hostContentHashes["$opfsPathA/Foo.md"])
+        assertNull(syncB.hostContentHashes["$opfsPathA/Foo.md"])
 
         testScope.cancel()
+        syncB.close()
     }
 
     @Test

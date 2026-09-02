@@ -80,35 +80,48 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     // Exposed non-privately so Main.kt/UI code can call its non-FileSystem-interface entry points
     // (reconnectHostDirectory, requestHostDirectoryAccess, connectHostDirectory, its StateFlows)
     // directly, without PlatformFileSystem needing to re-expose every one as a passthrough.
-    val hostDirectorySync: HostDirectorySync = HostDirectorySync(
-        graphIdProvider = { graphId },
-        cacheAccess = object : HostDirectorySync.CacheAccess {
-            override fun get(path: String) = cache[path]
-            override fun set(path: String, content: String) {
-                cache[path] = content
-            }
-            override fun remove(path: String) {
-                cache.remove(path)
-            }
-            override fun getBytes(path: String) = bytesCache[path]
-            override fun setBytes(path: String, data: ByteArray) {
-                bytesCache[path] = data
-            }
-            override fun removeBytes(path: String) {
-                bytesCache.remove(path)
-            }
-            override fun keysUnder(opfsPath: String) =
-                (cache.keys + bytesCache.keys).filter { it.startsWith("$opfsPath/") }.toSet()
-            override fun writeOpfsMirror(path: String, content: String) {
-                scope.launch { opfsWriteFile(path, content) }
-            }
-            override fun writeOpfsMirrorBytes(path: String, data: ByteArray) {
-                scope.launch { opfsWriteFileBytes(path, data.toJsArrayBuffer()) }
-            }
-            override fun opfsWriteDeferredFor(path: String): Deferred<Unit>? = opfsWriteInFlight[path]
-        },
-        scope = scope,
+    //
+    // Epic 1.1 (Task 1.1.2b): promoted from an anonymous object built inline at the
+    // HostDirectorySync(...) call site to a private field, constructed once and reused across
+    // every HostDirectorySync reconstruction below (switchActiveGraph). Deliberately a private
+    // field rather than `PlatformFileSystem : HostDirectorySync.CacheAccess` — see ADR-019's
+    // Alternatives Considered ("PlatformFileSystem : HostDirectorySync.CacheAccess") for why a
+    // field keeps this dependency's direction correct without widening PlatformFileSystem's own
+    // public surface for an abstraction only HostDirectorySync needs.
+    private val cacheAccess: HostDirectorySync.CacheAccess = object : HostDirectorySync.CacheAccess {
+        override fun get(path: String) = cache[path]
+        override fun set(path: String, content: String) {
+            cache[path] = content
+        }
+        override fun remove(path: String) {
+            cache.remove(path)
+        }
+        override fun getBytes(path: String) = bytesCache[path]
+        override fun setBytes(path: String, data: ByteArray) {
+            bytesCache[path] = data
+        }
+        override fun removeBytes(path: String) {
+            bytesCache.remove(path)
+        }
+        override fun keysUnder(opfsPath: String) =
+            (cache.keys + bytesCache.keys).filter { it.startsWith("$opfsPath/") }.toSet()
+        override fun writeOpfsMirror(path: String, content: String) {
+            scope.launch { opfsWriteFile(path, content) }
+        }
+        override fun writeOpfsMirrorBytes(path: String, data: ByteArray) {
+            scope.launch { opfsWriteFileBytes(path, data.toJsArrayBuffer()) }
+        }
+        override fun opfsWriteDeferredFor(path: String): Deferred<Unit>? = opfsWriteInFlight[path]
+    }
+
+    // Epic 1.1 (Task 1.1.2b): `var`, not `val` — `switchActiveGraph` now reassigns this wholesale
+    // to a brand-new `HostDirectorySync` instance per graph (SessionLifecycle's "construct fresh,
+    // discard old" shape) instead of mutating one long-lived instance's fields in place.
+    var hostDirectorySync: HostDirectorySync = HostDirectorySync(
+        graphId = OpfsGraphSlug(graphId),
+        cacheAccess = cacheAccess,
     )
+        private set
 
     init {
         // Belt-and-suspenders flush: fire the same scheduler when the tab is hidden/closed, even
@@ -187,28 +200,33 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
      * Re-points this [PlatformFileSystem] (and its composed [hostDirectorySync]) at [graphPath]
      * after `GraphManager.switchGraph()` changes the active graph.
      *
-     * Bug fix: [graphId] — read by [hostDirectorySync] via `graphIdProvider` for every
-     * persisted-handle lookup, poll/write lock name, and write-through path check — used to be set
-     * only once, by [preload] at startup. Switching graphs via `GraphManager`'s multi-graph
-     * registry (e.g. the graph switcher) never called back into this class, so `graphId` stayed
-     * pinned to whichever graph was active at page load: every write for a *different* active
-     * graph (an absolute path under that graph's own root) failed `HostDirectorySync`'s
-     * `repoRelativePath` prefix check against the stale `hostGraphOpfsPath`, so
-     * `scheduleHostWriteThrough` silently dropped it ("no valid host-relative path") — the graph
-     * looked idle/unsynced no matter what was edited.
+     * Bug fix: [graphId] — previously read by [hostDirectorySync] via a live `graphIdProvider`
+     * closure for every persisted-handle lookup, poll/write lock name, and write-through path
+     * check — used to be set only once, by [preload] at startup. Switching graphs via
+     * `GraphManager`'s multi-graph registry (e.g. the graph switcher) never called back into this
+     * class, so `graphId` stayed pinned to whichever graph was active at page load: every write
+     * for a *different* active graph (an absolute path under that graph's own root) failed
+     * `HostDirectorySync`'s `repoRelativePath` prefix check against the stale `hostGraphOpfsPath`,
+     * so `scheduleHostWriteThrough` silently dropped it ("no valid host-relative path") — the
+     * graph looked idle/unsynced no matter what was edited.
      *
-     * No-ops if [graphPath] resolves to the already-active graph. Otherwise disconnects any host
-     * directory connection for the previous graph first ([HostDirectorySync.disconnectForGraphSwitch]
-     * — a graph with no host connection of its own must never keep polling/observing the prior
-     * graph's directory), reloads this graph's own OPFS content/dirty-marker via [preload], then
-     * attempts to silently resume this graph's own persisted host connection, if any, via
+     * No-ops if [graphPath] resolves to the already-active graph — **retained unchanged by Epic
+     * 1.1** (pre-mortem.md P1-4): until Phase 2's `GraphScopedSession` takes over this guarantee
+     * (Task 2.1.2b), this same-graph idempotency check is the only protection against a rapid
+     * double-`switchActiveGraph()` call constructing two live [HostDirectorySync] instances for
+     * the same graph. Otherwise closes the previous graph's [HostDirectorySync] session
+     * ([SessionLifecycle.close] — Epic 1.1, Task 1.1.2a/b: a fresh instance replaces it wholesale,
+     * rather than the old `disconnectForGraphSwitch()` resetting the same instance in place),
+     * reloads this graph's own OPFS content/dirty-marker via [preload], then attempts to silently
+     * resume this graph's own persisted host connection, if any, via
      * [HostDirectorySync.reconnectHostDirectory] — mirroring what [preload]/`reconnectHostDirectory`
      * already do together at startup, just re-run per switch instead of once.
      */
     suspend fun switchActiveGraph(graphPath: String) {
         val newGraphId = graphPath.removePrefix("$homeDir/").substringBefore("/")
         if (newGraphId == graphId) return
-        hostDirectorySync.disconnectForGraphSwitch()
+        hostDirectorySync.close()
+        hostDirectorySync = HostDirectorySync(graphId = OpfsGraphSlug(newGraphId), cacheAccess = cacheAccess)
         preload(graphPath)
         hostDirectorySync.reconnectHostDirectory(newGraphId)
     }

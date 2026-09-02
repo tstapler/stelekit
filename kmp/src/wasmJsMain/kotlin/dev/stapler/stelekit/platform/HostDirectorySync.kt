@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.platform
 
+import dev.stapler.stelekit.coroutines.SessionLifecycle
 import dev.stapler.stelekit.db.ChangeDetectionScheduler
 import dev.stapler.stelekit.db.RescanOutcome
 import dev.stapler.stelekit.db.RescanReason
@@ -16,8 +17,11 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.await
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -85,17 +89,52 @@ internal class GraphRootedPath private constructor(val value: String) {
  */
 class HostDirectorySync(
     /**
-     * Reads `PlatformFileSystem.graphId`'s *live* value rather than a value captured at
-     * construction time. `HostDirectorySync` is composed into `PlatformFileSystem` in a field
-     * initializer — before `preload(graphPath)` later mutates `graphId` from `"default"` to the
-     * real graph id — so a plain `String` parameter would permanently key IndexedDB persistence
-     * under `"default"`. The composition call site passes `graphIdProvider = { graphId }`, a
-     * closure over the mutable field, so every read here sees the current value.
+     * Epic 1.1 (Story 1.1.1): captured once at construction, never a live closure — `graphId`
+     * is retired in favor of this plain [OpfsGraphSlug] value. `HostDirectorySync` is now the
+     * per-graph unit itself: a fresh instance is constructed per graph (see [close]/
+     * `SessionLifecycle`), so there is no live-read indirection left to solve — every method's
+     * "which graph is this for" question has exactly one answer for this instance's entire
+     * lifetime.
      */
-    private val graphIdProvider: () -> String,
+    private val graphId: OpfsGraphSlug,
     private val cacheAccess: CacheAccess,
-    private val scope: CoroutineScope,
-) {
+    /**
+     * Test-only escape hatch — always `null` (the default) in production, which builds a real
+     * `CoroutineScope(SupervisorJob() + Dispatchers.Default)` below. Never a constructor parameter
+     * a production call site supplies; exists solely so [forTest] (Epic 1.2) can inject a
+     * deterministic `TestScope`/dispatcher instead of a real one.
+     */
+    scopeOverride: CoroutineScope? = null,
+) : SessionLifecycle {
+    /**
+     * Epic 1.1 (Story 1.1.1/1.1.2): owned internally rather than externally injected — the whole
+     * instance is the per-graph session unit, so its own scope's lifetime is exactly this
+     * instance's lifetime. [close] cancels it. [forTest] (Epic 1.2) is the only caller that ever
+     * supplies [scopeOverride], bypassing this default for deterministic test dispatch.
+     */
+    override val scope: CoroutineScope = scopeOverride ?: CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /**
+     * Epic 1.1 (Story 1.1.2): implements [SessionLifecycle.close] — tears down this instance's
+     * poller and cancels its own [scope], so no coroutine this instance ever launched can touch
+     * any subsequently-constructed instance's state. Retires the old `disconnectForGraphSwitch()`
+     * manual field-by-field reset: there is nothing left to null out once the whole instance is
+     * discarded by the caller (`PlatformFileSystem.switchActiveGraph`, Task 1.1.2b) in favor of a
+     * fresh one. Safe to call at most once per instance, per [SessionLifecycle]'s contract.
+     *
+     * Also disconnects any live [hostChangeObserver] — a browser-side `FileSystemObserver` is not
+     * a coroutine, so [scope]'s cancellation alone would never stop it from holding this whole
+     * instance alive (via the closure `startHostChangeObserver` captured) and continuing to invoke
+     * its callback (itself a no-op once [scope] is cancelled, but a needless live reference to a
+     * discarded graph's directory all the same).
+     */
+    override fun close() {
+        stopHostDirectoryPolling()
+        hostChangeObserver?.let { disconnectObserver(it) }
+        hostChangeObserver = null
+        observerConfirmedActive = false
+        scope.cancel()
+    }
     /**
      * Routes host-sync diagnostics through the app's in-app "App Logs" screen
      * ([dev.stapler.stelekit.logging.LogManager]), not just the browser devtools console — every
@@ -477,7 +516,7 @@ class HostDirectorySync(
      */
     private suspend fun runLockedRescan(handle: JsAny, opfsPath: String, logPrefix: String): RescanOutcome {
         var changed = false
-        val acquired = WebLock.tryWithLock(FolderSyncLockNaming.pollLockNameFor(graphIdProvider())) {
+        val acquired = WebLock.tryWithLock(FolderSyncLockNaming.pollLockNameFor(graphId)) {
             changed = pollHostDirectoryOnce(handle, opfsPath)
         }
         if (acquired == null) {
@@ -664,10 +703,10 @@ class HostDirectorySync(
      * import, same as every other path that attaches a handle.
      *
      * Bug fix: persists keyed by [dirName] — the graph actually being attached — not
-     * [graphIdProvider]. This runs from `PlatformFileSystem.pickDirectoryAsync()` before the
-     * caller has registered/switched to the new graph in `GraphManager`, so `graphIdProvider()`
-     * still resolves to whichever graph was previously active; keying the envelope off it there
-     * silently persisted the new handle under the wrong graph's id, and
+     * [graphId]. This runs from `PlatformFileSystem.pickDirectoryAsync()` before the
+     * caller has registered/switched to the new graph in `GraphManager`, so this instance's own
+     * [graphId] still resolves to whichever graph it was constructed for; keying the envelope off
+     * it there silently persisted the new handle under the wrong graph's id, and
      * [reconnectHostDirectory]/[requestHostDirectoryAccess] — both keyed by the *actual* active
      * graph id on lookup — would never find it again in a later session.
      */
@@ -796,7 +835,7 @@ class HostDirectorySync(
             hostDirHandle = dirHandle
             hostGraphOpfsPath = existingOpfsPath
             val dirName = existingOpfsPath.substringAfterLast("/")
-            persistHostHandle(graphIdProvider(), dirName, dirHandle)
+            persistHostHandle(graphId.value, dirName, dirHandle)
             scope.launch {
                 val granted = requestStoragePersistence()
                 logger.debug("storage.persist(): granted=$granted")
@@ -819,48 +858,13 @@ class HostDirectorySync(
         return result
     }
 
-    /**
-     * Tears down this instance's connection to whichever graph it was last wired to, before
-     * [PlatformFileSystem.switchActiveGraph] reconnects it against a newly-active graph.
-     *
-     * Without this, switching from a host-connected graph A to graph B left [hostDirHandle]/
-     * [hostGraphOpfsPath] pointing at A: [reconnectHostDirectory] only overwrites them on its
-     * `"granted"` branch, so a graph B with no persisted host handle of its own (the common case)
-     * would resolve to [HostAccessState.NotApplicable] while the poller/observer kept running
-     * against A's directory under B's now-active tab — the root cause this fix addresses (see
-     * `hostGraphOpfsPath`'s mismatch diagnostic added in the previous commit).
-     *
-     * Bug fix: also drops [hostWritePending]/[hostWriteLatestPayload]/[hostWriteDirtyDuringFlush]/
-     * [hostWriteSuppressedDuringFlush] — all keyed by *repo-relative* path, which two different
-     * graphs' files can share (e.g. `journals/2026_09_01.md`). Left in place, B's poller would
-     * later call [retryStuckHostWrites], which iterates [hostWritePending] and would write A's
-     * stale [hostWriteLatestPayload] content into B's real host directory under that shared
-     * relative path — genuine cross-graph data corruption, not just a stale write. Safe to drop:
-     * the corresponding edit already landed in OPFS/the database (the source of truth) before ever
-     * reaching this queue, and reconnecting graph A later re-populates its host-write queue via
-     * [runHostReconciliation]'s `BrowserOnlyNeedsPush` pass, same as any other dropped write in this
-     * class. Deliberately does NOT touch [hostWriteInFlight]/[hostWriteCompletion] — those are owned
-     * by whichever coroutine is still actively running inside [flushHostWrite] for a path, and that
-     * coroutine's own `finally` block (not this function) is what completes/clears them; clearing a
-     * [hostWriteCompletion] entry here would leave a caller's `.await()` (e.g. [renameHostFile])
-     * hanging forever with nothing left to complete it. Also leaves [hostContentHashes]/
-     * [hostModTimes]/[hostFileSizes] alone — those are keyed by full absolute path, so they cannot
-     * collide across graphs; clearing them would only force unnecessary re-hashing on next connect.
-     */
-    internal fun disconnectForGraphSwitch() {
-        stopHostDirectoryPolling()
-        hostChangeObserver?.let { disconnectObserver(it) }
-        hostChangeObserver = null
-        observerConfirmedActive = false
-        hostDirHandle = null
-        hostGraphOpfsPath = null
-        hostWritePending.clear()
-        hostWriteLatestPayload.clear()
-        hostWriteDirtyDuringFlush.clear()
-        hostWriteSuppressedDuringFlush.clear()
-        updatePendingCount()
-        setHostAccessState(HostAccessState.NotApplicable)
-    }
+    // Epic 1.1 (Story 1.1.2, Task 1.1.2a): the former `disconnectForGraphSwitch()` field-by-field
+    // reset (stop poller/observer, null hostDirHandle/hostGraphOpfsPath, clear the repo-relative
+    // write queues) is retired — a graph switch now discards this whole instance via [close]
+    // instead of resetting it in place, so every one of those fields (including the cross-graph
+    // write-queue corruption this method used to guard against — see PR #293 round 2) is
+    // automatically gone with the instance. `PlatformFileSystem.switchActiveGraph` (Task 1.1.2b)
+    // calls `close()` then constructs a brand-new `HostDirectorySync` for the newly-active graph.
 
     // ── Epic 2.2 (Story 2.2.1): reconnectHostDirectory — silent resume, always reconciling ────
     /**
@@ -1431,23 +1435,21 @@ class HostDirectorySync(
      * permission pre-check (Task 4.2.3a) deliberately stays *outside* the lock — it touches no
      * shared write state, and per `GitWriteLock`'s documented scope discipline
      * (`GitWriteLock.kt:47-55`) a lock should cover only the actual critical section, never be
-     * widened to include independent preflight checks. Uses [graphIdProvider] (the live value),
-     * never a captured/stale `graphId`, matching every other lock-name derivation in this class.
+     * widened to include independent preflight checks. Uses [graphId] (this instance's immutable
+     * constructor value), matching every other lock-name derivation in this class.
      *
-     * Bug fix: [handle] and [opfsPath] are both snapshotted together here, at the very first line,
-     * and used consistently for the rest of this call — never re-read from the live
-     * [hostDirHandle]/[hostGraphOpfsPath] fields after a suspension point. `switchActiveGraph`
-     * (`PlatformFileSystem.kt`) can call [disconnectForGraphSwitch] and reconnect this same
-     * `HostDirectorySync` instance to a *different* graph while this coroutine is suspended
-     * (`opfsWriteDeferred?.await()` in [scheduleHostWriteThrough], the permission-check `await()`
-     * below, or any `await()` inside the write itself). The previous code captured [handle] once
-     * but re-read `hostGraphOpfsPath` live mid-function — so a write already in flight for the old
-     * graph would still write to the old graph's real directory (via the stably-captured `handle`)
-     * but compute `fullPath`/bookkeeping keys against the *new* graph's `opfsPath`, corrupting the
-     * new graph's `hostContentHashes`/`hostModTimes` freshness baseline and routing a stale
-     * conflict through [onHostConflict] tagged with a path that doesn't belong to either graph's
-     * real content. Snapshotting both together keeps this call self-consistently scoped to
-     * whichever graph was active when it started.
+     * Bug fix (historical — kept correct by Epic 1.1's per-graph-instance migration): [handle] and
+     * [opfsPath] are both snapshotted together here, at the very first line, and used consistently
+     * for the rest of this call — never re-read from the live [hostDirHandle]/[hostGraphOpfsPath]
+     * fields after a suspension point (`opfsWriteDeferred?.await()` in [scheduleHostWriteThrough],
+     * the permission-check `await()` below, or any `await()` inside the write itself). This
+     * matters even more now that a graph switch discards this whole instance rather than
+     * reconnecting it (Epic 1.1, Task 1.1.2c's regression test): an in-flight write dispatched
+     * before `close()` must still settle against *this* instance's own [handle]/[opfsPath], never
+     * a subsequently-constructed instance's state — which the entry-time snapshot already
+     * guarantees, since there is no shared mutable field left for it to reach across instances.
+     * Snapshotting both together keeps this call self-consistently scoped to whichever graph this
+     * instance was constructed for.
      */
     private suspend fun flushHostWrite(repoRelative: String) {
         val handle = hostDirHandle ?: return
@@ -1464,7 +1466,7 @@ class HostDirectorySync(
             return
         }
 
-        WebLock.withLock(FolderSyncLockNaming.writeLockNameFor(graphIdProvider(), repoRelative)) {
+        WebLock.withLock(FolderSyncLockNaming.writeLockNameFor(graphId, repoRelative)) {
             val payload = hostWriteLatestPayload[repoRelative] ?: return@withLock
             hostWriteDirtyDuringFlush -= repoRelative
 
@@ -1712,6 +1714,37 @@ class HostDirectorySync(
                 )
                 return
             }
+        }
+    }
+
+    companion object {
+        /**
+         * Epic 1.2 (Story 1.2.1, Task 1.2.1a): test-only construction path replacing the retired
+         * `graphIdProvider`-closure shape's direct-field-poke pattern (`sync.hostDirHandle =`/
+         * `sync.hostGraphOpfsPath =` after construction). [connectedHandle]/[opfsPath] are set
+         * together as one atomic step — never one without the other — matching the PR #293 fix's
+         * core invariant that these two fields are always consistent with each other.
+         *
+         * `onHostConflict`/`onHostBytesConflict`/`onHostWriteFailed` are **not** parameters here —
+         * a caller that needs to observe them still assigns the returned instance's `internal var`
+         * directly. When left unset, they default to exactly what the production constructor
+         * defaults to: `onHostConflict`/`onHostBytesConflict` buffer into their pending lists
+         * (never silently discarding), and `onHostWriteFailed` is a no-op. A test relying on
+         * `forTest(...)` without explicitly wiring one of these three should not assume it fires.
+         */
+        fun forTest(
+            graphId: OpfsGraphSlug,
+            cacheAccess: CacheAccess,
+            scope: CoroutineScope,
+            connectedHandle: JsAny? = null,
+            opfsPath: String? = null,
+        ): HostDirectorySync {
+            val sync = HostDirectorySync(graphId = graphId, cacheAccess = cacheAccess, scopeOverride = scope)
+            if (connectedHandle != null && opfsPath != null) {
+                sync.hostDirHandle = connectedHandle
+                sync.hostGraphOpfsPath = opfsPath
+            }
+            return sync
         }
     }
 }

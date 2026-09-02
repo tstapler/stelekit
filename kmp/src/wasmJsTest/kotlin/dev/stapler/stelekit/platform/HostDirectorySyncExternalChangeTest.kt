@@ -157,11 +157,7 @@ class HostDirectorySyncExternalChangeTest {
         val opfsPath = "/stelekit/${freshGraphId()}"
         val cache = FakeCacheAccess()
         val testScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-        val sync = HostDirectorySync(
-            graphIdProvider = { "g" },
-            cacheAccess = cache,
-            scope = testScope,
-        )
+        val sync = disconnectedSync(OpfsGraphSlug("g"), cache, testScope)
 
         val bytesCounter = newReadCounter()
         val secretPath = "$opfsPath/pages/Secret.md.stek"
