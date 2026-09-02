@@ -196,4 +196,35 @@ class PlatformFileSystemHostSyncDelegationTest {
         fs.hostDirectorySync.onHostConflict(GraphRootedPath.of("/stelekit/probe/Foo.md", null), "conflicting content")
         assertEquals(listOf("/stelekit/probe/Foo.md"), observed)
     }
+
+    @Test
+    fun setOnHostBytesConflict_should_SurviveAGraphSwitch_When_TheCallbackWasWiredBeforeSwitching() = runTest {
+        val fs = PlatformFileSystem()
+        fs.preload("/stelekit/${freshGraphId()}")
+        val observed = mutableListOf<String>()
+        fs.setOnHostBytesConflict { path, _ -> observed += path }
+
+        fs.switchActiveGraph("/stelekit/${freshGraphId()}")
+
+        fs.hostDirectorySync.onHostBytesConflict(
+            GraphRootedPath.of("/stelekit/probe/Foo.md.stek", null),
+            byteArrayOf(1, 2, 3),
+        )
+        assertEquals(listOf("/stelekit/probe/Foo.md.stek"), observed)
+    }
+
+    @Test
+    fun setOnHostWriteFailed_should_SurviveAGraphSwitch_When_TheCallbackWasWiredBeforeSwitching() = runTest {
+        val fs = PlatformFileSystem()
+        fs.preload("/stelekit/${freshGraphId()}")
+        val observed = mutableListOf<String>()
+        fs.setOnHostWriteFailed { error -> observed += error.path }
+
+        fs.switchActiveGraph("/stelekit/${freshGraphId()}")
+
+        fs.hostDirectorySync.onHostWriteFailed(
+            dev.stapler.stelekit.error.DomainError.FileSystemError.WriteFailed("/stelekit/probe/Foo.md", "boom"),
+        )
+        assertEquals(listOf("/stelekit/probe/Foo.md"), observed)
+    }
 }

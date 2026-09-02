@@ -147,4 +147,39 @@ class HostDirectorySyncGraphSwitchTest {
 
         testScope.cancel()
     }
+
+    @Test
+    fun onAccessStateChanged_should_NeverFireWithTheConstructorDefault_When_AFreshInstanceReplacesThePreviousGraphsSession() = runTest {
+        // Epic 2.2 (Task 2.2.1d): PlatformFileSystem.buildGraphSyncSession constructs a brand-new
+        // HostDirectorySync per graph switch, each starting from its own private
+        // HostAccessState.NotApplicable default — the "no flash" guarantee this test protects is
+        // that constructing that fresh instance must never itself push NotApplicable through
+        // onAccessStateChanged into PlatformFileSystem's stable, switch-surviving
+        // hostAccessStateFlow. setHostAccessState only invokes the callback on an actual state
+        // transition (old != new), and construction never calls setHostAccessState — so the
+        // callback must stay silent until reconnectHostDirectory resolves a real state.
+        val observed = mutableListOf<HostAccessState>()
+        val testScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val opfsPath = freshOpfsPath("switch-flash")
+        val sync = HostDirectorySync(
+            graphId = OpfsGraphSlug(opfsPath.substringAfterLast("/")),
+            cacheAccess = FakeCacheAccess(),
+            scopeOverride = testScope,
+            callbacks = HostDirectorySync.Callbacks(onAccessStateChanged = { state -> observed += state }),
+        )
+        assertTrue(observed.isEmpty(), "constructing a fresh session must never fire the callback on its own")
+
+        sync.lookupPersistedHandle = { makeWritableHostRoot() to opfsPath }
+        val resolved = sync.reconnectHostDirectory(opfsPath.substringAfterLast("/"))
+
+        assertEquals(HostAccessState.Granted, resolved)
+        val expectedStates: List<HostAccessState> = listOf(HostAccessState.Granted)
+        assertEquals(
+            expectedStates,
+            observed,
+            "the callback must fire exactly once, with the real resolved state — never NotApplicable",
+        )
+
+        testScope.cancel()
+    }
 }
