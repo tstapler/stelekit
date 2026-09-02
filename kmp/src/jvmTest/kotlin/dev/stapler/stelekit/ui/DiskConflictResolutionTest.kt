@@ -1,10 +1,12 @@
 package dev.stapler.stelekit.ui
 
 import dev.stapler.stelekit.db.DatabaseWriteActor
+import dev.stapler.stelekit.db.GraphEpoch
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.platform.PlatformFileSystem
@@ -88,7 +90,9 @@ class DiskConflictResolutionTest {
         val scope = CoroutineScope(Dispatchers.Unconfined)
         val searchRepo = InMemorySearchRepository()
         @Suppress("DEPRECATION")
-        val graphWriter = GraphWriter(PlatformFileSystem(), pageRepository = pageRepo)
+        val graphWriter = GraphWriter(PlatformFileSystem(), pageRepository = pageRepo).also {
+            it.currentEpoch = GraphEpoch(GraphId("disk-conflict-test"), graphPath = "", sequence = 1L)
+        }
         var viewModelRef: StelekitViewModel? = null
         val bsm = BlockStateManager(
             blockRepository = blockRepo,
@@ -124,7 +128,9 @@ class DiskConflictResolutionTest {
         val scope = CoroutineScope(Dispatchers.Unconfined)
         val searchRepo = InMemorySearchRepository()
         @Suppress("DEPRECATION")
-        val graphWriter = GraphWriter(PlatformFileSystem(), pageRepository = pageRepo)
+        val graphWriter = GraphWriter(PlatformFileSystem(), pageRepository = pageRepo).also {
+            it.currentEpoch = GraphEpoch(GraphId("disk-conflict-test"), graphPath = "", sequence = 1L)
+        }
         var viewModelRef: StelekitViewModel? = null
         val bsm = BlockStateManager(
             blockRepository = blockRepo,
@@ -768,7 +774,9 @@ class DiskConflictResolutionTest {
             // production default (PlatformDispatcher.IO) is a real dispatch onto the JVM-wide
             // Dispatchers.IO pool, whose scheduling latency under CI's maxParallelForks CPU
             // contention could exceed the withTimeout budget below even with instant fake work.
-            val graphWriter = GraphWriter(fs, pageRepository = pageRepo, ioDispatcher = Dispatchers.Unconfined)
+            val graphWriter = GraphWriter(fs, pageRepository = pageRepo, ioDispatcher = Dispatchers.Unconfined).also {
+                it.currentEpoch = GraphEpoch(GraphId("disk-conflict-rename-test"), graphPath = tempDir.absolutePath, sequence = 1L)
+            }
             val scope = CoroutineScope(Dispatchers.Unconfined)
             val writeActor = dev.stapler.stelekit.db.DatabaseWriteActor(blockRepo, pageRepo, scope = scope)
             val searchRepo = InMemorySearchRepository()
