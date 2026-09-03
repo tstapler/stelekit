@@ -155,8 +155,13 @@ class BlockInsertBenchmarkTest {
             val graphWriter = GraphWriter(
                 fileSystem = shimFs,
                 writeActor = actor,
-                graphPath = tempDir.absolutePath,
-            )
+            ).also {
+                it.currentEpoch = dev.stapler.stelekit.db.GraphEpoch(
+                    graphId = dev.stapler.stelekit.model.GraphId("block-insert-benchmark-test"),
+                    graphPath = tempDir.absolutePath,
+                    sequence = 1L,
+                )
+            }
             val writerScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
             graphWriter.startAutoSave(writerScope)
 

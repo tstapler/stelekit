@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.78.2](https://github.com/tstapler/stelekit/compare/v0.78.1...v0.78.2) (2026-09-03)
+
+
+### Bug Fixes
+
+* **bazel:** pin org.eclipse.jgit.ssh.jsch to 7.3.0, matching JGit core ([651bc9f](https://github.com/tstapler/stelekit/commit/651bc9fadb08e7e1198a9c0501fe3f4be49f251d))
+* **git:** set initial branch to main on repo init ([a1f1d02](https://github.com/tstapler/stelekit/commit/a1f1d02a1984883e9453f5d9cbc91090a5728179))
+* **kmp:** GraphScopedSession migration for host-sync/PlatformFileSystem/GraphWriter ([#296](https://github.com/tstapler/stelekit/issues/296)) ([03e0340](https://github.com/tstapler/stelekit/commit/03e03405a20f12abd0af1c12a9945179e03b48e7))
+
+## [0.78.1](https://github.com/tstapler/stelekit/compare/v0.78.0...v0.78.1) (2026-09-01)
+
+
+### Bug Fixes
+
+* **web:** follow GraphManager's active graph in host-directory sync ([#293](https://github.com/tstapler/stelekit/issues/293)) ([4157104](https://github.com/tstapler/stelekit/commit/4157104767a3b0d7b6c6da3c15521429ad47de3f))
+
 ## [0.78.0](https://github.com/tstapler/stelekit/compare/v0.77.0...v0.78.0) (2026-09-01)
 
 

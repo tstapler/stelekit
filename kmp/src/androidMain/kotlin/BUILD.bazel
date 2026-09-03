@@ -5,13 +5,15 @@ Compiled together with commonMain and jvmCommonMain in a single kt_android_libra
 so that Kotlin Multiplatform expect/actual resolution works under Bazel.
 This mirrors how jvm_main_lib combines commonMain + jvmCommonMain + jvmMain for JVM.
 
-Note on JGit versioning: rules_jvm_external cannot resolve the same
-groupId:artifactId at two different versions. The JGit 5.13.x ssh.jsch
-module (org.eclipse.jgit:org.eclipse.jgit.ssh.jsch:5.13.3) has a different
-artifactId than the 7.x ssh.apache module, so both can co-exist in the
-artifact list. However org.eclipse.jgit:org.eclipse.jgit:7.3.0 is the
-resolved version — Android code calling JGit 5.13.x APIs must be aware
-that the 7.x JAR is on the compile classpath.
+Note on JGit versioning: org.eclipse.jgit.ssh.jsch (Android's SSH transport)
+is pinned to 7.3.0 in MODULE.bazel, matching org.eclipse.jgit:org.eclipse.jgit
+and org.eclipse.jgit.ssh.apache exactly — all three must stay in lockstep.
+AndroidGitRepository.kt imports the 6.x+ package layout
+(org.eclipse.jgit.transport.ssh.jsch.*); an older ssh.jsch (e.g. 5.13.x, which
+predates that package split) will fail to compile against the 7.x core jar.
+com.jcraft:jsch is excluded repo-wide (MODULE.bazel's `excluded_artifacts`) in
+favor of the maintained com.github.mwiede:jsch fork — mirrors
+kmp/build.gradle.kts's identical exclusion on the Gradle side.
 """
 
 load("@rules_kotlin//kotlin:android.bzl", "kt_android_library")

@@ -97,11 +97,7 @@ class HostDirectorySyncReconciliationBenchmarkTest {
     fun runHostReconciliation_should_MeasureFirstEverAndSteadyStatePassCosts_When_Walking8030MockedHostFiles() = runTest {
         val cache = FakeCacheAccess()
         val testScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-        val sync = HostDirectorySync(
-            graphIdProvider = { "bench-graph" },
-            cacheAccess = cache,
-            scope = testScope,
-        )
+        val sync = disconnectedSync(OpfsGraphSlug("bench-graph"), cache, testScope)
         val files = buildFixtureFiles()
 
         // ── Pass 1: first-ever reconciliation — no baseline, full content-read walk. ────────────

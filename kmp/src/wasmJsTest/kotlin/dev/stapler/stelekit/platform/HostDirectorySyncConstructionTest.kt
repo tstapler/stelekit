@@ -67,9 +67,11 @@ class HostDirectorySyncConstructionTest {
         val fakeCacheAccess = FakeCacheAccess()
         val testScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-        // Given: constructed directly, no PlatformFileSystem instance involved anywhere.
-        val sync = HostDirectorySync(
-            graphIdProvider = { "g" },
+        // Given: constructed directly via HostDirectorySync.forTest — graphId + cacheAccess +
+        // scope, no PlatformFileSystem instance involved anywhere (Epic 1.1's retired
+        // graphIdProvider-closure shape collapsed to this plain OpfsGraphSlug value).
+        val sync = HostDirectorySync.forTest(
+            graphId = OpfsGraphSlug("g"),
             cacheAccess = fakeCacheAccess,
             scope = testScope,
         )

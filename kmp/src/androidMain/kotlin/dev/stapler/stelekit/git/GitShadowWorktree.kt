@@ -6,7 +6,6 @@ package dev.stapler.stelekit.git
 import android.content.Context
 import android.util.Log
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
-import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.GitWorktreeLocks
 import dev.stapler.stelekit.util.ContentHasher
 import kotlinx.coroutines.CancellationException
@@ -47,7 +46,6 @@ class GitShadowWorktree(
     context: Context,
     internal val shadowKey: String,
     private val safRoot: String,
-    private val fileSystem: FileSystem,
 ) : GitWorktreePathMapper {
 
     private val worktreeRoot = File(context.filesDir, "graphs/$shadowKey/gitshadow")

@@ -374,10 +374,17 @@ class JvmGitRepositoryTest {
     fun `abortMerge resets a conflicted merge back to pre-merge HEAD content and clears merge state`() = runTest {
         assertTrue(repository.init(config.repoRoot).isRight())
         Git.open(File(config.repoRoot)).use { git -> setIdentity(git) }
+        // GitConfig.remoteBranch defaults to the literal "main", but git's actual init branch
+        // name depends on the running machine/CI runner's init.defaultBranch — derive it for real
+        // instead of assuming, exactly like the merge-conflict tests above (this test previously
+        // used the bare `config` here, which only passed when the ambient git config happened to
+        // default to "main").
+        val baseBranch = Git.open(File(config.repoRoot)).use { it.repository.branch }
+        val mergeConfig = config.copy(remoteBranch = baseBranch)
 
         File(config.repoRoot, "shared.md").writeText("base\n")
-        assertTrue(repository.stageSubdir(config).isRight())
-        assertTrue(repository.commit(config, "base commit").isRight())
+        assertTrue(repository.stageSubdir(mergeConfig).isRight())
+        assertTrue(repository.commit(mergeConfig, "base commit").isRight())
 
         val originDir = createTempDirectory("stelekit_jvm_git_origin_").toFile()
         Git.cloneRepository().setURI(config.repoRoot).setBare(true).setDirectory(originDir).call().close()
@@ -397,11 +404,11 @@ class JvmGitRepositoryTest {
         }
 
         File(config.repoRoot, "shared.md").writeText("local change\n")
-        assertTrue(repository.stageSubdir(config).isRight())
-        assertTrue(repository.commit(config, "local change").isRight())
+        assertTrue(repository.stageSubdir(mergeConfig).isRight())
+        assertTrue(repository.commit(mergeConfig, "local change").isRight())
 
-        assertTrue(repository.fetch(config).isRight())
-        val mergeResult = repository.merge(config)
+        assertTrue(repository.fetch(mergeConfig).isRight())
+        val mergeResult = repository.merge(mergeConfig)
         assertTrue(mergeResult.isRight(), "merge failed: $mergeResult")
         assertTrue((mergeResult as Either.Right).value.hasConflicts, "expected a conflict")
 
@@ -413,7 +420,7 @@ class JvmGitRepositoryTest {
             )
         }
 
-        val abortResult = repository.abortMerge(config)
+        val abortResult = repository.abortMerge(mergeConfig)
         assertTrue(abortResult.isRight(), "abortMerge failed: $abortResult")
 
         Git.open(File(config.repoRoot)).use { git ->
@@ -429,7 +436,7 @@ class JvmGitRepositoryTest {
             "expected working tree reset to pre-merge (local) HEAD content",
         )
 
-        val statusResult = repository.status(config)
+        val statusResult = repository.status(mergeConfig)
         assertTrue(statusResult.isRight(), "status failed: $statusResult")
         assertFalse(
             (statusResult as Either.Right).value.hasLocalChanges,

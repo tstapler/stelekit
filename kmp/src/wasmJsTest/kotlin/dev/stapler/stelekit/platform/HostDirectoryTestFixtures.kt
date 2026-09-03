@@ -3,10 +3,37 @@
 
 package dev.stapler.stelekit.platform
 
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 
 // js() calls must be top-level functions in Kotlin/Wasm — not inside a class or companion object
 // (mirrors HostDirectorySyncHandleRetentionTest.kt's established idiom for this codebase).
+
+// ── Epic 1.2 (Story 1.2.1, Task 1.2.1b): named HostDirectorySync.forTest(...) scenarios ─────────
+// Thin wrappers over HostDirectorySync.forTest, per pitfalls.md §3's "several small, named factory
+// functions for named scenarios" guidance over one many-nullable-parameter God fixture.
+
+/** A [HostDirectorySync] already connected to [rootHandle] at [opfsPath]. */
+internal fun connectedSync(
+    graphId: OpfsGraphSlug,
+    opfsPath: String,
+    rootHandle: JsAny,
+    cacheAccess: HostDirectorySync.CacheAccess,
+    scope: CoroutineScope,
+): HostDirectorySync = HostDirectorySync.forTest(
+    graphId = graphId,
+    cacheAccess = cacheAccess,
+    scope = scope,
+    connectedHandle = rootHandle,
+    opfsPath = opfsPath,
+)
+
+/** A [HostDirectorySync] with no host directory connection at all. */
+internal fun disconnectedSync(
+    graphId: OpfsGraphSlug,
+    cacheAccess: HostDirectorySync.CacheAccess,
+    scope: CoroutineScope,
+): HostDirectorySync = HostDirectorySync.forTest(graphId = graphId, cacheAccess = cacheAccess, scope = scope)
 
 // ── Fake FileSystemDirectoryHandle/FileSystemFileHandle tree builders ─────────────────────────
 // Mirrors the `listOpfsEntries`/`isFileEntry`/`isDirectoryEntry`/`getFile().text()`/
