@@ -73,7 +73,7 @@ class AndroidGitRepository(
         // every real resolution, so GitShadowWorktree.sweepOrphans() never deletes an actively
         // used graph's shadow tree — no per-call-site opt-in required.
         return shadowWorktrees.getOrPut(key) {
-            GitShadowWorktree(context, key, repoRoot, fileSystem)
+            GitShadowWorktree(context, key, repoRoot)
         }.also {
             it.touchLastUsed()
             // Task 5.2.1c: keep PlatformFileSystem's write-behind flush lock-key in sync with the
