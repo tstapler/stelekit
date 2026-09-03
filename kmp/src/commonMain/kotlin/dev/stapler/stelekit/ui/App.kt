@@ -646,7 +646,18 @@ private fun GraphContent(
                 graphLoader.emitExternalFileChange(filePath, diskContent)
             },
             spanEmitter = repos.spanEmitter,
-        )
+        ).also { writer ->
+            // Bug fix (sdd:6-verify BLOCKER): this GraphWriter instance is fresh per active graph
+            // (remember is keyed on repos, which is per-graph) — renamePage/deletePage fail fast on
+            // a null currentEpoch, so every graph needs one seeded immediately at construction, not
+            // only paranoid-mode graphs via onVaultUnlock/onCreateVault's success paths. Those two
+            // handlers still advance `sequence` on top of this baseline via their own
+            // `(graphWriter.currentEpoch?.sequence ?: 0L) + 1` logic.
+            val id = activeGraphInfo?.id
+            if (id != null) {
+                writer.currentEpoch = GraphEpoch(graphId = id, graphPath = activeGraphPath, sequence = 1L)
+            }
+        }
     }
 
     // Wire git sync service for the active graph.

@@ -248,11 +248,14 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
      * so `scheduleHostWriteThrough` silently dropped it ("no valid host-relative path") — the
      * graph looked idle/unsynced no matter what was edited.
      *
-     * No-ops if [graphPath] resolves to the already-active graph — **retained unchanged by Epic
-     * 1.1** (pre-mortem.md P1-4): until Phase 2's `GraphScopedSession` takes over this guarantee
-     * (Task 2.1.2b), this same-graph idempotency check is the only protection against a rapid
-     * double-`switchActiveGraph()` call constructing two live [HostDirectorySync] instances for
-     * the same graph. Otherwise closes the previous graph's [HostDirectorySync] session
+     * No-ops if [graphPath] resolves to the already-active graph — a fast-path outer guard that
+     * avoids re-running [preload]'s OPFS reload/dirty-marker restore and
+     * [HostDirectorySync.reconnectHostDirectory] for a no-op switch. `GraphScopedSession.switchTo`
+     * (called from [preload]) already has its own, authoritative idempotency check for a
+     * genuinely concurrent double-switch to the same id — this outer check is redundant with that
+     * guarantee, not a replacement for it; it exists purely to skip the reload/reconnect work, not
+     * to prevent constructing two live [HostDirectorySync] instances (that's `switchTo`'s job).
+     * Otherwise closes the previous graph's [HostDirectorySync] session
      * ([SessionLifecycle.close] — Epic 1.1, Task 1.1.2a/b: a fresh instance replaces it wholesale,
      * rather than the old `disconnectForGraphSwitch()` resetting the same instance in place),
      * reloads this graph's own OPFS content/dirty-marker via [preload], then attempts to silently

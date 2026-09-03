@@ -383,7 +383,7 @@ class GraphWriter(
      */
     override suspend fun deletePage(page: Page): Boolean {
         // Capture the active epoch ONCE here, before queuing for saveMutex — see renamePage's
-        // identical rationale above and GraphWriterEpochCaptureTest. requireNotNull is a
+        // identical rationale above and GraphWriterEpochCaptureTest. checkNotNull is a
         // deliberate fail-fast — see renamePage's identical rationale (GraphWriterNotYetLoadedTest).
         val capturedEpoch = checkNotNull(this@GraphWriter.currentEpoch) {
             "renamePage/deletePage called before any graph was loaded"

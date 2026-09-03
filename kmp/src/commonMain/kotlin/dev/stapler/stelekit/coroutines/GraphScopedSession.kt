@@ -83,6 +83,21 @@ class GraphScopedSession<Id : Any, T : SessionLifecycle>(
      * Returns the active session for [id], constructing one via [factory] if [id] is not already
      * active. See the class KDoc for the full sequencing guarantee and the factory's resource-
      * cleanup contract.
+     *
+     * **Precondition — callers must serialize `switchTo` calls for *different* [id]s.** The
+     * idempotency/joining guarantee above is scoped to *repeated calls for the same [id]*; it does
+     * not order two concurrent calls for two different ids against each other. Each call's factory
+     * runs outside the lock, so if a caller races `switchTo(A)` against `switchTo(B)` concurrently,
+     * whichever factory happens to finish last wins the swap into [_current] — even if that call
+     * was issued first. This class's own only current caller, `PlatformFileSystem.preload`/
+     * `switchActiveGraph`, is safe today because every post-boot call to it comes from
+     * `Main.kt`'s single `graphManager.graphRegistry.collect { ... }` coroutine — `Flow` collection
+     * is inherently sequential, so no two switches for different graphs ever race there. A future
+     * caller without that same single-collector discipline would need its own external ordering (a
+     * sequence number, a `Mutex`, or a single-consumer channel) — this class provides none itself.
+     * (`GraphManager.switchGraph` is *not* a caller of this class — it's the analogous,
+     * independently-implemented pattern this generic holder was extracted to mirror, not a
+     * consumer of it.)
      */
     suspend fun switchTo(id: Id, factory: suspend (CoroutineScope) -> T): T {
         // Step 1 (locked): idempotency check, then either join an in-flight construction for
