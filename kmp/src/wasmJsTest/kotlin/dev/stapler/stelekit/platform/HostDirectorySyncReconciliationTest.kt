@@ -109,11 +109,7 @@ class HostDirectorySyncReconciliationTest {
         graphId: String,
         cacheAccess: FakeCacheAccess,
         scope: CoroutineScope,
-    ): HostDirectorySync = HostDirectorySync(
-        graphIdProvider = { graphId },
-        cacheAccess = cacheAccess,
-        scope = scope,
-    )
+    ): HostDirectorySync = disconnectedSync(OpfsGraphSlug(graphId), cacheAccess, scope)
 
     // scheduleHostWriteThrough enqueues into hostWritePending inside its own scope.launch (see
     // HostDirectorySync.scheduleHostWriteThrough's doc comment) — genuinely async against `sync`'s

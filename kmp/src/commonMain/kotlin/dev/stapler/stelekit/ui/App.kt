@@ -22,6 +22,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalClipboardManager
+import dev.stapler.stelekit.db.GraphEpoch
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.migration.registerAllMigrations
@@ -645,7 +646,18 @@ private fun GraphContent(
                 graphLoader.emitExternalFileChange(filePath, diskContent)
             },
             spanEmitter = repos.spanEmitter,
-        )
+        ).also { writer ->
+            // Bug fix (sdd:6-verify BLOCKER): this GraphWriter instance is fresh per active graph
+            // (remember is keyed on repos, which is per-graph) — renamePage/deletePage fail fast on
+            // a null currentEpoch, so every graph needs one seeded immediately at construction, not
+            // only paranoid-mode graphs via onVaultUnlock/onCreateVault's success paths. Those two
+            // handlers still advance `sequence` on top of this baseline via their own
+            // `(graphWriter.currentEpoch?.sequence ?: 0L) + 1` logic.
+            val id = activeGraphInfo?.id
+            if (id != null) {
+                writer.currentEpoch = GraphEpoch(graphId = id, graphPath = activeGraphPath, sequence = 1L)
+            }
+        }
     }
 
     // Wire git sync service for the active graph.
@@ -845,7 +857,18 @@ private fun GraphContent(
                     val layer = dev.stapler.stelekit.vault.CryptoLayer(engine, unlockResult.dek)
                     // Set graph paths before cryptoLayer so any concurrent reader that observes
                     // cryptoLayer != null will also see the correct graphPath (used as AAD base).
-                    graphWriter.graphPath = activeGraphPath
+                    // GraphId is sourced only from GraphManager.getActiveGraphInfo()?.id — never
+                    // derived from activeGraphPath — per the GraphId smart-constructor discipline.
+                    val activeGraphIdForUnlock = graphManager.getActiveGraphInfo()?.id
+                    if (activeGraphIdForUnlock == null) {
+                        graphContentLogger.error("onVaultUnlock: no active graph — cannot establish GraphEpoch")
+                    } else {
+                        graphWriter.currentEpoch = GraphEpoch(
+                            graphId = activeGraphIdForUnlock,
+                            graphPath = activeGraphPath,
+                            sequence = (graphWriter.currentEpoch?.sequence ?: 0L) + 1,
+                        )
+                    }
                     graphLoader.setGraphPath(activeGraphPath)
                     graphLoader.setCryptoLayer(layer)
                     graphWriter.setCryptoLayer(layer)
@@ -876,7 +899,18 @@ private fun GraphContent(
                     is arrow.core.Either.Right -> {
                         val unlockResult = result.value
                         val layer = dev.stapler.stelekit.vault.CryptoLayer(engine, unlockResult.dek)
-                        graphWriter.graphPath = activeGraphPath
+                        // GraphId sourced only from GraphManager.getActiveGraphInfo()?.id — see
+                        // onVaultUnlock's identical rationale above.
+                        val activeGraphIdForCreate = graphManager.getActiveGraphInfo()?.id
+                        if (activeGraphIdForCreate == null) {
+                            graphContentLogger.error("onCreateVault: no active graph — cannot establish GraphEpoch")
+                        } else {
+                            graphWriter.currentEpoch = GraphEpoch(
+                                graphId = activeGraphIdForCreate,
+                                graphPath = activeGraphPath,
+                                sequence = (graphWriter.currentEpoch?.sequence ?: 0L) + 1,
+                            )
+                        }
                         graphLoader.setGraphPath(activeGraphPath)
                         graphLoader.setCryptoLayer(layer)
                         graphWriter.setCryptoLayer(layer)

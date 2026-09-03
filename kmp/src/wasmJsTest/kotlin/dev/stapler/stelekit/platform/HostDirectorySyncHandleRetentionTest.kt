@@ -87,11 +87,8 @@ class HostDirectorySyncHandleRetentionTest {
         override fun opfsWriteDeferredFor(path: String): Deferred<Unit>? = null
     }
 
-    private fun newSync(graphId: String, scope: CoroutineScope): HostDirectorySync = HostDirectorySync(
-        graphIdProvider = { graphId },
-        cacheAccess = NoOpCacheAccess(),
-        scope = scope,
-    )
+    private fun newSync(graphId: String, scope: CoroutineScope): HostDirectorySync =
+        disconnectedSync(OpfsGraphSlug(graphId), NoOpCacheAccess(), scope)
 
     @Test
     fun attachFreshHandle_should_SetHostDirHandleAndOpfsPath_When_PickDirectoryAsyncSucceeds() = runTest {
@@ -135,13 +132,13 @@ class HostDirectorySyncHandleRetentionTest {
     @Test
     fun persistHostHandle_should_StoreHostHandleEnvelopeKeyedByThePickedGraphsOwnId_When_AttachFreshHandleCompletes() = runTest {
         // Bug fix regression coverage: attachFreshHandle runs from pickDirectoryAsync() BEFORE the
-        // caller has registered/switched to the newly-picked graph in GraphManager, so
-        // graphIdProvider() here deliberately resolves to a DIFFERENT, unrelated graph — exactly
-        // like a real multi-graph session picking a new folder while some other graph is active.
-        // The envelope must be keyed by the picked graph's own id (derived from its dirName), not
-        // graphIdProvider()'s stale value — otherwise reconnectHostDirectory()/
-        // requestHostDirectoryAccess() (both keyed by the *actual* active graph id on lookup) can
-        // never find it again in a later session.
+        // caller has registered/switched to the newly-picked graph in GraphManager, so this
+        // instance's own constructor-captured graphId here deliberately holds a DIFFERENT,
+        // unrelated graph — exactly like a real multi-graph session picking a new folder while
+        // some other graph is active. The envelope must be keyed by the picked graph's own id
+        // (derived from its dirName), never this instance's own graphId — otherwise
+        // reconnectHostDirectory()/requestHostDirectoryAccess() (both keyed by the *actual* active
+        // graph id on lookup) can never find it again in a later session.
         val testScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val staleActiveGraphId = "live-${Random.nextInt(0, Int.MAX_VALUE)}"
         val sync = newSync(graphId = staleActiveGraphId, scope = testScope)

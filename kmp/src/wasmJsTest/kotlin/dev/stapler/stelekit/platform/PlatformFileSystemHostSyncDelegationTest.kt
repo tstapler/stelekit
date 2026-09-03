@@ -163,4 +163,68 @@ class PlatformFileSystemHostSyncDelegationTest {
         assertEquals(0, fs.hostDirectorySync.hostWritePending.size, "applyRemoteContent must never write-through")
         assertEquals(0, writableRootCreateWritableCallCount(root))
     }
+
+    // ── Epic 2.2 (Story 2.2.1/2.2.2): stable flow identity + callback re-supply across a switch ──
+
+    @Test
+    fun hostAccessStateFlow_should_KeepTheSameFlowIdentityAcrossASwitch_When_ActiveGraphChanges() = runTest {
+        val fs = PlatformFileSystem()
+        val flowBeforeSwitch = fs.hostAccessStateFlow
+        fs.preload("/stelekit/${freshGraphId()}")
+        val flowAfterFirstPreload = fs.hostAccessStateFlow
+
+        fs.switchActiveGraph("/stelekit/${freshGraphId()}")
+
+        assertTrue(
+            flowBeforeSwitch === flowAfterFirstPreload && flowAfterFirstPreload === fs.hostAccessStateFlow,
+            "hostAccessStateFlow must be one PlatformFileSystem-owned StateFlow, stable across every graph switch",
+        )
+    }
+
+    @Test
+    fun setOnHostConflict_should_SurviveAGraphSwitch_When_TheCallbackWasWiredBeforeSwitching() = runTest {
+        val fs = PlatformFileSystem()
+        fs.preload("/stelekit/${freshGraphId()}")
+        val observed = mutableListOf<String>()
+        fs.setOnHostConflict { path, _ -> observed += path }
+
+        fs.switchActiveGraph("/stelekit/${freshGraphId()}")
+
+        // The freshly constructed HostDirectorySync for the new graph must have received the same
+        // callback via buildGraphSyncSession's Callbacks bundle — never silently reset to the
+        // buffering/no-op default just because a graph switch replaced the instance.
+        fs.hostDirectorySync.onHostConflict(GraphRootedPath.of("/stelekit/probe/Foo.md", null), "conflicting content")
+        assertEquals(listOf("/stelekit/probe/Foo.md"), observed)
+    }
+
+    @Test
+    fun setOnHostBytesConflict_should_SurviveAGraphSwitch_When_TheCallbackWasWiredBeforeSwitching() = runTest {
+        val fs = PlatformFileSystem()
+        fs.preload("/stelekit/${freshGraphId()}")
+        val observed = mutableListOf<String>()
+        fs.setOnHostBytesConflict { path, _ -> observed += path }
+
+        fs.switchActiveGraph("/stelekit/${freshGraphId()}")
+
+        fs.hostDirectorySync.onHostBytesConflict(
+            GraphRootedPath.of("/stelekit/probe/Foo.md.stek", null),
+            byteArrayOf(1, 2, 3),
+        )
+        assertEquals(listOf("/stelekit/probe/Foo.md.stek"), observed)
+    }
+
+    @Test
+    fun setOnHostWriteFailed_should_SurviveAGraphSwitch_When_TheCallbackWasWiredBeforeSwitching() = runTest {
+        val fs = PlatformFileSystem()
+        fs.preload("/stelekit/${freshGraphId()}")
+        val observed = mutableListOf<String>()
+        fs.setOnHostWriteFailed { error -> observed += error.path }
+
+        fs.switchActiveGraph("/stelekit/${freshGraphId()}")
+
+        fs.hostDirectorySync.onHostWriteFailed(
+            dev.stapler.stelekit.error.DomainError.FileSystemError.WriteFailed("/stelekit/probe/Foo.md", "boom"),
+        )
+        assertEquals(listOf("/stelekit/probe/Foo.md"), observed)
+    }
 }
