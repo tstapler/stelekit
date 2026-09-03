@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.79.0](https://github.com/tstapler/stelekit/compare/v0.78.3...v0.79.0) (2026-09-03)
+
+
+### Features
+
+* **web:** show and re-link a graph's real host folder ([#300](https://github.com/tstapler/stelekit/issues/300)) ([da30a13](https://github.com/tstapler/stelekit/commit/da30a135c445cf1a0ecec01db650d41d6e837263))
+
+
+### Bug Fixes
+
+* **db:** re-root stale page file_path values after a graph path migration ([af8a271](https://github.com/tstapler/stelekit/commit/af8a271ccaae47cac95f40cec40c46e9ddbdffef))
+
 ## [0.78.3](https://github.com/tstapler/stelekit/compare/v0.78.2...v0.78.3) (2026-09-03)
 
 
