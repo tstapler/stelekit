@@ -27,6 +27,7 @@ kt_jvm_library(
     deps = [
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
         "@maven//:org_jetbrains_kotlin_kotlin_test_junit",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
     ],
     visibility = ["//kmp/src:__subpackages__"],
 )
