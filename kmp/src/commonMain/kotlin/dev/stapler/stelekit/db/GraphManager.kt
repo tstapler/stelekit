@@ -713,6 +713,8 @@ class GraphManager(
                         val db = factory.steleDatabase()
                         UuidMigration(writeActor).runIfNeeded(db)
                         logger.info("init[${elapsed()}ms]: UuidMigration done")
+                        FilePathRootMigration(writeActor).runIfNeeded(db, graphInfo.path)
+                        logger.info("init[${elapsed()}ms]: FilePathRootMigration done")
                         try {
                             MigrationRunner(
                                 registry = MigrationRegistry,
