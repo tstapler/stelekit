@@ -38,7 +38,7 @@ build:android --android_sdk=@androidsdk//:sdk
 # terminated abruptly ... Socket closed"). Cap the local action RAM pool so
 # scheduling stays within budget; scoped to :android since JVM-only targets
 # don't spawn dexer actions.
-build:android --local_ram_resources=9000
+build:android --local_resources=memory=9000
 
 # ── Correctness / hermetic sandbox ────────────────────────────────────────────
 build --sandbox_default_allow_network=false
