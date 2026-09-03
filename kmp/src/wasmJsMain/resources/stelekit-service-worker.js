@@ -37,7 +37,16 @@ if (typeof window === "undefined") {
     importScripts("looks-like-app-shell.js");
 
     self.addEventListener("install", () => self.skipWaiting());
-    self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
+    // Bug fix: `activate` only fires on first install or a genuine version update — never for
+    // an already-active worker. Previously this just called clients.claim(), leaving the old
+    // CACHE_NAME entries in place. The page-side reload-on-updatefound logic below then
+    // immediately re-fetched kmp.js/the wasm chunks — but stale-while-revalidate serves a
+    // cache hit unconditionally and only refreshes the cache *after* responding, so that reload
+    // still ran the outgoing version once more; only the *next* reload (whenever the user
+    // happened to cause one) would see the fix. Clearing CACHE_NAME here means that reload's
+    // fetches are guaranteed cache misses, hitting network fresh — still protected by the same
+    // looksLikeAppShell() validation the "nothing cached yet" branch already applies.
+    self.addEventListener("activate", (event) => event.waitUntil(caches.delete(CACHE_NAME).then(() => self.clients.claim())));
 
     self.addEventListener("message", (ev) => {
         if (!ev.data) {
