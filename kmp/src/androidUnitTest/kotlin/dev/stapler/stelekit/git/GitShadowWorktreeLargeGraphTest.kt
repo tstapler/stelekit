@@ -137,7 +137,7 @@ class GitShadowWorktreeLargeGraphTest {
 
         val shadowKey = GitShadowWorktree.shadowKeyForSafPath(SAF_ROOT)
         val worktreeFileSystem = RecordingFakeFileSystem()
-        val worktree = GitShadowWorktree(context, shadowKey, SAF_ROOT, worktreeFileSystem)
+        val worktree = GitShadowWorktree(context, shadowKey, SAF_ROOT)
 
         // ── State captured inside the launched coroutine, asserted on afterward ─────────────
         var firstSyncListingSize = -1

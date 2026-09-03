@@ -73,7 +73,7 @@ class AndroidGitRepository(
         // every real resolution, so GitShadowWorktree.sweepOrphans() never deletes an actively
         // used graph's shadow tree — no per-call-site opt-in required.
         return shadowWorktrees.getOrPut(key) {
-            GitShadowWorktree(context, key, repoRoot, fileSystem)
+            GitShadowWorktree(context, key, repoRoot)
         }.also {
             it.touchLastUsed()
             // Task 5.2.1c: keep PlatformFileSystem's write-behind flush lock-key in sync with the
@@ -132,7 +132,11 @@ class AndroidGitRepository(
             try {
                 val worktree = shadowWorktreeFor(repoRoot)
                 insufficientShadowStorageError(worktree, repoRoot)?.let { return@withContext it.left() }
-                Git.init().setDirectory(File(resolveForJGit(repoRoot))).call().use { git ->
+                // GitConfig.remoteBranch defaults to "main" — JGit's own default initial branch
+                // is "master" regardless of the host's `init.defaultBranch` git config, so a
+                // freshly-init'd (non-cloned) repo would otherwise never match the branch name
+                // fetch()/merge() look for.
+                Git.init().setDirectory(File(resolveForJGit(repoRoot))).setInitialBranch("main").call().use { git ->
                     syncShadowAfterInitOrClone(repoRoot, git)
                 }
                 Unit.right()

@@ -5,7 +5,6 @@ package dev.stapler.stelekit.git
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
-import dev.stapler.stelekit.platform.FileSystem
 import kotlinx.coroutines.runBlocking
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -30,24 +29,8 @@ class GitShadowWorktreeTest {
 
     private val context: Context get() = ApplicationProvider.getApplicationContext()
 
-    /** Minimal stand-in for the constructor's [FileSystem] param — unused by the methods under test. */
-    private class FakeFileSystem : FileSystem {
-        override fun getDefaultGraphPath() = "saf://root"
-        override fun expandTilde(path: String) = path
-        override fun readFile(path: String): String? = null
-        override fun writeFile(path: String, content: String) = false
-        override fun listFiles(path: String) = emptyList<String>()
-        override fun listDirectories(path: String) = emptyList<String>()
-        override fun fileExists(path: String) = false
-        override fun directoryExists(path: String) = false
-        override fun createDirectory(path: String) = false
-        override fun deleteFile(path: String) = false
-        override fun pickDirectory(): String? = null
-        override fun getLastModifiedTime(path: String): Long? = null
-    }
-
     private fun newWorktree(safRoot: String = "saf://root"): GitShadowWorktree =
-        GitShadowWorktree(context, "test-key-${System.nanoTime()}", safRoot, FakeFileSystem())
+        GitShadowWorktree(context, "test-key-${System.nanoTime()}", safRoot)
 
     // ── Task 8.1.1a: sync copy/skip-fresh/delete/exclude-.git coverage ─────────────────────────
 

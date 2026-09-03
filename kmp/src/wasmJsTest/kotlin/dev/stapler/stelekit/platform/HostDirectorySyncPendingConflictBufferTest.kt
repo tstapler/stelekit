@@ -35,11 +35,7 @@ class HostDirectorySyncPendingConflictBufferTest {
         override fun opfsWriteDeferredFor(path: String): Deferred<Unit>? = null
     }
 
-    private fun newSync(scope: CoroutineScope) = HostDirectorySync(
-        graphIdProvider = { "g" },
-        cacheAccess = FakeCacheAccess(),
-        scope = scope,
-    )
+    private fun newSync(scope: CoroutineScope) = disconnectedSync(OpfsGraphSlug("g"), FakeCacheAccess(), scope)
 
     @Test
     fun onHostConflict_should_BufferConflicts_When_NoRealCallbackWiredYet() = runTest {
