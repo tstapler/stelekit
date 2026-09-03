@@ -46,17 +46,13 @@ class HostDirectorySyncWriteThroughTest {
         cacheAccess: FakeCacheAccess,
         scope: CoroutineScope,
         rootHandle: JsAny,
-    ): HostDirectorySync {
-        val graphId = opfsPath.substringAfterLast("/")
-        val sync = HostDirectorySync(
-            graphIdProvider = { graphId },
-            cacheAccess = cacheAccess,
-            scope = scope,
-        )
-        sync.hostDirHandle = rootHandle
-        sync.hostGraphOpfsPath = opfsPath
-        return sync
-    }
+    ): HostDirectorySync = connectedSync(
+        graphId = OpfsGraphSlug(opfsPath.substringAfterLast("/")),
+        opfsPath = opfsPath,
+        rootHandle = rootHandle,
+        cacheAccess = cacheAccess,
+        scope = scope,
+    )
 
     /** Polls [block] on a real (non-test-scheduler) dispatcher until true or the timeout elapses —
      * mirrors PlatformFileSystemOpfsWriteDurabilityTest.kt's helper, needed here because
@@ -394,7 +390,7 @@ class HostDirectorySyncWriteThroughTest {
         // field's true default.
         val cacheAccess = FakeCacheAccess()
         val testScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-        val sync = HostDirectorySync(graphIdProvider = { "g" }, cacheAccess = cacheAccess, scope = testScope)
+        val sync = disconnectedSync(graphId = OpfsGraphSlug("g"), cacheAccess = cacheAccess, scope = testScope)
         assertNull(sync.hostDirHandle)
         testScope.cancel()
     }

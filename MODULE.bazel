@@ -171,6 +171,14 @@ maven.install(
     # Skip source JARs — halves the number of Coursier fetch operations.
     # Source JARs are only useful for IDE navigation, not for builds.
     fetch_sources = False,
+    # com.jcraft:jsch is abandoned (unmaintained, no ED25519/ECDSA/OpenSSH key support) —
+    # org.eclipse.jgit.ssh.jsch pulls it in transitively, but com.github.mwiede:jsch (a
+    # maintained, drop-in-compatible fork, same com.jcraft.jsch package) is the intended
+    # sole jsch implementation on the classpath. Mirrors kmp/build.gradle.kts's
+    # `exclude(group = "com.jcraft", module = "jsch")` on the Gradle side.
+    excluded_artifacts = [
+        "com.jcraft:jsch",
+    ],
     artifacts = [
         # ── Kotlin stdlib (required by rules_kotlin kt_jvm_library) ──────────
         "org.jetbrains.kotlin:kotlin-stdlib:2.3.21",
@@ -271,8 +279,13 @@ maven.install(
         # resolved to higher version). See CLAUDE.md note on version pinning.
         "org.eclipse.jgit:org.eclipse.jgit:7.3.0.202506031305-r",
         "org.eclipse.jgit:org.eclipse.jgit.ssh.apache:7.3.0.202506031305-r",
-        # JGit SSH/JSch for Android (5.13.x group; artifactId is different)
-        "org.eclipse.jgit:org.eclipse.jgit.ssh.jsch:5.13.3.202401111512-r",
+        # JGit SSH/JSch for Android — must match the 7.3.0 core version above.
+        # AndroidGitRepository.kt imports org.eclipse.jgit.transport.ssh.jsch.* (the
+        # 6.x+ package layout); the 5.13.x artifact previously pinned here ships the
+        # pre-6.x layout (org.eclipse.jgit.transport.JschConfigSessionFactory, no
+        # `.ssh.jsch` subpackage) and fails to compile. Matches kmp/build.gradle.kts's
+        # Gradle dependency exactly, including the com.jcraft:jsch exclusion below.
+        "org.eclipse.jgit:org.eclipse.jgit.ssh.jsch:7.3.0.202506031305-r",
         "com.github.mwiede:jsch:0.2.21",
 
         # ── Transitive version conflict pins ─────────────────────────────────

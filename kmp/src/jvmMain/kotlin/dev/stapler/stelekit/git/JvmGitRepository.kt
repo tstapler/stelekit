@@ -66,7 +66,11 @@ class JvmGitRepository(
     override suspend fun init(repoRoot: String): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
             try {
-                Git.init().setDirectory(File(repoRoot)).call().close()
+                // GitConfig.remoteBranch defaults to "main" — JGit's own default initial branch
+                // is "master" regardless of the host's `init.defaultBranch` git config, so a
+                // freshly-init'd (non-cloned) repo would otherwise never match the branch name
+                // fetch()/merge() look for.
+                Git.init().setDirectory(File(repoRoot)).setInitialBranch("main").call().close()
                 Unit.right()
             } catch (e: CancellationException) {
                 throw e

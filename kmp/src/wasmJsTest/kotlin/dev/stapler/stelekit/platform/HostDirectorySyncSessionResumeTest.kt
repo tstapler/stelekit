@@ -151,11 +151,7 @@ class HostDirectorySyncSessionResumeTest {
         graphId: String,
         cacheAccess: FakeCacheAccess,
         scope: CoroutineScope,
-    ): HostDirectorySync = HostDirectorySync(
-        graphIdProvider = { graphId },
-        cacheAccess = cacheAccess,
-        scope = scope,
-    )
+    ): HostDirectorySync = disconnectedSync(OpfsGraphSlug(graphId), cacheAccess, scope)
 
     // ── reconnectHostDirectory (Story 2.2.1) ────────────────────────────────────────────────────
 

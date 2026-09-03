@@ -62,24 +62,8 @@ class GitShadowFlushActorTest {
         override fun getLastModifiedTime(path: String): Long? = lastModifiedTimes[path]
     }
 
-    /** Only used to satisfy [GitShadowWorktree]'s constructor — unused by the sync-free methods under test. */
-    private class InertFileSystem : FileSystem {
-        override fun getDefaultGraphPath() = "saf://root"
-        override fun expandTilde(path: String) = path
-        override fun readFile(path: String): String? = null
-        override fun writeFile(path: String, content: String) = false
-        override fun listFiles(path: String) = emptyList<String>()
-        override fun listDirectories(path: String) = emptyList<String>()
-        override fun fileExists(path: String) = false
-        override fun directoryExists(path: String) = false
-        override fun createDirectory(path: String) = false
-        override fun deleteFile(path: String) = false
-        override fun pickDirectory(): String? = null
-        override fun getLastModifiedTime(path: String): Long? = null
-    }
-
     private fun newWorktree(): GitShadowWorktree =
-        GitShadowWorktree(context, "flush-key-${System.nanoTime()}", safRoot, InertFileSystem())
+        GitShadowWorktree(context, "flush-key-${System.nanoTime()}", safRoot)
 
     private fun newQueue(): GitWriteBackQueue = GitWriteBackQueue(tempFolder.newFile("queue-${System.nanoTime()}.txt"))
 

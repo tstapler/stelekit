@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.platform
 
+import dev.stapler.stelekit.coroutines.SessionLifecycle
 import dev.stapler.stelekit.db.ChangeDetectionScheduler
 import dev.stapler.stelekit.db.RescanOutcome
 import dev.stapler.stelekit.db.RescanReason
@@ -16,8 +17,11 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.await
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -83,19 +87,78 @@ internal class GraphRootedPath private constructor(val value: String) {
  * `project_plans/web-local-folder-livesync/implementation/plan.md` builds its fields/methods onto
  * this class, never back onto `PlatformFileSystem`.
  */
-class HostDirectorySync(
+internal class HostDirectorySync(
     /**
-     * Reads `PlatformFileSystem.graphId`'s *live* value rather than a value captured at
-     * construction time. `HostDirectorySync` is composed into `PlatformFileSystem` in a field
-     * initializer — before `preload(graphPath)` later mutates `graphId` from `"default"` to the
-     * real graph id — so a plain `String` parameter would permanently key IndexedDB persistence
-     * under `"default"`. The composition call site passes `graphIdProvider = { graphId }`, a
-     * closure over the mutable field, so every read here sees the current value.
+     * Epic 1.1 (Story 1.1.1): captured once at construction, never a live closure — `graphId`
+     * is retired in favor of this plain [OpfsGraphSlug] value. `HostDirectorySync` is now the
+     * per-graph unit itself: a fresh instance is constructed per graph (see [close]/
+     * `SessionLifecycle`), so there is no live-read indirection left to solve — every method's
+     * "which graph is this for" question has exactly one answer for this instance's entire
+     * lifetime.
      */
-    private val graphIdProvider: () -> String,
+    private val graphId: OpfsGraphSlug,
     private val cacheAccess: CacheAccess,
-    private val scope: CoroutineScope,
-) {
+    /**
+     * Test-only escape hatch — always `null` (the default) in production, which builds a real
+     * `CoroutineScope(SupervisorJob() + Dispatchers.Default)` below. Never a constructor parameter
+     * a production call site supplies; exists solely so [forTest] (Epic 1.2) can inject a
+     * deterministic `TestScope`/dispatcher instead of a real one.
+     */
+    scopeOverride: CoroutineScope? = null,
+    /**
+     * Epic 2.2 (Story 2.2.1/2.2.2): every UI-facing callback this instance can fire, bundled so
+     * `PlatformFileSystem.buildGraphSyncSession` supplies all five at once from its own
+     * `PlatformFileSystem`-owned fields instead of five separate constructor params accreting
+     * over time. `onHostConflict`/`onHostBytesConflict`/`onHostWriteFailed` are nullable — a
+     * `null` here means "keep this instance's own buffering/no-op default" (see each field's own
+     * doc comment below), since those three have meaningful non-identity defaults that a fresh
+     * `Callbacks()` must not clobber before `PlatformFileSystem` has any real callback to supply
+     * (e.g. at app boot, before a `GraphLoader` exists). `onAccessStateChanged`/
+     * `onPendingCountChanged` have no such buffering need, so they default straight to no-ops.
+     */
+    callbacks: Callbacks = Callbacks(),
+) : SessionLifecycle {
+
+    /** See [callbacks]'s parameter doc comment. */
+    data class Callbacks(
+        val onAccessStateChanged: (HostAccessState) -> Unit = {},
+        val onPendingCountChanged: (Int) -> Unit = {},
+        val onHostConflict: ((path: GraphRootedPath, hostContent: String) -> Unit)? = null,
+        val onHostBytesConflict: ((path: GraphRootedPath, hostBytes: ByteArray) -> Unit)? = null,
+        val onHostWriteFailed: ((error: DomainError.FileSystemError.WriteFailed) -> Unit)? = null,
+    )
+
+    private val onAccessStateChanged = callbacks.onAccessStateChanged
+    private val onPendingCountChanged = callbacks.onPendingCountChanged
+    /**
+     * Epic 1.1 (Story 1.1.1/1.1.2): owned internally rather than externally injected — the whole
+     * instance is the per-graph session unit, so its own scope's lifetime is exactly this
+     * instance's lifetime. [close] cancels it. [forTest] (Epic 1.2) is the only caller that ever
+     * supplies [scopeOverride], bypassing this default for deterministic test dispatch.
+     */
+    override val scope: CoroutineScope = scopeOverride ?: CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /**
+     * Epic 1.1 (Story 1.1.2): implements [SessionLifecycle.close] — tears down this instance's
+     * poller and cancels its own [scope], so no coroutine this instance ever launched can touch
+     * any subsequently-constructed instance's state. Retires the old `disconnectForGraphSwitch()`
+     * manual field-by-field reset: there is nothing left to null out once the whole instance is
+     * discarded by the caller (`PlatformFileSystem.switchActiveGraph`, Task 1.1.2b) in favor of a
+     * fresh one. Safe to call at most once per instance, per [SessionLifecycle]'s contract.
+     *
+     * Also disconnects any live [hostChangeObserver] — a browser-side `FileSystemObserver` is not
+     * a coroutine, so [scope]'s cancellation alone would never stop it from holding this whole
+     * instance alive (via the closure `startHostChangeObserver` captured) and continuing to invoke
+     * its callback (itself a no-op once [scope] is cancelled, but a needless live reference to a
+     * discarded graph's directory all the same).
+     */
+    override fun close() {
+        stopHostDirectoryPolling()
+        hostChangeObserver?.let { disconnectObserver(it) }
+        hostChangeObserver = null
+        observerConfirmedActive = false
+        scope.cancel()
+    }
     /**
      * Routes host-sync diagnostics through the app's in-app "App Logs" screen
      * ([dev.stapler.stelekit.logging.LogManager]), not just the browser devtools console — every
@@ -138,6 +201,7 @@ class HostDirectorySync(
             logger.info("host access state: $old -> $newState (hostGraphOpfsPath=$hostGraphOpfsPath)")
         }
         _hostAccessStateFlow.value = newState
+        onAccessStateChanged(newState)
     }
 
     /**
@@ -151,7 +215,9 @@ class HostDirectorySync(
     val hostWritePendingCountFlow: StateFlow<Int> = _hostWritePendingCountFlow.asStateFlow()
 
     private fun updatePendingCount() {
-        _hostWritePendingCountFlow.value = hostWritePending.size
+        val count = hostWritePending.size
+        _hostWritePendingCountFlow.value = count
+        onPendingCountChanged(count)
     }
 
     // ── Epic 4.1 (Task 4.1.1a): per-path write-through coalescing state ───────────────────────
@@ -187,7 +253,7 @@ class HostDirectorySync(
      * [scheduleHostWriteThrough]'s doc comment for the full "exactly one write of the latest
      * content" rationale (Story 4.1.1's coalescing acceptance criterion).
      */
-    private val hostWriteLatestPayload = mutableMapOf<String, HostWritePayload>()
+    internal val hostWriteLatestPayload = mutableMapOf<String, HostWritePayload>()
 
     /**
      * Epic 7.1 (Task 7.1.1a): completion signal for [scheduleHostWriteThrough]'s in-flight flush
@@ -234,7 +300,8 @@ class HostDirectorySync(
      * `writeErrors` channel — no new error surface. Defaults to a no-op so production code that
      * never wires a graph (or tests) still compiles and runs safely.
      */
-    internal var onHostWriteFailed: (error: DomainError.FileSystemError.WriteFailed) -> Unit = {}
+    internal var onHostWriteFailed: (error: DomainError.FileSystemError.WriteFailed) -> Unit =
+        callbacks.onHostWriteFailed ?: {}
 
     // ── Epic 3.2 (Task 3.2.2a/c): reconciliation dispatch collaborators ───────────────────────
     /**
@@ -270,10 +337,11 @@ class HostDirectorySync(
      * now buffers into [pendingHostConflicts] instead of discarding; [flushPendingHostConflicts]
      * replays the buffer the moment a real callback is set.
      */
-    internal var onHostConflict: (path: GraphRootedPath, hostContent: String) -> Unit = { path, hostContent ->
-        pendingHostConflicts += path to hostContent
-        mirrorPendingHostConflictCount(pendingHostConflicts.size)
-    }
+    internal var onHostConflict: (path: GraphRootedPath, hostContent: String) -> Unit = callbacks.onHostConflict
+        ?: { path, hostContent ->
+            pendingHostConflicts += path to hostContent
+            mirrorPendingHostConflictCount(pendingHostConflicts.size)
+        }
 
     private val pendingHostConflicts = mutableListOf<Pair<GraphRootedPath, String>>()
 
@@ -305,10 +373,11 @@ class HostDirectorySync(
      * buffering-default pattern for the identical app-boot race window — see that property's doc
      * comment.
      */
-    internal var onHostBytesConflict: (path: GraphRootedPath, hostBytes: ByteArray) -> Unit = { path, hostBytes ->
-        pendingHostBytesConflicts += path to hostBytes
-        mirrorPendingHostBytesConflictCount(pendingHostBytesConflicts.size)
-    }
+    internal var onHostBytesConflict: (path: GraphRootedPath, hostBytes: ByteArray) -> Unit =
+        callbacks.onHostBytesConflict ?: { path, hostBytes ->
+            pendingHostBytesConflicts += path to hostBytes
+            mirrorPendingHostBytesConflictCount(pendingHostBytesConflicts.size)
+        }
 
     private val pendingHostBytesConflicts = mutableListOf<Pair<GraphRootedPath, ByteArray>>()
 
@@ -477,7 +546,7 @@ class HostDirectorySync(
      */
     private suspend fun runLockedRescan(handle: JsAny, opfsPath: String, logPrefix: String): RescanOutcome {
         var changed = false
-        val acquired = WebLock.tryWithLock(FolderSyncLockNaming.pollLockNameFor(graphIdProvider())) {
+        val acquired = WebLock.tryWithLock(FolderSyncLockNaming.pollLockNameFor(graphId)) {
             changed = pollHostDirectoryOnce(handle, opfsPath)
         }
         if (acquired == null) {
@@ -662,12 +731,20 @@ class HostDirectorySync(
      * [reconnectHostDirectory]) or the user re-ran the connect flow from Settings. Now mirrors
      * [connectHostDirectory]'s success path so live sync starts immediately after the initial
      * import, same as every other path that attaches a handle.
+     *
+     * Bug fix: persists keyed by [dirName] — the graph actually being attached — not
+     * [graphId]. This runs from `PlatformFileSystem.pickDirectoryAsync()` before the
+     * caller has registered/switched to the new graph in `GraphManager`, so this instance's own
+     * [graphId] still resolves to whichever graph it was constructed for; keying the envelope off
+     * it there silently persisted the new handle under the wrong graph's id, and
+     * [reconnectHostDirectory]/[requestHostDirectoryAccess] — both keyed by the *actual* active
+     * graph id on lookup — would never find it again in a later session.
      */
     suspend fun attachFreshHandle(dirHandle: JsAny, opfsPath: String) {
         hostDirHandle = dirHandle
         hostGraphOpfsPath = opfsPath
         val dirName = opfsPath.substringAfterLast("/")
-        persistHostHandle(graphIdProvider(), dirName, dirHandle)
+        persistHostHandle(dirName, dirName, dirHandle)
         scope.launch {
             val granted = requestStoragePersistence()
             logger.debug("storage.persist(): granted=$granted")
@@ -788,7 +865,7 @@ class HostDirectorySync(
             hostDirHandle = dirHandle
             hostGraphOpfsPath = existingOpfsPath
             val dirName = existingOpfsPath.substringAfterLast("/")
-            persistHostHandle(graphIdProvider(), dirName, dirHandle)
+            persistHostHandle(graphId.value, dirName, dirHandle)
             scope.launch {
                 val granted = requestStoragePersistence()
                 logger.debug("storage.persist(): granted=$granted")
@@ -810,6 +887,14 @@ class HostDirectorySync(
         setHostAccessState(result)
         return result
     }
+
+    // Epic 1.1 (Story 1.1.2, Task 1.1.2a): the former `disconnectForGraphSwitch()` field-by-field
+    // reset (stop poller/observer, null hostDirHandle/hostGraphOpfsPath, clear the repo-relative
+    // write queues) is retired — a graph switch now discards this whole instance via [close]
+    // instead of resetting it in place, so every one of those fields (including the cross-graph
+    // write-queue corruption this method used to guard against — see PR #293 round 2) is
+    // automatically gone with the instance. `PlatformFileSystem.switchActiveGraph` (Task 1.1.2b)
+    // calls `close()` then constructs a brand-new `HostDirectorySync` for the newly-active graph.
 
     // ── Epic 2.2 (Story 2.2.1): reconnectHostDirectory — silent resume, always reconciling ────
     /**
@@ -1380,11 +1465,25 @@ class HostDirectorySync(
      * permission pre-check (Task 4.2.3a) deliberately stays *outside* the lock — it touches no
      * shared write state, and per `GitWriteLock`'s documented scope discipline
      * (`GitWriteLock.kt:47-55`) a lock should cover only the actual critical section, never be
-     * widened to include independent preflight checks. Uses [graphIdProvider] (the live value),
-     * never a captured/stale `graphId`, matching every other lock-name derivation in this class.
+     * widened to include independent preflight checks. Uses [graphId] (this instance's immutable
+     * constructor value), matching every other lock-name derivation in this class.
+     *
+     * Bug fix (historical — kept correct by Epic 1.1's per-graph-instance migration): [handle] and
+     * [opfsPath] are both snapshotted together here, at the very first line, and used consistently
+     * for the rest of this call — never re-read from the live [hostDirHandle]/[hostGraphOpfsPath]
+     * fields after a suspension point (`opfsWriteDeferred?.await()` in [scheduleHostWriteThrough],
+     * the permission-check `await()` below, or any `await()` inside the write itself). This
+     * matters even more now that a graph switch discards this whole instance rather than
+     * reconnecting it (Epic 1.1, Task 1.1.2c's regression test): an in-flight write dispatched
+     * before `close()` must still settle against *this* instance's own [handle]/[opfsPath], never
+     * a subsequently-constructed instance's state — which the entry-time snapshot already
+     * guarantees, since there is no shared mutable field left for it to reach across instances.
+     * Snapshotting both together keeps this call self-consistently scoped to whichever graph this
+     * instance was constructed for.
      */
     private suspend fun flushHostWrite(repoRelative: String) {
         val handle = hostDirHandle ?: return
+        val opfsPath = hostGraphOpfsPath
 
         // Task 4.2.3a: proactive permission check — *before* any write attempt is made, not only
         // reactively after one has already failed (research/pitfalls.md §1.1).
@@ -1397,11 +1496,10 @@ class HostDirectorySync(
             return
         }
 
-        WebLock.withLock(FolderSyncLockNaming.writeLockNameFor(graphIdProvider(), repoRelative)) {
+        WebLock.withLock(FolderSyncLockNaming.writeLockNameFor(graphId, repoRelative)) {
             val payload = hostWriteLatestPayload[repoRelative] ?: return@withLock
             hostWriteDirtyDuringFlush -= repoRelative
 
-            val opfsPath = hostGraphOpfsPath
             val fullPath = if (opfsPath != null) "$opfsPath/$repoRelative" else repoRelative
 
             try {
@@ -1646,6 +1744,37 @@ class HostDirectorySync(
                 )
                 return
             }
+        }
+    }
+
+    companion object {
+        /**
+         * Epic 1.2 (Story 1.2.1, Task 1.2.1a): test-only construction path replacing the retired
+         * `graphIdProvider`-closure shape's direct-field-poke pattern (`sync.hostDirHandle =`/
+         * `sync.hostGraphOpfsPath =` after construction). [connectedHandle]/[opfsPath] are set
+         * together as one atomic step — never one without the other — matching the PR #293 fix's
+         * core invariant that these two fields are always consistent with each other.
+         *
+         * `onHostConflict`/`onHostBytesConflict`/`onHostWriteFailed` are **not** parameters here —
+         * a caller that needs to observe them still assigns the returned instance's `internal var`
+         * directly. When left unset, they default to exactly what the production constructor
+         * defaults to: `onHostConflict`/`onHostBytesConflict` buffer into their pending lists
+         * (never silently discarding), and `onHostWriteFailed` is a no-op. A test relying on
+         * `forTest(...)` without explicitly wiring one of these three should not assume it fires.
+         */
+        fun forTest(
+            graphId: OpfsGraphSlug,
+            cacheAccess: CacheAccess,
+            scope: CoroutineScope,
+            connectedHandle: JsAny? = null,
+            opfsPath: String? = null,
+        ): HostDirectorySync {
+            val sync = HostDirectorySync(graphId = graphId, cacheAccess = cacheAccess, scopeOverride = scope)
+            if (connectedHandle != null && opfsPath != null) {
+                sync.hostDirHandle = connectedHandle
+                sync.hostGraphOpfsPath = opfsPath
+            }
+            return sync
         }
     }
 }

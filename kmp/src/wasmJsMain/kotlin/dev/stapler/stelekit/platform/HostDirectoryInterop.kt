@@ -150,6 +150,14 @@ internal suspend fun observeHandle(observer: JsAny, handle: JsAny, recursive: Bo
     observePromise(observer, handle, recursive).await<JsAny>()
 }
 
+/**
+ * Stops a previously-started [FileSystemObserver] from delivering further change records.
+ * Needed when switching the active graph (`HostDirectorySync.close`) so a still-live observer
+ * from the old, now-discarded graph's `HostDirectorySync` instance cannot keep firing callbacks
+ * or keep that instance alive via its own captured closure.
+ */
+internal fun disconnectObserver(observer: JsAny): Unit = js("observer.disconnect()")
+
 internal fun changeRecordType(record: JsAny): String = js("record.type")
 
 private fun changeRecordRelativePathArray(record: JsAny): JsAny = js("record.relativePathComponents")

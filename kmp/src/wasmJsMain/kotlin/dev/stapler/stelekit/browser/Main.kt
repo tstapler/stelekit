@@ -31,6 +31,7 @@ import kotlinx.browser.localStorage
 import kotlinx.browser.window
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 private fun markSteleKitReady(): Unit = js("window.__stelekit_ready = true")
@@ -269,6 +270,22 @@ fun main() {
             graphManager.switchGraph(DEMO_GRAPH_ID)
         }
 
+        // Bug fix: opfsFileSystem's graphId/hostDirectorySync were only ever wired to the boot-time
+        // graph above (opfsGraphPath/reconnectHostDirectory) — GraphManager's multi-graph switcher
+        // (the sidebar graph dropdown) can activate a different graph at any time afterward, and
+        // nothing told opfsFileSystem. Keep it in sync for the life of the session; skips the demo
+        // graph (never OPFS-backed) and no-ops in demo-fallback mode (no real fileSystem to update).
+        if (!useDemoFallback) {
+            scope.launch {
+                graphManager.graphRegistry.collect { registry ->
+                    val activeId = registry.activeGraphId ?: return@collect
+                    if (activeId == DEMO_GRAPH_ID) return@collect
+                    val info = registry.graphs.firstOrNull { it.id == activeId } ?: return@collect
+                    opfsFileSystem.switchActiveGraph(info.path)
+                }
+            }
+        }
+
         markSteleKitReady()
         markGraphDialogCapable(dev.stapler.stelekit.platform.showDirectoryPickerSupported())
 
@@ -280,11 +297,18 @@ fun main() {
                 attachmentService = WasmMediaAttachmentService(fileSystem),
                 gitRepository = wasmGitRepository,
                 localChangesCountFlow = opfsFileSystem.dirtyFileCountFlow,
-                hostAccessStateFlow = opfsFileSystem.hostDirectorySync.hostAccessStateFlow,
-                hostWritePendingCountFlow = opfsFileSystem.hostDirectorySync.hostWritePendingCountFlow,
+                hostAccessStateFlow = opfsFileSystem.hostAccessStateFlow,
+                hostWritePendingCountFlow = opfsFileSystem.hostWritePendingCountFlow,
                 hostWriteStuckFlow = opfsFileSystem.hostDirectorySync.hostWriteStuckFlow,
+                // Bug fix: read the CURRENT active graph via opfsFileSystem.currentGraphId()/
+                // graphRootPath() at click time, not the boot-time graphId/opfsGraphPath locals
+                // — graphManager.graphRegistry's collector (below) can have switched opfsFileSystem
+                // to a different graph since page load, and these callbacks must act on whichever
+                // graph the user is actually looking at when they click.
                 onReconnectHostDirectory = {
-                    scope.launch { opfsFileSystem.hostDirectorySync.requestHostDirectoryAccess(graphId) }
+                    scope.launch {
+                        opfsFileSystem.hostDirectorySync.requestHostDirectoryAccess(opfsFileSystem.currentGraphId())
+                    }
                 },
                 // Task 3.1.1c: "Enable live folder sync" — wired the same way the badge's flows
                 // above are, straight to HostDirectorySync.connectHostDirectory. Its own internal
@@ -293,7 +317,7 @@ fun main() {
                 // lastReconciliationSummary is stashed by runHostReconciliation on the same call,
                 // so it is always fresh when result == Granted.
                 onConnectHostDirectory = connectHostDirectory@{
-                    val result = opfsFileSystem.hostDirectorySync.connectHostDirectory(opfsGraphPath)
+                    val result = opfsFileSystem.hostDirectorySync.connectHostDirectory(opfsFileSystem.graphRootPath())
                     val summary = opfsFileSystem.hostDirectorySync.lastReconciliationSummary
                     if (result != HostAccessState.Granted || summary == null) {
                         return@connectHostDirectory ReconciliationUiState.Failed(
@@ -370,8 +394,8 @@ private suspend fun runEphemeralSession() {
             attachmentService = WasmMediaAttachmentService(fileSystem),
             gitRepository = wasmGitRepository,
             localChangesCountFlow = fileSystem.dirtyFileCountFlow,
-            hostAccessStateFlow = fileSystem.hostDirectorySync.hostAccessStateFlow,
-            hostWritePendingCountFlow = fileSystem.hostDirectorySync.hostWritePendingCountFlow,
+            hostAccessStateFlow = fileSystem.hostAccessStateFlow,
+            hostWritePendingCountFlow = fileSystem.hostWritePendingCountFlow,
             hostWriteStuckFlow = fileSystem.hostDirectorySync.hostWriteStuckFlow,
             onReconnectHostDirectory = {},
             onConnectHostDirectory = {

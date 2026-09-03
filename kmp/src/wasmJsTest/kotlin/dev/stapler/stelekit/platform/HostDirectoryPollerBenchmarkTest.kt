@@ -170,8 +170,8 @@ class HostDirectoryPollerBenchmarkTest {
     }
 
     private fun newSync(cache: FakeCacheAccess, scope: CoroutineScope): Pair<HostDirectorySync, String> {
-        // Root cause (Group 2 investigation, continued): the poll lock name is derived from
-        // graphIdProvider() (FolderSyncLockNaming.pollLockNameFor) and the real, page-scoped
+        // Root cause (Group 2 investigation, continued): the poll lock name is derived from this
+        // instance's own graphId (FolderSyncLockNaming.pollLockNameFor) and the real, page-scoped
         // navigator.locks API doesn't reset between @Test functions in the same Karma page — a
         // fixed literal here means all runCumulativeTickCountCase invocations below fight over
         // the exact same real browser lock. If one test's drain loop ever leaves that lock
@@ -183,7 +183,7 @@ class HostDirectoryPollerBenchmarkTest {
         // `it-migration-rollback-${Random.nextInt(...)}` per-test-unique-resource-name convention
         // already used in HostDirectorySyncMigrationReconciliationTest.kt).
         val graphId = "poller-bench-graph-${Random.nextInt(0, Int.MAX_VALUE)}"
-        return HostDirectorySync(graphIdProvider = { graphId }, cacheAccess = cache, scope = scope) to graphId
+        return disconnectedSync(OpfsGraphSlug(graphId), cache, scope) to graphId
     }
 
     // ── Story 5.5.1: per-tick cost at 8,030 files ──────────────────────────────────────────────

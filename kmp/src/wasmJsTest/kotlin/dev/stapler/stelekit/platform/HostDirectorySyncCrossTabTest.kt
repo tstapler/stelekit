@@ -113,7 +113,7 @@ class HostDirectorySyncCrossTabTest {
     private fun freshId(prefix: String): String = "$prefix-${Random.nextInt(0, Int.MAX_VALUE)}"
 
     private fun newSync(graphId: String, opfsPath: String, cacheAccess: HostDirectorySync.CacheAccess, scope: CoroutineScope): HostDirectorySync {
-        val sync = HostDirectorySync(graphIdProvider = { graphId }, cacheAccess = cacheAccess, scope = scope)
+        val sync = disconnectedSync(OpfsGraphSlug(graphId), cacheAccess, scope)
         sync.hostGraphOpfsPath = opfsPath
         return sync
     }
