@@ -1,6 +1,36 @@
 # Adversarial Review: depth-model-download-stall
 **Date**: 2026-07-28
-**Verdict**: BLOCKED
+**Verdict**: BLOCKED (resolved during implementation — see Resolution below)
+
+## Resolution (2026-09-01)
+
+Implemented with a corrected design rather than the plan's literal task list, since the task
+list itself did not fix Blockers 1–2:
+
+- **Blockers 1 & 2** (AC5 not actually achieved; `cancelDownload()` can't reach the in-flight
+  continuation): fixed by eliminating the per-caller `suspendCancellableCoroutine` entirely.
+  `downloadModel()` now only enqueues (if needed) and then suspends on a shared
+  `awaitTerminal()` (`modelState.first { Ready || Failed || Absent }`) — the enqueue,
+  `BroadcastReceiver`, and polling all live on the instance-owned `scope`, not on any caller's
+  coroutine. `Absent` is a valid terminal, so `cancelDownload()` resolves every suspended caller
+  (fresh or reattached) instead of hanging them. Covered by
+  `DepthModelDownloaderCancelTest`'s "resolves a concurrently-suspended caller" test and
+  `DepthModelDownloaderReattachTest`.
+- **Blocker 3** (`onEstimateDepth` wired to a silent no-op): scoped out explicitly.
+  `ScreenRouter` passes `onEstimateDepth = null`; `DepthEstimationPanel`'s `Ready` branch renders
+  a disabled "Estimation coming soon" button instead of a fully-enabled dead one. Real estimation
+  wiring (sourcing an `ImageBitmap` for the current photo) is unrelated to this bug and needs its
+  own investigation — left for a follow-up.
+- **Blocker 4** (zero automated coverage of the actual polling decision logic): the poll loop's
+  per-tick branching (advance / stall / terminal) was extracted into a pure `decidePollTick`
+  function, unit-tested directly in `DepthModelDownloaderProgressMathTest` (including a
+  two-tick increasing-progress sequence) rather than driving a real coroutine loop against
+  `ShadowDownloadManager`, which has no API to simulate live in-flight byte progress.
+- **Concerns**: process-death re-attachment remains explicitly out of scope (not changed by this
+  fix — `activeDownloadId` is still an in-memory field). Manual on-device verification (Story
+  5.1.3) still stands as the check for real `DownloadManager` completion behavior, since none of
+  the automated tests can drive a request to genuine `STATUS_SUCCESSFUL` under
+  `ShadowDownloadManager`.
 
 ## Blockers
 
