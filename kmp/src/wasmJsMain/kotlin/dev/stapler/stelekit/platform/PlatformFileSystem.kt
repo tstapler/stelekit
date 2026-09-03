@@ -663,6 +663,19 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
      * folder's own name (for [GraphInfo.hostDirName] display) so the UI can show which real folder
      * is linked — distinct from [existingPath], which may not share the same basename once a graph
      * has been relinked to a differently-named folder.
+     *
+     * Bug fix: [importUserDirToCache] only ever adds/overwrites [cache] entries for files present
+     * in the newly-picked folder — it never removes entries left over under [existingPath] from
+     * whatever was cached there before (a previously-linked folder, or the graph's own pre-relink
+     * content). Without pruning, a file present in the old folder but absent from the new one stays
+     * in [cache]/[bytesCache]/[blobUrlCache], and a subsequent edit to it would write stale
+     * old-folder content into the newly-linked folder via [HostDirectorySync.scheduleHostWriteThrough]
+     * — silent cross-contamination between folders. So: snapshot the cache keys scoped to
+     * [existingPath] before importing, diff against what the import actually wrote, and locally
+     * prune anything left over (cache maps + its OPFS-backed copy) — deliberately not through
+     * [deleteFile]/`scheduleHostWriteThrough(Delete)`, since neither the abandoned old folder nor
+     * the freshly-picked new folder should receive a delete for a file that, from the new folder's
+     * perspective, never existed.
      */
     override suspend fun relinkHostDirectoryAsync(existingPath: String): String? {
         if (!showDirectoryPickerSupported()) return null
@@ -672,7 +685,18 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             val dirHandle = promise.await<JsAny>()
             val name = getEntryName(dirHandle)
             println("[SteleKit] relinkHostDirectory: importing '$name' → '$existingPath'")
-            importUserDirToCache(dirHandle, existingPath)
+            val oldPaths = cache.keys.filter { it == existingPath || it.startsWith("$existingPath/") }.toSet()
+            val importedPaths = importUserDirToCache(dirHandle, existingPath)
+            val stale = oldPaths - importedPaths
+            for (stalePath in stale) {
+                cache.remove(stalePath)
+                bytesCache.remove(stalePath)
+                blobUrlCache.remove(stalePath)
+                scope.launch { opfsDeleteFile(stalePath) }
+            }
+            if (stale.isNotEmpty()) {
+                println("[SteleKit] relinkHostDirectory: pruned ${stale.size} stale cache entries")
+            }
             hostDirectorySync.attachFreshHandle(dirHandle, existingPath)
             name
         } catch (e: Throwable) {
@@ -684,7 +708,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         }
     }
 
-    private suspend fun importUserDirToCache(dirHandle: JsAny, currentPath: String) {
+    private suspend fun importUserDirToCache(dirHandle: JsAny, currentPath: String): Set<String> {
+        val imported = mutableSetOf<String>()
         val entries = listOpfsEntries(dirHandle)
         println("[SteleKit] importUserDirToCache: ${entries.size} entries in '$currentPath'")
         for (entry in entries) {
@@ -694,19 +719,22 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             when {
                 isFileEntry(entry) && isImageFile(name) -> {
                     readOpfsFileAsObjectUrl(entry)?.let { blobUrlCache[path] = it }
+                    imported.add(path)
                 }
                 isFileEntry(entry) -> {
                     val content = readOpfsFile(entry)
                     if (content != null) {
                         cache[path] = content
                         scope.launch { opfsWriteFile(path, content) }
+                        imported.add(path)
                     } else {
                         println("[SteleKit] importUserDirToCache: failed to read '$path'")
                     }
                 }
-                isDirectoryEntry(entry) -> importUserDirToCache(entry, path)
+                isDirectoryEntry(entry) -> imported.addAll(importUserDirToCache(entry, path))
             }
         }
+        return imported
     }
     override suspend fun pickFileAsync(): String? = null
 
