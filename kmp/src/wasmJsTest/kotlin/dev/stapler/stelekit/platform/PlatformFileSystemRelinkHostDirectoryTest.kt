@@ -87,6 +87,10 @@ class PlatformFileSystemRelinkHostDirectoryTest {
         fs.preload("/stelekit/$graphId")
 
         val original = stubShowDirectoryPickerToReject()
+        // Copilot review: prime pendingDirectoryPicker synchronously first, matching the real
+        // call-site contract (requestDirectoryPickerNow before any suspend point) instead of
+        // only exercising relinkHostDirectoryAsync's showDirectoryPickerPromise() fallback.
+        fs.requestDirectoryPickerNow()
         val result = try {
             fs.relinkHostDirectoryAsync("/stelekit/$graphId")
         } finally {
@@ -129,6 +133,8 @@ class PlatformFileSystemRelinkHostDirectoryTest {
         )
 
         val original = stubShowDirectoryPickerToResolve(host)
+        // Copilot review: prime pendingDirectoryPicker synchronously first — same as above.
+        fs.requestDirectoryPickerNow()
         val result = try {
             fs.relinkHostDirectoryAsync(existingPath)
         } finally {

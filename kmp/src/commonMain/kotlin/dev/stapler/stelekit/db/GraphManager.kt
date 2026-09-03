@@ -457,6 +457,9 @@ class GraphManager(
         val registry = _graphRegistry.value
         val graphIndex = registry.graphs.indexOfFirst { it.id == id }
         if (graphIndex == -1) return false
+        // Copilot review: matches renameGraph/updateGraphPath's immutability rule — the demo
+        // graph's metadata is never user-editable.
+        if (registry.graphs[graphIndex].isDemo) return false
 
         val updatedGraphs = registry.graphs.toMutableList()
         updatedGraphs[graphIndex] = updatedGraphs[graphIndex].copy(hostDirName = dirName)

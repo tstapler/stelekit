@@ -696,10 +696,19 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             val importedPaths = importUserDirToCache(dirHandle, existingPath)
             val stale = oldPaths - importedPaths
             for (stalePath in stale) {
+                // Copilot review: await any write already in flight for this path before
+                // deleting — otherwise a late write (queued before this relink started) can
+                // land after opfsDeleteFile() and silently recreate the "pruned" file.
+                opfsWriteInFlight[stalePath]?.await()
                 cache.remove(stalePath)
                 bytesCache.remove(stalePath)
                 blobUrlCache.remove(stalePath)
                 scope.launch { opfsDeleteFile(stalePath) }
+                // Copilot review: also clear this path out of the git dirty set — its cache
+                // content is gone, so a stale dirty entry (e.g. a pending WRITE from before the
+                // relink) would otherwise make a later git-write flow try to read content that
+                // no longer exists ("No cached content for dirty path") and skew the dirty count.
+                recordDirty(stalePath, DirtyOp.DELETE)
             }
             if (stale.isNotEmpty()) {
                 println("[SteleKit] relinkHostDirectory: pruned ${stale.size} stale cache entries")
@@ -725,8 +734,16 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             val path = "$currentPath/$name"
             when {
                 isFileEntry(entry) && isImageFile(name) -> {
-                    readOpfsFileAsObjectUrl(entry)?.let { blobUrlCache[path] = it }
-                    imported.add(path)
+                    // Copilot review: only count this path as imported when the object URL was
+                    // actually created — marking it imported unconditionally let a failed read
+                    // mask a stale blobUrlCache entry from a previous relink's prune diff.
+                    val url = readOpfsFileAsObjectUrl(entry)
+                    if (url != null) {
+                        blobUrlCache[path] = url
+                        imported.add(path)
+                    } else {
+                        println("[SteleKit] importUserDirToCache: failed to read image '$path'")
+                    }
                 }
                 isFileEntry(entry) -> {
                     val content = readOpfsFile(entry)
