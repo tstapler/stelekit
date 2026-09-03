@@ -13,6 +13,7 @@ load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library")
 kt_jvm_library(
     name = "common_test_fixtures",
     srcs = [
+        "dev/stapler/stelekit/coroutines/SessionLifecycleContractTest.kt",
         "dev/stapler/stelekit/db/sidecar/FakeFileSystem.kt",
         "dev/stapler/stelekit/sections/SectionFilterTest.kt",
         "dev/stapler/stelekit/sections/SectionManifestParserTest.kt",
