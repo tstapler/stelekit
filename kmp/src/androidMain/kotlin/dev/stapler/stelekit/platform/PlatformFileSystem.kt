@@ -897,6 +897,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         return isSafPermissionValid(context ?: return false, uri)
     }
 
+    override fun hasAllFilesAccess(): Boolean = isDirectAccess()
+
     override fun displayNameForPath(path: String): String {
         if (path.startsWith("content://")) return displayNameForContentUri(path)
         if (!path.startsWith("saf://")) return super.displayNameForPath(path)

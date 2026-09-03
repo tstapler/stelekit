@@ -80,6 +80,13 @@ interface FileSystem {
     }
 
     fun hasStoragePermission(): Boolean = true
+    /**
+     * True when this platform can resolve a picked directory to a real `java.io.File` path
+     * usable directly by JGit (Desktop/iOS: always; Android: only with `MANAGE_EXTERNAL_STORAGE`
+     * granted — a plain SAF grant gives read/write access to a folder's content but never a real
+     * file path, since JGit has no concept of `content://` URIs).
+     */
+    fun hasAllFilesAccess(): Boolean = true
     fun getLibraryDisplayName(): String? = null
     /** Human-readable name for a given graph path. Defaults to the last path segment. */
     fun displayNameForPath(path: String): String =
