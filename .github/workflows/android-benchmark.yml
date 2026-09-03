@@ -9,7 +9,7 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -19,7 +19,6 @@ jobs:
   android-benchmark:
     name: Android Instrumented Benchmark
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event.pull_request.draft == false
 
     steps:
       - uses: actions/checkout@v4

@@ -9,7 +9,7 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   checks: write
@@ -23,7 +23,6 @@ jobs:
   jvm-test:
     name: JVM Tests
     runs-on: ubuntu-latest
-    if: github.event.pull_request.draft == false
 
     steps:
       - uses: actions/checkout@v4
@@ -65,7 +64,6 @@ jobs:
   android:
     name: Android
     runs-on: ubuntu-latest
-    if: github.event.pull_request.draft == false
 
     steps:
       - uses: actions/checkout@v4
@@ -125,7 +123,6 @@ jobs:
   sqldelight-sync:
     name: SQLDelight generated sources
     runs-on: ubuntu-latest
-    if: github.event.pull_request.draft == false
 
     steps:
       - uses: actions/checkout@v4
@@ -161,7 +158,6 @@ jobs:
   readme-sync:
     name: README sync
     runs-on: ubuntu-latest
-    if: github.event.pull_request.draft == false
     steps:
       - uses: actions/checkout@v4
 
@@ -179,7 +175,6 @@ jobs:
   lint:
     name: Lint (Detekt)
     runs-on: ubuntu-latest
-    if: github.event.pull_request.draft == false
 
     steps:
       - uses: actions/checkout@v4
@@ -210,7 +205,6 @@ jobs:
     name: Android Smoke Tests (Emulator)
     runs-on: ubuntu-latest
     needs: [android]
-    if: github.event.pull_request.draft == false
 
     steps:
       - uses: actions/checkout@v4
@@ -263,7 +257,6 @@ jobs:
   workflow-lint:
     name: Workflow Lint
     runs-on: ubuntu-latest
-    if: github.event.pull_request.draft == false
     steps:
       - uses: actions/checkout@v4
 
@@ -291,7 +284,6 @@ jobs:
   wasmjs-compile:
     name: Wasm/JS Compile
     runs-on: ubuntu-latest
-    if: github.event.pull_request.draft == false
 
     steps:
       - uses: actions/checkout@v4
@@ -330,7 +322,6 @@ jobs:
   wasmjs-e2e:
     name: Wasm/JS E2E
     runs-on: ubuntu-latest
-    if: github.event.pull_request.draft == false
 
     steps:
       - uses: actions/checkout@v4

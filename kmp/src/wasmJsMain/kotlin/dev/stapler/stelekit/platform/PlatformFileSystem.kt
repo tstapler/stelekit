@@ -615,6 +615,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
 
     actual override fun pickDirectory(): String? = null
     override val supportsNativeDirectoryPicker: Boolean get() = showDirectoryPickerSupported()
+    override val supportsHostDirectoryLink: Boolean get() = showDirectoryPickerSupported()
 
     private var pendingDirectoryPicker: kotlin.js.Promise<JsAny>? = null
     private var lastPickerError: String? = null
@@ -653,7 +654,78 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         }
     }
 
-    private suspend fun importUserDirToCache(dirHandle: JsAny, currentPath: String) {
+    /**
+     * Re-points an already-tracked graph at a newly-picked host folder — reuses [existingPath]
+     * (the graph's existing OPFS path) instead of deriving a new one from the picked folder's
+     * name, unlike [pickDirectoryAsync]. Imports the picked folder's contents into [existingPath]
+     * (merging with/overwriting whatever is already cached there) and attaches the fresh handle
+     * via [HostDirectorySync.attachFreshHandle], same as a first-time link. Returns the picked
+     * folder's own name (for [GraphInfo.hostDirName] display) so the UI can show which real folder
+     * is linked — distinct from [existingPath], which may not share the same basename once a graph
+     * has been relinked to a differently-named folder.
+     *
+     * Bug fix: [importUserDirToCache] only ever adds/overwrites [cache] entries for files present
+     * in the newly-picked folder — it never removes entries left over under [existingPath] from
+     * whatever was cached there before (a previously-linked folder, or the graph's own pre-relink
+     * content). Without pruning, a file present in the old folder but absent from the new one stays
+     * in [cache]/[bytesCache]/[blobUrlCache], and a subsequent edit to it would write stale
+     * old-folder content into the newly-linked folder via [HostDirectorySync.scheduleHostWriteThrough]
+     * — silent cross-contamination between folders. So: snapshot the cache keys scoped to
+     * [existingPath] before importing, diff against what the import actually wrote, and locally
+     * prune anything left over (cache maps + its OPFS-backed copy) — deliberately not through
+     * [deleteFile]/`scheduleHostWriteThrough(Delete)`, since neither the abandoned old folder nor
+     * the freshly-picked new folder should receive a delete for a file that, from the new folder's
+     * perspective, never existed.
+     */
+    override suspend fun relinkHostDirectoryAsync(existingPath: String): String? {
+        if (!showDirectoryPickerSupported()) return null
+        val promise = pendingDirectoryPicker ?: showDirectoryPickerPromise()
+        pendingDirectoryPicker = null
+        return try {
+            val dirHandle = promise.await<JsAny>()
+            val name = getEntryName(dirHandle)
+            println("[SteleKit] relinkHostDirectory: importing '$name' → '$existingPath'")
+            // Bug fix: paranoid-mode (encrypted) content lives exclusively in bytesCache and
+            // imported images live exclusively in blobUrlCache (see importUserDirToCache below) —
+            // scanning cache.keys alone missed both, leaving exactly the leftovers this prune
+            // exists to catch. Scope matches this method's own doc comment's [cache]/[bytesCache]/
+            // [blobUrlCache] claim.
+            val oldPaths = (cache.keys + bytesCache.keys + blobUrlCache.keys)
+                .filter { it == existingPath || it.startsWith("$existingPath/") }
+                .toSet()
+            val importedPaths = importUserDirToCache(dirHandle, existingPath)
+            val stale = oldPaths - importedPaths
+            for (stalePath in stale) {
+                // Copilot review: await any write already in flight for this path before
+                // deleting — otherwise a late write (queued before this relink started) can
+                // land after opfsDeleteFile() and silently recreate the "pruned" file.
+                opfsWriteInFlight[stalePath]?.await()
+                cache.remove(stalePath)
+                bytesCache.remove(stalePath)
+                blobUrlCache.remove(stalePath)
+                scope.launch { opfsDeleteFile(stalePath) }
+                // Copilot review: also clear this path out of the git dirty set — its cache
+                // content is gone, so a stale dirty entry (e.g. a pending WRITE from before the
+                // relink) would otherwise make a later git-write flow try to read content that
+                // no longer exists ("No cached content for dirty path") and skew the dirty count.
+                recordDirty(stalePath, DirtyOp.DELETE)
+            }
+            if (stale.isNotEmpty()) {
+                println("[SteleKit] relinkHostDirectory: pruned ${stale.size} stale cache entries")
+            }
+            hostDirectorySync.attachFreshHandle(dirHandle, existingPath)
+            name
+        } catch (e: Throwable) {
+            println("[SteleKit] relinkHostDirectory: ${e.message}")
+            if (e.message?.contains("abort", ignoreCase = true) != true) {
+                lastPickerError = e.message ?: "Failed to open the folder picker."
+            }
+            null
+        }
+    }
+
+    private suspend fun importUserDirToCache(dirHandle: JsAny, currentPath: String): Set<String> {
+        val imported = mutableSetOf<String>()
         val entries = listOpfsEntries(dirHandle)
         println("[SteleKit] importUserDirToCache: ${entries.size} entries in '$currentPath'")
         for (entry in entries) {
@@ -662,20 +734,31 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             val path = "$currentPath/$name"
             when {
                 isFileEntry(entry) && isImageFile(name) -> {
-                    readOpfsFileAsObjectUrl(entry)?.let { blobUrlCache[path] = it }
+                    // Copilot review: only count this path as imported when the object URL was
+                    // actually created — marking it imported unconditionally let a failed read
+                    // mask a stale blobUrlCache entry from a previous relink's prune diff.
+                    val url = readOpfsFileAsObjectUrl(entry)
+                    if (url != null) {
+                        blobUrlCache[path] = url
+                        imported.add(path)
+                    } else {
+                        println("[SteleKit] importUserDirToCache: failed to read image '$path'")
+                    }
                 }
                 isFileEntry(entry) -> {
                     val content = readOpfsFile(entry)
                     if (content != null) {
                         cache[path] = content
                         scope.launch { opfsWriteFile(path, content) }
+                        imported.add(path)
                     } else {
                         println("[SteleKit] importUserDirToCache: failed to read '$path'")
                     }
                 }
-                isDirectoryEntry(entry) -> importUserDirToCache(entry, path)
+                isDirectoryEntry(entry) -> imported.addAll(importUserDirToCache(entry, path))
             }
         }
+        return imported
     }
     override suspend fun pickFileAsync(): String? = null
 
