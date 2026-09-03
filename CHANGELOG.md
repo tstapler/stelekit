@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.78.3](https://github.com/tstapler/stelekit/compare/v0.78.2...v0.78.3) (2026-09-03)
+
+
+### Bug Fixes
+
+* **android:** real progress, cancel, and stall detection for depth-model download ([#295](https://github.com/tstapler/stelekit/issues/295)) ([5f523e0](https://github.com/tstapler/stelekit/commit/5f523e0939793bd330e14771adf320ac3e7a4e21))
+
 ## [0.78.2](https://github.com/tstapler/stelekit/compare/v0.78.1...v0.78.2) (2026-09-03)
 
 
