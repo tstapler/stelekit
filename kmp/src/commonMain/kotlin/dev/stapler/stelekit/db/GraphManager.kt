@@ -445,6 +445,27 @@ class GraphManager(
     }
 
     /**
+     * Records the real host-folder name last linked for [id] (web-local-folder-livesync only) —
+     * called after [dev.stapler.stelekit.platform.FileSystem.pickDirectoryAsync]/
+     * [dev.stapler.stelekit.platform.FileSystem.relinkHostDirectoryAsync] succeeds, so the sidebar
+     * can show which real folder a graph is linked to instead of only its internal [GraphInfo.path].
+     * No data migration is needed here — the actual re-link (importing the new folder's content
+     * and attaching the fresh handle) already happened in [dev.stapler.stelekit.platform.FileSystem];
+     * this just persists the display metadata.
+     */
+    fun updateHostDirName(id: GraphId, dirName: String?): Boolean {
+        val registry = _graphRegistry.value
+        val graphIndex = registry.graphs.indexOfFirst { it.id == id }
+        if (graphIndex == -1) return false
+
+        val updatedGraphs = registry.graphs.toMutableList()
+        updatedGraphs[graphIndex] = updatedGraphs[graphIndex].copy(hostDirName = dirName)
+        _graphRegistry.value = registry.copy(graphs = updatedGraphs)
+        saveRegistry()
+        return true
+    }
+
+    /**
      * Moves a graph to a new filesystem [newPath]. Because [GraphId] is derived from
      * sha256(canonicalPath), this re-keys the graph's identity: the SQLite DB (+ WAL/SHM
      * sidecars), the telemetry DB, and any stored git credentials are renamed/re-keyed from

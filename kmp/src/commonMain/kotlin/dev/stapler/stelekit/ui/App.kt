@@ -1502,6 +1502,31 @@ private fun GraphContent(
                                         }
                                     }
                                 },
+                                onRenameGraph = { id, newName ->
+                                    if (!graphManager.renameGraph(GraphId(id), newName)) {
+                                        viewModel.sendSnackbar("Failed to rename graph")
+                                    }
+                                },
+                                onRelinkHostDirectory = { id ->
+                                    // Must call synchronously here, before scope.launch — same
+                                    // transient-user-activation constraint as onAddGraph above.
+                                    fileSystem.requestDirectoryPickerNow()
+                                    scope.launch {
+                                        val graph = graphManager.graphRegistry.value.graphs.find { it.id.value == id }
+                                        if (graph == null) return@launch
+                                        val dirName = fileSystem.relinkHostDirectoryAsync(graph.path)
+                                        if (dirName != null) {
+                                            graphManager.updateHostDirName(GraphId(id), dirName)
+                                            viewModel.sendSnackbar("Linked to folder \"$dirName\"")
+                                        } else {
+                                            val pickerError = fileSystem.consumeLastPickerError()
+                                            if (pickerError != null) {
+                                                viewModel.sendSnackbar("Couldn't open folder picker: $pickerError")
+                                            }
+                                        }
+                                    }
+                                },
+                                supportsHostDirectoryLink = fileSystem.supportsHostDirectoryLink,
                                 onCollapse = { viewModel.toggleSidebar() },
                                 syncState = syncState,
                                 onSyncClick = {

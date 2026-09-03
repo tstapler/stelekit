@@ -615,6 +615,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
 
     actual override fun pickDirectory(): String? = null
     override val supportsNativeDirectoryPicker: Boolean get() = showDirectoryPickerSupported()
+    override val supportsHostDirectoryLink: Boolean get() = showDirectoryPickerSupported()
 
     private var pendingDirectoryPicker: kotlin.js.Promise<JsAny>? = null
     private var lastPickerError: String? = null
@@ -646,6 +647,36 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             opfsPath
         } catch (e: Throwable) {
             println("[SteleKit] showDirectoryPicker: ${e.message}")
+            if (e.message?.contains("abort", ignoreCase = true) != true) {
+                lastPickerError = e.message ?: "Failed to open the folder picker."
+            }
+            null
+        }
+    }
+
+    /**
+     * Re-points an already-tracked graph at a newly-picked host folder — reuses [existingPath]
+     * (the graph's existing OPFS path) instead of deriving a new one from the picked folder's
+     * name, unlike [pickDirectoryAsync]. Imports the picked folder's contents into [existingPath]
+     * (merging with/overwriting whatever is already cached there) and attaches the fresh handle
+     * via [HostDirectorySync.attachFreshHandle], same as a first-time link. Returns the picked
+     * folder's own name (for [GraphInfo.hostDirName] display) so the UI can show which real folder
+     * is linked — distinct from [existingPath], which may not share the same basename once a graph
+     * has been relinked to a differently-named folder.
+     */
+    override suspend fun relinkHostDirectoryAsync(existingPath: String): String? {
+        if (!showDirectoryPickerSupported()) return null
+        val promise = pendingDirectoryPicker ?: showDirectoryPickerPromise()
+        pendingDirectoryPicker = null
+        return try {
+            val dirHandle = promise.await<JsAny>()
+            val name = getEntryName(dirHandle)
+            println("[SteleKit] relinkHostDirectory: importing '$name' → '$existingPath'")
+            importUserDirToCache(dirHandle, existingPath)
+            hostDirectorySync.attachFreshHandle(dirHandle, existingPath)
+            name
+        } catch (e: Throwable) {
+            println("[SteleKit] relinkHostDirectory: ${e.message}")
             if (e.message?.contains("abort", ignoreCase = true) != true) {
                 lastPickerError = e.message ?: "Failed to open the folder picker."
             }
