@@ -8,6 +8,7 @@ import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -105,9 +106,16 @@ class PlatformFileSystemRelinkHostDirectoryTest {
         fs.preload(existingPath)
 
         // Seed the cache as if an earlier-linked folder (or the graph's own pre-relink content)
-        // left a file behind that the newly-picked folder below does not contain.
+        // left a file behind that the newly-picked folder below does not contain. Covers all
+        // three maps relinkHostDirectoryAsync's doc comment claims to prune: plaintext cache,
+        // paranoid-mode bytesCache (bug-fix regression — an earlier version only scanned `cache`
+        // and missed this), and blobUrlCache-only imported images.
         fs.writeFile("$existingPath/journal/2024_01_01.md", "# stale journal entry")
         assertEquals("# stale journal entry", fs.readFile("$existingPath/journal/2024_01_01.md"))
+        fs.writeFileBytes("$existingPath/vault/secret.md.stek", byteArrayOf(1, 2, 3))
+        assertNotNull(fs.getContentBytes("$existingPath/vault/secret.md.stek"))
+        fs.registerBlobUrl("$existingPath/assets/old.png", "blob:stale-image")
+        assertEquals("blob:stale-image", fs.resolveAssetUri(existingPath, "assets/old.png"))
 
         val newFolderName = "notes-b"
         val host = fakeDirEntry(
@@ -136,6 +144,14 @@ class PlatformFileSystemRelinkHostDirectoryTest {
         assertNull(
             fs.readFile("$existingPath/journal/2024_01_01.md"),
             "stale cache entry from the previously-linked folder must be pruned after relink",
+        )
+        assertNull(
+            fs.getContentBytes("$existingPath/vault/secret.md.stek"),
+            "stale bytesCache-only (paranoid-mode) entry must be pruned after relink",
+        )
+        assertNull(
+            fs.resolveAssetUri(existingPath, "assets/old.png"),
+            "stale blobUrlCache-only (image) entry must be pruned after relink",
         )
         assertTrue(fs.supportsHostDirectoryLink)
     }

@@ -685,7 +685,14 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             val dirHandle = promise.await<JsAny>()
             val name = getEntryName(dirHandle)
             println("[SteleKit] relinkHostDirectory: importing '$name' → '$existingPath'")
-            val oldPaths = cache.keys.filter { it == existingPath || it.startsWith("$existingPath/") }.toSet()
+            // Bug fix: paranoid-mode (encrypted) content lives exclusively in bytesCache and
+            // imported images live exclusively in blobUrlCache (see importUserDirToCache below) —
+            // scanning cache.keys alone missed both, leaving exactly the leftovers this prune
+            // exists to catch. Scope matches this method's own doc comment's [cache]/[bytesCache]/
+            // [blobUrlCache] claim.
+            val oldPaths = (cache.keys + bytesCache.keys + blobUrlCache.keys)
+                .filter { it == existingPath || it.startsWith("$existingPath/") }
+                .toSet()
             val importedPaths = importUserDirToCache(dirHandle, existingPath)
             val stale = oldPaths - importedPaths
             for (stalePath in stale) {
