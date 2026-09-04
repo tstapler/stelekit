@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -18,10 +19,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -38,6 +41,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -52,6 +56,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import arrow.core.Either
+import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.GitAuth
 import dev.stapler.stelekit.git.GitConfigRepository
@@ -70,6 +75,7 @@ import dev.stapler.stelekit.platform.security.CredentialStore
 import kotlin.time.Clock
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Multi-step wizard for configuring git sync on a graph.
@@ -133,6 +139,32 @@ fun GitSetupScreen(
     var wikiSubdir by remember {
         mutableStateOf(existingConfig?.wikiSubdir ?: detectedWikiSubdir ?: "")
     }
+    var wikiSubdirBrowserOpen by remember { mutableStateOf(false) }
+
+    // Live .git check at repoRoot, replacing the old saf://-string-prefix heuristic (which never
+    // covered wasm's OPFS-mirrored picker paths, only Android's). Null while unchecked/blank —
+    // callers below only branch on it once it's a real true/false.
+    var hasGitAtRepoRoot by remember { mutableStateOf<Boolean?>(null) }
+    LaunchedEffect(repoRoot) {
+        if (repoRoot.isBlank()) {
+            hasGitAtRepoRoot = null
+            return@LaunchedEffect
+        }
+        hasGitAtRepoRoot = withContext(PlatformDispatcher.IO) {
+            val gitPath = "$repoRoot/.git"
+            fileSystem.fileExists(gitPath) || fileSystem.directoryExists(gitPath)
+        }
+    }
+    // "Use existing clone" against a SAF-only folder (no MANAGE_EXTERNAL_STORAGE) is structurally
+    // unsupported — see AndroidGitRepository.resolveForJGit's doc comment: JGit only understands
+    // java.io.File, and the shadow-worktree mirror deliberately never copies .git itself
+    // (FileSystem.listFilesRecursiveWithModTimes skips it), so there's no path to a working
+    // git repo either way. Surfaced explicitly rather than left to fail at "Test connection" with
+    // a cryptic "repository not found: /data/data/.../gitshadow" error.
+    val existingRepoNeedsAllFilesAccess = useExistingClone &&
+        repoRoot.startsWith("saf://") &&
+        !fileSystem.hasAllFilesAccess()
+
     var authType by remember { mutableStateOf(existingConfig?.authType ?: GitAuthType.NONE) }
     var sshKeyPath by remember { mutableStateOf(existingConfig?.sshKeyPath ?: "") }
     val credentialStore = remember { CredentialStore() }
@@ -295,21 +327,31 @@ fun GitSetupScreen(
                     cloneUrl = cloneUrl,
                     onCloneUrlChange = { cloneUrl = it },
                     wikiSubdir = wikiSubdir,
-                    onWikiSubdirChange = { wikiSubdir = it },
+                    onWikiSubdirChange = { newValue ->
+                        // Reject rather than silently store a picked content:// URI here — a
+                        // relative subdirectory never contains a URI scheme.
+                        if (!looksLikeUri(newValue)) wikiSubdir = newValue
+                    },
                     onBack = { step = 1 },
                     onNext = { step = 3 },
                     nextEnabled = repoRoot.isNotBlank() && (useExistingClone || cloneUrl.isNotBlank()),
                     onBrowseRepoRoot = {
                         scope.launch {
                             val path = fileSystem.pickDirectoryAsync()
-                            if (path != null) repoRoot = path
+                            if (path != null) {
+                                repoRoot = path
+                                wikiSubdir = "" // stale relative to the old root — start over, not silently wrong
+                            }
                         }
                     },
-                    // Android SAF grants are scoped to exactly the folder the user picked — a
-                    // .git above it is structurally invisible, so GraphManager.detectGitRoot()
-                    // never runs for these (see its own doc comment). Surfaced here rather than
-                    // left as a silently-blank wizard.
-                    detectionUnavailable = repoRoot.startsWith("saf://") && detectedRepoRoot.isNullOrEmpty(),
+                    onBrowseWikiSubdir = { wikiSubdirBrowserOpen = true },
+                    // Android SAF/wasm OPFS picker grants are scoped to exactly the folder the
+                    // user picked — a .git above it is structurally invisible, so
+                    // GraphManager.detectGitRoot()'s upward walk never runs for these (see its own
+                    // doc comment). Driven by the live check above rather than a saf://-prefix
+                    // guess, so it also covers wasm's differently-schemed picker path.
+                    detectionUnavailable = hasGitAtRepoRoot == false && detectedRepoRoot.isNullOrEmpty(),
+                    existingRepoNeedsAllFilesAccess = existingRepoNeedsAllFilesAccess,
                 )
 
                 3 -> {
@@ -581,6 +623,16 @@ fun GitSetupScreen(
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
+
+    if (wikiSubdirBrowserOpen) {
+        WikiSubdirBrowserDialog(
+            fileSystem = fileSystem,
+            repoRoot = repoRoot,
+            initialSubdir = wikiSubdir,
+            onDismiss = { wikiSubdirBrowserOpen = false },
+            onSelect = { selected -> wikiSubdir = selected },
+        )
+    }
 }
 
 /**
@@ -689,7 +741,9 @@ private fun Step2RepoPath(
     onNext: () -> Unit,
     nextEnabled: Boolean = repoRoot.isNotBlank(),
     onBrowseRepoRoot: (() -> Unit)? = null,
+    onBrowseWikiSubdir: (() -> Unit)? = null,
     detectionUnavailable: Boolean = false,
+    existingRepoNeedsAllFilesAccess: Boolean = false,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Repository path", style = MaterialTheme.typography.titleMedium)
@@ -703,6 +757,14 @@ private fun Step2RepoPath(
                 singleLine = true,
             )
         }
+
+        Text(
+            "Pick the folder that directly contains .git — usually your project's top-level " +
+                "folder, not a notes/pages subfolder inside it. You can point at a subfolder " +
+                "separately below.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
 
         OutlinedTextField(
             value = repoRoot,
@@ -722,12 +784,23 @@ private fun Step2RepoPath(
             } else null,
         )
 
-        if (detectionUnavailable) {
+        if (existingRepoNeedsAllFilesAccess) {
             Text(
-                "This folder was picked via Android's document picker, so SteleKit can't look " +
-                    "above it to find the repository automatically — enter the repository root " +
-                    "and wiki subdirectory below by hand. If your notes are at the repository's " +
-                    "top level, leave the subdirectory empty.",
+                "This folder was picked via the system document picker, so SteleKit can only " +
+                    "see its content — not open its .git as a real repository. Connecting to an " +
+                    "existing repository this way requires granting \"All files access\" " +
+                    "(Android Settings → Apps → SteleKit → Permissions → All files access), or " +
+                    "use \"Clone new repo\" instead with this same remote URL.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        } else if (detectionUnavailable) {
+            Text(
+                "No .git found directly in this folder, and SteleKit can't look above it to " +
+                    "find one automatically (the system document picker only grants access to " +
+                    "what you picked and what's inside it). If your repository is a parent " +
+                    "folder, browse again and pick that folder instead. If your notes live in a " +
+                    "subfolder of what you picked, use \"Browse\" below to select it.",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -739,6 +812,16 @@ private fun Step2RepoPath(
             label = { Text("Wiki subdirectory (leave empty if notes are at repo root)") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
+            trailingIcon = if (onBrowseWikiSubdir != null && repoRoot.isNotBlank()) {
+                {
+                    IconButton(onClick = onBrowseWikiSubdir) {
+                        Icon(
+                            imageVector = Icons.Default.Folder,
+                            contentDescription = "Browse subfolders of the repository root",
+                        )
+                    }
+                }
+            } else null,
         )
 
         Row(
@@ -752,6 +835,87 @@ private fun Step2RepoPath(
             ) { Text("Next") }
         }
     }
+}
+
+/**
+ * In-app subfolder browser scoped to [repoRoot] — replaces free-text entry for the common "notes
+ * live in a subfolder of the repo" case, since [repoRoot] itself is frequently an opaque picker
+ * URI (Android SAF, wasm OPFS) that a user cannot meaningfully hand-type a path relative to.
+ * Built entirely on [FileSystem.listDirectories], which every platform actual already implements
+ * for its own path scheme — no new platform-specific plumbing needed.
+ */
+@Composable
+private fun WikiSubdirBrowserDialog(
+    fileSystem: FileSystem,
+    repoRoot: String,
+    initialSubdir: String,
+    onDismiss: () -> Unit,
+    onSelect: (String) -> Unit,
+) {
+    var segments by remember {
+        mutableStateOf(initialSubdir.split('/').filter { it.isNotBlank() })
+    }
+    var subdirs by remember { mutableStateOf<List<String>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(segments) {
+        loading = true
+        val path = (listOf(repoRoot) + segments).joinToString("/")
+        subdirs = withContext(PlatformDispatcher.IO) { fileSystem.listDirectories(path).sorted() }
+        loading = false
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Select wiki subdirectory") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = if (segments.isEmpty()) "/ (repository root)" else "/" + segments.joinToString("/"),
+                    style = MaterialTheme.typography.labelMedium,
+                )
+                if (loading) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                } else {
+                    Column(
+                        modifier = Modifier.heightIn(max = 280.dp).verticalScroll(rememberScrollState()),
+                    ) {
+                        if (segments.isNotEmpty()) {
+                            TextButton(onClick = { segments = segments.dropLast(1) }) {
+                                Text("..")
+                            }
+                        }
+                        subdirs.forEach { name ->
+                            TextButton(onClick = { segments = segments + name }) {
+                                Icon(
+                                    imageVector = Icons.Default.Folder,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(name)
+                            }
+                        }
+                        if (subdirs.isEmpty()) {
+                            Text(
+                                "No subfolders here.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onSelect(segments.joinToString("/")); onDismiss() }) {
+                Text("Select this folder")
+            }
+        },
+        dismissButton = {
+            OutlinedButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }
 
 @Composable
@@ -1157,6 +1321,13 @@ private fun Step5TestAndSave(
         }
     }
 }
+
+/**
+ * True for text that could not possibly be a valid relative wiki-subdirectory path — i.e. it
+ * carries a URI scheme. Guards against a picked `content://`/`saf://` URI landing in the Wiki
+ * subdirectory field (which must always be a plain relative path under the repo root).
+ */
+internal fun looksLikeUri(value: String): Boolean = value.contains("://")
 
 /**
  * Populates the `PlatformSettings` keys ("githubOwner"/"githubRepo"/"githubBranch"/"githubToken")
