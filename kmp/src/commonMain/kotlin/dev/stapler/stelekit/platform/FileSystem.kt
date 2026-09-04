@@ -103,6 +103,27 @@ interface FileSystem {
     suspend fun pickFileAsync(): String? = null
 
     /**
+     * Re-points an already-tracked graph's host-directory connection at a newly-picked folder,
+     * reusing [existingPath] (the graph's existing internal path) rather than deriving a new one —
+     * unlike [pickDirectoryAsync], which always creates a brand-new graph. Imports the newly
+     * picked folder's contents into [existingPath] and returns the picked folder's own name (for
+     * display), or null if the user cancelled, picking failed, or this platform has no concept of
+     * a host directory separate from its own storage (every platform except the wasmJs actual).
+     * Callers must call [requestDirectoryPickerNow] synchronously from the triggering click first,
+     * exactly as [pickDirectoryAsync] callers do.
+     */
+    suspend fun relinkHostDirectoryAsync(existingPath: String): String? = null
+
+    /**
+     * True only on platforms with a host-directory-livesync concept separate from their own
+     * storage (currently the wasmJs actual, gated on browser support for `showDirectoryPicker`).
+     * Distinct from [supportsNativeDirectoryPicker] — that flag covers the native "add a new
+     * graph" folder dialog available on desktop/Android/iOS too, where a graph's [relinkHostDirectoryAsync]
+     * has no meaning since its path already *is* the real folder.
+     */
+    val supportsHostDirectoryLink: Boolean get() = false
+
+    /**
      * Read raw bytes from a file. Used by paranoid-mode decryption to read STEK-format files.
      * Platforms that support paranoid mode must override this with true byte-level IO.
      * The default throws [UnsupportedOperationException] to prevent silent data corruption

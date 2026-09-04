@@ -390,6 +390,17 @@ internal fun ScreenRouter(
                 DisposableEffect(annotationEditorViewModel) {
                     onDispose { annotationEditorViewModel.close() }
                 }
+                // depth-model-download-stall: safe cast — only Android's OnnxMonocularDepthEstimator
+                // implements DownloadableDepthModel (ADR-002); NoOp/iOS estimators don't, so the
+                // depth-estimation panel simply doesn't render there.
+                val downloadableDepthModel = SensorModule.monocularDepthEstimator as?
+                    dev.stapler.stelekit.platform.ml.DownloadableDepthModel
+                LaunchedEffect(downloadableDepthModel) {
+                    downloadableDepthModel?.modelState?.collect { uiState ->
+                        annotationEditorViewModel.updateDepthModelUiState(uiState)
+                    }
+                }
+                val depthModelScope = rememberCoroutineScope()
                 // Collect the annotation reactively; initialize the viewModel once on first non-null load.
                 var initialized by remember(imageAnnotationUuid) { mutableStateOf(false) }
                 var resolvedAnnotation by remember(imageAnnotationUuid) {
@@ -419,6 +430,18 @@ internal fun ScreenRouter(
                                 viewModel.goBack()
                             }
                         },
+                        onDownloadDepthModel = downloadableDepthModel?.let {
+                            { depthModelScope.launch { it.downloadModel() } }
+                        },
+                        onCancelDownloadDepthModel = downloadableDepthModel?.let {
+                            { it.cancelDownload() }
+                        },
+                        // Real depth estimation (running inference on a captured bitmap) is
+                        // unrelated to the download-stall bug this wiring exists for and needs its
+                        // own bitmap-sourcing work — left null so the panel shows "coming soon"
+                        // instead of a silently-dead button (see project_plans/
+                        // depth-model-download-stall/implementation/adversarial-review.md Blocker 3).
+                        onEstimateDepth = null,
                     )
                 }
             }

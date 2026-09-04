@@ -465,10 +465,34 @@ fun resolveAppVersion(): String = (findProperty("appVersion") as? String)?.remov
 // Short commit SHA of the checkout being built, for display alongside the version tag in
 // Settings — lets us tell which exact commit a running build (especially the web deploy) is
 // actually serving. Falls back to "unknown" outside a git checkout (e.g. a source tarball).
-fun resolveGitCommit(): String = providers.exec {
-    commandLine("git", "rev-parse", "--short=8", "HEAD")
-    isIgnoreExitValue = true
-}.standardOutput.asText.getOrElse("unknown").trim().ifEmpty { "unknown" }
+// Purely cosmetic (Settings display only, nothing reads it for correctness), so — unlike
+// resolveAppVersion() — it does not need to be a tracked task input at all. Called eagerly at
+// configuration time by the two sites below (desktop packaging's jvmArgs, the profiling test
+// task's systemProperty) — both DSL properties AGP/Compose Desktop require to be known during
+// configuration, so unlike generateWasmVersionInfo's doLast (below) there's no way to defer these
+// to execution time.
+//
+// Bug fix: this used to shell out via providers.exec() unconditionally. providers.exec's stdout
+// is a ValueSource, and Gradle's configuration cache must re-invoke any ValueSource used as a
+// task input on every build to check whether it changed — so every local commit forced a full
+// reconfigure ("output of the external process 'git' has changed"), paid by every local dev
+// iteration for a value nothing but a rarely-run packaging/profiling task's display needs. Gated
+// on CI the same way resolveAppVersion() gates on -PappVersion: CI gets the exact SHA; ordinary
+// local/dev builds use a stable "dev" placeholder and never start the git process at all.
+fun resolveGitCommitNow(): String = if (System.getenv("CI") != null) {
+    try {
+        val proc = ProcessBuilder("git", "rev-parse", "--short=8", "HEAD")
+            .directory(rootDir)
+            .redirectErrorStream(true)
+            .start()
+        val output = proc.inputStream.bufferedReader().readText().trim()
+        if (proc.waitFor() == 0 && output.isNotEmpty()) output else "unknown"
+    } catch (e: Exception) {
+        "unknown"
+    }
+} else {
+    "dev"
+}
 
 // wasmJs has no JVM system-property equivalent to pass the resolved version at runtime (unlike
 // the JVM target — see the "run" task's -Dapp.version below), so it is baked in at compile time
@@ -478,11 +502,27 @@ val generateWasmVersionInfo by tasks.registering {
     description = "Generates a Kotlin constant with the resolved app version for the wasmJs target."
     val outputDir = layout.buildDirectory.dir("generated/version/wasmJsMain/kotlin")
     val version = resolveAppVersion()
-    val gitCommit = resolveGitCommit()
+    // Bug fix: calling the script-level resolveGitCommitNow() from inside doLast crashes under
+    // the configuration cache ("Cannot invoke Build_gradle.resolveGitCommitNow() because
+    // this.this$0 is null") — invoking any build-script member function from a task-action
+    // closure requires capturing the enclosing script instance, which the configuration cache
+    // deliberately can't serialize/replay. Capturing a plain File as a local here instead is
+    // config-cache-safe (simple serializable value, not a script reference), so the git logic
+    // below is inlined rather than calling out to the shared helper.
+    val projectRootDir = rootDir
     inputs.property("appVersion", version)
-    inputs.property("gitCommit", gitCommit)
     outputs.dir(outputDir)
     doLast {
+        val gitCommit = try {
+            val proc = ProcessBuilder("git", "rev-parse", "--short=8", "HEAD")
+                .directory(projectRootDir)
+                .redirectErrorStream(true)
+                .start()
+            val output = proc.inputStream.bufferedReader().readText().trim()
+            if (proc.waitFor() == 0 && output.isNotEmpty()) output else "unknown"
+        } catch (e: Exception) {
+            "unknown"
+        }
         val outFile = outputDir.get().asFile.resolve("dev/stapler/stelekit/performance/WasmVersionInfo.kt")
         outFile.parentFile.mkdirs()
         outFile.writeText(
@@ -1088,7 +1128,7 @@ compose.desktop {
             packageVersion = if ((parts.firstOrNull()?.toIntOrNull() ?: 1) == 0)
                 "1.${parts.drop(1).joinToString(".")}" else rawVersion
             jvmArgs("-Dapp.version=$rawVersion")
-            jvmArgs("-Dapp.gitCommit=${resolveGitCommit()}")
+            jvmArgs("-Dapp.gitCommit=${resolveGitCommitNow()}")
             modules("java.sql")
             macOS {
                 iconFile.set(project.file("src/jvmMain/resources/icons/icon.icns"))
@@ -1300,7 +1340,7 @@ afterEvaluate {
         // with the resolved JDK 21 binary instead.
         setExecutable(jdk21Launcher.get().executablePath.asFile.absolutePath)
         systemProperty("app.version", resolvedAppVersion)
-        systemProperty("app.gitCommit", resolveGitCommit())
+        systemProperty("app.gitCommit", resolveGitCommitNow())
 
         // Dev/test launches must never point at the real default graph path — running
         // alongside an already-open real install (or repeated dev sessions) lets independent

@@ -8,10 +8,21 @@ plugins {
 }
 
 val appVersionStr = (findProperty("appVersion") as? String ?: "0.1.0").removePrefix("v")
-val gitCommitHash = providers.exec {
-    commandLine("git", "rev-parse", "--short=8", "HEAD")
-    isIgnoreExitValue = true
-}.standardOutput.asText.getOrElse("unknown").trim().ifEmpty { "unknown" }
+// Bug fix: shelling out to `git rev-parse` unconditionally made HEAD's SHA a configuration-cache
+// input (providers.exec's stdout is a ValueSource Gradle must re-check every build), so every
+// local commit invalidated the cache and forced a full reconfigure — for a value that's purely
+// cosmetic (an About-screen display string, nothing reads it for correctness). Mirrors the same
+// fix applied in kmp/build.gradle.kts's resolveGitCommit(): CI (which can pass -PgitCommit) gets
+// the exact SHA; ordinary local/dev builds use a stable "dev" placeholder instead of invoking git.
+val gitCommitHash = (findProperty("gitCommit") as? String)
+    ?: if (System.getenv("CI") != null) {
+        providers.exec {
+            commandLine("git", "rev-parse", "--short=8", "HEAD")
+            isIgnoreExitValue = true
+        }.standardOutput.asText.getOrElse("unknown").trim().ifEmpty { "unknown" }
+    } else {
+        "dev"
+    }
 val versionParts = appVersionStr.split(".")
 val vMajor = versionParts.getOrNull(0)?.toIntOrNull() ?: 0
 val vMinor = versionParts.getOrNull(1)?.toIntOrNull() ?: 0
