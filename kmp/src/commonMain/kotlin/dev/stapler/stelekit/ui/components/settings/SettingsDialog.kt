@@ -441,28 +441,5 @@ enum class SettingsCategory(val label: String, val icon: ImageVector) {
     DEVELOPER("Developer", Icons.Default.BugReport),
 }
 
-@Composable
-private fun DeveloperSettings(
-    isLibsqlDriverEnabled: Boolean,
-    onLibsqlDriverToggle: (Boolean) -> Unit,
-) {
-    SettingsSection("Database Driver") {
-        SettingsToggleRow(
-            label = "Use libsql JNI driver",
-            checked = isLibsqlDriverEnabled,
-            onCheckedChange = onLibsqlDriverToggle,
-        )
-        Text(
-            text = if (isLibsqlDriverEnabled)
-                "Active: libsql JNI driver (WAL mode). Reload the graph to apply."
-            else
-                "Active: system SQLite. Reload the graph to apply.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = androidx.compose.ui.Modifier.padding(top = 4.dp, bottom = 8.dp),
-        )
-    }
-}
-
 private fun versionLabel(appVersion: String, gitCommit: String): String =
     if (gitCommit == "unknown") "v$appVersion" else "v$appVersion ($gitCommit)"

@@ -14,8 +14,13 @@ import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
+import dev.stapler.stelekit.ui.annotate.DepthModelUiState
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.withContext
 import java.nio.FloatBuffer
 
@@ -33,7 +38,9 @@ import java.nio.FloatBuffer
  * All ORT calls are wrapped in try/catch — ORT may throw [ai.onnxruntime.OrtException] or
  * [UnsatisfiedLinkError] on unsupported devices.
  */
-class OnnxMonocularDepthEstimator(private val context: Context) : MonocularDepthEstimator {
+class OnnxMonocularDepthEstimator(
+    private val context: Context,
+) : MonocularDepthEstimator, DownloadableDepthModel {
 
     @Volatile private var ortEnv: OrtEnvironment? = null
     @Volatile private var ortSession: OrtSession? = null
@@ -45,8 +52,17 @@ class OnnxMonocularDepthEstimator(private val context: Context) : MonocularDepth
 
     val downloader: DepthModelDownloader = DepthModelDownloader(context)
 
-    /** Mirrors [DepthModelDownloader.modelState] for UI observation. */
-    val modelState: StateFlow<DepthModelDownloader.ModelState> = downloader.modelState
+    /** [DownloadableDepthModel]'s platform-independent mirror of [downloader]'s [DepthModelDownloader.ModelState]. */
+    override val modelState: StateFlow<DepthModelUiState> =
+        downloader.modelState.map { it.toUiState() }.stateIn(
+            scope = CoroutineScope(PlatformDispatcher.Default),
+            started = SharingStarted.Eagerly,
+            initialValue = downloader.modelState.value.toUiState(),
+        )
+
+    override suspend fun downloadModel(): Either<DomainError, Unit> = downloader.downloadModel().map {}
+
+    override fun cancelDownload() = downloader.cancelDownload()
 
     override val isAvailable: Boolean
         get() = _isAvailable

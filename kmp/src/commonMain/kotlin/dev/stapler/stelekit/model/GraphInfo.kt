@@ -26,6 +26,11 @@ data class GraphInfo(
     val gitDetectionDismissed: Boolean = false,
     val browserOnlySyncBannerDismissed: Boolean = false,
     val isDemo: Boolean = false,
+    /** Real host-folder name last linked via the File System Access API (web-local-folder-livesync
+     * only) — e.g. "notes" for `~/Documents/notes`. Distinct from [path], which is this graph's own
+     * internal identity path and does not change when the graph is relinked to a differently-named
+     * host folder. Null on every platform without a host-directory concept, and until first linked. */
+    val hostDirName: String? = null,
 )
 
 /**

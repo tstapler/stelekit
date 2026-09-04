@@ -122,8 +122,12 @@ sealed interface DepthModelUiState {
     /** Model ready — show "Estimate depth (AI)" button. */
     data object Ready : DepthModelUiState
 
-    /** Download failed. Show "Download failed — tap to retry". */
-    data object Failed : DepthModelUiState
+    /**
+     * Download failed. Show "Download failed — tap to retry", or [reason] followed by
+     * "Tap to retry." when set (e.g. a stall-timeout transition surfaces plain-language copy
+     * instead of the generic message).
+     */
+    data class Failed(val reason: String? = null) : DepthModelUiState
 }
 
 /** Records the calibration state before a user-initiated change, enabling single-level undo. */

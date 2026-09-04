@@ -106,6 +106,9 @@ fun LeftSidebar(
     onReconnectHostDirectory: () -> Unit = {},
     onCloneGraph: () -> Unit = {},
     onUpdateGraphPath: (String, String) -> Unit = { _, _ -> },
+    onRenameGraph: (String, String) -> Unit = { _, _ -> },
+    onRelinkHostDirectory: (String) -> Unit = {},
+    supportsHostDirectoryLink: Boolean = false,
     gitSyncedGraphId: String? = null,
     onNewSectionJournalEntry: (() -> Unit)? = null,
     sectionManifest: SectionManifest? = null,
@@ -156,6 +159,9 @@ fun LeftSidebar(
                 onRemoveGraph = onRemoveGraph,
                 onCloneGraph = onCloneGraph,
                 onUpdateGraphPath = onUpdateGraphPath,
+                onRenameGraph = onRenameGraph,
+                onRelinkHostDirectory = onRelinkHostDirectory,
+                supportsHostDirectoryLink = supportsHostDirectoryLink,
                 gitSyncedGraphId = gitSyncedGraphId,
                 isDemoActive = isDemoActive,
                 hostAccessState = hostAccessState,
@@ -353,6 +359,13 @@ fun GraphSwitcher(
     onRemoveGraph: (String) -> Unit,
     onCloneGraph: () -> Unit = {},
     onUpdateGraphPath: (String, String) -> Unit = { _, _ -> },
+    onRenameGraph: (String, String) -> Unit = { _, _ -> },
+    /** Re-points a graph's host-folder link at a newly-picked folder (web-local-folder-livesync
+     * only). Must call the platform's directory-picker synchronously from this click before
+     * launching a coroutine — same transient-user-activation constraint as [onAddGraph]. No-op
+     * (button hidden) on platforms without a native directory picker. */
+    onRelinkHostDirectory: (String) -> Unit = {},
+    supportsHostDirectoryLink: Boolean = false,
     gitSyncedGraphId: String? = null,
     isDemoActive: Boolean = false,
     /** Epic 2.3: host-directory connection state for [activeGraphId] only — used to show a
@@ -532,22 +545,33 @@ fun GraphSwitcher(
         )
     }
 
-    // Edit-path dialog: lets the user re-point a tracked graph at a new folder.
+    // Edit dialog: rename, re-point the internal path (migrates the DB), and/or re-link the
+    // real host folder (web-local-folder-livesync only) — three independent fields, each with
+    // its own save action so a field that requires migration/re-linking only runs that work.
     val editingGraph = graphToEdit
     if (editingGraph != null) {
+        var newName by remember(editingGraph.id.value) { mutableStateOf(editingGraph.displayName) }
         var newPath by remember(editingGraph.id.value) { mutableStateOf(editingGraph.path) }
         AlertDialog(
             onDismissRequest = { graphToEdit = null },
-            title = { Text("Edit Graph Path") },
+            title = { Text("Edit Graph") },
             text = {
                 Column {
+                    OutlinedTextField(
+                        value = newName,
+                        onValueChange = { newName = it },
+                        label = { Text("Name") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(12.dp))
                     Text(
-                        "Move \"${editingGraph.displayName}\" to a different folder. " +
-                            "The graph's database will be migrated to the new location.",
+                        "Internal graph path. Changing this moves \"${editingGraph.displayName}\"'s " +
+                            "database to a different location on this device.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(4.dp))
                     OutlinedTextField(
                         value = newPath,
                         onValueChange = { newPath = it },
@@ -555,15 +579,40 @@ fun GraphSwitcher(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    if (supportsHostDirectoryLink) {
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            editingGraph.hostDirName?.let { "Linked local folder: $it" }
+                                ?: "No local folder linked yet.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        TextButton(
+                            onClick = {
+                                onRelinkHostDirectory(editingGraph.id.value)
+                                graphToEdit = null
+                            },
+                            contentPadding = PaddingValues(horizontal = 0.dp),
+                        ) {
+                            Text(if (editingGraph.hostDirName != null) "Change linked folder…" else "Link a local folder…")
+                        }
+                    }
                 }
             },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        onUpdateGraphPath(editingGraph.id.value, newPath)
+                        if (newName.isNotBlank() && newName != editingGraph.displayName) {
+                            onRenameGraph(editingGraph.id.value, newName)
+                        }
+                        if (newPath.isNotBlank() && newPath != editingGraph.path) {
+                            onUpdateGraphPath(editingGraph.id.value, newPath)
+                        }
                         graphToEdit = null
                     },
-                    enabled = newPath.isNotBlank() && newPath != editingGraph.path,
+                    enabled = (newName.isNotBlank() && newName != editingGraph.displayName) ||
+                        (newPath.isNotBlank() && newPath != editingGraph.path),
                 ) {
                     Text("Save")
                 }
@@ -621,7 +670,10 @@ fun GraphItem(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = graph.path,
+                    // Prefer the real linked host folder's name over the internal OPFS path —
+                    // the path (e.g. "/stelekit/notes") tells the user nothing about which real
+                    // folder on disk the graph is backed by once host-directory-livesync is wired up.
+                    text = graph.hostDirName?.let { "linked to: $it" } ?: graph.path,
                     style = MaterialTheme.typography.bodySmall,
                     color = (if (isActive) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
                         .copy(alpha = 0.6f),

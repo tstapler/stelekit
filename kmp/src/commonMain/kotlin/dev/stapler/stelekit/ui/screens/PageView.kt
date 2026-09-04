@@ -289,6 +289,10 @@ fun PageView(
                 .pointerInput(Unit) {
                     detectTapGestures(onTap = {
                         focusManager.clearFocus()
+                        // Tapping empty page background is the expected/discoverable way to
+                        // back out of an accidental selection — Escape works too but isn't
+                        // obvious, and there was previously no way to exit via a plain tap.
+                        blockStateManager.clearSelection()
                     })
                 },
             contentPadding = PaddingValues(top = 16.dp, bottom = toolbarHeightDp + 8.dp)

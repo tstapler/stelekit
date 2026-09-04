@@ -150,6 +150,10 @@ fun JournalsView(
                 .pointerInput(Unit) {
                     detectTapGestures(onTap = {
                         focusManager.clearFocus()
+                        // Mirrors PageView.kt — tapping empty background is the discoverable
+                        // way to back out of an accidental selection (Escape works too, but
+                        // isn't obvious).
+                        viewModel.clearSelection()
                     })
                 },
             contentPadding = PaddingValues(top = 16.dp, bottom = toolbarHeightDp + 8.dp)

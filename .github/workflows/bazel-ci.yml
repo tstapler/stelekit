@@ -21,37 +21,21 @@ jobs:
     name: Bazel JVM tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    if: github.event.pull_request.draft == false
     steps:
       - uses: actions/checkout@v4
 
-      - name: Cache bazel-cache-proxy binary
-        id: bcp-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/bin/bazel-cache-proxy
-          key: bcp-${{ runner.os }}-7806c5f
-
-      - name: Install bazel-cache-proxy
-        if: steps.bcp-cache.outputs.cache-hit != 'true'
-        run: |
-          sudo apt-get install -y --no-install-recommends protobuf-compiler
-          cargo install --git https://github.com/tstapler/bazel-cache-proxy --rev 7806c5f bazel-cache-proxy --locked
-
-      - name: Start bazel-cache-proxy (GHA backend)
-        run: |
-          printf '[backend]\ntype = "gha"\n' > /tmp/bcp.toml
-          ~/.cargo/bin/bazel-cache-proxy serve --config /tmp/bcp.toml &
-          sleep 2
-          curl -sf http://127.0.0.1:9090/healthz
+      - uses: ./.github/actions/setup-bcp
 
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@0.19.0
         with:
           bazelisk-version: "1.x"
-          # Persistent disk cache for build action results (compiled Kotlin, JARs).
-          # Keyed per-job so JVM and Android caches don't collide.
-          disk-cache: jvm
+          # Shared across all 4 Bazel jobs (not job-scoped): their action graphs
+          # heavily overlap (commonMain compile, external repo fetch/build, etc.),
+          # and GitHub evicts the whole repo's caches once combined size crosses
+          # ~10GB, so 4 separate near-duplicate multi-hundred-MB disk-caches were
+          # starving each other out. One shared cache stores that overlap once.
+          disk-cache: shared
           # Shared Maven/artifact download cache across all jobs (keyed by MODULE.bazel).
           repository-cache: true
           # Cache large individual external repos (Compose Desktop, AndroidX) separately.
@@ -83,7 +67,6 @@ jobs:
     name: Bazel Android build
     runs-on: ubuntu-latest
     timeout-minutes: 65
-    if: github.event.pull_request.draft == false
     steps:
       - uses: actions/checkout@v4
 
@@ -99,31 +82,14 @@ jobs:
       - name: Install host tools required by aar_import
         run: sudo apt-get install -y --no-install-recommends unzip
 
-      - name: Cache bazel-cache-proxy binary
-        id: bcp-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/bin/bazel-cache-proxy
-          key: bcp-${{ runner.os }}-7806c5f
-
-      - name: Install bazel-cache-proxy
-        if: steps.bcp-cache.outputs.cache-hit != 'true'
-        run: |
-          sudo apt-get install -y --no-install-recommends protobuf-compiler
-          cargo install --git https://github.com/tstapler/bazel-cache-proxy --rev 7806c5f bazel-cache-proxy --locked
-
-      - name: Start bazel-cache-proxy (GHA backend)
-        run: |
-          printf '[backend]\ntype = "gha"\n' > /tmp/bcp.toml
-          ~/.cargo/bin/bazel-cache-proxy serve --config /tmp/bcp.toml &
-          sleep 2
-          curl -sf http://127.0.0.1:9090/healthz
+      - uses: ./.github/actions/setup-bcp
 
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@0.19.0
         with:
           bazelisk-version: "1.x"
-          disk-cache: android
+          # Shared across all 4 Bazel jobs — see comment on bazel-jvm's setup step.
+          disk-cache: shared
           repository-cache: true
           external-cache: true
           # Always save repository cache (includes the dalvik tarball from android.googlesource.com)
@@ -139,7 +105,6 @@ jobs:
     name: Bazel Android unit tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    if: github.event.pull_request.draft == false
     steps:
       - uses: actions/checkout@v4
 
@@ -155,31 +120,14 @@ jobs:
       - name: Install host tools required by aar_import
         run: sudo apt-get install -y --no-install-recommends unzip
 
-      - name: Cache bazel-cache-proxy binary
-        id: bcp-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/bin/bazel-cache-proxy
-          key: bcp-${{ runner.os }}-7806c5f
-
-      - name: Install bazel-cache-proxy
-        if: steps.bcp-cache.outputs.cache-hit != 'true'
-        run: |
-          sudo apt-get install -y --no-install-recommends protobuf-compiler
-          cargo install --git https://github.com/tstapler/bazel-cache-proxy --rev 7806c5f bazel-cache-proxy --locked
-
-      - name: Start bazel-cache-proxy (GHA backend)
-        run: |
-          printf '[backend]\ntype = "gha"\n' > /tmp/bcp.toml
-          ~/.cargo/bin/bazel-cache-proxy serve --config /tmp/bcp.toml &
-          sleep 2
-          curl -sf http://127.0.0.1:9090/healthz
+      - uses: ./.github/actions/setup-bcp
 
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@0.19.0
         with:
           bazelisk-version: "1.x"
-          disk-cache: android-tests
+          # Shared across all 4 Bazel jobs — see comment on bazel-jvm's setup step.
+          disk-cache: shared
           repository-cache: true
           external-cache: true
           cache-save: ${{ github.event_name != 'pull_request' }}
@@ -200,7 +148,6 @@ jobs:
     name: Bazel web (WASM/JS via Gradle genrule)
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    if: github.event.pull_request.draft == false
     steps:
       - uses: actions/checkout@v4
 
@@ -224,31 +171,14 @@ jobs:
             gradle-web-${{ runner.os }}-${{ hashFiles('kmp/build.gradle.kts', 'settings.gradle.kts', 'gradle.properties') }}-
             gradle-web-${{ runner.os }}-
 
-      - name: Cache bazel-cache-proxy binary
-        id: bcp-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/bin/bazel-cache-proxy
-          key: bcp-${{ runner.os }}-7806c5f
-
-      - name: Install bazel-cache-proxy
-        if: steps.bcp-cache.outputs.cache-hit != 'true'
-        run: |
-          sudo apt-get install -y --no-install-recommends protobuf-compiler
-          cargo install --git https://github.com/tstapler/bazel-cache-proxy --rev 7806c5f bazel-cache-proxy --locked
-
-      - name: Start bazel-cache-proxy (GHA backend)
-        run: |
-          printf '[backend]\ntype = "gha"\n' > /tmp/bcp.toml
-          ~/.cargo/bin/bazel-cache-proxy serve --config /tmp/bcp.toml &
-          sleep 2
-          curl -sf http://127.0.0.1:9090/healthz
+      - uses: ./.github/actions/setup-bcp
 
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@0.19.0
         with:
           bazelisk-version: "1.x"
-          disk-cache: web
+          # Shared across all 4 Bazel jobs — see comment on bazel-jvm's setup step.
+          disk-cache: shared
           repository-cache: true
           external-cache: true
           cache-save: ${{ github.event_name != 'pull_request' }}
