@@ -13,8 +13,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -23,6 +25,27 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.ui.theme.StelekitTheme
 import dev.stapler.stelekit.ui.useLongPressForDrag
+
+/**
+ * Shared `detectDragGestures`/`detectDragGesturesAfterLongPress` branch — both the reorder
+ * drag handle and the lasso-select bullet need the same long-press-vs-immediate split.
+ */
+private fun Modifier.dragGesture(
+    useLongPress: Boolean,
+    onDragStart: (Offset) -> Unit,
+    onDrag: (PointerInputChange, Offset) -> Unit,
+    onDragEnd: () -> Unit,
+): Modifier = pointerInput(useLongPress) {
+    if (useLongPress) {
+        detectDragGesturesAfterLongPress(
+            onDragStart = onDragStart, onDrag = onDrag, onDragEnd = onDragEnd, onDragCancel = onDragEnd,
+        )
+    } else {
+        detectDragGestures(
+            onDragStart = onDragStart, onDrag = onDrag, onDragEnd = onDragEnd, onDragCancel = onDragEnd,
+        )
+    }
+}
 
 /**
  * The left-side gutter of a block row: drag handle, collapse/expand toggle,
@@ -94,49 +117,22 @@ internal fun BlockGutter(
                         }
                     }
                 }
-                .pointerInput(useLongPress) {
-                    if (useLongPress) {
-                        detectDragGesturesAfterLongPress(
-                            onDragStart = { startOffset ->
-                                isDragging = true
-                                isHovered = false
-                                onDragStart(blockUuid, startOffset.y)
-                            },
-                            onDragEnd = {
-                                isDragging = false
-                                onDragEnd()
-                            },
-                            onDragCancel = {
-                                isDragging = false
-                                onDragEnd()
-                            },
-                            onDrag = { change, dragAmount ->
-                                change.consume()
-                                onDrag(dragAmount.y)
-                            }
-                        )
-                    } else {
-                        detectDragGestures(
-                            onDragStart = { startOffset ->
-                                isDragging = true
-                                isHovered = false
-                                onDragStart(blockUuid, startOffset.y)
-                            },
-                            onDragEnd = {
-                                isDragging = false
-                                onDragEnd()
-                            },
-                            onDragCancel = {
-                                isDragging = false
-                                onDragEnd()
-                            },
-                            onDrag = { change, dragAmount ->
-                                change.consume()
-                                onDrag(dragAmount.y)
-                            }
-                        )
-                    }
-                },
+                .dragGesture(
+                    useLongPress = useLongPress,
+                    onDragStart = { startOffset ->
+                        isDragging = true
+                        isHovered = false
+                        onDragStart(blockUuid, startOffset.y)
+                    },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        onDrag(dragAmount.y)
+                    },
+                    onDragEnd = {
+                        isDragging = false
+                        onDragEnd()
+                    },
+                ),
             contentAlignment = Alignment.Center
         ) {
             Icon(
@@ -184,26 +180,15 @@ internal fun BlockGutter(
             .padding(end = 12.dp, top = 10.dp)
             .size(6.dp)
             .onGloballyPositioned { bulletCoords = it }
-            .pointerInput(useLongPress) {
-                val toRootY: (androidx.compose.ui.geometry.Offset) -> Float = { offset ->
-                    (bulletCoords?.localToRoot(offset) ?: offset).y
-                }
-                if (useLongPress) {
-                    detectDragGesturesAfterLongPress(
-                        onDragStart = { _ -> onLassoDragStart(blockUuid) },
-                        onDrag = { change, _ -> change.consume(); onLassoDrag(toRootY(change.position)) },
-                        onDragEnd = onLassoDragEnd,
-                        onDragCancel = onLassoDragEnd,
-                    )
-                } else {
-                    detectDragGestures(
-                        onDragStart = { _ -> onLassoDragStart(blockUuid) },
-                        onDrag = { change, _ -> change.consume(); onLassoDrag(toRootY(change.position)) },
-                        onDragEnd = onLassoDragEnd,
-                        onDragCancel = onLassoDragEnd,
-                    )
-                }
-            }
+            .dragGesture(
+                useLongPress = useLongPress,
+                onDragStart = { _ -> onLassoDragStart(blockUuid) },
+                onDrag = { change, _ ->
+                    change.consume()
+                    onLassoDrag((bulletCoords?.localToRoot(change.position) ?: change.position).y)
+                },
+                onDragEnd = onLassoDragEnd,
+            )
             .background(
                 color = StelekitTheme.colors.bullet,
                 shape = androidx.compose.foundation.shape.CircleShape

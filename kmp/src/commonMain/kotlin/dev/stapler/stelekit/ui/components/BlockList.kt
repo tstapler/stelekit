@@ -110,13 +110,12 @@ internal fun computeDropTarget(
 }
 
 /**
- * Resolves which block row [pointerY] (in the same column-relative coordinate space as
- * [blockBounds]) is currently nearest, for the click-and-drag lasso-select gesture started
- * from a block's bullet (see [BlockList]'s `onLassoDragStart`/`onLassoDrag` wiring). Uses the
- * same nearest-row-center distance metric as [computeDropTarget]'s candidate search, which
- * gives it the same natural clamp-to-edge behavior: a pointer above the first block or below
- * the last one still resolves to that edge block rather than to nothing, so a lasso drag that
- * overshoots the list's bounds keeps extending the selection to the nearest end.
+ * Resolves which block row [pointerY] is nearest, for lasso-select (see [BlockList]'s
+ * `onLassoDragStart`/`onLassoDrag`). Same nearest-row-center metric as [computeDropTarget], so
+ * it naturally clamps to the first/last row rather than returning null when overshooting the
+ * list's bounds. On an exact tie, the earlier entry in [blockBounds]'s iteration order wins —
+ * callers must pass an order-stable map (BlockList always does: `blockBounds` is built by
+ * appending to a `Map` in on-screen row order, never a `HashMap`).
  */
 internal fun hitTestNearestBlockRow(
     pointerY: Float,
@@ -460,8 +459,14 @@ fun BlockList(
                         onEnterSelectionMode(uuid)
                     },
                     onLassoDrag = { rootY ->
+                        // Guard on isLassoDragging, not just non-null coordinates: the physical
+                        // pointer drag in BlockGutter keeps firing this callback until pointer-up
+                        // regardless of Compose state, so without this check Escape's isLassoDragging
+                        // = false reset would be cosmetic only — the selection would keep growing
+                        // underneath it for the rest of the gesture (mirrors dragState's null-guard
+                        // for the reorder-drag equivalent above).
                         val colTop = columnCoords?.positionInRoot()?.y
-                        if (colTop != null) {
+                        if (isLassoDragging && colTop != null) {
                             val hitUuid = hitTestNearestBlockRow(rootY - colTop, blockBounds)
                             if (hitUuid != null && hitUuid != lastLassoHitUuid) {
                                 lastLassoHitUuid = hitUuid
