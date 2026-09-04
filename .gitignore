@@ -149,7 +149,12 @@ e2e/test-results/
 # --------------------
 # Claude Code
 # --------------------
-.claude/
+# Machine-local only: agent worktree checkouts (can reach multi-GB) and
+# per-developer settings/lock state. Everything else in .claude/ (commands,
+# skills, shared settings.json) is meant to be tracked.
+.claude/worktrees/
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
 
 # --------------------
 # ClojureScript

@@ -35,6 +35,19 @@ build:android --android_sdk=@androidsdk//:sdk
 # let these run back-to-back — run 33803270917, "Server terminated abruptly").
 build:android --local_resources=memory=9000
 
+# ── Persistent workers for Android dex/desugar/resource actions ──────────────
+# Without these, every Dexing/Desugaring/resource-merge action spawns a fresh
+# `java` process (processwrapper-sandbox) instead of reusing a warm worker JVM.
+# CI run 33891824754's Android build job: 1510s elapsed vs. 236s critical path
+# (6.4x) with 825/916 sampled actions on processwrapper-sandbox and only 91 on
+# worker/multiplex-worker — i.e. most of the wall clock is JVM-startup and
+# scheduling overhead, not actual dependency-chain work. These are native
+# rules_android/Bazel flags (`bazel help build`), verified locally: adding them
+# to `bazel build //kmp:android_app --config=android` shifted 466/809 actions
+# from processwrapper-sandbox to worker with no failures.
+build:android --persistent_android_dex_desugar
+build:android --persistent_android_resource_processor
+
 # ── Correctness / hermetic sandbox ────────────────────────────────────────────
 build --sandbox_default_allow_network=false
 build --incompatible_strict_action_env
