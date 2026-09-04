@@ -29,15 +29,10 @@ build --repo_env=ANDROID_HOME
 build:android --android_sdk=@androidsdk//:sdk
 
 # ── Resource limits (Android on the 16GB standard GH runner) ─────────────────
-# PackageAndroidResources and d8 dexer actions are each a `java -Xmx3G`
-# process. With a cold disk-cache, network-download waits between actions
-# naturally staggered when these ran, so this never surfaced. Once the disk
-# cache is warm (see bazel-ci.yml's shared `disk-cache`), Bazel schedules them
-# back-to-back: 4 concurrent dexers (12GB) + the 6GB server JVM cap above
-# exceeds the runner's 16GB and OOM-kills the Bazel server ("Server
-# terminated abruptly ... Socket closed"). Cap the local action RAM pool so
-# scheduling stays within budget; scoped to :android since JVM-only targets
-# don't spawn dexer actions.
+# PackageAndroidResources/d8 dexer actions are each a `java -Xmx3G` process;
+# 4 running concurrently + the 6GB server JVM cap above exceeds 16GB and
+# OOM-kills the Bazel server (observed once bazel-ci.yml's shared disk-cache
+# let these run back-to-back — run 33803270917, "Server terminated abruptly").
 build:android --local_resources=memory=9000
 
 # ── Correctness / hermetic sandbox ────────────────────────────────────────────
