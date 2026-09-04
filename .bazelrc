@@ -42,11 +42,25 @@ build:android --local_resources=memory=9000
 # (6.4x) with 825/916 sampled actions on processwrapper-sandbox and only 91 on
 # worker/multiplex-worker — i.e. most of the wall clock is JVM-startup and
 # scheduling overhead, not actual dependency-chain work. These are native
-# rules_android/Bazel flags (`bazel help build`), verified locally: adding them
-# to `bazel build //kmp:android_app --config=android` shifted 466/809 actions
-# from processwrapper-sandbox to worker with no failures.
+# rules_android/Bazel flags (`bazel help build`).
 build:android --persistent_android_dex_desugar
 build:android --persistent_android_resource_processor
+
+# Cap concurrent Desugar/DexBuilder worker instances: unlike the one-shot
+# sandboxed processes they replace, persistent workers stay resident and hold
+# their JVM heap between actions instead of releasing it on exit. The
+# `--local_resources=memory=9000` budget above doesn't see that steady-state
+# footprint (these actions' declared resource_set understates it), so with no
+# cap CI run 33929109869 spun up enough concurrent Desugar/DexBuilder workers
+# to exceed the 16GB GH runner and got OOM-killed mid-build ("Killed" —
+# desugar_java8 --persistent_worker — which cascaded into unrelated
+# KotlinCompile/Dexing actions failing with "Worker process did not return a
+# WorkResponse"). 2 is deliberately conservative headroom alongside the
+# existing KotlinCompile workers and the rest of the build.
+build:android --worker_max_instances=Desugar=2
+build:android --worker_max_instances=DexBuilder=2
+build:android --worker_max_multiplex_instances=Desugar=2
+build:android --worker_max_multiplex_instances=DexBuilder=2
 
 # ── Correctness / hermetic sandbox ────────────────────────────────────────────
 build --sandbox_default_allow_network=false
