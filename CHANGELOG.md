@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.80.0](https://github.com/tstapler/stelekit/compare/v0.79.0...v0.80.0) (2026-09-04)
+
+
+### Features
+
+* **ui:** add click-and-drag lasso-select for blocks ([#303](https://github.com/tstapler/stelekit/issues/303)) ([43bed73](https://github.com/tstapler/stelekit/commit/43bed738d28530bc53ba64a00b4723bbe63c2e30))
+
+
+### Bug Fixes
+
+* **git:** guide repo-root/wiki-subdir picking instead of failing cryptically ([#299](https://github.com/tstapler/stelekit/issues/299)) ([ddfb721](https://github.com/tstapler/stelekit/commit/ddfb721ee07fa073a7747aa6f3257995e5667071))
+
 ## [0.79.0](https://github.com/tstapler/stelekit/compare/v0.78.3...v0.79.0) (2026-09-03)
 
 
