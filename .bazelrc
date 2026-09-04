@@ -28,6 +28,13 @@ build --repo_env=ANDROID_HOME
 # resolution.  Pass --config=android when building Android targets.
 build:android --android_sdk=@androidsdk//:sdk
 
+# ── Resource limits (Android on the 16GB standard GH runner) ─────────────────
+# PackageAndroidResources/d8 dexer actions are each a `java -Xmx3G` process;
+# 4 running concurrently + the 6GB server JVM cap above exceeds 16GB and
+# OOM-kills the Bazel server (observed once bazel-ci.yml's shared disk-cache
+# let these run back-to-back — run 33803270917, "Server terminated abruptly").
+build:android --local_resources=memory=9000
+
 # ── Correctness / hermetic sandbox ────────────────────────────────────────────
 build --sandbox_default_allow_network=false
 build --incompatible_strict_action_env
