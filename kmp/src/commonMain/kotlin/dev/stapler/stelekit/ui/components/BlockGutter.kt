@@ -16,6 +16,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -42,6 +44,9 @@ internal fun BlockGutter(
     onDragStart: (uuid: String, startY: Float) -> Unit = { _, _ -> },
     onDrag: (deltaY: Float) -> Unit = {},
     onDragEnd: () -> Unit = {},
+    onLassoDragStart: (uuid: String) -> Unit = {},
+    onLassoDrag: (rootY: Float) -> Unit = {},
+    onLassoDragEnd: () -> Unit = {},
 ) {
     var isDragging by remember { mutableStateOf(false) }
     var isHovered by remember { mutableStateOf(false) }
@@ -166,15 +171,44 @@ internal fun BlockGutter(
         Spacer(modifier = Modifier.width(4.dp))
     }
 
-    // Bullet point (Always shown)
+    // Bullet point (Always shown). Also the click-and-drag handle for lasso-selecting a
+    // contiguous run of blocks: dragging from here across other rows grows the selection to
+    // span anchor..pointer, mirroring shift-click's contiguous-range semantics (extendSelectionTo).
+    // Deliberately reuses the existing 6dp hit area rather than enlarging it — the drag handle
+    // above already owns an expanded 48dp touch target for reorder, and growing the bullet's own
+    // box would shift row height/layout and risk the Roborazzi screenshot goldens for no gain on
+    // desktop, where this gesture is primarily mouse-driven.
+    var bulletCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
     Box(
         modifier = Modifier
             .padding(end = 12.dp, top = 10.dp)
             .size(6.dp)
+            .onGloballyPositioned { bulletCoords = it }
+            .pointerInput(useLongPress) {
+                val toRootY: (androidx.compose.ui.geometry.Offset) -> Float = { offset ->
+                    (bulletCoords?.localToRoot(offset) ?: offset).y
+                }
+                if (useLongPress) {
+                    detectDragGesturesAfterLongPress(
+                        onDragStart = { _ -> onLassoDragStart(blockUuid) },
+                        onDrag = { change, _ -> change.consume(); onLassoDrag(toRootY(change.position)) },
+                        onDragEnd = onLassoDragEnd,
+                        onDragCancel = onLassoDragEnd,
+                    )
+                } else {
+                    detectDragGestures(
+                        onDragStart = { _ -> onLassoDragStart(blockUuid) },
+                        onDrag = { change, _ -> change.consume(); onLassoDrag(toRootY(change.position)) },
+                        onDragEnd = onLassoDragEnd,
+                        onDragCancel = onLassoDragEnd,
+                    )
+                }
+            }
             .background(
                 color = StelekitTheme.colors.bullet,
                 shape = androidx.compose.foundation.shape.CircleShape
             )
+            .semantics { contentDescription = "Select blocks" }
     )
 
     // DEBUG: Show level to diagnose indentation issues

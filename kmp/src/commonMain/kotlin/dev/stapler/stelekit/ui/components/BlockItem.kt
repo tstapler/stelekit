@@ -80,6 +80,9 @@ internal fun BlockItem(
     onDragStart: (uuid: String, startY: Float) -> Unit = { _, _ -> },
     onDrag: (deltaY: Float) -> Unit = {},
     onDragEnd: () -> Unit = {},
+    onLassoDragStart: (uuid: String) -> Unit = {},
+    onLassoDrag: (rootY: Float) -> Unit = {},
+    onLassoDragEnd: () -> Unit = {},
     dropAbove: Boolean = false,
     dropBelow: Boolean = false,
     dropAsChild: Boolean = false,
@@ -338,6 +341,9 @@ internal fun BlockItem(
                 onDragStart = onDragStart,
                 onDrag = onDrag,
                 onDragEnd = onDragEnd,
+                onLassoDragStart = onLassoDragStart,
+                onLassoDrag = onLassoDrag,
+                onLassoDragEnd = onLassoDragEnd,
             )
 
             if (!block.isLoaded) {

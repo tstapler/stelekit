@@ -23,6 +23,7 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
@@ -107,6 +108,23 @@ internal fun computeDropTarget(
     }
     return DropTargetResult(targetUuid, zone, isBlocked = targetUuid in blockedTargetUuids)
 }
+
+/**
+ * Resolves which block row [pointerY] (in the same column-relative coordinate space as
+ * [blockBounds]) is currently nearest, for the click-and-drag lasso-select gesture started
+ * from a block's bullet (see [BlockList]'s `onLassoDragStart`/`onLassoDrag` wiring). Uses the
+ * same nearest-row-center distance metric as [computeDropTarget]'s candidate search, which
+ * gives it the same natural clamp-to-edge behavior: a pointer above the first block or below
+ * the last one still resolves to that edge block rather than to nothing, so a lasso drag that
+ * overshoots the list's bounds keeps extending the selection to the nearest end.
+ */
+internal fun hitTestNearestBlockRow(
+    pointerY: Float,
+    blockBounds: Map<String, Pair<Float, Float>>,
+): String? =
+    blockBounds.entries
+        .minByOrNull { (_, bounds) -> kotlin.math.abs((bounds.first + bounds.second) / 2f - pointerY) }
+        ?.key
 
 /**
  * Renders a list of blocks with proper hierarchy, supporting collapse/expand.
@@ -219,12 +237,19 @@ fun BlockList(
     var currentDropZone by remember { mutableStateOf<DropZone?>(null) }
     var isDropBlocked by remember { mutableStateOf(false) }
 
+    // Click-and-drag lasso-select: a drag started on a block's bullet grows the selection to
+    // span anchor..pointer as the pointer crosses further rows (see onLassoDragStart/onLassoDrag
+    // wiring below, near the block's onDragStart/onDrag). isLassoDragging joins isDragging below
+    // so the hosting LazyColumn also suspends scrolling for a lasso drag, same as a reorder drag.
+    var isLassoDragging by remember { mutableStateOf(false) }
+    var lastLassoHitUuid by remember { mutableStateOf<String?>(null) }
+
     // GAP-010: notify the caller whenever an active drag starts/stops so the hosting scroll
     // container can suspend scrolling for the duration (see onDragStateChange's doc above).
     // rememberUpdatedState avoids capturing a stale lambda reference inside the LaunchedEffect
     // below if the caller passes a new onDragStateChange lambda across recompositions.
     val currentOnDragStateChange by rememberUpdatedState(onDragStateChange)
-    val isDragging = dragState?.isDragging == true
+    val isDragging = dragState?.isDragging == true || isLassoDragging
     LaunchedEffect(isDragging) { currentOnDragStateChange(isDragging) }
 
     // Clean up drag state when this composable leaves the composition (e.g. page navigation)
@@ -234,6 +259,8 @@ fun BlockList(
             dropTargetUuid = null
             currentDropZone = null
             isDropBlocked = false
+            isLassoDragging = false
+            lastLassoHitUuid = null
             currentOnDragStateChange(false)
         }
     }
@@ -288,11 +315,13 @@ fun BlockList(
                         onShiftArrowDown()
                         true
                     }
-                    event.key == Key.Escape && dragState != null -> {
+                    event.key == Key.Escape && (dragState != null || isLassoDragging) -> {
                         dragState = null
                         dropTargetUuid = null
                         currentDropZone = null
                         isDropBlocked = false
+                        isLassoDragging = false
+                        lastLassoHitUuid = null
                         true
                     }
                     else -> false
@@ -424,6 +453,25 @@ fun BlockList(
                         dropTargetUuid = null
                         currentDropZone = null
                         isDropBlocked = false
+                    },
+                    onLassoDragStart = { uuid ->
+                        isLassoDragging = true
+                        lastLassoHitUuid = uuid
+                        onEnterSelectionMode(uuid)
+                    },
+                    onLassoDrag = { rootY ->
+                        val colTop = columnCoords?.positionInRoot()?.y
+                        if (colTop != null) {
+                            val hitUuid = hitTestNearestBlockRow(rootY - colTop, blockBounds)
+                            if (hitUuid != null && hitUuid != lastLassoHitUuid) {
+                                lastLassoHitUuid = hitUuid
+                                onShiftClick(hitUuid)
+                            }
+                        }
+                    },
+                    onLassoDragEnd = {
+                        isLassoDragging = false
+                        lastLassoHitUuid = null
                     },
                     dropAbove = isDropTarget && !isDropBlocked && currentDropZone == DropZone.ABOVE,
                     dropBelow = isDropTarget && !isDropBlocked && currentDropZone == DropZone.BELOW,
