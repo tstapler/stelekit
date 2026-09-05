@@ -1,0 +1,78 @@
+name: CI job report
+description: >
+  Always-run summary of build/test timing and resource pressure, written to
+  the job's step summary so it's visible in the Actions UI without downloading
+  raw logs. On a real failure the same output doubles as the first diagnostic
+  step: the OOM/failure-signal grep and the memory timeline are exactly what
+  root-causing a resource-exhaustion failure needs (see bazel-perf skill —
+  this replaces having to do that by hand from `gh api .../logs` every time).
+  Call this once at the end of a job with `if: always()`, after
+  ci-resource-monitor was started earlier and after the build/test step(s)
+  teed their output to the log file(s) named in `log-files`.
+
+inputs:
+  log-files:
+    description: Newline-separated list of log file paths the job's build/test steps teed their output to
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Report timing and resource diagnostics
+      shell: bash
+      env:
+        # Passed via env, not spliced into the script as `${{ inputs.log-files }}` —
+        # the latter is a template-injection risk (zizmor: code injection via
+        # template expansion) since GH Actions substitutes `${{ }}` as raw text
+        # before the shell ever runs.
+        LOG_FILES: ${{ inputs.log-files }}
+      run: |
+        {
+          echo "### CI timing"
+          echo '```'
+          found_timing=0
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            if [ -f "$f" ]; then
+              line=$(grep -E "^INFO: Elapsed time:" "$f" | tail -n 1)
+              if [ -n "$line" ]; then
+                echo "$f: $line"
+                found_timing=1
+              fi
+            fi
+          done <<< "$LOG_FILES"
+          [ "$found_timing" -eq 0 ] && echo "(no 'INFO: Elapsed time' line found in any log — not a bazel build/test step, or it didn't reach completion)"
+          echo '```'
+
+          echo
+          echo "### Resource timeline (vmstat, 5s interval; last 2 min of samples)"
+          echo '```'
+          tail -n 24 "$RUNNER_TEMP/ci-vmstat.log" 2>/dev/null || echo "(no vmstat log — ci-resource-monitor wasn't run earlier in this job)"
+          echo '```'
+
+          echo
+          echo "### Kernel OOM-killer log (best-effort — GH Actions runners sometimes enforce cgroup memory limits without a kernel-level OOM event, so an empty result here does NOT rule out an OOM; check the resource timeline above and the signal grep below too)"
+          echo '```'
+          sudo dmesg 2>/dev/null | grep -iE "killed process|out of memory|oom" | tail -n 20
+          [ "${PIPESTATUS[0]:-0}" -ne 0 ] && echo "(dmesg unavailable in this environment)"
+          echo '```'
+
+          echo
+          echo "### Known OOM/resource-exhaustion signal strings in this job's own output"
+          echo '```'
+          pattern='Killed|WorkResponse|OutOfMemoryError|Java heap space|quit or closed its stdin|Bazel caught terminate signal|received a shutdown signal|Cannot allocate memory'
+          any=0
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            if [ -f "$f" ]; then
+              hits=$(grep -nE "$pattern" "$f")
+              if [ -n "$hits" ]; then
+                echo "--- $f ---"
+                echo "$hits" | tail -n 20
+                any=1
+              fi
+            fi
+          done <<< "$LOG_FILES"
+          [ "$any" -eq 0 ] && echo "(none found — if this job failed, it's very likely not a resource-exhaustion failure)"
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"

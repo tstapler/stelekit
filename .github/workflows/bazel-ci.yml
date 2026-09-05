@@ -24,6 +24,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: ./.github/actions/ci-resource-monitor
+
       - uses: ./.github/actions/setup-bcp
 
       - name: Set up Bazel
@@ -51,7 +53,7 @@ jobs:
           mkdir -p /tmp/.X11-unix
 
       - name: Build JVM target
-        run: bazel build //kmp:desktop_app --config=remote-cache
+        run: bazel build //kmp:desktop_app --config=remote-cache 2>&1 | tee "$RUNNER_TEMP/bazel-jvm-build.log"
 
       - name: Run JVM tests
         run: |
@@ -60,7 +62,15 @@ jobs:
             --test_output=all \
             --sandbox_add_mount_pair=/tmp/.X11-unix \
             --test_env=DISPLAY \
-            --test_env=XAUTHORITY
+            --test_env=XAUTHORITY 2>&1 | tee "$RUNNER_TEMP/bazel-jvm-test.log"
+
+      - name: CI job report
+        if: always()
+        uses: ./.github/actions/ci-job-report
+        with:
+          log-files: |
+            ${{ runner.temp }}/bazel-jvm-build.log
+            ${{ runner.temp }}/bazel-jvm-test.log
 
   # ── Android build ──────────────────────────────────────────────────────────
   bazel-android:
@@ -69,6 +79,8 @@ jobs:
     timeout-minutes: 65
     steps:
       - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/ci-resource-monitor
 
       - name: Set up JDK 21 + Android SDK
         uses: actions/setup-java@v4
@@ -98,7 +110,13 @@ jobs:
           cache-save: true
 
       - name: Build Android APK
-        run: bazel build //kmp:android_app --config=android --config=remote-cache
+        run: bazel build //kmp:android_app --config=android --config=remote-cache 2>&1 | tee "$RUNNER_TEMP/bazel-android-build.log"
+
+      - name: CI job report
+        if: always()
+        uses: ./.github/actions/ci-job-report
+        with:
+          log-files: ${{ runner.temp }}/bazel-android-build.log
 
   # ── Android unit tests ─────────────────────────────────────────────────────
   bazel-android-tests:
@@ -107,6 +125,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/ci-resource-monitor
 
       - name: Set up JDK 21 + Android SDK
         uses: actions/setup-java@v4
@@ -138,7 +158,13 @@ jobs:
             --config=android \
             --config=remote-cache \
             --test_output=all \
-            --experimental_ui_max_stdouterr_bytes=4194304
+            --experimental_ui_max_stdouterr_bytes=4194304 2>&1 | tee "$RUNNER_TEMP/bazel-android-tests.log"
+
+      - name: CI job report
+        if: always()
+        uses: ./.github/actions/ci-job-report
+        with:
+          log-files: ${{ runner.temp }}/bazel-android-tests.log
 
   # ── WASM/JS web build ─────────────────────────────────────────────────────
   # rules_kotlin does not yet support Kotlin/WASM natively (rules_kotlin#567).
@@ -150,6 +176,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/ci-resource-monitor
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -184,7 +212,13 @@ jobs:
           cache-save: ${{ github.event_name != 'pull_request' }}
 
       - name: Build web bundle
-        run: bazel build //kmp:web_app --config=remote-cache
+        run: bazel build //kmp:web_app --config=remote-cache 2>&1 | tee "$RUNNER_TEMP/bazel-web-build.log"
+
+      - name: CI job report
+        if: always()
+        uses: ./.github/actions/ci-job-report
+        with:
+          log-files: ${{ runner.temp }}/bazel-web-build.log
 
       - name: Upload web distribution artifact
         if: github.event_name == 'push'

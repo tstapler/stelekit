@@ -1,0 +1,37 @@
+name: Start CI resource monitor
+description: >
+  Reports the runner's actual CPU/memory/cgroup limits — so a `runs-on` change
+  to a bigger/smaller runner is visible in the job output instead of silently
+  changing the resource budget every OOM postmortem has to assume — and starts
+  a background vmstat sampler that ci-job-report reads later. Call this early
+  in a job, right after checkout, before any heavy build/test step.
+
+runs:
+  using: composite
+  steps:
+    - name: Report runner resources
+      shell: bash
+      run: |
+        {
+          echo "### Runner resources (${{ runner.os }}/${{ runner.arch }})"
+          echo '```'
+          echo "nproc: $(nproc)"
+          free -h
+          uname -a
+          if [ -f /sys/fs/cgroup/memory.max ]; then
+            echo "cgroup v2 memory.max: $(cat /sys/fs/cgroup/memory.max)"
+            echo "cgroup v2 memory.current: $(cat /sys/fs/cgroup/memory.current 2>/dev/null || echo unknown)"
+          elif [ -f /sys/fs/cgroup/memory/memory.limit_in_bytes ]; then
+            echo "cgroup v1 memory.limit_in_bytes: $(cat /sys/fs/cgroup/memory/memory.limit_in_bytes)"
+          else
+            echo "cgroup memory limit: not found (unexpected — note this if debugging a resource issue)"
+          fi
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Start background resource sampler
+      shell: bash
+      run: |
+        nohup vmstat -t 5 > "$RUNNER_TEMP/ci-vmstat.log" 2>&1 &
+        disown
+        echo "started vmstat sampler (pid $!) -> $RUNNER_TEMP/ci-vmstat.log"
