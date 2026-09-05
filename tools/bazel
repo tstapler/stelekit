@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Bazel wrapper script — Bazel's own convention: if tools/bazel exists and is
+# executable, both bazel and bazelisk exec it instead of the real binary,
+# passing the real binary's path via $BAZEL_REAL. See
+# https://bazel.build/run/scripts#running-bazel-wrapper-scripts
+#
+# This repo uses multiple concurrent git worktrees (agent-driven development —
+# each worker/agent gets its own worktree). Bazel has no cross-process
+# concurrency coordination: every invocation independently assumes it owns the
+# whole machine (--jobs/--local_resources default to the full local CPU/RAM),
+# so N concurrent worktrees each running a heavy `bazel build`/`test` will
+# collectively oversubscribe the host — observed directly: load average 49 on
+# a 24-core box with 5 concurrent Bazel processes, memory pinned near 100%.
+# For CPU/memory-bound work like this, running that many jobs serially with
+# full machine resources each is faster in aggregate than running them
+# concurrently starved — plus it avoids the OOM class of failure entirely.
+#
+# Serializes the resource-heavy commands across ALL worktrees of this repo via
+# a fixed-path flock — lightweight/read-only commands (query, version, info,
+# etc.) pass straight through, unlocked.
+set -euo pipefail
+
+if [ -z "${BAZEL_REAL:-}" ]; then
+  echo "tools/bazel: \$BAZEL_REAL is not set — this script must be invoked by bazel/bazelisk, not run directly." >&2
+  exit 1
+fi
+
+cmd="${1:-}"
+case "$cmd" in
+  build | test | run | mobile-install | coverage)
+    is_heavy=1
+    ;;
+  *)
+    is_heavy=0
+    ;;
+esac
+
+# Escape hatch for a developer who deliberately wants to run something
+# alongside a heavy build (e.g. a quick query) — heavy commands aren't queries
+# so this is rarely needed, but it's here.
+if [ "$is_heavy" -eq 1 ] && [ -z "${BAZEL_SKIP_LOCK:-}" ]; then
+  lock_file="${BAZEL_LOCAL_CONCURRENCY_LOCK:-/tmp/.stelekit-bazel-heavy.lock}"
+  if [ ! -e "$lock_file" ] && command -v flock >/dev/null 2>&1; then
+    : > "$lock_file" 2>/dev/null || true
+  fi
+  if command -v flock >/dev/null 2>&1; then
+    if ! flock -n "$lock_file" true 2>/dev/null; then
+      echo "tools/bazel: another heavy Bazel invocation is running on this machine (from any worktree) — waiting for $lock_file..." >&2
+    fi
+    exec flock "$lock_file" "$BAZEL_REAL" "$@"
+  fi
+  # No flock available (non-Linux) — fall through unlocked rather than fail the build.
+fi
+
+exec "$BAZEL_REAL" "$@"
