@@ -460,6 +460,31 @@ PR #1712's friend-jar handling if it simplifies the associates strategy.
   directly) — read it, and record in this story whether it simplifies the `associates` strategy.
 - Files: none (research/verification only, informs Task 1.2.1b)
 
+**Findings (2026-09-05, verified via `gh api`/`gh pr view`, not web search)**:
+- PR #1652 (`_get_android_resource_class_jars` perf fix) is confirmed present in 2.4.10: its merge
+  commit `6cec0dfc11a23756df509039a81e1c97fa535850` is `behind_by: 0` relative to tag `v2.4.10`
+  (`gh api repos/bazel-contrib/rules_kotlin/compare/6cec0dfc...v2.4.10` → `{"status":"ahead",
+  "ahead_by":44,"behind_by":0}`), i.e. it's a strict ancestor, not just date-adjacent.
+- PR #1712's actual diff (`kotlin/internal/jvm/associates.bzl`) gates internal-symbol stripping
+  from ABI jars behind a **new, separate** toolchain flag,
+  `experimental_treat_internal_as_private_in_abi_jars`, which now must be explicitly enabled
+  *together with* the pre-existing `experimental_remove_private_classes_in_abi_jars` for internal
+  symbols to be removed from ABI/compile jars (previously `experimental_remove_private_classes_in_abi_jars`
+  alone had this effect). **This repo's own `define_kt_toolchain` (`BUILD.bazel:34-39`) sets
+  neither flag**, nor `experimental_strict_associate_dependencies` — confirmed via
+  `grep -rn "experimental_remove_private_classes_in_abi_jars\|experimental_strict_associate_dependencies\|experimental_treat_internal_as_private_in_abi_jars" **/*.bazel **/*.bzl` returning
+  no matches outside `associates.bzl` itself. With none of these flags set, `associates.bzl`'s
+  `_collect_associates` falls through to its third documented outcome — the full transitive set of
+  COMPILE (ABI) jars per associate — which already contains internal symbols (no ABI jar is being
+  stripped of them at all in this repo's configuration).
+- **Conclusion: PR #1712 does not simplify or change Epic 2.1/4.2's `associates` strategy for this
+  repo as currently configured.** It only becomes relevant if/when this repo later opts into
+  `experimental_remove_private_classes_in_abi_jars` (e.g. for binary-size reasons) — Epic 2.1's
+  hands-on two-friend-target verification (Story 2.1.1) remains necessary and unchanged. One
+  incidental positive: since internal-visibility here already flows through COMPILE/ABI jars (not
+  CLASS/full-output jars), this is consistent with (though does not by itself prove) the
+  ABI-stable-interface-jar assumption Story 1.7.2 tests directly.
+
 ##### Task 1.2.1b: Bump rules_kotlin + Kotlin version pins in lockstep, re-verify the patch applies (~5 min)
 - Edit `MODULE.bazel:16` (`rules_kotlin` → `2.4.10`), `MODULE.bazel`'s compose/serialization
   compiler-plugin pins → `2.4.10`, and `settings.gradle.kts`'s Kotlin plugin versions → `2.4.10`
