@@ -32,3 +32,73 @@ filegroup(
     srcs = ["dev/stapler/stelekit/platform/DemoFileSystem.kt"],
     visibility = ["//kmp:__subpackages__"],
 )
+
+# ── :platform_core_srcs (Epic 1.6) ────────────────────────────────────────────
+# The verified subset of files across cache/coroutines/db/llm/model/performance/
+# platform/sections/transfer/ui that carry a real `expect`/`actual` declaration
+# (a top-of-line `expect`/`actual class|fun|val|var|interface|object|typealias|
+# constructor`, not a bare word — the naive `grep -rlE '\b(expect|actual)\b'`
+# over-counts by ~39% here on comment/KDoc prose that merely uses the English
+# word "actual"/"expect", e.g. ui/App.kt's sole hit is a code comment, not a
+# declaration; project_plans/commonmain-bazel-target-split/implementation/
+# plan.md Story 1.6.1 records the full derivation and the corrected count).
+#
+# IMPORTANT CORRECTION to this project's own Domain Glossary/requirements.md:
+# neither this list nor any of the 11 packages it's drawn from is
+# "expect/actual in full" — every one of these packages has far more
+# non-expect/actual files than expect/actual ones (e.g. platform: 10 of 50,
+# performance: 7 of 32, model: 1 of 13) — so this filegroup is always a
+# verified subset, never "the whole package."
+#
+# Stays common_srcs-included (not independently compiled) in both platform
+# targets, per ADR-005's existing double-compilation constraint — unchanged
+# by this filegroup's introduction.
+filegroup(
+    name = "platform_core_srcs",
+    srcs = [
+        "dev/stapler/stelekit/cache/PlatformCacheConfig.kt",
+        "dev/stapler/stelekit/cache/PlatformLock.kt",
+        "dev/stapler/stelekit/coroutines/PlatformDispatcher.kt",
+        "dev/stapler/stelekit/db/DriverFactory.kt",
+        "dev/stapler/stelekit/db/LibsqlSupport.kt",
+        "dev/stapler/stelekit/db/PlatformUtils.kt",
+        "dev/stapler/stelekit/db/PragmaUtils.kt",
+        "dev/stapler/stelekit/llm/PlatformOnDeviceLlmProvider.kt",
+        "dev/stapler/stelekit/model/Uuid.kt",
+        "dev/stapler/stelekit/performance/CurrentSpanContext.kt",
+        "dev/stapler/stelekit/performance/DeviceInfo.kt",
+        "dev/stapler/stelekit/performance/GzipHelper.kt",
+        "dev/stapler/stelekit/performance/OtelProvider.kt",
+        "dev/stapler/stelekit/performance/OtelRepositoryWrappers.kt",
+        "dev/stapler/stelekit/performance/PlatformJankStatsEffect.kt",
+        "dev/stapler/stelekit/performance/SpanArchiver.kt",
+        "dev/stapler/stelekit/platform/DynamicColorSupport.kt",
+        "dev/stapler/stelekit/platform/EphemeralSession.kt",
+        "dev/stapler/stelekit/platform/GitManager.kt",
+        "dev/stapler/stelekit/platform/NetworkMonitor.kt",
+        "dev/stapler/stelekit/platform/OpenInBrowser.kt",
+        "dev/stapler/stelekit/platform/PlatformFileOpener.kt",
+        "dev/stapler/stelekit/platform/PlatformFileSystem.kt",
+        "dev/stapler/stelekit/platform/PlatformSettings.kt",
+        "dev/stapler/stelekit/platform/ResourceLoader.kt",
+        "dev/stapler/stelekit/platform/security/CredentialStore.kt",
+        "dev/stapler/stelekit/sections/PlatformSectionSync.kt",
+        "dev/stapler/stelekit/sections/SectionManifestParser.kt",
+        "dev/stapler/stelekit/transfer/qrcode/QrCodec.kt",
+        "dev/stapler/stelekit/ui/annotate/ImageEncoder.kt",
+        "dev/stapler/stelekit/ui/components/CameraViewfinderDialog.kt",
+        "dev/stapler/stelekit/ui/components/DebugMenuOverlay.kt",
+        "dev/stapler/stelekit/ui/components/PageDropTargetModifier.kt",
+        "dev/stapler/stelekit/ui/components/PlatformFrameTimeOverlay.kt",
+        "dev/stapler/stelekit/ui/components/SearchDialog.kt",
+        "dev/stapler/stelekit/ui/ModifierExtensions.kt",
+        "dev/stapler/stelekit/ui/PlatformBackHandler.kt",
+        "dev/stapler/stelekit/ui/PlatformBottomBar.kt",
+        "dev/stapler/stelekit/ui/PlatformClipboardProvider.kt",
+        "dev/stapler/stelekit/ui/PlatformShareProvider.kt",
+        "dev/stapler/stelekit/ui/theme/DynamicColorScheme.kt",
+        "dev/stapler/stelekit/ui/transfer/PlatformCameraPreview.kt",
+        "dev/stapler/stelekit/util/Time.kt",
+    ],
+    visibility = ["//kmp:__subpackages__"],
+)
