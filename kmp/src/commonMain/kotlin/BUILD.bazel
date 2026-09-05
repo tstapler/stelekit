@@ -21,7 +21,15 @@ See ADR-005 for the double-compilation trade-off.
 # single compilation unit so expect/actual declarations resolve correctly.
 filegroup(
     name = "kt_srcs",
-    srcs = glob(["**/*.kt"]),
+    # dev/stapler/stelekit/stats/** has its own BUILD.bazel (Tier 1, ADR-001,
+    # tier_manifest.bzl:TIER_1_PACKAGES) and is compiled as an independent
+    # target now — Bazel's glob() already excludes it automatically (glob()
+    # never crosses into a subdirectory that is itself a package), but the
+    # exclude is listed explicitly anyway so "what's still in the monolith"
+    # stays self-documenting from this file alone, per the Common Per-Package
+    # Extraction Recipe (project_plans/commonmain-bazel-target-split/
+    # implementation/plan.md).
+    srcs = glob(["**/*.kt"], exclude = ["dev/stapler/stelekit/stats/**"]),
     visibility = ["//kmp:__subpackages__"],
 )
 
