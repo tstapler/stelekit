@@ -46,21 +46,30 @@ build:android --local_resources=memory=9000
 build:android --persistent_android_dex_desugar
 build:android --persistent_android_resource_processor
 
-# Cap concurrent Desugar/DexBuilder worker instances: unlike the one-shot
-# sandboxed processes they replace, persistent workers stay resident and hold
-# their JVM heap between actions instead of releasing it on exit. The
-# `--local_resources=memory=9000` budget above doesn't see that steady-state
-# footprint (these actions' declared resource_set understates it), so with no
-# cap CI run 33929109869 spun up enough concurrent Desugar/DexBuilder workers
-# to exceed the 16GB GH runner and got OOM-killed mid-build ("Killed" —
-# desugar_java8 --persistent_worker — which cascaded into unrelated
-# KotlinCompile/Dexing actions failing with "Worker process did not return a
-# WorkResponse"). 2 is deliberately conservative headroom alongside the
-# existing KotlinCompile workers and the rest of the build.
+# Cap concurrent Desugar/DexBuilder/PackageAndroidResources worker instances:
+# unlike the one-shot sandboxed processes they replace, persistent workers stay
+# resident and hold their JVM heap between actions instead of releasing it on
+# exit. The `--local_resources=memory=9000` budget above doesn't see that
+# steady-state footprint (these actions' declared resource_set understates
+# it), so with no cap CI run 33929109869 spun up enough concurrent
+# Desugar/DexBuilder workers to exceed the 16GB GH runner and got OOM-killed
+# mid-build ("Killed" — desugar_java8 --persistent_worker — which cascaded
+# into unrelated KotlinCompile/Dexing actions failing with "Worker process did
+# not return a WorkResponse"). Capping just those two mnemonics was not
+# enough: CI run 33931054162 (with the cap above already applied) still failed
+# near the same end-of-build point, this time taking the whole runner down
+# ("Bazel caught terminate signal" / "The runner has received a shutdown
+# signal") with PackageAndroidResources also failing — the
+# --persistent_android_resource_processor flag above makes that mnemonic a
+# persistent worker too, and it was never capped. All three mnemonics now
+# capped at 2 — deliberately conservative headroom alongside the existing
+# KotlinCompile workers and the rest of the build.
 build:android --worker_max_instances=Desugar=2
 build:android --worker_max_instances=DexBuilder=2
+build:android --worker_max_instances=PackageAndroidResources=2
 build:android --worker_max_multiplex_instances=Desugar=2
 build:android --worker_max_multiplex_instances=DexBuilder=2
+build:android --worker_max_multiplex_instances=PackageAndroidResources=2
 
 # ── Correctness / hermetic sandbox ────────────────────────────────────────────
 build --sandbox_default_allow_network=false
