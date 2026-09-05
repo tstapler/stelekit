@@ -35,6 +35,12 @@ kt_android_library(
     ],
     custom_package = "dev.stapler.stelekit",
     deps = [
+        # stats (Tier 1, extracted — ADR-001, tier_manifest.bzl:TIER_1_PACKAGES):
+        # real fan-in from ui/App.kt, ui/screens/LibraryStats*.kt (commonMain)
+        # — without this dep, stats/*.kt (now its own Bazel package, excluded
+        # from kt_srcs's glob) is unresolved here.
+        "//kmp/src/commonMain/kotlin/dev/stapler/stelekit/stats:stats",
+
         # Android string resources (R.string.no_graph_*) — defined in kmp/ package
         # because kmp/src/androidMain/res/ has no own BUILD file.
         "//kmp:kmp_android_resources",
