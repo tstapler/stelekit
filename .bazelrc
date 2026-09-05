@@ -35,6 +35,21 @@ build:android --android_sdk=@androidsdk//:sdk
 # let these run back-to-back — run 33803270917, "Server terminated abruptly").
 build:android --local_resources=memory=9000
 
+# ── Persistent workers for Android dex/desugar/resource actions — REVERTED ───
+# Tried `--persistent_android_dex_desugar` + `--persistent_android_resource_processor`
+# (native rules_android/Bazel flags) to fix CI run 33891824754's Android build job
+# (1510s elapsed vs. 236s critical path, 6.4x — mostly JVM-startup/scheduling
+# overhead from processwrapper-sandbox instead of warm worker reuse). Reverted
+# after 3 failed CI attempts to cap concurrency safely: unlike the one-shot
+# sandboxed processes they replace, these workers (Desugar, DexBuilder,
+# PackageAndroidResources) stay resident holding `-Xmx3G` each — even capped at
+# 2 instances apiece that's 6 workers × 3GB = 18GB from these three mnemonics
+# alone, before the 6GB-capped Bazel server, KotlinCompile's own worker, or OS
+# overhead, on a 16GB runner. Every attempt OOM-killed mid-build (runs
+# 33929109869, 33931054162, 33931907031). Don't re-enable these flags without
+# either a larger-memory runner or verified low-enough instance caps (see
+# bazel-perf skill) — and verify on real CI, not just a large local dev box.
+
 # ── Correctness / hermetic sandbox ────────────────────────────────────────────
 build --sandbox_default_allow_network=false
 build --incompatible_strict_action_env
