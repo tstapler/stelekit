@@ -15,9 +15,14 @@ kt_jvm_library(
     srcs = [
         "dev/stapler/stelekit/coroutines/SessionLifecycleContractTest.kt",
         "dev/stapler/stelekit/db/sidecar/FakeFileSystem.kt",
+        "dev/stapler/stelekit/migration/DagValidatorTest.kt",
+        "dev/stapler/stelekit/migration/DslEvaluatorTest.kt",
+        "dev/stapler/stelekit/migration/MigrationDslTest.kt",
+        "dev/stapler/stelekit/search/FtsQueryBuilderTest.kt",
         "dev/stapler/stelekit/sections/SectionFilterTest.kt",
         "dev/stapler/stelekit/sections/SectionManifestParserTest.kt",
     ],
+    kotlinc_opts = "//:kmp_jvm_kotlinc_opts",
     # Friend (not just deps) access to jvm_main_lib is required: SectionManifestParserTest
     # references the internal `TOML_PARSING_SUPPORTED` expect/actual declaration, which is
     # only visible across a kt_jvm_library boundary via `associates`, mirroring the same
