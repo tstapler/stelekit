@@ -758,6 +758,31 @@ record the inventory table in this story)
 ##### Task 1.6.1b: Record the resulting file table in this story (~3 min)
 - Files: `project_plans/commonmain-bazel-target-split/implementation/plan.md`
 
+**Recorded result (Phase 5 implementation, 2026-09-04)**:
+
+The literal `grep -rlE '\b(expect|actual)\b' .../{model,platform,cache,coroutines,util,performance,db,llm,sections,transfer,ui}` command finds **70 files**. However, spot-checking confirmed this over-counts: the bare-word regex also matches comments/KDoc using "actual"/"expect" as ordinary English prose (e.g. `ui/App.kt`'s sole hit, `ui/App.kt:848`, is `// button); VaultManager determines the actual namespace...` — not a declaration). A refined pass requiring the match to *start* a declaration line (`^\s*(actual|expect)\s+(class|fun|val|var|interface|object|typealias|enum class|constructor)\b`, with `value`/`data`/`sealed`/etc. modifiers tolerated between the keyword and the declaration type) finds **43 files** — a **~39% false-positive rate** on the naive check, consistent with `research/features.md`'s own finding of high false-positive rates on unrefined regexes for this codebase. All 27 raw-only files were spot-checked or confirmed as comment/KDoc prose, not real declarations.
+
+**Per-package count (refined / raw / package total)**:
+
+| Package | Expect/actual files (refined) | Raw grep count | Package total files |
+|---|---|---|---|
+| `model` | 1 | 2 | 13 |
+| `platform` | 10 | 15 | 50 |
+| `cache` | 2 | 2 | 4 |
+| `coroutines` | 1 | 1 | 3 |
+| `util` | 1 | 1 | 7 |
+| `performance` | 7 | 7 | 32 |
+| `db` | 4 | 9 | (not counted; Tier 3, stays in monolith) |
+| `llm` | 1 | 2 | (not counted; Tier 3) |
+| `sections` | 2 | 2 | (not counted; Tier 3) |
+| `transfer` | 1 | 5 | (not counted; Tier 3) |
+| `ui` | 13 | 24 | (not counted; Tier 3) |
+| **Total** | **43** | **70** | — |
+
+**Critical correction to this project's own claim**: requirements.md's Scope section and this plan's Domain Glossary both assert `model`, `platform`, `cache`, `coroutines`, `util`, `performance` are "expect/actual **in full**." This is false for every one of the six — none of them are anywhere close to fully expect/actual: `model` 1/13 (8%), `platform` 10/50 (20%), `cache` 2/4 (50%), `coroutines` 1/3 (33%), `util` 1/7 (14%), `performance` 7/32 (22%). `:platform_core_srcs` (Story 1.6.2) is therefore built from the verified 43-file subset across **all 11** candidate packages uniformly — not "6 packages wholesale + a subset of the other 5" as the stale claim implied. This does not change any tier classification (Tier 1/2/3 assignments are per-package, not per-file) — it only changes what `:platform_core_srcs`'s filegroup actually contains.
+
+The exact 43-file list is committed directly in `kmp/src/commonMain/kotlin/BUILD.bazel`'s `platform_core_srcs` filegroup (Story 1.6.2) rather than duplicated here.
+
 #### Story 1.6.2: Create `:platform_core`'s filegroup and wire it into both platform targets
 **As a** engineer, **I want** a concrete `filegroup` (per `research/architecture.md`'s design —
 `:platform_core` stays `common_srcs`-included, it is not an independently compiled target, since
