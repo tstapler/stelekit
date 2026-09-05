@@ -1,0 +1,16 @@
+{
+  "checks": [
+    {
+      "name": "kotlin-import-cycles",
+      "architecture_checker": "import-cycles",
+      "severity": "advisory",
+      "triggers": ["batch"]
+    },
+    {
+      "name": "kotlin-coupling",
+      "architecture_checker": "coupling",
+      "severity": "advisory",
+      "triggers": ["batch"]
+    }
+  ]
+}
