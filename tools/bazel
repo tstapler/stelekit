@@ -6,18 +6,39 @@
 #
 # This repo uses multiple concurrent git worktrees (agent-driven development —
 # each worker/agent gets its own worktree). Bazel has no cross-process
-# concurrency coordination: every invocation independently assumes it owns the
-# whole machine (--jobs/--local_resources default to the full local CPU/RAM),
-# so N concurrent worktrees each running a heavy `bazel build`/`test` will
-# collectively oversubscribe the host — observed directly: load average 49 on
-# a 24-core box with 5 concurrent Bazel processes, memory pinned near 100%.
-# For CPU/memory-bound work like this, running that many jobs serially with
-# full machine resources each is faster in aggregate than running them
-# concurrently starved — plus it avoids the OOM class of failure entirely.
+# concurrency coordination, and no wall-clock timeout on non-test actions.
+# Two real incidents from this, on the same day: (1) 5 concurrent worktrees
+# each running a heavy `bazel build`/`test` — each assuming it owns the whole
+# machine — drove load average to 49 on a 24-core box with memory pinned near
+# 100%; (2) a single KotlinCompile action ran 62,206s (~17.3h) inside an
+# abandoned worktree's server, consuming ~22GB RAM, never crashing or getting
+# OOM-killed (most likely GC-thrashing under the same memory pressure from
+# (1) — alive and burning CPU/RAM, but making ~no forward progress — rather
+# than a genuine deadlock) before being found and killed by hand. See
+# CLAUDE.md's "Bazel server orphaning and runaway builds" section.
 #
-# Serializes the resource-heavy commands across ALL worktrees of this repo via
-# a fixed-path flock — lightweight/read-only commands (query, version, info,
-# etc.) pass straight through, unlocked.
+# Three layers for build/test/run/mobile-install/coverage (the heavy
+# commands); read-only commands (query, version, info, etc.) pass straight
+# through, unaffected by any of this:
+#   1. flock — serializes heavy invocations across ALL worktrees of this repo,
+#      so N concurrent agents don't each fight for the whole machine. For
+#      CPU/memory-bound work like this, N jobs run serially with full
+#      resources each is faster in aggregate than N jobs run concurrently
+#      starved, and it removes the memory-pressure trigger behind (2) above.
+#   2. A hard resource cap matching this repo's real CI (stelekit is a public
+#      GitHub repo → GH-hosted standard runner = 4 vCPU / 16GB, not the
+#      private-repo tier's 2 vCPU/8GB) via a systemd --user --scope cgroup,
+#      so a local run either fits the same budget CI has or fails the same
+#      way CI would — instead of quietly succeeding on this box's 61GB/24
+#      cores while CI OOMs, or thrashing for hours instead of failing fast.
+#   3. `timeout` — a hard wall-clock ceiling so nothing can hang unattended
+#      for hours regardless of cause (GC thrashing, a genuine deadlock, or a
+#      legitimately-too-slow build). This is the one that would have killed
+#      incident (2) outright at the 60-minute mark instead of 17 hours.
+#
+# Escape hatches, in case any of these is wrong for a specific deliberate
+# invocation: BAZEL_SKIP_LOCK=1, BAZEL_NO_CI_LIMITS=1, BAZEL_TIMEOUT=<duration
+# for `timeout`(1), e.g. "2h", or "0" to disable.
 set -euo pipefail
 
 if [ -z "${BAZEL_REAL:-}" ]; then
@@ -35,21 +56,30 @@ case "$cmd" in
     ;;
 esac
 
-# Escape hatch for a developer who deliberately wants to run something
-# alongside a heavy build (e.g. a quick query) — heavy commands aren't queries
-# so this is rarely needed, but it's here.
-if [ "$is_heavy" -eq 1 ] && [ -z "${BAZEL_SKIP_LOCK:-}" ]; then
-  lock_file="${BAZEL_LOCAL_CONCURRENCY_LOCK:-/tmp/.stelekit-bazel-heavy.lock}"
-  if [ ! -e "$lock_file" ] && command -v flock >/dev/null 2>&1; then
-    : > "$lock_file" 2>/dev/null || true
-  fi
-  if command -v flock >/dev/null 2>&1; then
-    if ! flock -n "$lock_file" true 2>/dev/null; then
-      echo "tools/bazel: another heavy Bazel invocation is running on this machine (from any worktree) — waiting for $lock_file..." >&2
-    fi
-    exec flock "$lock_file" "$BAZEL_REAL" "$@"
-  fi
-  # No flock available (non-Linux) — fall through unlocked rather than fail the build.
+if [ "$is_heavy" -ne 1 ]; then
+  exec "$BAZEL_REAL" "$@"
 fi
 
-exec "$BAZEL_REAL" "$@"
+# ── Build the command to run, innermost-out: real bazel -> timeout -> cgroup scope -> flock ──
+
+run=("$BAZEL_REAL" "$@")
+
+timeout_dur="${BAZEL_TIMEOUT:-60m}"
+if [ "$timeout_dur" != "0" ] && command -v timeout >/dev/null 2>&1; then
+  run=(timeout "$timeout_dur" "${run[@]}")
+fi
+
+if [ -z "${BAZEL_NO_CI_LIMITS:-}" ] && command -v systemd-run >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
+  run=(systemd-run --user --scope --quiet -p MemoryMax=16G -p CPUQuota=400% -- "${run[@]}")
+fi
+
+if [ -z "${BAZEL_SKIP_LOCK:-}" ] && command -v flock >/dev/null 2>&1; then
+  lock_file="${BAZEL_LOCAL_CONCURRENCY_LOCK:-/tmp/.stelekit-bazel-heavy.lock}"
+  [ -e "$lock_file" ] || : > "$lock_file" 2>/dev/null || true
+  if ! flock -n "$lock_file" true 2>/dev/null; then
+    echo "tools/bazel: another heavy Bazel invocation is running on this machine (from any worktree) — waiting for $lock_file..." >&2
+  fi
+  exec flock "$lock_file" "${run[@]}"
+fi
+
+exec "${run[@]}"
