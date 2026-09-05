@@ -1,0 +1,16 @@
+"""
+stats — Tier 1: zero cycle involvement, zero hub imports (ADR-001,
+tier_manifest.bzl:TIER_1_PACKAGES). 2 files, zero expect/actual, zero internal,
+zero cross-package imports — the simplest Tier 1 package, used as the first
+smoke target for the stelekit_kt_common_library macro (plan.md Task 1.1.1c /
+Story 2.2.1).
+"""
+
+load("//:kotlin_common.bzl", "stelekit_kt_common_library")
+
+stelekit_kt_common_library(
+    name = "stats",
+    srcs = glob(["*.kt"]),
+    platform = "jvm",
+    deps = ["@maven//:org_jetbrains_kotlin_kotlin_stdlib"],
+)
