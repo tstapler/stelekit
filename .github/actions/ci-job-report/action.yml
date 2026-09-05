@@ -27,6 +27,13 @@ runs:
         # before the shell ever runs.
         LOG_FILES: ${{ inputs.log-files }}
       run: |
+        # GH Actions runs `run:` steps as `bash -e -o pipefail` by default. This
+        # script is inherently "check things that might not be found" (grep with
+        # zero matches is the expected/common case, not an error) — every grep
+        # here would otherwise abort the whole step under -e/pipefail the moment
+        # nothing matches, which is exactly what happened on the first real CI
+        # run: it died in ~10ms, before writing anything to the step summary.
+        set +e +o pipefail
         {
           echo "### CI timing"
           echo '```'
