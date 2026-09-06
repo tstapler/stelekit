@@ -19,12 +19,25 @@
 #
 # Three layers for build/test/run/mobile-install/coverage (the heavy
 # commands); read-only commands (query, version, info, etc.) pass straight
-# through, unaffected by any of this:
-#   1. flock — serializes heavy invocations across ALL worktrees of this repo,
-#      so N concurrent agents don't each fight for the whole machine. For
-#      CPU/memory-bound work like this, N jobs run serially with full
-#      resources each is faster in aggregate than N jobs run concurrently
-#      starved, and it removes the memory-pressure trigger behind (2) above.
+# through, unaffected by any of this, and none of it runs on CI (see below):
+#   1. A mkdir-based lock (NOT flock) serializes heavy invocations across ALL
+#      worktrees of this repo, so N concurrent agents don't each fight for
+#      the whole machine. For CPU/memory-bound work like this, N jobs run
+#      serially with full resources each is faster in aggregate than N jobs
+#      run concurrently starved, and it removes the memory-pressure trigger
+#      behind (2) above.
+#
+#      This is deliberately NOT flock(1): flock's lock lives on a file
+#      descriptor, and that fd gets inherited into any grandchild the locked
+#      command forks. Bazel forks exactly such a grandchild — its persistent
+#      background server — which never closes the inherited fd, so the
+#      server outlives the client and keeps the lock held indefinitely.
+#      Confirmed for real with flock: a *second, later, unrelated* `bazel`
+#      invocation against a workspace whose server was still warm from an
+#      earlier command hung waiting on a lock that idle server was still
+#      holding. A plain directory + recorded PID, released by this script's
+#      own `trap ... EXIT` when the CLIENT (not the server) exits, has no fd
+#      for anything to inherit — it doesn't care what the server does after.
 #   2. A hard resource cap matching this repo's real CI (stelekit is a public
 #      GitHub repo → GH-hosted standard runner = 4 vCPU / 16GB, not the
 #      private-repo tier's 2 vCPU/8GB) via a systemd --user --scope cgroup,
@@ -35,6 +48,13 @@
 #      for hours regardless of cause (GC thrashing, a genuine deadlock, or a
 #      legitimately-too-slow build). This is the one that would have killed
 #      incident (2) outright at the 60-minute mark instead of 17 hours.
+#
+# None of this runs under CI: each CI job gets a fresh, dedicated, isolated
+# VM with known fixed resources — there's no other worktree to contend with,
+# which is the only problem layer 1/2 solve, and CI already has its own
+# 30-60 minute job timeouts covering what layer 3 solves locally.
+# GITHUB_ACTIONS is set by GitHub Actions specifically (unlike generic $CI,
+# which some local tools also set).
 #
 # Escape hatches, in case any of these is wrong for a specific deliberate
 # invocation: BAZEL_SKIP_LOCK=1, BAZEL_NO_CI_LIMITS=1, BAZEL_TIMEOUT=<duration
@@ -56,11 +76,11 @@ case "$cmd" in
     ;;
 esac
 
-if [ "$is_heavy" -ne 1 ]; then
+if [ "$is_heavy" -ne 1 ] || [ -n "${GITHUB_ACTIONS:-}" ]; then
   exec "$BAZEL_REAL" "$@"
 fi
 
-# ── Build the command to run, innermost-out: real bazel -> timeout -> cgroup scope -> flock ──
+# ── Build the command to run, innermost-out: real bazel -> timeout -> cgroup scope ──
 
 run=("$BAZEL_REAL" "$@")
 
@@ -73,13 +93,28 @@ if [ -z "${BAZEL_NO_CI_LIMITS:-}" ] && command -v systemd-run >/dev/null 2>&1 &&
   run=(systemd-run --user --scope --quiet -p MemoryMax=16G -p CPUQuota=400% -- "${run[@]}")
 fi
 
-if [ -z "${BAZEL_SKIP_LOCK:-}" ] && command -v flock >/dev/null 2>&1; then
-  lock_file="${BAZEL_LOCAL_CONCURRENCY_LOCK:-/tmp/.stelekit-bazel-heavy.lock}"
-  [ -e "$lock_file" ] || : > "$lock_file" 2>/dev/null || true
-  if ! flock -n "$lock_file" true 2>/dev/null; then
-    echo "tools/bazel: another heavy Bazel invocation is running on this machine (from any worktree) — waiting for $lock_file..." >&2
-  fi
-  exec flock "$lock_file" "${run[@]}"
+if [ -n "${BAZEL_SKIP_LOCK:-}" ]; then
+  "${run[@]}"
+  exit $?
 fi
 
-exec "${run[@]}"
+lock_dir="${BAZEL_LOCAL_CONCURRENCY_LOCK:-/tmp/.stelekit-bazel-heavy.lock.d}"
+printed_wait=0
+while ! mkdir "$lock_dir" 2>/dev/null; do
+  holder_pid=$(cat "$lock_dir/pid" 2>/dev/null || true)
+  if [ -n "$holder_pid" ] && ! kill -0 "$holder_pid" 2>/dev/null; then
+    # Holder's process is gone (crashed without cleaning up) — reclaim.
+    rm -rf "$lock_dir" 2>/dev/null || true
+    continue
+  fi
+  if [ "$printed_wait" -eq 0 ]; then
+    echo "tools/bazel: another heavy Bazel invocation (pid ${holder_pid:-unknown}) is running on this machine (from any worktree) — waiting for $lock_dir..." >&2
+    printed_wait=1
+  fi
+  sleep 1
+done
+echo "$$" > "$lock_dir/pid"
+trap 'rm -rf "$lock_dir" 2>/dev/null || true' EXIT
+
+"${run[@]}"
+exit $?
