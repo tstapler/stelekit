@@ -13,7 +13,7 @@ module(
 # Core Bazel rules
 ###############################################################################
 
-bazel_dep(name = "rules_kotlin", version = "2.3.20")
+bazel_dep(name = "rules_kotlin", version = "2.4.10")
 
 # @platforms is transitively pulled in by other deps (rules_rust, rules_android, etc.)
 # but bzlmod only exposes a repo under a bare name (@platforms) to modules that declare
@@ -181,14 +181,14 @@ maven.install(
     ],
     artifacts = [
         # ── Kotlin stdlib (required by rules_kotlin kt_jvm_library) ──────────
-        "org.jetbrains.kotlin:kotlin-stdlib:2.3.21",
-        "org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.3.21",
-        "org.jetbrains.kotlin:kotlin-reflect:2.3.21",
-        "org.jetbrains.kotlin:kotlin-test-junit:2.3.21",
+        "org.jetbrains.kotlin:kotlin-stdlib:2.4.10",
+        "org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.4.10",
+        "org.jetbrains.kotlin:kotlin-reflect:2.4.10",
+        "org.jetbrains.kotlin:kotlin-test-junit:2.4.10",
 
         # ── Compiler plugins (embeddable — used as kt_compiler_plugin deps) ────
-        "org.jetbrains.kotlin:kotlin-compose-compiler-plugin-embeddable:2.3.21",
-        "org.jetbrains.kotlin:kotlin-serialization-compiler-plugin-embeddable:2.3.21",
+        "org.jetbrains.kotlin:kotlin-compose-compiler-plugin-embeddable:2.4.10",
+        "org.jetbrains.kotlin:kotlin-serialization-compiler-plugin-embeddable:2.4.10",
 
         # ── Arrow 2.2.1.1 (KMP — use -jvm classifier) ───────────────────────
         "io.arrow-kt:arrow-core-jvm:2.2.1.1",
