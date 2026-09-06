@@ -12,6 +12,15 @@ try-import %workspace%/.bazelrc.user
 # before the machine swaps out.  Increase to -Xmx8g on 32 GB machines.
 startup --host_jvm_args=-Xmx6g
 
+# ── Idle server timeout ───────────────────────────────────────────────────────
+# Each Claude Code agent worktree gets its own bazel server (keyed by
+# workspace_directory). Worktree teardown doesn't run `bazel shutdown` first,
+# so a finished/abandoned worktree's server just lingers holding onto RAM and
+# worker processes. Default is 3h; 30m gets it reaped fast without killing a
+# server mid-interactive-use. Doesn't help a server that's stuck *inside* a
+# build (not idle) — see CLAUDE.md's Bazel section for that failure mode.
+startup --max_idle_secs=1800
+
 # ── JVM toolchain ─────────────────────────────────────────────────────────────
 build --java_runtime_version=21
 build --tool_java_runtime_version=21

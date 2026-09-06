@@ -43,6 +43,11 @@ bazel build //kmp:web_app
 # Run all Bazel tests
 bazel test //...
 
+# Cap any build/test invocation so a starved or hung action can't run for
+# hours unattended — see "Bazel server orphaning" below for why this matters
+# especially inside a Claude Code worktree.
+timeout 30m bazel build //kmp:android_app --config=android
+
 # MANDATORY: Re-generate SQLDelight sources whenever any .sq file changes.
 # Bazel uses the committed generated sources in kmp/src/generated/sqldelight/ directly
 # (it does NOT run codegen at build time). Forgetting this step causes unresolved reference
@@ -53,6 +58,43 @@ rsync -a kmp/build/generated/sqldelight/code/SteleDatabase/commonMain/ kmp/src/g
 rsync -a kmp/build/generated/sqldelight/code/TelemetryDatabase/commonMain/ kmp/src/generated/sqldelight-telemetry/
 # Then commit kmp/src/generated/sqldelight/ and kmp/src/generated/sqldelight-telemetry/
 # The CI job "SQLDelight generated sources" in ci.yml enforces this automatically.
+```
+
+### Bazel server orphaning and runaway builds
+
+Each workspace directory (including every Claude Code agent worktree under
+`.claude/worktrees/`) gets its own persistent Bazel server, keyed by a hash of
+that path under `~/.cache/bazel/_bazel_$USER/`. Worktree teardown does not run
+`bazel shutdown` first, so when an agent's worktree is removed, its Bazel
+server doesn't stop — it just keeps running with no client left to hand
+results to. `startup --max_idle_secs=1800` (this repo's `.bazelrc`) reaps a
+server that's sitting idle after that, but it does **not** help a server
+that's stuck actively running: Bazel has no default wall-clock timeout on a
+build/compile action (only `bazel test` has `--test_timeout`), so a single
+starved action can run for hours. This happened for real on 2026-09-05: a
+`KotlinCompile` action ran 62,206s (~17.3h) inside an abandoned worktree's
+Bazel server on a machine running many concurrent agents, consuming ~22GB RAM
+across its worker processes before being found and killed by hand.
+
+Mitigations in place:
+- `startup --max_idle_secs=1800` in `.bazelrc` — reap truly-idle orphans within 30m instead of 3h.
+- Wrap any bazel invocation you expect to run unattended (agent sessions, scripts) in `timeout <N> bazel ...` so a starved build can't run indefinitely.
+
+If you're about to end an agent session/worktree that ran Bazel, run `bazel shutdown` from inside it first — it only tears down that workspace's own server, not anyone else's.
+
+To find and clear existing orphans:
+```bash
+# List each running server's output_base and workspace_directory, flagging any
+# whose workspace no longer exists on disk (workspace_directory is in the
+# server's `cmdline` file, not `server.pid.txt` — that one's just a bare PID).
+for d in ~/.cache/bazel/_bazel_$USER/*/; do
+  [ -f "$d/server/cmdline" ] || continue
+  ws=$(tr '\0' '\n' < "$d/server/cmdline" | grep -oP '(?<=--workspace_directory=).*')
+  [ -d "$ws" ] || echo "ORPHAN: $d -> $ws"
+done
+
+# Kill a specific orphaned server + its worker processes by output_base hash
+pgrep -f '<output_base_hash>' | xargs -r kill -9
 ```
 
 ## Gradle Build & Run Commands
