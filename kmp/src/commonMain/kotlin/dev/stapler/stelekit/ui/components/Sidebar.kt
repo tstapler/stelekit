@@ -444,9 +444,10 @@ fun GraphSwitcher(
                                 onGraphSelected(graph.id.value)
                                 expanded = false
                             },
-                            onRemove = if (availableGraphs.size > 1) {
-                                { graphToRemove = graph }
-                            } else null,
+                            // GraphManager.removeGraph now allows removing the last real graph
+                            // (falls back to activeGraphId = null, surfacing the empty-state
+                            // prompt) — no longer gated on availableGraphs.size > 1.
+                            onRemove = { graphToRemove = graph },
                             // Re-pointing an ephemeral graph at a real folder would defeat the
                             // whole point of the mode — an ephemeral session only ever has this
                             // one graph, so gating on the session (not per-graph) is sufficient.

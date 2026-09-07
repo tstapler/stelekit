@@ -88,7 +88,21 @@ class GraphManager(
     
     private val _activeRepositorySet = MutableStateFlow<RepositorySet?>(null)
     val activeRepositorySet: StateFlow<RepositorySet?> = _activeRepositorySet.asStateFlow()
-    
+
+    /**
+     * `true` iff [removeGraph] just removed the last real (non-demo) graph while it was active,
+     * leaving `activeGraphId = null`. Distinct from merely checking `activeGraphId == null`
+     * because that condition is also transiently true for one frame on a brand-new install
+     * (before `App.kt`'s `LaunchedEffect(currentGraphPath)` self-heals by adding/activating a
+     * default graph) — a Compose-level empty-state screen gated on that alone would flash on
+     * every first launch. This flag is only ever set by an explicit user removal, and cleared by
+     * [switchGraph], so it stays `false` for the entire first-launch path and reliably
+     * distinguishes "the user emptied their graph list" from "no graph has loaded yet."
+     * Session-scoped: a fresh [GraphManager] (i.e. a page reload on wasmJs) starts at `false`.
+     */
+    private val _graphsExplicitlyEmptied = MutableStateFlow(false)
+    val graphsExplicitlyEmptied: StateFlow<Boolean> = _graphsExplicitlyEmptied.asStateFlow()
+
     // Track current factory for lifecycle management.
     // Written from a background coroutine (switchGraph's IO launch) and read on the Compose
     // main thread in createGitConfigRepository(); @Volatile is required for JVM visibility.
@@ -406,13 +420,47 @@ class GraphManager(
         val graphIndex = registry.graphs.indexOfFirst { it.id == id }
         if (graphIndex == -1) return false
 
-        // Don't allow removing active graph
-        if (registry.activeGraphId == id) return false
-
         if (registry.graphs[graphIndex].isDemo) return false
 
+        // The demo graph is always registered (addDemoGraph() runs unconditionally at boot) and
+        // is never itself removable (guarded above), so it doesn't count as a "real" graph here —
+        // registry.graphs.size alone would never reach 1 with the demo graph always present.
+        val realGraphs = registry.graphs.filter { !it.isDemo }
+        val isOnlyRealGraph = realGraphs.size == 1 && realGraphs[0].id == id
+
+        if (registry.activeGraphId == id) {
+            // Removing the active graph is only allowed when it's the last real graph left —
+            // otherwise the caller must switch to another graph first, since there's no way to
+            // pick which graph becomes active next. When it IS the last real graph, tear down its
+            // repository set the same way switchGraph() tears down an outgoing graph, but without
+            // opening a new one (deliberately not falling back to the demo graph — the app is left
+            // with zero active graphs so the empty-state prompt can offer to create one).
+            if (!isOnlyRealGraph) return false
+
+            _graphsExplicitlyEmptied.value = true
+            _activeGitSyncService.value?.shutdown()
+            _activeGitSyncService.value = null
+            _activeVaultCredentialStore.value = null
+            // Null the repo set before closing the driver, mirroring switchGraph()'s own ordering
+            // rationale — Compose flow collectors must see null and stop querying before the
+            // database connection is torn down.
+            _activeRepositorySet.value = null
+            val factoryToClose = currentFactory
+            currentFactory = null
+            coroutineScope.launch(PlatformDispatcher.IO) {
+                try {
+                    factoryToClose?.close()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    logger.error("Failed to close graph's factory while removing the last graph $id", e)
+                }
+            }
+        }
+
         val updated = registry.copy(
-            graphs = registry.graphs.filter { it.id != id }
+            graphs = registry.graphs.filter { it.id != id },
+            activeGraphId = if (registry.activeGraphId == id) null else registry.activeGraphId,
         )
         _graphRegistry.value = updated
         saveRegistry()
@@ -749,6 +797,7 @@ class GraphManager(
         // Update active graph — use atomic update {} to avoid clobbering concurrent registry
         // mutations (e.g. git detection updating detectedRepoRoot on a background IO coroutine).
         _graphRegistry.update { it.copy(activeGraphId = id) }
+        _graphsExplicitlyEmptied.value = false
         saveRegistry()
     }
 

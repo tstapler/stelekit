@@ -57,6 +57,7 @@ import dev.stapler.stelekit.ui.i18n.LocalI18n
 import dev.stapler.stelekit.ui.i18n.t
 import dev.stapler.stelekit.ui.onboarding.Onboarding
 import dev.stapler.stelekit.ui.screens.AllPagesViewModel
+import dev.stapler.stelekit.ui.screens.EmptyGraphStateScreen
 import dev.stapler.stelekit.ui.screens.LibraryStatsViewModel
 import dev.stapler.stelekit.stats.LibraryStatsProvider
 import dev.stapler.stelekit.stats.NoOpLibraryStatsProvider
@@ -386,6 +387,50 @@ fun StelekitApp(
     }
 
     val notificationManager = remember { NotificationManager() }
+
+    // Shown when the user has explicitly removed their only graph (see GraphManager.removeGraph's
+    // "last real graph" path) — checking graphsExplicitlyEmptied rather than activeGraphId == null
+    // alone is deliberate: the latter is also transiently true for one frame on a brand-new
+    // install before the LaunchedEffect above self-heals by adding/activating a default graph,
+    // which would otherwise flash this screen on every first launch. Session-scoped (a page
+    // reload creates a fresh GraphManager, resetting the flag) — matches removeGraph's own
+    // "graph files are not deleted" precedent, so nothing durable needs undoing here either.
+    val graphsExplicitlyEmptied by graphManager.graphsExplicitlyEmptied.collectAsState()
+    if (graphsExplicitlyEmptied && activeGraphId == null) {
+        var emptyStateError by remember { mutableStateOf<String?>(null) }
+        StelekitTheme(themeMode = StelekitThemeMode.SYSTEM) {
+            EmptyGraphStateScreen(
+                onCreateGraph = if (fileSystem.supportsNativeDirectoryPicker) {
+                    {
+                        scope.launch {
+                            val path = fileSystem.pickDirectoryAsync()
+                            if (path != null) {
+                                emptyStateError = null
+                                val graphId = graphManager.addGraph(path)
+                                graphManager.switchGraph(graphId)
+                            } else {
+                                emptyStateError = fileSystem.consumeLastPickerError()
+                            }
+                        }
+                    }
+                } else null,
+                onTryDemo = {
+                    scope.launch {
+                        try {
+                            val graphId = graphManager.addDemoGraph()
+                            graphManager.switchGraph(graphId)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            emptyStateError = "Could not load the demo graph: ${e.message}"
+                        }
+                    }
+                },
+                errorMessage = emptyStateError,
+            )
+        }
+        return
+    }
 
     val repos = activeRepoSet
 
