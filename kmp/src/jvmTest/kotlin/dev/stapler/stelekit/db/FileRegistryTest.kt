@@ -299,6 +299,44 @@ class FileRegistryTest {
         assertEquals("- External content", changes.changedFiles[0].content)
     }
 
+    // ── Regression: non-page files (assets/config) must never be scanned as pages ─────────────
+    // A real graph directory mixes .md pages with non-page files — most commonly images under
+    // an assets/ subdirectory, but scanDirectory/detectChanges operate per-directory so a stray
+    // non-.md file dropped directly alongside pages (e.g. a misplaced screenshot) must also be
+    // excluded. This is the guard that already made the JVM/Android load path safe from the
+    // "PNG decoded as a page" crash class fixed in HostDirectorySync.kt (wasmJs) this session —
+    // locking it in here so a future refactor of the ".md"/".md.stek" filter can't reintroduce it.
+
+    @Test
+    fun `scanDirectory excludes non-md non-stek files from pageFiles`() = runTest {
+        val fs = FakeFs()
+        fs.externalWrite("/graph/pages/Real Page.md", "- real content")
+        fs.externalWrite("/graph/pages/image_123.png", "PNG ")
+        fs.externalWrite("/graph/pages/config.edn", "{:some \"config\"}")
+        val registry = FileRegistry(fs)
+
+        val entries = registry.scanDirectory("/graph/pages")
+
+        assertEquals(1, entries.size)
+        assertEquals("Real Page.md", entries[0].fileName)
+        assertEquals(listOf("Real Page.md"), registry.pageFiles("/graph/pages").map { it.fileName })
+    }
+
+    @Test
+    fun `detectChanges never reports a non-md non-stek file as new or changed`() = runTest {
+        val fs = FakeFs()
+        fs.externalWrite("/graph/pages/image_123.png", "PNG ")
+        val registry = FileRegistry(fs)
+
+        val firstPass = registry.detectChanges("/graph/pages")
+        assertTrue(firstPass.newFiles.isEmpty(), "a non-page file must never surface as a new page")
+
+        // Even if its content changes on disk afterward, it must stay invisible to page sync.
+        fs.externalWrite("/graph/pages/image_123.png", "PNG 		")
+        val secondPass = registry.detectChanges("/graph/pages")
+        assertTrue(secondPass.changedFiles.isEmpty(), "a non-page file must never surface as a changed page")
+    }
+
     // ── Scenario 8: File deleted ──────────────────────────────────────────────
 
     @Test

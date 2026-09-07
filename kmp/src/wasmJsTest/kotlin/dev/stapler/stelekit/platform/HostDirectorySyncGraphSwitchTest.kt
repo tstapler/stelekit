@@ -3,12 +3,15 @@
 
 package dev.stapler.stelekit.platform
 
+import dev.stapler.stelekit.git.model.DirtyEntry
+import dev.stapler.stelekit.git.model.DirtyOp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlin.random.Random
@@ -109,6 +112,44 @@ class HostDirectorySyncGraphSwitchTest {
 
         testScope.cancel()
         syncB.close()
+    }
+
+    // ── Level-0 consolidation regression: retryStuckHostWrites shares scheduleHostWriteThrough's ──
+    // ── claim/flush/release logic (claimAndFlushHostWrite) — the same guarantee must hold here ───
+
+    @Test
+    fun close_should_LetAnInFlightRetryStuckHostWriteSettleHarmlessly_When_TheOpfsWriteWasAlreadyDispatchedBeforeClose() = runTest {
+        // Mirrors close_should_LetAnInFlightHostWriteCompletionSettleHarmlessly...(above), but
+        // drives the claim/flush/release logic through retryStuckHostWrites instead of
+        // scheduleHostWriteThrough — the other of the two call sites that used to duplicate this
+        // logic (see claimAndFlushHostWrite's doc comment). Before that extraction, a fix applied
+        // to only one copy would have left this exact scenario broken via the other entry point.
+        val opfsPathA = freshOpfsPath("journal-a")
+        val gatedRoot = makeWritableEnumerableHostRoot()
+        val testScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val syncA = newSync(opfsPathA, FakeCacheAccess(), testScope, gatedRoot)
+
+        // Seed hostWritePending directly (as reconciliation's BrowserOnlyNeedsPush branch or a
+        // prior failed flush attempt would) rather than through scheduleHostWriteThrough, so this
+        // test exercises retryStuckHostWrites' own claim path specifically.
+        val repoRelative = "Foo.md"
+        syncA.hostWriteLatestPayload[repoRelative] = HostWritePayload.Text("A-content")
+        syncA.hostWritePending[repoRelative] = DirtyEntry(DirtyOp.WRITE, 0L)
+
+        val retryJob = testScope.launch { syncA.retryStuckHostWrites() }
+        awaitCondition { writableEnumerableRootAttemptCount(gatedRoot) >= 1 }
+        assertFalse(retryJob.isCompleted, "the write must still be in flight at this point")
+
+        // When: close() is called on syncA (simulating a graph switch) while the OPFS write is
+        // still suspended, then the gate is released, letting the write settle.
+        syncA.close()
+        openWritableEnumerableRootGate(gatedRoot)
+
+        // Then: the flush settles against syncA's own state instead of being cancelled away.
+        awaitCondition { syncA.hostContentHashes["$opfsPathA/$repoRelative"] != null }
+        assertEquals("A-content".hashCode(), syncA.hostContentHashes["$opfsPathA/$repoRelative"])
+
+        testScope.cancel()
     }
 
     @Test

@@ -15,10 +15,12 @@ import dev.stapler.stelekit.git.model.gitApiJson
 import dev.stapler.stelekit.logging.Logger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.await
 import kotlinx.coroutines.cancel
@@ -28,6 +30,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlin.js.toJsString
@@ -135,8 +138,26 @@ internal class HostDirectorySync(
      * instance is the per-graph session unit, so its own scope's lifetime is exactly this
      * instance's lifetime. [close] cancels it. [forTest] (Epic 1.2) is the only caller that ever
      * supplies [scopeOverride], bypassing this default for deterministic test dispatch.
+     *
+     * Bug fix: carries a [CoroutineExceptionHandler], mirroring `StelekitViewModel.scope`'s
+     * documented "last line of defense" pattern — without it, an uncaught exception from any
+     * coroutine this instance launches (most notably `reconnectHostDirectory`'s fire-and-forget
+     * `scope.launch { runHostReconciliation(...) }` on silent app-boot resume, which has no local
+     * catch of its own) would previously reach the platform default handler with no record in this
+     * app's own log surface at all. Log-only, never mutates [hostAccessStateFlow]: by the time this
+     * fires the handle/[hostAccessStateFlow] have almost always already been set correctly by the
+     * synchronous portion of the launching function (e.g. [reconnectHostDirectory] sets `Granted`
+     * and starts the poller *before* the reconciliation walk that might fail) — a background
+     * reconciliation hiccup doesn't mean the connection itself was lost, so downgrading the state
+     * here would be actively wrong, not merely imprecise.
      */
-    override val scope: CoroutineScope = scopeOverride ?: CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    override val scope: CoroutineScope = scopeOverride ?: CoroutineScope(
+        SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, e ->
+            if (e !is CancellationException) {
+                logger.error("Uncaught Throwable in HostDirectorySync coroutine: ${e::class.simpleName}: ${e.message}", e)
+            }
+        },
+    )
 
     /**
      * Epic 1.1 (Story 1.1.2): implements [SessionLifecycle.close] — tears down this instance's
@@ -1038,6 +1059,21 @@ internal class HostDirectorySync(
      * Returns a [ReconciliationSummary] tallying every classification, also stashed in
      * [lastReconciliationSummary] for UI wiring that runs after [connectHostDirectory] resolves.
      */
+    /**
+     * `true` only for plaintext markdown pages — the sole extension [runHostReconciliation]'s walk
+     * and [pollHostDirectoryOnce]'s `visit` are allowed to decode as UTF-8 text and (for
+     * `runHostReconciliation`) route through the page-conflict pipeline. Everything else —
+     * `.md.stek` (paranoid-mode, handled by its own dedicated branch), images/assets, and any
+     * other file — must be read as raw bytes.
+     *
+     * Extracted as the single source of truth after both call sites independently forgot this
+     * check (the crash class this fixes: a PNG's binary bytes decoded as text and handed to
+     * `onHostConflict`/`GraphLoader`, which throws `Validation.validateString`'s control-character
+     * guard) — a future change to the classification rule now only has one place to go wrong
+     * instead of two that can silently drift apart.
+     */
+    private fun isMarkdownPagePath(path: String): Boolean = path.endsWith(".md")
+
     suspend fun runHostReconciliation(dirHandle: JsAny, opfsPath: String): ReconciliationSummary {
         // Bug fix: the BrowserOnlyNeedsPush branch below calls scheduleHostWriteThrough(path, ...),
         // which keys hostWritePending by repoRelativePath(path) — a strip against the *field*
@@ -1119,7 +1155,7 @@ internal class HostDirectorySync(
                         hostModTimes[path] = mtime
                         hostFileSizes[path] = size
                     }
-                    isFileEntry(entry) -> {
+                    isFileEntry(entry) && isMarkdownPagePath(path) -> {
                         hostVisitedPaths += path
                         val file = getOpfsFile(entry)
                         val mtime = fileLastModified(file)
@@ -1162,6 +1198,29 @@ internal class HostDirectorySync(
                                         // Unreachable here — see the `.md.stek` branch's identical note.
                                     }
                                 }
+                            }
+                        }
+                        hostModTimes[path] = mtime
+                        hostFileSizes[path] = size
+                    }
+                    // Non-page file (image/asset/config, e.g. logseq/assets/*.png) — mirror bytes
+                    // into the cache/OPFS without routing through the markdown page-conflict
+                    // pipeline. onHostConflict/GraphLoader expect plaintext *page* content; decoding
+                    // arbitrary binary bytes as UTF-8 text and treating the result as a page name
+                    // threw `IllegalArgumentException: Input contains control characters` in
+                    // Validation.validateString (Models.kt) once a PNG made it this far.
+                    isFileEntry(entry) -> {
+                        hostVisitedPaths += path
+                        val file = getOpfsFile(entry)
+                        val mtime = fileLastModified(file)
+                        val size = fileSize(file)
+                        if (!matchesBaseline(path, mtime, size)) {
+                            val hostBytes = readOpfsFileAsBytes(entry)
+                            if (hostBytes == null) {
+                                logger.warn("runHostReconciliation: failed to read '$path' from host, skipping")
+                            } else {
+                                cacheAccess.setBytes(path, hostBytes)
+                                cacheAccess.writeOpfsMirrorBytes(path, hostBytes)
                             }
                         }
                         hostModTimes[path] = mtime
@@ -1276,12 +1335,17 @@ internal class HostDirectorySync(
             val unchanged = hostModTimes[path] == mtime && hostFileSizes[path] == size
             if (!unchanged) {
                 anyChanged = true
-                if (path.endsWith(".md.stek")) {
-                    val bytes = readOpfsFileAsBytes(entry)
-                    if (bytes != null) cacheAccess.setBytes(path, bytes)
-                } else {
+                // Only plain ".md" pages are page content — ".md.stek" and everything else
+                // (images/assets/config) round-trip as raw bytes, mirroring runHostReconciliation's
+                // walk above. Decoding a binary file (e.g. a PNG) as UTF-8 text here doesn't crash
+                // (this function never dispatches onHostConflict), but silently corrupts it via
+                // lossy String round-tripping.
+                if (isMarkdownPagePath(path)) {
                     val content = readOpfsFile(entry)
                     if (content != null) cacheAccess.set(path, content)
+                } else {
+                    val bytes = readOpfsFileAsBytes(entry)
+                    if (bytes != null) cacheAccess.setBytes(path, bytes)
                 }
             }
             hostModTimes[path] = mtime
@@ -1421,16 +1485,7 @@ internal class HostDirectorySync(
                     hostWriteDirtyDuringFlush += repoRelative
                     return@launch
                 }
-                hostWriteInFlight += repoRelative
-                try {
-                    do {
-                        flushHostWrite(repoRelative)
-                    } while (repoRelative in hostWriteDirtyDuringFlush)
-                } finally {
-                    hostWriteInFlight -= repoRelative
-                    hostWriteCompletion.remove(repoRelative)?.complete(Unit)
-                    repollIfSuppressedDuringFlush(repoRelative)
-                }
+                claimAndFlushHostWrite(repoRelative)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
@@ -1579,16 +1634,36 @@ internal class HostDirectorySync(
         if (hostDirHandle == null) return
         val candidates = hostWritePending.keys.toList().filter { it !in hostWriteInFlight }
         for (repoRelative in candidates) {
-            hostWriteInFlight += repoRelative
-            try {
+            claimAndFlushHostWrite(repoRelative)
+        }
+    }
+
+    /**
+     * Shared by [scheduleHostWriteThrough] and [retryStuckHostWrites] — both claim [repoRelative]
+     * as in-flight, run the flush-until-clean loop, and release ownership the same way. Extracted
+     * after a fix landed in only one of the two copies of this logic (the [NonCancellable] wrap
+     * below): once a write is claimed as in-flight, it must survive this instance's own scope
+     * being cancelled out from under it (e.g. [close] on a graph switch,
+     * `HostDirectorySyncGraphSwitchTest`'s
+     * `close_should_LetAnInFlightHostWriteCompletionSettleHarmlessly...` regression) — a real File
+     * System Access API write already dispatched to the browser continues regardless of
+     * Kotlin-side cancellation, so cancelling this coroutine here would silently desync
+     * [hostContentHashes]/[hostModTimes] from what actually landed on disk. A single shared
+     * implementation means this guarantee can no longer drift out of sync between the two
+     * call sites the way it did before this extraction.
+     */
+    private suspend fun claimAndFlushHostWrite(repoRelative: String) {
+        hostWriteInFlight += repoRelative
+        try {
+            withContext(NonCancellable) {
                 do {
                     flushHostWrite(repoRelative)
                 } while (repoRelative in hostWriteDirtyDuringFlush)
-            } finally {
-                hostWriteInFlight -= repoRelative
-                hostWriteCompletion.remove(repoRelative)?.complete(Unit)
-                repollIfSuppressedDuringFlush(repoRelative)
             }
+        } finally {
+            hostWriteInFlight -= repoRelative
+            hostWriteCompletion.remove(repoRelative)?.complete(Unit)
+            repollIfSuppressedDuringFlush(repoRelative)
         }
     }
 
