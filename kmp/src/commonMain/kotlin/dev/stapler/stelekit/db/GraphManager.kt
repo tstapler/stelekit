@@ -411,6 +411,25 @@ class GraphManager(
         return cloneResult.map { addGraph(localPath) }
     }
 
+    /**
+     * Resets the active-graph-scoped fields (git sync service, vault credential store,
+     * repository set) and hands back [currentFactory] for the caller to close asynchronously.
+     * Shared by [switchGraph] (tearing down the outgoing graph before opening the next one) and
+     * [removeGraph] (tearing down the last graph with nothing to open next), so the two copies
+     * of this sequence can't silently drift apart.
+     */
+    private fun tearDownActiveGraphResources(): dev.stapler.stelekit.repository.RepositoryFactory? {
+        _activeGitSyncService.value?.shutdown()
+        _activeGitSyncService.value = null
+        _activeVaultCredentialStore.value = null
+        // Null the repo set before closing the driver so Compose flow collectors see null and
+        // stop querying before the database connection is torn down.
+        _activeRepositorySet.value = null
+        val factoryToClose = currentFactory
+        currentFactory = null
+        return factoryToClose
+    }
+
     fun removeGraph(id: GraphId): Boolean {
         // Cancel any active coroutines for this graph
         activeGraphJobs.remove(id)?.cancel()
@@ -438,15 +457,7 @@ class GraphManager(
             if (!isOnlyRealGraph) return false
 
             _graphsExplicitlyEmptied.value = true
-            _activeGitSyncService.value?.shutdown()
-            _activeGitSyncService.value = null
-            _activeVaultCredentialStore.value = null
-            // Null the repo set before closing the driver, mirroring switchGraph()'s own ordering
-            // rationale — Compose flow collectors must see null and stop querying before the
-            // database connection is torn down.
-            _activeRepositorySet.value = null
-            val factoryToClose = currentFactory
-            currentFactory = null
+            val factoryToClose = tearDownActiveGraphResources()
             coroutineScope.launch(PlatformDispatcher.IO) {
                 try {
                     factoryToClose?.close()
@@ -458,11 +469,17 @@ class GraphManager(
             }
         }
 
-        val updated = registry.copy(
-            graphs = registry.graphs.filter { it.id != id },
-            activeGraphId = if (registry.activeGraphId == id) null else registry.activeGraphId,
-        )
-        _graphRegistry.value = updated
+        // Atomic update {} — not a plain .value = ... assignment — so this can't clobber a
+        // concurrent registry mutation from a background IO coroutine (e.g. git detection
+        // updating detectedRepoRoot), the same hazard switchGraph()'s own activeGraphId update
+        // is guarded against. Newly reachable here: before this method allowed removing the
+        // active graph, this branch never wrote the registry at all.
+        _graphRegistry.update {
+            it.copy(
+                graphs = it.graphs.filter { g -> g.id != id },
+                activeGraphId = if (it.activeGraphId == id) null else it.activeGraphId,
+            )
+        }
         saveRegistry()
 
         // Clean up git credentials stored for this graph
@@ -669,21 +686,12 @@ class GraphManager(
             evictCoordinatorFor(it)
         }
 
-        // Shutdown any git sync service from the previous graph
-        _activeGitSyncService.value?.shutdown()
-        _activeGitSyncService.value = null
-        _activeVaultCredentialStore.value = null
-
-        // Null the repo set BEFORE closing the driver so Compose flow collectors see null
-        // and stop querying before the database connection is torn down. Closing first
-        // caused a race where in-flight LaunchedEffect queries hit an already-closed DB.
-        // The actual close() call is deferred to the IO coroutine below — pragmaOptimizeAndClose()
-        // now runs a PRAGMA wal_checkpoint(TRUNCATE), which can take seconds on a large WAL, and
-        // switchGraph() is called synchronously from the Compose UI dispatcher (rememberCoroutineScope
-        // in App.kt), so running it here would freeze the UI on every graph switch.
-        _activeRepositorySet.value = null
-        val factoryToClose = currentFactory
-        currentFactory = null
+        // Closing the captured factory is deferred to the IO coroutine below —
+        // pragmaOptimizeAndClose() now runs a PRAGMA wal_checkpoint(TRUNCATE), which can take
+        // seconds on a large WAL, and switchGraph() is called synchronously from the Compose UI
+        // dispatcher (rememberCoroutineScope in App.kt), so running it here would freeze the UI
+        // on every graph switch.
+        val factoryToClose = tearDownActiveGraphResources()
 
         // Create a new scope for this graph's operations first so the actor can use it.
         // MUST use a fresh SupervisorJob — CoroutineScope(coroutineScope.coroutineContext) would

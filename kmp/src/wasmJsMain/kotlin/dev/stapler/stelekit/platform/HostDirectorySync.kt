@@ -22,6 +22,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.await
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -31,6 +32,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlin.js.toJsString
@@ -139,17 +141,10 @@ internal class HostDirectorySync(
      * instance's lifetime. [close] cancels it. [forTest] (Epic 1.2) is the only caller that ever
      * supplies [scopeOverride], bypassing this default for deterministic test dispatch.
      *
-     * Bug fix: carries a [CoroutineExceptionHandler], mirroring `StelekitViewModel.scope`'s
-     * documented "last line of defense" pattern — without it, an uncaught exception from any
-     * coroutine this instance launches (most notably `reconnectHostDirectory`'s fire-and-forget
-     * `scope.launch { runHostReconciliation(...) }` on silent app-boot resume, which has no local
-     * catch of its own) would previously reach the platform default handler with no record in this
-     * app's own log surface at all. Log-only, never mutates [hostAccessStateFlow]: by the time this
-     * fires the handle/[hostAccessStateFlow] have almost always already been set correctly by the
-     * synchronous portion of the launching function (e.g. [reconnectHostDirectory] sets `Granted`
-     * and starts the poller *before* the reconciliation walk that might fail) — a background
-     * reconciliation hiccup doesn't mean the connection itself was lost, so downgrading the state
-     * here would be actively wrong, not merely imprecise.
+     * Carries a [CoroutineExceptionHandler] (mirrors `StelekitViewModel.scope`) so a fire-and-forget
+     * launch's uncaught exception is logged instead of vanishing into the platform default handler.
+     * Log-only — never touches [hostAccessStateFlow], since that's already set correctly by the
+     * launching function's synchronous portion before the failure-prone async work runs.
      */
     override val scope: CoroutineScope = scopeOverride ?: CoroutineScope(
         SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, e ->
@@ -1060,17 +1055,10 @@ internal class HostDirectorySync(
      * [lastReconciliationSummary] for UI wiring that runs after [connectHostDirectory] resolves.
      */
     /**
-     * `true` only for plaintext markdown pages — the sole extension [runHostReconciliation]'s walk
-     * and [pollHostDirectoryOnce]'s `visit` are allowed to decode as UTF-8 text and (for
-     * `runHostReconciliation`) route through the page-conflict pipeline. Everything else —
-     * `.md.stek` (paranoid-mode, handled by its own dedicated branch), images/assets, and any
-     * other file — must be read as raw bytes.
-     *
-     * Extracted as the single source of truth after both call sites independently forgot this
-     * check (the crash class this fixes: a PNG's binary bytes decoded as text and handed to
-     * `onHostConflict`/`GraphLoader`, which throws `Validation.validateString`'s control-character
-     * guard) — a future change to the classification rule now only has one place to go wrong
-     * instead of two that can silently drift apart.
+     * `true` only for plaintext `.md` pages — `.md.stek` (paranoid mode, its own branch) and
+     * everything else (images/assets) must round-trip as raw bytes, not decoded as UTF-8 text.
+     * Single source of truth after both call sites independently re-implemented (and drifted on)
+     * this check.
      */
     private fun isMarkdownPagePath(path: String): Boolean = path.endsWith(".md")
 
@@ -1203,12 +1191,9 @@ internal class HostDirectorySync(
                         hostModTimes[path] = mtime
                         hostFileSizes[path] = size
                     }
-                    // Non-page file (image/asset/config, e.g. logseq/assets/*.png) — mirror bytes
-                    // into the cache/OPFS without routing through the markdown page-conflict
-                    // pipeline. onHostConflict/GraphLoader expect plaintext *page* content; decoding
-                    // arbitrary binary bytes as UTF-8 text and treating the result as a page name
-                    // threw `IllegalArgumentException: Input contains control characters` in
-                    // Validation.validateString (Models.kt) once a PNG made it this far.
+                    // Non-page file (image/asset/config) — mirror bytes without routing through
+                    // the page-conflict pipeline; decoding binary as UTF-8 here previously threw
+                    // in Validation.validateString once a PNG made it this far.
                     isFileEntry(entry) -> {
                         hostVisitedPaths += path
                         val file = getOpfsFile(entry)
@@ -1639,26 +1624,36 @@ internal class HostDirectorySync(
     }
 
     /**
-     * Shared by [scheduleHostWriteThrough] and [retryStuckHostWrites] — both claim [repoRelative]
-     * as in-flight, run the flush-until-clean loop, and release ownership the same way. Extracted
-     * after a fix landed in only one of the two copies of this logic (the [NonCancellable] wrap
-     * below): once a write is claimed as in-flight, it must survive this instance's own scope
-     * being cancelled out from under it (e.g. [close] on a graph switch,
-     * `HostDirectorySyncGraphSwitchTest`'s
-     * `close_should_LetAnInFlightHostWriteCompletionSettleHarmlessly...` regression) — a real File
-     * System Access API write already dispatched to the browser continues regardless of
-     * Kotlin-side cancellation, so cancelling this coroutine here would silently desync
-     * [hostContentHashes]/[hostModTimes] from what actually landed on disk. A single shared
-     * implementation means this guarantee can no longer drift out of sync between the two
-     * call sites the way it did before this extraction.
+     * Shared claim/flush/release logic for [scheduleHostWriteThrough] and [retryStuckHostWrites].
+     * [NonCancellable]: a dispatched browser write continues regardless of [close] cancelling
+     * this scope, so cancelling here would desync [hostContentHashes] from disk.
+     * [HOST_WRITE_FLUSH_TIMEOUT_MS]: bounds that immunity so a genuinely stuck browser call
+     * can't leak this instance forever — [retryStuckHostWrites] retries after a timeout.
      */
     private suspend fun claimAndFlushHostWrite(repoRelative: String) {
         hostWriteInFlight += repoRelative
         try {
             withContext(NonCancellable) {
-                do {
-                    flushHostWrite(repoRelative)
-                } while (repoRelative in hostWriteDirtyDuringFlush)
+                try {
+                    // Dispatchers.Default explicitly (not just inherited) so the timeout is
+                    // always measured against a real clock — retryStuckHostWrites is called
+                    // directly (not via scope.launch) from some tests running on runTest's
+                    // virtual-time dispatcher, which auto-advances straight past a withTimeout
+                    // that inherits it, firing the timeout the moment this suspends at all.
+                    withContext(Dispatchers.Default) {
+                        withTimeout(HOST_WRITE_FLUSH_TIMEOUT_MS) {
+                            do {
+                                flushHostWrite(repoRelative)
+                            } while (repoRelative in hostWriteDirtyDuringFlush)
+                        }
+                    }
+                } catch (e: TimeoutCancellationException) {
+                    logger.warn(
+                        "claimAndFlushHostWrite: '$repoRelative' exceeded ${HOST_WRITE_FLUSH_TIMEOUT_MS}ms, " +
+                            "abandoning this attempt — retryStuckHostWrites will retry it",
+                        e,
+                    )
+                }
             }
         } finally {
             hostWriteInFlight -= repoRelative
@@ -1823,6 +1818,14 @@ internal class HostDirectorySync(
     }
 
     companion object {
+        /**
+         * Upper bound on one [claimAndFlushHostWrite] attempt — conservative and not measured
+         * against real-world stalls; tune down if this ever proves too patient, or up if a slow
+         * real device/large file legitimately needs longer than this before
+         * [retryStuckHostWrites] gets a chance to retry.
+         */
+        private const val HOST_WRITE_FLUSH_TIMEOUT_MS = 30_000L
+
         /**
          * Epic 1.2 (Story 1.2.1, Task 1.2.1a): test-only construction path replacing the retired
          * `graphIdProvider`-closure shape's direct-field-poke pattern (`sync.hostDirHandle =`/

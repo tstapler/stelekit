@@ -1526,7 +1526,13 @@ private fun GraphContent(
                                     }
                                     closeSidebarIfMobile()
                                 },
-                                onRemoveGraph = { scope.launch { graphManager.removeGraph(GraphId(it)) } },
+                                onRemoveGraph = { id ->
+                                    scope.launch {
+                                        if (!graphManager.removeGraph(GraphId(id))) {
+                                            viewModel.sendSnackbar("Switch to another graph before removing the active one")
+                                        }
+                                    }
+                                },
                                 onUpdateGraphPath = { id, newPath ->
                                     scope.launch {
                                         when (val result = graphManager.updateGraphPath(GraphId(id), newPath)) {

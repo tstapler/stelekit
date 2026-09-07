@@ -268,16 +268,11 @@ jobs:
         # (wasmJsBrowserTest) needs a headless-Chrome/Karma setup not yet wired into CI — a separate,
         # bigger infra task; compiling is the low-risk, high-value slice of that work.
         #
-        # Bug fix: this step carried `continue-on-error: true` for the two commonTest files this
-        # comment used to name (FrameTransportSignatureTest.kt, QrRoundTripFidelityTest.kt) — both
-        # were since moved to jvmTest, fixing them, but the flag was never removed. That gap let a
-        # THIRD, unrelated commonTest file (migration/DslEvaluatorTest.kt, moved into commonTest by
-        # #306 using kotlinx.coroutines.runBlocking, unavailable on Kotlin/Wasm — the exact same
-        # mistake class) merge with a silently broken wasmJs test compile, undetected until this
-        # step was manually re-run months later. Removed now that
-        # `./gradlew :kmp:compileTestKotlinWasmJs -PenableJs=true` passes clean — do not re-add this
-        # flag as a quick fix for a new failure; fix the failing file (most likely by moving a
-        # JVM-only-API test out of commonTest) instead, the same way the original two were fixed.
+        # This step's old `continue-on-error: true` (added for two commonTest files since moved
+        # to jvmTest) was never removed after they were fixed, which let a third unrelated
+        # commonTest file break this the same way, undetected for months. Removed now that this
+        # command passes clean — do not re-add the flag; fix the failing file instead (move its
+        # JVM-only-API usage out of commonTest).
         run: ./gradlew :kmp:compileTestKotlinWasmJs --no-daemon --build-cache -PenableJs=true
 
   # ── Wasm/JS e2e (Playwright) ───────────────────────────────────────────────
