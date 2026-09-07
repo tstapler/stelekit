@@ -1513,8 +1513,20 @@ class StelekitViewModel(
                     // this change, so callers observing UI state don't need to wait on the DB
                     // write landing. Not awaited here so a slow/queued write can't stall the
                     // shared collector coroutine and delay processing of the next file event.
+                    //
+                    // Caught locally (unlike letting it fall through to `scope`'s
+                    // CoroutineExceptionHandler) so one malformed external file — e.g. a
+                    // misclassified binary asset producing content that fails page validation —
+                    // degrades to a logged skip instead of a full-screen fatalError for the whole
+                    // app over a single file.
                     scope.launch {
-                        graphLoader.applyExternalFileChange(FilePath(event.filePath), event.content)
+                        try {
+                            graphLoader.applyExternalFileChange(FilePath(event.filePath), event.content)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            logger.error("applyExternalFileChange failed for '${event.filePath}': ${e.message}", e)
+                        }
                     }
                     return@collect
                 }
