@@ -81,12 +81,41 @@
 #      On non-Linux systems without /proc this degrades to pid-only
 #      liveness (unchanged, pre-existing behavior — not a regression).
 #
+#      `ln -s TARGET LINKPATH` does NOT fail when LINKPATH is an existing
+#      directory — POSIX/GNU `ln` instead silently creates a symlink named
+#      after TARGET's basename INSIDE that directory, and returns exit 0 as
+#      if it had created LINKPATH itself. Reproduced directly: `ln -s
+#      "111:222" some_dir` and a second `ln -s "333:444" some_dir` both
+#      "succeed" with no collision ever detected. The OLD lock format
+#      (mkdir-based, superseded by this symlink scheme) used a directory at
+#      this exact default path, so any leftover directory there — from that
+#      old format, from a crash before this fix landed, or from anything
+#      else that happens to create a plain directory at the lock path —
+#      would make every `ln -s` against it report false success forever,
+#      permanently defeating the lock with zero error output (reproduced
+#      end-to-end: two concurrent `bazel build`s ran fully overlapped against
+#      a pre-existing plain directory at the lock path). Two defenses, both
+#      needed:
+#        (a) at the top of each loop iteration, before ever calling `ln -s`,
+#            a pre-existing non-symlink at the lock path is proactively
+#            removed as reclaimable garbage;
+#        (b) after `ln -s` reports success, the lock path is verified to
+#            actually BE the symlink just created — `[ -L "$lock_path" ]`
+#            and `readlink "$lock_path"` matching exactly what was written —
+#            before treating the lock as acquired. If either check fails
+#            (e.g. a fresh directory or symlink from another process raced
+#            in between (a) and the `ln -s` call), the loop retries instead
+#            of proceeding on a false "acquired" signal.
+#
 #      A waiter that has been blocked longer than $BAZEL_LOCK_WAIT_TIMEOUT
-#      (default 3600s) gives up with a clear, actionable error instead of
-#      spinning on `sleep 1` forever — e.g. if a stale lock's directory
-#      couldn't be removed (permissions) the old code silently swallowed
-#      that failure and hung indefinitely, indistinguishable from a
-#      legitimately long build.
+#      (default 10800s / 3h — 3x BAZEL_TIMEOUT's own 60m default, to tolerate
+#      a realistic queue of several full-length legitimately-queued batch
+#      jobs ahead of this one before concluding something is actually stuck,
+#      rather than false-triggering on ordinary queuing depth) gives up with
+#      a clear, actionable error instead of spinning on `sleep 1` forever —
+#      e.g. if a stale lock's directory couldn't be removed (permissions)
+#      the old code silently swallowed that failure and hung indefinitely,
+#      indistinguishable from a legitimately long build.
 #   2. A hard resource cap matching this repo's real CI (stelekit is a public
 #      GitHub repo → GH-hosted standard runner = 4 vCPU / 16GB, not the
 #      private-repo tier's 2 vCPU/8GB) via a systemd --user --scope cgroup,
@@ -118,7 +147,7 @@
 #   BAZEL_TIMEOUT=<duration>     wall-clock ceiling for `timeout`(1) on batch
 #                                commands, e.g. "2h"; "0" disables it
 #   BAZEL_LOCK_WAIT_TIMEOUT=<s>  max seconds to wait for the lock before
-#                                giving up with an error (default 3600)
+#                                giving up with an error (default 10800)
 #   BAZEL_CI_MEM_MAX=<value>     systemd MemoryMax= (default 16G)
 #   BAZEL_CI_CPU_QUOTA=<value>   systemd CPUQuota= (default 400%)
 #   BAZEL_LOCAL_CONCURRENCY_LOCK=<path>  override the lock path
@@ -243,20 +272,41 @@ fi
 self_start=""
 [ "$proc_available" -eq 1 ] && { self_start=$(proc_start_time "$$") || self_start=""; }
 
-wait_timeout="${BAZEL_LOCK_WAIT_TIMEOUT:-3600}"
+wait_timeout="${BAZEL_LOCK_WAIT_TIMEOUT:-10800}"
 waited=0
 printed_wait=0
 
 while true; do
-  if ln -s "$$:${self_start}" "$lock_path" 2>/dev/null; then
-    # Lock acquired — release it when this (client) process exits, whatever
-    # the exit reason. Deliberately NOT `exec`ing the command below: this
-    # trap must still run in-process afterward to release the lock, and
-    # exec would replace this process image and skip it, leaking the lock
-    # forever. `set -e` already propagates the command's exit code without
-    # needing an explicit `exit $?`.
-    trap 'rm -rf "$lock_path" 2>/dev/null || true' EXIT
-    break
+  # Defense (a): a pre-existing non-symlink at the lock path (an old-format
+  # mkdir-based lock directory, or anything else that happens to have
+  # created a plain directory/file here) makes `ln -s` below silently
+  # "succeed" without ever creating our symlink — see the header comment.
+  # Proactively reclaim it before ever attempting `ln -s`.
+  if [ -e "$lock_path" ] && [ ! -L "$lock_path" ]; then
+    rm -rf "$lock_path" 2>/dev/null || true
+  fi
+
+  our_payload="$$:${self_start}"
+  if ln -s "$our_payload" "$lock_path" 2>/dev/null; then
+    # Defense (b): `ln -s` reports success even when $lock_path was an
+    # existing directory (it creates a symlink named after $our_payload's
+    # basename INSIDE that directory instead) — see the header comment.
+    # Verify the lock path is actually the symlink we just created, with
+    # the payload we just wrote, before trusting the exit code as proof of
+    # exclusive ownership. If either check fails, do NOT break — loop back
+    # around so the top-of-loop cleanup and a fresh `ln -s` attempt run
+    # again.
+    if [ -L "$lock_path" ] && [ "$(readlink "$lock_path" 2>/dev/null)" = "$our_payload" ]; then
+      # Lock acquired — release it when this (client) process exits,
+      # whatever the exit reason. Deliberately NOT `exec`ing the command
+      # below: this trap must still run in-process afterward to release
+      # the lock, and exec would replace this process image and skip it,
+      # leaking the lock forever. `set -e` already propagates the
+      # command's exit code without needing an explicit `exit $?`.
+      trap 'rm -rf "$lock_path" 2>/dev/null || true' EXIT
+      break
+    fi
+    continue
   fi
 
   payload=$(readlink "$lock_path" 2>/dev/null || true)
