@@ -88,7 +88,21 @@ class GraphManager(
     
     private val _activeRepositorySet = MutableStateFlow<RepositorySet?>(null)
     val activeRepositorySet: StateFlow<RepositorySet?> = _activeRepositorySet.asStateFlow()
-    
+
+    /**
+     * `true` iff [removeGraph] just removed the last real (non-demo) graph while it was active,
+     * leaving `activeGraphId = null`. Distinct from merely checking `activeGraphId == null`
+     * because that condition is also transiently true for one frame on a brand-new install
+     * (before `App.kt`'s `LaunchedEffect(currentGraphPath)` self-heals by adding/activating a
+     * default graph) — a Compose-level empty-state screen gated on that alone would flash on
+     * every first launch. This flag is only ever set by an explicit user removal, and cleared by
+     * [switchGraph], so it stays `false` for the entire first-launch path and reliably
+     * distinguishes "the user emptied their graph list" from "no graph has loaded yet."
+     * Session-scoped: a fresh [GraphManager] (i.e. a page reload on wasmJs) starts at `false`.
+     */
+    private val _graphsExplicitlyEmptied = MutableStateFlow(false)
+    val graphsExplicitlyEmptied: StateFlow<Boolean> = _graphsExplicitlyEmptied.asStateFlow()
+
     // Track current factory for lifecycle management.
     // Written from a background coroutine (switchGraph's IO launch) and read on the Compose
     // main thread in createGitConfigRepository(); @Volatile is required for JVM visibility.
@@ -397,6 +411,25 @@ class GraphManager(
         return cloneResult.map { addGraph(localPath) }
     }
 
+    /**
+     * Resets the active-graph-scoped fields (git sync service, vault credential store,
+     * repository set) and hands back [currentFactory] for the caller to close asynchronously.
+     * Shared by [switchGraph] (tearing down the outgoing graph before opening the next one) and
+     * [removeGraph] (tearing down the last graph with nothing to open next), so the two copies
+     * of this sequence can't silently drift apart.
+     */
+    private fun tearDownActiveGraphResources(): dev.stapler.stelekit.repository.RepositoryFactory? {
+        _activeGitSyncService.value?.shutdown()
+        _activeGitSyncService.value = null
+        _activeVaultCredentialStore.value = null
+        // Null the repo set before closing the driver so Compose flow collectors see null and
+        // stop querying before the database connection is torn down.
+        _activeRepositorySet.value = null
+        val factoryToClose = currentFactory
+        currentFactory = null
+        return factoryToClose
+    }
+
     fun removeGraph(id: GraphId): Boolean {
         // Cancel any active coroutines for this graph
         activeGraphJobs.remove(id)?.cancel()
@@ -406,15 +439,47 @@ class GraphManager(
         val graphIndex = registry.graphs.indexOfFirst { it.id == id }
         if (graphIndex == -1) return false
 
-        // Don't allow removing active graph
-        if (registry.activeGraphId == id) return false
-
         if (registry.graphs[graphIndex].isDemo) return false
 
-        val updated = registry.copy(
-            graphs = registry.graphs.filter { it.id != id }
-        )
-        _graphRegistry.value = updated
+        // The demo graph is always registered (addDemoGraph() runs unconditionally at boot) and
+        // is never itself removable (guarded above), so it doesn't count as a "real" graph here —
+        // registry.graphs.size alone would never reach 1 with the demo graph always present.
+        val realGraphs = registry.graphs.filter { !it.isDemo }
+        val isOnlyRealGraph = realGraphs.size == 1 && realGraphs[0].id == id
+
+        if (registry.activeGraphId == id) {
+            // Removing the active graph is only allowed when it's the last real graph left —
+            // otherwise the caller must switch to another graph first, since there's no way to
+            // pick which graph becomes active next. When it IS the last real graph, tear down its
+            // repository set the same way switchGraph() tears down an outgoing graph, but without
+            // opening a new one (deliberately not falling back to the demo graph — the app is left
+            // with zero active graphs so the empty-state prompt can offer to create one).
+            if (!isOnlyRealGraph) return false
+
+            _graphsExplicitlyEmptied.value = true
+            val factoryToClose = tearDownActiveGraphResources()
+            coroutineScope.launch(PlatformDispatcher.IO) {
+                try {
+                    factoryToClose?.close()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    logger.error("Failed to close graph's factory while removing the last graph $id", e)
+                }
+            }
+        }
+
+        // Atomic update {} — not a plain .value = ... assignment — so this can't clobber a
+        // concurrent registry mutation from a background IO coroutine (e.g. git detection
+        // updating detectedRepoRoot), the same hazard switchGraph()'s own activeGraphId update
+        // is guarded against. Newly reachable here: before this method allowed removing the
+        // active graph, this branch never wrote the registry at all.
+        _graphRegistry.update {
+            it.copy(
+                graphs = it.graphs.filter { g -> g.id != id },
+                activeGraphId = if (it.activeGraphId == id) null else it.activeGraphId,
+            )
+        }
         saveRegistry()
 
         // Clean up git credentials stored for this graph
@@ -621,21 +686,12 @@ class GraphManager(
             evictCoordinatorFor(it)
         }
 
-        // Shutdown any git sync service from the previous graph
-        _activeGitSyncService.value?.shutdown()
-        _activeGitSyncService.value = null
-        _activeVaultCredentialStore.value = null
-
-        // Null the repo set BEFORE closing the driver so Compose flow collectors see null
-        // and stop querying before the database connection is torn down. Closing first
-        // caused a race where in-flight LaunchedEffect queries hit an already-closed DB.
-        // The actual close() call is deferred to the IO coroutine below — pragmaOptimizeAndClose()
-        // now runs a PRAGMA wal_checkpoint(TRUNCATE), which can take seconds on a large WAL, and
-        // switchGraph() is called synchronously from the Compose UI dispatcher (rememberCoroutineScope
-        // in App.kt), so running it here would freeze the UI on every graph switch.
-        _activeRepositorySet.value = null
-        val factoryToClose = currentFactory
-        currentFactory = null
+        // Closing the captured factory is deferred to the IO coroutine below —
+        // pragmaOptimizeAndClose() now runs a PRAGMA wal_checkpoint(TRUNCATE), which can take
+        // seconds on a large WAL, and switchGraph() is called synchronously from the Compose UI
+        // dispatcher (rememberCoroutineScope in App.kt), so running it here would freeze the UI
+        // on every graph switch.
+        val factoryToClose = tearDownActiveGraphResources()
 
         // Create a new scope for this graph's operations first so the actor can use it.
         // MUST use a fresh SupervisorJob — CoroutineScope(coroutineScope.coroutineContext) would
@@ -749,6 +805,7 @@ class GraphManager(
         // Update active graph — use atomic update {} to avoid clobbering concurrent registry
         // mutations (e.g. git detection updating detectedRepoRoot on a background IO coroutine).
         _graphRegistry.update { it.copy(activeGraphId = id) }
+        _graphsExplicitlyEmptied.value = false
         saveRegistry()
     }
 

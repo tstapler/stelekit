@@ -268,13 +268,11 @@ jobs:
         # (wasmJsBrowserTest) needs a headless-Chrome/Karma setup not yet wired into CI — a separate,
         # bigger infra task; compiling is the low-risk, high-value slice of that work.
         #
-        # continue-on-error: true until 2 pre-existing, unrelated compile errors are fixed —
-        # commonTest's FrameTransportSignatureTest.kt (kotlin-reflect KParameter/isSuspend
-        # unavailable on Kotlin/Wasm) and QrRoundTripFidelityTest.kt (kotlinx.coroutines'
-        # runBlocking unavailable on Kotlin/Wasm) predate this PR and were never caught because this
-        # step didn't exist. Track: give those two tests a JVM-only/expect-actual home, then remove
-        # this flag so wasmJsTest compile failures actually block CI.
-        continue-on-error: true
+        # This step's old `continue-on-error: true` (added for two commonTest files since moved
+        # to jvmTest) was never removed after they were fixed, which let a third unrelated
+        # commonTest file break this the same way, undetected for months. Removed now that this
+        # command passes clean — do not re-add the flag; fix the failing file instead (move its
+        # JVM-only-API usage out of commonTest).
         run: ./gradlew :kmp:compileTestKotlinWasmJs --no-daemon --build-cache -PenableJs=true
 
   # ── Wasm/JS e2e (Playwright) ───────────────────────────────────────────────

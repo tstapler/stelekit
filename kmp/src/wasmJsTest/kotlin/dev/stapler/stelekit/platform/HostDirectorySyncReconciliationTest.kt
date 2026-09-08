@@ -324,6 +324,30 @@ class HostDirectorySyncReconciliationTest {
     }
 
     @Test
+    fun runHostReconciliation_should_MirrorAsBytesWithoutInvokingOnHostConflict_When_PathIsANonMarkdownAssetLikeAPng() = runTest {
+        val opfsPath = "/stelekit/g"
+        val cache = FakeCacheAccess()
+        val testScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val sync = newSync("g", cache, testScope)
+
+        // Real PNGs open with byte 0x89, well outside ASCII — decoding this as UTF-8 text and
+        // handing it to onHostConflict (as the pre-fix code did) reaches Validation.validateString,
+        // which throws IllegalArgumentException on the resulting control characters.
+        val pngBytes = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x00, 0x01, 0x02)
+        val host = rootDir(Dir("assets", listOf(BytesFile("image_123.png", pngBytes))))
+
+        val onHostConflictCalls = mutableListOf<Pair<String, String>>()
+        sync.onHostConflict = { path, content -> onHostConflictCalls += path.value to content }
+
+        sync.runHostReconciliation(host, opfsPath)
+
+        assertTrue(onHostConflictCalls.isEmpty())
+        assertTrue(cache.bytesStore["$opfsPath/assets/image_123.png"]!!.contentEquals(pngBytes))
+        assertEquals(0, cache.setCallCount) // never routed through the String-typed cache
+        testScope.cancel()
+    }
+
+    @Test
     fun runHostReconciliation_should_ClassifyPathsNotVisitedByHostWalkAsBrowserOnlyNeedsPush_When_CacheHasPathsAbsentFromHost() = runTest {
         val opfsPath = "/stelekit/g"
         val cache = FakeCacheAccess()
@@ -512,6 +536,17 @@ class HostDirectorySyncReconciliationTest {
     fun pickDirectoryAsync_should_ProduceByteForByteIdenticalCacheToPreProjectBehavior_When_GraphIsFreshAndEmpty() = runTest {
         val graphName = "it-fresh-${Random.nextInt(0, Int.MAX_VALUE)}"
         val fs = PlatformFileSystem()
+        // Bug fix: PlatformFileSystem.hostDirectorySync now reads through
+        // GraphScopedSession.current (the #296 migration), which throws
+        // ("GraphScopedSession.current read before any switchTo call completed") until preload()/
+        // switchActiveGraph() has run at least once — exactly what attachFreshHandle (called from
+        // pickDirectoryAsync) needs. In the real app this is always already true by the time a user
+        // can reach the "pick a folder" UI (App.kt always switches to an initial graph at boot
+        // first), but this test constructs PlatformFileSystem() bare, so it must preload a
+        // placeholder graph itself first — mirrors HostDirectorySyncExternalChangeTest.kt's
+        // established `fs.preload(graphPath)` pattern. Uses a path distinct from the
+        // about-to-be-picked graphName so the two sessions don't collide.
+        fs.preload("/stelekit/placeholder-${Random.nextInt(0, Int.MAX_VALUE)}")
 
         val host = fakeDirEntry(
             graphName,

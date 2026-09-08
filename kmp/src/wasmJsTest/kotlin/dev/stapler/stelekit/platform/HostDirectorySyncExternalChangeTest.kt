@@ -188,4 +188,47 @@ class HostDirectorySyncExternalChangeTest {
 
         testScope.cancel()
     }
+
+    // ── Regression: non-page assets (e.g. images) must use the bytes branch too ────────────────
+    // Bug fix: this branch used to be keyed on ".md.stek" only, so any other file — a plain .png
+    // under assets/ included — fell into the text branch (readOpfsFile()/.text()), silently
+    // corrupting it via lossy UTF-8 round-tripping. Mirrors the .md.stek test above but for an
+    // arbitrary non-".md" path.
+
+    @Test
+    fun pollHostDirectoryOnce_should_UseBytesBranch_When_ChangedPathIsANonMarkdownAsset() = runTest {
+        val opfsPath = "/stelekit/${freshGraphId()}"
+        val cache = FakeCacheAccess()
+        val testScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val sync = disconnectedSync(OpfsGraphSlug("g"), cache, testScope)
+
+        val bytesCounter = newReadCounter()
+        val assetPath = "$opfsPath/assets/image_123.png"
+        val pngBytes = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x00, 0x01, 0x02)
+
+        // fakeBytesFileEntry's fixture object only implements arrayBuffer() (no .text() method
+        // at all) — if production code mistakenly tried the text branch for this path, it would
+        // throw (undefined is not a function) rather than silently succeed, so the absence of a
+        // thrown error here is itself part of the "never reads via .text()" guarantee, reinforced
+        // by the setBytesCallCount/setCallCount assertions below.
+        val pngEntry = fakeBytesFileEntry(
+            name = "image_123.png",
+            buffer = pngBytes.toJsArrayBuffer(),
+            lastModified = 9_000L,
+            size = pngBytes.size.toLong(),
+            counter = bytesCounter,
+        )
+        val assetsDir = fakeDirEntry("assets", toJsArray(listOf(pngEntry)))
+        val root = fakeDirEntry("root", toJsArray(listOf(assetsDir)))
+
+        sync.pollHostDirectoryOnce(root, opfsPath)
+
+        assertEquals(1, readCounterValue(bytesCounter), "changed non-.md path must read via arrayBuffer()")
+        assertEquals(1, cache.setBytesCallCount, "changed non-.md path must update bytesCache via setBytes")
+        assertEquals(0, cache.setCallCount, "a non-.md path must never update the text cache via set")
+        assertTrue(cache.bytesStore[assetPath].contentEquals(pngBytes))
+        assertEquals(9_000L, sync.hostModTimes[assetPath])
+
+        testScope.cancel()
+    }
 }

@@ -14,7 +14,7 @@ import dev.stapler.stelekit.repository.InMemoryReferenceRepository
 import dev.stapler.stelekit.repository.InMemorySearchRepository
 import dev.stapler.stelekit.repository.JournalService
 import dev.stapler.stelekit.repository.RepositorySet
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -48,16 +48,14 @@ class DslEvaluatorTest {
         properties = properties,
     )
 
-    private fun buildRepoSet(
+    private suspend fun buildRepoSet(
         pages: List<Page> = emptyList(),
         blocks: List<Block> = emptyList(),
     ): RepositorySet {
         val blockRepo = InMemoryBlockRepository()
         val pageRepo = InMemoryPageRepository()
-        runBlocking {
-            pages.forEach { pageRepo.savePage(it) }
-            blocks.forEach { blockRepo.saveBlock(it) }
-        }
+        pages.forEach { pageRepo.savePage(it) }
+        blocks.forEach { blockRepo.saveBlock(it) }
         return RepositorySet(
             blockRepository = blockRepo,
             pageRepository = pageRepo,
@@ -71,7 +69,7 @@ class DslEvaluatorTest {
     // ── Tests ──────────────────────────────────────────────────────────────────
 
     @Test
-    fun evaluator_applies_property_to_matching_blocks(): Unit = runBlocking {
+    fun evaluator_applies_property_to_matching_blocks() = runTest {
         val page = makePage("page-1", "TestPage")
         val matchingBlock = makeBlock("block-match", "page-1", "has tag:kotlin")
         val otherBlock   = makeBlock("block-other", "page-1", "no tag here", position = "a1")
@@ -98,7 +96,7 @@ class DslEvaluatorTest {
     }
 
     @Test
-    fun evaluator_is_idempotent(): Unit = runBlocking {
+    fun evaluator_is_idempotent() = runTest {
         val page = makePage("page-1", "TestPage")
         // Block already has the property the migration wants to set.
         val alreadyMigratedBlock = makeBlock(
@@ -126,7 +124,7 @@ class DslEvaluatorTest {
     }
 
     @Test
-    fun evaluator_throws_on_destructive_without_flag(): Unit = runBlocking {
+    fun evaluator_throws_on_destructive_without_flag() = runTest {
         val page = makePage("page-1", "TestPage")
         val block = makeBlock("block-del", "page-1", "delete me")
 
@@ -148,7 +146,7 @@ class DslEvaluatorTest {
     }
 
     @Test
-    fun evaluator_allows_destructive_with_flag(): Unit = runBlocking {
+    fun evaluator_allows_destructive_with_flag() = runTest {
         val page = makePage("page-1", "TestPage")
         val block = makeBlock("block-del", "page-1", "delete me")
 

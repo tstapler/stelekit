@@ -53,6 +53,10 @@ class PlatformFileSystemHostSyncDelegationTest {
     @Test
     fun hostDirectoryAccessState_should_DelegateToHostDirectorySyncFlowValue_When_Called() = runTest {
         val fs = PlatformFileSystem()
+        // PlatformFileSystem.hostDirectorySync reads through GraphScopedSession.current, which
+        // requires preload()/switchActiveGraph() to have run at least once — see
+        // HostDirectorySyncReconciliationTest.kt's identical fix for the full explanation.
+        fs.preload("/stelekit/placeholder-${Random.nextInt(0, Int.MAX_VALUE)}")
         val handle = fakeHandleWithGrantedPermission()
         fs.hostDirectorySync.lookupPersistedHandle = { handle to "/stelekit/g" }
 

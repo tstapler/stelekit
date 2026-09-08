@@ -15,11 +15,14 @@ import dev.stapler.stelekit.git.model.gitApiJson
 import dev.stapler.stelekit.logging.Logger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.await
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -28,6 +31,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlin.js.toJsString
@@ -135,8 +140,19 @@ internal class HostDirectorySync(
      * instance is the per-graph session unit, so its own scope's lifetime is exactly this
      * instance's lifetime. [close] cancels it. [forTest] (Epic 1.2) is the only caller that ever
      * supplies [scopeOverride], bypassing this default for deterministic test dispatch.
+     *
+     * Carries a [CoroutineExceptionHandler] (mirrors `StelekitViewModel.scope`) so a fire-and-forget
+     * launch's uncaught exception is logged instead of vanishing into the platform default handler.
+     * Log-only — never touches [hostAccessStateFlow], since that's already set correctly by the
+     * launching function's synchronous portion before the failure-prone async work runs.
      */
-    override val scope: CoroutineScope = scopeOverride ?: CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    override val scope: CoroutineScope = scopeOverride ?: CoroutineScope(
+        SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, e ->
+            if (e !is CancellationException) {
+                logger.error("Uncaught Throwable in HostDirectorySync coroutine: ${e::class.simpleName}: ${e.message}", e)
+            }
+        },
+    )
 
     /**
      * Epic 1.1 (Story 1.1.2): implements [SessionLifecycle.close] — tears down this instance's
@@ -1038,6 +1054,14 @@ internal class HostDirectorySync(
      * Returns a [ReconciliationSummary] tallying every classification, also stashed in
      * [lastReconciliationSummary] for UI wiring that runs after [connectHostDirectory] resolves.
      */
+    /**
+     * `true` only for plaintext `.md` pages — `.md.stek` (paranoid mode, its own branch) and
+     * everything else (images/assets) must round-trip as raw bytes, not decoded as UTF-8 text.
+     * Single source of truth after both call sites independently re-implemented (and drifted on)
+     * this check.
+     */
+    private fun isMarkdownPagePath(path: String): Boolean = path.endsWith(".md")
+
     suspend fun runHostReconciliation(dirHandle: JsAny, opfsPath: String): ReconciliationSummary {
         // Bug fix: the BrowserOnlyNeedsPush branch below calls scheduleHostWriteThrough(path, ...),
         // which keys hostWritePending by repoRelativePath(path) — a strip against the *field*
@@ -1119,7 +1143,7 @@ internal class HostDirectorySync(
                         hostModTimes[path] = mtime
                         hostFileSizes[path] = size
                     }
-                    isFileEntry(entry) -> {
+                    isFileEntry(entry) && isMarkdownPagePath(path) -> {
                         hostVisitedPaths += path
                         val file = getOpfsFile(entry)
                         val mtime = fileLastModified(file)
@@ -1162,6 +1186,26 @@ internal class HostDirectorySync(
                                         // Unreachable here — see the `.md.stek` branch's identical note.
                                     }
                                 }
+                            }
+                        }
+                        hostModTimes[path] = mtime
+                        hostFileSizes[path] = size
+                    }
+                    // Non-page file (image/asset/config) — mirror bytes without routing through
+                    // the page-conflict pipeline; decoding binary as UTF-8 here previously threw
+                    // in Validation.validateString once a PNG made it this far.
+                    isFileEntry(entry) -> {
+                        hostVisitedPaths += path
+                        val file = getOpfsFile(entry)
+                        val mtime = fileLastModified(file)
+                        val size = fileSize(file)
+                        if (!matchesBaseline(path, mtime, size)) {
+                            val hostBytes = readOpfsFileAsBytes(entry)
+                            if (hostBytes == null) {
+                                logger.warn("runHostReconciliation: failed to read '$path' from host, skipping")
+                            } else {
+                                cacheAccess.setBytes(path, hostBytes)
+                                cacheAccess.writeOpfsMirrorBytes(path, hostBytes)
                             }
                         }
                         hostModTimes[path] = mtime
@@ -1276,12 +1320,17 @@ internal class HostDirectorySync(
             val unchanged = hostModTimes[path] == mtime && hostFileSizes[path] == size
             if (!unchanged) {
                 anyChanged = true
-                if (path.endsWith(".md.stek")) {
-                    val bytes = readOpfsFileAsBytes(entry)
-                    if (bytes != null) cacheAccess.setBytes(path, bytes)
-                } else {
+                // Only plain ".md" pages are page content — ".md.stek" and everything else
+                // (images/assets/config) round-trip as raw bytes, mirroring runHostReconciliation's
+                // walk above. Decoding a binary file (e.g. a PNG) as UTF-8 text here doesn't crash
+                // (this function never dispatches onHostConflict), but silently corrupts it via
+                // lossy String round-tripping.
+                if (isMarkdownPagePath(path)) {
                     val content = readOpfsFile(entry)
                     if (content != null) cacheAccess.set(path, content)
+                } else {
+                    val bytes = readOpfsFileAsBytes(entry)
+                    if (bytes != null) cacheAccess.setBytes(path, bytes)
                 }
             }
             hostModTimes[path] = mtime
@@ -1421,16 +1470,7 @@ internal class HostDirectorySync(
                     hostWriteDirtyDuringFlush += repoRelative
                     return@launch
                 }
-                hostWriteInFlight += repoRelative
-                try {
-                    do {
-                        flushHostWrite(repoRelative)
-                    } while (repoRelative in hostWriteDirtyDuringFlush)
-                } finally {
-                    hostWriteInFlight -= repoRelative
-                    hostWriteCompletion.remove(repoRelative)?.complete(Unit)
-                    repollIfSuppressedDuringFlush(repoRelative)
-                }
+                claimAndFlushHostWrite(repoRelative)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
@@ -1579,16 +1619,46 @@ internal class HostDirectorySync(
         if (hostDirHandle == null) return
         val candidates = hostWritePending.keys.toList().filter { it !in hostWriteInFlight }
         for (repoRelative in candidates) {
-            hostWriteInFlight += repoRelative
-            try {
-                do {
-                    flushHostWrite(repoRelative)
-                } while (repoRelative in hostWriteDirtyDuringFlush)
-            } finally {
-                hostWriteInFlight -= repoRelative
-                hostWriteCompletion.remove(repoRelative)?.complete(Unit)
-                repollIfSuppressedDuringFlush(repoRelative)
+            claimAndFlushHostWrite(repoRelative)
+        }
+    }
+
+    /**
+     * Shared claim/flush/release logic for [scheduleHostWriteThrough] and [retryStuckHostWrites].
+     * [NonCancellable]: a dispatched browser write continues regardless of [close] cancelling
+     * this scope, so cancelling here would desync [hostContentHashes] from disk.
+     * [HOST_WRITE_FLUSH_TIMEOUT_MS]: bounds that immunity so a genuinely stuck browser call
+     * can't leak this instance forever — [retryStuckHostWrites] retries after a timeout.
+     */
+    private suspend fun claimAndFlushHostWrite(repoRelative: String) {
+        hostWriteInFlight += repoRelative
+        try {
+            withContext(NonCancellable) {
+                try {
+                    // Dispatchers.Default explicitly (not just inherited) so the timeout is
+                    // always measured against a real clock — retryStuckHostWrites is called
+                    // directly (not via scope.launch) from some tests running on runTest's
+                    // virtual-time dispatcher, which auto-advances straight past a withTimeout
+                    // that inherits it, firing the timeout the moment this suspends at all.
+                    withContext(Dispatchers.Default) {
+                        withTimeout(HOST_WRITE_FLUSH_TIMEOUT_MS) {
+                            do {
+                                flushHostWrite(repoRelative)
+                            } while (repoRelative in hostWriteDirtyDuringFlush)
+                        }
+                    }
+                } catch (e: TimeoutCancellationException) {
+                    logger.warn(
+                        "claimAndFlushHostWrite: '$repoRelative' exceeded ${HOST_WRITE_FLUSH_TIMEOUT_MS}ms, " +
+                            "abandoning this attempt — retryStuckHostWrites will retry it",
+                        e,
+                    )
+                }
             }
+        } finally {
+            hostWriteInFlight -= repoRelative
+            hostWriteCompletion.remove(repoRelative)?.complete(Unit)
+            repollIfSuppressedDuringFlush(repoRelative)
         }
     }
 
@@ -1748,6 +1818,14 @@ internal class HostDirectorySync(
     }
 
     companion object {
+        /**
+         * Upper bound on one [claimAndFlushHostWrite] attempt — conservative and not measured
+         * against real-world stalls; tune down if this ever proves too patient, or up if a slow
+         * real device/large file legitimately needs longer than this before
+         * [retryStuckHostWrites] gets a chance to retry.
+         */
+        private const val HOST_WRITE_FLUSH_TIMEOUT_MS = 30_000L
+
         /**
          * Epic 1.2 (Story 1.2.1, Task 1.2.1a): test-only construction path replacing the retired
          * `graphIdProvider`-closure shape's direct-field-poke pattern (`sync.hostDirHandle =`/
