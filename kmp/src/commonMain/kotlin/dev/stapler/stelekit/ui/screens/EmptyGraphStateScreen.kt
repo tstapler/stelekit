@@ -20,11 +20,12 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun EmptyGraphStateScreen(
     onTryDemo: () -> Unit,
+    modifier: Modifier = Modifier,
     onCreateGraph: (() -> Unit)? = null,
     errorMessage: String? = null,
 ) {
     Surface(
-        modifier = Modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background,
     ) {
         Column(
