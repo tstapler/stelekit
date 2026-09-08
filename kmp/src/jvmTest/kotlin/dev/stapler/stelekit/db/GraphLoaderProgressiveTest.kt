@@ -21,9 +21,8 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -738,39 +737,49 @@ class GraphLoaderProgressiveTest {
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `midnight watcher calls ensureTodayJournal after simulated day crossing`() = runTest {
-        val callCount = AtomicInteger(0)
+        val pageRepo = InMemoryPageRepository()
+        val blockRepo = InMemoryBlockRepository()
         val tz = TimeZone.currentSystemDefault()
-        val startInstant = LocalDate(2026, 5, 28).atStartOfDayIn(tz) + 23.hours + 58.minutes
-        val fakeClock = FakeClock(startInstant)
+        val day28 = LocalDate(2026, 5, 28)
+        val fakeClock = FakeClock(day28.atStartOfDayIn(tz) + 23.hours + 58.minutes)
+        val vmScope = CoroutineScope(coroutineContext + SupervisorJob())
+        val vm = buildMidnightWatcherViewModel(pageRepo, blockRepo, fakeClock, vmScope)
 
-        val watcherJob = launch {
-            while (isActive) {
-                val now = fakeClock.now()
-                val today = now.toLocalDateTime(tz).date
-                val tomorrowMidnight = today.plus(1, DateTimeUnit.DAY).atStartOfDayIn(tz)
-                val delayMs = (tomorrowMidnight - now).inWholeMilliseconds.coerceAtLeast(1_000L)
-                kotlinx.coroutines.delay(delayMs)
-                fakeClock.advance(2.minutes)
-                callCount.incrementAndGet()
-            }
-        }
+        vm.startMidnightBoundaryWatcher(fakeClock)
+        // Let the watcher dispatch and seed lastJournalDate from the ORIGINAL frozen clock
+        // (May 28) before advancing it — advancing first would corrupt the seed itself.
+        runCurrent()
 
+        // First crossing: May 28 → May 29. lastJournalDate seeded to May 28 above,
+        // so this crossing is genuinely new and must fire.
+        val day29 = day28.plus(1, DateTimeUnit.DAY)
+        fakeClock.advance(2.minutes)
         advanceTimeBy(121_000)
-        assertEquals(1, callCount.get(), "ensureTodayJournal must be called once after first midnight")
+        assertNotNull(pageRepo.getJournalPageByDate(day29).first().getOrNull(),
+            "ensureTodayJournal must be called once after first midnight")
 
+        // Second crossing: May 29 → May 30.
+        val day30 = day29.plus(1, DateTimeUnit.DAY)
+        fakeClock.advance(24.hours)
         advanceTimeBy(24 * 60 * 60 * 1000L + 1_000L)
-        assertEquals(2, callCount.get(), "ensureTodayJournal must be called again after second midnight")
+        assertNotNull(pageRepo.getJournalPageByDate(day30).first().getOrNull(),
+            "ensureTodayJournal must be called again after second midnight")
 
+        // Third crossing: May 30 → May 31.
+        val day31 = day30.plus(1, DateTimeUnit.DAY)
+        fakeClock.advance(24.hours)
         advanceTimeBy(24 * 60 * 60 * 1000L + 1_000L)
-        assertEquals(3, callCount.get(), "ensureTodayJournal must be called a third time")
+        assertNotNull(pageRepo.getJournalPageByDate(day31).first().getOrNull(),
+            "ensureTodayJournal must be called a third time")
 
-        watcherJob.cancel()
+        vmScope.cancel()
     }
 
-    /** Builds a StelekitViewModel wired to a virtual-time [scope] so `advanceTimeBy` drives
-     *  the real `startMidnightBoundaryWatcher` coroutine deterministically instead of relying
-     *  on wall-clock delays. */
-    private fun buildRealTimeViewModel(
+    /** Builds a StelekitViewModel wired to [scope] and [fakeClock] for the midnight-watcher
+     *  tests. Pass a `TestScope`-derived scope (e.g. `coroutineContext + SupervisorJob()`) so
+     *  `advanceTimeBy` drives the real `startMidnightBoundaryWatcher` coroutine deterministically,
+     *  or a real dispatcher when the test needs genuine wall-clock timing. */
+    private fun buildMidnightWatcherViewModel(
         pageRepo: InMemoryPageRepository,
         blockRepo: InMemoryBlockRepository,
         fakeClock: FakeClock,
@@ -808,9 +817,13 @@ class GraphLoaderProgressiveTest {
         // Shares this test's virtual-time dispatcher, but its own SupervisorJob so it can be
         // cancelled independently of the outer TestScope.
         val vmScope = CoroutineScope(coroutineContext + SupervisorJob())
-        val vm = buildRealTimeViewModel(pageRepo, blockRepo, fakeClock, vmScope)
+        val vm = buildMidnightWatcherViewModel(pageRepo, blockRepo, fakeClock, vmScope)
 
         vm.startMidnightBoundaryWatcher(fakeClock)
+        // Let the watcher actually dispatch — seed lastJournalDate and enter its first
+        // delay() — before cancelling, so this proves cancellation of a running watcher
+        // rather than cancellation of a job that never started.
+        runCurrent()
         vmScope.cancel()
 
         advanceTimeBy(200_000)
@@ -830,18 +843,22 @@ class GraphLoaderProgressiveTest {
         val today = LocalDate(2026, 5, 29)
         val fakeClock = FakeClock(today.atStartOfDayIn(tz) + 23.hours + 58.minutes)
         val vmScope = CoroutineScope(coroutineContext + SupervisorJob())
-        val vm = buildRealTimeViewModel(pageRepo, blockRepo, fakeClock, vmScope)
+        val vm = buildMidnightWatcherViewModel(pageRepo, blockRepo, fakeClock, vmScope)
 
         vm.startMidnightBoundaryWatcher(fakeClock)
 
         // The watcher's delay elapses (virtual time), but the FakeClock instant is left
         // untouched — so clock.now() still resolves to May 29, matching the seeded
         // lastJournalDate. The production guard (`if (today == lastJournalDate) continue`)
-        // must skip creating a journal here.
+        // must skip creating a journal here. If ensureTodayJournal() fired anyway, it would
+        // write to clock.now()'s date — May 29 (`today`), not `tomorrow` — so the assertion
+        // must check `today` to actually catch the guard being bypassed.
         advanceTimeBy(121_000)
+        assertEquals(null, pageRepo.getJournalPageByDate(today).first().getOrNull(),
+            "Must skip creating a journal when the computed date already matches lastJournalDate")
         val tomorrow = today.plus(1, DateTimeUnit.DAY)
         assertEquals(null, pageRepo.getJournalPageByDate(tomorrow).first().getOrNull(),
-            "Must skip creating a journal when the computed date already matches lastJournalDate")
+            "Must not have created tomorrow's journal either")
 
         // Now genuinely cross into May 30 and let the watcher's next check observe it.
         // Bounded advanceTimeBy only — the watcher's `while (isActive)` loop never
@@ -873,7 +890,7 @@ class GraphLoaderProgressiveTest {
         // vmScope uses real Dispatchers.Default so its internal observe-coroutines do not
         // join the test scheduler and cause advanceUntilIdle() to spin forever.
         val vmScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-        val vm = buildRealTimeViewModel(pageRepo, blockRepo, fakeClock, vmScope)
+        val vm = buildMidnightWatcherViewModel(pageRepo, blockRepo, fakeClock, vmScope)
 
         vm.startMidnightBoundaryWatcher(fakeClock)
 
