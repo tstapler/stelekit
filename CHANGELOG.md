@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.81.0](https://github.com/tstapler/stelekit/compare/v0.80.0...v0.81.0) (2026-09-08)
+
+
+### Features
+
+* **scripts:** add cross-package internal-visibility audit + extraction-readiness aggregator ([#310](https://github.com/tstapler/stelekit/issues/310)) ([236ce9c](https://github.com/tstapler/stelekit/commit/236ce9c74efb2891226b514b176d34de21e2cc48))
+
+
+### Bug Fixes
+
+* **bazel:** address code-review findings on tools/bazel wrapper ([9afdc71](https://github.com/tstapler/stelekit/commit/9afdc711334f3e22833b57d4e846f14103493a17))
+* **bazel:** replace flock with a non-fd lock; skip entirely on CI ([38575d2](https://github.com/tstapler/stelekit/commit/38575d221983b2e6e2563d7199205eac3a7f68c2))
+* **bazel:** verify lock symlink identity, reclaim pre-existing non-symlinks ([a09d1ec](https://github.com/tstapler/stelekit/commit/a09d1ec7456adde6674433333709003b7517a2bb))
+* **wasm:** stop PNG/non-page files from crashing host-directory sync; zero-graphs empty state ([#316](https://github.com/tstapler/stelekit/issues/316)) ([966162e](https://github.com/tstapler/stelekit/commit/966162e8b23aa3b06d890aa722df27b9f35381de))
+
 ## [0.80.0](https://github.com/tstapler/stelekit/compare/v0.79.0...v0.80.0) (2026-09-04)
 
 
