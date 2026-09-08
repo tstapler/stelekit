@@ -1,0 +1,343 @@
+#!/usr/bin/env bash
+# Bazel wrapper script — Bazel's own convention: if tools/bazel exists and is
+# executable, both bazel and bazelisk exec it instead of the real binary,
+# passing the real binary's path via $BAZEL_REAL. See
+# https://bazel.build/run/scripts#running-bazel-wrapper-scripts
+#
+# This repo uses multiple concurrent git worktrees (agent-driven development —
+# each worker/agent gets its own worktree). Bazel has no cross-process
+# concurrency coordination, and no wall-clock timeout on non-test actions.
+# Two real incidents from this, on the same day: (1) 5 concurrent worktrees
+# each running a heavy `bazel build`/`test` — each assuming it owns the whole
+# machine — drove load average to 49 on a 24-core box with memory pinned near
+# 100%; (2) a single KotlinCompile action ran 62,206s (~17.3h) inside an
+# abandoned worktree's server, consuming ~22GB RAM, never crashing or getting
+# OOM-killed (most likely GC-thrashing under the same memory pressure from
+# (1) — alive and burning CPU/RAM, but making ~no forward progress — rather
+# than a genuine deadlock) before being found and killed by hand. See
+# CLAUDE.md's "Bazel server orphaning and runaway builds" section.
+#
+# Commands split into two classes; read-only commands (query, version, info,
+# etc.) pass straight through unaffected by any of this, and none of it runs
+# on CI (see below):
+#
+#   "batch"       build, test, coverage — always finite, safe to queue behind
+#                 other invocations and to kill on a wall-clock timeout.
+#   "interactive" run, mobile-install — can be legitimately long-lived (e.g.
+#                 `bazel run //kmp:desktop_app`, this repo's own documented
+#                 way to launch the desktop app for an entire dev session, see
+#                 CLAUDE.md). These get the resource cap (capping a live app's
+#                 CPU/memory is safe) but deliberately get NEITHER the
+#                 wall-clock timeout NOR the cross-worktree lock — a batch
+#                 command misclassified into this bucket briefly starved every
+#                 other worktree for hours the first time this was tried.
+#
+# Layers applied to "batch" commands (interactive commands only get #2):
+#   1. A mkdir/symlink-based lock (NOT flock) serializes heavy invocations
+#      across ALL worktrees of this repo, so N concurrent agents don't each
+#      fight for the whole machine. For CPU/memory-bound work like this, N
+#      jobs run serially with full resources each is faster in aggregate than
+#      N jobs run concurrently starved, and it removes the memory-pressure
+#      trigger behind (2) above.
+#
+#      This is deliberately NOT flock(1): flock's lock lives on a file
+#      descriptor, and that fd gets inherited into any grandchild the locked
+#      command forks. Bazel forks exactly such a grandchild — its persistent
+#      background server — which never closes the inherited fd, so the
+#      server outlives the client and keeps the lock held indefinitely.
+#      Confirmed for real with flock: a *second, later, unrelated* `bazel`
+#      invocation against a workspace whose server was still warm from an
+#      earlier command hung waiting on a lock that idle server was still
+#      holding. A plain lock path + recorded holder PID, released by this
+#      script's own `trap ... EXIT` when the CLIENT (not the server) exits,
+#      has no fd for anything to inherit — it doesn't care what the server
+#      does after.
+#
+#      The lock itself is a symlink (`ln -s "$$:<starttime>" "$lock_path"`),
+#      not a directory containing a separately-written pid file. Symlink
+#      creation is a single atomic syscall that fails outright (EEXIST) if
+#      the target already exists — there is never a window where the lock is
+#      visible to a waiter before its payload (the holder's pid) is. An
+#      earlier version used `mkdir "$lock_dir"` followed by a later
+#      `echo "$$" > "$lock_dir/pid"`; a SIGKILL/OOM-kill between those two
+#      steps (exactly the failure mode this script exists to guard against)
+#      left a lock directory with an empty pid file that no later contender
+#      could ever identify as stale, wedging the lock forever. (A
+#      stage-in-temp-dir-then-`mv`-into-place scheme would also close this,
+#      but `mv`'s "move into an existing directory" fallback behavior — not
+#      just a GNU-ism, see POSIX mv(1) — makes that only safe with GNU's
+#      `-T`/`--no-target-directory`, which isn't portable to BSD/macOS `mv`.
+#      The symlink never has that ambiguity on any platform.)
+#
+#      A holder is considered live only if its pid is running AND (where
+#      /proc is available) its recorded process start time still matches —
+#      otherwise the lock is stale and reclaimed. This also closes the
+#      empty-pid-file failure mode above (an old-format or hand-created lock
+#      dir with no readable payload parses as an empty/unknown pid, which is
+#      always treated as dead) and guards against PID reuse: if the true
+#      holder dies and the kernel recycles its pid before a waiter checks, a
+#      start-time mismatch still marks the lock reclaimable rather than
+#      handing another worktree's live process a false "still held" verdict.
+#      On non-Linux systems without /proc this degrades to pid-only
+#      liveness (unchanged, pre-existing behavior — not a regression).
+#
+#      `ln -s TARGET LINKPATH` does NOT fail when LINKPATH is an existing
+#      directory — POSIX/GNU `ln` instead silently creates a symlink named
+#      after TARGET's basename INSIDE that directory, and returns exit 0 as
+#      if it had created LINKPATH itself. Reproduced directly: `ln -s
+#      "111:222" some_dir` and a second `ln -s "333:444" some_dir` both
+#      "succeed" with no collision ever detected. The OLD lock format
+#      (mkdir-based, superseded by this symlink scheme) used a directory at
+#      this exact default path, so any leftover directory there — from that
+#      old format, from a crash before this fix landed, or from anything
+#      else that happens to create a plain directory at the lock path —
+#      would make every `ln -s` against it report false success forever,
+#      permanently defeating the lock with zero error output (reproduced
+#      end-to-end: two concurrent `bazel build`s ran fully overlapped against
+#      a pre-existing plain directory at the lock path). Two defenses, both
+#      needed:
+#        (a) at the top of each loop iteration, before ever calling `ln -s`,
+#            a pre-existing non-symlink at the lock path is proactively
+#            removed as reclaimable garbage;
+#        (b) after `ln -s` reports success, the lock path is verified to
+#            actually BE the symlink just created — `[ -L "$lock_path" ]`
+#            and `readlink "$lock_path"` matching exactly what was written —
+#            before treating the lock as acquired. If either check fails
+#            (e.g. a fresh directory or symlink from another process raced
+#            in between (a) and the `ln -s` call), the loop retries instead
+#            of proceeding on a false "acquired" signal.
+#
+#      A waiter that has been blocked longer than $BAZEL_LOCK_WAIT_TIMEOUT
+#      (default 10800s / 3h — 3x BAZEL_TIMEOUT's own 60m default, to tolerate
+#      a realistic queue of several full-length legitimately-queued batch
+#      jobs ahead of this one before concluding something is actually stuck,
+#      rather than false-triggering on ordinary queuing depth) gives up with
+#      a clear, actionable error instead of spinning on `sleep 1` forever —
+#      e.g. if a stale lock's directory couldn't be removed (permissions)
+#      the old code silently swallowed that failure and hung indefinitely,
+#      indistinguishable from a legitimately long build.
+#   2. A hard resource cap matching this repo's real CI (stelekit is a public
+#      GitHub repo → GH-hosted standard runner = 4 vCPU / 16GB, not the
+#      private-repo tier's 2 vCPU/8GB) via a systemd --user --scope cgroup,
+#      so a local run either fits the same budget CI has or fails the same
+#      way CI would — instead of quietly succeeding on this box's 61GB/24
+#      cores while CI OOMs, or thrashing for hours instead of failing fast.
+#      Applies to both batch and interactive commands. If systemd-run / a
+#      systemd --user session isn't available (macOS, or Linux without one),
+#      this is skipped with a one-line stderr warning rather than silently —
+#      the header above promises CI-equivalent limits, and a dev shouldn't be
+#      misled into thinking they have them when they don't.
+#   3. `timeout` — a hard wall-clock ceiling so nothing can hang unattended
+#      for hours regardless of cause (GC thrashing, a genuine deadlock, or a
+#      legitimately-too-slow build). This is the one that would have killed
+#      incident (2) outright at the 60-minute mark instead of 17 hours.
+#      Batch commands only — see the interactive-class note above.
+#
+# None of this runs under CI: each CI job gets a fresh, dedicated, isolated
+# VM with known fixed resources — there's no other worktree to contend with,
+# which is the only problem layer 1/2 solve, and CI already has its own
+# 30-60 minute job timeouts covering what layer 3 solves locally.
+# GITHUB_ACTIONS is set by GitHub Actions specifically (unlike generic $CI,
+# which some local tools also set).
+#
+# Escape hatches / tuning, in case any of these is wrong for a specific
+# deliberate invocation:
+#   BAZEL_SKIP_LOCK=1            skip the cross-worktree lock entirely
+#   BAZEL_NO_CI_LIMITS=1         skip the systemd cgroup resource cap
+#   BAZEL_TIMEOUT=<duration>     wall-clock ceiling for `timeout`(1) on batch
+#                                commands, e.g. "2h"; "0" disables it
+#   BAZEL_LOCK_WAIT_TIMEOUT=<s>  max seconds to wait for the lock before
+#                                giving up with an error (default 10800)
+#   BAZEL_CI_MEM_MAX=<value>     systemd MemoryMax= (default 16G)
+#   BAZEL_CI_CPU_QUOTA=<value>   systemd CPUQuota= (default 400%)
+#   BAZEL_LOCAL_CONCURRENCY_LOCK=<path>  override the lock path
+#
+# Regression tests: tools/bazel_test.sh (run with `bash tools/bazel_test.sh`).
+set -euo pipefail
+
+if [ -z "${BAZEL_REAL:-}" ]; then
+  echo "tools/bazel: \$BAZEL_REAL is not set — this script must be invoked by bazel/bazelisk, not run directly." >&2
+  exit 1
+fi
+
+# Find the command verb, skipping any leading startup flags (valid Bazel CLI
+# grammar is `bazel [startup_options] command ...`, e.g.
+# `bazel --output_base=/tmp/x build //...`). This doesn't handle a startup
+# flag whose value is a separate token (`--output_base /tmp/x build ...`) —
+# not worth the extra parsing complexity for a case Bazel's own docs steer
+# users away from (the `--flag=value` form is preferred) and that doesn't
+# appear anywhere in this repo's own tooling.
+cmd=""
+for arg in "$@"; do
+  case "$arg" in
+    -*) continue ;;
+    *)
+      cmd="$arg"
+      break
+      ;;
+  esac
+done
+
+case "$cmd" in
+  build | test | coverage)
+    heavy_class="batch"
+    ;;
+  run | mobile-install)
+    heavy_class="interactive"
+    ;;
+  *)
+    heavy_class="none"
+    ;;
+esac
+
+if [ "$heavy_class" = "none" ] || [ -n "${GITHUB_ACTIONS:-}" ]; then
+  exec "$BAZEL_REAL" "$@"
+fi
+
+# ── Build the command to run, innermost-out: real bazel -> timeout -> cgroup scope ──
+
+run=("$BAZEL_REAL" "$@")
+
+if [ "$heavy_class" = "batch" ]; then
+  timeout_dur="${BAZEL_TIMEOUT:-60m}"
+  if [ "$timeout_dur" != "0" ] && command -v timeout >/dev/null 2>&1; then
+    run=(timeout "$timeout_dur" "${run[@]}")
+  fi
+fi
+
+mem_max="${BAZEL_CI_MEM_MAX:-16G}"
+cpu_quota="${BAZEL_CI_CPU_QUOTA:-400%}"
+if [ -z "${BAZEL_NO_CI_LIMITS:-}" ]; then
+  if command -v systemd-run >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
+    run=(systemd-run --user --scope --quiet -p "MemoryMax=${mem_max}" -p "CPUQuota=${cpu_quota}" -- "${run[@]}")
+  else
+    echo "tools/bazel: WARNING: systemd-run / a systemd --user session is not available on this platform — the CI-equivalent resource cap (${mem_max} memory / ${cpu_quota} CPU) is NOT being enforced. Set BAZEL_NO_CI_LIMITS=1 to silence this warning." >&2
+  fi
+fi
+
+if [ "$heavy_class" = "interactive" ]; then
+  # run/mobile-install: resource-capped above, but deliberately never locked
+  # or time-boxed — see the header comment's "interactive" class note.
+  exec "${run[@]}"
+fi
+
+# From here on: heavy_class == "batch" (build/test/coverage).
+
+if [ -n "${BAZEL_SKIP_LOCK:-}" ]; then
+  exec "${run[@]}"
+fi
+
+# ── Cross-worktree lock ──
+
+proc_available=0
+[ -d /proc/self ] && proc_available=1
+
+# Prints the process start time (field 20 of /proc/<pid>/stat, after the
+# "pid (comm) " prefix — stripped via the LAST ") " so a comm containing
+# spaces/parens doesn't shift the field offsets) for PID-reuse detection.
+proc_start_time() {
+  local pid="$1" stat_line
+  stat_line=$(cat "/proc/$pid/stat" 2>/dev/null) || return 1
+  stat_line="${stat_line##*) }"
+  # shellcheck disable=SC2086
+  set -- $stat_line
+  printf '%s\n' "${20:-}"
+}
+
+# A lock is legitimately held only if its recorded pid is alive AND (where
+# /proc is available) its start time still matches what was recorded when it
+# acquired the lock. Any other case (dead pid, missing/unreadable start time
+# on a /proc-capable system, or a start-time mismatch from pid reuse) is
+# reclaimable. On systems without /proc this falls back to pid-only
+# liveness — a pre-existing, accepted limitation, not a regression.
+is_holder_alive() {
+  local pid="$1" recorded_start="$2" current_start
+  [ -n "$pid" ] || return 1
+  kill -0 "$pid" 2>/dev/null || return 1
+  if [ "$proc_available" -eq 1 ]; then
+    [ -n "$recorded_start" ] || return 1
+    current_start=$(proc_start_time "$pid") || current_start=""
+    [ -n "$current_start" ] && [ "$current_start" = "$recorded_start" ] || return 1
+  fi
+  return 0
+}
+
+lock_path="${BAZEL_LOCAL_CONCURRENCY_LOCK:-/tmp/.stelekit-bazel-heavy.lock.d}"
+lock_parent_dir=$(dirname "$lock_path")
+if ! mkdir -p "$lock_parent_dir" 2>/dev/null && [ ! -d "$lock_parent_dir" ]; then
+  echo "tools/bazel: FATAL: cannot create '$lock_parent_dir' (parent of lock path '$lock_path', from \$BAZEL_LOCAL_CONCURRENCY_LOCK) — check permissions or override BAZEL_LOCAL_CONCURRENCY_LOCK." >&2
+  exit 1
+fi
+
+self_start=""
+[ "$proc_available" -eq 1 ] && { self_start=$(proc_start_time "$$") || self_start=""; }
+
+wait_timeout="${BAZEL_LOCK_WAIT_TIMEOUT:-10800}"
+waited=0
+printed_wait=0
+
+while true; do
+  # Defense (a): a pre-existing non-symlink at the lock path (an old-format
+  # mkdir-based lock directory, or anything else that happens to have
+  # created a plain directory/file here) makes `ln -s` below silently
+  # "succeed" without ever creating our symlink — see the header comment.
+  # Proactively reclaim it before ever attempting `ln -s`.
+  if [ -e "$lock_path" ] && [ ! -L "$lock_path" ]; then
+    rm -rf "$lock_path" 2>/dev/null || true
+  fi
+
+  our_payload="$$:${self_start}"
+  if ln -s "$our_payload" "$lock_path" 2>/dev/null; then
+    # Defense (b): `ln -s` reports success even when $lock_path was an
+    # existing directory (it creates a symlink named after $our_payload's
+    # basename INSIDE that directory instead) — see the header comment.
+    # Verify the lock path is actually the symlink we just created, with
+    # the payload we just wrote, before trusting the exit code as proof of
+    # exclusive ownership. If either check fails, do NOT break — loop back
+    # around so the top-of-loop cleanup and a fresh `ln -s` attempt run
+    # again.
+    if [ -L "$lock_path" ] && [ "$(readlink "$lock_path" 2>/dev/null)" = "$our_payload" ]; then
+      # Lock acquired — release it when this (client) process exits,
+      # whatever the exit reason. Deliberately NOT `exec`ing the command
+      # below: this trap must still run in-process afterward to release
+      # the lock, and exec would replace this process image and skip it,
+      # leaking the lock forever. `set -e` already propagates the
+      # command's exit code without needing an explicit `exit $?`.
+      trap 'rm -rf "$lock_path" 2>/dev/null || true' EXIT
+      break
+    fi
+    continue
+  fi
+
+  payload=$(readlink "$lock_path" 2>/dev/null || true)
+  holder_pid="${payload%%:*}"
+  case "$payload" in
+    *:*) holder_start="${payload#*:}" ;;
+    *) holder_start="" ;;
+  esac
+
+  if ! is_holder_alive "$holder_pid" "$holder_start"; then
+    if ! rm -rf "$lock_path" 2>/dev/null; then
+      echo "tools/bazel: FATAL: found a stale lock at $lock_path (recorded holder pid ${holder_pid:-unknown}, no longer running) but could not remove it — check permissions, remove it manually, or rerun with BAZEL_SKIP_LOCK=1." >&2
+      exit 1
+    fi
+    continue
+  fi
+
+  if [ "$printed_wait" -eq 0 ]; then
+    echo "tools/bazel: another heavy Bazel invocation (pid ${holder_pid:-unknown}) is running on this machine (from any worktree) — waiting for $lock_path (up to ${wait_timeout}s; set BAZEL_LOCK_WAIT_TIMEOUT to change, or BAZEL_SKIP_LOCK=1 to bypass)..." >&2
+    printed_wait=1
+  fi
+  sleep 1
+  waited=$((waited + 1))
+
+  if [ "$wait_timeout" != "0" ] && [ "$waited" -ge "$wait_timeout" ]; then
+    echo "tools/bazel: FATAL: waited ${waited}s for lock $lock_path (held by pid ${holder_pid:-unknown}) — giving up. If this lock is stuck, remove it manually: rm -rf $lock_path — or bypass locking for this invocation: BAZEL_SKIP_LOCK=1 — or raise the wait bound: BAZEL_LOCK_WAIT_TIMEOUT=<seconds>." >&2
+    exit 1
+  fi
+  if [ $((waited % 60)) -eq 0 ]; then
+    echo "tools/bazel: still waiting for $lock_path after ${waited}s (holder pid ${holder_pid:-unknown})..." >&2
+  fi
+done
+
+"${run[@]}"
