@@ -434,6 +434,7 @@ fun GitSetupScreen(
                     testSuccess = testSuccess,
                     saving = saving,
                     saveError = saveError,
+                    existingRepoNeedsAllFilesAccess = existingRepoNeedsAllFilesAccess,
                     onBack = { step = 4 },
                     onTestConnection = {
                         scope.launch {
@@ -785,15 +786,20 @@ private fun Step2RepoPath(
         )
 
         if (existingRepoNeedsAllFilesAccess) {
-            Text(
-                "This folder was picked via the system document picker, so SteleKit can only " +
-                    "see its content — not open its .git as a real repository. Connecting to an " +
-                    "existing repository this way requires granting \"All files access\" " +
-                    "(Android Settings → Apps → SteleKit → Permissions → All files access), or " +
-                    "use \"Clone new repo\" instead with this same remote URL.",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.error,
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    "This folder was picked via the system document picker, so SteleKit can " +
+                        "only see its content — not open its .git as a real repository. " +
+                        "Connecting to an existing repository this way requires granting " +
+                        "\"All files access\", or use \"Clone new repo\" instead with this " +
+                        "same remote URL.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                TextButton(onClick = { dev.stapler.stelekit.platform.openAllFilesAccessSettings() }) {
+                    Text("Open \"All files access\" settings")
+                }
+            }
         } else if (detectionUnavailable) {
             Text(
                 "No .git found directly in this folder, and SteleKit can't look above it to " +
@@ -1236,11 +1242,29 @@ private fun Step5TestAndSave(
     cloneInProgress: Boolean = false,
     cloneProgress: String = "",
     cloneError: String? = null,
+    existingRepoNeedsAllFilesAccess: Boolean = false,
     onSave: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Test and save", style = MaterialTheme.typography.titleMedium)
         Text("Optionally test your connection before saving.", style = MaterialTheme.typography.bodyMedium)
+
+        // Repeats Step2RepoPath's warning here since this is where the underlying problem
+        // actually surfaces to the user — a cryptic "repository not found: .../gitshadow"
+        // from Test connection — not just at the earlier repo-path step.
+        if (existingRepoNeedsAllFilesAccess) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    "This repo was picked via the system document picker, so \"Test " +
+                        "connection\" will fail here unless \"All files access\" is granted.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                TextButton(onClick = { dev.stapler.stelekit.platform.openAllFilesAccessSettings() }) {
+                    Text("Open \"All files access\" settings")
+                }
+            }
+        }
 
         OutlinedButton(
             onClick = onTestConnection,

@@ -43,15 +43,12 @@ import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.performance.DebugBuildConfig
 import dev.stapler.stelekit.performance.DebugMenuState
 import dev.stapler.stelekit.performance.LocalSpanRecorder
-import dev.stapler.stelekit.performance.NoOpSpanRecorder
 import dev.stapler.stelekit.performance.PlatformJankStatsEffect
-import dev.stapler.stelekit.performance.SpanRecorder
 import dev.stapler.stelekit.platform.*
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.repository.*
 import dev.stapler.stelekit.ui.components.*
 import dev.stapler.stelekit.ui.components.git.GitDetectionBanner
-import dev.stapler.stelekit.ui.components.settings.ReconciliationUiState
 import dev.stapler.stelekit.ui.i18n.I18n
 import dev.stapler.stelekit.ui.i18n.LocalI18n
 import dev.stapler.stelekit.ui.i18n.t
@@ -59,8 +56,6 @@ import dev.stapler.stelekit.ui.onboarding.Onboarding
 import dev.stapler.stelekit.ui.screens.AllPagesViewModel
 import dev.stapler.stelekit.ui.screens.EmptyGraphStateScreen
 import dev.stapler.stelekit.ui.screens.LibraryStatsViewModel
-import dev.stapler.stelekit.stats.LibraryStatsProvider
-import dev.stapler.stelekit.stats.NoOpLibraryStatsProvider
 import dev.stapler.stelekit.ui.screens.JournalsViewModel
 import dev.stapler.stelekit.ui.screens.LibrarySetupScreen
 import dev.stapler.stelekit.ui.screens.PageView
@@ -68,12 +63,8 @@ import dev.stapler.stelekit.ui.screens.PermissionRecoveryScreen
 import dev.stapler.stelekit.ui.screens.SearchViewModel
 import dev.stapler.stelekit.ui.screens.VaultUnlockScreen
 import dev.stapler.stelekit.vault.VaultManager.VaultEvent
-import dev.stapler.stelekit.domain.NoOpUrlFetcher
-import dev.stapler.stelekit.domain.UrlFetcher
 import dev.stapler.stelekit.voice.VoiceCaptureState
 import dev.stapler.stelekit.voice.VoiceCaptureViewModel
-import dev.stapler.stelekit.voice.VoicePipelineConfig
-import dev.stapler.stelekit.voice.VoiceSettings
 import dev.stapler.stelekit.tags.LlmTagProvider
 import dev.stapler.stelekit.tags.TagSettings
 import dev.stapler.stelekit.tags.TagSuggestionEngine
@@ -97,64 +88,51 @@ import dev.stapler.stelekit.sections.getSectionStates
 import dev.stapler.stelekit.db.ImageImportService
 import dev.stapler.stelekit.error.toUiMessage
 import dev.stapler.stelekit.model.ImageSource
-import dev.stapler.stelekit.platform.sensor.CameraProvider
 import dev.stapler.stelekit.platform.sensor.SensorModule
 import dev.stapler.stelekit.platform.sensor.PlatformImageFile
 
-internal suspend fun executeCaptureAndImport(
-    imageImportService: ImageImportService?,
-    getActiveGraphPath: () -> String?,
-    pageUuid: String,
-    navigateAfterImport: Boolean,
-    cameraProvider: CameraProvider = SensorModule.cameraProvider,
-    onSnackbar: (String) -> Unit,
-    onNavigate: (annotationUuid: String, pageUuid: String) -> Unit,
-    onWarn: (String) -> Unit,
-) {
-    val service = imageImportService ?: run {
-        onWarn("captureAndImport called with no imageImportService")
-        return
-    }
-    val graphPath = getActiveGraphPath()?.takeIf { it.isNotEmpty() } ?: run {
-        onWarn("captureAndImport called with no active graph path")
-        return
-    }
-    when (val captured = cameraProvider.capturePhoto()) {
-        is Either.Left -> {
-            onWarn("Camera capture failed: ${captured.value.message}")
-            onSnackbar(captured.value.toUiMessage())
-        }
-        is Either.Right -> {
-            val result = service.import(
-                tempFile = captured.value,
-                graphPath = graphPath,
-                pageUuid = dev.stapler.stelekit.model.PageUuid(pageUuid),
-                source = ImageSource.CAMERA,
-                insertToJournalPage = false,
-            )
-            result.onLeft { err ->
-                onWarn("Camera image import failed: ${err.message}")
-                onSnackbar(err.toUiMessage())
-            }
-            if (navigateAfterImport) {
-                result.onRight { annotation ->
-                    onNavigate(annotation.uuid, pageUuid)
-                }
-            }
-        }
-    }
-}
-
-/**
- * Runs [importOperation] bounded by [timeoutMs], returning `null` on timeout instead of
- * hanging. Used by [dev.stapler.stelekit.ui.components.CapturePreviewDialog]'s onSave handler
- * so a stalled [ImageImportService.import] (blocked file IO, wedged DB write) can't leave the
- * importing spinner stuck forever.
- */
+/** Runs [importOperation] bounded by [timeoutMs], returning `null` on timeout instead of hanging. */
 internal suspend fun <T> withImportTimeout(
     timeoutMs: Long = 20_000L,
     importOperation: suspend () -> T,
 ): T? = withTimeoutOrNull(timeoutMs) { importOperation() }
+
+/** SAF permission was revoked after being granted — folder content is still there, just re-grant. */
+@Composable
+private fun PermissionRecoveryScreenThemed(
+    libraryDisplayName: String?,
+    folderPickError: String?,
+    onRequestFolder: () -> Unit,
+) {
+    StelekitTheme(themeMode = StelekitThemeMode.SYSTEM) {
+        PermissionRecoveryScreen(
+            folderName = libraryDisplayName,
+            onReconnectFolder = onRequestFolder,
+            onChooseDifferentFolder = onRequestFolder,
+            errorMessage = folderPickError,
+        )
+    }
+}
+
+/** First launch — no folder chosen yet. */
+@Composable
+private fun FirstLaunchSetupScreenThemed(folderPickError: String?, onRequestFolder: () -> Unit) {
+    StelekitTheme(themeMode = StelekitThemeMode.SYSTEM) {
+        LibrarySetupScreen(onChooseFolder = onRequestFolder, errorMessage = folderPickError)
+    }
+}
+
+/** Shown when the user has explicitly removed their only graph — see [StelekitApp]'s call site. */
+@Composable
+private fun EmptyGraphScreen(
+    onCreateGraph: (() -> Unit)?,
+    errorMessage: String?,
+    onTryDemo: () -> Unit,
+) {
+    StelekitTheme(themeMode = StelekitThemeMode.SYSTEM) {
+        EmptyGraphStateScreen(onCreateGraph = onCreateGraph, onTryDemo = onTryDemo, errorMessage = errorMessage)
+    }
+}
 
 /**
  * Root Composable for the Logseq application.
@@ -164,98 +142,10 @@ internal suspend fun <T> withImportTimeout(
 fun StelekitApp(
     fileSystem: FileSystem,
     graphPath: String,
-    graphManager: GraphManager? = null,
-    pluginHost: PluginHost = remember { PluginHost() },
-    encryptionManager: EncryptionManager = remember { DefaultEncryptionManager() },
-    urlFetcher: UrlFetcher = remember { NoOpUrlFetcher() },
-    libraryStatsProvider: LibraryStatsProvider = NoOpLibraryStatsProvider,
-    voicePipeline: VoicePipelineConfig = remember { VoicePipelineConfig() },
-    voiceSettings: VoiceSettings? = null,
-    onRebuildVoicePipeline: (() -> Unit)? = null,
-    deviceSttAvailable: Boolean = false,
-    deviceLlmAvailable: Boolean = false,
-    spanRecorder: SpanRecorder = NoOpSpanRecorder,
-    /** Called once the GraphManager instance is ready. Used by the host Activity for onTrimMemory. */
-    onGraphManagerReady: ((GraphManager) -> Unit)? = null,
-    /**
-     * Registers a memory-pressure handler. The lambda receives a [() -> Unit] callback;
-     * the host Activity should store it and invoke it when onTrimMemory fires. Mirrors the
-     * [onGraphManagerReady] pattern.
-     */
-    onMemoryPressure: (((() -> Unit) -> Unit))? = null,
-    /**
-     * Platform-specific git implementation. Pass [JvmGitRepository] on Desktop,
-     * [AndroidGitRepository] on Android. When null, git sync is disabled.
-     */
-    gitRepository: dev.stapler.stelekit.git.GitRepository? = null,
-    /**
-     * Platform-specific crypto engine for paranoid-mode vault operations.
-     * Pass [JvmCryptoEngine] on Desktop. Android support is pending an AndroidCryptoEngine.
-     * When null, paranoid mode is unavailable.
-     */
-    cryptoEngine: dev.stapler.stelekit.vault.CryptoEngine? = null,
-    /**
-     * Platform-specific media attachment service. When non-null the attach-image button
-     * is shown in [MobileBlockToolbar] on the PageView screen.
-     *
-     * Pass [JvmMediaAttachmentService] on Desktop.
-     * Pass the Android service (from [rememberAndroidMediaAttachmentService]) on Android.
-     * Pass null (default) to hide the button entirely.
-     */
-    attachmentService: dev.stapler.stelekit.service.MediaAttachmentService? = null,
-    /**
-     * Platform-specific Google OAuth manager. When non-null the Google Account settings
-     * panel becomes interactive (Connect / Disconnect buttons are wired up).
-     *
-     * Pass [AndroidGoogleAuthManager] on Android, [JvmGoogleAuthManager] on Desktop.
-     * When null (default), the panel is rendered but the buttons are no-ops.
-     */
-    googleAuthManager: dev.stapler.stelekit.platform.google.GoogleAuthManager? = null,
-    requestCameraPermission: (suspend () -> Boolean)? = null,
-    /**
-     * Count of locally-dirty files not yet synced to the remote (web only). When non-null,
-     * [StelekitViewModel.syncState] upgrades an otherwise-[dev.stapler.stelekit.git.model.SyncState.Idle]
-     * state to [dev.stapler.stelekit.git.model.SyncState.LocalChangesPending] while this count is
-     * nonzero. Pass [dev.stapler.stelekit.platform.PlatformFileSystem.dirtyFileCountFlow] on web.
-     * When null (default — JVM/Android), git sync state is unaffected.
-     */
-    localChangesCountFlow: kotlinx.coroutines.flow.StateFlow<Int>? = null,
-    /**
-     * Current [HostAccessState] for the active graph's `web-local-folder-livesync` host directory
-     * connection (web only). Pass `PlatformFileSystem.hostDirectorySync.hostAccessStateFlow` on
-     * web. When null (default — JVM/Android/iOS), `FolderSyncStatusBadge` renders nothing.
-     */
-    hostAccessStateFlow: kotlinx.coroutines.flow.StateFlow<HostAccessState>? = null,
-    /**
-     * Count of edits queued for push to the connected host directory (web only). Pass
-     * `PlatformFileSystem.hostDirectorySync.hostWritePendingCountFlow` on web. When null (default
-     * — JVM/Android/iOS), `FolderSyncStatusBadge` treats the pending count as zero.
-     */
-    hostWritePendingCountFlow: kotlinx.coroutines.flow.StateFlow<Int>? = null,
-    /**
-     * Epic 4.4 (Task 4.4.1c): `true` while a write-through flush is stuck (transient failure,
-     * permission nominally still `Granted`) — web only. Pass
-     * `PlatformFileSystem.hostDirectorySync.hostWriteStuckFlow` on web. When null (default —
-     * JVM/Android/iOS), `FolderSyncStatusBadge` never renders the `SyncDegraded` row.
-     */
-    hostWriteStuckFlow: kotlinx.coroutines.flow.StateFlow<Boolean>? = null,
-    /**
-     * Called when the user taps `FolderSyncStatusBadge`'s reconnect/grant-access affordance (web
-     * only) — should invoke `PlatformFileSystem.hostDirectorySync.requestHostDirectoryAccess`.
-     * When null (default — JVM/Android/iOS), the badge's click affordance is disabled (it never
-     * renders on these platforms anyway, since [hostAccessStateFlow] stays null).
-     */
-    onReconnectHostDirectory: (() -> Unit)? = null,
-    /**
-     * Task 3.1.1c: "Enable live folder sync" affordance for an already-populated graph — invoked
-     * from `SettingsDialog`'s `FolderSyncSettings` section (web only). Should perform the real
-     * `showDirectoryPicker → HostDirectorySync.connectHostDirectory → runHostReconciliation`
-     * sequence and resolve to the terminal [ReconciliationUiState]. Pass a lambda wrapping
-     * `PlatformFileSystem.hostDirectorySync.connectHostDirectory` on web. When null (default —
-     * JVM/Android/iOS), `FolderSyncSettings`'s call site in `SettingsDialog` renders nothing.
-     */
-    onConnectHostDirectory: (suspend () -> ReconciliationUiState)? = null,
+    deps: StelekitAppDeps = remember { StelekitAppDeps() },
 ) {
+    val injectedGraphManager = deps.graphManager
+
     val platformSettings = remember { PlatformSettings() }
     val scope = rememberCoroutineScope()
 
@@ -263,10 +153,10 @@ fun StelekitApp(
     remember { registerAllMigrations() }
 
     // Create GraphManager - this owns all graph lifecycle
-    val graphManager = graphManager ?: remember(platformSettings, fileSystem) {
+    val graphManager = injectedGraphManager ?: remember(platformSettings, fileSystem) {
         GraphManager(platformSettings, DriverFactory(), fileSystem)
     }
-    LaunchedEffect(graphManager) { onGraphManagerReady?.invoke(graphManager) }
+    LaunchedEffect(graphManager) { deps.lifecycleHooks.onGraphManagerReady?.invoke(graphManager) }
 
     // Observe the active repository set
     val activeRepoSet by graphManager.activeRepositorySet.collectAsState()
@@ -324,7 +214,6 @@ fun StelekitApp(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    // Suspend callback used by both setup and recovery screens
     val onFolderPicked: suspend () -> Unit = {
         folderPickError = null
         appLogger.info("onFolderPicked: launching folder picker")
@@ -352,22 +241,13 @@ fun StelekitApp(
     // Non-SAF paths (e.g. /data/local/tmp/ benchmark paths or desktop paths) don't
     // require a document-tree grant, so skip the screen for those.
     if (!permissionGranted && (isSafPath || currentGraphPath.isEmpty())) {
-        StelekitTheme(themeMode = StelekitThemeMode.SYSTEM) {
-            if (isSafPath) {
-                // Permission was revoked — show recovery screen
-                PermissionRecoveryScreen(
-                    folderName = fileSystem.getLibraryDisplayName(),
-                    onReconnectFolder = { fileSystem.requestDirectoryPickerNow(); scope.launch { onFolderPicked() } },
-                    onChooseDifferentFolder = { fileSystem.requestDirectoryPickerNow(); scope.launch { onFolderPicked() } },
-                    errorMessage = folderPickError,
-                )
-            } else {
-                // First launch — no folder chosen yet
-                LibrarySetupScreen(
-                    onChooseFolder = { fileSystem.requestDirectoryPickerNow(); scope.launch { onFolderPicked() } },
-                    errorMessage = folderPickError
-                )
-            }
+        val onRequestFolder: () -> Unit = { fileSystem.requestDirectoryPickerNow(); scope.launch { onFolderPicked() } }
+        if (isSafPath) {
+            // Permission was revoked — show recovery screen
+            PermissionRecoveryScreenThemed(fileSystem.getLibraryDisplayName(), folderPickError, onRequestFolder)
+        } else {
+            // First launch — no folder chosen yet
+            FirstLaunchSetupScreenThemed(folderPickError, onRequestFolder)
         }
         return
     }
@@ -398,37 +278,35 @@ fun StelekitApp(
     val graphsExplicitlyEmptied by graphManager.graphsExplicitlyEmptied.collectAsState()
     if (graphsExplicitlyEmptied && activeGraphId == null) {
         var emptyStateError by remember { mutableStateOf<String?>(null) }
-        StelekitTheme(themeMode = StelekitThemeMode.SYSTEM) {
-            EmptyGraphStateScreen(
-                onCreateGraph = if (fileSystem.supportsNativeDirectoryPicker) {
-                    {
-                        scope.launch {
-                            val path = fileSystem.pickDirectoryAsync()
-                            if (path != null) {
-                                emptyStateError = null
-                                val graphId = graphManager.addGraph(path)
-                                graphManager.switchGraph(graphId)
-                            } else {
-                                emptyStateError = fileSystem.consumeLastPickerError()
-                            }
-                        }
-                    }
-                } else null,
-                onTryDemo = {
+        EmptyGraphScreen(
+            onCreateGraph = if (fileSystem.supportsNativeDirectoryPicker) {
+                {
                     scope.launch {
-                        try {
-                            val graphId = graphManager.addDemoGraph()
+                        val path = fileSystem.pickDirectoryAsync()
+                        if (path != null) {
+                            emptyStateError = null
+                            val graphId = graphManager.addGraph(path)
                             graphManager.switchGraph(graphId)
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (e: Exception) {
-                            emptyStateError = "Could not load the demo graph: ${e.message}"
+                        } else {
+                            emptyStateError = fileSystem.consumeLastPickerError()
                         }
                     }
-                },
-                errorMessage = emptyStateError,
-            )
-        }
+                }
+            } else null,
+            errorMessage = emptyStateError,
+            onTryDemo = {
+                scope.launch {
+                    try {
+                        val graphId = graphManager.addDemoGraph()
+                        graphManager.switchGraph(graphId)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        emptyStateError = "Could not load the demo graph: ${e.message}"
+                    }
+                }
+            },
+        )
         return
     }
 
@@ -445,33 +323,18 @@ fun StelekitApp(
     // Use key(graphId) to recreate ViewModels when graph changes
     key(activeGraphId) {
         GraphContent(
-            repos = repos,
-            fileSystem = fileSystem,
-            platformSettings = platformSettings,
-            pluginHost = pluginHost,
-            encryptionManager = encryptionManager,
-            graphManager = graphManager,
-            notificationManager = notificationManager,
-            urlFetcher = urlFetcher,
-            libraryStatsProvider = libraryStatsProvider,
-            voicePipeline = voicePipeline,
-            voiceSettings = voiceSettings,
-            onRebuildVoicePipeline = onRebuildVoicePipeline,
-            deviceSttAvailable = deviceSttAvailable,
-            deviceLlmAvailable = deviceLlmAvailable,
-            spanRecorder = spanRecorder,
-            onMemoryPressure = onMemoryPressure,
-            gitRepository = gitRepository,
-            cryptoEngine = cryptoEngine,
-            attachmentService = attachmentService,
-            googleAuthManager = googleAuthManager,
-            requestCameraPermission = requestCameraPermission,
-            localChangesCountFlow = localChangesCountFlow,
-            hostAccessStateFlow = hostAccessStateFlow,
-            hostWritePendingCountFlow = hostWritePendingCountFlow,
-            hostWriteStuckFlow = hostWriteStuckFlow,
-            onReconnectHostDirectory = onReconnectHostDirectory,
-            onConnectHostDirectory = onConnectHostDirectory,
+            GraphContentDeps(
+                repos = repos,
+                fileSystem = fileSystem,
+                platformSettings = platformSettings,
+                graphManager = graphManager,
+                notificationManager = notificationManager,
+                onMemoryPressure = deps.lifecycleHooks.onMemoryPressure,
+                coreServices = deps.coreServices,
+                voiceConfig = deps.voiceConfig,
+                platformIntegrations = deps.platformIntegrations,
+                webSyncDeps = deps.webSyncDeps,
+            )
         )
     }
 }
@@ -484,35 +347,35 @@ fun StelekitApp(
  * See ADR-001 for decomposition rationale.
  */
 @Composable
-private fun GraphContent(
-    repos: RepositorySet,
-    fileSystem: FileSystem,
-    platformSettings: Settings,
-    pluginHost: PluginHost,
-    encryptionManager: EncryptionManager,
-    graphManager: GraphManager,
-    notificationManager: NotificationManager,
-    urlFetcher: UrlFetcher = NoOpUrlFetcher(),
-    libraryStatsProvider: LibraryStatsProvider = NoOpLibraryStatsProvider,
-    voicePipeline: VoicePipelineConfig = VoicePipelineConfig(),
-    voiceSettings: VoiceSettings? = null,
-    onRebuildVoicePipeline: (() -> Unit)? = null,
-    deviceSttAvailable: Boolean = false,
-    deviceLlmAvailable: Boolean = false,
-    spanRecorder: SpanRecorder = NoOpSpanRecorder,
-    onMemoryPressure: (((() -> Unit) -> Unit))? = null,
-    gitRepository: dev.stapler.stelekit.git.GitRepository? = null,
-    cryptoEngine: dev.stapler.stelekit.vault.CryptoEngine? = null,
-    attachmentService: dev.stapler.stelekit.service.MediaAttachmentService? = null,
-    googleAuthManager: dev.stapler.stelekit.platform.google.GoogleAuthManager? = null,
-    requestCameraPermission: (suspend () -> Boolean)? = null,
-    localChangesCountFlow: kotlinx.coroutines.flow.StateFlow<Int>? = null,
-    hostAccessStateFlow: kotlinx.coroutines.flow.StateFlow<HostAccessState>? = null,
-    hostWritePendingCountFlow: kotlinx.coroutines.flow.StateFlow<Int>? = null,
-    hostWriteStuckFlow: kotlinx.coroutines.flow.StateFlow<Boolean>? = null,
-    onReconnectHostDirectory: (() -> Unit)? = null,
-    onConnectHostDirectory: (suspend () -> ReconciliationUiState)? = null,
-) {
+private fun GraphContent(deps: GraphContentDeps) {
+    val repos = deps.repos
+    val fileSystem = deps.fileSystem
+    val platformSettings = deps.platformSettings
+    val graphManager = deps.graphManager
+    val notificationManager = deps.notificationManager
+    val onMemoryPressure = deps.onMemoryPressure
+    val pluginHost = deps.coreServices.pluginHost
+    val encryptionManager = deps.coreServices.encryptionManager
+    val urlFetcher = deps.coreServices.urlFetcher
+    val libraryStatsProvider = deps.coreServices.libraryStatsProvider
+    val voicePipeline = deps.coreServices.voicePipeline
+    val spanRecorder = deps.coreServices.spanRecorder
+    val voiceSettings = deps.voiceConfig.voiceSettings
+    val onRebuildVoicePipeline = deps.voiceConfig.onRebuildVoicePipeline
+    val deviceSttAvailable = deps.voiceConfig.deviceSttAvailable
+    val deviceLlmAvailable = deps.voiceConfig.deviceLlmAvailable
+    val gitRepository = deps.platformIntegrations.gitRepository
+    val cryptoEngine = deps.platformIntegrations.cryptoEngine
+    val attachmentService = deps.platformIntegrations.attachmentService
+    val googleAuthManager = deps.platformIntegrations.googleAuthManager
+    val requestCameraPermission = deps.platformIntegrations.requestCameraPermission
+    val localChangesCountFlow = deps.webSyncDeps.localChangesCountFlow
+    val hostAccessStateFlow = deps.webSyncDeps.hostAccessStateFlow
+    val hostWritePendingCountFlow = deps.webSyncDeps.hostWritePendingCountFlow
+    val hostWriteStuckFlow = deps.webSyncDeps.hostWriteStuckFlow
+    val onReconnectHostDirectory = deps.webSyncDeps.onReconnectHostDirectory
+    val onConnectHostDirectory = deps.webSyncDeps.onConnectHostDirectory
+
     // Epic 2.3 (Task 2.3.1c): resolved here (not passed as raw StateFlow into StelekitViewModel,
     // unlike localChangesCountFlow) — FolderSyncStatusBadge is a pure sidebar-header composable,
     // not part of syncState, so collectAsState() directly feeds its call site below.
@@ -1356,16 +1219,18 @@ private fun GraphContent(
                         .onKeyEvent { keyEvent ->
                             onGraphKeyEvent(
                                 keyEvent = keyEvent,
-                                onCommandPalette = { viewModel.setCommandPaletteVisible(true) },
-                                onSearch = { viewModel.setSearchDialogVisible(true) },
-                                onToggleSidebar = { viewModel.toggleSidebar() },
-                                onToggleRightSidebar = { viewModel.toggleRightSidebar() },
-                                onSettings = { viewModel.setSettingsVisible(true) },
-                                onUndo = { journalsViewModel.undo() },
-                                onRedo = { journalsViewModel.redo() },
-                                onBack = { viewModel.goBack() },
-                                onForward = { viewModel.goForward() },
-                                onDebugMenu = { viewModel.showDebugMenu() }
+                                handlers = GraphKeyEventHandlers(
+                                    onCommandPalette = { viewModel.setCommandPaletteVisible(true) },
+                                    onSearch = { viewModel.setSearchDialogVisible(true) },
+                                    onToggleSidebar = { viewModel.toggleSidebar() },
+                                    onToggleRightSidebar = { viewModel.toggleRightSidebar() },
+                                    onSettings = { viewModel.setSettingsVisible(true) },
+                                    onUndo = { journalsViewModel.undo() },
+                                    onRedo = { journalsViewModel.redo() },
+                                    onBack = { viewModel.goBack() },
+                                    onForward = { viewModel.goForward() },
+                                    onDebugMenu = { viewModel.showDebugMenu() },
+                                ),
                             )
                         }
                 ) {
@@ -1838,9 +1703,8 @@ private fun GraphContent(
                                             // this scope (a plain rememberCoroutineScope() with no
                                             // CoroutineExceptionHandler) would otherwise kill the
                                             // Android process and, even short of a crash, skip the
-                                            // isCaptureImporting reset — the exact "stuck spinner"
-                                            // class of hang this PR fixes, reintroduced one step
-                                            // downstream of the capture dialog itself.
+                                            // isCaptureImporting reset, leaving the save button stuck
+                                            // in its importing state.
                                             try {
                                                 val graphPath = graphManager.getActiveGraphInfo()?.path
                                                 if (graphPath == null) {
@@ -1968,63 +1832,71 @@ private fun GraphContent(
                         viewModel = viewModel,
                         notificationManager = notificationManager,
                         fileSystem = fileSystem,
-                        voiceSettings = voiceSettings,
-                        llmCredentialStore = llmCredentialStore,
-                        llmProviderRegistry = llmProviderRegistry,
-                        llmSettings = llmSettings,
-                        onLlmCredentialsChange = { llmRegistryRefreshToken++ },
-                        onRebuildVoicePipeline = onRebuildVoicePipeline,
-                        deviceSttAvailable = deviceSttAvailable,
-                        deviceLlmAvailable = deviceLlmAvailable,
                         frameMetric = frameMetricState,
-                        debugState = debugMenuState,
-                        loadPageBlocks = { pageUuidStr -> repos.blockRepository.getBlocksForPage(dev.stapler.stelekit.model.PageUuid(pageUuidStr)) },
-                        onDebugStateChange = { newState ->
-                            debugMenuState = newState
-                            viewModel.onDebugMenuStateChange(newState)
-                        },
-                        isParanoidMode = isParanoidMode,
-                        isVaultUnlocked = vaultState is VaultState.Unlocked,
-                        onCreateVault = onCreateVault,
-                        onAddKeyslot = onAddKeyslot,
-                        onRemoveKeyslot = onRemoveKeyslot,
-                        onLockVault = onLockVault,
-                        onListActiveSlots = onListActiveSlots,
-                        isGoogleAuthenticated = isGoogleAuthenticated,
-                        googleConnectedEmail = googleConnectedEmail,
-                        isGoogleConnecting = isGoogleConnecting,
-                        googleAuthError = googleAuthError,
-                        onConnectGoogle = onConnectGoogle,
-                        onDisconnectGoogle = onDisconnectGoogle,
-                        gitSyncService = gitSyncService,
-                        gitRepository = gitRepository,
-                        gitConfigRepository = gitConfigRepository,
-                        activeGraphId = activeGraphId?.value,
-                        onCloneAndAdd = if (gitRepository != null) {
-                            { url, localPath, auth, onProgress ->
-                                graphManager.cloneAndAdd(gitRepository, url, localPath, auth, onProgress).map { it.value }
-                            }
-                        } else null,
-                        graphPath = activeGraphPath,
-                        detectedRepoRoot = graphRegistry.graphs.firstOrNull { it.id == activeGraphId }?.detectedRepoRoot,
-                        detectedWikiSubdir = graphRegistry.graphs.firstOrNull { it.id == activeGraphId }?.detectedWikiSubdir,
-                        onCloneComplete = { newGraphId ->
-                            scope.launch { graphManager.switchGraph(GraphId(newGraphId)) }
-                        },
-                        onAuthError = { viewModel.openGitSetupForCredentials() },
-                        shareProvider = shareProvider,
-                        exportService = exportService,
-                        driveClient = null, // DriveApiClient injected from platform entry point in a future phase
-                        shareGoogleAuthManager = googleAuthManager,
-                        tagSettings = tagSettings,
-                        hasLlmKey = hasTagSuggestionLlmProviderState.value,
-                        currentPage = appState.currentPage,
-                        currentBlocks = appState.currentPage?.let {
-                            blockStateManager.blocksForPage(it.uuid.value)
-                        } ?: emptyList(),
-                        selectedBlockUuids = blockStateManager.selectedBlockUuids.collectAsState().value,
-                        hostAccessState = hostAccessState,
-                        onConnectHostDirectory = onConnectHostDirectory,
+                        deps = GraphDialogLayerDeps(
+                            settings = SettingsDialogDeps(
+                                voiceSettings = voiceSettings,
+                                llmCredentialStore = llmCredentialStore,
+                                llmProviderRegistry = llmProviderRegistry,
+                                llmSettings = llmSettings,
+                                onLlmCredentialsChange = { llmRegistryRefreshToken++ },
+                                onRebuildVoicePipeline = onRebuildVoicePipeline,
+                                deviceSttAvailable = deviceSttAvailable,
+                                deviceLlmAvailable = deviceLlmAvailable,
+                                isParanoidMode = isParanoidMode,
+                                isVaultUnlocked = vaultState is VaultState.Unlocked,
+                                onCreateVault = onCreateVault,
+                                onAddKeyslot = onAddKeyslot,
+                                onRemoveKeyslot = onRemoveKeyslot,
+                                onLockVault = onLockVault,
+                                onListActiveSlots = onListActiveSlots,
+                                isGoogleAuthenticated = isGoogleAuthenticated,
+                                googleConnectedEmail = googleConnectedEmail,
+                                isGoogleConnecting = isGoogleConnecting,
+                                googleAuthError = googleAuthError,
+                                onConnectGoogle = onConnectGoogle,
+                                onDisconnectGoogle = onDisconnectGoogle,
+                                tagSettings = tagSettings,
+                                hasLlmKey = hasTagSuggestionLlmProviderState.value,
+                                hostAccessState = hostAccessState,
+                                onConnectHostDirectory = onConnectHostDirectory,
+                            ),
+                            gitSync = GitSyncDeps(
+                                gitSyncService = gitSyncService,
+                                gitRepository = gitRepository,
+                                gitConfigRepository = gitConfigRepository,
+                                activeGraphId = activeGraphId?.value,
+                                onCloneAndAdd = if (gitRepository != null) {
+                                    { url, localPath, auth, onProgress ->
+                                        graphManager.cloneAndAdd(gitRepository, url, localPath, auth, onProgress).map { it.value }
+                                    }
+                                } else null,
+                                graphPath = activeGraphPath,
+                                detectedRepoRoot = graphRegistry.graphs.firstOrNull { it.id == activeGraphId }?.detectedRepoRoot,
+                                detectedWikiSubdir = graphRegistry.graphs.firstOrNull { it.id == activeGraphId }?.detectedWikiSubdir,
+                                onCloneComplete = { newGraphId ->
+                                    scope.launch { graphManager.switchGraph(GraphId(newGraphId)) }
+                                },
+                                onAuthError = { viewModel.openGitSetupForCredentials() },
+                            ),
+                            share = ShareDialogDeps(
+                                shareProvider = shareProvider,
+                                exportService = exportService,
+                                driveClient = null, // DriveApiClient injected from platform entry point in a future phase
+                                shareGoogleAuthManager = googleAuthManager,
+                                currentPage = appState.currentPage,
+                                currentBlocks = appState.currentPage?.let {
+                                    blockStateManager.blocksForPage(it.uuid.value)
+                                } ?: emptyList(),
+                                selectedBlockUuids = blockStateManager.selectedBlockUuids.collectAsState().value,
+                            ),
+                            debugState = debugMenuState,
+                            loadPageBlocks = { pageUuidStr -> repos.blockRepository.getBlocksForPage(dev.stapler.stelekit.model.PageUuid(pageUuidStr)) },
+                            onDebugStateChange = { newState ->
+                                debugMenuState = newState
+                                viewModel.onDebugMenuStateChange(newState)
+                            },
+                        ),
                     )
 
                     if (showAddGraphDialog) {
@@ -2054,42 +1926,60 @@ private fun GraphContent(
     } // CompositionLocalProvider(LocalSpanRecorder, LocalFileSystem)
 }
 
+/** Bundles [onGraphKeyEvent]'s per-shortcut callbacks (Parameter Object pattern). */
+private data class GraphKeyEventHandlers(
+    val onCommandPalette: () -> Unit,
+    val onSearch: () -> Unit,
+    val onToggleSidebar: () -> Unit,
+    val onToggleRightSidebar: () -> Unit,
+    val onSettings: () -> Unit,
+    val onUndo: () -> Unit,
+    val onRedo: () -> Unit,
+    val onBack: () -> Unit,
+    val onForward: () -> Unit,
+    val onDebugMenu: () -> Unit = {},
+)
+
 /**
  * Pure function — handles keyboard shortcuts for the graph content area.
  * Extracted from GraphContent to make shortcut logic testable without a Compose runtime.
  * See ADR-001.
  */
-private fun onGraphKeyEvent(
-    keyEvent: KeyEvent,
-    onCommandPalette: () -> Unit,
-    onSearch: () -> Unit,
-    onToggleSidebar: () -> Unit,
-    onToggleRightSidebar: () -> Unit,
-    onSettings: () -> Unit,
-    onUndo: () -> Unit,
-    onRedo: () -> Unit,
-    onBack: () -> Unit,
-    onForward: () -> Unit,
-    onDebugMenu: () -> Unit = {},
-): Boolean {
+private fun onGraphKeyEvent(keyEvent: KeyEvent, handlers: GraphKeyEventHandlers): Boolean {
     if (keyEvent.type != KeyEventType.KeyDown) return false
     val isMod = keyEvent.isCtrlPressed || keyEvent.isMetaPressed
     val isShift = keyEvent.isShiftPressed
     return when {
-        isMod && isShift && keyEvent.key == Key.P -> { onCommandPalette(); true }
-        isMod && keyEvent.key == Key.K -> { onSearch(); true }
-        isMod && isShift && keyEvent.key == Key.B -> { onToggleRightSidebar(); true }
-        isMod && keyEvent.key == Key.B -> { onToggleSidebar(); true }
-        isMod && keyEvent.key == Key.Comma -> { onSettings(); true }
-        isMod && !isShift && keyEvent.key == Key.Z -> { onUndo(); true }
-        (isMod && isShift && keyEvent.key == Key.Z) || (isMod && keyEvent.key == Key.Y) -> { onRedo(); true }
+        isMod && isShift && keyEvent.key == Key.P -> { handlers.onCommandPalette(); true }
+        isMod && keyEvent.key == Key.K -> { handlers.onSearch(); true }
+        isMod && isShift && keyEvent.key == Key.B -> { handlers.onToggleRightSidebar(); true }
+        isMod && keyEvent.key == Key.B -> { handlers.onToggleSidebar(); true }
+        isMod && keyEvent.key == Key.Comma -> { handlers.onSettings(); true }
+        isMod && !isShift && keyEvent.key == Key.Z -> { handlers.onUndo(); true }
+        (isMod && isShift && keyEvent.key == Key.Z) || (isMod && keyEvent.key == Key.Y) -> { handlers.onRedo(); true }
         (keyEvent.isAltPressed && keyEvent.key == Key.DirectionLeft) ||
-        (isMod && keyEvent.key == Key.LeftBracket) -> { onBack(); true }
+        (isMod && keyEvent.key == Key.LeftBracket) -> { handlers.onBack(); true }
         (keyEvent.isAltPressed && keyEvent.key == Key.DirectionRight) ||
-        (isMod && keyEvent.key == Key.RightBracket) -> { onForward(); true }
-        isMod && isShift && keyEvent.key == Key.D -> { onDebugMenu(); true }
+        (isMod && keyEvent.key == Key.RightBracket) -> { handlers.onForward(); true }
+        isMod && isShift && keyEvent.key == Key.D -> { handlers.onDebugMenu(); true }
         else -> false
     }
+}
+
+@Composable
+private fun RowScope.EncryptionStatus(isEncrypted: Boolean) {
+    Icon(
+        imageVector = if (isEncrypted) Icons.Default.Lock else Icons.Default.LockOpen,
+        contentDescription = null,
+        modifier = Modifier.size(14.dp),
+        tint = if (isEncrypted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Spacer(modifier = Modifier.width(8.dp))
+    Text(
+        text = if (isEncrypted) t("status.encrypted") else t("status.not_encrypted"),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
 }
 
 /**
@@ -2111,18 +2001,7 @@ private fun StatusBarContent(
             .padding(horizontal = 16.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(
-            imageVector = if (isEncrypted) Icons.Default.Lock else Icons.Default.LockOpen,
-            contentDescription = null,
-            modifier = Modifier.size(14.dp),
-            tint = if (isEncrypted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(modifier = Modifier.width(8.dp))
-        Text(
-            text = if (isEncrypted) t("status.encrypted") else t("status.not_encrypted"),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        EncryptionStatus(isEncrypted)
         Spacer(modifier = Modifier.weight(1f))
         Text(
             text = activeGraphName,

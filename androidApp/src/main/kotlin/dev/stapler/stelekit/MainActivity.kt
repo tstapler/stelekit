@@ -35,6 +35,11 @@ import dev.stapler.stelekit.git.GitShadowWorktree
 import dev.stapler.stelekit.git.GitSyncServiceRegistry
 import dev.stapler.stelekit.service.rememberAndroidMediaAttachmentService
 import dev.stapler.stelekit.ui.StelekitApp
+import dev.stapler.stelekit.ui.StelekitAppCoreServices
+import dev.stapler.stelekit.ui.StelekitAppDeps
+import dev.stapler.stelekit.ui.StelekitAppLifecycleHooks
+import dev.stapler.stelekit.ui.StelekitAppPlatformIntegrations
+import dev.stapler.stelekit.ui.StelekitAppVoiceConfig
 import android.speech.SpeechRecognizer
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -331,19 +336,29 @@ class MainActivity : ComponentActivity() {
                 // path so the app opens the user's existing graph directly.
                 graphPath = intent.getStringExtra(EXTRA_BENCHMARK_GRAPH_PATH)
                     ?: if (fileSystem.hasStoragePermission()) fileSystem.getDefaultGraphPath() else "",
-                graphManager = app.graphManager,
-                urlFetcher = UrlFetcherAndroid(),
-                voicePipeline = voicePipeline,
-                voiceSettings = voiceSettings,
-                onRebuildVoicePipeline = { composeScope.launch { rebuildVoicePipeline() } },
-                deviceSttAvailable = deviceSttAvailable,
-                deviceLlmAvailable = deviceLlmAvailable,
-                spanRecorder = spanRecorder,
-                gitRepository = gitRepository,
-                onGraphManagerReady = { gm -> graphManager = gm },
-                onMemoryPressure = { handler -> onMemoryPressureHandler = handler },
-                attachmentService = attachmentService,
-                requestCameraPermission = ::requestCameraPermission,
+                deps = StelekitAppDeps(
+                    graphManager = app.graphManager,
+                    coreServices = StelekitAppCoreServices(
+                        urlFetcher = UrlFetcherAndroid(),
+                        voicePipeline = voicePipeline,
+                        spanRecorder = spanRecorder,
+                    ),
+                    voiceConfig = StelekitAppVoiceConfig(
+                        voiceSettings = voiceSettings,
+                        onRebuildVoicePipeline = { composeScope.launch { rebuildVoicePipeline() } },
+                        deviceSttAvailable = deviceSttAvailable,
+                        deviceLlmAvailable = deviceLlmAvailable,
+                    ),
+                    lifecycleHooks = StelekitAppLifecycleHooks(
+                        onGraphManagerReady = { gm -> graphManager = gm },
+                        onMemoryPressure = { handler -> onMemoryPressureHandler = handler },
+                    ),
+                    platformIntegrations = StelekitAppPlatformIntegrations(
+                        gitRepository = gitRepository,
+                        attachmentService = attachmentService,
+                        requestCameraPermission = ::requestCameraPermission,
+                    ),
+                ),
             )
         }
     }
