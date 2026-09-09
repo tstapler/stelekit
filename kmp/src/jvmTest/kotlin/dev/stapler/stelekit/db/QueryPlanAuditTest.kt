@@ -71,6 +71,9 @@ class QueryPlanAuditTest {
         // size_bytes has no index — size-sorted browsing is an uncommon path; add
         // idx_asset_size if it becomes a hot read pattern
         "selectAssetsBySizeKeyset", "selectAssetsByMediaTypeBySizeKeyset",
+        // file_path has no index; only read by FilePathRootMigration, a one-shot migration
+        // guarded to run once per graph after a path change — not a hot/reactive read path
+        "selectPageUuidAndFilePath",
     )
 
     // ── All SELECT queries from SteleDatabase.sq, parameters replaced with literals ──────────
@@ -190,6 +193,8 @@ ORDER BY depth, parent_uuid, position"""),
             "SELECT * FROM pages ORDER BY created_at DESC LIMIT 10"),
         AuditQuery("countPages",
             "SELECT COUNT(*) FROM pages"),
+        AuditQuery("selectPageUuidAndFilePath",
+            "SELECT uuid, file_path FROM pages WHERE file_path IS NOT NULL"),
         AuditQuery("selectJournalPages",
             "SELECT * FROM pages WHERE is_journal = 1 AND journal_date IS NOT NULL ORDER BY journal_date DESC LIMIT 10 OFFSET 0"),
         AuditQuery("selectJournalPageByDate",
