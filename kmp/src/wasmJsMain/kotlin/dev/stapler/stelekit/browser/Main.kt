@@ -293,44 +293,50 @@ fun main() {
             StelekitApp(
                 fileSystem = fileSystem,
                 graphPath = graphPath,
-                graphManager = graphManager,
-                attachmentService = WasmMediaAttachmentService(fileSystem),
-                gitRepository = wasmGitRepository,
-                localChangesCountFlow = opfsFileSystem.dirtyFileCountFlow,
-                hostAccessStateFlow = opfsFileSystem.hostAccessStateFlow,
-                hostWritePendingCountFlow = opfsFileSystem.hostWritePendingCountFlow,
-                hostWriteStuckFlow = opfsFileSystem.hostDirectorySync.hostWriteStuckFlow,
-                // Bug fix: read the CURRENT active graph via opfsFileSystem.currentGraphId()/
-                // graphRootPath() at click time, not the boot-time graphId/opfsGraphPath locals
-                // — graphManager.graphRegistry's collector (below) can have switched opfsFileSystem
-                // to a different graph since page load, and these callbacks must act on whichever
-                // graph the user is actually looking at when they click.
-                onReconnectHostDirectory = {
-                    scope.launch {
-                        opfsFileSystem.hostDirectorySync.requestHostDirectoryAccess(opfsFileSystem.currentGraphId())
-                    }
-                },
-                // Task 3.1.1c: "Enable live folder sync" — wired the same way the badge's flows
-                // above are, straight to HostDirectorySync.connectHostDirectory. Its own internal
-                // showDirectoryPicker → runHostReconciliation sequence already leaves hostDirHandle
-                // unset on any failure, so a non-Granted result here always means "nothing changed."
-                // lastReconciliationSummary is stashed by runHostReconciliation on the same call,
-                // so it is always fresh when result == Granted.
-                onConnectHostDirectory = connectHostDirectory@{
-                    val result = opfsFileSystem.hostDirectorySync.connectHostDirectory(opfsFileSystem.graphRootPath())
-                    val summary = opfsFileSystem.hostDirectorySync.lastReconciliationSummary
-                    if (result != HostAccessState.Granted || summary == null) {
-                        return@connectHostDirectory ReconciliationUiState.Failed(
-                            "Couldn't finish comparing your files"
-                        )
-                    }
-                    ReconciliationUiState.Summary(
-                        identical = summary.identical,
-                        hostChangedConflict = summary.hostChangedConflict,
-                        hostOnlyNew = summary.hostOnlyNew,
-                        browserOnlyNeedsPush = summary.browserOnlyNeedsPush,
-                    )
-                },
+                deps = dev.stapler.stelekit.ui.StelekitAppDeps(
+                    graphManager = graphManager,
+                    platformIntegrations = dev.stapler.stelekit.ui.StelekitAppPlatformIntegrations(
+                        attachmentService = WasmMediaAttachmentService(fileSystem),
+                        gitRepository = wasmGitRepository,
+                    ),
+                    webSyncDeps = dev.stapler.stelekit.ui.StelekitAppWebSyncDeps(
+                        localChangesCountFlow = opfsFileSystem.dirtyFileCountFlow,
+                        hostAccessStateFlow = opfsFileSystem.hostAccessStateFlow,
+                        hostWritePendingCountFlow = opfsFileSystem.hostWritePendingCountFlow,
+                        hostWriteStuckFlow = opfsFileSystem.hostDirectorySync.hostWriteStuckFlow,
+                        // Bug fix: read the CURRENT active graph via opfsFileSystem.currentGraphId()/
+                        // graphRootPath() at click time, not the boot-time graphId/opfsGraphPath locals
+                        // — graphManager.graphRegistry's collector (below) can have switched opfsFileSystem
+                        // to a different graph since page load, and these callbacks must act on whichever
+                        // graph the user is actually looking at when they click.
+                        onReconnectHostDirectory = {
+                            scope.launch {
+                                opfsFileSystem.hostDirectorySync.requestHostDirectoryAccess(opfsFileSystem.currentGraphId())
+                            }
+                        },
+                        // Task 3.1.1c: "Enable live folder sync" — wired the same way the badge's flows
+                        // above are, straight to HostDirectorySync.connectHostDirectory. Its own internal
+                        // showDirectoryPicker → runHostReconciliation sequence already leaves hostDirHandle
+                        // unset on any failure, so a non-Granted result here always means "nothing changed."
+                        // lastReconciliationSummary is stashed by runHostReconciliation on the same call,
+                        // so it is always fresh when result == Granted.
+                        onConnectHostDirectory = connectHostDirectory@{
+                            val result = opfsFileSystem.hostDirectorySync.connectHostDirectory(opfsFileSystem.graphRootPath())
+                            val summary = opfsFileSystem.hostDirectorySync.lastReconciliationSummary
+                            if (result != HostAccessState.Granted || summary == null) {
+                                return@connectHostDirectory ReconciliationUiState.Failed(
+                                    "Couldn't finish comparing your files"
+                                )
+                            }
+                            ReconciliationUiState.Summary(
+                                identical = summary.identical,
+                                hostChangedConflict = summary.hostChangedConflict,
+                                hostOnlyNew = summary.hostOnlyNew,
+                                browserOnlyNeedsPush = summary.browserOnlyNeedsPush,
+                            )
+                        },
+                    ),
+                ),
             )
         }
     }
@@ -390,17 +396,23 @@ private suspend fun runEphemeralSession() {
         StelekitApp(
             fileSystem = fileSystem,
             graphPath = graphPath,
-            graphManager = graphManager,
-            attachmentService = WasmMediaAttachmentService(fileSystem),
-            gitRepository = wasmGitRepository,
-            localChangesCountFlow = fileSystem.dirtyFileCountFlow,
-            hostAccessStateFlow = fileSystem.hostAccessStateFlow,
-            hostWritePendingCountFlow = fileSystem.hostWritePendingCountFlow,
-            hostWriteStuckFlow = fileSystem.hostDirectorySync.hostWriteStuckFlow,
-            onReconnectHostDirectory = {},
-            onConnectHostDirectory = {
-                ReconciliationUiState.Failed("Connecting a local folder isn't available in a temporary session")
-            },
+            deps = dev.stapler.stelekit.ui.StelekitAppDeps(
+                graphManager = graphManager,
+                platformIntegrations = dev.stapler.stelekit.ui.StelekitAppPlatformIntegrations(
+                    attachmentService = WasmMediaAttachmentService(fileSystem),
+                    gitRepository = wasmGitRepository,
+                ),
+                webSyncDeps = dev.stapler.stelekit.ui.StelekitAppWebSyncDeps(
+                    localChangesCountFlow = fileSystem.dirtyFileCountFlow,
+                    hostAccessStateFlow = fileSystem.hostAccessStateFlow,
+                    hostWritePendingCountFlow = fileSystem.hostWritePendingCountFlow,
+                    hostWriteStuckFlow = fileSystem.hostDirectorySync.hostWriteStuckFlow,
+                    onReconnectHostDirectory = {},
+                    onConnectHostDirectory = {
+                        ReconciliationUiState.Failed("Connecting a local folder isn't available in a temporary session")
+                    },
+                ),
+            ),
         )
     }
 }
