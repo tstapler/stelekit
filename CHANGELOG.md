@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.81.1](https://github.com/tstapler/stelekit/compare/v0.81.0...v0.81.1) (2026-09-09)
+
+
+### Bug Fixes
+
+* **db:** restore release pipeline by fixing QueryPlanAuditTest coverage gap ([#319](https://github.com/tstapler/stelekit/issues/319)) ([4348609](https://github.com/tstapler/stelekit/commit/4348609ab9ddf7cc76eb62fa3f6575b832128272))
+
 ## [0.81.0](https://github.com/tstapler/stelekit/compare/v0.80.0...v0.81.0) (2026-09-08)
 
 
