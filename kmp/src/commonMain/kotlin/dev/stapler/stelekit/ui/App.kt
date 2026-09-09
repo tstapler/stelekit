@@ -43,15 +43,12 @@ import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.performance.DebugBuildConfig
 import dev.stapler.stelekit.performance.DebugMenuState
 import dev.stapler.stelekit.performance.LocalSpanRecorder
-import dev.stapler.stelekit.performance.NoOpSpanRecorder
 import dev.stapler.stelekit.performance.PlatformJankStatsEffect
-import dev.stapler.stelekit.performance.SpanRecorder
 import dev.stapler.stelekit.platform.*
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.repository.*
 import dev.stapler.stelekit.ui.components.*
 import dev.stapler.stelekit.ui.components.git.GitDetectionBanner
-import dev.stapler.stelekit.ui.components.settings.ReconciliationUiState
 import dev.stapler.stelekit.ui.i18n.I18n
 import dev.stapler.stelekit.ui.i18n.LocalI18n
 import dev.stapler.stelekit.ui.i18n.t
@@ -59,8 +56,6 @@ import dev.stapler.stelekit.ui.onboarding.Onboarding
 import dev.stapler.stelekit.ui.screens.AllPagesViewModel
 import dev.stapler.stelekit.ui.screens.EmptyGraphStateScreen
 import dev.stapler.stelekit.ui.screens.LibraryStatsViewModel
-import dev.stapler.stelekit.stats.LibraryStatsProvider
-import dev.stapler.stelekit.stats.NoOpLibraryStatsProvider
 import dev.stapler.stelekit.ui.screens.JournalsViewModel
 import dev.stapler.stelekit.ui.screens.LibrarySetupScreen
 import dev.stapler.stelekit.ui.screens.PageView
@@ -68,12 +63,8 @@ import dev.stapler.stelekit.ui.screens.PermissionRecoveryScreen
 import dev.stapler.stelekit.ui.screens.SearchViewModel
 import dev.stapler.stelekit.ui.screens.VaultUnlockScreen
 import dev.stapler.stelekit.vault.VaultManager.VaultEvent
-import dev.stapler.stelekit.domain.NoOpUrlFetcher
-import dev.stapler.stelekit.domain.UrlFetcher
 import dev.stapler.stelekit.voice.VoiceCaptureState
 import dev.stapler.stelekit.voice.VoiceCaptureViewModel
-import dev.stapler.stelekit.voice.VoicePipelineConfig
-import dev.stapler.stelekit.voice.VoiceSettings
 import dev.stapler.stelekit.tags.LlmTagProvider
 import dev.stapler.stelekit.tags.TagSettings
 import dev.stapler.stelekit.tags.TagSuggestionEngine

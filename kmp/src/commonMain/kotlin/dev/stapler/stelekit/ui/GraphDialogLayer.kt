@@ -197,39 +197,63 @@ private fun GitSetupDialogHost(
         val gitConfigRepository = gitSync.gitConfigRepository
         val canShowGitSetup = appState.gitSetupVisible &&
             gitSyncService != null && gitRepository != null && gitConfigRepository != null
-        if (!canShowGitSetup) return@key
-
-        val deviceFlowClient = remember { GitHubDeviceFlowClient.withDefaultClient() }
-        // Previously always null, discarding a graph's saved GitConfig every time the wizard
-        // reopened — re-editing sync settings silently reset auth type, branch, and poll
-        // interval to their defaults. Loaded once per open (keyed on activeGraphId, inside the
-        // already gitSetupVisible-keyed composition) rather than reactively, matching this
-        // dialog's existing "fresh state per open" pattern (see the class doc above).
-        val (existingConfigLoaded, existingConfig) = rememberExistingGitConfig(gitSync.activeGraphId, gitConfigRepository)
-        if (!existingConfigLoaded) return@key
-
-        GitSetupScreen(
-            graphId = gitSync.activeGraphId ?: "",
-            gitRepository = gitRepository,
-            gitConfigRepository = gitConfigRepository,
-            gitSyncService = gitSyncService,
-            fileSystem = fileSystem,
-            onDismiss = { viewModel.dismissGitSetup() },
-            onSave = {
-                viewModel.sendSnackbar("Git sync configured")
-                viewModel.dismissGitSetup()
-            },
-            onCloneAndAdd = gitSync.onCloneAndAdd,
-            graphPath = gitSync.graphPath,
-            onCloneComplete = gitSync.onCloneComplete,
-            initialStep = appState.gitSetupInitialStep,
-            initialUseExistingClone = !appState.gitSetupOpenForClone,
-            existingConfig = existingConfig,
-            detectedRepoRoot = gitSync.detectedRepoRoot,
-            detectedWikiSubdir = gitSync.detectedWikiSubdir,
-            deviceFlowClient = deviceFlowClient,
-        )
+        // A `return@key` guard clause here (rather than this `if`) compiles fine on JVM/desktop
+        // but broke Android release dexing: D8 rejects the non-local-return-through-an-inline-
+        // lambda synthetic class it produces ("Method name '<anonymous>' in class
+        // '$$$$$NON_LOCAL_RETURN$$$$$' cannot be represented in dex format"). key() is an inline
+        // Compose function, so a label-qualified return out of its lambda is a non-local return
+        // at the bytecode level even though it reads like an ordinary guard clause.
+        if (canShowGitSetup) {
+            GitSetupDialogContent(appState, viewModel, fileSystem, gitSync, gitRepository, gitConfigRepository, gitSyncService)
+        }
     }
+}
+
+/**
+ * Split out of [GitSetupDialogHost] so its `existingConfigLoaded` guard can use a plain, local
+ * `return` — safe here because this is an ordinary function boundary, not a return out of an
+ * inline lambda (see the non-local-return/dexing note at the [key] call site above).
+ */
+@Composable
+private fun GitSetupDialogContent(
+    appState: AppState,
+    viewModel: StelekitViewModel,
+    fileSystem: FileSystem,
+    gitSync: GitSyncDeps,
+    gitRepository: dev.stapler.stelekit.git.GitRepository,
+    gitConfigRepository: GitConfigRepository,
+    gitSyncService: dev.stapler.stelekit.git.GitSyncService,
+) {
+    val deviceFlowClient = remember { GitHubDeviceFlowClient.withDefaultClient() }
+    // Previously always null, discarding a graph's saved GitConfig every time the wizard
+    // reopened — re-editing sync settings silently reset auth type, branch, and poll
+    // interval to their defaults. Loaded once per open (keyed on activeGraphId, inside the
+    // already gitSetupVisible-keyed composition) rather than reactively, matching this
+    // dialog's existing "fresh state per open" pattern (see the class doc above).
+    val (existingConfigLoaded, existingConfig) = rememberExistingGitConfig(gitSync.activeGraphId, gitConfigRepository)
+    if (!existingConfigLoaded) return
+
+    GitSetupScreen(
+        graphId = gitSync.activeGraphId ?: "",
+        gitRepository = gitRepository,
+        gitConfigRepository = gitConfigRepository,
+        gitSyncService = gitSyncService,
+        fileSystem = fileSystem,
+        onDismiss = { viewModel.dismissGitSetup() },
+        onSave = {
+            viewModel.sendSnackbar("Git sync configured")
+            viewModel.dismissGitSetup()
+        },
+        onCloneAndAdd = gitSync.onCloneAndAdd,
+        graphPath = gitSync.graphPath,
+        onCloneComplete = gitSync.onCloneComplete,
+        initialStep = appState.gitSetupInitialStep,
+        initialUseExistingClone = !appState.gitSetupOpenForClone,
+        existingConfig = existingConfig,
+        detectedRepoRoot = gitSync.detectedRepoRoot,
+        detectedWikiSubdir = gitSync.detectedWikiSubdir,
+        deviceFlowClient = deviceFlowClient,
+    )
 }
 
 /**
