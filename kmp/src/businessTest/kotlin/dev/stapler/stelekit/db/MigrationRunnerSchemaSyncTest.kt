@@ -77,12 +77,7 @@ class MigrationRunnerSchemaSyncTest {
 
     @Test
     fun `all IF NOT EXISTS tables in SteleDatabase schema have a MigrationRunner entry`() {
-        val sqContent = checkNotNull(sqContent) {
-            "Could not locate SteleDatabase.sq: no 'SteleDatabase.sq' classpath resource " +
-                "(Bazel — check kmp/src/businessTest/kotlin/BUILD.bazel's " +
-                "sqldatabase_schema_as_resource target) and system property 'stelekit.sq.file' " +
-                "not set (Gradle — injected by the jvmTest task in kmp/build.gradle.kts)."
-        }
+        val sqContent = checkNotNull(sqContent) { SQ_CONTENT_NOT_FOUND_MESSAGE }
         val tablesInSchema: Set<String> = Regex(
             """CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+(\w+)""",
             RegexOption.IGNORE_CASE
@@ -216,3 +211,9 @@ class MigrationRunnerSchemaSyncTest {
         return names
     }
 }
+
+private const val SQ_CONTENT_NOT_FOUND_MESSAGE =
+    "Could not locate SteleDatabase.sq: no 'SteleDatabase.sq' classpath resource " +
+        "(Bazel — check kmp/src/businessTest/kotlin/BUILD.bazel's " +
+        "sqldatabase_schema_as_resource target) and system property 'stelekit.sq.file' " +
+        "not set (Gradle — injected by the jvmTest task in kmp/build.gradle.kts)."
