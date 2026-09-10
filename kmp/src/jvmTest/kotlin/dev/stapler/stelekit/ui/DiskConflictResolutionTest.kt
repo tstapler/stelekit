@@ -431,6 +431,41 @@ class DiskConflictResolutionTest {
         )
     }
 
+    @Test
+    fun checkAndShowPendingConflict_stillShowsDialog_When_FirstBlockIsBlankButLaterBlocksHaveRealContent() = runBlocking {
+        // A page whose root block is blank (e.g. a spacer bullet) but whose real content lives in
+        // a later block. previousContent (computed from the first block only) is blank here too,
+        // but the page genuinely has local content to protect — auto-resolving on
+        // previousContent.isBlank() alone would silently discard it with no way to review or undo.
+        val blankFirstBlock = testBlock.copy(uuid = BlockUuid("block-blank-first"), content = "", position = "a0")
+        val realSecondBlock = testBlock.copy(
+            uuid = BlockUuid("block-real-second"),
+            content = "Real local content",
+            position = "a1",
+        )
+        val pageRepo = FakePageRepository(listOf(testPage))
+        val blockRepo = FakeBlockRepository(mapOf(testPageUuid to listOf(blankFirstBlock, realSecondBlock)))
+        val graphLoader = testGraphLoader(pageRepo, blockRepo)
+        val vm = makeViewModel(pageRepo = pageRepo, blockRepo = blockRepo, graphLoader = graphLoader)
+        vm.startAutoSave()
+
+        graphLoader.emitExternalFileChange(testFilePath, "- disk content overwriting the page")
+        assertNotNull(
+            vm.uiState.value.pendingConflicts[testFilePath],
+            "off-page external change must populate pendingConflicts before navigation"
+        )
+
+        vm.navigateTo(Screen.PageView(testPage))
+
+        withTimeout(2_000) {
+            vm.uiState.first { it.diskConflict != null || it.pendingConflicts[testFilePath] == null }
+        }
+        assertTrue(
+            vm.uiState.value.diskConflict != null,
+            "a page with real local content in a non-first block must still show the conflict dialog"
+        )
+    }
+
     // ─── Story 6.1.1b: coverage gaps ─────────────────────────────────────────
 
     @Test

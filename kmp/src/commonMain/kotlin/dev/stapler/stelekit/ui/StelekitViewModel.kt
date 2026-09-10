@@ -1489,12 +1489,22 @@ class StelekitViewModel(
                     val pageName = event.filePath
                         .substringAfterLast('/').removeSuffix(".md").replace("_", " ")
                     val existing = state.pendingConflicts[event.filePath]
-                    val previousContent = existing?.previousContent ?: run {
+                    val previousContent: String
+                    val pageExistedLocally: Boolean
+                    if (existing != null) {
+                        previousContent = existing.previousContent
+                        pageExistedLocally = existing.pageExistedLocally
+                    } else {
                         val existingPage = pageRepository.getPageByName(pageName).first().getOrNull()
-                        existingPage?.let { p ->
+                        val localBlocks = existingPage?.let { p ->
                             blockRepository.getBlocksForPage(p.uuid).first().getOrNull()
-                                ?.minByOrNull { it.position }?.content
-                        } ?: ""
+                        }
+                        previousContent = localBlocks?.minByOrNull { it.position }?.content ?: ""
+                        // A blank first block does not mean "no local edit" — content can live in
+                        // later blocks (e.g. a blank root bullet with real children). Only treat
+                        // this as safe to auto-resolve when the page genuinely has no local content
+                        // anywhere, not just an empty first block.
+                        pageExistedLocally = existingPage != null && localBlocks.orEmpty().any { it.content.isNotBlank() }
                     }
                     if (existing == null || existing.diskContent != event.content) {
                         _uiState.update { it.copy(
@@ -1503,6 +1513,7 @@ class StelekitViewModel(
                                 pageName = pageName,
                                 diskContent = event.content,
                                 previousContent = previousContent,
+                                pageExistedLocally = pageExistedLocally,
                             ))
                         )}
                         if (existing == null) {
@@ -1630,10 +1641,12 @@ class StelekitViewModel(
             // observeExternalFileChanges), so firstBlock now holds the disk content, not the
             // user's prior content — that prior content only survives in previousContent.
             // Two cases are false positives, not real conflicts: content is unchanged (our own
-            // save landing on disk), or previousContent is blank because the page never existed
-            // locally before this change (e.g. a host-directory import of a brand-new page) — in
-            // both cases there is no local edit to protect, so there is nothing to review.
-            if (latestPending.previousContent.isBlank() || latestPending.previousContent == latestPending.diskContent) {
+            // save landing on disk), or the page had no local content anywhere before this change
+            // (e.g. a host-directory import of a brand-new page) — in both cases there is no local
+            // edit to protect, so there is nothing to review. Note this is !pageExistedLocally, not
+            // previousContent.isBlank() — a blank *first* block doesn't mean the page had no local
+            // content, since real content can live in later blocks.
+            if (!latestPending.pageExistedLocally || latestPending.previousContent == latestPending.diskContent) {
                 clearPendingConflict(filePath)
                 return@launch
             }
