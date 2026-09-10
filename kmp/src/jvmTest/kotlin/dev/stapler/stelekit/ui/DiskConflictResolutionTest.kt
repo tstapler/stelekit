@@ -394,6 +394,78 @@ class DiskConflictResolutionTest {
         )
     }
 
+    @Test
+    fun checkAndShowPendingConflict_autoResolves_When_PageNeverExistedLocallyBeforeTheChange() = runBlocking {
+        val pageRepo = FakePageRepository(listOf(testPage))
+        val blockRepo = FakeBlockRepository(mapOf(testPageUuid to listOf(testBlock)))
+        val graphLoader = testGraphLoader(pageRepo, blockRepo)
+        val vm = makeViewModel(pageRepo = pageRepo, blockRepo = blockRepo, graphLoader = graphLoader)
+        vm.startAutoSave()
+
+        // A brand-new page (e.g. a host-directory import) that the browser never had before —
+        // pageRepository.getPageByName() finds nothing, so observeExternalFileChanges' off-page
+        // branch computes previousContent = "". This must never surface the conflict dialog:
+        // there is no local edit to lose.
+        val newFilePath = "/tmp/test-graph/pages/BrandNewPage.md"
+        graphLoader.emitExternalFileChange(newFilePath, "- disk content that never existed locally")
+        assertNotNull(
+            vm.uiState.value.pendingConflicts[newFilePath],
+            "off-page external change must populate pendingConflicts before navigation"
+        )
+
+        val newPage = Page(
+            uuid = PageUuid("page-brand-new"),
+            name = "BrandNewPage",
+            filePath = newFilePath,
+            createdAt = now,
+            updatedAt = now,
+        )
+        vm.navigateTo(Screen.PageView(newPage))
+
+        withTimeout(2_000) {
+            vm.uiState.first { it.pendingConflicts[newFilePath] == null }
+        }
+        assertNull(
+            vm.uiState.value.diskConflict,
+            "a page with no prior local content must auto-resolve, never show the conflict dialog"
+        )
+    }
+
+    @Test
+    fun checkAndShowPendingConflict_stillShowsDialog_When_FirstBlockIsBlankButLaterBlocksHaveRealContent() = runBlocking {
+        // A page whose root block is blank (e.g. a spacer bullet) but whose real content lives in
+        // a later block. previousContent (computed from the first block only) is blank here too,
+        // but the page genuinely has local content to protect — auto-resolving on
+        // previousContent.isBlank() alone would silently discard it with no way to review or undo.
+        val blankFirstBlock = testBlock.copy(uuid = BlockUuid("block-blank-first"), content = "", position = "a0")
+        val realSecondBlock = testBlock.copy(
+            uuid = BlockUuid("block-real-second"),
+            content = "Real local content",
+            position = "a1",
+        )
+        val pageRepo = FakePageRepository(listOf(testPage))
+        val blockRepo = FakeBlockRepository(mapOf(testPageUuid to listOf(blankFirstBlock, realSecondBlock)))
+        val graphLoader = testGraphLoader(pageRepo, blockRepo)
+        val vm = makeViewModel(pageRepo = pageRepo, blockRepo = blockRepo, graphLoader = graphLoader)
+        vm.startAutoSave()
+
+        graphLoader.emitExternalFileChange(testFilePath, "- disk content overwriting the page")
+        assertNotNull(
+            vm.uiState.value.pendingConflicts[testFilePath],
+            "off-page external change must populate pendingConflicts before navigation"
+        )
+
+        vm.navigateTo(Screen.PageView(testPage))
+
+        withTimeout(2_000) {
+            vm.uiState.first { it.diskConflict != null || it.pendingConflicts[testFilePath] == null }
+        }
+        assertTrue(
+            vm.uiState.value.diskConflict != null,
+            "a page with real local content in a non-first block must still show the conflict dialog"
+        )
+    }
+
     // ─── Story 6.1.1b: coverage gaps ─────────────────────────────────────────
 
     @Test

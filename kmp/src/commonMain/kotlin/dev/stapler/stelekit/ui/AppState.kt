@@ -242,4 +242,5 @@ data class PendingConflict(
     val pageName: String,
     val diskContent: String,
     val previousContent: String,
+    val pageExistedLocally: Boolean,
 )
