@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.81.2](https://github.com/tstapler/stelekit/compare/v0.81.1...v0.81.2) (2026-09-10)
+
+
+### Bug Fixes
+
+* **ui:** stop false-positive conflict dialog for pages with no local edit ([#321](https://github.com/tstapler/stelekit/issues/321)) ([6e5b29d](https://github.com/tstapler/stelekit/commit/6e5b29d5a34f2512fcc5957233c593fde23521f5))
+
 ## [0.81.1](https://github.com/tstapler/stelekit/compare/v0.81.0...v0.81.1) (2026-09-09)
 
 
