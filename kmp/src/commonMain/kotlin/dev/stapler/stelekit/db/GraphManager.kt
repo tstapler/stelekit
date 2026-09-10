@@ -891,7 +891,10 @@ class GraphManager(
         // so a `.git` above that folder is invisible to this app regardless of path-parsing
         // correctness — bail out explicitly instead of relying on the loop terminating safely once
         // it works its way back to (and then past) the "saf://" scheme delimiter.
-        if (graphPath.startsWith("saf://") || graphPath.startsWith("content://")) return null
+        if (graphPath.startsWith("saf://") || graphPath.startsWith("content://")) {
+            logger.info("detectGitRoot: skipping SAF/content path, git-repo auto-detection unsupported ($graphPath)")
+            return null
+        }
         return withContext(PlatformDispatcher.IO) {
             try {
                 val normalizedPath = graphPath.replace('\\', '/')

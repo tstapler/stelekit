@@ -27,6 +27,8 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PhotoLibrary
@@ -110,6 +112,11 @@ fun LeftSidebar(
     onRelinkHostDirectory: (String) -> Unit = {},
     supportsHostDirectoryLink: Boolean = false,
     gitSyncedGraphId: String? = null,
+    /** Pages captured from another graph by [onExportPagesForMerge], not yet merged in here.
+     * Cross-graph page/journal recovery — see GraphMergeService's class doc. */
+    mergePendingPageCount: Int = 0,
+    onExportPagesForMerge: () -> Unit = {},
+    onImportMergedPages: () -> Unit = {},
     onNewSectionJournalEntry: (() -> Unit)? = null,
     sectionManifest: SectionManifest? = null,
     defaultSection: String = "",
@@ -165,6 +172,9 @@ fun LeftSidebar(
                 gitSyncedGraphId = gitSyncedGraphId,
                 isDemoActive = isDemoActive,
                 hostAccessState = hostAccessState,
+                mergePendingPageCount = mergePendingPageCount,
+                onExportPagesForMerge = onExportPagesForMerge,
+                onImportMergedPages = onImportMergedPages,
             )
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
@@ -346,6 +356,25 @@ fun PendingConflictsBanner(count: Int, onClick: () -> Unit, modifier: Modifier =
     }
 }
 
+/** Single-line icon+label row for a [DropdownMenuItem] in [GraphSwitcher]'s menu. */
+@Composable
+private fun GraphMenuActionItem(icon: ImageVector, label: String, onClick: () -> Unit) {
+    DropdownMenuItem(
+        text = {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(8.dp))
+                Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+            }
+        },
+        onClick = onClick,
+        contentPadding = PaddingValues(0.dp),
+    )
+}
+
 /**
  * Graph switcher component for selecting and managing graphs.
  */
@@ -371,6 +400,9 @@ fun GraphSwitcher(
     /** Epic 2.3: host-directory connection state for [activeGraphId] only — used to show a
      * "linked to local folder" indicator distinct from the graph's internal OPFS path. */
     hostAccessState: HostAccessState = HostAccessState.NotApplicable,
+    mergePendingPageCount: Int = 0,
+    onExportPagesForMerge: () -> Unit = {},
+    onImportMergedPages: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -468,35 +500,24 @@ fun GraphSwitcher(
 
             // Not offered inside an already-ephemeral session — connecting a local OPFS folder
             // would introduce the exact persistent storage side channel that mode exists to avoid.
-            if (!isCurrentSessionEphemeral()) DropdownMenuItem(
-                text = {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Open local folder...", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-                    }
-                },
-                onClick = { onAddGraph(); expanded = false },
-                contentPadding = PaddingValues(0.dp),
-            )
+            if (!isCurrentSessionEphemeral()) {
+                GraphMenuActionItem(Icons.Default.Add, "Open local folder...") { onAddGraph(); expanded = false }
+            }
 
-            DropdownMenuItem(
-                text = {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Clone from URL...", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-                    }
-                },
-                onClick = { onCloneGraph(); expanded = false },
-                contentPadding = PaddingValues(0.dp),
-            )
+            GraphMenuActionItem(Icons.Default.CloudDownload, "Clone from URL...") { onCloneGraph(); expanded = false }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+            // Cross-graph page/journal recovery: capture this graph's pages, switch to another
+            // graph via the list above, then paste them in. See GraphMergeService's class doc.
+            GraphMenuActionItem(Icons.Default.ContentCopy, "Copy pages from this graph...") {
+                onExportPagesForMerge(); expanded = false
+            }
+            if (mergePendingPageCount > 0) {
+                GraphMenuActionItem(Icons.Default.ContentPaste, "Merge $mergePendingPageCount captured page(s) here") {
+                    onImportMergedPages(); expanded = false
+                }
+            }
 
             if (isEphemeralWebModeAvailable() && !isCurrentSessionEphemeral()) {
                 DropdownMenuItem(

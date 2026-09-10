@@ -23,6 +23,7 @@ import dev.stapler.stelekit.export.ClipboardProvider
 import dev.stapler.stelekit.export.ExportService
 import dev.stapler.stelekit.platform.google.GoogleAuthManager
 import dev.stapler.stelekit.git.GitSyncService
+import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.BlockUuid
@@ -308,6 +309,11 @@ class StelekitViewModel(
         scope.launch {
             activeGitSyncService.value?.fetchOnly(graphId)
         }
+    }
+
+    /** Reflects the active graph's real [dev.stapler.stelekit.git.GitConfigRepository] state (or `null`) into [AppState.gitConfig] — this field previously had no writer at all. */
+    fun setGitConfig(config: GitConfig?) {
+        _uiState.update { it.copy(gitConfig = config) }
     }
 
     /** Opens the git setup wizard. */
@@ -2012,7 +2018,7 @@ class StelekitViewModel(
         }
     }
 
-    /** Updates the journal date range used by the [ShareScope.JournalRange] export path. */
+    /** Sets the journal date range for a [ShareScope.JournalRange] export. */
     fun setShareJournalDateRange(from: LocalDate?, to: LocalDate?) {
         _uiState.update { it.copy(shareJournalFromDate = from, shareJournalToDate = to) }
     }

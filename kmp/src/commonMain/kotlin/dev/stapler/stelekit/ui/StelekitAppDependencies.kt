@@ -177,4 +177,8 @@ data class GraphContentDeps(
     val voiceConfig: StelekitAppVoiceConfig = StelekitAppVoiceConfig(),
     val platformIntegrations: StelekitAppPlatformIntegrations = StelekitAppPlatformIntegrations(),
     val webSyncDeps: StelekitAppWebSyncDeps = StelekitAppWebSyncDeps(),
+    /** Survives graph switches (created once in [StelekitApp], above the `key(activeGraphId)`
+     * that tears [GraphContent] down and recreates it) so a page snapshot taken on one graph
+     * is still there after switching to the merge target. */
+    val graphMergeService: dev.stapler.stelekit.transfer.GraphMergeService = dev.stapler.stelekit.transfer.GraphMergeService(),
 )

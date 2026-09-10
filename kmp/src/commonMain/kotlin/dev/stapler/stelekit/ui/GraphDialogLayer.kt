@@ -225,6 +225,7 @@ private fun GitSetupDialogContent(
     gitSyncService: dev.stapler.stelekit.git.GitSyncService,
 ) {
     val deviceFlowClient = remember { GitHubDeviceFlowClient.withDefaultClient() }
+    val coroutineScope = rememberCoroutineScope()
     // Previously always null, discarding a graph's saved GitConfig every time the wizard
     // reopened — re-editing sync settings silently reset auth type, branch, and poll
     // interval to their defaults. Loaded once per open (keyed on activeGraphId, inside the
@@ -241,8 +242,14 @@ private fun GitSetupDialogContent(
         fileSystem = fileSystem,
         onDismiss = { viewModel.dismissGitSetup() },
         onSave = {
-            viewModel.sendSnackbar("Git sync configured")
-            viewModel.dismissGitSetup()
+            coroutineScope.launch {
+                val graphId = gitSync.activeGraphId
+                if (graphId != null) {
+                    viewModel.setGitConfig(gitConfigRepository.getConfig(graphId).getOrNull())
+                }
+                viewModel.sendSnackbar("Git sync configured")
+                viewModel.dismissGitSetup()
+            }
         },
         onCloneAndAdd = gitSync.onCloneAndAdd,
         graphPath = gitSync.graphPath,

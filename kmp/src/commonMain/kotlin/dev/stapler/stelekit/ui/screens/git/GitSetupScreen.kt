@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.ui.screens.git
 
+import dev.stapler.stelekit.logging.Logger
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -96,6 +97,8 @@ import kotlinx.coroutines.withContext
  * @param onDismiss Called when the user cancels the wizard.
  * @param onSaved Called after configuration is saved and initial fetch succeeds.
  */
+private val gitSetupLogger = Logger("GitSetupScreen")
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GitSetupScreen(
@@ -557,9 +560,13 @@ fun GitSetupScreen(
                                 val saveResult = gitConfigRepository.saveConfig(config)
                                 saving = false
                                 if (saveResult.isRight()) {
+                                    gitSetupLogger.info("saveConfig succeeded (clone-and-add) graphId=$newGraphId")
                                     onCloneComplete?.invoke(newGraphId)
                                     onSave()
                                 } else {
+                                    gitSetupLogger.error(
+                                        "saveConfig failed (clone-and-add) graphId=$newGraphId error=${saveResult.leftOrNull()}"
+                                    )
                                     saveError = "Failed to save configuration."
                                 }
                                 return@launch
@@ -610,10 +617,12 @@ fun GitSetupScreen(
                             val result = gitConfigRepository.saveConfig(config)
                             saving = false
                             if (result.isRight()) {
+                                gitSetupLogger.info("saveConfig succeeded graphId=$graphId")
                                 // Trigger an immediate background fetch
                                 gitSyncService.fetchOnly(graphId)
                                 onSave()
                             } else {
+                                gitSetupLogger.error("saveConfig failed graphId=$graphId error=${result.leftOrNull()}")
                                 saveError = "Failed to save configuration."
                             }
                         }

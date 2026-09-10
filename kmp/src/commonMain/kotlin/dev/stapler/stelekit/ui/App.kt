@@ -312,6 +312,10 @@ fun StelekitApp(
 
     val repos = activeRepoSet
 
+    // Created here, above key(activeGraphId), so a page snapshot survives the graph switch
+    // it's meant to be pasted into — see GraphMergeService's class doc.
+    val graphMergeService = remember { dev.stapler.stelekit.transfer.GraphMergeService() }
+
     if (repos == null || !migrationReady) {
         // Show loading state while repositories are being initialized or migration is running
         StelekitTheme(themeMode = StelekitThemeMode.SYSTEM) {
@@ -334,6 +338,7 @@ fun StelekitApp(
                 voiceConfig = deps.voiceConfig,
                 platformIntegrations = deps.platformIntegrations,
                 webSyncDeps = deps.webSyncDeps,
+                graphMergeService = graphMergeService,
             )
         )
     }
@@ -375,6 +380,8 @@ private fun GraphContent(deps: GraphContentDeps) {
     val hostWriteStuckFlow = deps.webSyncDeps.hostWriteStuckFlow
     val onReconnectHostDirectory = deps.webSyncDeps.onReconnectHostDirectory
     val onConnectHostDirectory = deps.webSyncDeps.onConnectHostDirectory
+    val graphMergeService = deps.graphMergeService
+    val mergePendingPageCount by graphMergeService.pendingPageCount.collectAsState()
 
     // Epic 2.3 (Task 2.3.1c): resolved here (not passed as raw StateFlow into StelekitViewModel,
     // unlike localChangesCountFlow) — FolderSyncStatusBadge is a pure sidebar-header composable,
@@ -1353,6 +1360,31 @@ private fun GraphContent(deps: GraphContentDeps) {
                                 hostPendingWriteCount = hostWritePendingCount,
                                 hostWriteStuck = hostWriteStuck,
                                 onReconnectHostDirectory = onReconnectHostDirectory ?: {},
+                                mergePendingPageCount = mergePendingPageCount,
+                                onExportPagesForMerge = {
+                                    scope.launch {
+                                        graphMergeService.snapshot(repos)
+                                        viewModel.sendSnackbar(
+                                            "Captured ${graphMergeService.pendingPageCount.value} pages — " +
+                                                "switch to the target graph, then tap \"Merge captured pages\""
+                                        )
+                                    }
+                                },
+                                onImportMergedPages = {
+                                    scope.launch {
+                                        val result = graphMergeService.merge(repos, fileSystem)
+                                        val summary = buildString {
+                                            append("Merged ${result.imported.size} pages")
+                                            if (result.skippedExisting.isNotEmpty()) {
+                                                append(", skipped ${result.skippedExisting.size} already here")
+                                            }
+                                            if (result.failed.isNotEmpty()) {
+                                                append(", ${result.failed.size} failed")
+                                            }
+                                        }
+                                        viewModel.sendSnackbar(summary)
+                                    }
+                                },
                                 onPageClick = { page ->
                                     viewModel.navigateTo(Screen.PageView(page))
                                     closeSidebarIfMobile()
@@ -1485,6 +1517,20 @@ private fun GraphContent(deps: GraphContentDeps) {
                             var showCameraViewfinder by remember { mutableStateOf(false) }
                             var pendingCaptureNavigateAfterImport by remember { mutableStateOf(false) }
                             val activeGraphInfo2 = graphRegistry.graphs.firstOrNull { it.id == activeGraphId }
+                            // appState.gitConfig used to default to null and never get assigned anywhere
+                            // (verified via repo-wide grep), so every UI element gated on it — the
+                            // sidebar "git configured" indicator, this banner's suppression check — was
+                            // permanently wrong regardless of the graph's real GitConfigRepository state.
+                            // Reload it from the repository whenever the active graph changes.
+                            LaunchedEffect(activeGraphId) {
+                                val gid = activeGraphId?.value ?: return@LaunchedEffect
+                                val repoConfig = gitConfigRepository?.getConfig(gid)?.getOrNull()
+                                graphContentLogger.info(
+                                    "gitConfig loaded graph=$gid configured=${repoConfig != null} " +
+                                        "detectedRepoRoot=${activeGraphInfo2?.detectedRepoRoot}"
+                                )
+                                viewModel.setGitConfig(repoConfig)
+                            }
                             val showGitBanner = activeGraphInfo2?.detectedRepoRoot != null &&
                                 appState.gitConfig == null &&
                                 activeGraphInfo2.gitDetectionDismissed == false
@@ -1492,6 +1538,7 @@ private fun GraphContent(deps: GraphContentDeps) {
                                 activeGraphInfo2.isDemo == false &&
                                 hostAccessState == HostAccessState.NotApplicable &&
                                 fileSystem.supportsNativeDirectoryPicker &&
+                                onConnectHostDirectory != null &&
                                 activeGraphInfo2.browserOnlySyncBannerDismissed == false
                             // SyncDegraded: permission still reads as Granted, but the write-through
                             // queue is stuck — the startup log line ("reconnectHostDirectory(...):
