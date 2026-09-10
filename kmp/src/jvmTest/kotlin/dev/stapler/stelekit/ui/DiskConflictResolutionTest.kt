@@ -394,6 +394,43 @@ class DiskConflictResolutionTest {
         )
     }
 
+    @Test
+    fun checkAndShowPendingConflict_autoResolves_When_PageNeverExistedLocallyBeforeTheChange() = runBlocking {
+        val pageRepo = FakePageRepository(listOf(testPage))
+        val blockRepo = FakeBlockRepository(mapOf(testPageUuid to listOf(testBlock)))
+        val graphLoader = testGraphLoader(pageRepo, blockRepo)
+        val vm = makeViewModel(pageRepo = pageRepo, blockRepo = blockRepo, graphLoader = graphLoader)
+        vm.startAutoSave()
+
+        // A brand-new page (e.g. a host-directory import) that the browser never had before —
+        // pageRepository.getPageByName() finds nothing, so observeExternalFileChanges' off-page
+        // branch computes previousContent = "". This must never surface the conflict dialog:
+        // there is no local edit to lose.
+        val newFilePath = "/tmp/test-graph/pages/BrandNewPage.md"
+        graphLoader.emitExternalFileChange(newFilePath, "- disk content that never existed locally")
+        assertNotNull(
+            vm.uiState.value.pendingConflicts[newFilePath],
+            "off-page external change must populate pendingConflicts before navigation"
+        )
+
+        val newPage = Page(
+            uuid = PageUuid("page-brand-new"),
+            name = "BrandNewPage",
+            filePath = newFilePath,
+            createdAt = now,
+            updatedAt = now,
+        )
+        vm.navigateTo(Screen.PageView(newPage))
+
+        withTimeout(2_000) {
+            vm.uiState.first { it.pendingConflicts[newFilePath] == null }
+        }
+        assertNull(
+            vm.uiState.value.diskConflict,
+            "a page with no prior local content must auto-resolve, never show the conflict dialog"
+        )
+    }
+
     // ─── Story 6.1.1b: coverage gaps ─────────────────────────────────────────
 
     @Test

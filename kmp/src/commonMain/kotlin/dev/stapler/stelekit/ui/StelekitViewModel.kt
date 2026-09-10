@@ -1629,9 +1629,11 @@ class StelekitViewModel(
             // The disk content was already auto-applied to the DB at detection time (see
             // observeExternalFileChanges), so firstBlock now holds the disk content, not the
             // user's prior content — that prior content only survives in previousContent.
-            // If they're equal, the "conflict" was a false positive (e.g. our own save landing
-            // on disk) and there's nothing to review.
-            if (latestPending.previousContent == latestPending.diskContent) {
+            // Two cases are false positives, not real conflicts: content is unchanged (our own
+            // save landing on disk), or previousContent is blank because the page never existed
+            // locally before this change (e.g. a host-directory import of a brand-new page) — in
+            // both cases there is no local edit to protect, so there is nothing to review.
+            if (latestPending.previousContent.isBlank() || latestPending.previousContent == latestPending.diskContent) {
                 clearPendingConflict(filePath)
                 return@launch
             }
