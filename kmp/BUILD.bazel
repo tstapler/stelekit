@@ -54,6 +54,15 @@ test_suite(
     visibility = ["//visibility:public"],
 )
 
+# Exposes the SQLDelight schema source so MigrationRunnerSchemaSyncTest can bundle it as a
+# classpath resource (Bazel path — see kmp/src/businessTest/kotlin/BUILD.bazel) instead of
+# relying on the Gradle-only -Dstelekit.sq.file system property.
+filegroup(
+    name = "sqldelight_schema_source",
+    srcs = ["src/commonMain/sqldelight/dev/stapler/stelekit/db/SteleDatabase.sq"],
+    visibility = ["//kmp:__subpackages__"],
+)
+
 # ── Web / WASM-JS ─────────────────────────────────────────────────────────────
 #
 # Kotlin/WASM is not yet supported by rules_kotlin (tracking: rules_kotlin#567).

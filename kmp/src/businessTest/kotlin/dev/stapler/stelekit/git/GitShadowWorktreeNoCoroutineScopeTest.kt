@@ -28,22 +28,29 @@ import kotlin.test.fail
  */
 class GitShadowWorktreeNoCoroutineScopeTest {
 
-    /** Walks up from a classpath resource to the repo root, then resolves the androidMain source file. */
-    private val sourceFile: File by lazy {
-        val resource = javaClass.classLoader.getResource("demo-graph/pages")
-            ?: fail("demo-graph/pages not found on classpath — check that commonMain resources are on the test classpath")
-        var dir = File(resource.toURI())
-        while (dir != dir.parentFile) {
-            val candidate = dir.resolve(
-                "src/androidMain/kotlin/dev/stapler/stelekit/git/GitShadowWorktree.kt"
-            )
-            if (candidate.exists()) return@lazy candidate
-            dir = dir.parentFile
-        }
-        fail("Could not locate GitShadowWorktree.kt walking up from: $resource")
+    /**
+     * Bazel path first — bundled as a classpath resource (see BUILD.bazel's
+     * git_shadow_worktree_as_resource target), since Bazel's runfiles-jarred classpath makes
+     * walking up from a classloader resource to a real repo-root file impossible (`toURI()`
+     * throws "URI is not hierarchical" on a `jar:file:...!/...` URL). Falls back to Gradle's
+     * unpacked classpath, where that walk works fine.
+     */
+    private val source: String by lazy {
+        javaClass.classLoader.getResourceAsStream("GitShadowWorktree.kt")?.bufferedReader()?.readText()
+            ?: run {
+                val resource = javaClass.classLoader.getResource("demo-graph/pages")
+                    ?: fail("demo-graph/pages not found on classpath — check that commonMain resources are on the test classpath")
+                var dir = File(resource.toURI())
+                while (dir != dir.parentFile) {
+                    val candidate = dir.resolve(
+                        "src/androidMain/kotlin/dev/stapler/stelekit/git/GitShadowWorktree.kt"
+                    )
+                    if (candidate.exists()) return@run candidate.readText()
+                    dir = dir.parentFile
+                }
+                fail("Could not locate GitShadowWorktree.kt walking up from: $resource")
+            }
     }
-
-    private val source: String by lazy { sourceFile.readText() }
 
     @Test
     fun `GitShadowWorktree declares no CoroutineScope-typed property`() {

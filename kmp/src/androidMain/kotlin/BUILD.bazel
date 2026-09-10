@@ -181,3 +181,12 @@ kt_android_library(
     ],
     visibility = ["//kmp:__subpackages__", "//androidApp:__subpackages__"],
 )
+
+# Exposes GitShadowWorktree.kt as a Bazel target so GitShadowWorktreeNoCoroutineScopeTest
+# (businessTest, JVM-only) can bundle it as a classpath resource and read its source text
+# without compiling it — same idiom as commonMain's demo_filesystem_source.
+filegroup(
+    name = "git_shadow_worktree_source",
+    srcs = ["dev/stapler/stelekit/git/GitShadowWorktree.kt"],
+    visibility = ["//kmp:__subpackages__"],
+)

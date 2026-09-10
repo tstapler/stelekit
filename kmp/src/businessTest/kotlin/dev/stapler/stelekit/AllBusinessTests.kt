@@ -11,22 +11,17 @@ package dev.stapler.stelekit
 // auto-discovery, no suite list) — currently invoked only in the release gate
 // (release.yml), not on every PR.
 //
-// Intentionally excluded from this list — these read real repo files or Gradle-injected
-// system properties, which Bazel's sandboxed/jarred runfiles classpath doesn't provide the
-// same way `./gradlew jvmTest` does (verified: each fails here with the cited error, passes
-// under Gradle):
-//   - MigrationRunnerSchemaSyncTest — needs `-Dstelekit.sq.file`, injected only by Gradle's
-//     jvmTest task (kmp/build.gradle.kts). Fails here: IllegalStateException naming the
-//     missing property.
-//   - BacklogTriageRuleTest, GapBacklogSchemaTest, GapBacklogTraceabilityTest,
-//     JourneyDocsFrontmatterTest, JourneyStepCountRubricTest, and
-//     GitShadowWorktreeNoCoroutineScopeTest — all locate the repo root via
-//     `File(classLoader.getResource(...).toURI())` (DocRepoLocator, and a duplicate of the
-//     same logic in GitShadowWorktreeNoCoroutineScopeTest), which assumes an unpacked,
-//     on-disk classpath. Under Bazel the resource resolves inside a runfiles jar
-//     (`jar:file:...!/...`), so `toURI()` throws IllegalArgumentException: URI is not
-//     hierarchical. A real fix needs Bazel's Runfiles API plus `data` deps in
-//     BUILD.bazel — not attempted here.
+// 7 of those 76 needed real fixes rather than just adding an import: MigrationRunnerSchemaSyncTest,
+// BacklogTriageRuleTest, GapBacklogSchemaTest, GapBacklogTraceabilityTest, JourneyDocsFrontmatterTest,
+// JourneyStepCountRubricTest, and GitShadowWorktreeNoCoroutineScopeTest all read real repo files
+// (SteleDatabase.sq, docs/journeys/*.md, project_plans/.../gap-backlog.md+plan.md,
+// GitShadowWorktree.kt) or a Gradle-injected system property, none of which Bazel's jarred
+// runfiles classpath provides the way Gradle's unpacked one does. Fixed by bundling each real
+// file as a classpath resource (see BUILD.bazel's *_as_resource(s) targets in this package, and
+// the root/kmp/androidMain BUILD.bazel filegroups they consume) and updating each test (and
+// DocRepoLocator, shared by 4 of them) to try that resource first, falling back to the original
+// Gradle-only resolution — the same Bazel-resource/Gradle-fallback idiom DemoFileSystemSyncTest
+// already applies to DemoFileSystem.kt.
 import dev.stapler.stelekit.clipboard.BlockClipboardTest
 import dev.stapler.stelekit.domain.ImportServiceTest
 import dev.stapler.stelekit.editor.LinkInsertionTest
@@ -73,11 +68,18 @@ import dev.stapler.stelekit.db.GraphSwitchInvalidationTest
 import dev.stapler.stelekit.db.IndexDrainSectionFilterTest
 import dev.stapler.stelekit.db.MigrationRunnerCoverageTest
 import dev.stapler.stelekit.db.MigrationRunnerIndexTest
+import dev.stapler.stelekit.db.MigrationRunnerSchemaSyncTest
 import dev.stapler.stelekit.db.SqliteStatementAnalyzerTest
 import dev.stapler.stelekit.db.WithoutRowidMigrationTest
+import dev.stapler.stelekit.docs.BacklogTriageRuleTest
+import dev.stapler.stelekit.docs.GapBacklogSchemaTest
+import dev.stapler.stelekit.docs.GapBacklogTraceabilityTest
+import dev.stapler.stelekit.docs.JourneyDocsFrontmatterTest
+import dev.stapler.stelekit.docs.JourneyStepCountRubricTest
 import dev.stapler.stelekit.editor.ImageAttachCallbackContractTest
 import dev.stapler.stelekit.export.ExportServiceJournalRangeTest
 import dev.stapler.stelekit.export.ExportServiceLinkedPagesTest
+import dev.stapler.stelekit.git.GitShadowWorktreeNoCoroutineScopeTest
 import dev.stapler.stelekit.git.GitSyncServiceRateLimitRetryTest
 import dev.stapler.stelekit.git.GitSyncServiceTest
 import dev.stapler.stelekit.git.merge.JournalMergeServiceTest
@@ -172,11 +174,18 @@ import org.junit.runners.Suite
     IndexDrainSectionFilterTest::class,
     MigrationRunnerCoverageTest::class,
     MigrationRunnerIndexTest::class,
+    MigrationRunnerSchemaSyncTest::class,
     SqliteStatementAnalyzerTest::class,
     WithoutRowidMigrationTest::class,
+    BacklogTriageRuleTest::class,
+    GapBacklogSchemaTest::class,
+    GapBacklogTraceabilityTest::class,
+    JourneyDocsFrontmatterTest::class,
+    JourneyStepCountRubricTest::class,
     ImageAttachCallbackContractTest::class,
     ExportServiceJournalRangeTest::class,
     ExportServiceLinkedPagesTest::class,
+    GitShadowWorktreeNoCoroutineScopeTest::class,
     GitSyncServiceRateLimitRetryTest::class,
     GitSyncServiceTest::class,
     JournalMergeServiceTest::class,

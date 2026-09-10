@@ -84,3 +84,24 @@ toolchain(
     toolchain_type = "@rules_android//toolchains/android:toolchain_type",
     visibility = ["//visibility:public"],
 )
+
+# ── Doc-schema test fixtures ──────────────────────────────────────────────────
+# Real repo docs, exposed so businessTest's doc-schema tests (BacklogTriageRuleTest,
+# GapBacklogSchemaTest, GapBacklogTraceabilityTest, JourneyStepCountRubricTest,
+# JourneyDocsFrontmatterTest) can bundle them as classpath resources — see
+# kmp/src/businessTest/kotlin/BUILD.bazel and DocRepoLocator's class doc for why
+# (Bazel's jarred runfiles classpath vs. Gradle's unpacked one).
+filegroup(
+    name = "rich_editing_backlog_docs",
+    srcs = [
+        "project_plans/rich-editing-experience/implementation/gap-backlog.md",
+        "project_plans/rich-editing-experience/implementation/plan.md",
+    ],
+    visibility = ["//kmp:__subpackages__"],
+)
+
+filegroup(
+    name = "journey_docs_source",
+    srcs = glob(["docs/journeys/*.md"]),
+    visibility = ["//kmp:__subpackages__"],
+)
