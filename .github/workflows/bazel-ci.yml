@@ -32,7 +32,7 @@ jobs:
         uses: bazel-contrib/setup-bazel@0.19.0
         with:
           bazelisk-version: "1.x"
-          # Shared across all 4 Bazel jobs (not job-scoped): their action graphs
+          # Shared across all 5 Bazel jobs (not job-scoped): their action graphs
           # heavily overlap (commonMain compile, external repo fetch/build, etc.),
           # and GitHub evicts the whole repo's caches once combined size crosses
           # ~10GB, so 4 separate near-duplicate multi-hundred-MB disk-caches were
@@ -72,6 +72,40 @@ jobs:
             ${{ runner.temp }}/bazel-jvm-build.log
             ${{ runner.temp }}/bazel-jvm-test.log
 
+  # ── Business-logic tests (no UI) ────────────────────────────────────────────
+  bazel-business:
+    name: Bazel business-logic tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/ci-resource-monitor
+
+      - uses: ./.github/actions/setup-bcp
+
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@0.19.0
+        with:
+          bazelisk-version: "1.x"
+          # Shared across all 5 Bazel jobs — see comment on bazel-jvm's setup step.
+          disk-cache: shared
+          repository-cache: true
+          external-cache: true
+          cache-save: ${{ github.event_name != 'pull_request' }}
+
+      - name: Run business-logic tests
+        run: |
+          bazel test //kmp:business_tests \
+            --config=remote-cache \
+            --test_output=all 2>&1 | tee "$RUNNER_TEMP/bazel-business-test.log"
+
+      - name: CI job report
+        if: always()
+        uses: ./.github/actions/ci-job-report
+        with:
+          log-files: ${{ runner.temp }}/bazel-business-test.log
+
   # ── Android build ──────────────────────────────────────────────────────────
   bazel-android:
     name: Bazel Android build
@@ -100,7 +134,7 @@ jobs:
         uses: bazel-contrib/setup-bazel@0.19.0
         with:
           bazelisk-version: "1.x"
-          # Shared across all 4 Bazel jobs — see comment on bazel-jvm's setup step.
+          # Shared across all 5 Bazel jobs — see comment on bazel-jvm's setup step.
           disk-cache: shared
           repository-cache: true
           external-cache: true
@@ -146,7 +180,7 @@ jobs:
         uses: bazel-contrib/setup-bazel@0.19.0
         with:
           bazelisk-version: "1.x"
-          # Shared across all 4 Bazel jobs — see comment on bazel-jvm's setup step.
+          # Shared across all 5 Bazel jobs — see comment on bazel-jvm's setup step.
           disk-cache: shared
           repository-cache: true
           external-cache: true
@@ -205,7 +239,7 @@ jobs:
         uses: bazel-contrib/setup-bazel@0.19.0
         with:
           bazelisk-version: "1.x"
-          # Shared across all 4 Bazel jobs — see comment on bazel-jvm's setup step.
+          # Shared across all 5 Bazel jobs — see comment on bazel-jvm's setup step.
           disk-cache: shared
           repository-cache: true
           external-cache: true
