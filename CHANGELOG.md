@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.82.0](https://github.com/tstapler/stelekit/compare/v0.81.2...v0.82.0) (2026-09-11)
+
+
+### Features
+
+* **transfer:** add cross-graph page/journal merge; fix git-config dead state ([b004635](https://github.com/tstapler/stelekit/commit/b004635f784ac9dd6f085f48c935a7319130572c))
+
+
+### Bug Fixes
+
+* **bazel:** make the last 7 businessTest classes pass under Bazel too ([39b5788](https://github.com/tstapler/stelekit/commit/39b5788d676bc857eaa244d93e63840bb2458622))
+
 ## [0.81.2](https://github.com/tstapler/stelekit/compare/v0.81.1...v0.81.2) (2026-09-10)
 
 
