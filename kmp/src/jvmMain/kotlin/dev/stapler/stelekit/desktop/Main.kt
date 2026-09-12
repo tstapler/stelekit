@@ -4,6 +4,7 @@
 
 package dev.stapler.stelekit.desktop
 
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import kotlinx.coroutines.CancellationException
 import androidx.compose.runtime.LaunchedEffect
@@ -24,6 +25,7 @@ import dev.stapler.stelekit.capture.GlobalHotkeyListener
 import dev.stapler.stelekit.capture.JKeymasterHotkeyListener
 import dev.stapler.stelekit.capture.PendingCapturePoller
 import dev.stapler.stelekit.capture.PendingCaptureWriter
+import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.domain.UrlFetcherJvm
 import dev.stapler.stelekit.service.JvmMediaAttachmentService
 import dev.stapler.stelekit.git.JvmGitRepository
@@ -133,22 +135,9 @@ fun main(args: Array<String>) {
             OtelSpanRecorder(OtelProvider.getTracer("compose.navigation") as Tracer)
         }
 
-        // Desktop quick-capture: one CaptureController/hotkey listener for the whole process
-        // lifetime, registered once and unregistered on window close (see onCloseRequest below).
-        val captureController = remember(fileSystem) { CaptureController(fileSystem) }
-        val hotkeyListener = remember { JKeymasterHotkeyListener() }
-        LaunchedEffect(Unit) { captureController.start(hotkeyListener) }
-
-        // Cold-start drain of any pending-capture files left on disk (headless CLI captures,
-        // or a capture taken before the graph finished loading) — replayed through the same
-        // CaptureWriter chain the live popup uses, every 5s and once immediately on start.
-        val poller = remember(fileSystem) { PendingCapturePoller(fileSystem) }
-        LaunchedEffect(Unit) { poller.start() }
-
-        // Unix-domain-socket fast path: a CLI capture delivered while SteleKit is already
-        // running skips the poller's up-to-5s latency entirely (see CaptureSocketClient).
-        val socketListener = remember(fileSystem) { CaptureSocketListener(fileSystem) }
-        LaunchedEffect(Unit) { socketListener.start() }
+        // Desktop quick-capture: hotkey popup + cold-start poller + socket fast path, all
+        // owned for the whole process lifetime (see CaptureSurfaces below).
+        val captureSurfaces = rememberCaptureSurfaces(fileSystem)
 
         logger.info("Starting Desktop Application with graph: $graphPath")
         errorTracker.recordBreadcrumb("Graph path resolved: $graphPath", "SYSTEM")
@@ -156,9 +145,7 @@ fun main(args: Array<String>) {
         Window(
             onCloseRequest = {
                 logger.info("Application shutting down")
-                captureController.stop(hotkeyListener)
-                socketListener.stop()
-                poller.stop()
+                captureSurfaces.stopAll()
                 dev.stapler.stelekit.logging.LogManager.flush()
                 // Closing the main window exits the whole JVM anyway, so these stop() calls are
                 // for orderly shutdown (flushing logs, closing the socket file) rather than
@@ -207,21 +194,66 @@ fun main(args: Array<String>) {
                         gitRepository = gitRepository,
                     ),
                     lifecycleHooks = StelekitAppLifecycleHooks(
-                        onGraphManagerReady = { gm ->
-                            captureController.attachGraphManager(gm)
-                            poller.attachGraphManager(gm)
-                            socketListener.attachGraphManager(gm)
+                        onGraphManagerReady = { gm -> captureSurfaces.attachGraphManager(gm) },
+                        onNotificationManagerReady = { nm ->
+                            captureSurfaces.controller.attachNotificationManager(nm)
                         },
-                        onNotificationManagerReady = { nm -> captureController.attachNotificationManager(nm) },
                     ),
                     captureDeps = StelekitAppCaptureDeps(
                         hotkeyComboLabel = GlobalHotkeyListener.DEFAULT_COMBO_LABEL,
-                        hotkeyRegistrationFailure = hotkeyListener.registrationFailure,
+                        hotkeyRegistrationFailure = captureSurfaces.hotkeyListener.registrationFailure,
                     ),
                 ),
             )
         }
 
-        CapturePopupWindow(captureController)
+        CapturePopupWindow(captureSurfaces.controller)
     }
+}
+
+/**
+ * Bundles the desktop quick-capture background surfaces (hotkey popup controller, cold-start
+ * pending-capture poller, Unix-domain-socket fast-path listener) so [main]'s own setup code
+ * doesn't drown in per-surface `remember`/`LaunchedEffect` boilerplate — this is purely an
+ * organizational grouping, not a new abstraction layer (each field is used directly).
+ */
+private class CaptureSurfaces(
+    val controller: CaptureController,
+    val hotkeyListener: JKeymasterHotkeyListener,
+    val poller: PendingCapturePoller,
+    val socketListener: CaptureSocketListener,
+) {
+    fun attachGraphManager(gm: GraphManager) {
+        controller.attachGraphManager(gm)
+        poller.attachGraphManager(gm)
+        socketListener.attachGraphManager(gm)
+    }
+
+    fun stopAll() {
+        controller.stop(hotkeyListener)
+        socketListener.stop()
+        poller.stop()
+    }
+}
+
+@Composable
+private fun rememberCaptureSurfaces(fileSystem: PlatformFileSystem): CaptureSurfaces {
+    val controller = remember(fileSystem) { CaptureController(fileSystem) }
+    val hotkeyListener = remember { JKeymasterHotkeyListener() }
+    // Cold-start drain of any pending-capture files left on disk (headless CLI captures, or a
+    // capture taken before the graph finished loading) — replayed through the same
+    // CaptureWriter chain the live popup uses, every 5s and once immediately on start.
+    val poller = remember(fileSystem) { PendingCapturePoller(fileSystem) }
+    // Unix-domain-socket fast path: a CLI capture delivered while SteleKit is already running
+    // skips the poller's up-to-5s latency entirely (see CaptureSocketClient).
+    val socketListener = remember(fileSystem) { CaptureSocketListener(fileSystem) }
+    val surfaces = remember(controller, hotkeyListener, poller, socketListener) {
+        CaptureSurfaces(controller, hotkeyListener, poller, socketListener)
+    }
+    LaunchedEffect(surfaces) {
+        controller.start(hotkeyListener)
+        poller.start()
+        socketListener.start()
+    }
+    return surfaces
 }
