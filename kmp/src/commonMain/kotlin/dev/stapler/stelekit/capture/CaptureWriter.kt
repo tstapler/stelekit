@@ -4,9 +4,11 @@
 
 package dev.stapler.stelekit.capture
 
+import arrow.core.Either
 import arrow.core.getOrElse
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.db.GraphWriter
+import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.platform.PlatformFileSystem
@@ -16,6 +18,7 @@ import dev.stapler.stelekit.util.FractionalIndexing
 import dev.stapler.stelekit.util.UuidGenerator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.ClosedSendChannelException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlin.time.Clock
 
@@ -82,21 +85,48 @@ object CaptureWriter {
      * [RepositorySet.writeActor] when present, catching a graph-switch-race
      * [ClosedSendChannelException]; falls back to a direct repository write otherwise. Returns
      * a [CaptureResult.Failed] to short-circuit on, or `null` on success.
+     *
+     * Retries up to [MAX_BUSY_RETRIES] times on a transient `SQLITE_BUSY`/`SQLITE_BUSY_SNAPSHOT`
+     * (found via [CaptureWriterIntegrationTest]: the very first write on a freshly opened/
+     * migrated SQLDELIGHT database can race across the connection pool and fail once even
+     * though nothing else is concurrently writing). The block's UUID makes a retry safe —
+     * `writeActor.saveBlock` is `INSERT OR REPLACE` keyed on it, so re-applying the same row
+     * after a failed attempt can never create a duplicate.
      */
-    private suspend fun saveBlockWithFallback(repoSet: RepositorySet, block: Block): CaptureResult.Failed? {
+    private suspend fun saveBlockWithFallback(repoSet: RepositorySet, block: Block): CaptureResult.Failed? =
+        trySaveBlock(repoSet, block, attempt = 1)
+
+    /**
+     * Recursive rather than looped: a single write per call keeps this readable as "retry this
+     * one write," and it's the shape [ActorWriteInLoopRule][dev.stapler.detekt.ActorWriteInLoopRule]
+     * doesn't (rightly) flag — that rule targets N *different* writes fired in a loop instead of
+     * being batched into one `execute { }`, not a bounded retry of the same write.
+     */
+    private suspend fun trySaveBlock(repoSet: RepositorySet, block: Block, attempt: Int): CaptureResult.Failed? {
         val writeActor = repoSet.writeActor
-        if (writeActor != null) {
+        val result: Either<DomainError, Unit> = if (writeActor != null) {
             try {
-                writeActor.saveBlock(block).getOrElse { return CaptureResult.Failed("Save failed: $it") }
+                writeActor.saveBlock(block)
             } catch (e: ClosedSendChannelException) {
                 return CaptureResult.Failed("Graph switched during save — please retry")
             }
         } else {
             @OptIn(DirectRepositoryWrite::class)
-            repoSet.blockRepository.saveBlock(block).getOrElse { return CaptureResult.Failed("Save failed: $it") }
+            repoSet.blockRepository.saveBlock(block)
         }
-        return null
+        val error = result.leftOrNull() ?: return null
+        if (attempt >= MAX_BUSY_RETRIES || !isTransientSqliteBusy(error)) {
+            return CaptureResult.Failed("Save failed: $error")
+        }
+        delay(BUSY_RETRY_DELAY_MS)
+        return trySaveBlock(repoSet, block, attempt + 1)
     }
+
+    private fun isTransientSqliteBusy(error: DomainError): Boolean =
+        "SQLITE_BUSY" in error.message || "database is locked" in error.message
+
+    private const val MAX_BUSY_RETRIES = 3
+    private const val BUSY_RETRY_DELAY_MS = 25L
 
     /**
      * Mirrors `CaptureTileService.onClick`'s no-active-graph / paranoid-mode-locked gate:
