@@ -262,24 +262,40 @@ class StelekitViewModel(
     // --- Git Sync ---
 
     /**
+     * Dirty-file count derived from [GitSyncService.localStatus] — the platform-agnostic source,
+     * refreshed on graph open, each periodic poll tick, and after every sync/commit (see
+     * [GitSyncService.refreshLocalStatus]). Works identically on every platform, unlike
+     * [localChangesCountFlow] below.
+     */
+    private val gitLocalStatusCountFlow: Flow<Int> = activeGitSyncService
+        .flatMapLatest { service -> service?.localStatus ?: flowOf(null) }
+        .map { status -> (status?.untrackedFiles?.size ?: 0) + (status?.modifiedFiles?.size ?: 0) }
+
+    /**
      * Emits the current [SyncState] from the active [GitSyncService], upgraded to
-     * [SyncState.LocalChangesPending] when [localChangesCountFlow] reports a nonzero dirty count
-     * while the raw state is otherwise [SyncState.Idle] (Epic 4.3, Story 4.3.2). Falls back to
-     * [SyncState.Idle] when no git sync service is configured.
+     * [SyncState.LocalChangesPending] when either dirty-count source reports a nonzero count while
+     * the raw state is otherwise [SyncState.Idle] (Epic 4.3, Story 4.3.2): [gitLocalStatusCountFlow]
+     * (all platforms) or [localChangesCountFlow] (web-only file-watcher signal, kept as a second,
+     * lower-latency source — a local git status read can lag a just-written file by one poll tick).
+     * Falls back to [SyncState.Idle] when no git sync service is configured.
      *
      * The upgrade only ever overrides [SyncState.Idle] — it never interrupts an in-progress state
-     * (`Fetching`/`Merging`/`Pushing`/`Committing`/etc.). When [localChangesCountFlow] is null
-     * (JVM/Android — the web-only [dev.stapler.stelekit.platform.PlatformFileSystem] is the sole
-     * producer), this combine is a byte-for-byte no-op: `combine` with a constant `flowOf(0)`
-     * degrades to the original `activeGitSyncService.flatMapLatest { ... }` output because `count >
-     * 0` is always false, so [SyncState.LocalChangesPending] can never be emitted.
+     * (`Fetching`/`Merging`/`Pushing`/`Committing`/etc.).
      */
     val syncState: StateFlow<SyncState> = activeGitSyncService
         .flatMapLatest { service -> service?.syncState ?: flowOf(SyncState.Idle) }
-        .combine(localChangesCountFlow ?: flowOf(0)) { rawState, count ->
+        .combine(
+            gitLocalStatusCountFlow.combine(localChangesCountFlow ?: flowOf(0)) { a, b -> maxOf(a, b) }
+        ) { rawState, count ->
             if (rawState is SyncState.Idle && count > 0) SyncState.LocalChangesPending(count) else rawState
         }
         .stateIn(scope, SharingStarted.Eagerly, SyncState.Idle)
+
+    /** Epoch-millis of the last successful sync for the active graph, persisted across app
+     * restarts (see [GitSyncService.lastSyncAt]) — null when never synced or no service is active. */
+    val gitLastSyncAt: StateFlow<Long?> = activeGitSyncService
+        .flatMapLatest { service -> service?.lastSyncAt ?: flowOf(null) }
+        .stateIn(scope, SharingStarted.Eagerly, null)
 
     private fun observeSyncState() {
         scope.launch {

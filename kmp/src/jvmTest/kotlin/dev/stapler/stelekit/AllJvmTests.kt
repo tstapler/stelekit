@@ -74,6 +74,7 @@ import dev.stapler.stelekit.ui.components.SearchDialogTest
 import dev.stapler.stelekit.ui.components.SuggestionContextMenuTest
 import dev.stapler.stelekit.ui.components.SuggestionNavigatorPanelTest
 import dev.stapler.stelekit.ui.components.SuggestionRenderBenchmarkTest
+import dev.stapler.stelekit.ui.components.SyncStatusBadgeTest
 import dev.stapler.stelekit.ui.components.TopBarTest
 import dev.stapler.stelekit.ui.components.settings.AddEditLlmProviderDialogTest
 import dev.stapler.stelekit.ui.components.settings.LlmProviderListScreenTest
@@ -169,6 +170,7 @@ import org.junit.runners.Suite
     SuggestionContextMenuTest::class,
     SuggestionNavigatorPanelTest::class,
     SuggestionRenderBenchmarkTest::class,
+    SyncStatusBadgeTest::class,
     TopBarTest::class,
     DemoBannerTest::class,
     GraphSwitcherDemoFilterTest::class,

@@ -94,6 +94,9 @@ fun LeftSidebar(
     onRemoveGraph: (String) -> Unit = {},
     onCollapse: () -> Unit = {},
     syncState: SyncState = SyncState.Idle,
+    /** Epoch-millis of the last successful git sync, persisted across restarts. Null when never
+     * synced or no git sync service is active — see [GitSyncService.lastSyncAt]. */
+    gitLastSyncAt: Long? = null,
     onSyncClick: () -> Unit = {},
     onGitSetup: () -> Unit = {},
     isGitConfigured: Boolean = false,
@@ -201,7 +204,7 @@ fun LeftSidebar(
             }
 
             SyncStatusBadge(
-                syncState = syncState,
+                status = GitSyncStatus(state = syncState, lastSyncAt = gitLastSyncAt),
                 onSyncClick = onSyncClick,
                 isGitConfigured = isGitConfigured,
                 onAuthError = onAuthError,

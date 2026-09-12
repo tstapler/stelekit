@@ -18,6 +18,7 @@ import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.git.model.wikiRoot
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.NetworkMonitor
+import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.platform.security.CredentialAccess
 import dev.stapler.stelekit.logging.Logger
 import kotlinx.coroutines.CancellationException
@@ -53,11 +54,50 @@ class GitSyncService(
     /** Returns the active [CredentialAccess] for checking vault availability before sync. Null means always available. */
     private val credentialAccessProvider: (() -> CredentialAccess)? = null,
     private val journalMergeService: JournalMergeService? = null,
+    /** Graph this instance serves — one instance per active graph (see class doc). Used only to
+     * key [lastSyncAt]'s persisted value in [settings]; every method still takes its own
+     * `graphId` parameter for the actual git operation. */
+    private val graphId: String = "",
+    /** Backs [lastSyncAt] across app restarts. Null (tests, and any caller that doesn't need
+     * persistence) makes [lastSyncAt] start at null and never persist. */
+    private val settings: Settings? = null,
 ) {
     private val logger = Logger("GitSyncService")
 
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
     val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
+
+    /**
+     * Working-tree status (dirty file count), refreshed by [refreshLocalStatus] independently of
+     * the full [sync] pipeline — never mutated by [_syncState] transitions. Null until the first
+     * refresh completes (graph open, each periodic poll tick, or after [sync]/[commitLocalChanges]).
+     */
+    private val _localStatus = MutableStateFlow<GitStatus?>(null)
+    val localStatus: StateFlow<GitStatus?> = _localStatus.asStateFlow()
+
+    /** Epoch-millis timestamp of the last successful [sync]/[applyJournalMerge], persisted in
+     * [settings] so it survives app restarts and graph switches — unlike [SyncState.Success],
+     * which only lives for the 3-second badge fade. */
+    private val _lastSyncAt = MutableStateFlow(settings?.getString(lastSyncSettingsKey(), "")?.toLongOrNull())
+    val lastSyncAt: StateFlow<Long?> = _lastSyncAt.asStateFlow()
+
+    private fun lastSyncSettingsKey() = "git_last_synced_at_$graphId"
+
+    private fun recordLastSyncAt(epochMillis: Long) {
+        _lastSyncAt.value = epochMillis
+        settings?.putString(lastSyncSettingsKey(), epochMillis.toString())
+    }
+
+    /**
+     * Lightweight working-tree status check — reads git status without running the full
+     * commit/fetch/merge/push [sync] pipeline. Never touches the network and never mutates
+     * [_syncState], so it's safe to call frequently (graph open, each periodic poll tick, after
+     * [sync]/[commitLocalChanges] completes) without disturbing an in-progress sync's state.
+     */
+    suspend fun refreshLocalStatus(graphId: String) {
+        val config = configRepository.getConfig(graphId).getOrNull() ?: return
+        _localStatus.value = gitRepository.status(config).getOrNull()
+    }
 
     // Owns its own scope — never accept rememberCoroutineScope()
     // CoroutineExceptionHandler guards against uncaught Throwable crashing the Android process.
@@ -68,6 +108,14 @@ class GitSyncService(
         )
     }
     private val scope = CoroutineScope(SupervisorJob() + PlatformDispatcher.IO + exceptionHandler)
+
+    init {
+        // Populate localStatus immediately on construction (graph open) rather than waiting for
+        // the first periodic poll tick or manual sync — see refreshLocalStatus's doc.
+        if (graphId.isNotEmpty()) {
+            scope.launch { refreshLocalStatus(graphId) }
+        }
+    }
 
     @kotlin.concurrent.Volatile private var periodicSyncJob: Job? = null
 
@@ -298,11 +346,13 @@ class GitSyncService(
                 return@withContext err.left()
             }
 
+            refreshLocalStatus(graphId)
             val success = SyncState.Success(
                 localCommitsMade = localCommitsMade,
                 remoteCommitsMerged = remoteCommitsMerged,
                 lastSyncAt = Clock.System.now().toEpochMilliseconds(),
             )
+            recordLastSyncAt(success.lastSyncAt)
             _syncState.value = success
             success.right()
         }
@@ -392,6 +442,7 @@ class GitSyncService(
                 is Either.Left -> return@withContext r.value.left()
                 is Either.Right -> r.value
             }
+            refreshLocalStatus(graphId)
             _syncState.value = SyncState.Idle
             sha.right()
         }
@@ -509,10 +560,13 @@ class GitSyncService(
             return@withContext err.left()
         }
 
+        refreshLocalStatus(graphId)
+        val successAt = Clock.System.now().toEpochMilliseconds()
+        recordLastSyncAt(successAt)
         _syncState.value = SyncState.Success(
             localCommitsMade = 0,
             remoteCommitsMerged = 1,
-            lastSyncAt = Clock.System.now().toEpochMilliseconds(),
+            lastSyncAt = successAt,
         )
         Unit.right()
     }
@@ -545,6 +599,7 @@ class GitSyncService(
         periodicSyncJob = scope.launch {
             while (true) {
                 delay(intervalMinutes * 60_000L)
+                refreshLocalStatus(graphId)
                 fetchOnly(graphId)
             }
         }

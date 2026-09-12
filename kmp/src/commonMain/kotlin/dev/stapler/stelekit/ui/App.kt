@@ -580,6 +580,9 @@ private fun GraphContent(deps: GraphContentDeps) {
     val gitConfigRepository = remember(gitRepository) {
         if (gitRepository == null) null else graphManager.createGitConfigRepository()
     }
+    // Snapshot only — GraphContent is torn down and recreated by the parent's key(activeGraphId)
+    // whenever the active graph changes, so this can't change during this instance's lifetime.
+    val gitSyncGraphId = remember { graphManager.graphRegistry.value.activeGraphId?.value ?: "" }
     val gitSyncService = remember(gitConfigRepository) {
         if (gitRepository == null || gitConfigRepository == null) return@remember null
         val networkMonitor = dev.stapler.stelekit.platform.NetworkMonitor()
@@ -592,6 +595,8 @@ private fun GraphContent(deps: GraphContentDeps) {
             networkMonitor = networkMonitor,
             fileSystem = fileSystem,
             credentialAccessProvider = { vaultCredentialStore ?: dev.stapler.stelekit.platform.security.CredentialStore() },
+            graphId = gitSyncGraphId,
+            settings = platformSettings,
         )
     }
     DisposableEffect(gitSyncService) {
@@ -1171,6 +1176,7 @@ private fun GraphContent(deps: GraphContentDeps) {
     val graphRegistry by graphManager.graphRegistry.collectAsState()
     val activeGraphId = graphRegistry.activeGraphId
     val syncState by viewModel.syncState.collectAsState()
+    val gitLastSyncAt by viewModel.gitLastSyncAt.collectAsState()
 
     StelekitTheme(themeMode = appState.themeMode) {
         CompositionLocalProvider(LocalI18n provides I18n(appState.language)) {
@@ -1477,6 +1483,7 @@ private fun GraphContent(deps: GraphContentDeps) {
                                 supportsHostDirectoryLink = fileSystem.supportsHostDirectoryLink,
                                 onCollapse = { viewModel.toggleSidebar() },
                                 syncState = syncState,
+                                gitLastSyncAt = gitLastSyncAt,
                                 onSyncClick = {
                                     if (syncState is dev.stapler.stelekit.git.model.SyncState.CredentialVaultLocked) {
                                         // Vault is locked — lock() re-shows the unlock screen

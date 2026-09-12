@@ -33,6 +33,23 @@ bazel test //kmp:jvm_tests
 # Run only business-logic tests (no UI, fastest)
 bazel test //kmp:business_tests
 
+# `bazel test //kmp:jvm_tests` includes Compose Desktop UI tests, which need a real X11 display.
+# On a native Wayland session (`echo $XDG_SESSION_TYPE` → wayland) there is no X11 DISPLAY at all
+# for Bazel's sandbox to use — even with xorg-xwayland installed, nothing lazily starts it inside
+# a plain shell/agent session, and a shell's inherited DISPLAY/XAUTHORITY env vars (e.g. from a
+# stale Claude Code shell snapshot) can point at a socket that no longer exists. Symptom: every
+# UI test fails identically with `NoClassDefFoundError: Could not initialize class
+# sun.awt.X11.XToolkit` / `Can't connect to X11 window server using ':N' as the value of the
+# DISPLAY variable` — dozens of failures, all with this one root cause, not a real regression.
+# Fix: install a real virtual framebuffer once (`sudo pacman -S xorg-server-xvfb` on
+# Arch/Manjaro — same package this repo's CI installs via apt as `xvfb`), then always invoke
+# jvm_tests through it with the same flags bazel-ci.yml's bazel-jvm job uses:
+xvfb-run --auto-servernum bazel test //kmp:jvm_tests \
+  --sandbox_add_mount_pair=/tmp/.X11-unix --test_env=DISPLAY --test_env=XAUTHORITY
+# Without a working display, treat any bare `bazel test //kmp:jvm_tests` UI-test failures as
+# unverified rather than a regression, and fall back to `bazel test //kmp:business_tests`
+# (no UI, unaffected) for real local signal.
+
 # Build Android APK (requires ANDROID_HOME to be set)
 bazel build //kmp:android_app --config=android
 

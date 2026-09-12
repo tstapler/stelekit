@@ -41,11 +41,26 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.error.toSyncErrorMessage
 import dev.stapler.stelekit.git.model.SyncState
 import kotlinx.coroutines.delay
+import kotlin.time.Clock
+
+/**
+ * [SyncStatusBadge]'s input, bundled into one type to keep its parameter count down —
+ * [state] and [lastSyncAt] both describe "the current sync status" and are always supplied
+ * together by callers (see [StelekitViewModel.syncState]/[StelekitViewModel.gitLastSyncAt]).
+ *
+ * @param state Current sync state from [GitSyncService].
+ * @param lastSyncAt Epoch-millis of the last successful sync (persisted — survives app restarts),
+ * shown only while [state] is [SyncState.Idle]. Null renders "Never synced".
+ */
+data class GitSyncStatus(
+    val state: SyncState,
+    val lastSyncAt: Long? = null,
+)
 
 /**
  * A compact badge + icon button combo displayed in the sidebar header area.
  *
- * - [SyncState.Idle]: greyed-out sync icon, no badge text
+ * - [SyncState.Idle]: muted "Synced Nm ago" / "Never synced" text, from [GitSyncStatus.lastSyncAt]
  * - [SyncState.Fetching / Merging / Pushing / Committing]: animated spinning sync icon
  * - [SyncState.MergeAvailable(n)]: blue cloud-download icon with "↓ n" label
  * - [SyncState.ConflictPending]: amber warning icon with "Conflict" label
@@ -54,14 +69,14 @@ import kotlinx.coroutines.delay
  * - [SyncState.LocalChangesPending(n)]: neutral cloud-upload icon with "n unsynced" label — tappable, same as every other actionable state
  * - [SyncState.RateLimited]: neutral sync icon with "Retrying…" label — never clickable, never phrased as "tap to retry"
  *
- * @param syncState Current sync state from [GitSyncService].
+ * @param status Current sync state + last-synced time — see [GitSyncStatus].
  * @param onSyncClick Called when the manual sync icon button is tapped.
  * @param isGitConfigured Whether git sync has been configured for the current graph.
  * @param onAuthError Called when the sync error is an authentication failure.
  */
 @Composable
 fun SyncStatusBadge(
-    syncState: SyncState,
+    status: GitSyncStatus,
     onSyncClick: () -> Unit,
     modifier: Modifier = Modifier,
     isGitConfigured: Boolean = true,
@@ -86,7 +101,11 @@ fun SyncStatusBadge(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // Badge area — state-specific icon and label
-        SyncStateBadge(syncState = syncState, onSyncClick = onSyncClick, onAuthError = onAuthError)
+        SyncStateBadge(
+            status = status,
+            onSyncClick = onSyncClick,
+            onAuthError = onAuthError,
+        )
 
         Spacer(modifier = Modifier.width(4.dp))
 
@@ -109,15 +128,14 @@ fun SyncStatusBadge(
 
 @Composable
 private fun SyncStateBadge(
-    syncState: SyncState,
+    status: GitSyncStatus,
     onSyncClick: () -> Unit,
     modifier: Modifier = Modifier,
     onAuthError: (() -> Unit)? = null,
 ) {
+    val syncState = status.state
     when (syncState) {
-        is SyncState.Idle -> {
-            // No visible badge when idle
-        }
+        is SyncState.Idle -> LastSyncedText(lastSyncAt = status.lastSyncAt, modifier = modifier)
 
         is SyncState.Fetching,
         is SyncState.Merging,
@@ -315,5 +333,35 @@ private fun SyncStateBadge(
                 )
             }
         }
+    }
+}
+
+/** Muted "Synced Nm ago" / "Never synced" text for [SyncState.Idle], ticking every 30s so the
+ * elapsed time stays roughly current without a per-second recompose. */
+@Composable
+private fun LastSyncedText(lastSyncAt: Long?, modifier: Modifier = Modifier) {
+    var now by remember { mutableStateOf(Clock.System.now().toEpochMilliseconds()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(30_000)
+            now = Clock.System.now().toEpochMilliseconds()
+        }
+    }
+    Text(
+        text = if (lastSyncAt != null) "Synced ${formatElapsed(now - lastSyncAt)}" else "Never synced",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+        modifier = modifier,
+    )
+}
+
+/** Renders a non-negative millisecond duration as "just now" or a coarse "Nm/Nh/Nd ago" label. */
+private fun formatElapsed(elapsedMs: Long): String {
+    val minutes = elapsedMs.coerceAtLeast(0) / 60_000
+    return when {
+        minutes < 1 -> "just now"
+        minutes < 60 -> "${minutes}m ago"
+        minutes < 1_440 -> "${minutes / 60}h ago"
+        else -> "${minutes / 1_440}d ago"
     }
 }

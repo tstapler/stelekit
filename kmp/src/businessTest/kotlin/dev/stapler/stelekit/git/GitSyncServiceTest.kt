@@ -710,4 +710,41 @@ class GitSyncServiceTest {
         assertIs<Either.Right<*>>(result)
         assertEquals(1, commitCalls, "expected exactly one merge commit covering both files")
     }
+
+    // ── refreshLocalStatus: lightweight status check, independent of the sync pipeline ────────
+
+    @Test
+    fun `refreshLocalStatus populates localStatus without touching syncState`() = runTest {
+        val statusResult = GitStatus(
+            hasLocalChanges = true,
+            untrackedFiles = listOf("new.md"),
+            modifiedFiles = listOf("edited.md"),
+        )
+        val gitRepository = object : StubGitRepository() {
+            override suspend fun status(config: GitConfig) = statusResult.right()
+        }
+        val service = buildService(
+            gitRepository = gitRepository,
+            configRepository = StubConfigRepository(Either.Right(sampleConfig)),
+        )
+
+        val syncStateBefore = service.syncState.value
+        assertEquals(null, service.localStatus.value, "no refresh has happened yet")
+
+        service.refreshLocalStatus("test-graph")
+
+        assertEquals(statusResult, service.localStatus.value)
+        assertEquals(syncStateBefore, service.syncState.value, "refreshLocalStatus must never mutate syncState")
+    }
+
+    @Test
+    fun `refreshLocalStatus leaves localStatus null when there is no git config`() = runTest {
+        val service = buildService(
+            configRepository = StubConfigRepository(Either.Right(null)),
+        )
+
+        service.refreshLocalStatus("test-graph")
+
+        assertEquals(null, service.localStatus.value)
+    }
 }
