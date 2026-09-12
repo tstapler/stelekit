@@ -18,6 +18,8 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.rememberWindowState
 import dev.stapler.stelekit.capture.CaptureController
 import dev.stapler.stelekit.capture.CapturePopupWindow
+import dev.stapler.stelekit.capture.CaptureSocketClient
+import dev.stapler.stelekit.capture.CaptureSocketListener
 import dev.stapler.stelekit.capture.GlobalHotkeyListener
 import dev.stapler.stelekit.capture.JKeymasterHotkeyListener
 import dev.stapler.stelekit.capture.PendingCapturePoller
@@ -46,11 +48,16 @@ import java.awt.KeyboardFocusManager
 import javax.swing.UIManager
 
 fun main(args: Array<String>) {
-    // Headless CLI capture mode: write directly to the pending-capture queue and exit before
-    // any Compose/OTel/logging setup runs, so `stelekit --capture-text "..."` stays fast and
-    // side-effect-free (no window, no log file, no OpenTelemetry SDK spun up).
+    // Headless CLI capture mode: try the socket fast path first (delivers immediately if
+    // SteleKit is already running), falling back to the pending-capture queue — reusing the
+    // same captureId so a lost ack can't double-record — and exit before any Compose/OTel/
+    // logging setup runs, so `stelekit --capture-text "..."` stays fast and side-effect-free
+    // (no window, no log file, no OpenTelemetry SDK spun up).
     parseCaptureArgs(args)?.let { text ->
-        PendingCaptureWriter.write(text)
+        val result = CaptureSocketClient.trySend(text)
+        if (!result.delivered) {
+            PendingCaptureWriter.write(text, result.captureId)
+        }
         println("Captured.")
         return
     }
@@ -138,6 +145,11 @@ fun main(args: Array<String>) {
         val poller = remember(fileSystem) { PendingCapturePoller(fileSystem) }
         LaunchedEffect(Unit) { poller.start() }
 
+        // Unix-domain-socket fast path: a CLI capture delivered while SteleKit is already
+        // running skips the poller's up-to-5s latency entirely (see CaptureSocketClient).
+        val socketListener = remember(fileSystem) { CaptureSocketListener(fileSystem) }
+        LaunchedEffect(Unit) { socketListener.start() }
+
         logger.info("Starting Desktop Application with graph: $graphPath")
         errorTracker.recordBreadcrumb("Graph path resolved: $graphPath", "SYSTEM")
 
@@ -145,6 +157,7 @@ fun main(args: Array<String>) {
             onCloseRequest = {
                 logger.info("Application shutting down")
                 captureController.stop(hotkeyListener)
+                socketListener.stop()
                 dev.stapler.stelekit.logging.LogManager.flush()
                 // Closing the main window exits the whole JVM — including the hotkey listener
                 // and any future in-process capture surfaces (socket listener, poller). This is
@@ -194,6 +207,7 @@ fun main(args: Array<String>) {
                         onGraphManagerReady = { gm ->
                             captureController.attachGraphManager(gm)
                             poller.attachGraphManager(gm)
+                            socketListener.attachGraphManager(gm)
                         },
                         onNotificationManagerReady = { nm -> captureController.attachNotificationManager(nm) },
                     ),
