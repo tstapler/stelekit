@@ -178,6 +178,7 @@ private fun SettingsDialogHost(
         hostAccessState = settings.hostAccessState,
         supportsNativeDirectoryPicker = fileSystem.supportsNativeDirectoryPicker,
         onConnectHostDirectory = settings.onConnectHostDirectory,
+        hotkeyComboLabel = settings.hotkeyComboLabel,
     )
 }
 
