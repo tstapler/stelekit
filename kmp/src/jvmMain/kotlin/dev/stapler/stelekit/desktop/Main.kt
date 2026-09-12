@@ -19,12 +19,10 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.rememberWindowState
 import dev.stapler.stelekit.capture.CaptureController
 import dev.stapler.stelekit.capture.CapturePopupWindow
-import dev.stapler.stelekit.capture.CaptureSocketClient
 import dev.stapler.stelekit.capture.CaptureSocketListener
 import dev.stapler.stelekit.capture.GlobalHotkeyListener
 import dev.stapler.stelekit.capture.JKeymasterHotkeyListener
 import dev.stapler.stelekit.capture.PendingCapturePoller
-import dev.stapler.stelekit.capture.PendingCaptureWriter
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.domain.UrlFetcherJvm
 import dev.stapler.stelekit.service.JvmMediaAttachmentService
@@ -56,10 +54,7 @@ fun main(args: Array<String>) {
     // logging setup runs, so `stelekit --capture-text "..."` stays fast and side-effect-free
     // (no window, no log file, no OpenTelemetry SDK spun up).
     parseCaptureArgs(args)?.let { text ->
-        val result = CaptureSocketClient.trySend(text)
-        if (!result.delivered) {
-            PendingCaptureWriter.write(text, result.captureId)
-        }
+        runHeadlessCapture(text)
         println("Captured.")
         return
     }
@@ -216,8 +211,13 @@ fun main(args: Array<String>) {
  * pending-capture poller, Unix-domain-socket fast-path listener) so [main]'s own setup code
  * doesn't drown in per-surface `remember`/`LaunchedEffect` boilerplate — this is purely an
  * organizational grouping, not a new abstraction layer (each field is used directly).
+ *
+ * `internal` rather than `private` so [MainCaptureFlowTest] (jvmTest) can construct one with
+ * real components and exercise [attachGraphManager]/[stopAll] directly — `main()`'s own
+ * `application { }`/`Window { }` body isn't independently callable outside a real Compose
+ * window, so this class is the seam that lets the wiring be tested headlessly.
  */
-private class CaptureSurfaces(
+internal class CaptureSurfaces(
     val controller: CaptureController,
     val hotkeyListener: JKeymasterHotkeyListener,
     val poller: PendingCapturePoller,
