@@ -99,6 +99,38 @@ class CaptureControllerTest {
     }
 
     @Test
+    fun save_should_ClearStaleCaptureResult_When_RetryingAfterAPriorFailure() = runBlocking {
+        // Regression for the architecture-review-traced bug: CapturePopupContent's render
+        // `when` checks captureResult before saveState, so a stale non-null captureResult
+        // surviving into saveState=Saving would render the wrong placeholder (e.g.
+        // "No graph configured") during a Retry click instead of the Saving state.
+        val setup = newActiveSetup()
+
+        // First attempt fails before a graph is attached, leaving captureResult = NoActiveGraph.
+        val unattachedController = CaptureController(newFileSystem())
+        unattachedController.show()
+        unattachedController.updateText("Buy milk")
+        unattachedController.save()
+        val failed = assertIs<CapturePopupState.Shown>(
+            unattachedController.awaitState { it is CapturePopupState.Shown && it.saveState == SaveState.Error },
+        )
+        assertEquals(CaptureResult.NoActiveGraph, failed.captureResult)
+
+        // Attach a working graph (simulating the graph finishing load) and retry.
+        unattachedController.attachGraphManager(setup.graphManager)
+        unattachedController.save()
+
+        val saving = assertIs<CapturePopupState.Shown>(
+            unattachedController.awaitState { it is CapturePopupState.Shown && it.saveState == SaveState.Saving },
+        )
+        assertEquals(
+            null,
+            saving.captureResult,
+            "stale captureResult from the prior failure must not survive into the Saving state",
+        )
+    }
+
+    @Test
     fun save_should_NotThrowForgottenCoroutineScopeException_When_CalledAfterFiveShowHideCycles() = runBlocking {
         val controller = newActiveSetup().controller
 

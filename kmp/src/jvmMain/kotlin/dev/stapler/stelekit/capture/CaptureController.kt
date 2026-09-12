@@ -13,6 +13,7 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -69,6 +70,7 @@ class CaptureController(private val fileSystem: PlatformFileSystem) {
     /** Unregisters [hotkeyListener], e.g. on application shutdown. */
     fun stop(hotkeyListener: GlobalHotkeyListener) {
         hotkeyListener.unregister()
+        scope.cancel()
     }
 
     /**
@@ -114,7 +116,12 @@ class CaptureController(private val fileSystem: PlatformFileSystem) {
             return
         }
 
-        _state.value = current.copy(saveState = SaveState.Saving)
+        // Clear any captureResult left over from a prior failed attempt (e.g. GraphLocked from
+        // an earlier save, or the initial availability check) -- CapturePopupContent's render
+        // `when` checks captureResult before saveState, so a stale non-null value here would
+        // render the wrong placeholder (e.g. "Vault is locked") during a Retry click instead of
+        // the Saving state, even though CapturePopupState.Shown itself allows this combination.
+        _state.value = current.copy(saveState = SaveState.Saving, captureResult = null)
         val result = CaptureWriter.writeCaptureDirect(gm, fileSystem, current.text, captureId = null)
 
         // Re-read state rather than reuse `current` — updateText()/dismiss() may have raced

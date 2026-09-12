@@ -5,6 +5,7 @@
 package dev.stapler.stelekit.desktop
 
 import dev.stapler.stelekit.capture.CaptureSocketClient
+import dev.stapler.stelekit.capture.CaptureSocketPath
 import dev.stapler.stelekit.capture.PendingCapturesDirectory
 import dev.stapler.stelekit.capture.PendingCaptureWriter
 
@@ -26,7 +27,7 @@ fun parseCaptureArgs(args: Array<String>): String? {
  */
 fun runHeadlessCapture(
     text: String,
-    socketPath: String = "${System.getProperty("user.home")}/.stelekit/stelekit.sock",
+    socketPath: String = CaptureSocketPath.path(),
     pendingCaptureDirectory: String = PendingCapturesDirectory.path(),
 ): CaptureSocketClient.CaptureSendResult {
     val result = CaptureSocketClient.trySend(text, socketPath)

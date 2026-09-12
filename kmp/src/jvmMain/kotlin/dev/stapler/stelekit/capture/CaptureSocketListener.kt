@@ -38,7 +38,7 @@ import java.nio.file.attribute.PosixFilePermissions
  */
 class CaptureSocketListener(
     private val fileSystem: PlatformFileSystem,
-    private val socketPath: String = "${System.getProperty("user.home")}/.stelekit/stelekit.sock",
+    private val socketPath: String = CaptureSocketPath.path(),
 ) {
 
     @Volatile

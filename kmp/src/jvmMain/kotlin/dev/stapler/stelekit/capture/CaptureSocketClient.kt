@@ -42,7 +42,7 @@ object CaptureSocketClient {
      */
     fun trySend(
         text: String,
-        socketPath: String = "${System.getProperty("user.home")}/.stelekit/stelekit.sock",
+        socketPath: String = CaptureSocketPath.path(),
     ): CaptureSendResult {
         val captureId = UuidGenerator.generateV7()
         val pending = PendingCaptureFile(

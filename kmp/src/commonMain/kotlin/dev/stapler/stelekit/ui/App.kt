@@ -7,6 +7,7 @@ package dev.stapler.stelekit.ui
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.background
+import dev.stapler.stelekit.capture.HotkeyRegistrationFailure
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Lock
@@ -361,7 +362,7 @@ fun StelekitApp(
 private fun CaptureNoticesOverlay(platformSettings: Settings, captureDeps: StelekitAppCaptureDeps) {
     val failureFlow = remember(captureDeps.hotkeyRegistrationFailure) {
         captureDeps.hotkeyRegistrationFailure
-            ?: MutableStateFlow<dev.stapler.stelekit.capture.HotkeyRegistrationFailure?>(null)
+            ?: MutableStateFlow<HotkeyRegistrationFailure?>(null)
     }
     val hotkeyFailure by failureFlow.collectAsState()
     var conflictNoticeDismissedThisSession by remember { mutableStateOf(false) }
