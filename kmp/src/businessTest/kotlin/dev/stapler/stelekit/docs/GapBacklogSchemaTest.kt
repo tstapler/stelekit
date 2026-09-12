@@ -114,7 +114,7 @@ class GapBacklogSchemaTest {
 
     @Test
     fun `parseBacklogRow should extractAllSchemaColumns When rowIsWellFormed`() {
-        val rows = GapBacklogParser.parseRows(DocRepoLocator.gapBacklogFile.readText())
+        val rows = GapBacklogParser.parseRows(DocRepoLocator.gapBacklogText())
         val gap001 = rows.single { it.gapId == "GAP-001" }
         assertEquals("toggle-todo", gap001.journeyId)
         assertEquals("all", gap001.platform)
@@ -143,7 +143,7 @@ class GapBacklogSchemaTest {
 
     @Test
     fun `everyRealBacklogRow should passSchemaValidation When readFromDisk`() {
-        val rows = GapBacklogParser.parseRows(DocRepoLocator.gapBacklogFile.readText())
+        val rows = GapBacklogParser.parseRows(DocRepoLocator.gapBacklogText())
         assertTrue(rows.isNotEmpty(), "expected at least one row to parse out of gap-backlog.md")
         val failures = rows.flatMap { row -> GapBacklogParser.rowErrors(row).map { "${row.gapId}: $it" } }
         assertTrue(failures.isEmpty(), failures.joinToString("\n"))
@@ -151,7 +151,7 @@ class GapBacklogSchemaTest {
 
     @Test
     fun `backlogPlatformCoverage should beBalancedAcrossAllFourPlatforms When fullBacklogIsAggregated`() {
-        val rows = GapBacklogParser.parseRows(DocRepoLocator.gapBacklogFile.readText())
+        val rows = GapBacklogParser.parseRows(DocRepoLocator.gapBacklogText())
         val allPlatforms = setOf("desktop", "android", "ios", "web")
         val covered = rows.flatMap { row ->
             if (row.platform.equals("all", ignoreCase = true)) {

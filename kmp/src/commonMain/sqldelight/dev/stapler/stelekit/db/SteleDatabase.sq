@@ -432,6 +432,12 @@ UPDATE pages SET properties = ? WHERE uuid = ?;
 updatePageName:
 UPDATE pages SET name = ? WHERE uuid = ?;
 
+selectPageUuidAndFilePath:
+SELECT uuid, file_path FROM pages WHERE file_path IS NOT NULL;
+
+updatePageFilePathByUuid:
+UPDATE pages SET file_path = ? WHERE uuid = ?;
+
 updatePage:
 UPDATE pages SET
     namespace = ?,

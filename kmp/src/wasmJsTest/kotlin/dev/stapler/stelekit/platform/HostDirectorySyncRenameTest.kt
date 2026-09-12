@@ -105,17 +105,13 @@ class HostDirectorySyncRenameTest {
         cacheAccess: FakeCacheAccess,
         scope: CoroutineScope,
         rootHandle: JsAny,
-    ): HostDirectorySync {
-        val graphId = opfsPath.substringAfterLast("/")
-        val sync = HostDirectorySync(
-            graphIdProvider = { graphId },
-            cacheAccess = cacheAccess,
-            scope = scope,
-        )
-        sync.hostDirHandle = rootHandle
-        sync.hostGraphOpfsPath = opfsPath
-        return sync
-    }
+    ): HostDirectorySync = connectedSync(
+        graphId = OpfsGraphSlug(opfsPath.substringAfterLast("/")),
+        opfsPath = opfsPath,
+        rootHandle = rootHandle,
+        cacheAccess = cacheAccess,
+        scope = scope,
+    )
 
     /** Mirrors HostDirectorySyncWriteThroughTest.kt's helper — scheduleHostWriteThrough/
      * renameHostFile launch onto a real, independently-dispatched CoroutineScope. */
@@ -223,7 +219,7 @@ class HostDirectorySyncRenameTest {
         // it behind, having crashed after write-new but before delete-old).
         cache.textStore["$opfsPath/pages/New.md"] = "body"
         val testScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-        val sync = HostDirectorySync(graphIdProvider = { "g" }, cacheAccess = cache, scope = testScope)
+        val sync = disconnectedSync(graphId = OpfsGraphSlug("g"), cacheAccess = cache, scope = testScope)
 
         val host = rootDir(Dir("pages", listOf(TextFile("Old.md", "body"), TextFile("New.md", "body"))))
         val summary = sync.runHostReconciliation(host, opfsPath)
@@ -247,7 +243,7 @@ class HostDirectorySyncRenameTest {
         val opfsPath = "/stelekit/g"
         val cache = FakeCacheAccess() // empty — both pages are genuinely new and unrelated
         val testScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-        val sync = HostDirectorySync(graphIdProvider = { "g" }, cacheAccess = cache, scope = testScope)
+        val sync = disconnectedSync(graphId = OpfsGraphSlug("g"), cacheAccess = cache, scope = testScope)
 
         val host = rootDir(Dir("pages", listOf(TextFile("Empty1.md", ""), TextFile("Empty2.md", ""))))
         val summary = sync.runHostReconciliation(host, opfsPath)

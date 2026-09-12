@@ -25,6 +25,11 @@ import dev.stapler.stelekit.git.model.GitLabCommitRequest
 import dev.stapler.stelekit.git.model.GitLabCommitResponse
 import dev.stapler.stelekit.git.model.GitLabCompareResponse
 import dev.stapler.stelekit.git.model.GitLabTreeEntry
+import dev.stapler.stelekit.git.merge.Diff3
+import dev.stapler.stelekit.git.merge.findDuplicateBlockIds
+import dev.stapler.stelekit.git.merge.hasConflicts
+import dev.stapler.stelekit.git.merge.mergeMarkdownBlocks
+import dev.stapler.stelekit.git.merge.toTwoWayConflictMarkerText
 import dev.stapler.stelekit.git.model.GitRefResponse
 import dev.stapler.stelekit.git.model.GitRefUpdateRequest
 import dev.stapler.stelekit.git.model.GitTreeEntry
@@ -84,13 +89,18 @@ import kotlin.time.Clock
  *   fields (only mutators: `setPendingCommit`/`clearDirtySet`), so [fetch] and [push] accept
  *   `baseSha`/`pendingCommit` as explicit parameters — the caller (`WasmGitRepository`, Epic 4.1)
  *   is expected to track/read these itself (e.g. from the restored dirty-set marker).
- * - [commit] accepts [GitConfig] (for `config.repoRoot`) and reconstructs each dirty path's
- *   absolute OPFS cache key as `"${config.repoRoot}/$repoRelativePath"` to read its content via
- *   [PlatformFileSystem.getContentBytes] (raw bytes, covering both plain-text and paranoid-mode
- *   encrypted content — never [PlatformFileSystem.readFile], which is String-only and silently
- *   drops paranoid-mode dirty entries) — this assumes `GitConfig.repoRoot` is set to the same
- *   OPFS graph path passed to `PlatformFileSystem.preload()` on web (mirrors `recordDirty`'s own
- *   `"/stelekit/".removePrefix(...)`-relative convention).
+ * - **Local vs. API path space**: [PlatformFileSystem.getDirtySnapshot] keys (and every
+ *   `filePath`/`ConflictFile.filePath` this class hands back) are *local* paths — relative to
+ *   [PlatformFileSystem.graphRootPath], the graph's actual OPFS folder — never derived from
+ *   `config.repoRoot`. GitHub's/GitLab's REST APIs instead need *repo-relative* paths, which equal
+ *   the local path only when `config.wikiSubdir` is empty. [toApiPath]/[toLocalPathOrNull] convert
+ *   between the two at the API boundary, so a graph whose wiki lives in a subfolder of a larger git
+ *   repo (`wikiSubdir` non-empty) behaves the same on web as it does via JGit on JVM/Android —
+ *   previously `wikiSubdir` was silently ignored everywhere in this file. [commit] reconstructs
+ *   each dirty path's absolute OPFS cache key as `"${fileSystem.graphRootPath()}/$localPath"` to
+ *   read its content via [PlatformFileSystem.getContentBytes] (raw bytes, covering both plain-text
+ *   and paranoid-mode encrypted content — never [PlatformFileSystem.readFile], which is
+ *   String-only and silently drops paranoid-mode dirty entries).
  * - `message` is accepted as an explicit parameter (built by the caller via the existing
  *   `buildCommitMessage(config)`), matching how `GitSyncService` already calls
  *   `gitRepository.commit(config, buildCommitMessage(config))` for the JVM/Android paths.
@@ -107,6 +117,26 @@ class WasmGitWriteService(
 
     /** Epic 3.5 (Story 3.5.1): tag matches the class name, per this repo's `Logger` convention. */
     private val logger = Logger("WasmGitWriteService")
+
+    /**
+     * Maps a local (OPFS/dirty-set-relative) path to the repo-relative path GitHub's/GitLab's REST
+     * APIs expect, by prepending `wikiSubdir` when the wiki lives in a subfolder of the git repo.
+     * Identity when `wikiSubdir` is empty. Inverse of [toLocalPathOrNull].
+     */
+    private fun GitConfig.toApiPath(localPath: String): String =
+        wikiSubdir?.takeIf { it.isNotEmpty() }?.let { "$it/$localPath" } ?: localPath
+
+    /**
+     * Maps a repo-relative API path back to a local path, or `null` when [apiPath] falls outside
+     * `wikiSubdir` — a change elsewhere in the repo that has no bearing on this graph's wiki and
+     * must be neither auto-merged in nor reported as a conflict. Identity when `wikiSubdir` is
+     * empty. Inverse of [toApiPath].
+     */
+    private fun GitConfig.toLocalPathOrNull(apiPath: String): String? {
+        val subdir = wikiSubdir?.takeIf { it.isNotEmpty() } ?: return apiPath
+        val prefix = "$subdir/"
+        return apiPath.takeIf { it.startsWith(prefix) }?.removePrefix(prefix)
+    }
 
     // ============================ Epic 3.5: outcome logging helpers ============================
     //
@@ -245,7 +275,7 @@ class WasmGitWriteService(
         baseSha: String,
     ): Either<DomainError.GitError, MergeResult> = when (hostConfig.type) {
         GitHostType.GITHUB -> mergeGitHub(config, hostConfig, baseSha)
-        GitHostType.GITLAB -> mergeGitLab(hostConfig, baseSha)
+        GitHostType.GITLAB -> mergeGitLab(config, hostConfig, baseSha)
         GitHostType.UNSUPPORTED -> {
             val err = DomainError.GitError.NotSupported(hostConfig.type.name)
             logTerminalFailure(step = "host-unsupported", err = err)
@@ -278,8 +308,9 @@ class WasmGitWriteService(
     ): Either<DomainError.GitError, Unit> = when (side) {
         MergeSide.LOCAL -> Unit.right()
         MergeSide.REMOTE -> {
-            val content = fetchRemoteFileContent(hostConfig, filePath, remoteRef).getOrElse { return it.left() }
-            fileSystem.writeFile("${config.repoRoot}/$filePath", content)
+            val content = fetchRemoteFileContent(hostConfig, config.toApiPath(filePath), remoteRef)
+                .getOrElse { return it.left() }
+            fileSystem.writeFile("${fileSystem.graphRootPath()}/$filePath", content)
             Unit.right()
         }
     }
@@ -367,7 +398,7 @@ class WasmGitWriteService(
                 DirtyOp.WRITE -> {
                     // BLOCKER fix: read raw bytes uniformly (plain-text AND paranoid-mode content)
                     // via getContentBytes — readFile() alone never sees bytesCache-only entries.
-                    val bytes = fileSystem.getContentBytes("${config.repoRoot}/$path")
+                    val bytes = fileSystem.getContentBytes("${fileSystem.graphRootPath()}/$path")
                         ?: return DomainError.GitError.CommitFailed(
                             "No cached content for dirty path: $path"
                         ).left()
@@ -382,7 +413,12 @@ class WasmGitWriteService(
 
         val blobShas = createBlobsBounded(hostConfig, writes).getOrElse { return it.left() }
 
-        val treeSha = buildTree(hostConfig, baseSha, blobShas, deletedPaths).getOrElse { return it.left() }
+        val treeSha = buildTree(
+            hostConfig,
+            baseSha,
+            blobShas.mapKeys { (localPath, _) -> config.toApiPath(localPath) },
+            deletedPaths.map { config.toApiPath(it) },
+        ).getOrElse { return it.left() }
         val commitSha = createCommitObject(hostConfig, treeSha, baseSha, message).getOrElse { return it.left() }
 
         fileSystem.setPendingCommit(commitSha, treeSha)
@@ -581,7 +617,10 @@ class WasmGitWriteService(
             return err.left()
         }
         val localPaths = fileSystem.getDirtySnapshot().keys
-        val remotePaths = compare.files.map { it.filename }.toSet()
+        // compare.files[].filename is repo-relative (API space) — map into local (wiki-relative)
+        // space and drop anything outside wikiSubdir: an unrelated change elsewhere in the repo is
+        // neither a conflict nor something to auto-merge into this graph.
+        val remotePaths = compare.files.mapNotNull { config.toLocalPathOrNull(it.filename) }.toSet()
         val partition = partitionConflicts(localPaths, remotePaths)
 
         if (partition.conflicting.isNotEmpty()) {
@@ -642,7 +681,7 @@ class WasmGitWriteService(
                 DirtyOp.WRITE -> {
                     // BLOCKER fix: read raw bytes uniformly (plain-text AND paranoid-mode content)
                     // via getContentBytes — readFile() alone never sees bytesCache-only entries.
-                    val bytes = fileSystem.getContentBytes("${config.repoRoot}/$path")
+                    val bytes = fileSystem.getContentBytes("${fileSystem.graphRootPath()}/$path")
                         ?: return DomainError.GitError.CommitFailed(
                             "No cached content for dirty path: $path"
                         ).left()
@@ -655,15 +694,24 @@ class WasmGitWriteService(
             }
         }
 
+        // remotePaths (from mergeGitHub/mergeGitLab) are already local-relative — see
+        // toLocalPathOrNull's filtering at the call site. Only the outgoing fetch needs the
+        // repo-relative API path back.
         for (path in remotePaths) {
             // Remote-fetched content is always text (never encrypted) — applyRemoteContent's own
             // doc comment confirms this write path needs no parallel bytesCache treatment.
-            val content = fetchRemoteFileContent(hostConfig, path, newBaseSha).getOrElse { return it.left() }
-            fileSystem.applyRemoteContent("${config.repoRoot}/$path", content)
+            val content = fetchRemoteFileContent(hostConfig, config.toApiPath(path), newBaseSha)
+                .getOrElse { return it.left() }
+            fileSystem.applyRemoteContent("${fileSystem.graphRootPath()}/$path", content)
             blobShas[path] = createBlob(hostConfig, content.encodeToByteArray()).getOrElse { return it.left() }
         }
 
-        val treeSha = buildTree(hostConfig, newBaseSha, blobShas, deletedPaths).getOrElse { return it.left() }
+        val treeSha = buildTree(
+            hostConfig,
+            newBaseSha,
+            blobShas.mapKeys { (localPath, _) -> config.toApiPath(localPath) },
+            deletedPaths.map { config.toApiPath(it) },
+        ).getOrElse { return it.left() }
         val commitSha = createCommitObject(hostConfig, treeSha, newBaseSha, message).getOrElse { return it.left() }
 
         fileSystem.setPendingCommit(commitSha, treeSha)
@@ -701,17 +749,19 @@ class WasmGitWriteService(
      */
     @OptIn(ExperimentalEncodingApi::class)
     private fun buildGitLabActions(
+        config: GitConfig,
         dirty: Map<String, DirtyEntry>,
         baseSha: String,
-        existingPaths: Set<String>,
+        existingApiPaths: Set<String>,
         readContent: (String) -> ByteArray?,
     ): Either<DomainError.GitError, List<GitLabCommitAction>> {
         val actions = mutableListOf<GitLabCommitAction>()
         for ((path, entry) in dirty) {
+            val apiPath = config.toApiPath(path)
             when (entry.op) {
                 DirtyOp.DELETE -> actions += GitLabCommitAction(
                     action = "delete",
-                    filePath = path,
+                    filePath = apiPath,
                     lastCommitId = baseSha,
                 )
                 DirtyOp.WRITE -> {
@@ -723,10 +773,10 @@ class WasmGitWriteService(
                     if (sizeBytes > MAX_BLOB_BYTES) {
                         return DomainError.GitError.FileTooLarge(path, sizeBytes, MAX_BLOB_BYTES).left()
                     }
-                    val existedAtBase = path in existingPaths
+                    val existedAtBase = apiPath in existingApiPaths
                     actions += GitLabCommitAction(
                         action = resolveActionType(existedAtBase),
-                        filePath = path,
+                        filePath = apiPath,
                         content = Base64.Default.encode(bytes),
                         lastCommitId = if (existedAtBase) baseSha else null,
                     )
@@ -777,6 +827,7 @@ class WasmGitWriteService(
      * remote-changed-path set via its own compare call.
      */
     suspend fun mergeGitLab(
+        config: GitConfig,
         hostConfig: GitHostConfig,
         baseSha: String,
     ): Either<DomainError.GitError, MergeResult> {
@@ -785,7 +836,8 @@ class WasmGitWriteService(
             return err.left()
         }
         val localPaths = fileSystem.getDirtySnapshot().keys
-        val remotePaths = compare.diffs.map { it.newPath }.toSet()
+        // compare.diffs[].newPath is repo-relative (API space) — see mergeGitHub's identical note.
+        val remotePaths = compare.diffs.mapNotNull { config.toLocalPathOrNull(it.newPath) }.toSet()
         val partition = partitionConflicts(localPaths, remotePaths)
 
         if (partition.conflicting.isNotEmpty()) {
@@ -818,15 +870,87 @@ class WasmGitWriteService(
     }
 
     /**
-     * Task 3.3.2a (pulled forward): maps each conflicting path to a [ConflictFile] with empty
-     * hunks (Pattern Decision "Conflict representation" — no code path reads `hunks` for this
-     * per-file, accept/reject conflict UX). Public — not yet called from within this class (the
-     * `MergeConflict` this file returns only carries `conflictPaths: List<String>`); Epic 4.1's
-     * `WasmGitRepository` is expected to call this when translating a `Left(MergeConflict)` into
-     * `GitRepository.merge()`'s `MergeResult(hasConflicts = true, conflicts = ...)` contract.
+     * Maps each conflicting path to a [ConflictFile] with real, line-level hunks — this platform
+     * has no local JGit-produced working tree with conflict-marker files (content is fetched via
+     * the GitHub/GitLab REST API), so unlike Android/Desktop's `merge()`, which reads markers
+     * JGit already wrote, this fetches the base/local/remote content itself and runs a real
+     * three-way merge ([dev.stapler.stelekit.git.merge.Diff3]) to produce the same
+     * `<<<<<<< / ======= / >>>>>>>` marker text [ConflictResolver.parseConflictFile] already
+     * parses — plugging into the exact same downstream hunk-resolution UI other platforms use.
+     *
+     * Note: this only changes what's *shown* for a path already flagged conflicting — it does
+     * NOT change [merge]/[mergeGitLab]'s path-level conflict *detection* (any path touched on
+     * both sides still always surfaces as a conflict, even when Diff3 finds the two edits don't
+     * actually overlap at the line level). Broadening detection to skip surfacing genuinely
+     * non-overlapping line-level changes as a conflict at all is a separate, larger behavior
+     * change (silently auto-merging content that currently always pauses for user review) and is
+     * deliberately out of scope here.
      */
-    fun buildConflictFiles(conflictingPaths: Set<String>): List<ConflictFile> =
-        conflictingPaths.map { path -> ConflictFile(filePath = path, wikiRelativePath = path, hunks = emptyList()) }
+    suspend fun buildConflictFiles(
+        config: GitConfig,
+        hostConfig: GitHostConfig,
+        conflictingPaths: Set<String>,
+    ): List<ConflictFile> = conflictingPaths.map { path ->
+        buildConflictFile(config, hostConfig, path)
+    }
+
+    private suspend fun buildConflictFile(
+        config: GitConfig,
+        hostConfig: GitHostConfig,
+        path: String,
+    ): ConflictFile {
+        val fallback = ConflictFile(filePath = path, wikiRelativePath = path, hunks = emptyList())
+        // UNKNOWN_CONFLICT_PATH (GitLab's generic 409/422 case with no specific path) has nothing
+        // real to fetch content for — degrade to the whole-file-only fallback immediately.
+        if (path == UNKNOWN_CONFLICT_PATH) return fallback
+
+        val apiPath = config.toApiPath(path)
+        val localContent = fileSystem.readFile(path) ?: return fallback
+        val baseContent = fetchRemoteFileContent(hostConfig, apiPath, fileSystem.getBaseSha()).getOrNull() ?: return fallback
+        // hostConfig.branch works as a ref for both hosts' raw-content APIs (same convention
+        // checkoutFile's REMOTE-side resolution already uses) — no extra ref-sha fetch needed.
+        val remoteContent = fetchRemoteFileContent(hostConfig, apiPath, hostConfig.branch).getOrNull() ?: return fallback
+
+        // Page/journal markdown gets the block-aware merge (BlockDiff3) — it aligns whole
+        // outline blocks by content instead of raw text lines, so a conflict never splits a
+        // block in half and a block moved to a different parent (unlike a plain line edit)
+        // registers as a real change instead of silently vanishing. Any other .md-adjacent file
+        // this repo tracks (or a block parse failure — defensive at this API-content boundary)
+        // falls back to the line-level Diff3 already in use.
+        val blockResult = if (path.endsWith(".md")) {
+            runCatching {
+                mergeMarkdownBlocks(baseContent, localContent, remoteContent)
+            }.getOrNull()
+        } else {
+            null
+        }
+
+        val markerText: String
+        val hasConflicts: Boolean
+        if (blockResult != null) {
+            markerText = blockResult.toTwoWayConflictMarkerText(localLabel = "local", remoteLabel = hostConfig.branch)
+            hasConflicts = blockResult.hasConflicts()
+        } else {
+            val chunks = Diff3.merge(baseContent.lines(), localContent.lines(), remoteContent.lines())
+            markerText = chunks.toTwoWayConflictMarkerText(localLabel = "local", remoteLabel = hostConfig.branch)
+            hasConflicts = chunks.hasConflicts()
+        }
+        // Finding no actual overlap (despite the path-level partition flagging both sides as
+        // touching this file) still surfaces as a conflict per this function's doc — hunks stay
+        // empty and the whole-file "Keep mine"/"Use remote" pick degrades safely.
+        val hunks = if (hasConflicts) {
+            ConflictResolver().parseConflictFile(path, markerText, wikiRoot = "").getOrNull()?.hunks ?: emptyList()
+        } else {
+            emptyList()
+        }
+        return ConflictFile(
+            filePath = path,
+            wikiRelativePath = path,
+            hunks = hunks,
+            rawContent = markerText,
+            duplicateBlockIds = blockResult?.findDuplicateBlockIds() ?: emptyList(),
+        )
+    }
 
     /**
      * BLOCKER fix (web-git-writeback architecture review): fetches the set of repo-relative
@@ -869,12 +993,12 @@ class WasmGitWriteService(
         context: GitLabPushContext,
         dirty: Map<String, DirtyEntry>,
     ): Either<DomainError.GitError, Unit> {
-        val existingPaths = fetchGitLabTreePaths(hostConfig, context.baseSha).getOrElse { err ->
+        val existingApiPaths = fetchGitLabTreePaths(hostConfig, context.baseSha).getOrElse { err ->
             logTerminalFailure(step = "gitlab-fetch-tree", err = err)
             return err.left()
         }
-        val actions = buildGitLabActions(dirty, context.baseSha, existingPaths) { path ->
-            fileSystem.getContentBytes("${context.config.repoRoot}/$path")
+        val actions = buildGitLabActions(context.config, dirty, context.baseSha, existingApiPaths) { path ->
+            fileSystem.getContentBytes("${fileSystem.graphRootPath()}/$path")
         }.getOrElse { err ->
             logTerminalFailure(step = "gitlab-build-actions", err = err)
             return err.left()

@@ -1,0 +1,122 @@
+{
+  "timestamp": "2026-08-10 18:08:06 UTC",
+  "gitSha": "6683ab5f",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 1,
+  "phase2Ms": 0,
+  "phase3Ms": 1,
+  "totalMs": 2,
+  "jankBaselineP50Ms": 1,
+  "jankBaselineP95Ms": 14,
+  "jankLoadP50Ms": 0,
+  "jankLoadP95Ms": 0,
+  "jankFactor": 0.0,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 613,
+      "pct": 37.0
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 122,
+      "pct": 7.4
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 105,
+      "pct": 6.3
+    },
+    {
+      "frame": "java.util.LinkedHashMap$Entry_[k]",
+      "samples": 105,
+      "pct": 6.3
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 68,
+      "pct": 4.1
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 45,
+      "pct": 2.7
+    },
+    {
+      "frame": "java.nio.DirectByteBuffer_[k]",
+      "samples": 35,
+      "pct": 2.1
+    },
+    {
+      "frame": "java.util.LinkedHashMap_[k]",
+      "samples": 34,
+      "pct": 2.1
+    },
+    {
+      "frame": "java.util.HashMap$Node[]_[k]",
+      "samples": 32,
+      "pct": 1.9
+    },
+    {
+      "frame": "dev.stapler.stelekit.parsing.lexer.Token_[k]",
+      "samples": 32,
+      "pct": 1.9
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 36722,
+      "pct": 97.8
+    },
+    {
+      "frame": "/tmp/sqlite-3.51.3.0-8a0d2bc4-13e2-4fec-99cb-a13fe546fd52-libsqlitejdbc.so",
+      "samples": 237,
+      "pct": 0.6
+    },
+    {
+      "frame": "fsync",
+      "samples": 212,
+      "pct": 0.6
+    },
+    {
+      "frame": "__libc_pwrite",
+      "samples": 103,
+      "pct": 0.3
+    },
+    {
+      "frame": "pthread_cond_signal",
+      "samples": 33,
+      "pct": 0.1
+    },
+    {
+      "frame": "SR_handler",
+      "samples": 31,
+      "pct": 0.1
+    },
+    {
+      "frame": "prctl",
+      "samples": 7,
+      "pct": 0.0
+    },
+    {
+      "frame": "dev/stapler/stelekit/util/ContentHasher.sha256_[1]",
+      "samples": 5,
+      "pct": 0.0
+    },
+    {
+      "frame": "syscall",
+      "samples": 5,
+      "pct": 0.0
+    },
+    {
+      "frame": "itable stub",
+      "samples": 4,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": []
+}

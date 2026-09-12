@@ -90,7 +90,7 @@ class ErrorStateNoDeadEndTest {
             pageUuid = "page-1",
             pageName = "Groceries",
             filePath = "/graph/pages/groceries.md",
-            editingBlockUuid = "block-1",
+            editingBlockUuid = dev.stapler.stelekit.model.BlockUuid("block-1"),
             localContent = "- Buy milk (edited)",
             diskContent = "- Buy milk and eggs",
         )

@@ -162,4 +162,26 @@ object WebLock {
             }
         }
     }
+
+    /**
+     * Non-blocking tab-lifetime leader election: attempts to acquire [lockName] via
+     * `navigator.locks.request(name, { ifAvailable: true }, ...)` and, unlike [tryWithLock],
+     * deliberately never releases it. Returns `true` if this tab is now the lock's sole holder,
+     * `false` if another tab/context already holds it. The lock is held until the browser
+     * discards this document (tab close/navigate/reload) — per the Web Locks spec, locks are
+     * automatically released when their requesting context goes away, so no explicit release is
+     * needed for a "hold for the lifetime of this tab" use case like single-writer SQLite/OPFS
+     * driver ownership. Do not call this for short-lived critical sections — use [tryWithLock].
+     */
+    suspend fun tryAcquireLeader(lockName: String): Boolean {
+        val handle = jsRequestLockHandleIfAvailable(lockName)
+        val lock = jsHandleAcquiredPromiseOrNull(handle).await<JsAny?>()
+        if (lock == null) {
+            // Busy: the callback already resolved its own held Promise (see
+            // jsRequestLockHandleIfAvailable), so this release is a harmless no-op cleanup.
+            jsHandleRelease(handle)
+            return false
+        }
+        return true
+    }
 }

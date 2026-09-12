@@ -13,6 +13,10 @@ fdroid/.venv/
 /bazel-*
 /.bazel/
 
+# bazel vendor's machine-local symlink into the repo cache — everything else
+# under /vendor (VENDOR.bazel, the marker files, vendored repo sources) is committed.
+/vendor/bazel-external
+
 # --------------------
 # Gradle
 # --------------------
@@ -145,7 +149,12 @@ e2e/test-results/
 # --------------------
 # Claude Code
 # --------------------
-.claude/
+# Machine-local only: agent worktree checkouts (can reach multi-GB) and
+# per-developer settings/lock state. Everything else in .claude/ (commands,
+# skills, shared settings.json) is meant to be tracked.
+.claude/worktrees/
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
 
 # --------------------
 # ClojureScript
@@ -154,8 +163,11 @@ e2e/test-results/
 
 # --------------------
 # Legacy Capacitor app (replaced by KMP androidApp/)
+# Anchored to repo root: an unanchored "android/" also matched nested paths
+# like vendor/rules_android+/toolchains/android/, silently excluding that
+# vendored Bazel toolchain package from every commit.
 # --------------------
-android/
+/android/
 
 # --------------------
 # F-Droid repo signing keystore and generated index (secrets in GitHub Actions)

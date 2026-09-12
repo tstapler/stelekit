@@ -22,9 +22,12 @@ import kotlin.test.assertTrue
  *
  * ## Test 1 — static schema sync (auto-derived, zero maintenance)
  *
- * Reads `SteleDatabase.sq` (path injected via the `stelekit.sq.file` Gradle system property
- * set in the `jvmTest` task) and extracts every `CREATE TABLE IF NOT EXISTS <name>`. Asserts
- * each name appears in a SQL statement inside [MigrationRunner.all].
+ * Reads `SteleDatabase.sq` and extracts every `CREATE TABLE IF NOT EXISTS <name>`. Asserts
+ * each name appears in a SQL statement inside [MigrationRunner.all]. Under Gradle the file is
+ * located via the `stelekit.sq.file` system property injected by the `jvmTest` task; under
+ * Bazel it's bundled as a classpath resource instead (see
+ * `kmp/src/businessTest/kotlin/BUILD.bazel`'s `sqldatabase_schema_as_resource` target) since
+ * Bazel has no equivalent Gradle-task-injected-property mechanism.
  *
  * **Would have caught the original bug**: `image_annotations` was in `.sq` with `IF NOT EXISTS`
  * but absent from `MigrationRunner.all` — this test would have FAILED.
@@ -41,7 +44,11 @@ import kotlin.test.assertTrue
  */
 class MigrationRunnerSchemaSyncTest {
 
-    private val sqFilePath: String? = System.getProperty("stelekit.sq.file")
+    /** Bazel path first (classpath resource), then the Gradle system property. */
+    private val sqContent: String? by lazy {
+        javaClass.classLoader.getResourceAsStream("SteleDatabase.sq")?.bufferedReader()?.readText()
+            ?: System.getProperty("stelekit.sq.file")?.let { File(it).readText() }
+    }
 
     private lateinit var tempFile: File
     private lateinit var driver: PooledJdbcSqliteDriver
@@ -70,12 +77,7 @@ class MigrationRunnerSchemaSyncTest {
 
     @Test
     fun `all IF NOT EXISTS tables in SteleDatabase schema have a MigrationRunner entry`() {
-        checkNotNull(sqFilePath) {
-            "System property 'stelekit.sq.file' not set — run via Gradle (./gradlew jvmTest). " +
-                "The property is injected by the jvmTest task in kmp/build.gradle.kts."
-        }
-
-        val sqContent = File(sqFilePath).readText()
+        val sqContent = checkNotNull(sqContent) { SQ_CONTENT_NOT_FOUND_MESSAGE }
         val tablesInSchema: Set<String> = Regex(
             """CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+(\w+)""",
             RegexOption.IGNORE_CASE
@@ -209,3 +211,9 @@ class MigrationRunnerSchemaSyncTest {
         return names
     }
 }
+
+private const val SQ_CONTENT_NOT_FOUND_MESSAGE =
+    "Could not locate SteleDatabase.sq: no 'SteleDatabase.sq' classpath resource " +
+        "(Bazel — check kmp/src/businessTest/kotlin/BUILD.bazel's " +
+        "sqldatabase_schema_as_resource target) and system property 'stelekit.sq.file' " +
+        "not set (Gradle — injected by the jvmTest task in kmp/build.gradle.kts)."

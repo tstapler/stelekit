@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.db
 
+import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
@@ -86,8 +87,13 @@ class FileSystemCallCountTest {
 
         val graphWriter = GraphWriter(
             fileSystem = countingFs,
-            graphPath = graphPath,
-        )
+        ).also {
+            it.currentEpoch = GraphEpoch(
+                graphId = GraphId("fs-count-test-graph"),
+                graphPath = graphPath,
+                sequence = 1L,
+            )
+        }
         graphWriter.startAutoSave(scope)
 
         val bsm = BlockStateManager(

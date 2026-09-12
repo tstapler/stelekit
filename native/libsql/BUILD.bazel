@@ -17,7 +17,9 @@ load("@crates//:defs.bzl", "all_crate_deps")
 #
 # Cross-compile for a specific target with:
 #   bazel build //native/libsql:stelekit_libsql \
-#     --platforms=@rules_rust//rust/platform:aarch64-apple-darwin
+#     --platforms=//native/libsql/platforms:aarch64-apple-darwin
+# (NOT @rules_rust//rust/platform:<triple> — those are config_setting()s, not
+# platform()s, and don't provide PlatformInfo. See platforms/BUILD.bazel.)
 #
 # The resulting library must be placed in kmp/src/jvmMain/resources/native/<os-arch>/
 # so the JVM can find and load it at runtime via NativeLibLoader.

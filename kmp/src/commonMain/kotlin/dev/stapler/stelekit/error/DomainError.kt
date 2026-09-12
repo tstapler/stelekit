@@ -102,6 +102,11 @@ sealed interface DomainError {
                 "File too large to sync: $path ($sizeBytes bytes exceeds max of $maxBytes bytes)"
         }
         data class NetworkFailure(override val message: String) : GitError
+        data class WorkingTreeSyncFailed(val direction: String, val path: String, override val message: String) : GitError
+        data class WorkingTreeWriteBackFailed(val path: String, override val message: String) : GitError
+        data class WorkingTreeConcurrentEditDetected(val path: String) : GitError {
+            override val message: String = "Local file changed during sync: $path"
+        }
     }
 
     sealed interface AttachmentError : DomainError {
@@ -202,6 +207,9 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.GitError.RateLimited -> "Rate limited — retrying automatically"
     is DomainError.GitError.FileTooLarge -> "File too large to sync: ${path}"
     is DomainError.GitError.NetworkFailure -> "Network error — sync will retry"
+    is DomainError.GitError.WorkingTreeSyncFailed -> "Sync failed: $path"
+    is DomainError.GitError.WorkingTreeWriteBackFailed -> "Write-back failed: $path"
+    is DomainError.GitError.WorkingTreeConcurrentEditDetected -> message
     is DomainError.AttachmentError.CopyFailed -> "Attachment failed"
     is DomainError.AttachmentError.PickerFailed -> "Could not open file picker"
     is DomainError.AttachmentError.AssetsDirectoryFailed -> "Cannot create assets directory"
@@ -234,4 +242,7 @@ fun DomainError.GitError.toSyncErrorMessage(): String = when (this) {
     is DomainError.GitError.RateLimited -> "Rate limited by GitHub/GitLab — retrying automatically"
     is DomainError.GitError.FileTooLarge -> "File too large to sync: $path"
     is DomainError.GitError.NetworkFailure -> "Network error — sync will retry"
+    is DomainError.GitError.WorkingTreeSyncFailed -> "Sync failed — tap to retry"
+    is DomainError.GitError.WorkingTreeWriteBackFailed -> "Write-back failed — tap to retry"
+    is DomainError.GitError.WorkingTreeConcurrentEditDetected -> "Local file changed during sync — resolve to continue"
 }

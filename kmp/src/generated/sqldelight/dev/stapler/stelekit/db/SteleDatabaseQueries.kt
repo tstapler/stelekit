@@ -1275,6 +1275,15 @@ public class SteleDatabaseQueries(
 
   public fun selectRecentlyCreatedPages(value_: Long): Query<Pages> = selectRecentlyCreatedPages(value_, ::Pages)
 
+  public fun <T : Any> selectPageUuidAndFilePath(mapper: (uuid: String, file_path: String) -> T): Query<T> = Query(-524_424_975, arrayOf("pages"), driver, "SteleDatabase.sq", "selectPageUuidAndFilePath", "SELECT uuid, file_path FROM pages WHERE file_path IS NOT NULL") { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getString(1)!!
+    )
+  }
+
+  public fun selectPageUuidAndFilePath(): Query<SelectPageUuidAndFilePath> = selectPageUuidAndFilePath(::SelectPageUuidAndFilePath)
+
   public fun countPages(): Query<Long> = Query(1_240_499_126, arrayOf("pages"), driver, "SteleDatabase.sq", "countPages", "SELECT COUNT(*) FROM pages") { cursor ->
     cursor.getLong(0)!!
   }
@@ -3856,6 +3865,21 @@ public class SteleDatabaseQueries(
     notifyQueries(-658_837_276) { emit ->
       emit("pages")
       emit("pages_fts")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun updatePageFilePathByUuid(file_path: String?, uuid: String): Long {
+    val result = driver.execute(-1_529_244_948, """UPDATE pages SET file_path = ? WHERE uuid = ?""", 2) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, file_path)
+          bindString(parameterIndex++, uuid)
+        }.await()
+    notifyQueries(-1_529_244_948) { emit ->
+      emit("pages")
     }
     return result
   }

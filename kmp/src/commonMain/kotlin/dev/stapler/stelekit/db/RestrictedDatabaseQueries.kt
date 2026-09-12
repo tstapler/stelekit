@@ -211,6 +211,10 @@ class RestrictedDatabaseQueries(
         queries.updatePageProperties(properties, uuid)
 
     @DirectSqlWrite
+    suspend fun updatePageFilePathByUuid(file_path: String, uuid: String): Long =
+        queries.updatePageFilePathByUuid(file_path, uuid)
+
+    @DirectSqlWrite
     suspend fun updatePageFavorite(is_favorite: Long?, uuid: String): Long =
         queries.updatePageFavorite(is_favorite, uuid)
 

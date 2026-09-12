@@ -5,9 +5,14 @@
 package dev.stapler.stelekit.db
 
 import arrow.core.Either
+import dev.stapler.stelekit.domain.CaptureEnrichmentCoordinator
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.GitAuth
 import dev.stapler.stelekit.git.GitRepository
+import dev.stapler.stelekit.llm.LlmCredentialStore
+import dev.stapler.stelekit.llm.LlmProviderRegistry
+import dev.stapler.stelekit.llm.LlmSettings
+import dev.stapler.stelekit.llm.buildLlmProviderRegistry
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.migration.ChangeApplier
 import dev.stapler.stelekit.migration.ChangelogRepository
@@ -24,15 +29,18 @@ import dev.stapler.stelekit.model.GraphRegistry
 import dev.stapler.stelekit.vault.VaultManager
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.Settings
+import dev.stapler.stelekit.platform.security.CredentialStore
 import dev.stapler.stelekit.repository.GraphBackend
 import dev.stapler.stelekit.repository.RepositorySet
 import dev.stapler.stelekit.util.ContentHasher
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -40,6 +48,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.time.Clock
 import kotlinx.serialization.encodeToString
@@ -78,7 +88,21 @@ class GraphManager(
     
     private val _activeRepositorySet = MutableStateFlow<RepositorySet?>(null)
     val activeRepositorySet: StateFlow<RepositorySet?> = _activeRepositorySet.asStateFlow()
-    
+
+    /**
+     * `true` iff [removeGraph] just removed the last real (non-demo) graph while it was active,
+     * leaving `activeGraphId = null`. Distinct from merely checking `activeGraphId == null`
+     * because that condition is also transiently true for one frame on a brand-new install
+     * (before `App.kt`'s `LaunchedEffect(currentGraphPath)` self-heals by adding/activating a
+     * default graph) — a Compose-level empty-state screen gated on that alone would flash on
+     * every first launch. This flag is only ever set by an explicit user removal, and cleared by
+     * [switchGraph], so it stays `false` for the entire first-launch path and reliably
+     * distinguishes "the user emptied their graph list" from "no graph has loaded yet."
+     * Session-scoped: a fresh [GraphManager] (i.e. a page reload on wasmJs) starts at `false`.
+     */
+    private val _graphsExplicitlyEmptied = MutableStateFlow(false)
+    val graphsExplicitlyEmptied: StateFlow<Boolean> = _graphsExplicitlyEmptied.asStateFlow()
+
     // Track current factory for lifecycle management.
     // Written from a background coroutine (switchGraph's IO launch) and read on the Compose
     // main thread in createGitConfigRepository(); @Volatile is required for JVM visibility.
@@ -92,6 +116,49 @@ class GraphManager(
 
     // Track active coroutines for cleanup during graph switches
     private val activeGraphJobs = mutableMapOf<GraphId, CoroutineScope>()
+
+    // Memoized per-graph CaptureEnrichmentCoordinator construction (Epic 1.2). coordinatorMutex
+    // guards only the cache read/insert below, never the Deferred.await() — see
+    // getOrCreateEnrichmentCoordinator().
+    private val coordinatorMutex = Mutex()
+    private var coordinatorFor: Pair<GraphId, Deferred<CaptureEnrichmentCoordinator>>? = null
+
+    /**
+     * Evicts the memoized [CaptureEnrichmentCoordinator] cache entry for [graphId] if it's the
+     * currently cached one — called from [switchGraph] and [removeGraph] alongside the
+     * `activeGraphJobs.remove(id)?.cancel()` call that tears down the [CoroutineScope] the
+     * coordinator (and its [dev.stapler.stelekit.domain.PageNameIndex]'s `stateIn`/collector)
+     * was built on. Without this, a coordinator whose construction already completed survives
+     * as a silently-frozen zombie tied to a cancelled scope — switching away and back to the
+     * same graph would keep returning it, and suggestions would never update again for that
+     * graph. Guarded by the same [coordinatorMutex] every other `coordinatorFor` access uses.
+     *
+     * Dispatched on [coroutineScope] (fire-and-forget) rather than acquired synchronously:
+     * [switchGraph]/[removeGraph] are not `suspend`, and this class's commonMain code is built
+     * for wasmJs too, where a blocking acquire (`runBlocking`) is not safe to use — see
+     * `RepositoryFactory.kt`'s "WASM/JS skips PRAGMA" precedent for the same constraint.
+     * [coordinatorMutex] is documented to be held only for a quick map read/insert, never across
+     * a suspension point, so this eviction is queued and lands promptly.
+     */
+    private fun evictCoordinatorFor(graphId: GraphId) {
+        coroutineScope.launch {
+            coordinatorMutex.withLock {
+                if (coordinatorFor?.first == graphId) coordinatorFor = null
+            }
+        }
+    }
+
+    // Same construction recipe App.kt:490-500 uses for the Compose tree's registry — CaptureActivity
+    // never runs that composition, so GraphManager builds its own equivalent, self-contained.
+    // A single shared instance (not re-constructed per call) so getOrCreateEnrichmentCoordinator()
+    // can pass the same LlmSettings into resolveTopicEnricher() for per-feature provider selection.
+    private val llmSettings: LlmSettings by lazy { LlmSettings(platformSettings) }
+    private val llmProviderRegistry: LlmProviderRegistry by lazy {
+        buildLlmProviderRegistry(
+            LlmCredentialStore(CredentialStore()),
+            llmSettings,
+        )
+    }
 
     // Git sync service for the currently active graph.
     // Set externally via registerGitSyncService() after GraphLoader/GraphWriter are wired.
@@ -344,23 +411,75 @@ class GraphManager(
         return cloneResult.map { addGraph(localPath) }
     }
 
+    /**
+     * Resets the active-graph-scoped fields (git sync service, vault credential store,
+     * repository set) and hands back [currentFactory] for the caller to close asynchronously.
+     * Shared by [switchGraph] (tearing down the outgoing graph before opening the next one) and
+     * [removeGraph] (tearing down the last graph with nothing to open next), so the two copies
+     * of this sequence can't silently drift apart.
+     */
+    private fun tearDownActiveGraphResources(): dev.stapler.stelekit.repository.RepositoryFactory? {
+        _activeGitSyncService.value?.shutdown()
+        _activeGitSyncService.value = null
+        _activeVaultCredentialStore.value = null
+        // Null the repo set before closing the driver so Compose flow collectors see null and
+        // stop querying before the database connection is torn down.
+        _activeRepositorySet.value = null
+        val factoryToClose = currentFactory
+        currentFactory = null
+        return factoryToClose
+    }
+
     fun removeGraph(id: GraphId): Boolean {
         // Cancel any active coroutines for this graph
         activeGraphJobs.remove(id)?.cancel()
-        
+        evictCoordinatorFor(id)
+
         val registry = _graphRegistry.value
         val graphIndex = registry.graphs.indexOfFirst { it.id == id }
         if (graphIndex == -1) return false
 
-        // Don't allow removing active graph
-        if (registry.activeGraphId == id) return false
-
         if (registry.graphs[graphIndex].isDemo) return false
 
-        val updated = registry.copy(
-            graphs = registry.graphs.filter { it.id != id }
-        )
-        _graphRegistry.value = updated
+        // The demo graph is always registered (addDemoGraph() runs unconditionally at boot) and
+        // is never itself removable (guarded above), so it doesn't count as a "real" graph here —
+        // registry.graphs.size alone would never reach 1 with the demo graph always present.
+        val realGraphs = registry.graphs.filter { !it.isDemo }
+        val isOnlyRealGraph = realGraphs.size == 1 && realGraphs[0].id == id
+
+        if (registry.activeGraphId == id) {
+            // Removing the active graph is only allowed when it's the last real graph left —
+            // otherwise the caller must switch to another graph first, since there's no way to
+            // pick which graph becomes active next. When it IS the last real graph, tear down its
+            // repository set the same way switchGraph() tears down an outgoing graph, but without
+            // opening a new one (deliberately not falling back to the demo graph — the app is left
+            // with zero active graphs so the empty-state prompt can offer to create one).
+            if (!isOnlyRealGraph) return false
+
+            _graphsExplicitlyEmptied.value = true
+            val factoryToClose = tearDownActiveGraphResources()
+            coroutineScope.launch(PlatformDispatcher.IO) {
+                try {
+                    factoryToClose?.close()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    logger.error("Failed to close graph's factory while removing the last graph $id", e)
+                }
+            }
+        }
+
+        // Atomic update {} — not a plain .value = ... assignment — so this can't clobber a
+        // concurrent registry mutation from a background IO coroutine (e.g. git detection
+        // updating detectedRepoRoot), the same hazard switchGraph()'s own activeGraphId update
+        // is guarded against. Newly reachable here: before this method allowed removing the
+        // active graph, this branch never wrote the registry at all.
+        _graphRegistry.update {
+            it.copy(
+                graphs = it.graphs.filter { g -> g.id != id },
+                activeGraphId = if (it.activeGraphId == id) null else it.activeGraphId,
+            )
+        }
         saveRegistry()
 
         // Clean up git credentials stored for this graph
@@ -386,6 +505,30 @@ class GraphManager(
 
         val updated = registry.copy(graphs = updatedGraphs)
         _graphRegistry.value = updated
+        saveRegistry()
+        return true
+    }
+
+    /**
+     * Records the real host-folder name last linked for [id] (web-local-folder-livesync only) —
+     * called after [dev.stapler.stelekit.platform.FileSystem.pickDirectoryAsync]/
+     * [dev.stapler.stelekit.platform.FileSystem.relinkHostDirectoryAsync] succeeds, so the sidebar
+     * can show which real folder a graph is linked to instead of only its internal [GraphInfo.path].
+     * No data migration is needed here — the actual re-link (importing the new folder's content
+     * and attaching the fresh handle) already happened in [dev.stapler.stelekit.platform.FileSystem];
+     * this just persists the display metadata.
+     */
+    fun updateHostDirName(id: GraphId, dirName: String?): Boolean {
+        val registry = _graphRegistry.value
+        val graphIndex = registry.graphs.indexOfFirst { it.id == id }
+        if (graphIndex == -1) return false
+        // Copilot review: matches renameGraph/updateGraphPath's immutability rule — the demo
+        // graph's metadata is never user-editable.
+        if (registry.graphs[graphIndex].isDemo) return false
+
+        val updatedGraphs = registry.graphs.toMutableList()
+        updatedGraphs[graphIndex] = updatedGraphs[graphIndex].copy(hostDirName = dirName)
+        _graphRegistry.value = registry.copy(graphs = updatedGraphs)
         saveRegistry()
         return true
     }
@@ -538,23 +681,17 @@ class GraphManager(
         // and checking only (a) lets the second call cancel the first init scope → crash.
         val currentGraphId = registry.activeGraphId
         if (currentGraphId == id && (_activeRepositorySet.value != null || activeGraphJobs.containsKey(id))) return
-        currentGraphId?.let { activeGraphJobs.remove(it)?.cancel() }
+        currentGraphId?.let {
+            activeGraphJobs.remove(it)?.cancel()
+            evictCoordinatorFor(it)
+        }
 
-        // Shutdown any git sync service from the previous graph
-        _activeGitSyncService.value?.shutdown()
-        _activeGitSyncService.value = null
-        _activeVaultCredentialStore.value = null
-
-        // Null the repo set BEFORE closing the driver so Compose flow collectors see null
-        // and stop querying before the database connection is torn down. Closing first
-        // caused a race where in-flight LaunchedEffect queries hit an already-closed DB.
-        // The actual close() call is deferred to the IO coroutine below — pragmaOptimizeAndClose()
-        // now runs a PRAGMA wal_checkpoint(TRUNCATE), which can take seconds on a large WAL, and
-        // switchGraph() is called synchronously from the Compose UI dispatcher (rememberCoroutineScope
-        // in App.kt), so running it here would freeze the UI on every graph switch.
-        _activeRepositorySet.value = null
-        val factoryToClose = currentFactory
-        currentFactory = null
+        // Closing the captured factory is deferred to the IO coroutine below —
+        // pragmaOptimizeAndClose() now runs a PRAGMA wal_checkpoint(TRUNCATE), which can take
+        // seconds on a large WAL, and switchGraph() is called synchronously from the Compose UI
+        // dispatcher (rememberCoroutineScope in App.kt), so running it here would freeze the UI
+        // on every graph switch.
+        val factoryToClose = tearDownActiveGraphResources()
 
         // Create a new scope for this graph's operations first so the actor can use it.
         // MUST use a fresh SupervisorJob — CoroutineScope(coroutineScope.coroutineContext) would
@@ -632,6 +769,8 @@ class GraphManager(
                         val db = factory.steleDatabase()
                         UuidMigration(writeActor).runIfNeeded(db)
                         logger.info("init[${elapsed()}ms]: UuidMigration done")
+                        FilePathRootMigration(writeActor).runIfNeeded(db, graphInfo.path)
+                        logger.info("init[${elapsed()}ms]: FilePathRootMigration done")
                         try {
                             MigrationRunner(
                                 registry = MigrationRegistry,
@@ -666,6 +805,7 @@ class GraphManager(
         // Update active graph — use atomic update {} to avoid clobbering concurrent registry
         // mutations (e.g. git detection updating detectedRepoRoot on a background IO coroutine).
         _graphRegistry.update { it.copy(activeGraphId = id) }
+        _graphsExplicitlyEmptied.value = false
         saveRegistry()
     }
 
@@ -711,9 +851,50 @@ class GraphManager(
         _graphRegistry.value.graphs.map { it.id }.toSet()
     
     fun getActiveRepositorySet(): RepositorySet? = _activeRepositorySet.value
-    
+
+    /**
+     * Returns the current graph's memoized [CaptureEnrichmentCoordinator] (built once per
+     * [GraphId], race-safe); `null` if there's no active graph/[RepositorySet]/scope yet.
+     * [coordinatorMutex] guards only the cache read/insert, never the `await()` itself, so a
+     * slow construction for one graph never blocks a concurrent call for a different graph — and
+     * a [Deferred] that fails is evicted so the next call retries instead of replaying the failure.
+     */
+    suspend fun getOrCreateEnrichmentCoordinator(): CaptureEnrichmentCoordinator? {
+        val (graphId, deferred) = coordinatorMutex.withLock {
+            val graphId = _graphRegistry.value.activeGraphId ?: return@withLock null
+            val repoSet = _activeRepositorySet.value ?: return@withLock null
+            val scope = activeGraphJobs[graphId] ?: return@withLock null
+            val existing = coordinatorFor?.takeIf { it.first == graphId }?.second
+            val deferred = existing ?: scope.async(start = CoroutineStart.LAZY) {
+                val topicEnricher = CaptureEnrichmentCoordinator.resolveTopicEnricher(llmProviderRegistry, llmSettings)
+                CaptureEnrichmentCoordinator(repoSet.pageRepository, scope, topicEnricher)
+            }.also { coordinatorFor = graphId to it }
+            graphId to deferred
+        } ?: return null
+        return try {
+            deferred.await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            coordinatorMutex.withLock {
+                if (coordinatorFor?.first == graphId) coordinatorFor = null
+            }
+            throw e
+        }
+    }
+
     private suspend fun detectGitRoot(graphPath: String): Pair<String, String>? {
-        if (graphPath.startsWith("content://")) return null
+        // Android SAF-opened graphs are "saf://{encodedTreeUri}/{relativePath}" (see
+        // PlatformFileSystem.toSafRoot), never a literal "content://" prefix — this check never
+        // matched a real SAF path. Walking such a path with the POSIX '/'-splitting logic below is
+        // also structurally pointless: a SAF grant is scoped to exactly the folder the user picked,
+        // so a `.git` above that folder is invisible to this app regardless of path-parsing
+        // correctness — bail out explicitly instead of relying on the loop terminating safely once
+        // it works its way back to (and then past) the "saf://" scheme delimiter.
+        if (graphPath.startsWith("saf://") || graphPath.startsWith("content://")) {
+            logger.info("detectGitRoot: skipping SAF/content path, git-repo auto-detection unsupported ($graphPath)")
+            return null
+        }
         return withContext(PlatformDispatcher.IO) {
             try {
                 val normalizedPath = graphPath.replace('\\', '/')

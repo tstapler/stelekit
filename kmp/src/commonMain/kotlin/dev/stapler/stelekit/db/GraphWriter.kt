@@ -12,6 +12,7 @@ import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.model.SectionId
@@ -25,6 +26,16 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
+
+/**
+ * A snapshot of "which graph is currently active for paranoid-mode AAD purposes," swapped in
+ * atomically by [GraphWriter.currentEpoch]. [graphId] is sourced only from
+ * `GraphManager.getActiveGraphInfo()?.id` — never derived from [graphPath] or any raw path/OPFS
+ * folder-name string (see the web-host-sync-session-lifecycle plan's `GraphId` smart-constructor
+ * discipline). [sequence] is a monotonic counter incremented on every switch, used purely so a
+ * captured-vs-current mismatch is observable/loggable — it has no other behavioral role.
+ */
+data class GraphEpoch(val graphId: GraphId, val graphPath: String, val sequence: Long)
 
 /**
  * Handles writing page and block changes back to markdown files.
@@ -51,8 +62,6 @@ class GraphWriter(
     private val sidecarManager: SidecarManager? = null,
     /** Initial CryptoLayer value — use [setCryptoLayer] to change at runtime. */
     initialCryptoLayer: CryptoLayer? = null,
-    /** Graph root path — required to compute graph-root-relative AAD paths for encryption. */
-    @Volatile var graphPath: String = "",
     /**
      * Called immediately before writing a file to disk. Allows the caller to pre-mark the
      * file as a pending own-write in [FileRegistry] so the watcher never sees our write as
@@ -78,6 +87,15 @@ class GraphWriter(
      * ([diskContent]). The write has already been aborted when this is called.
      */
     private val onPreWriteConflict: (suspend (filePath: String, pendingContent: String, diskContent: String) -> Unit)? = null,
+    /** Emits "file.write"/"file.rename"/"file.delete" spans for the disk-IO SLO. Null disables. */
+    private val spanEmitter: dev.stapler.stelekit.performance.SpanEmitter? = null,
+    /**
+     * Dispatcher used for all [fileSystem] calls. Defaults to [PlatformDispatcher.IO] in
+     * production. Tests that inject a zero-latency [FileSystem] fake (no real disk I/O to bound)
+     * should override this with [Dispatchers.Unconfined] so assertions don't race the real,
+     * CI-contended [Dispatchers.IO] thread pool shared across concurrently-forked test JVMs.
+     */
+    private val ioDispatcher: CoroutineDispatcher = PlatformDispatcher.IO,
 ) : GraphWriterPort {
     /**
      * Backing field for the CryptoLayer used to encrypt files in paranoid mode.
@@ -85,11 +103,41 @@ class GraphWriter(
      */
     @Volatile private var cryptoLayer: CryptoLayer? = initialCryptoLayer
 
+    /**
+     * The currently-active graph, for the [renamePage]/[deletePage]/[savePageInternal]
+     * paranoid-AAD guard checks. `null` = no graph loaded yet — a real, type-checked
+     * "uninitialized" state, never an empty-string/empty-[GraphId] sentinel that could be
+     * mistaken for a real graph. Set atomically (whole value swapped, never field-by-field)
+     * by the caller (typically [GraphManager]/`App.kt`) whenever the active graph changes.
+     *
+     * [renamePage]/[deletePage]/[savePageInternal] each capture this value exactly once at
+     * entry — before acquiring [saveMutex] — into a local `val`, and use that captured value
+     * for the remainder of the call. Re-reading this live field after a suspension point
+     * (e.g. after queuing for [saveMutex]) would let an in-flight call silently observe a
+     * *different* graph than the one it started against.
+     */
+    @Volatile var currentEpoch: GraphEpoch? = null
+
+    /**
+     * Read-only view of [currentEpoch]'s path, kept for callers ([movePageToSection],
+     * [relativeFilePath]'s default parameter) that only ever read the active graph's path and
+     * were not part of the epoch-capture migration. `null` when no graph has been loaded yet.
+     */
+    val graphPath: String? get() = currentEpoch?.graphPath
+
     override fun setCryptoLayer(layer: CryptoLayer?) { cryptoLayer = layer }
 
     override fun closeAndClearCryptoLayer() { cryptoLayer?.close(); cryptoLayer = null }
 
     private val logger = Logger("GraphWriter")
+
+    /** Redacts [this] to an opaque hash-derived token in paranoid (encrypted) mode; passes through otherwise. */
+    private fun String.redactPath(): String {
+        if (isEmpty() || cryptoLayer == null) return this
+        val hash = dev.stapler.stelekit.util.ContentHasher.sha256ForContent(this).take(8)
+        return "<redacted:$hash>"
+    }
+
     private val saveMutex = Mutex()
     // Tracks the disk-content hash of the most recently detected conflict per file.
     // Cleared on a successful write so only the first save after an external change logs
@@ -217,9 +265,28 @@ class GraphWriter(
      * Calculates the new file path based on the new name and moves the file.
      * Returns true if successful, false otherwise.
      */
-    override suspend fun renamePage(page: Page, newName: String, graphPath: String): Boolean = saveMutex.withLock {
+    override suspend fun renamePage(page: Page, newName: String, graphPath: String): Boolean {
+        // Capture the active epoch ONCE here, before queuing for saveMutex — never re-read
+        // this@GraphWriter.currentEpoch again below. If this call queues behind another
+        // in-flight save/rename/delete and a graph switch happens while it waits, it must still
+        // complete against the graph it was originally requested for (see GraphWriterEpochCaptureTest).
+        // checkNotNull is a deliberate fail-fast: renamePage/deletePage are only ever called
+        // once a graph is active, so a null currentEpoch here is a real programming error, not a
+        // state this migration needs to quietly tolerate (see GraphWriterNotYetLoadedTest).
+        val capturedEpoch = checkNotNull(this@GraphWriter.currentEpoch) {
+            "renamePage/deletePage called before any graph was loaded"
+        }
+        return saveMutex.withLock {
+        val nowEpoch = this@GraphWriter.currentEpoch
+        if (nowEpoch?.sequence != capturedEpoch.sequence) {
+            logger.info(
+                "renamePage/deletePage proceeding against captured epoch $capturedEpoch even though currentEpoch is now $nowEpoch"
+            )
+        }
+        val spanStart = dev.stapler.stelekit.performance.HistogramWriter.epochMs()
+        val renameResult =
         // IO boundary: all fileSystem calls must run on PlatformDispatcher.IO on Android.
-        withContext(PlatformDispatcher.IO) {
+        withContext(ioDispatcher) {
         val oldPath = page.filePath
         if (oldPath.isNullOrBlank()) {
             logger.error("Cannot rename page with no file path: ${page.name}")
@@ -228,7 +295,9 @@ class GraphWriter(
 
         // Guard: cannot rename pages in the hidden-volume reserve area
         val renameLayer = cryptoLayer
-        val renameGraphPath = this@GraphWriter.graphPath
+        // Use the epoch captured before this call queued for saveMutex — never the live field —
+        // so an in-flight rename always finishes against the graph it was requested for.
+        val renameGraphPath = capturedEpoch.graphPath
         if (renameLayer != null && renameGraphPath.isEmpty()) {
             logger.error("renamePage aborted — cryptoLayer is set but graphPath is empty (AAD would be wrong)")
             return@withContext false
@@ -299,15 +368,37 @@ class GraphWriter(
             logger.error("Failed to write new file during rename: $newPath")
             return@withContext false
         }
-        } // end withContext(PlatformDispatcher.IO)
+        } // end withContext(ioDispatcher)
+        spanEmitter?.emit(
+            name = "file.rename",
+            startMs = spanStart,
+            attrs = mapOf("path" to (page.filePath ?: "").redactPath()),
+        )
+        renameResult
+        } // end saveMutex.withLock
     }
 
     /**
      * Delete a page file.
      */
-    override suspend fun deletePage(page: Page): Boolean = saveMutex.withLock {
+    override suspend fun deletePage(page: Page): Boolean {
+        // Capture the active epoch ONCE here, before queuing for saveMutex — see renamePage's
+        // identical rationale above and GraphWriterEpochCaptureTest. checkNotNull is a
+        // deliberate fail-fast — see renamePage's identical rationale (GraphWriterNotYetLoadedTest).
+        val capturedEpoch = checkNotNull(this@GraphWriter.currentEpoch) {
+            "renamePage/deletePage called before any graph was loaded"
+        }
+        return saveMutex.withLock {
+        val nowEpoch = this@GraphWriter.currentEpoch
+        if (nowEpoch?.sequence != capturedEpoch.sequence) {
+            logger.info(
+                "renamePage/deletePage proceeding against captured epoch $capturedEpoch even though currentEpoch is now $nowEpoch"
+            )
+        }
+        val spanStart = dev.stapler.stelekit.performance.HistogramWriter.epochMs()
+        val deleteResult =
         // IO boundary: all fileSystem calls must run on PlatformDispatcher.IO on Android.
-        withContext(PlatformDispatcher.IO) {
+        withContext(ioDispatcher) {
         val path = page.filePath
         if (path.isNullOrBlank()) {
             logger.error("Cannot delete page with no file path: ${page.name}")
@@ -316,7 +407,8 @@ class GraphWriter(
 
         // Guard: cannot delete pages in the hidden-volume reserve area
         val deleteLayer = cryptoLayer
-        val deleteGraphPath = this@GraphWriter.graphPath
+        // Use the epoch captured before this call queued for saveMutex — never the live field.
+        val deleteGraphPath = capturedEpoch.graphPath
         if (deleteLayer != null && deleteLayer.checkNotHiddenReserve(relativeFilePath(path, deleteGraphPath)).isLeft()) {
             logger.error("Delete blocked — restricted path: $path")
             return@withContext false
@@ -330,7 +422,14 @@ class GraphWriter(
             logger.error("Failed to delete page file: $path")
         }
         success
-        } // end withContext(PlatformDispatcher.IO)
+        } // end withContext(ioDispatcher)
+        spanEmitter?.emit(
+            name = "file.delete",
+            startMs = spanStart,
+            attrs = mapOf("path" to (page.filePath ?: "").redactPath()),
+        )
+        deleteResult
+        } // end saveMutex.withLock
     }
 
     /**
@@ -349,16 +448,21 @@ class GraphWriter(
      * (temp-file + rename). A partial write of an .md.stek ciphertext cannot be recovered —
      * the AEAD tag will fail to verify and the page will be permanently unreadable.
      */
-    private suspend fun savePageInternal(page: Page, blocks: List<Block>, graphPath: String): Boolean =
-        saveMutex.withLock {
+    private suspend fun savePageInternal(page: Page, blocks: List<Block>, graphPath: String): Boolean {
+        // Capture the active epoch ONCE here, before queuing for saveMutex — for consistency with
+        // renamePage/deletePage's identical fix (see GraphWriterEpochCaptureTest). Note the actual
+        // write destination is the explicit `graphPath` parameter above (already safe); this
+        // capture only feeds the AAD-guard check below.
+        val capturedEpoch = this@GraphWriter.currentEpoch
+        return saveMutex.withLock {
             // IO BOUNDARY: All filesystem calls below this line run on PlatformDispatcher.IO.
             // Adding any fileSystem.* call outside this withContext block will cause SAF Binder IPC
             // to block a Default dispatcher thread, reintroducing the Android insert lag.
-            withContext(PlatformDispatcher.IO) {
-            // Capture cryptoLayer and graphPath once at lock entry — also used by getPageFilePath so
+            withContext(ioDispatcher) {
+            // Capture cryptoLayer once at lock entry — also used by getPageFilePath so
             // the file extension (.md.stek vs .md) is consistent with all subsequent encrypt/decrypt calls.
             val capturedCryptoLayer = cryptoLayer
-            val capturedGraphPath = this@GraphWriter.graphPath
+            val capturedGraphPath = capturedEpoch?.graphPath ?: ""
             // GAP-3: fail fast if encryption is active but the graph path hasn't been set yet.
             // relativeFilePath() with empty graphPath strips only the leading "/" from absolute paths,
             // producing the wrong AAD string and making the file permanently unreadable.
@@ -470,21 +574,25 @@ class GraphWriter(
                     saga(
                         action = {
                             if (cryptoLayerNow != null) {
+                                val writeSpanStart = dev.stapler.stelekit.performance.HistogramWriter.epochMs()
                                 val relPath = relativeFilePath(filePath, capturedGraphPath)
                                 val encryptedBytes = cryptoLayerNow.encrypt(relPath, content.encodeToByteArray())
                                 if (!fileSystem.writeFileBytes(filePath, encryptedBytes)) {
                                     error("writeFileBytes returned false for: $filePath")
                                 }
                                 fileSystem.updateShadow(filePath, content)
+                                spanEmitter?.emit("file.write", writeSpanStart, attrs = mapOf("path" to filePath.redactPath()))
                             } else {
                                 // Try write-behind first (zero Binder IPC on Android); falls back to direct SAF write.
                                 val wroteViaShadow = fileSystem.markDirty(filePath, content)
                                 if (!wroteViaShadow) {
+                                    val writeSpanStart = dev.stapler.stelekit.performance.HistogramWriter.epochMs()
                                     if (!fileSystem.writeFile(filePath, content)) {
                                         error("writeFile returned false for: $filePath")
                                     }
                                     // Keep shadow in sync after a direct SAF write
                                     fileSystem.updateShadow(filePath, content)
+                                    spanEmitter?.emit("file.write", writeSpanStart, attrs = mapOf("path" to filePath.redactPath()))
                                 }
                             }
                         },
@@ -555,8 +663,9 @@ class GraphWriter(
                 logger.error("Failed to write file: $filePath", e)
             }
             succeeded
-            } // end withContext(PlatformDispatcher.IO)
-        }
+            } // end withContext(ioDispatcher)
+        } // end saveMutex.withLock
+    }
 
     private fun buildMarkdown(page: Page, blocks: List<Block>): String =
         LogseqPageSerializer.serialize(page, blocks)
@@ -602,7 +711,7 @@ class GraphWriter(
         newRelativePath: String,
     ) {
         try {
-            val content = withContext(PlatformDispatcher.IO) { fileSystem.readFile(filePath) } ?: return
+            val content = withContext(ioDispatcher) { fileSystem.readFile(filePath) } ?: return
             if (!content.contains(oldRelativePath)) return
             val escaped = Regex.escape(oldRelativePath)
             val updated = content
@@ -612,7 +721,7 @@ class GraphWriter(
                 .replace(Regex("\\[$escaped\\]")) { "[$newRelativePath]" }
             if (updated == content) return
             onPreWrite?.invoke(filePath)
-            withContext(PlatformDispatcher.IO) { fileSystem.writeFile(filePath, updated) }
+            withContext(ioDispatcher) { fileSystem.writeFile(filePath, updated) }
             onFileWritten?.invoke(filePath)
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
@@ -632,13 +741,14 @@ class GraphWriter(
         page: Page,
         newSectionId: SectionId,
         newPathPrefix: String,
-    ): Either<DomainError, Page> = withContext(PlatformDispatcher.IO) {
+    ): Either<DomainError, Page> = withContext(ioDispatcher) {
         try {
             val oldPath = page.filePath
             val capturedCryptoLayer = cryptoLayer
             val extension = if (capturedCryptoLayer != null) ".md.stek" else ".md"
             val safeName = FileUtils.sanitizeFileName(page.name)
-            val base = if (graphPath.endsWith("/")) graphPath else "$graphPath/"
+            val movePageToSectionGraphPath = graphPath ?: ""
+            val base = if (movePageToSectionGraphPath.endsWith("/")) movePageToSectionGraphPath else "$movePageToSectionGraphPath/"
             val newPath = "$base$newPathPrefix/$safeName$extension"
 
             if (oldPath == null || oldPath == newPath) {
@@ -686,7 +796,7 @@ class GraphWriter(
     }
 
     /** Compute the graph-root-relative path used as AAD for file encryption. */
-    private fun relativeFilePath(absoluteFilePath: String, base: String = graphPath): String {
+    private fun relativeFilePath(absoluteFilePath: String, base: String = graphPath ?: ""): String {
         val baseWithSlash = if (base.endsWith("/")) base else "$base/"
         return if (absoluteFilePath.startsWith(baseWithSlash)) {
             absoluteFilePath.removePrefix(baseWithSlash)
@@ -711,11 +821,11 @@ class GraphWriter(
             pageRepository: PageRepository? = null,
             sidecarManager: SidecarManager? = null,
             cryptoLayer: CryptoLayer? = null,
-            graphPath: String = "",
             onPreWrite: (suspend (String) -> Unit)? = null,
             onClearPendingWrite: (suspend (String) -> Unit)? = null,
             checkPreWriteConflict: (suspend (String, String) -> Boolean)? = null,
             onPreWriteConflict: (suspend (String, String, String) -> Unit)? = null,
+            spanEmitter: dev.stapler.stelekit.performance.SpanEmitter? = null,
         ): Resource<GraphWriter> = resource {
             val writer = GraphWriter(
                 fileSystem = fileSystem,
@@ -724,11 +834,11 @@ class GraphWriter(
                 pageRepository = pageRepository,
                 sidecarManager = sidecarManager,
                 initialCryptoLayer = cryptoLayer,
-                graphPath = graphPath,
                 onPreWrite = onPreWrite,
                 onClearPendingWrite = onClearPendingWrite,
                 checkPreWriteConflict = checkPreWriteConflict,
                 onPreWriteConflict = onPreWriteConflict,
+                spanEmitter = spanEmitter,
             )
             onRelease {
                 try { writer.flush() } catch (_: Exception) { /* best-effort flush */ }

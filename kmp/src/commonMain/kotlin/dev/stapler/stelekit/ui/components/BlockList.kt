@@ -23,6 +23,7 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
@@ -107,6 +108,22 @@ internal fun computeDropTarget(
     }
     return DropTargetResult(targetUuid, zone, isBlocked = targetUuid in blockedTargetUuids)
 }
+
+/**
+ * Resolves which block row [pointerY] is nearest, for lasso-select (see [BlockList]'s
+ * `onLassoDragStart`/`onLassoDrag`). Same nearest-row-center metric as [computeDropTarget], so
+ * it naturally clamps to the first/last row rather than returning null when overshooting the
+ * list's bounds. On an exact tie, the earlier entry in [blockBounds]'s iteration order wins —
+ * callers must pass an order-stable map (BlockList always does: `blockBounds` is built by
+ * appending to a `Map` in on-screen row order, never a `HashMap`).
+ */
+internal fun hitTestNearestBlockRow(
+    pointerY: Float,
+    blockBounds: Map<String, Pair<Float, Float>>,
+): String? =
+    blockBounds.entries
+        .minByOrNull { (_, bounds) -> kotlin.math.abs((bounds.first + bounds.second) / 2f - pointerY) }
+        ?.key
 
 /**
  * Renders a list of blocks with proper hierarchy, supporting collapse/expand.
@@ -219,12 +236,19 @@ fun BlockList(
     var currentDropZone by remember { mutableStateOf<DropZone?>(null) }
     var isDropBlocked by remember { mutableStateOf(false) }
 
+    // Click-and-drag lasso-select: a drag started on a block's bullet grows the selection to
+    // span anchor..pointer as the pointer crosses further rows (see onLassoDragStart/onLassoDrag
+    // wiring below, near the block's onDragStart/onDrag). isLassoDragging joins isDragging below
+    // so the hosting LazyColumn also suspends scrolling for a lasso drag, same as a reorder drag.
+    var isLassoDragging by remember { mutableStateOf(false) }
+    var lastLassoHitUuid by remember { mutableStateOf<String?>(null) }
+
     // GAP-010: notify the caller whenever an active drag starts/stops so the hosting scroll
     // container can suspend scrolling for the duration (see onDragStateChange's doc above).
     // rememberUpdatedState avoids capturing a stale lambda reference inside the LaunchedEffect
     // below if the caller passes a new onDragStateChange lambda across recompositions.
     val currentOnDragStateChange by rememberUpdatedState(onDragStateChange)
-    val isDragging = dragState?.isDragging == true
+    val isDragging = dragState?.isDragging == true || isLassoDragging
     LaunchedEffect(isDragging) { currentOnDragStateChange(isDragging) }
 
     // Clean up drag state when this composable leaves the composition (e.g. page navigation)
@@ -234,6 +258,8 @@ fun BlockList(
             dropTargetUuid = null
             currentDropZone = null
             isDropBlocked = false
+            isLassoDragging = false
+            lastLassoHitUuid = null
             currentOnDragStateChange(false)
         }
     }
@@ -288,11 +314,13 @@ fun BlockList(
                         onShiftArrowDown()
                         true
                     }
-                    event.key == Key.Escape && dragState != null -> {
+                    event.key == Key.Escape && (dragState != null || isLassoDragging) -> {
                         dragState = null
                         dropTargetUuid = null
                         currentDropZone = null
                         isDropBlocked = false
+                        isLassoDragging = false
+                        lastLassoHitUuid = null
                         true
                     }
                     else -> false
@@ -424,6 +452,31 @@ fun BlockList(
                         dropTargetUuid = null
                         currentDropZone = null
                         isDropBlocked = false
+                    },
+                    onLassoDragStart = { uuid ->
+                        isLassoDragging = true
+                        lastLassoHitUuid = uuid
+                        onEnterSelectionMode(uuid)
+                    },
+                    onLassoDrag = { rootY ->
+                        // Guard on isLassoDragging, not just non-null coordinates: the physical
+                        // pointer drag in BlockGutter keeps firing this callback until pointer-up
+                        // regardless of Compose state, so without this check Escape's isLassoDragging
+                        // = false reset would be cosmetic only — the selection would keep growing
+                        // underneath it for the rest of the gesture (mirrors dragState's null-guard
+                        // for the reorder-drag equivalent above).
+                        val colTop = columnCoords?.positionInRoot()?.y
+                        if (isLassoDragging && colTop != null) {
+                            val hitUuid = hitTestNearestBlockRow(rootY - colTop, blockBounds)
+                            if (hitUuid != null && hitUuid != lastLassoHitUuid) {
+                                lastLassoHitUuid = hitUuid
+                                onShiftClick(hitUuid)
+                            }
+                        }
+                    },
+                    onLassoDragEnd = {
+                        isLassoDragging = false
+                        lastLassoHitUuid = null
                     },
                     dropAbove = isDropTarget && !isDropBlocked && currentDropZone == DropZone.ABOVE,
                     dropBelow = isDropTarget && !isDropBlocked && currentDropZone == DropZone.BELOW,

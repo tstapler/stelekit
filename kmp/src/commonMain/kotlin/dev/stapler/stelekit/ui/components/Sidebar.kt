@@ -25,7 +25,10 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PhotoLibrary
@@ -50,6 +53,9 @@ import dev.stapler.stelekit.model.GraphInfo
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.platform.HostAccessState
+import dev.stapler.stelekit.platform.isCurrentSessionEphemeral
+import dev.stapler.stelekit.platform.isEphemeralWebModeAvailable
+import dev.stapler.stelekit.platform.startEphemeralSession
 import dev.stapler.stelekit.sections.SectionManifest
 import dev.stapler.stelekit.ui.LocalWindowSizeClass
 import dev.stapler.stelekit.ui.Screen
@@ -102,7 +108,15 @@ fun LeftSidebar(
     onReconnectHostDirectory: () -> Unit = {},
     onCloneGraph: () -> Unit = {},
     onUpdateGraphPath: (String, String) -> Unit = { _, _ -> },
+    onRenameGraph: (String, String) -> Unit = { _, _ -> },
+    onRelinkHostDirectory: (String) -> Unit = {},
+    supportsHostDirectoryLink: Boolean = false,
     gitSyncedGraphId: String? = null,
+    /** Pages captured from another graph by [onExportPagesForMerge], not yet merged in here.
+     * Cross-graph page/journal recovery — see GraphMergeService's class doc. */
+    mergePendingPageCount: Int = 0,
+    onExportPagesForMerge: () -> Unit = {},
+    onImportMergedPages: () -> Unit = {},
     onNewSectionJournalEntry: (() -> Unit)? = null,
     sectionManifest: SectionManifest? = null,
     defaultSection: String = "",
@@ -152,8 +166,15 @@ fun LeftSidebar(
                 onRemoveGraph = onRemoveGraph,
                 onCloneGraph = onCloneGraph,
                 onUpdateGraphPath = onUpdateGraphPath,
+                onRenameGraph = onRenameGraph,
+                onRelinkHostDirectory = onRelinkHostDirectory,
+                supportsHostDirectoryLink = supportsHostDirectoryLink,
                 gitSyncedGraphId = gitSyncedGraphId,
                 isDemoActive = isDemoActive,
+                hostAccessState = hostAccessState,
+                mergePendingPageCount = mergePendingPageCount,
+                onExportPagesForMerge = onExportPagesForMerge,
+                onImportMergedPages = onImportMergedPages,
             )
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
@@ -335,6 +356,25 @@ fun PendingConflictsBanner(count: Int, onClick: () -> Unit, modifier: Modifier =
     }
 }
 
+/** Single-line icon+label row for a [DropdownMenuItem] in [GraphSwitcher]'s menu. */
+@Composable
+private fun GraphMenuActionItem(icon: ImageVector, label: String, onClick: () -> Unit) {
+    DropdownMenuItem(
+        text = {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(8.dp))
+                Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+            }
+        },
+        onClick = onClick,
+        contentPadding = PaddingValues(0.dp),
+    )
+}
+
 /**
  * Graph switcher component for selecting and managing graphs.
  */
@@ -348,8 +388,21 @@ fun GraphSwitcher(
     onRemoveGraph: (String) -> Unit,
     onCloneGraph: () -> Unit = {},
     onUpdateGraphPath: (String, String) -> Unit = { _, _ -> },
+    onRenameGraph: (String, String) -> Unit = { _, _ -> },
+    /** Re-points a graph's host-folder link at a newly-picked folder (web-local-folder-livesync
+     * only). Must call the platform's directory-picker synchronously from this click before
+     * launching a coroutine — same transient-user-activation constraint as [onAddGraph]. No-op
+     * (button hidden) on platforms without a native directory picker. */
+    onRelinkHostDirectory: (String) -> Unit = {},
+    supportsHostDirectoryLink: Boolean = false,
     gitSyncedGraphId: String? = null,
     isDemoActive: Boolean = false,
+    /** Epic 2.3: host-directory connection state for [activeGraphId] only — used to show a
+     * "linked to local folder" indicator distinct from the graph's internal OPFS path. */
+    hostAccessState: HostAccessState = HostAccessState.NotApplicable,
+    mergePendingPageCount: Int = 0,
+    onExportPagesForMerge: () -> Unit = {},
+    onImportMergedPages: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -379,7 +432,7 @@ fun GraphSwitcher(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    imageVector = Icons.Default.Folder,
+                    imageVector = if (hostAccessState == HostAccessState.Granted) Icons.Default.FolderOpen else Icons.Default.Folder,
                     contentDescription = null,
                     modifier = Modifier.size(20.dp),
                     tint = MaterialTheme.colorScheme.primary
@@ -391,6 +444,14 @@ fun GraphSwitcher(
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                     modifier = Modifier.weight(1f)
                 )
+                if (hostAccessState == HostAccessState.Granted) {
+                    Icon(
+                        imageVector = Icons.Default.Link,
+                        contentDescription = "Connected to local folder",
+                        modifier = Modifier.size(14.dp).padding(end = 4.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
                 Icon(
                     imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                     contentDescription = if (expanded) "Collapse" else "Expand"
@@ -410,14 +471,19 @@ fun GraphSwitcher(
                             graph = graph,
                             isActive = graph.id.value == activeGraphId,
                             isSynced = graph.id.value == gitSyncedGraphId,
+                            isHostConnected = graph.id.value == activeGraphId && hostAccessState == HostAccessState.Granted,
                             onSelect = {
                                 onGraphSelected(graph.id.value)
                                 expanded = false
                             },
-                            onRemove = if (availableGraphs.size > 1) {
-                                { graphToRemove = graph }
-                            } else null,
-                            onEditPath = if (!graph.isDemo) {
+                            // GraphManager.removeGraph now allows removing the last real graph
+                            // (falls back to activeGraphId = null, surfacing the empty-state
+                            // prompt) — no longer gated on availableGraphs.size > 1.
+                            onRemove = { graphToRemove = graph },
+                            // Re-pointing an ephemeral graph at a real folder would defeat the
+                            // whole point of the mode — an ephemeral session only ever has this
+                            // one graph, so gating on the session (not per-graph) is sufficient.
+                            onEditPath = if (!graph.isDemo && !isCurrentSessionEphemeral()) {
                                 { graphToEdit = graph }
                             } else null
                         )
@@ -432,35 +498,48 @@ fun GraphSwitcher(
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
-            DropdownMenuItem(
-                text = {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Open local folder...", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-                    }
-                },
-                onClick = { onAddGraph(); expanded = false },
-                contentPadding = PaddingValues(0.dp),
-            )
+            // Not offered inside an already-ephemeral session — connecting a local OPFS folder
+            // would introduce the exact persistent storage side channel that mode exists to avoid.
+            if (!isCurrentSessionEphemeral()) {
+                GraphMenuActionItem(Icons.Default.Add, "Open local folder...") { onAddGraph(); expanded = false }
+            }
 
-            DropdownMenuItem(
-                text = {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Clone from URL...", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-                    }
-                },
-                onClick = { onCloneGraph(); expanded = false },
-                contentPadding = PaddingValues(0.dp),
-            )
+            GraphMenuActionItem(Icons.Default.CloudDownload, "Clone from URL...") { onCloneGraph(); expanded = false }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+            // Cross-graph page/journal recovery: capture this graph's pages, switch to another
+            // graph via the list above, then paste them in. See GraphMergeService's class doc.
+            GraphMenuActionItem(Icons.Default.ContentCopy, "Copy pages from this graph...") {
+                onExportPagesForMerge(); expanded = false
+            }
+            if (mergePendingPageCount > 0) {
+                GraphMenuActionItem(Icons.Default.ContentPaste, "Merge $mergePendingPageCount captured page(s) here") {
+                    onImportMergedPages(); expanded = false
+                }
+            }
+
+            if (isEphemeralWebModeAvailable() && !isCurrentSessionEphemeral()) {
+                DropdownMenuItem(
+                    text = {
+                        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Bolt, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Open temporarily...", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                            }
+                            Text(
+                                "Checked-out files live in memory only — nothing is saved on this computer",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(start = 26.dp),
+                            )
+                        }
+                    },
+                    onClick = { startEphemeralSession(); expanded = false },
+                    contentPadding = PaddingValues(0.dp),
+                )
+            }
         }
     }
     
@@ -488,22 +567,33 @@ fun GraphSwitcher(
         )
     }
 
-    // Edit-path dialog: lets the user re-point a tracked graph at a new folder.
+    // Edit dialog: rename, re-point the internal path (migrates the DB), and/or re-link the
+    // real host folder (web-local-folder-livesync only) — three independent fields, each with
+    // its own save action so a field that requires migration/re-linking only runs that work.
     val editingGraph = graphToEdit
     if (editingGraph != null) {
+        var newName by remember(editingGraph.id.value) { mutableStateOf(editingGraph.displayName) }
         var newPath by remember(editingGraph.id.value) { mutableStateOf(editingGraph.path) }
         AlertDialog(
             onDismissRequest = { graphToEdit = null },
-            title = { Text("Edit Graph Path") },
+            title = { Text("Edit Graph") },
             text = {
                 Column {
+                    OutlinedTextField(
+                        value = newName,
+                        onValueChange = { newName = it },
+                        label = { Text("Name") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(12.dp))
                     Text(
-                        "Move \"${editingGraph.displayName}\" to a different folder. " +
-                            "The graph's database will be migrated to the new location.",
+                        "Internal graph path. Changing this moves \"${editingGraph.displayName}\"'s " +
+                            "database to a different location on this device.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(4.dp))
                     OutlinedTextField(
                         value = newPath,
                         onValueChange = { newPath = it },
@@ -511,15 +601,40 @@ fun GraphSwitcher(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    if (supportsHostDirectoryLink) {
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            editingGraph.hostDirName?.let { "Linked local folder: $it" }
+                                ?: "No local folder linked yet.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        TextButton(
+                            onClick = {
+                                onRelinkHostDirectory(editingGraph.id.value)
+                                graphToEdit = null
+                            },
+                            contentPadding = PaddingValues(horizontal = 0.dp),
+                        ) {
+                            Text(if (editingGraph.hostDirName != null) "Change linked folder…" else "Link a local folder…")
+                        }
+                    }
                 }
             },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        onUpdateGraphPath(editingGraph.id.value, newPath)
+                        if (newName.isNotBlank() && newName != editingGraph.displayName) {
+                            onRenameGraph(editingGraph.id.value, newName)
+                        }
+                        if (newPath.isNotBlank() && newPath != editingGraph.path) {
+                            onUpdateGraphPath(editingGraph.id.value, newPath)
+                        }
                         graphToEdit = null
                     },
-                    enabled = newPath.isNotBlank() && newPath != editingGraph.path,
+                    enabled = (newName.isNotBlank() && newName != editingGraph.displayName) ||
+                        (newPath.isNotBlank() && newPath != editingGraph.path),
                 ) {
                     Text("Save")
                 }
@@ -541,6 +656,10 @@ fun GraphItem(
     graph: GraphInfo,
     isActive: Boolean,
     isSynced: Boolean = false,
+    /** Epic 2.3: true when this graph is the active graph and it currently has a granted
+     * host-directory connection — shown as a distinct badge from [graph.path]'s OPFS path,
+     * which alone gives no indication the graph is backed by a live local folder. */
+    isHostConnected: Boolean = false,
     onSelect: () -> Unit,
     onRemove: (() -> Unit)? = null,
     onEditPath: (() -> Unit)? = null,
@@ -573,7 +692,10 @@ fun GraphItem(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = graph.path,
+                    // Prefer the real linked host folder's name over the internal OPFS path —
+                    // the path (e.g. "/stelekit/notes") tells the user nothing about which real
+                    // folder on disk the graph is backed by once host-directory-livesync is wired up.
+                    text = graph.hostDirName?.let { "linked to: $it" } ?: graph.path,
                     style = MaterialTheme.typography.bodySmall,
                     color = (if (isActive) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
                         .copy(alpha = 0.6f),
@@ -593,6 +715,14 @@ fun GraphItem(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+            }
+            if (isHostConnected) {
+                Icon(
+                    imageVector = Icons.Default.Link,
+                    contentDescription = "Connected to local folder",
+                    modifier = Modifier.size(14.dp).padding(end = 2.dp),
+                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                )
             }
             if (isSynced) {
                 Icon(

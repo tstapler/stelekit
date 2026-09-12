@@ -6,8 +6,8 @@ internal fun createSqliteWorker(scriptPath: String): JsAny =
 internal fun workerPostMessage(worker: JsAny, message: JsAny): Unit =
     js("worker.postMessage(message)")
 
-internal fun buildInitMessage(dbPath: String): JsAny =
-    js("({ type: 'init', dbPath: dbPath })")
+internal fun buildInitMessage(dbPath: String, mode: String): JsAny =
+    js("({ type: 'init', dbPath: dbPath, mode: mode })")
 
 internal fun buildExecMessage(id: Int, sql: String, bindArray: JsAny): JsAny =
     js("({ type: 'exec', id: id, sql: sql, bind: bindArray })")

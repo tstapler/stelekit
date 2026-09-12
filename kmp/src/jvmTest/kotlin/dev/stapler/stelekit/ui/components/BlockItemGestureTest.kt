@@ -87,13 +87,32 @@ class BlockItemGestureTest {
         assertEquals(0, recorder.toggleSelectCalls)
     }
 
+    /**
+     * Composes [WikiLinkText] directly with an explicit non-null `onLongPressSelect`, rather
+     * than through [BlockItem] (which now resolves `onLongPressSelect` to `null` on the JVM
+     * target via `useLongPressToSelectBlock()` — desktop/mouse already has shift-click,
+     * Ctrl+A, and click-and-drag lasso-select, so a stationary press-and-hold no longer enters
+     * selection mode there; see `ModifierExtensions.jvm.kt`). This still pins the gesture
+     * recognizer's own tap-vs-long-press resolution — the thing this test class exists to
+     * cover — independent of which platform currently wires a non-null `onLongPressSelect` in.
+     */
     @Test
     fun genuineLongPress_entersSelectionMode_notEditMode() {
-        val recorder = render()
+        var enterSelectionModeCalls = 0
+        var startEditingCalls = 0
+        composeTestRule.setContent {
+            WikiLinkText(
+                text = "Plain block text",
+                textColor = Color.Black,
+                linkColor = Color.Blue,
+                onClick = { startEditingCalls++ },
+                onLongPressSelect = { enterSelectionModeCalls++ },
+            )
+        }
         composeTestRule.onNodeWithText("Plain block text").performTouchInput { longClick() }
 
-        assertEquals(1, recorder.enterSelectionModeCalls)
-        assertEquals(0, recorder.startEditingCalls)
+        assertEquals(1, enterSelectionModeCalls)
+        assertEquals(0, startEditingCalls)
     }
 
     @Test
@@ -144,37 +163,42 @@ class BlockItemGestureTest {
      * only at initial composition and can't detect a stale closure), this drives the real
      * long-press-then-tap sequence within one composed instance.
      */
+    /**
+     * Composes [WikiLinkText] directly with an explicit non-null `onLongPressSelect` (see
+     * [genuineLongPress_entersSelectionMode_notEditMode] for why this bypasses [BlockItem] on
+     * the JVM target) so the enter-selection-then-tap sequence this test drives can still occur
+     * at all — the stale-closure bug this pins isn't specific to long-press-to-select as an
+     * entry mechanism, only to `isInSelectionMode` flipping true on an already-composed row.
+     */
     @Test
     fun longPressThenTap_onSameRow_togglesSelection_notEditMode() {
-        val recorder = Recorder()
+        var enterSelectionModeCalls = 0
+        var toggleSelectCalls = 0
+        var startEditingCalls = 0
         var selectionMode by mutableStateOf(false)
         composeTestRule.setContent {
-            BlockItem(
-                block = block(),
-                isEditing = false,
+            WikiLinkText(
+                text = "Plain block text",
+                textColor = Color.Black,
+                linkColor = Color.Blue,
+                onClick = { startEditingCalls++ },
                 isInSelectionMode = selectionMode,
-                onToggleSelect = { recorder.toggleSelectCalls++ },
-                onEnterSelectionMode = {
-                    recorder.enterSelectionModeCalls++
+                onToggleSelect = { toggleSelectCalls++ },
+                onLongPressSelect = {
+                    enterSelectionModeCalls++
                     selectionMode = true
                 },
-                onStartEditing = { recorder.startEditingCalls++ },
-                onStopEditing = {},
-                onContentChange = { _, _ -> },
-                onLinkClick = { recorder.linkClicked = it },
-                onNewBlock = {},
-                onSplitBlock = { _, _ -> },
             )
         }
         val node = composeTestRule.onNodeWithText("Plain block text")
 
         node.performTouchInput { longClick() }
         composeTestRule.waitForIdle()
-        assertEquals(1, recorder.enterSelectionModeCalls)
+        assertEquals(1, enterSelectionModeCalls)
 
         node.performClick()
-        assertEquals(1, recorder.toggleSelectCalls)
-        assertEquals(0, recorder.startEditingCalls)
+        assertEquals(1, toggleSelectCalls)
+        assertEquals(0, startEditingCalls)
     }
 
     /**
@@ -300,31 +324,29 @@ class BlockItemGestureTest {
     /**
      * Regression coverage for [OrderedListItemBlock]'s number-marker `combinedClickable`
      * (see [orderedListItemNumberMarker_tap_entersEditMode]): a genuine long-press on the
-     * marker (`onLongPressSelect` non-null, as on the JVM target where
-     * `useLongPressForDrag()` is `false`) must enter selection mode, not start editing --
-     * mirrors [genuineLongPress_entersSelectionMode_notEditMode] but for the marker itself.
+     * marker with a non-null `onLongPressSelect` must enter selection mode, not start editing
+     * -- mirrors [genuineLongPress_entersSelectionMode_notEditMode] but for the marker itself.
+     * Composes [OrderedListItemBlock] directly with an explicit `onLongPressSelect` for the
+     * same reason: [BlockItem] now resolves it to `null` on the JVM target.
      */
     @Test
     fun orderedListItemNumberMarker_longPress_entersSelectionMode_notEditMode() {
-        val recorder = Recorder()
+        var enterSelectionModeCalls = 0
+        var startEditingCalls = 0
         composeTestRule.setContent {
-            BlockItem(
-                block = block(content = "1. Plain block text", blockType = BlockType.OrderedListItem(number = 1)),
-                isEditing = false,
-                onToggleSelect = { recorder.toggleSelectCalls++ },
-                onEnterSelectionMode = { recorder.enterSelectionModeCalls++ },
-                onStartEditing = { recorder.startEditingCalls++ },
-                onStopEditing = {},
-                onContentChange = { _, _ -> },
-                onLinkClick = { recorder.linkClicked = it },
-                onNewBlock = {},
-                onSplitBlock = { _, _ -> },
+            OrderedListItemBlock(
+                content = "1. Plain block text",
+                number = 1,
+                linkColor = Color.Blue,
+                onStartEditing = { startEditingCalls++ },
+                onLinkClick = {},
+                onLongPressSelect = { enterSelectionModeCalls++ },
             )
         }
         composeTestRule.onNodeWithText("1.").performTouchInput { longClick() }
 
-        assertEquals(1, recorder.enterSelectionModeCalls)
-        assertEquals(0, recorder.startEditingCalls)
+        assertEquals(1, enterSelectionModeCalls)
+        assertEquals(0, startEditingCalls)
     }
 
     /**

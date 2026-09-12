@@ -1,0 +1,8 @@
+bazel-*
+# Intellij Bazel Plugin
+.ijwb
+# Android Studio Bazel Plugin
+.aswb
+*.swp
+MODULE.bazel.lock
+.claude

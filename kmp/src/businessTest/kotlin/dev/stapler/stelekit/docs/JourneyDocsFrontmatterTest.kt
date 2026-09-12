@@ -1,19 +1,29 @@
 package dev.stapler.stelekit.docs
 
 import java.io.File
+import java.net.JarURLConnection
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * Locates repo-root planning artifacts (`docs/journeys/` markdown files,
- * `project_plans/rich-editing-experience/implementation/` markdown files) from a businessTest classpath.
+ * Reads repo-root planning artifacts (`docs/journeys/` markdown files,
+ * `project_plans/rich-editing-experience/implementation/` markdown files) from a businessTest
+ * classpath.
  *
- * Same idiom as [dev.stapler.stelekit.docs.WebsiteDocsCoverageTest] (jvmTest): walk up from a
- * known classpath resource until a directory containing the expected repo-root siblings is
- * found, rather than relying on a Gradle-injected system property (keeps `build.gradle.kts`
- * untouched for this doc-schema enforcement work).
+ * Two resolution paths, tried in order:
+ *  1. **Bazel**: each file is bundled as a classpath resource (see
+ *     `kmp/src/businessTest/kotlin/BUILD.bazel`'s `rich_editing_backlog_docs_as_resources` and
+ *     `journey_docs_as_resources` targets) — `getResourceAsStream`/jar-entry enumeration, no
+ *     real [File] involved. Needed because Bazel's `kt_jvm_test` packs classpath resources into
+ *     a runfiles jar, so a classloader resource resolves to a `jar:file:...!/...` URL —
+ *     `File(url.toURI())` throws `IllegalArgumentException: URI is not hierarchical` on that,
+ *     and even if it didn't, walking "up" from a path inside Bazel's sandboxed runfiles tree
+ *     would never reach the real repo root.
+ *  2. **Gradle** (fallback): walk up from a known classpath resource (`demo-graph/pages`, an
+ *     unpacked directory under Gradle) until a directory containing the expected repo-root
+ *     siblings (`kmp/`, `docs/`, `project_plans/`) is found, then read the real on-disk file.
  */
 object DocRepoLocator {
 
@@ -33,20 +43,56 @@ object DocRepoLocator {
         error("Could not locate repository root (dir containing kmp/, docs/, project_plans/) from: $resource")
     }
 
-    val journeysDir: File get() = repoRoot.resolve("docs/journeys")
+    /** [resourceName] is the Bazel-bundled classpath resource name; [repoRelativePath] is the
+     * real path from [repoRoot], used only as the Gradle fallback. */
+    private fun readRepoFile(resourceName: String, repoRelativePath: String): String =
+        DocRepoLocator::class.java.classLoader.getResourceAsStream(resourceName)
+            ?.bufferedReader()?.readText()
+            ?: repoRoot.resolve(repoRelativePath).readText()
 
-    val gapBacklogFile: File get() = repoRoot.resolve(
-        "project_plans/rich-editing-experience/implementation/gap-backlog.md"
+    fun gapBacklogText(): String = readRepoFile(
+        "gap-backlog.md",
+        "project_plans/rich-editing-experience/implementation/gap-backlog.md",
     )
 
-    val planFile: File get() = repoRoot.resolve(
-        "project_plans/rich-editing-experience/implementation/plan.md"
+    fun planText(): String = readRepoFile(
+        "plan.md",
+        "project_plans/rich-editing-experience/implementation/plan.md",
     )
 
-    fun journeyDocFiles(): List<File> =
-        (journeysDir.listFiles { f -> f.isFile && f.extension == "md" && f.name != "README.md" }
-            ?: error("docs/journeys/ not found or unreadable at $journeysDir"))
-            .sortedBy { it.name }
+    /** (fileName, text) pairs for every non-README .md file in docs/journeys/, sorted by name. */
+    fun journeyDocs(): List<Pair<String, String>> {
+        val bazelNames = bazelJourneyDocNames()
+        return if (bazelNames != null) {
+            bazelNames.map { name -> name to readRepoFile("journeys/$name", "docs/journeys/$name") }
+        } else {
+            val journeysDir = repoRoot.resolve("docs/journeys")
+            (journeysDir.listFiles { f -> f.isFile && f.extension == "md" && f.name != "README.md" }
+                ?: error("docs/journeys/ not found or unreadable at $journeysDir"))
+                .sortedBy { it.name }
+                .map { it.name to it.readText() }
+        }
+    }
+
+    /** Enumerates journeys/ .md resource names from the Bazel-bundled jar (mirrors
+     * DemoFileSystemSyncTest's file:// vs jar:// handling for demo-graph/pages). Returns null
+     * when there's no "journeys" classpath resource at all — the Gradle path, which has no such
+     * resource since journey_docs_as_resources is Bazel-only. */
+    private fun bazelJourneyDocNames(): List<String>? {
+        val url = DocRepoLocator::class.java.classLoader.getResource("journeys") ?: return null
+        if (url.protocol != "jar") return null
+        val connection = url.openConnection() as JarURLConnection
+        return connection.jarFile.use { jar ->
+            jar.entries().asSequence()
+                .filter {
+                    !it.isDirectory && it.name.startsWith("journeys/") &&
+                        it.name.endsWith(".md") && it.name != "journeys/README.md"
+                }
+                .map { it.name.removePrefix("journeys/") }
+                .sorted()
+                .toList()
+        }
+    }
 }
 
 /**
@@ -102,11 +148,10 @@ object JourneyDocs {
         "voice-capture", "annotate-asset",
     )
 
-    fun parseAll(): List<JourneyDoc> = DocRepoLocator.journeyDocFiles().map { file ->
-        val text = file.readText()
+    fun parseAll(): List<JourneyDoc> = DocRepoLocator.journeyDocs().map { (name, text) ->
         val frontmatter = FrontmatterParser.extractFrontmatter(text)
-            ?: error("${file.name}: no frontmatter block found (must start with '---' and close with '---')")
-        JourneyDoc(file.name, FrontmatterParser.parseTopLevelFields(frontmatter))
+            ?: error("$name: no frontmatter block found (must start with '---' and close with '---')")
+        JourneyDoc(name, FrontmatterParser.parseTopLevelFields(frontmatter))
     }
 }
 

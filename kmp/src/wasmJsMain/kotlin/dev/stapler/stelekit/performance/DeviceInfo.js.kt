@@ -8,7 +8,8 @@ actual class DeviceInfo actual constructor(
     actual val osVersion: String,
     actual val deviceModel: String,
     actual val availableRamMb: Long,
-    actual val appVersion: String
+    actual val appVersion: String,
+    actual val gitCommit: String
 )
 
 actual fun heapSummary(): String = "heap:n/a"
@@ -18,5 +19,6 @@ actual fun getDeviceInfo(): DeviceInfo = DeviceInfo(
     osVersion = "unknown",
     deviceModel = "unknown",
     availableRamMb = 0L,
-    appVersion = "dev"
+    appVersion = WASM_APP_VERSION,
+    gitCommit = WASM_GIT_COMMIT
 )

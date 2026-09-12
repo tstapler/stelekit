@@ -29,8 +29,8 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 
 private val BACKLINKS_COL_WIDTH: Dp = 90.dp
-private val MODIFIED_COL_WIDTH: Dp = 90.dp
-private val CREATED_COL_WIDTH: Dp = 80.dp
+private val MODIFIED_COL_WIDTH: Dp = 160.dp
+private val CREATED_COL_WIDTH: Dp = 160.dp
 
 @Composable
 fun AllPagesScreen(
@@ -359,6 +359,9 @@ private fun PageRowItem(
 }
 
 private fun formatInstantShort(instant: kotlin.time.Instant): String {
-    val date = instant.toLocalDateTime(TimeZone.currentSystemDefault()).date
-    return "${date.year}-${date.monthNumber.toString().padStart(2, '0')}-${date.dayOfMonth.toString().padStart(2, '0')}"
+    val dt = instant.toLocalDateTime(TimeZone.currentSystemDefault())
+    val date = dt.date
+    val time = dt.time
+    return "${date.year}-${date.monthNumber.toString().padStart(2, '0')}-${date.dayOfMonth.toString().padStart(2, '0')} " +
+        "${time.hour.toString().padStart(2, '0')}:${time.minute.toString().padStart(2, '0')}:${time.second.toString().padStart(2, '0')}"
 }

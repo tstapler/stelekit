@@ -31,3 +31,9 @@ actual fun Modifier.platformNavigationInput(
 }
 
 actual fun useLongPressForDrag(): Boolean = false
+
+// Desktop/mouse already has shift-click range select, Ctrl+A, and click-and-drag lasso-select
+// (BlockGutter's bullet handle) — precise alternatives that make long-press-to-select redundant
+// and actively harmful: a stationary mouse-down while positioning a text cursor is ordinary
+// desktop behavior and was firing this instead of focusing the block for editing.
+actual fun useLongPressToSelectBlock(): Boolean = false

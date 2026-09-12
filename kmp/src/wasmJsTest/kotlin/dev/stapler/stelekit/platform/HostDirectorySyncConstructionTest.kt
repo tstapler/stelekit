@@ -67,9 +67,11 @@ class HostDirectorySyncConstructionTest {
         val fakeCacheAccess = FakeCacheAccess()
         val testScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-        // Given: constructed directly, no PlatformFileSystem instance involved anywhere.
-        val sync = HostDirectorySync(
-            graphIdProvider = { "g" },
+        // Given: constructed directly via HostDirectorySync.forTest — graphId + cacheAccess +
+        // scope, no PlatformFileSystem instance involved anywhere (Epic 1.1's retired
+        // graphIdProvider-closure shape collapsed to this plain OpfsGraphSlug value).
+        val sync = HostDirectorySync.forTest(
+            graphId = OpfsGraphSlug("g"),
             cacheAccess = fakeCacheAccess,
             scope = testScope,
         )
@@ -91,8 +93,11 @@ class HostDirectorySyncConstructionTest {
         fakeCacheAccess.set("/stelekit/g/pages/A.md", "a")
         fakeCacheAccess.set("/stelekit/g/pages/B.md", "b")
         fakeCacheAccess.set("/stelekit/g/other/C.md", "c")
+        // keysUnder is documented (CacheAccess.keysUnder) as covering "cache keys (text or
+        // bytes)" — Secret.md.stek (setBytes'd above, under the same "pages" prefix) is
+        // therefore expected here alongside the two plain-text keys.
         assertEquals(
-            setOf("/stelekit/g/pages/A.md", "/stelekit/g/pages/B.md"),
+            setOf("/stelekit/g/pages/A.md", "/stelekit/g/pages/B.md", "/stelekit/g/pages/Secret.md.stek"),
             fakeCacheAccess.keysUnder("/stelekit/g/pages"),
         )
 

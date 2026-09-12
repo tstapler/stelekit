@@ -16,6 +16,39 @@ java_library(
     resource_strip_prefix = "kmp/src/commonMain/kotlin/dev/stapler/stelekit/platform",
 )
 
+# Bundles SteleDatabase.sq as a classpath resource ("SteleDatabase.sq") so
+# MigrationRunnerSchemaSyncTest can read it under Bazel without the Gradle-only
+# -Dstelekit.sq.file system property.
+java_library(
+    name = "sqldatabase_schema_as_resource",
+    resources = ["//kmp:sqldelight_schema_source"],
+    resource_strip_prefix = "kmp/src/commonMain/sqldelight/dev/stapler/stelekit/db",
+)
+
+# Bundles GitShadowWorktree.kt as a classpath resource ("GitShadowWorktree.kt") so
+# GitShadowWorktreeNoCoroutineScopeTest can read its source text under Bazel.
+java_library(
+    name = "git_shadow_worktree_as_resource",
+    resources = ["//kmp/src/androidMain/kotlin:git_shadow_worktree_source"],
+    resource_strip_prefix = "kmp/src/androidMain/kotlin/dev/stapler/stelekit/git",
+)
+
+# Bundles gap-backlog.md and plan.md as classpath resources ("gap-backlog.md",
+# "plan.md") for DocRepoLocator's Bazel path — see DocRepoLocator's class doc.
+java_library(
+    name = "rich_editing_backlog_docs_as_resources",
+    resources = ["//:rich_editing_backlog_docs"],
+    resource_strip_prefix = "project_plans/rich-editing-experience/implementation",
+)
+
+# Bundles docs/journeys/*.md as classpath resources under "journeys/" (e.g.
+# "journeys/insert-tag.md") for DocRepoLocator's Bazel path.
+java_library(
+    name = "journey_docs_as_resources",
+    resources = ["//:journey_docs_source"],
+    resource_strip_prefix = "docs",
+)
+
 # Runnable test target — bazel test //kmp:business_tests
 kt_jvm_test(
     name = "business_tests",
@@ -30,6 +63,10 @@ kt_jvm_test(
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
         "//kmp/src/commonMain/resources:common_resources",
         ":demo_filesystem_as_resource",
+        ":sqldatabase_schema_as_resource",
+        ":git_shadow_worktree_as_resource",
+        ":rich_editing_backlog_docs_as_resources",
+        ":journey_docs_as_resources",
     ],
     visibility = ["//kmp:__subpackages__"],
 )

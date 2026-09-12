@@ -34,6 +34,7 @@ private fun LlmFeature.displayName(): String = when (this) {
     LlmFeature.VOICE_FORMATTING -> "Voice formatting"
     LlmFeature.TAG_SUGGESTION -> "Tag suggestion"
     LlmFeature.GRAPH_EDIT_SYNTHESIS -> "Graph edit synthesis"
+    LlmFeature.CAPTURE_ENRICHMENT -> "Capture enrichment"
 }
 
 /**

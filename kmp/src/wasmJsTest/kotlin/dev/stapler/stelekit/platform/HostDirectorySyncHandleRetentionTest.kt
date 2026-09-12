@@ -87,11 +87,8 @@ class HostDirectorySyncHandleRetentionTest {
         override fun opfsWriteDeferredFor(path: String): Deferred<Unit>? = null
     }
 
-    private fun newSync(graphId: String, scope: CoroutineScope): HostDirectorySync = HostDirectorySync(
-        graphIdProvider = { graphId },
-        cacheAccess = NoOpCacheAccess(),
-        scope = scope,
-    )
+    private fun newSync(graphId: String, scope: CoroutineScope): HostDirectorySync =
+        disconnectedSync(OpfsGraphSlug(graphId), NoOpCacheAccess(), scope)
 
     @Test
     fun attachFreshHandle_should_SetHostDirHandleAndOpfsPath_When_PickDirectoryAsyncSucceeds() = runTest {
@@ -133,10 +130,18 @@ class HostDirectorySyncHandleRetentionTest {
     }
 
     @Test
-    fun persistHostHandle_should_StoreHostHandleEnvelopeKeyedByGraphId_When_AttachFreshHandleCompletes() = runTest {
+    fun persistHostHandle_should_StoreHostHandleEnvelopeKeyedByThePickedGraphsOwnId_When_AttachFreshHandleCompletes() = runTest {
+        // Bug fix regression coverage: attachFreshHandle runs from pickDirectoryAsync() BEFORE the
+        // caller has registered/switched to the newly-picked graph in GraphManager, so this
+        // instance's own constructor-captured graphId here deliberately holds a DIFFERENT,
+        // unrelated graph — exactly like a real multi-graph session picking a new folder while
+        // some other graph is active. The envelope must be keyed by the picked graph's own id
+        // (derived from its dirName), never this instance's own graphId — otherwise
+        // reconnectHostDirectory()/requestHostDirectoryAccess() (both keyed by the *actual* active
+        // graph id on lookup) can never find it again in a later session.
         val testScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-        val graphId = "live-${Random.nextInt(0, Int.MAX_VALUE)}"
-        val sync = newSync(graphId = graphId, scope = testScope)
+        val staleActiveGraphId = "live-${Random.nextInt(0, Int.MAX_VALUE)}"
+        val sync = newSync(graphId = staleActiveGraphId, scope = testScope)
         val dirHandle = fakeDirHandle("my-notes")
         val opfsPath = "/stelekit/my-notes"
 
@@ -145,11 +150,13 @@ class HostDirectorySyncHandleRetentionTest {
         // Independently verified against the real IndexedDB global, via a fresh connection —
         // mirroring a new tab/session reading back what this call persisted.
         val readDb = idbOpenHandleDb()
-        val stored = idbGetHandle(readDb, graphId)
+        assertNotNull(idbGetHandle(readDb, "my-notes"))
+        assertEquals(null, idbGetHandle(readDb, staleActiveGraphId))
 
-        assertNotNull(stored)
-        val decoded = gitApiJson.decodeFromString<HostHandleEnvelope>(jsAnyToKotlinString(stored))
-        assertEquals(graphId, decoded.graphId)
+        val decoded = gitApiJson.decodeFromString<HostHandleEnvelope>(
+            jsAnyToKotlinString(idbGetHandle(readDb, "my-notes")!!),
+        )
+        assertEquals("my-notes", decoded.graphId)
         assertEquals("my-notes", decoded.dirName)
         testScope.cancel()
     }

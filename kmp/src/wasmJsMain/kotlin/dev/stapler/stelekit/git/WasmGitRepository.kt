@@ -125,7 +125,7 @@ class WasmGitRepository(
                 if (err is DomainError.GitError.MergeConflict) {
                     MergeResult(
                         hasConflicts = true,
-                        conflicts = gitWriteService.buildConflictFiles(err.conflictPaths.toSet()),
+                        conflicts = gitWriteService.buildConflictFiles(config, hostConfig, err.conflictPaths.toSet()),
                         changedFiles = emptyList(),
                     ).right()
                 } else {

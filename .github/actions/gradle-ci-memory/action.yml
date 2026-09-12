@@ -1,0 +1,26 @@
+name: Configure Gradle CI memory
+description: >
+  Right-sizes Gradle/Kotlin JVM heap and worker parallelism for GitHub-hosted
+  ubuntu-latest runners (2 vCPU / 7 GB RAM). The repo's gradle.properties sets
+  org.gradle.jvmargs to -Xmx4g and org.gradle.workers.max to 4, tuned for a
+  local dev workstation. On a 7 GB CI runner the main Gradle build JVM (4g)
+  plus the separately-forked Kotlin compile daemon (also 4g, since it inherits
+  org.gradle.jvmargs) already reserve 8g before any test/transform work runs,
+  causing intermittent "Java heap space" OOMs (e.g. Robolectric's
+  JetifyTransform during :kmp:testDebugUnitTest). Writes an override to
+  GRADLE_USER_HOME/gradle.properties, which Gradle applies with higher
+  precedence than the project's own gradle.properties, so local dev is
+  unaffected.
+
+runs:
+  using: composite
+  steps:
+    - name: Cap Gradle/Kotlin heap for this runner
+      shell: bash
+      run: |
+        mkdir -p ~/.gradle
+        cat >> ~/.gradle/gradle.properties <<'EOF'
+        org.gradle.jvmargs=-Xms512m -Xmx2560m -XX:MaxMetaspaceSize=512m -XX:ReservedCodeCacheSize=256m -XX:+HeapDumpOnOutOfMemoryError
+        kotlin.daemon.jvm.options=-Xmx1536m
+        org.gradle.workers.max=2
+        EOF

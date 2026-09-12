@@ -3,12 +3,14 @@
 
 package dev.stapler.stelekit.ui.screens.git
 
+import dev.stapler.stelekit.logging.Logger
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -18,10 +20,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -38,6 +42,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -52,21 +57,26 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import arrow.core.Either
+import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.GitAuth
 import dev.stapler.stelekit.git.GitConfigRepository
+import dev.stapler.stelekit.git.GitCredentialConnectionStore
 import dev.stapler.stelekit.git.GitHostAdapter
 import dev.stapler.stelekit.git.GitHubDeviceFlowClient
 import dev.stapler.stelekit.git.GitRepository
 import dev.stapler.stelekit.git.GitSyncService
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
+import dev.stapler.stelekit.git.model.GitCredentialConnection
+import dev.stapler.stelekit.git.model.GitHostType
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.platform.security.CredentialStore
 import kotlin.time.Clock
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Multi-step wizard for configuring git sync on a graph.
@@ -87,6 +97,8 @@ import kotlinx.coroutines.launch
  * @param onDismiss Called when the user cancels the wizard.
  * @param onSaved Called after configuration is saved and initial fetch succeeds.
  */
+private val gitSetupLogger = Logger("GitSetupScreen")
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GitSetupScreen(
@@ -101,6 +113,12 @@ fun GitSetupScreen(
     initialStep: Int = 1,
     initialUseExistingClone: Boolean = true,
     graphPath: String = "",
+    // Auto-detected by GraphManager.detectGitRoot() and surfaced via GitDetectionBanner — prefills
+    // Step2RepoPath so opening this wizard from that banner doesn't discard what the app already
+    // figured out (previously always defaulted repoRoot to graphPath / wikiSubdir to blank, even
+    // when detection had already found the real repo root above a nested wiki folder).
+    detectedRepoRoot: String? = null,
+    detectedWikiSubdir: String? = null,
     onSave: () -> Unit = {},
     onCloneAndAdd: (suspend (url: String, localPath: String, auth: GitAuth, onProgress: (String) -> Unit) -> Either<DomainError.GitError, String>)? = null,
     onCloneComplete: ((String) -> Unit)? = null,
@@ -115,14 +133,68 @@ fun GitSetupScreen(
     var cloneUrl by remember { mutableStateOf("") }
     var repoRoot by remember {
         mutableStateOf(
-            existingConfig?.repoRoot ?: if (initialUseExistingClone) graphPath else ""
+            existingConfig?.repoRoot
+                ?: detectedRepoRoot
+                ?: if (initialUseExistingClone) graphPath else ""
         )
     }
     var sshPassphrase by remember { mutableStateOf("") }
-    var wikiSubdir by remember { mutableStateOf(existingConfig?.wikiSubdir ?: "") }
+    var wikiSubdir by remember {
+        mutableStateOf(existingConfig?.wikiSubdir ?: detectedWikiSubdir ?: "")
+    }
+    var wikiSubdirBrowserOpen by remember { mutableStateOf(false) }
+
+    // Live .git check at repoRoot, replacing the old saf://-string-prefix heuristic (which never
+    // covered wasm's OPFS-mirrored picker paths, only Android's). Null while unchecked/blank —
+    // callers below only branch on it once it's a real true/false.
+    var hasGitAtRepoRoot by remember { mutableStateOf<Boolean?>(null) }
+    LaunchedEffect(repoRoot) {
+        if (repoRoot.isBlank()) {
+            hasGitAtRepoRoot = null
+            return@LaunchedEffect
+        }
+        hasGitAtRepoRoot = withContext(PlatformDispatcher.IO) {
+            val gitPath = "$repoRoot/.git"
+            fileSystem.fileExists(gitPath) || fileSystem.directoryExists(gitPath)
+        }
+    }
+    // "Use existing clone" against a SAF-only folder (no MANAGE_EXTERNAL_STORAGE) is structurally
+    // unsupported — see AndroidGitRepository.resolveForJGit's doc comment: JGit only understands
+    // java.io.File, and the shadow-worktree mirror deliberately never copies .git itself
+    // (FileSystem.listFilesRecursiveWithModTimes skips it), so there's no path to a working
+    // git repo either way. Surfaced explicitly rather than left to fail at "Test connection" with
+    // a cryptic "repository not found: /data/data/.../gitshadow" error.
+    val existingRepoNeedsAllFilesAccess = useExistingClone &&
+        repoRoot.startsWith("saf://") &&
+        !fileSystem.hasAllFilesAccess()
+
     var authType by remember { mutableStateOf(existingConfig?.authType ?: GitAuthType.NONE) }
     var sshKeyPath by remember { mutableStateOf(existingConfig?.sshKeyPath ?: "") }
     val credentialStore = remember { CredentialStore() }
+    // App-wide (not per-graph) — lets HTTPS_TOKEN/GITHUB_OAUTH credentials be reused across graphs
+    // instead of re-pasting a PAT or redoing the OAuth device flow every time. PlatformSettings()
+    // is instantiated ad hoc here rather than threaded through as a parameter, matching the
+    // existing precedent in persistWebGitCredentials below (each instance shares the same
+    // underlying platform store — SharedPreferences/NSUserDefaults/localStorage — so this is safe).
+    val connectionStore = remember(credentialStore) { GitCredentialConnectionStore(PlatformSettings(), credentialStore) }
+    var httpsConnections by remember {
+        mutableStateOf(connectionStore.listConnections(GitAuthType.HTTPS_TOKEN))
+    }
+    var oauthConnections by remember {
+        mutableStateOf(connectionStore.listConnections(GitAuthType.GITHUB_OAUTH))
+    }
+    // Null selection means "enter/connect a new credential" — the manual entry UI stays visible.
+    // Pre-selects the saved connection an existing config's token happens to match, so re-opening
+    // the wizard on an already-configured graph doesn't show "enter a new token" over a value that
+    // actually came from a saved connection.
+    var selectedHttpsConnectionId by remember {
+        mutableStateOf(
+            existingConfig?.httpsTokenKey?.let { key -> credentialStore.retrieve(key) }?.let { token ->
+                httpsConnections.firstOrNull { connectionStore.getSecret(it) == token }?.id
+            }
+        )
+    }
+    var selectedOauthConnectionId by remember { mutableStateOf<String?>(null) }
     var httpsToken by remember {
         mutableStateOf(
             existingConfig?.httpsTokenKey?.let { key -> credentialStore.retrieve(key) } ?: ""
@@ -136,6 +208,23 @@ fun GitSetupScreen(
     var oauthDialogState by remember { mutableStateOf<OAuthDialogState?>(null) }
     var oauthConnectedAs by remember { mutableStateOf<String?>(null) }
     var oauthJob by remember { mutableStateOf<Job?>(null) }
+
+    // Shared by both startOAuthFlow call sites (initial connect + dialog retry): a freshly
+    // completed device flow is saved as a new reusable connection (GitHub OAuth is the only auth
+    // type this device flow ever produces, so host is always "github.com"), so the next graph
+    // configured against the same account can pick it from the list instead of redoing the flow.
+    val onOAuthConnected: (username: String, token: String) -> Unit = { username, token ->
+        oauthConnectedAs = username
+        val connection = connectionStore.saveConnection(
+            host = "github.com",
+            accountLabel = username,
+            authType = GitAuthType.GITHUB_OAUTH,
+            secret = token,
+            createdAt = Clock.System.now().toEpochMilliseconds(),
+        )
+        selectedOauthConnectionId = connection.id
+        oauthConnections = connectionStore.listConnections(GitAuthType.GITHUB_OAUTH)
+    }
 
     // Step 5: connection test state
     var testInProgress by remember { mutableStateOf(false) }
@@ -192,7 +281,7 @@ fun GitSetupScreen(
                         credentialStore = credentialStore,
                         onDialogStateChange = { oauthDialogState = it },
                         onShowDialog = { showOAuthDialog = true },
-                        onConnected = { username -> oauthConnectedAs = username },
+                        onConnected = onOAuthConnected,
                     )
                 }
             },
@@ -241,16 +330,31 @@ fun GitSetupScreen(
                     cloneUrl = cloneUrl,
                     onCloneUrlChange = { cloneUrl = it },
                     wikiSubdir = wikiSubdir,
-                    onWikiSubdirChange = { wikiSubdir = it },
+                    onWikiSubdirChange = { newValue ->
+                        // Reject rather than silently store a picked content:// URI here — a
+                        // relative subdirectory never contains a URI scheme.
+                        if (!looksLikeUri(newValue)) wikiSubdir = newValue
+                    },
                     onBack = { step = 1 },
                     onNext = { step = 3 },
                     nextEnabled = repoRoot.isNotBlank() && (useExistingClone || cloneUrl.isNotBlank()),
                     onBrowseRepoRoot = {
                         scope.launch {
                             val path = fileSystem.pickDirectoryAsync()
-                            if (path != null) repoRoot = path
+                            if (path != null) {
+                                repoRoot = path
+                                wikiSubdir = "" // stale relative to the old root — start over, not silently wrong
+                            }
                         }
                     },
+                    onBrowseWikiSubdir = { wikiSubdirBrowserOpen = true },
+                    // Android SAF/wasm OPFS picker grants are scoped to exactly the folder the
+                    // user picked — a .git above it is structurally invisible, so
+                    // GraphManager.detectGitRoot()'s upward walk never runs for these (see its own
+                    // doc comment). Driven by the live check above rather than a saf://-prefix
+                    // guess, so it also covers wasm's differently-schemed picker path.
+                    detectionUnavailable = hasGitAtRepoRoot == false && detectedRepoRoot.isNullOrEmpty(),
+                    existingRepoNeedsAllFilesAccess = existingRepoNeedsAllFilesAccess,
                 )
 
                 3 -> {
@@ -262,19 +366,35 @@ fun GitSetupScreen(
                                 // Delete stored OAuth token when switching away
                                 credentialStore.delete("git_github_oauth_$graphId")
                                 oauthConnectedAs = null
+                                selectedOauthConnectionId = null
                             }
                             authType = newType
                         },
                         sshKeyPath = sshKeyPath,
                         onSshKeyPathChange = { sshKeyPath = it },
                         httpsToken = httpsToken,
-                        onHttpsTokenChange = { httpsToken = it },
+                        onHttpsTokenChange = {
+                            httpsToken = it
+                            selectedHttpsConnectionId = null
+                        },
                         tokenVisible = tokenVisible,
                         onToggleTokenVisible = { tokenVisible = !tokenVisible },
                         sshPassphrase = sshPassphrase,
                         onSshPassphraseChange = { sshPassphrase = it },
                         onBack = { step = 2 },
                         onNext = { step = 4 },
+                        httpsConnections = httpsConnections,
+                        selectedHttpsConnectionId = selectedHttpsConnectionId,
+                        onSelectHttpsConnection = { connection ->
+                            selectedHttpsConnectionId = connection?.id
+                            httpsToken = connection?.let { connectionStore.getSecret(it) } ?: ""
+                        },
+                        oauthConnections = oauthConnections,
+                        selectedOauthConnectionId = selectedOauthConnectionId,
+                        onSelectOauthConnection = { connection ->
+                            selectedOauthConnectionId = connection?.id
+                            oauthConnectedAs = connection?.accountLabel
+                        },
                         oauthConnectedAs = oauthConnectedAs,
                         onStartOAuthFlow = {
                             showOAuthDialog = true
@@ -287,7 +407,7 @@ fun GitSetupScreen(
                                     credentialStore = credentialStore,
                                     onDialogStateChange = { oauthDialogState = it },
                                     onShowDialog = { showOAuthDialog = true },
-                                    onConnected = { username -> oauthConnectedAs = username },
+                                    onConnected = onOAuthConnected,
                                 )
                             }
                         },
@@ -317,6 +437,7 @@ fun GitSetupScreen(
                     testSuccess = testSuccess,
                     saving = saving,
                     saveError = saveError,
+                    existingRepoNeedsAllFilesAccess = existingRepoNeedsAllFilesAccess,
                     onBack = { step = 4 },
                     onTestConnection = {
                         scope.launch {
@@ -394,10 +515,16 @@ fun GitSetupScreen(
                                     return@launch
                                 }
                                 val newGraphId = (cloneResult as Either.Right).value
-                                val httpsTokenKey = if (authType == GitAuthType.HTTPS_TOKEN && httpsToken.isNotBlank()) {
-                                    val tokenKey = "git_https_token_$newGraphId"
-                                    credentialStore.store(tokenKey, httpsToken)
-                                    tokenKey
+                                val httpsTokenKey = if (authType == GitAuthType.HTTPS_TOKEN) {
+                                    resolveHttpsTokenKey(
+                                        graphId = newGraphId,
+                                        httpsToken = httpsToken,
+                                        cloneUrl = cloneUrl,
+                                        selectedConnectionId = selectedHttpsConnectionId,
+                                        connectionStore = connectionStore,
+                                        credentialStore = credentialStore,
+                                        fallbackKey = null,
+                                    )
                                 } else {
                                     null
                                 }
@@ -409,7 +536,13 @@ fun GitSetupScreen(
                                     null
                                 }
                                 val oauthTokenKey = if (authType == GitAuthType.GITHUB_OAUTH) {
-                                    "git_github_oauth_$newGraphId"
+                                    resolveOauthTokenKey(
+                                        graphId = newGraphId,
+                                        selectedConnectionId = selectedOauthConnectionId,
+                                        connectionStore = connectionStore,
+                                        credentialStore = credentialStore,
+                                        fallbackKey = "git_github_oauth_$newGraphId",
+                                    )
                                 } else null
                                 // Web git write-back fix (PR #239 review): the wasmJs configResolver
                                 // (browser/Main.kt) reads credentials from PlatformSettings, not from
@@ -427,18 +560,28 @@ fun GitSetupScreen(
                                 val saveResult = gitConfigRepository.saveConfig(config)
                                 saving = false
                                 if (saveResult.isRight()) {
+                                    gitSetupLogger.info("saveConfig succeeded (clone-and-add) graphId=$newGraphId")
                                     onCloneComplete?.invoke(newGraphId)
                                     onSave()
                                 } else {
+                                    gitSetupLogger.error(
+                                        "saveConfig failed (clone-and-add) graphId=$newGraphId error=${saveResult.leftOrNull()}"
+                                    )
                                     saveError = "Failed to save configuration."
                                 }
                                 return@launch
                             }
 
-                            val httpsTokenKey = if (authType == GitAuthType.HTTPS_TOKEN && httpsToken.isNotBlank()) {
-                                val tokenKey = "git_https_token_$graphId"
-                                credentialStore.store(tokenKey, httpsToken)
-                                tokenKey
+                            val httpsTokenKey = if (authType == GitAuthType.HTTPS_TOKEN) {
+                                resolveHttpsTokenKey(
+                                    graphId = graphId,
+                                    httpsToken = httpsToken,
+                                    cloneUrl = cloneUrl,
+                                    selectedConnectionId = selectedHttpsConnectionId,
+                                    connectionStore = connectionStore,
+                                    credentialStore = credentialStore,
+                                    fallbackKey = existingConfig?.httpsTokenKey,
+                                )
                             } else {
                                 existingConfig?.httpsTokenKey
                             }
@@ -450,7 +593,13 @@ fun GitSetupScreen(
                                 existingConfig?.sshKeyPassphraseKey
                             }
                             val oauthTokenKey = if (authType == GitAuthType.GITHUB_OAUTH) {
-                                existingConfig?.oauthTokenKey ?: "git_github_oauth_$graphId"
+                                resolveOauthTokenKey(
+                                    graphId = graphId,
+                                    selectedConnectionId = selectedOauthConnectionId,
+                                    connectionStore = connectionStore,
+                                    credentialStore = credentialStore,
+                                    fallbackKey = existingConfig?.oauthTokenKey ?: "git_github_oauth_$graphId",
+                                )
                             } else null
                             // Web git write-back fix (PR #239 review): same PlatformSettings wiring as
                             // the clone-and-add path above. cloneUrl is typically blank here (this is
@@ -468,10 +617,12 @@ fun GitSetupScreen(
                             val result = gitConfigRepository.saveConfig(config)
                             saving = false
                             if (result.isRight()) {
+                                gitSetupLogger.info("saveConfig succeeded graphId=$graphId")
                                 // Trigger an immediate background fetch
                                 gitSyncService.fetchOnly(graphId)
                                 onSave()
                             } else {
+                                gitSetupLogger.error("saveConfig failed graphId=$graphId error=${result.leftOrNull()}")
                                 saveError = "Failed to save configuration."
                             }
                         }
@@ -481,6 +632,16 @@ fun GitSetupScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
         }
+    }
+
+    if (wikiSubdirBrowserOpen) {
+        WikiSubdirBrowserDialog(
+            fileSystem = fileSystem,
+            repoRoot = repoRoot,
+            initialSubdir = wikiSubdir,
+            onDismiss = { wikiSubdirBrowserOpen = false },
+            onSelect = { selected -> wikiSubdir = selected },
+        )
     }
 }
 
@@ -494,7 +655,7 @@ private suspend fun startOAuthFlow(
     credentialStore: CredentialStore,
     onDialogStateChange: (OAuthDialogState) -> Unit,
     onShowDialog: () -> Unit,
-    onConnected: (String) -> Unit,
+    onConnected: (username: String, token: String) -> Unit,
 ) {
     if (deviceFlowClient == null) {
         onDialogStateChange(OAuthDialogState.Error("GitHub OAuth is not available on this platform"))
@@ -540,7 +701,7 @@ private suspend fun startOAuthFlow(
     credentialStore.store(key, token)
 
     val username = deviceFlowClient.fetchUsername(token) ?: "GitHub User"
-    onConnected(username)
+    onConnected(username, token)
     onDialogStateChange(OAuthDialogState.Success(username))
 }
 
@@ -590,6 +751,9 @@ private fun Step2RepoPath(
     onNext: () -> Unit,
     nextEnabled: Boolean = repoRoot.isNotBlank(),
     onBrowseRepoRoot: (() -> Unit)? = null,
+    onBrowseWikiSubdir: (() -> Unit)? = null,
+    detectionUnavailable: Boolean = false,
+    existingRepoNeedsAllFilesAccess: Boolean = false,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Repository path", style = MaterialTheme.typography.titleMedium)
@@ -603,6 +767,14 @@ private fun Step2RepoPath(
                 singleLine = true,
             )
         }
+
+        Text(
+            "Pick the folder that directly contains .git — usually your project's top-level " +
+                "folder, not a notes/pages subfolder inside it. You can point at a subfolder " +
+                "separately below.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
 
         OutlinedTextField(
             value = repoRoot,
@@ -622,12 +794,49 @@ private fun Step2RepoPath(
             } else null,
         )
 
+        if (existingRepoNeedsAllFilesAccess) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    "This folder was picked via the system document picker, so SteleKit can " +
+                        "only see its content — not open its .git as a real repository. " +
+                        "Connecting to an existing repository this way requires granting " +
+                        "\"All files access\", or use \"Clone new repo\" instead with this " +
+                        "same remote URL.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                TextButton(onClick = { dev.stapler.stelekit.platform.openAllFilesAccessSettings() }) {
+                    Text("Open \"All files access\" settings")
+                }
+            }
+        } else if (detectionUnavailable) {
+            Text(
+                "No .git found directly in this folder, and SteleKit can't look above it to " +
+                    "find one automatically (the system document picker only grants access to " +
+                    "what you picked and what's inside it). If your repository is a parent " +
+                    "folder, browse again and pick that folder instead. If your notes live in a " +
+                    "subfolder of what you picked, use \"Browse\" below to select it.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
         OutlinedTextField(
             value = wikiSubdir,
             onValueChange = onWikiSubdirChange,
             label = { Text("Wiki subdirectory (leave empty if notes are at repo root)") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
+            trailingIcon = if (onBrowseWikiSubdir != null && repoRoot.isNotBlank()) {
+                {
+                    IconButton(onClick = onBrowseWikiSubdir) {
+                        Icon(
+                            imageVector = Icons.Default.Folder,
+                            contentDescription = "Browse subfolders of the repository root",
+                        )
+                    }
+                }
+            } else null,
         )
 
         Row(
@@ -641,6 +850,87 @@ private fun Step2RepoPath(
             ) { Text("Next") }
         }
     }
+}
+
+/**
+ * In-app subfolder browser scoped to [repoRoot] — replaces free-text entry for the common "notes
+ * live in a subfolder of the repo" case, since [repoRoot] itself is frequently an opaque picker
+ * URI (Android SAF, wasm OPFS) that a user cannot meaningfully hand-type a path relative to.
+ * Built entirely on [FileSystem.listDirectories], which every platform actual already implements
+ * for its own path scheme — no new platform-specific plumbing needed.
+ */
+@Composable
+private fun WikiSubdirBrowserDialog(
+    fileSystem: FileSystem,
+    repoRoot: String,
+    initialSubdir: String,
+    onDismiss: () -> Unit,
+    onSelect: (String) -> Unit,
+) {
+    var segments by remember {
+        mutableStateOf(initialSubdir.split('/').filter { it.isNotBlank() })
+    }
+    var subdirs by remember { mutableStateOf<List<String>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(segments) {
+        loading = true
+        val path = (listOf(repoRoot) + segments).joinToString("/")
+        subdirs = withContext(PlatformDispatcher.IO) { fileSystem.listDirectories(path).sorted() }
+        loading = false
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Select wiki subdirectory") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = if (segments.isEmpty()) "/ (repository root)" else "/" + segments.joinToString("/"),
+                    style = MaterialTheme.typography.labelMedium,
+                )
+                if (loading) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                } else {
+                    Column(
+                        modifier = Modifier.heightIn(max = 280.dp).verticalScroll(rememberScrollState()),
+                    ) {
+                        if (segments.isNotEmpty()) {
+                            TextButton(onClick = { segments = segments.dropLast(1) }) {
+                                Text("..")
+                            }
+                        }
+                        subdirs.forEach { name ->
+                            TextButton(onClick = { segments = segments + name }) {
+                                Icon(
+                                    imageVector = Icons.Default.Folder,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(name)
+                            }
+                        }
+                        if (subdirs.isEmpty()) {
+                            Text(
+                                "No subfolders here.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onSelect(segments.joinToString("/")); onDismiss() }) {
+                Text("Select this folder")
+            }
+        },
+        dismissButton = {
+            OutlinedButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }
 
 @Composable
@@ -657,6 +947,12 @@ private fun Step3Auth(
     onSshPassphraseChange: (String) -> Unit,
     onBack: () -> Unit,
     onNext: () -> Unit,
+    httpsConnections: List<GitCredentialConnection> = emptyList(),
+    selectedHttpsConnectionId: String? = null,
+    onSelectHttpsConnection: (GitCredentialConnection?) -> Unit = {},
+    oauthConnections: List<GitCredentialConnection> = emptyList(),
+    selectedOauthConnectionId: String? = null,
+    onSelectOauthConnection: (GitCredentialConnection?) -> Unit = {},
     oauthConnectedAs: String? = null,
     onStartOAuthFlow: () -> Unit = {},
     showOAuthDialog: Boolean = false,
@@ -743,31 +1039,73 @@ private fun Step3Auth(
         }
 
         if (authType == GitAuthType.HTTPS_TOKEN) {
-            OutlinedTextField(
-                value = httpsToken,
-                onValueChange = onHttpsTokenChange,
-                label = { Text("Personal access token") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                visualTransformation = if (tokenVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                trailingIcon = {
-                    IconButton(onClick = onToggleTokenVisible) {
-                        Icon(
-                            imageVector = if (tokenVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                            contentDescription = if (tokenVisible) "Hide token" else "Show token",
-                        )
+            if (httpsConnections.isNotEmpty()) {
+                Text("Saved tokens", style = MaterialTheme.typography.labelMedium)
+                httpsConnections.forEach { connection ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().selectable(
+                            selected = selectedHttpsConnectionId == connection.id,
+                            role = Role.RadioButton,
+                            onClick = { onSelectHttpsConnection(connection) },
+                        ),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = selectedHttpsConnectionId == connection.id, onClick = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(connection.accountLabel, style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                connection.host,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
-                },
-            )
-            Text(
-                "Token is encrypted on disk using device-specific keys. For stronger protection, use SSH key auth.",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth().selectable(
+                        selected = selectedHttpsConnectionId == null,
+                        role = Role.RadioButton,
+                        onClick = { onSelectHttpsConnection(null) },
+                    ),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RadioButton(selected = selectedHttpsConnectionId == null, onClick = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Use a new token")
+                }
+            }
+            if (selectedHttpsConnectionId == null) {
+                OutlinedTextField(
+                    value = httpsToken,
+                    onValueChange = onHttpsTokenChange,
+                    label = { Text("Personal access token") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    visualTransformation = if (tokenVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        IconButton(onClick = onToggleTokenVisible) {
+                            Icon(
+                                imageVector = if (tokenVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = if (tokenVisible) "Hide token" else "Show token",
+                            )
+                        }
+                    },
+                )
+                Text(
+                    "Token is encrypted on disk using device-specific keys. For stronger protection, use SSH key auth.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
 
         if (authType == GitAuthType.GITHUB_OAUTH) {
-            if (oauthConnectedAs != null) {
+            // A saved connection is selected: show it as "connected" (matching the fresh-device-flow
+            // banner below) plus the picker for switching to a different saved account or a new one.
+            // Otherwise: the device-flow entry point, with the picker (if any saved accounts exist)
+            // offered above it as a faster alternative to redoing the flow.
+            if (selectedOauthConnectionId != null && oauthConnectedAs != null) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -784,12 +1122,51 @@ private fun Step3Auth(
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
+                if (oauthConnections.size > 1) {
+                    Text("Switch account", style = MaterialTheme.typography.labelMedium)
+                    oauthConnections.filter { it.id != selectedOauthConnectionId }.forEach { connection ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().selectable(
+                                selected = false,
+                                role = Role.RadioButton,
+                                onClick = { onSelectOauthConnection(connection) },
+                            ),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = false, onClick = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("@${connection.accountLabel}", style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
                 OutlinedButton(
                     onClick = onStartOAuthFlow,
                     enabled = deviceFlowEnabled,
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("Re-connect") }
+                ) { Text("Connect a different account") }
             } else {
+                if (oauthConnections.isNotEmpty()) {
+                    Text("Saved accounts", style = MaterialTheme.typography.labelMedium)
+                    oauthConnections.forEach { connection ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().selectable(
+                                selected = false,
+                                role = Role.RadioButton,
+                                onClick = { onSelectOauthConnection(connection) },
+                            ),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = false, onClick = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("@${connection.accountLabel}", style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                    Text(
+                        "Or connect a new account below.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Button(
                     onClick = onStartOAuthFlow,
                     enabled = deviceFlowEnabled,
@@ -874,11 +1251,29 @@ private fun Step5TestAndSave(
     cloneInProgress: Boolean = false,
     cloneProgress: String = "",
     cloneError: String? = null,
+    existingRepoNeedsAllFilesAccess: Boolean = false,
     onSave: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Test and save", style = MaterialTheme.typography.titleMedium)
         Text("Optionally test your connection before saving.", style = MaterialTheme.typography.bodyMedium)
+
+        // Repeats Step2RepoPath's warning here since this is where the underlying problem
+        // actually surfaces to the user — a cryptic "repository not found: .../gitshadow"
+        // from Test connection — not just at the earlier repo-path step.
+        if (existingRepoNeedsAllFilesAccess) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    "This repo was picked via the system document picker, so \"Test " +
+                        "connection\" will fail here unless \"All files access\" is granted.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                TextButton(onClick = { dev.stapler.stelekit.platform.openAllFilesAccessSettings() }) {
+                    Text("Open \"All files access\" settings")
+                }
+            }
+        }
 
         OutlinedButton(
             onClick = onTestConnection,
@@ -961,6 +1356,13 @@ private fun Step5TestAndSave(
 }
 
 /**
+ * True for text that could not possibly be a valid relative wiki-subdirectory path — i.e. it
+ * carries a URI scheme. Guards against a picked `content://`/`saf://` URI landing in the Wiki
+ * subdirectory field (which must always be a plain relative path under the repo root).
+ */
+internal fun looksLikeUri(value: String): Boolean = value.contains("://")
+
+/**
  * Populates the `PlatformSettings` keys ("githubOwner"/"githubRepo"/"githubBranch"/"githubToken")
  * that `browser/Main.kt`'s `configResolver` reads once at wasmJs startup into
  * `PlatformFileSystem`/`WasmSectionSyncService`'s companion fields — the credential source the
@@ -1000,6 +1402,70 @@ internal fun persistWebGitCredentials(
     settings.putString("githubRepo", repo)
     settings.putString("githubBranch", branch)
     settings.putString("githubToken", token)
+}
+
+/**
+ * Persists [httpsToken] under [graphId]'s graph-scoped CredentialStore key (the key every
+ * platform's git auth code actually reads at operation time — unchanged by connection reuse) and
+ * returns that key, or [fallbackKey] when [httpsToken] is blank (nothing to persist — e.g. editing
+ * a graph without touching the token field). When [selectedConnectionId] is null — the user typed
+ * a brand-new token rather than picking a saved [GitCredentialConnection] — also remembers it as a
+ * new connection so a future graph can reuse it without re-pasting. [cloneUrl] (only ever
+ * non-blank on the "clone a new repo" path — Step2RepoPath has no remote-URL field otherwise) is
+ * used best-effort to label the new connection by host; a blank/unparseable URL falls back to a
+ * generic label rather than skipping the save.
+ */
+internal fun resolveHttpsTokenKey(
+    graphId: String,
+    httpsToken: String,
+    cloneUrl: String,
+    selectedConnectionId: String?,
+    connectionStore: GitCredentialConnectionStore,
+    credentialStore: CredentialStore,
+    fallbackKey: String?,
+): String? {
+    if (httpsToken.isBlank()) return fallbackKey
+    val key = "git_https_token_$graphId"
+    credentialStore.store(key, httpsToken)
+    if (selectedConnectionId == null) {
+        val hostType = cloneUrl.takeIf { it.isNotBlank() }?.let(GitHostAdapter::detect)
+            ?.takeIf { it != GitHostType.UNSUPPORTED }
+        val host = hostType?.let { if (it == GitHostType.GITHUB) "github.com" else "gitlab.com" } ?: "git"
+        connectionStore.saveConnection(
+            host = host,
+            accountLabel = if (hostType != null) "$host token" else "Personal access token",
+            authType = GitAuthType.HTTPS_TOKEN,
+            secret = httpsToken,
+            createdAt = Clock.System.now().toEpochMilliseconds(),
+        )
+    }
+    return key
+}
+
+/**
+ * Resolves the CredentialStore key to use for [GitConfig.oauthTokenKey]. When [selectedConnectionId]
+ * names a saved connection (the user picked "Saved accounts" instead of running the device flow
+ * again), copies that connection's secret into [graphId]'s graph-scoped key — the key every
+ * platform's git auth code actually reads — since connections are otherwise invisible to that
+ * code. A fresh device-flow completion already stores its token directly under that graph-scoped
+ * key (see `startOAuthFlow`), so [fallbackKey] covers that case unchanged.
+ */
+internal fun resolveOauthTokenKey(
+    graphId: String,
+    selectedConnectionId: String?,
+    connectionStore: GitCredentialConnectionStore,
+    credentialStore: CredentialStore,
+    fallbackKey: String?,
+): String? {
+    val key = "git_github_oauth_$graphId"
+    val secret = selectedConnectionId
+        ?.let { id -> connectionStore.listConnections(GitAuthType.GITHUB_OAUTH).firstOrNull { it.id == id } }
+        ?.let { connectionStore.getSecret(it) }
+    if (secret != null) {
+        credentialStore.store(key, secret)
+        return key
+    }
+    return fallbackKey
 }
 
 private fun buildConfig(

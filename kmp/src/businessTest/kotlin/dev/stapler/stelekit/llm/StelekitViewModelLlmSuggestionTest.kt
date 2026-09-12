@@ -140,7 +140,7 @@ class StelekitViewModelLlmSuggestionTest {
                 searchRepository = InMemorySearchRepository(),
                 graphLoader = StubGraphLoaderPort(),
                 graphWriter = graphWriter,
-                platformSettings = StubSettings(),
+                platformSettings = StubSettings().apply { putString("lastGraphPath", "/tmp/graph") },
                 scope = scope,
                 activeGraphIdProvider = { activeGraphId },
                 llmSuggestionInbox = inbox,

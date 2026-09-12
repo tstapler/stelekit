@@ -45,6 +45,9 @@ class DomainErrorTest {
             DomainError.GitError.RateLimited(42),
             DomainError.GitError.FileTooLarge("assets/large.md.stek", 90_000_000, 75_000_000),
             DomainError.GitError.NetworkFailure("Failed to fetch"),
+            DomainError.GitError.WorkingTreeSyncFailed("saf-to-shadow", "/path", "sync failed"),
+            DomainError.GitError.WorkingTreeWriteBackFailed("/path", "write-back failed"),
+            DomainError.GitError.WorkingTreeConcurrentEditDetected("/path"),
             DomainError.BleError.ConnectionFailed("ble connect"),
             DomainError.BleError.Gatt133(3, "gatt error"),
             DomainError.SensorError.PermissionDenied("camera"),
@@ -99,6 +102,9 @@ class DomainErrorTest {
                 is DomainError.GitError.RateLimited -> err.message
                 is DomainError.GitError.FileTooLarge -> err.message
                 is DomainError.GitError.NetworkFailure -> err.message
+                is DomainError.GitError.WorkingTreeSyncFailed -> err.message
+                is DomainError.GitError.WorkingTreeWriteBackFailed -> err.message
+                is DomainError.GitError.WorkingTreeConcurrentEditDetected -> err.message
                 is DomainError.AttachmentError.CopyFailed -> err.message
                 is DomainError.AttachmentError.PickerFailed -> err.message
                 is DomainError.AttachmentError.AssetsDirectoryFailed -> err.message
@@ -172,6 +178,9 @@ class DomainErrorTest {
             DomainError.GitError.RateLimited(42),
             DomainError.GitError.FileTooLarge("assets/large.md.stek", 90_000_000, 75_000_000),
             DomainError.GitError.NetworkFailure("Failed to fetch"),
+            DomainError.GitError.WorkingTreeSyncFailed("saf-to-shadow", "/path", "sync failed"),
+            DomainError.GitError.WorkingTreeWriteBackFailed("/path", "write-back failed"),
+            DomainError.GitError.WorkingTreeConcurrentEditDetected("/path"),
             DomainError.NetworkError.RequestFailed("req failed"),
             DomainError.AttachmentError.CopyFailed("copy"),
             DomainError.AttachmentError.PickerFailed("picker"),

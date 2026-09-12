@@ -3,23 +3,36 @@
 
 package dev.stapler.stelekit.platform
 
+import dev.stapler.stelekit.coroutines.SessionLifecycle
+import dev.stapler.stelekit.db.ChangeDetectionScheduler
+import dev.stapler.stelekit.db.RescanOutcome
+import dev.stapler.stelekit.db.RescanReason
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.model.DirtyEntry
 import dev.stapler.stelekit.git.model.DirtyOp
 import dev.stapler.stelekit.git.model.HostHandleEnvelope
 import dev.stapler.stelekit.git.model.gitApiJson
+import dev.stapler.stelekit.logging.Logger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.await
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlin.js.toJsString
@@ -31,12 +44,37 @@ import kotlin.time.Clock
  * see `HostDirectorySyncConstructionTest.kt`). */
 private const val HOME_DIR = "/stelekit"
 
-// ── Epic 5.1 (Task 5.1.2b): HostDirectoryPoller backoff multipliers ───────────────────────────
-/** Widens [HostDirectorySync.effectivePollIntervalMs] while [HostDirectorySync.isTabHidden]. */
-private const val HIDDEN_POLL_BACKOFF_MULTIPLIER = 6L
+/**
+ * Smart constructor enforcing the invariant a plain `String` cannot express: every path handed to
+ * [HostDirectorySync.onHostConflict] must be graph-rooted (prefixed by the graph's OPFS root, e.g.
+ * `"/stelekit/g/journals/2026_08_12.md"`), never repo-relative (e.g. `"journals/2026_08_12.md"`).
+ * `GraphLoader`'s `path.contains("/journals/")` journal-detection idiom silently misclassifies the
+ * repo-relative form — see `HostDirectorySyncReconciliationTest.runHostReconciliation_should_PreserveFullGraphRootedPath_When_HostChangedConflictIsUnderJournalsDirectory`
+ * for the regression this closes. [of] fails fast at the mistake site instead of letting a
+ * mis-rooted path travel silently downstream. `opfsPath = null` skips validation, for call sites
+ * (buffering-only tests) where graph-rootedness isn't the property under test.
+ */
+internal class GraphRootedPath private constructor(val value: String) {
+    override fun toString(): String = value
 
-/** Widens [HostDirectorySync.effectivePollIntervalMs] while [HostDirectorySync.observerConfirmedActive]. */
-private const val OBSERVER_HEALTHY_POLL_BACKOFF_MULTIPLIER = 6L
+    override fun equals(other: Any?): Boolean = other is GraphRootedPath && other.value == value
+
+    override fun hashCode(): Int = value.hashCode()
+
+    companion object {
+        fun of(candidate: String, opfsPath: String?): GraphRootedPath {
+            require(opfsPath == null || candidate.startsWith(opfsPath)) {
+                "Expected a path rooted at graph root '$opfsPath', got '$candidate' — " +
+                    "did you mean to pass the repo-relative form instead?"
+            }
+            return GraphRootedPath(candidate)
+        }
+    }
+}
+
+// Epic 5.1 (Task 5.1.2b)'s HIDDEN_POLL_BACKOFF_MULTIPLIER/OBSERVER_HEALTHY_POLL_BACKOFF_MULTIPLIER
+// (both 6x) now live as ChangeDetectionScheduler.BACKOFF_MULTIPLIER, shared with the
+// Android/JVM platform's GraphFileWatcher — see effectivePollIntervalMs()'s doc comment below.
 
 /**
  * Epic 1.6 (architecture-review.md Blocker 1 remediation): standalone collaborator that owns all
@@ -54,19 +92,98 @@ private const val OBSERVER_HEALTHY_POLL_BACKOFF_MULTIPLIER = 6L
  * `project_plans/web-local-folder-livesync/implementation/plan.md` builds its fields/methods onto
  * this class, never back onto `PlatformFileSystem`.
  */
-class HostDirectorySync(
+internal class HostDirectorySync(
     /**
-     * Reads `PlatformFileSystem.graphId`'s *live* value rather than a value captured at
-     * construction time. `HostDirectorySync` is composed into `PlatformFileSystem` in a field
-     * initializer — before `preload(graphPath)` later mutates `graphId` from `"default"` to the
-     * real graph id — so a plain `String` parameter would permanently key IndexedDB persistence
-     * under `"default"`. The composition call site passes `graphIdProvider = { graphId }`, a
-     * closure over the mutable field, so every read here sees the current value.
+     * Epic 1.1 (Story 1.1.1): captured once at construction, never a live closure — `graphId`
+     * is retired in favor of this plain [OpfsGraphSlug] value. `HostDirectorySync` is now the
+     * per-graph unit itself: a fresh instance is constructed per graph (see [close]/
+     * `SessionLifecycle`), so there is no live-read indirection left to solve — every method's
+     * "which graph is this for" question has exactly one answer for this instance's entire
+     * lifetime.
      */
-    private val graphIdProvider: () -> String,
+    private val graphId: OpfsGraphSlug,
     private val cacheAccess: CacheAccess,
-    private val scope: CoroutineScope,
-) {
+    /**
+     * Test-only escape hatch — always `null` (the default) in production, which builds a real
+     * `CoroutineScope(SupervisorJob() + Dispatchers.Default)` below. Never a constructor parameter
+     * a production call site supplies; exists solely so [forTest] (Epic 1.2) can inject a
+     * deterministic `TestScope`/dispatcher instead of a real one.
+     */
+    scopeOverride: CoroutineScope? = null,
+    /**
+     * Epic 2.2 (Story 2.2.1/2.2.2): every UI-facing callback this instance can fire, bundled so
+     * `PlatformFileSystem.buildGraphSyncSession` supplies all five at once from its own
+     * `PlatformFileSystem`-owned fields instead of five separate constructor params accreting
+     * over time. `onHostConflict`/`onHostBytesConflict`/`onHostWriteFailed` are nullable — a
+     * `null` here means "keep this instance's own buffering/no-op default" (see each field's own
+     * doc comment below), since those three have meaningful non-identity defaults that a fresh
+     * `Callbacks()` must not clobber before `PlatformFileSystem` has any real callback to supply
+     * (e.g. at app boot, before a `GraphLoader` exists). `onAccessStateChanged`/
+     * `onPendingCountChanged` have no such buffering need, so they default straight to no-ops.
+     */
+    callbacks: Callbacks = Callbacks(),
+) : SessionLifecycle {
+
+    /** See [callbacks]'s parameter doc comment. */
+    data class Callbacks(
+        val onAccessStateChanged: (HostAccessState) -> Unit = {},
+        val onPendingCountChanged: (Int) -> Unit = {},
+        val onHostConflict: ((path: GraphRootedPath, hostContent: String) -> Unit)? = null,
+        val onHostBytesConflict: ((path: GraphRootedPath, hostBytes: ByteArray) -> Unit)? = null,
+        val onHostWriteFailed: ((error: DomainError.FileSystemError.WriteFailed) -> Unit)? = null,
+    )
+
+    private val onAccessStateChanged = callbacks.onAccessStateChanged
+    private val onPendingCountChanged = callbacks.onPendingCountChanged
+    /**
+     * Epic 1.1 (Story 1.1.1/1.1.2): owned internally rather than externally injected — the whole
+     * instance is the per-graph session unit, so its own scope's lifetime is exactly this
+     * instance's lifetime. [close] cancels it. [forTest] (Epic 1.2) is the only caller that ever
+     * supplies [scopeOverride], bypassing this default for deterministic test dispatch.
+     *
+     * Carries a [CoroutineExceptionHandler] (mirrors `StelekitViewModel.scope`) so a fire-and-forget
+     * launch's uncaught exception is logged instead of vanishing into the platform default handler.
+     * Log-only — never touches [hostAccessStateFlow], since that's already set correctly by the
+     * launching function's synchronous portion before the failure-prone async work runs.
+     */
+    override val scope: CoroutineScope = scopeOverride ?: CoroutineScope(
+        SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, e ->
+            if (e !is CancellationException) {
+                logger.error("Uncaught Throwable in HostDirectorySync coroutine: ${e::class.simpleName}: ${e.message}", e)
+            }
+        },
+    )
+
+    /**
+     * Epic 1.1 (Story 1.1.2): implements [SessionLifecycle.close] — tears down this instance's
+     * poller and cancels its own [scope], so no coroutine this instance ever launched can touch
+     * any subsequently-constructed instance's state. Retires the old `disconnectForGraphSwitch()`
+     * manual field-by-field reset: there is nothing left to null out once the whole instance is
+     * discarded by the caller (`PlatformFileSystem.switchActiveGraph`, Task 1.1.2b) in favor of a
+     * fresh one. Safe to call at most once per instance, per [SessionLifecycle]'s contract.
+     *
+     * Also disconnects any live [hostChangeObserver] — a browser-side `FileSystemObserver` is not
+     * a coroutine, so [scope]'s cancellation alone would never stop it from holding this whole
+     * instance alive (via the closure `startHostChangeObserver` captured) and continuing to invoke
+     * its callback (itself a no-op once [scope] is cancelled, but a needless live reference to a
+     * discarded graph's directory all the same).
+     */
+    override fun close() {
+        stopHostDirectoryPolling()
+        hostChangeObserver?.let { disconnectObserver(it) }
+        hostChangeObserver = null
+        observerConfirmedActive = false
+        scope.cancel()
+    }
+    /**
+     * Routes host-sync diagnostics through the app's in-app "App Logs" screen
+     * ([dev.stapler.stelekit.logging.LogManager]), not just the browser devtools console — every
+     * `println` in this file used to be devtools-only, which meant permission-state transitions,
+     * poller/observer failures, and reconciliation summaries were invisible to a user diagnosing a
+     * sync issue from inside the app itself.
+     */
+    private val logger = Logger("HostDirectorySync")
+
     // ── Epic 2.1 (Story 2.1.1): retain the freshly picked handle + persist it to IndexedDB ────
     // `internal` rather than `private`: HostDirectorySyncHandleRetentionTest.kt (wasmJsTest, friend
     // source set of wasmJsMain) asserts on these directly per validation.md's acceptance criteria
@@ -93,9 +210,14 @@ class HostDirectorySync(
     private fun setHostAccessState(newState: HostAccessState) {
         val old = _hostAccessStateFlow.value
         if (old != newState) {
-            println("[SteleKit] host access state: $old -> $newState")
+            // Diagnostic: hostGraphOpfsPath included because "Granted" alone doesn't reveal which
+            // OPFS root the connected handle resolves against — a mismatch here (vs. the graph's
+            // own OPFS path, printed separately by Main.kt's opfsGraphPath log) is exactly what
+            // makes every write silently defer forever (see repoRelativePath's doc comment).
+            logger.info("host access state: $old -> $newState (hostGraphOpfsPath=$hostGraphOpfsPath)")
         }
         _hostAccessStateFlow.value = newState
+        onAccessStateChanged(newState)
     }
 
     /**
@@ -109,12 +231,27 @@ class HostDirectorySync(
     val hostWritePendingCountFlow: StateFlow<Int> = _hostWritePendingCountFlow.asStateFlow()
 
     private fun updatePendingCount() {
-        _hostWritePendingCountFlow.value = hostWritePending.size
+        val count = hostWritePending.size
+        _hostWritePendingCountFlow.value = count
+        onPendingCountChanged(count)
     }
 
     // ── Epic 4.1 (Task 4.1.1a): per-path write-through coalescing state ───────────────────────
     /** Paths whose flush cycle currently owns [scheduleHostWriteThrough]'s coalescing loop. */
     private val hostWriteInFlight = mutableSetOf<String>()
+
+    /**
+     * Repo-relative paths [pollHostDirectoryOnce]'s own-write suppression (HostDirectorySync.kt's
+     * `visit` doc comment, Task 5.1.1c) skipped entirely while owned by [hostWriteInFlight] — an
+     * external change landing on the same path during that window is otherwise lost forever,
+     * since the skip never refreshes [hostModTimes]/[hostFileSizes]/the cache and there's no
+     * second chance to notice it. [repollIfSuppressedDuringFlush], called from both
+     * [scheduleHostWriteThrough]'s and [retryStuckHostWrites]'s `finally` blocks (either can own
+     * the in-flight flush that cleared [hostWriteInFlight] for a path), re-polls any path recorded
+     * here once its own flush clears, bounding the loss window to "one extra poll" rather than
+     * "silently dropped."
+     */
+    private val hostWriteSuppressedDuringFlush = mutableSetOf<String>()
 
     /**
      * Paths that received a new [scheduleHostWriteThrough] call while already in
@@ -132,7 +269,7 @@ class HostDirectorySync(
      * [scheduleHostWriteThrough]'s doc comment for the full "exactly one write of the latest
      * content" rationale (Story 4.1.1's coalescing acceptance criterion).
      */
-    private val hostWriteLatestPayload = mutableMapOf<String, HostWritePayload>()
+    internal val hostWriteLatestPayload = mutableMapOf<String, HostWritePayload>()
 
     /**
      * Epic 7.1 (Task 7.1.1a): completion signal for [scheduleHostWriteThrough]'s in-flight flush
@@ -179,7 +316,8 @@ class HostDirectorySync(
      * `writeErrors` channel — no new error surface. Defaults to a no-op so production code that
      * never wires a graph (or tests) still compiles and runs safely.
      */
-    internal var onHostWriteFailed: (error: DomainError.FileSystemError.WriteFailed) -> Unit = {}
+    internal var onHostWriteFailed: (error: DomainError.FileSystemError.WriteFailed) -> Unit =
+        callbacks.onHostWriteFailed ?: {}
 
     // ── Epic 3.2 (Task 3.2.2a/c): reconciliation dispatch collaborators ───────────────────────
     /**
@@ -215,12 +353,13 @@ class HostDirectorySync(
      * now buffers into [pendingHostConflicts] instead of discarding; [flushPendingHostConflicts]
      * replays the buffer the moment a real callback is set.
      */
-    internal var onHostConflict: (path: String, hostContent: String) -> Unit = { path, hostContent ->
-        pendingHostConflicts += path to hostContent
-        mirrorPendingHostConflictCount(pendingHostConflicts.size)
-    }
+    internal var onHostConflict: (path: GraphRootedPath, hostContent: String) -> Unit = callbacks.onHostConflict
+        ?: { path, hostContent ->
+            pendingHostConflicts += path to hostContent
+            mirrorPendingHostConflictCount(pendingHostConflicts.size)
+        }
 
-    private val pendingHostConflicts = mutableListOf<Pair<String, String>>()
+    private val pendingHostConflicts = mutableListOf<Pair<GraphRootedPath, String>>()
 
     /** Test-observation seam: lets Playwright/e2e specs assert the race window buffered, then drained. */
     internal val pendingHostConflictCount: Int get() = pendingHostConflicts.size
@@ -230,12 +369,44 @@ class HostDirectorySync(
      * (see that property's doc comment), then clears the buffer. Called from
      * `PlatformFileSystem.setOnHostConflict` immediately after it assigns the real callback.
      */
-    internal fun flushPendingHostConflicts(callback: (path: String, hostContent: String) -> Unit) {
+    internal fun flushPendingHostConflicts(callback: (path: GraphRootedPath, hostContent: String) -> Unit) {
         if (pendingHostConflicts.isEmpty()) return
         val buffered = pendingHostConflicts.toList()
         pendingHostConflicts.clear()
         mirrorPendingHostConflictCount(0)
         buffered.forEach { (path, hostContent) -> callback(path, hostContent) }
+    }
+
+    /**
+     * Bytes-aware sibling of [onHostConflict] for `.md.stek` (paranoid-mode) content — fired from
+     * the `.md.stek` branch's `ReconciliationOutcome.HostOnlyNew` case so a new encrypted
+     * host-directory file is surfaced to the DB/UI the same way its plaintext counterpart already
+     * is, instead of only landing in OPFS/cache. String-typed [onHostConflict] can't carry
+     * ciphertext (that's exactly what the `.md.stek HostChangedConflict` branch's doc comment
+     * explains adversarial-review.md Blocker 4 forbids), so this callback carries raw
+     * [ByteArray] instead and lets the caller (`GraphLoader`, the only holder of [CryptoLayer])
+     * decrypt before forwarding to [emitExternalFileChange]. Mirrors [onHostConflict]'s
+     * buffering-default pattern for the identical app-boot race window — see that property's doc
+     * comment.
+     */
+    internal var onHostBytesConflict: (path: GraphRootedPath, hostBytes: ByteArray) -> Unit =
+        callbacks.onHostBytesConflict ?: { path, hostBytes ->
+            pendingHostBytesConflicts += path to hostBytes
+            mirrorPendingHostBytesConflictCount(pendingHostBytesConflicts.size)
+        }
+
+    private val pendingHostBytesConflicts = mutableListOf<Pair<GraphRootedPath, ByteArray>>()
+
+    /** Test-observation seam, mirrors [pendingHostConflictCount]. */
+    internal val pendingHostBytesConflictCount: Int get() = pendingHostBytesConflicts.size
+
+    /** Mirrors [flushPendingHostConflicts] for the bytes-aware buffer. */
+    internal fun flushPendingHostBytesConflicts(callback: (path: GraphRootedPath, hostBytes: ByteArray) -> Unit) {
+        if (pendingHostBytesConflicts.isEmpty()) return
+        val buffered = pendingHostBytesConflicts.toList()
+        pendingHostBytesConflicts.clear()
+        mirrorPendingHostBytesConflictCount(0)
+        buffered.forEach { (path, hostBytes) -> callback(path, hostBytes) }
     }
 
     /**
@@ -262,27 +433,85 @@ class HostDirectorySync(
     internal val hostFileSizes: MutableMap<String, Long> = mutableMapOf()
 
     // ── Epic 5.1 (Story 5.1.2)/5.2 (Story 5.2.2): HostDirectoryPoller + observer state ─────────
-    /** The currently-running timer loop, if any — see [startHostDirectoryPolling]/[stopHostDirectoryPolling]. */
-    private var hostPollJob: Job? = null
+    /**
+     * The **base** poll interval (Task 5.1.2a) — used as-is only when the tab is visible *and*
+     * `FileSystemObserver` is not confirmed active; the timer loop never reads this directly,
+     * only [effectivePollIntervalMs] (via [scheduler]). Default confirmed by Epic 5.5's
+     * large-graph benchmark — see `HostDirectoryPollerBenchmarkTest`'s class doc comment for the
+     * measured numbers this default is based on.
+     */
+    private var hostPollIntervalMs: Long = 10_000L
+
+    /**
+     * Owns the "when do we rescan the host directory" triggering/backoff decision — shared with
+     * the Android/JVM platform's `GraphFileWatcher` (see [ChangeDetectionScheduler]'s class doc
+     * comment). [startHostDirectoryPolling] starts it; [handleObserverRecords] and the
+     * visibility-regain loop in [init] both call [ChangeDetectionScheduler.hint] instead of
+     * polling directly, so a stale first look (the host directory handle momentarily lagging a
+     * write) gets a short bounded burst of fast follow-up rescans instead of waiting for the next
+     * unrelated signal or the full poll interval — closing the same "external file doesn't load
+     * for a long time" gap this fix closes on Android.
+     *
+     * `onRescan` below reproduces each trigger's *exact* prior per-source behavior rather than a
+     * single unified one, since the three original call sites were NOT symmetric: Timer ticks are
+     * `WebLock`-guarded and also drive [retryStuckHostWrites] (matching the original timer loop's
+     * body); Signal/FollowUp rescans are deliberately **not** `WebLock`-guarded, matching
+     * [handleObserverRecords]'s original unlocked behavior; Resume (visibility-regain) **is**
+     * `WebLock`-guarded, matching that loop's original behavior. See [runLockedRescan]/
+     * [runTimerTriggeredRescan].
+     */
+    private val scheduler = ChangeDetectionScheduler(baseIntervalMs = hostPollIntervalMs) { reason ->
+        val handle = hostDirHandle
+        val opfsPath = hostGraphOpfsPath
+        if (handle == null || opfsPath == null) {
+            // Previously a silent `?: continue` in the timer loop alone — indistinguishable in
+            // logs from a healthy connection between ticks. A permanently-null handle/path here
+            // (e.g. connectHostDirectory never completed, or a reconnect cleared state without
+            // restarting polling) makes every tick a no-op forever, which reads to the user as
+            // "external changes never sync" rather than "delayed."
+            logger.warn(
+                "HostDirectoryPoller tick skipped: hostDirHandle=${handle != null} " +
+                    "hostGraphOpfsPath=${opfsPath != null}",
+            )
+            RescanOutcome(foundChange = false)
+        } else {
+            when (reason) {
+                RescanReason.Timer -> runTimerTriggeredRescan(handle, opfsPath)
+                RescanReason.Resume -> runLockedRescan(handle, opfsPath, "visibility-regain poll")
+                RescanReason.Signal, RescanReason.FollowUp ->
+                    RescanOutcome(foundChange = pollHostDirectoryOnce(handle, opfsPath))
+            }
+        }
+    }
 
     /**
      * Kept current by the dedicated tracking loop in [init]. `internal` (not `private`) — mirrors
      * this class's established "internal for direct test assertion/injection" convention (see
      * [hostWriteDirtyDuringFlush]/[hostContentHashes]) so [HostDirectoryPollerBenchmarkTest]'s
      * Story 5.5.2 virtual-time tests can force the hidden-tab case directly rather than driving a
-     * real `document.visibilityState` transition. Read by [effectivePollIntervalMs].
+     * real `document.visibilityState` transition. Forwarded to [scheduler] so
+     * [effectivePollIntervalMs] reflects it immediately, including when a test sets this field
+     * directly before ever calling [startHostDirectoryPolling].
      */
     internal var isTabHidden = false
+        set(value) {
+            field = value
+            scheduler.setSlow(value)
+        }
 
     /**
      * Set `true` the instant [startHostChangeObserver]'s `FileSystemObserver` construction +
      * `observe()` (Task 5.2.2a) complete without throwing; left `true` for the life of the
      * connection (ADR-002's "fast path" framing — never re-demoted to primary on a quiet period).
      * Stays `false` when `fileSystemObserverSupported()` is `false` or construction/`observe()`
-     * throws. `internal` for the same Story 5.5.2 testability reason as [isTabHidden]. Read by
-     * [effectivePollIntervalMs].
+     * throws. `internal` for the same Story 5.5.2 testability reason as [isTabHidden]. Forwarded
+     * to [scheduler] — see that field's doc comment.
      */
     internal var observerConfirmedActive = false
+        set(value) {
+            field = value
+            scheduler.setObserverHealthy(value)
+        }
 
     /**
      * Retained so a future feature-detect-gated teardown has something to disconnect — not
@@ -291,31 +520,17 @@ class HostDirectorySync(
     private var hostChangeObserver: JsAny? = null
 
     /**
-     * The **base** poll interval (Task 5.1.2a) — used as-is only when the tab is visible *and*
-     * `FileSystemObserver` is not confirmed active; the timer loop never reads this directly,
-     * only [effectivePollIntervalMs]. Default confirmed by Epic 5.5's large-graph benchmark — see
-     * `HostDirectoryPollerBenchmarkTest`'s class doc comment for the measured numbers this default
-     * is based on.
-     */
-    private var hostPollIntervalMs: Long = 10_000L
-
-    /**
      * Task 5.1.2b: the actual delay [startHostDirectoryPolling]'s timer loop sleeps for on its
-     * next tick — `hostPollIntervalMs * backoffMultiplier`, where `backoffMultiplier` is `maxOf`
-     * (never the product) of [HIDDEN_POLL_BACKOFF_MULTIPLIER] (applied when [isTabHidden]) and
-     * [OBSERVER_HEALTHY_POLL_BACKOFF_MULTIPLIER] (applied when [observerConfirmedActive]) — the
-     * two backoff reasons do not compound (Story 5.1.2's third acceptance criterion). Recomputed
-     * fresh on every call, never cached, so a visibility/observer-health change takes effect
-     * starting the very next tick, not retroactively. `internal` so
-     * [HostDirectoryPollerBenchmarkTest] can assert the computed value directly.
+     * next tick — delegates to [ChangeDetectionScheduler.effectiveIntervalMs], which applies
+     * `hostPollIntervalMs * backoffMultiplier`, where `backoffMultiplier` is 6x (never compounded)
+     * when [isTabHidden] and/or [observerConfirmedActive] — the two backoff reasons do not
+     * compound (Story 5.1.2's third acceptance criterion; see [ChangeDetectionScheduler]'s
+     * `effectiveIntervalMs` for the shared implementation). Recomputed fresh on every call, never
+     * cached, so a visibility/observer-health change takes effect starting the very next tick, not
+     * retroactively. `internal` so [HostDirectoryPollerBenchmarkTest] can assert the computed
+     * value directly.
      */
-    internal fun effectivePollIntervalMs(): Long {
-        val multiplier = maxOf(
-            if (isTabHidden) HIDDEN_POLL_BACKOFF_MULTIPLIER else 1L,
-            if (observerConfirmedActive) OBSERVER_HEALTHY_POLL_BACKOFF_MULTIPLIER else 1L,
-        )
-        return hostPollIntervalMs * multiplier
-    }
+    internal fun effectivePollIntervalMs(): Long = scheduler.effectiveIntervalMs()
 
     /**
      * Task 5.1.2a: starts the timer loop that keeps [hostModTimes]/[hostFileSizes]/cache current
@@ -327,61 +542,66 @@ class HostDirectorySync(
      * [hostDirHandle]/[hostGraphOpfsPath] (Story 5.5.2's virtual-time benchmarks).
      */
     internal fun startHostDirectoryPolling() {
-        hostPollJob?.cancel()
-        hostPollJob = scope.launch {
-            while (isActive) {
-                delay(effectivePollIntervalMs())
-                val handle = hostDirHandle ?: continue
-                val opfsPath = hostGraphOpfsPath ?: continue
-                try {
-                    // Epic 6.2 (Task 6.2.1b): leader-for-one-tick — a `null` result means another
-                    // tab already holds this graph's poll lock for this tick; that is a silent
-                    // skip (OPFS is cross-tab-shared, so this tab's own next tick, or its next
-                    // `cache` read, sees the winner's result), never an error or user-visible event.
-                    val acquired = WebLock.tryWithLock(FolderSyncLockNaming.pollLockNameFor(graphIdProvider())) {
-                        pollHostDirectoryOnce(handle, opfsPath)
-                    }
-                    if (acquired == null) {
-                        println("[SteleKit] HostDirectoryPoller tick skipped: poll lock held by another tab")
-                    }
-                    // BUG fix: a transient flushHostWrite failure (handleFlushFailure's
-                    // "permission re-query still granted" branch) previously left repoRelative
-                    // queued in hostWritePending forever with nothing ever re-attempting it — the
-                    // queue only drained if the user happened to edit that exact file again
-                    // (a fresh scheduleHostWriteThrough call) or the host directory was fully
-                    // disconnected/reconnected (runHostReconciliation is one-shot, not periodic).
-                    // Retrying here piggybacks on this already-running per-tab timer, so a stuck
-                    // entry gets a fresh attempt every poll tick — effectivePollIntervalMs() acts
-                    // as the retry backoff — without adding a second timer loop.
-                    retryStuckHostWrites()
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Throwable) {
-                    // Bug fix: a poll tick can fail because the browser silently demoted this
-                    // handle's permission back to "prompt" (e.g. after the tab was backgrounded) —
-                    // previously this branch only println'd and looped again next tick, leaving
-                    // hostAccessStateFlow stuck at Granted forever. `FolderSyncStatusBadge` then
-                    // kept showing "Synced to <dir>" even though every subsequent tick was failing
-                    // the same way, silently, with no reconciliation ever running again. Re-query
-                    // the handle's actual permission here and mirror it into hostAccessStateFlow so
-                    // the badge honestly falls back to "Reconnect folder"/"Grant access".
-                    println("[SteleKit] HostDirectoryPoller tick failed: ${e.message}")
-                    val handleForRequery = hostDirHandle
-                    if (handleForRequery != null) {
-                        val permission = queryHandlePermission(handleForRequery)
-                        if (permission != "granted") {
-                            setHostAccessState(mapPermissionResultToAccessState(permission))
-                        }
-                    }
-                }
-            }
-        }
+        scheduler.start(scope)
     }
 
     /** Stops the timer loop started by [startHostDirectoryPolling] — called when [hostDirHandle] is disconnected. */
     internal fun stopHostDirectoryPolling() {
-        hostPollJob?.cancel()
-        hostPollJob = null
+        scheduler.stop()
+    }
+
+    /**
+     * Epic 6.2 (Task 6.2.1b): leader-for-one-tick — a `null` [WebLock.tryWithLock] result means
+     * another tab already holds this graph's poll lock for this tick; that is a silent skip (OPFS
+     * is cross-tab-shared, so this tab's own next tick, or its next `cache` read, sees the
+     * winner's result), never an error or user-visible event. Shared by [runTimerTriggeredRescan]
+     * (Timer) and the visibility-regain loop's [ChangeDetectionScheduler] hint (Resume) — the two
+     * original call sites that were already `WebLock`-guarded before this dispatch. [logPrefix]
+     * reproduces each original call site's exact log text (`"HostDirectoryPoller tick"` /
+     * `"visibility-regain poll"`).
+     */
+    private suspend fun runLockedRescan(handle: JsAny, opfsPath: String, logPrefix: String): RescanOutcome {
+        var changed = false
+        val acquired = WebLock.tryWithLock(FolderSyncLockNaming.pollLockNameFor(graphId)) {
+            changed = pollHostDirectoryOnce(handle, opfsPath)
+        }
+        if (acquired == null) {
+            logger.debug("$logPrefix skipped: poll lock held by another tab")
+        }
+        return RescanOutcome(foundChange = changed)
+    }
+
+    /**
+     * Reproduces the original timer loop's tick body exactly: [runLockedRescan] (the `WebLock`
+     * critical section), then unconditionally — even on a lost lock race —
+     * [retryStuckHostWrites] (BUG fix, unchanged: a transient `flushHostWrite` failure previously
+     * left `repoRelative` queued in `hostWritePending` forever with nothing re-attempting it;
+     * retrying here piggybacks on this already-running per-tab timer tick —
+     * [effectivePollIntervalMs] acts as the retry backoff — without a second timer loop). The
+     * outer catch (permission re-query + [hostAccessStateFlow] update on a failing tick) is also
+     * unchanged from the original timer loop.
+     */
+    private suspend fun runTimerTriggeredRescan(handle: JsAny, opfsPath: String): RescanOutcome = try {
+        val outcome = runLockedRescan(handle, opfsPath, "HostDirectoryPoller tick")
+        retryStuckHostWrites()
+        outcome
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        // Bug fix (unchanged): a poll tick can fail because the browser silently demoted this
+        // handle's permission back to "prompt" (e.g. after the tab was backgrounded) — re-query
+        // the handle's actual permission here and mirror it into hostAccessStateFlow so the badge
+        // honestly falls back to "Reconnect folder"/"Grant access" instead of leaving
+        // hostAccessStateFlow stuck at Granted with every subsequent tick failing the same way.
+        logger.warn("HostDirectoryPoller tick failed: ${e.message}", e)
+        val handleForRequery = hostDirHandle
+        if (handleForRequery != null) {
+            val permission = queryHandlePermission(handleForRequery)
+            if (permission != "granted") {
+                setHostAccessState(mapPermissionResultToAccessState(permission))
+            }
+        }
+        RescanOutcome(foundChange = false)
     }
 
     /**
@@ -389,11 +609,12 @@ class HostDirectorySync(
      * recursively when the browser supports it, so external changes are detected roughly one
      * event-loop tick after they happen instead of waiting for the next timer tick. Sets
      * [observerConfirmedActive] `true` only when both construction and `observe()` complete
-     * without throwing; `false` when unsupported or either step fails. [observeHandle] itself
-     * already catches and logs its own failures rather than throwing (`HostDirectoryInterop.kt`),
-     * so in practice only `newFileSystemObserver`'s construction step can drive the `false` branch
-     * here — a limitation of that existing interop function's signature, not a gap introduced by
-     * this method.
+     * without throwing; `false` when unsupported or either step fails. [observeHandle] propagates
+     * a failing `observe()` call (it does not swallow it) so a real-world failure — e.g. a
+     * browser that supports the `FileSystemObserver` constructor but rejects `recursive: true`
+     * observation for a local-disk handle obtained via `showDirectoryPicker()` — is caught here
+     * and correctly demotes [observerConfirmedActive] to `false` instead of leaving a false
+     * "healthy" signal in place for the life of the connection.
      */
     private suspend fun startHostChangeObserver(handle: JsAny) {
         if (!fileSystemObserverSupported()) {
@@ -408,7 +629,7 @@ class HostDirectorySync(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
-            println("[SteleKit] FileSystemObserver setup failed: ${e.message}")
+            logger.warn("FileSystemObserver setup failed: ${e.message}", e)
             observerConfirmedActive = false
         }
     }
@@ -416,33 +637,35 @@ class HostDirectorySync(
     /**
      * Task 5.2.2b: dispatch entry point for [startHostChangeObserver]'s `FileSystemObserver`
      * callback. Iterates [records] (a plain JS array) via [jsRecordsLength]/[jsRecordsGet], reading
-     * each record's [changeRecordType]/[changeRecordRelativePath] for observability — but for
-     * every record type this batch contains (`"appeared"`/`"modified"`/`"disappeared"`/`"moved"`
-     * *and* `"errored"`), the actual remediation is the same single full-tree
-     * [pollHostDirectoryOnce] call below, run once per callback invocation rather than once per
-     * record. A targeted single-file variant scoped to `relativePathComponents` would be a tighter
-     * v1, but the full walk is an acceptable simplification here (per the plan) — its own
-     * mtime/size pre-filter (Task 5.1.1b) already makes a redundant full-tree walk cheap for every
-     * path except the one(s) that actually changed; see `HostDirectoryPollerBenchmarkTest` for the
-     * measured per-tick cost this relies on. Never lets an exception escape uncaught — a broken
-     * observer callback must not silently stop future change delivery.
+     * each record's [changeRecordType]/[changeRecordRelativePath] for observability, then hints
+     * [scheduler] (`RescanReason.Signal`) rather than polling directly — the scheduler's own
+     * unlocked Signal branch (see that field's doc comment) reproduces this callback's original
+     * unlocked [pollHostDirectoryOnce] behavior, run once per callback invocation rather than once
+     * per record (a targeted single-file variant scoped to `relativePathComponents` would be a
+     * tighter v1, but the full walk is an acceptable simplification here per the plan — its own
+     * mtime/size pre-filter, Task 5.1.1b, already makes a redundant full-tree walk cheap for every
+     * path except the one(s) that actually changed). A stale first look now also earns a short
+     * bounded burst of fast follow-up rescans (the scheduler's own contribution — see that field's
+     * doc comment) instead of only the next unrelated signal or full poll interval. Never lets an
+     * exception escape uncaught — a broken observer callback must not silently stop future change
+     * delivery.
      */
     private suspend fun handleObserverRecords(records: JsAny) {
-        val handle = hostDirHandle ?: return
-        val opfsPath = hostGraphOpfsPath ?: return
+        hostDirHandle ?: return
+        hostGraphOpfsPath ?: return
         try {
             val count = jsRecordsLength(records)
             for (i in 0 until count) {
                 val record = jsRecordsGet(records, i)
                 val type = changeRecordType(record)
                 val relativePath = changeRecordRelativePath(record).joinToString("/")
-                println("[SteleKit] FileSystemObserver record: type=$type path=$relativePath")
+                logger.debug("FileSystemObserver record: type=$type path=$relativePath")
             }
-            pollHostDirectoryOnce(handle, opfsPath)
+            scheduler.hint(RescanReason.Signal)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
-            println("[SteleKit] handleObserverRecords failed: ${e.message}")
+            logger.warn("handleObserverRecords failed: ${e.message}", e)
         }
     }
 
@@ -466,26 +689,14 @@ class HostDirectorySync(
         // Epic 5.3 (Task 5.3.1a): visibility-regain immediate recheck — independent of the timer
         // loop's own steady-state cadence (Story 5.1.2's effectivePollIntervalMs/isTabHidden
         // backoff) and independent of PlatformFileSystem's unrelated hidden-flush loop (git
-        // dirty-marker flush on tab hide, PlatformFileSystem.kt:99-108).
+        // dirty-marker flush on tab hide, PlatformFileSystem.kt:99-108). Hints scheduler
+        // (RescanReason.Resume) rather than polling directly — runLockedRescan reproduces this
+        // loop's original WebLock-guarded behavior exactly (see scheduler's doc comment).
         scope.launch {
             while (isActive) {
                 jsVisibilityVisiblePromise().await<JsAny?>()
-                val handle = hostDirHandle ?: continue
-                val opfsPath = hostGraphOpfsPath ?: continue
-                try {
-                    // Epic 6.2 (Task 6.2.1b): same leader-for-one-tick lock as the timer loop above
-                    // — a `null` result (another tab already owns this tick) is a silent skip.
-                    val acquired = WebLock.tryWithLock(FolderSyncLockNaming.pollLockNameFor(graphIdProvider())) {
-                        pollHostDirectoryOnce(handle, opfsPath)
-                    }
-                    if (acquired == null) {
-                        println("[SteleKit] visibility-regain poll skipped: poll lock held by another tab")
-                    }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Throwable) {
-                    println("[SteleKit] visibility-regain poll failed: ${e.message}")
-                }
+                if (hostDirHandle == null || hostGraphOpfsPath == null) continue
+                scheduler.hint(RescanReason.Resume)
             }
         }
     }
@@ -536,15 +747,23 @@ class HostDirectorySync(
      * [reconnectHostDirectory]) or the user re-ran the connect flow from Settings. Now mirrors
      * [connectHostDirectory]'s success path so live sync starts immediately after the initial
      * import, same as every other path that attaches a handle.
+     *
+     * Bug fix: persists keyed by [dirName] — the graph actually being attached — not
+     * [graphId]. This runs from `PlatformFileSystem.pickDirectoryAsync()` before the
+     * caller has registered/switched to the new graph in `GraphManager`, so this instance's own
+     * [graphId] still resolves to whichever graph it was constructed for; keying the envelope off
+     * it there silently persisted the new handle under the wrong graph's id, and
+     * [reconnectHostDirectory]/[requestHostDirectoryAccess] — both keyed by the *actual* active
+     * graph id on lookup — would never find it again in a later session.
      */
     suspend fun attachFreshHandle(dirHandle: JsAny, opfsPath: String) {
         hostDirHandle = dirHandle
         hostGraphOpfsPath = opfsPath
         val dirName = opfsPath.substringAfterLast("/")
-        persistHostHandle(graphIdProvider(), dirName, dirHandle)
+        persistHostHandle(dirName, dirName, dirHandle)
         scope.launch {
             val granted = requestStoragePersistence()
-            println("[SteleKit] storage.persist(): granted=$granted")
+            logger.debug("storage.persist(): granted=$granted")
         }
         startHostDirectoryPolling()
         startHostChangeObserver(dirHandle)
@@ -582,7 +801,7 @@ class HostDirectorySync(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
-            println("[SteleKit] persistHostHandle failed for graphId=$graphId: ${e.message}")
+            logger.warn("persistHostHandle failed for graphId=$graphId: ${e.message}", e)
         }
     }
 
@@ -613,7 +832,7 @@ class HostDirectorySync(
     } catch (e: CancellationException) {
         throw e
     } catch (e: Throwable) {
-        println("[SteleKit] lookupPersistedHandle failed for graphId=$graphId: ${e.message}")
+        logger.warn("lookupPersistedHandle failed for graphId=$graphId: ${e.message}", e)
         null
     }
 
@@ -650,16 +869,22 @@ class HostDirectorySync(
      * function's return.
      */
     suspend fun connectHostDirectory(existingOpfsPath: String): HostAccessState {
+        // runHostReconciliation now sets hostGraphOpfsPath unconditionally as soon as it starts
+        // (see its own doc comment) so hostWritePending is keyed correctly even when this function
+        // hasn't set the field yet. Snapshot the prior value so a failure below can restore it
+        // exactly, rather than blindly nulling it out and clobbering an already-connected graph's
+        // field if this call is, e.g., a failed reconnect attempt to a different path.
+        val priorOpfsPath = hostGraphOpfsPath
         val result = try {
             val dirHandle = showDirectoryPicker()
             runHostReconciliation(dirHandle, existingOpfsPath)
             hostDirHandle = dirHandle
             hostGraphOpfsPath = existingOpfsPath
             val dirName = existingOpfsPath.substringAfterLast("/")
-            persistHostHandle(graphIdProvider(), dirName, dirHandle)
+            persistHostHandle(graphId.value, dirName, dirHandle)
             scope.launch {
                 val granted = requestStoragePersistence()
-                println("[SteleKit] storage.persist(): granted=$granted")
+                logger.debug("storage.persist(): granted=$granted")
             }
             // Epic 5.1/5.2: start the poller + (browser-permitting) the FileSystemObserver fast
             // path now that the handle is retained — mirrors reconnectHostDirectory's wiring below.
@@ -669,12 +894,23 @@ class HostDirectorySync(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
-            println("[SteleKit] connectHostDirectory failed for '$existingOpfsPath': ${e.message}")
+            logger.warn("connectHostDirectory failed for '$existingOpfsPath': ${e.message}", e)
+            // Restore the pre-call value (see comment above) so this function's "failure leaves
+            // nothing changed" contract still holds.
+            hostGraphOpfsPath = priorOpfsPath
             HostAccessState.NotApplicable
         }
         setHostAccessState(result)
         return result
     }
+
+    // Epic 1.1 (Story 1.1.2, Task 1.1.2a): the former `disconnectForGraphSwitch()` field-by-field
+    // reset (stop poller/observer, null hostDirHandle/hostGraphOpfsPath, clear the repo-relative
+    // write queues) is retired — a graph switch now discards this whole instance via [close]
+    // instead of resetting it in place, so every one of those fields (including the cross-graph
+    // write-queue corruption this method used to guard against — see PR #293 round 2) is
+    // automatically gone with the instance. `PlatformFileSystem.switchActiveGraph` (Task 1.1.2b)
+    // calls `close()` then constructs a brand-new `HostDirectorySync` for the newly-active graph.
 
     // ── Epic 2.2 (Story 2.2.1): reconnectHostDirectory — silent resume, always reconciling ────
     /**
@@ -710,7 +946,7 @@ class HostDirectorySync(
             scope.launch { runHostReconciliation(handle, opfsPath) }
             scope.launch {
                 val granted = requestStoragePersistence()
-                println("[SteleKit] storage.persist(): granted=$granted")
+                logger.debug("storage.persist(): granted=$granted")
             }
             // Epic 5.1/5.2: same wiring as connectHostDirectory — launched non-blocking
             // (startHostChangeObserver is suspend) so session-resume startup latency/UI
@@ -768,7 +1004,7 @@ class HostDirectorySync(
             scope.launch { runHostReconciliation(handle, opfsPath) }
             scope.launch {
                 val granted = requestStoragePersistence()
-                println("[SteleKit] storage.persist(): granted=$granted")
+                logger.debug("storage.persist(): granted=$granted")
             }
             startHostDirectoryPolling()
             scope.launch { startHostChangeObserver(handle) }
@@ -818,7 +1054,26 @@ class HostDirectorySync(
      * Returns a [ReconciliationSummary] tallying every classification, also stashed in
      * [lastReconciliationSummary] for UI wiring that runs after [connectHostDirectory] resolves.
      */
+    /**
+     * `true` only for plaintext `.md` pages — `.md.stek` (paranoid mode, its own branch) and
+     * everything else (images/assets) must round-trip as raw bytes, not decoded as UTF-8 text.
+     * Single source of truth after both call sites independently re-implemented (and drifted on)
+     * this check.
+     */
+    private fun isMarkdownPagePath(path: String): Boolean = path.endsWith(".md")
+
     suspend fun runHostReconciliation(dirHandle: JsAny, opfsPath: String): ReconciliationSummary {
+        // Bug fix: the BrowserOnlyNeedsPush branch below calls scheduleHostWriteThrough(path, ...),
+        // which keys hostWritePending by repoRelativePath(path) — a strip against the *field*
+        // hostGraphOpfsPath, not this function's local opfsPath parameter. reconnectHostDirectory/
+        // requestHostDirectoryAccess already set the field before launching this function, so this
+        // was masked there, but connectHostDirectory's blocking flow deliberately calls this
+        // function *before* setting the field (so a mid-walk failure leaves it untouched — see that
+        // function's own doc comment) and this function is also called directly by tests with no
+        // field set at all. Set it here unconditionally so hostWritePending's keys are always
+        // correctly stripped regardless of caller; connectHostDirectory's catch block below resets
+        // it back to null on failure to preserve its existing "leaves nothing changed" contract.
+        hostGraphOpfsPath = opfsPath
         var identicalCount = 0
         var hostChangedConflictCount = 0
         var hostOnlyNewCount = 0
@@ -836,6 +1091,7 @@ class HostDirectorySync(
         suspend fun walk(handle: JsAny, currentPath: String) {
             for (entry in listOpfsEntries(handle)) {
                 val name = getEntryName(entry)
+                if (isIgnoredHostEntryName(name)) continue
                 val path = "$currentPath/$name"
                 when {
                     isFileEntry(entry) && path.endsWith(".md.stek") -> {
@@ -848,7 +1104,7 @@ class HostDirectorySync(
                         } else {
                             val hostBytes = readOpfsFileAsBytes(entry)
                             if (hostBytes == null) {
-                                println("[SteleKit] runHostReconciliation: failed to read '$path' from host, skipping")
+                                logger.warn("runHostReconciliation: failed to read '$path' from host, skipping")
                             } else {
                                 val cacheBytes = cacheAccess.getBytes(path)
                                 when (classifyReconciliationBytes(hostBytes, cacheBytes)) {
@@ -872,6 +1128,7 @@ class HostDirectorySync(
                                         logPossibleStaleRenameDuplicate(path, opfsPath) { otherPath ->
                                             cacheAccess.getBytes(otherPath)?.contentEquals(hostBytes) == true
                                         }
+                                        onHostBytesConflict(GraphRootedPath.of(path, opfsPath), hostBytes)
                                     }
                                     ReconciliationOutcome.BrowserOnlyNeedsPush -> {
                                         // Unreachable: hostBytes is non-null in this branch (the walk
@@ -886,7 +1143,7 @@ class HostDirectorySync(
                         hostModTimes[path] = mtime
                         hostFileSizes[path] = size
                     }
-                    isFileEntry(entry) -> {
+                    isFileEntry(entry) && isMarkdownPagePath(path) -> {
                         hostVisitedPaths += path
                         val file = getOpfsFile(entry)
                         val mtime = fileLastModified(file)
@@ -896,19 +1153,29 @@ class HostDirectorySync(
                         } else {
                             val hostContent = readOpfsFile(entry)
                             if (hostContent == null) {
-                                println("[SteleKit] runHostReconciliation: failed to read '$path' from host, skipping")
+                                logger.warn("runHostReconciliation: failed to read '$path' from host, skipping")
                             } else {
                                 val cacheContent = cacheAccess.get(path)
                                 when (classifyReconciliation(hostContent, cacheContent)) {
                                     ReconciliationOutcome.Identical -> identicalCount++
                                     ReconciliationOutcome.HostChangedConflict -> {
                                         hostChangedConflictCount++
-                                        onHostConflict(path.removePrefix("$opfsPath/"), hostContent)
+                                        // Pass the full OPFS path (not stripped of opfsPath) — GraphLoader's
+                                        // journal detection matches on the "/journals/" substring, which a
+                                        // graph-root-relative path (e.g. "journals/foo.md") lacks. This must
+                                        // stay consistent with the "$graphPath/journals/..." form every other
+                                        // load path already uses.
+                                        onHostConflict(GraphRootedPath.of(path, opfsPath), hostContent)
                                     }
                                     ReconciliationOutcome.HostOnlyNew -> {
                                         hostOnlyNewCount++
                                         cacheAccess.set(path, hostContent)
                                         cacheAccess.writeOpfsMirror(path, hostContent)
+                                        // A host-only file is new to the app's DB too — without this
+                                        // call the cache/OPFS mirror gets the content but the DB/UI
+                                        // never learns about it, so it silently doesn't appear until
+                                        // some other write touches the same page.
+                                        onHostConflict(GraphRootedPath.of(path, opfsPath), hostContent)
                                         // Task 7.1.2a: log-only stale-rename-duplicate check — see
                                         // logPossibleStaleRenameDuplicate's doc comment.
                                         logPossibleStaleRenameDuplicate(path, opfsPath) { otherPath ->
@@ -919,6 +1186,26 @@ class HostDirectorySync(
                                         // Unreachable here — see the `.md.stek` branch's identical note.
                                     }
                                 }
+                            }
+                        }
+                        hostModTimes[path] = mtime
+                        hostFileSizes[path] = size
+                    }
+                    // Non-page file (image/asset/config) — mirror bytes without routing through
+                    // the page-conflict pipeline; decoding binary as UTF-8 here previously threw
+                    // in Validation.validateString once a PNG made it this far.
+                    isFileEntry(entry) -> {
+                        hostVisitedPaths += path
+                        val file = getOpfsFile(entry)
+                        val mtime = fileLastModified(file)
+                        val size = fileSize(file)
+                        if (!matchesBaseline(path, mtime, size)) {
+                            val hostBytes = readOpfsFileAsBytes(entry)
+                            if (hostBytes == null) {
+                                logger.warn("runHostReconciliation: failed to read '$path' from host, skipping")
+                            } else {
+                                cacheAccess.setBytes(path, hostBytes)
+                                cacheAccess.writeOpfsMirrorBytes(path, hostBytes)
                             }
                         }
                         hostModTimes[path] = mtime
@@ -962,8 +1249,8 @@ class HostDirectorySync(
             browserOnlyNeedsPush = browserOnlyNeedsPushCount,
         )
         lastReconciliationSummary = summary
-        println(
-            "[SteleKit] reconciliation: ${summary.identical} identical, ${summary.hostChangedConflict} conflict, " +
+        logger.info(
+            "reconciliation: ${summary.identical} identical, ${summary.hostChangedConflict} conflict, " +
                 "${summary.hostOnlyNew} host-only, ${summary.browserOnlyNeedsPush} browser-only",
         )
         return summary
@@ -1003,24 +1290,47 @@ class HostDirectorySync(
      * 4.1 — a concurrent [flushHostWrite] already owns that path) is skipped entirely this tick —
      * neither its baseline nor its cache entry is touched — so the poller never races a
      * concurrent host write and misclassifies the app's own in-progress write as an external
-     * change.
+     * change. The skip is recorded in [hostWriteSuppressedDuringFlush]; whichever of
+     * [scheduleHostWriteThrough] or [retryStuckHostWrites] owns the in-flight flush re-polls the
+     * path (via [repollIfSuppressedDuringFlush]) once it clears [hostWriteInFlight], so a genuine
+     * external edit that lands during the suppression window is picked up on the very next tick
+     * instead of being silently lost until some unrelated future change to the same path happens
+     * to retrigger it.
+     *
+     * Returns `true` iff any visited path's mtime/size differed from its known baseline (i.e. its
+     * cache entry was refreshed) — a signal [ChangeDetectionScheduler] uses to decide whether a
+     * Signal/Resume-triggered rescan needs a bounded follow-up burst (see [scheduler]'s doc
+     * comment). A path skipped via the own-write-suppression guard does not count as a change
+     * here — it isn't a discovery gap the follow-up-burst mechanism needs to chase; the write
+     * that's suppressing it already knows to re-poll via [repollIfSuppressedDuringFlush].
      */
-    suspend fun pollHostDirectoryOnce(dirHandle: JsAny, opfsPath: String) {
+    suspend fun pollHostDirectoryOnce(dirHandle: JsAny, opfsPath: String): Boolean {
+        var anyChanged = false
+
         suspend fun visit(entry: JsAny, path: String) {
             val repoRelative = path.removePrefix("$opfsPath/")
-            if (repoRelative in hostWriteInFlight) return
+            if (repoRelative in hostWriteInFlight) {
+                hostWriteSuppressedDuringFlush += repoRelative
+                return
+            }
 
             val file = getOpfsFile(entry)
             val mtime = fileLastModified(file)
             val size = fileSize(file)
             val unchanged = hostModTimes[path] == mtime && hostFileSizes[path] == size
             if (!unchanged) {
-                if (path.endsWith(".md.stek")) {
-                    val bytes = readOpfsFileAsBytes(entry)
-                    if (bytes != null) cacheAccess.setBytes(path, bytes)
-                } else {
+                anyChanged = true
+                // Only plain ".md" pages are page content — ".md.stek" and everything else
+                // (images/assets/config) round-trip as raw bytes, mirroring runHostReconciliation's
+                // walk above. Decoding a binary file (e.g. a PNG) as UTF-8 text here doesn't crash
+                // (this function never dispatches onHostConflict), but silently corrupts it via
+                // lossy String round-tripping.
+                if (isMarkdownPagePath(path)) {
                     val content = readOpfsFile(entry)
                     if (content != null) cacheAccess.set(path, content)
+                } else {
+                    val bytes = readOpfsFileAsBytes(entry)
+                    if (bytes != null) cacheAccess.setBytes(path, bytes)
                 }
             }
             hostModTimes[path] = mtime
@@ -1030,6 +1340,7 @@ class HostDirectorySync(
         suspend fun walk(handle: JsAny, currentPath: String) {
             for (entry in listOpfsEntries(handle)) {
                 val name = getEntryName(entry)
+                if (isIgnoredHostEntryName(name)) continue
                 val path = "$currentPath/$name"
                 when {
                     isFileEntry(entry) -> visit(entry, path)
@@ -1039,6 +1350,7 @@ class HostDirectorySync(
         }
 
         walk(dirHandle, opfsPath)
+        return anyChanged
     }
 
     /**
@@ -1060,9 +1372,24 @@ class HostDirectorySync(
     // ── Epic 4.1-4.4: write-through queue, coalescing flush scheduler, failure surfacing ──────
 
     /** Repo-relative key derivation matching [runHostReconciliation]'s existing convention. */
-    private fun repoRelativePath(path: String): String {
-        val opfsPath = hostGraphOpfsPath
-        return if (opfsPath != null && path.startsWith("$opfsPath/")) path.removePrefix("$opfsPath/") else path
+    /**
+     * Bug fix: returns `null` (rather than the unchanged absolute [path]) when [hostGraphOpfsPath]
+     * is unset or doesn't match — an absolute path treated as repo-relative produces a leading `/`
+     * that [resolveHostEntry]'s `split("/")` turns into an empty first segment, and
+     * `getDirectoryHandle(dir, "", create)` fails every time with "Name is not allowed" — this
+     * exact error was observed live in production, confirming the mechanism. Worse,
+     * [scheduleHostWriteThrough] used to cache that broken value as the permanent
+     * [hostWritePending]/[hostWriteInFlight] key for the path, so one call that hit a
+     * [hostGraphOpfsPath] mismatch poisoned that page's sync forever, deterministically failing on
+     * every retry for the rest of the session even after [hostGraphOpfsPath] was correct again.
+     * (What specifically caused [hostGraphOpfsPath] to mismatch in the observed incident — every
+     * known assignment site sets it synchronously before returning, and the failing write happened
+     * well after `reconnectHostDirectory` had already completed — is not confirmed; this fix
+     * removes the failure mode regardless of its trigger.)
+     */
+    private fun repoRelativePath(path: String): String? {
+        val opfsPath = hostGraphOpfsPath ?: return null
+        return if (path.startsWith("$opfsPath/")) path.removePrefix("$opfsPath/") else null
     }
 
     private fun dirtyOpFor(payload: HostWritePayload): DirtyOp =
@@ -1119,6 +1446,14 @@ class HostDirectorySync(
      */
     fun scheduleHostWriteThrough(path: String, payload: HostWritePayload): Deferred<Unit> {
         val repoRelative = repoRelativePath(path)
+        if (repoRelative == null) {
+            // Bug fix: hostGraphOpfsPath is unset/mismatched right now — never enqueue under an
+            // absolute-path key (see repoRelativePath's doc comment for why that key is fatal).
+            // Reconciliation's BrowserOnlyNeedsPush pass picks this path up correctly once
+            // hostGraphOpfsPath is valid again, so dropping this attempt here is safe, not silent.
+            logger.warn("scheduleHostWriteThrough: no valid host-relative path for '$path' yet, deferring to reconciliation")
+            return CompletableDeferred(Unit)
+        }
         val opfsWriteDeferred = cacheAccess.opfsWriteDeferredFor(path)
         val completion = hostWriteCompletion.getOrPut(repoRelative) { CompletableDeferred() }
         scope.launch {
@@ -1135,15 +1470,7 @@ class HostDirectorySync(
                     hostWriteDirtyDuringFlush += repoRelative
                     return@launch
                 }
-                hostWriteInFlight += repoRelative
-                try {
-                    do {
-                        flushHostWrite(repoRelative)
-                    } while (repoRelative in hostWriteDirtyDuringFlush)
-                } finally {
-                    hostWriteInFlight -= repoRelative
-                    hostWriteCompletion.remove(repoRelative)?.complete(Unit)
-                }
+                claimAndFlushHostWrite(repoRelative)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
@@ -1178,11 +1505,25 @@ class HostDirectorySync(
      * permission pre-check (Task 4.2.3a) deliberately stays *outside* the lock — it touches no
      * shared write state, and per `GitWriteLock`'s documented scope discipline
      * (`GitWriteLock.kt:47-55`) a lock should cover only the actual critical section, never be
-     * widened to include independent preflight checks. Uses [graphIdProvider] (the live value),
-     * never a captured/stale `graphId`, matching every other lock-name derivation in this class.
+     * widened to include independent preflight checks. Uses [graphId] (this instance's immutable
+     * constructor value), matching every other lock-name derivation in this class.
+     *
+     * Bug fix (historical — kept correct by Epic 1.1's per-graph-instance migration): [handle] and
+     * [opfsPath] are both snapshotted together here, at the very first line, and used consistently
+     * for the rest of this call — never re-read from the live [hostDirHandle]/[hostGraphOpfsPath]
+     * fields after a suspension point (`opfsWriteDeferred?.await()` in [scheduleHostWriteThrough],
+     * the permission-check `await()` below, or any `await()` inside the write itself). This
+     * matters even more now that a graph switch discards this whole instance rather than
+     * reconnecting it (Epic 1.1, Task 1.1.2c's regression test): an in-flight write dispatched
+     * before `close()` must still settle against *this* instance's own [handle]/[opfsPath], never
+     * a subsequently-constructed instance's state — which the entry-time snapshot already
+     * guarantees, since there is no shared mutable field left for it to reach across instances.
+     * Snapshotting both together keeps this call self-consistently scoped to whichever graph this
+     * instance was constructed for.
      */
     private suspend fun flushHostWrite(repoRelative: String) {
         val handle = hostDirHandle ?: return
+        val opfsPath = hostGraphOpfsPath
 
         // Task 4.2.3a: proactive permission check — *before* any write attempt is made, not only
         // reactively after one has already failed (research/pitfalls.md §1.1).
@@ -1195,11 +1536,10 @@ class HostDirectorySync(
             return
         }
 
-        WebLock.withLock(FolderSyncLockNaming.writeLockNameFor(graphIdProvider(), repoRelative)) {
+        WebLock.withLock(FolderSyncLockNaming.writeLockNameFor(graphId, repoRelative)) {
             val payload = hostWriteLatestPayload[repoRelative] ?: return@withLock
             hostWriteDirtyDuringFlush -= repoRelative
 
-            val opfsPath = hostGraphOpfsPath
             val fullPath = if (opfsPath != null) "$opfsPath/$repoRelative" else repoRelative
 
             try {
@@ -1213,7 +1553,9 @@ class HostDirectorySync(
                         val currentHostContent = readOpfsFile(fileHandle)
                         val knownHash = hostContentHashes[fullPath]
                         if (currentHostContent != null && knownHash != null && currentHostContent.hashCode() != knownHash) {
-                            onHostConflict(repoRelative, currentHostContent)
+                            // Full path, not repoRelative — GraphLoader's journal detection matches
+                            // on "/journals/", which a graph-root-relative path lacks.
+                            onHostConflict(GraphRootedPath.of(fullPath, opfsPath), currentHostContent)
                             return@withLock
                         }
                         val writable: JsAny = fileHandleCreateWritable(fileHandle).await()
@@ -1277,15 +1619,62 @@ class HostDirectorySync(
         if (hostDirHandle == null) return
         val candidates = hostWritePending.keys.toList().filter { it !in hostWriteInFlight }
         for (repoRelative in candidates) {
-            hostWriteInFlight += repoRelative
-            try {
-                do {
-                    flushHostWrite(repoRelative)
-                } while (repoRelative in hostWriteDirtyDuringFlush)
-            } finally {
-                hostWriteInFlight -= repoRelative
-                hostWriteCompletion.remove(repoRelative)?.complete(Unit)
+            claimAndFlushHostWrite(repoRelative)
+        }
+    }
+
+    /**
+     * Shared claim/flush/release logic for [scheduleHostWriteThrough] and [retryStuckHostWrites].
+     * [NonCancellable]: a dispatched browser write continues regardless of [close] cancelling
+     * this scope, so cancelling here would desync [hostContentHashes] from disk.
+     * [HOST_WRITE_FLUSH_TIMEOUT_MS]: bounds that immunity so a genuinely stuck browser call
+     * can't leak this instance forever — [retryStuckHostWrites] retries after a timeout.
+     */
+    private suspend fun claimAndFlushHostWrite(repoRelative: String) {
+        hostWriteInFlight += repoRelative
+        try {
+            withContext(NonCancellable) {
+                try {
+                    // Dispatchers.Default explicitly (not just inherited) so the timeout is
+                    // always measured against a real clock — retryStuckHostWrites is called
+                    // directly (not via scope.launch) from some tests running on runTest's
+                    // virtual-time dispatcher, which auto-advances straight past a withTimeout
+                    // that inherits it, firing the timeout the moment this suspends at all.
+                    withContext(Dispatchers.Default) {
+                        withTimeout(HOST_WRITE_FLUSH_TIMEOUT_MS) {
+                            do {
+                                flushHostWrite(repoRelative)
+                            } while (repoRelative in hostWriteDirtyDuringFlush)
+                        }
+                    }
+                } catch (e: TimeoutCancellationException) {
+                    logger.warn(
+                        "claimAndFlushHostWrite: '$repoRelative' exceeded ${HOST_WRITE_FLUSH_TIMEOUT_MS}ms, " +
+                            "abandoning this attempt — retryStuckHostWrites will retry it",
+                        e,
+                    )
+                }
             }
+        } finally {
+            hostWriteInFlight -= repoRelative
+            hostWriteCompletion.remove(repoRelative)?.complete(Unit)
+            repollIfSuppressedDuringFlush(repoRelative)
+        }
+    }
+
+    /**
+     * Shared by [scheduleHostWriteThrough] and [retryStuckHostWrites]'s `finally` blocks — both
+     * clear [hostWriteInFlight] for a path independently, so both must also check
+     * [hostWriteSuppressedDuringFlush] or a path whose in-flight ownership passes through
+     * [retryStuckHostWrites] (a "stuck" write under repeated retry) reopens the exact silent-loss
+     * window this mechanism exists to close.
+     */
+    private suspend fun repollIfSuppressedDuringFlush(repoRelative: String) {
+        if (!hostWriteSuppressedDuringFlush.remove(repoRelative)) return
+        val handle = hostDirHandle
+        val rootOpfsPath = hostGraphOpfsPath
+        if (handle != null && rootOpfsPath != null) {
+            pollHostDirectoryOnce(handle, rootOpfsPath)
         }
     }
 
@@ -1319,6 +1708,9 @@ class HostDirectorySync(
      */
     private suspend fun handleFlushFailure(repoRelative: String, handle: JsAny, e: Throwable) {
         val message = e.message ?: "unknown"
+        // Bug fix: this was the only path a stuck write ever took, and it never logged the actual
+        // exception — the console showed a healthy "Granted" state while writes failed silently.
+        logger.warn("flushHostWrite failed for '$repoRelative': $message", e)
         if (message.contains("NotFoundError", ignoreCase = true)) {
             setHostAccessState(HostAccessState.Disconnected(message))
             // Epic 5.1/5.2: the stored handle no longer resolves — stop polling/treating the
@@ -1370,23 +1762,28 @@ class HostDirectorySync(
         scheduleHostWriteThrough(to, HostWritePayload.Text(content)).await()
 
         val repoRelativeTo = repoRelativePath(to)
-        val verified = try {
-            val (dir, fileName) = resolveHostEntry(handle, repoRelativeTo, create = false)
-            val fileHandle = getFileHandle(dir, fileName, false)
-            val readBack = readOpfsFile(fileHandle)
-            readBack != null && readBack.hashCode() == content.hashCode() && readBack == content
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Throwable) {
-            println("[SteleKit] renameHostFile: failed to verify '$to' after write: ${e.message}")
+        val verified = if (repoRelativeTo == null) {
+            logger.warn("renameHostFile: no valid host-relative path for '$to', skipping verification")
             false
+        } else {
+            try {
+                val (dir, fileName) = resolveHostEntry(handle, repoRelativeTo, create = false)
+                val fileHandle = getFileHandle(dir, fileName, false)
+                val readBack = readOpfsFile(fileHandle)
+                readBack != null && readBack.hashCode() == content.hashCode() && readBack == content
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                logger.warn("renameHostFile: failed to verify '$to' after write: ${e.message}", e)
+                false
+            }
         }
 
         if (verified) {
             scheduleHostWriteThrough(from, HostWritePayload.Delete).await()
         } else {
-            println(
-                "[SteleKit] renameHostFile: verification failed for '$to', leaving '$from' in place " +
+            logger.warn(
+                "renameHostFile: verification failed for '$to', leaving '$from' in place " +
                     "(fail-safe, not fail-destructive)",
             )
         }
@@ -1411,12 +1808,51 @@ class HostDirectorySync(
         for (otherPath in cacheAccess.keysUnder(opfsPath)) {
             if (otherPath == path) continue
             if (matches(otherPath)) {
-                println(
-                    "[SteleKit] reconciliation: possible stale-rename duplicate: " +
+                logger.info(
+                    "reconciliation: possible stale-rename duplicate: " +
                         "${path.removePrefix("$opfsPath/")} matches content of ${otherPath.removePrefix("$opfsPath/")}",
                 )
                 return
             }
+        }
+    }
+
+    companion object {
+        /**
+         * Upper bound on one [claimAndFlushHostWrite] attempt — conservative and not measured
+         * against real-world stalls; tune down if this ever proves too patient, or up if a slow
+         * real device/large file legitimately needs longer than this before
+         * [retryStuckHostWrites] gets a chance to retry.
+         */
+        private const val HOST_WRITE_FLUSH_TIMEOUT_MS = 30_000L
+
+        /**
+         * Epic 1.2 (Story 1.2.1, Task 1.2.1a): test-only construction path replacing the retired
+         * `graphIdProvider`-closure shape's direct-field-poke pattern (`sync.hostDirHandle =`/
+         * `sync.hostGraphOpfsPath =` after construction). [connectedHandle]/[opfsPath] are set
+         * together as one atomic step — never one without the other — matching the PR #293 fix's
+         * core invariant that these two fields are always consistent with each other.
+         *
+         * `onHostConflict`/`onHostBytesConflict`/`onHostWriteFailed` are **not** parameters here —
+         * a caller that needs to observe them still assigns the returned instance's `internal var`
+         * directly. When left unset, they default to exactly what the production constructor
+         * defaults to: `onHostConflict`/`onHostBytesConflict` buffer into their pending lists
+         * (never silently discarding), and `onHostWriteFailed` is a no-op. A test relying on
+         * `forTest(...)` without explicitly wiring one of these three should not assume it fires.
+         */
+        fun forTest(
+            graphId: OpfsGraphSlug,
+            cacheAccess: CacheAccess,
+            scope: CoroutineScope,
+            connectedHandle: JsAny? = null,
+            opfsPath: String? = null,
+        ): HostDirectorySync {
+            val sync = HostDirectorySync(graphId = graphId, cacheAccess = cacheAccess, scopeOverride = scope)
+            if (connectedHandle != null && opfsPath != null) {
+                sync.hostDirHandle = connectedHandle
+                sync.hostGraphOpfsPath = opfsPath
+            }
+            return sync
         }
     }
 }

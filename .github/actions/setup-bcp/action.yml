@@ -1,0 +1,29 @@
+name: Setup bazel-cache-proxy
+description: >
+  Cache, install, and start bazel-cache-proxy with the GHA backend.
+  Starts the proxy on port 9090 — used by --config=remote-cache in all Bazel jobs.
+
+runs:
+  using: composite
+  steps:
+    - name: Cache bazel-cache-proxy binary
+      id: bcp-cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/bin/bazel-cache-proxy
+        key: bcp-${{ runner.os }}-7806c5f
+
+    - name: Install bazel-cache-proxy
+      if: steps.bcp-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        sudo apt-get install -y --no-install-recommends protobuf-compiler
+        cargo install --git https://github.com/tstapler/bazel-cache-proxy --rev 7806c5f bazel-cache-proxy --locked
+
+    - name: Start bazel-cache-proxy (GHA backend)
+      shell: bash
+      run: |
+        printf '[backend]\ntype = "gha"\n' > /tmp/bcp.toml
+        ~/.cargo/bin/bazel-cache-proxy serve --config /tmp/bcp.toml &
+        sleep 2
+        curl -sf http://127.0.0.1:9090/healthz

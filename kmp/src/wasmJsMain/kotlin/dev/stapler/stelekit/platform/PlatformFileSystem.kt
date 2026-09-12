@@ -1,5 +1,7 @@
 package dev.stapler.stelekit.platform
 
+import dev.stapler.stelekit.coroutines.GraphScopedSession
+import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.model.DirtyEntry
 import dev.stapler.stelekit.git.model.DirtyOp
 import dev.stapler.stelekit.git.model.DirtySetMarker
@@ -27,21 +29,29 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     private val blobUrlCache = mutableMapOf<String, String>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+    /**
+     * The "open temporarily" flow's storage mode: [cache]/[bytesCache]/[dirtySet] behave exactly
+     * as in persistent mode (checked out files can be read, edited, and pushed via git normally
+     * for the rest of this session), but nothing is ever mirrored to OPFS — no directory preload
+     * on [preload], no `.stele-dirty-set.json` checkpoint, no per-write OPFS persistence. Closing
+     * or reloading the tab discards everything. Set once via [markEphemeral] immediately after
+     * construction, before [preload] — this can't be a constructor parameter without breaking the
+     * `expect class PlatformFileSystem()` no-arg contract shared with JVM/Android/iOS.
+     */
+    private var ephemeral = false
+
+    /** Must be called immediately after construction, before [preload] — see [ephemeral]'s doc. */
+    fun markEphemeral() {
+        ephemeral = true
+    }
+
     // ── Epic 2.1/2.2: dirty-file tracking + .stele-dirty-set.json checkpoint ──────────────────
-    private val dirtySet = mutableMapOf<String, DirtyEntry>()
+    // Epic 2.1 (web-host-sync-session-lifecycle): the dirty set/baseSha/pendingCommit/marker-write
+    // scheduling fields, and hostDirectorySync itself, all now live on the per-graph
+    // GraphSyncSession bundle held by sessionHolder below — see that class's KDoc — swapped
+    // wholesale on every graph switch instead of being reset field-by-field in place.
     private val _dirtyFileCountFlow = MutableStateFlow(0)
     val dirtyFileCountFlow: StateFlow<Int> = _dirtyFileCountFlow.asStateFlow()
-    private var graphId: String = "default"
-    private var baseSha: String = ""
-    private var pendingCommit: PendingCommit = PendingCommit.None
-
-    // Immediate, coalesce-while-busy marker-write scheduler (NOT a fixed-delay debounce — see
-    // Task 2.1.2b's redesign note in project_plans/web-git-writeback/implementation/plan.md).
-    // At most one .stele-dirty-set.json write is ever in flight at a time; a burst of
-    // recordDirty()/scheduleMarkerWrite() calls while one is in flight coalesces into exactly
-    // one trailing write of the latest state, launched the instant the in-flight write completes.
-    private var markerWriteInFlight = false
-    private var markerWriteDirty = false
 
     // ── Epic 1.7 (Story 1.7.1): per-path in-flight OPFS-write tracking ────────────────────────
     // Populated when writeFile/writeFileBytes launches its OPFS-persisting write, self-cleans on
@@ -62,35 +72,93 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     // Exposed non-privately so Main.kt/UI code can call its non-FileSystem-interface entry points
     // (reconnectHostDirectory, requestHostDirectoryAccess, connectHostDirectory, its StateFlows)
     // directly, without PlatformFileSystem needing to re-expose every one as a passthrough.
-    val hostDirectorySync: HostDirectorySync = HostDirectorySync(
-        graphIdProvider = { graphId },
-        cacheAccess = object : HostDirectorySync.CacheAccess {
-            override fun get(path: String) = cache[path]
-            override fun set(path: String, content: String) {
-                cache[path] = content
-            }
-            override fun remove(path: String) {
-                cache.remove(path)
-            }
-            override fun getBytes(path: String) = bytesCache[path]
-            override fun setBytes(path: String, data: ByteArray) {
-                bytesCache[path] = data
-            }
-            override fun removeBytes(path: String) {
-                bytesCache.remove(path)
-            }
-            override fun keysUnder(opfsPath: String) =
-                (cache.keys + bytesCache.keys).filter { it.startsWith("$opfsPath/") }.toSet()
-            override fun writeOpfsMirror(path: String, content: String) {
-                scope.launch { opfsWriteFile(path, content) }
-            }
-            override fun writeOpfsMirrorBytes(path: String, data: ByteArray) {
-                scope.launch { opfsWriteFileBytes(path, data.toJsArrayBuffer()) }
-            }
-            override fun opfsWriteDeferredFor(path: String): Deferred<Unit>? = opfsWriteInFlight[path]
-        },
-        scope = scope,
-    )
+    //
+    // Epic 1.1 (Task 1.1.2b): promoted from an anonymous object built inline at the
+    // HostDirectorySync(...) call site to a private field, constructed once and reused across
+    // every HostDirectorySync reconstruction below (switchActiveGraph). Deliberately a private
+    // field rather than `PlatformFileSystem : HostDirectorySync.CacheAccess` — see ADR-019's
+    // Alternatives Considered ("PlatformFileSystem : HostDirectorySync.CacheAccess") for why a
+    // field keeps this dependency's direction correct without widening PlatformFileSystem's own
+    // public surface for an abstraction only HostDirectorySync needs.
+    private val cacheAccess: HostDirectorySync.CacheAccess = object : HostDirectorySync.CacheAccess {
+        override fun get(path: String) = cache[path]
+        override fun set(path: String, content: String) {
+            cache[path] = content
+        }
+        override fun remove(path: String) {
+            cache.remove(path)
+        }
+        override fun getBytes(path: String) = bytesCache[path]
+        override fun setBytes(path: String, data: ByteArray) {
+            bytesCache[path] = data
+        }
+        override fun removeBytes(path: String) {
+            bytesCache.remove(path)
+        }
+        override fun keysUnder(opfsPath: String) =
+            (cache.keys + bytesCache.keys).filter { it.startsWith("$opfsPath/") }.toSet()
+        override fun writeOpfsMirror(path: String, content: String) {
+            scope.launch { opfsWriteFile(path, content) }
+        }
+        override fun writeOpfsMirrorBytes(path: String, data: ByteArray) {
+            scope.launch { opfsWriteFileBytes(path, data.toJsArrayBuffer()) }
+        }
+        override fun opfsWriteDeferredFor(path: String): Deferred<Unit>? = opfsWriteInFlight[path]
+    }
+
+    // ── Epic 2.1 (web-host-sync-session-lifecycle): per-graph session, swapped wholesale ──────
+    // Replaces the old `var hostDirectorySync` field + hand-rolled `close()`-then-reconstruct
+    // sequencing in `switchActiveGraph` — see GraphScopedSession's KDoc for the sequencing
+    // guarantee this now delegates to (mirrors GraphManager.switchGraph()).
+    private val sessionHolder = GraphScopedSession<OpfsGraphSlug, GraphSyncSession>()
+
+    /**
+     * One-line proxy onto the active session's [HostDirectorySync] — kept as a computed property
+     * (not a stored field) so every existing call site (`Main.kt`, this class's own methods) reads
+     * through [sessionHolder] without needing its own rewrite. Throws if read before [preload]'s
+     * first [sessionHolder]`.switchTo` call completes — matches this class's other "no graph
+     * loaded yet" call sites' fail-fast convention (see `GraphWriter.currentEpoch`).
+     */
+    internal val hostDirectorySync: HostDirectorySync get() = sessionHolder.current.hostDirectorySync
+
+    // ── Epic 2.2 (Story 2.2.1/2.2.2): stable, PlatformFileSystem-owned callback/flow surface ──
+    // Seeded once, never re-seeded on a graph switch — a fresh HostDirectorySync per graph would
+    // otherwise reset a UI-bound StateFlow's identity (and its current value) out from under any
+    // composable already collecting the old instance's flow. buildGraphSyncSession re-supplies
+    // these into every freshly constructed HostDirectorySync via its Callbacks bundle instead.
+    private val _hostAccessStateFlow = MutableStateFlow<HostAccessState>(HostAccessState.NotApplicable)
+    val hostAccessStateFlow: StateFlow<HostAccessState> = _hostAccessStateFlow.asStateFlow()
+    private val _hostWritePendingCountFlow = MutableStateFlow(0)
+    val hostWritePendingCountFlow: StateFlow<Int> = _hostWritePendingCountFlow.asStateFlow()
+
+    private var onHostConflictCallback: ((path: GraphRootedPath, hostContent: String) -> Unit)? = null
+    private var onHostBytesConflictCallback: ((path: GraphRootedPath, hostBytes: ByteArray) -> Unit)? = null
+    private var onHostWriteFailedCallback: ((error: DomainError.FileSystemError.WriteFailed) -> Unit)? = null
+
+    /** Factory passed to every [sessionHolder]`.switchTo` call — see [GraphSyncSession]'s KDoc. */
+    private fun buildGraphSyncSession(graphId: OpfsGraphSlug, sessionScope: CoroutineScope): GraphSyncSession {
+        val sync = HostDirectorySync(
+            graphId = graphId,
+            cacheAccess = cacheAccess,
+            callbacks = HostDirectorySync.Callbacks(
+                onAccessStateChanged = { state -> _hostAccessStateFlow.value = state },
+                onPendingCountChanged = { count -> _hostWritePendingCountFlow.value = count },
+                onHostConflict = onHostConflictCallback,
+                onHostBytesConflict = onHostBytesConflictCallback,
+                onHostWriteFailed = onHostWriteFailedCallback,
+            ),
+        )
+        return GraphSyncSession(
+            graphId = graphId,
+            scope = sessionScope,
+            hostDirectorySync = sync,
+            gitWriteState = GitWriteState(
+                dirtySet = mutableMapOf(),
+                baseSha = "",
+                pendingCommit = PendingCommit.None,
+            ),
+        )
+    }
 
     init {
         // Belt-and-suspenders flush: fire the same scheduler when the tab is hidden/closed, even
@@ -128,8 +196,36 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         }
     }
 
+    /**
+     * The OPFS path this instance is actually preloaded/storing content under
+     * (`"$homeDir/$graphId"`) — the graph's opened folder, i.e. what `GraphInfo.path` and
+     * `GitConfig.wikiRoot` mean on every other platform. The write-back engine
+     * (`WasmGitWriteService`/`WasmGitRepository`) uses this directly instead of deriving it from
+     * `GitConfig.repoRoot`, so local storage addressing never depends on what the user typed into
+     * the git-sync wizard's "Local repository root path" field — that field is free to name the
+     * actual git top level (which may sit above this folder when `wikiSubdir` is set), matching
+     * native-platform semantics instead of requiring `repoRoot` to literally equal this path.
+     *
+     * Bug fix: also the graph currently wired to [hostDirectorySync] — read by `Main.kt`'s
+     * `onReconnectHostDirectory`/`onConnectHostDirectory` UI callbacks (alongside [currentGraphId]),
+     * which used to close over the boot-time `graphId`/`opfsGraphPath` locals instead. Those never
+     * advanced when `graphManager.graphRegistry`'s collector called [switchActiveGraph] for a
+     * newly-active graph, so clicking "Reconnect folder"/"Enable live folder sync" while viewing a
+     * *different* graph than the one active at page load would look up/reconcile the wrong graph's
+     * host connection entirely (same root cause this file's other fixes address, just for the
+     * manual entry points).
+     */
+    fun graphRootPath(): String = "$homeDir/${currentGraphId()}"
+
+    /** See [graphRootPath]'s doc comment — the id half of the same bug fix. */
+    fun currentGraphId(): String = sessionHolder.currentOrNull?.graphId?.value ?: "default"
+
     suspend fun preload(graphPath: String) {
-        graphId = graphPath.removePrefix("$homeDir/").substringBefore("/").ifEmpty { graphId }
+        val newGraphId = graphPath.removePrefix("$homeDir/").substringBefore("/").ifEmpty { currentGraphId() }
+        sessionHolder.switchTo(OpfsGraphSlug(newGraphId)) { scope -> buildGraphSyncSession(OpfsGraphSlug(newGraphId), scope) }
+        // Ephemeral graphs start empty by definition — there is nothing in OPFS to load (they're
+        // never written there) and no dirty-set checkpoint to restore.
+        if (ephemeral) return
         try {
             loadOpfsDirectory(graphPath)
         } catch (e: Throwable) {
@@ -138,18 +234,66 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         restoreDirtySetMarker()
     }
 
-    private fun markerPath(): String = "$homeDir/$graphId/.stele-dirty-set.json"
+    /**
+     * Re-points this [PlatformFileSystem] (and its composed [hostDirectorySync]) at [graphPath]
+     * after `GraphManager.switchGraph()` changes the active graph.
+     *
+     * Bug fix: [graphId] — previously read by [hostDirectorySync] via a live `graphIdProvider`
+     * closure for every persisted-handle lookup, poll/write lock name, and write-through path
+     * check — used to be set only once, by [preload] at startup. Switching graphs via
+     * `GraphManager`'s multi-graph registry (e.g. the graph switcher) never called back into this
+     * class, so `graphId` stayed pinned to whichever graph was active at page load: every write
+     * for a *different* active graph (an absolute path under that graph's own root) failed
+     * `HostDirectorySync`'s `repoRelativePath` prefix check against the stale `hostGraphOpfsPath`,
+     * so `scheduleHostWriteThrough` silently dropped it ("no valid host-relative path") — the
+     * graph looked idle/unsynced no matter what was edited.
+     *
+     * No-ops if [graphPath] resolves to the already-active graph — a fast-path outer guard that
+     * avoids re-running [preload]'s OPFS reload/dirty-marker restore and
+     * [HostDirectorySync.reconnectHostDirectory] for a no-op switch. `GraphScopedSession.switchTo`
+     * (called from [preload]) already has its own, authoritative idempotency check for a
+     * genuinely concurrent double-switch to the same id — this outer check is redundant with that
+     * guarantee, not a replacement for it; it exists purely to skip the reload/reconnect work, not
+     * to prevent constructing two live [HostDirectorySync] instances (that's `switchTo`'s job).
+     * Otherwise closes the previous graph's [HostDirectorySync] session
+     * ([SessionLifecycle.close] — Epic 1.1, Task 1.1.2a/b: a fresh instance replaces it wholesale,
+     * rather than the old `disconnectForGraphSwitch()` resetting the same instance in place),
+     * reloads this graph's own OPFS content/dirty-marker via [preload], then attempts to silently
+     * resume this graph's own persisted host connection, if any, via
+     * [HostDirectorySync.reconnectHostDirectory] — mirroring what [preload]/`reconnectHostDirectory`
+     * already do together at startup, just re-run per switch instead of once.
+     */
+    suspend fun switchActiveGraph(graphPath: String) {
+        val newGraphId = graphPath.removePrefix("$homeDir/").substringBefore("/")
+        if (newGraphId == currentGraphId()) return
+        preload(graphPath)
+        hostDirectorySync.reconnectHostDirectory(newGraphId)
+    }
+
+    private fun markerPath(): String = "$homeDir/${currentGraphId()}/.stele-dirty-set.json"
 
     /** Crash-safe: absent or malformed marker leaves the dirty set empty, never throws. */
     private suspend fun restoreDirtySetMarker() {
+        // Bug fix: clear the *previous* graph's in-memory dirtySet/baseSha/pendingCommit
+        // unconditionally, before attempting to load this graph's own marker — these are single
+        // shared fields, and `preload()`/`switchActiveGraph()` now re-run this per graph switch,
+        // not just once at boot. The old code only cleared/overwrote them inside the `try` block
+        // *after* a successful read, so switching to a graph that has never had a dirty-marker file
+        // written (a brand-new or never-edited graph — the common case) hit the `?: return` below
+        // and silently left the previous graph's state in place, now mislabeled under this graph's
+        // own graphId.
+        val gitWriteState = sessionHolder.current.gitWriteState
+        gitWriteState.dirtySet.clear()
+        _dirtyFileCountFlow.value = 0
+        gitWriteState.baseSha = ""
+        gitWriteState.pendingCommit = PendingCommit.None
         try {
             val raw = opfsReadFileAtPath(markerPath()) ?: return
             val marker = gitApiJson.decodeFromString<DirtySetMarker>(raw)
-            dirtySet.clear()
-            dirtySet.putAll(marker.dirtyFiles)
-            _dirtyFileCountFlow.value = dirtySet.size
-            baseSha = marker.baseSha
-            pendingCommit = marker.pendingCommit
+            gitWriteState.dirtySet.putAll(marker.dirtyFiles)
+            _dirtyFileCountFlow.value = gitWriteState.dirtySet.size
+            gitWriteState.baseSha = marker.baseSha
+            gitWriteState.pendingCommit = marker.pendingCommit
         } catch (e: Throwable) {
             println("[SteleKit] dirty-set marker restore failed, starting empty: ${e.message}")
         }
@@ -160,12 +304,13 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         if (path.startsWith(DOWNLOAD_PREFIX)) return
         val repoRelative = path.removePrefix("/stelekit/").substringAfter("/")
         if (repoRelative.isEmpty()) return
+        val dirtySet = sessionHolder.current.gitWriteState.dirtySet
         dirtySet[repoRelative] = DirtyEntry(op, Clock.System.now().toEpochMilliseconds())
         _dirtyFileCountFlow.value = dirtySet.size
         scheduleMarkerWrite()
     }
 
-    fun getDirtySnapshot(): Map<String, DirtyEntry> = dirtySet.toMap()
+    fun getDirtySnapshot(): Map<String, DirtyEntry> = sessionHolder.current.gitWriteState.dirtySet.toMap()
 
     /**
      * Epic 4.1: read-only accessor for the last-known-synced base sha (restored from the
@@ -173,7 +318,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
      * `WasmGitRepository` is the sole consumer — this keeps [baseSha] a single source of truth
      * instead of `WasmGitRepository` privately re-tracking a duplicate copy across calls.
      */
-    fun getBaseSha(): String = baseSha
+    fun getBaseSha(): String = sessionHolder.current.gitWriteState.baseSha
 
     /**
      * Epic 4.1: read-only accessor for the currently-staged [PendingCommit] (set by
@@ -181,11 +326,11 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
      * `push()` time to hand `WasmGitWriteService.push()` the exact staged commit `commit()` (or an
      * auto-merge rebuild) produced, without duplicating this state privately.
      */
-    fun getPendingCommit(): PendingCommit = pendingCommit
+    fun getPendingCommit(): PendingCommit = sessionHolder.current.gitWriteState.pendingCommit
 
     /** Used by `commit()` (Phase 3) to persist the staged GitHub commit before `push()` runs. */
     fun setPendingCommit(commitSha: String, treeSha: String) {
-        pendingCommit = PendingCommit.Staged(commitSha, treeSha)
+        sessionHolder.current.gitWriteState.pendingCommit = PendingCommit.Staged(commitSha, treeSha)
         scheduleMarkerWrite()
     }
 
@@ -198,7 +343,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
      * only a successful push does that.
      */
     fun resetPendingCommit() {
-        pendingCommit = PendingCommit.None
+        sessionHolder.current.gitWriteState.pendingCommit = PendingCommit.None
         scheduleMarkerWrite()
     }
 
@@ -208,44 +353,62 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
      * 2.1.2d), and writes the marker immediately: the crash-safety-critical "clear last" write.
      */
     fun clearDirtySet(newBaseSha: String) {
-        dirtySet.clear()
+        val gitWriteState = sessionHolder.current.gitWriteState
+        gitWriteState.dirtySet.clear()
         _dirtyFileCountFlow.value = 0
-        baseSha = newBaseSha
-        pendingCommit = PendingCommit.None
+        gitWriteState.baseSha = newBaseSha
+        gitWriteState.pendingCommit = PendingCommit.None
         scheduleMarkerWrite()
     }
 
+    /**
+     * Bug fix: snapshots [graphId]/[dirtySet]/[baseSha]/[pendingCommit] synchronously, right here at
+     * schedule time, rather than [writeMarkerNow] reading those fields live when the launched
+     * coroutine actually runs. Every caller of [scheduleMarkerWrite] has already applied its own
+     * mutation to those fields by the time it calls this — capturing now means the write always
+     * persists exactly the state that was true when scheduled, tagged with the graph that was
+     * active then. Without this, `switchActiveGraph()` re-running [preload]/[restoreDirtySetMarker]
+     * for a *different* graph while an old graph's marker write was still in-flight (or merely
+     * queued via [pendingMarkerWrite]) could execute with the live fields already flipped to the new
+     * graph — persisting the wrong graph's dirty content under the wrong graph's marker path, a
+     * disk-level cross-graph corruption (not just an in-memory race).
+     */
     private fun scheduleMarkerWrite() {
-        if (markerWriteInFlight) {
-            markerWriteDirty = true
+        // Ephemeral graphs have nothing to resume across a reload (a reload IS a fresh session),
+        // so there is no checkpoint to write.
+        if (ephemeral) return
+        val gitWriteState = sessionHolder.current.gitWriteState
+        val snapshot = DirtySetMarker(
+            graphId = currentGraphId(),
+            baseSha = gitWriteState.baseSha,
+            pendingCommit = gitWriteState.pendingCommit,
+            checkpointedAtMillis = Clock.System.now().toEpochMilliseconds(),
+            dirtyFiles = gitWriteState.dirtySet.toMap(),
+        )
+        if (gitWriteState.markerWriteInFlight) {
+            gitWriteState.pendingMarkerWrite = snapshot
             return
         }
-        markerWriteInFlight = true
+        gitWriteState.markerWriteInFlight = true
         scope.launch {
-            writeMarkerNow()
-            while (markerWriteDirty) {
-                markerWriteDirty = false
-                writeMarkerNow()
+            writeMarkerNow(snapshot)
+            while (true) {
+                val next = gitWriteState.pendingMarkerWrite ?: break
+                gitWriteState.pendingMarkerWrite = null
+                writeMarkerNow(next)
             }
-            markerWriteInFlight = false
+            gitWriteState.markerWriteInFlight = false
         }
     }
 
-    private suspend fun writeMarkerNow() {
-        val marker = DirtySetMarker(
-            graphId = graphId,
-            baseSha = baseSha,
-            pendingCommit = pendingCommit,
-            checkpointedAtMillis = Clock.System.now().toEpochMilliseconds(),
-            dirtyFiles = dirtySet.toMap(),
-        )
+    private suspend fun writeMarkerNow(marker: DirtySetMarker) {
         val encoded = try {
             gitApiJson.encodeToString(marker)
         } catch (e: Throwable) {
             println("[SteleKit] dirty-set marker encode failed: ${e.message}")
             return
         }
-        opfsWriteFile(markerPath(), encoded)
+        opfsWriteFile("$homeDir/${marker.graphId}/.stele-dirty-set.json", encoded)
     }
 
     private suspend fun loadOpfsDirectory(graphPath: String) {
@@ -266,6 +429,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         val entries = listOpfsEntries(dirHandle)
         for (entry in entries) {
             val name = getEntryName(entry)
+            if (isIgnoredHostEntryName(name)) continue
             val path = "$currentPath/$name"
             if (isFileEntry(entry)) {
                 if (isImageFile(name)) {
@@ -317,7 +481,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         val rawUrl = "https://raw.githubusercontent.com/$owner/$repo/$branch/$repoRelative"
         val content = WasmSectionSyncService.githubFetch(rawUrl, token) ?: return null
         cache[path] = content
-        scope.launch { opfsWriteFile(path, content) }
+        if (!ephemeral) scope.launch { opfsWriteFile(path, content) }
         return content
     }
     actual override fun fileExists(path: String): Boolean = cache.containsKey(path) || blobUrlCache.containsKey(path)
@@ -342,11 +506,13 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         }
         cache[path] = content
         recordDirty(path, DirtyOp.WRITE)
-        opfsWriteInFlight[path] = scope.async {
-            try {
-                opfsWriteFile(path, content)
-            } finally {
-                opfsWriteInFlight.remove(path)
+        if (!ephemeral) {
+            opfsWriteInFlight[path] = scope.async {
+                try {
+                    opfsWriteFile(path, content)
+                } finally {
+                    opfsWriteInFlight.remove(path)
+                }
             }
         }
         // Epic 4.3 (Task 4.3.1a): the fourth independent effect (web-local-folder-livesync) —
@@ -376,7 +542,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     fun applyRemoteContent(path: String, content: String): Boolean {
         if (path.startsWith(DOWNLOAD_PREFIX)) return false
         cache[path] = content
-        scope.launch { opfsWriteFile(path, content) }
+        if (!ephemeral) scope.launch { opfsWriteFile(path, content) }
         return true
     }
 
@@ -390,11 +556,13 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         if (path.startsWith(DOWNLOAD_PREFIX)) return false
         bytesCache[path] = data
         recordDirty(path, DirtyOp.WRITE)
-        opfsWriteInFlight[path] = scope.async {
-            try {
-                opfsWriteFileBytes(path, data.toJsArrayBuffer())
-            } finally {
-                opfsWriteInFlight.remove(path)
+        if (!ephemeral) {
+            opfsWriteInFlight[path] = scope.async {
+                try {
+                    opfsWriteFileBytes(path, data.toJsArrayBuffer())
+                } finally {
+                    opfsWriteInFlight.remove(path)
+                }
             }
         }
         // Epic 4.3 (Task 4.3.1b): same one-line delegation as writeFile, for paranoid-mode bytes.
@@ -416,7 +584,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         cache.remove(path)
         bytesCache.remove(path)
         recordDirty(path, DirtyOp.DELETE)
-        scope.launch { opfsDeleteFile(path) }
+        if (!ephemeral) scope.launch { opfsDeleteFile(path) }
         // Epic 4.3 (Task 4.3.1c): same one-line delegation, dispatches to flushHostWrite's
         // HostWritePayload.Delete branch (dirRemoveEntry against hostDirHandle).
         if (hostDirectorySync.hostDirHandle != null) {
@@ -447,10 +615,28 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
 
     actual override fun pickDirectory(): String? = null
     override val supportsNativeDirectoryPicker: Boolean get() = showDirectoryPickerSupported()
+    override val supportsHostDirectoryLink: Boolean get() = showDirectoryPickerSupported()
+
+    private var pendingDirectoryPicker: kotlin.js.Promise<JsAny>? = null
+    private var lastPickerError: String? = null
+
+    override fun requestDirectoryPickerNow() {
+        if (!showDirectoryPickerSupported()) return
+        pendingDirectoryPicker = showDirectoryPickerPromise()
+    }
+
+    override fun consumeLastPickerError(): String? {
+        val error = lastPickerError
+        lastPickerError = null
+        return error
+    }
+
     actual override suspend fun pickDirectoryAsync(): String? {
         if (!showDirectoryPickerSupported()) return null
+        val promise = pendingDirectoryPicker ?: showDirectoryPickerPromise()
+        pendingDirectoryPicker = null
         return try {
-            val dirHandle = showDirectoryPicker()
+            val dirHandle = promise.await<JsAny>()
             val name = getEntryName(dirHandle)
             val opfsPath = "$homeDir/$name"
             println("[SteleKit] pickDirectory: importing '$name' → '$opfsPath'")
@@ -461,32 +647,118 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             opfsPath
         } catch (e: Throwable) {
             println("[SteleKit] showDirectoryPicker: ${e.message}")
+            if (e.message?.contains("abort", ignoreCase = true) != true) {
+                lastPickerError = e.message ?: "Failed to open the folder picker."
+            }
             null
         }
     }
 
-    private suspend fun importUserDirToCache(dirHandle: JsAny, currentPath: String) {
+    /**
+     * Re-points an already-tracked graph at a newly-picked host folder — reuses [existingPath]
+     * (the graph's existing OPFS path) instead of deriving a new one from the picked folder's
+     * name, unlike [pickDirectoryAsync]. Imports the picked folder's contents into [existingPath]
+     * (merging with/overwriting whatever is already cached there) and attaches the fresh handle
+     * via [HostDirectorySync.attachFreshHandle], same as a first-time link. Returns the picked
+     * folder's own name (for [GraphInfo.hostDirName] display) so the UI can show which real folder
+     * is linked — distinct from [existingPath], which may not share the same basename once a graph
+     * has been relinked to a differently-named folder.
+     *
+     * Bug fix: [importUserDirToCache] only ever adds/overwrites [cache] entries for files present
+     * in the newly-picked folder — it never removes entries left over under [existingPath] from
+     * whatever was cached there before (a previously-linked folder, or the graph's own pre-relink
+     * content). Without pruning, a file present in the old folder but absent from the new one stays
+     * in [cache]/[bytesCache]/[blobUrlCache], and a subsequent edit to it would write stale
+     * old-folder content into the newly-linked folder via [HostDirectorySync.scheduleHostWriteThrough]
+     * — silent cross-contamination between folders. So: snapshot the cache keys scoped to
+     * [existingPath] before importing, diff against what the import actually wrote, and locally
+     * prune anything left over (cache maps + its OPFS-backed copy) — deliberately not through
+     * [deleteFile]/`scheduleHostWriteThrough(Delete)`, since neither the abandoned old folder nor
+     * the freshly-picked new folder should receive a delete for a file that, from the new folder's
+     * perspective, never existed.
+     */
+    override suspend fun relinkHostDirectoryAsync(existingPath: String): String? {
+        if (!showDirectoryPickerSupported()) return null
+        val promise = pendingDirectoryPicker ?: showDirectoryPickerPromise()
+        pendingDirectoryPicker = null
+        return try {
+            val dirHandle = promise.await<JsAny>()
+            val name = getEntryName(dirHandle)
+            println("[SteleKit] relinkHostDirectory: importing '$name' → '$existingPath'")
+            // Bug fix: paranoid-mode (encrypted) content lives exclusively in bytesCache and
+            // imported images live exclusively in blobUrlCache (see importUserDirToCache below) —
+            // scanning cache.keys alone missed both, leaving exactly the leftovers this prune
+            // exists to catch. Scope matches this method's own doc comment's [cache]/[bytesCache]/
+            // [blobUrlCache] claim.
+            val oldPaths = (cache.keys + bytesCache.keys + blobUrlCache.keys)
+                .filter { it == existingPath || it.startsWith("$existingPath/") }
+                .toSet()
+            val importedPaths = importUserDirToCache(dirHandle, existingPath)
+            val stale = oldPaths - importedPaths
+            for (stalePath in stale) {
+                // Copilot review: await any write already in flight for this path before
+                // deleting — otherwise a late write (queued before this relink started) can
+                // land after opfsDeleteFile() and silently recreate the "pruned" file.
+                opfsWriteInFlight[stalePath]?.await()
+                cache.remove(stalePath)
+                bytesCache.remove(stalePath)
+                blobUrlCache.remove(stalePath)
+                scope.launch { opfsDeleteFile(stalePath) }
+                // Copilot review: also clear this path out of the git dirty set — its cache
+                // content is gone, so a stale dirty entry (e.g. a pending WRITE from before the
+                // relink) would otherwise make a later git-write flow try to read content that
+                // no longer exists ("No cached content for dirty path") and skew the dirty count.
+                recordDirty(stalePath, DirtyOp.DELETE)
+            }
+            if (stale.isNotEmpty()) {
+                println("[SteleKit] relinkHostDirectory: pruned ${stale.size} stale cache entries")
+            }
+            hostDirectorySync.attachFreshHandle(dirHandle, existingPath)
+            name
+        } catch (e: Throwable) {
+            println("[SteleKit] relinkHostDirectory: ${e.message}")
+            if (e.message?.contains("abort", ignoreCase = true) != true) {
+                lastPickerError = e.message ?: "Failed to open the folder picker."
+            }
+            null
+        }
+    }
+
+    private suspend fun importUserDirToCache(dirHandle: JsAny, currentPath: String): Set<String> {
+        val imported = mutableSetOf<String>()
         val entries = listOpfsEntries(dirHandle)
         println("[SteleKit] importUserDirToCache: ${entries.size} entries in '$currentPath'")
         for (entry in entries) {
             val name = getEntryName(entry)
+            if (isIgnoredHostEntryName(name)) continue
             val path = "$currentPath/$name"
             when {
                 isFileEntry(entry) && isImageFile(name) -> {
-                    readOpfsFileAsObjectUrl(entry)?.let { blobUrlCache[path] = it }
+                    // Copilot review: only count this path as imported when the object URL was
+                    // actually created — marking it imported unconditionally let a failed read
+                    // mask a stale blobUrlCache entry from a previous relink's prune diff.
+                    val url = readOpfsFileAsObjectUrl(entry)
+                    if (url != null) {
+                        blobUrlCache[path] = url
+                        imported.add(path)
+                    } else {
+                        println("[SteleKit] importUserDirToCache: failed to read image '$path'")
+                    }
                 }
                 isFileEntry(entry) -> {
                     val content = readOpfsFile(entry)
                     if (content != null) {
                         cache[path] = content
                         scope.launch { opfsWriteFile(path, content) }
+                        imported.add(path)
                     } else {
                         println("[SteleKit] importUserDirToCache: failed to read '$path'")
                     }
                 }
-                isDirectoryEntry(entry) -> importUserDirToCache(entry, path)
+                isDirectoryEntry(entry) -> imported.addAll(importUserDirToCache(entry, path))
             }
         }
+        return imported
     }
     override suspend fun pickFileAsync(): String? = null
 
@@ -498,11 +770,31 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
      */
     override fun setOnHostConflict(callback: ((path: String, hostContent: String) -> Unit)?) {
         val resolved = callback ?: { _, _ -> }
-        hostDirectorySync.onHostConflict = resolved
+        // Unwraps GraphRootedPath at this boundary — the common FileSystem/GraphLoader contract
+        // stays plain String (see GraphRootedPath's doc comment for why the type only exists
+        // inside HostDirectorySync internals).
+        val adapted: (GraphRootedPath, String) -> Unit = { path, hostContent -> resolved(path.value, hostContent) }
+        // Story 2.2.2: stored so buildGraphSyncSession re-supplies it to every future graph's
+        // freshly constructed HostDirectorySync too — a graph switch must not silently drop this.
+        onHostConflictCallback = adapted
+        hostDirectorySync.onHostConflict = adapted
         // Replays any conflicts the silent-resume reconciliation walk found before App.kt's
         // composition got far enough to wire a real callback — see onHostConflict's doc comment
         // in HostDirectorySync.kt for why that window exists and used to lose conflicts silently.
-        hostDirectorySync.flushPendingHostConflicts(resolved)
+        hostDirectorySync.flushPendingHostConflicts(adapted)
+    }
+
+    /**
+     * Bytes-aware sibling of [setOnHostConflict]: delegates to
+     * [HostDirectorySync.onHostBytesConflict]. Wired from `App.kt` alongside [setOnHostConflict],
+     * for the same reason.
+     */
+    override fun setOnHostBytesConflict(callback: ((path: String, hostBytes: ByteArray) -> Unit)?) {
+        val resolved = callback ?: { _, _ -> }
+        val adapted: (GraphRootedPath, ByteArray) -> Unit = { path, hostBytes -> resolved(path.value, hostBytes) }
+        onHostBytesConflictCallback = adapted
+        hostDirectorySync.onHostBytesConflict = adapted
+        hostDirectorySync.flushPendingHostBytesConflicts(adapted)
     }
 
     /**
@@ -511,6 +803,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
      * later, per-active-graph, inside `App.kt`'s composition.
      */
     override fun setOnHostWriteFailed(callback: ((dev.stapler.stelekit.error.DomainError.FileSystemError.WriteFailed) -> Unit)?) {
+        onHostWriteFailedCallback = callback
         hostDirectorySync.onHostWriteFailed = callback ?: {}
     }
 
@@ -522,7 +815,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
      * graph's host-directory connection at a time (see `graphIdProvider`'s doc comment).
      */
     override suspend fun hostDirectoryAccessState(graphPath: String): HostAccessState =
-        hostDirectorySync.hostAccessStateFlow.value
+        hostAccessStateFlow.value
 
     /**
      * Epic 5.1 (Task 5.2.1a): one-line delegate to [HostDirectorySync.hostModTimes], populated by
