@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.83.0](https://github.com/tstapler/stelekit/compare/v0.82.0...v0.83.0) (2026-09-12)
+
+
+### Features
+
+* **capture:** desktop quick-capture hotkey popup ([#325](https://github.com/tstapler/stelekit/issues/325)) ([00d4cc6](https://github.com/tstapler/stelekit/commit/00d4cc6452a65aa92a45062915b9a0b053affb2c))
+* **git:** show persistent dirty-count + last-synced status in sidebar ([ffea987](https://github.com/tstapler/stelekit/commit/ffea98777306eb651b2b1cf7640f8e9455b1b2ab))
+
+
+### Bug Fixes
+
+* **ui:** stop phantom conflict auto-resolve for underscore/encoded page titles ([#324](https://github.com/tstapler/stelekit/issues/324)) ([e087959](https://github.com/tstapler/stelekit/commit/e087959cb127b157872eec61d16df74b7f263e66))
+
 ## [0.82.0](https://github.com/tstapler/stelekit/compare/v0.81.2...v0.82.0) (2026-09-11)
 
 
