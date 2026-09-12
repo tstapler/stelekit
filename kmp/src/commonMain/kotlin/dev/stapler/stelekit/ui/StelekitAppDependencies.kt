@@ -18,6 +18,7 @@ import dev.stapler.stelekit.ui.components.settings.ReconciliationUiState
 import dev.stapler.stelekit.voice.VoicePipelineConfig
 import dev.stapler.stelekit.voice.VoiceSettings
 import kotlinx.coroutines.flow.StateFlow
+import dev.stapler.stelekit.capture.HotkeyRegistrationFailure
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.Settings
@@ -147,6 +148,19 @@ data class StelekitAppWebSyncDeps(
 )
 
 /**
+ * Desktop quick-capture hotkey wiring (Stories 1.4.2/1.4.3) — every field defaults to "feature
+ * absent" (no failure ever surfaced, a literal fallback label) since `GlobalHotkeyListener` is
+ * jvmMain-only and this file is commonMain. A real desktop host wires
+ * `hotkeyComboLabel = GlobalHotkeyListener.DEFAULT_COMBO_LABEL` and
+ * `hotkeyRegistrationFailure = jKeymasterHotkeyListener.registrationFailure` from jvmMain, where
+ * both types are visible — see `design/ux.md` Surface 2's "never hand-typed separately" note.
+ */
+data class StelekitAppCaptureDeps(
+    val hotkeyComboLabel: String = "Ctrl+Shift+Space",
+    val hotkeyRegistrationFailure: StateFlow<HotkeyRegistrationFailure?>? = null,
+)
+
+/**
  * Every optional [StelekitApp] dependency, grouped by theme. [StelekitApp] must default this
  * parameter via `remember { StelekitAppDeps() }`, not a plain `= StelekitAppDeps()` — see
  * [StelekitAppCoreServices]'s doc for why.
@@ -158,6 +172,7 @@ data class StelekitAppDeps(
     val lifecycleHooks: StelekitAppLifecycleHooks = StelekitAppLifecycleHooks(),
     val platformIntegrations: StelekitAppPlatformIntegrations = StelekitAppPlatformIntegrations(),
     val webSyncDeps: StelekitAppWebSyncDeps = StelekitAppWebSyncDeps(),
+    val captureDeps: StelekitAppCaptureDeps = StelekitAppCaptureDeps(),
 )
 
 /**
@@ -181,4 +196,6 @@ data class GraphContentDeps(
      * that tears [GraphContent] down and recreates it) so a page snapshot taken on one graph
      * is still there after switching to the merge target. */
     val graphMergeService: dev.stapler.stelekit.transfer.GraphMergeService = dev.stapler.stelekit.transfer.GraphMergeService(),
+    /** Threaded to `SettingsDialog`'s "Keyboard Shortcuts" row — see [StelekitAppCaptureDeps]. */
+    val hotkeyComboLabel: String? = null,
 )

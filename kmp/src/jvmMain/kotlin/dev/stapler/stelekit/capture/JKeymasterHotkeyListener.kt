@@ -3,6 +3,9 @@ package dev.stapler.stelekit.capture
 import com.tulskiy.keymaster.common.HotKeyListener
 import com.tulskiy.keymaster.common.Provider
 import dev.stapler.stelekit.logging.Logger
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import javax.swing.KeyStroke
 
 /**
@@ -23,6 +26,11 @@ class JKeymasterHotkeyListener(
     private val logger = Logger("JKeymasterHotkeyListener")
     private var provider: Provider? = null
 
+    private val _registrationFailure = MutableStateFlow<HotkeyRegistrationFailure?>(null)
+
+    /** Non-null once [register] has failed; stays null on success. Surfaced by Story 1.4.3's `HotkeyConflictNotice`. */
+    val registrationFailure: StateFlow<HotkeyRegistrationFailure?> = _registrationFailure.asStateFlow()
+
     override fun register(onTriggered: () -> Unit) {
         try {
             val provider = providerFactory()
@@ -33,6 +41,21 @@ class JKeymasterHotkeyListener(
             // Throwable, not Exception: native hook loading can fail with UnsatisfiedLinkError
             // (an Error, not an Exception) — see SteleKitApplication.onCreate for the same rule.
             logger.warn("Hotkey registration failed", e)
+            _registrationFailure.value = classifyFailure(e)
+        }
+    }
+
+    /**
+     * Best-effort classification by exception type/message — JKeymaster/native hooks don't
+     * expose a structured error code, so this is heuristic, not exhaustive.
+     */
+    private fun classifyFailure(e: Throwable): HotkeyRegistrationFailure {
+        val text = "${e::class.simpleName.orEmpty()} ${e.message.orEmpty()}".lowercase()
+        return when {
+            "already" in text || "in use" in text || "bound" in text -> HotkeyRegistrationFailure.AlreadyInUse
+            "wayland" in text || "session" in text || "unsupported" in text || "display" in text ->
+                HotkeyRegistrationFailure.UnsupportedSession
+            else -> HotkeyRegistrationFailure.Unknown
         }
     }
 

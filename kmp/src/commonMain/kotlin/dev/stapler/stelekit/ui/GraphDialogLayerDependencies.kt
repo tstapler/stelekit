@@ -62,6 +62,8 @@ data class SettingsDialogDeps(
     // keeps SettingsDialog's FolderSyncSettings call site un-rendered there.
     val hostAccessState: HostAccessState = HostAccessState.NotApplicable,
     val onConnectHostDirectory: (suspend () -> ReconciliationUiState)? = null,
+    // Desktop-only quick-capture hotkey (Story 1.4.2) — null on platforms with no global hotkey.
+    val hotkeyComboLabel: String? = null,
 )
 
 /**
