@@ -6,6 +6,7 @@ package dev.stapler.stelekit.desktop
 
 import androidx.compose.runtime.getValue
 import kotlinx.coroutines.CancellationException
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -15,12 +16,19 @@ import androidx.compose.ui.window.MenuBar
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.rememberWindowState
+import dev.stapler.stelekit.capture.CaptureController
+import dev.stapler.stelekit.capture.CapturePopupWindow
+import dev.stapler.stelekit.capture.GlobalHotkeyListener
+import dev.stapler.stelekit.capture.JKeymasterHotkeyListener
+import dev.stapler.stelekit.capture.PendingCaptureWriter
 import dev.stapler.stelekit.domain.UrlFetcherJvm
 import dev.stapler.stelekit.service.JvmMediaAttachmentService
 import dev.stapler.stelekit.git.JvmGitRepository
 import dev.stapler.stelekit.ui.StelekitApp
+import dev.stapler.stelekit.ui.StelekitAppCaptureDeps
 import dev.stapler.stelekit.ui.StelekitAppCoreServices
 import dev.stapler.stelekit.ui.StelekitAppDeps
+import dev.stapler.stelekit.ui.StelekitAppLifecycleHooks
 import dev.stapler.stelekit.ui.StelekitAppPlatformIntegrations
 import dev.stapler.stelekit.ui.theme.setSystemDarkTheme
 import dev.stapler.stelekit.platform.PlatformFileSystem
@@ -36,7 +44,16 @@ import io.opentelemetry.api.trace.Tracer
 import java.awt.KeyboardFocusManager
 import javax.swing.UIManager
 
-fun main() {
+fun main(args: Array<String>) {
+    // Headless CLI capture mode: write directly to the pending-capture queue and exit before
+    // any Compose/OTel/logging setup runs, so `stelekit --capture-text "..."` stays fast and
+    // side-effect-free (no window, no log file, no OpenTelemetry SDK spun up).
+    parseCaptureArgs(args)?.let { text ->
+        PendingCaptureWriter.write(text)
+        println("Captured.")
+        return
+    }
+
     // Initialize file logging before anything else
     val fileLogSink = dev.stapler.stelekit.logging.FileLogSink()
     dev.stapler.stelekit.logging.LogManager.addSink(fileLogSink)
@@ -108,13 +125,24 @@ fun main() {
             OtelSpanRecorder(OtelProvider.getTracer("compose.navigation") as Tracer)
         }
 
+        // Desktop quick-capture: one CaptureController/hotkey listener for the whole process
+        // lifetime, registered once and unregistered on window close (see onCloseRequest below).
+        val captureController = remember(fileSystem) { CaptureController(fileSystem) }
+        val hotkeyListener = remember { JKeymasterHotkeyListener() }
+        LaunchedEffect(Unit) { captureController.start(hotkeyListener) }
+
         logger.info("Starting Desktop Application with graph: $graphPath")
         errorTracker.recordBreadcrumb("Graph path resolved: $graphPath", "SYSTEM")
 
         Window(
             onCloseRequest = {
                 logger.info("Application shutting down")
+                captureController.stop(hotkeyListener)
                 dev.stapler.stelekit.logging.LogManager.flush()
+                // Closing the main window exits the whole JVM — including the hotkey listener
+                // and any future in-process capture surfaces (socket listener, poller). This is
+                // an accepted v1 scope cut, not a bug: see
+                // project_plans/desktop-quick-capture/decisions/ADR-002-v1-scope-cut-in-process-popup-only.md.
                 exitApplication()
             },
             state = windowState,
@@ -155,8 +183,18 @@ fun main() {
                         attachmentService = attachmentService,
                         gitRepository = gitRepository,
                     ),
+                    lifecycleHooks = StelekitAppLifecycleHooks(
+                        onGraphManagerReady = { gm -> captureController.attachGraphManager(gm) },
+                        onNotificationManagerReady = { nm -> captureController.attachNotificationManager(nm) },
+                    ),
+                    captureDeps = StelekitAppCaptureDeps(
+                        hotkeyComboLabel = GlobalHotkeyListener.DEFAULT_COMBO_LABEL,
+                        hotkeyRegistrationFailure = hotkeyListener.registrationFailure,
+                    ),
                 ),
             )
         }
+
+        CapturePopupWindow(captureController)
     }
 }

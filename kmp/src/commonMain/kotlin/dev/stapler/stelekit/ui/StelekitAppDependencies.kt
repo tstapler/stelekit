@@ -64,6 +64,9 @@ data class StelekitAppLifecycleHooks(
      * and invoke when onTrimMemory fires, mirroring [onGraphManagerReady]'s pattern.
      */
     val onMemoryPressure: (((() -> Unit) -> Unit))? = null,
+    /** Called once the [NotificationManager] instance is ready — Desktop wires this to
+     * `CaptureController.attachNotificationManager` so capture saves can surface a toast. */
+    val onNotificationManagerReady: ((NotificationManager) -> Unit)? = null,
 )
 
 /**

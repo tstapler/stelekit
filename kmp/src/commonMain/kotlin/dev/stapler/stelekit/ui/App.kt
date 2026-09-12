@@ -267,6 +267,7 @@ fun StelekitApp(
     }
 
     val notificationManager = remember { NotificationManager() }
+    LaunchedEffect(notificationManager) { deps.lifecycleHooks.onNotificationManagerReady?.invoke(notificationManager) }
 
     // Shown when the user has explicitly removed their only graph (see GraphManager.removeGraph's
     // "last real graph" path) — checking graphsExplicitlyEmptied rather than activeGraphId == null
