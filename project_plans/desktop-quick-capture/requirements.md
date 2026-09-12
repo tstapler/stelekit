@@ -13,9 +13,18 @@ desktop users, not a distinct persona requiring research or segmentation.
 ## Prioritization
 
 This item was picked up via the backlog triage process, not scored against a formal RICE/ICE
-model or other open backlog items. Its justification is the platform-parity gap stated above:
-Android already has `CaptureActivity`; desktop has no equivalent, so desktop users have
-strictly more friction than Android users for the same one-line-note task.
+model or other open backlog items — appropriate for a solo-maintainer personal app with no
+product-management function scoring a shared backlog. Informally: Reach is 1 user (the
+maintainer) using desktop daily; Impact is the 3-vs-5+ action reduction quantified above,
+used on every quick-note capture; Confidence is high (the write path is a direct port of
+`CaptureActivity`'s already-proven mechanism, not new territory); Effort is `plan.md`'s Epics
+1-3 (hotkey popup + pending-captures poller + socket IPC foundation, all tasked in this v1
+plan — see plan.md's task-time estimates), with only the separate OS-native extension
+surfaces (macOS Services menu, Nautilus script, Windows registry handler — ADR-002's
+"Phase 2", a different "Phase 2" than plan.md's own Epic numbering) deferred to a later
+project — a small, low-risk, daily-use win, which is why it's being picked up now rather
+than scored against unrelated backlog items it doesn't compete with for scarce shared
+capacity.
 
 ## Problem
 
@@ -24,7 +33,12 @@ share-sheet → translucent overlay → text field → save to today's journal v
 `GraphWriter`/`DatabaseWriteActor`. Desktop (JVM: macOS/Linux/Windows) has no equivalent —
 no way to capture a note from outside the running app without opening SteleKit and using
 in-app Import. This is a friction gap, not a broken feature: desktop users today have
-strictly more steps than Android users to add a one-line note.
+strictly more steps than Android users to add a one-line note — concretely, Android's path
+is share-sheet tap → type → tap Save (3 actions, app need not be foregrounded), while
+desktop's only path today is switch focus to SteleKit → open in-app Import → select
+source/format → paste/select text → confirm (5+ actions, requires the app already be
+visible on screen). This feature's v1 popup path (hotkey → type → Ctrl+Enter) matches
+Android's 3-action count.
 
 Distinct from:
 - #230 — Chrome web-clipper extension (browser-scoped only).
@@ -113,12 +127,18 @@ context-menu/Share-extension surfaces, but not for a hotkey popup, which is the 
 
 This is a solo-maintainer personal app, not a metrics-instrumented product — no dedicated
 telemetry is built for this feature (see `implementation/plan.md`'s Observability Plan: no
-metrics added in v1). Success is assessed qualitatively:
+metrics added in v1). Success is assessed via two concrete, already-available proxies
+(no new instrumentation needed) rather than an unverifiable subjective impression:
 
-- Does the primary maintainer (Tyler) actually use the hotkey capture path daily instead of
-  falling back to in-app Import, within the first month post-release?
-- Are there zero duplicate-journal-entry bug reports attributable to the idempotency
-  mechanism (`captureId`-based `INSERT OR REPLACE`)?
+- **Usage proxy**: `CaptureController`/`CaptureWriter` already log at `info` on every
+  successful save (Observability Plan, `plan.md`). One month post-release,
+  `grep -c "Saved to today's journal" ~/.stelekit/logs/*.log` (or the app's current log
+  path/rotation) across that period gives an actual daily-use count, not an impression —
+  target: captured at least 15 of the 30 days (roughly every other day; the maintainer
+  doesn't have a note every single day).
+- **Correctness proxy**: zero duplicate-journal-entry bug reports (filed as a backlog item
+  or GitHub issue) attributable to the idempotency mechanism (`captureId`-based
+  `INSERT OR REPLACE`) in the same 30-day window.
 
 ## Open Questions
 
