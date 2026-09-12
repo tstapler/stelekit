@@ -19,7 +19,7 @@ import javax.swing.KeyStroke
  * that are impractical to exercise in a headless test JVM.
  */
 class JKeymasterHotkeyListener(
-    private val comboLabel: String = DEFAULT_COMBO,
+    private val comboLabel: String = keyStrokeStringFor(GlobalHotkeyListener.DEFAULT_COMBO_LABEL),
     private val providerFactory: () -> Provider = { Provider.getCurrentProvider(false) },
 ) : GlobalHotkeyListener {
 
@@ -71,7 +71,27 @@ class JKeymasterHotkeyListener(
     }
 
     companion object {
-        // javax.swing.KeyStroke combo string; JKeymaster registers this against the native hook.
-        private const val DEFAULT_COMBO = "control shift SPACE"
+        /**
+         * Converts a human-facing combo label (e.g. [GlobalHotkeyListener.DEFAULT_COMBO_LABEL],
+         * `"Ctrl+Shift+Space"`) into the [javax.swing.KeyStroke] string JKeymaster expects
+         * (`"control shift SPACE"`). [GlobalHotkeyListener.DEFAULT_COMBO_LABEL] is the single
+         * source of truth for the default combo — this function is what keeps the UI-facing
+         * label and the actual registration string from drifting apart, rather than each
+         * hardcoding its own copy.
+         */
+        internal fun keyStrokeStringFor(label: String): String {
+            val parts = label.split("+")
+            val modifiers = parts.dropLast(1).map {
+                when (it.trim().lowercase()) {
+                    "ctrl", "control" -> "control"
+                    "cmd", "meta", "command" -> "meta"
+                    "alt", "option" -> "alt"
+                    "shift" -> "shift"
+                    else -> it.trim().lowercase()
+                }
+            }
+            val key = parts.last().trim().uppercase()
+            return (modifiers + key).joinToString(" ")
+        }
     }
 }

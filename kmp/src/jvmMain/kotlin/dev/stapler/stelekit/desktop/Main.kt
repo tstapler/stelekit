@@ -158,10 +158,13 @@ fun main(args: Array<String>) {
                 logger.info("Application shutting down")
                 captureController.stop(hotkeyListener)
                 socketListener.stop()
+                poller.stop()
                 dev.stapler.stelekit.logging.LogManager.flush()
-                // Closing the main window exits the whole JVM — including the hotkey listener
-                // and any future in-process capture surfaces (socket listener, poller). This is
-                // an accepted v1 scope cut, not a bug: see
+                // Closing the main window exits the whole JVM anyway, so these stop() calls are
+                // for orderly shutdown (flushing logs, closing the socket file) rather than
+                // strictly required — but if background residency (a Tray icon) is ever added
+                // in a later phase, capture would keep working after window close. This is an
+                // accepted v1 scope cut, not a bug: see
                 // project_plans/desktop-quick-capture/decisions/ADR-002-v1-scope-cut-in-process-popup-only.md.
                 exitApplication()
             },

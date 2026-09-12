@@ -77,9 +77,12 @@ class CaptureController(private val fileSystem: PlatformFileSystem) {
      * preserved and the caller is responsible for bringing the existing window to front.
      */
     fun show() {
-        priorFocusOwner = currentActiveWindow()
-
+        // Only snapshot the caller's window on the Hidden -> Shown transition. If the popup
+        // is already Shown (a second hotkey press while it's open), it likely already has OS
+        // focus itself -- recording it here would clobber the real priorFocusOwner captured on
+        // the first press, and restoreFocus() would later try to focus the popup being hidden.
         if (_state.value is CapturePopupState.Shown) return
+        priorFocusOwner = currentActiveWindow()
 
         val gm = graphManager
         val captureResult = if (gm == null) {
