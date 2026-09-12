@@ -20,6 +20,7 @@ import dev.stapler.stelekit.capture.CaptureController
 import dev.stapler.stelekit.capture.CapturePopupWindow
 import dev.stapler.stelekit.capture.GlobalHotkeyListener
 import dev.stapler.stelekit.capture.JKeymasterHotkeyListener
+import dev.stapler.stelekit.capture.PendingCapturePoller
 import dev.stapler.stelekit.capture.PendingCaptureWriter
 import dev.stapler.stelekit.domain.UrlFetcherJvm
 import dev.stapler.stelekit.service.JvmMediaAttachmentService
@@ -131,6 +132,12 @@ fun main(args: Array<String>) {
         val hotkeyListener = remember { JKeymasterHotkeyListener() }
         LaunchedEffect(Unit) { captureController.start(hotkeyListener) }
 
+        // Cold-start drain of any pending-capture files left on disk (headless CLI captures,
+        // or a capture taken before the graph finished loading) — replayed through the same
+        // CaptureWriter chain the live popup uses, every 5s and once immediately on start.
+        val poller = remember(fileSystem) { PendingCapturePoller(fileSystem) }
+        LaunchedEffect(Unit) { poller.start() }
+
         logger.info("Starting Desktop Application with graph: $graphPath")
         errorTracker.recordBreadcrumb("Graph path resolved: $graphPath", "SYSTEM")
 
@@ -184,7 +191,10 @@ fun main(args: Array<String>) {
                         gitRepository = gitRepository,
                     ),
                     lifecycleHooks = StelekitAppLifecycleHooks(
-                        onGraphManagerReady = { gm -> captureController.attachGraphManager(gm) },
+                        onGraphManagerReady = { gm ->
+                            captureController.attachGraphManager(gm)
+                            poller.attachGraphManager(gm)
+                        },
                         onNotificationManagerReady = { nm -> captureController.attachNotificationManager(nm) },
                     ),
                     captureDeps = StelekitAppCaptureDeps(
