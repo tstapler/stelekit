@@ -91,6 +91,7 @@ import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import dev.stapler.stelekit.sections.getSectionStates
 import dev.stapler.stelekit.sections.putSectionStates
+import dev.stapler.stelekit.util.FileUtils
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.plus
@@ -1492,8 +1493,9 @@ class StelekitViewModel(
                     // if the user later navigates here, checkAndShowPendingConflict() can still
                     // offer a review/undo dialog for what the auto-apply overwrote.
                     event.suppress()
-                    val pageName = event.filePath
-                        .substringAfterLast('/').removeSuffix(".md").replace("_", " ")
+                    val pageName = FileUtils.decodeFileName(
+                        event.filePath.substringAfterLast('/').removeSuffix(".md.stek").removeSuffix(".md")
+                    )
                     val existing = state.pendingConflicts[event.filePath]
                     val previousContent: String
                     val pageExistedLocally: Boolean

@@ -466,6 +466,40 @@ class DiskConflictResolutionTest {
         )
     }
 
+    @Test
+    fun checkAndShowPendingConflict_stillShowsDialog_When_PageTitleContainsUnderscore() = runBlocking {
+        // observeExternalFileChanges derives pageName from the filename via FileUtils.decodeFileName,
+        // matching how GraphWriter/FileUtils.sanitizeFileName name files on disk. A page titled
+        // "hello_world" is written to "hello_world.md" verbatim (sanitizeFileName does not touch
+        // underscores), so pageName must resolve back to "hello_world", not "hello world" — a stray
+        // filename->title heuristic that turns "_" into " " would fail the getPageByName lookup,
+        // wrongly conclude pageExistedLocally = false, and silently auto-resolve (discard) a real
+        // conflict the next time the page is opened.
+        val underscorePage = testPage.copy(name = "hello_world", filePath = "/tmp/test-graph/pages/hello_world.md")
+        val underscoreBlock = testBlock.copy(pageUuid = underscorePage.uuid, content = "Real local content")
+        val pageRepo = FakePageRepository(listOf(underscorePage))
+        val blockRepo = FakeBlockRepository(mapOf(testPageUuid to listOf(underscoreBlock)))
+        val graphLoader = testGraphLoader(pageRepo, blockRepo)
+        val vm = makeViewModel(pageRepo = pageRepo, blockRepo = blockRepo, graphLoader = graphLoader)
+        vm.startAutoSave()
+
+        graphLoader.emitExternalFileChange(underscorePage.filePath!!, "- disk content overwriting the page")
+        assertNotNull(
+            vm.uiState.value.pendingConflicts[underscorePage.filePath],
+            "off-page external change must populate pendingConflicts before navigation"
+        )
+
+        vm.navigateTo(Screen.PageView(underscorePage))
+
+        withTimeout(2_000) {
+            vm.uiState.first { it.diskConflict != null || it.pendingConflicts[underscorePage.filePath] == null }
+        }
+        assertTrue(
+            vm.uiState.value.diskConflict != null,
+            "a page whose title contains an underscore must still show the conflict dialog, not auto-resolve"
+        )
+    }
+
     // ─── Story 6.1.1b: coverage gaps ─────────────────────────────────────────
 
     @Test
