@@ -61,6 +61,16 @@ class CaptureController(private val fileSystem: PlatformFileSystem) {
         notificationManager = nm
     }
 
+    /** Registers [hotkeyListener] to call [show] when the bound combo fires. */
+    fun start(hotkeyListener: GlobalHotkeyListener) {
+        hotkeyListener.register { show() }
+    }
+
+    /** Unregisters [hotkeyListener], e.g. on application shutdown. */
+    fun stop(hotkeyListener: GlobalHotkeyListener) {
+        hotkeyListener.unregister()
+    }
+
     /**
      * Opens the popup with an empty draft. If the popup is already [CapturePopupState.Shown]
      * (a second hotkey trigger while it's open), this is a no-op — the existing draft text is
