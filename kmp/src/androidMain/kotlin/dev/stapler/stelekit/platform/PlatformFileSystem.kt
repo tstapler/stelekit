@@ -1173,13 +1173,18 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         val expandedPath = expandTilde(normalized)
         val canonicalPath = File(expandedPath).canonicalPath
         // Enforce containment within an allowed root to prevent path traversal. homeDir (the
-        // public Documents directory) is the historical default-graph root; context.filesDir is
-        // the app-private root newAppOwnedGraphPath() hands out for "App storage" graphs (Story
-        // 2.2.1/2.2.2) — allowed here for parity with legacyReadFileBytes/legacyWriteFileBytes,
-        // which already permit it for attachments.
+        // public Documents directory) is the historical default-graph root; filesDir/graphs is
+        // the app-private root newAppOwnedGraphPath() actually hands out for "App storage" graphs
+        // (Story 2.2.1/2.2.2) — scoped to that subdirectory, not all of filesDir, so this check
+        // can't be used to reach the app's databases/prefs/cache under filesDir's other children.
         val homePath = File(homeDir).canonicalPath
-        val allowedRoots = listOfNotNull(homePath, context?.filesDir?.canonicalPath)
-        require(allowedRoots.any { canonicalPath.startsWith(it) }) { "Path must be within the allowed directory" }
+        val allowedRoots = listOfNotNull(homePath, context?.filesDir?.let { File(it, "graphs").canonicalPath })
+        // A plain startsWith(root) is not a directory-boundary check: a sibling directory whose
+        // name merely has `root` as a string prefix (e.g. "$root-evil/x") would satisfy it too.
+        // Require either an exact match or a "/"-bounded prefix.
+        require(allowedRoots.any { canonicalPath == it || canonicalPath.startsWith("$it/") }) {
+            "Path must be within the allowed directory"
+        }
         return canonicalPath
     }
 }
