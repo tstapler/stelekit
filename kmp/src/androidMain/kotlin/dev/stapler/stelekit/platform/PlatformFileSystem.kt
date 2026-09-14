@@ -1006,15 +1006,25 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             val canonicalPath = File(expandedPath).canonicalPath
             val homePath = File(homeDir).canonicalPath
             val ctx = context
-            val allowedPrefixes = buildList {
+            // Mirrors validateLegacyPath's allowed-root set (homeDir, filesDir/graphs) but adds
+            // cacheDir/externalCacheDir: legitimate legacy attachment sources such as
+            // AndroidCameraProvider's captures/, AndroidPhotoPickerLauncher's photo_import_*.jpg,
+            // and AndroidAudioRecorder's voice_*.m4a all stage under cacheDir before being copied
+            // into a graph (ImageImportService). filesDir is scoped to graphs/, not the whole
+            // directory, since no caller legitimately reads a filesDir path outside it (the app's
+            // SQLite databases and shared_prefs live directly under filesDir).
+            val allowedRoots = buildList {
                 add(homePath)
                 if (ctx != null) {
                     add(ctx.cacheDir.canonicalPath)
-                    add(ctx.filesDir.canonicalPath)
+                    add(File(ctx.filesDir, "graphs").canonicalPath)
                     ctx.externalCacheDir?.canonicalPath?.let { add(it) }
                 }
             }
-            require(allowedPrefixes.any { canonicalPath.startsWith(it) }) {
+            // A plain startsWith(root) is not a directory-boundary check: a sibling directory
+            // whose name merely has `root` as a string prefix (e.g. "$root-evil/x") would satisfy
+            // it too. Require either an exact match or a "/"-bounded prefix (see validateLegacyPath).
+            require(allowedRoots.any { canonicalPath == it || canonicalPath.startsWith("$it/") }) {
                 "Path must be within an allowed directory"
             }
             val file = File(canonicalPath)
