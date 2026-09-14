@@ -3,10 +3,11 @@
 package dev.stapler.stelekit.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import dev.stapler.stelekit.export.GraphZipExporter
+import dev.stapler.stelekit.export.WasmJsGraphZipExporter
 
-// Web's own zip export (a hand-rolled stored-only writer, per ADR-003's Amendment) is Epic 2.3's
-// Task 2.3.3c, not this one — null here until that lands. See PlatformGraphZipExporter.kt's
-// expect doc.
+// Web's own zip export (Story 2.3.3, ADR-003's Amendment): a hand-rolled stored-only ZIP writer —
+// see WasmJsGraphZipExporter's doc comment.
 @Composable
-actual fun rememberGraphZipExporter(): GraphZipExporter? = null
+actual fun rememberGraphZipExporter(): GraphZipExporter? = remember { WasmJsGraphZipExporter() }

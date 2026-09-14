@@ -31,6 +31,14 @@ const val PlainGraphAppOwnedWarningAndroidCopy = "Kept inside SteleKit only — 
     "automatic backup."
 
 /**
+ * ADR-003 Amendment's exact Web warning copy — the OPFS-specific consequence (clearing site data,
+ * not uninstalling an app) — single source of truth for both Web's call sites (`App.kt`,
+ * `GitSetupScreen.kt` never shows this per ux.md's git-clone exemption) and its regression test.
+ */
+const val PlainGraphAppOwnedWarningWebCopy = "Kept in this browser only — not backed up " +
+    "automatically, and lost if you clear site data."
+
+/**
  * Shared dialog shell (ADR-003, `design/ux.md` Surface 11) shown before a **plain (non-git)**
  * graph is created with [dev.stapler.stelekit.model.StorageLocation.AppOwned] — the only storage
  * mode with no backup at all (no git remote, `allowBackup="false"`). Invoked from both Surface 2

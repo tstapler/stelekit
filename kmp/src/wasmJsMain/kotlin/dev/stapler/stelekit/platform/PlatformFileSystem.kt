@@ -8,6 +8,7 @@ import dev.stapler.stelekit.git.model.DirtySetMarker
 import dev.stapler.stelekit.git.model.PendingCommit
 import dev.stapler.stelekit.git.model.gitApiJson
 import dev.stapler.stelekit.sync.WasmSectionSyncService
+import dev.stapler.stelekit.util.UuidGenerator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -616,6 +617,14 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     actual override fun pickDirectory(): String? = null
     override val supportsNativeDirectoryPicker: Boolean get() = showDirectoryPickerSupported()
     override val supportsHostDirectoryLink: Boolean get() = showDirectoryPickerSupported()
+
+    // Epic 2.3 (Story 2.3.1/2.3.2): OPFS is available in every browser (Chromium, Firefox,
+    // Safari) regardless of File System Access API support, so unlike
+    // supportsNativeDirectoryPicker this is unconditionally true — "App storage" is always a
+    // choosable UnifiedLocationPicker row on web, matching Android's own unconditional override.
+    override val supportsAppOwnedStorage: Boolean get() = true
+
+    override fun newAppOwnedGraphPath(): String = "$homeDir/${UuidGenerator.generateV7()}"
 
     private var pendingDirectoryPicker: kotlin.js.Promise<JsAny>? = null
     private var lastPickerError: String? = null

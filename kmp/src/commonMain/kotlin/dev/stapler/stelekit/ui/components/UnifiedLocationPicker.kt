@@ -105,6 +105,14 @@ private suspend fun resolveBrowseSelection(
  * @param appStorageSubtitle the exact platform copy for the "App storage" row's subtitle
  * (`design/ux.md` §2 / plan.md Task 2.1.1b) — supplied by the caller since only it knows whether it
  * is running on Android or Web.
+ * @param onBrowseClicked invoked synchronously, in the same Compose click-handler call stack, the
+ * instant the "Browse…" row is tapped — *before* [onBrowseRequested] runs inside a coroutine
+ * launch. Exists because [onBrowseRequested] is a `suspend` lambda dispatched through that launch,
+ * which on wasmJs can lose the browser's "transient user activation" window before
+ * `window.showDirectoryPicker()` is ever called (`stack.md` §3,
+ * [dev.stapler.stelekit.platform.showDirectoryPickerPromise]'s doc comment). The wasmJs caller
+ * wires this to [dev.stapler.stelekit.platform.FileSystem.requestDirectoryPickerNow], which is a
+ * synchronous no-op on every other platform — safe to leave as the default no-op there.
  */
 @Composable
 fun UnifiedLocationPicker(
@@ -116,6 +124,7 @@ fun UnifiedLocationPicker(
     onConfirm: (StorageLocation) -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
+    onBrowseClicked: () -> Unit = {},
 ) {
     var selection by remember { mutableStateOf<PickerSelection?>(null) }
     val scope = rememberCoroutineScope()
@@ -134,6 +143,8 @@ fun UnifiedLocationPicker(
                 selection = selection,
                 onSelectAppStorage = { selection = PickerSelection.AppStorage },
                 onBrowseClick = {
+                    // Must run before scope.launch, not inside it — see onBrowseClicked's doc.
+                    onBrowseClicked()
                     scope.launch { selection = resolveBrowseSelection(selection, onBrowseRequested) }
                 },
             )

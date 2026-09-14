@@ -686,6 +686,11 @@ fun GitSetupScreen(
             appStorageSubtitle = "Kept inside SteleKit only — not visible in your device's " +
                 "file manager, and removed if you uninstall the app.",
             platformCapabilities = fileSystem.supportsNativeDirectoryPicker,
+            onBrowseClicked = {
+                // Must run synchronously here, not inside onBrowseRequested's scope.launch — see
+                // UnifiedLocationPicker's onBrowseClicked doc / stack.md §3's Chrome requirement.
+                fileSystem.requestDirectoryPickerNow()
+            },
             onBrowseRequested = {
                 val path = fileSystem.pickDirectoryAsync()
                 path?.let {

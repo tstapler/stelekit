@@ -43,6 +43,7 @@ import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.StorageLocation
 import dev.stapler.stelekit.performance.DebugBuildConfig
 import dev.stapler.stelekit.performance.DebugMenuState
+import dev.stapler.stelekit.performance.getDeviceInfo
 import dev.stapler.stelekit.performance.LocalSpanRecorder
 import dev.stapler.stelekit.performance.PlatformJankStatsEffect
 import dev.stapler.stelekit.platform.*
@@ -2017,8 +2018,12 @@ private fun GraphContent(deps: GraphContentDeps) {
                             appStorageSubtitle = "Kept inside SteleKit only — not visible in " +
                                 "your device's file manager, and removed if you uninstall the app.",
                             platformCapabilities = fileSystem.supportsNativeDirectoryPicker,
-                            onBrowseRequested = {
+                            onBrowseClicked = {
+                                // Must run synchronously here, not inside onBrowseRequested's
+                                // scope.launch — see UnifiedLocationPicker's onBrowseClicked doc.
                                 fileSystem.requestDirectoryPickerNow()
+                            },
+                            onBrowseRequested = {
                                 val path = fileSystem.pickDirectoryAsync()
                                 path?.let {
                                     val expanded = fileSystem.expandTilde(it)
@@ -2048,8 +2053,15 @@ private fun GraphContent(deps: GraphContentDeps) {
 
                     pendingPlainGraphWarning?.let { (location, path) ->
                         val zipExporter = rememberGraphZipExporter()
+                        // ADR-003's Amendment: Android and Web describe a different concrete
+                        // consequence (uninstalling the app vs. clearing site data) — see
+                        // getDeviceInfo's "platform" field convention (SloChecker.diskThresholdsFor).
+                        val warningCopy = remember { getDeviceInfo().platform }.let { platform ->
+                            if (platform == "Android") PlainGraphAppOwnedWarningAndroidCopy
+                            else PlainGraphAppOwnedWarningWebCopy
+                        }
                         PlainGraphAppOwnedWarningDialog(
-                            bodyText = PlainGraphAppOwnedWarningAndroidCopy,
+                            bodyText = warningCopy,
                             onExportZip = zipExporter?.let { exporter ->
                                 {
                                     exporter.export(fileSystem, path, "stelekit-graph").isRight()
