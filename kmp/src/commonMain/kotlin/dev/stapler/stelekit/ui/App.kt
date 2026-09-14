@@ -1571,6 +1571,13 @@ private fun GraphContent(deps: GraphContentDeps) {
                                     }
                                 },
                                 moveStorageLocationPlatformCapabilities = fileSystem.supportsNativeDirectoryPicker,
+                                // Epic 4.2 (Story 4.2.1, ADR-003): Link is a real continuous mirror
+                                // only for git-cloned graphs (the existing shadow-worktree
+                                // write-back mechanism, Android-only). No gitRepository on this
+                                // platform (e.g. Web) falls back to `true` — unaffected by this
+                                // gate, matching ADR-003's Web-ships-Link-for-both-graph-types
+                                // decision (Epic 4.1, wired separately in FolderSyncSettings.kt).
+                                isGraphGitCloned = { path -> gitRepository?.isGitRepo(path) ?: true },
                                 onStorageLocationChosen = onStorageLocationChosen,
                                 onCollapse = { viewModel.toggleSidebar() },
                                 syncState = syncState,

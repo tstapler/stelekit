@@ -122,6 +122,13 @@ fun LeftSidebar(
     storageLocationResolver: StorageLocationResolver? = null,
     onBrowseRequestedForMove: suspend (String) -> StorageLocation? = { null },
     moveStorageLocationPlatformCapabilities: Boolean = false,
+    /** Epic 4.2 (Story 4.2.1): resolves whether [StorageMoveChoiceDialog]'s "Link" option should
+     * be offered for a graph's move flow — real signal is `GitRepository.isGitRepo(graph.path)`
+     * (already resolves through Android's shadow-worktree for `saf://` paths, see
+     * `AndroidGitRepository.isGitRepo`), wired in by the composition root. Defaults to `true` so
+     * platforms/tests that don't wire a real check keep prior (Epic 3.4) behavior — Link is only
+     * ever gated OFF, never gated on, by a caller opting in to a real check. */
+    isGraphGitCloned: suspend (path: String) -> Boolean = { true },
     /** Epic 3.4: fires once the user has chosen Relocate/Link in [StorageMoveChoiceDialog] and
      * confirmed in [StorageMoveConfirmDialog] — the composition root's hand-off point to drive
      * `GraphRelocationCoordinator.relocate()` (Relocate) or `connectHostDirectory` (Link, Epic
@@ -190,6 +197,7 @@ fun LeftSidebar(
                 storageLocationResolver = storageLocationResolver,
                 onBrowseRequestedForMove = onBrowseRequestedForMove,
                 moveStorageLocationPlatformCapabilities = moveStorageLocationPlatformCapabilities,
+                isGraphGitCloned = isGraphGitCloned,
                 onStorageLocationChosen = onStorageLocationChosen,
                 gitSyncedGraphId = gitSyncedGraphId,
                 isDemoActive = isDemoActive,
@@ -429,6 +437,8 @@ fun GraphSwitcher(
     onBrowseRequestedForMove: suspend (String) -> StorageLocation? = { null },
     /** Whether the relocate flow's [UnifiedLocationPicker] shows a "Browse…" row. */
     moveStorageLocationPlatformCapabilities: Boolean = false,
+    /** See [LeftSidebar]'s parameter doc — gates [StorageMoveChoiceDialog]'s "Link" option. */
+    isGraphGitCloned: suspend (path: String) -> Boolean = { true },
     /**
      * Epic 3.4: fires once the user has picked a destination in [UnifiedLocationPicker], chosen
      * Relocate/Link in [StorageMoveChoiceDialog], and confirmed in [StorageMoveConfirmDialog] —
@@ -458,6 +468,10 @@ fun GraphSwitcher(
     // carried forward into StorageMoveChoiceDialog/StorageMoveConfirmDialog once the picker
     // resolves a destination, so both name the exact "from"/"to" locations (never a placeholder).
     var movingStorageSource by remember { mutableStateOf<StorageLocation?>(null) }
+    // Epic 4.2 (Story 4.2.1): resolved alongside movingStorageSource so choosingMoveFor can gate
+    // StorageMoveChoiceDialog's "Link" option — true (Link offered) until proven otherwise, since
+    // isGraphGitCloned defaults to { true } and a plain graph is the only case that flips it off.
+    var movingStorageIsLinkAvailable by remember { mutableStateOf(true) }
     var choosingMoveFor by remember { mutableStateOf<PendingStorageMove?>(null) }
     var confirmingMove by remember { mutableStateOf<PendingStorageMove?>(null) }
     val moveStorageScope = rememberCoroutineScope()
@@ -657,6 +671,7 @@ fun GraphSwitcher(
                                 // storageLocationResolver doc) — still open the picker so the
                                 // "Browse…" row keeps working, just without the backfill side effect.
                                 movingStorageSource = storageLocationResolver?.resolveOrBackfill(graphId)
+                                movingStorageIsLinkAvailable = isGraphGitCloned(editingGraph.path)
                                 movingStorageForGraph = editingGraph
                             }
                         },
@@ -726,6 +741,7 @@ fun GraphSwitcher(
                     // graph actually lives.
                     source = movingStorageSource ?: StorageLocation.AppOwned(movingGraph.id.value),
                     destination = destination,
+                    isLinkAvailable = movingStorageIsLinkAvailable,
                 )
                 movingStorageForGraph = null
                 movingStorageSource = null
@@ -742,9 +758,11 @@ fun GraphSwitcher(
             graphName = choosing.graph.displayName,
             source = choosing.source,
             destination = choosing.destination,
-            // TODO(Epic 4.2): plain (non-git) Android graph detection isn't wired into GraphInfo
-            // yet — Link is offered unconditionally here until Story 4.2.1 adds that check, per
-            // this dispatch's own scope note (Phase 4 isn't implemented yet).
+            // Epic 4.2 (Story 4.2.1): gated by isGraphGitCloned(graph.path), resolved when the
+            // move flow started (see movingStorageIsLinkAvailable above) — per ADR-003, Link is
+            // only a real continuous mirror for git-cloned Android graphs (the existing
+            // shadow-worktree write-back mechanism); plain graphs get the disabled note instead.
+            isLinkAvailable = choosing.isLinkAvailable,
             onRelocateChosen = {
                 confirmingMove = choosing.copy(isRelocate = true)
                 choosingMoveFor = null
@@ -800,6 +818,7 @@ private data class PendingStorageMove(
     val source: StorageLocation,
     val destination: StorageLocation,
     val isRelocate: Boolean = true,
+    val isLinkAvailable: Boolean = true,
 )
 
 /**
