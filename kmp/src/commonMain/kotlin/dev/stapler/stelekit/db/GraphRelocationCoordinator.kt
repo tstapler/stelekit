@@ -15,6 +15,7 @@ import dev.stapler.stelekit.model.StorageLocation
 import dev.stapler.stelekit.model.StorageMoveOperation
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.repository.RepositorySet
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.ProducerScope
 import kotlinx.coroutines.flow.Flow
@@ -174,6 +175,19 @@ class GraphRelocationCoordinator(
         val graphIdValue = operation.graphId
         val graphId = GraphId(graphIdValue)
 
+        // Set once, read from both the explicit pre-send release below and the outer `finally` —
+        // lets a normal (non-cancelled) exit release the quiesce lock and clear MoveInProgressFlag
+        // BEFORE its terminal state is sent, so a collector reacting to that terminal state can
+        // never observe the flag still true; `finally` only re-runs the release if cancellation
+        // skipped the normal exit path entirely.
+        var released = false
+        suspend fun releaseOnce() {
+            if (released) return
+            released = true
+            quiesceStrategy.release(operation)
+            MoveInProgressFlag.setMoveInProgress(graphIdValue, false)
+        }
+
         logMoveStarted(operation)
         MoveInProgressFlag.setMoveInProgress(graphIdValue, true)
         try {
@@ -188,12 +202,14 @@ class GraphRelocationCoordinator(
                 // The driver was never closed on this path — no reopen call at all.
                 val timeoutState = StorageMoveUiState.Failed(DomainError.StorageError.QuiesceTimedOut(QUIESCE_TIMEOUT_MS))
                 logMoveTerminal(operation, timeoutState)
+                releaseOnce()
                 send(timeoutState)
                 return@channelFlow
             }
             if (quiesceOutcome is Either.Left) {
                 val failedState = StorageMoveUiState.Failed(quiesceOutcome.value)
                 logMoveTerminal(operation, failedState)
+                releaseOnce()
                 send(failedState)
                 return@channelFlow
             }
@@ -216,34 +232,48 @@ class GraphRelocationCoordinator(
                 }
                 copyOutcome = copyIntoStagingThenRepoint(operation)
             } finally {
+                // Wrapped in try/catch: this whole block already runs under NonCancellable
+                // specifically so cleanup completes even when the coroutine was cancelled
+                // mid-copy/verify — but ordinary `finally` semantics mean an unrelated Throwable
+                // escaping from here (e.g. a DB error from switchGraph/onGraphLocationDetermined)
+                // would silently replace an in-flight CancellationException instead of letting it
+                // keep propagating. Log and swallow anything that isn't itself a cancellation.
                 withContext(NonCancellable) {
-                    // Reopen-and-confirm is one inseparable pair — switchGraph() alone only
-                    // schedules the reopen; awaitPendingMigration() is what actually waits for it.
-                    graphManager.switchGraph(graphId, forceReinit = true)
-                    reopenedRepositorySet = graphManager.awaitPendingMigration()
+                    try {
+                        // Reopen-and-confirm is one inseparable pair — switchGraph() alone only
+                        // schedules the reopen; awaitPendingMigration() is what actually waits for it.
+                        graphManager.switchGraph(graphId, forceReinit = true)
+                        reopenedRepositorySet = graphManager.awaitPendingMigration()
 
-                    // Step 7: only on the happy path, and only once reopen is confirmed, is the
-                    // new location persisted — never through a closed/unconfirmed connection.
-                    val successfulOutcome = copyOutcome
-                    if (reopenedRepositorySet != null && successfulOutcome is Either.Right) {
-                        // GraphInfo.path is the registry field GraphManager actually uses to open
-                        // this graph's content (App.kt's currentGraphPath init, FilePathRootMigration,
-                        // this coordinator's own resolveSourceRoot for AppOwned) — onGraphLocationDetermined
-                        // alone only records storage_locations' kind/uri metadata and never touches it,
-                        // so without this call a "successful" relocate would leave the app reading/
-                        // writing the graph at its old path while the new copy sits untouched.
-                        graphManager.updateGraphContentPath(graphId, successfulOutcome.value)
-                        graphManager.onGraphLocationDetermined(graphIdValue, operation.destination)
+                        // Step 7: only on the happy path, and only once reopen is confirmed, is the
+                        // new location persisted — never through a closed/unconfirmed connection.
+                        val successfulOutcome = copyOutcome
+                        if (reopenedRepositorySet != null && successfulOutcome is Either.Right) {
+                            // GraphInfo.path is the registry field GraphManager actually uses to open
+                            // this graph's content (App.kt's currentGraphPath init, FilePathRootMigration,
+                            // this coordinator's own resolveSourceRoot for AppOwned) — onGraphLocationDetermined
+                            // alone only records storage_locations' kind/uri metadata and never touches it,
+                            // so without this call a "successful" relocate would leave the app reading/
+                            // writing the graph at its old path while the new copy sits untouched.
+                            graphManager.updateGraphContentPath(graphId, successfulOutcome.value)
+                            graphManager.onGraphLocationDetermined(graphIdValue, operation.destination).onLeft {
+                                logger.warn("relocate: failed to persist storage_locations for graph $graphIdValue after a successful move: $it")
+                            }
 
-                        // Epic 5.2: release the source's persisted access grant (e.g. a SAF tree
-                        // URI permission) now that the copy is verified, repointed, reopened, and
-                        // persisted. `deleteSourceAfterVerify` (StorageMoveOperation.Relocate) has
-                        // no reader anywhere in this codebase today — no call site ever passes
-                        // `true` — so there is no "confirmed cleanup" step to hook this to yet.
-                        // Releasing here instead: the app will never touch operation.source via
-                        // this graph again regardless of that flag, so the OS-level grant is safe
-                        // to drop now rather than waiting on cleanup logic that doesn't exist.
-                        quiesceStrategy.releaseSourceGrant(operation.source)
+                            // Epic 5.2: release the source's persisted access grant (e.g. a SAF tree
+                            // URI permission) now that the copy is verified, repointed, reopened, and
+                            // persisted. `deleteSourceAfterVerify` (StorageMoveOperation.Relocate) has
+                            // no reader anywhere in this codebase today — no call site ever passes
+                            // `true` — so there is no "confirmed cleanup" step to hook this to yet.
+                            // Releasing here instead: the app will never touch operation.source via
+                            // this graph again regardless of that flag, so the OS-level grant is safe
+                            // to drop now rather than waiting on cleanup logic that doesn't exist.
+                            quiesceStrategy.releaseSourceGrant(operation.source)
+                        }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Throwable) {
+                        logger.error("relocate: unexpected failure during reopen/repersist cleanup for graph $graphIdValue", e)
                     }
                 }
             }
@@ -256,14 +286,26 @@ class GraphRelocationCoordinator(
                 else -> StorageMoveUiState.Summary
             }
             logMoveTerminal(operation, terminalState)
+            releaseOnce()
             send(terminalState)
         } finally {
             // Step 8, shared by every exit path above (success, ordinary failure, quiesce
             // timeout/failure, or cancellation at any point) — under NonCancellable so it still
-            // runs when this coroutine itself has been cancelled.
-            withContext(NonCancellable) {
-                quiesceStrategy.release(operation)
-                MoveInProgressFlag.setMoveInProgress(graphIdValue, false)
+            // runs when this coroutine itself has been cancelled. Only re-runs the release when
+            // the normal-exit `releaseOnce()` calls above never got a chance to (i.e. this
+            // coroutine was cancelled before reaching one) — see `released`'s doc above.
+            if (!released) {
+                withContext(NonCancellable) {
+                    try {
+                        released = true
+                        quiesceStrategy.release(operation)
+                        MoveInProgressFlag.setMoveInProgress(graphIdValue, false)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Throwable) {
+                        logger.error("relocate: unexpected failure releasing quiesce/flag for graph $graphIdValue", e)
+                    }
+                }
             }
         }
     }
@@ -302,6 +344,18 @@ class GraphRelocationCoordinator(
             return@channelFlow
         }
 
+        // See relocate()'s identical `released`/`releaseOnce` doc comment — same rationale: a
+        // normal exit releases the quiesce lock and clears MoveInProgressFlag BEFORE its terminal
+        // state is sent, so a collector reacting to that terminal state never observes the flag
+        // still true.
+        var released = false
+        suspend fun releaseOnce() {
+            if (released) return
+            released = true
+            quiesceStrategy.release(operation)
+            MoveInProgressFlag.setMoveInProgress(graphIdValue, false)
+        }
+
         MoveInProgressFlag.setMoveInProgress(graphIdValue, true)
         try {
             send(StorageMoveUiState.Quiescing)
@@ -311,21 +365,32 @@ class GraphRelocationCoordinator(
             if (quiesceOutcome == null) {
                 val timeoutState = StorageMoveUiState.Failed(DomainError.StorageError.QuiesceTimedOut(QUIESCE_TIMEOUT_MS))
                 logMoveTerminal(operation, timeoutState)
+                releaseOnce()
                 send(timeoutState)
                 return@channelFlow
             }
             if (quiesceOutcome is Either.Left) {
                 val failedState = StorageMoveUiState.Failed(quiesceOutcome.value)
                 logMoveTerminal(operation, failedState)
+                releaseOnce()
                 send(failedState)
                 return@channelFlow
             }
 
-            attachHostLink(step, operation)
+            attachHostLink(step, operation, ::releaseOnce)
         } finally {
-            withContext(NonCancellable) {
-                quiesceStrategy.release(operation)
-                MoveInProgressFlag.setMoveInProgress(graphIdValue, false)
+            if (!released) {
+                withContext(NonCancellable) {
+                    try {
+                        released = true
+                        quiesceStrategy.release(operation)
+                        MoveInProgressFlag.setMoveInProgress(graphIdValue, false)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Throwable) {
+                        logger.error("link: unexpected failure releasing quiesce/flag for graph $graphIdValue", e)
+                    }
+                }
             }
         }
     }
@@ -333,11 +398,14 @@ class GraphRelocationCoordinator(
     /**
      * Resolves [operation]'s source root, invokes [step], and — on success — persists the new
      * [StorageLocation] via [GraphManager.onGraphLocationDetermined]. Extracted from [link] purely
-     * to keep that function's own body short; not reused anywhere else.
+     * to keep that function's own body short; not reused anywhere else. [releaseOnce] is [link]'s
+     * quiesce-release/flag-clear closure — called before every terminal `send` here too, for the
+     * same "cleanup before terminal state" reason [link] itself does.
      */
     private suspend fun ProducerScope<StorageMoveUiState>.attachHostLink(
         step: HostLinkStep,
         operation: StorageMoveOperation.Link,
+        releaseOnce: suspend () -> Unit,
     ) {
         // Reuses resolveSourceRoot unchanged — the same AppOwned-via-GraphManager lookup
         // relocate() already depends on, not new/duplicated logic.
@@ -345,6 +413,7 @@ class GraphRelocationCoordinator(
             is Either.Left -> {
                 val failedState = StorageMoveUiState.Failed(resolved.value)
                 logMoveTerminal(operation, failedState)
+                releaseOnce()
                 send(failedState)
                 return
             }
@@ -356,6 +425,7 @@ class GraphRelocationCoordinator(
             is Either.Left -> {
                 val failedState = StorageMoveUiState.Failed(linkOutcome.value)
                 logMoveTerminal(operation, failedState)
+                releaseOnce()
                 send(failedState)
             }
             is Either.Right -> {
@@ -365,9 +435,12 @@ class GraphRelocationCoordinator(
                 // why Android's step opts out (Story 4.2.1: "Link never repoints the location of
                 // record — only Relocate does").
                 if (step.persistsDestinationOnSuccess) {
-                    graphManager.onGraphLocationDetermined(operation.graphId, operation.destination)
+                    graphManager.onGraphLocationDetermined(operation.graphId, operation.destination).onLeft {
+                        logger.warn("link: failed to persist storage_locations for graph ${operation.graphId} after a successful link: $it")
+                    }
                 }
                 logMoveTerminal(operation, StorageMoveUiState.Summary)
+                releaseOnce()
                 send(StorageMoveUiState.Summary)
             }
         }
@@ -419,7 +492,16 @@ class GraphRelocationCoordinator(
             if (createdDirs.add(parent)) fileSystem.createDirectory(parent)
             FileMove(from = "$stagingPath/$relativePath", to = to)
         }
-        AtomicFileRelocationStep.relocate(fileSystem, moves).map { destinationRoot }
+        val relocateResult = AtomicFileRelocationStep.relocate(fileSystem, moves)
+        if (relocateResult is Either.Right) {
+            // AtomicFileRelocationStep only moves report.verifiedPaths — the staging directory's
+            // own .marker file (RelocationStagingDirectory.writeMarker) is never one of those
+            // paths, so without this the now-empty staging directory (bar its marker) would
+            // otherwise sit orphaned until RelocationStagingDirectory.sweep()'s 7-day grace period
+            // next runs. deleteFile mirrors sweep()'s own precedent for deleting a directory path.
+            fileSystem.deleteFile(stagingPath)
+        }
+        relocateResult.map { destinationRoot }
     }
 
     /**

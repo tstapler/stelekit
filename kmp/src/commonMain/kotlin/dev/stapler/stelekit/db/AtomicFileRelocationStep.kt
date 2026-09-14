@@ -7,6 +7,7 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.platform.FileSystem
 
 /**
@@ -25,14 +26,25 @@ data class FileMove(val from: String, val to: String, val optional: Boolean = fa
  * growing that 40-commit-churn file further.
  */
 object AtomicFileRelocationStep {
+    private val logger = Logger("AtomicFileRelocationStep")
+
     fun relocate(fileSystem: FileSystem, files: List<FileMove>): Either<DomainError.StorageError, Unit> {
         val applied = mutableListOf<FileMove>()
         for (move in files) {
             val skippedAsAbsentOptional = move.optional && !fileSystem.fileExists(move.from)
             val succeeded = skippedAsAbsentOptional || fileSystem.renameFile(move.from, move.to)
             if (!succeeded) {
+                // Best-effort rollback: a rename failing here means a file is left stranded at
+                // `done.to` with nothing referencing it there — log which ones so a partial
+                // recovery state (some files back at their original path, some not) is at least
+                // diagnosable instead of silently swallowed.
                 for (done in applied.asReversed()) {
-                    fileSystem.renameFile(done.to, done.from)
+                    if (!fileSystem.renameFile(done.to, done.from)) {
+                        logger.error(
+                            "relocate: rollback rename failed after ${move.from} -> ${move.to} failed — " +
+                                "${done.to} could not be moved back to ${done.from}, file may be stranded",
+                        )
+                    }
                 }
                 return DomainError.StorageError.RelocationFailed(move.from).left()
             }

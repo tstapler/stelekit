@@ -25,11 +25,12 @@ class BulkCopyVerifierTest {
         }
         val verifier = BulkCopyVerifier(fileSystem)
 
-        val batchSizes = mutableListOf<Int>()
+        // (processed, total) as reported by each onBatchProgress call.
+        val progressCalls = mutableListOf<Pair<Int, Int>>()
         val result = verifier.copyAndVerifyPaths(
             sourceRoot = "source",
             destinationRoot = "destination",
-            onBatchProgress = { _, batchSize -> batchSizes += batchSize },
+            onBatchProgress = { processed, total -> progressCalls += processed to total },
         )
 
         val report = assertIs<arrow.core.Either.Right<CopyReport>>(result).value
@@ -37,14 +38,57 @@ class BulkCopyVerifierTest {
         assertEquals(fileCount, report.verifiedPaths.size)
 
         // Mirrors GraphLoader.indexRemainingPages's INDEX_BATCH_SIZE = 100 bounded-drain
-        // precedent: never more than COPY_BATCH_SIZE files' worth of a batch processed at once,
-        // and the 8,030-file source required more than one batch to prove batching actually ran.
-        assertTrue(batchSizes.size > 1, "expected multiple batches, got ${batchSizes.size}")
+        // precedent: infer batching from the number of progress calls — the 8,030-file source
+        // required more than one batch to prove batching actually ran.
+        assertTrue(progressCalls.size > 1, "expected multiple batches, got ${progressCalls.size}")
+
+        // `total` is the WHOLE operation's file count, fixed on every single call — never the
+        // current batch's size. Regression guard for the progress-total/batch-size mismatch:
+        // total used to reset to <= COPY_BATCH_SIZE every batch instead of staying at fileCount.
         assertTrue(
-            batchSizes.all { it <= BulkCopyVerifier.COPY_BATCH_SIZE },
-            "every batch must be <= ${BulkCopyVerifier.COPY_BATCH_SIZE} files, got $batchSizes",
+            progressCalls.all { (_, total) -> total == fileCount },
+            "total must stay fixed at $fileCount on every call, got ${progressCalls.map { it.second }}",
         )
-        assertEquals(fileCount, batchSizes.sum())
+
+        // `processed` climbs monotonically in steps no larger than COPY_BATCH_SIZE and ends
+        // exactly at fileCount.
+        var previousProcessed = 0
+        for ((processed, _) in progressCalls) {
+            assertTrue(
+                processed - previousProcessed <= BulkCopyVerifier.COPY_BATCH_SIZE,
+                "batch step must be <= ${BulkCopyVerifier.COPY_BATCH_SIZE}, got ${processed - previousProcessed}",
+            )
+            previousProcessed = processed
+        }
+        assertEquals(fileCount, previousProcessed)
+    }
+
+    @Test
+    fun `copyAndVerify should ReportProcessedGreaterThanOrEqualToTotalOnlyOnFinalBatch When SourceHas250Files`() = runTest {
+        val fileSystem = FakeFileSystem()
+        val fileCount = 250 // > COPY_BATCH_SIZE (100) -> 3 batches: 100, 100, 50
+        repeat(fileCount) { i ->
+            fileSystem.writeFileBytes("source/page_$i.md", "content $i".encodeToByteArray())
+        }
+        val verifier = BulkCopyVerifier(fileSystem)
+
+        val progressCalls = mutableListOf<Pair<Int, Int>>()
+        val result = verifier.copyAndVerifyPaths(
+            sourceRoot = "source",
+            destinationRoot = "destination",
+            onBatchProgress = { processed, total -> progressCalls += processed to total },
+        )
+
+        assertIs<arrow.core.Either.Right<CopyReport>>(result)
+        assertEquals(listOf(100 to 250, 200 to 250, 250 to 250), progressCalls)
+
+        // GraphRelocationCoordinator.copyIntoStagingThenRepoint fires Verifying exactly when
+        // `processed >= total` — reproducing that same predicate here must be true ONLY on the
+        // last of the three batches. Before the progress-total/batch-size fix this fired after
+        // the FIRST 100-file batch (100 >= batchSize-as-total(100)), i.e. long before the whole
+        // graph was actually copied and verified.
+        val verifyingFiredAt = progressCalls.indexOfFirst { (processed, total) -> total > 0 && processed >= total }
+        assertEquals(progressCalls.lastIndex, verifyingFiredAt, "Verifying must fire only after the LAST batch")
     }
 
     @Test

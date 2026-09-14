@@ -114,11 +114,12 @@ class BulkCopyVerifier(
     internal suspend fun copyAndVerifyPaths(
         sourceRoot: String,
         destinationRoot: String,
-        onBatchProgress: (filesProcessed: Int, batchSize: Int) -> Unit = { _, _ -> },
+        onBatchProgress: (filesProcessed: Int, total: Int) -> Unit = { _, _ -> },
         includeGitDirectory: Boolean = false,
     ): Either<DomainError.StorageError, CopyReport> {
         val relativePaths = fileSystem.listFilesRecursiveWithModTimes(sourceRoot).map { it.first } +
             (if (includeGitDirectory) gitDirectoryRelativePaths(sourceRoot) else emptyList())
+        val total = relativePaths.size
 
         if (spaceCheck !== InsufficientSpaceCheck.NONE) {
             val requiredBytes = relativePaths.sumOf { fileSystem.getFileSize("$sourceRoot/$it") ?: 0L }
@@ -141,7 +142,11 @@ class BulkCopyVerifier(
                 }
             }
             processed += batch.size
-            onBatchProgress(processed, batch.size)
+            // total is the whole operation's file count, fixed for the life of this call — NOT
+            // batch.size, which would make the reported total reset every COPY_BATCH_SIZE batch
+            // and make callers that key off processed >= total (GraphRelocationCoordinator's
+            // Verifying transition) fire after the first batch instead of the last.
+            onBatchProgress(processed, total)
         }
 
         return CopyReport(filesCopied = verified.size, bytesCopied = totalBytes, verifiedPaths = verified).right()
