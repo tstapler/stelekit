@@ -56,6 +56,15 @@ interface FileSystem {
     fun getLastModifiedTime(path: String): Long?
 
     /**
+     * Byte size of the file at [path], or null if it doesn't exist. Default implementation reads
+     * the whole file just to measure it — correct everywhere but not cheap; platforms with a
+     * native stat-like call (`java.io.File.length()`, Android `DocumentFile.length()`) should
+     * override this. Added for [dev.stapler.stelekit.db.BulkCopyVerifier]'s insufficient-space
+     * pre-flight check (Story 3.1.1 Task 3.1.1d), the only current caller.
+     */
+    fun getFileSize(path: String): Long? = readFileBytes(path)?.size?.toLong()
+
+    /**
      * Returns file names paired with their last-modified timestamps in one pass.
      * Default implementation calls [listFiles] + [getLastModifiedTime] per file;
      * JVM overrides this with a single [File.listFiles] traversal to avoid
