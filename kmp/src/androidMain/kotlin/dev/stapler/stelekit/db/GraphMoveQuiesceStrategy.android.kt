@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import arrow.core.Either
+import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.GitSyncBusyCounter
@@ -17,6 +18,7 @@ import dev.stapler.stelekit.model.StorageLocation
 import dev.stapler.stelekit.model.StorageMoveOperation
 import dev.stapler.stelekit.platform.GitWorktreeLocks
 import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 
 /** Same read+write flag pair `MainActivity.takePersistableUriPermission` grants a tree URI with. */
@@ -67,6 +69,19 @@ class AndroidGraphMoveQuiesceStrategy(
     private val releaseUriPermission: (treeUri: String) -> Unit = {},
 ) : GraphMoveQuiesceStrategy {
 
+    companion object {
+        /**
+         * Caps the write-back drain loop below so a persistently-failing flush (repeated SAF
+         * write failures) can't busy-loop real disk I/O until the caller's outer 30s
+         * `QUIESCE_TIMEOUT_MS` kills it with an opaque `QuiesceTimedOut` instead of an actionable
+         * error (MUST FIX from the `app-owned-storage-clone` idiom review).
+         */
+        private const val MAX_WRITE_BACK_FLUSH_ATTEMPTS = 10
+
+        /** Backoff between retryable write-back failures, so the bounded loop isn't a hot spin. */
+        private const val WRITE_BACK_RETRY_DELAY_MS = 200L
+    }
+
     /** Locks acquired by an in-flight [quiesce], keyed by shadow key, so [release] can find them. */
     private val heldLocks = ConcurrentHashMap<String, Mutex>()
 
@@ -83,13 +98,60 @@ class AndroidGraphMoveQuiesceStrategy(
         gitSyncBusyCounter.awaitIdle()
 
         if (target != null) {
-            while (!target.queue.isEmpty()) {
-                target.flush()
-            }
+            val drainError = drainWriteBack(target)
+            if (drainError != null) return drainError.left()
         }
 
         return Unit.right()
     }
+
+    /**
+     * Drains [target]'s write-back queue, bounded by [MAX_WRITE_BACK_FLUSH_ATTEMPTS] (see that
+     * constant's doc for why). Returns null on success, or the [DomainError.StorageError] to
+     * surface: immediately on a [DomainError.GitError.WorkingTreeConcurrentEditDetected] (the
+     * source isn't actually safe to copy yet — mirrors `AndroidGitRepository.merge()`/
+     * `checkoutFile()`'s handling of the same [dev.stapler.stelekit.git.GitShadowFlushActor]
+     * result), or once the attempt bound is exhausted while a retryable
+     * [DomainError.GitError.WorkingTreeWriteBackFailed] keeps the queue non-empty.
+     */
+    private suspend fun drainWriteBack(target: ShadowWorktreeQuiesceTarget): DomainError.StorageError? {
+        var attempts = 0
+        while (!target.queue.isEmpty() && attempts < MAX_WRITE_BACK_FLUSH_ATTEMPTS) {
+            attempts++
+            val flushErrors = target.flush().flushErrors()
+
+            flushErrors.filterIsInstance<DomainError.GitError.WorkingTreeConcurrentEditDetected>()
+                .firstOrNull()
+                ?.let { concurrentEdit ->
+                    return DomainError.StorageError.SourceInFlight(
+                        "concurrent edit detected during write-back quiesce: ${concurrentEdit.path}",
+                    )
+                }
+
+            // Any remaining errors are WorkingTreeWriteBackFailed (transient SAF I/O) — retryable,
+            // so back off briefly and loop again, bounded by MAX_WRITE_BACK_FLUSH_ATTEMPTS.
+            if (!target.queue.isEmpty() && attempts < MAX_WRITE_BACK_FLUSH_ATTEMPTS) {
+                delay(WRITE_BACK_RETRY_DELAY_MS)
+            }
+        }
+
+        if (!target.queue.isEmpty()) {
+            return DomainError.StorageError.SourceInFlight(
+                "write-back queue still has ${target.queue.getAll().size} pending path(s) after " +
+                    "$MAX_WRITE_BACK_FLUSH_ATTEMPTS flush attempts",
+            )
+        }
+
+        return null
+    }
+
+    /**
+     * Extracts the [DomainError.GitError] values out of a [dev.stapler.stelekit.git.GitShadowFlushActor.flush]
+     * result list's failed entries — mirrors `AndroidGitRepository`'s private helper of the same
+     * name/shape, which lives in a different `androidMain` file so isn't reusable directly here.
+     */
+    private fun List<Either<DomainError.GitError, Unit>>.flushErrors(): List<DomainError.GitError> =
+        mapNotNull { (it as? Either.Left)?.value }
 
     override suspend fun release(op: StorageMoveOperation) {
         val shadowKey = shadowWorktreeTarget(op)?.shadowKey
