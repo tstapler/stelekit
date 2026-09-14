@@ -61,6 +61,11 @@ class GitSyncService(
     /** Backs [lastSyncAt] across app restarts. Null (tests, and any caller that doesn't need
      * persistence) makes [lastSyncAt] start at null and never persist. */
     private val settings: Settings? = null,
+    /** Tracks whether [sync] is currently in flight, so the relocate quiesce sequence (Phase 3)
+     * can await idle before moving a graph's `.git` directory. Defaults to a private instance;
+     * callers that need to observe busy-ness externally (e.g. a quiesce strategy) should inject
+     * a shared instance instead. */
+    private val gitSyncBusyCounter: GitSyncBusyCounter = GitSyncBusyCounter(),
 ) {
     private val logger = Logger("GitSyncService")
 
@@ -166,6 +171,11 @@ class GitSyncService(
      */
     suspend fun sync(graphId: String): Either<DomainError.GitError, SyncState.Success> =
         withContext(PlatformDispatcher.IO) {
+            // Bracket the whole pipeline so gitSyncBusyCounter is decremented on every
+            // return@withContext exit path below, not just the success path.
+            gitSyncBusyCounter.begin()
+            try {
+
             // Task 3.4.2c: a manual sync trigger always supersedes any pending scheduled retry.
             rateLimitRetryJob?.cancel()
 
@@ -355,6 +365,9 @@ class GitSyncService(
             recordLastSyncAt(success.lastSyncAt)
             _syncState.value = success
             success.right()
+            } finally {
+                gitSyncBusyCounter.end()
+            }
         }
 
     /**
