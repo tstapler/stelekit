@@ -688,4 +688,19 @@ class RestrictedDatabaseQueries(
         uuid, file_path, relative_path, media_type, subfolder, tags, auto_labels,
         ocr_text, cloud_description, page_uuids, size_bytes, imported_at_ms, content_hash,
     )
+
+    // ── Storage location writes ───────────────────────────────────────────────
+
+    @DirectSqlWrite
+    suspend fun upsertStorageLocation(
+        graph_id: String,
+        kind: String,
+        tree_uri: String?,
+        real_path: String?,
+        display_name: String?,
+        updated_at_epoch_ms: Long,
+    ) = queries.upsertStorageLocation(graph_id, kind, tree_uri, real_path, display_name, updated_at_epoch_ms)
+
+    @DirectSqlWrite
+    suspend fun deleteStorageLocation(graph_id: String) = queries.deleteStorageLocation(graph_id)
 }

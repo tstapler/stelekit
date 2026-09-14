@@ -248,6 +248,16 @@ private class SteleDatabaseImpl(
           |    created_at_ms INTEGER NOT NULL
           |)
           """.trimMargin(), 0).await()
+      driver.execute(null, """
+          |CREATE TABLE IF NOT EXISTS storage_locations (
+          |    graph_id            TEXT NOT NULL PRIMARY KEY,
+          |    kind                TEXT NOT NULL,
+          |    tree_uri            TEXT,
+          |    real_path           TEXT,
+          |    display_name        TEXT,
+          |    updated_at_epoch_ms INTEGER NOT NULL
+          |)
+          """.trimMargin(), 0).await()
       driver.execute(null, "CREATE INDEX idx_pages_namespace ON pages(namespace)", 0).await()
       driver.execute(null, "CREATE INDEX idx_blocks_page_position ON blocks(page_uuid, position)", 0).await()
       driver.execute(null, "CREATE INDEX idx_blocks_parent_position ON blocks(parent_uuid, position)", 0).await()

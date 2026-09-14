@@ -3433,6 +3433,26 @@ public class SteleDatabaseQueries(
 
   public fun selectAllPendingMoves(): Query<Pending_asset_moves> = selectAllPendingMoves(::Pending_asset_moves)
 
+  public fun <T : Any> selectStorageLocation(graph_id: String, mapper: (
+    graph_id: String,
+    kind: String,
+    tree_uri: String?,
+    real_path: String?,
+    display_name: String?,
+    updated_at_epoch_ms: Long,
+  ) -> T): Query<T> = SelectStorageLocationQuery(graph_id) { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2),
+      cursor.getString(3),
+      cursor.getString(4),
+      cursor.getLong(5)!!
+    )
+  }
+
+  public fun selectStorageLocation(graph_id: String): Query<Storage_locations> = selectStorageLocation(graph_id, ::Storage_locations)
+
   public fun selectLastInsertRowId(): ExecutableQuery<Long> = Query(998_850_025, driver, "SteleDatabase.sq", "selectLastInsertRowId", "SELECT last_insert_rowid()") { cursor ->
     cursor.getLong(0)!!
   }
@@ -5210,6 +5230,49 @@ public class SteleDatabaseQueries(
         }.await()
     notifyQueries(-1_920_335_748) { emit ->
       emit("pending_asset_moves")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun upsertStorageLocation(
+    graph_id: String,
+    kind: String,
+    tree_uri: String?,
+    real_path: String?,
+    display_name: String?,
+    updated_at_epoch_ms: Long,
+  ): Long {
+    val result = driver.execute(1_562_779_584, """
+        |INSERT OR REPLACE INTO storage_locations (graph_id, kind, tree_uri, real_path, display_name, updated_at_epoch_ms)
+        |VALUES (?, ?, ?, ?, ?, ?)
+        """.trimMargin(), 6) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, graph_id)
+          bindString(parameterIndex++, kind)
+          bindString(parameterIndex++, tree_uri)
+          bindString(parameterIndex++, real_path)
+          bindString(parameterIndex++, display_name)
+          bindLong(parameterIndex++, updated_at_epoch_ms)
+        }.await()
+    notifyQueries(1_562_779_584) { emit ->
+      emit("storage_locations")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun deleteStorageLocation(graph_id: String): Long {
+    val result = driver.execute(1_562_946_500, """DELETE FROM storage_locations WHERE graph_id = ?""", 1) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, graph_id)
+        }.await()
+    notifyQueries(1_562_946_500) { emit ->
+      emit("storage_locations")
     }
     return result
   }
@@ -7663,5 +7726,25 @@ public class SteleDatabaseQueries(
     }
 
     override fun toString(): String = "SteleDatabase.sq:selectOrphanedAssets"
+  }
+
+  private inner class SelectStorageLocationQuery<out T : Any>(
+    public val graph_id: String,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("storage_locations", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("storage_locations", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(-161_263_533, """SELECT storage_locations.graph_id, storage_locations.kind, storage_locations.tree_uri, storage_locations.real_path, storage_locations.display_name, storage_locations.updated_at_epoch_ms FROM storage_locations WHERE graph_id = ?""", mapper, 1) {
+      var parameterIndex = 0
+      bindString(parameterIndex++, graph_id)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectStorageLocation"
   }
 }

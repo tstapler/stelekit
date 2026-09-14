@@ -337,6 +337,10 @@ ORDER BY depth, parent_uuid, position"""),
         AuditQuery("selectGitConfig",
             "SELECT * FROM git_config WHERE graph_id = 'x'"),
 
+        // ── storage_locations ─────────────────────────────────────────────────────────────────
+        AuditQuery("selectStorageLocation",
+            "SELECT * FROM storage_locations WHERE graph_id = 'x'"),
+
         // ── image_annotations ─────────────────────────────────────────────────────────────────
         AuditQuery("selectAllImageAnnotations",
             "SELECT * FROM image_annotations ORDER BY imported_at_ms DESC"),
@@ -488,6 +492,10 @@ ORDER BY depth, parent_uuid, position"""),
                 // ── git_config — needed for selectGitConfig ───────────────────────────────────
                 seed.execute(
                     "INSERT OR IGNORE INTO git_config(graph_id,repo_root) VALUES('g1','/repo')"
+                )
+                // ── storage_locations — needed for selectStorageLocation ──────────────────────
+                seed.execute(
+                    "INSERT OR IGNORE INTO storage_locations(graph_id,kind,updated_at_epoch_ms) VALUES('g1','AppOwned',0)"
                 )
                 seed.execute("ANALYZE")
             }

@@ -5,6 +5,8 @@
 package dev.stapler.stelekit.db
 
 import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
 import dev.stapler.stelekit.domain.CaptureEnrichmentCoordinator
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.GitAuth
@@ -26,6 +28,7 @@ import dev.stapler.stelekit.model.DEMO_GRAPH_ID
 import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.GraphInfo
 import dev.stapler.stelekit.model.GraphRegistry
+import dev.stapler.stelekit.model.StorageLocation
 import dev.stapler.stelekit.vault.VaultManager
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.Settings
@@ -116,6 +119,11 @@ class GraphManager(
 
     // Track active coroutines for cleanup during graph switches
     private val activeGraphJobs = mutableMapOf<GraphId, CoroutineScope>()
+
+    // Locations passed to addGraph() before that graph's own database is open (addGraph() runs
+    // before the caller's own switchGraph() call reopens the driver — see onGraphLocationDetermined).
+    // Flushed by switchGraph()'s init block once a writeActor exists for the graph.
+    private val pendingStorageLocations = mutableMapOf<GraphId, StorageLocation>()
 
     // Memoized per-graph CaptureEnrichmentCoordinator construction (Epic 1.2). coordinatorMutex
     // guards only the cache read/insert below, never the Deferred.await() — see
@@ -329,7 +337,7 @@ class GraphManager(
     fun graphIdFromPath(path: String): GraphId =
         GraphId(ContentHasher.sha256(path).take(16))
 
-    suspend fun addGraph(path: String): GraphId {
+    suspend fun addGraph(path: String, location: StorageLocation? = null): GraphId {
         // Use expanded path for consistent ID generation
         val expandedPath = fileSystem.expandTilde(path)
         val graphId = graphIdFromPath(expandedPath)
@@ -360,6 +368,10 @@ class GraphManager(
             )
             _graphRegistry.value = updated
             saveRegistry()
+        }
+
+        if (location != null) {
+            onGraphLocationDetermined(graphId.value, location)
         }
 
         // Fire-and-forget git detection; updates registry when complete
@@ -792,6 +804,11 @@ class GraphManager(
                         logger.info("init[${elapsed()}ms]: content migrations done")
                     }
                 }
+                // Flush any StorageLocation queued by addGraph() before this graph's driver was
+                // open (see onGraphLocationDetermined's KDoc).
+                pendingStorageLocations.remove(id)?.let { location ->
+                    repoSet.writeActor?.let { actor -> writeStorageLocation(factory, actor, id.value, location) }
+                }
                 repoSet.spanEmitter?.emit("db.init", t0)
             } catch (e: CancellationException) {
                 throw e
@@ -1017,6 +1034,52 @@ class GraphManager(
     }
 
     /**
+     * Persists [location] as [graphId]'s `storage_locations` row — the single place this table
+     * is ever written from a creation or relocate flow (ADR-001, Story 1.1.3). If [graphId] isn't
+     * the currently active graph (its driver may not be open yet — e.g. called from [addGraph]
+     * before the caller's own [switchGraph]), the write is queued in [pendingStorageLocations]
+     * and flushed by [switchGraph]'s init block once that graph's writeActor exists.
+     */
+    suspend fun onGraphLocationDetermined(graphId: String, location: StorageLocation) {
+        val id = GraphId(graphId)
+        val factory = currentFactory as? dev.stapler.stelekit.repository.RepositoryFactoryImpl
+        val actor = _activeRepositorySet.value?.writeActor
+        if (factory != null && actor != null && getActiveGraphId() == id) {
+            writeStorageLocation(factory, actor, graphId, location)
+        } else {
+            pendingStorageLocations[id] = location
+        }
+    }
+
+    private suspend fun writeStorageLocation(
+        factory: dev.stapler.stelekit.repository.RepositoryFactoryImpl,
+        actor: DatabaseWriteActor,
+        graphId: String,
+        location: StorageLocation,
+    ) {
+        val restricted = RestrictedDatabaseQueries(factory.steleDatabase().steleDatabaseQueries)
+        val row = location.toStorageLocationRow()
+        actor.execute(DatabaseWriteActor.Priority.HIGH) {
+            try {
+                @OptIn(DirectSqlWrite::class)
+                restricted.upsertStorageLocation(
+                    graph_id = graphId,
+                    kind = row.kind,
+                    tree_uri = row.treeUri,
+                    real_path = row.realPath,
+                    display_name = row.displayName,
+                    updated_at_epoch_ms = Clock.System.now().toEpochMilliseconds(),
+                )
+                Unit.right()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
+            }
+        }
+    }
+
+    /**
      * Clean up all resources when shutting down
      */
     fun shutdown() {
@@ -1034,4 +1097,19 @@ class GraphManager(
         currentFactory?.close()
         currentFactory = null
     }
+}
+
+/** The `storage_locations` table's per-kind nullable columns, derived from one [StorageLocation]. */
+private data class StorageLocationRow(
+    val kind: String,
+    val treeUri: String?,
+    val realPath: String?,
+    val displayName: String?,
+)
+
+private fun StorageLocation.toStorageLocationRow(): StorageLocationRow = when (this) {
+    is StorageLocation.AppOwned -> StorageLocationRow(kind = "AppOwned", treeUri = null, realPath = null, displayName = null)
+    is StorageLocation.SafFolder -> StorageLocationRow(kind = "SafFolder", treeUri = treeUri, realPath = null, displayName = null)
+    is StorageLocation.DirectAccessFolder -> StorageLocationRow(kind = "DirectAccessFolder", treeUri = null, realPath = realPath, displayName = null)
+    is StorageLocation.HostFolder -> StorageLocationRow(kind = "HostFolder", treeUri = null, realPath = null, displayName = displayName)
 }

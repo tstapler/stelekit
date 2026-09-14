@@ -810,6 +810,21 @@ object MigrationRunner {
                 "ANALYZE pages",
             )
         ),
+        Migration(
+            name = "storage_locations_table",
+            statements = listOf(
+                """
+                CREATE TABLE IF NOT EXISTS storage_locations (
+                    graph_id            TEXT NOT NULL PRIMARY KEY,
+                    kind                TEXT NOT NULL,
+                    tree_uri            TEXT,
+                    real_path           TEXT,
+                    display_name        TEXT,
+                    updated_at_epoch_ms INTEGER NOT NULL
+                )
+                """
+            )
+        ),
     )
 
     /**
