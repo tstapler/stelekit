@@ -1,6 +1,5 @@
 package dev.stapler.stelekit.db
 
-import dev.stapler.stelekit.db.sidecar.FakeFileSystem
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.StorageLocation
 import kotlin.test.Test
@@ -18,7 +17,7 @@ class BulkCopyVerifierTest {
 
     @Test
     fun `copyAndVerify should ProcessFilesInBoundedBatches When SourceHas8030Files`() = runTest {
-        val fileSystem = FakeFileSystem()
+        val fileSystem = FakeRelocationFileSystem()
         val fileCount = 8_030
         repeat(fileCount) { i ->
             fileSystem.writeFileBytes("source/page_$i.md", "content $i".encodeToByteArray())
@@ -65,7 +64,7 @@ class BulkCopyVerifierTest {
 
     @Test
     fun `copyAndVerify should ReportProcessedGreaterThanOrEqualToTotalOnlyOnFinalBatch When SourceHas250Files`() = runTest {
-        val fileSystem = FakeFileSystem()
+        val fileSystem = FakeRelocationFileSystem()
         val fileCount = 250 // > COPY_BATCH_SIZE (100) -> 3 batches: 100, 100, 50
         repeat(fileCount) { i ->
             fileSystem.writeFileBytes("source/page_$i.md", "content $i".encodeToByteArray())
@@ -143,7 +142,7 @@ class BulkCopyVerifierTest {
 
     @Test
     fun `copyAndVerify should call decodeFileName for identity, not a raw comparison`() = runTest {
-        val fileSystem = FakeFileSystem()
+        val fileSystem = FakeRelocationFileSystem()
         val sanitized = dev.stapler.stelekit.util.FileUtils.sanitizeFileName("Q&A_notes")
         fileSystem.writeFileBytes("source/$sanitized.md", "content".encodeToByteArray())
         val verifier = BulkCopyVerifier(fileSystem)
@@ -159,7 +158,7 @@ class BulkCopyVerifierTest {
     }
 
     /** Simulates a torn/corrupted write by flipping a byte the instant [corruptOnWriteTo] is written. */
-    private class ByteFlippingFakeFileSystem(private val corruptOnWriteTo: String) : FakeFileSystem() {
+    private class ByteFlippingFakeFileSystem(private val corruptOnWriteTo: String) : FakeRelocationFileSystem() {
         override fun writeFileBytes(path: String, data: ByteArray): Boolean {
             val toWrite = if (path == corruptOnWriteTo) {
                 data.copyOf().also { it[0] = (it[0].toInt() xor 0xFF).toByte() }
