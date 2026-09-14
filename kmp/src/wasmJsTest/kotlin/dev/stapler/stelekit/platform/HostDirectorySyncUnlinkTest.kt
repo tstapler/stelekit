@@ -4,6 +4,7 @@
 package dev.stapler.stelekit.platform
 
 import arrow.core.Either
+import arrow.core.right
 import dev.stapler.stelekit.db.unlinkHostDirectoryAndPersist
 import dev.stapler.stelekit.git.model.DirtyEntry
 import dev.stapler.stelekit.git.model.DirtyOp
@@ -91,6 +92,7 @@ class HostDirectorySyncUnlinkTest {
 
         val result = unlinkHostDirectoryAndPersist(sync, "g1") { graphId, location ->
             persistedCalls += graphId to location
+            Unit.right()
         }
 
         assertIs<Either.Right<Unit>>(result)
@@ -111,7 +113,7 @@ class HostDirectorySyncUnlinkTest {
         val sync = disconnectedSync(OpfsGraphSlug("g2"), FakeCacheAccess(), testScope)
         var persistCallCount = 0
 
-        val result = unlinkHostDirectoryAndPersist(sync, "g2") { _, _ -> persistCallCount++ }
+        val result = unlinkHostDirectoryAndPersist(sync, "g2") { _, _ -> persistCallCount++; Unit.right() }
 
         assertIs<Either.Right<Unit>>(result)
         assertEquals(1, persistCallCount)

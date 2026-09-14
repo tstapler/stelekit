@@ -8,9 +8,12 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.StorageLocation
 import dev.stapler.stelekit.platform.HostAccessState
 import dev.stapler.stelekit.platform.HostDirectorySync
+
+private val logger = Logger("HostLinkStep.wasmJs")
 
 /**
  * Wires a [HostLinkStep] to [hostDirectorySync]'s real [HostDirectorySync.connectHostDirectory] —
@@ -45,11 +48,13 @@ internal fun createWasmJsHostLinkStep(hostDirectorySync: HostDirectorySync): Hos
 internal suspend fun unlinkHostDirectoryAndPersist(
     hostDirectorySync: HostDirectorySync,
     graphId: String,
-    onGraphLocationDetermined: suspend (graphId: String, location: StorageLocation) -> Unit,
+    onGraphLocationDetermined: suspend (graphId: String, location: StorageLocation) -> Either<DomainError, Unit>,
 ): Either<DomainError.StorageError, Unit> {
     val result = hostDirectorySync.unlinkHostDirectory()
     if (result is Either.Right) {
-        onGraphLocationDetermined(graphId, StorageLocation.AppOwned(graphId))
+        onGraphLocationDetermined(graphId, StorageLocation.AppOwned(graphId)).onLeft {
+            logger.warn("unlinkHostDirectoryAndPersist: failed to persist AppOwned storage location for graph $graphId: $it")
+        }
     }
     return result
 }

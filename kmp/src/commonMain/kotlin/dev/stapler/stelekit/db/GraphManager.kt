@@ -371,7 +371,9 @@ class GraphManager(
         }
 
         if (location != null) {
-            onGraphLocationDetermined(graphId.value, location)
+            onGraphLocationDetermined(graphId.value, location).onLeft {
+                logger.warn("addGraph: failed to persist storage location for graph $graphId: $it")
+            }
         }
 
         // Fire-and-forget git detection; updates registry when complete
@@ -817,9 +819,16 @@ class GraphManager(
                     }
                 }
                 // Flush any StorageLocation queued by addGraph() before this graph's driver was
-                // open (see onGraphLocationDetermined's KDoc).
-                pendingStorageLocations.remove(id)?.let { location ->
-                    repoSet.writeActor?.let { actor -> writeStorageLocation(factory, actor, id.value, location) }
+                // open (see onGraphLocationDetermined's KDoc). Only pop the queued entry once the
+                // write actually runs — popping unconditionally when writeActor is still null
+                // (e.g. a non-SQLDELIGHT backend) would silently drop the location forever.
+                pendingStorageLocations[id]?.let { location ->
+                    repoSet.writeActor?.let { actor ->
+                        writeStorageLocation(factory, actor, id.value, location).onLeft {
+                            logger.warn("switchGraph: failed to flush pending storage location for graph $id: $it")
+                        }
+                        pendingStorageLocations.remove(id)
+                    }
                 }
                 repoSet.spanEmitter?.emit("db.init", t0)
             } catch (e: CancellationException) {
@@ -1077,14 +1086,15 @@ class GraphManager(
      * before the caller's own [switchGraph]), the write is queued in [pendingStorageLocations]
      * and flushed by [switchGraph]'s init block once that graph's writeActor exists.
      */
-    override suspend fun onGraphLocationDetermined(graphId: String, location: StorageLocation) {
+    override suspend fun onGraphLocationDetermined(graphId: String, location: StorageLocation): Either<DomainError, Unit> {
         val id = GraphId(graphId)
         val factory = currentFactory as? dev.stapler.stelekit.repository.RepositoryFactoryImpl
         val actor = _activeRepositorySet.value?.writeActor
-        if (factory != null && actor != null && getActiveGraphId() == id) {
+        return if (factory != null && actor != null && getActiveGraphId() == id) {
             writeStorageLocation(factory, actor, graphId, location)
         } else {
             pendingStorageLocations[id] = location
+            Unit.right()
         }
     }
 
@@ -1106,6 +1116,7 @@ class GraphManager(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                logger.warn("getStorageLocation: failed to read storage_locations row for graph $graphId", e)
                 null
             }
         }
@@ -1116,10 +1127,10 @@ class GraphManager(
         actor: DatabaseWriteActor,
         graphId: String,
         location: StorageLocation,
-    ) {
+    ): Either<DomainError, Unit> {
         val restricted = RestrictedDatabaseQueries(factory.steleDatabase().steleDatabaseQueries)
         val row = location.toStorageLocationRow()
-        actor.execute(DatabaseWriteActor.Priority.HIGH) {
+        return actor.execute(DatabaseWriteActor.Priority.HIGH) {
             try {
                 @OptIn(DirectSqlWrite::class)
                 restricted.upsertStorageLocation(
@@ -1167,13 +1178,32 @@ private data class StorageLocationRow(
     val displayName: String?,
 )
 
-/** The inverse of [toStorageLocationRow] — reconstructs a [StorageLocation] from a persisted row. */
+private val storageLocationLogger = Logger("GraphManager.StorageLocation")
+
+/**
+ * The inverse of [toStorageLocationRow] — reconstructs a [StorageLocation] from a persisted row.
+ * A `null` here means either "no row" (handled by the caller before this is invoked) or genuine
+ * corruption — an unrecognized `kind` or a `kind`/nullable-column mismatch — which is logged so it
+ * isn't silently indistinguishable from the "no row" case at the call site.
+ */
 private fun Storage_locations.toStorageLocationModel(): StorageLocation? = when (kind) {
     "AppOwned" -> StorageLocation.AppOwned(graph_id)
-    "SafFolder" -> tree_uri?.let { StorageLocation.SafFolder(graph_id, it) }
-    "DirectAccessFolder" -> real_path?.let { StorageLocation.DirectAccessFolder(graph_id, it) }
-    "HostFolder" -> display_name?.let { StorageLocation.HostFolder(graph_id, it) }
-    else -> null
+    "SafFolder" -> tree_uri?.let { StorageLocation.SafFolder(graph_id, it) } ?: run {
+        storageLocationLogger.warn("storage_locations row for $graph_id has kind=SafFolder but a null tree_uri — treating as corrupt")
+        null
+    }
+    "DirectAccessFolder" -> real_path?.let { StorageLocation.DirectAccessFolder(graph_id, it) } ?: run {
+        storageLocationLogger.warn("storage_locations row for $graph_id has kind=DirectAccessFolder but a null real_path — treating as corrupt")
+        null
+    }
+    "HostFolder" -> display_name?.let { StorageLocation.HostFolder(graph_id, it) } ?: run {
+        storageLocationLogger.warn("storage_locations row for $graph_id has kind=HostFolder but a null display_name — treating as corrupt")
+        null
+    }
+    else -> {
+        storageLocationLogger.warn("storage_locations row for $graph_id has unrecognized kind='$kind' — treating as corrupt")
+        null
+    }
 }
 
 private fun StorageLocation.toStorageLocationRow(): StorageLocationRow = when (this) {

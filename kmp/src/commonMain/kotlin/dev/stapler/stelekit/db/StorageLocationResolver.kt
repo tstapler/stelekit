@@ -4,6 +4,9 @@
 
 package dev.stapler.stelekit.db
 
+import arrow.core.Either
+import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.StorageLocation
 
 /**
@@ -13,7 +16,7 @@ import dev.stapler.stelekit.model.StorageLocation
  */
 interface StorageLocationStore {
     suspend fun getStorageLocation(graphId: String): StorageLocation?
-    suspend fun onGraphLocationDetermined(graphId: String, location: StorageLocation)
+    suspend fun onGraphLocationDetermined(graphId: String, location: StorageLocation): Either<DomainError, Unit>
 }
 
 /**
@@ -39,10 +42,16 @@ interface StorageLocationResolver {
     suspend fun resolveOrBackfill(graphId: String): StorageLocation
 }
 
+private val logger = Logger("StorageLocationResolver")
+
 /**
  * Shared short-circuit + write-back behind every platform's [StorageLocationResolver.resolveOrBackfill]:
  * return the persisted row when one exists, otherwise run [derive] exactly once, persist its
  * result, and return it.
+ *
+ * The derived value is returned regardless of whether the write-back succeeds — the caller
+ * already has the correct in-memory answer for this call — but a write failure means the backfill
+ * wasn't durable and will be re-derived on the next call, so it's logged rather than swallowed.
  */
 internal suspend fun resolveOrBackfillStorageLocation(
     store: StorageLocationStore,
@@ -51,6 +60,8 @@ internal suspend fun resolveOrBackfillStorageLocation(
 ): StorageLocation {
     store.getStorageLocation(graphId)?.let { return it }
     val derived = derive()
-    store.onGraphLocationDetermined(graphId, derived)
+    store.onGraphLocationDetermined(graphId, derived).onLeft {
+        logger.warn("resolveOrBackfill: failed to persist backfilled storage location for graph $graphId: $it")
+    }
     return derived
 }

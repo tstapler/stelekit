@@ -4,6 +4,9 @@
 
 package dev.stapler.stelekit.db
 
+import arrow.core.Either
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.StorageLocation
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -23,9 +26,10 @@ class StorageLocationResolverTest {
 
         override suspend fun getStorageLocation(graphId: String): StorageLocation? = rows[graphId]
 
-        override suspend fun onGraphLocationDetermined(graphId: String, location: StorageLocation) {
+        override suspend fun onGraphLocationDetermined(graphId: String, location: StorageLocation): Either<DomainError, Unit> {
             writeCount++
             rows[graphId] = location
+            return Unit.right()
         }
     }
 

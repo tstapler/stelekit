@@ -255,7 +255,13 @@ private class SteleDatabaseImpl(
           |    tree_uri            TEXT,
           |    real_path           TEXT,
           |    display_name        TEXT,
-          |    updated_at_epoch_ms INTEGER NOT NULL
+          |    updated_at_epoch_ms INTEGER NOT NULL,
+          |    CHECK (
+          |        (kind = 'AppOwned'           AND tree_uri IS NULL     AND real_path IS NULL     AND display_name IS NULL) OR
+          |        (kind = 'SafFolder'          AND tree_uri IS NOT NULL AND real_path IS NULL     AND display_name IS NULL) OR
+          |        (kind = 'DirectAccessFolder' AND real_path IS NOT NULL AND tree_uri IS NULL     AND display_name IS NULL) OR
+          |        (kind = 'HostFolder'         AND display_name IS NOT NULL AND tree_uri IS NULL  AND real_path IS NULL)
+          |    )
           |)
           """.trimMargin(), 0).await()
       driver.execute(null, "CREATE INDEX idx_pages_namespace ON pages(namespace)", 0).await()
