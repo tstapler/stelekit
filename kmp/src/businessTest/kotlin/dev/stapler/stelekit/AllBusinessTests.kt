@@ -22,6 +22,12 @@ package dev.stapler.stelekit
 // DocRepoLocator, shared by 4 of them) to try that resource first, falling back to the original
 // Gradle-only resolution — the same Bazel-resource/Gradle-fallback idiom DemoFileSystemSyncTest
 // already applies to DemoFileSystem.kt.
+//
+// This regressed a second time on 2026-09-14 (PR #327): 15 of 16 new relocation/storage-move
+// test classes were added without a suite entry. AllBusinessTestsCompletenessTest now scans the
+// runtime classpath for every dev.stapler.stelekit `*Test` class carrying a JUnit `@Test` method
+// and fails if it isn't registered here, so a missing entry is caught by this suite itself
+// instead of relying on someone noticing.
 import dev.stapler.stelekit.clipboard.BlockClipboardTest
 import dev.stapler.stelekit.domain.ImportServiceTest
 import dev.stapler.stelekit.editor.LinkInsertionTest
@@ -55,15 +61,29 @@ import dev.stapler.stelekit.asset.pipeline.AssetPipelineServiceTest
 import dev.stapler.stelekit.asset.pipeline.PluginRegistryTest
 import dev.stapler.stelekit.auto.AudiobookNoteFormatterTest
 import dev.stapler.stelekit.auto.AudiobookNoteWriterTest
+import dev.stapler.stelekit.db.AtomicFileRelocationStepTest
 import dev.stapler.stelekit.db.BlockHierarchyCteTest
+import dev.stapler.stelekit.db.BulkCopyVerifierTest
 import dev.stapler.stelekit.db.DiskConflictBlockMatcherTest
 import dev.stapler.stelekit.db.GraphLoaderDirtySetTest
 import dev.stapler.stelekit.db.GraphManagerAddGraphTest
 import dev.stapler.stelekit.db.GraphManagerEnrichmentCoordinatorTest
 import dev.stapler.stelekit.db.GraphManagerInitAutoRestoreTest
+import dev.stapler.stelekit.db.GraphManagerOnGraphLocationDeterminedTest
 import dev.stapler.stelekit.db.GraphManagerRemoveGraphTest
 import dev.stapler.stelekit.db.GraphManagerUpdateGraphPathTest
 import dev.stapler.stelekit.db.GraphManagerUpdateHostDirNameTest
+import dev.stapler.stelekit.db.GraphRelocationCoordinatorAppOwnedTest
+import dev.stapler.stelekit.db.GraphRelocationCoordinatorCancellationTest
+import dev.stapler.stelekit.db.GraphRelocationCoordinatorFailureTest
+import dev.stapler.stelekit.db.GraphRelocationCoordinatorFlagClearingTest
+import dev.stapler.stelekit.db.GraphRelocationCoordinatorLinkTest
+import dev.stapler.stelekit.db.GraphRelocationCoordinatorLoggingTest
+import dev.stapler.stelekit.db.GraphRelocationCoordinatorPathPersistenceTest
+import dev.stapler.stelekit.db.GraphRelocationCoordinatorQuiesceTimeoutTest
+import dev.stapler.stelekit.db.GraphRelocationCoordinatorReopenFailureTest
+import dev.stapler.stelekit.db.GraphRelocationCoordinatorSameGraphSwitchTest
+import dev.stapler.stelekit.db.GraphRelocationCoordinatorTest
 import dev.stapler.stelekit.db.GraphSwitchInvalidationTest
 import dev.stapler.stelekit.db.IndexDrainSectionFilterTest
 import dev.stapler.stelekit.db.MigrationRunnerCoverageTest
@@ -71,6 +91,7 @@ import dev.stapler.stelekit.db.MigrationRunnerIndexTest
 import dev.stapler.stelekit.db.MigrationRunnerSchemaSyncTest
 import dev.stapler.stelekit.db.RelocationStagingDirectoryTest
 import dev.stapler.stelekit.db.SqliteStatementAnalyzerTest
+import dev.stapler.stelekit.db.StorageLocationPersistenceTest
 import dev.stapler.stelekit.db.WithoutRowidMigrationTest
 import dev.stapler.stelekit.docs.BacklogTriageRuleTest
 import dev.stapler.stelekit.docs.GapBacklogSchemaTest
@@ -129,6 +150,7 @@ import org.junit.runners.Suite
 
 @RunWith(Suite::class)
 @Suite.SuiteClasses(
+    AllBusinessTestsCompletenessTest::class,
     BlockClipboardTest::class,
     ImportServiceTest::class,
     LinkInsertionTest::class,
@@ -162,15 +184,29 @@ import org.junit.runners.Suite
     PluginRegistryTest::class,
     AudiobookNoteFormatterTest::class,
     AudiobookNoteWriterTest::class,
+    AtomicFileRelocationStepTest::class,
     BlockHierarchyCteTest::class,
+    BulkCopyVerifierTest::class,
     DiskConflictBlockMatcherTest::class,
     GraphLoaderDirtySetTest::class,
     GraphManagerAddGraphTest::class,
     GraphManagerEnrichmentCoordinatorTest::class,
     GraphManagerInitAutoRestoreTest::class,
+    GraphManagerOnGraphLocationDeterminedTest::class,
     GraphManagerRemoveGraphTest::class,
     GraphManagerUpdateGraphPathTest::class,
     GraphManagerUpdateHostDirNameTest::class,
+    GraphRelocationCoordinatorAppOwnedTest::class,
+    GraphRelocationCoordinatorCancellationTest::class,
+    GraphRelocationCoordinatorFailureTest::class,
+    GraphRelocationCoordinatorFlagClearingTest::class,
+    GraphRelocationCoordinatorLinkTest::class,
+    GraphRelocationCoordinatorLoggingTest::class,
+    GraphRelocationCoordinatorPathPersistenceTest::class,
+    GraphRelocationCoordinatorQuiesceTimeoutTest::class,
+    GraphRelocationCoordinatorReopenFailureTest::class,
+    GraphRelocationCoordinatorSameGraphSwitchTest::class,
+    GraphRelocationCoordinatorTest::class,
     GraphSwitchInvalidationTest::class,
     IndexDrainSectionFilterTest::class,
     MigrationRunnerCoverageTest::class,
@@ -178,6 +214,7 @@ import org.junit.runners.Suite
     MigrationRunnerSchemaSyncTest::class,
     RelocationStagingDirectoryTest::class,
     SqliteStatementAnalyzerTest::class,
+    StorageLocationPersistenceTest::class,
     WithoutRowidMigrationTest::class,
     BacklogTriageRuleTest::class,
     GapBacklogSchemaTest::class,
