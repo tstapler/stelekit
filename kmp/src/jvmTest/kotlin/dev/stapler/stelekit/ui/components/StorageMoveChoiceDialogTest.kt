@@ -35,8 +35,8 @@ class StorageMoveChoiceDialogTest {
                 graphName = "My Notes",
                 source = source,
                 destination = destination,
-                onRelocateChosen = {},
-                onLinkChosen = {},
+                onRelocateChoose = {},
+                onLinkChoose = {},
                 onDismissRequest = {},
             )
         }
@@ -58,8 +58,8 @@ class StorageMoveChoiceDialogTest {
                 source = source,
                 destination = destination,
                 isLinkAvailable = false,
-                onRelocateChosen = {},
-                onLinkChosen = {},
+                onRelocateChoose = {},
+                onLinkChoose = {},
                 onDismissRequest = {},
             )
         }
@@ -80,8 +80,8 @@ class StorageMoveChoiceDialogTest {
                 graphName = "My Notes",
                 source = source,
                 destination = destination,
-                onRelocateChosen = { relocateChosen = true },
-                onLinkChosen = { linkChosen = true },
+                onRelocateChoose = { relocateChosen = true },
+                onLinkChoose = { linkChosen = true },
                 onDismissRequest = { dismissed = true },
             )
         }

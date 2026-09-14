@@ -18,6 +18,10 @@ import java.util.zip.ZipOutputStream
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 
+/** Characters stripped from [AndroidGraphZipExporter]'s share-sheet file name — hoisted out of
+ * [AndroidGraphZipExporter.export]'s lambda so it isn't recompiled on every call. */
+private val UNSAFE_FILENAME_CHARS = Regex("[^a-zA-Z0-9._-]")
+
 /**
  * Android [GraphZipExporter] (Story 2.2.1, Task 2.2.1e / ADR-003): recursively reads a graph's
  * markdown via [FileSystem], writes a real `.zip` with `java.util.zip.ZipOutputStream` (already
@@ -35,7 +39,7 @@ class AndroidGraphZipExporter : GraphZipExporter {
         try {
             val context = SteleKitContext.context
             val cacheDir = File(context.cacheDir, "share_export").also { it.mkdirs() }
-            val safeName = graphName.replace(Regex("[^a-zA-Z0-9._-]"), "_").ifEmpty { "graph" }
+            val safeName = graphName.replace(UNSAFE_FILENAME_CHARS, "_").ifEmpty { "graph" }
             val zipFile = File(cacheDir, "$safeName.zip")
 
             ZipOutputStream(FileOutputStream(zipFile)).use { zip ->

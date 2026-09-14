@@ -36,8 +36,8 @@ fun StorageMoveConfirmDialog(
     graphName: String,
     source: StorageLocation,
     destination: StorageLocation,
-    confirmLabel: String = "Move",
     onConfirm: () -> Unit,
+    confirmLabel: String = "Move",
     onDismissRequest: () -> Unit,
 ) {
     val cancelFocusRequester = remember { FocusRequester() }

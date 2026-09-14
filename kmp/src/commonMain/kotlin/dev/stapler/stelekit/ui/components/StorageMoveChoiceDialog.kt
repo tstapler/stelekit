@@ -47,11 +47,11 @@ fun StorageMoveChoiceDialog(
     graphName: String,
     source: StorageLocation,
     destination: StorageLocation,
+    onRelocateChoose: () -> Unit,
+    onLinkChoose: () -> Unit,
     isLinkAvailable: Boolean = true,
     isUnlinking: Boolean = false,
     linkUnavailableNote: String = "Continuous sync isn't available yet for graphs without git.",
-    onRelocateChosen: () -> Unit,
-    onLinkChosen: () -> Unit,
     onDismissRequest: () -> Unit,
 ) {
     AlertDialog(
@@ -66,7 +66,7 @@ fun StorageMoveChoiceDialog(
         confirmButton = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
-                    onClick = onRelocateChosen,
+                    onClick = onRelocateChoose,
                     modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
                 ) {
                     Column {
@@ -80,7 +80,7 @@ fun StorageMoveChoiceDialog(
                 }
                 if (isLinkAvailable) {
                     OutlinedButton(
-                        onClick = onLinkChosen,
+                        onClick = onLinkChoose,
                         modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
                     ) {
                         Column {

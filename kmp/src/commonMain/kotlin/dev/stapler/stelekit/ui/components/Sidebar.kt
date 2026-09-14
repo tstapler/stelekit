@@ -120,9 +120,9 @@ fun LeftSidebar(
     supportsHostDirectoryLink: Boolean = false,
     /** Story 3.2.2 — see [GraphSwitcher]'s parameter doc. */
     storageLocationResolver: StorageLocationResolver? = null,
-    onBrowseRequestedForMove: suspend (String) -> StorageLocation? = { null },
+    onBrowseRequestForMove: suspend (String) -> StorageLocation? = { null },
     /** See [GraphSwitcher]'s parameter doc. */
-    onBrowseClickedForMove: () -> Unit = {},
+    onBrowseClickForMove: () -> Unit = {},
     moveStorageLocationPlatformCapabilities: Boolean = false,
     /** Epic 4.2 (Story 4.2.1): resolves whether [StorageMoveChoiceDialog]'s "Link" option should
      * be offered for a graph's move flow — real signal is `GitRepository.isGitRepo(graph.path)`
@@ -136,8 +136,8 @@ fun LeftSidebar(
      * `GraphRelocationCoordinator.relocate()` (Relocate) or `connectHostDirectory` (Link, Epic
      * 4.1). Null (the default) means nothing happens once the user confirms — this file has no
      * coordinator instance to invoke itself, matching the composition-root wiring gap Epics 3.2/
-     * 3.3 already left for [storageLocationResolver] and [onBrowseRequestedForMove]. */
-    onStorageLocationChosen: (operation: StorageMoveOperation) -> Unit = {},
+     * 3.3 already left for [storageLocationResolver] and [onBrowseRequestForMove]. */
+    onStorageLocationChoose: (operation: StorageMoveOperation) -> Unit = {},
     gitSyncedGraphId: String? = null,
     /** Pages captured from another graph by [onExportPagesForMerge], not yet merged in here.
      * Cross-graph page/journal recovery — see GraphMergeService's class doc. */
@@ -197,11 +197,11 @@ fun LeftSidebar(
                 onRelinkHostDirectory = onRelinkHostDirectory,
                 supportsHostDirectoryLink = supportsHostDirectoryLink,
                 storageLocationResolver = storageLocationResolver,
-                onBrowseRequestedForMove = onBrowseRequestedForMove,
-                onBrowseClickedForMove = onBrowseClickedForMove,
+                onBrowseRequestForMove = onBrowseRequestForMove,
+                onBrowseClickForMove = onBrowseClickForMove,
                 moveStorageLocationPlatformCapabilities = moveStorageLocationPlatformCapabilities,
                 isGraphGitCloned = isGraphGitCloned,
-                onStorageLocationChosen = onStorageLocationChosen,
+                onStorageLocationChoose = onStorageLocationChoose,
                 gitSyncedGraphId = gitSyncedGraphId,
                 isDemoActive = isDemoActive,
                 hostAccessState = hostAccessState,
@@ -436,11 +436,11 @@ fun GraphSwitcher(
      * once it has a real resolver to inject.
      */
     storageLocationResolver: StorageLocationResolver? = null,
-    /** Threaded into [UnifiedLocationPicker]'s `onBrowseRequested` for the relocate flow. */
-    onBrowseRequestedForMove: suspend (String) -> StorageLocation? = { null },
+    /** Threaded into [UnifiedLocationPicker]'s `onBrowseRequest` for the relocate flow. */
+    onBrowseRequestForMove: suspend (String) -> StorageLocation? = { null },
     /** Must run synchronously in the "Browse…" row's own click handler — same transient-user-
-     * activation constraint as [UnifiedLocationPicker]'s `onBrowseClicked`. */
-    onBrowseClickedForMove: () -> Unit = {},
+     * activation constraint as [UnifiedLocationPicker]'s `onBrowseClick`. */
+    onBrowseClickForMove: () -> Unit = {},
     /** Whether the relocate flow's [UnifiedLocationPicker] shows a "Browse…" row. */
     moveStorageLocationPlatformCapabilities: Boolean = false,
     /** See [LeftSidebar]'s parameter doc — gates [StorageMoveChoiceDialog]'s "Link" option. */
@@ -451,7 +451,7 @@ fun GraphSwitcher(
      * see [Sidebar]'s parameter doc for why this is still a hand-off point rather than a direct
      * coordinator call.
      */
-    onStorageLocationChosen: (operation: StorageMoveOperation) -> Unit = {},
+    onStorageLocationChoose: (operation: StorageMoveOperation) -> Unit = {},
     gitSyncedGraphId: String? = null,
     isDemoActive: Boolean = false,
     /** Epic 2.3: host-directory connection state for [activeGraphId] only — used to show a
@@ -729,7 +729,7 @@ fun GraphSwitcher(
 
     // Story 3.2.2: UnifiedLocationPicker for the "Move storage location…" flow, opened once
     // resolveOrBackfill (above) completes. Epic 3.4: once a destination is picked, control passes
-    // to StorageMoveChoiceDialog (Relocate vs Link) below, not straight to onStorageLocationChosen.
+    // to StorageMoveChoiceDialog (Relocate vs Link) below, not straight to onStorageLocationChoose.
     val movingGraph = movingStorageForGraph
     if (movingGraph != null) {
         UnifiedLocationPicker(
@@ -737,8 +737,8 @@ fun GraphSwitcher(
             graphId = movingGraph.id.value,
             appStorageSubtitle = "Kept inside SteleKit only — not visible in your device's file manager.",
             platformCapabilities = moveStorageLocationPlatformCapabilities,
-            onBrowseClicked = onBrowseClickedForMove,
-            onBrowseRequested = { onBrowseRequestedForMove(movingGraph.id.value) },
+            onBrowseClick = onBrowseClickForMove,
+            onBrowseRequest = { onBrowseRequestForMove(movingGraph.id.value) },
             onConfirm = { destination ->
                 choosingMoveFor = PendingStorageMove(
                     graph = movingGraph,
@@ -770,11 +770,11 @@ fun GraphSwitcher(
             // only a real continuous mirror for git-cloned Android graphs (the existing
             // shadow-worktree write-back mechanism); plain graphs get the disabled note instead.
             isLinkAvailable = choosing.isLinkAvailable,
-            onRelocateChosen = {
+            onRelocateChoose = {
                 confirmingMove = choosing.copy(isRelocate = true)
                 choosingMoveFor = null
             },
-            onLinkChosen = {
+            onLinkChoose = {
                 confirmingMove = choosing.copy(isRelocate = false)
                 choosingMoveFor = null
             },
@@ -783,9 +783,9 @@ fun GraphSwitcher(
     }
 
     // Epic 3.4 (Story 3.4.2): names the exact source/destination before handing off to
-    // onStorageLocationChosen — the composition root's job (not this file's) is to actually drive
+    // onStorageLocationChoose — the composition root's job (not this file's) is to actually drive
     // GraphRelocationCoordinator.relocate()/connectHostDirectory from there and show
-    // StorageMoveProgressDialog for the result; see onStorageLocationChosen's doc above.
+    // StorageMoveProgressDialog for the result; see onStorageLocationChoose's doc above.
     val confirming = confirmingMove
     if (confirming != null) {
         StorageMoveConfirmDialog(
@@ -810,7 +810,7 @@ fun GraphSwitcher(
                         destination = confirming.destination,
                     )
                 }
-                onStorageLocationChosen(operation)
+                onStorageLocationChoose(operation)
                 confirmingMove = null
             },
             onDismissRequest = { confirmingMove = null },

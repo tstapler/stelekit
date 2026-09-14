@@ -32,8 +32,8 @@ class StorageMoveProgressDialogTest {
                 state = state,
                 onCancel = onCancel,
                 onRetry = onRetry,
-                onSummaryAcknowledged = {},
-                onReopenFailedAcknowledged = {},
+                onSummaryAcknowledge = {},
+                onReopenFailedAcknowledge = {},
             )
         }
     }
@@ -155,8 +155,8 @@ class StorageMoveProgressDialogTest {
                 ),
                 onCancel = {},
                 onRetry = {},
-                onSummaryAcknowledged = {},
-                onReopenFailedAcknowledged = { acknowledged = true },
+                onSummaryAcknowledge = {},
+                onReopenFailedAcknowledge = { acknowledged = true },
             )
         }
 

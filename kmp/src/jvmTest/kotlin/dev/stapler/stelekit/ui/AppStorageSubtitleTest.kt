@@ -3,7 +3,7 @@
 
 package dev.stapler.stelekit.ui
 
-import dev.stapler.stelekit.ui.components.PlainGraphAppOwnedWarningWebCopy
+import dev.stapler.stelekit.ui.components.PLAIN_GRAPH_APP_OWNED_WARNING_WEB_COPY
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
@@ -30,7 +30,7 @@ class AppStorageSubtitleTest {
 
     @Test
     fun `appStorageSubtitleFor should ReturnWebCopy when platform is Web`() {
-        assertEquals(PlainGraphAppOwnedWarningWebCopy, appStorageSubtitleFor("Web"))
+        assertEquals(PLAIN_GRAPH_APP_OWNED_WARNING_WEB_COPY, appStorageSubtitleFor("Web"))
     }
 
     @Test
@@ -38,7 +38,7 @@ class AppStorageSubtitleTest {
         // Desktop/iOS never show UnifiedLocationPicker's App-storage row today (no platform
         // currently reports "Desktop" here since fileSystem.supportsAppOwnedStorage gates the
         // whole picker) — falling through to the Web copy is the safer default over Android's.
-        assertEquals(PlainGraphAppOwnedWarningWebCopy, appStorageSubtitleFor("Desktop"))
+        assertEquals(PLAIN_GRAPH_APP_OWNED_WARNING_WEB_COPY, appStorageSubtitleFor("Desktop"))
     }
 
     @Test

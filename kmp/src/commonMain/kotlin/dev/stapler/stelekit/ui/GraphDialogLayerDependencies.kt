@@ -66,11 +66,11 @@ data class SettingsDialogDeps(
     // SettingsDialog's own parameter docs. Null onMoveStorageLocation hides the entry entirely.
     val onMoveStorageLocation: (suspend () -> dev.stapler.stelekit.model.StorageLocation)? = null,
     val storageMoveGraphName: String = "this graph",
-    val onStorageLocationChosen: (dev.stapler.stelekit.model.StorageMoveOperation) -> Unit = {},
+    val onStorageLocationChoose: (dev.stapler.stelekit.model.StorageMoveOperation) -> Unit = {},
     // Story 3.3.3 (AppOwned→HostFolder direction): see FolderSyncSettings's own parameter docs.
     // Null keeps that direction a logged no-op.
-    val onBrowseRequestedForMove: (suspend () -> dev.stapler.stelekit.model.StorageLocation?)? = null,
-    val onBrowseClickedForMove: () -> Unit = {},
+    val onBrowseRequestForMove: (suspend () -> dev.stapler.stelekit.model.StorageLocation?)? = null,
+    val onBrowseClickForMove: () -> Unit = {},
     // Epic 4.1 (Task 4.1.2c): "Unlink folder" affordance inside FolderSyncSettings — see
     // SettingsDialog's own parameter docs. Null onUnlinkHostDirectory hides the entry entirely.
     val onUnlinkHostDirectory: (suspend () -> Unit)? = null,

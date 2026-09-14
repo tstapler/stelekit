@@ -706,7 +706,9 @@ class GraphManager(
         // init is slow, so the LaunchedEffect arrives while _activeRepositorySet is still null,
         // and checking only (a) lets the second call cancel the first init scope → crash.
         val currentGraphId = registry.activeGraphId
-        if (currentGraphId == id && !forceReinit && (_activeRepositorySet.value != null || activeGraphJobs.containsKey(id))) return
+        val isAlreadyTargetGraph = currentGraphId == id && !forceReinit
+        val hasReadyOrInitializingRepositories = _activeRepositorySet.value != null || activeGraphJobs.containsKey(id)
+        if (isAlreadyTargetGraph && hasReadyOrInitializingRepositories) return
         currentGraphId?.let {
             activeGraphJobs.remove(it)?.cancel()
             evictCoordinatorFor(it)

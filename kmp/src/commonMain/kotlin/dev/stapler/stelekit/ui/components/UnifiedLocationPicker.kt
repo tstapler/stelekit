@@ -41,8 +41,8 @@ private const val BROWSE_DEFAULT_SUBTITLE = "Pick a folder on your device"
  * Stable test tags for the two pinned rows — used by [UnifiedLocationPicker]'s own tests and by
  * integration tests in Epics 2.2/2.3 that embed this composable.
  */
-const val UnifiedLocationPickerAppStorageRowTag = "unified-location-picker-app-storage-row"
-const val UnifiedLocationPickerBrowseRowTag = "unified-location-picker-browse-row"
+const val UNIFIED_LOCATION_PICKER_APP_STORAGE_ROW_TAG = "unified-location-picker-app-storage-row"
+const val UNIFIED_LOCATION_PICKER_BROWSE_ROW_TAG = "unified-location-picker-browse-row"
 
 /**
  * A user's in-progress choice inside [UnifiedLocationPicker], before "Next" resolves it to a
@@ -74,9 +74,9 @@ private fun StorageLocation.displayLabel(): String = when (this) {
  */
 private suspend fun resolveBrowseSelection(
     current: PickerSelection?,
-    onBrowseRequested: suspend () -> StorageLocation?,
+    onBrowseRequest: suspend () -> StorageLocation?,
 ): PickerSelection? {
-    val picked = onBrowseRequested()
+    val picked = onBrowseRequest()
     return when {
         picked != null -> PickerSelection.Browsed(picked)
         current is PickerSelection.Browsed -> null
@@ -95,7 +95,7 @@ private suspend fun resolveBrowseSelection(
  * No row is pre-selected on open, per `research/ux.md` §5's "no default action, must actively
  * choose" pattern — [onConfirm] can only fire once the user taps a row.
  *
- * This composable never calls a platform folder-picker API itself: [onBrowseRequested] is supplied
+ * This composable never calls a platform folder-picker API itself: [onBrowseRequest] is supplied
  * by the platform-specific caller (wired in Epics 2.2/2.3), since only the caller knows whether a
  * picked location should resolve to [StorageLocation.SafFolder] (Android) or
  * [StorageLocation.HostFolder] (Web). A `null` result means the user cancelled the native picker —
@@ -105,9 +105,9 @@ private suspend fun resolveBrowseSelection(
  * @param appStorageSubtitle the exact platform copy for the "App storage" row's subtitle
  * (`design/ux.md` §2 / plan.md Task 2.1.1b) — supplied by the caller since only it knows whether it
  * is running on Android or Web.
- * @param onBrowseClicked invoked synchronously, in the same Compose click-handler call stack, the
- * instant the "Browse…" row is tapped — *before* [onBrowseRequested] runs inside a coroutine
- * launch. Exists because [onBrowseRequested] is a `suspend` lambda dispatched through that launch,
+ * @param onBrowseClick invoked synchronously, in the same Compose click-handler call stack, the
+ * instant the "Browse…" row is tapped — *before* [onBrowseRequest] runs inside a coroutine
+ * launch. Exists because [onBrowseRequest] is a `suspend` lambda dispatched through that launch,
  * which on wasmJs can lose the browser's "transient user activation" window before
  * `window.showDirectoryPicker()` is ever called (`stack.md` §3,
  * [dev.stapler.stelekit.platform.showDirectoryPickerPromise]'s doc comment). The wasmJs caller
@@ -120,11 +120,11 @@ fun UnifiedLocationPicker(
     graphId: String,
     appStorageSubtitle: String,
     platformCapabilities: Boolean,
-    onBrowseRequested: suspend () -> StorageLocation?,
+    onBrowseRequest: suspend () -> StorageLocation?,
     onConfirm: (StorageLocation) -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
-    onBrowseClicked: () -> Unit = {},
+    onBrowseClick: () -> Unit = {},
 ) {
     var selection by remember { mutableStateOf<PickerSelection?>(null) }
     val scope = rememberCoroutineScope()
@@ -143,9 +143,9 @@ fun UnifiedLocationPicker(
                 selection = selection,
                 onSelectAppStorage = { selection = PickerSelection.AppStorage },
                 onBrowseClick = {
-                    // Must run before scope.launch, not inside it — see onBrowseClicked's doc.
-                    onBrowseClicked()
-                    scope.launch { selection = resolveBrowseSelection(selection, onBrowseRequested) }
+                    // Must run before scope.launch, not inside it — see onBrowseClick's doc.
+                    onBrowseClick()
+                    scope.launch { selection = resolveBrowseSelection(selection, onBrowseRequest) }
                 },
             )
         },
@@ -175,7 +175,7 @@ private fun LocationPickerRows(
             label = "App storage",
             subtitle = appStorageSubtitle,
             selected = selection == PickerSelection.AppStorage,
-            testTag = UnifiedLocationPickerAppStorageRowTag,
+            testTag = UNIFIED_LOCATION_PICKER_APP_STORAGE_ROW_TAG,
             onClick = onSelectAppStorage,
         )
         if (platformCapabilities) {
@@ -183,7 +183,7 @@ private fun LocationPickerRows(
                 label = "Browse…",
                 subtitle = browseSubtitle,
                 selected = selection is PickerSelection.Browsed,
-                testTag = UnifiedLocationPickerBrowseRowTag,
+                testTag = UNIFIED_LOCATION_PICKER_BROWSE_ROW_TAG,
                 onClick = onBrowseClick,
             )
         }

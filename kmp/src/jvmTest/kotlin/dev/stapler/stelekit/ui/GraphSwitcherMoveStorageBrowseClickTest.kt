@@ -14,16 +14,16 @@ import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.GraphInfo
 import dev.stapler.stelekit.model.StorageLocation
 import dev.stapler.stelekit.ui.components.GraphSwitcher
-import dev.stapler.stelekit.ui.components.UnifiedLocationPickerBrowseRowTag
+import dev.stapler.stelekit.ui.components.UNIFIED_LOCATION_PICKER_BROWSE_ROW_TAG
 import org.junit.Rule
 import org.junit.Test
 import kotlin.test.assertEquals
 
 /**
  * Idiom-review MUST FIX: the Sidebar/`GraphSwitcher` "Move storage location…" flow's
- * [dev.stapler.stelekit.ui.components.UnifiedLocationPicker] must call `onBrowseClickedForMove`
+ * [dev.stapler.stelekit.ui.components.UnifiedLocationPicker] must call `onBrowseClickForMove`
  * synchronously from the "Browse…" row's own click handler — before the suspend
- * `onBrowseRequestedForMove` runs — so the platform's native directory picker (e.g. wasmJs's
+ * `onBrowseRequestForMove` runs — so the platform's native directory picker (e.g. wasmJs's
  * `showDirectoryPicker()`) is invoked inside the click's transient-user-activation window. Every
  * other `UnifiedLocationPicker` call site in this diff (`App.kt`'s new-graph picker,
  * `FolderSyncSettings`'s move flow, `GitSetupScreen`'s clone picker) already threads this hook;
@@ -59,8 +59,8 @@ class GraphSwitcherMoveStorageBrowseClickTest {
                             StorageLocation.AppOwned(graphId)
                     },
                     moveStorageLocationPlatformCapabilities = true,
-                    onBrowseClickedForMove = { events += "clicked" },
-                    onBrowseRequestedForMove = { _ ->
+                    onBrowseClickForMove = { events += "clicked" },
+                    onBrowseRequestForMove = { _ ->
                         events += "requested"
                         null
                     },
@@ -77,14 +77,14 @@ class GraphSwitcherMoveStorageBrowseClickTest {
         composeTestRule.onNodeWithText("Move storage location…").performClick()
         composeTestRule.waitForIdle()
 
-        composeTestRule.onNodeWithTag(UnifiedLocationPickerBrowseRowTag).performClick()
+        composeTestRule.onNodeWithTag(UNIFIED_LOCATION_PICKER_BROWSE_ROW_TAG).performClick()
         composeTestRule.waitForIdle()
 
         assertEquals(
             listOf("clicked", "requested"),
             events,
-            "onBrowseClickedForMove must fire synchronously in the click handler, before the " +
-                "suspend onBrowseRequestedForMove runs",
+            "onBrowseClickForMove must fire synchronously in the click handler, before the " +
+                "suspend onBrowseRequestForMove runs",
         )
     }
 }

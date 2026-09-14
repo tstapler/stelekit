@@ -254,7 +254,7 @@ fun GitSetupScreen(
     var cloneStorageLocation by remember { mutableStateOf<StorageLocation?>(null) }
     var showCloneLocationPicker by remember { mutableStateOf(false) }
     var pendingAppOwnedGraphPath by remember { mutableStateOf("") }
-    // Set alongside the StorageLocation.SafFolder returned from the picker's onBrowseRequested —
+    // Set alongside the StorageLocation.SafFolder returned from the picker's onBrowseRequest —
     // SafFolder.treeUri only carries the tree-root segment (see the comment at its construction
     // below), so the full saf://<tree>/<subpath> repoRoot this screen/JGit needs is stashed here
     // rather than reconstructed from that shorter field.
@@ -687,12 +687,12 @@ fun GitSetupScreen(
             graphId = graphIdFromPath(fileSystem.expandTilde(pendingAppOwnedGraphPath)),
             appStorageSubtitle = appStorageSubtitleFor(getDeviceInfo().platform),
             platformCapabilities = fileSystem.supportsNativeDirectoryPicker,
-            onBrowseClicked = {
-                // Must run synchronously here, not inside onBrowseRequested's scope.launch — see
-                // UnifiedLocationPicker's onBrowseClicked doc / stack.md §3's Chrome requirement.
+            onBrowseClick = {
+                // Must run synchronously here, not inside onBrowseRequest's scope.launch — see
+                // UnifiedLocationPicker's onBrowseClick doc / stack.md §3's Chrome requirement.
                 fileSystem.requestDirectoryPickerNow()
             },
-            onBrowseRequested = {
+            onBrowseRequest = {
                 val path = fileSystem.pickDirectoryAsync()
                 path?.let {
                     val expanded = fileSystem.expandTilde(it)

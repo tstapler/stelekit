@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.ui.components.settings
 
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -67,18 +68,18 @@ fun FolderSyncSettings(
     graphName: String = "this graph",
     /** Epic 3.4: fires once the user confirms in [StorageMoveConfirmDialog] — see
      * [MoveStorageLocationSection]'s doc comment for which direction this covers today. */
-    onStorageLocationChosen: (operation: StorageMoveOperation) -> Unit = {},
+    onStorageLocationChoose: (operation: StorageMoveOperation) -> Unit = {},
     /**
      * Story 3.3.3 (AppOwned→HostFolder direction): backed by [dev.stapler.stelekit.platform.FileSystem.pickHostFolderNamePreview],
-     * threaded into [UnifiedLocationPicker]'s `onBrowseRequested` when the resolved source is
+     * threaded into [UnifiedLocationPicker]'s `onBrowseRequest` when the resolved source is
      * [StorageLocation.AppOwned] — see [MoveStorageLocationSection]'s doc comment. `null` (the
      * default) keeps that direction a logged no-op, so this stays backward compatible for any
      * caller that hasn't wired a picker in yet.
      */
-    onBrowseRequestedForMove: (suspend () -> StorageLocation?)? = null,
+    onBrowseRequestForMove: (suspend () -> StorageLocation?)? = null,
     /** Must run synchronously in the "Browse…" row's own click handler — same transient-user-
-     * activation constraint as [UnifiedLocationPicker]'s `onBrowseClicked`. */
-    onBrowseClickedForMove: () -> Unit = {},
+     * activation constraint as [UnifiedLocationPicker]'s `onBrowseClick`. */
+    onBrowseClickForMove: () -> Unit = {},
     /**
      * Epic 4.1 (Task 4.1.2c): detaches a currently-linked host folder while keeping the graph on
      * OPFS — should invoke `HostDirectorySync.unlinkHostDirectory()` (plus persisting the
@@ -94,122 +95,132 @@ fun FolderSyncSettings(
     var uiState by remember { mutableStateOf<ReconciliationUiState?>(null) }
     var isUnlinking by remember { mutableStateOf(false) }
 
-    // Independent of the "Enable live folder sync" gate below — a graph's storage location can be
-    // moved whether or not live folder sync is available/connected. Suppressed only while an
-    // "Enable live folder sync" reconciliation flow (uiState != null) is actively showing, so the
-    // two async actions never compete for the same screen at once.
-    if (onMoveStorageLocation != null && uiState == null) {
-        MoveStorageLocationSection(
-            onMoveStorageLocation = onMoveStorageLocation,
-            scope = scope,
-            modifier = modifier,
-            graphName = graphName,
-            onStorageLocationChosen = onStorageLocationChosen,
-            supportsNativeDirectoryPicker = supportsNativeDirectoryPicker,
-            onBrowseRequestedForMove = onBrowseRequestedForMove,
-            onBrowseClickedForMove = onBrowseClickedForMove,
-        )
-    }
+    // Everything below emits into this single outer Column instead of directly into the caller —
+    // compose-rules' MultipleEmitters check requires exactly one top-level emission source, and
+    // two of these sections (the "Move storage location" entry and the "already linked" unlink
+    // section right below) can legitimately render as siblings in the same composition, so this
+    // isn't just a lint-satisfying wrapper. Column wraps its `content` lambda internally before
+    // handing it to `Layout`, so a bare (non-local) `return` isn't legal inside it — the two
+    // `return@Column`s further down only skip the rest of Column's own content, but since Column
+    // is the last statement in this function that has the exact same net effect as the original
+    // top-level `return`s did.
+    Column(modifier = modifier) {
+        // Independent of the "Enable live folder sync" gate below — a graph's storage location can
+        // be moved whether or not live folder sync is available/connected. Suppressed only while an
+        // "Enable live folder sync" reconciliation flow (uiState != null) is actively showing, so
+        // the two async actions never compete for the same screen at once.
+        if (onMoveStorageLocation != null && uiState == null) {
+            MoveStorageLocationSection(
+                onMoveStorageLocation = onMoveStorageLocation,
+                scope = scope,
+                graphName = graphName,
+                onStorageLocationChoose = onStorageLocationChoose,
+                supportsNativeDirectoryPicker = supportsNativeDirectoryPicker,
+                onBrowseRequestForMove = onBrowseRequestForMove,
+                onBrowseClickForMove = onBrowseClickForMove,
+            )
+        }
 
-    // Epic 4.1 (Task 4.1.2c): the "already linked" counterpart to the "Enable live folder sync"
-    // section below — that section's own early-return gate (next block) means it never renders
-    // once hostAccessState leaves NotApplicable, so this is the only place a linked graph's
-    // Folder Sync settings show anything at all.
-    if (uiState == null && onUnlink != null &&
-        hostAccessState != HostAccessState.NotApplicable && hostAccessState != HostAccessState.Unlinked
-    ) {
+        // Epic 4.1 (Task 4.1.2c): the "already linked" counterpart to the "Enable live folder sync"
+        // section below — that section's own early-return gate (next block) means it never renders
+        // once hostAccessState leaves NotApplicable, so this is the only place a linked graph's
+        // Folder Sync settings show anything at all.
+        val hostIsLinked = hostAccessState != HostAccessState.NotApplicable && hostAccessState != HostAccessState.Unlinked
+        if (uiState == null && onUnlink != null && hostIsLinked) {
+            SettingsSection("Folder Sync") {
+                Text(
+                    "This graph is linked to a folder on your computer. Unlinking stops syncing to " +
+                        "that folder — your notes stay safely in the browser.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(12.dp))
+                Button(
+                    onClick = {
+                        isUnlinking = true
+                        scope.launch {
+                            try {
+                                onUnlink()
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Throwable) {
+                                logger.warn("Unlink folder failed: ${e.message}", e)
+                            } finally {
+                                isUnlinking = false
+                            }
+                        }
+                    },
+                    enabled = !isUnlinking,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Unlink folder")
+                }
+            }
+        }
+
+        // Bug fix (code-review repair loop): this guard now runs AFTER `uiState` is read via
+        // `remember`, and only applies while there is no in-progress/terminal reconciliation screen
+        // to show (`uiState == null`). `connectHostDirectory` flips `hostAccessState` to `Granted`
+        // as PART OF the connect flow — before the reconciliation-progress screen is naturally
+        // dismissed by the user via `onDone`/`onCancel` — so a recomposition triggered while
+        // `uiState` is `Connecting`/`Summary`/`Failed` must not bail out here just because
+        // `hostAccessState` has already moved past `NotApplicable`. Doing so (the original bug:
+        // this check sat above the `remember` line, so it ran unconditionally on every
+        // recomposition) would make the in-progress or terminal reconciliation screen disappear
+        // mid-flow — exactly the scenario this composable's own doc comment calls "the
+        // highest-stakes surface in the whole feature" (the UI proving the Critical Finding —
+        // browser edits preserved — didn't just happen silently off-screen).
+        if (uiState == null && (!supportsNativeDirectoryPicker || hostAccessState != HostAccessState.NotApplicable)) {
+            return@Column
+        }
+
+        fun startConnect() {
+            uiState = ReconciliationUiState.Connecting
+            scope.launch {
+                uiState = try {
+                    onConnect()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Throwable) {
+                    ReconciliationUiState.Failed(e.message ?: "Couldn't finish comparing your files")
+                }
+            }
+        }
+
+        val currentUiState = uiState
+        if (currentUiState != null) {
+            FolderSyncReconciliationProgress(
+                state = currentUiState,
+                onDone = { uiState = null },
+                onRetry = { startConnect() },
+                onCancel = { uiState = null },
+            )
+            return@Column
+        }
+
         SettingsSection("Folder Sync") {
             Text(
-                "This graph is linked to a folder on your computer. Unlinking stops syncing to " +
-                    "that folder — your notes stay safely in the browser.",
+                "This graph is stored in your browser only. You can connect it to a folder on your " +
+                    "computer so edits made here are written straight to your files — no export, " +
+                    "no git required.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(12.dp))
-            Button(
-                onClick = {
-                    isUnlinking = true
-                    scope.launch {
-                        try {
-                            onUnlink()
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (e: Throwable) {
-                            logger.warn("Unlink folder failed: ${e.message}", e)
-                        } finally {
-                            isUnlinking = false
-                        }
-                    }
-                },
-                enabled = !isUnlinking,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Unlink folder")
+            Button(onClick = ::startConnect, modifier = Modifier.fillMaxWidth()) {
+                Text("Enable live folder sync")
             }
+            Spacer(Modifier.height(8.dp))
+            // Load-bearing reassurance copy (design/ux.md Surface 7) — directly targets the
+            // Critical Finding's failure mode (silent destruction of browser-only edits on
+            // connect). Must be shown verbatim, before the button is ever clicked, and must never
+            // be cut for space.
+            Text(
+                "Existing edits in this graph are kept — nothing is overwritten when you connect.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
-    }
-
-    // Bug fix (code-review repair loop): this guard now runs AFTER `uiState` is read via
-    // `remember`, and only applies while there is no in-progress/terminal reconciliation screen to
-    // show (`uiState == null`). `connectHostDirectory` flips `hostAccessState` to `Granted` as
-    // PART OF the connect flow — before the reconciliation-progress screen is naturally dismissed
-    // by the user via `onDone`/`onCancel` — so a recomposition triggered while `uiState` is
-    // `Connecting`/`Summary`/`Failed` must not bail out here just because `hostAccessState` has
-    // already moved past `NotApplicable`. Doing so (the original bug: this check sat above the
-    // `remember` line, so it ran unconditionally on every recomposition) would make the in-progress
-    // or terminal reconciliation screen disappear mid-flow — exactly the scenario this composable's
-    // own doc comment calls "the highest-stakes surface in the whole feature" (the UI proving the
-    // Critical Finding — browser edits preserved — didn't just happen silently off-screen).
-    if (uiState == null && (!supportsNativeDirectoryPicker || hostAccessState != HostAccessState.NotApplicable)) {
-        return
-    }
-
-    fun startConnect() {
-        uiState = ReconciliationUiState.Connecting
-        scope.launch {
-            uiState = try {
-                onConnect()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Throwable) {
-                ReconciliationUiState.Failed(e.message ?: "Couldn't finish comparing your files")
-            }
-        }
-    }
-
-    val currentUiState = uiState
-    if (currentUiState != null) {
-        FolderSyncReconciliationProgress(
-            state = currentUiState,
-            onDone = { uiState = null },
-            onRetry = { startConnect() },
-            onCancel = { uiState = null },
-            modifier = modifier,
-        )
-        return
-    }
-
-    SettingsSection("Folder Sync") {
-        Text(
-            "This graph is stored in your browser only. You can connect it to a folder on your " +
-                "computer so edits made here are written straight to your files — no export, " +
-                "no git required.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(12.dp))
-        Button(onClick = ::startConnect, modifier = Modifier.fillMaxWidth()) {
-            Text("Enable live folder sync")
-        }
-        Spacer(Modifier.height(8.dp))
-        // Load-bearing reassurance copy (design/ux.md Surface 7) — directly targets the Critical
-        // Finding's failure mode (silent destruction of browser-only edits on connect). Must be
-        // shown verbatim, before the button is ever clicked, and must never be cut for space.
-        Text(
-            "Existing edits in this graph are kept — nothing is overwritten when you connect.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 
@@ -224,10 +235,10 @@ fun FolderSyncSettings(
  * When the resolved source is already a [StorageLocation.HostFolder] (a live-linked graph), the
  * destination is unambiguously [StorageLocation.AppOwned] — no new location needs to be chosen,
  * so the dialogs open directly. When the resolved source is [StorageLocation.AppOwned] and
- * [onBrowseRequestedForMove] is supplied, [UnifiedLocationPicker] opens first so the user can pick
+ * [onBrowseRequestForMove] is supplied, [UnifiedLocationPicker] opens first so the user can pick
  * a real destination folder via the browser's `showDirectoryPicker()`, mirroring Android's
- * `onBrowseRequestedForMove` wiring in `App.kt`'s `LeftSidebar` call site. A `null`
- * [onBrowseRequestedForMove] (the default) falls back to the previous logged no-op.
+ * `onBrowseRequestForMove` wiring in `App.kt`'s `LeftSidebar` call site. A `null`
+ * [onBrowseRequestForMove] (the default) falls back to the previous logged no-op.
  *
  * **Known remaining gap**: choosing "Relocate" for the AppOwned→HostFolder direction still fails
  * — `GraphRelocationCoordinator` resolves `AppOwned` roots via `GraphManager`/
@@ -241,12 +252,12 @@ fun FolderSyncSettings(
 private fun MoveStorageLocationSection(
     onMoveStorageLocation: suspend () -> StorageLocation,
     scope: CoroutineScope,
-    modifier: Modifier,
+    modifier: Modifier = Modifier,
     graphName: String = "this graph",
-    onStorageLocationChosen: (StorageMoveOperation) -> Unit = {},
+    onStorageLocationChoose: (StorageMoveOperation) -> Unit = {},
     supportsNativeDirectoryPicker: Boolean = false,
-    onBrowseRequestedForMove: (suspend () -> StorageLocation?)? = null,
-    onBrowseClickedForMove: () -> Unit = {},
+    onBrowseRequestForMove: (suspend () -> StorageLocation?)? = null,
+    onBrowseClickForMove: () -> Unit = {},
 ) {
     var isResolving by remember { mutableStateOf(false) }
     var pickingDestinationForSource by remember { mutableStateOf<StorageLocation.AppOwned?>(null) }
@@ -266,7 +277,7 @@ private fun MoveStorageLocationSection(
                                 choosingMoveForSource = location
                                 choosingMoveDestination = StorageLocation.AppOwned(location.graphId)
                             }
-                            location is StorageLocation.AppOwned && onBrowseRequestedForMove != null ->
+                            location is StorageLocation.AppOwned && onBrowseRequestForMove != null ->
                                 pickingDestinationForSource = location
                             else ->
                                 logger.warn(
@@ -293,14 +304,14 @@ private fun MoveStorageLocationSection(
     // Story 3.3.3 (AppOwned→HostFolder direction): picks a real destination before the same
     // Relocate/Link choice below opens — see this function's doc comment.
     val pickingSource = pickingDestinationForSource
-    if (pickingSource != null && onBrowseRequestedForMove != null) {
+    if (pickingSource != null && onBrowseRequestForMove != null) {
         UnifiedLocationPicker(
             title = "Move \"$graphName\" to…",
             graphId = pickingSource.graphId,
             appStorageSubtitle = "Kept inside SteleKit only — not visible in your device's file manager.",
             platformCapabilities = supportsNativeDirectoryPicker,
-            onBrowseClicked = onBrowseClickedForMove,
-            onBrowseRequested = onBrowseRequestedForMove,
+            onBrowseClick = onBrowseClickForMove,
+            onBrowseRequest = onBrowseRequestForMove,
             onConfirm = { destination ->
                 choosingMoveForSource = pickingSource
                 choosingMoveDestination = destination
@@ -320,7 +331,7 @@ private fun MoveStorageLocationSection(
             // True only for the HostFolder→AppOwned direction (see StorageMoveChoiceDialog's own
             // doc) — AppOwned→HostFolder is establishing a new link, not reversing one.
             isUnlinking = choosingSource is StorageLocation.HostFolder,
-            onRelocateChosen = {
+            onRelocateChoose = {
                 confirmingMove = StorageMoveOperation.Relocate(
                     graphId = choosingSource.graphId,
                     source = choosingSource,
@@ -332,7 +343,7 @@ private fun MoveStorageLocationSection(
                 choosingMoveForSource = null
                 choosingMoveDestination = null
             },
-            onLinkChosen = {
+            onLinkChoose = {
                 confirmingMove = StorageMoveOperation.Link(
                     graphId = choosingSource.graphId,
                     source = choosingSource,
@@ -356,7 +367,7 @@ private fun MoveStorageLocationSection(
             destination = confirming.destination,
             confirmLabel = if (confirming is StorageMoveOperation.Relocate) "Move" else "Link",
             onConfirm = {
-                onStorageLocationChosen(confirming)
+                onStorageLocationChoose(confirming)
                 confirmingMove = null
             },
             onDismissRequest = { confirmingMove = null },

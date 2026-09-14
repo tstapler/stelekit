@@ -11,7 +11,7 @@ import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.PlatformFileSystem
-import dev.stapler.stelekit.ui.components.PlainGraphAppOwnedWarningAndroidCopy
+import dev.stapler.stelekit.ui.components.PLAIN_GRAPH_APP_OWNED_WARNING_ANDROID_COPY
 import dev.stapler.stelekit.ui.components.PlainGraphAppOwnedWarningDialog
 import org.junit.Rule
 import org.junit.Test
@@ -98,7 +98,7 @@ class AddGraphAppOwnedTest {
         composeTestRule.setContent {
             MaterialTheme {
                 PlainGraphAppOwnedWarningDialog(
-                    bodyText = PlainGraphAppOwnedWarningAndroidCopy,
+                    bodyText = PLAIN_GRAPH_APP_OWNED_WARNING_ANDROID_COPY,
                     onExportZip = onExportZip,
                     onCreateAnyway = onCreateAnyway,
                     onGoBack = onGoBack,
@@ -111,7 +111,7 @@ class AddGraphAppOwnedTest {
     fun `warningDialog should ShowExactAndroidCopy when PlainGraphAppOwnedSelected`() {
         renderWarningDialog()
 
-        composeTestRule.onNodeWithText(PlainGraphAppOwnedWarningAndroidCopy).assertIsDisplayed()
+        composeTestRule.onNodeWithText(PLAIN_GRAPH_APP_OWNED_WARNING_ANDROID_COPY).assertIsDisplayed()
     }
 
     @Test

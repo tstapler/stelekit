@@ -103,7 +103,7 @@ data class StelekitAppPlatformIntegrations(
      * `createAndroidGraphMoveQuiesceStrategy(...)` on Android, `createWasmJsGraphMoveQuiesceStrategy(...)`
      * on Web. Null (Desktop/iOS, or before a host wires one) means [GraphContent] never constructs a
      * coordinator, so the "Move storage location…" entry points in [Sidebar]/[FolderSyncSettings]
-     * call their `onStorageLocationChosen` no-op default instead.
+     * call their `onStorageLocationChoose` no-op default instead.
      */
     val graphMoveQuiesceStrategy: GraphMoveQuiesceStrategy? = null,
     /**

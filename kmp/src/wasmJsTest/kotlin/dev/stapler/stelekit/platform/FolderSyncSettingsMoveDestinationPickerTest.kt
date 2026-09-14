@@ -55,14 +55,14 @@ private fun restoreShowDirectoryPicker(original: JsAny?): Unit = js(
  * [PlatformFileSystem.pickHostFolderNamePreview] (new — a name-only, side-effect-free
  * `showDirectoryPicker()` call, deliberately distinct from [PlatformFileSystem.pickDirectoryAsync]/
  * [PlatformFileSystem.relinkHostDirectoryAsync], which both import content and attach a live host
- * handle) into `FolderSyncSettings`'s `onBrowseRequestedForMove`, opening
+ * handle) into `FolderSyncSettings`'s `onBrowseRequestForMove`, opening
  * [dev.stapler.stelekit.ui.components.UnifiedLocationPicker] for that direction instead of the old
  * no-op.
  *
  * `wasmJsTest` has no Compose UI test harness (see `AddGraphDialogPickerTest.kt`'s doc comment for
  * the same limitation), so this exercises the real interop surface the fix is built on — the same
  * "test the real capability the UI is wired 1:1 from, not the UI" convention that file follows —
- * plus a literal reproduction of `App.kt`'s `onBrowseRequestedForMove` wiring lambda, proving the
+ * plus a literal reproduction of `App.kt`'s `onBrowseRequestForMove` wiring lambda, proving the
  * exact callback `FolderSyncSettings` receives now performs a real `showDirectoryPicker()` call and
  * returns a genuine [StorageLocation.HostFolder] destination, rather than never picking anything.
  */
@@ -125,28 +125,28 @@ class FolderSyncSettingsMoveDestinationPickerTest {
     }
 
     /**
-     * Reproduces `App.kt`'s `onBrowseRequestedForMove` lambda verbatim (wrap
+     * Reproduces `App.kt`'s `onBrowseRequestForMove` lambda verbatim (wrap
      * [PlatformFileSystem.pickHostFolderNamePreview]'s result in a [StorageLocation.HostFolder] for
      * the active graph) — the exact callback `FolderSyncSettings`'s
-     * `MoveStorageLocationSection` passes to `UnifiedLocationPicker.onBrowseRequested` for the
+     * `MoveStorageLocationSection` passes to `UnifiedLocationPicker.onBrowseRequest` for the
      * AppOwned→HostFolder direction, where the button click previously only ever reached a
      * `logger.warn` call, never a picker.
      */
     @Test
-    fun `wired onBrowseRequestedForMove callback resolves a real picked folder to a HostFolder destination`() = runTest {
+    fun `wired onBrowseRequestForMove callback resolves a real picked folder to a HostFolder destination`() = runTest {
         val graphId = freshGraphId()
         val folderName = "backup-folder"
         val host = fakeDirEntry(folderName, newJsArray())
 
         val fs = PlatformFileSystem()
-        val onBrowseRequestedForMove: suspend () -> StorageLocation? = {
+        val onBrowseRequestForMove: suspend () -> StorageLocation? = {
             fs.pickHostFolderNamePreview()?.let { name -> StorageLocation.HostFolder(graphId, name) }
         }
 
         val original = stubShowDirectoryPickerToResolve(host)
         fs.requestDirectoryPickerNow()
         val destination = try {
-            onBrowseRequestedForMove()
+            onBrowseRequestForMove()
         } finally {
             restoreShowDirectoryPicker(original)
         }
@@ -160,17 +160,17 @@ class FolderSyncSettingsMoveDestinationPickerTest {
     }
 
     @Test
-    fun `wired onBrowseRequestedForMove callback returns null on cancel, matching UnifiedLocationPicker's revert-to-unselected contract`() = runTest {
+    fun `wired onBrowseRequestForMove callback returns null on cancel, matching UnifiedLocationPicker's revert-to-unselected contract`() = runTest {
         val graphId = freshGraphId()
         val fs = PlatformFileSystem()
-        val onBrowseRequestedForMove: suspend () -> StorageLocation? = {
+        val onBrowseRequestForMove: suspend () -> StorageLocation? = {
             fs.pickHostFolderNamePreview()?.let { name -> StorageLocation.HostFolder(graphId, name) }
         }
 
         val original = stubShowDirectoryPickerToReject()
         fs.requestDirectoryPickerNow()
         val destination = try {
-            onBrowseRequestedForMove()
+            onBrowseRequestForMove()
         } finally {
             restoreShowDirectoryPicker(original)
         }

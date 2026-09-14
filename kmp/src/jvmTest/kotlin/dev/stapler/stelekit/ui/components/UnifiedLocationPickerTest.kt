@@ -36,7 +36,7 @@ class UnifiedLocationPickerTest {
     private fun renderPicker(
         graphId: String = "graph-1",
         platformCapabilities: Boolean = true,
-        onBrowseRequested: suspend () -> StorageLocation? = { null },
+        onBrowseRequest: suspend () -> StorageLocation? = { null },
         onConfirm: (StorageLocation) -> Unit = {},
         onDismiss: () -> Unit = {},
     ) {
@@ -47,7 +47,7 @@ class UnifiedLocationPickerTest {
                     graphId = graphId,
                     appStorageSubtitle = appStorageSubtitle,
                     platformCapabilities = platformCapabilities,
-                    onBrowseRequested = onBrowseRequested,
+                    onBrowseRequest = onBrowseRequest,
                     onConfirm = onConfirm,
                     onDismiss = onDismiss,
                 )
@@ -59,7 +59,7 @@ class UnifiedLocationPickerTest {
     fun unifiedLocationPicker_should_RenderAppStorageAsPinnedFirstRow_When_FirstOpened() {
         renderPicker()
 
-        composeTestRule.onNodeWithTag(UnifiedLocationPickerAppStorageRowTag).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(UNIFIED_LOCATION_PICKER_APP_STORAGE_ROW_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithText("App storage").assertIsDisplayed()
         composeTestRule.onNodeWithText(appStorageSubtitle).assertIsDisplayed()
     }
@@ -68,8 +68,8 @@ class UnifiedLocationPickerTest {
     fun unifiedLocationPicker_should_ShowNoPreSelectedRow_When_FirstOpened() {
         renderPicker()
 
-        composeTestRule.onNodeWithTag(UnifiedLocationPickerAppStorageRowTag).assertIsNotSelected()
-        composeTestRule.onNodeWithTag(UnifiedLocationPickerBrowseRowTag).assertIsNotSelected()
+        composeTestRule.onNodeWithTag(UNIFIED_LOCATION_PICKER_APP_STORAGE_ROW_TAG).assertIsNotSelected()
+        composeTestRule.onNodeWithTag(UNIFIED_LOCATION_PICKER_BROWSE_ROW_TAG).assertIsNotSelected()
     }
 
     @Test
@@ -85,7 +85,7 @@ class UnifiedLocationPickerTest {
         renderPicker(graphId = "graph-42", onConfirm = { confirmed = it })
 
         // Tap 1: select "App storage".
-        composeTestRule.onNodeWithTag(UnifiedLocationPickerAppStorageRowTag).performClick()
+        composeTestRule.onNodeWithTag(UNIFIED_LOCATION_PICKER_APP_STORAGE_ROW_TAG).performClick()
         composeTestRule.onNodeWithText("Next").assertIsEnabled()
 
         // Tap 2: confirm.
@@ -98,18 +98,18 @@ class UnifiedLocationPickerTest {
     fun unifiedLocationPicker_should_SelectAppStorageRow_When_Tapped() {
         renderPicker()
 
-        composeTestRule.onNodeWithTag(UnifiedLocationPickerAppStorageRowTag).performClick()
+        composeTestRule.onNodeWithTag(UNIFIED_LOCATION_PICKER_APP_STORAGE_ROW_TAG).performClick()
 
-        composeTestRule.onNodeWithTag(UnifiedLocationPickerAppStorageRowTag).assertIsSelected()
-        composeTestRule.onNodeWithTag(UnifiedLocationPickerBrowseRowTag).assertIsNotSelected()
+        composeTestRule.onNodeWithTag(UNIFIED_LOCATION_PICKER_APP_STORAGE_ROW_TAG).assertIsSelected()
+        composeTestRule.onNodeWithTag(UNIFIED_LOCATION_PICKER_BROWSE_ROW_TAG).assertIsNotSelected()
     }
 
     @Test
     fun unifiedLocationPicker_should_OmitBrowseRow_When_PlatformCapabilitiesFalse() {
         renderPicker(platformCapabilities = false)
 
-        composeTestRule.onNodeWithTag(UnifiedLocationPickerAppStorageRowTag).assertIsDisplayed()
-        composeTestRule.onNodeWithTag(UnifiedLocationPickerBrowseRowTag).assertDoesNotExist()
+        composeTestRule.onNodeWithTag(UNIFIED_LOCATION_PICKER_APP_STORAGE_ROW_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(UNIFIED_LOCATION_PICKER_BROWSE_ROW_TAG).assertDoesNotExist()
     }
 
     @Test
@@ -117,13 +117,13 @@ class UnifiedLocationPickerTest {
         var confirmed: StorageLocation? = null
         renderPicker(
             graphId = "graph-web",
-            onBrowseRequested = { StorageLocation.HostFolder("graph-web", "Documents") },
+            onBrowseRequest = { StorageLocation.HostFolder("graph-web", "Documents") },
             onConfirm = { confirmed = it },
         )
 
-        composeTestRule.onNodeWithTag(UnifiedLocationPickerBrowseRowTag).performClick()
+        composeTestRule.onNodeWithTag(UNIFIED_LOCATION_PICKER_BROWSE_ROW_TAG).performClick()
         composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithTag(UnifiedLocationPickerBrowseRowTag).assertIsSelected()
+        composeTestRule.onNodeWithTag(UNIFIED_LOCATION_PICKER_BROWSE_ROW_TAG).assertIsSelected()
         composeTestRule.onNodeWithText("Documents").assertIsDisplayed()
 
         composeTestRule.onNodeWithText("Next").performClick()
@@ -133,12 +133,12 @@ class UnifiedLocationPickerTest {
 
     @Test
     fun unifiedLocationPicker_should_RevertBrowseRowToUnselected_When_NativePickerCancelled() {
-        renderPicker(onBrowseRequested = { null })
+        renderPicker(onBrowseRequest = { null })
 
-        composeTestRule.onNodeWithTag(UnifiedLocationPickerBrowseRowTag).performClick()
+        composeTestRule.onNodeWithTag(UNIFIED_LOCATION_PICKER_BROWSE_ROW_TAG).performClick()
         composeTestRule.waitForIdle()
 
-        composeTestRule.onNodeWithTag(UnifiedLocationPickerBrowseRowTag).assertIsNotSelected()
+        composeTestRule.onNodeWithTag(UNIFIED_LOCATION_PICKER_BROWSE_ROW_TAG).assertIsNotSelected()
         composeTestRule.onNodeWithText("Next").assertIsNotEnabled()
     }
 
@@ -146,7 +146,7 @@ class UnifiedLocationPickerTest {
     fun unifiedLocationPicker_should_MergeLabelAndSubtitleIntoOneSemanticsNode_When_Rendered() {
         renderPicker()
 
-        val node = composeTestRule.onNodeWithTag(UnifiedLocationPickerAppStorageRowTag).fetchSemanticsNode()
+        val node = composeTestRule.onNodeWithTag(UNIFIED_LOCATION_PICKER_APP_STORAGE_ROW_TAG).fetchSemanticsNode()
         val mergedText = node.config.getOrElse(SemanticsProperties.Text) { emptyList() }
             .joinToString(" ") { it.text }
 
@@ -160,7 +160,7 @@ class UnifiedLocationPickerTest {
         var dismissed = false
         renderPicker(onConfirm = { confirmed = it }, onDismiss = { dismissed = true })
 
-        composeTestRule.onNodeWithTag(UnifiedLocationPickerAppStorageRowTag).performClick()
+        composeTestRule.onNodeWithTag(UNIFIED_LOCATION_PICKER_APP_STORAGE_ROW_TAG).performClick()
         composeTestRule.onNodeWithText("Cancel").performClick()
 
         assertNull(confirmed)

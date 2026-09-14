@@ -639,7 +639,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     override val supportsAppOwnedStorage: Boolean get() = true
 
     override fun newAppOwnedGraphPath(): String {
-        val ctx = context ?: throw IllegalStateException("PlatformFileSystem.init(context) not called")
+        val ctx = context ?: error("PlatformFileSystem.init(context) not called")
         return java.io.File(ctx.filesDir, "graphs/${java.util.UUID.randomUUID()}").absolutePath
     }
 

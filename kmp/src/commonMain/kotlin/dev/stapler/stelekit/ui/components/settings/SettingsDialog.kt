@@ -98,11 +98,11 @@ fun SettingsDialog(
     // that composable's own parameter docs. Null onMoveStorageLocation hides the entry entirely.
     onMoveStorageLocation: (suspend () -> dev.stapler.stelekit.model.StorageLocation)? = null,
     storageMoveGraphName: String = "this graph",
-    onStorageLocationChosen: (dev.stapler.stelekit.model.StorageMoveOperation) -> Unit = {},
+    onStorageLocationChoose: (dev.stapler.stelekit.model.StorageMoveOperation) -> Unit = {},
     // Story 3.3.3 (AppOwned→HostFolder direction): see FolderSyncSettings's own parameter docs.
     // Null keeps that direction a logged no-op.
-    onBrowseRequestedForMove: (suspend () -> dev.stapler.stelekit.model.StorageLocation?)? = null,
-    onBrowseClickedForMove: () -> Unit = {},
+    onBrowseRequestForMove: (suspend () -> dev.stapler.stelekit.model.StorageLocation?)? = null,
+    onBrowseClickForMove: () -> Unit = {},
     // Epic 4.1 (Task 4.1.2c): "Unlink folder" affordance — see FolderSyncSettings's own parameter
     // docs. Null onUnlinkHostDirectory hides the entry entirely.
     onUnlinkHostDirectory: (suspend () -> Unit)? = null,
@@ -167,9 +167,9 @@ fun SettingsDialog(
                                 onConnect = onConnectHostDirectory,
                                 onMoveStorageLocation = onMoveStorageLocation,
                                 graphName = storageMoveGraphName,
-                                onStorageLocationChosen = onStorageLocationChosen,
-                                onBrowseRequestedForMove = onBrowseRequestedForMove,
-                                onBrowseClickedForMove = onBrowseClickedForMove,
+                                onStorageLocationChoose = onStorageLocationChoose,
+                                onBrowseRequestForMove = onBrowseRequestForMove,
+                                onBrowseClickForMove = onBrowseClickForMove,
                                 onUnlink = onUnlinkHostDirectory,
                             )
                         }

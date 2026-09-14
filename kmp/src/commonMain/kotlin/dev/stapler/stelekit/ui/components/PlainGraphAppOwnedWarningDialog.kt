@@ -26,7 +26,7 @@ import kotlinx.coroutines.launch
  * call site (`App.kt`) and its regression test (`AddGraphAppOwnedTest.kt`, AC9/AC41), so the two
  * can never drift from each other by a stray character.
  */
-const val PlainGraphAppOwnedWarningAndroidCopy = "Kept inside SteleKit only — not visible in " +
+const val PLAIN_GRAPH_APP_OWNED_WARNING_ANDROID_COPY = "Kept inside SteleKit only — not visible in " +
     "your device's file manager, and permanently deleted if you uninstall the app. There is no " +
     "automatic backup."
 
@@ -35,7 +35,7 @@ const val PlainGraphAppOwnedWarningAndroidCopy = "Kept inside SteleKit only — 
  * not uninstalling an app) — single source of truth for both Web's call sites (`App.kt`,
  * `GitSetupScreen.kt` never shows this per ux.md's git-clone exemption) and its regression test.
  */
-const val PlainGraphAppOwnedWarningWebCopy = "Kept in this browser only — not backed up " +
+const val PLAIN_GRAPH_APP_OWNED_WARNING_WEB_COPY = "Kept in this browser only — not backed up " +
     "automatically, and lost if you clear site data."
 
 /**
