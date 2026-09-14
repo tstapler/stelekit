@@ -113,4 +113,56 @@ class GraphZipExporterWasmJsTest {
 
         assertTrue(result.isRight(), "export must succeed (Right) for a plain markdown graph: $result")
     }
+
+    /**
+     * MUST FIX regression (idiom review): the exporter used to read every file through
+     * [dev.stapler.stelekit.platform.FileSystem.readFile]'s String API before
+     * `.encodeToByteArray()`-ing it back — a round trip that silently replaces invalid UTF-8 byte
+     * sequences, corrupting any binary attachment or paranoid-mode STEK file in the archive. On
+     * wasmJs, byte-correct content for a path lives in [PlatformFileSystem]'s `bytesCache` (set by
+     * `writeFileBytes`, e.g. attachment uploads / STEK writes) rather than the plain-text `cache`
+     * `writeFile`/[FileSystem.listFilesRecursiveWithModTimes] enumerate. This test seeds `cache`
+     * with a placeholder via `writeFile` so the path is enumerable, then overwrites the
+     * authoritative content via `writeFileBytes` with a deliberately invalid-UTF-8 byte sequence —
+     * mirroring `bytesCache`'s precedence in `getContentBytes`, which the fixed exporter now uses.
+     * A regression back to the String round trip would either export the stale placeholder text or
+     * a lossily-mangled decode of the binary bytes; this asserts byte-for-byte fidelity instead.
+     */
+    @Test
+    fun storedZipWriter_should_RoundTripByteIdenticalContent_When_EntryIsBinaryNonUtf8Data() = runTest {
+        val fileSystem = PlatformFileSystem().apply { markEphemeral() }
+        val graphPath = "/stelekit/zip-binary-${Random.nextInt(0, Int.MAX_VALUE)}"
+        fileSystem.preload(graphPath)
+        val relativePath = "assets/attachment.bin"
+        val path = "$graphPath/$relativePath"
+        // Invalid UTF-8 byte sequences: a lone continuation byte (0xFF), an overlong/invalid
+        // leading byte (0xFE), and a truncated multi-byte sequence — decodeToString+encodeToByteArray
+        // would replace these with U+FFFD, changing the byte count and content.
+        val binaryContent = byteArrayOf(0x00, 0xFF.toByte(), 0xFE.toByte(), 0x01, 0xC0.toByte(), 0x80.toByte(), 0x7F)
+
+        fileSystem.writeFile(path, "placeholder text — must NOT end up in the export")
+        fileSystem.writeFileBytes(path, binaryContent)
+
+        val result = WasmJsGraphZipExporter().export(fileSystem, graphPath, "stelekit-graph")
+        assertTrue(result.isRight(), "export must succeed (Right) for a binary attachment: $result")
+
+        val entries = fileSystem.listFilesRecursiveWithModTimes(graphPath).map { (rel, _) ->
+            StoredZipWriter.Entry(rel, fileSystem.getContentBytes("$graphPath/$rel")!!)
+        }
+        val zipBytes = StoredZipWriter.build(entries)
+        val readBack = readStoredZip(zipBytes).associateBy { it.name }
+
+        val entry = readBack[relativePath]
+        assertTrue(entry != null, "archive is missing an entry for $relativePath")
+        assertContentEquals(
+            binaryContent,
+            entry.data,
+            "binary content for $relativePath must round-trip byte-identical, not lossily decoded/re-encoded as UTF-8",
+        )
+        assertEquals(
+            Crc32.compute(entry.data),
+            entry.storedCrc,
+            "the archive's stored CRC-32 must match the recovered binary content for $relativePath",
+        )
+    }
 }

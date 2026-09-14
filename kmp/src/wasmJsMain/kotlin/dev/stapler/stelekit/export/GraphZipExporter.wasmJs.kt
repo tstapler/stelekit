@@ -8,6 +8,7 @@ import arrow.core.right
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.platform.FileSystem
+import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.ui.WasmJsShareProvider
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
@@ -124,9 +125,8 @@ internal object StoredZipWriter {
 
 /**
  * Web [GraphZipExporter] (Story 2.3.3, Task 2.3.3c / ADR-003's Amendment): recursively reads a
- * graph's markdown via [FileSystem] — the same [FileSystem.listFilesRecursiveWithModTimes] +
- * [FileSystem.readFile] enumeration Android's exporter uses — zips it with [StoredZipWriter], and
- * triggers a browser download via [WasmJsShareProvider.saveBytesToFile] (no SAF/File-System-Access
+ * graph's files via [FileSystem.listFilesRecursiveWithModTimes], zips them with [StoredZipWriter],
+ * and triggers a browser download via [WasmJsShareProvider.saveBytesToFile] (no SAF/File-System-Access
  * prompt involved, per this story's acceptance criteria).
  */
 class WasmJsGraphZipExporter : GraphZipExporter {
@@ -137,8 +137,17 @@ class WasmJsGraphZipExporter : GraphZipExporter {
     ): Either<DomainError, Unit> = withContext(PlatformDispatcher.Default) {
         try {
             val entries = fileSystem.listFilesRecursiveWithModTimes(graphPath).mapNotNull { (relativePath, _) ->
-                val content = fileSystem.readFile("$graphPath/$relativePath") ?: return@mapNotNull null
-                StoredZipWriter.Entry(relativePath, content.encodeToByteArray())
+                val path = "$graphPath/$relativePath"
+                // Read raw bytes, not through the String API: a round-trip through String mangles
+                // non-UTF-8 byte sequences (images/attachments, paranoid-mode STEK-encrypted
+                // files). FileSystem.readFileBytes() has no wasmJs override (throws), so go through
+                // the wasmJs actual's own byte-level accessor directly — it already prefers
+                // bytesCache (the authoritative store for content written via writeFileBytes) and
+                // falls back to the plain-text cache, encoded, for everything else.
+                val content = (fileSystem as? PlatformFileSystem)?.getContentBytes(path)
+                    ?: fileSystem.readFile(path)?.encodeToByteArray()
+                    ?: return@mapNotNull null
+                StoredZipWriter.Entry(relativePath, content)
             }
             val zipBytes = StoredZipWriter.build(entries)
             val safeName = graphName.replace(Regex("[^a-zA-Z0-9._-]"), "_").ifEmpty { "graph" }
