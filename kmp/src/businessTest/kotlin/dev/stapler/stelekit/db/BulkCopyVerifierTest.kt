@@ -110,6 +110,38 @@ class BulkCopyVerifierTest {
     }
 
     @Test
+    fun `copyAndVerify should FailOnSecondBatchFile When CorruptionOccursPastFirstBatch`() = runTest {
+        // Regression coverage for the PR #327 review: the only prior failure-path test used a
+        // single-file/single-batch source, so a bug in how state carries across batch boundaries
+        // (COPY_BATCH_SIZE = 100) once a later batch fails was unverified. 250 files -> 3 batches
+        // (100, 100, 50); corrupting file #150 forces the failure into the SECOND batch.
+        val fileCount = 250
+        val corruptedIndex = 150
+        val corruptedPath = "destination/page_$corruptedIndex.md"
+        val fileSystem = ByteFlippingFakeFileSystem(corruptOnWriteTo = corruptedPath)
+        repeat(fileCount) { i ->
+            fileSystem.writeFileBytes("source/page_$i.md", "content $i".encodeToByteArray())
+        }
+        val verifier = BulkCopyVerifier(fileSystem)
+
+        val progressCalls = mutableListOf<Pair<Int, Int>>()
+        val result = verifier.copyAndVerifyPaths(
+            sourceRoot = "source",
+            destinationRoot = "destination",
+            onBatchProgress = { processed, total -> progressCalls += processed to total },
+        )
+
+        val error = assertIs<arrow.core.Either.Left<DomainError.StorageError>>(result).value
+        val verificationFailed = assertIs<DomainError.StorageError.VerificationFailed>(error)
+        assertEquals("page_$corruptedIndex.md", verificationFailed.path)
+
+        // The failure surfaces mid-batch-2, before batch 2's own onBatchProgress call — so only
+        // batch 1's progress (fully processed, uncorrupted) was ever reported. Proves batch 1's
+        // progress state isn't retroactively corrupted or double-reported by the later failure.
+        assertEquals(listOf(100 to fileCount), progressCalls)
+    }
+
+    @Test
     fun `copyAndVerify should call decodeFileName for identity, not a raw comparison`() = runTest {
         val fileSystem = FakeFileSystem()
         val sanitized = dev.stapler.stelekit.util.FileUtils.sanitizeFileName("Q&A_notes")

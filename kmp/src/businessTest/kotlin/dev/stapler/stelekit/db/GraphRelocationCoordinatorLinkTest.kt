@@ -204,4 +204,72 @@ class GraphRelocationCoordinatorLinkTest : RelocationCoordinatorTestSupport() {
 
         graphManager.shutdown()
     }
+
+    /**
+     * MAJOR finding from the PR #327 review: `FakeGraphMoveQuiesceStrategy.releaseSourceGrantCalls`
+     * was recorded but never asserted anywhere, so a regression that dropped or mistimed
+     * `GraphRelocationCoordinator.relocate`'s `releaseSourceGrant(operation.source)` call (Epic 5.2 —
+     * releases the source's OS-level SAF grant once a move is confirmed) would pass every existing
+     * test. Housed here rather than in `GraphRelocationCoordinatorTest.kt`: `relocate()`, not
+     * `link()`, is the one that calls it — see `reopenAndRepersistAfterRelocate`'s doc comment.
+     */
+    @Test
+    fun `relocate should ReleaseSourceGrant When HappyPath`() = runBlocking {
+        val runId = System.nanoTime()
+        val graphManager = newGraphManager()
+        graphManager.openGraph("/test/relocate-release-grant-$runId")
+        val graphId = graphManager.getActiveGraphId()!!
+
+        val markdownFs = FakeRelocationFileSystem()
+        markdownFs.writeFileBytes("source/page1.md", "hello".encodeToByteArray())
+        val quiesce = FakeGraphMoveQuiesceStrategy()
+        val coordinator = GraphRelocationCoordinator(graphManager, markdownFs, quiesce)
+
+        val source: StorageLocation = StorageLocation.DirectAccessFolder(graphId.value, "source")
+        val operation = StorageMoveOperation.Relocate(
+            graphId = graphId.value,
+            source = source,
+            destination = StorageLocation.DirectAccessFolder(graphId.value, "dest"),
+            deleteSourceAfterVerify = false,
+        )
+
+        val states = coordinator.relocate(operation).toList()
+
+        assertEquals(StorageMoveUiState.Summary, states.last())
+        assertEquals(listOf(source), quiesce.releaseSourceGrantCalls)
+
+        graphManager.shutdown()
+    }
+
+    /** Negative counterpart to the happy-path assertion above — a failed copy must never release
+     * the source's grant, since the app may still need to fall back to reading it. */
+    @Test
+    fun `relocate should NotReleaseSourceGrant When CopyFails`() = runBlocking {
+        val runId = System.nanoTime()
+        val graphManager = newGraphManager()
+        graphManager.openGraph("/test/relocate-release-grant-fail-$runId")
+        val graphId = graphManager.getActiveGraphId()!!
+
+        val markdownFs = FakeRelocationFileSystem()
+        markdownFs.writeFileBytes("source/page1.md", "hello".encodeToByteArray())
+        val quiesce = FakeGraphMoveQuiesceStrategy()
+        val failingStep = CopyAndVerifyStep { _, _, _ ->
+            DomainError.StorageError.DestinationNotWritable("dest/page1.md").left()
+        }
+        val coordinator = GraphRelocationCoordinator(graphManager, markdownFs, quiesce, failingStep)
+
+        val operation = StorageMoveOperation.Relocate(
+            graphId = graphId.value,
+            source = StorageLocation.DirectAccessFolder(graphId.value, "source"),
+            destination = StorageLocation.DirectAccessFolder(graphId.value, "dest"),
+            deleteSourceAfterVerify = false,
+        )
+
+        val states = coordinator.relocate(operation).toList()
+
+        assertIs<StorageMoveUiState.Failed>(states.last())
+        assertTrue(quiesce.releaseSourceGrantCalls.isEmpty(), "grant must not be released on a failed copy")
+
+        graphManager.shutdown()
+    }
 }

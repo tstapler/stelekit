@@ -62,6 +62,10 @@ open class FakeRelocationFileSystem : FileSystem {
     }
 
     override fun renameFile(from: String, to: String): Boolean {
+        // Mirrors JvmFileSystemBase.renameFile's pre-existing-destination short-circuit: a stale
+        // leftover from an interrupted relocate at `to` means this rename already happened, so
+        // report success without touching it (real implementations never overwrite `to` here).
+        if (to in files) return true
         val bytes = files.remove(from) ?: return false
         files[to] = bytes
         return true
