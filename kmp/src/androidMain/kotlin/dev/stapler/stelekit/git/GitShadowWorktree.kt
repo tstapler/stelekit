@@ -4,8 +4,11 @@
 package dev.stapler.stelekit.git
 
 import android.content.Context
+import android.database.sqlite.SQLiteDatabase
 import android.util.Log
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
+import dev.stapler.stelekit.db.GRAPH_DB_PREFIX
+import dev.stapler.stelekit.db.GRAPH_DB_SUFFIX
 import dev.stapler.stelekit.platform.GitWorktreeLocks
 import dev.stapler.stelekit.util.ContentHasher
 import kotlinx.coroutines.CancellationException
@@ -392,11 +395,14 @@ class GitShadowWorktree(
          * created before this sweep shipped — is exempt from deletion this pass: ambiguous
          * absence is never treated as evidence of staleness.
          *
-         * Deliberately a purely local, per-directory mtime check with no `GraphManager`/
+         * Deliberately a purely local, per-directory check with no `GraphManager`/
          * `GitConfigRepository` involvement — see plan.md's Epic 6.1 rationale for why an earlier
          * registered-handler design keyed off the live graph registry was rejected (that lookup
          * is only ever scoped to the *currently active* graph, so it would silently miss inactive
-         * graphs' shadow trees and delete live, unpushed data on next startup).
+         * graphs' shadow trees and delete live, unpushed data on next startup). ADR-002 / Epic 1.2's
+         * `StorageLocation` guard ([isAppOwnedStorageLocation]) follows the same rule: it reads each
+         * graph's own per-graph SQLite file directly rather than going through `GraphManager`, for
+         * exactly this reason.
          *
          * Performs blocking file I/O and is intentionally NOT a suspend function (zero coroutine
          * dependencies of its own) — callers must invoke it off the main thread, e.g. from
@@ -412,12 +418,65 @@ class GitShadowWorktree(
                 val marker = File(graphDir, LAST_USED_FILE_NAME)
                 if (!marker.exists()) continue // ambiguous absence — never eagerly delete
                 val age = now - marker.lastModified()
-                if (age > maxAgeMillis) {
-                    try {
-                        shadowDir.deleteRecursively()
-                    } catch (e: Exception) {
-                        Log.w(TAG, "sweepOrphans: failed to delete orphaned '${shadowDir.path}'", e)
+                if (age <= maxAgeMillis) continue
+
+                // ADR-002 / Epic 1.2: once a graph is promoted to AppOwned primary storage there is
+                // no SAF folder behind it, so this shadow tree is its *only* copy — never delete it
+                // on age alone. Looked up per directory (not once for the whole sweep) so one bad
+                // graph database can't abort the sweep for every other graph; a thrown lookup is
+                // treated the same as a confirmed AppOwned row (fail safe: unknown == do not delete).
+                val graphId = graphDir.name
+                when (isAppOwnedStorageLocation(context, graphId)) {
+                    true -> continue
+                    null -> {
+                        Log.w(TAG, "sweepOrphans: storage-location lookup failed for '$graphId' — leaving '${shadowDir.path}' untouched this pass")
+                        continue
                     }
+                    false -> Unit // no row (pre-existing graph) or a non-AppOwned kind — sweep as before
+                }
+
+                try {
+                    shadowDir.deleteRecursively()
+                } catch (e: Exception) {
+                    Log.w(TAG, "sweepOrphans: failed to delete orphaned '${shadowDir.path}'", e)
+                }
+            }
+        }
+
+        /**
+         * Reads [graphId]'s persisted `storage_locations` row directly from its own per-graph
+         * SQLite file (`GRAPH_DB_PREFIX$graphId$GRAPH_DB_SUFFIX` under `context.filesDir`), opened
+         * read-only. Deliberately bypasses `GraphManager.getStorageLocation()`: that read seam only
+         * answers for the *currently active* graph (see `GraphManager.getStorageLocation`'s
+         * `getActiveGraphId() != GraphId(graphId)` guard), but [sweepOrphans] runs once at startup
+         * over every graph on disk — routing through it would return "no row" for every graph that
+         * isn't currently open, silently disabling the AppOwned protection for exactly the graphs
+         * this ADR exists to protect.
+         *
+         * Returns `true` only for a confirmed `AppOwned` row, `false` for "no row" (including a
+         * database file that predates this migration and has no `storage_locations` table yet —
+         * equivalent to "no row", not a failure) or any other persisted kind, and `null` when the
+         * lookup itself throws (corrupt/locked file, I/O error) — callers must treat `null` the same
+         * as `true` (fail safe) without aborting the rest of the sweep.
+         */
+        private fun isAppOwnedStorageLocation(context: Context, graphId: String): Boolean? {
+            val dbFile = File(context.filesDir, "$GRAPH_DB_PREFIX$graphId$GRAPH_DB_SUFFIX")
+            if (!dbFile.exists()) return false
+            return try {
+                SQLiteDatabase.openDatabase(dbFile.absolutePath, null, SQLiteDatabase.OPEN_READONLY).use { db ->
+                    db.rawQuery(
+                        "SELECT kind FROM storage_locations WHERE graph_id = ? LIMIT 1",
+                        arrayOf(graphId),
+                    ).use { cursor -> cursor.moveToFirst() && cursor.getString(0) == "AppOwned" }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (e.message?.contains("no such table", ignoreCase = true) == true) {
+                    false // migration never ran against this file — equivalent to "no row"
+                } else {
+                    Log.w(TAG, "sweepOrphans: storage-location lookup failed for '$graphId'", e)
+                    null
                 }
             }
         }

@@ -72,6 +72,9 @@ class AndroidGitRepository(
         // .also { touchLastUsed() } refreshes the orphan-sweep liveness signal (Task 6.1.1a) on
         // every real resolution, so GitShadowWorktree.sweepOrphans() never deletes an actively
         // used graph's shadow tree — no per-call-site opt-in required.
+        // Task 1.2.1b finding: fires on every JGit-touching op (clone/init/openGit's commit/fetch/
+        // push/merge choke point, incl. WorkManager's background fetch) — not on "graph opened" in
+        // the UI per se; switching the active graph alone runs no git op and doesn't touch it.
         return shadowWorktrees.getOrPut(key) {
             GitShadowWorktree(context, key, repoRoot)
         }.also {
