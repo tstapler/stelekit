@@ -82,7 +82,7 @@ class GraphManager(
     /** Awaited before any driver is created — lets the Application flush write-behind pages
      *  on a background thread while GraphManager initialization proceeds. */
     private val preFlightJob: Deferred<Unit>? = null,
-) {
+) : StorageLocationStore {
     private val coroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val logger = Logger("GraphManager")
     private val json = Json { ignoreUnknownKeys = true }
@@ -1040,7 +1040,7 @@ class GraphManager(
      * before the caller's own [switchGraph]), the write is queued in [pendingStorageLocations]
      * and flushed by [switchGraph]'s init block once that graph's writeActor exists.
      */
-    suspend fun onGraphLocationDetermined(graphId: String, location: StorageLocation) {
+    override suspend fun onGraphLocationDetermined(graphId: String, location: StorageLocation) {
         val id = GraphId(graphId)
         val factory = currentFactory as? dev.stapler.stelekit.repository.RepositoryFactoryImpl
         val actor = _activeRepositorySet.value?.writeActor
@@ -1048,6 +1048,29 @@ class GraphManager(
             writeStorageLocation(factory, actor, graphId, location)
         } else {
             pendingStorageLocations[id] = location
+        }
+    }
+
+    /**
+     * Reads [graphId]'s persisted `storage_locations` row, if one exists — the read half of
+     * [StorageLocationResolver]'s short-circuit (Story 1.1.4): a caller must never re-derive a
+     * location that's already on record. Returns null both when no row exists and when [graphId]
+     * isn't the currently active graph, mirroring [onGraphLocationDetermined]'s scope (only the
+     * active graph's database is open at any given moment).
+     */
+    override suspend fun getStorageLocation(graphId: String): StorageLocation? {
+        val factory = currentFactory as? dev.stapler.stelekit.repository.RepositoryFactoryImpl ?: return null
+        if (getActiveGraphId() != GraphId(graphId)) return null
+        return withContext(PlatformDispatcher.DB) {
+            try {
+                factory.steleDatabase().steleDatabaseQueries.selectStorageLocation(graphId)
+                    .executeAsOneOrNull()
+                    ?.toStorageLocationModel()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            }
         }
     }
 
@@ -1106,6 +1129,15 @@ private data class StorageLocationRow(
     val realPath: String?,
     val displayName: String?,
 )
+
+/** The inverse of [toStorageLocationRow] — reconstructs a [StorageLocation] from a persisted row. */
+private fun Storage_locations.toStorageLocationModel(): StorageLocation? = when (kind) {
+    "AppOwned" -> StorageLocation.AppOwned(graph_id)
+    "SafFolder" -> tree_uri?.let { StorageLocation.SafFolder(graph_id, it) }
+    "DirectAccessFolder" -> real_path?.let { StorageLocation.DirectAccessFolder(graph_id, it) }
+    "HostFolder" -> display_name?.let { StorageLocation.HostFolder(graph_id, it) }
+    else -> null
+}
 
 private fun StorageLocation.toStorageLocationRow(): StorageLocationRow = when (this) {
     is StorageLocation.AppOwned -> StorageLocationRow(kind = "AppOwned", treeUri = null, realPath = null, displayName = null)
