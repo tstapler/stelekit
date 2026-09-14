@@ -21,6 +21,19 @@ import java.io.File
  * leave a torn or stale pack file) can produce a copy where object/ref counts still match but the
  * bytes are corrupted. `BulkCopyVerifier`'s same [ContentHasher.sha256] bar closes that gap here
  * too, in the same bounded-batch style ([BulkCopyVerifier.COPY_BATCH_SIZE]).
+ *
+ * **Not currently wired into `GraphRelocationCoordinator.relocate()`.** The bug this class was
+ * built to guard against (Task 3.1.1f) turned out to have an earlier root cause: `.git` was never
+ * copied into the destination at all (`listFilesRecursiveWithModTimes`'s shared, Android-shadow-
+ * worktree-motivated root-`.git` exclusion silently carried into relocate too — see
+ * `BulkCopyVerifier.copyAndVerifyPaths`'s `includeGitDirectory` doc). That fix makes
+ * `BulkCopyVerifier`'s own per-file [ContentHasher.sha256] loop cover every byte under `.git`
+ * (objects, packs, refs, `HEAD`, `config`, `index`, hooks — a strict superset of what this class
+ * checks) on every platform, not just Android's `java.io.File`-based one. This class is kept —
+ * still correct, still tested ([dev.stapler.stelekit.git.GitObjectContentVerifierTest]) — as a
+ * narrower, Android-specific objects-only check available for a future call site, but wiring it in
+ * as a *second* pass alongside `BulkCopyVerifier`'s now-universal verification would be redundant
+ * work with no additional safety margin.
  */
 class GitObjectContentVerifier {
     /** Verifies every loose object and pack file under [sourceGitDir]/objects exists, byte-identical, under [destinationGitDir]/objects. */

@@ -100,13 +100,25 @@ class BulkCopyVerifier(
      * [StorageLocation] — can invoke the primitive directly without inventing a fake
      * [StorageLocation] just to satisfy [copyAndVerify]'s signature. Also what tests exercise
      * directly.
+     *
+     * [includeGitDirectory] opts back into copying a root-level `.git` directory that
+     * [FileSystem.listFilesRecursiveWithModTimes]'s shared default deliberately excludes (that
+     * exclusion is load-bearing for Android's git-shadow-worktree mirror — see its doc comment —
+     * and must not change). Default `false` preserves every existing caller's behavior exactly.
+     * When `true`, [gitDirectoryRelativePaths] adds `.git`'s own contents to the same per-file
+     * copy-then-SHA-256-verify loop below, so a relocated git-cloned graph's history gets the
+     * identical real verify-before-cleanup bar as its markdown (closing the silent-`.git`-loss bug
+     * `GraphRelocationCoordinator.copyIntoStagingThenRepoint` was hitting — see that class's
+     * `copyAndVerifyStep` default).
      */
     internal suspend fun copyAndVerifyPaths(
         sourceRoot: String,
         destinationRoot: String,
         onBatchProgress: (filesProcessed: Int, batchSize: Int) -> Unit = { _, _ -> },
+        includeGitDirectory: Boolean = false,
     ): Either<DomainError.StorageError, CopyReport> {
-        val relativePaths = fileSystem.listFilesRecursiveWithModTimes(sourceRoot).map { it.first }
+        val relativePaths = fileSystem.listFilesRecursiveWithModTimes(sourceRoot).map { it.first } +
+            (if (includeGitDirectory) gitDirectoryRelativePaths(sourceRoot) else emptyList())
 
         if (spaceCheck !== InsufficientSpaceCheck.NONE) {
             val requiredBytes = relativePaths.sumOf { fileSystem.getFileSize("$sourceRoot/$it") ?: 0L }
@@ -133,6 +145,20 @@ class BulkCopyVerifier(
         }
 
         return CopyReport(filesCopied = verified.size, bytesCopied = totalBytes, verifiedPaths = verified).right()
+    }
+
+    /**
+     * Lists `.git`'s contents (relative to `sourceRoot`, prefixed `.git/…`) by walking
+     * `sourceRoot/.git` as [FileSystem.listFilesRecursiveWithModTimes]'s OWN root — the shared
+     * default's root-level `.git` exclusion only fires when the directory named `.git` is seen at
+     * the top of *that* walk, so starting the walk one level deeper, inside `.git` itself, never
+     * triggers it (none of `.git`'s own children — `objects`, `refs`, `hooks`, … — are themselves
+     * named `.git`). No change to [FileSystem]'s default behavior is needed for this.
+     */
+    private suspend fun gitDirectoryRelativePaths(sourceRoot: String): List<String> {
+        val gitDir = "$sourceRoot/.git"
+        if (!fileSystem.directoryExists(gitDir)) return emptyList()
+        return fileSystem.listFilesRecursiveWithModTimes(gitDir).map { ".git/${it.first}" }
     }
 
     /** Copies and verifies one file; returns its byte count on success. */

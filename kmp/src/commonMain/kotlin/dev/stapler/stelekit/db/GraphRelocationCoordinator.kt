@@ -81,7 +81,13 @@ class GraphRelocationCoordinator(
     private val fileSystem: FileSystem,
     private val quiesceStrategy: GraphMoveQuiesceStrategy,
     private val copyAndVerifyStep: CopyAndVerifyStep = CopyAndVerifyStep { source, destination, onProgress ->
-        BulkCopyVerifier(fileSystem).copyAndVerifyPaths(source, destination, onProgress)
+        // A git-cloned graph's history lives entirely in a root-level .git directory that
+        // listFilesRecursiveWithModTimes's shared default (FileSystem.kt) deliberately excludes
+        // for Android's shadow-worktree mirror — copyAndVerifyPaths's includeGitDirectory opt-in
+        // is what puts .git back on the same real per-file SHA-256 verify BulkCopyVerifier already
+        // gives markdown, closing the silent-history-loss bug a plain relocate used to hit.
+        val includeGitDirectory = fileSystem.directoryExists("$source/.git")
+        BulkCopyVerifier(fileSystem).copyAndVerifyPaths(source, destination, onProgress, includeGitDirectory)
     },
     /** See [HostLinkStep]'s doc comment. `null` (the default) means [link] always fails fast with
      * [DomainError.StorageError.DestinationNotWritable] — every non-Web construction site. */
