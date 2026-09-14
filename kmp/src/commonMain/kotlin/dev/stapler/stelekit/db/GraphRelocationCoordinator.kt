@@ -53,13 +53,25 @@ fun interface CopyAndVerifyStep {
  * follows), so this narrow port stands in for it: Web wires it via
  * `createWasmJsHostLinkStep(hostDirectorySync)`, which forwards straight to
  * `connectHostDirectory` (reusing its existing `runHostReconciliation` walk unchanged, per Story
- * 4.1.1's acceptance criteria) rather than reimplementing a parallel connect flow. `null` (the
- * default) means this platform/graph has no Link implementation — Android's own Link mode (Epic
- * 4.2, git-shadow-worktree write-back) is a different mechanism entirely and is not routed
- * through [GraphRelocationCoordinator].
+ * 4.1.1's acceptance criteria) rather than reimplementing a parallel connect flow. Android wires
+ * `createAndroidHostLinkStep()` (Epic 4.2, Story 4.2.1) — for a git-cloned graph,
+ * `GitShadowWorktree`'s write-back-to-SAF cache mode is already running invisibly, so that step
+ * does no new work; it only lets [link] reach its happy path instead of always failing fast with
+ * [DomainError.StorageError.DestinationNotWritable]. `null` (Desktop/iOS, or a host that hasn't
+ * wired one) means this platform/graph has no Link implementation at all.
  */
 fun interface HostLinkStep {
     suspend fun link(existingOpfsPath: String, destination: StorageLocation): Either<DomainError.StorageError, Unit>
+
+    /**
+     * Whether a successful [link] should repoint `storage_locations` to the operation's
+     * destination (via [GraphManager.onGraphLocationDetermined]). Web's Link genuinely adopts
+     * [StorageLocation.HostFolder] as the new location of record, so this defaults to `true`.
+     * Android's Link (Story 4.2.1) is confirmatory only — "Link never repoints the location of
+     * record — only Relocate does" (plan.md) — so `createAndroidHostLinkStep()` overrides this to
+     * `false`.
+     */
+    val persistsDestinationOnSuccess: Boolean get() = true
 }
 
 /**
@@ -90,7 +102,8 @@ class GraphRelocationCoordinator(
         BulkCopyVerifier(fileSystem).copyAndVerifyPaths(source, destination, onProgress, includeGitDirectory)
     },
     /** See [HostLinkStep]'s doc comment. `null` (the default) means [link] always fails fast with
-     * [DomainError.StorageError.DestinationNotWritable] — every non-Web construction site. */
+     * [DomainError.StorageError.DestinationNotWritable] — Desktop/iOS, or a host that hasn't wired
+     * a platform [HostLinkStep] yet. */
     private val hostLinkStep: HostLinkStep? = null,
 ) {
     private val logger = Logger("GraphRelocationCoordinator")
@@ -347,8 +360,13 @@ class GraphRelocationCoordinator(
             }
             is Either.Right -> {
                 // No updateGraphContentPath call, unlike relocate()'s step 7 — OPFS remains the
-                // graph's content path; only storage_locations' kind/uri metadata changes.
-                graphManager.onGraphLocationDetermined(operation.graphId, operation.destination)
+                // graph's content path. Repointing storage_locations' kind/uri metadata is itself
+                // conditional on step.persistsDestinationOnSuccess — see that property's doc for
+                // why Android's step opts out (Story 4.2.1: "Link never repoints the location of
+                // record — only Relocate does").
+                if (step.persistsDestinationOnSuccess) {
+                    graphManager.onGraphLocationDetermined(operation.graphId, operation.destination)
+                }
                 logMoveTerminal(operation, StorageMoveUiState.Summary)
                 send(StorageMoveUiState.Summary)
             }

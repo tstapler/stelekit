@@ -22,6 +22,7 @@ import androidx.lifecycle.lifecycleScope
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.db.RelocationStagingDirectory
 import dev.stapler.stelekit.db.createAndroidGraphMoveQuiesceStrategy
+import dev.stapler.stelekit.db.createAndroidHostLinkStep
 import dev.stapler.stelekit.db.createAndroidStorageLocationResolver
 import dev.stapler.stelekit.domain.UrlFetcherAndroid
 import dev.stapler.stelekit.llm.LlmCredentialStore
@@ -332,6 +333,13 @@ class MainActivity : ComponentActivity() {
                 app.graphManager?.let { gm -> createAndroidStorageLocationResolver(gm, applicationContext) }
             }
 
+            // Epic 4.2 (Story 4.2.1): fixes "Link" always failing with DestinationNotWritable —
+            // no androidMain construction site wired a HostLinkStep before this. Stateless (no
+            // Context/graph dependency), so a single remembered instance suffices; see
+            // createAndroidHostLinkStep's doc for why it's a genuine no-op that never repoints
+            // storage_locations.
+            val androidHostLinkStep = remember { createAndroidHostLinkStep() }
+
             // One-shot startup orphan sweep (plan.md Phase 6, Epic 6.1) — deletes long-unused
             // shadow git worktrees. Self-contained: no GraphManager/GitConfigRepository lookup
             // needed (see GitShadowWorktree.sweepOrphans doc), so it can run unconditionally here
@@ -393,6 +401,7 @@ class MainActivity : ComponentActivity() {
                         attachmentService = attachmentService,
                         requestCameraPermission = ::requestCameraPermission,
                         graphMoveQuiesceStrategy = androidGraphMoveQuiesceStrategy,
+                        hostLinkStep = androidHostLinkStep,
                         storageLocationResolver = androidStorageLocationResolver,
                     ),
                 ),

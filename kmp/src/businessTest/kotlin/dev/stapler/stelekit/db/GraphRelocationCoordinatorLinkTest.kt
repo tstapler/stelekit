@@ -27,6 +27,7 @@ class GraphRelocationCoordinatorLinkTest : RelocationCoordinatorTestSupport() {
 
     private class FakeHostLinkStep(
         private val outcome: Either<DomainError.StorageError, Unit> = Unit.right(),
+        override val persistsDestinationOnSuccess: Boolean = true,
     ) : HostLinkStep {
         val calls = mutableListOf<Pair<String, StorageLocation>>()
         override suspend fun link(existingOpfsPath: String, destination: StorageLocation): Either<DomainError.StorageError, Unit> {
@@ -103,6 +104,53 @@ class GraphRelocationCoordinatorLinkTest : RelocationCoordinatorTestSupport() {
 
         val failed = assertIs<StorageMoveUiState.Failed>(states.single())
         assertIs<DomainError.StorageError.DestinationNotWritable>(failed.reason)
+
+        graphManager.shutdown()
+    }
+
+    /**
+     * Regression test for the app-owned-storage-clone spec-compliance sweep's highest-severity
+     * finding: Android never wired a [HostLinkStep] (`androidMain`'s `createAndroidHostLinkStep()`,
+     * new for Story 4.2.1), so every Android "Link" click on a git-cloned graph fell through to
+     * [DestinationNotWritable] regardless of the UI's correct git-cloned gating. This test models
+     * `createAndroidHostLinkStep()`'s contract — a step that always succeeds and sets
+     * [HostLinkStep.persistsDestinationOnSuccess] `false` — without depending on `androidMain`
+     * (unreachable from this `businessTest` source set); `HostLinkStepAndroidTest`
+     * (`androidUnitTest`) separately covers the real Android factory function's behavior.
+     */
+    @Test
+    fun `link should SucceedWithoutRepointing When StepDoesNotPersistDestination`() = runBlocking {
+        val runId = System.nanoTime()
+        val safPath = "/test/link-graph-saf-$runId"
+        val graphManager = newGraphManager()
+        graphManager.openGraph(safPath)
+        val graphId = graphManager.getActiveGraphId()!!
+
+        // Mirrors Story 4.2.1's own acceptance-criteria scenario: an Android git-cloned graph
+        // currently on SafFolder, "Link" chosen with destination AppOwned.
+        val step = FakeHostLinkStep(persistsDestinationOnSuccess = false)
+        val coordinator = newLinkedCoordinator(graphManager, step)
+        val source = StorageLocation.SafFolder(graphId.value, "content://tree/123")
+        val destination = StorageLocation.AppOwned(graphId.value)
+        val operation = StorageMoveOperation.Link(
+            graphId = graphId.value,
+            source = source,
+            destination = destination,
+        )
+
+        val states = coordinator.link(operation).toList()
+
+        states.filterIsInstance<StorageMoveUiState.Failed>().forEach {
+            throw AssertionError("link failed unexpectedly: ${it.reason}")
+        }
+        assertEquals(StorageMoveUiState.Summary, states.last())
+        assertEquals(1, step.calls.size)
+
+        // The core assertion: a step that opts out of persisting must leave storage_locations
+        // untouched — "Link never repoints the location of record — only Relocate does."
+        assertEquals(null, graphManager.getStorageLocation(graphId.value))
+        // GraphInfo.path is likewise untouched — link() never calls updateGraphContentPath.
+        assertEquals(safPath, graphManager.getGraphInfo(graphId)?.path)
 
         graphManager.shutdown()
     }

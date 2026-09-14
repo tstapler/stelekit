@@ -108,9 +108,11 @@ data class StelekitAppPlatformIntegrations(
     val graphMoveQuiesceStrategy: GraphMoveQuiesceStrategy? = null,
     /**
      * Epic 4.1 (Task 4.1.1a): platform seam for [GraphRelocationCoordinator.link] — pass
-     * `createWasmJsHostLinkStep(fileSystem.hostDirectorySync)` on Web. Null (Desktop/iOS/Android —
-     * Android's own Link mode is Epic 4.2's separate git-shadow-worktree mechanism, not routed
-     * through [GraphRelocationCoordinator] at all) means a `Link` operation always fails fast.
+     * `createWasmJsHostLinkStep(fileSystem.hostDirectorySync)` on Web, `createAndroidHostLinkStep()`
+     * on Android (Epic 4.2, Story 4.2.1 — a no-op success for `GitShadowWorktree`'s already-running
+     * write-back-to-SAF cache mode, with `persistsDestinationOnSuccess = false` so Link never
+     * repoints `storage_locations`). Null (Desktop/iOS, or a host that hasn't wired one) means a
+     * `Link` operation always fails fast.
      */
     val hostLinkStep: dev.stapler.stelekit.db.HostLinkStep? = null,
     /**
