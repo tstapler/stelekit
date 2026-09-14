@@ -385,6 +385,7 @@ private fun GraphContent(deps: GraphContentDeps) {
     val hostLinkStep = deps.platformIntegrations.hostLinkStep
     val storageLocationResolver = deps.platformIntegrations.storageLocationResolver
     val insufficientSpaceCheck = deps.platformIntegrations.insufficientSpaceCheck
+    val gitSyncBusyCounter = deps.platformIntegrations.gitSyncBusyCounter
     val localChangesCountFlow = deps.webSyncDeps.localChangesCountFlow
     val hostAccessStateFlow = deps.webSyncDeps.hostAccessStateFlow
     val hostWritePendingCountFlow = deps.webSyncDeps.hostWritePendingCountFlow
@@ -615,6 +616,13 @@ private fun GraphContent(deps: GraphContentDeps) {
             credentialAccessProvider = { vaultCredentialStore ?: dev.stapler.stelekit.platform.security.CredentialStore() },
             graphId = gitSyncGraphId,
             settings = platformSettings,
+            // CRITICAL finding (PR #327 review): must be the same instance a host passes as
+            // gitSyncBusyCounter to createAndroidGraphMoveQuiesceStrategy(...), or the quiesce
+            // strategy's awaitIdle() never observes this service's sync() activity — see
+            // StelekitAppPlatformIntegrations.gitSyncBusyCounter's doc. Falling back to a fresh
+            // instance (Desktop/iOS, or before a host wires one) matches GitSyncService's own
+            // default.
+            gitSyncBusyCounter = gitSyncBusyCounter ?: dev.stapler.stelekit.git.GitSyncBusyCounter(),
         )
     }
     DisposableEffect(gitSyncService) {

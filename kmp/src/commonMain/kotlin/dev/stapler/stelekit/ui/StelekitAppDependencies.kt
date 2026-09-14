@@ -131,6 +131,20 @@ data class StelekitAppPlatformIntegrations(
      * convention.
      */
     val insufficientSpaceCheck: dev.stapler.stelekit.db.InsufficientSpaceCheck? = null,
+    /**
+     * CRITICAL finding (PR #327 review): the shared [dev.stapler.stelekit.git.GitSyncBusyCounter]
+     * instance [GraphContent] must inject into the active graph's `GitSyncService(...)` — it must
+     * be the SAME instance a host passes as `gitSyncBusyCounter` to
+     * `createAndroidGraphMoveQuiesceStrategy(...)` (Android) so
+     * `AndroidGraphMoveQuiesceStrategy.quiesce()` actually observes real sync activity instead of
+     * awaiting an always-idle counter nobody increments. Construct it once at the composition root
+     * (`MainActivity.kt`, same `remember` scope as [graphMoveQuiesceStrategy]) and pass the same
+     * reference to both construction sites. `null` (default; Desktop/iOS, or before a host wires
+     * one) makes `GitSyncService` fall back to its own private instance, mirroring
+     * [graphMoveQuiesceStrategy]/[insufficientSpaceCheck]'s "off unless a platform explicitly
+     * supplies one" convention.
+     */
+    val gitSyncBusyCounter: dev.stapler.stelekit.git.GitSyncBusyCounter? = null,
 )
 
 /**

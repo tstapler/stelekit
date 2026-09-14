@@ -310,22 +310,31 @@ class MainActivity : ComponentActivity() {
             val gitRepository = remember { buildGitRepository(applicationContext, app.fileSystem) }
             val attachmentService = rememberAndroidMediaAttachmentService(this@MainActivity, fileSystem)
 
+            // CRITICAL finding (PR #327 review): shared with GitSyncService (via
+            // StelekitAppPlatformIntegrations.gitSyncBusyCounter, passed below) so
+            // AndroidGraphMoveQuiesceStrategy.quiesce()'s awaitIdle() actually observes real
+            // sync() activity — a single instance constructed once at this composition root and
+            // threaded into both construction sites, never one fresh instance per site.
+            val sharedGitSyncBusyCounter = remember { GitSyncBusyCounter() }
+
             // Phase 3 (Epic 3.2): real quiesce port for GraphRelocationCoordinator, constructed
             // here (not inside StelekitApp) since it needs this Activity's Context for
-            // WorkManagerSyncScheduler pause/resume. gitSyncBusyCounter is a fresh, always-idle
-            // instance and shadowWorktreeTarget always resolves to null — GitSyncService doesn't
-            // expose its own busyCounter/shadow-worktree state publicly yet (no seam to share the
-            // live instance without changing GitSyncService itself, out of this dispatch's scope),
-            // so relocate correctly pauses WorkManager and copies files, but doesn't yet await an
-            // in-flight foreground git shadow-worktree sync before doing so. Null when
-            // app.graphManager failed to construct (see SteleKitApplication's own try/catch) —
-            // StelekitApp falls back to its own GraphManager in that case, which this strategy
-            // wouldn't be wired to anyway.
-            val androidGraphMoveQuiesceStrategy = remember(app.graphManager) {
+            // WorkManagerSyncScheduler pause/resume. shadowWorktreeTarget still always resolves to
+            // null: AndroidGitRepository.shadowWorktreeFor() and the GitShadowFlushActor a real
+            // flush lambda needs are both `internal` to the :kmp module and unreachable from this
+            // :androidApp module, so wiring a real resolver needs a public seam added to
+            // AndroidGitRepository itself — out of scope for this focused fix (see its TODO below).
+            // So relocate correctly pauses WorkManager, awaits real git-sync idleness, and copies
+            // files, but doesn't yet drain/lock a shadow worktree's write-back queue before
+            // copying it.
+            // TODO(shadowWorktreeTarget): resolve op's graph to its real ShadowWorktreeQuiesceTarget
+            // (shadowKey/queue/flush) once AndroidGitRepository exposes a public accessor for its
+            // internal shadowWorktreeFor()/GitShadowFlushActor — currently always null, not wired.
+            val androidGraphMoveQuiesceStrategy = remember(app.graphManager, sharedGitSyncBusyCounter) {
                 app.graphManager?.let {
                     createAndroidGraphMoveQuiesceStrategy(
                         context = applicationContext,
-                        gitSyncBusyCounter = GitSyncBusyCounter(),
+                        gitSyncBusyCounter = sharedGitSyncBusyCounter,
                         shadowWorktreeTarget = { null },
                     )
                 }
@@ -412,6 +421,7 @@ class MainActivity : ComponentActivity() {
                         hostLinkStep = androidHostLinkStep,
                         storageLocationResolver = androidStorageLocationResolver,
                         insufficientSpaceCheck = androidInsufficientSpaceCheck,
+                        gitSyncBusyCounter = sharedGitSyncBusyCounter,
                     ),
                 ),
             )
