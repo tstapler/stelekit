@@ -434,8 +434,13 @@ class GraphManager(
      * Shared by [switchGraph] (tearing down the outgoing graph before opening the next one) and
      * [removeGraph] (tearing down the last graph with nothing to open next), so the two copies
      * of this sequence can't silently drift apart.
+     *
+     * `internal` (Story 3.1.5, Task 3.1.5c) so `GraphRelocationCoordinator` can reuse this exact
+     * close mechanism directly instead of inventing a second one — it is the one caller that
+     * awaits the returned factory's `close()` itself, synchronously, rather than deferring the
+     * close to a background coroutine the way [switchGraph]/[removeGraph] do below.
      */
-    private fun tearDownActiveGraphResources(): dev.stapler.stelekit.repository.RepositoryFactory? {
+    internal fun tearDownActiveGraphResources(): dev.stapler.stelekit.repository.RepositoryFactory? {
         _activeGitSyncService.value?.shutdown()
         _activeGitSyncService.value = null
         _activeVaultCredentialStore.value = null
@@ -677,8 +682,16 @@ class GraphManager(
     /**
      * Switch to a different graph.
      * Closes the current database connection and opens a new one for the target graph.
+     *
+     * @param forceReinit Bypasses the idempotency guard below even when [id] is already the
+     *   active graph (Story 3.1.5, Task 3.1.5b). `GraphRelocationCoordinator` is the only caller
+     *   that ever passes `true` — a relocate keeps the same [GraphId], so without this the guard
+     *   would treat the coordinator's post-relocate reopen as a no-op "already active" switch and
+     *   never actually reopen the connection to the just-moved files. Every other call site keeps
+     *   the default `false`; the guard's racing-`LaunchedEffect` protection (see its own comment
+     *   below) is unchanged for ordinary switches.
      */
-    fun switchGraph(id: GraphId) {
+    fun switchGraph(id: GraphId, forceReinit: Boolean = false) {
         val registry = _graphRegistry.value
         val graphInfo = registry.graphs.firstOrNull { it.id == id }
         if (graphInfo == null) return
@@ -691,7 +704,7 @@ class GraphManager(
         // init is slow, so the LaunchedEffect arrives while _activeRepositorySet is still null,
         // and checking only (a) lets the second call cancel the first init scope → crash.
         val currentGraphId = registry.activeGraphId
-        if (currentGraphId == id && (_activeRepositorySet.value != null || activeGraphJobs.containsKey(id))) return
+        if (currentGraphId == id && !forceReinit && (_activeRepositorySet.value != null || activeGraphJobs.containsKey(id))) return
         currentGraphId?.let {
             activeGraphJobs.remove(it)?.cancel()
             evictCoordinatorFor(it)

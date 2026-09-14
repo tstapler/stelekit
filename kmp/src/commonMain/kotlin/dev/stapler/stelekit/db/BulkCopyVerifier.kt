@@ -192,7 +192,14 @@ private fun filenameIdentityMatches(sourcePath: String, destinationPath: String)
     return FileUtils.decodeFileName(sourceName) == FileUtils.decodeFileName(destinationName)
 }
 
-private fun StorageLocation.resolveRootPathOrNull(): String? = when (this) {
+/**
+ * `internal` (not `private`) so `GraphRelocationCoordinator` (Story 3.1.5) can resolve the same
+ * two directly-resolvable [StorageLocation] kinds for its own staging-path computation without
+ * duplicating this logic — see this file's class doc for why [StorageLocation.AppOwned]/
+ * [StorageLocation.HostFolder] resolution is deferred to the per-platform coordinator wiring
+ * (Epic 3.2/3.3) instead.
+ */
+internal fun StorageLocation.resolveRootPathOrNull(): String? = when (this) {
     is StorageLocation.DirectAccessFolder -> realPath
     is StorageLocation.SafFolder -> "saf://$treeUri"
     is StorageLocation.AppOwned -> null
