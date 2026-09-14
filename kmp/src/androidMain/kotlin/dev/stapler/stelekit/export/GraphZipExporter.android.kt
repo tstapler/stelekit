@@ -40,9 +40,9 @@ class AndroidGraphZipExporter : GraphZipExporter {
 
             ZipOutputStream(FileOutputStream(zipFile)).use { zip ->
                 for ((relativePath, _) in fileSystem.listFilesRecursiveWithModTimes(graphPath)) {
-                    val content = fileSystem.readFile("$graphPath/$relativePath") ?: continue
+                    val content = fileSystem.readFileBytes("$graphPath/$relativePath") ?: continue
                     zip.putNextEntry(ZipEntry(relativePath))
-                    zip.write(content.toByteArray(Charsets.UTF_8))
+                    zip.write(content)
                     zip.closeEntry()
                 }
             }
