@@ -70,6 +70,7 @@ import dev.stapler.stelekit.db.GraphManagerAddGraphTest
 import dev.stapler.stelekit.db.GraphManagerEnrichmentCoordinatorTest
 import dev.stapler.stelekit.db.GraphManagerInitAutoRestoreTest
 import dev.stapler.stelekit.db.GraphManagerOnGraphLocationDeterminedTest
+import dev.stapler.stelekit.db.GraphManagerPendingStorageLocationRemovalTest
 import dev.stapler.stelekit.db.GraphManagerRemoveGraphTest
 import dev.stapler.stelekit.db.GraphManagerUpdateGraphPathTest
 import dev.stapler.stelekit.db.GraphManagerUpdateHostDirNameTest
@@ -193,6 +194,7 @@ import org.junit.runners.Suite
     GraphManagerEnrichmentCoordinatorTest::class,
     GraphManagerInitAutoRestoreTest::class,
     GraphManagerOnGraphLocationDeterminedTest::class,
+    GraphManagerPendingStorageLocationRemovalTest::class,
     GraphManagerRemoveGraphTest::class,
     GraphManagerUpdateGraphPathTest::class,
     GraphManagerUpdateHostDirNameTest::class,

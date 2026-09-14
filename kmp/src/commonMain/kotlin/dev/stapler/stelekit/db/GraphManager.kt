@@ -122,7 +122,15 @@ class GraphManager(
 
     // Locations passed to addGraph() before that graph's own database is open (addGraph() runs
     // before the caller's own switchGraph() call reopens the driver — see onGraphLocationDetermined).
-    // Flushed by switchGraph()'s init block once a writeActor exists for the graph.
+    // Flushed by switchGraph()'s init block once a writeActor exists for the graph, and evicted by
+    // removeGraph() (see evictPendingStorageLocationFor) if the graph is removed before ever being
+    // flushed — otherwise the entry leaks forever, and a later re-add of the same path (same
+    // GraphId, since GraphId = sha256(path)) would replay a write meant for the removed instance.
+    // onGraphLocationDetermined is callable from any dispatcher, and the flush (switchGraph, on
+    // PlatformDispatcher.IO) and evict (removeGraph, dispatched onto coroutineScope) sites run on
+    // different coroutines too — pendingStorageLocationsMutex guards every read/write of this map,
+    // mirroring coordinatorMutex's guard on coordinatorFor below.
+    private val pendingStorageLocationsMutex = Mutex()
     private val pendingStorageLocations = mutableMapOf<GraphId, StorageLocation>()
 
     // Memoized per-graph CaptureEnrichmentCoordinator construction (Epic 1.2). coordinatorMutex
@@ -153,6 +161,22 @@ class GraphManager(
             coordinatorMutex.withLock {
                 if (coordinatorFor?.first == graphId) coordinatorFor = null
             }
+        }
+    }
+
+    /**
+     * Removes any not-yet-flushed [StorageLocation] queued in [pendingStorageLocations] for
+     * [graphId] — called from [removeGraph] so a graph removed before [switchGraph] ever ran its
+     * flush block doesn't leak the entry, and a subsequent re-add of the same path (same
+     * [GraphId]) doesn't have a stale queued write silently applied to the new instance.
+     *
+     * Dispatched on [coroutineScope] (fire-and-forget) rather than acquired synchronously, for the
+     * same reason as [evictCoordinatorFor]: [removeGraph] is not `suspend`, and a blocking acquire
+     * is not safe on wasmJs.
+     */
+    private fun evictPendingStorageLocationFor(graphId: GraphId) {
+        coroutineScope.launch {
+            pendingStorageLocationsMutex.withLock { pendingStorageLocations.remove(graphId) }
         }
     }
 
@@ -454,10 +478,19 @@ class GraphManager(
         return factoryToClose
     }
 
+    /**
+     * Unregisters [id] from the graph registry. Always clears its queued
+     * [pendingStorageLocations] entry, if any. Its `storage_locations` DB row is deleted too, but
+     * only on the path where [id] is the sole active graph being torn down — a non-active graph's
+     * per-graph database isn't open at removal time (see [onGraphLocationDetermined]'s KDoc), so
+     * deleting that row would require briefly opening a database this method has no reachable
+     * connection to; that gap is unaddressed here.
+     */
     fun removeGraph(id: GraphId): Boolean {
         // Cancel any active coroutines for this graph
         activeGraphJobs.remove(id)?.cancel()
         evictCoordinatorFor(id)
+        evictPendingStorageLocationFor(id)
 
         val registry = _graphRegistry.value
         val graphIndex = registry.graphs.indexOfFirst { it.id == id }
@@ -481,15 +514,27 @@ class GraphManager(
             if (!isOnlyRealGraph) return false
 
             _graphsExplicitlyEmptied.value = true
+            // storage_locations lives in each graph's own per-graph database file (see
+            // onGraphLocationDetermined's KDoc) — only reachable here because this is the active
+            // graph and tearDownActiveGraphResources() hasn't nulled currentFactory/writeActor
+            // yet. Capture them first so the row can be deleted before the factory closes,
+            // preventing a later re-add of the same path (same GraphId = sha256(path)) from
+            // inheriting this stale/revoked location. A non-active graph's database isn't open at
+            // removal time, so that case isn't covered by this call — see the removeGraph() KDoc.
+            //
+            // Gated on defaultBackend == SQLDELIGHT, mirroring switchGraph()'s identical guard on
+            // its own storage_locations write below: currentFactory is a RepositoryFactoryImpl
+            // and writeActor is non-null for EVERY backend (see RepositoryFactoryImpl.
+            // createRepositorySet — the actor is constructed whenever a scope is passed, backend
+            // notwithstanding), but factory.steleDatabase() lazily opens a real SQLite
+            // connection and runs MigrationRunner on first access — which must never happen for
+            // an IN_MEMORY-backend graph.
+            val factoryForDelete = (currentFactory as? dev.stapler.stelekit.repository.RepositoryFactoryImpl)
+                ?.takeIf { defaultBackend == GraphBackend.SQLDELIGHT }
+            val actorForDelete = _activeRepositorySet.value?.writeActor
             val factoryToClose = tearDownActiveGraphResources()
             coroutineScope.launch(PlatformDispatcher.IO) {
-                try {
-                    factoryToClose?.close()
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    logger.error("Failed to close graph's factory while removing the last graph $id", e)
-                }
+                deleteStorageLocationRowThenCloseFactory(id, factoryForDelete, actorForDelete, factoryToClose)
             }
         }
 
@@ -823,13 +868,18 @@ class GraphManager(
                 // Flush any StorageLocation queued by addGraph() before this graph's driver was
                 // open (see onGraphLocationDetermined's KDoc). Only pop the queued entry once the
                 // write actually runs — popping unconditionally when writeActor is still null
-                // (e.g. a non-SQLDELIGHT backend) would silently drop the location forever.
-                pendingStorageLocations[id]?.let { location ->
-                    repoSet.writeActor?.let { actor ->
-                        writeStorageLocation(factory, actor, id.value, location).onLeft {
-                            logger.warn("switchGraph: failed to flush pending storage location for graph $id: ${it::class.simpleName}")
+                // (e.g. a non-SQLDELIGHT backend) would silently drop the location forever. The
+                // whole check-write-remove sequence runs under one lock acquisition so a
+                // concurrent onGraphLocationDetermined() call can't queue a fresher location
+                // between this read and the remove() below, which would otherwise drop it.
+                pendingStorageLocationsMutex.withLock {
+                    pendingStorageLocations[id]?.let { location ->
+                        repoSet.writeActor?.let { actor ->
+                            writeStorageLocation(factory, actor, id.value, location).onLeft {
+                                logger.warn("switchGraph: failed to flush pending storage location for graph $id: ${it::class.simpleName}")
+                            }
+                            pendingStorageLocations.remove(id)
                         }
-                        pendingStorageLocations.remove(id)
                     }
                 }
                 repoSet.spanEmitter?.emit("db.init", t0)
@@ -1095,7 +1145,7 @@ class GraphManager(
         return if (factory != null && actor != null && getActiveGraphId() == id) {
             writeStorageLocation(factory, actor, graphId, location)
         } else {
-            pendingStorageLocations[id] = location
+            pendingStorageLocationsMutex.withLock { pendingStorageLocations[id] = location }
             Unit.right()
         }
     }
@@ -1143,6 +1193,55 @@ class GraphManager(
                     display_name = row.displayName,
                     updated_at_epoch_ms = Clock.System.now().toEpochMilliseconds(),
                 )
+                Unit.right()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
+            }
+        }
+    }
+
+    /**
+     * Deletes [graphId]'s `storage_locations` row (best-effort, logged on failure — never thrown)
+     * via [factoryForDelete]/[actorForDelete] if both are non-null, then closes [factoryToClose].
+     * The delete always runs to completion before the close, so it can never race a driver
+     * shutdown out from under it. Extracted from [removeGraph]'s only-real-graph teardown path.
+     */
+    private suspend fun deleteStorageLocationRowThenCloseFactory(
+        graphId: GraphId,
+        factoryForDelete: dev.stapler.stelekit.repository.RepositoryFactoryImpl?,
+        actorForDelete: DatabaseWriteActor?,
+        factoryToClose: dev.stapler.stelekit.repository.RepositoryFactory?,
+    ) {
+        if (factoryForDelete != null && actorForDelete != null) {
+            deleteStorageLocationRow(factoryForDelete, actorForDelete, graphId.value).onLeft {
+                logger.warn("removeGraph: failed to delete storage_locations row for graph $graphId: ${it::class.simpleName}")
+            }
+        }
+        try {
+            factoryToClose?.close()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.error("Failed to close graph's factory while removing the last graph $graphId", e)
+        }
+    }
+
+    /**
+     * Deletes [graphId]'s `storage_locations` row, mirroring [writeStorageLocation]'s
+     * actor-routed/`@DirectSqlWrite`-gated write pattern (ADR-001, Story 1.1.3).
+     */
+    private suspend fun deleteStorageLocationRow(
+        factory: dev.stapler.stelekit.repository.RepositoryFactoryImpl,
+        actor: DatabaseWriteActor,
+        graphId: String,
+    ): Either<DomainError, Unit> {
+        val restricted = RestrictedDatabaseQueries(factory.steleDatabase().steleDatabaseQueries)
+        return actor.execute(DatabaseWriteActor.Priority.HIGH) {
+            try {
+                @OptIn(DirectSqlWrite::class)
+                restricted.deleteStorageLocation(graphId)
                 Unit.right()
             } catch (e: CancellationException) {
                 throw e
