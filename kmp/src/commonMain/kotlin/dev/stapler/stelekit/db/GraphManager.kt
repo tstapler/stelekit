@@ -418,9 +418,14 @@ class GraphManager(
         localPath: String,
         auth: GitAuth,
         onProgress: (String) -> Unit,
+        // Story 2.2.2: the destination StorageLocation resolved by UnifiedLocationPicker, so the
+        // cloned graph's storage_locations row is written at creation time instead of waiting for
+        // a later relocate/link flow to lazily backfill it. Default null preserves every existing
+        // caller's behavior unchanged.
+        location: StorageLocation? = null,
     ): Either<DomainError.GitError, GraphId> {
         val cloneResult = gitRepository.clone(url, localPath, auth, onProgress)
-        return cloneResult.map { addGraph(localPath) }
+        return cloneResult.map { addGraph(localPath, location) }
     }
 
     /**

@@ -633,6 +633,16 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
 
     actual override fun pickDirectory(): String? = null // Handled via pickDirectoryAsync on Android
 
+    // Story 2.2.1/2.2.2: "App storage" backs a graph with a real path under context.filesDir —
+    // no SAF grant, no ACTION_OPEN_DOCUMENT_TREE launch. validateLegacyPath() below allows
+    // filesDir as a second containment root so read/write of that path actually works.
+    override val supportsAppOwnedStorage: Boolean get() = true
+
+    override fun newAppOwnedGraphPath(): String {
+        val ctx = context ?: throw IllegalStateException("PlatformFileSystem.init(context) not called")
+        return java.io.File(ctx.filesDir, "graphs/${java.util.UUID.randomUUID()}").absolutePath
+    }
+
     /**
      * Registers the callback that launches ACTION_CREATE_DOCUMENT and returns the chosen
      * content:// URI string (or null if cancelled). Must be called from MainActivity after
@@ -1162,9 +1172,14 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         val normalized = path.replace(Regex("[/\\\\]+"), "/")
         val expandedPath = expandTilde(normalized)
         val canonicalPath = File(expandedPath).canonicalPath
-        // Enforce containment within the public Documents directory to prevent path traversal
+        // Enforce containment within an allowed root to prevent path traversal. homeDir (the
+        // public Documents directory) is the historical default-graph root; context.filesDir is
+        // the app-private root newAppOwnedGraphPath() hands out for "App storage" graphs (Story
+        // 2.2.1/2.2.2) — allowed here for parity with legacyReadFileBytes/legacyWriteFileBytes,
+        // which already permit it for attachments.
         val homePath = File(homeDir).canonicalPath
-        require(canonicalPath.startsWith(homePath)) { "Path must be within the allowed directory" }
+        val allowedRoots = listOfNotNull(homePath, context?.filesDir?.canonicalPath)
+        require(allowedRoots.any { canonicalPath.startsWith(it) }) { "Path must be within the allowed directory" }
         return canonicalPath
     }
 }

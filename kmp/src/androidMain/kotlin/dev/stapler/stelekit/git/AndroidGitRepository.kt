@@ -66,8 +66,11 @@ class AndroidGitRepository(
      * `MANAGE_EXTERNAL_STORAGE`, no shadow needed) or when [repoRoot] isn't a `saf://` path.
      */
     internal fun shadowWorktreeFor(repoRoot: String): GitShadowWorktree? {
-        if (pathResolver(repoRoot) != null) return null // fast path resolves directly, no shadow needed
+        // AppOwned/DirectAccess/Desktop branch (Story 2.2.2): a repoRoot that isn't a saf:// URI
+        // at all needs no SAF resolution — checked first so pathResolver (which only ever
+        // resolves saf:// input) is never invoked for it, not just harmlessly returns null.
         if (!repoRoot.startsWith("saf://")) return null
+        if (pathResolver(repoRoot) != null) return null // fast path resolves directly, no shadow needed
         val key = GitShadowWorktree.shadowKeyForSafPath(repoRoot)
         // .also { touchLastUsed() } refreshes the orphan-sweep liveness signal (Task 6.1.1a) on
         // every real resolution, so GitShadowWorktree.sweepOrphans() never deletes an actively

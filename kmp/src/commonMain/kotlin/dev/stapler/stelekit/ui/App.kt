@@ -40,6 +40,7 @@ import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.DEMO_GRAPH_ID
 import dev.stapler.stelekit.model.GraphId
+import dev.stapler.stelekit.model.StorageLocation
 import dev.stapler.stelekit.performance.DebugBuildConfig
 import dev.stapler.stelekit.performance.DebugMenuState
 import dev.stapler.stelekit.performance.LocalSpanRecorder
@@ -1252,6 +1253,23 @@ private fun GraphContent(deps: GraphContentDeps) {
                     val snackbarHostState = remember { SnackbarHostState() }
                     var showAddGraphDialog by remember { mutableStateOf(false) }
                     var demoBannerDismissed by remember { mutableStateOf(false) }
+                    // Story 2.2.1: new-graph "App storage" flow (Android-only for now — gated on
+                    // fileSystem.supportsAppOwnedStorage). showNewGraphLocationPicker/
+                    // pendingNewGraphAppOwnedPath are the picker dialog's own open-state and its
+                    // pre-generated "App storage" candidate path (needed up front because
+                    // UnifiedLocationPicker takes graphId as a constructor param, before the user
+                    // has chosen a row). pendingPlainGraphWarning holds the resolved AppOwned
+                    // location + path awaiting the ADR-003 warning's "Create anyway"/"Go back".
+                    var showNewGraphLocationPicker by remember { mutableStateOf(false) }
+                    var pendingNewGraphAppOwnedPath by remember { mutableStateOf("") }
+                    // Set alongside the StorageLocation.SafFolder returned from the picker's
+                    // onBrowseRequested — SafFolder.treeUri only carries the tree-root segment
+                    // (see that lambda's comment), so the real picked path is stashed here rather
+                    // than reconstructed from that shorter field.
+                    var pendingNewGraphSafPath by remember { mutableStateOf("") }
+                    var pendingPlainGraphWarning by remember {
+                        mutableStateOf<Pair<StorageLocation.AppOwned, String>?>(null)
+                    }
                     LaunchedEffect(Unit) {
                         viewModel.snackbarEvents.collect { msg ->
                             try {
@@ -1405,27 +1423,39 @@ private fun GraphContent(deps: GraphContentDeps) {
                                     closeSidebarIfMobile()
                                 },
                                 onAddGraph = {
-                                    if (fileSystem.supportsNativeDirectoryPicker) {
-                                        // Must call synchronously here, before scope.launch, so the
-                                        // browser's showDirectoryPicker() runs within this click's
-                                        // transient user activation (see requestDirectoryPickerNow doc).
-                                        fileSystem.requestDirectoryPickerNow()
-                                        scope.launch {
-                                            val selectedPath = fileSystem.pickDirectoryAsync()
-                                            println("[SteleKit] onAddGraph: picker returned '$selectedPath'")
-                                            if (selectedPath != null) {
-                                                val newGraphId = graphManager.addGraph(selectedPath)
-                                                println("[SteleKit] onAddGraph: addGraph='$newGraphId', switching...")
-                                                graphManager.switchGraph(newGraphId)
-                                            } else {
-                                                val pickerError = fileSystem.consumeLastPickerError()
-                                                if (pickerError != null) {
-                                                    viewModel.sendSnackbar("Couldn't open folder picker: $pickerError")
+                                    when (addGraphFlowMode(fileSystem)) {
+                                        AddGraphFlowMode.ShowLocationPicker -> {
+                                            // Story 2.2.1: show UnifiedLocationPicker instead of
+                                            // jumping straight to the SAF folder picker, so "App
+                                            // storage" is choosable with zero SAF grant. The
+                                            // candidate path is generated now (not on confirm)
+                                            // because UnifiedLocationPicker needs graphId as a
+                                            // constructor param, before the user has chosen a row.
+                                            pendingNewGraphAppOwnedPath = fileSystem.newAppOwnedGraphPath()
+                                            showNewGraphLocationPicker = true
+                                        }
+                                        AddGraphFlowMode.ImmediateNativePicker -> {
+                                            // Must call synchronously here, before scope.launch, so
+                                            // the browser's showDirectoryPicker() runs within this
+                                            // click's transient user activation (see
+                                            // requestDirectoryPickerNow doc).
+                                            fileSystem.requestDirectoryPickerNow()
+                                            scope.launch {
+                                                val selectedPath = fileSystem.pickDirectoryAsync()
+                                                println("[SteleKit] onAddGraph: picker returned '$selectedPath'")
+                                                if (selectedPath != null) {
+                                                    val newGraphId = graphManager.addGraph(selectedPath)
+                                                    println("[SteleKit] onAddGraph: addGraph='$newGraphId', switching...")
+                                                    graphManager.switchGraph(newGraphId)
+                                                } else {
+                                                    val pickerError = fileSystem.consumeLastPickerError()
+                                                    if (pickerError != null) {
+                                                        viewModel.sendSnackbar("Couldn't open folder picker: $pickerError")
+                                                    }
                                                 }
                                             }
                                         }
-                                    } else {
-                                        showAddGraphDialog = true
+                                        AddGraphFlowMode.ShowNameDialog -> showAddGraphDialog = true
                                     }
                                     closeSidebarIfMobile()
                                 },
@@ -1921,8 +1951,8 @@ private fun GraphContent(deps: GraphContentDeps) {
                                 gitConfigRepository = gitConfigRepository,
                                 activeGraphId = activeGraphId?.value,
                                 onCloneAndAdd = if (gitRepository != null) {
-                                    { url, localPath, auth, onProgress ->
-                                        graphManager.cloneAndAdd(gitRepository, url, localPath, auth, onProgress).map { it.value }
+                                    { url, localPath, auth, location, onProgress ->
+                                        graphManager.cloneAndAdd(gitRepository, url, localPath, auth, onProgress, location).map { it.value }
                                     }
                                 } else null,
                                 graphPath = activeGraphPath,
@@ -1971,6 +2001,73 @@ private fun GraphContent(deps: GraphContentDeps) {
                         )
                     }
 
+                    // Story 2.2.1: replaces the immediate SAF-picker call in onAddGraph above,
+                    // whenever fileSystem.supportsAppOwnedStorage (Android today) — see that
+                    // callback's comment. createNewGraph is shared by both this picker's SafFolder
+                    // branch (no warning needed) and the AppOwned warning's "Create anyway" below.
+                    val createNewGraph: (String, StorageLocation?) -> Unit = { path, location ->
+                        scope.launch { graphManager.switchGraph(graphManager.addGraph(path, location)) }
+                    }
+                    if (showNewGraphLocationPicker) {
+                        UnifiedLocationPicker(
+                            title = "Choose where to keep this graph",
+                            graphId = graphManager.graphIdFromPath(
+                                fileSystem.expandTilde(pendingNewGraphAppOwnedPath)
+                            ).value,
+                            appStorageSubtitle = "Kept inside SteleKit only — not visible in " +
+                                "your device's file manager, and removed if you uninstall the app.",
+                            platformCapabilities = fileSystem.supportsNativeDirectoryPicker,
+                            onBrowseRequested = {
+                                fileSystem.requestDirectoryPickerNow()
+                                val path = fileSystem.pickDirectoryAsync()
+                                path?.let {
+                                    val expanded = fileSystem.expandTilde(it)
+                                    pendingNewGraphSafPath = expanded
+                                    // Only the tree-root segment — see the matching comment at
+                                    // GitSetupScreen's own onBrowseRequested (Story 2.2.2).
+                                    val treeUri = expanded.removePrefix("saf://").substringBefore("/")
+                                    StorageLocation.SafFolder(graphManager.graphIdFromPath(expanded).value, treeUri)
+                                }
+                            },
+                            onConfirm = { location ->
+                                showNewGraphLocationPicker = false
+                                when (location) {
+                                    is StorageLocation.AppOwned ->
+                                        // ADR-003: a plain (non-git) graph in AppOwned storage has
+                                        // no backup at all — warn before creating, not after.
+                                        pendingPlainGraphWarning = location to pendingNewGraphAppOwnedPath
+                                    is StorageLocation.SafFolder ->
+                                        createNewGraph(pendingNewGraphSafPath, location)
+                                    else ->
+                                        Unit
+                                }
+                            },
+                            onDismiss = { showNewGraphLocationPicker = false },
+                        )
+                    }
+
+                    pendingPlainGraphWarning?.let { (location, path) ->
+                        val zipExporter = rememberGraphZipExporter()
+                        PlainGraphAppOwnedWarningDialog(
+                            bodyText = PlainGraphAppOwnedWarningAndroidCopy,
+                            onExportZip = zipExporter?.let { exporter ->
+                                {
+                                    exporter.export(fileSystem, path, "stelekit-graph").isRight()
+                                }
+                            },
+                            onCreateAnyway = {
+                                pendingPlainGraphWarning = null
+                                createNewGraph(path, location)
+                            },
+                            onGoBack = {
+                                // ux.md Surface 11: returns to an editable New-graph dialog rather
+                                // than all the way back to the sidebar.
+                                pendingPlainGraphWarning = null
+                                showNewGraphLocationPicker = true
+                            },
+                        )
+                    }
+
                     } // CompositionLocalProvider(LocalWindowSizeClass)
                 }
                 } // vault unlocked else
@@ -1993,6 +2090,20 @@ private data class GraphKeyEventHandlers(
     val onForward: () -> Unit,
     val onDebugMenu: () -> Unit = {},
 )
+
+/** Which "add a new graph" UI [onAddGraph] should show, given this platform's [FileSystem]. */
+internal enum class AddGraphFlowMode { ShowLocationPicker, ImmediateNativePicker, ShowNameDialog }
+
+/**
+ * Pure decision logic for the sidebar's "add graph" affordance (Story 2.2.1) — factored out of
+ * `onAddGraph` so its "no SAF intent for `AppOwned`" acceptance criterion is testable without
+ * mounting the whole `App.kt` composable tree (see `AddGraphAppOwnedTest.kt`).
+ */
+internal fun addGraphFlowMode(fileSystem: FileSystem): AddGraphFlowMode = when {
+    fileSystem.supportsAppOwnedStorage -> AddGraphFlowMode.ShowLocationPicker
+    fileSystem.supportsNativeDirectoryPicker -> AddGraphFlowMode.ImmediateNativePicker
+    else -> AddGraphFlowMode.ShowNameDialog
+}
 
 /**
  * Pure function — handles keyboard shortcuts for the graph content area.

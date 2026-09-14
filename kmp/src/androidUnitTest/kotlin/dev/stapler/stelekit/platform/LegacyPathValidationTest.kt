@@ -7,8 +7,10 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
  * Tests for the legacy (non-SAF) path validation logic in [PlatformFileSystem].
@@ -112,5 +114,33 @@ class LegacyPathValidationTest {
         // homeDir is a directory, not a file — readFile must return null gracefully
         assertNull(fs().readFile(homeDir),
             "homeDir is a directory, not a file — readFile must return null without crashing")
+    }
+
+    // -------------------------------------------------------------------------
+    // context.filesDir as a second allowed root (Story 2.2.1/2.2.2 "App storage"): before this
+    // fix, validateLegacyPath only ever allowed homeDir (the public Documents dir), so a graph
+    // rooted at PlatformFileSystem.newAppOwnedGraphPath() — under context.filesDir — could not
+    // read or write a single page. See validateLegacyPath's own comment for the root cause.
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `writeFile and readFile round-trip for a path under context filesDir`() {
+        val fs = fs()
+        val path = context.filesDir.resolve("graphs/g1/pages/test.md").absolutePath
+
+        assertTrue(fs.writeFile(path, "hello"), "writeFile must succeed for a filesDir-rooted AppOwned path")
+        assertEquals("hello", fs.readFile(path))
+    }
+
+    @Test
+    fun `newAppOwnedGraphPath produces a path that is both filesDir-rooted and writable`() {
+        val fs = fs()
+        val path = fs.newAppOwnedGraphPath()
+
+        assertTrue(
+            path.startsWith(context.filesDir.canonicalPath),
+            "newAppOwnedGraphPath() must be rooted under context.filesDir, was: $path",
+        )
+        assertTrue(fs.writeFile("$path/pages/test.md", "hello"))
     }
 }

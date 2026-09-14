@@ -19,6 +19,23 @@ interface FileSystem {
     suspend fun pickDirectoryAsync(): String? = pickDirectory()
 
     /**
+     * True on platforms with a true app-private storage backend that needs zero external grant —
+     * Android's `filesDir` today (Story 2.2.1/2.2.2); Web's OPFS is the analogous Epic 2.3 case.
+     * Gates the "App storage" destination in [dev.stapler.stelekit.ui.components.UnifiedLocationPicker]
+     * call sites — false (the default) on Desktop/iOS, which already have unrestricted filesystem
+     * access and gain nothing from a second, app-private storage mode.
+     */
+    val supportsAppOwnedStorage: Boolean get() = false
+
+    /**
+     * Allocates a fresh, unique app-private root path for a brand-new [dev.stapler.stelekit.model.StorageLocation.AppOwned]
+     * graph. Only ever called when [supportsAppOwnedStorage] is true; the default throws since no
+     * other platform implements this concept.
+     */
+    fun newAppOwnedGraphPath(): String =
+        throw UnsupportedOperationException("newAppOwnedGraphPath is not supported on this platform")
+
+    /**
      * Synchronously kicks off the native directory picker so the platform call happens inside the
      * caller's click-handler call stack rather than after a `scope.launch` dispatch. Must be called
      * directly from a Compose `onClick` before any `scope.launch { pickDirectoryAsync() }` — on the
