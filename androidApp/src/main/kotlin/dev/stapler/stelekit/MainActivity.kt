@@ -20,6 +20,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.lifecycleScope
 import dev.stapler.stelekit.db.GraphManager
+import dev.stapler.stelekit.db.RelocationStagingDirectory
 import dev.stapler.stelekit.domain.UrlFetcherAndroid
 import dev.stapler.stelekit.llm.LlmCredentialStore
 import dev.stapler.stelekit.llm.LlmProviderAvailability
@@ -312,6 +313,13 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(Unit) {
                 withContext(Dispatchers.IO) {
                     GitShadowWorktree.sweepOrphans(this@MainActivity.applicationContext)
+                    // Same startup pass sweeps interrupted-relocate staging directories (Story 3.1.2)
+                    // — AppOwned's destination parent is context.filesDir/graphs, the same root
+                    // GitShadowWorktree.sweepOrphans() scans, so both sweeps run over one directory.
+                    RelocationStagingDirectory.sweep(
+                        fileSystem = fileSystem,
+                        destinationParent = File(this@MainActivity.applicationContext.filesDir, "graphs").path,
+                    )
                 }
             }
 

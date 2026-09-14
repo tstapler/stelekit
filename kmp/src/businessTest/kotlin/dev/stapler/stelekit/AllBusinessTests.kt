@@ -69,6 +69,7 @@ import dev.stapler.stelekit.db.IndexDrainSectionFilterTest
 import dev.stapler.stelekit.db.MigrationRunnerCoverageTest
 import dev.stapler.stelekit.db.MigrationRunnerIndexTest
 import dev.stapler.stelekit.db.MigrationRunnerSchemaSyncTest
+import dev.stapler.stelekit.db.RelocationStagingDirectoryTest
 import dev.stapler.stelekit.db.SqliteStatementAnalyzerTest
 import dev.stapler.stelekit.db.WithoutRowidMigrationTest
 import dev.stapler.stelekit.docs.BacklogTriageRuleTest
@@ -175,6 +176,7 @@ import org.junit.runners.Suite
     MigrationRunnerCoverageTest::class,
     MigrationRunnerIndexTest::class,
     MigrationRunnerSchemaSyncTest::class,
+    RelocationStagingDirectoryTest::class,
     SqliteStatementAnalyzerTest::class,
     WithoutRowidMigrationTest::class,
     BacklogTriageRuleTest::class,
