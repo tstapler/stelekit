@@ -4,7 +4,7 @@
 package dev.stapler.stelekit.db
 
 import dev.stapler.stelekit.platform.FileSystem
-import kotlinx.datetime.Clock
+import kotlin.time.Clock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
