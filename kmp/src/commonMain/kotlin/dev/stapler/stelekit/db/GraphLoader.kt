@@ -78,6 +78,10 @@ class GraphLoader(
     private val watcherPollIntervalMs: Long = 5_000L,
     /** When non-null, files matching the filter's excluded prefixes are skipped during loading. */
     @Volatile var sectionFilter: dev.stapler.stelekit.sections.SectionFilter? = null,
+    /** Real graph id, passed straight through to [GraphFileWatcher] so [MoveInProgressFlag]
+     * actually guards this loader's poll loop during a relocate/link (Story 1.3.2). Null (the
+     * default) preserves prior behavior for callers that don't have or don't need a graph id. */
+    private val graphId: String? = null,
 ) : GraphLoaderPort {
     private val logger = Logger("GraphLoader")
     private val markdownParser = MarkdownParser()
@@ -355,6 +359,7 @@ class GraphLoader(
         // Guard only pages with unsaved block edits — not all open pages. Open-but-unedited
         // pages (e.g. the journals page being viewed) must still be reloaded on external change.
         activePageFilePaths = { unsavedPageFilePaths.map { it.value }.toSet() },
+        graphId = graphId,
     )
 
     // Tracks the in-flight background indexing job so it can be cancelled under memory pressure.

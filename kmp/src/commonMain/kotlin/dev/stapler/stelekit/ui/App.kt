@@ -526,7 +526,13 @@ private fun GraphContent(deps: GraphContentDeps) {
         }
     }
     val graphLoader = remember(effectiveFileSystem, repos, sidecarManager) {
-        repos.createGraphLoader(effectiveFileSystem, sidecarManager = sidecarManager)
+        // graphId threads through to GraphFileWatcher so MoveInProgressFlag actually guards
+        // this graph's watcher poll loop during a relocate/link (Story 1.3.2).
+        repos.createGraphLoader(
+            effectiveFileSystem,
+            sidecarManager = sidecarManager,
+            graphId = graphManager.getActiveGraphId()?.value,
+        )
     }
     // Wire write-behind flush callbacks so FileRegistry correctly tracks SAF write windows.
     // - onFlushPreWrite: sets Long.MAX_VALUE sentinel before write, closing the mtime race
