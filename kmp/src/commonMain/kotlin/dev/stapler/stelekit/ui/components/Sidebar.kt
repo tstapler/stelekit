@@ -121,6 +121,8 @@ fun LeftSidebar(
     /** Story 3.2.2 — see [GraphSwitcher]'s parameter doc. */
     storageLocationResolver: StorageLocationResolver? = null,
     onBrowseRequestedForMove: suspend (String) -> StorageLocation? = { null },
+    /** See [GraphSwitcher]'s parameter doc. */
+    onBrowseClickedForMove: () -> Unit = {},
     moveStorageLocationPlatformCapabilities: Boolean = false,
     /** Epic 4.2 (Story 4.2.1): resolves whether [StorageMoveChoiceDialog]'s "Link" option should
      * be offered for a graph's move flow — real signal is `GitRepository.isGitRepo(graph.path)`
@@ -196,6 +198,7 @@ fun LeftSidebar(
                 supportsHostDirectoryLink = supportsHostDirectoryLink,
                 storageLocationResolver = storageLocationResolver,
                 onBrowseRequestedForMove = onBrowseRequestedForMove,
+                onBrowseClickedForMove = onBrowseClickedForMove,
                 moveStorageLocationPlatformCapabilities = moveStorageLocationPlatformCapabilities,
                 isGraphGitCloned = isGraphGitCloned,
                 onStorageLocationChosen = onStorageLocationChosen,
@@ -435,6 +438,9 @@ fun GraphSwitcher(
     storageLocationResolver: StorageLocationResolver? = null,
     /** Threaded into [UnifiedLocationPicker]'s `onBrowseRequested` for the relocate flow. */
     onBrowseRequestedForMove: suspend (String) -> StorageLocation? = { null },
+    /** Must run synchronously in the "Browse…" row's own click handler — same transient-user-
+     * activation constraint as [UnifiedLocationPicker]'s `onBrowseClicked`. */
+    onBrowseClickedForMove: () -> Unit = {},
     /** Whether the relocate flow's [UnifiedLocationPicker] shows a "Browse…" row. */
     moveStorageLocationPlatformCapabilities: Boolean = false,
     /** See [LeftSidebar]'s parameter doc — gates [StorageMoveChoiceDialog]'s "Link" option. */
@@ -731,6 +737,7 @@ fun GraphSwitcher(
             graphId = movingGraph.id.value,
             appStorageSubtitle = "Kept inside SteleKit only — not visible in your device's file manager.",
             platformCapabilities = moveStorageLocationPlatformCapabilities,
+            onBrowseClicked = onBrowseClickedForMove,
             onBrowseRequested = { onBrowseRequestedForMove(movingGraph.id.value) },
             onConfirm = { destination ->
                 choosingMoveFor = PendingStorageMove(

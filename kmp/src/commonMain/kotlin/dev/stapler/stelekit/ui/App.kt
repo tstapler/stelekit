@@ -1586,6 +1586,13 @@ private fun GraphContent(deps: GraphContentDeps) {
                                         StorageLocation.SafFolder(graphId, treeUri)
                                     }
                                 },
+                                onBrowseClickedForMove = {
+                                    // Must run synchronously here, not inside the suspend lambda
+                                    // above — same transient-user-activation constraint as every
+                                    // other showDirectoryPicker()-backed click in this file (see
+                                    // FolderSyncSettings's onBrowseClickedForMove wiring below).
+                                    fileSystem.requestDirectoryPickerNow()
+                                },
                                 moveStorageLocationPlatformCapabilities = fileSystem.supportsNativeDirectoryPicker,
                                 // Epic 4.2 (Story 4.2.1, ADR-003): Link is a real continuous mirror
                                 // only for git-cloned graphs (the existing shadow-worktree
