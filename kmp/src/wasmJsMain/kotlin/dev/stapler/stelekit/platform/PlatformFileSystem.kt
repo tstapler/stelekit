@@ -640,6 +640,14 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         return error
     }
 
+    /** Shared by every `showDirectoryPicker()`-based method's catch block — a user-initiated
+     * cancel throws with an "abort" message and should surface no error at all. */
+    private fun recordPickerErrorUnlessAborted(e: Throwable) {
+        if (e.message?.contains("abort", ignoreCase = true) != true) {
+            lastPickerError = e.message ?: "Failed to open the folder picker."
+        }
+    }
+
     actual override suspend fun pickDirectoryAsync(): String? {
         if (!showDirectoryPickerSupported()) return null
         val promise = pendingDirectoryPicker ?: showDirectoryPickerPromise()
@@ -656,9 +664,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             opfsPath
         } catch (e: Throwable) {
             println("[SteleKit] showDirectoryPicker: ${e.message}")
-            if (e.message?.contains("abort", ignoreCase = true) != true) {
-                lastPickerError = e.message ?: "Failed to open the folder picker."
-            }
+            recordPickerErrorUnlessAborted(e)
             null
         }
     }
@@ -726,9 +732,22 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             name
         } catch (e: Throwable) {
             println("[SteleKit] relinkHostDirectory: ${e.message}")
-            if (e.message?.contains("abort", ignoreCase = true) != true) {
-                lastPickerError = e.message ?: "Failed to open the folder picker."
-            }
+            recordPickerErrorUnlessAborted(e)
+            null
+        }
+    }
+
+    // Story 3.3.3: name-only preview for the "Move storage location…" picker — see the interface
+    // doc for why this doesn't reuse pickDirectoryAsync/relinkHostDirectoryAsync's import+attach.
+    override suspend fun pickHostFolderNamePreview(): String? {
+        if (!showDirectoryPickerSupported()) return null
+        val promise = pendingDirectoryPicker ?: showDirectoryPickerPromise()
+        pendingDirectoryPicker = null
+        return try {
+            getEntryName(promise.await<JsAny>())
+        } catch (e: Throwable) {
+            println("[SteleKit] pickHostFolderNamePreview: ${e.message}")
+            recordPickerErrorUnlessAborted(e)
             null
         }
     }

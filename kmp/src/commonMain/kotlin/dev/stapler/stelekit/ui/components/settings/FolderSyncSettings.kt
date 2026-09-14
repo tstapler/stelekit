@@ -23,6 +23,7 @@ import dev.stapler.stelekit.model.StorageMoveOperation
 import dev.stapler.stelekit.platform.HostAccessState
 import dev.stapler.stelekit.ui.components.StorageMoveChoiceDialog
 import dev.stapler.stelekit.ui.components.StorageMoveConfirmDialog
+import dev.stapler.stelekit.ui.components.UnifiedLocationPicker
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -68,6 +69,17 @@ fun FolderSyncSettings(
      * [MoveStorageLocationSection]'s doc comment for which direction this covers today. */
     onStorageLocationChosen: (operation: StorageMoveOperation) -> Unit = {},
     /**
+     * Story 3.3.3 (AppOwned→HostFolder direction): backed by [dev.stapler.stelekit.platform.FileSystem.pickHostFolderNamePreview],
+     * threaded into [UnifiedLocationPicker]'s `onBrowseRequested` when the resolved source is
+     * [StorageLocation.AppOwned] — see [MoveStorageLocationSection]'s doc comment. `null` (the
+     * default) keeps that direction a logged no-op, so this stays backward compatible for any
+     * caller that hasn't wired a picker in yet.
+     */
+    onBrowseRequestedForMove: (suspend () -> StorageLocation?)? = null,
+    /** Must run synchronously in the "Browse…" row's own click handler — same transient-user-
+     * activation constraint as [UnifiedLocationPicker]'s `onBrowseClicked`. */
+    onBrowseClickedForMove: () -> Unit = {},
+    /**
      * Epic 4.1 (Task 4.1.2c): detaches a currently-linked host folder while keeping the graph on
      * OPFS — should invoke `HostDirectorySync.unlinkHostDirectory()` (plus persisting the
      * resulting [dev.stapler.stelekit.model.StorageLocation.AppOwned] row). `null` hides the
@@ -87,7 +99,16 @@ fun FolderSyncSettings(
     // "Enable live folder sync" reconciliation flow (uiState != null) is actively showing, so the
     // two async actions never compete for the same screen at once.
     if (onMoveStorageLocation != null && uiState == null) {
-        MoveStorageLocationSection(onMoveStorageLocation, scope, modifier, graphName, onStorageLocationChosen)
+        MoveStorageLocationSection(
+            onMoveStorageLocation = onMoveStorageLocation,
+            scope = scope,
+            modifier = modifier,
+            graphName = graphName,
+            onStorageLocationChosen = onStorageLocationChosen,
+            supportsNativeDirectoryPicker = supportsNativeDirectoryPicker,
+            onBrowseRequestedForMove = onBrowseRequestedForMove,
+            onBrowseClickedForMove = onBrowseClickedForMove,
+        )
     }
 
     // Epic 4.1 (Task 4.1.2c): the "already linked" counterpart to the "Enable live folder sync"
@@ -199,23 +220,22 @@ fun FolderSyncSettings(
  * derive/persist this graph's current [StorageLocation] before anything else runs, per Story
  * 3.3.3's second acceptance criterion.
  *
- * Epic 3.4 wires [StorageMoveChoiceDialog]/[StorageMoveConfirmDialog] in for the one direction
- * this entry point can offer without a native directory picker: when the resolved source is
- * already a [StorageLocation.HostFolder] (a live-linked graph), the destination is unambiguously
- * [StorageLocation.AppOwned] — no new location needs to be chosen, so the dialogs open directly.
+ * Epic 3.4 wires [StorageMoveChoiceDialog]/[StorageMoveConfirmDialog] in for both directions.
+ * When the resolved source is already a [StorageLocation.HostFolder] (a live-linked graph), the
+ * destination is unambiguously [StorageLocation.AppOwned] — no new location needs to be chosen,
+ * so the dialogs open directly. When the resolved source is [StorageLocation.AppOwned] and
+ * [onBrowseRequestedForMove] is supplied, [UnifiedLocationPicker] opens first so the user can pick
+ * a real destination folder via the browser's `showDirectoryPicker()`, mirroring Android's
+ * `onBrowseRequestedForMove` wiring in `App.kt`'s `LeftSidebar` call site. A `null`
+ * [onBrowseRequestedForMove] (the default) falls back to the previous logged no-op.
  *
- * **Remaining gap (still open after the App.kt composition-root wiring dispatch)**: when the
- * resolved source is [StorageLocation.AppOwned], there is still no destination to hand off to —
- * connecting a *new* host folder requires the browser's `showDirectoryPicker()`, and this
- * composable has no callback for that (unlike Android's `onBrowseRequestedForMove`, now wired in
- * `App.kt`'s `LeftSidebar` call site). Adding one here means re-opening Epic 2.1/2.3's
- * directory-connect/reconciliation picker machinery inside this settings surface — real scope
- * creep for a wiring-only dispatch — so it stays a logged no-op rather than a fabricated
- * destination. Even with a destination picker wired in, a move *from* a `HostFolder` source would
- * still fail: `GraphRelocationCoordinator` resolves `AppOwned` roots via `GraphManager`/
+ * **Known remaining gap**: choosing "Relocate" for the AppOwned→HostFolder direction still fails
+ * — `GraphRelocationCoordinator` resolves `AppOwned` roots via `GraphManager`/
  * `FileSystem.newAppOwnedGraphPath()`, but `HostFolder` content lives behind an opaque
  * `FileSystemDirectoryHandle` (Web `HostDirectorySync`), not a filesystem path, and has no
- * resolution path yet — see `GraphRelocationCoordinator.hostFolderUnsupported()`.
+ * copy-based resolution path yet — see `GraphRelocationCoordinator.hostFolderUnsupported()`.
+ * "Link" already works for this direction: it runs through `HostLinkStep` →
+ * `HostDirectorySync.connectHostDirectory`, the same mechanism Epic 4.1 built.
  */
 @Composable
 private fun MoveStorageLocationSection(
@@ -224,9 +244,14 @@ private fun MoveStorageLocationSection(
     modifier: Modifier,
     graphName: String = "this graph",
     onStorageLocationChosen: (StorageMoveOperation) -> Unit = {},
+    supportsNativeDirectoryPicker: Boolean = false,
+    onBrowseRequestedForMove: (suspend () -> StorageLocation?)? = null,
+    onBrowseClickedForMove: () -> Unit = {},
 ) {
     var isResolving by remember { mutableStateOf(false) }
+    var pickingDestinationForSource by remember { mutableStateOf<StorageLocation.AppOwned?>(null) }
     var choosingMoveForSource by remember { mutableStateOf<StorageLocation?>(null) }
+    var choosingMoveDestination by remember { mutableStateOf<StorageLocation?>(null) }
     var confirmingMove by remember { mutableStateOf<StorageMoveOperation?>(null) }
 
     SettingsSection("Storage") {
@@ -236,15 +261,18 @@ private fun MoveStorageLocationSection(
                 scope.launch {
                     try {
                         val location = onMoveStorageLocation()
-                        if (location is StorageLocation.HostFolder) {
-                            choosingMoveForSource = location
-                        } else {
-                            // TODO(Story 3.3.3): no destination-picker wiring yet for an AppOwned
-                            // source — see this function's doc comment.
-                            logger.warn(
-                                "Move storage location: no destination picker wired for " +
-                                    "AppOwned source (graphId=${location.graphId})",
-                            )
+                        when {
+                            location is StorageLocation.HostFolder -> {
+                                choosingMoveForSource = location
+                                choosingMoveDestination = StorageLocation.AppOwned(location.graphId)
+                            }
+                            location is StorageLocation.AppOwned && onBrowseRequestedForMove != null ->
+                                pickingDestinationForSource = location
+                            else ->
+                                logger.warn(
+                                    "Move storage location: no destination picker wired for " +
+                                        "AppOwned source (graphId=${location.graphId})",
+                                )
                         }
                     } catch (e: CancellationException) {
                         throw e
@@ -262,14 +290,36 @@ private fun MoveStorageLocationSection(
         }
     }
 
+    // Story 3.3.3 (AppOwned→HostFolder direction): picks a real destination before the same
+    // Relocate/Link choice below opens — see this function's doc comment.
+    val pickingSource = pickingDestinationForSource
+    if (pickingSource != null && onBrowseRequestedForMove != null) {
+        UnifiedLocationPicker(
+            title = "Move \"$graphName\" to…",
+            graphId = pickingSource.graphId,
+            appStorageSubtitle = "Kept inside SteleKit only — not visible in your device's file manager.",
+            platformCapabilities = supportsNativeDirectoryPicker,
+            onBrowseClicked = onBrowseClickedForMove,
+            onBrowseRequested = onBrowseRequestedForMove,
+            onConfirm = { destination ->
+                choosingMoveForSource = pickingSource
+                choosingMoveDestination = destination
+                pickingDestinationForSource = null
+            },
+            onDismiss = { pickingDestinationForSource = null },
+        )
+    }
+
     val choosingSource = choosingMoveForSource
-    if (choosingSource != null) {
-        val destination = StorageLocation.AppOwned(choosingSource.graphId)
+    val destination = choosingMoveDestination
+    if (choosingSource != null && destination != null) {
         StorageMoveChoiceDialog(
             graphName = graphName,
             source = choosingSource,
             destination = destination,
-            isUnlinking = true,
+            // True only for the HostFolder→AppOwned direction (see StorageMoveChoiceDialog's own
+            // doc) — AppOwned→HostFolder is establishing a new link, not reversing one.
+            isUnlinking = choosingSource is StorageLocation.HostFolder,
             onRelocateChosen = {
                 confirmingMove = StorageMoveOperation.Relocate(
                     graphId = choosingSource.graphId,
@@ -280,6 +330,7 @@ private fun MoveStorageLocationSection(
                     deleteSourceAfterVerify = false,
                 )
                 choosingMoveForSource = null
+                choosingMoveDestination = null
             },
             onLinkChosen = {
                 confirmingMove = StorageMoveOperation.Link(
@@ -288,8 +339,12 @@ private fun MoveStorageLocationSection(
                     destination = destination,
                 )
                 choosingMoveForSource = null
+                choosingMoveDestination = null
             },
-            onDismissRequest = { choosingMoveForSource = null },
+            onDismissRequest = {
+                choosingMoveForSource = null
+                choosingMoveDestination = null
+            },
         )
     }
 

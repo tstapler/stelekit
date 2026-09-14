@@ -148,6 +148,18 @@ interface FileSystem {
     suspend fun relinkHostDirectoryAsync(existingPath: String): String? = null
 
     /**
+     * Story 3.3.3 (AppOwned→HostFolder move direction): shows the native directory picker and
+     * returns just the picked folder's name — unlike [pickDirectoryAsync]/[relinkHostDirectoryAsync],
+     * imports nothing and attaches no live handle, so an abandoned preview pick can't leave a
+     * throwaway OPFS import or mis-attached host handle behind. The real connect happens later, at
+     * confirm time, via `GraphRelocationCoordinator`'s `HostLinkStep` →
+     * `HostDirectorySync.connectHostDirectory`, which does its own `showDirectoryPicker()` call.
+     * Same [requestDirectoryPickerNow] synchronous-click requirement as [pickDirectoryAsync]. Null
+     * on cancel, failure, or a platform with no host-folder concept (only wasmJs has one today).
+     */
+    suspend fun pickHostFolderNamePreview(): String? = null
+
+    /**
      * True only on platforms with a host-directory-livesync concept separate from their own
      * storage (currently the wasmJs actual, gated on browser support for `showDirectoryPicker`).
      * Distinct from [supportsNativeDirectoryPicker] — that flag covers the native "add a new

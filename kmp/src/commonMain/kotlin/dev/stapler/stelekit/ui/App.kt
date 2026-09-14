@@ -2027,6 +2027,23 @@ private fun GraphContent(deps: GraphContentDeps) {
                                 },
                                 storageMoveGraphName = activeGraphInfo?.displayName ?: "this graph",
                                 onStorageLocationChosen = onStorageLocationChosen,
+                                // Story 3.3.3 (AppOwned→HostFolder direction): a name-only preview
+                                // pick (see FileSystem.pickHostFolderNamePreview's doc for why it
+                                // doesn't reuse pickDirectoryAsync/relinkHostDirectoryAsync) wrapped
+                                // as the StorageLocation FolderSyncSettings's UnifiedLocationPicker
+                                // needs to name the destination — the real connect (its own native
+                                // picker call) happens later, when the user confirms Link.
+                                onBrowseRequestedForMove = {
+                                    fileSystem.pickHostFolderNamePreview()?.let { name ->
+                                        StorageLocation.HostFolder(activeGraphId?.value ?: "", name)
+                                    }
+                                },
+                                onBrowseClickedForMove = {
+                                    // Must run synchronously here, not inside the suspend lambda
+                                    // above — same transient-user-activation constraint as every
+                                    // other showDirectoryPicker()-backed click in this file.
+                                    fileSystem.requestDirectoryPickerNow()
+                                },
                                 onUnlinkHostDirectory = onUnlinkHostDirectory,
                             ),
                             gitSync = GitSyncDeps(
