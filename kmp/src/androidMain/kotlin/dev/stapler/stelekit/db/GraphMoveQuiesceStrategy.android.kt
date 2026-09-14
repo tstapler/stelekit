@@ -4,11 +4,13 @@
 
 package dev.stapler.stelekit.db
 
+import android.content.Context
 import arrow.core.Either
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.GitSyncBusyCounter
 import dev.stapler.stelekit.git.GitWriteBackQueue
+import dev.stapler.stelekit.git.WorkManagerSyncScheduler
 import dev.stapler.stelekit.model.StorageLocation
 import dev.stapler.stelekit.model.StorageMoveOperation
 import dev.stapler.stelekit.platform.GitWorktreeLocks
@@ -39,16 +41,27 @@ class ShadowWorktreeQuiesceTarget(
  * when [op] doesn't touch one (no git remote configured for this graph) — injected rather than
  * this class resolving `AndroidGitRepository.shadowWorktreeFor()` itself, so it stays
  * unit-testable with fakes; Story 3.2.1 wires the real resolution.
+ *
+ * [pauseBackgroundSync]/[resumeBackgroundSync] (Story 3.2.1) pause/resume [op]'s graph's
+ * `WorkManager` periodic fetch job so it never races the foreground copy of `.git` — injected as
+ * lambdas rather than this class calling [WorkManagerSyncScheduler] directly, for the same
+ * fakes-over-Robolectric testability reason as [shadowWorktreeTarget]. Default to no-ops so
+ * existing callers/tests that don't care about WorkManager keep compiling unchanged; production
+ * wiring goes through [createAndroidGraphMoveQuiesceStrategy].
  */
 class AndroidGraphMoveQuiesceStrategy(
     private val gitSyncBusyCounter: GitSyncBusyCounter,
     private val shadowWorktreeTarget: (StorageMoveOperation) -> ShadowWorktreeQuiesceTarget?,
+    private val pauseBackgroundSync: (graphId: String) -> Unit = {},
+    private val resumeBackgroundSync: (graphId: String) -> Unit = {},
 ) : GraphMoveQuiesceStrategy {
 
     /** Locks acquired by an in-flight [quiesce], keyed by shadow key, so [release] can find them. */
     private val heldLocks = ConcurrentHashMap<String, Mutex>()
 
     override suspend fun quiesce(op: StorageMoveOperation): Either<DomainError.StorageError, Unit> {
+        pauseBackgroundSync(op.graphId)
+
         val target = shadowWorktreeTarget(op)
         if (target != null) {
             val lock = GitWorktreeLocks.lockFor(target.shadowKey)
@@ -68,13 +81,33 @@ class AndroidGraphMoveQuiesceStrategy(
     }
 
     override suspend fun release(op: StorageMoveOperation) {
-        val shadowKey = shadowWorktreeTarget(op)?.shadowKey ?: return
-        heldLocks.remove(shadowKey)?.let { lock ->
-            if (lock.isLocked) lock.unlock()
+        val shadowKey = shadowWorktreeTarget(op)?.shadowKey
+        if (shadowKey != null) {
+            heldLocks.remove(shadowKey)?.let { lock ->
+                if (lock.isLocked) lock.unlock()
+            }
         }
+        resumeBackgroundSync(op.graphId)
     }
 
     override suspend fun releaseSourceGrant(source: StorageLocation) {
         // No-op stub — Epic 5.2 wires ContentResolver.releasePersistableUriPermission here.
     }
 }
+
+/**
+ * Wires [AndroidGraphMoveQuiesceStrategy]'s [AndroidGraphMoveQuiesceStrategy.pauseBackgroundSync]/
+ * [AndroidGraphMoveQuiesceStrategy.resumeBackgroundSync] to real [WorkManagerSyncScheduler] calls
+ * (Story 3.2.1). Callers still supply [gitSyncBusyCounter] and [shadowWorktreeTarget] themselves —
+ * this factory only adds the WorkManager pause/resume behavior on top.
+ */
+fun createAndroidGraphMoveQuiesceStrategy(
+    context: Context,
+    gitSyncBusyCounter: GitSyncBusyCounter,
+    shadowWorktreeTarget: (StorageMoveOperation) -> ShadowWorktreeQuiesceTarget?,
+): AndroidGraphMoveQuiesceStrategy = AndroidGraphMoveQuiesceStrategy(
+    gitSyncBusyCounter = gitSyncBusyCounter,
+    shadowWorktreeTarget = shadowWorktreeTarget,
+    pauseBackgroundSync = { graphId -> WorkManagerSyncScheduler.pauseFor(context, graphId) },
+    resumeBackgroundSync = { graphId -> WorkManagerSyncScheduler.resumeFor(context, graphId) },
+)

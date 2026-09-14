@@ -48,9 +48,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import dev.stapler.stelekit.db.StorageLocationResolver
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.GraphInfo
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.StorageLocation
 import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.platform.HostAccessState
 import dev.stapler.stelekit.platform.isCurrentSessionEphemeral
@@ -61,6 +63,7 @@ import dev.stapler.stelekit.ui.LocalWindowSizeClass
 import dev.stapler.stelekit.ui.Screen
 import dev.stapler.stelekit.ui.isMobile
 import dev.stapler.stelekit.ui.theme.StelekitTheme
+import kotlinx.coroutines.launch
 
 /** Amber warning treatment for an unresolved disk conflict — matches [SyncStatusBadge]'s
  * `ConflictPending` color exactly (deliberately, for visual consistency between the two
@@ -114,6 +117,11 @@ fun LeftSidebar(
     onRenameGraph: (String, String) -> Unit = { _, _ -> },
     onRelinkHostDirectory: (String) -> Unit = {},
     supportsHostDirectoryLink: Boolean = false,
+    /** Story 3.2.2 — see [GraphSwitcher]'s parameter doc. */
+    storageLocationResolver: StorageLocationResolver? = null,
+    onBrowseRequestedForMove: suspend (String) -> StorageLocation? = { null },
+    moveStorageLocationPlatformCapabilities: Boolean = false,
+    onStorageLocationChosen: (graphId: String, destination: StorageLocation) -> Unit = { _, _ -> },
     gitSyncedGraphId: String? = null,
     /** Pages captured from another graph by [onExportPagesForMerge], not yet merged in here.
      * Cross-graph page/journal recovery — see GraphMergeService's class doc. */
@@ -172,6 +180,10 @@ fun LeftSidebar(
                 onRenameGraph = onRenameGraph,
                 onRelinkHostDirectory = onRelinkHostDirectory,
                 supportsHostDirectoryLink = supportsHostDirectoryLink,
+                storageLocationResolver = storageLocationResolver,
+                onBrowseRequestedForMove = onBrowseRequestedForMove,
+                moveStorageLocationPlatformCapabilities = moveStorageLocationPlatformCapabilities,
+                onStorageLocationChosen = onStorageLocationChosen,
                 gitSyncedGraphId = gitSyncedGraphId,
                 isDemoActive = isDemoActive,
                 hostAccessState = hostAccessState,
@@ -398,6 +410,24 @@ fun GraphSwitcher(
      * (button hidden) on platforms without a native directory picker. */
     onRelinkHostDirectory: (String) -> Unit = {},
     supportsHostDirectoryLink: Boolean = false,
+    /**
+     * Story 3.2.2: resolves/backfills a graph's real source [StorageLocation] before "Move
+     * storage location…" opens [UnifiedLocationPicker] (Story 1.1.4's `resolveOrBackfill`, so a
+     * graph that predates `storage_locations` still has a real source to relocate from). Null
+     * (the default) hides the button entirely — set by the platform-specific composition root
+     * once it has a real resolver to inject.
+     */
+    storageLocationResolver: StorageLocationResolver? = null,
+    /** Threaded into [UnifiedLocationPicker]'s `onBrowseRequested` for the relocate flow. */
+    onBrowseRequestedForMove: suspend (String) -> StorageLocation? = { null },
+    /** Whether the relocate flow's [UnifiedLocationPicker] shows a "Browse…" row. */
+    moveStorageLocationPlatformCapabilities: Boolean = false,
+    /**
+     * Fires once the user confirms a destination in [UnifiedLocationPicker] for the relocate
+     * flow. Placeholder call site for Epic 3.4's Relocate/Link choice dialog, which doesn't exist
+     * yet — until then this only receives the chosen [StorageLocation] with no further UI.
+     */
+    onStorageLocationChosen: (graphId: String, destination: StorageLocation) -> Unit = { _, _ -> },
     gitSyncedGraphId: String? = null,
     isDemoActive: Boolean = false,
     /** Epic 2.3: host-directory connection state for [activeGraphId] only — used to show a
@@ -411,6 +441,12 @@ fun GraphSwitcher(
     var expanded by remember { mutableStateOf(false) }
     var graphToRemove by remember { mutableStateOf<GraphInfo?>(null) }
     var graphToEdit by remember { mutableStateOf<GraphInfo?>(null) }
+    // Story 3.2.2: "Move storage location…" flow — resolveOrBackfill runs first (so a graph that
+    // predates storage_locations still has a real source location), then UnifiedLocationPicker
+    // opens once it resolves. Separate from graphToEdit so the picker survives the Edit dialog
+    // closing (the button closes it immediately on tap, matching onRelinkHostDirectory's pattern).
+    var movingStorageForGraph by remember { mutableStateOf<GraphInfo?>(null) }
+    val moveStorageScope = rememberCoroutineScope()
 
     Column(modifier = modifier) {
         // Current graph button
@@ -570,13 +606,12 @@ fun GraphSwitcher(
         )
     }
 
-    // Edit dialog: rename, re-point the internal path (migrates the DB), and/or re-link the
-    // real host folder (web-local-folder-livesync only) — three independent fields, each with
-    // its own save action so a field that requires migration/re-linking only runs that work.
+    // Edit dialog: rename, move the graph's storage location (guided flow, Story 3.2.2), and/or
+    // re-link the real host folder (web-local-folder-livesync only) — independent actions, each
+    // with its own trigger so an action that requires migration/re-linking only runs that work.
     val editingGraph = graphToEdit
     if (editingGraph != null) {
         var newName by remember(editingGraph.id.value) { mutableStateOf(editingGraph.displayName) }
-        var newPath by remember(editingGraph.id.value) { mutableStateOf(editingGraph.path) }
         AlertDialog(
             onDismissRequest = { graphToEdit = null },
             title = { Text("Edit Graph") },
@@ -591,19 +626,30 @@ fun GraphSwitcher(
                     )
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        "Internal graph path. Changing this moves \"${editingGraph.displayName}\"'s " +
-                            "database to a different location on this device.",
+                        "Move \"${editingGraph.displayName}\"'s files to a different storage location on this device.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(4.dp))
-                    OutlinedTextField(
-                        value = newPath,
-                        onValueChange = { newPath = it },
-                        label = { Text("Graph path") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    TextButton(
+                        onClick = {
+                            val graphId = editingGraph.id.value
+                            graphToEdit = null
+                            moveStorageScope.launch {
+                                // Story 1.1.4: backfills a real source location for a graph that
+                                // predates storage_locations, so the picker/choice dialog never
+                                // names a blank source. A null resolver means this platform's
+                                // composition root hasn't wired one in yet (see GraphSwitcher's
+                                // storageLocationResolver doc) — still open the picker so the
+                                // "Browse…" row keeps working, just without the backfill side effect.
+                                storageLocationResolver?.resolveOrBackfill(graphId)
+                                movingStorageForGraph = editingGraph
+                            }
+                        },
+                        contentPadding = PaddingValues(horizontal = 0.dp),
+                    ) {
+                        Text("Move storage location…")
+                    }
                     if (supportsHostDirectoryLink) {
                         Spacer(Modifier.height(12.dp))
                         Text(
@@ -631,13 +677,9 @@ fun GraphSwitcher(
                         if (newName.isNotBlank() && newName != editingGraph.displayName) {
                             onRenameGraph(editingGraph.id.value, newName)
                         }
-                        if (newPath.isNotBlank() && newPath != editingGraph.path) {
-                            onUpdateGraphPath(editingGraph.id.value, newPath)
-                        }
                         graphToEdit = null
                     },
-                    enabled = (newName.isNotBlank() && newName != editingGraph.displayName) ||
-                        (newPath.isNotBlank() && newPath != editingGraph.path),
+                    enabled = newName.isNotBlank() && newName != editingGraph.displayName,
                 ) {
                     Text("Save")
                 }
@@ -647,6 +689,27 @@ fun GraphSwitcher(
                     Text("Cancel")
                 }
             }
+        )
+    }
+
+    // Story 3.2.2: UnifiedLocationPicker for the "Move storage location…" flow, opened once
+    // resolveOrBackfill (above) completes. onConfirm's destination has nowhere real to go yet —
+    // Epic 3.4's Relocate/Link choice dialog (which would consume it, then drive
+    // GraphRelocationCoordinator.relocate()) doesn't exist yet, so onStorageLocationChosen is a
+    // placeholder call site until that epic wires the rest of the flow.
+    val movingGraph = movingStorageForGraph
+    if (movingGraph != null) {
+        UnifiedLocationPicker(
+            title = "Move \"${movingGraph.displayName}\" to…",
+            graphId = movingGraph.id.value,
+            appStorageSubtitle = "Kept inside SteleKit only — not visible in your device's file manager.",
+            platformCapabilities = moveStorageLocationPlatformCapabilities,
+            onBrowseRequested = { onBrowseRequestedForMove(movingGraph.id.value) },
+            onConfirm = { destination ->
+                onStorageLocationChosen(movingGraph.id.value, destination)
+                movingStorageForGraph = null
+            },
+            onDismiss = { movingStorageForGraph = null },
         )
     }
 }
