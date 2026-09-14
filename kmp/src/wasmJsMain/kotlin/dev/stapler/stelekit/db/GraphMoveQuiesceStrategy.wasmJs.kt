@@ -50,7 +50,8 @@ class WasmJsGraphMoveQuiesceStrategy internal constructor(
     }
 
     override suspend fun releaseSourceGrant(source: StorageLocation) {
-        // No-op stub on every platform until Epic 5.2 wires the real cleanup.
+        // No-op: Web has no SAF-style persisted URI permission to release (Epic 5.2 wired
+        // ContentResolver.releasePersistableUriPermission for Android's SafFolder only).
     }
 }
 
