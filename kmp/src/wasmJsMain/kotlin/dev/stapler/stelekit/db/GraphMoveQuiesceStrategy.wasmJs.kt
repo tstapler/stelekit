@@ -9,18 +9,43 @@ import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.StorageLocation
 import dev.stapler.stelekit.model.StorageMoveOperation
+import dev.stapler.stelekit.platform.HostDirectorySync
+import dev.stapler.stelekit.platform.WebLock
+import dev.stapler.stelekit.platform.relocateLockNameFor
 
 /**
- * Web [GraphMoveQuiesceStrategy] (Story 3.1.3). Starts as an initial no-op — Web has no
- * `GitSyncBusyCounter`/write-back-queue equivalent of Android's shadow worktree yet — and is
- * extended by Story 3.3.2 to pause `HostDirectorySync`'s host-poll loop before a relocate copies
- * a linked host folder's content.
+ * Web [GraphMoveQuiesceStrategy] (Story 3.1.3). [quiesce] always holds [op]'s graph-scoped
+ * relocate lock ([relocateLockNameFor], Story 3.3.1) for the duration of the operation —
+ * excluding a concurrent Link/relocate on the same graph without over-blocking an unrelated
+ * `GitWriteLock` push, which uses a distinct namespace. When [op]'s graph has a connected host
+ * folder, Story 3.3.2 additionally pauses [HostDirectorySync]'s poll loop
+ * ([HostDirectorySync.pausePolling]) so a poll tick's reconciliation can never race the relocate's
+ * copy step; [release] resumes it.
+ *
+ * [hostDirectorySyncFor] resolves [op] to the live [HostDirectorySync] instance for its graph, or
+ * `null` when that graph has none (browser-only graph, no host folder ever connected) — injected
+ * rather than this class looking one up itself, mirroring
+ * [dev.stapler.stelekit.db.AndroidGraphMoveQuiesceStrategy]'s `shadowWorktreeTarget` seam, so this
+ * class stays unit-testable with a fake. Defaults to `{ null }` so existing callers/tests (e.g.
+ * [WasmJsGraphMoveQuiesceStrategyTest], written pre-3.3.2) that construct this with no arguments
+ * keep compiling — the relocate lock still applies to them, they just never pause polling.
  */
-class WasmJsGraphMoveQuiesceStrategy : GraphMoveQuiesceStrategy {
-    override suspend fun quiesce(op: StorageMoveOperation): Either<DomainError.StorageError, Unit> = Unit.right()
+class WasmJsGraphMoveQuiesceStrategy internal constructor(
+    private val hostDirectorySyncFor: (StorageMoveOperation) -> HostDirectorySync? = { null },
+) : GraphMoveQuiesceStrategy {
+
+    /** Locks acquired by an in-flight [quiesce], keyed by graphId, so [release] can find them. */
+    private val heldLocks = mutableMapOf<String, WebLock.HeldLock>()
+
+    override suspend fun quiesce(op: StorageMoveOperation): Either<DomainError.StorageError, Unit> {
+        heldLocks[op.graphId] = WebLock.acquireHeld(relocateLockNameFor(op.graphId))
+        hostDirectorySyncFor(op)?.pausePolling()
+        return Unit.right()
+    }
 
     override suspend fun release(op: StorageMoveOperation) {
-        // No-op — see class doc; Story 3.3.2 adds real host-poll-pause release here.
+        hostDirectorySyncFor(op)?.resumePolling()
+        heldLocks.remove(op.graphId)?.release()
     }
 
     override suspend fun releaseSourceGrant(source: StorageLocation) {

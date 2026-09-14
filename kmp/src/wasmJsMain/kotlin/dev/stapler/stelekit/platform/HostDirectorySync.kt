@@ -45,6 +45,13 @@ import kotlin.time.Clock
 private const val HOME_DIR = "/stelekit"
 
 /**
+ * Task 3.3.1a: relocate/link lock name for [graphId] — a namespace distinct from
+ * [FolderSyncLockNaming]'s poll/write locks and `GitWriteLockNaming`'s git-push lock (research/
+ * architecture.md §3.2 point 1). Top-level so it's derivable without a live [HostDirectorySync].
+ */
+internal fun relocateLockNameFor(graphId: String): String = "stele-relocate-$graphId"
+
+/**
  * Smart constructor enforcing the invariant a plain `String` cannot express: every path handed to
  * [HostDirectorySync.onHostConflict] must be graph-rooted (prefixed by the graph's OPFS root, e.g.
  * `"/stelekit/g/journals/2026_08_12.md"`), never repo-relative (e.g. `"journals/2026_08_12.md"`).
@@ -549,6 +556,28 @@ internal class HostDirectorySync(
     internal fun stopHostDirectoryPolling() {
         scheduler.stop()
     }
+
+    /**
+     * Task 3.3.2a: full stop for a caller (Story 3.3.2's
+     * [dev.stapler.stelekit.db.WasmJsGraphMoveQuiesceStrategy]) that must not let a poll tick race
+     * a relocate's file copy — distinct from [isTabHidden]'s visibility-driven cadence *backoff*,
+     * which still polls, just less often.
+     */
+    internal fun pausePolling() {
+        stopHostDirectoryPolling()
+    }
+
+    /**
+     * Resumes polling paused by [pausePolling]. A no-op when no host directory is connected
+     * ([hostDirHandle]/[hostGraphOpfsPath] unset) — e.g. a relocate away from a linked host
+     * folder completed and there is nothing left to poll.
+     */
+    internal fun resumePolling() {
+        if (hostDirHandle != null && hostGraphOpfsPath != null) {
+            startHostDirectoryPolling()
+        }
+    }
+
 
     /**
      * Epic 6.2 (Task 6.2.1b): leader-for-one-tick — a `null` [WebLock.tryWithLock] result means

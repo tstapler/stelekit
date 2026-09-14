@@ -17,8 +17,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import dev.stapler.stelekit.logging.Logger
+import dev.stapler.stelekit.model.StorageLocation
 import dev.stapler.stelekit.platform.HostAccessState
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
 /**
@@ -47,9 +50,23 @@ fun FolderSyncSettings(
     supportsNativeDirectoryPicker: Boolean,
     onConnect: suspend () -> ReconciliationUiState,
     modifier: Modifier = Modifier,
+    // Story 3.3.3: Web equivalent of Android's Surface 4 "Move storage location…" entry point
+    // (Story 3.2.2). `null` hides the entry entirely (same "don't show a broken affordance"
+    // convention as this composable's other optional entry points). Non-null, the caller supplies
+    // a suspend lambda that performs `StorageLocationResolver.resolveOrBackfill(graphId)` — see
+    // [MoveStorageLocationSection]'s doc comment for what happens with the result.
+    onMoveStorageLocation: (suspend () -> StorageLocation)? = null,
 ) {
     val scope = rememberCoroutineScope()
     var uiState by remember { mutableStateOf<ReconciliationUiState?>(null) }
+
+    // Independent of the "Enable live folder sync" gate below — a graph's storage location can be
+    // moved whether or not live folder sync is available/connected. Suppressed only while an
+    // "Enable live folder sync" reconciliation flow (uiState != null) is actively showing, so the
+    // two async actions never compete for the same screen at once.
+    if (onMoveStorageLocation != null && uiState == null) {
+        MoveStorageLocationSection(onMoveStorageLocation, scope, modifier)
+    }
 
     // Bug fix (code-review repair loop): this guard now runs AFTER `uiState` is read via
     // `remember`, and only applies while there is no in-progress/terminal reconciliation screen to
@@ -114,3 +131,53 @@ fun FolderSyncSettings(
         )
     }
 }
+
+/**
+ * Task 3.3.3a: "Move storage location…" entry point — design/ux.md Surface 4, Web side (Android's
+ * equivalent, Story 3.2.2, lives in `Sidebar.kt`'s "Edit Graph" dialog instead). Clicking calls
+ * [onMoveStorageLocation] (the caller's `StorageLocationResolver.resolveOrBackfill(graphId)`) to
+ * derive/persist this graph's current [StorageLocation] before anything else runs, per Story
+ * 3.3.3's second acceptance criterion.
+ *
+ * **Gap**: Epic 3.4's Relocate-vs-Link choice dialog (`StorageMoveChoiceDialog`) and
+ * `UnifiedLocationPicker` wiring do not exist yet — there is nothing for the resolved
+ * [StorageLocation] to hand off to. This button currently only performs the resolve/backfill call
+ * and swallows its result; wiring the real picker → choice-dialog flow (Surface 4's steps 2-3) is
+ * Epic 3.4's job, not this story's.
+ */
+@Composable
+private fun MoveStorageLocationSection(
+    onMoveStorageLocation: suspend () -> StorageLocation,
+    scope: CoroutineScope,
+    modifier: Modifier,
+) {
+    var isResolving by remember { mutableStateOf(false) }
+
+    SettingsSection("Storage") {
+        Button(
+            onClick = {
+                isResolving = true
+                scope.launch {
+                    try {
+                        // TODO(Epic 3.4): open StorageMoveChoiceDialog/UnifiedLocationPicker here
+                        // with the resolved location as the picker's excluded "current location"
+                        // (Surface 4 AC16) once that flow exists.
+                        onMoveStorageLocation()
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Throwable) {
+                        logger.warn("resolveOrBackfill failed for Move storage location: ${e.message}", e)
+                    } finally {
+                        isResolving = false
+                    }
+                }
+            },
+            enabled = !isResolving,
+            modifier = modifier.fillMaxWidth(),
+        ) {
+            Text("Move storage location…")
+        }
+    }
+}
+
+private val logger = Logger("FolderSyncSettings")

@@ -89,6 +89,20 @@ private fun jsRequestLockHandleIfAvailable(name: String): JsAny = js(
 private fun jsHandleAcquiredPromiseOrNull(handle: JsAny): kotlin.js.Promise<JsAny?> = js("handle.acquired")
 
 /**
+ * Shared release step for [WebLock.withLock], [WebLock.tryWithLock], and [WebLock.HeldLock.release]
+ * — resolves the callback's held `Promise` and awaits full teardown, under [NonCancellable] so it
+ * still completes even when the calling coroutine's own `Job` is already cancelled. Safe to call
+ * even if the lock was never actually granted (e.g. a `tryWithLock` busy result) — see those call
+ * sites' doc comments.
+ */
+private suspend fun releaseWebLockHandle(handle: JsAny) {
+    withContext(NonCancellable) {
+        jsHandleRelease(handle)
+        jsHandleDonePromise(handle).await<JsAny>()
+    }
+}
+
+/**
  * Web-Locks-backed mutual exclusion for `web-local-folder-livesync`'s own lock names (see
  * `FolderSyncLockNaming`, Epic 1.2). This is a standalone implementation — it does not import from
  * or delegate to `git/GitWriteLock.kt`, which is a `web-git-writeback`-owned file this project must
@@ -122,10 +136,7 @@ object WebLock {
             jsHandleAcquiredPromise(handle).await<JsAny>()
             return block()
         } finally {
-            withContext(NonCancellable) {
-                jsHandleRelease(handle)
-                jsHandleDonePromise(handle).await<JsAny>()
-            }
+            releaseWebLockHandle(handle)
         }
     }
 
@@ -156,10 +167,7 @@ object WebLock {
             }
             return block()
         } finally {
-            withContext(NonCancellable) {
-                jsHandleRelease(handle)
-                jsHandleDonePromise(handle).await<JsAny>()
-            }
+            releaseWebLockHandle(handle)
         }
     }
 
@@ -183,5 +191,31 @@ object WebLock {
             return false
         }
         return true
+    }
+
+    /**
+     * Task 3.3.1a: opaque handle for a lock acquired via [acquireHeld]. Unlike [withLock]/
+     * [tryWithLock] — which always acquire and release within one suspend-function scope — a
+     * relocate's quiesce/release are two separate coordinator calls
+     * ([dev.stapler.stelekit.db.GraphMoveQuiesceStrategy.quiesce]/`release`), so the lock must be
+     * acquirable in one call and released in a later, independent one. Callers must call [release]
+     * exactly once; an un-released handle stays held until the tab is discarded, same as
+     * [tryAcquireLeader].
+     */
+    class HeldLock internal constructor(private val handle: JsAny) {
+        suspend fun release() = releaseWebLockHandle(handle)
+    }
+
+    /**
+     * Acquires [lockName], suspending until granted, and returns a [HeldLock] for the caller to
+     * [HeldLock.release] explicitly later — see that class's doc comment for why this exists
+     * alongside [withLock]. Do not use this for a short-lived critical section that fits in a
+     * single suspend call — use [withLock] there instead, so a thrown/cancelled block can never
+     * leave the lock held past its scope.
+     */
+    suspend fun acquireHeld(lockName: String): HeldLock {
+        val handle = jsRequestLockHandle(lockName)
+        jsHandleAcquiredPromise(handle).await<JsAny>()
+        return HeldLock(handle)
     }
 }
