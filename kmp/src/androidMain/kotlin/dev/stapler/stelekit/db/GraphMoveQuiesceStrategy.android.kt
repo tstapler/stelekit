@@ -5,6 +5,8 @@
 package dev.stapler.stelekit.db
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import arrow.core.Either
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
@@ -16,6 +18,9 @@ import dev.stapler.stelekit.model.StorageMoveOperation
 import dev.stapler.stelekit.platform.GitWorktreeLocks
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.sync.Mutex
+
+/** Same read+write flag pair `MainActivity.takePersistableUriPermission` grants a tree URI with. */
+private const val SAF_TREE_URI_FLAGS = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
 
 /**
  * Everything [AndroidGraphMoveQuiesceStrategy] needs to serialize a relocate/link against a git
@@ -48,12 +53,18 @@ class ShadowWorktreeQuiesceTarget(
  * fakes-over-Robolectric testability reason as [shadowWorktreeTarget]. Default to no-ops so
  * existing callers/tests that don't care about WorkManager keep compiling unchanged; production
  * wiring goes through [createAndroidGraphMoveQuiesceStrategy].
+ *
+ * [releaseUriPermission] (Epic 5.2) is `ContentResolver.releasePersistableUriPermission`, injected
+ * the same lambda way as the WorkManager pair above — this class needs no `Context` of its own to
+ * stay unit-testable. Default is a no-op; [createAndroidGraphMoveQuiesceStrategy] wires the real
+ * `ContentResolver` call.
  */
 class AndroidGraphMoveQuiesceStrategy(
     private val gitSyncBusyCounter: GitSyncBusyCounter,
     private val shadowWorktreeTarget: (StorageMoveOperation) -> ShadowWorktreeQuiesceTarget?,
     private val pauseBackgroundSync: (graphId: String) -> Unit = {},
     private val resumeBackgroundSync: (graphId: String) -> Unit = {},
+    private val releaseUriPermission: (treeUri: String) -> Unit = {},
 ) : GraphMoveQuiesceStrategy {
 
     /** Locks acquired by an in-flight [quiesce], keyed by shadow key, so [release] can find them. */
@@ -91,7 +102,9 @@ class AndroidGraphMoveQuiesceStrategy(
     }
 
     override suspend fun releaseSourceGrant(source: StorageLocation) {
-        // No-op stub — Epic 5.2 wires ContentResolver.releasePersistableUriPermission here.
+        if (source is StorageLocation.SafFolder) {
+            releaseUriPermission(source.treeUri)
+        }
     }
 }
 
@@ -110,4 +123,14 @@ fun createAndroidGraphMoveQuiesceStrategy(
     shadowWorktreeTarget = shadowWorktreeTarget,
     pauseBackgroundSync = { graphId -> WorkManagerSyncScheduler.pauseFor(context, graphId) },
     resumeBackgroundSync = { graphId -> WorkManagerSyncScheduler.resumeFor(context, graphId) },
+    releaseUriPermission = { treeUri ->
+        // Best-effort, matching MainActivity's existing release call (Task 5.2.1a) — a grant
+        // that's already gone (revoked, or never actually taken) must not fail the relocate,
+        // which has already completed successfully by the time this runs.
+        try {
+            context.contentResolver.releasePersistableUriPermission(Uri.parse(treeUri), SAF_TREE_URI_FLAGS)
+        } catch (_: SecurityException) {
+            // Grant was already released/revoked — nothing left to clean up.
+        }
+    },
 )

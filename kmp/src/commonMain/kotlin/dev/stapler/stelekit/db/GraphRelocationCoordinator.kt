@@ -221,6 +221,16 @@ class GraphRelocationCoordinator(
                         // writing the graph at its old path while the new copy sits untouched.
                         graphManager.updateGraphContentPath(graphId, successfulOutcome.value)
                         graphManager.onGraphLocationDetermined(graphIdValue, operation.destination)
+
+                        // Epic 5.2: release the source's persisted access grant (e.g. a SAF tree
+                        // URI permission) now that the copy is verified, repointed, reopened, and
+                        // persisted. `deleteSourceAfterVerify` (StorageMoveOperation.Relocate) has
+                        // no reader anywhere in this codebase today — no call site ever passes
+                        // `true` — so there is no "confirmed cleanup" step to hook this to yet.
+                        // Releasing here instead: the app will never touch operation.source via
+                        // this graph again regardless of that flag, so the OS-level grant is safe
+                        // to drop now rather than waiting on cleanup logic that doesn't exist.
+                        quiesceStrategy.releaseSourceGrant(operation.source)
                     }
                 }
             }
