@@ -617,23 +617,17 @@ class GraphManager(
     private fun moveGraphFilesAndCredentials(oldId: GraphId, newId: GraphId): Boolean {
         val oldDbPath = driverFactory.getDatabaseUrl(oldId.value).substringAfter("jdbc:sqlite:")
         val newDbPath = driverFactory.getDatabaseUrl(newId.value).substringAfter("jdbc:sqlite:")
-        var dbMoved = true
         if (fileSystem.fileExists(oldDbPath)) {
-            dbMoved = fileSystem.renameFile(oldDbPath, newDbPath)
-            if (dbMoved) {
-                val walMoved = renameSidecarIfPresent("$oldDbPath-wal", "$newDbPath-wal")
-                val shmMoved = walMoved && renameSidecarIfPresent("$oldDbPath-shm", "$newDbPath-shm")
-                if (!shmMoved) {
-                    // Roll back everything that succeeded so far so the registry's old path
-                    // stays valid — reporting failure must not strand the DB or a sidecar at a
-                    // path nothing references, which would otherwise still risk losing WAL data.
-                    if (walMoved) fileSystem.renameFile("$newDbPath-wal", "$oldDbPath-wal")
-                    fileSystem.renameFile(newDbPath, oldDbPath)
-                    dbMoved = false
-                }
-            }
+            val moved = AtomicFileRelocationStep.relocate(
+                fileSystem,
+                listOf(
+                    FileMove(oldDbPath, newDbPath),
+                    FileMove("$oldDbPath-wal", "$newDbPath-wal", optional = true),
+                    FileMove("$oldDbPath-shm", "$newDbPath-shm", optional = true),
+                ),
+            )
+            if (moved.isLeft()) return false
         }
-        if (!dbMoved) return false
 
         try {
             val oldTelemetryPath = driverFactory.getTelemetryDatabaseUrl(oldId.value).substringAfter("jdbc:sqlite:")

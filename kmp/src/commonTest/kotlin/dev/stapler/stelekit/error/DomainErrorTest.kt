@@ -69,6 +69,7 @@ class DomainErrorTest {
             DomainError.StorageError.InsufficientSpace(1000, 10),
             DomainError.StorageError.QuiesceTimedOut(30_000),
             DomainError.StorageError.ReopenFailed("g1"),
+            DomainError.StorageError.RelocationFailed("/path"),
         )
         for (err in errors) {
             // exhaustive when — compile error if any branch is missing
@@ -136,6 +137,7 @@ class DomainErrorTest {
                 is DomainError.StorageError.InsufficientSpace -> err.message
                 is DomainError.StorageError.QuiesceTimedOut -> err.message
                 is DomainError.StorageError.ReopenFailed -> err.message
+                is DomainError.StorageError.RelocationFailed -> err.message
             }
             assertTrue(msg.isNotEmpty(), "Expected non-empty message for $err")
         }
@@ -219,6 +221,7 @@ class DomainErrorTest {
             DomainError.StorageError.InsufficientSpace(1000, 10),
             DomainError.StorageError.QuiesceTimedOut(30_000),
             DomainError.StorageError.ReopenFailed("g1"),
+            DomainError.StorageError.RelocationFailed("/path"),
         )
         for (err in errors) {
             assertTrue(err.toUiMessage().isNotEmpty(), "Expected non-empty UI message for $err")

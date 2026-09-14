@@ -182,6 +182,9 @@ sealed interface DomainError {
         data class QuiesceTimedOut(val waitedMs: Long) : StorageError {
             override val message: String = "Timed out after ${waitedMs}ms waiting for in-flight sync to quiesce"
         }
+        data class RelocationFailed(val path: String) : StorageError {
+            override val message: String = "Failed to rename $path"
+        }
 
         /**
          * Worse than every other leaf here: the driver may now be stuck closed rather than back
@@ -261,6 +264,7 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.StorageError.InsufficientSpace -> "Not enough free space at the destination"
     is DomainError.StorageError.QuiesceTimedOut -> "Timed out waiting for sync to finish — please try again"
     is DomainError.StorageError.ReopenFailed -> "Move may have partially completed — please restart the app"
+    is DomainError.StorageError.RelocationFailed -> "Couldn't move file — nothing was changed"
 }
 
 fun DomainError.GitError.toSyncErrorMessage(): String = when (this) {
