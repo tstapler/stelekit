@@ -322,6 +322,13 @@ fun main() {
                                 graphManager = graphManager,
                                 hostAccessState = { opfsFileSystem.hostAccessStateFlow.value },
                             ),
+                        // MAJOR finding (PR #327 review): real pre-flight free-space check —
+                        // previously never wired, so GraphRelocationCoordinator's default
+                        // BulkCopyVerifier always used InsufficientSpaceCheck.NONE. Same
+                        // demo-fallback gate as graphMoveQuiesceStrategy/hostLinkStep above (no
+                        // persistent OPFS content to check space for in that mode).
+                        insufficientSpaceCheck = if (useDemoFallback) null else
+                            dev.stapler.stelekit.db.WasmJsInsufficientSpaceCheck(),
                     ),
                     webSyncDeps = dev.stapler.stelekit.ui.StelekitAppWebSyncDeps(
                         localChangesCountFlow = opfsFileSystem.dirtyFileCountFlow,

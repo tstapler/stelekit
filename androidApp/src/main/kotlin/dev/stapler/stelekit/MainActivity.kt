@@ -19,6 +19,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.lifecycleScope
+import dev.stapler.stelekit.db.AndroidInsufficientSpaceCheck
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.db.RelocationStagingDirectory
 import dev.stapler.stelekit.db.createAndroidGraphMoveQuiesceStrategy
@@ -340,6 +341,13 @@ class MainActivity : ComponentActivity() {
             // storage_locations.
             val androidHostLinkStep = remember { createAndroidHostLinkStep() }
 
+            // MAJOR finding (PR #327 review): real pre-flight free-space check — previously never
+            // wired, so GraphRelocationCoordinator's default BulkCopyVerifier always used
+            // InsufficientSpaceCheck.NONE and never actually checked available space before a
+            // relocate's copy. Stateless (StatFs is checked per-call, not cached), so a single
+            // remembered instance suffices.
+            val androidInsufficientSpaceCheck = remember { AndroidInsufficientSpaceCheck() }
+
             // One-shot startup orphan sweep (plan.md Phase 6, Epic 6.1) — deletes long-unused
             // shadow git worktrees. Self-contained: no GraphManager/GitConfigRepository lookup
             // needed (see GitShadowWorktree.sweepOrphans doc), so it can run unconditionally here
@@ -403,6 +411,7 @@ class MainActivity : ComponentActivity() {
                         graphMoveQuiesceStrategy = androidGraphMoveQuiesceStrategy,
                         hostLinkStep = androidHostLinkStep,
                         storageLocationResolver = androidStorageLocationResolver,
+                        insufficientSpaceCheck = androidInsufficientSpaceCheck,
                     ),
                 ),
             )

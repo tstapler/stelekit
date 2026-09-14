@@ -122,6 +122,15 @@ data class StelekitAppPlatformIntegrations(
      * `GraphSwitcher`'s own doc) but falls back to an `AppOwned` placeholder source.
      */
     val storageLocationResolver: StorageLocationResolver? = null,
+    /**
+     * MAJOR finding (PR #327 review): pre-flight free-space check for
+     * `GraphRelocationCoordinator`'s default `BulkCopyVerifier` — pass `AndroidInsufficientSpaceCheck()`
+     * on Android, `WasmJsInsufficientSpaceCheck()` on Web. `null` (Desktop/iOS, or before a host
+     * wires one) means the coordinator never checks free space before copying, mirroring
+     * [graphMoveQuiesceStrategy]/[hostLinkStep]'s "off unless a platform explicitly supplies one"
+     * convention.
+     */
+    val insufficientSpaceCheck: dev.stapler.stelekit.db.InsufficientSpaceCheck? = null,
 )
 
 /**

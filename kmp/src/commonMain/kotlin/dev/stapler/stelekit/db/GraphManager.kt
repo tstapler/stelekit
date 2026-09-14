@@ -372,7 +372,7 @@ class GraphManager(
 
         if (location != null) {
             onGraphLocationDetermined(graphId.value, location).onLeft {
-                logger.warn("addGraph: failed to persist storage location for graph $graphId: $it")
+                logger.warn("addGraph: failed to persist storage location for graph $graphId: ${it::class.simpleName}")
             }
         }
 
@@ -827,7 +827,7 @@ class GraphManager(
                 pendingStorageLocations[id]?.let { location ->
                     repoSet.writeActor?.let { actor ->
                         writeStorageLocation(factory, actor, id.value, location).onLeft {
-                            logger.warn("switchGraph: failed to flush pending storage location for graph $id: $it")
+                            logger.warn("switchGraph: failed to flush pending storage location for graph $id: ${it::class.simpleName}")
                         }
                         pendingStorageLocations.remove(id)
                     }
