@@ -3,6 +3,8 @@
 
 package dev.stapler.stelekit.platform
 
+import arrow.core.Either
+import arrow.core.right
 import dev.stapler.stelekit.coroutines.SessionLifecycle
 import dev.stapler.stelekit.db.ChangeDetectionScheduler
 import dev.stapler.stelekit.db.RescanOutcome
@@ -931,6 +933,57 @@ internal class HostDirectorySync(
         }
         setHostAccessState(result)
         return result
+    }
+
+    // ── Epic 4.1 (Task 4.1.2a): unlinkHostDirectory — detach, keep the instance alive ────────────
+    /**
+     * Detaches the currently-linked host directory while leaving this graph's OPFS content
+     * completely untouched — the inverse of [connectHostDirectory]'s "attach a mirror," not a
+     * relocate. Stops the poll loop, disconnects any live `FileSystemObserver`, clears the
+     * in-memory [hostDirHandle]/[hostGraphOpfsPath], drops the now-unreachable write-through queue
+     * (nothing left to push to), deletes this graph's two persisted IndexedDB entries
+     * ([persistHostHandle]'s envelope key and [handleObjectKey]'s real-handle key), and transitions
+     * [hostAccessStateFlow] to [HostAccessState.Unlinked].
+     *
+     * Deliberately **not** a resurrection of the retired `disconnectForGraphSwitch()` field-by-field
+     * reset (see the comment block below [connectHostDirectory] for why that pattern was retired) —
+     * this is a distinct, explicit, user-invoked transition on a still-live instance that keeps
+     * running afterward (unlike [close], which tears the whole instance down for a graph switch).
+     *
+     * The IndexedDB delete is what actually prevents a *future session's* `reconnectHostDirectory`
+     * silent-resume path from resurrecting this link: with no envelope/handle persisted,
+     * [lookupPersistedHandle] finds nothing and resume leaves [hostAccessStateFlow] at its inert
+     * default rather than re-attaching the detached folder (Story 4.1.2's second acceptance
+     * criterion). A failure deleting the IndexedDB entry is logged and does not fail this call
+     * (matches [persistHostHandle]'s established best-effort convention for this same object
+     * store) — the in-memory state always clears and [hostAccessStateFlow] always transitions to
+     * [HostAccessState.Unlinked] regardless, since a user who clicked "Unlink" must see the graph
+     * detached even if the browser's IndexedDB write momentarily fails.
+     */
+    suspend fun unlinkHostDirectory(): Either<DomainError.StorageError, Unit> {
+        stopHostDirectoryPolling()
+        hostChangeObserver?.let { disconnectObserver(it) }
+        hostChangeObserver = null
+        observerConfirmedActive = false
+
+        hostDirHandle = null
+        hostGraphOpfsPath = null
+        hostWritePending.clear()
+        updatePendingCount()
+        _hostWriteStuckFlow.value = false
+
+        try {
+            val db = idbOpenHandleDb()
+            idbDeleteHandle(db, graphId.value)
+            idbDeleteHandle(db, handleObjectKey(graphId.value))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            logger.warn("unlinkHostDirectory: IndexedDB delete failed for graphId=${graphId.value}: ${e.message}", e)
+        }
+
+        setHostAccessState(HostAccessState.Unlinked)
+        return Unit.right()
     }
 
     // Epic 1.1 (Story 1.1.2, Task 1.1.2a): the former `disconnectForGraphSwitch()` field-by-field

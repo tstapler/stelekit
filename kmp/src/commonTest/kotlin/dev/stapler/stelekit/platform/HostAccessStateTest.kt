@@ -14,13 +14,16 @@ import kotlin.test.assertEquals
  */
 class HostAccessStateTest {
     @Test
-    fun hostAccessState_should_ExposeExactlyFiveVariants_When_ExhaustiveWhenIsCompiled() {
+    fun hostAccessState_should_ExposeExactlySixVariants_When_ExhaustiveWhenIsCompiled() {
         val states: List<HostAccessState> = listOf(
             HostAccessState.NotApplicable,
             HostAccessState.Granted,
             HostAccessState.PromptNeeded,
             HostAccessState.Denied,
             HostAccessState.Disconnected("stale handle"),
+            // Epic 4.1 (Task 4.1.2b): added by unlinkHostDirectory — see HostAccessState.Unlinked's
+            // doc comment for why this is distinct from Disconnected/NotApplicable.
+            HostAccessState.Unlinked,
         )
 
         val labels = states.map { state ->
@@ -31,11 +34,12 @@ class HostAccessStateTest {
                 is HostAccessState.PromptNeeded -> "prompt_needed"
                 is HostAccessState.Denied -> "denied"
                 is HostAccessState.Disconnected -> "disconnected:${state.reason}"
+                is HostAccessState.Unlinked -> "unlinked"
             }
         }
 
         assertEquals(
-            listOf("not_applicable", "granted", "prompt_needed", "denied", "disconnected:stale handle"),
+            listOf("not_applicable", "granted", "prompt_needed", "denied", "disconnected:stale handle", "unlinked"),
             labels,
         )
     }

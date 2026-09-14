@@ -107,6 +107,13 @@ data class StelekitAppPlatformIntegrations(
      */
     val graphMoveQuiesceStrategy: GraphMoveQuiesceStrategy? = null,
     /**
+     * Epic 4.1 (Task 4.1.1a): platform seam for [GraphRelocationCoordinator.link] — pass
+     * `createWasmJsHostLinkStep(fileSystem.hostDirectorySync)` on Web. Null (Desktop/iOS/Android —
+     * Android's own Link mode is Epic 4.2's separate git-shadow-worktree mechanism, not routed
+     * through [GraphRelocationCoordinator] at all) means a `Link` operation always fails fast.
+     */
+    val hostLinkStep: dev.stapler.stelekit.db.HostLinkStep? = null,
+    /**
      * Resolves/backfills a graph's real [StorageLocation] before "Move storage location…" opens —
      * Story 3.2.2/3.3.3. Pass `createAndroidStorageLocationResolver(...)` on Android,
      * `createWasmJsStorageLocationResolver(...)` on Web. Null leaves the button working (per
@@ -161,6 +168,16 @@ data class StelekitAppWebSyncDeps(
      * `FolderSyncSettings`'s call site renders nothing.
      */
     val onConnectHostDirectory: (suspend () -> ReconciliationUiState)? = null,
+    /**
+     * Epic 4.1 (Task 4.1.2c): "Unlink folder" affordance — invoked from `SettingsDialog`'s
+     * `FolderSyncSettings` section for a graph that's currently linked. Should perform
+     * `HostDirectorySync.unlinkHostDirectory()` and, on success, persist the graph's
+     * `storage_locations` row back to `StorageLocation.AppOwned` via
+     * `GraphManager.onGraphLocationDetermined` (`unlinkHostDirectoryAndPersist` on web). Pass a
+     * lambda wrapping that on web. When null, `FolderSyncSettings`'s "Unlink folder" section
+     * renders nothing.
+     */
+    val onUnlinkHostDirectory: (suspend () -> Unit)? = null,
 )
 
 /**

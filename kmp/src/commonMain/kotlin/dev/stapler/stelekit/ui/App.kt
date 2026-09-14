@@ -381,6 +381,7 @@ private fun GraphContent(deps: GraphContentDeps) {
     val googleAuthManager = deps.platformIntegrations.googleAuthManager
     val requestCameraPermission = deps.platformIntegrations.requestCameraPermission
     val graphMoveQuiesceStrategy = deps.platformIntegrations.graphMoveQuiesceStrategy
+    val hostLinkStep = deps.platformIntegrations.hostLinkStep
     val storageLocationResolver = deps.platformIntegrations.storageLocationResolver
     val localChangesCountFlow = deps.webSyncDeps.localChangesCountFlow
     val hostAccessStateFlow = deps.webSyncDeps.hostAccessStateFlow
@@ -388,6 +389,7 @@ private fun GraphContent(deps: GraphContentDeps) {
     val hostWriteStuckFlow = deps.webSyncDeps.hostWriteStuckFlow
     val onReconnectHostDirectory = deps.webSyncDeps.onReconnectHostDirectory
     val onConnectHostDirectory = deps.webSyncDeps.onConnectHostDirectory
+    val onUnlinkHostDirectory = deps.webSyncDeps.onUnlinkHostDirectory
     val graphMergeService = deps.graphMergeService
     val mergePendingPageCount by graphMergeService.pendingPageCount.collectAsState()
 
@@ -696,38 +698,46 @@ private fun GraphContent(deps: GraphContentDeps) {
     // composable's own graphManager/fileSystem plus the platform-supplied quiesce port. Null
     // graphMoveQuiesceStrategy (Desktop/iOS, or a host that hasn't wired one) means no coordinator
     // exists, so onStorageLocationChosen below falls back to a snackbar instead of hanging.
-    val graphRelocationCoordinator = remember(graphManager, fileSystem, graphMoveQuiesceStrategy) {
-        graphMoveQuiesceStrategy?.let { GraphRelocationCoordinator(graphManager, fileSystem, it) }
+    val graphRelocationCoordinator = remember(graphManager, fileSystem, graphMoveQuiesceStrategy, hostLinkStep) {
+        graphMoveQuiesceStrategy?.let {
+            GraphRelocationCoordinator(graphManager, fileSystem, it, hostLinkStep = hostLinkStep)
+        }
     }
     var storageMoveState by remember { mutableStateOf<StorageMoveUiState?>(null) }
     var storageMoveGraphName by remember { mutableStateOf("this graph") }
     var storageMoveJob by remember { mutableStateOf<Job?>(null) }
-    var lastStorageMoveOperation by remember { mutableStateOf<StorageMoveOperation.Relocate?>(null) }
+    var lastStorageMoveOperation by remember { mutableStateOf<StorageMoveOperation?>(null) }
 
-    fun startStorageMove(operation: StorageMoveOperation.Relocate, graphName: String) {
+    // Epic 4.1: dispatches to the coordinator's Relocate or Link entry point — see
+    // GraphRelocationCoordinator.link's doc comment for why Link is a separate function rather
+    // than a branch inside relocate() itself. A null hostLinkStep (every non-Web platform) still
+    // reaches coordinator.link(), which fails fast with a real Failed(DestinationNotWritable)
+    // state shown in StorageMoveProgressDialog below — a more honest UI than a generic snackbar.
+    fun startStorageMove(operation: StorageMoveOperation, graphName: String) {
         val coordinator = graphRelocationCoordinator ?: return
         lastStorageMoveOperation = operation
         storageMoveGraphName = graphName
         storageMoveJob?.cancel()
+        val states = when (operation) {
+            is StorageMoveOperation.Relocate -> coordinator.relocate(operation)
+            is StorageMoveOperation.Link -> coordinator.link(operation)
+        }
         storageMoveJob = scope.launch {
-            coordinator.relocate(operation).collect { state -> storageMoveState = state }
+            states.collect { state -> storageMoveState = state }
         }
     }
 
     // Both Sidebar's GraphSwitcher (Android) and FolderSyncSettings (Web) hand off through this
-    // one callback (see GraphRelocationCoordinator.kt's own composition-root doc) — a real
-    // coordinator only runs Relocate; Link (Phase 4) isn't implemented yet, so it's declined with
-    // an explanatory snackbar instead of silently doing nothing.
+    // one callback (see GraphRelocationCoordinator.kt's own composition-root doc). A null
+    // coordinator (no graphMoveQuiesceStrategy wired — Desktop/iOS today) still can't run either
+    // operation, so it falls back to a snackbar instead of hanging.
     val onStorageLocationChosen: (StorageMoveOperation) -> Unit = { operation ->
-        when {
-            graphRelocationCoordinator == null ->
-                viewModel.sendSnackbar("Moving storage location isn't available on this platform yet")
-            operation is StorageMoveOperation.Relocate -> {
-                val graphName = graphManager.getGraphInfo(GraphId(operation.graphId))?.displayName
-                    ?: "this graph"
-                startStorageMove(operation, graphName)
-            }
-            else -> viewModel.sendSnackbar("Linking a folder isn't available yet")
+        if (graphRelocationCoordinator == null) {
+            viewModel.sendSnackbar("Moving storage location isn't available on this platform yet")
+        } else {
+            val graphName = graphManager.getGraphInfo(GraphId(operation.graphId))?.displayName
+                ?: "this graph"
+            startStorageMove(operation, graphName)
         }
     }
 
@@ -2017,6 +2027,7 @@ private fun GraphContent(deps: GraphContentDeps) {
                                 },
                                 storageMoveGraphName = activeGraphInfo?.displayName ?: "this graph",
                                 onStorageLocationChosen = onStorageLocationChosen,
+                                onUnlinkHostDirectory = onUnlinkHostDirectory,
                             ),
                             gitSync = GitSyncDeps(
                                 gitSyncService = gitSyncService,

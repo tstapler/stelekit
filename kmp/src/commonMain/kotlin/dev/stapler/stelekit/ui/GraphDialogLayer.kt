@@ -181,6 +181,7 @@ private fun SettingsDialogHost(
         onMoveStorageLocation = settings.onMoveStorageLocation,
         storageMoveGraphName = settings.storageMoveGraphName,
         onStorageLocationChosen = settings.onStorageLocationChosen,
+        onUnlinkHostDirectory = settings.onUnlinkHostDirectory,
     )
 }
 

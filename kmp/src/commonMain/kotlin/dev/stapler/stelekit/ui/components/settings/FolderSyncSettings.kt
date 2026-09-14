@@ -67,9 +67,20 @@ fun FolderSyncSettings(
     /** Epic 3.4: fires once the user confirms in [StorageMoveConfirmDialog] — see
      * [MoveStorageLocationSection]'s doc comment for which direction this covers today. */
     onStorageLocationChosen: (operation: StorageMoveOperation) -> Unit = {},
+    /**
+     * Epic 4.1 (Task 4.1.2c): detaches a currently-linked host folder while keeping the graph on
+     * OPFS — should invoke `HostDirectorySync.unlinkHostDirectory()` (plus persisting the
+     * resulting [dev.stapler.stelekit.model.StorageLocation.AppOwned] row). `null` hides the
+     * "Unlink folder" action entirely (same "don't show a broken affordance" convention as this
+     * composable's other optional entry points). Shown whenever [hostAccessState] indicates a link
+     * exists in some state (anything but [HostAccessState.NotApplicable]/[HostAccessState.Unlinked]),
+     * independent of the "Enable live folder sync" gate below, which only ever applies pre-link.
+     */
+    onUnlink: (suspend () -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     var uiState by remember { mutableStateOf<ReconciliationUiState?>(null) }
+    var isUnlinking by remember { mutableStateOf(false) }
 
     // Independent of the "Enable live folder sync" gate below — a graph's storage location can be
     // moved whether or not live folder sync is available/connected. Suppressed only while an
@@ -77,6 +88,44 @@ fun FolderSyncSettings(
     // two async actions never compete for the same screen at once.
     if (onMoveStorageLocation != null && uiState == null) {
         MoveStorageLocationSection(onMoveStorageLocation, scope, modifier, graphName, onStorageLocationChosen)
+    }
+
+    // Epic 4.1 (Task 4.1.2c): the "already linked" counterpart to the "Enable live folder sync"
+    // section below — that section's own early-return gate (next block) means it never renders
+    // once hostAccessState leaves NotApplicable, so this is the only place a linked graph's
+    // Folder Sync settings show anything at all.
+    if (uiState == null && onUnlink != null &&
+        hostAccessState != HostAccessState.NotApplicable && hostAccessState != HostAccessState.Unlinked
+    ) {
+        SettingsSection("Folder Sync") {
+            Text(
+                "This graph is linked to a folder on your computer. Unlinking stops syncing to " +
+                    "that folder — your notes stay safely in the browser.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(12.dp))
+            Button(
+                onClick = {
+                    isUnlinking = true
+                    scope.launch {
+                        try {
+                            onUnlink()
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Throwable) {
+                            logger.warn("Unlink folder failed: ${e.message}", e)
+                        } finally {
+                            isUnlinking = false
+                        }
+                    }
+                },
+                enabled = !isUnlinking,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Unlink folder")
+            }
+        }
     }
 
     // Bug fix (code-review repair loop): this guard now runs AFTER `uiState` is read via

@@ -99,6 +99,9 @@ fun SettingsDialog(
     onMoveStorageLocation: (suspend () -> dev.stapler.stelekit.model.StorageLocation)? = null,
     storageMoveGraphName: String = "this graph",
     onStorageLocationChosen: (dev.stapler.stelekit.model.StorageMoveOperation) -> Unit = {},
+    // Epic 4.1 (Task 4.1.2c): "Unlink folder" affordance — see FolderSyncSettings's own parameter
+    // docs. Null onUnlinkHostDirectory hides the entry entirely.
+    onUnlinkHostDirectory: (suspend () -> Unit)? = null,
 ) {
     if (visible) {
         Dialog(
@@ -161,6 +164,7 @@ fun SettingsDialog(
                                 onMoveStorageLocation = onMoveStorageLocation,
                                 graphName = storageMoveGraphName,
                                 onStorageLocationChosen = onStorageLocationChosen,
+                                onUnlink = onUnlinkHostDirectory,
                             )
                         }
                     }

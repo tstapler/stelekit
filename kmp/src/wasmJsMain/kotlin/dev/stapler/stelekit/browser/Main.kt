@@ -302,6 +302,11 @@ fun main() {
                         // persistent OPFS content to move), so both are left null there.
                         graphMoveQuiesceStrategy = if (useDemoFallback) null else
                             dev.stapler.stelekit.db.createWasmJsGraphMoveQuiesceStrategy(opfsFileSystem),
+                        // Epic 4.1 (Task 4.1.1a): forwards straight to connectHostDirectory —
+                        // reuses the same "no persistent OPFS content in demo-fallback mode" gate
+                        // graphMoveQuiesceStrategy above already applies.
+                        hostLinkStep = if (useDemoFallback) null else
+                            dev.stapler.stelekit.db.createWasmJsHostLinkStep(opfsFileSystem.hostDirectorySync),
                         storageLocationResolver = if (useDemoFallback) null else
                             dev.stapler.stelekit.db.createWasmJsStorageLocationResolver(
                                 graphManager = graphManager,
@@ -343,6 +348,22 @@ fun main() {
                                 hostOnlyNew = summary.hostOnlyNew,
                                 browserOnlyNeedsPush = summary.browserOnlyNeedsPush,
                             )
+                        },
+                        // Task 4.1.2c: detaches the current graph's folder and persists the
+                        // resulting AppOwned storage_locations row in one step (see
+                        // unlinkHostDirectoryAndPersist's own doc comment). A Left is rethrown as
+                        // a Throwable so FolderSyncSettings's own onUnlink catch block logs it —
+                        // that lambda's declared suspend () -> Unit shape has nowhere else to
+                        // surface an Either failure.
+                        onUnlinkHostDirectory = unlink@{
+                            val result = dev.stapler.stelekit.db.unlinkHostDirectoryAndPersist(
+                                opfsFileSystem.hostDirectorySync,
+                                opfsFileSystem.currentGraphId(),
+                                onGraphLocationDetermined = graphManager::onGraphLocationDetermined,
+                            )
+                            if (result is arrow.core.Either.Left) {
+                                throw RuntimeException(result.value.message)
+                            }
                         },
                     ),
                 ),

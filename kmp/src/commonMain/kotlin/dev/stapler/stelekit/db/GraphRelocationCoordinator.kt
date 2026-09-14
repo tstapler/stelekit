@@ -38,6 +38,24 @@ fun interface CopyAndVerifyStep {
 }
 
 /**
+ * Platform seam for [GraphRelocationCoordinator.link] (Epic 4.1, Task 4.1.1a) — attaches
+ * [destination] as a continuous mirror of the already-live content at [existingOpfsPath], then
+ * returns once that mirror is established. `commonMain` cannot reference wasmJsMain's
+ * `HostDirectorySync.connectHostDirectory` directly (KMP's one-way dependency direction — see
+ * [GraphMoveQuiesceStrategy]'s doc comment for the same constraint this codebase already
+ * follows), so this narrow port stands in for it: Web wires it via
+ * `createWasmJsHostLinkStep(hostDirectorySync)`, which forwards straight to
+ * `connectHostDirectory` (reusing its existing `runHostReconciliation` walk unchanged, per Story
+ * 4.1.1's acceptance criteria) rather than reimplementing a parallel connect flow. `null` (the
+ * default) means this platform/graph has no Link implementation — Android's own Link mode (Epic
+ * 4.2, git-shadow-worktree write-back) is a different mechanism entirely and is not routed
+ * through [GraphRelocationCoordinator].
+ */
+fun interface HostLinkStep {
+    suspend fun link(existingOpfsPath: String, destination: StorageLocation): Either<DomainError.StorageError, Unit>
+}
+
+/**
  * Orchestrates a [StorageMoveOperation.Relocate] end to end: quiesce → close the driver → copy
  * into a staging directory → verify → atomically repoint → reopen-and-confirm → repersist →
  * release, per Story 3.1.5's acceptance criteria. This is the safety-critical core of the whole
@@ -58,6 +76,9 @@ class GraphRelocationCoordinator(
     private val copyAndVerifyStep: CopyAndVerifyStep = CopyAndVerifyStep { source, destination, onProgress ->
         BulkCopyVerifier(fileSystem).copyAndVerifyPaths(source, destination, onProgress)
     },
+    /** See [HostLinkStep]'s doc comment. `null` (the default) means [link] always fails fast with
+     * [DomainError.StorageError.DestinationNotWritable] — every non-Web construction site. */
+    private val hostLinkStep: HostLinkStep? = null,
 ) {
     /**
      * Runs [operation] end to end, emitting UI-facing progress/terminal states. Collecting this
@@ -151,6 +172,93 @@ class GraphRelocationCoordinator(
             withContext(NonCancellable) {
                 quiesceStrategy.release(operation)
                 MoveInProgressFlag.setMoveInProgress(graphIdValue, false)
+            }
+        }
+    }
+
+    /**
+     * Runs [operation] end to end, per Story 4.1.1's acceptance criteria — the `Link` sibling to
+     * [relocate]. Deliberately **not** a branch inside [relocate]: a `Link` operation never closes
+     * the driver, never copies via [copyAndVerifyStep]/[BulkCopyVerifier], and never repoints
+     * [GraphManager]'s content path — OPFS stays the one live copy of the graph for the operation's
+     * entire duration, with [hostLinkStep] only attaching an additional continuous mirror alongside
+     * it (`research/architecture.md` §2's `LinkEstablished` transition). Keeping this as a separate
+     * function, rather than threading a `when (operation)` through [relocate]'s closed-driver
+     * `try`/`finally` region, is what keeps that safety-critical region's sequencing exactly as it
+     * was before this Epic — see this class's own doc comment on why that region is delicate.
+     *
+     * State sequence: [StorageMoveUiState.Quiescing] → [StorageMoveUiState.Verifying] (standing in
+     * for [hostLinkStep]'s own picker-then-reconcile walk, which has no incremental progress
+     * callback to drive [StorageMoveUiState.Copying] from) → [StorageMoveUiState.Summary] on
+     * success or [StorageMoveUiState.Failed] otherwise. Never [StorageMoveUiState.ReopenFailed] —
+     * there is no reopen step, since the driver was never closed.
+     */
+    fun link(operation: StorageMoveOperation.Link): Flow<StorageMoveUiState> = channelFlow {
+        val graphIdValue = operation.graphId
+        val step = hostLinkStep
+
+        if (step == null) {
+            send(
+                StorageMoveUiState.Failed(
+                    DomainError.StorageError.DestinationNotWritable(
+                        "Linking a folder is not supported on this platform/graph",
+                    ),
+                ),
+            )
+            return@channelFlow
+        }
+
+        MoveInProgressFlag.setMoveInProgress(graphIdValue, true)
+        try {
+            send(StorageMoveUiState.Quiescing)
+
+            val quiesceOutcome: Either<DomainError.StorageError, Unit>? =
+                withTimeoutOrNull(QUIESCE_TIMEOUT_MS) { quiesceStrategy.quiesce(operation) }
+            if (quiesceOutcome == null) {
+                send(StorageMoveUiState.Failed(DomainError.StorageError.QuiesceTimedOut(QUIESCE_TIMEOUT_MS)))
+                return@channelFlow
+            }
+            if (quiesceOutcome is Either.Left) {
+                send(StorageMoveUiState.Failed(quiesceOutcome.value))
+                return@channelFlow
+            }
+
+            attachHostLink(step, operation)
+        } finally {
+            withContext(NonCancellable) {
+                quiesceStrategy.release(operation)
+                MoveInProgressFlag.setMoveInProgress(graphIdValue, false)
+            }
+        }
+    }
+
+    /**
+     * Resolves [operation]'s source root, invokes [step], and — on success — persists the new
+     * [StorageLocation] via [GraphManager.onGraphLocationDetermined]. Extracted from [link] purely
+     * to keep that function's own body short; not reused anywhere else.
+     */
+    private suspend fun ProducerScope<StorageMoveUiState>.attachHostLink(
+        step: HostLinkStep,
+        operation: StorageMoveOperation.Link,
+    ) {
+        // Reuses resolveSourceRoot unchanged — the same AppOwned-via-GraphManager lookup
+        // relocate() already depends on, not new/duplicated logic.
+        val sourceRoot = when (val resolved = resolveSourceRoot(operation.source)) {
+            is Either.Left -> {
+                send(StorageMoveUiState.Failed(resolved.value))
+                return
+            }
+            is Either.Right -> resolved.value
+        }
+
+        send(StorageMoveUiState.Verifying)
+        when (val linkOutcome = withContext(PlatformDispatcher.IO) { step.link(sourceRoot, operation.destination) }) {
+            is Either.Left -> send(StorageMoveUiState.Failed(linkOutcome.value))
+            is Either.Right -> {
+                // No updateGraphContentPath call, unlike relocate()'s step 7 — OPFS remains the
+                // graph's content path; only storage_locations' kind/uri metadata changes.
+                graphManager.onGraphLocationDetermined(operation.graphId, operation.destination)
+                send(StorageMoveUiState.Summary)
             }
         }
     }
