@@ -124,6 +124,16 @@ private fun preventBrowserTabFocusTraversal(): Unit = js(
 fun main() {
     preventBrowserTabFocusTraversal()
     val scope = MainScope()
+
+    // One-shot startup sweep for an interrupted relocate's staging directory (Story 3.1.2), the
+    // Web counterpart of MainActivity.kt's Android call — self-contained and unconditional
+    // (no GraphManager/graph-registry lookup needed), so it runs as its own child launch rather
+    // than being threaded through the boot sequence below. Fire-and-forget: never gates first
+    // paint, matching this sweep's best-effort "matters on next launch, not this one" nature.
+    scope.launch {
+        dev.stapler.stelekit.db.sweepWasmJsRelocationStaging(scope)
+    }
+
     scope.launch(CoroutineExceptionHandler { _, throwable ->
         println("[SteleKit] Fatal startup error: ${throwable.message}")
         // ComposeViewport will not be mounted — the loading overlay remains visible
