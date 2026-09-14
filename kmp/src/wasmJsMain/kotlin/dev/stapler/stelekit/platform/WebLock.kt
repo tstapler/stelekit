@@ -212,10 +212,23 @@ object WebLock {
      * alongside [withLock]. Do not use this for a short-lived critical section that fits in a
      * single suspend call — use [withLock] there instead, so a thrown/cancelled block can never
      * leave the lock held past its scope.
+     *
+     * Bug fix (code-review repair loop): same leak as [withLock]/[tryWithLock] above — the
+     * browser grants the lock synchronously the instant `jsRequestLockHandle`'s callback runs,
+     * independent of whether this coroutine is still suspended awaiting
+     * [jsHandleAcquiredPromise] or has since been cancelled. Without a guard here, a cancellation
+     * during that await leaves the browser lock held (or about to be held) with no [HeldLock]
+     * ever returned for anyone to call [HeldLock.release] on — it then leaks until the tab
+     * closes. [releaseWebLockHandle] is safe to call even if the lock was never actually granted.
      */
     suspend fun acquireHeld(lockName: String): HeldLock {
         val handle = jsRequestLockHandle(lockName)
-        jsHandleAcquiredPromise(handle).await<JsAny>()
+        try {
+            jsHandleAcquiredPromise(handle).await<JsAny>()
+        } catch (e: Throwable) {
+            releaseWebLockHandle(handle)
+            throw e
+        }
         return HeldLock(handle)
     }
 }
