@@ -19,7 +19,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.StorageLocation
+import dev.stapler.stelekit.model.StorageMoveOperation
 import dev.stapler.stelekit.platform.HostAccessState
+import dev.stapler.stelekit.ui.components.StorageMoveChoiceDialog
+import dev.stapler.stelekit.ui.components.StorageMoveConfirmDialog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -56,6 +59,14 @@ fun FolderSyncSettings(
     // a suspend lambda that performs `StorageLocationResolver.resolveOrBackfill(graphId)` — see
     // [MoveStorageLocationSection]'s doc comment for what happens with the result.
     onMoveStorageLocation: (suspend () -> StorageLocation)? = null,
+    /** Epic 3.4: display name for [StorageMoveChoiceDialog]/[StorageMoveConfirmDialog] — no
+     * graph name flows into this composable today (its `SettingsDialog` caller has none either),
+     * so this defaults to a generic phrase rather than blocking the dialogs on that composition-
+     * root gap. */
+    graphName: String = "this graph",
+    /** Epic 3.4: fires once the user confirms in [StorageMoveConfirmDialog] — see
+     * [MoveStorageLocationSection]'s doc comment for which direction this covers today. */
+    onStorageLocationChosen: (operation: StorageMoveOperation) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     var uiState by remember { mutableStateOf<ReconciliationUiState?>(null) }
@@ -65,7 +76,7 @@ fun FolderSyncSettings(
     // "Enable live folder sync" reconciliation flow (uiState != null) is actively showing, so the
     // two async actions never compete for the same screen at once.
     if (onMoveStorageLocation != null && uiState == null) {
-        MoveStorageLocationSection(onMoveStorageLocation, scope, modifier)
+        MoveStorageLocationSection(onMoveStorageLocation, scope, modifier, graphName, onStorageLocationChosen)
     }
 
     // Bug fix (code-review repair loop): this guard now runs AFTER `uiState` is read via
@@ -139,19 +150,28 @@ fun FolderSyncSettings(
  * derive/persist this graph's current [StorageLocation] before anything else runs, per Story
  * 3.3.3's second acceptance criterion.
  *
- * **Gap**: Epic 3.4's Relocate-vs-Link choice dialog (`StorageMoveChoiceDialog`) and
- * `UnifiedLocationPicker` wiring do not exist yet — there is nothing for the resolved
- * [StorageLocation] to hand off to. This button currently only performs the resolve/backfill call
- * and swallows its result; wiring the real picker → choice-dialog flow (Surface 4's steps 2-3) is
- * Epic 3.4's job, not this story's.
+ * Epic 3.4 wires [StorageMoveChoiceDialog]/[StorageMoveConfirmDialog] in for the one direction
+ * this entry point can offer without a native directory picker: when the resolved source is
+ * already a [StorageLocation.HostFolder] (a live-linked graph), the destination is unambiguously
+ * [StorageLocation.AppOwned] — no new location needs to be chosen, so the dialogs open directly.
+ *
+ * **Remaining gap**: when the resolved source is [StorageLocation.AppOwned], there is still no
+ * destination to hand off to — connecting a *new* host folder requires the browser's
+ * `showDirectoryPicker()`, and this composable has no callback for that (unlike Android's
+ * `onBrowseRequestedForMove`); wiring one is Story 3.3.3's job, not this epic's. That path is
+ * logged and left a no-op rather than fabricating a destination.
  */
 @Composable
 private fun MoveStorageLocationSection(
     onMoveStorageLocation: suspend () -> StorageLocation,
     scope: CoroutineScope,
     modifier: Modifier,
+    graphName: String = "this graph",
+    onStorageLocationChosen: (StorageMoveOperation) -> Unit = {},
 ) {
     var isResolving by remember { mutableStateOf(false) }
+    var choosingMoveForSource by remember { mutableStateOf<StorageLocation?>(null) }
+    var confirmingMove by remember { mutableStateOf<StorageMoveOperation?>(null) }
 
     SettingsSection("Storage") {
         Button(
@@ -159,10 +179,17 @@ private fun MoveStorageLocationSection(
                 isResolving = true
                 scope.launch {
                     try {
-                        // TODO(Epic 3.4): open StorageMoveChoiceDialog/UnifiedLocationPicker here
-                        // with the resolved location as the picker's excluded "current location"
-                        // (Surface 4 AC16) once that flow exists.
-                        onMoveStorageLocation()
+                        val location = onMoveStorageLocation()
+                        if (location is StorageLocation.HostFolder) {
+                            choosingMoveForSource = location
+                        } else {
+                            // TODO(Story 3.3.3): no destination-picker wiring yet for an AppOwned
+                            // source — see this function's doc comment.
+                            logger.warn(
+                                "Move storage location: no destination picker wired for " +
+                                    "AppOwned source (graphId=${location.graphId})",
+                            )
+                        }
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Throwable) {
@@ -177,6 +204,52 @@ private fun MoveStorageLocationSection(
         ) {
             Text("Move storage location…")
         }
+    }
+
+    val choosingSource = choosingMoveForSource
+    if (choosingSource != null) {
+        val destination = StorageLocation.AppOwned(choosingSource.graphId)
+        StorageMoveChoiceDialog(
+            graphName = graphName,
+            source = choosingSource,
+            destination = destination,
+            isUnlinking = true,
+            onRelocateChosen = {
+                confirmingMove = StorageMoveOperation.Relocate(
+                    graphId = choosingSource.graphId,
+                    source = choosingSource,
+                    destination = destination,
+                    // AC34: never auto-delete the source here either — same cleanup-prompt rule
+                    // Android's Sidebar.kt wiring follows.
+                    deleteSourceAfterVerify = false,
+                )
+                choosingMoveForSource = null
+            },
+            onLinkChosen = {
+                confirmingMove = StorageMoveOperation.Link(
+                    graphId = choosingSource.graphId,
+                    source = choosingSource,
+                    destination = destination,
+                )
+                choosingMoveForSource = null
+            },
+            onDismissRequest = { choosingMoveForSource = null },
+        )
+    }
+
+    val confirming = confirmingMove
+    if (confirming != null) {
+        StorageMoveConfirmDialog(
+            graphName = graphName,
+            source = confirming.source,
+            destination = confirming.destination,
+            confirmLabel = if (confirming is StorageMoveOperation.Relocate) "Move" else "Link",
+            onConfirm = {
+                onStorageLocationChosen(confirming)
+                confirmingMove = null
+            },
+            onDismissRequest = { confirmingMove = null },
+        )
     }
 }
 
