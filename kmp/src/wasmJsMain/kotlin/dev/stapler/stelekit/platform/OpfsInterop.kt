@@ -107,6 +107,8 @@ internal suspend fun opfsDeleteDirectoryRecursive(path: String) {
             dir = getDirectoryHandle(dir, part, false)
         }
         @Suppress("UNUSED_VARIABLE") val _remove: JsAny = dirRemoveEntryRecursivePromise(dir, parts.last()).await()
+    } catch (e: CancellationException) {
+        throw e
     } catch (e: Throwable) {
         println("[SteleKit] OPFS recursive delete failed for $path: ${e.message}")
     }
