@@ -178,6 +178,9 @@ private fun SettingsDialogHost(
         hostAccessState = settings.hostAccessState,
         supportsNativeDirectoryPicker = fileSystem.supportsNativeDirectoryPicker,
         onConnectHostDirectory = settings.onConnectHostDirectory,
+        onMoveStorageLocation = settings.onMoveStorageLocation,
+        storageMoveGraphName = settings.storageMoveGraphName,
+        onStorageLocationChosen = settings.onStorageLocationChosen,
     )
 }
 

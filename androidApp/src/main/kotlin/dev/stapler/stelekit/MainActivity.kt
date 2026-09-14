@@ -21,6 +21,8 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.lifecycleScope
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.db.RelocationStagingDirectory
+import dev.stapler.stelekit.db.createAndroidGraphMoveQuiesceStrategy
+import dev.stapler.stelekit.db.createAndroidStorageLocationResolver
 import dev.stapler.stelekit.domain.UrlFetcherAndroid
 import dev.stapler.stelekit.llm.LlmCredentialStore
 import dev.stapler.stelekit.llm.LlmProviderAvailability
@@ -33,6 +35,7 @@ import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.platform.security.CredentialStore
 import dev.stapler.stelekit.git.AndroidGitRepository
 import dev.stapler.stelekit.git.GitShadowWorktree
+import dev.stapler.stelekit.git.GitSyncBusyCounter
 import dev.stapler.stelekit.git.GitSyncServiceRegistry
 import dev.stapler.stelekit.service.rememberAndroidMediaAttachmentService
 import dev.stapler.stelekit.ui.StelekitApp
@@ -305,6 +308,30 @@ class MainActivity : ComponentActivity() {
             val gitRepository = remember { buildGitRepository(applicationContext, app.fileSystem) }
             val attachmentService = rememberAndroidMediaAttachmentService(this@MainActivity, fileSystem)
 
+            // Phase 3 (Epic 3.2): real quiesce port for GraphRelocationCoordinator, constructed
+            // here (not inside StelekitApp) since it needs this Activity's Context for
+            // WorkManagerSyncScheduler pause/resume. gitSyncBusyCounter is a fresh, always-idle
+            // instance and shadowWorktreeTarget always resolves to null — GitSyncService doesn't
+            // expose its own busyCounter/shadow-worktree state publicly yet (no seam to share the
+            // live instance without changing GitSyncService itself, out of this dispatch's scope),
+            // so relocate correctly pauses WorkManager and copies files, but doesn't yet await an
+            // in-flight foreground git shadow-worktree sync before doing so. Null when
+            // app.graphManager failed to construct (see SteleKitApplication's own try/catch) —
+            // StelekitApp falls back to its own GraphManager in that case, which this strategy
+            // wouldn't be wired to anyway.
+            val androidGraphMoveQuiesceStrategy = remember(app.graphManager) {
+                app.graphManager?.let {
+                    createAndroidGraphMoveQuiesceStrategy(
+                        context = applicationContext,
+                        gitSyncBusyCounter = GitSyncBusyCounter(),
+                        shadowWorktreeTarget = { null },
+                    )
+                }
+            }
+            val androidStorageLocationResolver = remember(app.graphManager) {
+                app.graphManager?.let { gm -> createAndroidStorageLocationResolver(gm, applicationContext) }
+            }
+
             // One-shot startup orphan sweep (plan.md Phase 6, Epic 6.1) — deletes long-unused
             // shadow git worktrees. Self-contained: no GraphManager/GitConfigRepository lookup
             // needed (see GitShadowWorktree.sweepOrphans doc), so it can run unconditionally here
@@ -365,6 +392,8 @@ class MainActivity : ComponentActivity() {
                         gitRepository = gitRepository,
                         attachmentService = attachmentService,
                         requestCameraPermission = ::requestCameraPermission,
+                        graphMoveQuiesceStrategy = androidGraphMoveQuiesceStrategy,
+                        storageLocationResolver = androidStorageLocationResolver,
                     ),
                 ),
             )

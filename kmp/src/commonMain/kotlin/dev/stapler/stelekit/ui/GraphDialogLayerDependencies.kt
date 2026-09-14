@@ -62,6 +62,11 @@ data class SettingsDialogDeps(
     // keeps SettingsDialog's FolderSyncSettings call site un-rendered there.
     val hostAccessState: HostAccessState = HostAccessState.NotApplicable,
     val onConnectHostDirectory: (suspend () -> ReconciliationUiState)? = null,
+    // Epic 3.4/Story 3.3.3: "Move storage location…" entry point inside FolderSyncSettings — see
+    // SettingsDialog's own parameter docs. Null onMoveStorageLocation hides the entry entirely.
+    val onMoveStorageLocation: (suspend () -> dev.stapler.stelekit.model.StorageLocation)? = null,
+    val storageMoveGraphName: String = "this graph",
+    val onStorageLocationChosen: (dev.stapler.stelekit.model.StorageMoveOperation) -> Unit = {},
 )
 
 /**

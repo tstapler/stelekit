@@ -19,6 +19,8 @@ import dev.stapler.stelekit.voice.VoicePipelineConfig
 import dev.stapler.stelekit.voice.VoiceSettings
 import kotlinx.coroutines.flow.StateFlow
 import dev.stapler.stelekit.db.GraphManager
+import dev.stapler.stelekit.db.GraphMoveQuiesceStrategy
+import dev.stapler.stelekit.db.StorageLocationResolver
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.repository.RepositorySet
@@ -96,6 +98,21 @@ data class StelekitAppPlatformIntegrations(
      */
     val googleAuthManager: dev.stapler.stelekit.platform.google.GoogleAuthManager? = null,
     val requestCameraPermission: (suspend () -> Boolean)? = null,
+    /**
+     * Platform quiesce port for Story 3.1.3/3.1.5's `GraphRelocationCoordinator` — pass
+     * `createAndroidGraphMoveQuiesceStrategy(...)` on Android, `createWasmJsGraphMoveQuiesceStrategy(...)`
+     * on Web. Null (Desktop/iOS, or before a host wires one) means [GraphContent] never constructs a
+     * coordinator, so the "Move storage location…" entry points in [Sidebar]/[FolderSyncSettings]
+     * call their `onStorageLocationChosen` no-op default instead.
+     */
+    val graphMoveQuiesceStrategy: GraphMoveQuiesceStrategy? = null,
+    /**
+     * Resolves/backfills a graph's real [StorageLocation] before "Move storage location…" opens —
+     * Story 3.2.2/3.3.3. Pass `createAndroidStorageLocationResolver(...)` on Android,
+     * `createWasmJsStorageLocationResolver(...)` on Web. Null leaves the button working (per
+     * `GraphSwitcher`'s own doc) but falls back to an `AppOwned` placeholder source.
+     */
+    val storageLocationResolver: StorageLocationResolver? = null,
 )
 
 /**

@@ -155,11 +155,18 @@ fun FolderSyncSettings(
  * already a [StorageLocation.HostFolder] (a live-linked graph), the destination is unambiguously
  * [StorageLocation.AppOwned] — no new location needs to be chosen, so the dialogs open directly.
  *
- * **Remaining gap**: when the resolved source is [StorageLocation.AppOwned], there is still no
- * destination to hand off to — connecting a *new* host folder requires the browser's
- * `showDirectoryPicker()`, and this composable has no callback for that (unlike Android's
- * `onBrowseRequestedForMove`); wiring one is Story 3.3.3's job, not this epic's. That path is
- * logged and left a no-op rather than fabricating a destination.
+ * **Remaining gap (still open after the App.kt composition-root wiring dispatch)**: when the
+ * resolved source is [StorageLocation.AppOwned], there is still no destination to hand off to —
+ * connecting a *new* host folder requires the browser's `showDirectoryPicker()`, and this
+ * composable has no callback for that (unlike Android's `onBrowseRequestedForMove`, now wired in
+ * `App.kt`'s `LeftSidebar` call site). Adding one here means re-opening Epic 2.1/2.3's
+ * directory-connect/reconciliation picker machinery inside this settings surface — real scope
+ * creep for a wiring-only dispatch — so it stays a logged no-op rather than a fabricated
+ * destination. It would not be sufficient on its own anyway: `StorageLocation.resolveRootPathOrNull()`
+ * (`db/BulkCopyVerifier.kt`) returns `null` for both `AppOwned` and `HostFolder`, so
+ * `GraphRelocationCoordinator.relocate()` fails immediately with `DestinationNotWritable` for
+ * *any* operation touching either kind, regardless of platform — a pre-existing gap in the
+ * already-committed coordinator, not something a destination picker here would fix by itself.
  */
 @Composable
 private fun MoveStorageLocationSection(

@@ -24,7 +24,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalClipboardManager
 import dev.stapler.stelekit.db.GraphEpoch
 import dev.stapler.stelekit.db.GraphManager
+import dev.stapler.stelekit.db.GraphRelocationCoordinator
 import dev.stapler.stelekit.db.GraphWriter
+import dev.stapler.stelekit.db.StorageMoveUiState
 import dev.stapler.stelekit.migration.registerAllMigrations
 import dev.stapler.stelekit.db.SidecarManager
 import dev.stapler.stelekit.platform.DemoFileSystem
@@ -41,6 +43,7 @@ import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.DEMO_GRAPH_ID
 import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.StorageLocation
+import dev.stapler.stelekit.model.StorageMoveOperation
 import dev.stapler.stelekit.performance.DebugBuildConfig
 import dev.stapler.stelekit.performance.DebugMenuState
 import dev.stapler.stelekit.performance.getDeviceInfo
@@ -78,6 +81,7 @@ import dev.stapler.stelekit.performance.PercentileSummary
 import dev.stapler.stelekit.performance.QueryStat
 import dev.stapler.stelekit.performance.SerializedSpan
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -376,6 +380,8 @@ private fun GraphContent(deps: GraphContentDeps) {
     val attachmentService = deps.platformIntegrations.attachmentService
     val googleAuthManager = deps.platformIntegrations.googleAuthManager
     val requestCameraPermission = deps.platformIntegrations.requestCameraPermission
+    val graphMoveQuiesceStrategy = deps.platformIntegrations.graphMoveQuiesceStrategy
+    val storageLocationResolver = deps.platformIntegrations.storageLocationResolver
     val localChangesCountFlow = deps.webSyncDeps.localChangesCountFlow
     val hostAccessStateFlow = deps.webSyncDeps.hostAccessStateFlow
     val hostWritePendingCountFlow = deps.webSyncDeps.hostWritePendingCountFlow
@@ -682,6 +688,46 @@ private fun GraphContent(deps: GraphContentDeps) {
         ).also {
             viewModelRef = it
             it.startAutoSave()
+        }
+    }
+
+    // Phase 3 (Story 3.1.5/Epic 3.4): the composition root for "Move storage location…" — the
+    // only place a real GraphRelocationCoordinator gets constructed, since it needs this
+    // composable's own graphManager/fileSystem plus the platform-supplied quiesce port. Null
+    // graphMoveQuiesceStrategy (Desktop/iOS, or a host that hasn't wired one) means no coordinator
+    // exists, so onStorageLocationChosen below falls back to a snackbar instead of hanging.
+    val graphRelocationCoordinator = remember(graphManager, fileSystem, graphMoveQuiesceStrategy) {
+        graphMoveQuiesceStrategy?.let { GraphRelocationCoordinator(graphManager, fileSystem, it) }
+    }
+    var storageMoveState by remember { mutableStateOf<StorageMoveUiState?>(null) }
+    var storageMoveGraphName by remember { mutableStateOf("this graph") }
+    var storageMoveJob by remember { mutableStateOf<Job?>(null) }
+    var lastStorageMoveOperation by remember { mutableStateOf<StorageMoveOperation.Relocate?>(null) }
+
+    fun startStorageMove(operation: StorageMoveOperation.Relocate, graphName: String) {
+        val coordinator = graphRelocationCoordinator ?: return
+        lastStorageMoveOperation = operation
+        storageMoveGraphName = graphName
+        storageMoveJob?.cancel()
+        storageMoveJob = scope.launch {
+            coordinator.relocate(operation).collect { state -> storageMoveState = state }
+        }
+    }
+
+    // Both Sidebar's GraphSwitcher (Android) and FolderSyncSettings (Web) hand off through this
+    // one callback (see GraphRelocationCoordinator.kt's own composition-root doc) — a real
+    // coordinator only runs Relocate; Link (Phase 4) isn't implemented yet, so it's declined with
+    // an explanatory snackbar instead of silently doing nothing.
+    val onStorageLocationChosen: (StorageMoveOperation) -> Unit = { operation ->
+        when {
+            graphRelocationCoordinator == null ->
+                viewModel.sendSnackbar("Moving storage location isn't available on this platform yet")
+            operation is StorageMoveOperation.Relocate -> {
+                val graphName = graphManager.getGraphInfo(GraphId(operation.graphId))?.displayName
+                    ?: "this graph"
+                startStorageMove(operation, graphName)
+            }
+            else -> viewModel.sendSnackbar("Linking a folder isn't available yet")
         }
     }
 
@@ -1512,6 +1558,20 @@ private fun GraphContent(deps: GraphContentDeps) {
                                     }
                                 },
                                 supportsHostDirectoryLink = fileSystem.supportsHostDirectoryLink,
+                                storageLocationResolver = storageLocationResolver,
+                                // Same StorageLocation.SafFolder(graphId, treeUri) construction as
+                                // the new-graph UnifiedLocationPicker's onBrowseRequested above —
+                                // the established idiom for "wrap whatever fileSystem.pickDirectoryAsync()
+                                // returned as a storage location", not a new one invented here.
+                                onBrowseRequestedForMove = { graphId ->
+                                    fileSystem.pickDirectoryAsync()?.let { path ->
+                                        val expanded = fileSystem.expandTilde(path)
+                                        val treeUri = expanded.removePrefix("saf://").substringBefore("/")
+                                        StorageLocation.SafFolder(graphId, treeUri)
+                                    }
+                                },
+                                moveStorageLocationPlatformCapabilities = fileSystem.supportsNativeDirectoryPicker,
+                                onStorageLocationChosen = onStorageLocationChosen,
                                 onCollapse = { viewModel.toggleSidebar() },
                                 syncState = syncState,
                                 gitLastSyncAt = gitLastSyncAt,
@@ -1945,6 +2005,11 @@ private fun GraphContent(deps: GraphContentDeps) {
                                 hasLlmKey = hasTagSuggestionLlmProviderState.value,
                                 hostAccessState = hostAccessState,
                                 onConnectHostDirectory = onConnectHostDirectory,
+                                onMoveStorageLocation = storageLocationResolver?.let { resolver ->
+                                    { resolver.resolveOrBackfill(activeGraphId?.value ?: "") }
+                                },
+                                storageMoveGraphName = activeGraphInfo?.displayName ?: "this graph",
+                                onStorageLocationChosen = onStorageLocationChosen,
                             ),
                             gitSync = GitSyncDeps(
                                 gitSyncService = gitSyncService,
@@ -2077,6 +2142,28 @@ private fun GraphContent(deps: GraphContentDeps) {
                                 pendingPlainGraphWarning = null
                                 showNewGraphLocationPicker = true
                             },
+                        )
+                    }
+
+                    // Epic 3.4/Story 3.1.5: renders the coordinator's live Flow<StorageMoveUiState>,
+                    // started by onStorageLocationChosen above. Cancel just cancels the collecting
+                    // job and clears state — the coordinator's own NonCancellable cleanup (reopen,
+                    // quiesce release) still runs even though no terminal state reaches this dialog
+                    // on that path (see GraphRelocationCoordinator.relocate's doc).
+                    storageMoveState?.let { state ->
+                        StorageMoveProgressDialog(
+                            graphName = storageMoveGraphName,
+                            state = state,
+                            onCancel = {
+                                storageMoveJob?.cancel()
+                                storageMoveJob = null
+                                storageMoveState = null
+                            },
+                            onRetry = {
+                                lastStorageMoveOperation?.let { startStorageMove(it, storageMoveGraphName) }
+                            },
+                            onSummaryAcknowledged = { storageMoveState = null },
+                            onReopenFailedAcknowledged = { storageMoveState = null },
                         )
                     }
 

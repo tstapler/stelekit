@@ -10,6 +10,7 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.StorageLocation
 import dev.stapler.stelekit.model.StorageMoveOperation
 import dev.stapler.stelekit.platform.HostDirectorySync
+import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.WebLock
 import dev.stapler.stelekit.platform.relocateLockNameFor
 
@@ -52,3 +53,15 @@ class WasmJsGraphMoveQuiesceStrategy internal constructor(
         // No-op stub on every platform until Epic 5.2 wires the real cleanup.
     }
 }
+
+/**
+ * Wires a [WasmJsGraphMoveQuiesceStrategy] to [fileSystem]'s real [PlatformFileSystem.hostDirectorySync]
+ * — the composition root's job (Main.kt), since [WasmJsGraphMoveQuiesceStrategy]'s constructor is
+ * `internal` to this file precisely so callers go through this factory rather than reaching for the
+ * class directly, mirroring [createAndroidGraphMoveQuiesceStrategy]'s pattern on the other platform.
+ * [fileSystem] holds only the currently-active graph's session (see [PlatformFileSystem.hostDirectorySync]'s
+ * own doc), so — like [AndroidGraphMoveQuiesceStrategy]'s Context-scoped wiring — this strategy is
+ * only ever correct for relocating the graph [fileSystem] is currently open on.
+ */
+fun createWasmJsGraphMoveQuiesceStrategy(fileSystem: PlatformFileSystem): WasmJsGraphMoveQuiesceStrategy =
+    WasmJsGraphMoveQuiesceStrategy(hostDirectorySyncFor = { fileSystem.hostDirectorySync })

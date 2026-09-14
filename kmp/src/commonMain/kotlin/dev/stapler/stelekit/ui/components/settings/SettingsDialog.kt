@@ -94,6 +94,11 @@ fun SettingsDialog(
     hostAccessState: HostAccessState = HostAccessState.NotApplicable,
     supportsNativeDirectoryPicker: Boolean = false,
     onConnectHostDirectory: (suspend () -> ReconciliationUiState)? = null,
+    // Story 3.3.3/Epic 3.4: "Move storage location…" entry point inside FolderSyncSettings — see
+    // that composable's own parameter docs. Null onMoveStorageLocation hides the entry entirely.
+    onMoveStorageLocation: (suspend () -> dev.stapler.stelekit.model.StorageLocation)? = null,
+    storageMoveGraphName: String = "this graph",
+    onStorageLocationChosen: (dev.stapler.stelekit.model.StorageMoveOperation) -> Unit = {},
 ) {
     if (visible) {
         Dialog(
@@ -153,6 +158,9 @@ fun SettingsDialog(
                                 hostAccessState = hostAccessState,
                                 supportsNativeDirectoryPicker = supportsNativeDirectoryPicker,
                                 onConnect = onConnectHostDirectory,
+                                onMoveStorageLocation = onMoveStorageLocation,
+                                graphName = storageMoveGraphName,
+                                onStorageLocationChosen = onStorageLocationChosen,
                             )
                         }
                     }

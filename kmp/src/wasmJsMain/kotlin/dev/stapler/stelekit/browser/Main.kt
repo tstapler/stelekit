@@ -298,6 +298,15 @@ fun main() {
                     platformIntegrations = dev.stapler.stelekit.ui.StelekitAppPlatformIntegrations(
                         attachmentService = WasmMediaAttachmentService(fileSystem),
                         gitRepository = wasmGitRepository,
+                        // Phase 3 (Epic 3.3): relocate has no meaning in demo-fallback mode (no
+                        // persistent OPFS content to move), so both are left null there.
+                        graphMoveQuiesceStrategy = if (useDemoFallback) null else
+                            dev.stapler.stelekit.db.createWasmJsGraphMoveQuiesceStrategy(opfsFileSystem),
+                        storageLocationResolver = if (useDemoFallback) null else
+                            dev.stapler.stelekit.db.createWasmJsStorageLocationResolver(
+                                graphManager = graphManager,
+                                hostAccessState = { opfsFileSystem.hostAccessStateFlow.value },
+                            ),
                     ),
                     webSyncDeps = dev.stapler.stelekit.ui.StelekitAppWebSyncDeps(
                         localChangesCountFlow = opfsFileSystem.dirtyFileCountFlow,
@@ -401,6 +410,9 @@ private suspend fun runEphemeralSession() {
                 platformIntegrations = dev.stapler.stelekit.ui.StelekitAppPlatformIntegrations(
                     attachmentService = WasmMediaAttachmentService(fileSystem),
                     gitRepository = wasmGitRepository,
+                    // graphMoveQuiesceStrategy/storageLocationResolver intentionally left null — an
+                    // ephemeral session has no persistent storage to relocate to/from (see this
+                    // function's own doc), so "Move storage location…" stays inert here.
                 ),
                 webSyncDeps = dev.stapler.stelekit.ui.StelekitAppWebSyncDeps(
                     localChangesCountFlow = fileSystem.dirtyFileCountFlow,
