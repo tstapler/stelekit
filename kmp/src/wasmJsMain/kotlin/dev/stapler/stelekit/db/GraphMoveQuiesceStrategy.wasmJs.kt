@@ -5,6 +5,7 @@
 package dev.stapler.stelekit.db
 
 import arrow.core.Either
+import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.StorageLocation
@@ -39,6 +40,16 @@ class WasmJsGraphMoveQuiesceStrategy internal constructor(
     private val heldLocks = mutableMapOf<String, WebLock.HeldLock>()
 
     override suspend fun quiesce(op: StorageMoveOperation): Either<DomainError.StorageError, Unit> {
+        // BLOCKER 2 defense-in-depth (PR #327 review): GraphRelocationCoordinator.relocate()/link()
+        // now check MoveInProgressFlag before ever reaching here, so this should be unreachable in
+        // practice — but an unconditional overwrite here would otherwise silently leak the prior
+        // WebLock (its release() is never called) if this were ever invoked twice for the same
+        // graphId before the first quiesce()'s matching release(). Fail fast instead of clobbering.
+        if (heldLocks.containsKey(op.graphId)) {
+            return DomainError.StorageError.SourceInFlight(
+                "A relocate/link lock is already held for graph ${op.graphId}",
+            ).left()
+        }
         heldLocks[op.graphId] = WebLock.acquireHeld(relocateLockNameFor(op.graphId))
         hostDirectorySyncFor(op)?.pausePolling()
         return Unit.right()

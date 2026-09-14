@@ -94,7 +94,10 @@ internal class GitShadowFlushActor(
             }
         } catch (e: CancellationException) {
             throw e
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            // BLOCKER 3 fix (PR #327 review): catch Throwable, not Exception — an Error subclass
+            // (e.g. OutOfMemoryError) must not escape uncaught here, same reasoning as this repo's
+            // documented "Android Application.onCreate — catch Throwable, not Exception" rule.
             Log.e(TAG, "flushPage: unexpected error for $relativePath", e)
             DomainError.GitError.WorkingTreeWriteBackFailed(
                 safPath,

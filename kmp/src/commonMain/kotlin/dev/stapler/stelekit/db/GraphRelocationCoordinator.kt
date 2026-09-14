@@ -93,21 +93,49 @@ class GraphRelocationCoordinator(
     private val graphManager: GraphManager,
     private val fileSystem: FileSystem,
     private val quiesceStrategy: GraphMoveQuiesceStrategy,
-    private val copyAndVerifyStep: CopyAndVerifyStep = CopyAndVerifyStep { source, destination, onProgress ->
-        // A git-cloned graph's history lives entirely in a root-level .git directory that
-        // listFilesRecursiveWithModTimes's shared default (FileSystem.kt) deliberately excludes
-        // for Android's shadow-worktree mirror — copyAndVerifyPaths's includeGitDirectory opt-in
-        // is what puts .git back on the same real per-file SHA-256 verify BulkCopyVerifier already
-        // gives markdown, closing the silent-history-loss bug a plain relocate used to hit.
-        val includeGitDirectory = fileSystem.directoryExists("$source/.git")
-        BulkCopyVerifier(fileSystem).copyAndVerifyPaths(source, destination, onProgress, includeGitDirectory)
-    },
+    // Nullable constructor-only parameter (not a stored property) so its real default — built
+    // below in the class body — can reference [insufficientSpaceCheck], a *later* constructor
+    // parameter; a default expression here can't forward-reference it directly. Kept at this
+    // position (4th) so every existing positional call site (`GraphRelocationCoordinator(gm, fs,
+    // quiesce, someStep)`) keeps binding a real [CopyAndVerifyStep] to this parameter unchanged.
+    copyAndVerifyStep: CopyAndVerifyStep? = null,
     /** See [HostLinkStep]'s doc comment. `null` (the default) means [link] always fails fast with
      * [DomainError.StorageError.DestinationNotWritable] — Desktop/iOS, or a host that hasn't wired
      * a platform [HostLinkStep] yet. */
     private val hostLinkStep: HostLinkStep? = null,
+    /**
+     * MAJOR finding (PR #327 review): threads a real pre-flight free-space check into the default
+     * [BulkCopyVerifier] below — previously always [InsufficientSpaceCheck.NONE], so a relocate
+     * could start copying into a destination with no room. `null`-equivalent default
+     * [InsufficientSpaceCheck.NONE] (Desktop/iOS, or before a host wires one) matches
+     * [hostLinkStep]'s "off unless a platform explicitly supplies one" convention.
+     * Android/Web wire `AndroidInsufficientSpaceCheck()`/`WasmJsInsufficientSpaceCheck()` from the
+     * composition root (`MainActivity.kt`/`browser/Main.kt`, via
+     * [dev.stapler.stelekit.ui.StelekitAppPlatformIntegrations.insufficientSpaceCheck]).
+     */
+    private val insufficientSpaceCheck: InsufficientSpaceCheck = InsufficientSpaceCheck.NONE,
+    /**
+     * BLOCKER 1 fix (PR #327 review): flushes `GraphWriter`'s pending 500ms-debounced page saves
+     * before anything else in [relocate]/[link] — including before [MoveInProgressFlag] is even
+     * set — so an edit made just before the user clicks "Relocate"/"Link" is captured on disk
+     * rather than lost or split between the old and new locations. `null` (the default) is a
+     * no-op, matching [hostLinkStep]'s established "off unless a platform wires one" pattern.
+     * Wired from App.kt's composition root to `{ graphWriter.flush() }`.
+     */
+    private val flushPendingSaves: (suspend () -> Unit)? = null,
 ) {
     private val logger = Logger("GraphRelocationCoordinator")
+
+    // A git-cloned graph's history lives entirely in a root-level .git directory that
+    // listFilesRecursiveWithModTimes's shared default (FileSystem.kt) deliberately excludes for
+    // Android's shadow-worktree mirror — copyAndVerifyPaths's includeGitDirectory opt-in is what
+    // puts .git back on the same real per-file SHA-256 verify BulkCopyVerifier already gives
+    // markdown, closing the silent-history-loss bug a plain relocate used to hit.
+    private val copyAndVerifyStep: CopyAndVerifyStep = copyAndVerifyStep ?: CopyAndVerifyStep { source, destination, onProgress ->
+        val includeGitDirectory = fileSystem.directoryExists("$source/.git")
+        BulkCopyVerifier(fileSystem, insufficientSpaceCheck)
+            .copyAndVerifyPaths(source, destination, onProgress, includeGitDirectory)
+    }
 
     /** Story 5.1.1: `MoveStarted`, fired before any quiesce/copy work begins. */
     private fun logMoveStarted(operation: StorageMoveOperation) {
@@ -175,6 +203,30 @@ class GraphRelocationCoordinator(
         val graphIdValue = operation.graphId
         val graphId = GraphId(graphIdValue)
 
+        // BLOCKER 2 fix (PR #327 review): reject immediately if a relocate/link is already
+        // in-flight for this graph — the very first thing this function does, ahead of even the
+        // flush below, so two concurrent calls for the same graph can never both proceed past this
+        // point. Closes real corruption paths: RelocationStagingDirectory.stagingPath() is keyed
+        // only by graphId (two concurrent relocates would share one staging dir), and
+        // WasmJsGraphMoveQuiesceStrategy.quiesce() would otherwise overwrite/leak the first
+        // operation's held WebLock.
+        if (MoveInProgressFlag.isMoveInProgress(graphIdValue)) {
+            val inFlightState = StorageMoveUiState.Failed(
+                DomainError.StorageError.SourceInFlight(
+                    "Another storage move is already in progress for graph $graphIdValue",
+                ),
+            )
+            logMoveTerminal(operation, inFlightState)
+            send(inFlightState)
+            return@channelFlow
+        }
+
+        // BLOCKER 1 fix (PR #327 review): flush GraphWriter's pending 500ms-debounced saves before
+        // anything else — an edit made just before the user clicks "Relocate" must be captured on
+        // disk before quiesce/copy begins, or it can be lost or split between the old and new
+        // locations.
+        flushPendingSaves?.invoke()
+
         // Set once, read from both the explicit pre-send release below and the outer `finally` —
         // lets a normal (non-cancelled) exit release the quiesce lock and clear MoveInProgressFlag
         // BEFORE its terminal state is sent, so a collector reacting to that terminal state can
@@ -196,7 +248,9 @@ class GraphRelocationCoordinator(
             // Steps 1-2. Bounded so a stuck drain surfaces as a visible failure instead of an
             // indefinite spinner (this codebase's own documented "silent indefinite hang" class).
             val quiesceOutcome: Either<DomainError.StorageError, Unit>? =
-                withTimeoutOrNull(QUIESCE_TIMEOUT_MS) { quiesceStrategy.quiesce(operation) }
+                withTimeoutOrNull(QUIESCE_TIMEOUT_MS) {
+                    quiesceCatchingThrowable(operation, graphIdValue, context = "relocate")
+                }
 
             if (quiesceOutcome == null) {
                 // The driver was never closed on this path — no reopen call at all.
@@ -295,6 +349,23 @@ class GraphRelocationCoordinator(
         val graphIdValue = operation.graphId
         val step = hostLinkStep
 
+        // BLOCKER 2 fix (PR #327 review): same re-entrancy guard as relocate() — see its identical
+        // comment for the corruption paths this closes.
+        if (MoveInProgressFlag.isMoveInProgress(graphIdValue)) {
+            val inFlightState = StorageMoveUiState.Failed(
+                DomainError.StorageError.SourceInFlight(
+                    "Another storage move is already in progress for graph $graphIdValue",
+                ),
+            )
+            logMoveTerminal(operation, inFlightState)
+            send(inFlightState)
+            return@channelFlow
+        }
+
+        // BLOCKER 1 fix (PR #327 review): same pending-save flush as relocate() — see its identical
+        // comment.
+        flushPendingSaves?.invoke()
+
         logMoveStarted(operation)
 
         if (step == null) {
@@ -325,7 +396,9 @@ class GraphRelocationCoordinator(
             send(StorageMoveUiState.Quiescing)
 
             val quiesceOutcome: Either<DomainError.StorageError, Unit>? =
-                withTimeoutOrNull(QUIESCE_TIMEOUT_MS) { quiesceStrategy.quiesce(operation) }
+                withTimeoutOrNull(QUIESCE_TIMEOUT_MS) {
+                    quiesceCatchingThrowable(operation, graphIdValue, context = "link")
+                }
             if (quiesceOutcome == null) {
                 val timeoutState = StorageMoveUiState.Failed(DomainError.StorageError.QuiesceTimedOut(QUIESCE_TIMEOUT_MS))
                 logMoveTerminal(operation, timeoutState)
@@ -609,6 +682,31 @@ class GraphRelocationCoordinator(
             logger.error("$context: unexpected failure releasing quiesce/flag for graph $graphIdValue", e)
         }
     }
+
+    /**
+     * BLOCKER 3 fix (PR #327 review): [quiesceStrategy] is a `commonMain` port whose real
+     * implementations (`AndroidGraphMoveQuiesceStrategy`, `WasmJsGraphMoveQuiesceStrategy`) can
+     * throw a raw `Throwable` rather than returning `Either.Left` — [relocate]/[link] previously
+     * called [GraphMoveQuiesceStrategy.quiesce] with no try/catch at all, so such a throw would
+     * propagate out of the `channelFlow` uncaught. Converts any non-cancellation `Throwable` into
+     * a [DomainError.StorageError.RelocationFailed] instead, so it surfaces as a normal
+     * [StorageMoveUiState.Failed] emission rather than crashing whatever scope collects this flow
+     * (this codebase's own documented "uncaught coroutine Throwable kills the Android process"
+     * class).
+     */
+    private suspend fun quiesceCatchingThrowable(
+        operation: StorageMoveOperation,
+        graphIdValue: String,
+        context: String,
+    ): Either<DomainError.StorageError, Unit> =
+        try {
+            quiesceStrategy.quiesce(operation)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            logger.error("$context: quiesce threw unexpectedly for graph $graphIdValue", e)
+            DomainError.StorageError.RelocationFailed(graphIdValue).left()
+        }
 
     companion object {
         /**

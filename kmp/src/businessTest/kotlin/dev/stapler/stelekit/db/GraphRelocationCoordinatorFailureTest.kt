@@ -19,6 +19,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -58,6 +59,41 @@ class GraphRelocationCoordinatorFailureTest : RelocationCoordinatorTestSupport()
                 DomainError.StorageError.DestinationNotWritable("dest/page1.md").left()
             },
         )
+    }
+
+    /**
+     * BLOCKER 3 regression test (PR #327 review): real platform [GraphMoveQuiesceStrategy]
+     * implementations can throw a raw `Throwable` from `quiesce()` rather than returning
+     * `Either.Left` — `relocate()` must convert that into a normal `Failed` state rather than
+     * letting it propagate out of the `channelFlow` uncaught.
+     */
+    @Test
+    fun `relocate should EmitFailed When QuiesceThrowsRawThrowable`() = runBlocking {
+        val runId = System.nanoTime()
+        val graphManager = newGraphManager()
+        val graphId = graphManager.addGraph("/test/graph-quiesce-throws-$runId")
+
+        val quiesce = FakeGraphMoveQuiesceStrategy(throwOnQuiesce = IllegalStateException("boom"))
+        val coordinator = GraphRelocationCoordinator(graphManager, FakeRelocationFileSystem(), quiesce)
+
+        val operation = StorageMoveOperation.Relocate(
+            graphId = graphId.value,
+            source = StorageLocation.DirectAccessFolder(graphId.value, "source"),
+            destination = StorageLocation.DirectAccessFolder(graphId.value, "dest"),
+            deleteSourceAfterVerify = false,
+        )
+
+        // The bug this guards against: an uncaught Throwable here would fail this collect (and,
+        // in production, crash whatever scope is collecting the flow) instead of yielding a
+        // well-formed terminal state.
+        val states = withTimeout(5_000) { coordinator.relocate(operation).toList() }
+
+        val failed = assertIs<StorageMoveUiState.Failed>(states.last())
+        assertIs<DomainError.StorageError.RelocationFailed>(failed.reason)
+        assertFalse(MoveInProgressFlag.isMoveInProgress(graphId.value))
+        assertEquals(1, quiesce.releaseCalls.size)
+
+        graphManager.shutdown()
     }
 
     private suspend fun CoroutineScope.runFailureScenario(runId: Long, failingStep: CopyAndVerifyStep) {

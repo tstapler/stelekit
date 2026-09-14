@@ -15,10 +15,13 @@ import kotlinx.coroutines.awaitCancellation
  * Test double for [GraphMoveQuiesceStrategy] (Story 3.1.3), for exercising
  * `GraphRelocationCoordinator` (Story 3.1.5) without a real platform. [neverCompletes] models a
  * sync/write-back drain that hangs forever, so a test can assert the coordinator's own timeout —
- * not this fake — is what eventually terminates [quiesce].
+ * not this fake — is what eventually terminates [quiesce]. [throwOnQuiesce], when set, models the
+ * real platform implementations' documented ability to throw a raw `Throwable` from [quiesce]
+ * rather than returning `Either.Left` (BLOCKER 3, PR #327 review).
  */
 class FakeGraphMoveQuiesceStrategy(
     private val neverCompletes: Boolean = false,
+    private val throwOnQuiesce: Throwable? = null,
 ) : GraphMoveQuiesceStrategy {
     val quiesceCalls = mutableListOf<StorageMoveOperation>()
     val releaseCalls = mutableListOf<StorageMoveOperation>()
@@ -26,6 +29,7 @@ class FakeGraphMoveQuiesceStrategy(
 
     override suspend fun quiesce(op: StorageMoveOperation): Either<DomainError.StorageError, Unit> {
         quiesceCalls += op
+        throwOnQuiesce?.let { throw it }
         if (neverCompletes) awaitCancellation()
         return Unit.right()
     }

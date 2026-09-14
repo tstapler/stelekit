@@ -101,6 +101,47 @@ class GraphRelocationCoordinatorTest : RelocationCoordinatorTestSupport() {
 
         graphManager.shutdown()
     }
+
+    /**
+     * BLOCKER 1 regression test (PR #327 review): `GraphWriter`'s pending 500ms-debounced saves
+     * must be flushed before `relocate()` does anything else — including before `quiesce()` is
+     * called — so an edit made just before the user clicks "Relocate" can't be lost or split
+     * between the old and new locations.
+     */
+    @Test
+    fun `relocate should InvokeFlushPendingSavesBeforeQuiesce When Started`() = runBlocking {
+        val runId = System.nanoTime()
+        val graphManager = newGraphManager()
+        val graphId = graphManager.addGraph("/test/graph-flush-order-$runId")
+
+        val quiesce = FakeGraphMoveQuiesceStrategy()
+        var flushCallCount = 0
+        var flushRanBeforeAnyQuiesceCall = false
+        val coordinator = GraphRelocationCoordinator(
+            graphManager,
+            FakeRelocationFileSystem(),
+            quiesce,
+            flushPendingSaves = {
+                flushCallCount++
+                flushRanBeforeAnyQuiesceCall = quiesce.quiesceCalls.isEmpty()
+            },
+        )
+
+        val operation = StorageMoveOperation.Relocate(
+            graphId = graphId.value,
+            source = StorageLocation.DirectAccessFolder(graphId.value, "source"),
+            destination = StorageLocation.DirectAccessFolder(graphId.value, "dest"),
+            deleteSourceAfterVerify = false,
+        )
+
+        coordinator.relocate(operation).toList()
+
+        assertEquals(1, flushCallCount)
+        assertTrue(flushRanBeforeAnyQuiesceCall, "flushPendingSaves must run before quiesce() is called")
+        assertEquals(1, quiesce.quiesceCalls.size)
+
+        graphManager.shutdown()
+    }
 }
 
 internal class StubSettings : Settings {

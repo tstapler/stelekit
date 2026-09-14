@@ -9,7 +9,9 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.StorageLocation
 import dev.stapler.stelekit.model.StorageMoveOperation
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
@@ -110,6 +112,71 @@ class GraphRelocationCoordinatorFlagClearingTest : RelocationCoordinatorTestSupp
 
         collectJob.cancelAndJoin()
 
+        assertFalse(MoveInProgressFlag.isMoveInProgress(graphId.value))
+        graphManager.shutdown()
+    }
+
+    /**
+     * BLOCKER 2 regression test (PR #327 review): a second `relocate()` call for a graph that's
+     * already mid-move must be rejected immediately with `SourceInFlight` — never proceed to
+     * quiesce, never re-set `MoveInProgressFlag`. Without this guard, two concurrent relocates for
+     * the same graph would share one `RelocationStagingDirectory.stagingPath()` and could race
+     * each other's driver close/reopen lifecycle.
+     */
+    @Test
+    fun `relocate should RejectImmediately When AnotherMoveAlreadyInProgressForSameGraph`() = runBlocking {
+        val graphManager = newGraphManager()
+        val graphId = graphManager.addGraph("/test/flag-reentrant-${System.nanoTime()}")
+        val hangingStep = CopyAndVerifyStep { _, _, _ -> awaitCancellation() }
+        val quiesce = FakeGraphMoveQuiesceStrategy()
+        val coordinator = GraphRelocationCoordinator(graphManager, FakeRelocationFileSystem(), quiesce, hangingStep)
+        val operation = operationFor(graphId)
+
+        val firstJob = launch { coordinator.relocate(operation).collect { } }
+        withTimeout(5_000) {
+            while (!MoveInProgressFlag.isMoveInProgress(graphId.value)) yield()
+        }
+
+        val secondStates = coordinator.relocate(operation).toList()
+        val failed = assertIs<StorageMoveUiState.Failed>(secondStates.single())
+        assertIs<DomainError.StorageError.SourceInFlight>(failed.reason)
+        assertEquals(1, quiesce.quiesceCalls.size, "the rejected second call must never reach quiesce()")
+
+        firstJob.cancelAndJoin()
+        assertFalse(MoveInProgressFlag.isMoveInProgress(graphId.value))
+        graphManager.shutdown()
+    }
+
+    /** [link] sibling of the relocate re-entrancy guard above — same guard, same rationale. */
+    @Test
+    fun `link should RejectImmediately When AnotherMoveAlreadyInProgressForSameGraph`() = runBlocking {
+        val graphManager = newGraphManager()
+        graphManager.openGraph("/test/flag-reentrant-link-${System.nanoTime()}")
+        val graphId = graphManager.getActiveGraphId()!!
+        val quiesce = FakeGraphMoveQuiesceStrategy()
+        val hangingLink = HostLinkStep { _, _ -> awaitCancellation() }
+        val coordinator = GraphRelocationCoordinator(
+            graphManager,
+            FakeRelocationFileSystem(),
+            quiesce,
+            hostLinkStep = hangingLink,
+        )
+        val operation = StorageMoveOperation.Link(
+            graphId = graphId.value,
+            source = StorageLocation.AppOwned(graphId.value),
+            destination = StorageLocation.HostFolder(graphId.value, "Documents"),
+        )
+
+        val firstJob = launch { coordinator.link(operation).collect { } }
+        withTimeout(5_000) {
+            while (!MoveInProgressFlag.isMoveInProgress(graphId.value)) yield()
+        }
+
+        val secondStates = coordinator.link(operation).toList()
+        val failed = assertIs<StorageMoveUiState.Failed>(secondStates.single())
+        assertIs<DomainError.StorageError.SourceInFlight>(failed.reason)
+
+        firstJob.cancelAndJoin()
         assertFalse(MoveInProgressFlag.isMoveInProgress(graphId.value))
         graphManager.shutdown()
     }

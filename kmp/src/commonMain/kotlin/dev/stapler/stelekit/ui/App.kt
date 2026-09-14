@@ -82,6 +82,7 @@ import dev.stapler.stelekit.performance.QueryStat
 import dev.stapler.stelekit.performance.SerializedSpan
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -383,6 +384,7 @@ private fun GraphContent(deps: GraphContentDeps) {
     val graphMoveQuiesceStrategy = deps.platformIntegrations.graphMoveQuiesceStrategy
     val hostLinkStep = deps.platformIntegrations.hostLinkStep
     val storageLocationResolver = deps.platformIntegrations.storageLocationResolver
+    val insufficientSpaceCheck = deps.platformIntegrations.insufficientSpaceCheck
     val localChangesCountFlow = deps.webSyncDeps.localChangesCountFlow
     val hostAccessStateFlow = deps.webSyncDeps.hostAccessStateFlow
     val hostWritePendingCountFlow = deps.webSyncDeps.hostWritePendingCountFlow
@@ -704,9 +706,31 @@ private fun GraphContent(deps: GraphContentDeps) {
     // composable's own graphManager/fileSystem plus the platform-supplied quiesce port. Null
     // graphMoveQuiesceStrategy (Desktop/iOS, or a host that hasn't wired one) means no coordinator
     // exists, so onStorageLocationChoose below falls back to a snackbar instead of hanging.
-    val graphRelocationCoordinator = remember(graphManager, fileSystem, graphMoveQuiesceStrategy, hostLinkStep) {
+    val graphRelocationCoordinator = remember(
+        graphManager,
+        fileSystem,
+        graphMoveQuiesceStrategy,
+        hostLinkStep,
+        insufficientSpaceCheck,
+        graphWriter,
+    ) {
         graphMoveQuiesceStrategy?.let {
-            GraphRelocationCoordinator(graphManager, fileSystem, it, hostLinkStep = hostLinkStep)
+            GraphRelocationCoordinator(
+                graphManager,
+                fileSystem,
+                it,
+                hostLinkStep = hostLinkStep,
+                // MAJOR finding (PR #327 review): wires the real per-platform pre-flight
+                // free-space check when one is supplied; InsufficientSpaceCheck.NONE (never
+                // checks) otherwise — see StelekitAppPlatformIntegrations.insufficientSpaceCheck's
+                // doc for why this is the composition root for that seam.
+                insufficientSpaceCheck = insufficientSpaceCheck ?: dev.stapler.stelekit.db.InsufficientSpaceCheck.NONE,
+                // BLOCKER 1 fix (PR #327 review): flushes this graph's GraphWriter — the same
+                // instance StelekitViewModel/GitSyncService above already write through — before
+                // relocate()/link() quiesces/closes the driver, so a pending 500ms-debounced save
+                // is captured on disk first instead of being lost or split across the move.
+                flushPendingSaves = { graphWriter.flush() },
+            )
         }
     }
     var storageMoveState by remember { mutableStateOf<StorageMoveUiState?>(null) }
@@ -723,13 +747,35 @@ private fun GraphContent(deps: GraphContentDeps) {
         val coordinator = graphRelocationCoordinator ?: return
         lastStorageMoveOperation = operation
         storageMoveGraphName = graphName
-        storageMoveJob?.cancel()
+        val previousJob = storageMoveJob
         val states = when (operation) {
             is StorageMoveOperation.Relocate -> coordinator.relocate(operation)
             is StorageMoveOperation.Link -> coordinator.link(operation)
         }
         storageMoveJob = scope.launch {
-            states.collect { state -> storageMoveState = state }
+            // BLOCKER 2 fix (PR #327 review): await the previous job's full cancellation —
+            // including GraphRelocationCoordinator's own NonCancellable cleanup (reopen, quiesce
+            // release, MoveInProgressFlag clear) — before this job starts collecting, so a stale
+            // in-flight relocate/link (e.g. WasmJsGraphMoveQuiesceStrategy's still-mid-flight
+            // quiesce()) can never race a freshly-started one. The coordinator's own
+            // MoveInProgressFlag check (relocate()/link()'s first step) is the authoritative guard
+            // for genuinely concurrent callers from different entry points; this closes the common
+            // rapid-retry/double-click case cleanly instead of relying on that race alone.
+            previousJob?.cancelAndJoin()
+            try {
+                states.collect { state -> storageMoveState = state }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                // BLOCKER 3 fix (PR #327 review): mirrors the camera-capture scope.launch pattern
+                // below — an uncaught Throwable on this plain rememberCoroutineScope() (no
+                // CoroutineExceptionHandler) would otherwise kill the Android process even though
+                // GraphRelocationCoordinator itself now guards its own quiesce call.
+                graphContentLogger.error("Storage move collection crashed: ${e.message}", e)
+                storageMoveState = StorageMoveUiState.Failed(
+                    dev.stapler.stelekit.error.DomainError.StorageError.RelocationFailed(operation.graphId),
+                )
+            }
         }
     }
 
