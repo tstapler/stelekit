@@ -9,6 +9,7 @@ import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.StorageLocation
 import dev.stapler.stelekit.model.StorageMoveOperation
@@ -20,6 +21,12 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+
+/** `StorageLocation.kind`-string convention, matching `GraphManager`'s `toStorageLocationRow` (Story 1.1.3). */
+private fun StorageLocation.kindName(): String = this::class.simpleName ?: "Unknown"
+
+/** "Relocate" / "Link" — matches `StorageMoveOperation`'s sealed-interface case names. */
+private fun StorageMoveOperation.operationTypeName(): String = this::class.simpleName ?: "Unknown"
 
 /**
  * Pluggable copy-and-verify step, defaulting to [BulkCopyVerifier.copyAndVerifyPaths]. A named
@@ -80,6 +87,56 @@ class GraphRelocationCoordinator(
      * [DomainError.StorageError.DestinationNotWritable] — every non-Web construction site. */
     private val hostLinkStep: HostLinkStep? = null,
 ) {
+    private val logger = Logger("GraphRelocationCoordinator")
+
+    /** Story 5.1.1: `MoveStarted`, fired before any quiesce/copy work begins. */
+    private fun logMoveStarted(operation: StorageMoveOperation) {
+        logger.info(
+            "MoveStarted graphId=${operation.graphId} source=${operation.source.kindName()} " +
+                "destination=${operation.destination.kindName()} operation=${operation.operationTypeName()}",
+        )
+    }
+
+    /**
+     * Story 5.1.1: `MoveVerified`, fired once [copyAndVerifyStep] returns (both outcomes) —
+     * `hashMismatches` is only ever 1 today since [CopyAndVerifyStep] surfaces at most one
+     * [DomainError.StorageError.VerificationFailed] per call, not a per-file tally.
+     */
+    private fun logMoveVerified(
+        operation: StorageMoveOperation.Relocate,
+        outcome: Either<DomainError.StorageError, CopyReport>,
+    ) {
+        val filesCount = (outcome as? Either.Right)?.value?.filesCopied ?: 0
+        val hashMismatches = if ((outcome as? Either.Left)?.value is DomainError.StorageError.VerificationFailed) 1 else 0
+        logger.info(
+            "MoveVerified graphId=${operation.graphId} source=${operation.source.kindName()} " +
+                "destination=${operation.destination.kindName()} passed=${outcome is Either.Right} " +
+                "files=$filesCount hashMismatches=$hashMismatches",
+        )
+    }
+
+    /** Story 5.1.1: `MoveCompleted`/`MoveFailed`, fired once [state] is a terminal UI state. */
+    private fun logMoveTerminal(operation: StorageMoveOperation, state: StorageMoveUiState) {
+        val graphId = operation.graphId
+        val sourceKind = operation.source.kindName()
+        val destinationKind = operation.destination.kindName()
+        val opType = operation.operationTypeName()
+        when (state) {
+            is StorageMoveUiState.Summary -> logger.info(
+                "MoveCompleted graphId=$graphId source=$sourceKind destination=$destinationKind operation=$opType",
+            )
+            is StorageMoveUiState.Failed -> logger.error(
+                "MoveFailed graphId=$graphId source=$sourceKind destination=$destinationKind " +
+                    "operation=$opType reason=${state.reason::class.simpleName}",
+            )
+            is StorageMoveUiState.ReopenFailed -> logger.error(
+                "MoveFailed graphId=$graphId source=$sourceKind destination=$destinationKind " +
+                    "operation=$opType reason=${state.cause::class.simpleName}",
+            )
+            else -> {}
+        }
+    }
+
     /**
      * Runs [operation] end to end, emitting UI-facing progress/terminal states. Collecting this
      * flow off the main dispatcher is the caller's responsibility (mirrors [GraphManager]'s own
@@ -98,6 +155,7 @@ class GraphRelocationCoordinator(
         val graphIdValue = operation.graphId
         val graphId = GraphId(graphIdValue)
 
+        logMoveStarted(operation)
         MoveInProgressFlag.setMoveInProgress(graphIdValue, true)
         try {
             send(StorageMoveUiState.Quiescing)
@@ -109,11 +167,15 @@ class GraphRelocationCoordinator(
 
             if (quiesceOutcome == null) {
                 // The driver was never closed on this path — no reopen call at all.
-                send(StorageMoveUiState.Failed(DomainError.StorageError.QuiesceTimedOut(QUIESCE_TIMEOUT_MS)))
+                val timeoutState = StorageMoveUiState.Failed(DomainError.StorageError.QuiesceTimedOut(QUIESCE_TIMEOUT_MS))
+                logMoveTerminal(operation, timeoutState)
+                send(timeoutState)
                 return@channelFlow
             }
             if (quiesceOutcome is Either.Left) {
-                send(StorageMoveUiState.Failed(quiesceOutcome.value))
+                val failedState = StorageMoveUiState.Failed(quiesceOutcome.value)
+                logMoveTerminal(operation, failedState)
+                send(failedState)
                 return@channelFlow
             }
 
@@ -164,6 +226,7 @@ class GraphRelocationCoordinator(
                 copyOutcome is Either.Left -> StorageMoveUiState.Failed(copyOutcome.value)
                 else -> StorageMoveUiState.Summary
             }
+            logMoveTerminal(operation, terminalState)
             send(terminalState)
         } finally {
             // Step 8, shared by every exit path above (success, ordinary failure, quiesce
@@ -197,14 +260,16 @@ class GraphRelocationCoordinator(
         val graphIdValue = operation.graphId
         val step = hostLinkStep
 
+        logMoveStarted(operation)
+
         if (step == null) {
-            send(
-                StorageMoveUiState.Failed(
-                    DomainError.StorageError.DestinationNotWritable(
-                        "Linking a folder is not supported on this platform/graph",
-                    ),
+            val unsupportedState = StorageMoveUiState.Failed(
+                DomainError.StorageError.DestinationNotWritable(
+                    "Linking a folder is not supported on this platform/graph",
                 ),
             )
+            logMoveTerminal(operation, unsupportedState)
+            send(unsupportedState)
             return@channelFlow
         }
 
@@ -215,11 +280,15 @@ class GraphRelocationCoordinator(
             val quiesceOutcome: Either<DomainError.StorageError, Unit>? =
                 withTimeoutOrNull(QUIESCE_TIMEOUT_MS) { quiesceStrategy.quiesce(operation) }
             if (quiesceOutcome == null) {
-                send(StorageMoveUiState.Failed(DomainError.StorageError.QuiesceTimedOut(QUIESCE_TIMEOUT_MS)))
+                val timeoutState = StorageMoveUiState.Failed(DomainError.StorageError.QuiesceTimedOut(QUIESCE_TIMEOUT_MS))
+                logMoveTerminal(operation, timeoutState)
+                send(timeoutState)
                 return@channelFlow
             }
             if (quiesceOutcome is Either.Left) {
-                send(StorageMoveUiState.Failed(quiesceOutcome.value))
+                val failedState = StorageMoveUiState.Failed(quiesceOutcome.value)
+                logMoveTerminal(operation, failedState)
+                send(failedState)
                 return@channelFlow
             }
 
@@ -245,7 +314,9 @@ class GraphRelocationCoordinator(
         // relocate() already depends on, not new/duplicated logic.
         val sourceRoot = when (val resolved = resolveSourceRoot(operation.source)) {
             is Either.Left -> {
-                send(StorageMoveUiState.Failed(resolved.value))
+                val failedState = StorageMoveUiState.Failed(resolved.value)
+                logMoveTerminal(operation, failedState)
+                send(failedState)
                 return
             }
             is Either.Right -> resolved.value
@@ -253,11 +324,16 @@ class GraphRelocationCoordinator(
 
         send(StorageMoveUiState.Verifying)
         when (val linkOutcome = withContext(PlatformDispatcher.IO) { step.link(sourceRoot, operation.destination) }) {
-            is Either.Left -> send(StorageMoveUiState.Failed(linkOutcome.value))
+            is Either.Left -> {
+                val failedState = StorageMoveUiState.Failed(linkOutcome.value)
+                logMoveTerminal(operation, failedState)
+                send(failedState)
+            }
             is Either.Right -> {
                 // No updateGraphContentPath call, unlike relocate()'s step 7 — OPFS remains the
                 // graph's content path; only storage_locations' kind/uri metadata changes.
                 graphManager.onGraphLocationDetermined(operation.graphId, operation.destination)
+                logMoveTerminal(operation, StorageMoveUiState.Summary)
                 send(StorageMoveUiState.Summary)
             }
         }
@@ -296,6 +372,7 @@ class GraphRelocationCoordinator(
             trySend(StorageMoveUiState.Copying(processed, total))
             if (total > 0 && processed >= total) trySend(StorageMoveUiState.Verifying)
         }
+        logMoveVerified(operation, copyResult)
         val report = when (copyResult) {
             is Either.Left -> return@withContext copyResult
             is Either.Right -> copyResult.value
