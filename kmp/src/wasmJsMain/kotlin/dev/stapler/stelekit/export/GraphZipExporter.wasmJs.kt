@@ -14,6 +14,38 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 
 /**
+ * Growable `ByteArray` accumulator, doubling capacity as needed — avoids boxing individual bytes
+ * into `Byte` objects the way an `ArrayList<Byte>` would (a real cost when accumulating whole
+ * exported files, including large images/attachments).
+ */
+private class GrowableByteBuffer(initialCapacity: Int = 64) {
+    private var array = ByteArray(initialCapacity)
+    var size: Int = 0
+        private set
+
+    private fun ensureCapacity(minCapacity: Int) {
+        if (minCapacity <= array.size) return
+        var newCapacity = array.size.coerceAtLeast(1)
+        while (newCapacity < minCapacity) newCapacity *= 2
+        array = array.copyOf(newCapacity)
+    }
+
+    fun addByte(b: Byte) {
+        ensureCapacity(size + 1)
+        array[size] = b
+        size++
+    }
+
+    fun addBytes(bytes: ByteArray) {
+        ensureCapacity(size + bytes.size)
+        bytes.copyInto(array, destinationOffset = size)
+        size += bytes.size
+    }
+
+    fun toByteArray(): ByteArray = array.copyOf(size)
+}
+
+/**
  * Hand-rolled stored-only (uncompressed, method `0`) ZIP writer — no `java.util.zip` (JVM-only,
  * unavailable on Kotlin/Wasm) and no third-party compression dependency (ADR-003 Amendment,
  * `research/build-vs-buy.md`'s "no new dependency justified" finding). `STORED` entries are copied
@@ -39,7 +71,7 @@ internal object StoredZipWriter {
     private data class CentralRecord(val nameBytes: ByteArray, val crc: Long, val size: Long, val offset: Int)
 
     fun build(entries: List<Entry>): ByteArray {
-        val out = ArrayList<Byte>()
+        val out = GrowableByteBuffer()
         val central = entries.map { entry -> out.writeLocalEntry(entry) }
 
         val centralDirectoryStart = out.size
@@ -50,7 +82,7 @@ internal object StoredZipWriter {
         return out.toByteArray()
     }
 
-    private fun ArrayList<Byte>.writeLocalEntry(entry: Entry): CentralRecord {
+    private fun GrowableByteBuffer.writeLocalEntry(entry: Entry): CentralRecord {
         val offset = size // this entry's local file header starts here
         val nameBytes = entry.name.encodeToByteArray()
         val crc = Crc32.compute(entry.data)
@@ -73,7 +105,7 @@ internal object StoredZipWriter {
         return CentralRecord(nameBytes, crc, entrySize, offset)
     }
 
-    private fun ArrayList<Byte>.writeCentralRecord(record: CentralRecord) {
+    private fun GrowableByteBuffer.writeCentralRecord(record: CentralRecord) {
         putU32(CENTRAL_DIRECTORY_SIGNATURE)
         putU16(VERSION) // version made by
         putU16(VERSION) // version needed to extract
@@ -94,7 +126,7 @@ internal object StoredZipWriter {
         putBytes(record.nameBytes)
     }
 
-    private fun ArrayList<Byte>.writeEndOfCentralDirectory(recordCount: Int, directorySize: Int, directoryStart: Int) {
+    private fun GrowableByteBuffer.writeEndOfCentralDirectory(recordCount: Int, directorySize: Int, directoryStart: Int) {
         putU32(END_OF_CENTRAL_DIRECTORY_SIGNATURE)
         putU16(0) // number of this disk
         putU16(0) // disk where central directory starts
@@ -105,21 +137,20 @@ internal object StoredZipWriter {
         putU16(0) // comment length
     }
 
-    private fun ArrayList<Byte>.putU16(value: Int) {
-        add((value and 0xFF).toByte())
-        add(((value ushr 8) and 0xFF).toByte())
+    private fun GrowableByteBuffer.putU16(value: Int) {
+        addByte((value and 0xFF).toByte())
+        addByte(((value ushr 8) and 0xFF).toByte())
     }
 
-    private fun ArrayList<Byte>.putU32(value: Long) {
-        add((value and 0xFF).toByte())
-        add(((value ushr 8) and 0xFF).toByte())
-        add(((value ushr 16) and 0xFF).toByte())
-        add(((value ushr 24) and 0xFF).toByte())
+    private fun GrowableByteBuffer.putU32(value: Long) {
+        addByte((value and 0xFF).toByte())
+        addByte(((value ushr 8) and 0xFF).toByte())
+        addByte(((value ushr 16) and 0xFF).toByte())
+        addByte(((value ushr 24) and 0xFF).toByte())
     }
 
-    private fun ArrayList<Byte>.putBytes(bytes: ByteArray) {
-        ensureCapacity(size + bytes.size)
-        for (b in bytes) add(b)
+    private fun GrowableByteBuffer.putBytes(bytes: ByteArray) {
+        addBytes(bytes)
     }
 }
 
