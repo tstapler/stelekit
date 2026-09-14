@@ -6,9 +6,11 @@ package dev.stapler.stelekit.db
 
 import arrow.core.Either
 import arrow.core.left
+import arrow.core.right
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.GraphId
+import dev.stapler.stelekit.model.StorageLocation
 import dev.stapler.stelekit.model.StorageMoveOperation
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.repository.RepositorySet
@@ -147,14 +149,14 @@ class GraphRelocationCoordinator(
     private suspend fun ProducerScope<StorageMoveUiState>.copyIntoStagingThenRepoint(
         operation: StorageMoveOperation.Relocate,
     ): Either<DomainError.StorageError, Unit> = withContext(PlatformDispatcher.IO) {
-        val sourceRoot = operation.source.resolveRootPathOrNull()
-            ?: return@withContext DomainError.StorageError.DestinationNotWritable(
-                "Cannot resolve a filesystem root path for source location of graph ${operation.graphId}",
-            ).left()
-        val destinationRoot = operation.destination.resolveRootPathOrNull()
-            ?: return@withContext DomainError.StorageError.DestinationNotWritable(
-                "Cannot resolve a filesystem root path for destination location of graph ${operation.graphId}",
-            ).left()
+        val sourceRoot = when (val resolved = resolveSourceRoot(operation.source)) {
+            is Either.Left -> return@withContext resolved
+            is Either.Right -> resolved.value
+        }
+        val destinationRoot = when (val resolved = resolveDestinationRoot(operation.destination)) {
+            is Either.Left -> return@withContext resolved
+            is Either.Right -> resolved.value
+        }
 
         val destinationParent = destinationRoot.substringBeforeLast("/", missingDelimiterValue = "")
         val stagingPath = RelocationStagingDirectory.stagingPath(destinationParent, operation.graphId)
@@ -184,6 +186,69 @@ class GraphRelocationCoordinator(
         }
         AtomicFileRelocationStep.relocate(fileSystem, moves)
     }
+
+    /**
+     * Resolves [location] as the *current* root of a graph's content. [StorageLocation.DirectAccessFolder]
+     * and [StorageLocation.SafFolder] carry their path directly (see `resolveRootPathOrNull` in
+     * `BulkCopyVerifier.kt`); [StorageLocation.AppOwned] has no path of its own (Story 3.1.1's
+     * `BulkCopyVerifier` class doc), so it is looked up from [GraphManager]'s registry — the graph
+     * is already living there, so [GraphManager.getGraphInfo]'s `path` is that same app-owned
+     * directory `FileSystem.newAppOwnedGraphPath()` allocated when this graph was created or last
+     * relocated. [StorageLocation.HostFolder] is a known, documented gap — see [hostFolderUnsupported].
+     */
+    private fun resolveSourceRoot(location: StorageLocation): Either<DomainError.StorageError, String> =
+        when (location) {
+            is StorageLocation.AppOwned ->
+                graphManager.getGraphInfo(GraphId(location.graphId))?.path?.right()
+                    ?: DomainError.StorageError.DestinationNotWritable(
+                        "No registered path for app-owned graph ${location.graphId} — it was never opened",
+                    ).left()
+            is StorageLocation.HostFolder -> hostFolderUnsupported(location)
+            else -> location.resolveRootPathOrNull()?.right()
+                ?: DomainError.StorageError.DestinationNotWritable(
+                    "Cannot resolve a filesystem root path for location: $location",
+                ).left()
+        }
+
+    /**
+     * Resolves [location] as a *fresh* destination root for a relocate/link target.
+     * [StorageLocation.AppOwned] is never an existing, registered path here — it is a brand-new
+     * app-private directory the move is about to populate — so unlike [resolveSourceRoot] this
+     * allocates one via [FileSystem.newAppOwnedGraphPath] rather than consulting [GraphManager]'s
+     * registry (which, for a move *into* app-owned storage, still reflects the graph's old location).
+     */
+    private fun resolveDestinationRoot(location: StorageLocation): Either<DomainError.StorageError, String> =
+        when (location) {
+            is StorageLocation.AppOwned ->
+                try {
+                    fileSystem.newAppOwnedGraphPath().right()
+                } catch (e: UnsupportedOperationException) {
+                    DomainError.StorageError.DestinationNotWritable(
+                        "This platform does not support app-owned storage: ${e.message}",
+                    ).left()
+                }
+            is StorageLocation.HostFolder -> hostFolderUnsupported(location)
+            else -> location.resolveRootPathOrNull()?.right()
+                ?: DomainError.StorageError.DestinationNotWritable(
+                    "Cannot resolve a filesystem root path for location: $location",
+                ).left()
+        }
+
+    /**
+     * [StorageLocation.HostFolder] content lives behind an opaque `FileSystemDirectoryHandle`
+     * (Web `HostDirectorySync`), not a plain path string — [BulkCopyVerifier]'s generic path-based
+     * copy has no way to reach it. This is a known, deliberate gap (not a silent failure): a future
+     * story must give `HostDirectorySync` its own copy mechanism built on its existing
+     * directory-handle read/write-through primitives, then wire it in here as an alternative to
+     * [CopyAndVerifyStep] rather than trying to force it through a root-path string.
+     */
+    private fun hostFolderUnsupported(location: StorageLocation.HostFolder): Either<DomainError.StorageError, String> =
+        DomainError.StorageError.DestinationNotWritable(
+            "HostFolder \"${location.displayName}\" relocation is not implemented: its content lives " +
+                "behind an opaque FileSystemDirectoryHandle, not a filesystem path, so it cannot be " +
+                "copied by BulkCopyVerifier's generic path-based copy. Needs a HostDirectorySync-based " +
+                "copy path (future story).",
+        ).left()
 
     companion object {
         /**

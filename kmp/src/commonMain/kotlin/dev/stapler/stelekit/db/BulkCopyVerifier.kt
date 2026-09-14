@@ -57,13 +57,15 @@ fun interface InsufficientSpaceCheck {
  * Deliberately built on generic [FileSystem] path strings rather than resolving
  * [StorageLocation.AppOwned]/[StorageLocation.HostFolder] to a root path itself — those two kinds
  * have no path derivable from their own fields alone (an app-owned root is an opaque path
- * allocated once via `FileSystem.newAppOwnedGraphPath()` and tracked by `GraphManager`, not
+ * allocated via `FileSystem.newAppOwnedGraphPath()` and tracked by `GraphManager`'s registry, not
  * recomputable from `graphId`; a Web host folder is an opaque `FileSystemDirectoryHandle`, not a
- * string). Resolving those two is the calling coordinator's job once it exists (Epic 3.2/3.3's
- * per-platform relocate wiring, per this epic's own framing in plan.md); [StorageLocation.DirectAccessFolder]
- * and [StorageLocation.SafFolder] already carry a path directly ([StorageLocation.DirectAccessFolder.realPath],
- * and the `saf://` convention `PlatformFileSystem`'s generic path-based API already understands),
- * so this class resolves those two itself.
+ * string). Resolving those two is `GraphRelocationCoordinator`'s job (`resolveSourceRoot`/
+ * `resolveDestinationRoot`, Epic 3.2/3.3's per-platform relocate wiring) — it holds the
+ * `GraphManager` reference and `FileSystem` this class deliberately does not depend on;
+ * [StorageLocation.DirectAccessFolder] and [StorageLocation.SafFolder] already carry a path
+ * directly ([StorageLocation.DirectAccessFolder.realPath], and the `saf://` convention
+ * `PlatformFileSystem`'s generic path-based API already understands), so this class resolves
+ * those two itself.
  */
 class BulkCopyVerifier(
     private val fileSystem: FileSystem,
@@ -196,8 +198,9 @@ private fun filenameIdentityMatches(sourcePath: String, destinationPath: String)
  * `internal` (not `private`) so `GraphRelocationCoordinator` (Story 3.1.5) can resolve the same
  * two directly-resolvable [StorageLocation] kinds for its own staging-path computation without
  * duplicating this logic — see this file's class doc for why [StorageLocation.AppOwned]/
- * [StorageLocation.HostFolder] resolution is deferred to the per-platform coordinator wiring
- * (Epic 3.2/3.3) instead.
+ * [StorageLocation.HostFolder] resolution instead happens in `GraphRelocationCoordinator`
+ * (`resolveSourceRoot`/`resolveDestinationRoot`), which has the `GraphManager`/`FileSystem`
+ * access this function deliberately does not.
  */
 internal fun StorageLocation.resolveRootPathOrNull(): String? = when (this) {
     is StorageLocation.DirectAccessFolder -> realPath

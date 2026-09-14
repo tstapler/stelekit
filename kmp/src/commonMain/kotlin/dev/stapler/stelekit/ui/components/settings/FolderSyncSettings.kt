@@ -162,11 +162,11 @@ fun FolderSyncSettings(
  * `App.kt`'s `LeftSidebar` call site). Adding one here means re-opening Epic 2.1/2.3's
  * directory-connect/reconciliation picker machinery inside this settings surface — real scope
  * creep for a wiring-only dispatch — so it stays a logged no-op rather than a fabricated
- * destination. It would not be sufficient on its own anyway: `StorageLocation.resolveRootPathOrNull()`
- * (`db/BulkCopyVerifier.kt`) returns `null` for both `AppOwned` and `HostFolder`, so
- * `GraphRelocationCoordinator.relocate()` fails immediately with `DestinationNotWritable` for
- * *any* operation touching either kind, regardless of platform — a pre-existing gap in the
- * already-committed coordinator, not something a destination picker here would fix by itself.
+ * destination. Even with a destination picker wired in, a move *from* a `HostFolder` source would
+ * still fail: `GraphRelocationCoordinator` resolves `AppOwned` roots via `GraphManager`/
+ * `FileSystem.newAppOwnedGraphPath()`, but `HostFolder` content lives behind an opaque
+ * `FileSystemDirectoryHandle` (Web `HostDirectorySync`), not a filesystem path, and has no
+ * resolution path yet — see `GraphRelocationCoordinator.hostFolderUnsupported()`.
  */
 @Composable
 private fun MoveStorageLocationSection(

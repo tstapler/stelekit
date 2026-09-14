@@ -16,6 +16,12 @@ import dev.stapler.stelekit.platform.FileSystem
 open class FakeRelocationFileSystem : FileSystem {
     private val files = mutableMapOf<String, ByteArray>()
     private val explicitDirs = mutableSetOf<String>()
+    private var appOwnedCounter = 0
+
+    override val supportsAppOwnedStorage: Boolean get() = true
+
+    /** Mirrors the real Android/wasmJs actuals' contract: a fresh, unique path on every call. */
+    override fun newAppOwnedGraphPath(): String = "appowned/${appOwnedCounter++}"
 
     override fun getDefaultGraphPath(): String = "/graph"
     override fun expandTilde(path: String): String = path
@@ -60,4 +66,7 @@ open class FakeRelocationFileSystem : FileSystem {
         files[to] = bytes
         return true
     }
+
+    /** Every path currently tracked, for test assertion-failure messages only. */
+    fun allFilePaths(): List<String> = files.keys.toList()
 }
