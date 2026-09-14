@@ -174,11 +174,60 @@ class AndroidGraphMoveQuiesceStrategyTest {
 
         // Bounded: a persistently-retryable failure must not spin unboundedly (this is the
         // regression this test guards — previously the drain loop retried forever, relying only
-        // on GraphRelocationCoordinator's outer 30s QUIESCE_TIMEOUT_MS to stop it).
-        assertTrue(flush.calls in 1..10, "expected a small bounded number of retry attempts, got ${flush.calls}")
+        // on GraphRelocationCoordinator's outer 30s QUIESCE_TIMEOUT_MS to stop it). Exact count,
+        // not just an upper bound (an in..10 range would still pass if a regression dropped the
+        // loop to e.g. 1 retry) — must match MAX_WRITE_BACK_FLUSH_ATTEMPTS in
+        // GraphMoveQuiesceStrategy.android.kt (private, so not directly referenceable here).
+        assertEquals(10, flush.calls, "expected exactly MAX_WRITE_BACK_FLUSH_ATTEMPTS retry attempts")
         assertFalse(queue.isEmpty(), "the persistently-failing path is never dequeued by design")
         assertIs<Either.Left<DomainError.StorageError>>(result)
         assertIs<DomainError.StorageError.SourceInFlight>(result.value)
+
+        strategy.release(op)
+    }
+
+    /**
+     * Fails every attempt until [succeedOnAttempt], which dequeues and succeeds — covers the case
+     * the always-succeed and always-fail-forever tests above don't: that a mid-loop recovery
+     * actually drains the queue and returns success, not just that the loop eventually gives up.
+     */
+    private class EventuallySucceedingFlush(
+        private val queue: GitWriteBackQueue,
+        private val succeedOnAttempt: Int,
+        private val error: (path: String) -> DomainError.GitError,
+    ) {
+        var calls = 0
+            private set
+
+        suspend fun invoke(): List<Either<DomainError.GitError, Unit>> {
+            calls++
+            if (calls < succeedOnAttempt) {
+                return queue.getAll().map { error(it).left() }
+            }
+            queue.dequeue("pages/foo.md")
+            return emptyList()
+        }
+    }
+
+    @Test
+    fun quiesce_should_SucceedAfterRetrying_When_FlushFailsThenSucceedsOnItsLastAllowedAttempt() = runTest {
+        val queue = newQueue()
+        queue.enqueue("pages/foo.md")
+
+        val busyCounter = GitSyncBusyCounter()
+        // Fails on attempts 1-9, succeeds on attempt 10 — the last attempt the bounded loop
+        // allows — proving the loop recovers correctly rather than only ever hitting the bound.
+        val flush = EventuallySucceedingFlush(queue, succeedOnAttempt = 10) { path ->
+            DomainError.GitError.WorkingTreeWriteBackFailed(path, "transient SAF write failure for $path")
+        }
+        val target = newTarget(queue) { flush.invoke() }
+        val strategy = newStrategy(busyCounter, target)
+
+        val result = strategy.quiesce(op)
+
+        assertEquals(10, flush.calls, "flush should retry until it succeeds, not stop early or spin past success")
+        assertTrue(queue.isEmpty(), "a successful flush must drain the queue")
+        assertIs<Either.Right<Unit>>(result)
 
         strategy.release(op)
     }
