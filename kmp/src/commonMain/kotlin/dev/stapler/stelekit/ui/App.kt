@@ -2098,8 +2098,7 @@ private fun GraphContent(deps: GraphContentDeps) {
                             graphId = graphManager.graphIdFromPath(
                                 fileSystem.expandTilde(pendingNewGraphAppOwnedPath)
                             ).value,
-                            appStorageSubtitle = "Kept inside SteleKit only — not visible in " +
-                                "your device's file manager, and removed if you uninstall the app.",
+                            appStorageSubtitle = appStorageSubtitleFor(getDeviceInfo().platform),
                             platformCapabilities = fileSystem.supportsNativeDirectoryPicker,
                             onBrowseClicked = {
                                 // Must run synchronously here, not inside onBrowseRequested's
@@ -2220,6 +2219,21 @@ internal fun addGraphFlowMode(fileSystem: FileSystem): AddGraphFlowMode = when {
     fileSystem.supportsAppOwnedStorage -> AddGraphFlowMode.ShowLocationPicker
     fileSystem.supportsNativeDirectoryPicker -> AddGraphFlowMode.ImmediateNativePicker
     else -> AddGraphFlowMode.ShowNameDialog
+}
+
+/**
+ * Pure platform-copy logic for `UnifiedLocationPicker`'s "App storage" row subtitle (Story 2.1.1,
+ * `design/ux.md` §2) — factored out so the Android/Web wording is testable without mounting the
+ * whole composable tree, mirroring [addGraphFlowMode] above. Shared by this file's `AddGraphDialog`
+ * call site and `GitSetupScreen.kt`'s `Step2RepoPath` call site. Uses the same [platform] string
+ * convention as `pendingPlainGraphWarning`'s `warningCopy` above (see `getDeviceInfo`'s `platform`
+ * field and `SloChecker.diskThresholdsFor`).
+ */
+internal fun appStorageSubtitleFor(platform: String): String = if (platform == "Android") {
+    "Kept inside SteleKit only — not visible in your device's file manager, and removed if you " +
+        "uninstall the app."
+} else {
+    PlainGraphAppOwnedWarningWebCopy
 }
 
 /**

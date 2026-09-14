@@ -71,9 +71,11 @@ import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.git.model.GitCredentialConnection
 import dev.stapler.stelekit.git.model.GitHostType
 import dev.stapler.stelekit.model.StorageLocation
+import dev.stapler.stelekit.performance.getDeviceInfo
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.platform.security.CredentialStore
+import dev.stapler.stelekit.ui.appStorageSubtitleFor
 import dev.stapler.stelekit.ui.components.UnifiedLocationPicker
 import dev.stapler.stelekit.util.ContentHasher
 import kotlin.time.Clock
@@ -683,8 +685,7 @@ fun GitSetupScreen(
         UnifiedLocationPicker(
             title = "Choose where to clone this repository",
             graphId = graphIdFromPath(fileSystem.expandTilde(pendingAppOwnedGraphPath)),
-            appStorageSubtitle = "Kept inside SteleKit only — not visible in your device's " +
-                "file manager, and removed if you uninstall the app.",
+            appStorageSubtitle = appStorageSubtitleFor(getDeviceInfo().platform),
             platformCapabilities = fileSystem.supportsNativeDirectoryPicker,
             onBrowseClicked = {
                 // Must run synchronously here, not inside onBrowseRequested's scope.launch — see
