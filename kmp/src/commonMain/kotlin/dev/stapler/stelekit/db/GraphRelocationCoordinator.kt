@@ -100,7 +100,12 @@ class GraphRelocationCoordinator(
             // verification failure, or cancellation — reopens the driver (step 6) before the
             // operation ends; the finally below runs under NonCancellable so it still executes
             // even if this coroutine itself has been cancelled mid-copy/verify.
-            var copyOutcome: Either<DomainError.StorageError, Unit> =
+            // The Right value is the actual destination root copyIntoStagingThenRepoint moved
+            // files into — for StorageLocation.AppOwned this is only known after
+            // resolveDestinationRoot() allocates it (FileSystem.newAppOwnedGraphPath() returns a
+            // fresh, non-deterministic path on every call), so it must be threaded out and reused
+            // rather than re-derived at step 7 below.
+            var copyOutcome: Either<DomainError.StorageError, String> =
                 DomainError.StorageError.RelocationFailed(graphIdValue).left()
             var reopenedRepositorySet: RepositorySet? = null
             try {
@@ -117,7 +122,15 @@ class GraphRelocationCoordinator(
 
                     // Step 7: only on the happy path, and only once reopen is confirmed, is the
                     // new location persisted — never through a closed/unconfirmed connection.
-                    if (reopenedRepositorySet != null && copyOutcome is Either.Right) {
+                    val successfulOutcome = copyOutcome
+                    if (reopenedRepositorySet != null && successfulOutcome is Either.Right) {
+                        // GraphInfo.path is the registry field GraphManager actually uses to open
+                        // this graph's content (App.kt's currentGraphPath init, FilePathRootMigration,
+                        // this coordinator's own resolveSourceRoot for AppOwned) — onGraphLocationDetermined
+                        // alone only records storage_locations' kind/uri metadata and never touches it,
+                        // so without this call a "successful" relocate would leave the app reading/
+                        // writing the graph at its old path while the new copy sits untouched.
+                        graphManager.updateGraphContentPath(graphId, successfulOutcome.value)
                         graphManager.onGraphLocationDetermined(graphIdValue, operation.destination)
                     }
                 }
@@ -144,11 +157,14 @@ class GraphRelocationCoordinator(
 
     /**
      * Steps 4-5: copy+verify into the staging directory, then atomically repoint staging to the
-     * final destination. The untouched source is only ever read here, never written.
+     * final destination. The untouched source is only ever read here, never written. Returns the
+     * resolved destination root on success — the single source of truth for where the graph's
+     * content actually now lives, since [StorageLocation.AppOwned] has no path of its own (it is
+     * allocated fresh, once, inside [resolveDestinationRoot]).
      */
     private suspend fun ProducerScope<StorageMoveUiState>.copyIntoStagingThenRepoint(
         operation: StorageMoveOperation.Relocate,
-    ): Either<DomainError.StorageError, Unit> = withContext(PlatformDispatcher.IO) {
+    ): Either<DomainError.StorageError, String> = withContext(PlatformDispatcher.IO) {
         val sourceRoot = when (val resolved = resolveSourceRoot(operation.source)) {
             is Either.Left -> return@withContext resolved
             is Either.Right -> resolved.value
@@ -184,7 +200,7 @@ class GraphRelocationCoordinator(
             if (createdDirs.add(parent)) fileSystem.createDirectory(parent)
             FileMove(from = "$stagingPath/$relativePath", to = to)
         }
-        AtomicFileRelocationStep.relocate(fileSystem, moves)
+        AtomicFileRelocationStep.relocate(fileSystem, moves).map { destinationRoot }
     }
 
     /**

@@ -1046,6 +1046,31 @@ class GraphManager(
     }
 
     /**
+     * Overwrites [id]'s registered [GraphInfo.path] in place, preserving [GraphId] and every other
+     * registry field — no file I/O, no id re-keying. This is the narrow complement
+     * [GraphRelocationCoordinator] calls (alongside [onGraphLocationDetermined]) once its own
+     * copy+verify+atomic-move has already physically placed the graph's content at [newPath] and
+     * the driver has been reopened and confirmed against that new location.
+     *
+     * Deliberately distinct from [updateGraphPath]: that function re-derives a *new* [GraphId]
+     * from the given path (since [GraphId] is `sha256(path)`) and re-keys the on-disk
+     * database/telemetry/credential files to match — the mechanism behind the legacy, now-removed
+     * freeform "Graph path" text field. A relocate keeps the same [GraphId] across a move (see
+     * [GraphRelocationCoordinator]'s own doc), so reusing [updateGraphPath] here would both corrupt
+     * that invariant and redundantly re-move files the coordinator already moved itself.
+     */
+    internal fun updateGraphContentPath(id: GraphId, newPath: String) {
+        _graphRegistry.update { registry ->
+            val idx = registry.graphs.indexOfFirst { it.id == id }
+            if (idx == -1) return@update registry
+            val updatedGraphs = registry.graphs.toMutableList()
+            updatedGraphs[idx] = updatedGraphs[idx].copy(path = newPath)
+            registry.copy(graphs = updatedGraphs)
+        }
+        saveRegistry()
+    }
+
+    /**
      * Persists [location] as [graphId]'s `storage_locations` row — the single place this table
      * is ever written from a creation or relocate flow (ADR-001, Story 1.1.3). If [graphId] isn't
      * the currently active graph (its driver may not be open yet — e.g. called from [addGraph]
