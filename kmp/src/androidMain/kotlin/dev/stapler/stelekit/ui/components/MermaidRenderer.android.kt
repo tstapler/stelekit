@@ -23,12 +23,8 @@ private const val RENDER_HTML_URL = "file:///android_asset/mermaid/render.html"
  * to [Dispatchers.Main] only for the WebView calls themselves.
  */
 actual suspend fun renderMermaid(key: MermaidRenderKey): MermaidRenderResult = withContext(PlatformDispatcher.IO) {
+    key.sourceLengthFailure()?.let { return@withContext it }
     val source = key.sourceText
-    when {
-        source.isBlank() -> return@withContext MermaidRenderResult.Failed("empty source")
-        source.length > MAX_MERMAID_SOURCE_LENGTH ->
-            return@withContext MermaidRenderResult.Failed("source exceeds $MAX_MERMAID_SOURCE_LENGTH chars")
-    }
 
     try {
         withTimeoutOrNull(MERMAID_RENDER_TIMEOUT_MS) { renderViaWebView(source) }

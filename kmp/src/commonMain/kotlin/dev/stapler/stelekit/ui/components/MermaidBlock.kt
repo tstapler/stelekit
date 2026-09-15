@@ -33,15 +33,6 @@ import androidx.compose.ui.unit.dp
 
 private const val GENERIC_MERMAID_ACCESSIBILITY_LABEL = "Mermaid diagram — tap to view source"
 
-/** Mirrors [CodeFenceBlock]'s private `extractCodeBody` — strips the leading/trailing fence lines. */
-private fun extractMermaidSourceBody(content: String): String {
-    val lines = content.lines()
-    val isFenceLine: (String) -> Boolean = { it.trim().let { t -> t.startsWith("```") || t.startsWith("~~~") } }
-    val start = if (lines.firstOrNull()?.let(isFenceLine) == true) 1 else 0
-    val end = if (lines.lastOrNull()?.let(isFenceLine) == true) lines.size - 1 else lines.size
-    return if (start < end) lines.subList(start, end).joinToString("\n") else ""
-}
-
 /**
  * Simple line-prefix parse of mermaid's `accTitle:`/`accDescr:` directives (ux.md Surface 3) —
  * not a full mermaid grammar parse, just enough to recover the author-supplied accessible label.
@@ -81,7 +72,7 @@ fun MermaidBlock(
     onLongPressSelect: (() -> Unit)? = null,
     renderer: suspend (MermaidRenderKey) -> MermaidRenderResult = ::renderMermaid,
 ) {
-    val sourceText = remember(content) { extractMermaidSourceBody(content) }
+    val sourceText = remember(content) { extractCodeBody(content) }
 
     // Oversized/empty source is never handed to the renderer at all (REQ-8) — cheapest correct
     // behavior for a pathological or empty diagram, matching CodeFenceBlock's existing empty-body handling.

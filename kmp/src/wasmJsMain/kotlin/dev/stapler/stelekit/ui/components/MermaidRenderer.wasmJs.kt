@@ -18,13 +18,8 @@ private var mermaidRenderCounter = 0
  * fire — it cannot preempt a synchronous/tight-loop `mermaid.render()` hang.
  */
 actual suspend fun renderMermaid(key: MermaidRenderKey): MermaidRenderResult {
+    key.sourceLengthFailure()?.let { return it }
     val source = key.sourceText
-    if (source.isBlank()) {
-        return MermaidRenderResult.Failed("Empty diagram source")
-    }
-    if (source.length > MAX_MERMAID_SOURCE_LENGTH) {
-        return MermaidRenderResult.Failed("Diagram source exceeds $MAX_MERMAID_SOURCE_LENGTH characters")
-    }
 
     return try {
         MermaidJsBindings.initialize(buildMermaidInitConfig(MERMAID_SECURITY_LEVEL))

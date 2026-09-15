@@ -26,7 +26,11 @@ import kotlinx.coroutines.withContext
  * `Context` when the actor is no longer needed.
  */
 class MermaidEngineActor(
-    private val engine: MermaidJvmEngine = MermaidJvmEngine(),
+    initialEngine: MermaidJvmEngine = MermaidJvmEngine(),
+    // Injectable so tests can verify the timeout→swap behavior with a fast fake, without depending
+    // on real GraalJS cold-start latency (which can itself exceed MERMAID_RENDER_TIMEOUT_MS under
+    // load — a separate, already-documented risk, not something this seam is meant to paper over).
+    private val newEngine: () -> MermaidJvmEngine = ::MermaidJvmEngine,
 ) {
     private val dispatcher = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "MermaidEngineActor").apply { isDaemon = true }
@@ -34,19 +38,29 @@ class MermaidEngineActor(
 
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
 
-    // renderMermaidWith's own withTimeoutOrNull hops onto Dispatchers.IO so a genuine hang can be
-    // abandoned (see that function's docs) — which means dispatcher-thread-affinity alone can't
-    // guarantee serialization: the dedicated dispatcher's one thread would otherwise sit free to
-    // start a second call's IO-dispatched render() while the first is still in flight. The Mutex
-    // closes that gap by serializing at the call level, independent of which thread each call's
-    // work happens to run on.
+    // renderMermaidWith's own withTimeoutOrNull hops onto its own per-call single-thread dispatcher
+    // (see that function's docs) so a genuine hang can be abandoned — which means dispatcher-thread-
+    // affinity alone can't guarantee serialization: the actor's own dedicated dispatcher's one
+    // thread would otherwise sit free to start a second call's render() while the first is still
+    // in flight on its own dispatcher. The Mutex closes that gap by serializing at the call level,
+    // independent of which thread each call's work happens to run on.
     private val mutex = Mutex()
+
+    // A timed-out call's engine has a thread permanently wedged inside its GraalJS Context (see
+    // renderMermaidWith's docs) — that Context can never safely serve another call. Replacing it
+    // with a fresh engine, rather than reusing the poisoned one, is what makes a single hang a
+    // one-time cost instead of a permanent app-wide degradation. Read/written only under `mutex`.
+    private var engine: MermaidJvmEngine = initialEngine
 
     /** Renders [key] on the actor's dedicated thread, one call at a time; delegates to [renderMermaidWith]. */
     suspend fun render(key: MermaidRenderKey): MermaidRenderResult =
         mutex.withLock {
             withContext(scope.coroutineContext) {
-                renderMermaidWith(engine, key)
+                val result = renderMermaidWith(engine, key)
+                if (result is MermaidRenderResult.Failed && result.reason == MERMAID_TIMEOUT_REASON) {
+                    engine = newEngine()
+                }
+                result
             }
         }
 

@@ -9,6 +9,7 @@ import kotlin.test.assertIs
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
+import kotlin.time.Duration.Companion.seconds
 
 /** REQ-10 — [MermaidEngineActor] serializes concurrent renders onto one dedicated thread. */
 class MermaidEngineActorTest {
@@ -48,6 +49,41 @@ class MermaidEngineActorTest {
             ).awaitAll()
             results.forEach { assertIs<MermaidRenderResult.Rendered>(it) }
             assertFalse(overlapDetected.get(), "engine.render() calls must never overlap")
+        } finally {
+            actor.close()
+        }
+    }
+
+    /**
+     * Regression test for the bug found in review: a timed-out call's engine has a thread
+     * permanently wedged inside its GraalJS Context, so reusing that same engine for later calls
+     * would make every future render also time out — silently degrading rendering app-wide for the
+     * rest of the process's life. [MermaidEngineActor] must swap in a fresh engine on timeout so a
+     * single hang costs exactly one render, not all of them.
+     */
+    @Test
+    fun render_should_recoverOnNextCall_when_previousCallTimedOut() = runTest(timeout = 30.seconds) {
+        val hangingEngine = object : MermaidJvmEngine() {
+            override fun render(source: String): String {
+                Thread.sleep(Long.MAX_VALUE)
+                error("unreachable")
+            }
+        }
+        val healthyEngine = object : MermaidJvmEngine() {
+            override fun render(source: String): String = "<svg>recovered</svg>"
+        }
+        // A fast fake for the post-swap engine, not a real MermaidJvmEngine(): a genuinely fresh
+        // GraalJS Context's own cold-start cost can itself exceed MERMAID_RENDER_TIMEOUT_MS under
+        // load (a separate, already-documented risk) — this test verifies the swap happens at all,
+        // independent of that unrelated timing concern.
+        val actor = MermaidEngineActor(hangingEngine, newEngine = { healthyEngine })
+        try {
+            val timedOut = actor.render(key(1))
+            assertIs<MermaidRenderResult.Failed>(timedOut)
+            assertEquals(MERMAID_TIMEOUT_REASON, timedOut.reason)
+
+            val recovered = actor.render(key(2))
+            assertIs<MermaidRenderResult.Rendered>(recovered)
         } finally {
             actor.close()
         }
