@@ -41,6 +41,21 @@ actual suspend fun renderMermaid(key: MermaidRenderKey): MermaidRenderResult = w
     }
 }
 
+/**
+ * Enables JS (required to run the bundled mermaid.js) while locking down every file/content
+ * access surface — the render page is a bundled asset, never a remote or user-supplied URL, so
+ * there is no legitimate reason for the page's own script to reach the filesystem or a content
+ * provider. Extracted so the settings themselves are directly assertable in a Robolectric test
+ * (see `MermaidWebViewSettingsTest`) rather than only inferred from behavior.
+ */
+internal fun configureMermaidRenderWebView(webView: WebView) {
+    webView.settings.javaScriptEnabled = true
+    webView.settings.allowFileAccess = false
+    webView.settings.allowFileAccessFromFileURLs = false
+    webView.settings.allowUniversalAccessFromFileURLs = false
+    webView.settings.allowContentAccess = false
+}
+
 private suspend fun renderViaWebView(source: String): MermaidRenderResult {
     val bridge = MermaidWebViewBridge()
     val deferred = bridge.newPendingResult()
@@ -49,11 +64,7 @@ private suspend fun renderViaWebView(source: String): MermaidRenderResult {
         withContext(Dispatchers.Main) {
             val wv = WebView(SteleKitContext.context)
             webView = wv
-            wv.settings.javaScriptEnabled = true
-            wv.settings.allowFileAccess = false
-            wv.settings.allowFileAccessFromFileURLs = false
-            wv.settings.allowUniversalAccessFromFileURLs = false
-            wv.settings.allowContentAccess = false
+            configureMermaidRenderWebView(wv)
             wv.addJavascriptInterface(bridge, "AndroidBridge")
             wv.webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView, url: String?) {

@@ -65,6 +65,20 @@ class BlockItemCodeFenceDispatchTest {
     }
 
     @Test
+    fun blockItem_should_dispatchToMermaidBlock_when_languageIsMermaid() {
+        // Oversized source (over MAX_MERMAID_SOURCE_LENGTH) makes MermaidBlock fall back to
+        // CodeFenceBlock synchronously and deterministically (no GraalJS/WebView engine
+        // involved) — its fallback always relabels the language "mermaid" regardless of the
+        // fence's own tag, which is exactly the signal that proves BlockItem routed through
+        // MermaidBlock rather than straight to CodeFenceBlock.
+        val oversizedBody = "graph TD;" + "A-->B;".repeat(MAX_MERMAID_SOURCE_LENGTH)
+        render(codeFenceBlock("```mermaid\n$oversizedBody\n```", language = "mermaid"))
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithText("mermaid").assertExists()
+    }
+
+    @Test
     fun blockItem_should_dispatchToCodeFenceBlock_when_languageTagAbsent() {
         render(codeFenceBlock("```\nplain text body\n```", language = ""))
         composeTestRule.waitForIdle()
