@@ -16,6 +16,10 @@ import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
+import io.kotest.property.Arb
+import io.kotest.property.arbitrary.int
+import io.kotest.property.arbitrary.string
+import io.kotest.property.checkAll
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -761,6 +765,33 @@ class BlockStateManagerTest {
         val updated = blockRepo.getBlockByUuid(BlockUuid("b1")).first().getOrNull()
         assertNotNull(updated)
         assertEquals("Hi[[Page]]", updated.content, "With no cursor info, link appended at end")
+    }
+
+    @Test
+    fun insertLinkAtCursor_insertsExactlyAtGivenPosition_forAnyContentAndPosition() = runTest {
+        checkAll(100, Arb.string(0, 48), Arb.int(0, 60)) { content, rawIndex ->
+            val cursor = rawIndex.coerceIn(0, content.length)
+            val blockRepo = InMemoryBlockRepository()
+            val pageRepo = InMemoryPageRepository()
+            val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+            val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+            val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+            pageRepo.savePage(createPage())
+            blockRepo.saveBlock(createBlock("b1", content = content, version = 0))
+            manager.observePage(PageUuid(pageUuid))
+            manager.blocks.first { it.containsKey(pageUuid) }
+
+            manager.insertLinkAtCursor(BlockUuid("b1"), "P", overrideCursorIndex = cursor)
+            advanceUntilIdle()
+
+            val updated = blockRepo.getBlockByUuid(BlockUuid("b1")).first().getOrNull()
+            assertEquals(
+                content.substring(0, cursor) + "[[P]]" + content.substring(cursor),
+                updated?.content,
+                "Link must splice in at the given position, never at a stale/clamped index"
+            )
+        }
     }
 
     // ---- insertLinkAtCursor — reads fresh in-memory content, not stale DB content ----
