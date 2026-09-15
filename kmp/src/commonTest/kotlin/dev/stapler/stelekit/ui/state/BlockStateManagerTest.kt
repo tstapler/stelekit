@@ -3,6 +3,7 @@ package dev.stapler.stelekit.ui.state
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
+import dev.stapler.stelekit.db.BlockUpdateEvent
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphWriter
@@ -23,6 +24,7 @@ import io.kotest.property.checkAll
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -165,6 +167,60 @@ class BlockStateManagerTest {
         assertNotNull(staleBlock)
         assertEquals("user typed this", staleBlock.content,
             "Dirty block should NOT be overwritten by stale DB emission")
+
+        manager.unobservePage(PageUuid(pageUuid))
+    }
+
+    /**
+     * Regression test for the Android "text jumps back and erases words" bug.
+     *
+     * [dev.stapler.stelekit.db.BlockUpdateEvent.BlockContentPatched] carries no version — the
+     * write-actor emits it as a plain confirmation-of-durability signal — so nothing prevents the
+     * confirmation for an *older* keystroke's write from being processed after a *newer*
+     * keystroke's optimistic update has already landed in `_blocks`. Using a manually-driven
+     * [pushSource] (rather than a real [DatabaseWriteActor]) makes that reordering deterministic
+     * instead of depending on real coroutine-scheduling luck.
+     */
+    @Test
+    fun stale_content_confirmation_does_not_revert_newer_optimistic_edit() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val invalidations = MutableSharedFlow<Set<PageUuid>>(extraBufferCapacity = 10)
+        val pushed = MutableSharedFlow<BlockUpdateEvent>(extraBufferCapacity = 10)
+
+        pageRepo.savePage(createPage())
+        blockRepo.saveBlock(createBlock("block-1", content = "original", version = 0))
+        val manager = BlockStateManager(
+            blockRepository = blockRepo,
+            graphLoader = graphLoader,
+            scope = scope,
+            invalidationSource = invalidations,
+            pushSource = pushed,
+        )
+        manager.observePage(PageUuid(pageUuid))
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        // Two keystrokes for the same block; each issues its own content write and (in
+        // production) would get its own BlockContentPatched confirmation.
+        manager.updateBlockContent(BlockUuid("block-1"), "hello wor", 2)
+        advanceUntilIdle()
+        manager.updateBlockContent(BlockUuid("block-1"), "hello wo", 3)
+        advanceUntilIdle()
+
+        // Confirmations arrive REVERSED relative to keystroke order.
+        pushed.tryEmit(BlockUpdateEvent.BlockContentPatched(PageUuid(pageUuid), BlockUuid("block-1"), "hello wo"))
+        advanceUntilIdle()
+        pushed.tryEmit(BlockUpdateEvent.BlockContentPatched(PageUuid(pageUuid), BlockUuid("block-1"), "hello wor"))
+        advanceUntilIdle()
+
+        val finalBlock = manager.blocks.value[pageUuid]!!.find { it.uuid.value == "block-1" }
+        assertNotNull(finalBlock)
+        assertEquals(
+            "hello wo", finalBlock.content,
+            "A stale write confirmation must not revert content a newer keystroke already applied"
+        )
 
         manager.unobservePage(PageUuid(pageUuid))
     }
