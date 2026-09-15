@@ -242,6 +242,95 @@ class BlockStateManagerTest {
         manager.unobservePage(PageUuid(pageUuid))
     }
 
+    /**
+     * Regression test for the `maxOf`/`<=` version guards in [BlockStateManager.applyContentChange].
+     * Without them, a lower-version write landing after a higher-version one (e.g. an out-of-order
+     * keystroke coroutine) would regress the block's content — deleting either guard makes this fail.
+     */
+    @Test
+    fun applyContentChange_never_lets_an_older_version_write_overwrite_a_newer_one() = runTest {
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
+
+        pageRepo.savePage(createPage())
+        blockRepo.saveBlock(createBlock("block-1", content = "original", version = 0))
+        manager.observePage(PageUuid(pageUuid))
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        // Newer version lands first...
+        manager.updateBlockContent(BlockUuid("block-1"), "newer content", 3)
+        advanceUntilIdle()
+        // ...then an older version's write arrives after — must not regress content or version.
+        manager.updateBlockContent(BlockUuid("block-1"), "older content", 2)
+        advanceUntilIdle()
+
+        val finalBlock = manager.blocks.value[pageUuid]!!.find { it.uuid.value == "block-1" }
+        assertNotNull(finalBlock)
+        assertEquals(
+            "newer content", finalBlock.content,
+            "An older-version write arriving after a newer one must not regress the block's content"
+        )
+        assertEquals(3L, finalBlock.version, "Block version must not regress either")
+
+        manager.unobservePage(PageUuid(pageUuid))
+    }
+
+    /**
+     * Regression test for the write-failure branch of [BlockStateManager.applyContentChange]:
+     * a failed write must decrement the pending-write count without clearing dirty (content never
+     * persisted), so a later successful write's own confirmation still clears dirty correctly
+     * once its count reaches zero — proving the failure didn't leave the count permanently ahead.
+     *
+     * Uses explicit [pushSource]-driven confirmations (as in the reordering test above) rather
+     * than the plain constructor: without it, [BlockStateManager] falls back to a standing DB
+     * subscription whose merge logic clears dirty independently of the pending-write count,
+     * which would mask the exact bug this test targets.
+     */
+    @Test
+    fun applyContentChange_write_failure_does_not_leave_pending_count_stuck() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val failingRepo = FailingContentWriteBlockRepository(blockRepo)
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, failingRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val invalidations = MutableSharedFlow<Set<PageUuid>>(extraBufferCapacity = 10)
+        val pushed = MutableSharedFlow<BlockUpdateEvent>(extraBufferCapacity = 10)
+
+        pageRepo.savePage(createPage())
+        blockRepo.saveBlock(createBlock("block-1", content = "original", version = 0))
+        val manager = BlockStateManager(
+            blockRepository = failingRepo,
+            graphLoader = graphLoader,
+            scope = scope,
+            invalidationSource = invalidations,
+            pushSource = pushed,
+        )
+        manager.observePage(PageUuid(pageUuid))
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        // First write fails — no confirmation will ever arrive for it.
+        manager.updateBlockContent(BlockUuid("block-1"), "will fail to persist", 1)
+        advanceUntilIdle()
+        assertTrue(
+            manager.dirtyBlockUuids.contains("block-1"),
+            "Block must stay dirty after a failed write — content never persisted"
+        )
+
+        // Second write succeeds and gets its own confirmation.
+        failingRepo.failNextWrite = false
+        manager.updateBlockContent(BlockUuid("block-1"), "will succeed", 2)
+        advanceUntilIdle()
+        pushed.tryEmit(BlockUpdateEvent.BlockContentPatched(PageUuid(pageUuid), BlockUuid("block-1"), "will succeed"))
+        advanceUntilIdle()
+
+        assertFalse(
+            manager.dirtyBlockUuids.contains("block-1"),
+            "Dirty must clear once the successful write's confirmation lands — if the failed " +
+                "write's count were never decremented, this confirmation would still see pendingWrites > 0"
+        )
+
+        manager.unobservePage(PageUuid(pageUuid))
+    }
+
     // ---- Editing focus ----
 
     @Test
@@ -2264,5 +2353,21 @@ private class DelayedContentBlockRepository(
         delay(contentDelayMs)
         return delegate.updateBlockContentOnly(blockUuid, content)
     }
+}
+
+/** Fails [updateBlockContentOnly] while [failNextWrite] is true; delegates otherwise. */
+@OptIn(DirectRepositoryWrite::class)
+private class FailingContentWriteBlockRepository(
+    val delegate: InMemoryBlockRepository,
+) : BlockRepository by delegate {
+    var failNextWrite: Boolean = true
+
+    @DirectRepositoryWrite
+    override suspend fun updateBlockContentOnly(
+        blockUuid: BlockUuid,
+        content: String,
+    ): Either<DomainError, Unit> =
+        if (failNextWrite) DomainError.DatabaseError.WriteFailed("injected updateBlockContentOnly failure").left()
+        else delegate.updateBlockContentOnly(blockUuid, content)
 }
 

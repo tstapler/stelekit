@@ -42,6 +42,7 @@ sealed class BlockUpdateEvent {
     data class BlockContentPatched(
         val pageUuid: PageUuid,
         val blockUuid: BlockUuid,
+        // Intentionally unused by BlockStateManager.applyContentPatch — see its doc for why.
         val newContent: String,
     ) : BlockUpdateEvent()
 
