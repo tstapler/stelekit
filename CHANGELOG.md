@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.84.1](https://github.com/tstapler/stelekit/compare/v0.84.0...v0.84.1) (2026-09-15)
+
+
+### Bug Fixes
+
+* **editor:** two Android cursor/edit-race bugs, plus test dedup ([#329](https://github.com/tstapler/stelekit/issues/329)) ([76999b8](https://github.com/tstapler/stelekit/commit/76999b87075aa5ca30fe01533853a2c772e6649a))
+
 ## [0.84.0](https://github.com/tstapler/stelekit/compare/v0.83.0...v0.84.0) (2026-09-15)
 
 
