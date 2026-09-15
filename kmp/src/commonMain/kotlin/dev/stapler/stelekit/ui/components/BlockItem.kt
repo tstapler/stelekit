@@ -369,12 +369,20 @@ internal fun BlockItem(
                         onStartEditing = onStartEditing,
                         modifier = Modifier.weight(1f),
                     )
-                    BlockTypes.CODE_FENCE -> CodeFenceBlock(
-                        content = block.content,
-                        language = codeFenceLanguage(block.content),
-                        onStartEditing = onStartEditing,
-                        modifier = Modifier.weight(1f),
-                    )
+                    BlockTypes.CODE_FENCE -> if (codeFenceLanguage(block.content).equals("mermaid", ignoreCase = true)) {
+                        MermaidBlock(
+                            content = block.content,
+                            onStartEditing = onStartEditing,
+                            modifier = Modifier.weight(1f),
+                        )
+                    } else {
+                        CodeFenceBlock(
+                            content = block.content,
+                            language = codeFenceLanguage(block.content),
+                            onStartEditing = onStartEditing,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
                     BlockTypes.BLOCKQUOTE -> BlockquoteBlock(
                         content = block.content,
                         linkColor = linkColor,

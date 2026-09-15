@@ -135,6 +135,17 @@ kotlin {
                 // implementation("com.kuzudb:kuzu-jdbc:0.7.0")
                 // implementation("org.neo4j.driver:neo4j-java-driver:5.21.0")
                 // implementation("org.neo4j:neo4j:5.21.0")
+
+                // GraalJS (community edition — pure-JVM, no separate GraalVM install required)
+                // hosts the bundled mermaid.js for headless Desktop diagram rendering. See
+                // project_plans/mermaid-diagrams/decisions/ADR-001-mermaid-rendering-strategy.md.
+                implementation("org.graalvm.polyglot:polyglot:24.1.1")
+                implementation("org.graalvm.polyglot:js-community:24.1.1")
+
+                // Apache Batik — supplies the SVGTextElement.getBBox() text-measurement shim
+                // mermaid.js's layout pass needs (headless GraalJS has no native DOM/font API).
+                implementation("org.apache.xmlgraphics:batik-bridge:1.18")
+                implementation("org.apache.xmlgraphics:batik-anim:1.18")
             }
         }
 
@@ -155,6 +166,7 @@ kotlin {
             val wasmJsMain by getting {
                 dependencies {
                     implementation(npm("@sqlite.org/sqlite-wasm", "3.46.1-build1"))
+                    implementation(npm("mermaid", "12.0.0"))
                 }
             }
 
