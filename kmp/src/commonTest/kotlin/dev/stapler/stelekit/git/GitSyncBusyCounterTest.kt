@@ -75,6 +75,6 @@ class GitSyncBusyCounterTest {
 
         assertTrue(awaitIdleCompleted, "awaitIdle should complete once the counter returns to zero")
         waiter.join()
-        assertFalse(counter.isBusy.value)
+        assertFalse(counter.isBusy.first { !it })
     }
 }
