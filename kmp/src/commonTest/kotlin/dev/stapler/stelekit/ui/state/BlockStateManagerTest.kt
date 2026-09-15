@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -92,6 +93,26 @@ private class CountingBlockRepository(
     }
 }
 
+/** The plain `blockRepo`/`pageRepo`/`graphLoader`/`scope`/`manager` quintet ~50 tests below need
+ * before doing anything test-specific. Tests that construct any of these pieces differently
+ * (a custom FileSystem, a decorator repository, a GraphWriter, named BlockStateManager params)
+ * build their own — this only covers the plain case. */
+private data class Harness(
+    val blockRepo: InMemoryBlockRepository,
+    val pageRepo: InMemoryPageRepository,
+    val graphLoader: GraphLoader,
+    val scope: CoroutineScope,
+    val manager: BlockStateManager,
+)
+
+private fun TestScope.newHarness(): Harness {
+    val blockRepo = InMemoryBlockRepository()
+    val pageRepo = InMemoryPageRepository()
+    val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+    val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+    return Harness(blockRepo, pageRepo, graphLoader, scope, BlockStateManager(blockRepo, graphLoader, scope))
+}
+
 @OptIn(ExperimentalCoroutinesApi::class)
 class BlockStateManagerTest {
 
@@ -125,11 +146,7 @@ class BlockStateManagerTest {
 
     @Test
     fun dirty_block_is_preserved_when_stale_db_emission_arrives() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         // Setup: page with a block
         val page = createPage()
@@ -229,11 +246,7 @@ class BlockStateManagerTest {
 
     @Test
     fun requestEditBlock_sets_focus_state() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         assertNull(manager.editingBlockUuid.value)
         assertNull(manager.editingCursorIndex.value)
@@ -250,11 +263,7 @@ class BlockStateManagerTest {
 
     @Test
     fun undo_redo_basic_flow() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         assertEquals(false, manager.canUndo.value)
         assertEquals(false, manager.canRedo.value)
@@ -288,11 +297,7 @@ class BlockStateManagerTest {
 
     @Test
     fun toggleBlockCollapse_toggles() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         assertEquals(emptySet(), manager.collapsedBlockUuids.value)
 
@@ -307,11 +312,7 @@ class BlockStateManagerTest {
 
     @Test
     fun unobservePage_stops_observation_and_keeps_cache() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("block-1", content = "test"))
@@ -403,11 +404,7 @@ class BlockStateManagerTest {
      */
     @Test
     fun unobservePage_cancels_observation_but_keeps_blocks_as_cache() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1"))
@@ -436,11 +433,7 @@ class BlockStateManagerTest {
 
     @Test
     fun addBlockToPage_creates_block_and_sets_focus() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         pageRepo.savePage(createPage())
         manager.observePage(PageUuid(pageUuid))
@@ -774,11 +767,7 @@ class BlockStateManagerTest {
 
     @Test
     fun insertLinkAtCursor_usesOverrideCursorIndex_whenEditingCursorIsNull() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         pageRepo.savePage(createPage())
         val block = createBlock("b1", content = "Hello world", version = 0)
@@ -802,11 +791,7 @@ class BlockStateManagerTest {
 
     @Test
     fun insertLinkAtCursor_fallsBackToContentLength_whenBothNull() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         pageRepo.savePage(createPage())
         val block = createBlock("b1", content = "Hi", version = 0)
@@ -827,11 +812,7 @@ class BlockStateManagerTest {
     fun insertLinkAtCursor_insertsExactlyAtGivenPosition_forAnyContentAndPosition() = runTest {
         checkAll(100, Arb.string(0, 48), Arb.int(0, 60)) { content, rawIndex ->
             val cursor = rawIndex.coerceIn(0, content.length)
-            val blockRepo = InMemoryBlockRepository()
-            val pageRepo = InMemoryPageRepository()
-            val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-            val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-            val manager = BlockStateManager(blockRepo, graphLoader, scope)
+            val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
             pageRepo.savePage(createPage())
             blockRepo.saveBlock(createBlock("b1", content = content, version = 0))
@@ -869,11 +850,7 @@ class BlockStateManagerTest {
      */
     @Test
     fun insertLinkAtCursor_usesInMemoryContent_notStaleDbContent_whenBlockIsDirty() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         pageRepo.savePage(createPage())
         val original = createBlock("b1", content = "old content", version = 0)
@@ -925,11 +902,7 @@ class BlockStateManagerTest {
      */
     @Test
     fun insertLinkAtCursor_fallsBackToDb_whenBlockNotLoadedInMemory() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", content = "Hello world", version = 0))
@@ -950,11 +923,7 @@ class BlockStateManagerTest {
 
     @Test
     fun replaceSelectionWithLink_replacesSelectedText() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         pageRepo.savePage(createPage())
         val block = createBlock("b1", content = "Hello world today", version = 0)
@@ -974,11 +943,7 @@ class BlockStateManagerTest {
 
     @Test
     fun replaceSelectionWithLink_fallsBackToInsertWhenNoRealSelection() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         pageRepo.savePage(createPage())
         val block = createBlock("b1", content = "Hello world", version = 0)
@@ -998,11 +963,7 @@ class BlockStateManagerTest {
 
     @Test
     fun replaceSelectionWithLink_safelyHandlesOutOfBoundsSelection() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         pageRepo.savePage(createPage())
         val block = createBlock("b1", content = "Hi", version = 0)
@@ -1023,11 +984,7 @@ class BlockStateManagerTest {
 
     @Test
     fun observePage_adds_uuid_to_activePageUuids() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         pageRepo.savePage(createPage())
         assertTrue(manager.activePageUuids.value.isEmpty())
@@ -1039,11 +996,7 @@ class BlockStateManagerTest {
 
     @Test
     fun unobservePage_removes_uuid_from_activePageUuids() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         pageRepo.savePage(createPage())
         manager.observePage(PageUuid(pageUuid))
@@ -1056,11 +1009,7 @@ class BlockStateManagerTest {
 
     @Test
     fun activePageUuids_tracks_multiple_pages_independently() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         val pageA = createPage(uuid = "page-a")
         val pageB = createPage(uuid = "page-b")
@@ -1080,11 +1029,7 @@ class BlockStateManagerTest {
 
     @Test
     fun updateEditingSelection_exposedViaStateFlow() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         assertNull(manager.editingSelectionRange.value)
 
@@ -1100,11 +1045,7 @@ class BlockStateManagerTest {
 
     @Test
     fun enterSelectionMode_sets_anchor_and_selected_and_isInSelectionMode() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         assertFalse(manager.isInSelectionMode.value)
         assertTrue(manager.selectedBlockUuids.value.isEmpty())
@@ -1117,11 +1058,7 @@ class BlockStateManagerTest {
 
     @Test
     fun toggleBlockSelection_adds_then_removes_uuid() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         manager.toggleBlockSelection(BlockUuid("b1"))
         assertTrue(manager.selectedBlockUuids.value.contains("b1"))
@@ -1134,11 +1071,7 @@ class BlockStateManagerTest {
 
     @Test
     fun toggleBlockSelection_can_add_multiple_uuids() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         manager.toggleBlockSelection(BlockUuid("b1"))
         manager.toggleBlockSelection(BlockUuid("b2"))
@@ -1149,11 +1082,7 @@ class BlockStateManagerTest {
 
     @Test
     fun clearSelection_resets_all_selection_state() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         manager.enterSelectionMode(BlockUuid("b1"))
         assertTrue(manager.isInSelectionMode.value)
@@ -1166,11 +1095,7 @@ class BlockStateManagerTest {
 
     @Test
     fun selectAll_selects_all_visible_blocks_for_page() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", position = "a0"))
@@ -1188,11 +1113,7 @@ class BlockStateManagerTest {
 
     @Test
     fun extendSelectionByOne_down_adds_next_visible_block() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", position = "a0"))
@@ -1209,11 +1130,7 @@ class BlockStateManagerTest {
 
     @Test
     fun extendSelectionByOne_up_adds_previous_visible_block() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", position = "a0"))
@@ -1230,11 +1147,7 @@ class BlockStateManagerTest {
 
     @Test
     fun extendSelectionTo_selects_range_from_anchor_to_target() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", position = "a0"))
@@ -1252,11 +1165,7 @@ class BlockStateManagerTest {
 
     @Test
     fun deleteSelectedBlocks_removes_selected_block_and_clears_selection() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", content = "keep", position = "a0"))
@@ -1277,11 +1186,7 @@ class BlockStateManagerTest {
 
     @Test
     fun deleteSelectedBlocks_is_noop_when_nothing_selected() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         manager.deleteSelectedBlocks().join()
 
@@ -1292,11 +1197,7 @@ class BlockStateManagerTest {
 
     @Test
     fun splitBlock_creates_two_blocks_at_cursor_position() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", content = "HelloWorld", position = "a0"))
@@ -1314,11 +1215,7 @@ class BlockStateManagerTest {
 
     @Test
     fun splitBlock_focuses_the_new_block() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", content = "AB", position = "a0"))
@@ -1337,11 +1234,7 @@ class BlockStateManagerTest {
 
     @Test
     fun splitBlock_records_undo_entry_and_undo_restores_single_block() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", content = "HelloWorld", position = "a0"))
@@ -1362,11 +1255,7 @@ class BlockStateManagerTest {
 
     @Test
     fun splitBlock_at_cursor_zero_produces_empty_first_block_and_full_content_in_second() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", content = "Hello", position = "a0"))
@@ -1385,11 +1274,7 @@ class BlockStateManagerTest {
 
     @Test
     fun indentBlock_makes_block_child_of_previous_sibling() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", content = "parent", position = "a0"))
@@ -1408,11 +1293,7 @@ class BlockStateManagerTest {
 
     @Test
     fun indentBlock_records_undo_entry() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", position = "a0"))
@@ -1428,11 +1309,7 @@ class BlockStateManagerTest {
 
     @Test
     fun outdentBlock_moves_child_to_grandparent_level() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         pageRepo.savePage(createPage())
         // b1 at root, b2 is child of b1
@@ -1457,11 +1334,7 @@ class BlockStateManagerTest {
 
     @Test
     fun moveBlockUp_swaps_positions_with_previous_sibling() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", content = "first", position = "a0"))
@@ -1480,11 +1353,7 @@ class BlockStateManagerTest {
 
     @Test
     fun moveBlockDown_swaps_positions_with_next_sibling() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", content = "first", position = "a0"))
@@ -1505,11 +1374,7 @@ class BlockStateManagerTest {
 
     @Test
     fun updateBlockContent_undo_restores_old_content() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", content = "original", version = 0, position = "a0"))
@@ -1532,11 +1397,7 @@ class BlockStateManagerTest {
 
     @Test
     fun updateBlockContent_redo_reapplies_edit_after_undo() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", content = "original", version = 0, position = "a0"))
@@ -1559,11 +1420,7 @@ class BlockStateManagerTest {
 
     @Test
     fun focusNextBlock_moves_focus_to_next_visible_block() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", content = "first", position = "a0"))
@@ -1582,11 +1439,7 @@ class BlockStateManagerTest {
 
     @Test
     fun focusPreviousBlock_moves_focus_to_previous_visible_block() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", content = "first", position = "a0"))
@@ -1605,11 +1458,7 @@ class BlockStateManagerTest {
 
     @Test
     fun focusNextBlock_is_noop_at_last_block() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", content = "only", position = "a0"))
@@ -1625,11 +1474,7 @@ class BlockStateManagerTest {
 
     @Test
     fun focusPreviousBlock_is_noop_at_first_block() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", content = "only", position = "a0"))
@@ -1647,11 +1492,7 @@ class BlockStateManagerTest {
 
     @Test
     fun updateBlockProperties_persists_new_properties_in_local_state() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", position = "a0"))
@@ -1671,11 +1512,7 @@ class BlockStateManagerTest {
 
     @Test
     fun mergeBlock_combines_content_with_previous_sibling_and_removes_block() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", content = "Hello", position = "a0"))
@@ -1695,11 +1532,7 @@ class BlockStateManagerTest {
 
     @Test
     fun mergeBlock_moves_focus_to_previous_block() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", content = "Hello", position = "a0"))
@@ -2226,11 +2059,7 @@ class BlockStateManagerDirtyPageUuidsTest {
      */
     @Test
     fun dirtyPageUuids_is_empty_on_construction() = runTest {
-        val blockRepo = InMemoryBlockRepository()
-        val pageRepo = InMemoryPageRepository()
-        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
-        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        val (blockRepo, pageRepo, graphLoader, scope, manager) = newHarness()
 
         assertTrue(manager.dirtyPageUuids.value.isEmpty(), "dirtyPageUuids must be empty before any edits")
     }
