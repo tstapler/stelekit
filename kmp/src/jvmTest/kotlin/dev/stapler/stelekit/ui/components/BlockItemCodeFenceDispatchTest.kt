@@ -4,7 +4,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import dev.stapler.stelekit.model.Block
-import dev.stapler.stelekit.model.BlockTypes
+import dev.stapler.stelekit.model.BlockType
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.ui.theme.StelekitTheme
@@ -27,14 +27,14 @@ class BlockItemCodeFenceDispatchTest {
 
     private fun now() = Clock.System.now()
 
-    private fun codeFenceBlock(content: String) = Block(
+    private fun codeFenceBlock(content: String, language: String) = Block(
         uuid = BlockUuid("b1"),
         pageUuid = PageUuid("p1"),
         content = content,
-        position = 0,
+        position = "a0",
         createdAt = now(),
         updatedAt = now(),
-        blockType = BlockTypes.CODE_FENCE,
+        blockType = BlockType.CodeFence(language),
     )
 
     private fun render(block: Block) {
@@ -58,7 +58,7 @@ class BlockItemCodeFenceDispatchTest {
 
     @Test
     fun blockItem_should_dispatchToCodeFenceBlock_when_languageIsKotlin() {
-        render(codeFenceBlock("```kotlin\nval x = 1\n```"))
+        render(codeFenceBlock("```kotlin\nval x = 1\n```", language = "kotlin"))
         composeTestRule.waitForIdle()
 
         composeTestRule.onNodeWithText("kotlin").assertExists()
@@ -66,7 +66,7 @@ class BlockItemCodeFenceDispatchTest {
 
     @Test
     fun blockItem_should_dispatchToCodeFenceBlock_when_languageTagAbsent() {
-        render(codeFenceBlock("```\nplain text body\n```"))
+        render(codeFenceBlock("```\nplain text body\n```", language = ""))
         composeTestRule.waitForIdle()
 
         // MermaidBlock's fallback always hard-codes language = "mermaid"; its absence here
