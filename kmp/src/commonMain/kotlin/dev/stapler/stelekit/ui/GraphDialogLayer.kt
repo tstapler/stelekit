@@ -184,6 +184,7 @@ private fun SettingsDialogHost(
         onBrowseRequestForMove = settings.onBrowseRequestForMove,
         onBrowseClickForMove = settings.onBrowseClickForMove,
         onUnlinkHostDirectory = settings.onUnlinkHostDirectory,
+        hotkeyComboLabel = settings.hotkeyComboLabel,
     )
 }
 

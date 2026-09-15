@@ -194,6 +194,8 @@ kotlin {
                 // ZXing — QR encode/decode for camera-qr-export (ADR-001/Story 2.1.2)
                 implementation("com.google.zxing:core:3.5.4")
 
+                implementation("com.github.tulskiy:jkeymaster:1.3") // research/build-vs-buy.md: fresher than JNativeHook (June-2025 push)
+
                 // Graph databases for performance evaluation
                 // implementation("com.kuzudb:kuzu-jdbc:0.7.0")
                 // implementation("org.neo4j.driver:neo4j-java-driver:5.21.0")

@@ -74,6 +74,8 @@ data class SettingsDialogDeps(
     // Epic 4.1 (Task 4.1.2c): "Unlink folder" affordance inside FolderSyncSettings — see
     // SettingsDialog's own parameter docs. Null onUnlinkHostDirectory hides the entry entirely.
     val onUnlinkHostDirectory: (suspend () -> Unit)? = null,
+    // Desktop-only quick-capture hotkey (Story 1.4.2) — null on platforms with no global hotkey.
+    val hotkeyComboLabel: String? = null,
 )
 
 /**

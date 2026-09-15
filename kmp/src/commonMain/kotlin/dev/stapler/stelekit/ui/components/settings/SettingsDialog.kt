@@ -106,6 +106,8 @@ fun SettingsDialog(
     // Epic 4.1 (Task 4.1.2c): "Unlink folder" affordance — see FolderSyncSettings's own parameter
     // docs. Null onUnlinkHostDirectory hides the entry entirely.
     onUnlinkHostDirectory: (suspend () -> Unit)? = null,
+    // Desktop-only quick-capture hotkey (Story 1.4.2) — null hides GeneralSettings' row.
+    hotkeyComboLabel: String? = null,
 ) {
     if (visible) {
         Dialog(
@@ -149,7 +151,8 @@ fun SettingsDialog(
                             currentLanguage = currentLanguage,
                             onLanguageChange = onLanguageChange,
                             isLeftHanded = isLeftHanded,
-                            onLeftHandedChange = onLeftHandedChange
+                            onLeftHandedChange = onLeftHandedChange,
+                            hotkeyComboLabel = hotkeyComboLabel,
                         )
                         // web-local-folder-livesync Task 3.1.1c: no dedicated "Sync"
                         // category exists in this dialog, so the affordance lives here —

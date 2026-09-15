@@ -4,8 +4,10 @@
 
 package dev.stapler.stelekit.desktop
 
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import kotlinx.coroutines.CancellationException
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -15,12 +17,21 @@ import androidx.compose.ui.window.MenuBar
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.rememberWindowState
+import dev.stapler.stelekit.capture.CaptureController
+import dev.stapler.stelekit.capture.CapturePopupWindow
+import dev.stapler.stelekit.capture.CaptureSocketListener
+import dev.stapler.stelekit.capture.GlobalHotkeyListener
+import dev.stapler.stelekit.capture.JKeymasterHotkeyListener
+import dev.stapler.stelekit.capture.PendingCapturePoller
+import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.domain.UrlFetcherJvm
 import dev.stapler.stelekit.service.JvmMediaAttachmentService
 import dev.stapler.stelekit.git.JvmGitRepository
 import dev.stapler.stelekit.ui.StelekitApp
+import dev.stapler.stelekit.ui.StelekitAppCaptureDeps
 import dev.stapler.stelekit.ui.StelekitAppCoreServices
 import dev.stapler.stelekit.ui.StelekitAppDeps
+import dev.stapler.stelekit.ui.StelekitAppLifecycleHooks
 import dev.stapler.stelekit.ui.StelekitAppPlatformIntegrations
 import dev.stapler.stelekit.ui.theme.setSystemDarkTheme
 import dev.stapler.stelekit.platform.PlatformFileSystem
@@ -36,7 +47,18 @@ import io.opentelemetry.api.trace.Tracer
 import java.awt.KeyboardFocusManager
 import javax.swing.UIManager
 
-fun main() {
+fun main(args: Array<String>) {
+    // Headless CLI capture mode: try the socket fast path first (delivers immediately if
+    // SteleKit is already running), falling back to the pending-capture queue — reusing the
+    // same captureId so a lost ack can't double-record — and exit before any Compose/OTel/
+    // logging setup runs, so `stelekit --capture-text "..."` stays fast and side-effect-free
+    // (no window, no log file, no OpenTelemetry SDK spun up).
+    parseCaptureArgs(args)?.let { text ->
+        runHeadlessCapture(text)
+        println("Captured.")
+        return
+    }
+
     // Initialize file logging before anything else
     val fileLogSink = dev.stapler.stelekit.logging.FileLogSink()
     dev.stapler.stelekit.logging.LogManager.addSink(fileLogSink)
@@ -108,13 +130,24 @@ fun main() {
             OtelSpanRecorder(OtelProvider.getTracer("compose.navigation") as Tracer)
         }
 
+        // Desktop quick-capture: hotkey popup + cold-start poller + socket fast path, all
+        // owned for the whole process lifetime (see CaptureSurfaces below).
+        val captureSurfaces = rememberCaptureSurfaces(fileSystem)
+
         logger.info("Starting Desktop Application with graph: $graphPath")
         errorTracker.recordBreadcrumb("Graph path resolved: $graphPath", "SYSTEM")
 
         Window(
             onCloseRequest = {
                 logger.info("Application shutting down")
+                captureSurfaces.stopAll()
                 dev.stapler.stelekit.logging.LogManager.flush()
+                // Closing the main window exits the whole JVM anyway, so these stop() calls are
+                // for orderly shutdown (flushing logs, closing the socket file) rather than
+                // strictly required — but if background residency (a Tray icon) is ever added
+                // in a later phase, capture would keep working after window close. This is an
+                // accepted v1 scope cut, not a bug: see
+                // project_plans/desktop-quick-capture/decisions/ADR-002-v1-scope-cut-in-process-popup-only.md.
                 exitApplication()
             },
             state = windowState,
@@ -155,8 +188,72 @@ fun main() {
                         attachmentService = attachmentService,
                         gitRepository = gitRepository,
                     ),
+                    lifecycleHooks = StelekitAppLifecycleHooks(
+                        onGraphManagerReady = { gm -> captureSurfaces.attachGraphManager(gm) },
+                        onNotificationManagerReady = { nm ->
+                            captureSurfaces.controller.attachNotificationManager(nm)
+                        },
+                    ),
+                    captureDeps = StelekitAppCaptureDeps(
+                        hotkeyComboLabel = GlobalHotkeyListener.DEFAULT_COMBO_LABEL,
+                        hotkeyRegistrationFailure = captureSurfaces.hotkeyListener.registrationFailure,
+                    ),
                 ),
             )
         }
+
+        CapturePopupWindow(captureSurfaces.controller)
     }
+}
+
+/**
+ * Bundles the desktop quick-capture background surfaces (hotkey popup controller, cold-start
+ * pending-capture poller, Unix-domain-socket fast-path listener) so [main]'s own setup code
+ * doesn't drown in per-surface `remember`/`LaunchedEffect` boilerplate — this is purely an
+ * organizational grouping, not a new abstraction layer (each field is used directly).
+ *
+ * `internal` rather than `private` so [MainCaptureFlowTest] (jvmTest) can construct one with
+ * real components and exercise [attachGraphManager]/[stopAll] directly — `main()`'s own
+ * `application { }`/`Window { }` body isn't independently callable outside a real Compose
+ * window, so this class is the seam that lets the wiring be tested headlessly.
+ */
+internal class CaptureSurfaces(
+    val controller: CaptureController,
+    val hotkeyListener: JKeymasterHotkeyListener,
+    val poller: PendingCapturePoller,
+    val socketListener: CaptureSocketListener,
+) {
+    fun attachGraphManager(gm: GraphManager) {
+        controller.attachGraphManager(gm)
+        poller.attachGraphManager(gm)
+        socketListener.attachGraphManager(gm)
+    }
+
+    fun stopAll() {
+        controller.stop(hotkeyListener)
+        socketListener.stop()
+        poller.stop()
+    }
+}
+
+@Composable
+private fun rememberCaptureSurfaces(fileSystem: PlatformFileSystem): CaptureSurfaces {
+    val controller = remember(fileSystem) { CaptureController(fileSystem) }
+    val hotkeyListener = remember { JKeymasterHotkeyListener() }
+    // Cold-start drain of any pending-capture files left on disk (headless CLI captures, or a
+    // capture taken before the graph finished loading) — replayed through the same
+    // CaptureWriter chain the live popup uses, every 5s and once immediately on start.
+    val poller = remember(fileSystem) { PendingCapturePoller(fileSystem) }
+    // Unix-domain-socket fast path: a CLI capture delivered while SteleKit is already running
+    // skips the poller's up-to-5s latency entirely (see CaptureSocketClient).
+    val socketListener = remember(fileSystem) { CaptureSocketListener(fileSystem) }
+    val surfaces = remember(controller, hotkeyListener, poller, socketListener) {
+        CaptureSurfaces(controller, hotkeyListener, poller, socketListener)
+    }
+    LaunchedEffect(surfaces) {
+        controller.start(hotkeyListener)
+        poller.start()
+        socketListener.start()
+    }
+    return surfaces
 }

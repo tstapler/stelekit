@@ -7,6 +7,7 @@ package dev.stapler.stelekit.ui
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.background
+import dev.stapler.stelekit.capture.HotkeyRegistrationFailure
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Lock
@@ -274,6 +275,7 @@ fun StelekitApp(
     }
 
     val notificationManager = remember { NotificationManager() }
+    LaunchedEffect(notificationManager) { deps.lifecycleHooks.onNotificationManagerReady?.invoke(notificationManager) }
 
     // Shown when the user has explicitly removed their only graph (see GraphManager.removeGraph's
     // "last real graph" path) — checking graphsExplicitlyEmptied rather than activeGraphId == null
@@ -332,24 +334,66 @@ fun StelekitApp(
     }
 
     // Use key(graphId) to recreate ViewModels when graph changes
-    key(activeGraphId) {
-        GraphContent(
-            GraphContentDeps(
-                repos = repos,
-                fileSystem = fileSystem,
-                platformSettings = platformSettings,
-                graphManager = graphManager,
-                notificationManager = notificationManager,
-                onMemoryPressure = deps.lifecycleHooks.onMemoryPressure,
-                coreServices = deps.coreServices,
-                voiceConfig = deps.voiceConfig,
-                platformIntegrations = deps.platformIntegrations,
-                webSyncDeps = deps.webSyncDeps,
-                graphMergeService = graphMergeService,
+    Box(modifier = Modifier.fillMaxSize()) {
+        key(activeGraphId) {
+            GraphContent(
+                GraphContentDeps(
+                    repos = repos,
+                    fileSystem = fileSystem,
+                    platformSettings = platformSettings,
+                    graphManager = graphManager,
+                    notificationManager = notificationManager,
+                    onMemoryPressure = deps.lifecycleHooks.onMemoryPressure,
+                    coreServices = deps.coreServices,
+                    voiceConfig = deps.voiceConfig,
+                    platformIntegrations = deps.platformIntegrations,
+                    webSyncDeps = deps.webSyncDeps,
+                    graphMergeService = graphMergeService,
+                    hotkeyComboLabel = deps.captureDeps.hotkeyComboLabel,
+                )
             )
+        }
+
+        CaptureNoticesOverlay(platformSettings, deps.captureDeps)
+    }
+}
+
+/**
+ * Stories 1.4.2/1.4.3's two one-time notices, layered as an overlay over the main window content
+ * (never blocking or stealing focus — Nielsen #1/#9, `design/ux.md` Surfaces 2/3). A registration
+ * failure supersedes the first-run notice for the whole launch: [firstRunNoticeShown]'s persisted
+ * flag is only written when the notice is actually shown and dismissed, so it still shows
+ * normally on a later, successful-registration launch.
+ */
+@Composable
+private fun CaptureNoticesOverlay(platformSettings: Settings, captureDeps: StelekitAppCaptureDeps) {
+    val failureFlow = remember(captureDeps.hotkeyRegistrationFailure) {
+        captureDeps.hotkeyRegistrationFailure
+            ?: MutableStateFlow<HotkeyRegistrationFailure?>(null)
+    }
+    val hotkeyFailure by failureFlow.collectAsState()
+    var conflictNoticeDismissedThisSession by remember { mutableStateOf(false) }
+    var firstRunNoticeShown by remember {
+        mutableStateOf(platformSettings.getBoolean(CAPTURE_FIRST_RUN_NOTICE_KEY, false))
+    }
+
+    when {
+        hotkeyFailure != null && !conflictNoticeDismissedThisSession -> HotkeyConflictNotice(
+            failure = hotkeyFailure!!,
+            hotkeyCombo = captureDeps.hotkeyComboLabel,
+            onDismiss = { conflictNoticeDismissedThisSession = true },
+        )
+        !firstRunNoticeShown && hotkeyFailure == null -> FirstRunHotkeyNotice(
+            hotkeyCombo = captureDeps.hotkeyComboLabel,
+            onDismiss = {
+                platformSettings.putBoolean(CAPTURE_FIRST_RUN_NOTICE_KEY, true)
+                firstRunNoticeShown = true
+            },
         )
     }
 }
+
+private const val CAPTURE_FIRST_RUN_NOTICE_KEY = "capture.firstRunNoticeShown"
 
 /**
  * Composition root for a single active graph.
@@ -379,6 +423,7 @@ private fun GraphContent(deps: GraphContentDeps) {
     val gitRepository = deps.platformIntegrations.gitRepository
     val cryptoEngine = deps.platformIntegrations.cryptoEngine
     val attachmentService = deps.platformIntegrations.attachmentService
+    val hotkeyComboLabel = deps.hotkeyComboLabel
     val googleAuthManager = deps.platformIntegrations.googleAuthManager
     val requestCameraPermission = deps.platformIntegrations.requestCameraPermission
     val graphMoveQuiesceStrategy = deps.platformIntegrations.graphMoveQuiesceStrategy
@@ -2112,6 +2157,7 @@ private fun GraphContent(deps: GraphContentDeps) {
                                     fileSystem.requestDirectoryPickerNow()
                                 },
                                 onUnlinkHostDirectory = onUnlinkHostDirectory,
+                                hotkeyComboLabel = hotkeyComboLabel,
                             ),
                             gitSync = GitSyncDeps(
                                 gitSyncService = gitSyncService,
