@@ -49,6 +49,7 @@ private suspend fun renderViaWebView(source: String): MermaidRenderResult {
             val wv = WebView(SteleKitContext.context)
             webView = wv
             wv.settings.javaScriptEnabled = true
+            wv.settings.allowFileAccess = false
             wv.settings.allowFileAccessFromFileURLs = false
             wv.settings.allowUniversalAccessFromFileURLs = false
             wv.settings.allowContentAccess = false

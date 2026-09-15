@@ -121,7 +121,16 @@ open class MermaidJvmEngine {
 
     private fun buildContext(): Context {
         val ctx = Context.newBuilder("js")
-            .allowAllAccess(true)
+            // The evaluated JS is built by interpolating user-authored diagram text (renderSetupScript)
+            // into a script string — narrow this to only what mermaid.js/the shim actually need, not
+            // allowAllAccess(true)'s unrestricted host reflection/IO/process access, so a future escaping
+            // bug in that interpolation can't turn into unrestricted host access. HostAccess.EXPLICIT
+            // matches JavaBridge's own @HostAccess.Export annotations, which allowAllAccess(true) made
+            // meaningless (that annotation only restricts anything under EXPLICIT).
+            .allowHostAccess(HostAccess.EXPLICIT)
+            .allowIO(false)
+            .allowCreateProcess(false)
+            .allowHostClassLookup { false }
             // Stock JDK (not a full GraalVM install) — js-community runs interpreter-only,
             // which is fine for occasional diagram renders; this just silences the perf warning.
             .option("engine.WarnInterpreterOnly", "false")
