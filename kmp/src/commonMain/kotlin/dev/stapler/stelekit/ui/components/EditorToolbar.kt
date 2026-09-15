@@ -6,6 +6,11 @@ import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.ui.screens.SearchViewModel
 import dev.stapler.stelekit.ui.state.BlockStateManager
 
+// liveSelectionStart must win: editingCursorIndex is stale once set by a structural op
+// (merge/split/indent) and never cleared, so preferring it stranded tag inserts at old positions.
+internal fun resolveLinkPickerCursorIndex(editingCursorIndex: Int?, liveSelectionStart: Int?): Int? =
+    liveSelectionStart ?: editingCursorIndex
+
 /**
  * Hosts [MobileBlockToolbar] and its link-picker dialog with full wiring to [BlockStateManager].
  *
@@ -125,7 +130,7 @@ fun EditorToolbar(
                 val curBlockUuid = editingBlockUuid
                 val sel = blockStateManager.editingSelectionRange.value
                 linkPickerBlockUuid = curBlockUuid
-                linkPickerCursorIndex = editingCursorIndex ?: sel?.first
+                linkPickerCursorIndex = resolveLinkPickerCursorIndex(editingCursorIndex, sel?.first)
                 linkPickerSelectionRange = sel
                 linkPickerInitialQuery = if (sel != null && sel.first < sel.last && curBlockUuid != null) {
                     // Same click-time-read fix as onSuggestTags above (Task B.1.1b) — read

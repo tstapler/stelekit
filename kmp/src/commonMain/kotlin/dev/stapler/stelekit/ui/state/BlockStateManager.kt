@@ -171,6 +171,32 @@ class BlockStateManager(
     private val _dirtyBlocks = MutableStateFlow<Map<String, Long>>(emptyMap())
 
     /**
+     * Number of [applyContentChange] content writes issued for a block whose [BlockUpdateEvent.BlockContentPatched]
+     * confirmation hasn't arrived yet (or, on failure, hasn't been accounted for directly).
+     *
+     * Needed because [BlockUpdateEvent.BlockContentPatched] carries no version — the write-actor's
+     * DB row has its own independent `version = version + 1` counter (see SteleDatabase.sq's
+     * updateBlockContent), unrelated to the UI-local keystroke version used for [_dirtyBlocks]. If
+     * [applyContentPatch] cleared dirty and applied the confirmation's content the instant *a*
+     * write confirmed, a confirmation for an *older* keystroke arriving after a *newer* keystroke's
+     * optimistic update landed would silently revert already-typed text — the root cause of the
+     * Android "text jumps back and erases words while typing" bug. Only clear dirty once every
+     * issued write has been accounted for, and never apply the confirmation's content: [_blocks]
+     * already holds the correct, possibly-newer, optimistic content.
+     */
+    private val _pendingContentWriteCounts = MutableStateFlow<Map<String, Int>>(emptyMap())
+
+    /** Returns the remaining pending-write count for [uuidStr] after decrementing by one. */
+    private fun decrementPendingContentWrite(uuidStr: String): Int {
+        var remaining = 0
+        _pendingContentWriteCounts.update { counts ->
+            remaining = (counts[uuidStr] ?: 1) - 1
+            if (remaining <= 0) counts - uuidStr else counts + (uuidStr to remaining)
+        }
+        return remaining
+    }
+
+    /**
      * UUIDs of pages that have at least one block with unsaved local edits.
      * Used by [dev.stapler.stelekit.db.GraphLoader] to protect only truly-dirty pages
      * from auto-reload when an external file change is detected — open-but-unedited pages
@@ -600,7 +626,7 @@ class BlockStateManager(
                                 }
                                 is BlockUpdateEvent.BlockContentPatched -> {
                                     if (event.pageUuid != pageUuid) return@collect
-                                    applyContentPatch(pageUuidStr, event.blockUuid, event.newContent)
+                                    applyContentPatch(event.blockUuid)
                                 }
                                 is BlockUpdateEvent.BlockReplaced -> {
                                     if (event.pageUuid != pageUuid) return@collect
@@ -701,20 +727,20 @@ class BlockStateManager(
     // Apply dirty-set semantics: a block with a pending unconfirmed local edit (dirtyVersion >
     // block.version) keeps its local content; confirmed or clean blocks accept the patched value.
 
-    private fun applyContentPatch(pageUuidStr: String, blockUuid: BlockUuid, newContent: String) {
-        _blocks.update { current ->
-            val pageBlocks = current[pageUuidStr] ?: return@update current
-            val updated = pageBlocks.map { block ->
-                if (block.uuid != blockUuid) return@map block
-                val dirtyVersion = _dirtyBlocks.value[block.uuid.value]
-                if (dirtyVersion != null && dirtyVersion > block.version) block
-                else {
-                    _dirtyBlocks.update { it - block.uuid.value }
-                    block.copy(content = newContent)
-                }
-            }
-            current + (pageUuidStr to updated)
-        }
+    /**
+     * Confirmation that a content write issued by [applyContentChange] has landed in the DB.
+     *
+     * Deliberately does NOT apply the event's content to [_blocks]: the block's DB row has its own
+     * independent version counter (`version = version + 1` in SQL), so this confirmation cannot
+     * be matched against the UI-local keystroke version that [_dirtyBlocks] tracks, and a
+     * confirmation for an older keystroke can arrive after a newer keystroke's optimistic update
+     * already landed. [_blocks] already holds the correct (possibly newer) optimistic content;
+     * this only clears the dirty flag, and only once every content write issued for the block has
+     * been confirmed (or otherwise accounted for — see [decrementPendingContentWrite]'s callers).
+     */
+    private fun applyContentPatch(blockUuid: BlockUuid) {
+        if (decrementPendingContentWrite(blockUuid.value) > 0) return
+        _dirtyBlocks.update { it - blockUuid.value }
     }
 
     private fun applyBlockReplace(pageUuidStr: String, incoming: Block) {
@@ -809,7 +835,10 @@ class BlockStateManager(
     // the per-keystroke onContentChange path in PageView.kt / JournalsView.kt — so a user typing
     // while one of these helpers is landing can still race with it. Closing that gap requires
     // wrapping the keystroke path in the same mutex and has its own latency/UX tradeoffs; it is
-    // tracked as follow-up work, not addressed here.
+    // tracked as follow-up work, not addressed here. applyContentChange's version guard (below)
+    // prevents the specific symptom this caused — a stale write silently reverting already-typed
+    // text — by refusing to apply an update whose version is behind what's already stored, but it
+    // does not merge concurrent edits, so a race still drops one side's content.
     private val contentMutationMutexGuard = Mutex()
     private val contentMutationMutexes = mutableMapOf<String, Mutex>()
 
@@ -1007,14 +1036,25 @@ class BlockStateManager(
                 return
             }
 
-        // Mark dirty BEFORE saving so the observer merge keeps our version
-        _dirtyBlocks.update { it + (uuidStr to version) }
+        // Mark dirty BEFORE saving so the observer merge keeps our version. maxOf guards against
+        // out-of-order keystroke coroutines: each keystroke's updateBlockContent runs in its own
+        // scope.launch on a multi-threaded dispatcher, so a later keystroke's coroutine can reach
+        // this line before an earlier one's — most visible on Android where the IME fires several
+        // onValueChange calls per composition update. Without the guard the dirty marker (and the
+        // _blocks entry below) can regress to an older version, which is what surfaces as typed
+        // text jumping back / getting erased mid-edit.
+        _dirtyBlocks.update { it + (uuidStr to maxOf(it[uuidStr] ?: 0L, version)) }
+        _pendingContentWriteCounts.update { it + (uuidStr to ((it[uuidStr] ?: 0) + 1)) }
 
         val t0 = dev.stapler.stelekit.performance.HistogramWriter.epochMs()
         val writeResult = writeContentOnly(blockUuid, content, block.pageUuid)
         histogramWriter?.record("editor_input", dev.stapler.stelekit.performance.HistogramWriter.epochMs() - t0)
         if (writeResult.isLeft()) {
             logger.warn("applyContentChange: DB write failed for $uuidStr — content lives in-memory only")
+            // No BlockContentPatched confirmation will arrive for a failed write (the actor only
+            // emits it on success) — account for it directly so the pending-write count doesn't
+            // get stuck waiting for a confirmation that will never come.
+            decrementPendingContentWrite(uuidStr)
         }
 
         val updated = block.copy(content = content, version = version)
@@ -1022,7 +1062,9 @@ class BlockStateManager(
             val newBlocks = current.toMutableMap()
             val pageBlocks = newBlocks[block.pageUuid.value]?.toMutableList() ?: return@update current
             val idx = pageBlocks.indexOfFirst { it.uuid == blockUuid }
-            if (idx >= 0) pageBlocks[idx] = updated
+            // Same out-of-order guard as above: never let a stale (lower-version) keystroke
+            // coroutine overwrite content a later keystroke already applied.
+            if (idx >= 0 && pageBlocks[idx].version <= version) pageBlocks[idx] = updated
             newBlocks[block.pageUuid.value] = pageBlocks
             newBlocks
         }
