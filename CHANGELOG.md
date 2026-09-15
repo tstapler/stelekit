@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.84.0](https://github.com/tstapler/stelekit/compare/v0.83.0...v0.84.0) (2026-09-15)
+
+
+### Features
+
+* app-owned storage picker + relocate/link between storage backends ([#327](https://github.com/tstapler/stelekit/issues/327)) ([6a3bbbf](https://github.com/tstapler/stelekit/commit/6a3bbbf0d19f0307b10f68ee69a9bb4b39c8eb8c))
+
 ## [0.83.0](https://github.com/tstapler/stelekit/compare/v0.82.0...v0.83.0) (2026-09-12)
 
 
