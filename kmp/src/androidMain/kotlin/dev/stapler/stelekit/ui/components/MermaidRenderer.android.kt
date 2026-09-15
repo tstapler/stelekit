@@ -7,6 +7,7 @@ import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.platform.SteleKitContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
@@ -66,6 +67,10 @@ private suspend fun renderViaWebView(source: String): MermaidRenderResult {
         return deferred.await()
     } finally {
         bridge.close()
-        withContext(Dispatchers.Main) { webView?.destroy() }
+        // On the timeout path this `finally` runs while the coroutine's Job is already
+        // cancelling — an ordinary `withContext` would throw CancellationException immediately
+        // without running its body, leaking the WebView + JS bridge on every timeout. +
+        // NonCancellable forces the destroy() call to actually happen.
+        withContext(Dispatchers.Main + NonCancellable) { webView?.destroy() }
     }
 }

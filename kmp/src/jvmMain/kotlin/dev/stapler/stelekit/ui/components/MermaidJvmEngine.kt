@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.ui.components
 
+import dev.stapler.stelekit.cache.SteleLruCache
 import java.awt.Font
 import java.awt.Graphics2D
 import java.awt.image.BufferedImage
@@ -53,6 +54,24 @@ open class MermaidJvmEngine {
         globalThis.CSSStyleSheet = CSSStyleSheet;
         if (!document.adoptedStyleSheets) { document.adoptedStyleSheets = []; }
     """.trimIndent()
+
+    /**
+     * Force-interrupts and frees the underlying GraalJS [Context], for use when a timed-out
+     * [render] call has left it permanently wedged (see [MermaidEngineActor] — this engine is
+     * about to be discarded and replaced). `Context.close(true)` is GraalJS's documented API for
+     * this: it cancels the still-running call on its own thread and blocks until that interrupt
+     * lands, so it can itself throw or take a while — caught here so the caller's engine swap
+     * always proceeds regardless.
+     */
+    fun forceClose() {
+        val ctx = context ?: return
+        context = null
+        try {
+            ctx.close(true)
+        } catch (e: Throwable) {
+            System.err.println("[mermaid-js] forceClose failed: ${e.message}")
+        }
+    }
 
     /** Renders [source] to an SVG string. Wrapped per this repo's native-load-failure rule (catch Throwable). */
     open fun render(source: String): String {
@@ -197,7 +216,9 @@ open class MermaidJvmEngine {
     class JavaBridge {
         private val measureImage = BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB)
         private val measureGraphics: Graphics2D = measureImage.createGraphics()
-        private val bboxCache = LinkedHashMap<String, String>()
+        // Bounded like `mermaidRenderCache` (MermaidCache.kt) — one bbox string per distinct SVG
+        // fragment could otherwise grow unboundedly for the engine's lifetime.
+        private val bboxCache = SteleLruCache<String, String>(maxWeight = 200)
         private var svgDocumentFactory: SAXSVGDocumentFactory? = runCatching {
             SAXSVGDocumentFactory(XMLResourceDescriptor.getXMLParserClassName())
         }.getOrNull()
@@ -232,7 +253,7 @@ open class MermaidJvmEngine {
         fun computeSvgBBox(svgFragment: String?): String {
             if (svgFragment.isNullOrEmpty()) return ""
             val factory = svgDocumentFactory ?: return ""
-            bboxCache[svgFragment]?.let { return it }
+            bboxCache.get(svgFragment)?.let { return it }
             return try {
                 val wrapped = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"4000\" height=\"4000\">" +
                     sanitizeForBatik(svgFragment) + "</svg>"
@@ -245,7 +266,7 @@ open class MermaidJvmEngine {
                         ""
                     } else {
                         "${round2(bounds.x)},${round2(bounds.y)},${round2(bounds.width)},${round2(bounds.height)}"
-                            .also { bboxCache[svgFragment] = it }
+                            .also { bboxCache.put(svgFragment, it) }
                     }
                 } finally {
                     bridgeContext.dispose()

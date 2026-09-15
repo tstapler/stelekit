@@ -54,5 +54,15 @@ class MermaidJvmEngineTest {
         threads.forEach { it.start() }
         threads.forEach { it.join() }
         println("SPIKE concurrent-access errors: ${errors.map { it::class.simpleName + ": " + it.message }}")
+
+        assertTrue(errors.isNotEmpty(), "expected concurrent multi-thread access to produce at least one error")
+        // MermaidJvmEngine.render() wraps every non-MermaidEngineException Throwable (including
+        // GraalJS's own IllegalStateException) in a MermaidEngineException — so the underlying
+        // IllegalStateException is asserted for either directly or as the wrapper's cause.
+        assertTrue(
+            errors.any { it is IllegalStateException || it.cause is IllegalStateException },
+            "expected an IllegalStateException (GraalJS's 'Multi threaded access requested'), " +
+                "directly or wrapped, got: ${errors.map { it::class.simpleName + ": " + it.message }}",
+        )
     }
 }

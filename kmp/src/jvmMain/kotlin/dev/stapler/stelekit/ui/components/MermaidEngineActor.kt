@@ -58,6 +58,10 @@ class MermaidEngineActor(
             withContext(scope.coroutineContext) {
                 val result = renderMermaidWith(engine, key)
                 if (result is MermaidRenderResult.Failed && result.reason == MERMAID_TIMEOUT_REASON) {
+                    // The wedged Context must be force-closed before it's dropped, or its native
+                    // GraalJS/Truffle state leaks for the rest of the process's life (CRITICAL —
+                    // see MermaidEngineActor.kt:59-62 in the PR review).
+                    engine.forceClose()
                     engine = newEngine()
                 }
                 result

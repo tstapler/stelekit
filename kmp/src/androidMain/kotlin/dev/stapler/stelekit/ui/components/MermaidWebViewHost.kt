@@ -3,8 +3,10 @@ package dev.stapler.stelekit.ui.components
 import android.annotation.SuppressLint
 import android.view.MotionEvent
 import android.webkit.WebView
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 
@@ -16,8 +18,12 @@ import androidx.compose.ui.viewinterop.AndroidView
  */
 @Composable
 fun MermaidWebViewHost(result: MermaidRenderResult.Rendered, modifier: Modifier = Modifier) {
+    // A plain fillMaxWidth() AndroidView has no height signal in an unbounded-height parent (e.g.
+    // the block list's Column) and measures at zero height — derive one from the SVG's own
+    // viewBox, same fix as the JVM Skia canvas (MermaidSvgCanvas.kt).
+    val ratio = remember(result.svg) { mermaidSvgAspectRatio(result.svg) }
     AndroidView(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth().aspectRatio(ratio),
         factory = { context -> WebView(context).also(::configureMermaidWebViewForHosting) },
         update = { webView -> webView.loadMermaidSvg(result.svg) },
     )
