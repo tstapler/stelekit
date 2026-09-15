@@ -5,6 +5,8 @@
 package dev.stapler.stelekit.db
 
 import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
 import dev.stapler.stelekit.domain.CaptureEnrichmentCoordinator
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.GitAuth
@@ -26,6 +28,7 @@ import dev.stapler.stelekit.model.DEMO_GRAPH_ID
 import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.GraphInfo
 import dev.stapler.stelekit.model.GraphRegistry
+import dev.stapler.stelekit.model.StorageLocation
 import dev.stapler.stelekit.vault.VaultManager
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.Settings
@@ -79,7 +82,7 @@ class GraphManager(
     /** Awaited before any driver is created — lets the Application flush write-behind pages
      *  on a background thread while GraphManager initialization proceeds. */
     private val preFlightJob: Deferred<Unit>? = null,
-) {
+) : StorageLocationStore {
     private val coroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val logger = Logger("GraphManager")
     private val json = Json { ignoreUnknownKeys = true }
@@ -117,6 +120,19 @@ class GraphManager(
     // Track active coroutines for cleanup during graph switches
     private val activeGraphJobs = mutableMapOf<GraphId, CoroutineScope>()
 
+    // Locations passed to addGraph() before that graph's own database is open (addGraph() runs
+    // before the caller's own switchGraph() call reopens the driver — see onGraphLocationDetermined).
+    // Flushed by switchGraph()'s init block once a writeActor exists for the graph, and evicted by
+    // removeGraph() (see evictPendingStorageLocationFor) if the graph is removed before ever being
+    // flushed — otherwise the entry leaks forever, and a later re-add of the same path (same
+    // GraphId, since GraphId = sha256(path)) would replay a write meant for the removed instance.
+    // onGraphLocationDetermined is callable from any dispatcher, and the flush (switchGraph, on
+    // PlatformDispatcher.IO) and evict (removeGraph, dispatched onto coroutineScope) sites run on
+    // different coroutines too — pendingStorageLocationsMutex guards every read/write of this map,
+    // mirroring coordinatorMutex's guard on coordinatorFor below.
+    private val pendingStorageLocationsMutex = Mutex()
+    private val pendingStorageLocations = mutableMapOf<GraphId, StorageLocation>()
+
     // Memoized per-graph CaptureEnrichmentCoordinator construction (Epic 1.2). coordinatorMutex
     // guards only the cache read/insert below, never the Deferred.await() — see
     // getOrCreateEnrichmentCoordinator().
@@ -145,6 +161,22 @@ class GraphManager(
             coordinatorMutex.withLock {
                 if (coordinatorFor?.first == graphId) coordinatorFor = null
             }
+        }
+    }
+
+    /**
+     * Removes any not-yet-flushed [StorageLocation] queued in [pendingStorageLocations] for
+     * [graphId] — called from [removeGraph] so a graph removed before [switchGraph] ever ran its
+     * flush block doesn't leak the entry, and a subsequent re-add of the same path (same
+     * [GraphId]) doesn't have a stale queued write silently applied to the new instance.
+     *
+     * Dispatched on [coroutineScope] (fire-and-forget) rather than acquired synchronously, for the
+     * same reason as [evictCoordinatorFor]: [removeGraph] is not `suspend`, and a blocking acquire
+     * is not safe on wasmJs.
+     */
+    private fun evictPendingStorageLocationFor(graphId: GraphId) {
+        coroutineScope.launch {
+            pendingStorageLocationsMutex.withLock { pendingStorageLocations.remove(graphId) }
         }
     }
 
@@ -329,7 +361,7 @@ class GraphManager(
     fun graphIdFromPath(path: String): GraphId =
         GraphId(ContentHasher.sha256(path).take(16))
 
-    suspend fun addGraph(path: String): GraphId {
+    suspend fun addGraph(path: String, location: StorageLocation? = null): GraphId {
         // Use expanded path for consistent ID generation
         val expandedPath = fileSystem.expandTilde(path)
         val graphId = graphIdFromPath(expandedPath)
@@ -360,6 +392,12 @@ class GraphManager(
             )
             _graphRegistry.value = updated
             saveRegistry()
+        }
+
+        if (location != null) {
+            onGraphLocationDetermined(graphId.value, location).onLeft {
+                logger.warn("addGraph: failed to persist storage location for graph $graphId: ${it::class.simpleName}")
+            }
         }
 
         // Fire-and-forget git detection; updates registry when complete
@@ -406,9 +444,14 @@ class GraphManager(
         localPath: String,
         auth: GitAuth,
         onProgress: (String) -> Unit,
+        // Story 2.2.2: the destination StorageLocation resolved by UnifiedLocationPicker, so the
+        // cloned graph's storage_locations row is written at creation time instead of waiting for
+        // a later relocate/link flow to lazily backfill it. Default null preserves every existing
+        // caller's behavior unchanged.
+        location: StorageLocation? = null,
     ): Either<DomainError.GitError, GraphId> {
         val cloneResult = gitRepository.clone(url, localPath, auth, onProgress)
-        return cloneResult.map { addGraph(localPath) }
+        return cloneResult.map { addGraph(localPath, location) }
     }
 
     /**
@@ -417,8 +460,13 @@ class GraphManager(
      * Shared by [switchGraph] (tearing down the outgoing graph before opening the next one) and
      * [removeGraph] (tearing down the last graph with nothing to open next), so the two copies
      * of this sequence can't silently drift apart.
+     *
+     * `internal` (Story 3.1.5, Task 3.1.5c) so `GraphRelocationCoordinator` can reuse this exact
+     * close mechanism directly instead of inventing a second one — it is the one caller that
+     * awaits the returned factory's `close()` itself, synchronously, rather than deferring the
+     * close to a background coroutine the way [switchGraph]/[removeGraph] do below.
      */
-    private fun tearDownActiveGraphResources(): dev.stapler.stelekit.repository.RepositoryFactory? {
+    internal fun tearDownActiveGraphResources(): dev.stapler.stelekit.repository.RepositoryFactory? {
         _activeGitSyncService.value?.shutdown()
         _activeGitSyncService.value = null
         _activeVaultCredentialStore.value = null
@@ -430,10 +478,19 @@ class GraphManager(
         return factoryToClose
     }
 
+    /**
+     * Unregisters [id] from the graph registry. Always clears its queued
+     * [pendingStorageLocations] entry, if any. Its `storage_locations` DB row is deleted too, but
+     * only on the path where [id] is the sole active graph being torn down — a non-active graph's
+     * per-graph database isn't open at removal time (see [onGraphLocationDetermined]'s KDoc), so
+     * deleting that row would require briefly opening a database this method has no reachable
+     * connection to; that gap is unaddressed here.
+     */
     fun removeGraph(id: GraphId): Boolean {
         // Cancel any active coroutines for this graph
         activeGraphJobs.remove(id)?.cancel()
         evictCoordinatorFor(id)
+        evictPendingStorageLocationFor(id)
 
         val registry = _graphRegistry.value
         val graphIndex = registry.graphs.indexOfFirst { it.id == id }
@@ -457,15 +514,27 @@ class GraphManager(
             if (!isOnlyRealGraph) return false
 
             _graphsExplicitlyEmptied.value = true
+            // storage_locations lives in each graph's own per-graph database file (see
+            // onGraphLocationDetermined's KDoc) — only reachable here because this is the active
+            // graph and tearDownActiveGraphResources() hasn't nulled currentFactory/writeActor
+            // yet. Capture them first so the row can be deleted before the factory closes,
+            // preventing a later re-add of the same path (same GraphId = sha256(path)) from
+            // inheriting this stale/revoked location. A non-active graph's database isn't open at
+            // removal time, so that case isn't covered by this call — see the removeGraph() KDoc.
+            //
+            // Gated on defaultBackend == SQLDELIGHT, mirroring switchGraph()'s identical guard on
+            // its own storage_locations write below: currentFactory is a RepositoryFactoryImpl
+            // and writeActor is non-null for EVERY backend (see RepositoryFactoryImpl.
+            // createRepositorySet — the actor is constructed whenever a scope is passed, backend
+            // notwithstanding), but factory.steleDatabase() lazily opens a real SQLite
+            // connection and runs MigrationRunner on first access — which must never happen for
+            // an IN_MEMORY-backend graph.
+            val factoryForDelete = (currentFactory as? dev.stapler.stelekit.repository.RepositoryFactoryImpl)
+                ?.takeIf { defaultBackend == GraphBackend.SQLDELIGHT }
+            val actorForDelete = _activeRepositorySet.value?.writeActor
             val factoryToClose = tearDownActiveGraphResources()
             coroutineScope.launch(PlatformDispatcher.IO) {
-                try {
-                    factoryToClose?.close()
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    logger.error("Failed to close graph's factory while removing the last graph $id", e)
-                }
+                deleteStorageLocationRowThenCloseFactory(id, factoryForDelete, actorForDelete, factoryToClose)
             }
         }
 
@@ -600,23 +669,17 @@ class GraphManager(
     private fun moveGraphFilesAndCredentials(oldId: GraphId, newId: GraphId): Boolean {
         val oldDbPath = driverFactory.getDatabaseUrl(oldId.value).substringAfter("jdbc:sqlite:")
         val newDbPath = driverFactory.getDatabaseUrl(newId.value).substringAfter("jdbc:sqlite:")
-        var dbMoved = true
         if (fileSystem.fileExists(oldDbPath)) {
-            dbMoved = fileSystem.renameFile(oldDbPath, newDbPath)
-            if (dbMoved) {
-                val walMoved = renameSidecarIfPresent("$oldDbPath-wal", "$newDbPath-wal")
-                val shmMoved = walMoved && renameSidecarIfPresent("$oldDbPath-shm", "$newDbPath-shm")
-                if (!shmMoved) {
-                    // Roll back everything that succeeded so far so the registry's old path
-                    // stays valid — reporting failure must not strand the DB or a sidecar at a
-                    // path nothing references, which would otherwise still risk losing WAL data.
-                    if (walMoved) fileSystem.renameFile("$newDbPath-wal", "$oldDbPath-wal")
-                    fileSystem.renameFile(newDbPath, oldDbPath)
-                    dbMoved = false
-                }
-            }
+            val moved = AtomicFileRelocationStep.relocate(
+                fileSystem,
+                listOf(
+                    FileMove(oldDbPath, newDbPath),
+                    FileMove("$oldDbPath-wal", "$newDbPath-wal", optional = true),
+                    FileMove("$oldDbPath-shm", "$newDbPath-shm", optional = true),
+                ),
+            )
+            if (moved.isLeft()) return false
         }
-        if (!dbMoved) return false
 
         try {
             val oldTelemetryPath = driverFactory.getTelemetryDatabaseUrl(oldId.value).substringAfter("jdbc:sqlite:")
@@ -666,8 +729,16 @@ class GraphManager(
     /**
      * Switch to a different graph.
      * Closes the current database connection and opens a new one for the target graph.
+     *
+     * @param forceReinit Bypasses the idempotency guard below even when [id] is already the
+     *   active graph (Story 3.1.5, Task 3.1.5b). `GraphRelocationCoordinator` is the only caller
+     *   that ever passes `true` — a relocate keeps the same [GraphId], so without this the guard
+     *   would treat the coordinator's post-relocate reopen as a no-op "already active" switch and
+     *   never actually reopen the connection to the just-moved files. Every other call site keeps
+     *   the default `false`; the guard's racing-`LaunchedEffect` protection (see its own comment
+     *   below) is unchanged for ordinary switches.
      */
-    fun switchGraph(id: GraphId) {
+    fun switchGraph(id: GraphId, forceReinit: Boolean = false) {
         val registry = _graphRegistry.value
         val graphInfo = registry.graphs.firstOrNull { it.id == id }
         if (graphInfo == null) return
@@ -680,7 +751,9 @@ class GraphManager(
         // init is slow, so the LaunchedEffect arrives while _activeRepositorySet is still null,
         // and checking only (a) lets the second call cancel the first init scope → crash.
         val currentGraphId = registry.activeGraphId
-        if (currentGraphId == id && (_activeRepositorySet.value != null || activeGraphJobs.containsKey(id))) return
+        val isAlreadyTargetGraph = currentGraphId == id && !forceReinit
+        val hasReadyOrInitializingRepositories = _activeRepositorySet.value != null || activeGraphJobs.containsKey(id)
+        if (isAlreadyTargetGraph && hasReadyOrInitializingRepositories) return
         currentGraphId?.let {
             activeGraphJobs.remove(it)?.cancel()
             evictCoordinatorFor(it)
@@ -790,6 +863,23 @@ class GraphManager(
                             logger.warn("MigrationRunner: concurrent run detected for graph $id — backing off", e)
                         }
                         logger.info("init[${elapsed()}ms]: content migrations done")
+                    }
+                }
+                // Flush any StorageLocation queued by addGraph() before this graph's driver was
+                // open (see onGraphLocationDetermined's KDoc). Only pop the queued entry once the
+                // write actually runs — popping unconditionally when writeActor is still null
+                // (e.g. a non-SQLDELIGHT backend) would silently drop the location forever. The
+                // whole check-write-remove sequence runs under one lock acquisition so a
+                // concurrent onGraphLocationDetermined() call can't queue a fresher location
+                // between this read and the remove() below, which would otherwise drop it.
+                pendingStorageLocationsMutex.withLock {
+                    pendingStorageLocations[id]?.let { location ->
+                        repoSet.writeActor?.let { actor ->
+                            writeStorageLocation(factory, actor, id.value, location).onLeft {
+                                logger.warn("switchGraph: failed to flush pending storage location for graph $id: ${it::class.simpleName}")
+                            }
+                            pendingStorageLocations.remove(id)
+                        }
                     }
                 }
                 repoSet.spanEmitter?.emit("db.init", t0)
@@ -1017,6 +1107,151 @@ class GraphManager(
     }
 
     /**
+     * Overwrites [id]'s registered [GraphInfo.path] in place, preserving [GraphId] and every other
+     * registry field — no file I/O, no id re-keying. This is the narrow complement
+     * [GraphRelocationCoordinator] calls (alongside [onGraphLocationDetermined]) once its own
+     * copy+verify+atomic-move has already physically placed the graph's content at [newPath] and
+     * the driver has been reopened and confirmed against that new location.
+     *
+     * Deliberately distinct from [updateGraphPath]: that function re-derives a *new* [GraphId]
+     * from the given path (since [GraphId] is `sha256(path)`) and re-keys the on-disk
+     * database/telemetry/credential files to match — the mechanism behind the legacy, now-removed
+     * freeform "Graph path" text field. A relocate keeps the same [GraphId] across a move (see
+     * [GraphRelocationCoordinator]'s own doc), so reusing [updateGraphPath] here would both corrupt
+     * that invariant and redundantly re-move files the coordinator already moved itself.
+     */
+    internal fun updateGraphContentPath(id: GraphId, newPath: String) {
+        _graphRegistry.update { registry ->
+            val idx = registry.graphs.indexOfFirst { it.id == id }
+            if (idx == -1) return@update registry
+            val updatedGraphs = registry.graphs.toMutableList()
+            updatedGraphs[idx] = updatedGraphs[idx].copy(path = newPath)
+            registry.copy(graphs = updatedGraphs)
+        }
+        saveRegistry()
+    }
+
+    /**
+     * Persists [location] as [graphId]'s `storage_locations` row — the single place this table
+     * is ever written from a creation or relocate flow (ADR-001, Story 1.1.3). If [graphId] isn't
+     * the currently active graph (its driver may not be open yet — e.g. called from [addGraph]
+     * before the caller's own [switchGraph]), the write is queued in [pendingStorageLocations]
+     * and flushed by [switchGraph]'s init block once that graph's writeActor exists.
+     */
+    override suspend fun onGraphLocationDetermined(graphId: String, location: StorageLocation): Either<DomainError, Unit> {
+        val id = GraphId(graphId)
+        val factory = currentFactory as? dev.stapler.stelekit.repository.RepositoryFactoryImpl
+        val actor = _activeRepositorySet.value?.writeActor
+        return if (factory != null && actor != null && getActiveGraphId() == id) {
+            writeStorageLocation(factory, actor, graphId, location)
+        } else {
+            pendingStorageLocationsMutex.withLock { pendingStorageLocations[id] = location }
+            Unit.right()
+        }
+    }
+
+    /**
+     * Reads [graphId]'s persisted `storage_locations` row, if one exists — the read half of
+     * [StorageLocationResolver]'s short-circuit (Story 1.1.4): a caller must never re-derive a
+     * location that's already on record. Returns null both when no row exists and when [graphId]
+     * isn't the currently active graph, mirroring [onGraphLocationDetermined]'s scope (only the
+     * active graph's database is open at any given moment).
+     */
+    override suspend fun getStorageLocation(graphId: String): StorageLocation? {
+        val factory = currentFactory as? dev.stapler.stelekit.repository.RepositoryFactoryImpl ?: return null
+        if (getActiveGraphId() != GraphId(graphId)) return null
+        return withContext(PlatformDispatcher.DB) {
+            try {
+                factory.steleDatabase().steleDatabaseQueries.selectStorageLocation(graphId)
+                    .executeAsOneOrNull()
+                    ?.toStorageLocationModel()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.warn("getStorageLocation: failed to read storage_locations row for graph $graphId", e)
+                null
+            }
+        }
+    }
+
+    private suspend fun writeStorageLocation(
+        factory: dev.stapler.stelekit.repository.RepositoryFactoryImpl,
+        actor: DatabaseWriteActor,
+        graphId: String,
+        location: StorageLocation,
+    ): Either<DomainError, Unit> {
+        val restricted = RestrictedDatabaseQueries(factory.steleDatabase().steleDatabaseQueries)
+        val row = location.toStorageLocationRow()
+        return actor.execute(DatabaseWriteActor.Priority.HIGH) {
+            try {
+                @OptIn(DirectSqlWrite::class)
+                restricted.upsertStorageLocation(
+                    graph_id = graphId,
+                    kind = row.kind,
+                    tree_uri = row.treeUri,
+                    real_path = row.realPath,
+                    display_name = row.displayName,
+                    updated_at_epoch_ms = Clock.System.now().toEpochMilliseconds(),
+                )
+                Unit.right()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
+            }
+        }
+    }
+
+    /**
+     * Deletes [graphId]'s `storage_locations` row (best-effort, logged on failure — never thrown)
+     * via [factoryForDelete]/[actorForDelete] if both are non-null, then closes [factoryToClose].
+     * The delete always runs to completion before the close, so it can never race a driver
+     * shutdown out from under it. Extracted from [removeGraph]'s only-real-graph teardown path.
+     */
+    private suspend fun deleteStorageLocationRowThenCloseFactory(
+        graphId: GraphId,
+        factoryForDelete: dev.stapler.stelekit.repository.RepositoryFactoryImpl?,
+        actorForDelete: DatabaseWriteActor?,
+        factoryToClose: dev.stapler.stelekit.repository.RepositoryFactory?,
+    ) {
+        if (factoryForDelete != null && actorForDelete != null) {
+            deleteStorageLocationRow(factoryForDelete, actorForDelete, graphId.value).onLeft {
+                logger.warn("removeGraph: failed to delete storage_locations row for graph $graphId: ${it::class.simpleName}")
+            }
+        }
+        try {
+            factoryToClose?.close()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.error("Failed to close graph's factory while removing the last graph $graphId", e)
+        }
+    }
+
+    /**
+     * Deletes [graphId]'s `storage_locations` row, mirroring [writeStorageLocation]'s
+     * actor-routed/`@DirectSqlWrite`-gated write pattern (ADR-001, Story 1.1.3).
+     */
+    private suspend fun deleteStorageLocationRow(
+        factory: dev.stapler.stelekit.repository.RepositoryFactoryImpl,
+        actor: DatabaseWriteActor,
+        graphId: String,
+    ): Either<DomainError, Unit> {
+        val restricted = RestrictedDatabaseQueries(factory.steleDatabase().steleDatabaseQueries)
+        return actor.execute(DatabaseWriteActor.Priority.HIGH) {
+            try {
+                @OptIn(DirectSqlWrite::class)
+                restricted.deleteStorageLocation(graphId)
+                Unit.right()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
+            }
+        }
+    }
+
+    /**
      * Clean up all resources when shutting down
      */
     fun shutdown() {
@@ -1034,4 +1269,47 @@ class GraphManager(
         currentFactory?.close()
         currentFactory = null
     }
+}
+
+/** The `storage_locations` table's per-kind nullable columns, derived from one [StorageLocation]. */
+private data class StorageLocationRow(
+    val kind: String,
+    val treeUri: String?,
+    val realPath: String?,
+    val displayName: String?,
+)
+
+private val storageLocationLogger = Logger("GraphManager.StorageLocation")
+
+/**
+ * The inverse of [toStorageLocationRow] — reconstructs a [StorageLocation] from a persisted row.
+ * A `null` here means either "no row" (handled by the caller before this is invoked) or genuine
+ * corruption — an unrecognized `kind` or a `kind`/nullable-column mismatch — which is logged so it
+ * isn't silently indistinguishable from the "no row" case at the call site.
+ */
+private fun Storage_locations.toStorageLocationModel(): StorageLocation? = when (kind) {
+    "AppOwned" -> StorageLocation.AppOwned(graph_id)
+    "SafFolder" -> tree_uri?.let { StorageLocation.SafFolder(graph_id, it) } ?: run {
+        storageLocationLogger.warn("storage_locations row for $graph_id has kind=SafFolder but a null tree_uri — treating as corrupt")
+        null
+    }
+    "DirectAccessFolder" -> real_path?.let { StorageLocation.DirectAccessFolder(graph_id, it) } ?: run {
+        storageLocationLogger.warn("storage_locations row for $graph_id has kind=DirectAccessFolder but a null real_path — treating as corrupt")
+        null
+    }
+    "HostFolder" -> display_name?.let { StorageLocation.HostFolder(graph_id, it) } ?: run {
+        storageLocationLogger.warn("storage_locations row for $graph_id has kind=HostFolder but a null display_name — treating as corrupt")
+        null
+    }
+    else -> {
+        storageLocationLogger.warn("storage_locations row for $graph_id has unrecognized kind='$kind' — treating as corrupt")
+        null
+    }
+}
+
+private fun StorageLocation.toStorageLocationRow(): StorageLocationRow = when (this) {
+    is StorageLocation.AppOwned -> StorageLocationRow(kind = "AppOwned", treeUri = null, realPath = null, displayName = null)
+    is StorageLocation.SafFolder -> StorageLocationRow(kind = "SafFolder", treeUri = treeUri, realPath = null, displayName = null)
+    is StorageLocation.DirectAccessFolder -> StorageLocationRow(kind = "DirectAccessFolder", treeUri = null, realPath = realPath, displayName = null)
+    is StorageLocation.HostFolder -> StorageLocationRow(kind = "HostFolder", treeUri = null, realPath = null, displayName = displayName)
 }

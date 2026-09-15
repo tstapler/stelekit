@@ -20,6 +20,8 @@ import dev.stapler.stelekit.voice.VoiceSettings
 import kotlinx.coroutines.flow.StateFlow
 import dev.stapler.stelekit.capture.HotkeyRegistrationFailure
 import dev.stapler.stelekit.db.GraphManager
+import dev.stapler.stelekit.db.GraphMoveQuiesceStrategy
+import dev.stapler.stelekit.db.StorageLocationResolver
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.repository.RepositorySet
@@ -100,6 +102,53 @@ data class StelekitAppPlatformIntegrations(
      */
     val googleAuthManager: dev.stapler.stelekit.platform.google.GoogleAuthManager? = null,
     val requestCameraPermission: (suspend () -> Boolean)? = null,
+    /**
+     * Platform quiesce port for Story 3.1.3/3.1.5's `GraphRelocationCoordinator` — pass
+     * `createAndroidGraphMoveQuiesceStrategy(...)` on Android, `createWasmJsGraphMoveQuiesceStrategy(...)`
+     * on Web. Null (Desktop/iOS, or before a host wires one) means [GraphContent] never constructs a
+     * coordinator, so the "Move storage location…" entry points in [Sidebar]/[FolderSyncSettings]
+     * call their `onStorageLocationChoose` no-op default instead.
+     */
+    val graphMoveQuiesceStrategy: GraphMoveQuiesceStrategy? = null,
+    /**
+     * Epic 4.1 (Task 4.1.1a): platform seam for [GraphRelocationCoordinator.link] — pass
+     * `createWasmJsHostLinkStep(fileSystem.hostDirectorySync)` on Web, `createAndroidHostLinkStep()`
+     * on Android (Epic 4.2, Story 4.2.1 — a no-op success for `GitShadowWorktree`'s already-running
+     * write-back-to-SAF cache mode, with `persistsDestinationOnSuccess = false` so Link never
+     * repoints `storage_locations`). Null (Desktop/iOS, or a host that hasn't wired one) means a
+     * `Link` operation always fails fast.
+     */
+    val hostLinkStep: dev.stapler.stelekit.db.HostLinkStep? = null,
+    /**
+     * Resolves/backfills a graph's real [StorageLocation] before "Move storage location…" opens —
+     * Story 3.2.2/3.3.3. Pass `createAndroidStorageLocationResolver(...)` on Android,
+     * `createWasmJsStorageLocationResolver(...)` on Web. Null leaves the button working (per
+     * `GraphSwitcher`'s own doc) but falls back to an `AppOwned` placeholder source.
+     */
+    val storageLocationResolver: StorageLocationResolver? = null,
+    /**
+     * MAJOR finding (PR #327 review): pre-flight free-space check for
+     * `GraphRelocationCoordinator`'s default `BulkCopyVerifier` — pass `AndroidInsufficientSpaceCheck()`
+     * on Android, `WasmJsInsufficientSpaceCheck()` on Web. `null` (Desktop/iOS, or before a host
+     * wires one) means the coordinator never checks free space before copying, mirroring
+     * [graphMoveQuiesceStrategy]/[hostLinkStep]'s "off unless a platform explicitly supplies one"
+     * convention.
+     */
+    val insufficientSpaceCheck: dev.stapler.stelekit.db.InsufficientSpaceCheck? = null,
+    /**
+     * CRITICAL finding (PR #327 review): the shared [dev.stapler.stelekit.git.GitSyncBusyCounter]
+     * instance [GraphContent] must inject into the active graph's `GitSyncService(...)` — it must
+     * be the SAME instance a host passes as `gitSyncBusyCounter` to
+     * `createAndroidGraphMoveQuiesceStrategy(...)` (Android) so
+     * `AndroidGraphMoveQuiesceStrategy.quiesce()` actually observes real sync activity instead of
+     * awaiting an always-idle counter nobody increments. Construct it once at the composition root
+     * (`MainActivity.kt`, same `remember` scope as [graphMoveQuiesceStrategy]) and pass the same
+     * reference to both construction sites. `null` (default; Desktop/iOS, or before a host wires
+     * one) makes `GitSyncService` fall back to its own private instance, mirroring
+     * [graphMoveQuiesceStrategy]/[insufficientSpaceCheck]'s "off unless a platform explicitly
+     * supplies one" convention.
+     */
+    val gitSyncBusyCounter: dev.stapler.stelekit.git.GitSyncBusyCounter? = null,
 )
 
 /**
@@ -148,6 +197,16 @@ data class StelekitAppWebSyncDeps(
      * `FolderSyncSettings`'s call site renders nothing.
      */
     val onConnectHostDirectory: (suspend () -> ReconciliationUiState)? = null,
+    /**
+     * Epic 4.1 (Task 4.1.2c): "Unlink folder" affordance — invoked from `SettingsDialog`'s
+     * `FolderSyncSettings` section for a graph that's currently linked. Should perform
+     * `HostDirectorySync.unlinkHostDirectory()` and, on success, persist the graph's
+     * `storage_locations` row back to `StorageLocation.AppOwned` via
+     * `GraphManager.onGraphLocationDetermined` (`unlinkHostDirectoryAndPersist` on web). Pass a
+     * lambda wrapping that on web. When null, `FolderSyncSettings`'s "Unlink folder" section
+     * renders nothing.
+     */
+    val onUnlinkHostDirectory: (suspend () -> Unit)? = null,
 )
 
 /**

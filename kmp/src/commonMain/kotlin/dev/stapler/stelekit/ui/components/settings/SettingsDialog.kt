@@ -94,6 +94,18 @@ fun SettingsDialog(
     hostAccessState: HostAccessState = HostAccessState.NotApplicable,
     supportsNativeDirectoryPicker: Boolean = false,
     onConnectHostDirectory: (suspend () -> ReconciliationUiState)? = null,
+    // Story 3.3.3/Epic 3.4: "Move storage location…" entry point inside FolderSyncSettings — see
+    // that composable's own parameter docs. Null onMoveStorageLocation hides the entry entirely.
+    onMoveStorageLocation: (suspend () -> dev.stapler.stelekit.model.StorageLocation)? = null,
+    storageMoveGraphName: String = "this graph",
+    onStorageLocationChoose: (dev.stapler.stelekit.model.StorageMoveOperation) -> Unit = {},
+    // Story 3.3.3 (AppOwned→HostFolder direction): see FolderSyncSettings's own parameter docs.
+    // Null keeps that direction a logged no-op.
+    onBrowseRequestForMove: (suspend () -> dev.stapler.stelekit.model.StorageLocation?)? = null,
+    onBrowseClickForMove: () -> Unit = {},
+    // Epic 4.1 (Task 4.1.2c): "Unlink folder" affordance — see FolderSyncSettings's own parameter
+    // docs. Null onUnlinkHostDirectory hides the entry entirely.
+    onUnlinkHostDirectory: (suspend () -> Unit)? = null,
     // Desktop-only quick-capture hotkey (Story 1.4.2) — null hides GeneralSettings' row.
     hotkeyComboLabel: String? = null,
 ) {
@@ -156,6 +168,12 @@ fun SettingsDialog(
                                 hostAccessState = hostAccessState,
                                 supportsNativeDirectoryPicker = supportsNativeDirectoryPicker,
                                 onConnect = onConnectHostDirectory,
+                                onMoveStorageLocation = onMoveStorageLocation,
+                                graphName = storageMoveGraphName,
+                                onStorageLocationChoose = onStorageLocationChoose,
+                                onBrowseRequestForMove = onBrowseRequestForMove,
+                                onBrowseClickForMove = onBrowseClickForMove,
+                                onUnlink = onUnlinkHostDirectory,
                             )
                         }
                     }

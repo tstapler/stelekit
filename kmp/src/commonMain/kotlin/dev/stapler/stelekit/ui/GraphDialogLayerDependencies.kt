@@ -62,6 +62,18 @@ data class SettingsDialogDeps(
     // keeps SettingsDialog's FolderSyncSettings call site un-rendered there.
     val hostAccessState: HostAccessState = HostAccessState.NotApplicable,
     val onConnectHostDirectory: (suspend () -> ReconciliationUiState)? = null,
+    // Epic 3.4/Story 3.3.3: "Move storage location…" entry point inside FolderSyncSettings — see
+    // SettingsDialog's own parameter docs. Null onMoveStorageLocation hides the entry entirely.
+    val onMoveStorageLocation: (suspend () -> dev.stapler.stelekit.model.StorageLocation)? = null,
+    val storageMoveGraphName: String = "this graph",
+    val onStorageLocationChoose: (dev.stapler.stelekit.model.StorageMoveOperation) -> Unit = {},
+    // Story 3.3.3 (AppOwned→HostFolder direction): see FolderSyncSettings's own parameter docs.
+    // Null keeps that direction a logged no-op.
+    val onBrowseRequestForMove: (suspend () -> dev.stapler.stelekit.model.StorageLocation?)? = null,
+    val onBrowseClickForMove: () -> Unit = {},
+    // Epic 4.1 (Task 4.1.2c): "Unlink folder" affordance inside FolderSyncSettings — see
+    // SettingsDialog's own parameter docs. Null onUnlinkHostDirectory hides the entry entirely.
+    val onUnlinkHostDirectory: (suspend () -> Unit)? = null,
     // Desktop-only quick-capture hotkey (Story 1.4.2) — null on platforms with no global hotkey.
     val hotkeyComboLabel: String? = null,
 )
@@ -75,7 +87,9 @@ data class GitSyncDeps(
     val gitRepository: GitRepository? = null,
     val gitConfigRepository: GitConfigRepository? = null,
     val activeGraphId: String? = null,
-    val onCloneAndAdd: (suspend (url: String, localPath: String, auth: GitAuth, onProgress: (String) -> Unit) -> Either<DomainError.GitError, String>)? = null,
+    // location (Story 2.2.2): the destination StorageLocation UnifiedLocationPicker resolved in
+    // GitSetupScreen's Step2RepoPath — null for the pre-feature "Browse…"-only flow.
+    val onCloneAndAdd: (suspend (url: String, localPath: String, auth: GitAuth, location: dev.stapler.stelekit.model.StorageLocation?, onProgress: (String) -> Unit) -> Either<DomainError.GitError, String>)? = null,
     val graphPath: String = "",
     // Auto-detected by GraphManager.detectGitRoot() (walks up from graphPath looking for `.git`);
     // threaded through so GitSetupScreen can prefill Step2RepoPath instead of discarding detection

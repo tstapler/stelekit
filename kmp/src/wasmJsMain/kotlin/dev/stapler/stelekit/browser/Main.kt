@@ -124,6 +124,16 @@ private fun preventBrowserTabFocusTraversal(): Unit = js(
 fun main() {
     preventBrowserTabFocusTraversal()
     val scope = MainScope()
+
+    // One-shot startup sweep for an interrupted relocate's staging directory (Story 3.1.2), the
+    // Web counterpart of MainActivity.kt's Android call — self-contained and unconditional
+    // (no GraphManager/graph-registry lookup needed), so it runs as its own child launch rather
+    // than being threaded through the boot sequence below. Fire-and-forget: never gates first
+    // paint, matching this sweep's best-effort "matters on next launch, not this one" nature.
+    scope.launch {
+        dev.stapler.stelekit.db.sweepWasmJsRelocationStaging(scope)
+    }
+
     scope.launch(CoroutineExceptionHandler { _, throwable ->
         println("[SteleKit] Fatal startup error: ${throwable.message}")
         // ComposeViewport will not be mounted — the loading overlay remains visible
@@ -298,6 +308,27 @@ fun main() {
                     platformIntegrations = dev.stapler.stelekit.ui.StelekitAppPlatformIntegrations(
                         attachmentService = WasmMediaAttachmentService(fileSystem),
                         gitRepository = wasmGitRepository,
+                        // Phase 3 (Epic 3.3): relocate has no meaning in demo-fallback mode (no
+                        // persistent OPFS content to move), so both are left null there.
+                        graphMoveQuiesceStrategy = if (useDemoFallback) null else
+                            dev.stapler.stelekit.db.createWasmJsGraphMoveQuiesceStrategy(opfsFileSystem),
+                        // Epic 4.1 (Task 4.1.1a): forwards straight to connectHostDirectory —
+                        // reuses the same "no persistent OPFS content in demo-fallback mode" gate
+                        // graphMoveQuiesceStrategy above already applies.
+                        hostLinkStep = if (useDemoFallback) null else
+                            dev.stapler.stelekit.db.createWasmJsHostLinkStep(opfsFileSystem.hostDirectorySync),
+                        storageLocationResolver = if (useDemoFallback) null else
+                            dev.stapler.stelekit.db.createWasmJsStorageLocationResolver(
+                                graphManager = graphManager,
+                                hostAccessState = { opfsFileSystem.hostAccessStateFlow.value },
+                            ),
+                        // MAJOR finding (PR #327 review): real pre-flight free-space check —
+                        // previously never wired, so GraphRelocationCoordinator's default
+                        // BulkCopyVerifier always used InsufficientSpaceCheck.NONE. Same
+                        // demo-fallback gate as graphMoveQuiesceStrategy/hostLinkStep above (no
+                        // persistent OPFS content to check space for in that mode).
+                        insufficientSpaceCheck = if (useDemoFallback) null else
+                            dev.stapler.stelekit.db.WasmJsInsufficientSpaceCheck(),
                     ),
                     webSyncDeps = dev.stapler.stelekit.ui.StelekitAppWebSyncDeps(
                         localChangesCountFlow = opfsFileSystem.dirtyFileCountFlow,
@@ -334,6 +365,22 @@ fun main() {
                                 hostOnlyNew = summary.hostOnlyNew,
                                 browserOnlyNeedsPush = summary.browserOnlyNeedsPush,
                             )
+                        },
+                        // Task 4.1.2c: detaches the current graph's folder and persists the
+                        // resulting AppOwned storage_locations row in one step (see
+                        // unlinkHostDirectoryAndPersist's own doc comment). A Left is rethrown as
+                        // a Throwable so FolderSyncSettings's own onUnlink catch block logs it —
+                        // that lambda's declared suspend () -> Unit shape has nowhere else to
+                        // surface an Either failure.
+                        onUnlinkHostDirectory = unlink@{
+                            val result = dev.stapler.stelekit.db.unlinkHostDirectoryAndPersist(
+                                opfsFileSystem.hostDirectorySync,
+                                opfsFileSystem.currentGraphId(),
+                                onGraphLocationDetermined = graphManager::onGraphLocationDetermined,
+                            )
+                            if (result is arrow.core.Either.Left) {
+                                throw RuntimeException(result.value.message)
+                            }
                         },
                     ),
                 ),
@@ -401,6 +448,9 @@ private suspend fun runEphemeralSession() {
                 platformIntegrations = dev.stapler.stelekit.ui.StelekitAppPlatformIntegrations(
                     attachmentService = WasmMediaAttachmentService(fileSystem),
                     gitRepository = wasmGitRepository,
+                    // graphMoveQuiesceStrategy/storageLocationResolver intentionally left null — an
+                    // ephemeral session has no persistent storage to relocate to/from (see this
+                    // function's own doc), so "Move storage location…" stays inert here.
                 ),
                 webSyncDeps = dev.stapler.stelekit.ui.StelekitAppWebSyncDeps(
                     localChangesCountFlow = fileSystem.dirtyFileCountFlow,

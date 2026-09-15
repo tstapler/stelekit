@@ -133,4 +133,48 @@ class WebLockTest {
 
         holder.await()
     }
+
+    // ── Task 3.3.1a follow-up: WebLock.acquireHeld cancellation safety ─────────────────────────
+
+    @Test
+    fun acquireHeld_should_ReleaseTheLock_When_CancelledWhileAwaitingAcquisition() = runTest {
+        val lockName = freshLockName("wl-acquireheld-cancel")
+        val holderAcquired = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val holderShouldRelease = kotlinx.coroutines.CompletableDeferred<Unit>()
+
+        // Hold the lock on a real (non-test-scheduler) dispatcher so the acquireHeld() call
+        // below genuinely queues behind it instead of racing virtual time.
+        val holder = async(kotlinx.coroutines.Dispatchers.Default) {
+            WebLock.withLock(lockName) {
+                holderAcquired.complete(Unit)
+                holderShouldRelease.await()
+            }
+        }
+        holderAcquired.await()
+
+        // acquireHeld() queues behind the holder and suspends inside the acquire-await — cancel
+        // it while it's still queued (the lock has not yet been granted to it).
+        val pendingAcquire = async(kotlinx.coroutines.Dispatchers.Default) {
+            WebLock.acquireHeld(lockName)
+        }
+        delay(50) // let the queued request actually register before cancelling it
+        pendingAcquire.cancel()
+
+        // Releasing the holder lets the browser grant the now-queued (and cancelled) request;
+        // acquireHeld's catch block releases it immediately once granted rather than leaving a
+        // HeldLock nobody can ever call release() on.
+        holderShouldRelease.complete(Unit)
+        holder.await()
+        pendingAcquire.join()
+
+        // If acquireHeld had leaked the lock, this would return null (lock still "held" forever,
+        // same as tab-lifetime tryAcquireLeader semantics) instead of running the block.
+        val result = WebLock.tryWithLock(lockName) { "acquired-after-cancel" }
+        assertEquals(
+            "acquired-after-cancel",
+            result,
+            "acquireHeld() cancelled while awaiting acquisition must not leak the underlying " +
+                "Web Lock — a later tryWithLock() on the same name must still succeed",
+        )
+    }
 }

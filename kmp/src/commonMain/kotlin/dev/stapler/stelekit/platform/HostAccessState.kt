@@ -33,4 +33,17 @@ sealed interface HostAccessState {
      * human-readable diagnostic (e.g. the underlying DOM exception name/message).
      */
     data class Disconnected(val reason: String) : HostAccessState
+
+    /**
+     * Epic 4.1 (Task 4.1.2b): the user explicitly detached a previously-linked host directory via
+     * `HostDirectorySync.unlinkHostDirectory()` — the graph stays fully usable, now backed only by
+     * OPFS. Distinct from [Disconnected] (which implies something went wrong — a stale/missing
+     * handle) and from [NotApplicable] (which means "never linked at all"/"no host directory
+     * concept on this platform/graph"): this state carries the deliberate-choice history so a
+     * future session never silently tries to resume the detached link (see
+     * `unlinkHostDirectory`'s own doc comment — it also deletes the persisted IndexedDB handle
+     * entry, which is what actually prevents that resurrection; this state is the in-session UI
+     * signal). Renders nothing in `FolderSyncStatusBadge`, same as [NotApplicable].
+     */
+    data object Unlinked : HostAccessState
 }

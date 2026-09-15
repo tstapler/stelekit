@@ -82,6 +82,13 @@ data class RepositorySet(
 fun RepositorySet.createGraphLoader(
     fileSystem: dev.stapler.stelekit.platform.FileSystem,
     sidecarManager: dev.stapler.stelekit.db.SidecarManager? = null,
+    /** Real graph id, threaded into [dev.stapler.stelekit.db.GraphFileWatcher] so
+     * [dev.stapler.stelekit.db.MoveInProgressFlag] actually guards this graph's watcher poll
+     * loop during a relocate/link (Story 1.3.2). Null (the default) preserves prior behavior
+     * for callers — e.g. one-shot merge/import flows — that don't have or don't need one. */
+    graphId: String? = null,
+    /** Poll interval for the file watcher. Override in tests to speed up cycles. */
+    watcherPollIntervalMs: Long = 5_000L,
 ): dev.stapler.stelekit.db.GraphLoader =
     dev.stapler.stelekit.db.GraphLoader(
         fileSystem = fileSystem,
@@ -93,6 +100,8 @@ fun RepositorySet.createGraphLoader(
         histogramWriter = histogramWriter,
         spanRepository = spanRepository,
         sidecarManager = sidecarManager,
+        watcherPollIntervalMs = watcherPollIntervalMs,
+        graphId = graphId,
     ).also { it.onBulkImportComplete = onBulkImportComplete }
 
 /**

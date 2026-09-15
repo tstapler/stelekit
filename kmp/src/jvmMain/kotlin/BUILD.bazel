@@ -123,6 +123,9 @@ kt_jvm_library(
         # ZXing — QR encode/decode for camera-qr-export (from commonMain expect / jvmMain actual)
         "@maven//:com_google_zxing_core",
 
+        # jkeymaster — desktop-only global hotkey for quick-capture (Story 1.4.2, from jvmMain)
+        "@maven//:com_github_tulskiy_jkeymaster",
+
         # Kotlin stdlib
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
     ],

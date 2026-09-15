@@ -19,7 +19,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.lifecycleScope
+import dev.stapler.stelekit.db.AndroidInsufficientSpaceCheck
 import dev.stapler.stelekit.db.GraphManager
+import dev.stapler.stelekit.db.RelocationStagingDirectory
+import dev.stapler.stelekit.db.createAndroidGraphMoveQuiesceStrategy
+import dev.stapler.stelekit.db.createAndroidHostLinkStep
+import dev.stapler.stelekit.db.createAndroidStorageLocationResolver
 import dev.stapler.stelekit.domain.UrlFetcherAndroid
 import dev.stapler.stelekit.llm.LlmCredentialStore
 import dev.stapler.stelekit.llm.LlmProviderAvailability
@@ -32,6 +37,7 @@ import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.platform.security.CredentialStore
 import dev.stapler.stelekit.git.AndroidGitRepository
 import dev.stapler.stelekit.git.GitShadowWorktree
+import dev.stapler.stelekit.git.GitSyncBusyCounter
 import dev.stapler.stelekit.git.GitSyncServiceRegistry
 import dev.stapler.stelekit.service.rememberAndroidMediaAttachmentService
 import dev.stapler.stelekit.ui.StelekitApp
@@ -304,6 +310,53 @@ class MainActivity : ComponentActivity() {
             val gitRepository = remember { buildGitRepository(applicationContext, app.fileSystem) }
             val attachmentService = rememberAndroidMediaAttachmentService(this@MainActivity, fileSystem)
 
+            // CRITICAL finding (PR #327 review): shared with GitSyncService (via
+            // StelekitAppPlatformIntegrations.gitSyncBusyCounter, passed below) so
+            // AndroidGraphMoveQuiesceStrategy.quiesce()'s awaitIdle() actually observes real
+            // sync() activity — a single instance constructed once at this composition root and
+            // threaded into both construction sites, never one fresh instance per site.
+            val sharedGitSyncBusyCounter = remember { GitSyncBusyCounter() }
+
+            // Phase 3 (Epic 3.2): real quiesce port for GraphRelocationCoordinator, constructed
+            // here (not inside StelekitApp) since it needs this Activity's Context for
+            // WorkManagerSyncScheduler pause/resume. shadowWorktreeTarget still always resolves to
+            // null: AndroidGitRepository.shadowWorktreeFor() and the GitShadowFlushActor a real
+            // flush lambda needs are both `internal` to the :kmp module and unreachable from this
+            // :androidApp module, so wiring a real resolver needs a public seam added to
+            // AndroidGitRepository itself — out of scope for this focused fix (see its TODO below).
+            // So relocate correctly pauses WorkManager, awaits real git-sync idleness, and copies
+            // files, but doesn't yet drain/lock a shadow worktree's write-back queue before
+            // copying it.
+            // TODO(shadowWorktreeTarget): resolve op's graph to its real ShadowWorktreeQuiesceTarget
+            // (shadowKey/queue/flush) once AndroidGitRepository exposes a public accessor for its
+            // internal shadowWorktreeFor()/GitShadowFlushActor — currently always null, not wired.
+            val androidGraphMoveQuiesceStrategy = remember(app.graphManager, sharedGitSyncBusyCounter) {
+                app.graphManager?.let {
+                    createAndroidGraphMoveQuiesceStrategy(
+                        context = applicationContext,
+                        gitSyncBusyCounter = sharedGitSyncBusyCounter,
+                        shadowWorktreeTarget = { null },
+                    )
+                }
+            }
+            val androidStorageLocationResolver = remember(app.graphManager) {
+                app.graphManager?.let { gm -> createAndroidStorageLocationResolver(gm, applicationContext) }
+            }
+
+            // Epic 4.2 (Story 4.2.1): fixes "Link" always failing with DestinationNotWritable —
+            // no androidMain construction site wired a HostLinkStep before this. Stateless (no
+            // Context/graph dependency), so a single remembered instance suffices; see
+            // createAndroidHostLinkStep's doc for why it's a genuine no-op that never repoints
+            // storage_locations.
+            val androidHostLinkStep = remember { createAndroidHostLinkStep() }
+
+            // MAJOR finding (PR #327 review): real pre-flight free-space check — previously never
+            // wired, so GraphRelocationCoordinator's default BulkCopyVerifier always used
+            // InsufficientSpaceCheck.NONE and never actually checked available space before a
+            // relocate's copy. Stateless (StatFs is checked per-call, not cached), so a single
+            // remembered instance suffices.
+            val androidInsufficientSpaceCheck = remember { AndroidInsufficientSpaceCheck() }
+
             // One-shot startup orphan sweep (plan.md Phase 6, Epic 6.1) — deletes long-unused
             // shadow git worktrees. Self-contained: no GraphManager/GitConfigRepository lookup
             // needed (see GitShadowWorktree.sweepOrphans doc), so it can run unconditionally here
@@ -312,6 +365,13 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(Unit) {
                 withContext(Dispatchers.IO) {
                     GitShadowWorktree.sweepOrphans(this@MainActivity.applicationContext)
+                    // Same startup pass sweeps interrupted-relocate staging directories (Story 3.1.2)
+                    // — AppOwned's destination parent is context.filesDir/graphs, the same root
+                    // GitShadowWorktree.sweepOrphans() scans, so both sweeps run over one directory.
+                    RelocationStagingDirectory.sweep(
+                        fileSystem = fileSystem,
+                        destinationParent = File(this@MainActivity.applicationContext.filesDir, "graphs").path,
+                    )
                 }
             }
 
@@ -357,6 +417,11 @@ class MainActivity : ComponentActivity() {
                         gitRepository = gitRepository,
                         attachmentService = attachmentService,
                         requestCameraPermission = ::requestCameraPermission,
+                        graphMoveQuiesceStrategy = androidGraphMoveQuiesceStrategy,
+                        hostLinkStep = androidHostLinkStep,
+                        storageLocationResolver = androidStorageLocationResolver,
+                        insufficientSpaceCheck = androidInsufficientSpaceCheck,
+                        gitSyncBusyCounter = sharedGitSyncBusyCounter,
                     ),
                 ),
             )

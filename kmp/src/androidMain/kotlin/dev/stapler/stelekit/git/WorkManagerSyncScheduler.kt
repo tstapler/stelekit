@@ -33,10 +33,10 @@ class WorkManagerSyncScheduler(
     private val graphId: String,
 ) : BackgroundSyncScheduler {
 
-    private val workName get() = "stelekit_git_sync_$graphId"
+    private val workName get() = workNameFor(graphId)
 
     override fun schedule(intervalMinutes: Int) {
-        val repeatInterval = maxOf(intervalMinutes.toLong(), 15L)
+        val repeatInterval = maxOf(intervalMinutes.toLong(), MIN_INTERVAL_MINUTES)
 
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
@@ -60,6 +60,39 @@ class WorkManagerSyncScheduler(
 
     override fun cancel() {
         WorkManager.getInstance(context).cancelUniqueWork(workName)
+    }
+
+    companion object {
+        /** Android's floor for periodic work — matches [schedule]'s existing clamp. */
+        private const val MIN_INTERVAL_MINUTES = 15L
+
+        private fun workNameFor(graphId: String) = "stelekit_git_sync_$graphId"
+
+        /**
+         * Pauses [graphId]'s scheduled periodic sync job ahead of a relocate/link's copy step
+         * (Story 3.2.1), so a concurrent WorkManager fetch never races the foreground copy of
+         * `.git`. Cancels the enqueued unique periodic work outright rather than merely skipping
+         * one run — [resumeFor] re-enqueues it once the move completes.
+         *
+         * A `Context`-scoped companion function rather than an instance method: the caller
+         * ([AndroidGraphMoveQuiesceStrategy]) quiesces an arbitrary [graphId] from a
+         * [dev.stapler.stelekit.model.StorageMoveOperation], not necessarily one it already holds
+         * a per-graph [WorkManagerSyncScheduler] instance for.
+         */
+        fun pauseFor(context: Context, graphId: String) {
+            WorkManager.getInstance(context).cancelUniqueWork(workNameFor(graphId))
+        }
+
+        /**
+         * Re-schedules [graphId]'s periodic sync job after a relocate/link's [release] step
+         * completes. Re-enqueues at Android's minimum interval rather than the graph's previously
+         * configured interval — [GitSyncService] re-applies the graph's real configured interval
+         * the next time it starts, so this is a safety net restoring background coverage, not the
+         * source of truth for the interval.
+         */
+        fun resumeFor(context: Context, graphId: String) {
+            WorkManagerSyncScheduler(context, graphId).schedule(MIN_INTERVAL_MINUTES.toInt())
+        }
     }
 }
 

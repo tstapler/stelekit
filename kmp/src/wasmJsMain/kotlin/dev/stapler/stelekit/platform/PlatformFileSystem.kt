@@ -8,6 +8,7 @@ import dev.stapler.stelekit.git.model.DirtySetMarker
 import dev.stapler.stelekit.git.model.PendingCommit
 import dev.stapler.stelekit.git.model.gitApiJson
 import dev.stapler.stelekit.sync.WasmSectionSyncService
+import dev.stapler.stelekit.util.UuidGenerator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -617,6 +618,14 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     override val supportsNativeDirectoryPicker: Boolean get() = showDirectoryPickerSupported()
     override val supportsHostDirectoryLink: Boolean get() = showDirectoryPickerSupported()
 
+    // Epic 2.3 (Story 2.3.1/2.3.2): OPFS is available in every browser (Chromium, Firefox,
+    // Safari) regardless of File System Access API support, so unlike
+    // supportsNativeDirectoryPicker this is unconditionally true — "App storage" is always a
+    // choosable UnifiedLocationPicker row on web, matching Android's own unconditional override.
+    override val supportsAppOwnedStorage: Boolean get() = true
+
+    override fun newAppOwnedGraphPath(): String = "$homeDir/${UuidGenerator.generateV7()}"
+
     private var pendingDirectoryPicker: kotlin.js.Promise<JsAny>? = null
     private var lastPickerError: String? = null
 
@@ -629,6 +638,14 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         val error = lastPickerError
         lastPickerError = null
         return error
+    }
+
+    /** Shared by every `showDirectoryPicker()`-based method's catch block — a user-initiated
+     * cancel throws with an "abort" message and should surface no error at all. */
+    private fun recordPickerErrorUnlessAborted(e: Throwable) {
+        if (e.message?.contains("abort", ignoreCase = true) != true) {
+            lastPickerError = e.message ?: "Failed to open the folder picker."
+        }
     }
 
     actual override suspend fun pickDirectoryAsync(): String? {
@@ -647,9 +664,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             opfsPath
         } catch (e: Throwable) {
             println("[SteleKit] showDirectoryPicker: ${e.message}")
-            if (e.message?.contains("abort", ignoreCase = true) != true) {
-                lastPickerError = e.message ?: "Failed to open the folder picker."
-            }
+            recordPickerErrorUnlessAborted(e)
             null
         }
     }
@@ -717,9 +732,22 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             name
         } catch (e: Throwable) {
             println("[SteleKit] relinkHostDirectory: ${e.message}")
-            if (e.message?.contains("abort", ignoreCase = true) != true) {
-                lastPickerError = e.message ?: "Failed to open the folder picker."
-            }
+            recordPickerErrorUnlessAborted(e)
+            null
+        }
+    }
+
+    // Story 3.3.3: name-only preview for the "Move storage location…" picker — see the interface
+    // doc for why this doesn't reuse pickDirectoryAsync/relinkHostDirectoryAsync's import+attach.
+    override suspend fun pickHostFolderNamePreview(): String? {
+        if (!showDirectoryPickerSupported()) return null
+        val promise = pendingDirectoryPicker ?: showDirectoryPickerPromise()
+        pendingDirectoryPicker = null
+        return try {
+            getEntryName(promise.await<JsAny>())
+        } catch (e: Throwable) {
+            println("[SteleKit] pickHostFolderNamePreview: ${e.message}")
+            recordPickerErrorUnlessAborted(e)
             null
         }
     }

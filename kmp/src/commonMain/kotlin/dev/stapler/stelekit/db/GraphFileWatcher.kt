@@ -55,6 +55,10 @@ class GraphFileWatcher(
     private val pollIntervalMs: Long = 5_000L,
     private val onDirtyFile: (suspend (filePath: String) -> Unit)? = null,
     private val activePageFilePaths: (() -> Set<String>)? = null,
+    /** When non-null, the poll loop early-exits (skips the whole rescan) for a graph currently
+     * mid-relocate/link — see [MoveInProgressFlag]. Null (the default) preserves prior behavior
+     * for callers that don't yet thread a graphId through. */
+    private val graphId: String? = null,
 ) {
     private val logger = Logger("GraphFileWatcher")
 
@@ -115,6 +119,12 @@ class GraphFileWatcher(
         logger.info("Started watching graph for changes: $graphPath")
 
         val newScheduler = ChangeDetectionScheduler(baseIntervalMs = pollIntervalMs) {
+            // Early-exit for a graph currently mid-relocate/link: its files are being moved out
+            // from under us, so a scan here would race the move rather than detect a real edit.
+            if (graphId != null && MoveInProgressFlag.isMoveInProgress(graphId)) {
+                return@ChangeDetectionScheduler RescanOutcome(foundChange = false)
+            }
+
             // Both dirs are scanned on every trigger (poll tick, native signal, or bounded
             // follow-up retry) — a native signal doesn't identify which dir changed, and a
             // redundant scan of an unchanged dir is cheap (FileRegistry's mod-time diff is

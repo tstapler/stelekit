@@ -123,7 +123,13 @@ jobs:
           distribution: "temurin"
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        # Both v3 and v4's `packages` input defaults to "tools platform-tools" — "tools" is
+        # the legacy SDK Tools package, which Google has removed from the SDK repository
+        # entirely (fails with "Failed to find package 'tools'" regardless of action version).
+        # Override to just the package actually needed here.
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+        with:
+          packages: "platform-tools"
 
       - name: Install host tools required by aar_import
         run: sudo apt-get install -y --no-install-recommends unzip
@@ -169,7 +175,13 @@ jobs:
           distribution: "temurin"
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        # Both v3 and v4's `packages` input defaults to "tools platform-tools" — "tools" is
+        # the legacy SDK Tools package, which Google has removed from the SDK repository
+        # entirely (fails with "Failed to find package 'tools'" regardless of action version).
+        # Override to just the package actually needed here.
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+        with:
+          packages: "platform-tools"
 
       - name: Install host tools required by aar_import
         run: sudo apt-get install -y --no-install-recommends unzip

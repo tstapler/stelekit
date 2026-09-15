@@ -810,6 +810,27 @@ object MigrationRunner {
                 "ANALYZE pages",
             )
         ),
+        Migration(
+            name = "storage_locations_table",
+            statements = listOf(
+                """
+                CREATE TABLE IF NOT EXISTS storage_locations (
+                    graph_id            TEXT NOT NULL PRIMARY KEY,
+                    kind                TEXT NOT NULL,
+                    tree_uri            TEXT,
+                    real_path           TEXT,
+                    display_name        TEXT,
+                    updated_at_epoch_ms INTEGER NOT NULL,
+                    CHECK (
+                        (kind = 'AppOwned'           AND tree_uri IS NULL     AND real_path IS NULL     AND display_name IS NULL) OR
+                        (kind = 'SafFolder'          AND tree_uri IS NOT NULL AND real_path IS NULL     AND display_name IS NULL) OR
+                        (kind = 'DirectAccessFolder' AND real_path IS NOT NULL AND tree_uri IS NULL     AND display_name IS NULL) OR
+                        (kind = 'HostFolder'         AND display_name IS NOT NULL AND tree_uri IS NULL  AND real_path IS NULL)
+                    )
+                )
+                """
+            )
+        ),
     )
 
     /**

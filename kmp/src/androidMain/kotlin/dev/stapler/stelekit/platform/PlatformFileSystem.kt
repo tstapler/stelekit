@@ -605,6 +605,175 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         catch (e: IllegalArgumentException) { Log.w(TAG, "getLastModifiedTime: invalid URI for $path", e); null }
     }
 
+    /**
+     * Renames/moves [from] to [to]. Dispatches on each path's own backend rather than a single
+     * prefix check — [from]/[to] are always within the same [dev.stapler.stelekit.model.StorageLocation]
+     * backend in practice (see [dev.stapler.stelekit.db.AtomicFileRelocationStep]'s staging-to-destination
+     * repoint), but every branch degrades gracefully to a copy+delete fallback rather than failing
+     * outright, so a mixed pair or an unsupported SAF provider still succeeds.
+     */
+    override fun renameFile(from: String, to: String): Boolean {
+        val fromReal = !from.startsWith("saf://") && !from.startsWith("content://")
+        val toReal = !to.startsWith("saf://") && !to.startsWith("content://")
+        if (fromReal && toReal) return legacyRenameFile(from, to)
+        if (from.startsWith("saf://") && to.startsWith("saf://")) {
+            if (isDirectAccess()) {
+                val realFrom = resolveToRealPath(from)
+                val realTo = resolveToRealPath(to)
+                if (realFrom != null && realTo != null) {
+                    val ok = legacyRenameFile(realFrom, realTo)
+                    if (ok) invalidateShadow(from)
+                    return ok
+                }
+            }
+            val ok = safRenameFile(from, to)
+            if (ok) invalidateShadow(from)
+            return ok
+        }
+        // Mixed backends (e.g. real <-> content://) — not produced by any current caller, but the
+        // per-path-dispatching read/write/delete primitives already handle any combination.
+        return genericCopyThenDelete(from, to)
+    }
+
+    private fun legacyRenameFile(from: String, to: String): Boolean {
+        return try {
+            val validatedFrom = validateLegacyPath(expandTilde(from))
+            val validatedTo = validateLegacyPath(expandTilde(to))
+            val oldFile = File(validatedFrom)
+            if (!oldFile.exists()) return false
+            val newFile = File(validatedTo)
+            if (newFile.exists()) return true
+            newFile.parentFile?.let { if (!it.exists()) it.mkdirs() }
+            val renamed = oldFile.renameTo(newFile)
+            if (!renamed) {
+                // Cross-volume renames fail with a plain renameTo — fall back to copy+delete,
+                // matching JvmFileSystemBase.renameFile's approach.
+                oldFile.copyTo(newFile, overwrite = true)
+                oldFile.delete()
+            }
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * SAF rename/move via [DocumentsContract]. A same-directory move is a pure display-name
+     * rename ([DocumentsContract.renameDocument]); a cross-directory move needs
+     * [DocumentsContract.moveDocument] (API 24+, always available at this app's minSdk 26) followed
+     * by a rename if the destination name differs from the source's. Some providers (e.g. some
+     * removable-storage/cloud document providers) don't advertise `FLAG_SUPPORTS_MOVE` and return
+     * null / throw — [genericCopyThenDelete] covers that case via plain stream copy + delete.
+     */
+    private fun safRenameFile(from: String, to: String): Boolean {
+        val ctx = context ?: return false
+        return try {
+            val fromDocUri = parseDocumentUri(from)
+            val fromParentUri = parseParentDocUri(from)
+            val toParentUri = parseParentDocUri(to)
+            val toName = to.substringAfterLast('/')
+            val resultUri: Uri? = if (fromParentUri == toParentUri) {
+                try {
+                    DocumentsContract.renameDocument(ctx.contentResolver, fromDocUri, toName)
+                } catch (_: Exception) { null }
+            } else {
+                val moved = try {
+                    DocumentsContract.moveDocument(ctx.contentResolver, fromDocUri, fromParentUri, toParentUri)
+                } catch (_: Exception) { null }
+                if (moved == null) {
+                    null
+                } else {
+                    val movedName = DocumentFile.fromSingleUri(ctx, moved)?.name
+                    if (movedName != null && movedName != toName) {
+                        try {
+                            DocumentsContract.renameDocument(ctx.contentResolver, moved, toName)
+                        } catch (_: Exception) { null } ?: moved
+                    } else {
+                        moved
+                    }
+                }
+            }
+            if (resultUri != null) {
+                knownExistingFiles.remove(from)
+                knownExistingFiles.add(to)
+                true
+            } else {
+                genericCopyThenDelete(from, to)
+            }
+        } catch (e: SecurityException) {
+            Log.w(TAG, "renameFile: permission denied for $from -> $to", e)
+            false
+        } catch (e: IllegalArgumentException) {
+            Log.w(TAG, "renameFile: invalid URI for $from -> $to", e)
+            false
+        }
+    }
+
+    /** Last-resort rename fallback: read the whole source, write it at the destination, delete the source. */
+    private fun genericCopyThenDelete(from: String, to: String): Boolean {
+        val data = readFileBytes(from) ?: return false
+        if (!writeFileBytes(to, data)) return false
+        return deleteFile(from)
+    }
+
+    /**
+     * Byte size of the file at [path] via a real stat call — [java.io.File.length] for real-path
+     * cases, a [DocumentsContract.Document.COLUMN_SIZE] cursor query (mirrors
+     * [queryDocumentLastModified]'s idiom) for SAF, [OpenableColumns.SIZE] for `content://`.
+     * Overrides [FileSystem.getFileSize]'s default, which reads the whole file into memory.
+     */
+    override fun getFileSize(path: String): Long? {
+        if (path.startsWith("content://")) return contentUriSize(path)
+        if (!path.startsWith("saf://")) return legacyGetFileSize(path)
+        if (isDirectAccess()) {
+            val realPath = resolveToRealPath(path)
+            if (realPath != null) return legacyGetFileSize(realPath)
+        }
+        return try {
+            val docUri = parseDocumentUri(path)
+            queryDocumentSize(docUri)
+        } catch (e: SecurityException) { Log.w(TAG, "getFileSize: permission denied for $path", e); null }
+        catch (e: IllegalArgumentException) { Log.w(TAG, "getFileSize: invalid URI for $path", e); null }
+    }
+
+    private fun legacyGetFileSize(path: String): Long? {
+        return try {
+            val expandedPath = expandTilde(path)
+            val validatedPath = validateLegacyPath(expandedPath)
+            val file = File(validatedPath)
+            if (file.exists() && file.isFile) file.length() else null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun queryDocumentSize(docUri: Uri): Long? {
+        val ctx = context ?: return null
+        return ctx.contentResolver.query(
+            docUri,
+            arrayOf(DocumentsContract.Document.COLUMN_SIZE),
+            null, null, null
+        )?.use { cursor ->
+            val idx = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
+            if (idx >= 0 && cursor.moveToFirst() && !cursor.isNull(idx)) cursor.getLong(idx) else null
+        }
+    }
+
+    private fun contentUriSize(uriString: String): Long? {
+        val ctx = context ?: return null
+        return try {
+            val uri = Uri.parse(uriString)
+            ctx.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+                val idx = cursor.getColumnIndex(OpenableColumns.SIZE)
+                if (idx >= 0 && cursor.moveToFirst() && !cursor.isNull(idx)) cursor.getLong(idx) else null
+            }
+        } catch (_: Exception) { null }
+    }
+
     override fun listFilesWithModTimes(path: String): List<Pair<String, Long>> {
         if (!path.startsWith("saf://")) return super.listFilesWithModTimes(path)
         if (isDirectAccess()) {
@@ -632,6 +801,16 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     }
 
     actual override fun pickDirectory(): String? = null // Handled via pickDirectoryAsync on Android
+
+    // Story 2.2.1/2.2.2: "App storage" backs a graph with a real path under context.filesDir —
+    // no SAF grant, no ACTION_OPEN_DOCUMENT_TREE launch. validateLegacyPath() below allows
+    // filesDir as a second containment root so read/write of that path actually works.
+    override val supportsAppOwnedStorage: Boolean get() = true
+
+    override fun newAppOwnedGraphPath(): String {
+        val ctx = context ?: error("PlatformFileSystem.init(context) not called")
+        return java.io.File(ctx.filesDir, "graphs/${java.util.UUID.randomUUID()}").absolutePath
+    }
 
     /**
      * Registers the callback that launches ACTION_CREATE_DOCUMENT and returns the chosen
@@ -996,15 +1175,25 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             val canonicalPath = File(expandedPath).canonicalPath
             val homePath = File(homeDir).canonicalPath
             val ctx = context
-            val allowedPrefixes = buildList {
+            // Mirrors validateLegacyPath's allowed-root set (homeDir, filesDir/graphs) but adds
+            // cacheDir/externalCacheDir: legitimate legacy attachment sources such as
+            // AndroidCameraProvider's captures/, AndroidPhotoPickerLauncher's photo_import_*.jpg,
+            // and AndroidAudioRecorder's voice_*.m4a all stage under cacheDir before being copied
+            // into a graph (ImageImportService). filesDir is scoped to graphs/, not the whole
+            // directory, since no caller legitimately reads a filesDir path outside it (the app's
+            // SQLite databases and shared_prefs live directly under filesDir).
+            val allowedRoots = buildList {
                 add(homePath)
                 if (ctx != null) {
                     add(ctx.cacheDir.canonicalPath)
-                    add(ctx.filesDir.canonicalPath)
+                    add(File(ctx.filesDir, "graphs").canonicalPath)
                     ctx.externalCacheDir?.canonicalPath?.let { add(it) }
                 }
             }
-            require(allowedPrefixes.any { canonicalPath.startsWith(it) }) {
+            // A plain startsWith(root) is not a directory-boundary check: a sibling directory
+            // whose name merely has `root` as a string prefix (e.g. "$root-evil/x") would satisfy
+            // it too. Require either an exact match or a "/"-bounded prefix (see validateLegacyPath).
+            require(allowedRoots.any { canonicalPath == it || canonicalPath.startsWith("$it/") }) {
                 "Path must be within an allowed directory"
             }
             val file = File(canonicalPath)
@@ -1162,9 +1351,19 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         val normalized = path.replace(Regex("[/\\\\]+"), "/")
         val expandedPath = expandTilde(normalized)
         val canonicalPath = File(expandedPath).canonicalPath
-        // Enforce containment within the public Documents directory to prevent path traversal
+        // Enforce containment within an allowed root to prevent path traversal. homeDir (the
+        // public Documents directory) is the historical default-graph root; filesDir/graphs is
+        // the app-private root newAppOwnedGraphPath() actually hands out for "App storage" graphs
+        // (Story 2.2.1/2.2.2) — scoped to that subdirectory, not all of filesDir, so this check
+        // can't be used to reach the app's databases/prefs/cache under filesDir's other children.
         val homePath = File(homeDir).canonicalPath
-        require(canonicalPath.startsWith(homePath)) { "Path must be within the allowed directory" }
+        val allowedRoots = listOfNotNull(homePath, context?.filesDir?.let { File(it, "graphs").canonicalPath })
+        // A plain startsWith(root) is not a directory-boundary check: a sibling directory whose
+        // name merely has `root` as a string prefix (e.g. "$root-evil/x") would satisfy it too.
+        // Require either an exact match or a "/"-bounded prefix.
+        require(allowedRoots.any { canonicalPath == it || canonicalPath.startsWith("$it/") }) {
+            "Path must be within the allowed directory"
+        }
         return canonicalPath
     }
 }

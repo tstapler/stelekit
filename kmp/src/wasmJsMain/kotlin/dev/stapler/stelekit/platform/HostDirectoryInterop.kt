@@ -60,6 +60,10 @@ private fun idbGetHandlePromise(db: JsAny, key: String): kotlin.js.Promise<JsAny
     "new Promise(function(res) { var tx = db.transaction('handles', 'readonly'); var req = tx.objectStore('handles').get(key); req.onsuccess = function() { res(req.result || null); }; req.onerror = function() { res(null); }; })",
 )
 
+private fun idbDeleteHandlePromise(db: JsAny, key: String): kotlin.js.Promise<JsAny> = js(
+    "new Promise(function(res, rej) { var tx = db.transaction('handles', 'readwrite'); tx.objectStore('handles').delete(key); tx.oncomplete = function() { res(true); }; tx.onerror = function(e) { rej(e); }; })",
+)
+
 /**
  * Opens (creating on first use) the `stelekit-host-handles` IndexedDB database and its single
  * `handles` object store. Unlike the read/write helpers below, a failure here leaves the caller
@@ -91,6 +95,21 @@ internal suspend fun idbGetHandle(db: JsAny, key: String): JsAny? = try {
 } catch (e: Throwable) {
     println("[SteleKit] IndexedDB get failed for key=$key: ${e.message}")
     null
+}
+
+/**
+ * Delete path — log-and-continue on failure, matching [idbPutHandle]'s convention. Used by
+ * `HostDirectorySync.unlinkHostDirectory` (Epic 4.1) to remove a graph's persisted handle so a
+ * later `reconnectHostDirectory` silent-resume never finds it and re-attaches the detached folder.
+ */
+internal suspend fun idbDeleteHandle(db: JsAny, key: String) {
+    try {
+        idbDeleteHandlePromise(db, key).await()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        println("[SteleKit] IndexedDB delete failed for key=$key: ${e.message}")
+    }
 }
 
 // ---------------------------------------------------------------------------------------------

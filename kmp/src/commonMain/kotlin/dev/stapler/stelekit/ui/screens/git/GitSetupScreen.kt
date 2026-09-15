@@ -70,9 +70,14 @@ import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.git.model.GitCredentialConnection
 import dev.stapler.stelekit.git.model.GitHostType
+import dev.stapler.stelekit.model.StorageLocation
+import dev.stapler.stelekit.performance.getDeviceInfo
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.platform.security.CredentialStore
+import dev.stapler.stelekit.ui.appStorageSubtitleFor
+import dev.stapler.stelekit.ui.components.UnifiedLocationPicker
+import dev.stapler.stelekit.util.ContentHasher
 import kotlin.time.Clock
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -120,7 +125,7 @@ fun GitSetupScreen(
     detectedRepoRoot: String? = null,
     detectedWikiSubdir: String? = null,
     onSave: () -> Unit = {},
-    onCloneAndAdd: (suspend (url: String, localPath: String, auth: GitAuth, onProgress: (String) -> Unit) -> Either<DomainError.GitError, String>)? = null,
+    onCloneAndAdd: (suspend (url: String, localPath: String, auth: GitAuth, location: StorageLocation?, onProgress: (String) -> Unit) -> Either<DomainError.GitError, String>)? = null,
     onCloneComplete: ((String) -> Unit)? = null,
     deviceFlowClient: GitHubDeviceFlowClient? = null,
 ) {
@@ -240,6 +245,21 @@ fun GitSetupScreen(
     var cloneProgress by remember { mutableStateOf("") }
     var cloneError by remember { mutableStateOf<String?>(null) }
 
+    // Story 2.2.2: destination StorageLocation for a "clone a remote repository" flow, resolved by
+    // UnifiedLocationPicker. Null for "use existing clone" (no picker shown there — see
+    // Step2RepoPath's onShowLocationPicker gate) and for the pre-feature "Browse…"-only path this
+    // repo replaces. showCloneLocationPicker/pendingAppOwnedGraphPath are the picker dialog's own
+    // open-state and its pre-generated "App storage" candidate path (needed up front because
+    // UnifiedLocationPicker takes graphId as a constructor param, before the user has chosen).
+    var cloneStorageLocation by remember { mutableStateOf<StorageLocation?>(null) }
+    var showCloneLocationPicker by remember { mutableStateOf(false) }
+    var pendingAppOwnedGraphPath by remember { mutableStateOf("") }
+    // Set alongside the StorageLocation.SafFolder returned from the picker's onBrowseRequest —
+    // SafFolder.treeUri only carries the tree-root segment (see the comment at its construction
+    // below), so the full saf://<tree>/<subpath> repoRoot this screen/JGit needs is stashed here
+    // rather than reconstructed from that shorter field.
+    var pendingSafRepoRoot by remember { mutableStateOf("") }
+
     val stepLabel = when (step) {
         1 -> "Repository mode"
         2 -> "Repository path"
@@ -338,12 +358,25 @@ fun GitSetupScreen(
                     onBack = { step = 1 },
                     onNext = { step = 3 },
                     nextEnabled = repoRoot.isNotBlank() && (useExistingClone || cloneUrl.isNotBlank()),
-                    onBrowseRepoRoot = {
-                        scope.launch {
-                            val path = fileSystem.pickDirectoryAsync()
-                            if (path != null) {
-                                repoRoot = path
-                                wikiSubdir = "" // stale relative to the old root — start over, not silently wrong
+                    onBrowseRepoRoot = if (!useExistingClone && fileSystem.supportsAppOwnedStorage) {
+                        // Story 2.2.2: "clone a remote repository" destination — show
+                        // UnifiedLocationPicker instead of jumping straight to the SAF folder
+                        // picker, so "App storage" is choosable with zero SAF grant. "Use existing
+                        // clone" (the other branch, below) is untouched: browsing there always
+                        // means "find my existing local repo," where AppOwned has no meaning.
+                        {
+                            pendingAppOwnedGraphPath = fileSystem.newAppOwnedGraphPath()
+                            showCloneLocationPicker = true
+                        }
+                    } else {
+                        {
+                            scope.launch {
+                                val path = fileSystem.pickDirectoryAsync()
+                                if (path != null) {
+                                    repoRoot = path
+                                    wikiSubdir = "" // stale relative to the old root — start over, not silently wrong
+                                    cloneStorageLocation = null
+                                }
                             }
                         }
                     },
@@ -505,7 +538,7 @@ fun GitSetupScreen(
                                     )
                                     GitAuthType.NONE -> GitAuth.None
                                 }
-                                val cloneResult = onCloneAndAdd(cloneUrl, repoRoot, cloneAuth) { progress ->
+                                val cloneResult = onCloneAndAdd(cloneUrl, repoRoot, cloneAuth, cloneStorageLocation) { progress ->
                                     cloneProgress = progress
                                 }
                                 cloneInProgress = false
@@ -641,6 +674,48 @@ fun GitSetupScreen(
             initialSubdir = wikiSubdir,
             onDismiss = { wikiSubdirBrowserOpen = false },
             onSelect = { selected -> wikiSubdir = selected },
+        )
+    }
+
+    // Story 2.2.2: clone-destination picker for "clone a remote repository" — see the
+    // onBrowseRepoRoot branch above that opens this. Only ever shown when
+    // fileSystem.supportsAppOwnedStorage (Android today), so this dialog never appears on
+    // Desktop/iOS, matching those platforms' pre-feature "Browse…"-only behavior.
+    if (showCloneLocationPicker) {
+        UnifiedLocationPicker(
+            title = "Choose where to clone this repository",
+            graphId = graphIdFromPath(fileSystem.expandTilde(pendingAppOwnedGraphPath)),
+            appStorageSubtitle = appStorageSubtitleFor(getDeviceInfo().platform),
+            platformCapabilities = fileSystem.supportsNativeDirectoryPicker,
+            onBrowseClick = {
+                // Must run synchronously here, not inside onBrowseRequest's scope.launch — see
+                // UnifiedLocationPicker's onBrowseClick doc / stack.md §3's Chrome requirement.
+                fileSystem.requestDirectoryPickerNow()
+            },
+            onBrowseRequest = {
+                val path = fileSystem.pickDirectoryAsync()
+                path?.let {
+                    val expanded = fileSystem.expandTilde(it)
+                    pendingSafRepoRoot = expanded
+                    // SafFolder's treeUri only needs to uniquely address the picked tree — the
+                    // encoded segment right after "saf://" (see PlatformFileSystem.toSafRoot) —
+                    // not the fully-decoded content:// form AndroidStorageLocationResolver
+                    // reconstructs for a pre-existing graph's lazy backfill.
+                    val treeUri = expanded.removePrefix("saf://").substringBefore("/")
+                    StorageLocation.SafFolder(graphIdFromPath(expanded), treeUri)
+                }
+            },
+            onConfirm = { location ->
+                showCloneLocationPicker = false
+                cloneStorageLocation = location
+                repoRoot = when (location) {
+                    is StorageLocation.AppOwned -> pendingAppOwnedGraphPath
+                    is StorageLocation.SafFolder -> pendingSafRepoRoot
+                    else -> repoRoot
+                }
+                wikiSubdir = "" // stale relative to the old root — start over, not silently wrong
+            },
+            onDismiss = { showCloneLocationPicker = false },
         )
     }
 }
@@ -1467,6 +1542,15 @@ internal fun resolveOauthTokenKey(
     }
     return fallbackKey
 }
+
+/**
+ * Mirrors [dev.stapler.stelekit.db.GraphManager.graphIdFromPath] exactly (same hash, same
+ * `take(16)`), so a [StorageLocation.AppOwned] resolved here for [UnifiedLocationPicker] — before
+ * the graph exists — carries the same id `GraphManager.addGraph(path, location)` computes for
+ * that same [expandedPath] once the clone completes (Story 2.2.2, Task 2.2.2c).
+ */
+private fun graphIdFromPath(expandedPath: String): String =
+    ContentHasher.sha256(expandedPath).take(16)
 
 private fun buildConfig(
     graphId: String,

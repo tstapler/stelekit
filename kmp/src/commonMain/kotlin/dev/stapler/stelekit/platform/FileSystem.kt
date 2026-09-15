@@ -19,6 +19,23 @@ interface FileSystem {
     suspend fun pickDirectoryAsync(): String? = pickDirectory()
 
     /**
+     * True on platforms with a true app-private storage backend that needs zero external grant —
+     * Android's `filesDir` today (Story 2.2.1/2.2.2); Web's OPFS is the analogous Epic 2.3 case.
+     * Gates the "App storage" destination in [dev.stapler.stelekit.ui.components.UnifiedLocationPicker]
+     * call sites — false (the default) on Desktop/iOS, which already have unrestricted filesystem
+     * access and gain nothing from a second, app-private storage mode.
+     */
+    val supportsAppOwnedStorage: Boolean get() = false
+
+    /**
+     * Allocates a fresh, unique app-private root path for a brand-new [dev.stapler.stelekit.model.StorageLocation.AppOwned]
+     * graph. Only ever called when [supportsAppOwnedStorage] is true; the default throws since no
+     * other platform implements this concept.
+     */
+    fun newAppOwnedGraphPath(): String =
+        throw UnsupportedOperationException("newAppOwnedGraphPath is not supported on this platform")
+
+    /**
      * Synchronously kicks off the native directory picker so the platform call happens inside the
      * caller's click-handler call stack rather than after a `scope.launch` dispatch. Must be called
      * directly from a Compose `onClick` before any `scope.launch { pickDirectoryAsync() }` — on the
@@ -37,6 +54,15 @@ interface FileSystem {
      */
     fun consumeLastPickerError(): String? = null
     fun getLastModifiedTime(path: String): Long?
+
+    /**
+     * Byte size of the file at [path], or null if it doesn't exist. Default implementation reads
+     * the whole file just to measure it — correct everywhere but not cheap; platforms with a
+     * native stat-like call (`java.io.File.length()`, Android `DocumentFile.length()`) should
+     * override this. Added for [dev.stapler.stelekit.db.BulkCopyVerifier]'s insufficient-space
+     * pre-flight check (Story 3.1.1 Task 3.1.1d), the only current caller.
+     */
+    fun getFileSize(path: String): Long? = readFileBytes(path)?.size?.toLong()
 
     /**
      * Returns file names paired with their last-modified timestamps in one pass.
@@ -120,6 +146,18 @@ interface FileSystem {
      * exactly as [pickDirectoryAsync] callers do.
      */
     suspend fun relinkHostDirectoryAsync(existingPath: String): String? = null
+
+    /**
+     * Story 3.3.3 (AppOwned→HostFolder move direction): shows the native directory picker and
+     * returns just the picked folder's name — unlike [pickDirectoryAsync]/[relinkHostDirectoryAsync],
+     * imports nothing and attaches no live handle, so an abandoned preview pick can't leave a
+     * throwaway OPFS import or mis-attached host handle behind. The real connect happens later, at
+     * confirm time, via `GraphRelocationCoordinator`'s `HostLinkStep` →
+     * `HostDirectorySync.connectHostDirectory`, which does its own `showDirectoryPicker()` call.
+     * Same [requestDirectoryPickerNow] synchronous-click requirement as [pickDirectoryAsync]. Null
+     * on cancel, failure, or a platform with no host-folder concept (only wasmJs has one today).
+     */
+    suspend fun pickHostFolderNamePreview(): String? = null
 
     /**
      * True only on platforms with a host-directory-livesync concept separate from their own

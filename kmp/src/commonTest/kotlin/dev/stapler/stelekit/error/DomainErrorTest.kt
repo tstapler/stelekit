@@ -62,6 +62,14 @@ class DomainErrorTest {
             DomainError.QrTransferError.MarkdownParseFailed,
             DomainError.QrTransferError.EnvelopeMalformed,
             DomainError.QrTransferError.OverwriteFailedPreviousContentAffected("page-uuid-123"),
+            DomainError.StorageError.VerificationFailed("/path", "hash mismatch"),
+            DomainError.StorageError.SourceInFlight("sync in progress"),
+            DomainError.StorageError.DestinationNotWritable("/path"),
+            DomainError.StorageError.PartialCopyDetected("/path"),
+            DomainError.StorageError.InsufficientSpace(1000, 10),
+            DomainError.StorageError.QuiesceTimedOut(30_000),
+            DomainError.StorageError.ReopenFailed("g1"),
+            DomainError.StorageError.RelocationFailed("/path"),
         )
         for (err in errors) {
             // exhaustive when — compile error if any branch is missing
@@ -122,6 +130,14 @@ class DomainErrorTest {
                 DomainError.QrTransferError.MarkdownParseFailed -> err.message
                 DomainError.QrTransferError.EnvelopeMalformed -> err.message
                 is DomainError.QrTransferError.OverwriteFailedPreviousContentAffected -> err.message
+                is DomainError.StorageError.VerificationFailed -> err.message
+                is DomainError.StorageError.SourceInFlight -> err.message
+                is DomainError.StorageError.DestinationNotWritable -> err.message
+                is DomainError.StorageError.PartialCopyDetected -> err.message
+                is DomainError.StorageError.InsufficientSpace -> err.message
+                is DomainError.StorageError.QuiesceTimedOut -> err.message
+                is DomainError.StorageError.ReopenFailed -> err.message
+                is DomainError.StorageError.RelocationFailed -> err.message
             }
             assertTrue(msg.isNotEmpty(), "Expected non-empty message for $err")
         }
@@ -198,6 +214,14 @@ class DomainErrorTest {
             DomainError.QrTransferError.PayloadTooLarge(90000, 65536),
             DomainError.QrTransferError.MarkdownParseFailed,
             DomainError.QrTransferError.EnvelopeMalformed,
+            DomainError.StorageError.VerificationFailed("/path", "hash mismatch"),
+            DomainError.StorageError.SourceInFlight("sync in progress"),
+            DomainError.StorageError.DestinationNotWritable("/path"),
+            DomainError.StorageError.PartialCopyDetected("/path"),
+            DomainError.StorageError.InsufficientSpace(1000, 10),
+            DomainError.StorageError.QuiesceTimedOut(30_000),
+            DomainError.StorageError.ReopenFailed("g1"),
+            DomainError.StorageError.RelocationFailed("/path"),
         )
         for (err in errors) {
             assertTrue(err.toUiMessage().isNotEmpty(), "Expected non-empty UI message for $err")

@@ -274,6 +274,11 @@ maven.install(
         # ── ZXing — QR encode/decode for camera-qr-export (ADR-001/Story 2.1.2, JVM + Android) ──
         "com.google.zxing:core:3.5.4",
 
+        # ── jkeymaster — desktop-only global hotkey for quick-capture (Story 1.4.2, JVM only) ──
+        # Matches kmp/build.gradle.kts's com.github.tulskiy:jkeymaster dependency; resolved via
+        # the jitpack.io repository configured below.
+        "com.github.tulskiy:jkeymaster:1.3",
+
         # ── JGit — one version per groupId:artifactId (rules_jvm_external constraint)
         # Desktop uses 7.x; Android also resolves to 7.x (version conflict
         # resolved to higher version). See CLAUDE.md note on version pinning.

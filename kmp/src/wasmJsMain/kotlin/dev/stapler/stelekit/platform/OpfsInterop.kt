@@ -88,6 +88,31 @@ internal fun writableWrite(writable: JsAny, content: String): kotlin.js.Promise<
 internal fun writableWriteBuffer(writable: JsAny, buffer: JsAny): kotlin.js.Promise<JsAny> = js("writable.write(buffer)")
 internal fun writableClose(writable: JsAny): kotlin.js.Promise<JsAny> = js("writable.close()")
 internal fun dirRemoveEntry(dir: JsAny, name: String): kotlin.js.Promise<JsAny> = js("dir.removeEntry(name)")
+private fun dirRemoveEntryRecursivePromise(dir: JsAny, name: String): kotlin.js.Promise<JsAny> =
+    js("dir.removeEntry(name, { recursive: true })")
+
+/**
+ * Deletes the directory at absolute OPFS path [path] and everything under it (`{recursive: true}`)
+ * — [dirRemoveEntry]/[opfsDeleteFile] only remove a single, already-empty entry, which fails on a
+ * non-empty directory. Used by the relocate staging-directory sweep (Story 3.1.2's Web wiring,
+ * `RelocationStagingDirectory.wasmJs.kt`) to remove a stale `.stele-relocate-staging-<graphId>/`
+ * directory in one call instead of walking and deleting its contents first.
+ */
+internal suspend fun opfsDeleteDirectoryRecursive(path: String) {
+    try {
+        val root = getOpfsRoot()
+        val parts = path.removePrefix("/").split("/")
+        var dir: JsAny = root
+        for (part in parts.dropLast(1)) {
+            dir = getDirectoryHandle(dir, part, false)
+        }
+        @Suppress("UNUSED_VARIABLE") val _remove: JsAny = dirRemoveEntryRecursivePromise(dir, parts.last()).await()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        println("[SteleKit] OPFS recursive delete failed for $path: ${e.message}")
+    }
+}
 
 internal suspend fun opfsWriteFile(path: String, content: String) {
     try {

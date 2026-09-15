@@ -48,9 +48,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import dev.stapler.stelekit.db.StorageLocationResolver
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.GraphInfo
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.StorageLocation
+import dev.stapler.stelekit.model.StorageMoveOperation
 import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.platform.HostAccessState
 import dev.stapler.stelekit.platform.isCurrentSessionEphemeral
@@ -61,6 +64,7 @@ import dev.stapler.stelekit.ui.LocalWindowSizeClass
 import dev.stapler.stelekit.ui.Screen
 import dev.stapler.stelekit.ui.isMobile
 import dev.stapler.stelekit.ui.theme.StelekitTheme
+import kotlinx.coroutines.launch
 
 /** Amber warning treatment for an unresolved disk conflict — matches [SyncStatusBadge]'s
  * `ConflictPending` color exactly (deliberately, for visual consistency between the two
@@ -114,6 +118,26 @@ fun LeftSidebar(
     onRenameGraph: (String, String) -> Unit = { _, _ -> },
     onRelinkHostDirectory: (String) -> Unit = {},
     supportsHostDirectoryLink: Boolean = false,
+    /** Story 3.2.2 — see [GraphSwitcher]'s parameter doc. */
+    storageLocationResolver: StorageLocationResolver? = null,
+    onBrowseRequestForMove: suspend (String) -> StorageLocation? = { null },
+    /** See [GraphSwitcher]'s parameter doc. */
+    onBrowseClickForMove: () -> Unit = {},
+    moveStorageLocationPlatformCapabilities: Boolean = false,
+    /** Epic 4.2 (Story 4.2.1): resolves whether [StorageMoveChoiceDialog]'s "Link" option should
+     * be offered for a graph's move flow — real signal is `GitRepository.isGitRepo(graph.path)`
+     * (already resolves through Android's shadow-worktree for `saf://` paths, see
+     * `AndroidGitRepository.isGitRepo`), wired in by the composition root. Defaults to `true` so
+     * platforms/tests that don't wire a real check keep prior (Epic 3.4) behavior — Link is only
+     * ever gated OFF, never gated on, by a caller opting in to a real check. */
+    isGraphGitCloned: suspend (path: String) -> Boolean = { true },
+    /** Epic 3.4: fires once the user has chosen Relocate/Link in [StorageMoveChoiceDialog] and
+     * confirmed in [StorageMoveConfirmDialog] — the composition root's hand-off point to drive
+     * `GraphRelocationCoordinator.relocate()` (Relocate) or `connectHostDirectory` (Link, Epic
+     * 4.1). Null (the default) means nothing happens once the user confirms — this file has no
+     * coordinator instance to invoke itself, matching the composition-root wiring gap Epics 3.2/
+     * 3.3 already left for [storageLocationResolver] and [onBrowseRequestForMove]. */
+    onStorageLocationChoose: (operation: StorageMoveOperation) -> Unit = {},
     gitSyncedGraphId: String? = null,
     /** Pages captured from another graph by [onExportPagesForMerge], not yet merged in here.
      * Cross-graph page/journal recovery — see GraphMergeService's class doc. */
@@ -172,6 +196,12 @@ fun LeftSidebar(
                 onRenameGraph = onRenameGraph,
                 onRelinkHostDirectory = onRelinkHostDirectory,
                 supportsHostDirectoryLink = supportsHostDirectoryLink,
+                storageLocationResolver = storageLocationResolver,
+                onBrowseRequestForMove = onBrowseRequestForMove,
+                onBrowseClickForMove = onBrowseClickForMove,
+                moveStorageLocationPlatformCapabilities = moveStorageLocationPlatformCapabilities,
+                isGraphGitCloned = isGraphGitCloned,
+                onStorageLocationChoose = onStorageLocationChoose,
                 gitSyncedGraphId = gitSyncedGraphId,
                 isDemoActive = isDemoActive,
                 hostAccessState = hostAccessState,
@@ -398,6 +428,30 @@ fun GraphSwitcher(
      * (button hidden) on platforms without a native directory picker. */
     onRelinkHostDirectory: (String) -> Unit = {},
     supportsHostDirectoryLink: Boolean = false,
+    /**
+     * Story 3.2.2: resolves/backfills a graph's real source [StorageLocation] before "Move
+     * storage location…" opens [UnifiedLocationPicker] (Story 1.1.4's `resolveOrBackfill`, so a
+     * graph that predates `storage_locations` still has a real source to relocate from). Null
+     * (the default) hides the button entirely — set by the platform-specific composition root
+     * once it has a real resolver to inject.
+     */
+    storageLocationResolver: StorageLocationResolver? = null,
+    /** Threaded into [UnifiedLocationPicker]'s `onBrowseRequest` for the relocate flow. */
+    onBrowseRequestForMove: suspend (String) -> StorageLocation? = { null },
+    /** Must run synchronously in the "Browse…" row's own click handler — same transient-user-
+     * activation constraint as [UnifiedLocationPicker]'s `onBrowseClick`. */
+    onBrowseClickForMove: () -> Unit = {},
+    /** Whether the relocate flow's [UnifiedLocationPicker] shows a "Browse…" row. */
+    moveStorageLocationPlatformCapabilities: Boolean = false,
+    /** See [LeftSidebar]'s parameter doc — gates [StorageMoveChoiceDialog]'s "Link" option. */
+    isGraphGitCloned: suspend (path: String) -> Boolean = { true },
+    /**
+     * Epic 3.4: fires once the user has picked a destination in [UnifiedLocationPicker], chosen
+     * Relocate/Link in [StorageMoveChoiceDialog], and confirmed in [StorageMoveConfirmDialog] —
+     * see [Sidebar]'s parameter doc for why this is still a hand-off point rather than a direct
+     * coordinator call.
+     */
+    onStorageLocationChoose: (operation: StorageMoveOperation) -> Unit = {},
     gitSyncedGraphId: String? = null,
     isDemoActive: Boolean = false,
     /** Epic 2.3: host-directory connection state for [activeGraphId] only — used to show a
@@ -411,6 +465,22 @@ fun GraphSwitcher(
     var expanded by remember { mutableStateOf(false) }
     var graphToRemove by remember { mutableStateOf<GraphInfo?>(null) }
     var graphToEdit by remember { mutableStateOf<GraphInfo?>(null) }
+    // Story 3.2.2: "Move storage location…" flow — resolveOrBackfill runs first (so a graph that
+    // predates storage_locations still has a real source location), then UnifiedLocationPicker
+    // opens once it resolves. Separate from graphToEdit so the picker survives the Edit dialog
+    // closing (the button closes it immediately on tap, matching onRelinkHostDirectory's pattern).
+    var movingStorageForGraph by remember { mutableStateOf<GraphInfo?>(null) }
+    // Epic 3.4: the real source resolveOrBackfill(graphId) returned for movingStorageForGraph —
+    // carried forward into StorageMoveChoiceDialog/StorageMoveConfirmDialog once the picker
+    // resolves a destination, so both name the exact "from"/"to" locations (never a placeholder).
+    var movingStorageSource by remember { mutableStateOf<StorageLocation?>(null) }
+    // Epic 4.2 (Story 4.2.1): resolved alongside movingStorageSource so choosingMoveFor can gate
+    // StorageMoveChoiceDialog's "Link" option — true (Link offered) until proven otherwise, since
+    // isGraphGitCloned defaults to { true } and a plain graph is the only case that flips it off.
+    var movingStorageIsLinkAvailable by remember { mutableStateOf(true) }
+    var choosingMoveFor by remember { mutableStateOf<PendingStorageMove?>(null) }
+    var confirmingMove by remember { mutableStateOf<PendingStorageMove?>(null) }
+    val moveStorageScope = rememberCoroutineScope()
 
     Column(modifier = modifier) {
         // Current graph button
@@ -570,13 +640,12 @@ fun GraphSwitcher(
         )
     }
 
-    // Edit dialog: rename, re-point the internal path (migrates the DB), and/or re-link the
-    // real host folder (web-local-folder-livesync only) — three independent fields, each with
-    // its own save action so a field that requires migration/re-linking only runs that work.
+    // Edit dialog: rename, move the graph's storage location (guided flow, Story 3.2.2), and/or
+    // re-link the real host folder (web-local-folder-livesync only) — independent actions, each
+    // with its own trigger so an action that requires migration/re-linking only runs that work.
     val editingGraph = graphToEdit
     if (editingGraph != null) {
         var newName by remember(editingGraph.id.value) { mutableStateOf(editingGraph.displayName) }
-        var newPath by remember(editingGraph.id.value) { mutableStateOf(editingGraph.path) }
         AlertDialog(
             onDismissRequest = { graphToEdit = null },
             title = { Text("Edit Graph") },
@@ -591,19 +660,31 @@ fun GraphSwitcher(
                     )
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        "Internal graph path. Changing this moves \"${editingGraph.displayName}\"'s " +
-                            "database to a different location on this device.",
+                        "Move \"${editingGraph.displayName}\"'s files to a different storage location on this device.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(4.dp))
-                    OutlinedTextField(
-                        value = newPath,
-                        onValueChange = { newPath = it },
-                        label = { Text("Graph path") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    TextButton(
+                        onClick = {
+                            val graphId = editingGraph.id.value
+                            graphToEdit = null
+                            moveStorageScope.launch {
+                                // Story 1.1.4: backfills a real source location for a graph that
+                                // predates storage_locations, so the picker/choice dialog never
+                                // names a blank source. A null resolver means this platform's
+                                // composition root hasn't wired one in yet (see GraphSwitcher's
+                                // storageLocationResolver doc) — still open the picker so the
+                                // "Browse…" row keeps working, just without the backfill side effect.
+                                movingStorageSource = storageLocationResolver?.resolveOrBackfill(graphId)
+                                movingStorageIsLinkAvailable = isGraphGitCloned(editingGraph.path)
+                                movingStorageForGraph = editingGraph
+                            }
+                        },
+                        contentPadding = PaddingValues(horizontal = 0.dp),
+                    ) {
+                        Text("Move storage location…")
+                    }
                     if (supportsHostDirectoryLink) {
                         Spacer(Modifier.height(12.dp))
                         Text(
@@ -631,13 +712,9 @@ fun GraphSwitcher(
                         if (newName.isNotBlank() && newName != editingGraph.displayName) {
                             onRenameGraph(editingGraph.id.value, newName)
                         }
-                        if (newPath.isNotBlank() && newPath != editingGraph.path) {
-                            onUpdateGraphPath(editingGraph.id.value, newPath)
-                        }
                         graphToEdit = null
                     },
-                    enabled = (newName.isNotBlank() && newName != editingGraph.displayName) ||
-                        (newPath.isNotBlank() && newPath != editingGraph.path),
+                    enabled = newName.isNotBlank() && newName != editingGraph.displayName,
                 ) {
                     Text("Save")
                 }
@@ -649,7 +726,107 @@ fun GraphSwitcher(
             }
         )
     }
+
+    // Story 3.2.2: UnifiedLocationPicker for the "Move storage location…" flow, opened once
+    // resolveOrBackfill (above) completes. Epic 3.4: once a destination is picked, control passes
+    // to StorageMoveChoiceDialog (Relocate vs Link) below, not straight to onStorageLocationChoose.
+    val movingGraph = movingStorageForGraph
+    if (movingGraph != null) {
+        UnifiedLocationPicker(
+            title = "Move \"${movingGraph.displayName}\" to…",
+            graphId = movingGraph.id.value,
+            appStorageSubtitle = "Kept inside SteleKit only — not visible in your device's file manager.",
+            platformCapabilities = moveStorageLocationPlatformCapabilities,
+            onBrowseClick = onBrowseClickForMove,
+            onBrowseRequest = { onBrowseRequestForMove(movingGraph.id.value) },
+            onConfirm = { destination ->
+                choosingMoveFor = PendingStorageMove(
+                    graph = movingGraph,
+                    // A null resolver (composition root hasn't wired one in yet, per
+                    // storageLocationResolver's doc) leaves the real source unknown — AppOwned is
+                    // the least-wrong placeholder available here, not a claim about where the
+                    // graph actually lives.
+                    source = movingStorageSource ?: StorageLocation.AppOwned(movingGraph.id.value),
+                    destination = destination,
+                    isLinkAvailable = movingStorageIsLinkAvailable,
+                )
+                movingStorageForGraph = null
+                movingStorageSource = null
+            },
+            onDismiss = { movingStorageForGraph = null; movingStorageSource = null },
+        )
+    }
+
+    // Epic 3.4 (Story 3.4.1): Relocate-vs-Link choice, opened once UnifiedLocationPicker resolves
+    // a destination above.
+    val choosing = choosingMoveFor
+    if (choosing != null) {
+        StorageMoveChoiceDialog(
+            graphName = choosing.graph.displayName,
+            source = choosing.source,
+            destination = choosing.destination,
+            // Epic 4.2 (Story 4.2.1): gated by isGraphGitCloned(graph.path), resolved when the
+            // move flow started (see movingStorageIsLinkAvailable above) — per ADR-003, Link is
+            // only a real continuous mirror for git-cloned Android graphs (the existing
+            // shadow-worktree write-back mechanism); plain graphs get the disabled note instead.
+            isLinkAvailable = choosing.isLinkAvailable,
+            onRelocateChoose = {
+                confirmingMove = choosing.copy(isRelocate = true)
+                choosingMoveFor = null
+            },
+            onLinkChoose = {
+                confirmingMove = choosing.copy(isRelocate = false)
+                choosingMoveFor = null
+            },
+            onDismissRequest = { choosingMoveFor = null },
+        )
+    }
+
+    // Epic 3.4 (Story 3.4.2): names the exact source/destination before handing off to
+    // onStorageLocationChoose — the composition root's job (not this file's) is to actually drive
+    // GraphRelocationCoordinator.relocate()/connectHostDirectory from there and show
+    // StorageMoveProgressDialog for the result; see onStorageLocationChoose's doc above.
+    val confirming = confirmingMove
+    if (confirming != null) {
+        StorageMoveConfirmDialog(
+            graphName = confirming.graph.displayName,
+            source = confirming.source,
+            destination = confirming.destination,
+            confirmLabel = if (confirming.isRelocate) "Move" else "Link",
+            onConfirm = {
+                val operation = if (confirming.isRelocate) {
+                    StorageMoveOperation.Relocate(
+                        graphId = confirming.graph.id.value,
+                        source = confirming.source,
+                        destination = confirming.destination,
+                        // AC34: never auto-delete the source — that choice belongs to the
+                        // post-move cleanup prompt (Surface 9), not this confirmation step.
+                        deleteSourceAfterVerify = false,
+                    )
+                } else {
+                    StorageMoveOperation.Link(
+                        graphId = confirming.graph.id.value,
+                        source = confirming.source,
+                        destination = confirming.destination,
+                    )
+                }
+                onStorageLocationChoose(operation)
+                confirmingMove = null
+            },
+            onDismissRequest = { confirmingMove = null },
+        )
+    }
 }
+
+/** Epic 3.4: carries a graph + resolved source/destination through the
+ * `StorageMoveChoiceDialog` → `StorageMoveConfirmDialog` hand-off inside [GraphSwitcher]. */
+private data class PendingStorageMove(
+    val graph: GraphInfo,
+    val source: StorageLocation,
+    val destination: StorageLocation,
+    val isRelocate: Boolean = true,
+    val isLinkAvailable: Boolean = true,
+)
 
 /**
  * Individual graph item in the dropdown.

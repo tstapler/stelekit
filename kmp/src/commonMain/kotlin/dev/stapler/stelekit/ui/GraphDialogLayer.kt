@@ -178,6 +178,12 @@ private fun SettingsDialogHost(
         hostAccessState = settings.hostAccessState,
         supportsNativeDirectoryPicker = fileSystem.supportsNativeDirectoryPicker,
         onConnectHostDirectory = settings.onConnectHostDirectory,
+        onMoveStorageLocation = settings.onMoveStorageLocation,
+        storageMoveGraphName = settings.storageMoveGraphName,
+        onStorageLocationChoose = settings.onStorageLocationChoose,
+        onBrowseRequestForMove = settings.onBrowseRequestForMove,
+        onBrowseClickForMove = settings.onBrowseClickForMove,
+        onUnlinkHostDirectory = settings.onUnlinkHostDirectory,
         hotkeyComboLabel = settings.hotkeyComboLabel,
     )
 }

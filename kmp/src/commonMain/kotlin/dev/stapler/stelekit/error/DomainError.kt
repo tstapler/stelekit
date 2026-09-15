@@ -160,6 +160,40 @@ sealed interface DomainError {
                 "Overwrite failed after clearing previous content for page $pageUuid — previous content may be lost"
         }
     }
+
+    /** Failure modes for relocate/link storage-move operations (ADR-001). */
+    sealed interface StorageError : DomainError {
+        data class VerificationFailed(val path: String, val reason: String) : StorageError {
+            override val message: String = "Verification failed for $path: $reason"
+        }
+        data class SourceInFlight(val reason: String) : StorageError {
+            override val message: String = "Source is still in flight: $reason"
+        }
+        data class DestinationNotWritable(val path: String) : StorageError {
+            override val message: String = "Destination not writable: $path"
+        }
+        data class PartialCopyDetected(val path: String) : StorageError {
+            override val message: String = "Partial copy detected at $path"
+        }
+        data class InsufficientSpace(val requiredBytes: Long, val availableBytes: Long) : StorageError {
+            override val message: String =
+                "Insufficient space: required $requiredBytes bytes, available $availableBytes bytes"
+        }
+        data class QuiesceTimedOut(val waitedMs: Long) : StorageError {
+            override val message: String = "Timed out after ${waitedMs}ms waiting for in-flight sync to quiesce"
+        }
+        data class RelocationFailed(val path: String) : StorageError {
+            override val message: String = "Failed to rename $path"
+        }
+
+        /**
+         * Worse than every other leaf here: the driver may now be stuck closed rather than back
+         * at its pre-move state (see `GraphRelocationCoordinator`, Story 3.1.5).
+         */
+        data class ReopenFailed(val graphId: String) : StorageError {
+            override val message: String = "Failed to reopen graph after relocate: $graphId"
+        }
+    }
 }
 
 fun Throwable.toDatabaseError(): DomainError.DatabaseError.WriteFailed =
@@ -223,6 +257,14 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.QrTransferError.EnvelopeMalformed -> "This transfer didn't include valid page info — please try sending it again"
     is DomainError.QrTransferError.OverwriteFailedPreviousContentAffected ->
         "Overwrite failed — this page's previous content may have been affected. Please check it and try again"
+    is DomainError.StorageError.VerificationFailed -> "Verification failed — the copied files don't match the originals"
+    is DomainError.StorageError.SourceInFlight -> "Can't move right now — a sync is still in progress"
+    is DomainError.StorageError.DestinationNotWritable -> "Can't write to the selected location"
+    is DomainError.StorageError.PartialCopyDetected -> "Copy is incomplete — nothing was changed"
+    is DomainError.StorageError.InsufficientSpace -> "Not enough free space at the destination"
+    is DomainError.StorageError.QuiesceTimedOut -> "Timed out waiting for sync to finish — please try again"
+    is DomainError.StorageError.ReopenFailed -> "Move may have partially completed — please restart the app"
+    is DomainError.StorageError.RelocationFailed -> "Couldn't move file — nothing was changed"
 }
 
 fun DomainError.GitError.toSyncErrorMessage(): String = when (this) {

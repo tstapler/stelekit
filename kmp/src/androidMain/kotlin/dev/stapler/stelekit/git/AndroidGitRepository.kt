@@ -66,12 +66,18 @@ class AndroidGitRepository(
      * `MANAGE_EXTERNAL_STORAGE`, no shadow needed) or when [repoRoot] isn't a `saf://` path.
      */
     internal fun shadowWorktreeFor(repoRoot: String): GitShadowWorktree? {
-        if (pathResolver(repoRoot) != null) return null // fast path resolves directly, no shadow needed
+        // AppOwned/DirectAccess/Desktop branch (Story 2.2.2): a repoRoot that isn't a saf:// URI
+        // at all needs no SAF resolution — checked first so pathResolver (which only ever
+        // resolves saf:// input) is never invoked for it, not just harmlessly returns null.
         if (!repoRoot.startsWith("saf://")) return null
+        if (pathResolver(repoRoot) != null) return null // fast path resolves directly, no shadow needed
         val key = GitShadowWorktree.shadowKeyForSafPath(repoRoot)
         // .also { touchLastUsed() } refreshes the orphan-sweep liveness signal (Task 6.1.1a) on
         // every real resolution, so GitShadowWorktree.sweepOrphans() never deletes an actively
         // used graph's shadow tree — no per-call-site opt-in required.
+        // Task 1.2.1b finding: fires on every JGit-touching op (clone/init/openGit's commit/fetch/
+        // push/merge choke point, incl. WorkManager's background fetch) — not on "graph opened" in
+        // the UI per se; switching the active graph alone runs no git op and doesn't touch it.
         return shadowWorktrees.getOrPut(key) {
             GitShadowWorktree(context, key, repoRoot)
         }.also {
