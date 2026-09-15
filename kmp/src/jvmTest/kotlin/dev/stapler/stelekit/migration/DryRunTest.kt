@@ -98,7 +98,7 @@ class DryRunTest {
         updatedAt = now,
     )
 
-    private fun makeBlock(uuid: String, pageUuid: String, content: String, position: Int = 0) = Block(
+    private fun makeBlock(uuid: String, pageUuid: String, content: String, position: String = "a0") = Block(
         uuid = BlockUuid(uuid),
         pageUuid = PageUuid(pageUuid),
         content = content,
@@ -151,13 +151,13 @@ class DryRunTest {
         val runner = buildRunner(db, repoSet, actor)
 
         // Snapshot repo state before
-        val pagesBefore = repoSet.pageRepository.getAllPages().first().getOrNull() ?: emptyList()
+        val pagesBefore = repoSet.pageRepository.getAllPagesSnapshot().getOrNull() ?: emptyList()
         val changelogBefore = ChangelogRepository(db).appliedIds("graph-dry-no-mod")
 
         runner.dryRun("graph-dry-no-mod", repoSet)
 
         // Snapshot repo state after
-        val pagesAfter = repoSet.pageRepository.getAllPages().first().getOrNull() ?: emptyList()
+        val pagesAfter = repoSet.pageRepository.getAllPagesSnapshot().getOrNull() ?: emptyList()
         val changelogAfter = ChangelogRepository(db).appliedIds("graph-dry-no-mod")
 
         assertEquals(pagesBefore.size, pagesAfter.size, "Page count should be unchanged after dry run")

@@ -37,19 +37,19 @@ class JsonExporter : PageExporter {
     private fun buildBlockTree(blocks: List<Block>): List<BlockDto> {
         val blocksByParent = blocks.groupBy { it.parentUuid }
 
-        fun buildChildren(parentUuid: String?): List<BlockDto> {
+        fun buildChildren(parentUuid: dev.stapler.stelekit.model.BlockUuid?): List<BlockDto> {
             val children = blocksByParent[parentUuid] ?: return emptyList()
             return children
                 .sortedWith(compareBy<Block> { it.position }.thenBy { it.uuid.value })
                 .map { block ->
                     BlockDto(
                         uuid = block.uuid.value,
-                        parentUuid = block.parentUuid,
+                        parentUuid = block.parentUuid?.value,
                         position = block.position,
                         level = block.level,
                         content = block.content,
                         properties = block.properties.filterKeys { it != "id" },
-                        children = buildChildren(block.uuid.value)
+                        children = buildChildren(block.uuid)
                     )
                 }
         }

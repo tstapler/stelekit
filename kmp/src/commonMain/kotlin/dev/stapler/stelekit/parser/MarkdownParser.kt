@@ -5,7 +5,6 @@ import kotlinx.coroutines.CancellationException
 import dev.stapler.stelekit.model.BlockType
 import dev.stapler.stelekit.model.ParsedBlock
 import dev.stapler.stelekit.model.ParsedPage
-import dev.stapler.stelekit.parsing.InlineParser
 import dev.stapler.stelekit.parsing.OutlinerParser
 import dev.stapler.stelekit.parsing.ast.*
 
@@ -40,13 +39,13 @@ class MarkdownParser {
         val level = when(block) {
             is BulletBlockNode -> block.level
             is ParagraphBlockNode -> 0
-            is HeadingBlockNode -> 0
-            is CodeFenceBlockNode -> 0
-            is BlockquoteBlockNode -> 0
+            is HeadingBlockNode -> block.indentLevel
+            is CodeFenceBlockNode -> block.indentLevel
+            is BlockquoteBlockNode -> block.indentLevel
             is OrderedListItemBlockNode -> block.level
-            is ThematicBreakBlockNode -> 0
-            is TableBlockNode -> 0
-            is RawHtmlBlockNode -> 0
+            is ThematicBreakBlockNode -> block.indentLevel
+            is TableBlockNode -> block.indentLevel
+            is RawHtmlBlockNode -> block.indentLevel
         }
 
         val blockType = when (block) {
@@ -86,6 +85,7 @@ class MarkdownParser {
             is BlockquoteBlockNode -> {
                 block.children.map { child -> "> ${reconstructContent(child.content)}" }.joinToString("\n")
             }
+            is RawHtmlBlockNode -> block.rawHtml
             else -> reconstructContent(block.content)
         }
         

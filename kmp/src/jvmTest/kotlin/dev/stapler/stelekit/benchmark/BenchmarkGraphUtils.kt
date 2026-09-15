@@ -78,5 +78,6 @@ object BenchmarkGraphUtils {
         override fun putBoolean(key: String, value: Boolean) = Unit
         override fun getString(key: String, defaultValue: String) = defaultValue
         override fun putString(key: String, value: String) = Unit
+        override fun containsKey(key: String) = false
     }
 }

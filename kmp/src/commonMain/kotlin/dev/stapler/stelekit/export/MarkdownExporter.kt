@@ -5,6 +5,7 @@ import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.outliner.BlockSorter
 import dev.stapler.stelekit.parsing.InlineParser
 import dev.stapler.stelekit.parsing.ast.*
+import dev.stapler.stelekit.util.indentContinuationLines
 
 class MarkdownExporter : PageExporter {
     override val formatId = "markdown"
@@ -50,7 +51,8 @@ class MarkdownExporter : PageExporter {
                 sb.append("\n\n")
             } else {
                 val indent = "  ".repeat(block.level - 1)
-                sb.append("$indent- $inlineContent\n")
+                val continuationIndent = "  ".repeat(block.level)
+                sb.append("$indent- ${inlineContent.indentContinuationLines(continuationIndent)}\n")
             }
         }
     }

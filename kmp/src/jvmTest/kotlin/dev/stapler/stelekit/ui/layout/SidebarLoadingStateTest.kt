@@ -100,10 +100,10 @@ class SidebarLoadingStateTest {
             }
         }
 
-        composeTestRule.onNodeWithText("Favorites").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Favorites").performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithText("My Favorite Page").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Recent").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Recent Note").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Recent").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Recent Note").performScrollTo().assertIsDisplayed()
     }
 
     @Test
@@ -127,7 +127,7 @@ class SidebarLoadingStateTest {
 
         composeTestRule.onNodeWithText("All Pages").performClick()
 
-        assertEquals(Screen.AllPages, navigatedTo, "clicking All Pages must navigate immediately after phase 1")
+        assertEquals(Screen.AllPages(), navigatedTo, "clicking All Pages must navigate immediately after phase 1")
     }
 
     @Test

@@ -4,7 +4,7 @@ UX review findings from triad review, covering multi-graph integration, user flo
 
 ## Critical (data integrity / security)
 
-- [ ] **Fix merge-cancel data corruption** — `ConflictResolutionScreen` "Cancel" leaves git in `MERGING` state; next sync fails silently. Fix: call `gitRepository.abortMerge(config)` on cancel, or replace Cancel with a warning dialog. (`GraphDialogLayer.kt`, `ConflictResolutionScreen.kt`, `GitSyncService.kt`)
+- [x] **Fix merge-cancel data corruption** — `ConflictResolutionScreen` "Cancel" leaves git in `MERGING` state; next sync fails silently. Fix: call `gitRepository.abortMerge(config)` on cancel, or replace Cancel with a warning dialog. (`GraphDialogLayer.kt`, `ConflictResolutionScreen.kt`, `GitSyncService.kt`) — fixed in `533fbbae03`; happy-path + failed-abort regression tests added in `GitSyncServiceTest.kt` (Story 3.3.3, web-git-writeback plan Task 3.3.3a).
 
 - [ ] **Mask HTTPS token field** — Step 3 of `GitSetupScreen` uses a plain `OutlinedTextField` for the personal access token. Add `visualTransformation = PasswordVisualTransformation()`. (`GitSetupScreen.kt` step 3)
 

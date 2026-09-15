@@ -1,0 +1,25 @@
+"""
+androidApp — Android application binary (debug APK).
+
+Produces a debug APK with native multidex and Java 8 core library desugaring.
+The `plugin.properties` exclusion from Gradle packaging is handled by the
+android_binary rule's default resource exclusion behavior.
+
+Developer command: bazel build //androidApp:android_app
+"""
+
+load("@rules_android//rules:rules.bzl", "android_binary")
+
+exports_files([
+    "BazelAndroidManifest.xml",
+    "src/main/AndroidManifest.xml",
+])
+
+android_binary(
+    name = "android_app",
+    manifest = "BazelAndroidManifest.xml",
+    custom_package = "dev.stapler.stelekit.android",
+    deps = ["//kmp/src/androidMain/kotlin:android_main"],
+    multidex = "native",
+    visibility = ["//visibility:public"],
+)

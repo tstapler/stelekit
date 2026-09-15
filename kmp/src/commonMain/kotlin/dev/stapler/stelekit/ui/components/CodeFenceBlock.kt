@@ -1,7 +1,8 @@
 package dev.stapler.stelekit.ui.components
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,12 +33,16 @@ private fun extractCodeBody(content: String): String {
  * monospace font, and horizontal scrolling.
  * Tapping the block enters edit mode.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun CodeFenceBlock(
     content: String,
     language: String,
     onStartEditing: () -> Unit,
     modifier: Modifier = Modifier,
+    isInSelectionMode: Boolean = false,
+    onToggleSelect: () -> Unit = {},
+    onLongPressSelect: (() -> Unit)? = null,
 ) {
     val codeText = remember(content) { extractCodeBody(content) }
 
@@ -45,7 +50,10 @@ internal fun CodeFenceBlock(
         modifier = modifier
             .clip(RoundedCornerShape(4.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .clickable { onStartEditing() }
+            .combinedClickable(
+                onLongClick = onLongPressSelect,
+                onClick = { if (isInSelectionMode) onToggleSelect() else onStartEditing() },
+            )
     ) {
         Column(
             modifier = Modifier.padding(12.dp)

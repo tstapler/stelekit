@@ -3,7 +3,6 @@ package dev.stapler.stelekit.ui.annotate
 import arrow.core.Either
 import androidx.compose.ui.graphics.ImageBitmap
 import dev.stapler.stelekit.calibration.CalibrationService
-import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.AnnotationType
 import dev.stapler.stelekit.model.Calibration
@@ -14,7 +13,6 @@ import dev.stapler.stelekit.model.MeasurementUnit
 import dev.stapler.stelekit.model.NormalizedPoint
 import dev.stapler.stelekit.model.angleBetweenThreePoints
 import dev.stapler.stelekit.model.metersToDisplayString
-import dev.stapler.stelekit.model.pixelDistanceToMeters
 import dev.stapler.stelekit.model.polygonAreaMeters
 import dev.stapler.stelekit.platform.measurement.DeviceConnectionState
 import dev.stapler.stelekit.platform.measurement.ExternalMeasurementDevice
@@ -124,8 +122,12 @@ sealed interface DepthModelUiState {
     /** Model ready — show "Estimate depth (AI)" button. */
     data object Ready : DepthModelUiState
 
-    /** Download failed. Show "Download failed — tap to retry". */
-    data object Failed : DepthModelUiState
+    /**
+     * Download failed. Show "Download failed — tap to retry", or [reason] followed by
+     * "Tap to retry." when set (e.g. a stall-timeout transition surfaces plain-language copy
+     * instead of the generic message).
+     */
+    data class Failed(val reason: String? = null) : DepthModelUiState
 }
 
 /** Records the calibration state before a user-initiated change, enabling single-level undo. */
@@ -318,10 +320,13 @@ class AnnotationEditorViewModel(
         scope.launch {
             val result = measurementRepository.getMeasurementsForImage(imageAnnotation.uuid).first()
             result.onRight { list ->
-                // Skip the load if the user has already committed or deleted annotations;
-                // applying stale repository results would overwrite optimistic UI state.
-                if (!hasBeenMutated.value) {
-                    _state.update { currentSt -> currentSt.copy(committedAnnotations = list) }
+                // Guard against TOCTOU: check hasBeenMutated inside _state.update so that the
+                // check and the write are part of the same CAS operation. If commitAnnotation
+                // wins the race and sets hasBeenMutated=true before our CAS succeeds, the
+                // MutableStateFlow CAS loop retries the lambda and we see true on retry.
+                _state.update { currentSt ->
+                    if (!hasBeenMutated.value) currentSt.copy(committedAnnotations = list)
+                    else currentSt
                 }
             }
         }
@@ -571,6 +576,10 @@ class AnnotationEditorViewModel(
      */
     @OptIn(DirectRepositoryWrite::class)
     fun updateCalibration(newCalibration: Calibration) {
+        if (!newCalibration.pixelsPerMeter.isFinite() || newCalibration.pixelsPerMeter <= 0.0) {
+            logger.warn("updateCalibration rejected: invalid pixelsPerMeter=${newCalibration.pixelsPerMeter}")
+            return
+        }
         val st = _state.value
 
         // Push current state to calibration history for undo (single-entry — keeps most recent only)

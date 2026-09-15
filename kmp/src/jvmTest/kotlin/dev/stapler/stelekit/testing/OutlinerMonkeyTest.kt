@@ -87,7 +87,7 @@ class OutlinerMonkeyTest {
             uuid = BlockUuid(initialBlockUuid),
             pageUuid = PageUuid(pageUuid),
             content = "Root block",
-            position = 0,
+            position = "a0",
             createdAt = Clock.System.now(),
             updatedAt = Clock.System.now()
         ))
@@ -179,7 +179,7 @@ class OutlinerMonkeyTest {
             val blocksByUuid = blocks.associateBy { it.uuid.value }
             blocks.forEach { block ->
                 if (block.parentUuid != null) {
-                    val parent = blocksByUuid[block.parentUuid]
+                    val parent = blocksByUuid[block.parentUuid?.value]
                     assertTrue(parent != null, "Block ${block.uuid} references non-existent parent ${block.parentUuid}")
                     assertEquals(parent!!.level + 1, block.level, "Block ${block.uuid} level (${block.level}) is inconsistent with parent level (${parent.level})")
                 } else {

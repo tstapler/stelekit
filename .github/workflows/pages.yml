@@ -3,10 +3,20 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'CHANGELOG.md'
+      - '.release-please-manifest.json'
+      - 'Formula/**'
+      - 'Casks/**'
   workflow_dispatch:
   # Called from release.yml after fdroid.yml uploads its artifact, so that the
   # Pages deploy picks up the fresh F-Droid index without a separate site build.
   workflow_call:
+    inputs:
+      force_demo_rebuild:
+        type: boolean
+        default: false
+        description: 'Force Wasm rebuild even when kmp/ files did not change — pass true from release.yml so the app artifact is present in the run for build-site to download'
 
 # Queue pages.yml runs rather than cancelling them. A fast CI-only push completing
 # and deploying would otherwise cancel a concurrent workflow_dispatch run mid-way
@@ -19,6 +29,9 @@ concurrency:
 permissions:
   contents: read
   actions: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   check-changes:
@@ -34,10 +47,12 @@ jobs:
         # Use the full push range (github.event.before → HEAD) so multi-commit pushes
         # don't miss changes that landed in earlier commits of the same push.
         run: |
-          # On workflow_call (release deploy), skip the expensive Wasm rebuild.
-          # The release has already been tested; the last artifact is current enough.
-          if [ "${{ github.event_name }}" = "workflow_call" ]; then
-            echo "kmp=false" >> "$GITHUB_OUTPUT"
+          # When called from release.yml with force_demo_rebuild=true, force the Wasm rebuild
+          # even though release commits only bump version files (not kmp/ code).
+          # github.event_name propagates the caller's trigger (push, not workflow_call),
+          # so we use an explicit boolean input instead of inspecting event_name.
+          if [ "${{ inputs.force_demo_rebuild }}" = "true" ]; then
+            echo "kmp=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           BEFORE="${{ github.event.before }}"
@@ -74,7 +89,16 @@ jobs:
         with:
           path: ~/.konan
           key: konan-${{ runner.os }}-${{ hashFiles('kmp/build.gradle.kts', 'gradle/libs.versions.toml', 'settings.gradle.kts', 'gradle.properties') }}
+      - name: Cache Wasm app distribution
+        id: cache-demo
+        uses: actions/cache@v4
+        with:
+          path: kmp/build/dist/wasmJs/productionExecutable/
+          key: wasm-app-${{ runner.os }}-${{ hashFiles('kmp/build.gradle.kts', 'gradle/libs.versions.toml', 'settings.gradle.kts', 'gradle.properties', 'kmp/src/wasmJsMain/**', 'kmp/src/jsMain/**', 'kmp/src/commonMain/**') }}
+          restore-keys: |
+            wasm-app-${{ runner.os }}-
       - name: Build wasmJs demo
+        if: steps.cache-demo.outputs.cache-hit != 'true'
         run: ./gradlew :kmp:wasmJsBrowserDistribution --no-daemon --build-cache -PenableJs=true
       - name: Assert expected output exists
         run: test -d kmp/build/dist/wasmJs/productionExecutable/
@@ -86,7 +110,7 @@ jobs:
           fi
       - uses: actions/upload-artifact@v4
         with:
-          name: demo-dist
+          name: app-dist
           path: kmp/build/dist/wasmJs/productionExecutable/
           retention-days: 90
 
@@ -98,38 +122,42 @@ jobs:
       - uses: actions/checkout@v4
 
       # ── Demo artifact ─────────────────────────────────────────────────────
-      # Try current run first (when build-demo ran); fall back to last successful run
-      # so site-only edits keep the previously-built demo live.
+      # Try current run first (when build-demo ran); fall back to the latest
+      # app-dist artifact from any prior run so site-only edits (or pushes that
+      # don't touch kmp/, which skip build-demo) keep the previously-built demo
+      # live. Artifacts (90-day retention) are used instead of actions/cache —
+      # the wasm-app cache entry was observed getting evicted under this repo's
+      # cache pressure well within days, silently degrading the deployed site to
+      # its "coming soon" placeholder with no CI failure. `gh run download`
+      # without a run id fetches the most recent matching artifact across the
+      # whole repo, mirroring the fdroid-content fallback below.
       - id: download-demo
-        name: Download demo artifact (current run)
+        name: Download app artifact (current run)
         uses: actions/download-artifact@v4
         continue-on-error: true
         with:
-          name: demo-dist
-          path: site/public/demo/
+          name: app-dist
+          path: site/public/app/
       - id: download-demo-fallback
-        name: Download demo artifact (last successful run)
+        name: Download app artifact (latest available, fallback)
         if: steps.download-demo.outcome == 'failure'
         continue-on-error: true
-        run: |
-          # Iterate recent successful runs until we find one that has demo-dist.
-          # build-demo is skipped on site-only pushes, so the very latest run may
-          # not have the artifact — search up to 20 runs to find one that does.
-          FOUND=false
-          for RUN_ID in $(gh run list --workflow pages.yml --status success --limit 20 \
-            --json databaseId --jq '.[].databaseId'); do
-            if gh run download "$RUN_ID" --name demo-dist --dir site/public/demo/ 2>/dev/null; then
-              echo "Downloaded demo-dist from run $RUN_ID"
-              FOUND=true
-              break
-            fi
-          done
-          if [ "$FOUND" != "true" ]; then
-            echo "No recent successful run with demo-dist found"
-            exit 1
-          fi
         env:
           GH_TOKEN: ${{ github.token }}
+        run: gh run download --name app-dist --dir site/public/app/
+      # Fail loudly instead of silently deploying without a demo. The previous
+      # design treated "no demo found" as a handled, non-erroring state — that's
+      # exactly what let the cache-eviction bug above ship a "coming soon"
+      # placeholder to production with fully green CI. Whatever future cause
+      # might make BOTH downloads fail, it must block the deploy, not degrade
+      # past it: the prior successful GitHub Pages deployment stays live when
+      # this job fails, which is a strictly better outcome for users than
+      # shipping a broken one.
+      - name: Fail if no app-dist artifact is available from any source
+        if: steps.download-demo.outcome == 'failure' && steps.download-demo-fallback.outcome == 'failure'
+        run: |
+          echo "::error::No app-dist artifact found (current run and latest-available fallback both failed). Refusing to deploy — this previously shipped a silent 'coming soon' regression to production. If this is genuinely the first-ever deploy with no prior artifact to fall back to, that's the one legitimate case for this failure; otherwise investigate why build-demo / artifact retention is broken."
+          exit 1
 
       # ── F-Droid content ───────────────────────────────────────────────────
       # Primary: current run — present when fdroid.yml ran before us in the same
@@ -142,26 +170,29 @@ jobs:
         with:
           name: fdroid-content
           path: fdroid-content/
-      # Fallback: restore from the most recent successful fdroid.yml run.
+      # Fallback: restore the most recent fdroid-content artifact repo-wide.
+      # release.yml invokes fdroid.yml as a reusable workflow call, so builds
+      # triggered by a real release are attributed to release.yml's run, not
+      # fdroid.yml's — `gh run list --workflow fdroid.yml` can never see them,
+      # only standalone `workflow_dispatch` runs. That previously made this
+      # fallback resurrect a stale manual-dispatch build and silently drop the
+      # latest release from the deployed F-Droid repo. `gh run download` with
+      # no run id searches artifacts by name across the whole repo instead
+      # (same pattern as the app-dist fallback above), so it picks up the
+      # newest fdroid-content regardless of which workflow produced it.
       - id: download-fdroid-fallback
-        name: Restore fdroid content (last successful fdroid run)
+        name: Restore fdroid content (latest available, fallback)
         if: steps.download-fdroid.outcome == 'failure'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          LAST_RUN=$(gh run list --workflow fdroid.yml --status success --limit 1 \
-            --json databaseId --jq '.[0].databaseId // empty')
-          if [ -n "$LAST_RUN" ]; then
-            gh run download "$LAST_RUN" --name fdroid-content --dir fdroid-content/ || true
-            # upload-artifact@v4 strips the common path prefix (fdroid/) when
-            # multiple paths share it, so the artifact lands at repo/ not fdroid/repo/.
-            [ -d fdroid-content/repo ] && \
-              echo "Restored fdroid-content from run $LAST_RUN" || \
-              echo "Download succeeded but repo/ missing in run $LAST_RUN"
-          else
-            echo "No previous successful fdroid run found; fdroid content will be absent"
-          fi
+          gh run download --name fdroid-content --dir fdroid-content/ || true
+          # upload-artifact@v4 strips the common path prefix (fdroid/) when
+          # multiple paths share it, so the artifact lands at repo/ not fdroid/repo/.
+          [ -d fdroid-content/repo ] && \
+            echo "Restored latest available fdroid-content" || \
+            echo "Download succeeded but repo/ missing; fdroid content will be absent"
 
       - uses: actions/configure-pages@v5
       - uses: actions/setup-node@v4
@@ -169,6 +200,9 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: site/package-lock.json
+      - name: Test service worker cache-validation logic
+        run: node --test looks-like-app-shell.test.js
+        working-directory: kmp/src/wasmJsMain/resources
       - name: Install site dependencies
         run: npm ci
         working-directory: site

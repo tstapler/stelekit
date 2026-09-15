@@ -1,6 +1,11 @@
 package dev.stapler.stelekit.model
 
+import kotlin.jvm.JvmInline
 import kotlinx.serialization.Serializable
+
+/** Type-safe wrapper for image annotation UUIDs. */
+@JvmInline
+value class ImageAnnotationUuid(val value: String)
 
 /**
  * Source of the image — how it entered the system.

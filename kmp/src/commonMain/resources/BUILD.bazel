@@ -1,0 +1,11 @@
+load("@rules_java//java:defs.bzl", "java_library")
+
+# Classpath resources for commonMain — demo-graph and icons.
+# resource_strip_prefix strips the path down to the resource roots
+# so tests find resources as "demo-graph/..." not full package paths.
+java_library(
+    name = "common_resources",
+    resources = glob(["demo-graph/**/*"]),
+    resource_strip_prefix = "kmp/src/commonMain/resources",
+    visibility = ["//kmp:__subpackages__"],
+)

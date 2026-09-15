@@ -143,6 +143,30 @@ class FileRegistry(private val fileSystem: FileSystem) {
                     contentHashes[filePathKey] = newHash
                     changedFiles.add(ChangedFile(FileEntry(fileName, filePath, modTime), content))
                 }
+            } else if (modTime < lastKnown && lastKnown != Long.MAX_VALUE && !isEncrypted) {
+                // The file's mod time went BACKWARD relative to what we last recorded.
+                // This happens when a sync tool (git, Syncthing, Logseq Sync) delivers a
+                // file that was originally modified on another device — the provider preserves
+                // the original timestamp rather than setting it to "now". The modTime > lastKnown
+                // guard above misses this case entirely, so we fall through to a content-hash
+                // check to determine whether the file actually changed.
+                //
+                // Only runs when we have a stored hash (populated by prior reads or markWrittenByUs).
+                // Files we have never hashed are skipped to avoid O(N) SAF reads per poll cycle.
+                val storedHash = contentHashes[filePathKey]
+                if (storedHash != null) {
+                    fileSystem.invalidateShadow(filePath)
+                    val content = fileSystem.readFile(filePath) ?: continue
+                    val newHash = content.hashCode()
+                    if (storedHash != newHash) {
+                        modTimes[filePathKey] = modTime
+                        contentHashes[filePathKey] = newHash
+                        changedFiles.add(ChangedFile(FileEntry(fileName, filePath, modTime), content))
+                    } else {
+                        // Same content, just an older timestamp (e.g. sync re-delivered unchanged file).
+                        modTimes[filePathKey] = modTime
+                    }
+                }
             }
         }
 
@@ -162,26 +186,32 @@ class FileRegistry(private val fileSystem: FileSystem) {
     // ---- Write Tracking ----
 
     /**
-     * Marks a file as written by the app. Updates mod time and content hash
-     * so the watcher's content-hash guard will suppress the next detection.
+     * Marks a file as written by the app. For plain `.md` files, updates the content hash
+     * and sets modTimes to 0 so the next [detectChanges] poll uses the content-hash guard
+     * to suppress spurious own-write events. For `.md.stek` files, the sentinel set by
+     * [preMarkPendingWrite] stays active — callers must fire-and-forget a [updateModTime]
+     * call to eventually replace it.
      *
-     * Acquires [detectMutex] so this update is atomic with respect to [detectChanges],
-     * eliminating the race where a concurrent [detectChanges] could read a stale modTime
-     * for a `.md.stek` file (where the content-hash guard is disabled) and emit a spurious
-     * own-write event.
+     * Eliminates the [FileSystem.getLastModifiedTime] SAF call (blocked for minutes on Android
+     * remote document providers). [GraphLoader.markFileWrittenByUs] fires a background
+     * [getLastModifiedTime] + [updateModTime] after calling this to set the real post-write mtime.
      */
     suspend fun markWrittenByUs(filePath: String) = detectMutex.withLock {
-        val modTime = fileSystem.getLastModifiedTime(filePath) ?: return@withLock
         val filePathKey = FilePath(filePath)
-        modTimes[filePathKey] = modTime
-        // Binary encrypted files cannot be read as text — modTime update alone is sufficient
-        // for own-write suppression (detectChanges skips the content-hash guard for .md.stek).
         if (!filePath.endsWith(".md.stek")) {
+            // Read file content for the hash guard. SAF readFile is much faster than
+            // getLastModifiedTime (no remote metadata query). Set modTimes to 0 so the
+            // watcher's next poll enters the "changed" branch and the hash guard suppresses it.
+            // A fire-and-forget getLastModifiedTime in markFileWrittenByUs will later
+            // replace 0 with the real post-write mtime (eliminates the extra readFile per poll).
             val content = fileSystem.readFile(filePath)
             if (content != null) {
                 contentHashes[filePathKey] = content.hashCode()
             }
+            modTimes[filePathKey] = 0L
         }
+        // For .md.stek: no content-hash guard (binary content). Sentinel from
+        // preMarkPendingWrite stays in place; fire-and-forget modtime update replaces it.
     }
 
     /** Updates mod time for a file (after parseAndSavePage). */

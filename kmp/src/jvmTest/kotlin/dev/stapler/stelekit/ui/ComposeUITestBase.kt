@@ -54,7 +54,7 @@ open class ComposeUITestBase : BlockHoundTestBase() {
         scope = scope,
         graphWriter = graphWriter,
         pageRepository = pageRepo,
-        graphPathProvider = { viewModel.uiState.value.currentGraphPath }
+        graphPathProvider = { viewModel.uiState.value.currentGraphPath.orEmpty() }
     )
 
     val viewModel: StelekitViewModel by lazy {

@@ -14,6 +14,8 @@ import kotlin.time.Clock
 
 class InterruptedMigrationException(message: String) : Exception(message)
 
+class ConcurrentMigrationRunException(message: String) : Exception(message)
+
 class MigrationDagException(val errors: List<DagValidator.DagError>) :
     Exception("Migration DAG validation failed: $errors")
 

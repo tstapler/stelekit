@@ -6,6 +6,8 @@ import dev.stapler.stelekit.db.GraphWriterPort
 import dev.stapler.stelekit.db.UndoManager
 import dev.stapler.stelekit.export.ExportService
 import dev.stapler.stelekit.git.GitSyncService
+import dev.stapler.stelekit.llm.LlmSuggestionInbox
+import dev.stapler.stelekit.llm.LlmSuggestionWriter
 import dev.stapler.stelekit.performance.BugReportBuilder
 import dev.stapler.stelekit.performance.DebugFlagRepository
 import dev.stapler.stelekit.performance.HistogramWriter
@@ -73,4 +75,29 @@ data class StelekitViewModelDependencies(
     // ── Git sync ─────────────────────────────────────────────────────────────
     val activeGitSyncService: StateFlow<GitSyncService?> = MutableStateFlow(null),
     val activeGraphIdProvider: () -> String? = { null },
+    val onDismissGitDetection: (suspend (graphId: String) -> Unit)? = null,
+    val onDismissBrowserOnlySyncBanner: (suspend (graphId: String) -> Unit)? = null,
+    /**
+     * Count of locally-dirty files not yet synced to the remote (web only — see
+     * [dev.stapler.stelekit.platform.PlatformFileSystem.dirtyFileCountFlow]). When null
+     * (JVM/Android), [StelekitViewModel.syncState] behaves exactly as it did before this field
+     * existed — no [dev.stapler.stelekit.git.model.SyncState.LocalChangesPending] is ever emitted.
+     */
+    val localChangesCountFlow: StateFlow<Int>? = null,
+
+    // ── Sections ─────────────────────────────────────────────────────────────
+    val onSectionsLoaded: (suspend (dev.stapler.stelekit.sections.SectionManifest, Map<String, dev.stapler.stelekit.sections.SectionState>) -> Unit)? = null,
+
+    // ── LLM approval-gated edit workflow (Epic 7) ───────────────────────────────
+    /**
+     * Session-scoped pending-suggestion store. When null, [StelekitViewModel] constructs a
+     * default instance — matching the [journalService] default-construction pattern.
+     */
+    val llmSuggestionInbox: LlmSuggestionInbox? = null,
+    /**
+     * Resolves accepted suggestions to a `Page + List<Block>` write via [graphWriter]. When
+     * null, [StelekitViewModel] constructs a default instance from [pageRepository],
+     * [blockRepository], and [graphWriter].
+     */
+    val llmSuggestionWriter: LlmSuggestionWriter? = null,
 )

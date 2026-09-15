@@ -164,6 +164,8 @@ class BacklinkRenamer(
         val blocks = blockRepository.getBlocksForPage(pageUuid).first().getOrNull() ?: emptyList()
         // For the renamed page, clear filePath so GraphWriter recalculates the new path.
         val pageForSave = if (pageUuid == renamedPageUuid) page.copy(filePath = null) else page
-        graphWriter.savePage(pageForSave, blocks, graphPath)
+        graphWriter.savePage(pageForSave, blocks, graphPath).onLeft { error ->
+            logger.error("Failed to rewrite backlink file for page '${page.name}': ${error.message}")
+        }
     }
 }

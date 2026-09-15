@@ -13,6 +13,8 @@ import dev.stapler.stelekit.domain.TopicEnricher
 import dev.stapler.stelekit.domain.TopicSuggestion
 import dev.stapler.stelekit.domain.UrlFetcher
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockPropertyKeys
+import dev.stapler.stelekit.model.BlockType
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
@@ -193,8 +195,9 @@ class ImportViewModel(
     }
 
     private suspend fun runScan(text: String, matcher: AhoCorasickMatcher) {
-        // Get existing page names so suggestions don't duplicate known pages
-        val existingNames = pageRepository.getAllPages()
+        // Get existing page names so suggestions don't duplicate known pages.
+        // Names-only projection — never materialize full Page objects for the whole graph.
+        val existingNames = pageRepository.getPageNameEntries()
             .first()
             .getOrNull()
             ?.map { it.name }
@@ -376,10 +379,11 @@ class ImportViewModel(
             return
         }
 
-        // URL deduplication: reject if another page was already imported from this URL
+        // URL deduplication: reject if another page was already imported from this URL.
+        // One-shot bounded-batch snapshot (the source-URL property has no SQL index).
         if (currentState.activeTab == ImportTab.URL && currentState.urlInput.isNotBlank()) {
-            val allPages = pageRepository.getAllPages().first().getOrNull()
-            val duplicatePage = allPages?.firstOrNull { it.properties["source"] == currentState.urlInput }
+            val allPages = pageRepository.getAllPagesSnapshot().getOrNull()
+            val duplicatePage = allPages?.firstOrNull { it.properties[BlockPropertyKeys.SOURCE] == currentState.urlInput }
             if (duplicatePage != null) {
                 _state.update { it.copy(pageNameError = "A page from this URL already exists: '${duplicatePage.name}'") }
                 return
@@ -422,33 +426,38 @@ class ImportViewModel(
         // Determine content to split into blocks
         val htmlBlocks = currentState.rawHtml?.let { HtmlBlockConverter.convert(it) }
 
+        var prevImportPosition: String? = null
         val blocks = if (htmlBlocks != null) {
-            htmlBlocks.mapIndexed { index, rawBlock ->
+            htmlBlocks.map { rawBlock ->
+                val pos = dev.stapler.stelekit.util.FractionalIndexing.generateKeyBetween(prevImportPosition, null)
+                prevImportPosition = pos
                 Block(
                     uuid = BlockUuid(UuidGenerator.generateV7()),
                     pageUuid = PageUuid(pageUuid),
                     content = rawBlock.content.trim(),
                     level = rawBlock.level,
-                    position = index,
+                    position = pos,
                     createdAt = now,
                     updatedAt = now,
-                    blockType = "paragraph",
+                    blockType = BlockType.Paragraph,
                 )
             }
         } else {
             finalText
                 .split("\n\n")
                 .filter { it.isNotBlank() }
-                .mapIndexed { index, paragraph ->
+                .map { paragraph ->
+                    val pos = dev.stapler.stelekit.util.FractionalIndexing.generateKeyBetween(prevImportPosition, null)
+                    prevImportPosition = pos
                     Block(
                         uuid = BlockUuid(UuidGenerator.generateV7()),
                         pageUuid = PageUuid(pageUuid),
                         content = paragraph.trim(),
                         level = 0,
-                        position = index,
+                        position = pos,
                         createdAt = now,
                         updatedAt = now,
-                        blockType = "paragraph",
+                        blockType = BlockType.Paragraph,
                     )
                 }
         }
@@ -456,7 +465,7 @@ class ImportViewModel(
         // Build page properties
         val properties = buildMap<String, String> {
             if (currentState.activeTab == ImportTab.URL && currentState.urlInput.isNotBlank()) {
-                put("source", currentState.urlInput)
+                put(BlockPropertyKeys.SOURCE, currentState.urlInput)
             }
         }
 

@@ -70,4 +70,12 @@ actual class PlatformSettings actual constructor() : Settings {
             throw e
         } catch (e: Exception) { }
     }
+
+    actual override fun containsKey(key: String): Boolean {
+        return try {
+            prefs.contains(key)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) { false }
+    }
 }

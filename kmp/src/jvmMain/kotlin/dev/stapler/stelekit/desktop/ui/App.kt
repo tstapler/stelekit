@@ -6,6 +6,8 @@ import androidx.compose.ui.window.WindowState
 import dev.stapler.stelekit.domain.UrlFetcherJvm
 import dev.stapler.stelekit.stats.FileLibraryStatsProvider
 import dev.stapler.stelekit.ui.StelekitApp
+import dev.stapler.stelekit.ui.StelekitAppCoreServices
+import dev.stapler.stelekit.ui.StelekitAppDeps
 import dev.stapler.stelekit.platform.PlatformFileSystem
 
 @Composable
@@ -23,8 +25,12 @@ fun App(
         StelekitApp(
             fileSystem = fileSystem,
             graphPath = graphPath,
-            urlFetcher = UrlFetcherJvm(),
-            libraryStatsProvider = FileLibraryStatsProvider(),
+            deps = StelekitAppDeps(
+                coreServices = StelekitAppCoreServices(
+                    urlFetcher = UrlFetcherJvm(),
+                    libraryStatsProvider = FileLibraryStatsProvider(),
+                ),
+            ),
         )
     }
 }

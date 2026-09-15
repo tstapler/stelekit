@@ -1,17 +1,36 @@
 package dev.stapler.stelekit.model
 
+import kotlin.jvm.JvmInline
 import kotlinx.serialization.Serializable
+
+/** Type-safe wrapper for graph identifiers (sha256(canonicalPath).take(16)). */
+@Serializable
+@JvmInline
+value class GraphId(val value: String)
+
+/** Fixed GraphId for the demo graph — not a sha256 path hash; stable and collision-proof. */
+val DEMO_GRAPH_ID = GraphId("__demo__")
 
 /**
  * Information about a single graph (knowledge base).
  */
 @Serializable
 data class GraphInfo(
-    val id: String,           // sha256(canonicalPath).take(16)
+    val id: GraphId,           // sha256(canonicalPath).take(16)
     val path: String,         // Canonical absolute path
     val displayName: String,  // User-facing name (defaults to directory name)
     val addedAt: Long,        // Epoch millis
     val isParanoidMode: Boolean = false,  // True when .stele-vault is present
+    val detectedRepoRoot: String? = null,
+    val detectedWikiSubdir: String? = null,
+    val gitDetectionDismissed: Boolean = false,
+    val browserOnlySyncBannerDismissed: Boolean = false,
+    val isDemo: Boolean = false,
+    /** Real host-folder name last linked via the File System Access API (web-local-folder-livesync
+     * only) — e.g. "notes" for `~/Documents/notes`. Distinct from [path], which is this graph's own
+     * internal identity path and does not change when the graph is relinked to a differently-named
+     * host folder. Null on every platform without a host-directory concept, and until first linked. */
+    val hostDirName: String? = null,
 )
 
 /**
@@ -19,12 +38,12 @@ data class GraphInfo(
  */
 @Serializable
 data class GraphRegistry(
-    val activeGraphId: String? = null,
+    val activeGraphId: GraphId? = null,
     val graphs: List<GraphInfo> = emptyList()
 ) {
     /**
      * Get the set of graph IDs for quick lookup
      */
-    val graphIds: Set<String>
+    val graphIds: Set<GraphId>
         get() = graphs.map { it.id }.toSet()
 }

@@ -10,29 +10,29 @@ import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.git.model.ConflictFile
-import dev.stapler.stelekit.git.model.ConflictHunk
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
+import dev.stapler.stelekit.git.model.wikiRoot
+import dev.stapler.stelekit.platform.security.CredentialAccess
+import dev.stapler.stelekit.platform.security.CredentialStore
 import kotlin.concurrent.Volatile
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.api.MergeCommand
 import org.eclipse.jgit.api.errors.TransportException
-import org.eclipse.jgit.lib.Repository
 import org.eclipse.jgit.merge.MergeStrategy
 import org.eclipse.jgit.storage.file.FileRepositoryBuilder
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider
 import org.eclipse.jgit.transport.sshd.SshdSessionFactoryBuilder
 import java.io.File
-import java.time.Instant
 
 /**
  * JVM (Desktop) implementation of GitRepository using JGit 7.x.
  * All I/O runs on PlatformDispatcher.IO.
  */
 class JvmGitRepository(
-    credentialAccess: dev.stapler.stelekit.git.CredentialAccess = CredentialStore(),
+    credentialAccess: CredentialAccess = CredentialStore(),
 ) : GitRepository {
 
     private val logger = Logger("JvmGitRepository")
@@ -42,7 +42,7 @@ class JvmGitRepository(
      * and the vault is unlocked, or back to [CredentialStore] (PBKDF2) when locked.
      * @Volatile ensures visibility across the IO dispatcher thread pool.
      */
-    @Volatile var credentialAccess: dev.stapler.stelekit.git.CredentialAccess = credentialAccess
+    @Volatile var credentialAccess: CredentialAccess = credentialAccess
         internal set
 
     override fun setCredentialAccess(access: CredentialAccess) { credentialAccess = access }
@@ -66,7 +66,11 @@ class JvmGitRepository(
     override suspend fun init(repoRoot: String): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
             try {
-                Git.init().setDirectory(File(repoRoot)).call().close()
+                // GitConfig.remoteBranch defaults to "main" — JGit's own default initial branch
+                // is "master" regardless of the host's `init.defaultBranch` git config, so a
+                // freshly-init'd (non-cloned) repo would otherwise never match the branch name
+                // fetch()/merge() look for.
+                Git.init().setDirectory(File(repoRoot)).setInitialBranch("main").call().close()
                 Unit.right()
             } catch (e: CancellationException) {
                 throw e
@@ -159,7 +163,7 @@ class JvmGitRepository(
                 openGit(config.repoRoot).use { git ->
                     val statusResult = git.status()
                         .also { cmd ->
-                            if (config.wikiSubdir.isNotEmpty()) {
+                            if (!config.wikiSubdir.isNullOrEmpty()) {
                                 cmd.addPath(config.wikiSubdir)
                             }
                         }
@@ -186,7 +190,7 @@ class JvmGitRepository(
         withContext(PlatformDispatcher.IO) {
             try {
                 openGit(config.repoRoot).use { git ->
-                    val pattern = if (config.wikiSubdir.isEmpty()) "." else "${config.wikiSubdir}/"
+                    val pattern = if (config.wikiSubdir.isNullOrEmpty()) "." else "${config.wikiSubdir}/"
                     git.add().addFilepattern(pattern).call()
                     // Also stage deletions
                     git.add().setUpdate(true).addFilepattern(pattern).call()
@@ -237,16 +241,37 @@ class JvmGitRepository(
                     val conflictFiles = if (hasConflicts) {
                         mergeResult.conflicts?.keys?.map { filePath ->
                             val absolutePath = "${config.repoRoot}/$filePath"
-                            val wikiRelPath = if (config.wikiSubdir.isNotEmpty() &&
+                            val wikiRelPath = if (!config.wikiSubdir.isNullOrEmpty() &&
                                 filePath.startsWith("${config.wikiSubdir}/")) {
                                 filePath.removePrefix("${config.wikiSubdir}/")
                             } else {
                                 filePath
                             }
+                            // JGit already wrote real conflict-marker content directly into the
+                            // working tree at absolutePath (Desktop has no shadow indirection).
+                            // For markdown, prefer re-deriving that content via the block-aware
+                            // merge (tryBlockAwareConflict) over JGit's own line-level markers —
+                            // see that function's doc. Falls back to JGit's line-level marker
+                            // content, parsed the same way, for non-markdown/unparseable files.
+                            val jgitMarkerContent = runCatching { File(absolutePath).readText() }.getOrNull()
+                            val blockAware = tryBlockAwareConflict(repo, filePath, absolutePath, config.wikiRoot)
+                            val markerContent = blockAware?.markerText ?: jgitMarkerContent
+                            val hunks = blockAware?.hunks ?: markerContent?.let {
+                                ConflictResolver().parseConflictFile(absolutePath, it, config.wikiRoot)
+                                    .getOrNull()?.hunks
+                            } ?: emptyList()
+                            // Keep the working-tree file in sync with what the app will resolve
+                            // against — otherwise a block-merge conflict re-derivation would be
+                            // invisible to anything reading the file directly off disk.
+                            if (blockAware != null) {
+                                runCatching { File(absolutePath).writeText(blockAware.markerText) }
+                            }
                             ConflictFile(
                                 filePath = absolutePath,
                                 wikiRelativePath = wikiRelPath,
-                                hunks = emptyList(), // parsed by ConflictResolver later
+                                hunks = hunks,
+                                rawContent = markerContent,
+                                duplicateBlockIds = blockAware?.duplicateBlockIds ?: emptyList(),
                             )
                         } ?: emptyList()
                     } else {
@@ -282,7 +307,7 @@ class JvmGitRepository(
                         emptyList()
                     }
 
-                    val wikiChangedFiles = if (config.wikiSubdir.isNotEmpty()) {
+                    val wikiChangedFiles = if (!config.wikiSubdir.isNullOrEmpty()) {
                         changedFiles.filter { it.startsWith("${config.repoRoot}/${config.wikiSubdir}/") }
                     } else {
                         changedFiles
@@ -359,8 +384,19 @@ class JvmGitRepository(
         withContext(PlatformDispatcher.IO) {
             try {
                 openGit(config.repoRoot).use { git ->
+                    // ResetType.HARD, not MERGE: JGit 7.3.0's ResetCommand never implements
+                    // ResetType.MERGE/KEEP at all — both throw UnsupportedOperationException
+                    // unconditionally (verified by disassembling ResetCommand.class: its ResetType
+                    // switch routes MERGE and KEEP to the same throw; only HARD/MIXED/SOFT are
+                    // implemented). HARD's merge-state cleanup (MERGE_HEAD/MERGE_MSG removal,
+                    // RepositoryState MERGING -> SAFE) is unconditional on any ResetType other than
+                    // SOFT, so HARD correctly aborts the in-progress merge — empirically confirmed
+                    // against a real conflicted merge. See AndroidGitRepository.abortMerge()'s
+                    // matching comment for the full rationale (this platform has no shadow-worktree
+                    // reconciliation step to add, since Desktop reads/writes the real working tree
+                    // directly).
                     git.reset()
-                        .setMode(org.eclipse.jgit.api.ResetCommand.ResetType.MERGE)
+                        .setMode(org.eclipse.jgit.api.ResetCommand.ResetType.HARD)
                         .call()
                     Unit.right()
                 }
@@ -479,6 +515,10 @@ class JvmGitRepository(
                         transport.sshSessionFactory = sshFactory
                     }
                 }
+            }
+            GitAuthType.GITHUB_OAUTH -> {
+                val token = config.oauthTokenKey?.let { credentialAccess.retrieve(it) } ?: return
+                cmd.setCredentialsProvider(UsernamePasswordCredentialsProvider("x-oauth-basic", token))
             }
             GitAuthType.NONE -> {}
         }

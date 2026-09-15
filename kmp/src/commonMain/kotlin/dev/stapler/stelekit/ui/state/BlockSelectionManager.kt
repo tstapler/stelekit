@@ -102,10 +102,10 @@ class BlockSelectionManager(
         val allBlocks = blocksSnapshot()[pageUuid] ?: return uuids.toList()
         val blockByUuid = allBlocks.associateBy { it.uuid.value }
         return uuids.filter { uuid ->
-            var current = blockByUuid[uuid]?.parentUuid
+            var current = blockByUuid[uuid]?.parentUuid?.value
             while (current != null) {
                 if (current in uuids) return@filter false
-                current = blockByUuid[current]?.parentUuid
+                current = blockByUuid[current]?.parentUuid?.value
             }
             true
         }

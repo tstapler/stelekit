@@ -103,7 +103,8 @@ class GlobalUnlinkedReferencesViewModel(
         scope.launch {
             _state.update { it.copy(isLoading = true, results = emptyList(), errorMessage = null) }
             try {
-                val pages = pageRepository.getAllPages().first().getOrNull() ?: emptyList()
+                // Names-only projection — this scan only needs page names, never full Pages.
+                val pages = pageRepository.getPageNameEntries().first().getOrNull() ?: emptyList()
                 allPageNames = pages.map { it.name }
                 pageCursorIndex = 0
                 pendingEntries = mutableListOf()

@@ -4,29 +4,13 @@
 
 package dev.stapler.stelekit.ui
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.background
+import dev.stapler.stelekit.capture.HotkeyRegistrationFailure
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Style
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -37,13 +21,19 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalClipboardManager
+import dev.stapler.stelekit.db.GraphEpoch
 import dev.stapler.stelekit.db.GraphManager
+import dev.stapler.stelekit.db.GraphRelocationCoordinator
 import dev.stapler.stelekit.db.GraphWriter
+import dev.stapler.stelekit.db.StorageMoveUiState
 import dev.stapler.stelekit.migration.registerAllMigrations
 import dev.stapler.stelekit.db.SidecarManager
+import dev.stapler.stelekit.platform.DemoFileSystem
+import dev.stapler.stelekit.platform.HostAccessState
+import dev.stapler.stelekit.service.markdownImageLink
+import dev.stapler.stelekit.service.toMarkdown
 import dev.stapler.stelekit.export.ExportService
 import dev.stapler.stelekit.export.HtmlExporter
 import dev.stapler.stelekit.export.JsonExporter
@@ -51,39 +41,27 @@ import dev.stapler.stelekit.export.MarkdownExporter
 import dev.stapler.stelekit.export.PlainTextExporter
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Block
-import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.DEMO_GRAPH_ID
+import dev.stapler.stelekit.model.GraphId
+import dev.stapler.stelekit.model.StorageLocation
+import dev.stapler.stelekit.model.StorageMoveOperation
 import dev.stapler.stelekit.performance.DebugBuildConfig
 import dev.stapler.stelekit.performance.DebugMenuState
+import dev.stapler.stelekit.performance.getDeviceInfo
 import dev.stapler.stelekit.performance.LocalSpanRecorder
-import dev.stapler.stelekit.performance.NavigationTracingEffect
-import dev.stapler.stelekit.performance.NoOpSpanRecorder
 import dev.stapler.stelekit.performance.PlatformJankStatsEffect
-import dev.stapler.stelekit.performance.SpanRecorder
 import dev.stapler.stelekit.platform.*
 import dev.stapler.stelekit.db.DriverFactory
-import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.repository.*
 import dev.stapler.stelekit.ui.components.*
-import dev.stapler.stelekit.ui.components.settings.SettingsDialog
-import dev.stapler.stelekit.ui.rememberShareProvider
+import dev.stapler.stelekit.ui.components.git.GitDetectionBanner
 import dev.stapler.stelekit.ui.i18n.I18n
 import dev.stapler.stelekit.ui.i18n.LocalI18n
 import dev.stapler.stelekit.ui.i18n.t
 import dev.stapler.stelekit.ui.onboarding.Onboarding
-import dev.stapler.stelekit.repository.InMemoryImageAnnotationRepository
-import dev.stapler.stelekit.repository.InMemoryMeasurementAnnotationRepository
-import dev.stapler.stelekit.ui.annotate.AnnotationEditorViewModel
-import dev.stapler.stelekit.ui.annotate.AnnotationEditorScreen
-import dev.stapler.stelekit.ui.gallery.GalleryScreen
-import dev.stapler.stelekit.ui.gallery.GalleryViewModel
-import dev.stapler.stelekit.ui.screens.AllPagesScreen
 import dev.stapler.stelekit.ui.screens.AllPagesViewModel
-import dev.stapler.stelekit.ui.screens.LibraryStatsScreen
+import dev.stapler.stelekit.ui.screens.EmptyGraphStateScreen
 import dev.stapler.stelekit.ui.screens.LibraryStatsViewModel
-import dev.stapler.stelekit.stats.LibraryStatsProvider
-import dev.stapler.stelekit.stats.NoOpLibraryStatsProvider
-import dev.stapler.stelekit.ui.screens.GlobalUnlinkedReferencesScreen
-import dev.stapler.stelekit.ui.screens.JournalsView
 import dev.stapler.stelekit.ui.screens.JournalsViewModel
 import dev.stapler.stelekit.ui.screens.LibrarySetupScreen
 import dev.stapler.stelekit.ui.screens.PageView
@@ -91,30 +69,78 @@ import dev.stapler.stelekit.ui.screens.PermissionRecoveryScreen
 import dev.stapler.stelekit.ui.screens.SearchViewModel
 import dev.stapler.stelekit.ui.screens.VaultUnlockScreen
 import dev.stapler.stelekit.vault.VaultManager.VaultEvent
-import dev.stapler.stelekit.domain.NoOpUrlFetcher
-import dev.stapler.stelekit.domain.UrlFetcher
 import dev.stapler.stelekit.voice.VoiceCaptureState
 import dev.stapler.stelekit.voice.VoiceCaptureViewModel
-import dev.stapler.stelekit.voice.VoicePipelineConfig
-import dev.stapler.stelekit.voice.VoiceSettings
+import dev.stapler.stelekit.tags.LlmTagProvider
+import dev.stapler.stelekit.tags.TagSettings
+import dev.stapler.stelekit.tags.TagSuggestionEngine
+import dev.stapler.stelekit.tags.TagSuggestionViewModel
 import dev.stapler.stelekit.ui.theme.StelekitTheme
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
-import kotlin.math.roundToInt
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.performance.PercentileSummary
 import dev.stapler.stelekit.performance.QueryStat
 import dev.stapler.stelekit.performance.SerializedSpan
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlin.time.Clock
-import kotlinx.datetime.DateTimeUnit
-import kotlinx.datetime.LocalDate
-import kotlinx.datetime.TimeZone
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.datetime.plus
-import kotlinx.datetime.toLocalDateTime
+import arrow.core.Either
+import dev.stapler.stelekit.sections.SectionState
+import dev.stapler.stelekit.sections.getSectionStates
+import dev.stapler.stelekit.db.ImageImportService
+import dev.stapler.stelekit.error.toUiMessage
+import dev.stapler.stelekit.model.ImageSource
+import dev.stapler.stelekit.platform.sensor.SensorModule
+import dev.stapler.stelekit.platform.sensor.PlatformImageFile
+
+/** Runs [importOperation] bounded by [timeoutMs], returning `null` on timeout instead of hanging. */
+internal suspend fun <T> withImportTimeout(
+    timeoutMs: Long = 20_000L,
+    importOperation: suspend () -> T,
+): T? = withTimeoutOrNull(timeoutMs) { importOperation() }
+
+/** SAF permission was revoked after being granted — folder content is still there, just re-grant. */
+@Composable
+private fun PermissionRecoveryScreenThemed(
+    libraryDisplayName: String?,
+    folderPickError: String?,
+    onRequestFolder: () -> Unit,
+) {
+    StelekitTheme(themeMode = StelekitThemeMode.SYSTEM) {
+        PermissionRecoveryScreen(
+            folderName = libraryDisplayName,
+            onReconnectFolder = onRequestFolder,
+            onChooseDifferentFolder = onRequestFolder,
+            errorMessage = folderPickError,
+        )
+    }
+}
+
+/** First launch — no folder chosen yet. */
+@Composable
+private fun FirstLaunchSetupScreenThemed(folderPickError: String?, onRequestFolder: () -> Unit) {
+    StelekitTheme(themeMode = StelekitThemeMode.SYSTEM) {
+        LibrarySetupScreen(onChooseFolder = onRequestFolder, errorMessage = folderPickError)
+    }
+}
+
+/** Shown when the user has explicitly removed their only graph — see [StelekitApp]'s call site. */
+@Composable
+private fun EmptyGraphScreen(
+    onCreateGraph: (() -> Unit)?,
+    errorMessage: String?,
+    onTryDemo: () -> Unit,
+) {
+    StelekitTheme(themeMode = StelekitThemeMode.SYSTEM) {
+        EmptyGraphStateScreen(onCreateGraph = onCreateGraph, onTryDemo = onTryDemo, errorMessage = errorMessage)
+    }
+}
 
 /**
  * Root Composable for the Logseq application.
@@ -124,54 +150,10 @@ import kotlinx.datetime.toLocalDateTime
 fun StelekitApp(
     fileSystem: FileSystem,
     graphPath: String,
-    graphManager: GraphManager? = null,
-    pluginHost: PluginHost = remember { PluginHost() },
-    encryptionManager: EncryptionManager = remember { DefaultEncryptionManager() },
-    urlFetcher: UrlFetcher = remember { NoOpUrlFetcher() },
-    libraryStatsProvider: LibraryStatsProvider = NoOpLibraryStatsProvider,
-    voicePipeline: VoicePipelineConfig = remember { VoicePipelineConfig() },
-    voiceSettings: VoiceSettings? = null,
-    onRebuildVoicePipeline: (() -> Unit)? = null,
-    deviceSttAvailable: Boolean = false,
-    deviceLlmAvailable: Boolean = false,
-    spanRecorder: SpanRecorder = NoOpSpanRecorder,
-    /** Called once the GraphManager instance is ready. Used by the host Activity for onTrimMemory. */
-    onGraphManagerReady: ((GraphManager) -> Unit)? = null,
-    /**
-     * Registers a memory-pressure handler. The lambda receives a [() -> Unit] callback;
-     * the host Activity should store it and invoke it when onTrimMemory fires. Mirrors the
-     * [onGraphManagerReady] pattern.
-     */
-    onMemoryPressure: (((() -> Unit) -> Unit))? = null,
-    /**
-     * Platform-specific git implementation. Pass [JvmGitRepository] on Desktop,
-     * [AndroidGitRepository] on Android. When null, git sync is disabled.
-     */
-    gitRepository: dev.stapler.stelekit.git.GitRepository? = null,
-    /**
-     * Platform-specific crypto engine for paranoid-mode vault operations.
-     * Pass [JvmCryptoEngine] on Desktop. Android support is pending an AndroidCryptoEngine.
-     * When null, paranoid mode is unavailable.
-     */
-    cryptoEngine: dev.stapler.stelekit.vault.CryptoEngine? = null,
-    /**
-     * Platform-specific media attachment service. When non-null the attach-image button
-     * is shown in [MobileBlockToolbar] on the PageView screen.
-     *
-     * Pass [JvmMediaAttachmentService] on Desktop.
-     * Pass the Android service (from [rememberAndroidMediaAttachmentService]) on Android.
-     * Pass null (default) to hide the button entirely.
-     */
-    attachmentService: dev.stapler.stelekit.service.MediaAttachmentService? = null,
-    /**
-     * Platform-specific Google OAuth manager. When non-null the Google Account settings
-     * panel becomes interactive (Connect / Disconnect buttons are wired up).
-     *
-     * Pass [AndroidGoogleAuthManager] on Android, [JvmGoogleAuthManager] on Desktop.
-     * When null (default), the panel is rendered but the buttons are no-ops.
-     */
-    googleAuthManager: dev.stapler.stelekit.platform.google.GoogleAuthManager? = null,
+    deps: StelekitAppDeps = remember { StelekitAppDeps() },
 ) {
+    val injectedGraphManager = deps.graphManager
+
     val platformSettings = remember { PlatformSettings() }
     val scope = rememberCoroutineScope()
 
@@ -179,10 +161,10 @@ fun StelekitApp(
     remember { registerAllMigrations() }
 
     // Create GraphManager - this owns all graph lifecycle
-    val graphManager = graphManager ?: remember {
+    val graphManager = injectedGraphManager ?: remember(platformSettings, fileSystem) {
         GraphManager(platformSettings, DriverFactory(), fileSystem)
     }
-    LaunchedEffect(graphManager) { onGraphManagerReady?.invoke(graphManager) }
+    LaunchedEffect(graphManager) { deps.lifecycleHooks.onGraphManagerReady?.invoke(graphManager) }
 
     // Observe the active repository set
     val activeRepoSet by graphManager.activeRepositorySet.collectAsState()
@@ -240,7 +222,6 @@ fun StelekitApp(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    // Suspend callback used by both setup and recovery screens
     val onFolderPicked: suspend () -> Unit = {
         folderPickError = null
         appLogger.info("onFolderPicked: launching folder picker")
@@ -255,8 +236,10 @@ fun StelekitApp(
                 folderPickError = "Folder selected but permission not granted. Try choosing the folder again."
             }
         } else {
-            appLogger.info("onFolderPicked: picker returned null (cancelled or folder type not supported)")
-            folderPickError = "No folder was selected. Please choose a local folder on your device (not Google Drive or cloud storage)."
+            val pickerError = fileSystem.consumeLastPickerError()
+            appLogger.info("onFolderPicked: picker returned null (cancelled, failed, or folder type not supported): $pickerError")
+            folderPickError = pickerError
+                ?: "No folder was selected. Please choose a local folder on your device (not Google Drive or cloud storage)."
         }
     }
 
@@ -266,22 +249,13 @@ fun StelekitApp(
     // Non-SAF paths (e.g. /data/local/tmp/ benchmark paths or desktop paths) don't
     // require a document-tree grant, so skip the screen for those.
     if (!permissionGranted && (isSafPath || currentGraphPath.isEmpty())) {
-        StelekitTheme(themeMode = StelekitThemeMode.SYSTEM) {
-            if (isSafPath) {
-                // Permission was revoked — show recovery screen
-                PermissionRecoveryScreen(
-                    folderName = fileSystem.getLibraryDisplayName(),
-                    onReconnectFolder = { scope.launch { onFolderPicked() } },
-                    onChooseDifferentFolder = { scope.launch { onFolderPicked() } },
-                    errorMessage = folderPickError,
-                )
-            } else {
-                // First launch — no folder chosen yet
-                LibrarySetupScreen(
-                    onChooseFolder = { scope.launch { onFolderPicked() } },
-                    errorMessage = folderPickError
-                )
-            }
+        val onRequestFolder: () -> Unit = { fileSystem.requestDirectoryPickerNow(); scope.launch { onFolderPicked() } }
+        if (isSafPath) {
+            // Permission was revoked — show recovery screen
+            PermissionRecoveryScreenThemed(fileSystem.getLibraryDisplayName(), folderPickError, onRequestFolder)
+        } else {
+            // First launch — no folder chosen yet
+            FirstLaunchSetupScreenThemed(folderPickError, onRequestFolder)
         }
         return
     }
@@ -291,16 +265,65 @@ fun StelekitApp(
     // (returns the existing ID if already registered) and handles reconnect after
     // SAF permission loss, where activeGraphId may be non-null from the persisted
     // registry but the in-memory repos have not been set up in this process.
+    // Skip if currentGraphPath is the demo path — demo is managed by addDemoGraph()
+    // and must not be registered as a real graph here.
     LaunchedEffect(currentGraphPath) {
-        if (currentGraphPath.isNotEmpty()) {
+        if (currentGraphPath.isNotEmpty() && graphManager.getActiveGraphInfo()?.id != DEMO_GRAPH_ID) {
             val graphId = graphManager.addGraph(currentGraphPath)
             graphManager.switchGraph(graphId)
         }
     }
 
     val notificationManager = remember { NotificationManager() }
+    LaunchedEffect(notificationManager) { deps.lifecycleHooks.onNotificationManagerReady?.invoke(notificationManager) }
+
+    // Shown when the user has explicitly removed their only graph (see GraphManager.removeGraph's
+    // "last real graph" path) — checking graphsExplicitlyEmptied rather than activeGraphId == null
+    // alone is deliberate: the latter is also transiently true for one frame on a brand-new
+    // install before the LaunchedEffect above self-heals by adding/activating a default graph,
+    // which would otherwise flash this screen on every first launch. Session-scoped (a page
+    // reload creates a fresh GraphManager, resetting the flag) — matches removeGraph's own
+    // "graph files are not deleted" precedent, so nothing durable needs undoing here either.
+    val graphsExplicitlyEmptied by graphManager.graphsExplicitlyEmptied.collectAsState()
+    if (graphsExplicitlyEmptied && activeGraphId == null) {
+        var emptyStateError by remember { mutableStateOf<String?>(null) }
+        EmptyGraphScreen(
+            onCreateGraph = if (fileSystem.supportsNativeDirectoryPicker) {
+                {
+                    scope.launch {
+                        val path = fileSystem.pickDirectoryAsync()
+                        if (path != null) {
+                            emptyStateError = null
+                            val graphId = graphManager.addGraph(path)
+                            graphManager.switchGraph(graphId)
+                        } else {
+                            emptyStateError = fileSystem.consumeLastPickerError()
+                        }
+                    }
+                }
+            } else null,
+            errorMessage = emptyStateError,
+            onTryDemo = {
+                scope.launch {
+                    try {
+                        val graphId = graphManager.addDemoGraph()
+                        graphManager.switchGraph(graphId)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        emptyStateError = "Could not load the demo graph: ${e.message}"
+                    }
+                }
+            },
+        )
+        return
+    }
 
     val repos = activeRepoSet
+
+    // Created here, above key(activeGraphId), so a page snapshot survives the graph switch
+    // it's meant to be pasted into — see GraphMergeService's class doc.
+    val graphMergeService = remember { dev.stapler.stelekit.transfer.GraphMergeService() }
 
     if (repos == null || !migrationReady) {
         // Show loading state while repositories are being initialized or migration is running
@@ -311,31 +334,66 @@ fun StelekitApp(
     }
 
     // Use key(graphId) to recreate ViewModels when graph changes
-    key(activeGraphId) {
-        GraphContent(
-            repos = repos,
-            fileSystem = fileSystem,
-            platformSettings = platformSettings,
-            pluginHost = pluginHost,
-            encryptionManager = encryptionManager,
-            graphManager = graphManager,
-            notificationManager = notificationManager,
-            urlFetcher = urlFetcher,
-            libraryStatsProvider = libraryStatsProvider,
-            voicePipeline = voicePipeline,
-            voiceSettings = voiceSettings,
-            onRebuildVoicePipeline = onRebuildVoicePipeline,
-            deviceSttAvailable = deviceSttAvailable,
-            deviceLlmAvailable = deviceLlmAvailable,
-            spanRecorder = spanRecorder,
-            onMemoryPressure = onMemoryPressure,
-            gitRepository = gitRepository,
-            cryptoEngine = cryptoEngine,
-            attachmentService = attachmentService,
-            googleAuthManager = googleAuthManager,
+    Box(modifier = Modifier.fillMaxSize()) {
+        key(activeGraphId) {
+            GraphContent(
+                GraphContentDeps(
+                    repos = repos,
+                    fileSystem = fileSystem,
+                    platformSettings = platformSettings,
+                    graphManager = graphManager,
+                    notificationManager = notificationManager,
+                    onMemoryPressure = deps.lifecycleHooks.onMemoryPressure,
+                    coreServices = deps.coreServices,
+                    voiceConfig = deps.voiceConfig,
+                    platformIntegrations = deps.platformIntegrations,
+                    webSyncDeps = deps.webSyncDeps,
+                    graphMergeService = graphMergeService,
+                    hotkeyComboLabel = deps.captureDeps.hotkeyComboLabel,
+                )
+            )
+        }
+
+        CaptureNoticesOverlay(platformSettings, deps.captureDeps)
+    }
+}
+
+/**
+ * Stories 1.4.2/1.4.3's two one-time notices, layered as an overlay over the main window content
+ * (never blocking or stealing focus — Nielsen #1/#9, `design/ux.md` Surfaces 2/3). A registration
+ * failure supersedes the first-run notice for the whole launch: [firstRunNoticeShown]'s persisted
+ * flag is only written when the notice is actually shown and dismissed, so it still shows
+ * normally on a later, successful-registration launch.
+ */
+@Composable
+private fun CaptureNoticesOverlay(platformSettings: Settings, captureDeps: StelekitAppCaptureDeps) {
+    val failureFlow = remember(captureDeps.hotkeyRegistrationFailure) {
+        captureDeps.hotkeyRegistrationFailure
+            ?: MutableStateFlow<HotkeyRegistrationFailure?>(null)
+    }
+    val hotkeyFailure by failureFlow.collectAsState()
+    var conflictNoticeDismissedThisSession by remember { mutableStateOf(false) }
+    var firstRunNoticeShown by remember {
+        mutableStateOf(platformSettings.getBoolean(CAPTURE_FIRST_RUN_NOTICE_KEY, false))
+    }
+
+    when {
+        hotkeyFailure != null && !conflictNoticeDismissedThisSession -> HotkeyConflictNotice(
+            failure = hotkeyFailure!!,
+            hotkeyCombo = captureDeps.hotkeyComboLabel,
+            onDismiss = { conflictNoticeDismissedThisSession = true },
+        )
+        !firstRunNoticeShown && hotkeyFailure == null -> FirstRunHotkeyNotice(
+            hotkeyCombo = captureDeps.hotkeyComboLabel,
+            onDismiss = {
+                platformSettings.putBoolean(CAPTURE_FIRST_RUN_NOTICE_KEY, true)
+                firstRunNoticeShown = true
+            },
         )
     }
 }
+
+private const val CAPTURE_FIRST_RUN_NOTICE_KEY = "capture.firstRunNoticeShown"
 
 /**
  * Composition root for a single active graph.
@@ -345,36 +403,100 @@ fun StelekitApp(
  * See ADR-001 for decomposition rationale.
  */
 @Composable
-private fun GraphContent(
-    repos: RepositorySet,
-    fileSystem: FileSystem,
-    platformSettings: Settings,
-    pluginHost: PluginHost,
-    encryptionManager: EncryptionManager,
-    graphManager: GraphManager,
-    notificationManager: NotificationManager,
-    urlFetcher: UrlFetcher = NoOpUrlFetcher(),
-    libraryStatsProvider: LibraryStatsProvider = NoOpLibraryStatsProvider,
-    voicePipeline: VoicePipelineConfig = VoicePipelineConfig(),
-    voiceSettings: VoiceSettings? = null,
-    onRebuildVoicePipeline: (() -> Unit)? = null,
-    deviceSttAvailable: Boolean = false,
-    deviceLlmAvailable: Boolean = false,
-    spanRecorder: SpanRecorder = NoOpSpanRecorder,
-    onMemoryPressure: (((() -> Unit) -> Unit))? = null,
-    gitRepository: dev.stapler.stelekit.git.GitRepository? = null,
-    cryptoEngine: dev.stapler.stelekit.vault.CryptoEngine? = null,
-    attachmentService: dev.stapler.stelekit.service.MediaAttachmentService? = null,
-    googleAuthManager: dev.stapler.stelekit.platform.google.GoogleAuthManager? = null,
-) {
-    CompositionLocalProvider(LocalSpanRecorder provides spanRecorder) {
+private fun GraphContent(deps: GraphContentDeps) {
+    val repos = deps.repos
+    val fileSystem = deps.fileSystem
+    val platformSettings = deps.platformSettings
+    val graphManager = deps.graphManager
+    val notificationManager = deps.notificationManager
+    val onMemoryPressure = deps.onMemoryPressure
+    val pluginHost = deps.coreServices.pluginHost
+    val encryptionManager = deps.coreServices.encryptionManager
+    val urlFetcher = deps.coreServices.urlFetcher
+    val libraryStatsProvider = deps.coreServices.libraryStatsProvider
+    val voicePipeline = deps.coreServices.voicePipeline
+    val spanRecorder = deps.coreServices.spanRecorder
+    val voiceSettings = deps.voiceConfig.voiceSettings
+    val onRebuildVoicePipeline = deps.voiceConfig.onRebuildVoicePipeline
+    val deviceSttAvailable = deps.voiceConfig.deviceSttAvailable
+    val deviceLlmAvailable = deps.voiceConfig.deviceLlmAvailable
+    val gitRepository = deps.platformIntegrations.gitRepository
+    val cryptoEngine = deps.platformIntegrations.cryptoEngine
+    val attachmentService = deps.platformIntegrations.attachmentService
+    val hotkeyComboLabel = deps.hotkeyComboLabel
+    val googleAuthManager = deps.platformIntegrations.googleAuthManager
+    val requestCameraPermission = deps.platformIntegrations.requestCameraPermission
+    val graphMoveQuiesceStrategy = deps.platformIntegrations.graphMoveQuiesceStrategy
+    val hostLinkStep = deps.platformIntegrations.hostLinkStep
+    val storageLocationResolver = deps.platformIntegrations.storageLocationResolver
+    val insufficientSpaceCheck = deps.platformIntegrations.insufficientSpaceCheck
+    val gitSyncBusyCounter = deps.platformIntegrations.gitSyncBusyCounter
+    val localChangesCountFlow = deps.webSyncDeps.localChangesCountFlow
+    val hostAccessStateFlow = deps.webSyncDeps.hostAccessStateFlow
+    val hostWritePendingCountFlow = deps.webSyncDeps.hostWritePendingCountFlow
+    val hostWriteStuckFlow = deps.webSyncDeps.hostWriteStuckFlow
+    val onReconnectHostDirectory = deps.webSyncDeps.onReconnectHostDirectory
+    val onConnectHostDirectory = deps.webSyncDeps.onConnectHostDirectory
+    val onUnlinkHostDirectory = deps.webSyncDeps.onUnlinkHostDirectory
+    val graphMergeService = deps.graphMergeService
+    val mergePendingPageCount by graphMergeService.pendingPageCount.collectAsState()
+
+    // Epic 2.3 (Task 2.3.1c): resolved here (not passed as raw StateFlow into StelekitViewModel,
+    // unlike localChangesCountFlow) — FolderSyncStatusBadge is a pure sidebar-header composable,
+    // not part of syncState, so collectAsState() directly feeds its call site below.
+    val hostAccessState = hostAccessStateFlow?.collectAsState()?.value ?: HostAccessState.NotApplicable
+    val hostWritePendingCount = hostWritePendingCountFlow?.collectAsState()?.value ?: 0
+    // Epic 4.4 (Task 4.4.1c): SyncDegraded signal — see FolderSyncStatusBadge's state table.
+    val hostWriteStuck = hostWriteStuckFlow?.collectAsState()?.value ?: false
+
+    CompositionLocalProvider(
+        LocalSpanRecorder provides spanRecorder,
+        LocalFileSystem provides fileSystem,
+    ) {
     val scope = rememberCoroutineScope()
     val graphContentLogger = remember { Logger("GraphContent") }
     val composeClipboard = LocalClipboardManager.current
     val clipboardProvider = rememberClipboardProvider(composeClipboard)
 
+    // LLM/voice provider credential store (ADR-011) — not vault-integrated; a plain
+    // CredentialStore() is correct here (unlike git credentials, LLM keys have no
+    // paranoid-mode requirement in this epic).
+    val llmCredentialStore = remember {
+        dev.stapler.stelekit.llm.LlmCredentialStore(dev.stapler.stelekit.platform.security.CredentialStore())
+    }
+    // LLM provider registry + settings (Epic 6 Settings UI). llmRegistryRefreshToken forces a
+    // rebuild after the user adds/edits/removes a credential through the new Settings UI —
+    // LlmCredentialStore itself isn't reactive (no Flow), so this is the simplest way to keep
+    // the provider list in sync within a session without adding a new observable layer.
+    var llmRegistryRefreshToken by remember { androidx.compose.runtime.mutableStateOf(0) }
+    val llmSettings = remember(platformSettings) { dev.stapler.stelekit.llm.LlmSettings(platformSettings) }
+    val llmProviderRegistry = remember(llmCredentialStore, llmSettings, llmRegistryRefreshToken) {
+        dev.stapler.stelekit.llm.buildLlmProviderRegistry(llmCredentialStore, llmSettings)
+    }
+
+    // One-shot migrations (Epic 2 Story 2.3 credential migration; Epic 8 Story 8.1b voice
+    // on-device flag migration; Epic 8 Story 8.2b tag-suggestion existing-install guard). Run
+    // synchronously in this remember block — not LaunchedEffect — so it completes before
+    // tagEngine/voicePipeline provider selection or any other code path reads
+    // voiceSettings/llmCredentialStore/llmSettings on the first frame. runIfNeeded() is
+    // idempotent per-step (each step has its own one-shot flag), so re-execution on
+    // recomposition is safe. The return value signals whether Story 8.2's one-time
+    // "on-device tag suggestions available" notice should be shown this session — consumed
+    // below, once snackbarHostState is in scope.
+    val showTagSuggestionOnDeviceNotice = remember(voiceSettings, platformSettings, llmCredentialStore, llmSettings) {
+        if (voiceSettings != null) {
+            dev.stapler.stelekit.llm.LlmCredentialMigration(
+                voiceSettings, llmCredentialStore, platformSettings, llmSettings,
+            ).runIfNeeded()
+        } else false
+    }
+
     val activeGraphInfo = remember { graphManager.getActiveGraphInfo() }
     val activeGraphPath = activeGraphInfo?.path ?: ""
+
+    val effectiveFileSystem: FileSystem = remember(activeGraphInfo?.isDemo) {
+        if (activeGraphInfo?.isDemo == true) DemoFileSystem() else fileSystem
+    }
 
     // Paranoid mode: true when a .stele-vault file exists for this graph and a crypto engine is available.
     var isParanoidMode by remember {
@@ -391,7 +513,7 @@ private fun GraphContent(
         )
     }
 
-    var vaultManager by remember {
+    var vaultManager by remember(isParanoidMode, cryptoEngine, fileSystem) {
         androidx.compose.runtime.mutableStateOf(
             if (!isParanoidMode || cryptoEngine == null) null
             else dev.stapler.stelekit.vault.VaultManager(
@@ -414,17 +536,17 @@ private fun GraphContent(
         graphManager.registerVaultCredentialStore(vaultCredentialStore)
     }
 
-    val sidecarManager = remember {
+    val sidecarManager = remember(activeGraphPath, effectiveFileSystem) {
         val graphPath = activeGraphPath.ifEmpty { null }
-        if (graphPath != null) SidecarManager(fileSystem, graphPath) else null
+        if (graphPath != null) SidecarManager(effectiveFileSystem, graphPath) else null
     }
-    val imageSidecarManager = remember {
-        if (activeGraphPath.isNotEmpty()) dev.stapler.stelekit.db.sidecar.ImageSidecarManager(fileSystem) else null
+    val imageSidecarManager = remember(activeGraphPath, effectiveFileSystem) {
+        if (activeGraphPath.isNotEmpty()) dev.stapler.stelekit.db.sidecar.ImageSidecarManager(effectiveFileSystem) else null
     }
     val imageImportService = remember(imageSidecarManager) {
         if (imageSidecarManager != null && activeGraphPath.isNotEmpty()) {
             dev.stapler.stelekit.db.ImageImportService(
-                fileSystem = fileSystem,
+                fileSystem = effectiveFileSystem,
                 imageAnnotationRepository = repos.imageAnnotationRepository,
                 blockRepository = repos.blockRepository,
                 sidecarManager = imageSidecarManager,
@@ -443,7 +565,7 @@ private fun GraphContent(
                 ?.isNotEmpty() == true
             if (!hasExisting) {
                 dev.stapler.stelekit.db.sidecar.ImageSidecarIndexer(
-                    fileSystem = fileSystem,
+                    fileSystem = effectiveFileSystem,
                     imageAnnotationRepository = repos.imageAnnotationRepository,
                     measurementAnnotationRepository = repos.measurementAnnotationRepository,
                 ).rebuildFromSidecars(activeGraphPath)
@@ -451,28 +573,70 @@ private fun GraphContent(
             }
         }
     }
-    val graphLoader = remember {
-        GraphLoader(
-            fileSystem,
-            repos.pageRepository,
-            repos.blockRepository,
-            repos.journalService,
-            externalWriteActor = repos.writeActor,
-            backgroundPageRepository = repos.backgroundPageRepository,
+    val graphLoader = remember(effectiveFileSystem, repos, sidecarManager) {
+        // graphId threads through to GraphFileWatcher so MoveInProgressFlag actually guards
+        // this graph's watcher poll loop during a relocate/link (Story 1.3.2).
+        repos.createGraphLoader(
+            effectiveFileSystem,
             sidecarManager = sidecarManager,
-            histogramWriter = repos.histogramWriter,
-            spanRepository = repos.spanRepository,
-        ).also { it.onBulkImportComplete = repos.onBulkImportComplete }
+            graphId = graphManager.getActiveGraphId()?.value,
+        )
     }
-    val graphWriter = remember {
+    // Wire write-behind flush callbacks so FileRegistry correctly tracks SAF write windows.
+    // - onFlushPreWrite: sets Long.MAX_VALUE sentinel before write, closing the mtime race
+    //   window where a concurrent detectChanges poll emits a spurious event for .md.stek files.
+    // - onFlushComplete: replaces sentinel with post-flush mtime after successful write.
+    // - onFlushFailed: removes sentinel when write fails so the file is not permanently suppressed.
+    remember(graphLoader, effectiveFileSystem) {
+        effectiveFileSystem.setOnFlushPreWrite(graphLoader::preMarkFileWrite)
+        effectiveFileSystem.setOnFlushComplete(graphLoader::markFileWrittenByUs)
+        effectiveFileSystem.setOnFlushFailed(graphLoader::clearFilePendingWrite)
+        // web-local-folder-livesync Epic 3.2 (Task 3.2.2d): wires HostDirectorySync's
+        // reconciliation-conflict callback the same way as the three flush callbacks above —
+        // GraphLoader only exists here (per-active-graph, inside this composition), never in
+        // wasmJsMain's Main.kt, so this is where the plan's "after GraphLoader exists, wire the
+        // callback" instruction actually applies. No-op on every platform but wasmJs.
+        effectiveFileSystem.setOnHostConflict(graphLoader::emitExternalFileChange)
+        // Bytes-aware sibling for `.md.stek` (paranoid-mode) HostOnlyNew content — see
+        // FileSystem.setOnHostBytesConflict and GraphLoader.emitExternalFileChangeBytes.
+        effectiveFileSystem.setOnHostBytesConflict(graphLoader::emitExternalFileChangeBytes)
+        // web-local-folder-livesync Epic 4.4 (Task 4.4.1b): same wiring pattern, one call later —
+        // forwards write-through failures onto GraphLoader's existing writeErrors channel.
+        effectiveFileSystem.setOnHostWriteFailed(graphLoader::reportHostWriteFailure)
+        // Feeds the disk-IO SLO (SloChecker): emits "file.write.deferred" spans for each
+        // write-behind SAF flush so Android's deferred-write latency is tracked, not just
+        // the near-instant markDirty enqueue.
+        effectiveFileSystem.setSpanEmitter(repos.spanEmitter)
+    }
+
+    val graphWriter = remember(effectiveFileSystem, repos, graphLoader, sidecarManager) {
         GraphWriter(
-            fileSystem,
+            effectiveFileSystem,
             repos.writeActor,
             onFileWritten = graphLoader::markFileWrittenByUs,
             sidecarManager = sidecarManager,
-            onPreWrite = { filePath -> graphLoader.fileRegistry.preMarkPendingWrite(dev.stapler.stelekit.model.FilePath(filePath)) },
-            onClearPendingWrite = { filePath -> graphLoader.fileRegistry.clearPendingWrite(dev.stapler.stelekit.model.FilePath(filePath)) },
-        )
+            onPreWrite = { filePath -> graphLoader.preMarkFileWrite(filePath) },
+            onClearPendingWrite = { filePath -> graphLoader.clearFilePendingWrite(filePath) },
+            checkPreWriteConflict = { filePath, diskContent ->
+                val lastKnown = graphLoader.fileRegistry.getContentHash(dev.stapler.stelekit.model.FilePath(filePath))
+                lastKnown != null && diskContent.hashCode() != lastKnown
+            },
+            onPreWriteConflict = { filePath, _, diskContent ->
+                graphLoader.emitExternalFileChange(filePath, diskContent)
+            },
+            spanEmitter = repos.spanEmitter,
+        ).also { writer ->
+            // Bug fix (sdd:6-verify BLOCKER): this GraphWriter instance is fresh per active graph
+            // (remember is keyed on repos, which is per-graph) — renamePage/deletePage fail fast on
+            // a null currentEpoch, so every graph needs one seeded immediately at construction, not
+            // only paranoid-mode graphs via onVaultUnlock/onCreateVault's success paths. Those two
+            // handlers still advance `sequence` on top of this baseline via their own
+            // `(graphWriter.currentEpoch?.sequence ?: 0L) + 1` logic.
+            val id = activeGraphInfo?.id
+            if (id != null) {
+                writer.currentEpoch = GraphEpoch(graphId = id, graphPath = activeGraphPath, sequence = 1L)
+            }
+        }
     }
 
     // Wire git sync service for the active graph.
@@ -480,6 +644,9 @@ private fun GraphContent(
     val gitConfigRepository = remember(gitRepository) {
         if (gitRepository == null) null else graphManager.createGitConfigRepository()
     }
+    // Snapshot only — GraphContent is torn down and recreated by the parent's key(activeGraphId)
+    // whenever the active graph changes, so this can't change during this instance's lifetime.
+    val gitSyncGraphId = remember { graphManager.graphRegistry.value.activeGraphId?.value ?: "" }
     val gitSyncService = remember(gitConfigRepository) {
         if (gitRepository == null || gitConfigRepository == null) return@remember null
         val networkMonitor = dev.stapler.stelekit.platform.NetworkMonitor()
@@ -491,7 +658,16 @@ private fun GraphContent(
             configRepository = gitConfigRepository,
             networkMonitor = networkMonitor,
             fileSystem = fileSystem,
-            credentialAccessProvider = { vaultCredentialStore ?: dev.stapler.stelekit.git.CredentialStore() },
+            credentialAccessProvider = { vaultCredentialStore ?: dev.stapler.stelekit.platform.security.CredentialStore() },
+            graphId = gitSyncGraphId,
+            settings = platformSettings,
+            // CRITICAL finding (PR #327 review): must be the same instance a host passes as
+            // gitSyncBusyCounter to createAndroidGraphMoveQuiesceStrategy(...), or the quiesce
+            // strategy's awaitIdle() never observes this service's sync() activity — see
+            // StelekitAppPlatformIntegrations.gitSyncBusyCounter's doc. Falling back to a fresh
+            // instance (Desktop/iOS, or before a host wires one) matches GitSyncService's own
+            // default.
+            gitSyncBusyCounter = gitSyncBusyCounter ?: dev.stapler.stelekit.git.GitSyncBusyCounter(),
         )
     }
     DisposableEffect(gitSyncService) {
@@ -507,18 +683,21 @@ private fun GraphContent(
     // created first with a lazy lambda that resolves viewModel after both are initialised.
     var viewModelRef: StelekitViewModel? = null
 
-    val blockStateManager = remember {
+    val blockStateManager = remember(repos, graphLoader, graphWriter) {
         dev.stapler.stelekit.ui.state.BlockStateManager(
             blockRepository = repos.blockRepository,
             graphLoader = graphLoader,
             graphWriter = graphWriter,
             pageRepository = repos.pageRepository,
             graphPathProvider = { viewModelRef?.uiState?.value?.currentGraphPath ?: "" },
-            histogramWriter = repos.histogramWriter
+            histogramWriter = repos.histogramWriter,
+            writeActor = repos.writeActor,
+            invalidationSource = repos.writeActor?.blockInvalidations,
+            pushSource = repos.writeActor?.blocksPushed,
         )
     }
 
-    val exportService = remember {
+    val exportService = remember(clipboardProvider, repos) {
         ExportService(
             exporters = listOf(
                 MarkdownExporter(),
@@ -537,10 +716,13 @@ private fun GraphContent(
     // ViewModel scope must NOT be rememberCoroutineScope() — that scope is cancelled when the
     // composable leaves the composition, which would cancel all ViewModel coroutines on pause.
     val viewModelScope = remember { kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default) }
-    val viewModel = remember {
+    val onSectionsLoaded = remember(repos) {
+        dev.stapler.stelekit.sections.platformSectionSyncCallback(repos.pageRepository)
+    }
+    val viewModel = remember(effectiveFileSystem, repos, platformSettings, graphLoader, graphWriter, blockStateManager, exportService, graphManager, viewModelScope) {
         StelekitViewModel(
             StelekitViewModelDependencies(
-                fileSystem = fileSystem,
+                fileSystem = effectiveFileSystem,
                 pageRepository = repos.pageRepository,
                 blockRepository = repos.blockRepository,
                 searchRepository = repos.searchRepository,
@@ -557,12 +739,110 @@ private fun GraphContent(
                 histogramWriter = repos.histogramWriter,
                 ringBuffer = repos.ringBuffer,
                 activeGitSyncService = graphManager.activeGitSyncService,
-                activeGraphIdProvider = { graphManager.getActiveGraphId() },
+                localChangesCountFlow = localChangesCountFlow,
+                activeGraphIdProvider = { graphManager.getActiveGraphId()?.value },
+                onDismissGitDetection = { graphId -> graphManager.setGitDetectionDismissed(GraphId(graphId), true) },
+                onDismissBrowserOnlySyncBanner = { graphId ->
+                    graphManager.setBrowserOnlySyncBannerDismissed(GraphId(graphId), true)
+                },
+                onSectionsLoaded = onSectionsLoaded,
                 scope = viewModelScope,
             )
         ).also {
             viewModelRef = it
             it.startAutoSave()
+        }
+    }
+
+    // Phase 3 (Story 3.1.5/Epic 3.4): the composition root for "Move storage location…" — the
+    // only place a real GraphRelocationCoordinator gets constructed, since it needs this
+    // composable's own graphManager/fileSystem plus the platform-supplied quiesce port. Null
+    // graphMoveQuiesceStrategy (Desktop/iOS, or a host that hasn't wired one) means no coordinator
+    // exists, so onStorageLocationChoose below falls back to a snackbar instead of hanging.
+    val graphRelocationCoordinator = remember(
+        graphManager,
+        fileSystem,
+        graphMoveQuiesceStrategy,
+        hostLinkStep,
+        insufficientSpaceCheck,
+        graphWriter,
+    ) {
+        graphMoveQuiesceStrategy?.let {
+            GraphRelocationCoordinator(
+                graphManager,
+                fileSystem,
+                it,
+                hostLinkStep = hostLinkStep,
+                // MAJOR finding (PR #327 review): wires the real per-platform pre-flight
+                // free-space check when one is supplied; InsufficientSpaceCheck.NONE (never
+                // checks) otherwise — see StelekitAppPlatformIntegrations.insufficientSpaceCheck's
+                // doc for why this is the composition root for that seam.
+                insufficientSpaceCheck = insufficientSpaceCheck ?: dev.stapler.stelekit.db.InsufficientSpaceCheck.NONE,
+                // BLOCKER 1 fix (PR #327 review): flushes this graph's GraphWriter — the same
+                // instance StelekitViewModel/GitSyncService above already write through — before
+                // relocate()/link() quiesces/closes the driver, so a pending 500ms-debounced save
+                // is captured on disk first instead of being lost or split across the move.
+                flushPendingSaves = { graphWriter.flush() },
+            )
+        }
+    }
+    var storageMoveState by remember { mutableStateOf<StorageMoveUiState?>(null) }
+    var storageMoveGraphName by remember { mutableStateOf("this graph") }
+    var storageMoveJob by remember { mutableStateOf<Job?>(null) }
+    var lastStorageMoveOperation by remember { mutableStateOf<StorageMoveOperation?>(null) }
+
+    // Epic 4.1: dispatches to the coordinator's Relocate or Link entry point — see
+    // GraphRelocationCoordinator.link's doc comment for why Link is a separate function rather
+    // than a branch inside relocate() itself. A null hostLinkStep (every non-Web platform) still
+    // reaches coordinator.link(), which fails fast with a real Failed(DestinationNotWritable)
+    // state shown in StorageMoveProgressDialog below — a more honest UI than a generic snackbar.
+    fun startStorageMove(operation: StorageMoveOperation, graphName: String) {
+        val coordinator = graphRelocationCoordinator ?: return
+        lastStorageMoveOperation = operation
+        storageMoveGraphName = graphName
+        val previousJob = storageMoveJob
+        val states = when (operation) {
+            is StorageMoveOperation.Relocate -> coordinator.relocate(operation)
+            is StorageMoveOperation.Link -> coordinator.link(operation)
+        }
+        storageMoveJob = scope.launch {
+            // BLOCKER 2 fix (PR #327 review): await the previous job's full cancellation —
+            // including GraphRelocationCoordinator's own NonCancellable cleanup (reopen, quiesce
+            // release, MoveInProgressFlag clear) — before this job starts collecting, so a stale
+            // in-flight relocate/link (e.g. WasmJsGraphMoveQuiesceStrategy's still-mid-flight
+            // quiesce()) can never race a freshly-started one. The coordinator's own
+            // MoveInProgressFlag check (relocate()/link()'s first step) is the authoritative guard
+            // for genuinely concurrent callers from different entry points; this closes the common
+            // rapid-retry/double-click case cleanly instead of relying on that race alone.
+            previousJob?.cancelAndJoin()
+            try {
+                states.collect { state -> storageMoveState = state }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                // BLOCKER 3 fix (PR #327 review): mirrors the camera-capture scope.launch pattern
+                // below — an uncaught Throwable on this plain rememberCoroutineScope() (no
+                // CoroutineExceptionHandler) would otherwise kill the Android process even though
+                // GraphRelocationCoordinator itself now guards its own quiesce call.
+                graphContentLogger.error("Storage move collection crashed: ${e.message}", e)
+                storageMoveState = StorageMoveUiState.Failed(
+                    dev.stapler.stelekit.error.DomainError.StorageError.RelocationFailed(operation.graphId),
+                )
+            }
+        }
+    }
+
+    // Both Sidebar's GraphSwitcher (Android) and FolderSyncSettings (Web) hand off through this
+    // one callback (see GraphRelocationCoordinator.kt's own composition-root doc). A null
+    // coordinator (no graphMoveQuiesceStrategy wired — Desktop/iOS today) still can't run either
+    // operation, so it falls back to a snackbar instead of hanging.
+    val onStorageLocationChoose: (StorageMoveOperation) -> Unit = { operation ->
+        if (graphRelocationCoordinator == null) {
+            viewModel.sendSnackbar("Moving storage location isn't available on this platform yet")
+        } else {
+            val graphName = graphManager.getGraphInfo(GraphId(operation.graphId))?.displayName
+                ?: "this graph"
+            startStorageMove(operation, graphName)
         }
     }
 
@@ -585,7 +865,7 @@ private fun GraphContent(
             viewModel.registerAttachImageCallback {
                 scope.launch {
                     val editingBlockUuid = blockStateManager.editingBlockUuid.value
-                    val graphRoot = viewModel.uiState.value.currentGraphPath
+                    val graphRoot = viewModel.uiState.value.currentGraphPath ?: return@launch
                     val result = attachmentService.pickAndAttach(
                         graphRoot = graphRoot,
                         pageRelativePath = ""
@@ -595,9 +875,8 @@ private fun GraphContent(
                             graphContentLogger.warn("Image attachment failed: $err")
                         },
                         ifRight = { attachment: dev.stapler.stelekit.service.AttachmentResult ->
-                            val markdown = "![${attachment.displayName}](${attachment.relativePath})"
                             if (editingBlockUuid != null) {
-                                blockStateManager.insertTextAtCursor(editingBlockUuid, markdown)
+                                blockStateManager.insertTextAtCursor(editingBlockUuid, attachment.toMarkdown())
                             }
                         }
                     )
@@ -612,7 +891,7 @@ private fun GraphContent(
     // active graph. For paranoid-mode graphs, loading is deferred until after unlock so the
     // CryptoLayer is in place before any file reads.
     LaunchedEffect(Unit) {
-        if (!isParanoidMode && viewModel.uiState.value.currentGraphPath.isEmpty()) {
+        if (!isParanoidMode && viewModel.uiState.value.currentGraphPath == null) {
             val path = graphManager.getActiveGraphInfo()?.path
             if (!path.isNullOrEmpty()) {
                 viewModel.setGraphPath(path)
@@ -633,7 +912,7 @@ private fun GraphContent(
                 graphWriter.closeAndClearCryptoLayer()
                 vaultCredentialStore?.onVaultLocked()
                 // Revert git repository to PBKDF2 fallback store
-                gitRepository?.setCredentialAccess(dev.stapler.stelekit.git.CredentialStore())
+                gitRepository?.setCredentialAccess(dev.stapler.stelekit.platform.security.CredentialStore())
                 vaultState = VaultState.Locked   // show lock/unlock screen; gates graph content
             }
         }
@@ -642,7 +921,7 @@ private fun GraphContent(
     // After successful vault unlock, inject CryptoLayer into loader/writer then load graph.
     LaunchedEffect(vaultState) {
         val state = vaultState
-        if (state is VaultState.Unlocked && isParanoidMode && viewModel.uiState.value.currentGraphPath.isEmpty()) {
+        if (state is VaultState.Unlocked && isParanoidMode && viewModel.uiState.value.currentGraphPath == null) {
             val path = graphManager.getActiveGraphInfo()?.path ?: return@LaunchedEffect
             viewModel.setGraphPath(path)
         }
@@ -661,13 +940,24 @@ private fun GraphContent(
                     val layer = dev.stapler.stelekit.vault.CryptoLayer(engine, unlockResult.dek)
                     // Set graph paths before cryptoLayer so any concurrent reader that observes
                     // cryptoLayer != null will also see the correct graphPath (used as AAD base).
-                    graphWriter.graphPath = activeGraphPath
+                    // GraphId is sourced only from GraphManager.getActiveGraphInfo()?.id — never
+                    // derived from activeGraphPath — per the GraphId smart-constructor discipline.
+                    val activeGraphIdForUnlock = graphManager.getActiveGraphInfo()?.id
+                    if (activeGraphIdForUnlock == null) {
+                        graphContentLogger.error("onVaultUnlock: no active graph — cannot establish GraphEpoch")
+                    } else {
+                        graphWriter.currentEpoch = GraphEpoch(
+                            graphId = activeGraphIdForUnlock,
+                            graphPath = activeGraphPath,
+                            sequence = (graphWriter.currentEpoch?.sequence ?: 0L) + 1,
+                        )
+                    }
                     graphLoader.setGraphPath(activeGraphPath)
                     graphLoader.setCryptoLayer(layer)
                     graphWriter.setCryptoLayer(layer)
                     vaultCredentialStore?.onVaultUnlocked(unlockResult.dek)
                     // Swap git repository credential access to vault store
-                    gitRepository?.setCredentialAccess(vaultCredentialStore ?: dev.stapler.stelekit.git.CredentialStore())
+                    gitRepository?.setCredentialAccess(vaultCredentialStore ?: dev.stapler.stelekit.platform.security.CredentialStore())
                     // CryptoLayer must be injected before vaultState triggers graph load via LaunchedEffect
                     vaultState = VaultState.Unlocked(unlockResult.namespace)
                 }
@@ -692,19 +982,30 @@ private fun GraphContent(
                     is arrow.core.Either.Right -> {
                         val unlockResult = result.value
                         val layer = dev.stapler.stelekit.vault.CryptoLayer(engine, unlockResult.dek)
-                        graphWriter.graphPath = activeGraphPath
+                        // GraphId sourced only from GraphManager.getActiveGraphInfo()?.id — see
+                        // onVaultUnlock's identical rationale above.
+                        val activeGraphIdForCreate = graphManager.getActiveGraphInfo()?.id
+                        if (activeGraphIdForCreate == null) {
+                            graphContentLogger.error("onCreateVault: no active graph — cannot establish GraphEpoch")
+                        } else {
+                            graphWriter.currentEpoch = GraphEpoch(
+                                graphId = activeGraphIdForCreate,
+                                graphPath = activeGraphPath,
+                                sequence = (graphWriter.currentEpoch?.sequence ?: 0L) + 1,
+                            )
+                        }
                         graphLoader.setGraphPath(activeGraphPath)
                         graphLoader.setCryptoLayer(layer)
                         graphWriter.setCryptoLayer(layer)
                         vaultCredentialStore?.onVaultUnlocked(unlockResult.dek)
                         // Swap git repository credential access to vault store
-                        gitRepository?.setCredentialAccess(vaultCredentialStore ?: dev.stapler.stelekit.git.CredentialStore())
+                        gitRepository?.setCredentialAccess(vaultCredentialStore ?: dev.stapler.stelekit.platform.security.CredentialStore())
                         // Migrate existing credentials from PBKDF2 store into vault
-                        val graphId = graphManager.getActiveGraphId() ?: ""
-                        if (graphId.isNotEmpty()) {
+                        val graphId = graphManager.getActiveGraphId()
+                        if (graphId != null) {
                             vaultCredentialStore?.migrateFrom(
-                                source = dev.stapler.stelekit.git.CredentialStore(),
-                                keys = listOf("git_https_token_$graphId", "git_ssh_passphrase_$graphId"),
+                                source = dev.stapler.stelekit.platform.security.CredentialStore(),
+                                keys = listOf("git_https_token_${graphId.value}", "git_ssh_passphrase_${graphId.value}"),
                             )
                         }
                         vaultManager = tempManager
@@ -807,7 +1108,8 @@ private fun GraphContent(
         mutableStateOf(repos.debugFlagRepository?.loadDebugMenuState() ?: DebugMenuState())
     }
 
-    // Sync span capture toggle → ring buffer enabled flag (defaults to false in DebugMenuState).
+    // Sync span capture toggle → ring buffer enabled flag so histograms remain always-on
+    // but span recording only runs when explicitly requested.
     androidx.compose.runtime.LaunchedEffect(debugMenuState.isSpanCaptureEnabled) {
         repos.ringBuffer?.enabled = debugMenuState.isSpanCaptureEnabled
     }
@@ -902,14 +1204,79 @@ private fun GraphContent(
         }
     }
 
-    val journalsViewModel = remember {
-        JournalsViewModel(repos.journalService, blockStateManager)
+    val activeSectionIds = remember(platformSettings) {
+        val states = platformSettings.getSectionStates()
+        if (states.isEmpty()) null
+        else states.filterValues { it == SectionState.ACTIVE }.keys.toList()
     }
-    val voiceCaptureViewModel = remember(voicePipeline) {
+
+    val journalsViewModel = remember(repos, blockStateManager, activeSectionIds) {
+        JournalsViewModel(repos.journalService, blockStateManager, activeSectionIds = activeSectionIds)
+    }
+
+    val tagSettings = remember(platformSettings) { TagSettings(platformSettings) }
+    // Story 4.1.1: threads a real QrTransferSettings instance down to PageView's "Send via QR"
+    // menu (Story 3.1.4) — without this, qrTransferSettings stays null at every call site and the
+    // menu item never renders on any platform regardless of the flag's stored value.
+    val qrTransferSettings = remember(platformSettings) {
+        dev.stapler.stelekit.transfer.qrcode.QrTransferSettings(platformSettings)
+    }
+    // Epic 8 Story 8.2: resolved through the unified registry instead of the old
+    // buildLlmFormatterForTags(voiceSettings) (Anthropic/OpenAI-key-only) helper — this is the
+    // fix for the original complaint that Android tag suggestion couldn't use on-device
+    // inference. availableForFeature() performs a live availability check (e.g. on-device
+    // model readiness), so resolution is async via produceState; tagEngine briefly has no LLM
+    // tier on first composition until it resolves, then recomposes with it.
+    val tagLlmProviderState = produceState<dev.stapler.stelekit.llm.LlmProvider?>(
+        initialValue = null,
+        llmProviderRegistry, llmSettings, tagSettings,
+    ) {
+        value = if (tagSettings.isLlmTierEnabled()) {
+            when (val selectedId = llmSettings.getSelectedProviderId(dev.stapler.stelekit.llm.LlmFeature.TAG_SUGGESTION)) {
+                // Existing-install guard (Story 8.2b) explicitly disabled this feature —
+                // never fall through to Auto.
+                dev.stapler.stelekit.llm.LlmProviderRegistry.DISABLED_SENTINEL -> null
+                // "Auto" — first available provider in registry order (on-device included).
+                null -> llmProviderRegistry.availableForFeature(dev.stapler.stelekit.llm.LlmFeature.TAG_SUGGESTION).firstOrNull()
+                // Explicit selection — no Auto fallback if the id is stale/removed.
+                else -> llmProviderRegistry.find(selectedId)
+            }
+        } else null
+    }
+    val tagEngine = remember(viewModel.pageNameIndex, tagSettings.isEnabled(), tagLlmProviderState.value) {
+        if (!tagSettings.isEnabled()) null
+        else TagSuggestionEngine(
+            pageNameIndex = viewModel.pageNameIndex,
+            llmTagProvider = tagLlmProviderState.value?.let { LlmTagProvider(it.formatter) },
+            checkAvailability = tagLlmProviderState.value?.let { p -> { p.checkAvailability() } },
+        )
+    }
+    // Epic 8 Story 8.4a straggler fix: TagSuggestionSettings' "hasLlmKey" gate used to read
+    // voiceSettings.getAnthropicKey()/getOpenAiKey() directly — those always return null once
+    // LlmCredentialMigration has run (the whole point of the migration is clearing them), which
+    // would have permanently disabled the LLM-tier switch in Settings for every migrated
+    // install, including ones with a valid registry provider (remote key or on-device). Now
+    // reflects "is any provider available for TAG_SUGGESTION at all" via the registry,
+    // independent of the tier's enabled/disabled toggle state.
+    val hasTagSuggestionLlmProviderState = produceState(initialValue = false, llmProviderRegistry) {
+        value = llmProviderRegistry.availableForFeature(dev.stapler.stelekit.llm.LlmFeature.TAG_SUGGESTION).isNotEmpty()
+    }
+    val tagSuggestionViewModel = remember(tagEngine) {
+        if (tagEngine != null) TagSuggestionViewModel(tagEngine, onPropose = viewModel::proposeLlmSuggestion) else null
+    }
+    DisposableEffect(tagSuggestionViewModel) {
+        onDispose { tagSuggestionViewModel?.close() }
+    }
+    // Warm up the on-device model as soon as a provider is available — long before the user
+    // taps "Suggest tags" so the first request hits a warm runtime instead of a cold one.
+    LaunchedEffect(tagSuggestionViewModel) { tagSuggestionViewModel?.preload() }
+
+    val voiceCaptureViewModel = remember(voicePipeline, tagEngine) {
         VoiceCaptureViewModel(
             voicePipeline,
             repos.journalService,
             currentOpenPageUuid = { viewModel.uiState.value.currentPage?.uuid?.value },
+            tagSuggestionEngine = tagEngine,
         )
     }
     DisposableEffect(voiceCaptureViewModel) {
@@ -946,7 +1313,7 @@ private fun GraphContent(
     val allPagesViewModel = remember {
         AllPagesViewModel(repos.pageRepository, repos.blockRepository)
     }
-    val libraryStatsViewModel = remember {
+    val libraryStatsViewModel = remember(libraryStatsProvider, graphManager) {
         LibraryStatsViewModel(libraryStatsProvider, graphManager.getActiveGraphInfo()?.path ?: "")
     }
     val searchViewModel = remember {
@@ -972,6 +1339,7 @@ private fun GraphContent(
     val graphRegistry by graphManager.graphRegistry.collectAsState()
     val activeGraphId = graphRegistry.activeGraphId
     val syncState by viewModel.syncState.collectAsState()
+    val gitLastSyncAt by viewModel.gitLastSyncAt.collectAsState()
 
     StelekitTheme(themeMode = appState.themeMode) {
         CompositionLocalProvider(LocalI18n provides I18n(appState.language)) {
@@ -979,7 +1347,7 @@ private fun GraphContent(
                 Onboarding(
                     fileSystem = fileSystem,
                     onComplete = { viewModel.setOnboardingCompleted(true) },
-                    onGraphSelected = { path ->
+                    onGraphSelect = { path ->
                         scope.launch {
                             val graphId = graphManager.addGraph(path)
                             // Persist BEFORE switchGraph — switchGraph updates activeGraphId which
@@ -989,6 +1357,19 @@ private fun GraphContent(
                             viewModel.setGraphPath(path)
                             viewModel.setOnboardingCompleted(true)
                             graphManager.switchGraph(graphId)
+                        }
+                    },
+                    onDemoSelect = {
+                        scope.launch {
+                            try {
+                                val graphId = graphManager.addDemoGraph()
+                                graphManager.switchGraph(graphId)
+                                viewModel.setOnboardingCompleted(true)
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                viewModel.sendSnackbar("Could not load demo content. Starting with an empty graph.")
+                            }
                         }
                     }
                 )
@@ -1014,25 +1395,74 @@ private fun GraphContent(
                         .onKeyEvent { keyEvent ->
                             onGraphKeyEvent(
                                 keyEvent = keyEvent,
-                                onCommandPalette = { viewModel.setCommandPaletteVisible(true) },
-                                onSearch = { viewModel.setSearchDialogVisible(true) },
-                                onToggleSidebar = { viewModel.toggleSidebar() },
-                                onToggleRightSidebar = { viewModel.toggleRightSidebar() },
-                                onSettings = { viewModel.setSettingsVisible(true) },
-                                onUndo = { journalsViewModel.undo() },
-                                onRedo = { journalsViewModel.redo() },
-                                onBack = { viewModel.goBack() },
-                                onForward = { viewModel.goForward() },
-                                onDebugMenu = { viewModel.showDebugMenu() }
+                                handlers = GraphKeyEventHandlers(
+                                    onCommandPalette = { viewModel.setCommandPaletteVisible(true) },
+                                    onSearch = { viewModel.setSearchDialogVisible(true) },
+                                    onToggleSidebar = { viewModel.toggleSidebar() },
+                                    onToggleRightSidebar = { viewModel.toggleRightSidebar() },
+                                    onSettings = { viewModel.setSettingsVisible(true) },
+                                    onUndo = { journalsViewModel.undo() },
+                                    onRedo = { journalsViewModel.redo() },
+                                    onBack = { viewModel.goBack() },
+                                    onForward = { viewModel.goForward() },
+                                    onDebugMenu = { viewModel.showDebugMenu() },
+                                ),
                             )
                         }
                 ) {
                     val windowSizeClass = windowSizeClassFor(maxWidth)
                     val isMobile = windowSizeClass.isMobile
+                    val snackbarHostState = remember { SnackbarHostState() }
+                    var showAddGraphDialog by remember { mutableStateOf(false) }
+                    var demoBannerDismissed by remember { mutableStateOf(false) }
+                    // Story 2.2.1: new-graph "App storage" flow (Android-only for now — gated on
+                    // fileSystem.supportsAppOwnedStorage). showNewGraphLocationPicker/
+                    // pendingNewGraphAppOwnedPath are the picker dialog's own open-state and its
+                    // pre-generated "App storage" candidate path (needed up front because
+                    // UnifiedLocationPicker takes graphId as a constructor param, before the user
+                    // has chosen a row). pendingPlainGraphWarning holds the resolved AppOwned
+                    // location + path awaiting the ADR-003 warning's "Create anyway"/"Go back".
+                    var showNewGraphLocationPicker by remember { mutableStateOf(false) }
+                    var pendingNewGraphAppOwnedPath by remember { mutableStateOf("") }
+                    // Set alongside the StorageLocation.SafFolder returned from the picker's
+                    // onBrowseRequest — SafFolder.treeUri only carries the tree-root segment
+                    // (see that lambda's comment), so the real picked path is stashed here rather
+                    // than reconstructed from that shorter field.
+                    var pendingNewGraphSafPath by remember { mutableStateOf("") }
+                    var pendingPlainGraphWarning by remember {
+                        mutableStateOf<Pair<StorageLocation.AppOwned, String>?>(null)
+                    }
+                    LaunchedEffect(Unit) {
+                        viewModel.snackbarEvents.collect { msg ->
+                            try {
+                                snackbarHostState.showSnackbar(msg)
+                            } catch (e: kotlinx.coroutines.CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                graphContentLogger.warn("showSnackbar failed: $e")
+                            }
+                        }
+                    }
+                    // Epic 8 Story 8.2: one-time notice for existing installs whose tag
+                    // suggestion LLM tier was explicitly disabled by the migration guard above
+                    // (see showTagSuggestionOnDeviceNotice) so they know on-device support now
+                    // exists and how to turn it on.
+                    LaunchedEffect(showTagSuggestionOnDeviceNotice) {
+                        if (showTagSuggestionOnDeviceNotice) {
+                            try {
+                                snackbarHostState.showSnackbar("On-device tag suggestions are now available — enable in Settings")
+                            } catch (e: kotlinx.coroutines.CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                graphContentLogger.warn("showSnackbar failed: $e")
+                            }
+                        }
+                    }
 
                     CompositionLocalProvider(
                         LocalWindowSizeClass provides windowSizeClass,
-                        LocalOpenSearchWithText provides { text -> viewModel.setSearchDialogVisible(true, text) }
+                        LocalOpenSearchWithText provides { text -> viewModel.setSearchDialogVisible(true, text) },
+                        LocalFileSystem provides effectiveFileSystem,
                     ) {
 
                     // Auto-manage sidebar based on layout: open on desktop, closed on mobile.
@@ -1107,7 +1537,40 @@ private fun GraphContent(
                                 currentScreen = appState.currentScreen,
                                 currentGraphName = activeGraphInfo?.displayName ?: "",
                                 availableGraphs = graphRegistry.graphs,
-                                activeGraphId = activeGraphId,
+                                activeGraphId = activeGraphId?.value,
+                                pendingConflictFilePaths = appState.pendingConflictFilePaths,
+                                isDemoActive = activeGraphInfo?.isDemo == true,
+                                demoBannerDismissed = demoBannerDismissed,
+                                onDismissDemoBanner = { demoBannerDismissed = true },
+                                hostAccessState = hostAccessState,
+                                hostPendingWriteCount = hostWritePendingCount,
+                                hostWriteStuck = hostWriteStuck,
+                                onReconnectHostDirectory = onReconnectHostDirectory ?: {},
+                                mergePendingPageCount = mergePendingPageCount,
+                                onExportPagesForMerge = {
+                                    scope.launch {
+                                        graphMergeService.snapshot(repos)
+                                        viewModel.sendSnackbar(
+                                            "Captured ${graphMergeService.pendingPageCount.value} pages — " +
+                                                "switch to the target graph, then tap \"Merge captured pages\""
+                                        )
+                                    }
+                                },
+                                onImportMergedPages = {
+                                    scope.launch {
+                                        val result = graphMergeService.merge(repos, fileSystem)
+                                        val summary = buildString {
+                                            append("Merged ${result.imported.size} pages")
+                                            if (result.skippedExisting.isNotEmpty()) {
+                                                append(", skipped ${result.skippedExisting.size} already here")
+                                            }
+                                            if (result.failed.isNotEmpty()) {
+                                                append(", ${result.failed.size} failed")
+                                            }
+                                        }
+                                        viewModel.sendSnackbar(summary)
+                                    }
+                                },
                                 onPageClick = { page ->
                                     viewModel.navigateTo(Screen.PageView(page))
                                     closeSidebarIfMobile()
@@ -1118,22 +1581,129 @@ private fun GraphContent(
                                 },
                                 onToggleFavorite = { viewModel.toggleFavorite(it) },
                                 onGraphSelected = { id ->
-                                    scope.launch { graphManager.switchGraph(id) }
+                                    scope.launch { graphManager.switchGraph(GraphId(id)) }
                                     closeSidebarIfMobile()
                                 },
                                 onAddGraph = {
-                                    val selectedPath = fileSystem.pickDirectory()
-                                    if (selectedPath != null) {
-                                        scope.launch {
-                                            val newGraphId = graphManager.addGraph(selectedPath)
-                                            newGraphId?.let { graphManager.switchGraph(it) }
+                                    when (addGraphFlowMode(fileSystem)) {
+                                        AddGraphFlowMode.ShowLocationPicker -> {
+                                            // Story 2.2.1: show UnifiedLocationPicker instead of
+                                            // jumping straight to the SAF folder picker, so "App
+                                            // storage" is choosable with zero SAF grant. The
+                                            // candidate path is generated now (not on confirm)
+                                            // because UnifiedLocationPicker needs graphId as a
+                                            // constructor param, before the user has chosen a row.
+                                            pendingNewGraphAppOwnedPath = fileSystem.newAppOwnedGraphPath()
+                                            showNewGraphLocationPicker = true
                                         }
+                                        AddGraphFlowMode.ImmediateNativePicker -> {
+                                            // Must call synchronously here, before scope.launch, so
+                                            // the browser's showDirectoryPicker() runs within this
+                                            // click's transient user activation (see
+                                            // requestDirectoryPickerNow doc).
+                                            fileSystem.requestDirectoryPickerNow()
+                                            scope.launch {
+                                                val selectedPath = fileSystem.pickDirectoryAsync()
+                                                println("[SteleKit] onAddGraph: picker returned '$selectedPath'")
+                                                if (selectedPath != null) {
+                                                    val newGraphId = graphManager.addGraph(selectedPath)
+                                                    println("[SteleKit] onAddGraph: addGraph='$newGraphId', switching...")
+                                                    graphManager.switchGraph(newGraphId)
+                                                } else {
+                                                    val pickerError = fileSystem.consumeLastPickerError()
+                                                    if (pickerError != null) {
+                                                        viewModel.sendSnackbar("Couldn't open folder picker: $pickerError")
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        AddGraphFlowMode.ShowNameDialog -> showAddGraphDialog = true
                                     }
                                     closeSidebarIfMobile()
                                 },
-                                onRemoveGraph = { scope.launch { graphManager.removeGraph(it) } },
+                                onRemoveGraph = { id ->
+                                    scope.launch {
+                                        if (!graphManager.removeGraph(GraphId(id))) {
+                                            viewModel.sendSnackbar("Switch to another graph before removing the active one")
+                                        }
+                                    }
+                                },
+                                onUpdateGraphPath = { id, newPath ->
+                                    scope.launch {
+                                        when (val result = graphManager.updateGraphPath(GraphId(id), newPath)) {
+                                            is dev.stapler.stelekit.db.UpdateGraphPathResult.Success ->
+                                                viewModel.sendSnackbar("Graph moved to $newPath")
+                                            dev.stapler.stelekit.db.UpdateGraphPathResult.GraphNotFound ->
+                                                viewModel.sendSnackbar("Graph not found")
+                                            dev.stapler.stelekit.db.UpdateGraphPathResult.DemoGraphImmutable ->
+                                                viewModel.sendSnackbar("The demo graph's path cannot be changed")
+                                            dev.stapler.stelekit.db.UpdateGraphPathResult.PathNotFound ->
+                                                viewModel.sendSnackbar("Folder \"$newPath\" does not exist")
+                                            dev.stapler.stelekit.db.UpdateGraphPathResult.PathUnchanged ->
+                                                Unit
+                                            dev.stapler.stelekit.db.UpdateGraphPathResult.AlreadyTracked ->
+                                                viewModel.sendSnackbar("That folder is already tracked as another graph")
+                                            dev.stapler.stelekit.db.UpdateGraphPathResult.DatabaseMoveFailed ->
+                                                viewModel.sendSnackbar("Failed to move the graph's database — check file permissions")
+                                        }
+                                    }
+                                },
+                                onRenameGraph = { id, newName ->
+                                    if (!graphManager.renameGraph(GraphId(id), newName)) {
+                                        viewModel.sendSnackbar("Failed to rename graph")
+                                    }
+                                },
+                                onRelinkHostDirectory = { id ->
+                                    // Must call synchronously here, before scope.launch — same
+                                    // transient-user-activation constraint as onAddGraph above.
+                                    fileSystem.requestDirectoryPickerNow()
+                                    scope.launch {
+                                        val graph = graphManager.graphRegistry.value.graphs.find { it.id.value == id }
+                                        if (graph == null) return@launch
+                                        val dirName = fileSystem.relinkHostDirectoryAsync(graph.path)
+                                        if (dirName != null) {
+                                            graphManager.updateHostDirName(GraphId(id), dirName)
+                                            viewModel.sendSnackbar("Linked to folder \"$dirName\"")
+                                        } else {
+                                            val pickerError = fileSystem.consumeLastPickerError()
+                                            if (pickerError != null) {
+                                                viewModel.sendSnackbar("Couldn't open folder picker: $pickerError")
+                                            }
+                                        }
+                                    }
+                                },
+                                supportsHostDirectoryLink = fileSystem.supportsHostDirectoryLink,
+                                storageLocationResolver = storageLocationResolver,
+                                // Same StorageLocation.SafFolder(graphId, treeUri) construction as
+                                // the new-graph UnifiedLocationPicker's onBrowseRequest above —
+                                // the established idiom for "wrap whatever fileSystem.pickDirectoryAsync()
+                                // returned as a storage location", not a new one invented here.
+                                onBrowseRequestForMove = { graphId ->
+                                    fileSystem.pickDirectoryAsync()?.let { path ->
+                                        val expanded = fileSystem.expandTilde(path)
+                                        val treeUri = expanded.removePrefix("saf://").substringBefore("/")
+                                        StorageLocation.SafFolder(graphId, treeUri)
+                                    }
+                                },
+                                onBrowseClickForMove = {
+                                    // Must run synchronously here, not inside the suspend lambda
+                                    // above — same transient-user-activation constraint as every
+                                    // other showDirectoryPicker()-backed click in this file (see
+                                    // FolderSyncSettings's onBrowseClickForMove wiring below).
+                                    fileSystem.requestDirectoryPickerNow()
+                                },
+                                moveStorageLocationPlatformCapabilities = fileSystem.supportsNativeDirectoryPicker,
+                                // Epic 4.2 (Story 4.2.1, ADR-003): Link is a real continuous mirror
+                                // only for git-cloned graphs (the existing shadow-worktree
+                                // write-back mechanism, Android-only). No gitRepository on this
+                                // platform (e.g. Web) falls back to `true` — unaffected by this
+                                // gate, matching ADR-003's Web-ships-Link-for-both-graph-types
+                                // decision (Epic 4.1, wired separately in FolderSyncSettings.kt).
+                                isGraphGitCloned = { path -> gitRepository?.isGitRepo(path) ?: true },
+                                onStorageLocationChoose = onStorageLocationChoose,
                                 onCollapse = { viewModel.toggleSidebar() },
                                 syncState = syncState,
+                                gitLastSyncAt = gitLastSyncAt,
                                 onSyncClick = {
                                     if (syncState is dev.stapler.stelekit.git.model.SyncState.CredentialVaultLocked) {
                                         // Vault is locked — lock() re-shows the unlock screen
@@ -1146,7 +1716,13 @@ private fun GraphContent(
                                 isGitConfigured = appState.gitConfig != null,
                                 onAuthError = { viewModel.openGitSetupForCredentials() },
                                 onCloneGraph = { viewModel.openGitSetupForClone() },
-                                gitSyncedGraphId = if (appState.gitConfig != null) activeGraphId else null,
+                                gitSyncedGraphId = if (appState.gitConfig != null) activeGraphId?.value else null,
+                                onNewSectionJournalEntry = if (activeSectionIds?.size == 1) {
+                                    { viewModel.newSectionJournalForToday(activeSectionIds[0]) }
+                                } else null,
+                                sectionManifest = appState.currentManifest,
+                                defaultSection = appState.defaultSection.toDbString(),
+                                onSectionIndicatorClick = { viewModel.setSectionQuickToggleVisible(true) },
                             )
                         },
                         rightSidebar = {
@@ -1159,6 +1735,87 @@ private fun GraphContent(
                             )
                         },
                         content = {
+                            val cameraImportEnabled =
+                                imageImportService != null && SensorModule.cameraProvider.isAvailable
+                            var pendingCaptureFile by remember { mutableStateOf<PlatformImageFile?>(null) }
+                            var pendingCapturePageUuid by remember { mutableStateOf<String?>(null) }
+                            var pendingCaptureBlockUuid by remember { mutableStateOf<dev.stapler.stelekit.model.BlockUuid?>(null) }
+                            var isCaptureImporting by remember { mutableStateOf(false) }
+                            var showCameraViewfinder by remember { mutableStateOf(false) }
+                            var pendingCaptureNavigateAfterImport by remember { mutableStateOf(false) }
+                            val activeGraphInfo2 = graphRegistry.graphs.firstOrNull { it.id == activeGraphId }
+                            // appState.gitConfig used to default to null and never get assigned anywhere
+                            // (verified via repo-wide grep), so every UI element gated on it — the
+                            // sidebar "git configured" indicator, this banner's suppression check — was
+                            // permanently wrong regardless of the graph's real GitConfigRepository state.
+                            // Reload it from the repository whenever the active graph changes.
+                            LaunchedEffect(activeGraphId) {
+                                val gid = activeGraphId?.value ?: return@LaunchedEffect
+                                val repoConfig = gitConfigRepository?.getConfig(gid)?.getOrNull()
+                                graphContentLogger.info(
+                                    "gitConfig loaded graph=$gid configured=${repoConfig != null} " +
+                                        "detectedRepoRoot=${activeGraphInfo2?.detectedRepoRoot}"
+                                )
+                                viewModel.setGitConfig(repoConfig)
+                            }
+                            val showGitBanner = activeGraphInfo2?.detectedRepoRoot != null &&
+                                appState.gitConfig == null &&
+                                activeGraphInfo2.gitDetectionDismissed == false
+                            val showBrowserOnlySyncBanner = activeGraphInfo2 != null &&
+                                activeGraphInfo2.isDemo == false &&
+                                hostAccessState == HostAccessState.NotApplicable &&
+                                fileSystem.supportsNativeDirectoryPicker &&
+                                onConnectHostDirectory != null &&
+                                activeGraphInfo2.browserOnlySyncBannerDismissed == false
+                            // SyncDegraded: permission still reads as Granted, but the write-through
+                            // queue is stuck — the startup log line ("reconnectHostDirectory(...):
+                            // Granted") looks like sync is working, and nothing else prints a warning,
+                            // so this condition was previously visible only in the small sidebar badge.
+                            val hostSyncDegraded = hostAccessState is HostAccessState.Granted &&
+                                hostWriteStuck &&
+                                hostWritePendingCount > 0
+                            // Keyed by (graphId, condition kind), not just graphId: dismissing the
+                            // banner for one failure kind (e.g. Denied) must not suppress it for a
+                            // later, unrelated one (e.g. SyncDegraded) on the same graph.
+                            var hostReconnectBannerDismissedFor by remember { mutableStateOf<Pair<String?, String?>?>(null) }
+                            val hostReconnectBannerConditionKind = if (hostSyncDegraded) "degraded" else hostAccessState::class.simpleName
+                            val showHostReconnectBanner = activeGraphInfo2 != null &&
+                                (hostAccessState is HostAccessState.PromptNeeded ||
+                                    hostAccessState is HostAccessState.Denied ||
+                                    hostSyncDegraded) &&
+                                hostReconnectBannerDismissedFor != (activeGraphId?.value to hostReconnectBannerConditionKind)
+                            Column(modifier = Modifier.fillMaxSize()) {
+                                if (showGitBanner) {
+                                    GitDetectionBanner(
+                                        repoRoot = activeGraphInfo2!!.detectedRepoRoot!!,
+                                        onSetupSync = { viewModel.openGitSetup() },
+                                        onDismiss = {
+                                            val gid = activeGraphId ?: return@GitDetectionBanner
+                                            viewModel.dismissGitDetection(gid.value)
+                                        },
+                                    )
+                                }
+                                if (showBrowserOnlySyncBanner) {
+                                    BrowserOnlySyncBanner(
+                                        onEnableSync = { viewModel.setSettingsVisible(true) },
+                                        onDismiss = {
+                                            val gid = activeGraphId ?: return@BrowserOnlySyncBanner
+                                            viewModel.dismissBrowserOnlySyncBanner(gid.value)
+                                        },
+                                    )
+                                }
+                                if (showHostReconnectBanner) {
+                                    HostReconnectBanner(
+                                        state = hostAccessState,
+                                        degraded = hostSyncDegraded,
+                                        onReconnect = { onReconnectHostDirectory?.invoke() },
+                                        onDismiss = {
+                                            hostReconnectBannerDismissedFor =
+                                                activeGraphId?.value to hostReconnectBannerConditionKind
+                                        },
+                                    )
+                                }
+                            Box(modifier = Modifier.weight(1f)) {
                             ScreenRouter(
                                 screen = appState.currentScreen,
                                 repos = repos,
@@ -1172,11 +1829,13 @@ private fun GraphContent(
                                 appState = appState,
                                 graphWriter = graphWriter,
                                 urlFetcher = urlFetcher,
+                                qrTransferSettings = qrTransferSettings,
+                                graphLoader = graphLoader,
                                 capabilities = dev.stapler.stelekit.ui.components.EditorCapabilities(
                                     onAttachImage = if (attachmentService != null) {
                                         { editingBlockUuid ->
-                                            val graphRoot = appState.currentGraphPath
                                             scope.launch {
+                                                val graphRoot = appState.currentGraphPath ?: return@launch
                                                 val result = attachmentService.pickAndAttach(
                                                     graphRoot = graphRoot,
                                                     pageRelativePath = ""
@@ -1186,12 +1845,7 @@ private fun GraphContent(
                                                         graphContentLogger.warn("Image attachment failed: $err")
                                                     },
                                                     ifRight = { attachment: dev.stapler.stelekit.service.AttachmentResult ->
-                                                        val safeAlt = attachment.displayName.replace("]", "\\]")
-                                                        val safePath = attachment.relativePath.replace(")", "\\)")
-                                                        val markdown = "![${safeAlt}](${safePath})"
-                                                        if (editingBlockUuid != null) {
-                                                            blockStateManager.insertTextAtCursor(editingBlockUuid, markdown)
-                                                        }
+                                                        blockStateManager.insertTextAtCursor(editingBlockUuid, attachment.toMarkdown())
                                                     }
                                                 )
                                             }
@@ -1201,7 +1855,7 @@ private fun GraphContent(
                                         { files ->
                                             val graphRoot = appState.currentGraphPath
                                             val pageUuid = (appState.currentScreen as? Screen.PageView)?.page?.uuid
-                                            if (pageUuid != null) {
+                                            if (pageUuid != null && graphRoot != null) {
                                                 scope.launch {
                                                     files.forEach { file ->
                                                         val result = attachmentService.attachFilePath(
@@ -1213,11 +1867,9 @@ private fun GraphContent(
                                                                 graphContentLogger.warn("Drag-and-drop attachment failed: $err")
                                                             },
                                                             ifRight = { attachment: dev.stapler.stelekit.service.AttachmentResult ->
-                                                                val safeAlt = attachment.displayName.replace("]", "\\]")
-                                                                val safePath = attachment.relativePath.replace(")", "\\)")
                                                                 blockStateManager.addBlockWithContent(
                                                                     pageUuid = pageUuid,
-                                                                    content = "![${safeAlt}](${safePath})"
+                                                                    content = attachment.toMarkdown()
                                                                 )
                                                             }
                                                         )
@@ -1229,8 +1881,8 @@ private fun GraphContent(
                                     onPasteImage = if (attachmentService != null) {
                                         { editingBlockUuid ->
                                             if (attachmentService.hasClipboardImage()) {
-                                                val graphRoot = appState.currentGraphPath
                                                 scope.launch {
+                                                    val graphRoot = appState.currentGraphPath ?: return@launch
                                                     val result = attachmentService.pasteFromClipboard(graphRoot)
                                                         ?: return@launch
                                                     result.fold(
@@ -1238,11 +1890,8 @@ private fun GraphContent(
                                                             graphContentLogger.warn("Clipboard paste failed: $err")
                                                         },
                                                         ifRight = { attachment: dev.stapler.stelekit.service.AttachmentResult ->
-                                                            val safeAlt = attachment.displayName.replace("]", "\\]")
-                                                            val safePath = attachment.relativePath.replace(")", "\\)")
-                                                            val markdown = "![${safeAlt}](${safePath})"
                                                             if (editingBlockUuid != null) {
-                                                                blockStateManager.insertTextAtCursor(editingBlockUuid, markdown)
+                                                                blockStateManager.insertTextAtCursor(editingBlockUuid, attachment.toMarkdown())
                                                             }
                                                         }
                                                     )
@@ -1251,31 +1900,45 @@ private fun GraphContent(
                                             } else false
                                         }
                                     } else null,
-                                ),
-                                onImportImage = if (imageImportService != null &&
-                                    dev.stapler.stelekit.platform.sensor.SensorModule.cameraProvider.isAvailable) {
-                                    {
-                                        scope.launch {
-                                            val page = repos.journalService.ensureTodayJournal()
-                                            when (val captured = dev.stapler.stelekit.platform.sensor.SensorModule.cameraProvider.capturePhoto()) {
-                                                is arrow.core.Either.Left ->
-                                                    graphContentLogger.warn("Camera capture failed: ${captured.value}")
-                                                is arrow.core.Either.Right -> {
-                                                    val result = imageImportService.import(
-                                                        tempFile = captured.value,
-                                                        graphPath = activeGraphPath,
-                                                        pageUuid = page.uuid.value,
-                                                        source = dev.stapler.stelekit.model.ImageSource.CAMERA,
-                                                        insertToJournalPage = false,
-                                                    )
-                                                    result.onRight { annotation ->
-                                                        viewModel.navigateToAnnotationEditor(annotation.uuid, page.uuid.value)
-                                                    }
-                                                    result.onLeft { err ->
-                                                        graphContentLogger.warn("Image import failed: ${err.message}")
+                                    onCaptureImage = if (cameraImportEnabled) {
+                                        {
+                                            scope.launch {
+                                                if (requestCameraPermission != null) {
+                                                    val granted = requestCameraPermission.invoke()
+                                                    if (!granted) {
+                                                        viewModel.sendSnackbar("Camera permission denied — enable it in Settings to take photos")
+                                                        return@launch
                                                     }
                                                 }
+                                                // Snapshot page/block context before entering viewfinder —
+                                                // user may be in the editor and these will be stale once the dialog opens.
+                                                val pageUuid: String? =
+                                                    (appState.currentScreen as? Screen.PageView)?.page?.uuid?.value
+                                                        ?: appState.currentPage?.uuid?.value
+                                                pendingCapturePageUuid = pageUuid
+                                                    ?: repos.journalService.ensureTodayJournal().uuid.value
+                                                pendingCaptureBlockUuid = blockStateManager.editingBlockUuid.value
+                                                pendingCaptureNavigateAfterImport = false
+                                                showCameraViewfinder = true
                                             }
+                                        }
+                                    } else null,
+                                ),
+                                onImportImage = if (cameraImportEnabled) {
+                                    {
+                                        scope.launch {
+                                            if (requestCameraPermission != null) {
+                                                val granted = requestCameraPermission.invoke()
+                                                if (!granted) {
+                                                    viewModel.sendSnackbar("Camera permission denied — enable it in Settings to take photos")
+                                                    return@launch
+                                                }
+                                            }
+                                            val page = repos.journalService.ensureTodayJournal()
+                                            pendingCapturePageUuid = page.uuid.value
+                                            pendingCaptureBlockUuid = null
+                                            pendingCaptureNavigateAfterImport = true
+                                            showCameraViewfinder = true
                                         }
                                         Unit
                                     }
@@ -1284,7 +1947,106 @@ private fun GraphContent(
                                 perfSpans = perfSpans,
                                 perfHistograms = perfHistograms,
                                 perfQueryStats = perfQueryStats,
+                                tagSuggestionViewModel = tagSuggestionViewModel,
                             )
+                            if (showCameraViewfinder) {
+                                CameraViewfinderDialog(
+                                    onCapture = { file ->
+                                        pendingCaptureFile = file
+                                        showCameraViewfinder = false
+                                    },
+                                    onDismiss = { showCameraViewfinder = false },
+                                    onError = { msg -> viewModel.sendSnackbar(msg) },
+                                )
+                            }
+                            val captureFile = pendingCaptureFile
+                            val capturePageUuid = pendingCapturePageUuid
+                            if (captureFile != null && capturePageUuid != null) {
+                                CapturePreviewDialog(
+                                    imagePath = captureFile.path,
+                                    isImporting = isCaptureImporting,
+                                    onSave = {
+                                        val file = captureFile
+                                        val pageUuid = capturePageUuid
+                                        val captureBlockUuid = pendingCaptureBlockUuid
+                                        val navigateAfterImport = pendingCaptureNavigateAfterImport
+                                        isCaptureImporting = true
+                                        scope.launch {
+                                            // Throwable (not just Exception) is caught below and the
+                                            // whole block runs in try/finally: an uncaught Throwable on
+                                            // this scope (a plain rememberCoroutineScope() with no
+                                            // CoroutineExceptionHandler) would otherwise kill the
+                                            // Android process and, even short of a crash, skip the
+                                            // isCaptureImporting reset, leaving the save button stuck
+                                            // in its importing state.
+                                            try {
+                                                val graphPath = graphManager.getActiveGraphInfo()?.path
+                                                if (graphPath == null) {
+                                                    return@launch
+                                                }
+                                                // ponytail: 20s timeout so a stalled save (blocked file
+                                                // IO, wedged DB write) can't leave isCaptureImporting
+                                                // stuck true forever. Residual risk: if the timeout
+                                                // fires after the sidecar/DB write but before the
+                                                // block-insert step, the cancelled import can leave an
+                                                // orphaned ImageAnnotation with no visible block — same
+                                                // class of gap as any hard cancellation mid-pipeline,
+                                                // not specific to this guard. Out of scope here; would
+                                                // need ImageImportService's own step recovery hardened.
+                                                val result = imageImportService?.let { service ->
+                                                    withImportTimeout {
+                                                        service.import(
+                                                            tempFile = file,
+                                                            graphPath = graphPath,
+                                                            pageUuid = dev.stapler.stelekit.model.PageUuid(pageUuid),
+                                                            source = ImageSource.CAMERA,
+                                                            insertToJournalPage = false,
+                                                        )
+                                                    }
+                                                }
+                                                if (imageImportService != null && result == null) {
+                                                    graphContentLogger.warn("Camera image import timed out")
+                                                    viewModel.sendSnackbar("Image save timed out — try again")
+                                                }
+                                                result?.onLeft { err ->
+                                                    graphContentLogger.warn("Camera image import failed: ${err.message}")
+                                                    viewModel.sendSnackbar(err.toUiMessage())
+                                                }
+                                                result?.onRight { annotation ->
+                                                    if (navigateAfterImport) {
+                                                        viewModel.navigateToAnnotationEditor(annotation.uuid, pageUuid)
+                                                    } else {
+                                                        val relPath = annotation.filePath.removePrefix("$graphPath/")
+                                                        if (captureBlockUuid != null) {
+                                                            blockStateManager.insertTextAtCursor(
+                                                                captureBlockUuid,
+                                                                markdownImageLink("", "../$relPath"),
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            } catch (e: CancellationException) {
+                                                throw e
+                                            } catch (e: Throwable) {
+                                                graphContentLogger.warn("Camera image import crashed: ${e.message}", e)
+                                                viewModel.sendSnackbar("Image save failed — try again")
+                                            } finally {
+                                                isCaptureImporting = false
+                                                pendingCaptureFile = null
+                                                pendingCapturePageUuid = null
+                                                pendingCaptureBlockUuid = null
+                                            }
+                                        }
+                                    },
+                                    onDiscard = {
+                                        pendingCaptureFile = null
+                                        pendingCapturePageUuid = null
+                                        pendingCaptureBlockUuid = null
+                                    },
+                                )
+                            }
+                            } // Box
+                            } // Column
                         },
                         statusBar = {
                             if (!isMobile) {
@@ -1293,7 +2055,7 @@ private fun GraphContent(
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     StatusBarContent(
-                                        isEncrypted = encryptionManager.isEncryptionEnabled(appState.currentGraphPath),
+                                        isEncrypted = encryptionManager.isEncryptionEnabled(appState.currentGraphPath.orEmpty()),
                                         statusMessage = appState.statusMessage,
                                         activeGraphName = activeGraphInfo?.displayName ?: "",
                                         pluginCount = pluginHost.getAllPlugins().size,
@@ -1312,6 +2074,7 @@ private fun GraphContent(
                                     }
                                 }
                             }
+                            SnackbarHost(hostState = snackbarHostState)
                         },
                         bottomBar = {
                             PlatformBottomBar(
@@ -1321,6 +2084,7 @@ private fun GraphContent(
                                     closeSidebarIfMobile()
                                 },
                                 onSearch = { viewModel.setSearchDialogVisible(true) },
+                                onToggleSidebar = { viewModel.toggleSidebar() },
                                 isLeftHanded = appState.isLeftHanded,
                                 voiceCaptureButton = {
                                     VoiceCaptureButton(
@@ -1329,6 +2093,7 @@ private fun GraphContent(
                                         onDismissError = { voiceCaptureViewModel.dismissError() },
                                         onAutoReset = { voiceCaptureViewModel.resetToIdle() },
                                         amplitudeFlow = voicePipeline.effectiveAmplitudeFlow,
+                                        isSupported = voicePipeline.isSupported,
                                     )
                                 },
                             )
@@ -1341,54 +2106,213 @@ private fun GraphContent(
                         viewModel = viewModel,
                         notificationManager = notificationManager,
                         fileSystem = fileSystem,
-                        voiceSettings = voiceSettings,
-                        onRebuildVoicePipeline = onRebuildVoicePipeline,
-                        deviceSttAvailable = deviceSttAvailable,
-                        deviceLlmAvailable = deviceLlmAvailable,
                         frameMetric = frameMetricState,
-                        debugState = debugMenuState,
-                        loadPageBlocks = { pageUuidStr -> repos.blockRepository.getBlocksForPage(dev.stapler.stelekit.model.PageUuid(pageUuidStr)) },
-                        onDebugStateChange = { newState ->
-                            debugMenuState = newState
-                            viewModel.onDebugMenuStateChange(newState)
-                        },
-                        isParanoidMode = isParanoidMode,
-                        isVaultUnlocked = vaultState is VaultState.Unlocked,
-                        onCreateVault = onCreateVault,
-                        onAddKeyslot = onAddKeyslot,
-                        onRemoveKeyslot = onRemoveKeyslot,
-                        onLockVault = onLockVault,
-                        onListActiveSlots = onListActiveSlots,
-                        isGoogleAuthenticated = isGoogleAuthenticated,
-                        googleConnectedEmail = googleConnectedEmail,
-                        isGoogleConnecting = isGoogleConnecting,
-                        googleAuthError = googleAuthError,
-                        onConnectGoogle = onConnectGoogle,
-                        onDisconnectGoogle = onDisconnectGoogle,
-                        gitSyncService = gitSyncService,
-                        gitRepository = gitRepository,
-                        gitConfigRepository = gitConfigRepository,
-                        activeGraphId = activeGraphId,
-                        onCloneAndAdd = if (gitRepository != null) {
-                            { url, localPath, auth, onProgress ->
-                                graphManager.cloneAndAdd(gitRepository, url, localPath, auth, onProgress)
-                            }
-                        } else null,
-                        graphPath = activeGraphPath,
-                        onCloneComplete = { newGraphId ->
-                            scope.launch { graphManager.switchGraph(newGraphId) }
-                        },
-                        onAuthError = { viewModel.openGitSetupForCredentials() },
-                        shareProvider = shareProvider,
-                        exportService = exportService,
-                        driveClient = null, // DriveApiClient injected from platform entry point in a future phase
-                        shareGoogleAuthManager = googleAuthManager,
-                        currentPage = appState.currentPage,
-                        currentBlocks = appState.currentPage?.let {
-                            blockStateManager.blocksForPage(it.uuid.value)
-                        } ?: emptyList(),
-                        selectedBlockUuids = blockStateManager.selectedBlockUuids.collectAsState().value,
+                        deps = GraphDialogLayerDeps(
+                            settings = SettingsDialogDeps(
+                                voiceSettings = voiceSettings,
+                                llmCredentialStore = llmCredentialStore,
+                                llmProviderRegistry = llmProviderRegistry,
+                                llmSettings = llmSettings,
+                                onLlmCredentialsChange = { llmRegistryRefreshToken++ },
+                                onRebuildVoicePipeline = onRebuildVoicePipeline,
+                                deviceSttAvailable = deviceSttAvailable,
+                                deviceLlmAvailable = deviceLlmAvailable,
+                                isParanoidMode = isParanoidMode,
+                                isVaultUnlocked = vaultState is VaultState.Unlocked,
+                                onCreateVault = onCreateVault,
+                                onAddKeyslot = onAddKeyslot,
+                                onRemoveKeyslot = onRemoveKeyslot,
+                                onLockVault = onLockVault,
+                                onListActiveSlots = onListActiveSlots,
+                                isGoogleAuthenticated = isGoogleAuthenticated,
+                                googleConnectedEmail = googleConnectedEmail,
+                                isGoogleConnecting = isGoogleConnecting,
+                                googleAuthError = googleAuthError,
+                                onConnectGoogle = onConnectGoogle,
+                                onDisconnectGoogle = onDisconnectGoogle,
+                                tagSettings = tagSettings,
+                                hasLlmKey = hasTagSuggestionLlmProviderState.value,
+                                hostAccessState = hostAccessState,
+                                onConnectHostDirectory = onConnectHostDirectory,
+                                onMoveStorageLocation = storageLocationResolver?.let { resolver ->
+                                    { resolver.resolveOrBackfill(activeGraphId?.value ?: "") }
+                                },
+                                storageMoveGraphName = activeGraphInfo?.displayName ?: "this graph",
+                                onStorageLocationChoose = onStorageLocationChoose,
+                                // Story 3.3.3 (AppOwned→HostFolder direction): a name-only preview
+                                // pick (see FileSystem.pickHostFolderNamePreview's doc for why it
+                                // doesn't reuse pickDirectoryAsync/relinkHostDirectoryAsync) wrapped
+                                // as the StorageLocation FolderSyncSettings's UnifiedLocationPicker
+                                // needs to name the destination — the real connect (its own native
+                                // picker call) happens later, when the user confirms Link.
+                                onBrowseRequestForMove = {
+                                    fileSystem.pickHostFolderNamePreview()?.let { name ->
+                                        StorageLocation.HostFolder(activeGraphId?.value ?: "", name)
+                                    }
+                                },
+                                onBrowseClickForMove = {
+                                    // Must run synchronously here, not inside the suspend lambda
+                                    // above — same transient-user-activation constraint as every
+                                    // other showDirectoryPicker()-backed click in this file.
+                                    fileSystem.requestDirectoryPickerNow()
+                                },
+                                onUnlinkHostDirectory = onUnlinkHostDirectory,
+                                hotkeyComboLabel = hotkeyComboLabel,
+                            ),
+                            gitSync = GitSyncDeps(
+                                gitSyncService = gitSyncService,
+                                gitRepository = gitRepository,
+                                gitConfigRepository = gitConfigRepository,
+                                activeGraphId = activeGraphId?.value,
+                                onCloneAndAdd = if (gitRepository != null) {
+                                    { url, localPath, auth, location, onProgress ->
+                                        graphManager.cloneAndAdd(gitRepository, url, localPath, auth, onProgress, location).map { it.value }
+                                    }
+                                } else null,
+                                graphPath = activeGraphPath,
+                                detectedRepoRoot = graphRegistry.graphs.firstOrNull { it.id == activeGraphId }?.detectedRepoRoot,
+                                detectedWikiSubdir = graphRegistry.graphs.firstOrNull { it.id == activeGraphId }?.detectedWikiSubdir,
+                                onCloneComplete = { newGraphId ->
+                                    scope.launch { graphManager.switchGraph(GraphId(newGraphId)) }
+                                },
+                                onAuthError = { viewModel.openGitSetupForCredentials() },
+                            ),
+                            share = ShareDialogDeps(
+                                shareProvider = shareProvider,
+                                exportService = exportService,
+                                driveClient = null, // DriveApiClient injected from platform entry point in a future phase
+                                shareGoogleAuthManager = googleAuthManager,
+                                currentPage = appState.currentPage,
+                                currentBlocks = appState.currentPage?.let {
+                                    blockStateManager.blocksForPage(it.uuid.value)
+                                } ?: emptyList(),
+                                selectedBlockUuids = blockStateManager.selectedBlockUuids.collectAsState().value,
+                            ),
+                            debugState = debugMenuState,
+                            loadPageBlocks = { pageUuidStr -> repos.blockRepository.getBlocksForPage(dev.stapler.stelekit.model.PageUuid(pageUuidStr)) },
+                            onDebugStateChange = { newState ->
+                                debugMenuState = newState
+                                viewModel.onDebugMenuStateChange(newState)
+                            },
+                        ),
                     )
+
+                    if (showAddGraphDialog) {
+                        AddGraphDialog(
+                            onConfirm = { name ->
+                                val path = "/stelekit/$name"
+                                scope.launch {
+                                    val newGraphId = graphManager.addGraph(path)
+                                    showAddGraphDialog = false
+                                    if (newGraphId != null) {
+                                        graphManager.switchGraph(newGraphId)
+                                    } else {
+                                        snackbarHostState.showSnackbar("Failed to open graph \"$name\"")
+                                    }
+                                }
+                            },
+                            onDismiss = { showAddGraphDialog = false },
+                        )
+                    }
+
+                    // Story 2.2.1: replaces the immediate SAF-picker call in onAddGraph above,
+                    // whenever fileSystem.supportsAppOwnedStorage (Android today) — see that
+                    // callback's comment. createNewGraph is shared by both this picker's SafFolder
+                    // branch (no warning needed) and the AppOwned warning's "Create anyway" below.
+                    val createNewGraph: (String, StorageLocation?) -> Unit = { path, location ->
+                        scope.launch { graphManager.switchGraph(graphManager.addGraph(path, location)) }
+                    }
+                    if (showNewGraphLocationPicker) {
+                        UnifiedLocationPicker(
+                            title = "Choose where to keep this graph",
+                            graphId = graphManager.graphIdFromPath(
+                                fileSystem.expandTilde(pendingNewGraphAppOwnedPath)
+                            ).value,
+                            appStorageSubtitle = appStorageSubtitleFor(getDeviceInfo().platform),
+                            platformCapabilities = fileSystem.supportsNativeDirectoryPicker,
+                            onBrowseClick = {
+                                // Must run synchronously here, not inside onBrowseRequest's
+                                // scope.launch — see UnifiedLocationPicker's onBrowseClick doc.
+                                fileSystem.requestDirectoryPickerNow()
+                            },
+                            onBrowseRequest = {
+                                val path = fileSystem.pickDirectoryAsync()
+                                path?.let {
+                                    val expanded = fileSystem.expandTilde(it)
+                                    pendingNewGraphSafPath = expanded
+                                    // Only the tree-root segment — see the matching comment at
+                                    // GitSetupScreen's own onBrowseRequest (Story 2.2.2).
+                                    val treeUri = expanded.removePrefix("saf://").substringBefore("/")
+                                    StorageLocation.SafFolder(graphManager.graphIdFromPath(expanded).value, treeUri)
+                                }
+                            },
+                            onConfirm = { location ->
+                                showNewGraphLocationPicker = false
+                                when (location) {
+                                    is StorageLocation.AppOwned ->
+                                        // ADR-003: a plain (non-git) graph in AppOwned storage has
+                                        // no backup at all — warn before creating, not after.
+                                        pendingPlainGraphWarning = location to pendingNewGraphAppOwnedPath
+                                    is StorageLocation.SafFolder ->
+                                        createNewGraph(pendingNewGraphSafPath, location)
+                                    else ->
+                                        Unit
+                                }
+                            },
+                            onDismiss = { showNewGraphLocationPicker = false },
+                        )
+                    }
+
+                    pendingPlainGraphWarning?.let { (location, path) ->
+                        val zipExporter = rememberGraphZipExporter()
+                        // ADR-003's Amendment: Android and Web describe a different concrete
+                        // consequence (uninstalling the app vs. clearing site data) — see
+                        // getDeviceInfo's "platform" field convention (SloChecker.diskThresholdsFor).
+                        val warningCopy = remember { getDeviceInfo().platform }.let { platform ->
+                            if (platform == "Android") PLAIN_GRAPH_APP_OWNED_WARNING_ANDROID_COPY
+                            else PLAIN_GRAPH_APP_OWNED_WARNING_WEB_COPY
+                        }
+                        PlainGraphAppOwnedWarningDialog(
+                            bodyText = warningCopy,
+                            onExportZip = zipExporter?.let { exporter ->
+                                {
+                                    exporter.export(fileSystem, path, "stelekit-graph").isRight()
+                                }
+                            },
+                            onCreateAnyway = {
+                                pendingPlainGraphWarning = null
+                                createNewGraph(path, location)
+                            },
+                            onGoBack = {
+                                // ux.md Surface 11: returns to an editable New-graph dialog rather
+                                // than all the way back to the sidebar.
+                                pendingPlainGraphWarning = null
+                                showNewGraphLocationPicker = true
+                            },
+                        )
+                    }
+
+                    // Epic 3.4/Story 3.1.5: renders the coordinator's live Flow<StorageMoveUiState>,
+                    // started by onStorageLocationChoose above. Cancel just cancels the collecting
+                    // job and clears state — the coordinator's own NonCancellable cleanup (reopen,
+                    // quiesce release) still runs even though no terminal state reaches this dialog
+                    // on that path (see GraphRelocationCoordinator.relocate's doc).
+                    storageMoveState?.let { state ->
+                        StorageMoveProgressDialog(
+                            graphName = storageMoveGraphName,
+                            state = state,
+                            onCancel = {
+                                storageMoveJob?.cancel()
+                                storageMoveJob = null
+                                storageMoveState = null
+                            },
+                            onRetry = {
+                                lastStorageMoveOperation?.let { startStorageMove(it, storageMoveGraphName) }
+                            },
+                            onSummaryAcknowledge = { storageMoveState = null },
+                            onReopenFailedAcknowledge = { storageMoveState = null },
+                        )
+                    }
 
                     } // CompositionLocalProvider(LocalWindowSizeClass)
                 }
@@ -1396,7 +2320,50 @@ private fun GraphContent(
             }
         }
     }
-    } // CompositionLocalProvider(LocalSpanRecorder)
+    } // CompositionLocalProvider(LocalSpanRecorder, LocalFileSystem)
+}
+
+/** Bundles [onGraphKeyEvent]'s per-shortcut callbacks (Parameter Object pattern). */
+private data class GraphKeyEventHandlers(
+    val onCommandPalette: () -> Unit,
+    val onSearch: () -> Unit,
+    val onToggleSidebar: () -> Unit,
+    val onToggleRightSidebar: () -> Unit,
+    val onSettings: () -> Unit,
+    val onUndo: () -> Unit,
+    val onRedo: () -> Unit,
+    val onBack: () -> Unit,
+    val onForward: () -> Unit,
+    val onDebugMenu: () -> Unit = {},
+)
+
+/** Which "add a new graph" UI [onAddGraph] should show, given this platform's [FileSystem]. */
+internal enum class AddGraphFlowMode { ShowLocationPicker, ImmediateNativePicker, ShowNameDialog }
+
+/**
+ * Pure decision logic for the sidebar's "add graph" affordance (Story 2.2.1) — factored out of
+ * `onAddGraph` so its "no SAF intent for `AppOwned`" acceptance criterion is testable without
+ * mounting the whole `App.kt` composable tree (see `AddGraphAppOwnedTest.kt`).
+ */
+internal fun addGraphFlowMode(fileSystem: FileSystem): AddGraphFlowMode = when {
+    fileSystem.supportsAppOwnedStorage -> AddGraphFlowMode.ShowLocationPicker
+    fileSystem.supportsNativeDirectoryPicker -> AddGraphFlowMode.ImmediateNativePicker
+    else -> AddGraphFlowMode.ShowNameDialog
+}
+
+/**
+ * Pure platform-copy logic for `UnifiedLocationPicker`'s "App storage" row subtitle (Story 2.1.1,
+ * `design/ux.md` §2) — factored out so the Android/Web wording is testable without mounting the
+ * whole composable tree, mirroring [addGraphFlowMode] above. Shared by this file's `AddGraphDialog`
+ * call site and `GitSetupScreen.kt`'s `Step2RepoPath` call site. Uses the same [platform] string
+ * convention as `pendingPlainGraphWarning`'s `warningCopy` above (see `getDeviceInfo`'s `platform`
+ * field and `SloChecker.diskThresholdsFor`).
+ */
+internal fun appStorageSubtitleFor(platform: String): String = if (platform == "Android") {
+    "Kept inside SteleKit only — not visible in your device's file manager, and removed if you " +
+        "uninstall the app."
+} else {
+    PLAIN_GRAPH_APP_OWNED_WARNING_WEB_COPY
 }
 
 /**
@@ -1404,40 +2371,42 @@ private fun GraphContent(
  * Extracted from GraphContent to make shortcut logic testable without a Compose runtime.
  * See ADR-001.
  */
-private fun onGraphKeyEvent(
-    keyEvent: KeyEvent,
-    onCommandPalette: () -> Unit,
-    onSearch: () -> Unit,
-    onToggleSidebar: () -> Unit,
-    onToggleRightSidebar: () -> Unit,
-    onSettings: () -> Unit,
-    onUndo: () -> Unit,
-    onRedo: () -> Unit,
-    onBack: () -> Unit,
-    onForward: () -> Unit,
-    onDebugMenu: () -> Unit = {},
-): Boolean {
+private fun onGraphKeyEvent(keyEvent: KeyEvent, handlers: GraphKeyEventHandlers): Boolean {
     if (keyEvent.type != KeyEventType.KeyDown) return false
     val isMod = keyEvent.isCtrlPressed || keyEvent.isMetaPressed
     val isShift = keyEvent.isShiftPressed
     return when {
-        isMod && isShift && keyEvent.key == Key.P -> { onCommandPalette(); true }
-        isMod && keyEvent.key == Key.K -> { onSearch(); true }
-        isMod && isShift && keyEvent.key == Key.B -> { onToggleRightSidebar(); true }
-        isMod && keyEvent.key == Key.B -> { onToggleSidebar(); true }
-        isMod && keyEvent.key == Key.Comma -> { onSettings(); true }
-        isMod && !isShift && keyEvent.key == Key.Z -> { onUndo(); true }
-        (isMod && isShift && keyEvent.key == Key.Z) || (isMod && keyEvent.key == Key.Y) -> { onRedo(); true }
+        isMod && isShift && keyEvent.key == Key.P -> { handlers.onCommandPalette(); true }
+        isMod && keyEvent.key == Key.K -> { handlers.onSearch(); true }
+        isMod && isShift && keyEvent.key == Key.B -> { handlers.onToggleRightSidebar(); true }
+        isMod && keyEvent.key == Key.B -> { handlers.onToggleSidebar(); true }
+        isMod && keyEvent.key == Key.Comma -> { handlers.onSettings(); true }
+        isMod && !isShift && keyEvent.key == Key.Z -> { handlers.onUndo(); true }
+        (isMod && isShift && keyEvent.key == Key.Z) || (isMod && keyEvent.key == Key.Y) -> { handlers.onRedo(); true }
         (keyEvent.isAltPressed && keyEvent.key == Key.DirectionLeft) ||
-        (isMod && keyEvent.key == Key.LeftBracket) -> { onBack(); true }
+        (isMod && keyEvent.key == Key.LeftBracket) -> { handlers.onBack(); true }
         (keyEvent.isAltPressed && keyEvent.key == Key.DirectionRight) ||
-        (isMod && keyEvent.key == Key.RightBracket) -> { onForward(); true }
-        isMod && isShift && keyEvent.key == Key.D -> { onDebugMenu(); true }
+        (isMod && keyEvent.key == Key.RightBracket) -> { handlers.onForward(); true }
+        isMod && isShift && keyEvent.key == Key.D -> { handlers.onDebugMenu(); true }
         else -> false
     }
 }
 
-
+@Composable
+private fun RowScope.EncryptionStatus(isEncrypted: Boolean) {
+    Icon(
+        imageVector = if (isEncrypted) Icons.Default.Lock else Icons.Default.LockOpen,
+        contentDescription = null,
+        modifier = Modifier.size(14.dp),
+        tint = if (isEncrypted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Spacer(modifier = Modifier.width(8.dp))
+    Text(
+        text = if (isEncrypted) t("status.encrypted") else t("status.not_encrypted"),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+}
 
 /**
  * Status bar row — pure presentational composable. Receives only primitives;
@@ -1458,18 +2427,7 @@ private fun StatusBarContent(
             .padding(horizontal = 16.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(
-            imageVector = if (isEncrypted) Icons.Default.Lock else Icons.Default.LockOpen,
-            contentDescription = null,
-            modifier = Modifier.size(14.dp),
-            tint = if (isEncrypted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(modifier = Modifier.width(8.dp))
-        Text(
-            text = if (isEncrypted) t("status.encrypted") else t("status.not_encrypted"),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        EncryptionStatus(isEncrypted)
         Spacer(modifier = Modifier.weight(1f))
         Text(
             text = activeGraphName,
@@ -1492,4 +2450,39 @@ private fun StatusBarContent(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
+}
+
+@Composable
+private fun AddGraphDialog(
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var name by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Open Graph") },
+        text = {
+            Column {
+                Text("Enter a name for the graph. It will be stored in your browser's private storage.")
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Graph name") },
+                    singleLine = true,
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { if (name.trim().isNotEmpty()) onConfirm(name.trim()) },
+                enabled = name.trim().isNotEmpty(),
+            ) {
+                Text("Open")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }

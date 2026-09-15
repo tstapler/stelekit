@@ -2,6 +2,7 @@ package dev.stapler.stelekit.db
 
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.platform.PlatformFileSystem
@@ -39,7 +40,7 @@ class BacklinkRenamerTest {
         uuid = BlockUuid(uuid),
         pageUuid = PageUuid(pageUuid),
         content = content,
-        position = 0,
+        position = "a0",
         createdAt = now,
         updatedAt = now
     )
@@ -49,8 +50,10 @@ class BacklinkRenamerTest {
         blockRepo: InMemoryBlockRepository,
         graphPath: String
     ): BacklinkRenamer {
-        val fs = PlatformFileSystem()
-        val graphWriter = GraphWriter(fs)
+        val fs = PlatformFileSystem.withRoot(graphPath)
+        val graphWriter = GraphWriter(fs).also {
+            it.currentEpoch = GraphEpoch(GraphId("backlink-renamer-test"), graphPath = graphPath, sequence = 1L)
+        }
         val actor = DatabaseWriteActor(blockRepo, pageRepo)
         return BacklinkRenamer(pageRepo, blockRepo, graphWriter, actor)
     }
@@ -59,7 +62,7 @@ class BacklinkRenamerTest {
 
     @Test
     fun rename_with_no_backlinks_succeeds(): Unit = runBlocking {
-        val tempDir = File(System.getProperty("user.home"), "stelekit_renamer_test_${System.currentTimeMillis()}")
+        val tempDir = kotlin.io.path.createTempDirectory(kotlin.io.path.Path(System.getProperty("user.home")), "stelekit_renamer_test_").toFile()
         tempDir.mkdirs()
         try {
             // Create a markdown file for the page to be renamed
@@ -90,7 +93,7 @@ class BacklinkRenamerTest {
 
     @Test
     fun rename_rewrites_backlinks_in_other_pages(): Unit = runBlocking {
-        val tempDir = File(System.getProperty("user.home"), "stelekit_renamer_test_${System.currentTimeMillis()}")
+        val tempDir = kotlin.io.path.createTempDirectory(kotlin.io.path.Path(System.getProperty("user.home")), "stelekit_renamer_test_").toFile()
         tempDir.mkdirs()
         try {
             val pagesDir = File(tempDir, "pages")
@@ -126,7 +129,7 @@ class BacklinkRenamerTest {
 
     @Test
     fun rename_rewrites_multiple_backlinks_in_same_block(): Unit = runBlocking {
-        val tempDir = File(System.getProperty("user.home"), "stelekit_renamer_test_${System.currentTimeMillis()}")
+        val tempDir = kotlin.io.path.createTempDirectory(kotlin.io.path.Path(System.getProperty("user.home")), "stelekit_renamer_test_").toFile()
         tempDir.mkdirs()
         try {
             val pagesDir = File(tempDir, "pages")
@@ -159,7 +162,7 @@ class BacklinkRenamerTest {
 
     @Test
     fun rename_rewrites_aliased_backlinks_end_to_end(): Unit = runBlocking {
-        val tempDir = File(System.getProperty("user.home"), "stelekit_renamer_test_${System.currentTimeMillis()}")
+        val tempDir = kotlin.io.path.createTempDirectory(kotlin.io.path.Path(System.getProperty("user.home")), "stelekit_renamer_test_").toFile()
         tempDir.mkdirs()
         try {
             val pagesDir = File(tempDir, "pages")
@@ -195,7 +198,7 @@ class BacklinkRenamerTest {
 
     @Test
     fun rename_returns_failure_when_page_not_found_in_repo(): Unit = runBlocking {
-        val tempDir = File(System.getProperty("user.home"), "stelekit_renamer_test_${System.currentTimeMillis()}")
+        val tempDir = kotlin.io.path.createTempDirectory(kotlin.io.path.Path(System.getProperty("user.home")), "stelekit_renamer_test_").toFile()
         tempDir.mkdirs()
         try {
             val pageRepo = InMemoryPageRepository()
@@ -244,7 +247,7 @@ class BacklinkRenamerTest {
 
     @Test
     fun rename_rewrites_hashtag_references_end_to_end(): Unit = runBlocking {
-        val tempDir = File(System.getProperty("user.home"), "stelekit_renamer_test_${System.currentTimeMillis()}")
+        val tempDir = kotlin.io.path.createTempDirectory(kotlin.io.path.Path(System.getProperty("user.home")), "stelekit_renamer_test_").toFile()
         tempDir.mkdirs()
         try {
             val pagesDir = File(tempDir, "pages")
@@ -279,7 +282,7 @@ class BacklinkRenamerTest {
 
     @Test
     fun rename_returns_failure_when_page_has_no_file_path(): Unit = runBlocking {
-        val tempDir = File(System.getProperty("user.home"), "stelekit_renamer_test_${System.currentTimeMillis()}")
+        val tempDir = kotlin.io.path.createTempDirectory(kotlin.io.path.Path(System.getProperty("user.home")), "stelekit_renamer_test_").toFile()
         tempDir.mkdirs()
         try {
             val pageRepo = InMemoryPageRepository()

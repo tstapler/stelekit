@@ -6,7 +6,10 @@ import org.junit.Before
 import org.junit.Test
 import java.io.File
 import java.util.Properties
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -219,7 +222,116 @@ class MigrationRunnerApplyAllTest {
         )
     }
 
-    // ── Test 3: idempotent "already exists" errors do record the migration ─────
+    // ── Test 3: FTS5 trigger WHEN guard ───────────────────────────────────────
+
+    /**
+     * Regression test for the Android "no such module: fts5" / "no such table: pages_fts" crash.
+     *
+     * Root cause: on devices whose SQLite lacks FTS5, pages_fts_setup silently fails to create
+     * pages_fts (IF NOT EXISTS swallows the error) but successfully creates pages_ai/ad/au
+     * triggers. SQLite validates trigger body table references at fire time, BEFORE any WHEN
+     * clause — so every INSERT INTO pages throws "no such table: pages_fts".
+     *
+     * Fix: the fts5_triggers_when_guard migration drops all six FTS5 triggers.
+     * ensureFts5TriggerState() then recreates them only when pages_fts/blocks_fts actually exist.
+     *
+     * This test exercises ensureFts5TriggerState directly: given stale FTS5 triggers and
+     * no pages_fts, it must drop the triggers so INSERT works.
+     */
+    @Test
+    fun `ensureFts5TriggerState drops broken FTS5 triggers when pages_fts is absent`() = runBlocking {
+        // Arrange: pages table + broken pages_ai trigger referencing non-existent pages_fts.
+        val conn = driver.getConnection()
+        try {
+            conn.prepareStatement(
+                "CREATE TABLE pages (uuid TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE)"
+            ).execute()
+            conn.prepareStatement(
+                "CREATE TRIGGER pages_ai AFTER INSERT ON pages BEGIN INSERT INTO pages_fts(rowid, name) VALUES (new.rowid, new.name); END"
+            ).execute()
+        } finally {
+            driver.closeConnection(conn)
+        }
+
+        // Pre-condition: INSERT fails because the trigger fires and pages_fts doesn't exist.
+        // (SQLite validates trigger body table refs before the WHEN clause — even `WHEN 0` fails.)
+        val preFixError = runCatching {
+            val c = driver.getConnection()
+            try { c.createStatement().execute("INSERT INTO pages VALUES ('u1','TestPage')") }
+            finally { driver.closeConnection(c) }
+        }.exceptionOrNull()
+        assertNotNull(preFixError, "Pre-fix INSERT must fail (trigger body references missing pages_fts)")
+
+        // Act: ensureFts5TriggerState sees pages_fts is absent → drops pages_ai/ad/au
+        MigrationRunner.ensureFts5TriggerState(driver)
+
+        // Assert 1: pages_ai must be gone (not recreated since pages_fts is absent)
+        val pagesAiAfter = run {
+            val c = driver.getConnection()
+            try {
+                val rs = c.createStatement().executeQuery(
+                    "SELECT sql FROM sqlite_master WHERE type='trigger' AND name='pages_ai'"
+                )
+                if (rs.next()) rs.getString(1) else null
+            } finally { driver.closeConnection(c) }
+        }
+        assertNull(pagesAiAfter, "pages_ai must be absent; got: $pagesAiAfter")
+
+        // Assert 2: INSERT now succeeds
+        val postFixError = runCatching {
+            val c = driver.getConnection()
+            try { c.createStatement().execute("INSERT INTO pages VALUES ('u2','AnotherPage')") }
+            finally { driver.closeConnection(c) }
+        }.exceptionOrNull()
+        assertNull(postFixError, "INSERT must succeed after ensureFts5TriggerState; error: $postFixError")
+    }
+
+    /**
+     * Complementary test: ensureFts5TriggerState must RECREATE triggers when pages_fts exists
+     * (ensures normal FTS5 operation is not broken on capable devices).
+     */
+    @Test
+    fun `ensureFts5TriggerState keeps FTS5 triggers present when pages_fts exists`() = runBlocking {
+        // Arrange: pages table + pages_fts virtual table (FTS5 available) — no triggers yet.
+        val conn = driver.getConnection()
+        try {
+            conn.prepareStatement(
+                "CREATE TABLE pages (uuid TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE)"
+            ).execute()
+            conn.prepareStatement(
+                "CREATE VIRTUAL TABLE pages_fts USING fts5(name, content=pages, content_rowid=rowid)"
+            ).execute()
+            // No triggers created yet — simulates the state AFTER fts5_triggers_when_guard dropped them.
+        } finally {
+            driver.closeConnection(conn)
+        }
+
+        // Act: ensureFts5TriggerState sees pages_fts IS present → recreates pages_ai/ad/au
+        MigrationRunner.ensureFts5TriggerState(driver)
+
+        // Assert: pages_ai exists and references pages_fts correctly
+        val pagesAiSql = run {
+            val c = driver.getConnection()
+            try {
+                val rs = c.createStatement().executeQuery(
+                    "SELECT sql FROM sqlite_master WHERE type='trigger' AND name='pages_ai'"
+                )
+                if (rs.next()) rs.getString(1) else null
+            } finally { driver.closeConnection(c) }
+        }
+        assertNotNull(pagesAiSql, "pages_ai must be recreated when pages_fts exists")
+        assertTrue(pagesAiSql.contains("pages_fts"), "pages_ai body must reference pages_fts")
+
+        // Assert: INSERT works and the FTS5 index is updated
+        val insertError = runCatching {
+            val c = driver.getConnection()
+            try { c.createStatement().execute("INSERT INTO pages VALUES ('u1','TestPage')") }
+            finally { driver.closeConnection(c) }
+        }.exceptionOrNull()
+        assertNull(insertError, "INSERT must succeed on FTS5-capable device; error: $insertError")
+    }
+
+    // ── Test 4: idempotent "already exists" errors do record the migration ──────
 
     /**
      * Verifies that "duplicate column name" and "already exists" exceptions are still
@@ -252,5 +364,96 @@ class MigrationRunnerApplyAllTest {
             appliedMigrationNames().contains("create_existing_table"),
             "A migration that hits 'already exists' must still be recorded as applied"
         )
+    }
+
+    // ── Test 5: copy-alter migration completes without deadlock on poolSize=8 ──────
+
+    /**
+     * Regression test for the pages_section_id deadlock.
+     *
+     * Root cause: the original pages_section_id migration contained raw BEGIN/COMMIT statements.
+     * MigrationRunner.applyAll() executes each statement via driver.execute(), which acquires
+     * a DIFFERENT pooled connection per call. BEGIN on connection A held the write lock while
+     * subsequent DDL on connection B waited busy_timeout (10 s) — causing a cascade that
+     * totalled ~60 s until test timeout.
+     *
+     * Post-fix behaviour: migrations use auto-committing DDL only (no raw BEGIN/COMMIT).
+     * A copy-alter sequence (create-new / copy / drop-old / rename) must complete on a
+     * pooled driver with poolSize=8 in well under busy_timeout (i.e., < 5 s).
+     *
+     * Pre-fix behaviour: this test would hang for the full busy_timeout (5 s per blocked
+     * statement) and then fail because the migration is not recorded.
+     */
+    @Test(timeout = 5_000)
+    fun `copy-alter migration completes without deadlock on pooled driver`() = runBlocking {
+        // Use poolSize=8 (production value) so BEGIN on one connection would block subsequent
+        // DDL on other connections — reproducing the original deadlock condition.
+        val pooledDriver = PooledJdbcSqliteDriver(
+            "jdbc:sqlite:${tempFile.absolutePath}",
+            props,
+            poolSize = 8,
+        )
+
+        // Arrange — create a pages-like source table with some data.
+        val conn = pooledDriver.getConnection()
+        try {
+            conn.prepareStatement(
+                "CREATE TABLE schema_migrations (hash TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, applied_at INTEGER NOT NULL DEFAULT 0)"
+            ).execute()
+            conn.prepareStatement(
+                "CREATE TABLE items (id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL)"
+            ).execute()
+            conn.prepareStatement("INSERT INTO items VALUES ('a','alpha')").execute()
+            conn.prepareStatement("INSERT INTO items VALUES ('b','beta')").execute()
+        } finally {
+            pooledDriver.closeConnection(conn)
+        }
+
+        // A copy-alter migration that mirrors the pages_section_id pattern — no BEGIN/COMMIT.
+        val copyAlterMigration = MigrationRunner.Migration(
+            name = "items_copy_alter",
+            statements = listOf(
+                "DROP TABLE IF EXISTS items_new",
+                "CREATE TABLE IF NOT EXISTS items_new (id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, tag TEXT NOT NULL DEFAULT '')",
+                "INSERT INTO items_new SELECT id, name, '' FROM items",
+                "DROP TABLE items",
+                "ALTER TABLE items_new RENAME TO items",
+            )
+        )
+
+        try {
+            // Act — must finish well within 5 s (5 s is the test timeout above).
+            // Pre-fix code with BEGIN/COMMIT would block for busy_timeout per statement.
+            MigrationRunner.applyAll(pooledDriver, listOf(copyAlterMigration))
+
+            // Assert 1: migration recorded
+            val names = mutableSetOf<String>()
+            val nc = pooledDriver.getConnection()
+            try {
+                val rs = nc.prepareStatement("SELECT name FROM schema_migrations").executeQuery()
+                while (rs.next()) names += rs.getString(1)
+            } finally { pooledDriver.closeConnection(nc) }
+            assertTrue(names.contains("items_copy_alter"), "copy-alter migration must be recorded")
+
+            // Assert 2: data survived
+            val rows = mutableListOf<String>()
+            val rc = pooledDriver.getConnection()
+            try {
+                val rs = rc.prepareStatement("SELECT id FROM items ORDER BY id").executeQuery()
+                while (rs.next()) rows += rs.getString(1)
+            } finally { pooledDriver.closeConnection(rc) }
+            assertEquals(listOf("a", "b"), rows, "All rows must survive the copy-alter migration")
+
+            // Assert 3: new column present
+            val cols = mutableSetOf<String>()
+            val cc = pooledDriver.getConnection()
+            try {
+                val rs = cc.prepareStatement("PRAGMA table_info(items)").executeQuery()
+                while (rs.next()) cols += rs.getString("name")
+            } finally { pooledDriver.closeConnection(cc) }
+            assertTrue(cols.contains("tag"), "New 'tag' column must be present after copy-alter")
+        } finally {
+            pooledDriver.close()
+        }
     }
 }

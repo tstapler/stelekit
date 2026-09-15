@@ -4,9 +4,13 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
@@ -17,17 +21,28 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
 import dev.stapler.stelekit.domain.AhoCorasickMatcher
+import dev.stapler.stelekit.tags.BulkScanState
+import dev.stapler.stelekit.tags.JournalScanEntry
+import dev.stapler.stelekit.tags.TagSuggestionState
+import dev.stapler.stelekit.tags.TagSuggestionViewModel
+import dev.stapler.stelekit.tags.WikiLinkExtractor
+import dev.stapler.stelekit.ui.components.tags.SuggestionBottomSheet
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
-import dev.stapler.stelekit.ui.components.BlockList
+import dev.stapler.stelekit.model.SectionId
+import dev.stapler.stelekit.ui.components.PageContent
 import dev.stapler.stelekit.ui.components.EditorCapabilities
 import dev.stapler.stelekit.ui.components.EditorToolbar
+import dev.stapler.stelekit.ui.components.LocalGraphRootPath
+import dev.stapler.stelekit.ui.components.asLazyKey
 import dev.stapler.stelekit.ui.components.SuggestionItem
+import dev.stapler.stelekit.ui.components.typedItems
 import dev.stapler.stelekit.ui.components.SuggestionNavigatorPanel
 import dev.stapler.stelekit.performance.NavigationTracingEffect
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.datetime.LocalDate
 
 /**
@@ -41,12 +56,24 @@ fun JournalsView(
     viewModel: JournalsViewModel,
     isDebugMode: Boolean,
     onLinkClick: (String) -> Unit,
+    graphPath: String = "",
     searchViewModel: SearchViewModel? = null,
     onSearchPages: (String) -> kotlinx.coroutines.flow.Flow<List<SearchResultItem>> = { kotlinx.coroutines.flow.emptyFlow() },
     suggestionMatcher: AhoCorasickMatcher? = null,
     isLeftHanded: Boolean = false,
     onOpenAnnotationEditor: (imageAnnotationUuid: String) -> Unit = {},
     capabilities: EditorCapabilities = EditorCapabilities(),
+    tagSuggestionViewModel: TagSuggestionViewModel? = null,
+    currentGraphId: String? = null,
+    conflictFilePaths: Set<String> = emptySet(),
+    /**
+     * ux.md (i)/criterion 14: true while `AppState.diskConflict` is non-null. Passed straight
+     * through to [EditorToolbar]/`MobileBlockToolbar`'s Undo/Redo — must be a live value (see
+     * `ScreenRouter`'s `appState.diskConflict != null` call site) so Undo/Redo re-enable
+     * automatically once the conflict resolves.
+     */
+    hasDiskConflictPending: Boolean = false,
+    onExportEntry: ((page: Page, blocks: List<Block>, formatId: String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     NavigationTracingEffect("Journals")
@@ -61,6 +88,17 @@ fun JournalsView(
     val listState = rememberLazyListState()
     val focusManager = LocalFocusManager.current
     var toolbarHeight by remember { mutableStateOf(0) }
+    val tagSuggestionState by tagSuggestionViewModel?.state?.collectAsState()
+        ?: remember { mutableStateOf(TagSuggestionState.Idle) }
+    val scanState by tagSuggestionViewModel?.scanState?.collectAsState()
+        ?: remember { mutableStateOf<BulkScanState>(BulkScanState.Idle) }
+
+    LaunchedEffect(scanState) {
+        if (scanState is BulkScanState.Complete) {
+            delay(3_000)
+            tagSuggestionViewModel?.resetScan()
+        }
+    }
 
     if (isDebugMode) {
         val recomposeCount = remember { androidx.compose.runtime.mutableIntStateOf(0) }
@@ -70,6 +108,11 @@ fun JournalsView(
     // Navigator panel state — empty list means closed
     var navigatorSuggestions by remember { mutableStateOf<List<SuggestionItem>>(emptyList()) }
     var navigatorIndex by remember { mutableStateOf(0) }
+
+    // GAP-010 (Story D.3.1): true while any page's BlockList has an active block drag — used to
+    // suspend this LazyColumn's own scrolling so blockBounds (cached relative to each BlockList's
+    // internal Column) can never desynchronize from the drop-target computation mid-drag.
+    val isAnyBlockDragging = remember { mutableStateOf(false) }
 
     // Infinite scroll detection
     val shouldLoadMore = remember {
@@ -90,6 +133,7 @@ fun JournalsView(
 
     val toolbarHeightDp = with(LocalDensity.current) { toolbarHeight.toDp() }
 
+    CompositionLocalProvider(LocalGraphRootPath provides graphPath.ifEmpty { null }) {
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -97,19 +141,53 @@ fun JournalsView(
     ) {
         LazyColumn(
             state = listState,
+            // GAP-010: suspend scroll for the duration of any active block drag (see
+            // isAnyBlockDragging's doc above and BlockList.onDragStateChange).
+            userScrollEnabled = !isAnyBlockDragging.value,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 24.dp)
                 .pointerInput(Unit) {
                     detectTapGestures(onTap = {
                         focusManager.clearFocus()
+                        // Mirrors PageView.kt — tapping empty background is the discoverable
+                        // way to back out of an accidental selection (Escape works too, but
+                        // isn't obvious).
+                        viewModel.clearSelection()
                     })
                 },
             contentPadding = PaddingValues(top = 16.dp, bottom = toolbarHeightDp + 8.dp)
         ) {
-            items(
+            if (tagSuggestionViewModel != null && tagSuggestionViewModel.hasLlmProvider) {
+                item(key = "scan_banner") {
+                    ScanBanner(
+                        scanState = scanState,
+                        enabled = uiState.pages.isNotEmpty(),
+                        onScan = {
+                            val entries = uiState.pages.mapNotNull { page ->
+                                val blocks = allBlocks[page.uuid.value] ?: return@mapNotNull null
+                                val firstBlock = blocks.firstOrNull { it.content.isNotBlank() }
+                                    ?: return@mapNotNull null
+                                JournalScanEntry(
+                                    pageUuid = page.uuid.value,
+                                    targetBlockUuid = firstBlock.uuid.value,
+                                    contentSnapshot = firstBlock.content,
+                                    fullContent = blocks.take(20).joinToString("\n") { it.content }.take(500),
+                                    alreadyLinked = WikiLinkExtractor.extractPageNames(
+                                        blocks.joinToString("\n") { it.content }
+                                    ),
+                                    graphId = currentGraphId ?: "",
+                                )
+                            }
+                            tagSuggestionViewModel.scanEntries(entries)
+                        },
+                        onCancel = { tagSuggestionViewModel.cancelScan() },
+                    )
+                }
+            }
+            typedItems(
                 items = uiState.pages,
-                key = { page -> page.uuid },
+                key = { page -> page.uuid.asLazyKey() },
                 contentType = { "journal_entry" }
             ) { page ->
                 val blockList = allBlocks[page.uuid.value] ?: emptyList()
@@ -119,6 +197,20 @@ fun JournalsView(
                     blocks = blockList,
                     isLoading = !page.isContentLoaded || page.uuid.value in loadingPageUuids,
                     isDebugMode = isDebugMode,
+                    hasConflict = page.filePath in conflictFilePaths,
+                    onTitleClick = { onLinkClick(page.name) },
+                    onExport = onExportEntry?.let { export -> { formatId -> export(page, blockList, formatId) } },
+                    onSuggestTags = if (tagSuggestionViewModel != null) {
+                        {
+                            val firstBlock = blockList.firstOrNull { it.content.isNotBlank() }
+                                ?: blockList.firstOrNull()
+                            if (firstBlock != null) {
+                                val content = blockList.take(20).joinToString("\n") { it.content }.take(500)
+                                val linked = WikiLinkExtractor.extractPageNames(blockList.joinToString("\n") { it.content })
+                                tagSuggestionViewModel.requestSuggestions(firstBlock.uuid.value, content, linked)
+                            }
+                        }
+                    } else null,
                     editingBlockUuid = editingBlockUuid?.value,
                     editingCursorIndex = editingCursorIndex,
                     collapsedBlocks = collapsedBlockUuids,
@@ -158,6 +250,8 @@ fun JournalsView(
                     onFocusDown = { blockUuid -> viewModel.focusNextBlock(BlockUuid(blockUuid)) },
                     onSearchPages = onSearchPages,
                     formatEvents = viewModel.formatEvents,
+                    todoToggleEvents = viewModel.todoToggleEvents,
+                    onDragStateChange = { isDragging -> isAnyBlockDragging.value = isDragging },
                     suggestionMatcher = suggestionMatcher,
                     onNavigateAllSuggestions = { suggestions ->
                         navigatorSuggestions = suggestions
@@ -169,6 +263,13 @@ fun JournalsView(
                         )
                     },
                     onOpenAnnotationEditor = onOpenAnnotationEditor,
+                    onMoveSelectedBlocks = { newParentUuid, insertAfterUuid ->
+                        viewModel.moveSelectedBlocks(
+                            newParentUuid?.let { BlockUuid(it) },
+                            insertAfterUuid?.let { BlockUuid(it) }
+                        )
+                    },
+                    onAutoSelectForDrag = { blockUuid -> viewModel.enterSelectionMode(BlockUuid(blockUuid)) },
                 )
 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -228,10 +329,82 @@ fun JournalsView(
             capabilities = capabilities,
             searchViewModel = searchViewModel,
             isLeftHanded = isLeftHanded,
+            hasDiskConflictPending = hasDiskConflictPending,
+            onSuggestTags = if (tagSuggestionViewModel != null) { blockUuid, content ->
+                if (content.isNotBlank()) {
+                    val alreadyLinked = WikiLinkExtractor.extractPageNames(content)
+                    tagSuggestionViewModel.requestSuggestions(
+                        blockUuid = blockUuid,
+                        blockContent = content,
+                        alreadyLinkedTerms = alreadyLinked,
+                    )
+                }
+            } else null,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .onSizeChanged { toolbarHeight = it.height },
         )
+
+        if (tagSuggestionViewModel != null) {
+            SuggestionBottomSheet(
+                state = tagSuggestionState,
+                onAcceptTag = { uuid, term ->
+                    viewModel.blockStateManager.appendToBlock(
+                        dev.stapler.stelekit.model.BlockUuid(uuid), " [[$term]]"
+                    )
+                },
+                onDismiss = { tagSuggestionViewModel.dismiss() },
+                onRetry = { tagSuggestionViewModel.retryLastRequest() },
+            )
+        }
+    }
+    } // CompositionLocalProvider(LocalGraphRootPath)
+}
+
+@Composable
+internal fun ScanBanner(
+    scanState: BulkScanState,
+    enabled: Boolean,
+    onScan: () -> Unit,
+    onCancel: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    when (scanState) {
+        is BulkScanState.Idle -> if (enabled) {
+            TextButton(onClick = onScan, modifier = modifier.fillMaxWidth()) {
+                Text("Scan entries for tag suggestions")
+            }
+        }
+        is BulkScanState.Scanning -> Column(modifier = modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    "Scanning entries… (${scanState.done}/${scanState.total})",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = onCancel) { Text("Cancel") }
+            }
+            LinearProgressIndicator(
+                progress = {
+                    if (scanState.total > 0) scanState.done.toFloat() / scanState.total else 0f
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        is BulkScanState.Complete -> {
+            val msg = if (scanState.found > 0)
+                "Found ${scanState.found} tag suggestion${if (scanState.found != 1) "s" else ""} — opening review…"
+            else
+                "No new tag suggestions found"
+            Text(
+                msg,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = modifier.fillMaxWidth().padding(vertical = 8.dp),
+            )
+        }
     }
 }
 
@@ -244,6 +417,10 @@ private fun JournalEntry(
     blocks: List<Block>,
     isLoading: Boolean,
     isDebugMode: Boolean,
+    hasConflict: Boolean = false,
+    onTitleClick: () -> Unit,
+    onExport: ((formatId: String) -> Unit)? = null,
+    onSuggestTags: (() -> Unit)? = null,
     editingBlockUuid: String?,
     editingCursorIndex: Int?,
     collapsedBlocks: Set<String>,
@@ -273,97 +450,137 @@ private fun JournalEntry(
     onFocusDown: (String) -> Unit,
     onSearchPages: (String) -> kotlinx.coroutines.flow.Flow<List<SearchResultItem>> = { kotlinx.coroutines.flow.emptyFlow() },
     formatEvents: kotlinx.coroutines.flow.SharedFlow<FormatAction>? = null,
+    todoToggleEvents: kotlinx.coroutines.flow.SharedFlow<Unit>? = null,
+    onDragStateChange: (Boolean) -> Unit = {},
     suggestionMatcher: AhoCorasickMatcher? = null,
     onNavigateAllSuggestions: ((List<SuggestionItem>) -> Unit)? = null,
     onBlockSelectionChange: ((blockUuid: String, range: IntRange?) -> Unit)? = null,
     onOpenAnnotationEditor: (imageAnnotationUuid: String) -> Unit = {},
+    /** stelekit#238 — without these two, drag-to-reorder's ghost/drop-zone visuals work but the
+     * actual move and drag-initiated selection are no-ops: PageContent/BlockList default them to
+     * `{ _, _ -> }` / `{}` when a caller doesn't pass its own handler. */
+    onMoveSelectedBlocks: (newParentUuid: String?, insertAfterUuid: String?) -> Unit = { _, _ -> },
+    onAutoSelectForDrag: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier) {
-        // Journal date header (formatted nicely)
-        Text(
-            text = formatJournalDate(page.name),
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground,
+        // Journal date header with optional conflict indicator and overflow menu
+        var menuExpanded by remember { mutableStateOf(false) }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(bottom = 16.dp, top = 8.dp)
-        )
-
-        // Blocks content
-        if (blocks.isEmpty()) {
-            if (isLoading) {
-                Box(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                }
-            } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onAddBlockToPage(page.uuid.value) }
-                        .padding(vertical = 8.dp)
-                ) {
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable { onTitleClick() }
+            ) {
+                Text(
+                    text = formatJournalDate(page.name),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+                val sid = page.sectionId
+                if (sid is SectionId.Named) {
+                    Spacer(Modifier.width(8.dp))
                     Text(
-                        text = "Click to write...",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                        modifier = Modifier.padding(start = 8.dp, top = 4.dp, bottom = 4.dp)
+                        text = "[${sid.id}]",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                if (hasConflict) {
+                    Spacer(Modifier.width(8.dp))
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = "Page modified on disk — tap to review",
+                        tint = Color(0xFFF59E0B),
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
-        } else {
-            // Sort blocks hierarchically for display
-            val sortedBlocks = remember(blocks) { 
-                dev.stapler.stelekit.outliner.BlockSorter.sort(blocks)
+            if (onExport != null || onSuggestTags != null) {
+                Box {
+                    IconButton(onClick = { menuExpanded = true }) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "Entry options",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false }
+                    ) {
+                        if (onExport != null) {
+                            listOf(
+                                "markdown" to "Copy as Markdown",
+                                "plain-text" to "Copy as Plain Text",
+                                "html" to "Copy as HTML",
+                                "json" to "Copy as JSON",
+                            ).forEach { (formatId, label) ->
+                                DropdownMenuItem(
+                                    text = { Text(label) },
+                                    onClick = { menuExpanded = false; onExport(formatId) }
+                                )
+                            }
+                        }
+                        if (onSuggestTags != null) {
+                            if (onExport != null) HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text("Suggest tags for entry") },
+                                onClick = { menuExpanded = false; onSuggestTags() }
+                            )
+                        }
+                    }
+                }
             }
-            
-            BlockList(
-                blocks = sortedBlocks,
-                isDebugMode = isDebugMode,
-                editingBlockUuid = editingBlockUuid,
-                editingCursorIndex = editingCursorIndex,
-                collapsedBlocks = collapsedBlocks,
-                selectedBlockUuids = selectedBlockUuids,
-                isInSelectionMode = isInSelectionMode,
-                onToggleSelect = onToggleSelect,
-                onEnterSelectionMode = onEnterSelectionMode,
-                onShiftClick = onShiftClick,
-                onShiftArrowUp = onShiftArrowUp,
-                onShiftArrowDown = onShiftArrowDown,
-                onStartEditing = onStartEditing,
-                onStopEditing = onStopEditing,
-                onContentChange = onContentChange,
-                onLinkClick = onLinkClick,
-                onNewBlock = onNewBlock,
-                onSplitBlock = onSplitBlock,
-                onMergeBlock = onMergeBlock,
-                onIndent = onIndent,
-                onOutdent = onOutdent,
-                onMoveUp = onMoveUp,
-                onMoveDown = onMoveDown,
-                onLoadContent = onLoadContent,
-                onBackspace = onBackspace,
-                onToggleCollapse = onToggleCollapse,
-                onFocusUp = onFocusUp,
-                onFocusDown = onFocusDown,
-                onSearchPages = onSearchPages,
-                formatEvents = formatEvents,
-                suggestionMatcher = suggestionMatcher,
-                onNavigateAllSuggestions = onNavigateAllSuggestions,
-                onBlockSelectionChange = onBlockSelectionChange,
-                onOpenAnnotationEditor = onOpenAnnotationEditor,
-            )
-
-            // Clickable area below blocks to append new block
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp)
-                    .clickable { onAddBlockToPage(page.uuid.value) }
-            )
         }
+
+        // Blocks content
+        PageContent(
+            blocks = blocks,
+            isLoading = isLoading,
+            isDebugMode = isDebugMode,
+            editingBlockUuid = editingBlockUuid,
+            editingCursorIndex = editingCursorIndex,
+            collapsedBlocks = collapsedBlocks,
+            selectedBlockUuids = selectedBlockUuids,
+            isInSelectionMode = isInSelectionMode,
+            suggestionMatcher = suggestionMatcher,
+            formatEvents = formatEvents,
+            onAddBlockToPage = { onAddBlockToPage(page.uuid.value) },
+            onStartEditing = onStartEditing,
+            onStopEditing = onStopEditing,
+            onContentChange = onContentChange,
+            onLinkClick = onLinkClick,
+            onNewBlock = onNewBlock,
+            onSplitBlock = onSplitBlock,
+            onMergeBlock = onMergeBlock,
+            onBackspace = onBackspace,
+            onLoadContent = onLoadContent,
+            onToggleCollapse = onToggleCollapse,
+            onIndent = onIndent,
+            onOutdent = onOutdent,
+            onMoveUp = onMoveUp,
+            onMoveDown = onMoveDown,
+            onFocusUp = onFocusUp,
+            onFocusDown = onFocusDown,
+            onToggleSelect = onToggleSelect,
+            onEnterSelectionMode = onEnterSelectionMode,
+            onShiftClick = onShiftClick,
+            onShiftArrowUp = onShiftArrowUp,
+            onShiftArrowDown = onShiftArrowDown,
+            onSearchPages = onSearchPages,
+            onNavigateAllSuggestions = onNavigateAllSuggestions,
+            onBlockSelectionChange = onBlockSelectionChange,
+            onMoveSelectedBlocks = onMoveSelectedBlocks,
+            onAutoSelectForDrag = onAutoSelectForDrag,
+            onDragStateChange = onDragStateChange,
+            onOpenAnnotationEditor = onOpenAnnotationEditor,
+        )
     }
 }
 

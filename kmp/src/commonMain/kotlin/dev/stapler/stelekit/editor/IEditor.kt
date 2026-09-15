@@ -1,8 +1,6 @@
 package dev.stapler.stelekit.editor
 
 import arrow.core.Either
-import arrow.core.left
-import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 
 import androidx.compose.ui.input.key.KeyEvent
@@ -12,7 +10,6 @@ import dev.stapler.stelekit.editor.commands.EditorCommand
 import dev.stapler.stelekit.editor.state.EditorState
 import dev.stapler.stelekit.editor.state.EditorConfig
 import kotlinx.coroutines.flow.StateFlow
-import kotlin.Result
 
 /**
  * Core interface for the Logseq editor.

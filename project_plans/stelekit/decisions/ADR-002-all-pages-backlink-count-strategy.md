@@ -1,6 +1,6 @@
 # ADR-002: Backlink Count via Dedicated SQL Query
 
-**Status**: Accepted
+**Status**: Superseded by ADR-011-wikilink-reference-index.md
 **Date**: 2026-04-16
 **Feature**: All Pages View
 

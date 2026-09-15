@@ -1,0 +1,171 @@
+-- Performance histogram storage
+-- Bucketed counters; bucket_ms is the upper bound of the bucket in milliseconds.
+-- Boundaries: 0, 16, 33, 50, 100, 500, 1000, 5000 ms (plus an overflow ">5000" bucket represented as 9999).
+CREATE TABLE IF NOT EXISTS perf_histogram_buckets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    operation_name TEXT NOT NULL,
+    bucket_ms INTEGER NOT NULL,
+    count INTEGER NOT NULL DEFAULT 0,
+    recorded_at INTEGER NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_perf_hist_op_bucket
+    ON perf_histogram_buckets(operation_name, bucket_ms);
+CREATE INDEX IF NOT EXISTS idx_perf_hist_recorded_at
+    ON perf_histogram_buckets(recorded_at);
+
+CREATE TABLE IF NOT EXISTS debug_flags (
+    key TEXT NOT NULL PRIMARY KEY,
+    value INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL
+);
+
+-- Span storage for OTel trace persistence
+CREATE TABLE IF NOT EXISTS spans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    trace_id TEXT NOT NULL DEFAULT '',
+    span_id TEXT NOT NULL DEFAULT '',
+    parent_span_id TEXT NOT NULL DEFAULT '',
+    name TEXT NOT NULL,
+    start_epoch_ms INTEGER NOT NULL,
+    end_epoch_ms INTEGER NOT NULL,
+    duration_ms INTEGER NOT NULL,
+    attributes_json TEXT NOT NULL DEFAULT '{}',
+    status_code TEXT NOT NULL DEFAULT 'OK',
+    app_version TEXT NOT NULL DEFAULT '',
+    commit_hash TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS spans_start_epoch_ms_idx ON spans(start_epoch_ms DESC);
+CREATE INDEX IF NOT EXISTS spans_trace_id_idx ON spans(trace_id);
+-- Covers regression queries: WHERE app_version = ? AND name = ? ORDER BY duration_ms DESC
+CREATE INDEX IF NOT EXISTS idx_spans_version_name_duration ON spans(app_version, name, duration_ms DESC);
+-- Covers deleteSpansOlderThan WHERE end_epoch_ms < ?
+CREATE INDEX IF NOT EXISTS idx_spans_end_epoch_ms ON spans(end_epoch_ms);
+
+-- Per-query execution statistics, keyed by (app_version, table_name, operation).
+CREATE TABLE IF NOT EXISTS query_stats (
+    app_version TEXT NOT NULL,
+    table_name  TEXT NOT NULL,
+    operation   TEXT NOT NULL,
+    calls       INTEGER NOT NULL DEFAULT 0,
+    errors      INTEGER NOT NULL DEFAULT 0,
+    total_ms    INTEGER NOT NULL DEFAULT 0,
+    min_ms      INTEGER NOT NULL DEFAULT 9999999,
+    max_ms      INTEGER NOT NULL DEFAULT 0,
+    b1          INTEGER NOT NULL DEFAULT 0,
+    b5          INTEGER NOT NULL DEFAULT 0,
+    b16         INTEGER NOT NULL DEFAULT 0,
+    b50         INTEGER NOT NULL DEFAULT 0,
+    b100        INTEGER NOT NULL DEFAULT 0,
+    b500        INTEGER NOT NULL DEFAULT 0,
+    b_inf       INTEGER NOT NULL DEFAULT 0,
+    first_seen  INTEGER NOT NULL,
+    last_seen   INTEGER NOT NULL,
+    PRIMARY KEY (app_version, table_name, operation)
+);
+
+CREATE INDEX IF NOT EXISTS idx_query_stats_version_ms
+    ON query_stats(app_version, total_ms DESC);
+
+-- Histogram queries
+-- Two-step upsert: first ensure the row exists (no-op on conflict), then increment.
+insertHistogramBucketIfAbsent:
+INSERT OR IGNORE INTO perf_histogram_buckets (operation_name, bucket_ms, count, recorded_at)
+VALUES (?, ?, 0, ?);
+
+incrementHistogramBucketCount:
+UPDATE perf_histogram_buckets
+SET count = count + 1, recorded_at = ?
+WHERE operation_name = ? AND bucket_ms = ?;
+
+incrementHistogramBucketCountBy:
+UPDATE perf_histogram_buckets
+SET count = count + ?, recorded_at = ?
+WHERE operation_name = ? AND bucket_ms = ?;
+
+selectHistogramForOperation:
+SELECT bucket_ms, count FROM perf_histogram_buckets WHERE operation_name = ? ORDER BY bucket_ms;
+
+selectAllHistogramOperations:
+SELECT DISTINCT operation_name FROM perf_histogram_buckets ORDER BY operation_name;
+
+-- Batch export: all buckets for all operations in one round-trip (used by PerfExporter)
+selectAllHistogramBuckets:
+SELECT operation_name, bucket_ms, count FROM perf_histogram_buckets ORDER BY operation_name, bucket_ms;
+
+deleteOldHistogramRows:
+DELETE FROM perf_histogram_buckets WHERE recorded_at < ?;
+
+-- Debug flag queries
+upsertDebugFlag:
+INSERT OR REPLACE INTO debug_flags (key, value, updated_at)
+VALUES (?, ?, ?);
+
+selectDebugFlag:
+SELECT value FROM debug_flags WHERE key = ?;
+
+selectAllDebugFlags:
+SELECT key, value FROM debug_flags ORDER BY key;
+
+-- Span queries
+insertSpan:
+INSERT INTO spans (trace_id, span_id, parent_span_id, name, start_epoch_ms, end_epoch_ms, duration_ms, attributes_json, status_code, app_version, commit_hash)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectRecentSpans:
+SELECT * FROM spans ORDER BY start_epoch_ms DESC LIMIT ?;
+
+-- Regression comparison: fetch the slowest N spans for a given operation and version.
+selectSlowSpansByVersionAndName:
+SELECT * FROM spans WHERE app_version = ? AND name = ? ORDER BY duration_ms DESC LIMIT ?;
+
+-- Enumerate versions present in the spans table (newest first).
+selectDistinctVersionsWithSpans:
+SELECT DISTINCT app_version FROM spans WHERE app_version != '' ORDER BY app_version DESC;
+
+deleteSpansOlderThan:
+DELETE FROM spans WHERE end_epoch_ms < ?;
+
+deleteExcessSpans:
+DELETE FROM spans WHERE id NOT IN (SELECT id FROM spans ORDER BY start_epoch_ms DESC LIMIT ?);
+
+deleteAllSpans:
+DELETE FROM spans;
+
+-- query_stats queries
+insertQueryStatIfAbsent:
+INSERT OR IGNORE INTO query_stats (app_version, table_name, operation, calls, errors, total_ms, min_ms, max_ms, b1, b5, b16, b50, b100, b500, b_inf, first_seen, last_seen)
+VALUES (?, ?, ?, 0, 0, 0, 9999999, 0, 0, 0, 0, 0, 0, 0, 0, ?, ?);
+
+mergeQueryStat:
+UPDATE query_stats SET
+    calls    = calls    + ?,
+    errors   = errors   + ?,
+    total_ms = total_ms + ?,
+    min_ms   = MIN(min_ms,  ?),
+    max_ms   = MAX(max_ms,  ?),
+    b1       = b1    + ?,
+    b5       = b5    + ?,
+    b16      = b16   + ?,
+    b50      = b50   + ?,
+    b100     = b100  + ?,
+    b500     = b500  + ?,
+    b_inf    = b_inf + ?,
+    last_seen = MAX(last_seen, ?)
+WHERE app_version = ? AND table_name = ? AND operation = ?;
+
+selectQueryStatsByVersion:
+SELECT * FROM query_stats WHERE app_version = ? ORDER BY total_ms DESC;
+
+selectTopQueryStatsByTotalMs:
+SELECT * FROM query_stats WHERE app_version = ? ORDER BY total_ms DESC LIMIT ?;
+
+selectTopQueryStatsByCalls:
+SELECT * FROM query_stats WHERE app_version = ? ORDER BY calls DESC LIMIT ?;
+
+selectAllQueryStatVersions:
+SELECT DISTINCT app_version FROM query_stats ORDER BY app_version DESC;
+
+deleteQueryStatsForVersion:
+DELETE FROM query_stats WHERE app_version = ?;

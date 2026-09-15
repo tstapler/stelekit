@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import dev.stapler.stelekit.ui.components.typedGridItems
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
@@ -129,7 +130,7 @@ fun GalleryScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxSize(),
                 ) {
-                    items(state.images, key = { it.uuid }) { image ->
+                    typedGridItems(state.images, key = { it.uuid }) { image ->
                         GalleryCard(
                             image = image,
                             onTap = { onOpenAnnotationEditor(image.uuid) },

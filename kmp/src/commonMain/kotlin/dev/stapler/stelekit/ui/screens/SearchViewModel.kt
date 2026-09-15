@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.ui.screens
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockPropertyKeys
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.repository.DataType
 import dev.stapler.stelekit.repository.DateRange
@@ -181,7 +182,7 @@ class SearchViewModel(
             try {
                 // Merge tag filter into property filters if present
                 val effectivePropertyFilters = if (parsed.tagFilter != null) {
-                    parsed.propertyFilters + mapOf("tags" to parsed.tagFilter)
+                    parsed.propertyFilters + mapOf(BlockPropertyKeys.TAGS to parsed.tagFilter)
                 } else {
                     parsed.propertyFilters
                 }
@@ -255,7 +256,11 @@ class SearchViewModel(
                                 it is SearchResultItem.PageItem &&
                                     it.page.name.equals(query, ignoreCase = true)
                             }
-                            val withCreate = if (!exactPageMatch && query.isNotBlank() && !searchResult.hasMore) {
+                            // Page search always completes before this point (block search is what
+                            // drives hasMore) — gating on !hasMore delayed this until block search
+                            // also finished, so the row popped in and reflowed the list after the
+                            // user had already started tapping the (until-then) top item.
+                            val withCreate = if (!exactPageMatch && query.isNotBlank()) {
                                 listOf(SearchResultItem.CreatePageItem(query)) + items
                             } else {
                                 items
@@ -330,7 +335,7 @@ class SearchViewModel(
     }
 
     private fun parseTagsFromProperties(properties: Map<String, String>): List<String> {
-        val tagsValue = properties["tags"] ?: return emptyList()
+        val tagsValue = properties[BlockPropertyKeys.TAGS] ?: return emptyList()
         return tagsValue.split(Regex("[,\\s]+"))
             .map { it.trim() }
             .filter { it.isNotBlank() }

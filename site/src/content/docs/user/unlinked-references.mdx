@@ -1,0 +1,52 @@
+---
+title: Unlinked References
+description: Discover and link mentions of page names that are not yet wikilinks.
+---
+
+## What are Unlinked References?
+
+Unlinked References shows every block in your graph that mentions a page name as plain text
+without using a `[[wikilink]]`. For example, if you have a page called "Project Alpha" and a
+block on another page that says "worked on Project Alpha today" (without brackets), that block
+appears as an unlinked reference on the Project Alpha page.
+
+Linking these improves graph connectivity and backlink coverage. Each linked mention becomes a
+visible backlink, making your graph more navigable in both directions.
+
+## How to access it
+
+Open **Unlinked References** from the sidebar. The view lists all plain-text mentions of page
+names found across your entire graph.
+
+Alternatively, the **Backlinks** panel at the bottom of each page page shows both linked and
+unlinked references for that specific page.
+
+## Key interactions
+
+- Each entry shows the block text and the page where the mention appears
+- The matched page name is highlighted in the block text
+- Tap **Link** to convert the plain-text mention to a `[[wikilink]]` automatically — the file on
+  disk is updated immediately
+- Tap **Dismiss** to hide the suggestion without linking — dismissed suggestions do not reappear
+  unless the text changes
+- Scroll to browse all suggestions across your graph
+
+## Why link unlinked references?
+
+More wikilinks create more backlinks. When you link a mention, the linked page's **Backlinks**
+panel shows the full context of where it was mentioned — making your notes navigable in both
+directions. This is especially valuable for:
+
+- Person pages (`[[Alice]]`) — see every note where you mentioned Alice
+- Project pages — see every journal entry, task, and note that references the project
+- Concept pages — trace how ideas evolved across different contexts
+
+## Keyboard shortcuts
+
+Unlinked References is a review interface. No specific keyboard shortcuts.
+
+## Related features
+
+- [Backlinks](./backlinks) — see all pages that wikilink to the current page
+- [Block Editing](./block-editing) — how `[[wikilinks]]` work in the editor
+- [All Pages](./all-pages) — browse all pages to find candidates for linking

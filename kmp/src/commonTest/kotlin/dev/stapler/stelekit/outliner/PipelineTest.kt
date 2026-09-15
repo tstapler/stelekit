@@ -18,7 +18,7 @@ class PipelineTest {
             uuid = BlockUuid("00000000-0000-0000-0000-000000000001"),
             pageUuid = PageUuid("page-1"),
             content = "This is a [[page]] with a ((00000000-0000-0000-0000-000000000002)) reference and a #tag",
-            position = 0,
+            position = "a0",
             createdAt = Clock.System.now(),
             updatedAt = Clock.System.now(),
             properties = mapOf("tags" to "property-tag")
@@ -46,7 +46,7 @@ class PipelineTest {
                 
                   Some content with spaces  
             """.trimIndent(),
-            position = 0,
+            position = "a0",
             createdAt = Clock.System.now(),
             updatedAt = Clock.System.now()
         )
@@ -68,7 +68,7 @@ class PipelineTest {
                 
                 Check ((00000000-0000-0000-0000-000000000002))
             """.trimIndent(),
-            position = 0,
+            position = "a0",
             createdAt = Clock.System.now(),
             updatedAt = Clock.System.now()
         )

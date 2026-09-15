@@ -15,7 +15,7 @@ interface BlockStructureRepository {
      * Move a block to a new parent and/or position
      */
     @DirectRepositoryWrite
-    suspend fun moveBlock(blockUuid: BlockUuid, newParentUuid: BlockUuid?, newPosition: Int): Either<DomainError, Unit>
+    suspend fun moveBlock(blockUuid: BlockUuid, newParentUuid: BlockUuid?, newPosition: String): Either<DomainError, Unit>
 
     /**
      * Indent a block (move it to be a child of its preceding sibling)

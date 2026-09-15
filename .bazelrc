@@ -1,0 +1,108 @@
+# SteleKit .bazelrc
+# All Bazel flags for local and CI builds.
+#
+# Machine-specific overrides (ANDROID_HOME path, extra tool paths, etc.) go in
+# .bazelrc.user — that file is gitignored and imported below.  Copy
+# .bazelrc.user.example to .bazelrc.user and edit for your machine.
+try-import %workspace%/.bazelrc.user
+
+# ── Bazel server JVM heap ─────────────────────────────────────────────────────
+# Caps the Bazel server at 6 GB so Maven resolution doesn't OOM the host.
+# Coursier's transitive graph for Compose+AndroidX is large; capping forces GC
+# before the machine swaps out.  Increase to -Xmx8g on 32 GB machines.
+startup --host_jvm_args=-Xmx6g
+
+# ── Idle server timeout ───────────────────────────────────────────────────────
+# Each Claude Code agent worktree gets its own bazel server (keyed by
+# workspace_directory). Worktree teardown doesn't run `bazel shutdown` first,
+# so a finished/abandoned worktree's server just lingers holding onto RAM and
+# worker processes. Default is 3h; 30m gets it reaped fast without killing a
+# server mid-interactive-use. Doesn't help a server that's stuck *inside* a
+# build (not idle) — see CLAUDE.md's Bazel section for that failure mode.
+startup --max_idle_secs=1800
+
+# ── JVM toolchain ─────────────────────────────────────────────────────────────
+build --java_runtime_version=21
+build --tool_java_runtime_version=21
+
+# ── Android SDK ───────────────────────────────────────────────────────────────
+# android_sdk_repository_extension runs at repo-loading time (before config
+# flags), so ANDROID_HOME must be a global repo_env, not scoped to :android.
+# The value is supplied by .bazelrc.user locally and by the CI environment on
+# GitHub Actions (android-actions/setup-android sets ANDROID_HOME).
+build --repo_env=ANDROID_HOME
+
+# --android_sdk and the toolchain flag are kept in :android so that JVM-only
+# targets (business_tests, desktop_app) do not trigger Android toolchain
+# resolution.  Pass --config=android when building Android targets.
+build:android --android_sdk=@androidsdk//:sdk
+
+# ── Resource limits (Android on the 16GB standard GH runner) ─────────────────
+# PackageAndroidResources/d8 dexer actions are each a `java -Xmx3G` process;
+# 4 running concurrently + the 6GB server JVM cap above exceeds 16GB and
+# OOM-kills the Bazel server (observed once bazel-ci.yml's shared disk-cache
+# let these run back-to-back — run 33803270917, "Server terminated abruptly").
+build:android --local_resources=memory=9000
+
+# ── Persistent workers for Android dex/desugar/resource actions — REVERTED ───
+# Tried `--persistent_android_dex_desugar` + `--persistent_android_resource_processor`
+# (native rules_android/Bazel flags) to fix CI run 33891824754's Android build job
+# (1510s elapsed vs. 236s critical path, 6.4x — mostly JVM-startup/scheduling
+# overhead from processwrapper-sandbox instead of warm worker reuse). Reverted
+# after 3 failed CI attempts to cap concurrency safely: unlike the one-shot
+# sandboxed processes they replace, these workers (Desugar, DexBuilder,
+# PackageAndroidResources) stay resident holding `-Xmx3G` each — even capped at
+# 2 instances apiece that's 6 workers × 3GB = 18GB from these three mnemonics
+# alone, before the 6GB-capped Bazel server, KotlinCompile's own worker, or OS
+# overhead, on a 16GB runner. Every attempt OOM-killed mid-build (runs
+# 33929109869, 33931054162, 33931907031). Don't re-enable these flags without
+# either a larger-memory runner or verified low-enough instance caps (see
+# bazel-perf skill) — and verify on real CI, not just a large local dev box.
+
+# ── Correctness / hermetic sandbox ────────────────────────────────────────────
+build --sandbox_default_allow_network=false
+build --incompatible_strict_action_env
+
+# ── X11 socket access for Compose Desktop tests ───────────────────────────────
+# Compose Desktop tests require an X display.  The Linux sandbox creates a new
+# mount namespace and does not include /tmp/.X11-unix by default, so the X11
+# socket (DISPLAY=:N → /tmp/.X11-unix/XN) is inaccessible even when DISPLAY is
+# inherited.  Mount the X11 socket directory into every test sandbox.
+# Locally: use whatever X server is running.
+# CI: xvfb-run --auto-servernum creates the socket before bazel runs.
+test --sandbox_add_mount_pair=/tmp/.X11-unix
+
+# ── Output legibility ─────────────────────────────────────────────────────────
+build --show_timestamps
+build --noshow_loading_progress
+
+# ── CI profile ────────────────────────────────────────────────────────────────
+build:ci --color=no
+build:ci --curses=no
+# Retry transient network errors (e.g. 503 from android.googlesource.com) up to 5 times
+# before failing a repository fetch. Default is 2; 5 covers most GCS/Gerrit blips.
+build:ci --experimental_repository_downloader_retries=5
+
+# ── CI caching ────────────────────────────────────────────────────────────────
+# Bazel caching in CI is handled entirely by bazel-contrib/setup-bazel@0.19.0
+# (disk-cache, repository-cache, external-cache inputs) which uses GitHub Actions
+# native cache — no third-party service required.  See .github/workflows/bazel-ci.yml.
+
+# ── Vendored external repos ───────────────────────────────────────────────────
+# rules_android@0.7.1's BCR source.json lists a single download URL with no
+# mirror, and Bazel does not retry UnrecoverableHttpException (TLS/cert
+# failures) — so a cold repository-cache (e.g. after GitHub's 10GB/repo cache
+# eviction) can fail the whole build on a one-off cert blip with no fallback.
+# Vendoring it (`bazel vendor --vendor_dir=vendor --repo='@@rules_android+'`)
+# removes the network fetch for this repo entirely; re-run that command and
+# commit the result after bumping the rules_android version in MODULE.bazel.
+common --vendor_dir=vendor
+
+# ── Remote HTTP cache (bazel-cache-proxy) ─────────────────────────────────────
+# Enable with --config=remote-cache.  CI starts bazel-cache-proxy on port 9090
+# backed by the GHA cache API; all jobs on the same PR share the cache.
+# PRs write to their own scoped namespace so main's cache is never polluted.
+# Local use: start `bazel-cache-proxy serve` with a disk backend, then pass
+# --config=remote-cache to any bazel command.
+build:remote-cache --remote_cache=http://127.0.0.1:9090
+build:remote-cache --remote_upload_local_results

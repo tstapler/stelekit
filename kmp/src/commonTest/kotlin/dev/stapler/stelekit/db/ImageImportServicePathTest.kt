@@ -2,16 +2,26 @@ package dev.stapler.stelekit.db
 
 import arrow.core.Either
 import dev.stapler.stelekit.db.sidecar.FakeFileSystem
+import dev.stapler.stelekit.db.sidecar.ImageSidecarManager
+import dev.stapler.stelekit.repository.InMemoryBlockRepository
+import dev.stapler.stelekit.repository.InMemoryImageAnnotationRepository
 import kotlin.test.Test
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class ImageImportServicePathTest {
 
+    private fun buildService(fs: FakeFileSystem = FakeFileSystem()) = ImageImportService(
+        fileSystem = fs,
+        imageAnnotationRepository = InMemoryImageAnnotationRepository(),
+        blockRepository = InMemoryBlockRepository(),
+        sidecarManager = ImageSidecarManager(fs),
+    )
+
     @Test
     fun reservePath_should_createDirectory_when_assetsImagesAbsent() {
         val fs = FakeFileSystem()
-        val service = ImageImportService(fs)
+        val service = buildService(fs)
         val graphPath = "/graph"
         val uuid = "a3f8b2c1-d4e5-6789-abcd-ef0123456789"
 
@@ -32,7 +42,7 @@ class ImageImportServicePathTest {
     @Test
     fun reservePath_should_returnCorrectPath_when_calledWithKnownUuid() {
         val fs = FakeFileSystem()
-        val service = ImageImportService(fs)
+        val service = buildService(fs)
         val uuid = "abc12345-0000-0000-0000-000000000000"
         val result = service.reservePath("/graph", uuid)
 

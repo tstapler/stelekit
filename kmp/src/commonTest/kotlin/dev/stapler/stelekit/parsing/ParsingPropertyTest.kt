@@ -72,6 +72,22 @@ class ParsingPropertyTest {
     }
 
     @Test
+    fun inlineParserShouldNotBlowUpOnManyUnclosedBracketsFollowedByParens() {
+        // Regression for an exponential-time bug: `[label](url)` parsing recursively
+        // re-parsed the label on every candidate `[`, so text riddled with unmatched
+        // `[` characters (e.g. typing "[[MOP (" mid wiki-link) took exponential time
+        // and froze the UI thread. Must stay well under a second even at this size.
+        val input = "[(".repeat(2000)
+        val elapsed = kotlin.time.TimeSource.Monotonic.markNow().let {
+            InlineParser(input).parse()
+            it.elapsedNow()
+        }
+        if (elapsed.inWholeMilliseconds > 2000) {
+            fail("InlineParser took ${elapsed.inWholeMilliseconds}ms on pathological unclosed-bracket input — expected near-linear time")
+        }
+    }
+
+    @Test
     fun inlineParserShouldHandleBlockRefEdgeCases() {
         val inputs = listOf(
             "(", "((", "((ref", "((ref)", "((ref))", "((ref))extra",

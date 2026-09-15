@@ -16,6 +16,7 @@ sealed interface VoiceCaptureState {
         val isLikelyTruncated: Boolean = false,
         val transcriptPageTitle: String? = null,
         val savedToPageName: String? = null,
+        val suggestedTags: List<dev.stapler.stelekit.tags.TagSuggestion> = emptyList(),
     ) : VoiceCaptureState
     data class Error(
         val stage: PipelineStage,

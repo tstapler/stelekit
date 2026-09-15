@@ -1,0 +1,18 @@
+{
+  "name": "SteleKit",
+  "short_name": "SteleKit",
+  "description": "Local-first outliner for Desktop, Android, and Web. Your notes stay as plain markdown on disk — no cloud, no account.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#1e1e1e",
+  "theme_color": "#1e1e1e",
+  "icons": [
+    {
+      "src": "icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

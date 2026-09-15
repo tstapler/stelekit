@@ -14,6 +14,8 @@ import androidx.work.WorkerParameters
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
+import dev.stapler.stelekit.platform.PlatformFileSystem
+import dev.stapler.stelekit.platform.security.CredentialStore
 import kotlinx.coroutines.CancellationException
 import java.util.concurrent.TimeUnit
 
@@ -31,12 +33,10 @@ class WorkManagerSyncScheduler(
     private val graphId: String,
 ) : BackgroundSyncScheduler {
 
-    companion object {
-        private const val WORK_NAME = "stelekit_git_sync"
-    }
+    private val workName get() = workNameFor(graphId)
 
     override fun schedule(intervalMinutes: Int) {
-        val repeatInterval = maxOf(intervalMinutes.toLong(), 15L)
+        val repeatInterval = maxOf(intervalMinutes.toLong(), MIN_INTERVAL_MINUTES)
 
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
@@ -52,14 +52,47 @@ class WorkManagerSyncScheduler(
             .build()
 
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-            WORK_NAME,
+            workName,
             ExistingPeriodicWorkPolicy.UPDATE,
             request,
         )
     }
 
     override fun cancel() {
-        WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
+        WorkManager.getInstance(context).cancelUniqueWork(workName)
+    }
+
+    companion object {
+        /** Android's floor for periodic work — matches [schedule]'s existing clamp. */
+        private const val MIN_INTERVAL_MINUTES = 15L
+
+        private fun workNameFor(graphId: String) = "stelekit_git_sync_$graphId"
+
+        /**
+         * Pauses [graphId]'s scheduled periodic sync job ahead of a relocate/link's copy step
+         * (Story 3.2.1), so a concurrent WorkManager fetch never races the foreground copy of
+         * `.git`. Cancels the enqueued unique periodic work outright rather than merely skipping
+         * one run — [resumeFor] re-enqueues it once the move completes.
+         *
+         * A `Context`-scoped companion function rather than an instance method: the caller
+         * ([AndroidGraphMoveQuiesceStrategy]) quiesces an arbitrary [graphId] from a
+         * [dev.stapler.stelekit.model.StorageMoveOperation], not necessarily one it already holds
+         * a per-graph [WorkManagerSyncScheduler] instance for.
+         */
+        fun pauseFor(context: Context, graphId: String) {
+            WorkManager.getInstance(context).cancelUniqueWork(workNameFor(graphId))
+        }
+
+        /**
+         * Re-schedules [graphId]'s periodic sync job after a relocate/link's [release] step
+         * completes. Re-enqueues at Android's minimum interval rather than the graph's previously
+         * configured interval — [GitSyncService] re-applies the graph's real configured interval
+         * the next time it starts, so this is a safety net restoring background coverage, not the
+         * source of truth for the interval.
+         */
+        fun resumeFor(context: Context, graphId: String) {
+            WorkManagerSyncScheduler(context, graphId).schedule(MIN_INTERVAL_MINUTES.toInt())
+        }
     }
 }
 
@@ -113,7 +146,16 @@ class GitSyncWorker(
                 ?: run { driver.close(); return Result.success() }
 
             val config = row.toGitConfig()
-            val gitRepository = AndroidGitRepository()
+            // A throwaway, uninitialized PlatformFileSystem() is deliberately fine here (unlike
+            // MainActivity's construction site — see buildGitRepository): fetch() only updates
+            // remote-tracking refs and never touches the working tree, so no ensureFresh/shadow
+            // write-back happens on this call path even though resolveForJGit's shadowWorktreeFor
+            // still correctly targets the shadow directory. The user's next foreground merge()
+            // call is what surfaces fetched changes into SAF (plan.md Task 5.1.2b).
+            val gitRepository = AndroidGitRepository(
+                context = applicationContext,
+                fileSystem = PlatformFileSystem(),
+            )
             gitRepository.fetch(config)
 
             driver.close()
@@ -130,7 +172,7 @@ private fun dev.stapler.stelekit.db.Git_config.toGitConfig() =
     dev.stapler.stelekit.git.model.GitConfig(
         graphId = graph_id,
         repoRoot = repo_root,
-        wikiSubdir = wiki_subdir,
+        wikiSubdir = wiki_subdir.ifEmpty { null },
         remoteName = remote_name,
         remoteBranch = remote_branch,
         authType = runCatching {
@@ -139,6 +181,7 @@ private fun dev.stapler.stelekit.db.Git_config.toGitConfig() =
         sshKeyPath = ssh_key_path,
         sshKeyPassphraseKey = ssh_key_passphrase_key,
         httpsTokenKey = https_token_key,
+        oauthTokenKey = oauth_token_key,
         pollIntervalMinutes = poll_interval_minutes.toInt(),
         autoCommit = auto_commit != 0L,
         commitMessageTemplate = commit_message_template,

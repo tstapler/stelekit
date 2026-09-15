@@ -41,7 +41,7 @@ class ExportServiceLinkedPagesTest {
         content: String,
         pageUuid: String,
         level: Int = 0,
-        position: Int = 0,
+        position: String = "a0",
     ) = Block(
         uuid = BlockUuid(uuid),
         pageUuid = PageUuid(pageUuid),

@@ -1,0 +1,44 @@
+Add common_srcs attribute to kt_jvm_library for Kotlin Multiplatform (KMP) support.
+
+When common_srcs is set, sources in that list are passed to the Kotlin compiler
+via -Xcommon-sources, which enables expect/actual declarations. All files in
+common_srcs must also appear in srcs so they are compiled as part of the same
+compilation unit (mirrors how Kotlin Gradle Plugin compiles commonMain + jvmMain).
+
+diff --git a/kotlin/internal/jvm/jvm.bzl b/kotlin/internal/jvm/jvm.bzl
+--- a/kotlin/internal/jvm/jvm.bzl
++++ b/kotlin/internal/jvm/jvm.bzl
+@@ -219,6 +219,13 @@
+             default = [],
+             providers = [JavaInfo, _KtJvmInfo],
+         ),
++        "common_srcs": attr.label_list(
++            doc = """Common source files for Kotlin Multiplatform (KMP) compilation.
++            Files listed here are passed to the compiler with -Xcommon-sources,
++            which enables expect/actual declarations. MUST also appear in srcs.""",
++            allow_files = [".kt"],
++            default = [],
++        ),
+         "data": attr.label_list(
+             doc = """The list of files needed by this rule at runtime. See general comments about `data` at
+         [Attributes common to all build rules](https://docs.bazel.build/versions/master/be/common-definitions.html#common-attributes).""",
+diff --git a/kotlin/internal/jvm/compile.bzl b/kotlin/internal/jvm/compile.bzl
+--- a/kotlin/internal/jvm/compile.bzl
++++ b/kotlin/internal/jvm/compile.bzl
+@@ -580,6 +580,16 @@
+     args.add("--build_tools_api", toolchains.kt.experimental_build_tools_api)
+     args.add_all("--sources", srcs.all_srcs, omit_if_empty = True)
+     args.add_all("--source_jars", srcs.src_jars + generated_src_jars, omit_if_empty = True)
++    # KMP: pass -Xcommon-sources for expect/actual compilation across source sets
++    _kmp_common_srcs = getattr(ctx.attr, "common_srcs", None)
++    if _kmp_common_srcs:
++        _kmp_common_srcs_files = depset(transitive = [t.files for t in _kmp_common_srcs])
++        args.add_joined(
++            "--kotlin_passthrough_flags",
++            _kmp_common_srcs_files,
++            join_with = ",",
++            format_joined = "-Xcommon-sources=%s",
++        )
+     args.add_all("--deps_artifacts", deps_artifacts, omit_if_empty = True)
+     args.add_all("--kotlin_friend_paths", compile_deps.associate_jars, omit_if_empty = True)
+     args.add("--instrument_coverage", ctx.coverage_instrumented())

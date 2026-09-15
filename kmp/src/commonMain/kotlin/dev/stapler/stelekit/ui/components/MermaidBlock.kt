@@ -1,7 +1,8 @@
 package dev.stapler.stelekit.ui.components
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -75,6 +76,9 @@ fun MermaidBlock(
     content: String,
     onStartEditing: () -> Unit,
     modifier: Modifier = Modifier,
+    isInSelectionMode: Boolean = false,
+    onToggleSelect: () -> Unit = {},
+    onLongPressSelect: (() -> Unit)? = null,
     renderer: suspend (MermaidRenderKey) -> MermaidRenderResult = ::renderMermaid,
 ) {
     val sourceText = remember(content) { extractMermaidSourceBody(content) }
@@ -82,7 +86,15 @@ fun MermaidBlock(
     // Oversized/empty source is never handed to the renderer at all (REQ-8) — cheapest correct
     // behavior for a pathological or empty diagram, matching CodeFenceBlock's existing empty-body handling.
     if (sourceText.isEmpty() || sourceText.length > MAX_MERMAID_SOURCE_LENGTH) {
-        CodeFenceBlock(content = content, language = "mermaid", onStartEditing = onStartEditing, modifier = modifier)
+        CodeFenceBlock(
+            content = content,
+            language = "mermaid",
+            onStartEditing = onStartEditing,
+            modifier = modifier,
+            isInSelectionMode = isInSelectionMode,
+            onToggleSelect = onToggleSelect,
+            onLongPressSelect = onLongPressSelect,
+        )
         return
     }
 
@@ -92,6 +104,9 @@ fun MermaidBlock(
             sourceText = sourceText,
             widthPx = constraints.maxWidth,
             onStartEditing = onStartEditing,
+            isInSelectionMode = isInSelectionMode,
+            onToggleSelect = onToggleSelect,
+            onLongPressSelect = onLongPressSelect,
             renderer = renderer,
         )
     }
@@ -104,6 +119,9 @@ private fun MermaidRenderGate(
     sourceText: String,
     widthPx: Int,
     onStartEditing: () -> Unit,
+    isInSelectionMode: Boolean,
+    onToggleSelect: () -> Unit,
+    onLongPressSelect: (() -> Unit)?,
     renderer: suspend (MermaidRenderKey) -> MermaidRenderResult,
 ) {
     val theme = currentThemeFingerprint()
@@ -129,6 +147,9 @@ private fun MermaidRenderGate(
             result = rendered,
             accessibilityLabel = remember(sourceText) { mermaidAccessibilityLabel(sourceText) },
             onStartEditing = onStartEditing,
+            isInSelectionMode = isInSelectionMode,
+            onToggleSelect = onToggleSelect,
+            onLongPressSelect = onLongPressSelect,
             modifier = Modifier.fillMaxWidth(),
         )
     } else {
@@ -138,6 +159,9 @@ private fun MermaidRenderGate(
             content = content,
             language = "mermaid",
             onStartEditing = onStartEditing,
+            isInSelectionMode = isInSelectionMode,
+            onToggleSelect = onToggleSelect,
+            onLongPressSelect = onLongPressSelect,
             modifier = Modifier.fillMaxWidth(),
         )
     }
@@ -156,11 +180,15 @@ private fun MermaidRenderGate(
  * explicit (rather than relying solely on `clickable`'s own Enter/Space handling) so Enter/Space
  * activation is guaranteed regardless of the platform diagram surface underneath.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MermaidRenderedCard(
     result: MermaidRenderResult.Rendered,
     accessibilityLabel: String,
     onStartEditing: () -> Unit,
+    isInSelectionMode: Boolean,
+    onToggleSelect: () -> Unit,
+    onLongPressSelect: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -175,13 +203,16 @@ private fun MermaidRenderedCard(
                 if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
                 when (event.key) {
                     Key.Enter, Key.Spacebar -> {
-                        onStartEditing()
+                        if (isInSelectionMode) onToggleSelect() else onStartEditing()
                         true
                     }
                     else -> false
                 }
             }
-            .clickable { onStartEditing() }
+            .combinedClickable(
+                onLongClick = onLongPressSelect,
+                onClick = { if (isInSelectionMode) onToggleSelect() else onStartEditing() },
+            )
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(

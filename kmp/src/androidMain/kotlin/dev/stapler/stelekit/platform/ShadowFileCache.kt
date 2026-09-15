@@ -6,6 +6,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Read-only cache that mirrors SAF-backed markdown files to `filesDir` so Phase 3
@@ -20,6 +21,14 @@ import java.io.File
  */
 internal class ShadowFileCache(context: Context, graphId: String) {
     private val shadowRoot = File(context.filesDir, "graphs/$graphId/shadow")
+
+    // Per-instance flag: true on the first invalidateStaleShadow call after this cache
+    // was created. Scoped per-instance (not process-wide) so that switching graphs within
+    // a session still triggers a full purge for the newly-opened graph's shadow.
+    private val freshInstance = AtomicBoolean(true)
+
+    /** Returns true and clears the flag on the first call; false on all subsequent calls. */
+    fun isFirstAccess(): Boolean = freshInstance.getAndSet(false)
 
     companion object {
         private const val TAG = "ShadowFileCache"

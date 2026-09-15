@@ -1,8 +1,6 @@
 package dev.stapler.stelekit.ui.annotate
 
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Canvas
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -11,9 +9,7 @@ import androidx.compose.ui.graphics.PaintingStyle
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.unit.IntSize
 import dev.stapler.stelekit.model.AnnotationType
-import dev.stapler.stelekit.model.ImageAnnotation
 import dev.stapler.stelekit.model.MeasurementAnnotation
-import kotlin.math.sqrt
 
 /**
  * Bakes annotation overlays into an [ImageBitmap] and encodes the result as a JPEG [ByteArray].

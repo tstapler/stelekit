@@ -4,6 +4,8 @@
 import java.io.File as IoFile
 import java.text.SimpleDateFormat
 import java.util.Date
+import org.gradle.jvm.toolchain.JavaLanguageVersion
+import org.gradle.jvm.toolchain.JavaToolchainService
 
 plugins {
     kotlin("multiplatform")
@@ -42,6 +44,38 @@ kotlin {
     iosX64()
     iosArm64()
     iosSimulatorArm64()
+
+    // ── iOS Foundation Models shim scaffolding (Epic 5, llm-service) ───────────────────────
+    // Produces the `kmp.framework` Kotlin/Native output iosApp/ links against (Story 5.1), and
+    // wires cinterop bindings for the hand-authored Swift shims under iosApp/ (Stories 5.2/5.4:
+    // PingShim — the no-op cinterop smoke test — and FoundationModelsShim — the real Apple
+    // Intelligence / FoundationModels wrapper). See iosApp/README.md for the required manual
+    // build order: the Xcode shim framework targets must be built via `xcodebuild` BEFORE these
+    // cinterop tasks can resolve `PingShim`/`FoundationModelsShim`'s generated Clang modules —
+    // this repo's CI cannot run this path today (Gradle #17559 + Kotlin 2.3.x K2/Compose
+    // Multiplatform 1.7.x klib incompatibility block `compileKotlinIos*` entirely; see
+    // project_plans/llm-service/implementation/plan.md's Epic 5 "corrected CI framing").
+    listOf(iosX64(), iosArm64(), iosSimulatorArm64()).forEach { iosTarget ->
+        iosTarget.binaries.framework {
+            baseName = "kmp"
+        }
+
+        // Xcode's DerivedData-style output location the iosApp/README.md-documented xcodebuild
+        // invocation writes the shim frameworks into, keyed by SDK (device vs. simulator).
+        val sdkSuffix = if (iosTarget.name == "iosArm64") "iphoneos" else "iphonesimulator"
+        val shimFrameworkSearchPath = "$rootDir/iosApp/build/DerivedData/Build/Products/Debug-$sdkSuffix"
+
+        iosTarget.compilations.getByName("main").cinterops {
+            create("PingShim") {
+                defFile(project.file("src/nativeInterop/cinterop/PingShim.def"))
+                compilerOpts("-F$shimFrameworkSearchPath")
+            }
+            create("FoundationModelsShim") {
+                defFile(project.file("src/nativeInterop/cinterop/FoundationModelsShim.def"))
+                compilerOpts("-F$shimFrameworkSearchPath")
+            }
+        }
+    }
 
     // Configure source sets
     sourceSets {
@@ -89,6 +123,10 @@ kotlin {
 
                 // Ksoup — HTML parsing for URL import feature
                 implementation("com.fleeksoft.ksoup:ksoup:0.2.6")
+
+                // Okio — cross-platform file I/O for asset management
+                implementation("com.squareup.okio:okio:3.17.0")
+
             }
         }
 
@@ -97,6 +135,14 @@ kotlin {
             dependencies {
                 // OpenTelemetry API — JVM/Android only (not available for wasmJs)
                 implementation("io.opentelemetry:opentelemetry-api:1.43.0")
+                // ktoml — TOML parsing for .stele-sections manifest (excluded from wasmJs:
+                // ktoml generates WASM bytecode that fails wasm-opt validation)
+                implementation("com.akuleshov7:ktoml-core:0.7.1")
+                // JGit core — both jvmMain and androidMain already depend on this exact artifact
+                // independently (for the ssh transport variants, which do differ per-platform);
+                // hoisted here too so the shared block-aware-conflict helper
+                // (BlockAwareConflict.kt) can live once instead of duplicated per platform.
+                implementation("org.eclipse.jgit:org.eclipse.jgit:7.3.0.202506031305-r")
             }
         }
 
@@ -105,6 +151,14 @@ kotlin {
                 implementation(kotlin("test"))
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
                 implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.10.0")
+                // Okio FakeFileSystem — in-memory file system for asset tests
+                implementation("com.squareup.okio:okio-fakefilesystem:3.17.0")
+                // kotest assertions + property testing — pure KMP libraries usable from plain
+                // kotlin.test @Test functions (no Kotest Spec runner/KSP plugin needed), so they
+                // work unchanged on every target including wasmJs. See CLAUDE.md's "Testing
+                // Infrastructure" section for usage guidance.
+                implementation("io.kotest:kotest-assertions-core:6.2.4")
+                implementation("io.kotest:kotest-property:6.2.4")
             }
         }
 
@@ -130,6 +184,17 @@ kotlin {
 
                 // BouncyCastle — Argon2id KDF + HKDF-SHA256 for paranoid-mode vault
                 implementation("org.bouncycastle:bcprov-jdk18on:1.80")
+
+                // PDFBox — PDF text extraction for asset OCR pipeline
+                implementation("org.apache.pdfbox:pdfbox:3.0.4")
+
+                // ONNX Runtime — on-device ML inference for image auto-labeling
+                implementation("com.microsoft.onnxruntime:onnxruntime:1.26.0")
+
+                // ZXing — QR encode/decode for camera-qr-export (ADR-001/Story 2.1.2)
+                implementation("com.google.zxing:core:3.5.4")
+
+                implementation("com.github.tulskiy:jkeymaster:1.3") // research/build-vs-buy.md: fresher than JNativeHook (June-2025 push)
 
                 // Graph databases for performance evaluation
                 // implementation("com.kuzudb:kuzu-jdbc:0.7.0")
@@ -158,21 +223,33 @@ kotlin {
                 implementation("io.ktor:ktor-client-mock:3.1.3")
                 // BlockHound — detects blocking calls on coroutine scheduler threads
                 implementation("io.projectreactor.tools:blockhound:1.0.9.RELEASE")
+                // kotlin-reflect — required at runtime for KFunction.isSuspend/.parameters/.returnType
+                // (FrameTransportSignatureTest's reflection-based signature assertions)
+                implementation("org.jetbrains.kotlin:kotlin-reflect:2.3.21")
 
             }
         }
 
         if (project.findProperty("enableJs") == "true") {
             val wasmJsMain by getting {
+                kotlin.srcDir(layout.buildDirectory.dir("generated/version/wasmJsMain/kotlin"))
                 dependencies {
                     implementation(npm("@sqlite.org/sqlite-wasm", "3.46.1-build1"))
                     implementation(npm("mermaid", "12.0.0"))
+                    // Ktor HTTP engine for wasmJs — required for commonMain HttpClient() construction
+                    // (remote LlmFormatterProviders: Claude/OpenAI today, Gemini/generic-OpenAI-compatible
+                    // in Epic 3) to link on the web target. Every other source set already declares an
+                    // engine (ktor-client-okhttp / ktor-client-darwin); wasmJsMain did not until now.
+                    implementation("io.ktor:ktor-client-js:3.1.3")
                 }
             }
 
             val wasmJsTest by getting {
                 dependencies {
                     implementation(kotlin("test-wasm-js"))
+                    // Ktor MockEngine for unit-testing WasmGitWriteService without real network
+                    // calls (pure-Kotlin-multiplatform artifact — already used in jvmTest).
+                    implementation("io.ktor:ktor-client-mock:3.1.3")
                 }
             }
         }
@@ -185,6 +262,9 @@ kotlin {
                 implementation("androidx.core:core-ktx:1.15.0")
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
                 implementation("app.cash.sqldelight:android-driver:2.3.2")
+                // Bundled SQLite with FTS5, FTS4, FTS3, JSON1, RTREE compiled in.
+                // Guarantees consistent SQLite capabilities regardless of Android OEM build.
+                // 3.49.0 is the latest stable tag; update by bumping this version.
                 implementation("com.github.requery:sqlite-android:3.49.0")
 
                 // Ktor engine for Android (used by coil-network-ktor3)
@@ -211,6 +291,18 @@ kotlin {
                 // ExifInterface — EXIF orientation correction for camera-captured images
                 implementation("androidx.exifinterface:exifinterface:1.3.7")
 
+                // PDFBox Android — PDF text extraction for asset OCR pipeline (Android)
+                implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+
+                // ZXing — QR encode/decode for camera-qr-export (ADR-001/Story 2.1.2)
+                implementation("com.google.zxing:core:3.5.4")
+
+                // ML Kit Image Labeling — on-device image auto-labeling
+                implementation("com.google.mlkit:image-labeling:17.0.9")
+
+                // ML Kit Text Recognition — on-device OCR for image assets
+                implementation("com.google.mlkit:text-recognition:16.0.1")
+
                 // ARCore Depth API — optional AR depth sensing (Story 8.5)
                 // required=false in AndroidManifest so the app installs on non-AR devices.
                 implementation("com.google.ar:core:1.46.0")
@@ -219,6 +311,9 @@ kotlin {
                 implementation("androidx.camera:camera-core:1.4.1")
                 implementation("androidx.camera:camera-camera2:1.4.1")
                 implementation("androidx.camera:camera-lifecycle:1.4.1")
+                // camera-view's PreviewView — QR-receive live camera preview (Bug 2 fix,
+                // camera-qr-export Story 3.2.3 AC) and in-app camera viewfinder dialog.
+                implementation("androidx.camera:camera-view:1.4.1")
                 // ProcessLifecycleOwner — needed by AndroidCameraProvider; camera-lifecycle pulls
                 // this transitively but we declare it explicitly to guarantee compile-time resolution.
                 implementation("androidx.lifecycle:lifecycle-process:2.9.1")
@@ -242,11 +337,12 @@ kotlin {
                 // Model (~100MB) is downloaded on first use via DepthModelDownloader, not bundled.
                 implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
 
-                // JGit 5.13.x — Android git operations (Android-safe; Java 11 APIs with desugaring)
-                implementation("org.eclipse.jgit:org.eclipse.jgit:5.13.3.202401111512-r")
+                // JGit 7.x — Android git operations (matches Bazel-resolved version; desugaring handles Java 11 APIs)
+                implementation("org.eclipse.jgit:org.eclipse.jgit:7.3.0.202506031305-r")
                 // JGit SSH/JSch integration module (provides JschConfigSessionFactory)
+                // Version now matches core (7.3.0.202506031305-r) — no more version skew.
                 // Excludes com.jcraft:jsch so the mwiede fork below is the sole jsch on classpath
-                implementation("org.eclipse.jgit:org.eclipse.jgit.ssh.jsch:5.13.3.202401111512-r") {
+                implementation("org.eclipse.jgit:org.eclipse.jgit.ssh.jsch:7.3.0.202506031305-r") {
                     exclude(group = "com.jcraft", module = "jsch")
                 }
                 // mwiede/jsch fork — ED25519/ECDSA/OpenSSH key support for Android SSH
@@ -269,6 +365,10 @@ kotlin {
                 implementation("io.github.takahirom.roborazzi:roborazzi-compose:1.59.0")
                 implementation("androidx.compose.ui:ui-test-junit4:1.10.6")
                 implementation("androidx.compose.ui:ui-test-manifest:1.10.6")
+                // kotlin-reflect — required at runtime for KFunction.isSuspend/.parameters/.returnType
+                // (FrameTransportSignatureTest's reflection-based signature assertions, run on this
+                // target too since it lives in commonTest)
+                implementation("org.jetbrains.kotlin:kotlin-reflect:2.3.21")
             }
         }
 
@@ -299,6 +399,10 @@ kotlin {
 
                 // Kable — Kotlin coroutine BLE for iOS/Apple targets (CoreBluetooth wrapper)
                 implementation("com.juul.kable:core:0.32.0")
+
+                // ktoml — TOML parsing for .stele-sections manifest (actual impl for iOS;
+                // excluded from commonMain to avoid invalid WASM bytecode on wasmJs target)
+                implementation("com.akuleshov7:ktoml-core:0.7.1")
             }
         }
 
@@ -359,6 +463,267 @@ if (project.findProperty("enableJs") == "true") {
             }
         }
     }
+}
+
+// ── Demo filesystem generator ──────────────────────────────────────────────────
+// Reads: kmp/src/commonMain/resources/demo-graph/{pages,journals}/
+// Writes: kmp/src/commonMain/kotlin/dev/stapler/stelekit/platform/DemoFileSystem.kt
+// Up-to-date: Gradle skips if no .md file in demo-graph changed since last run.
+
+// Single source of truth for the app version: an explicit -PappVersion (CI release builds),
+// falling back to the committed version.txt (local/dev builds), falling back to "dev".
+fun resolveAppVersion(): String = (findProperty("appVersion") as? String)?.removePrefix("v")
+    ?: rootProject.file("version.txt").takeIf { it.exists() }?.readText()?.trim()
+    ?: "dev"
+
+// Short commit SHA of the checkout being built, for display alongside the version tag in
+// Settings — lets us tell which exact commit a running build (especially the web deploy) is
+// actually serving. Falls back to "unknown" outside a git checkout (e.g. a source tarball).
+// Purely cosmetic (Settings display only, nothing reads it for correctness), so — unlike
+// resolveAppVersion() — it does not need to be a tracked task input at all. Called eagerly at
+// configuration time by the two sites below (desktop packaging's jvmArgs, the profiling test
+// task's systemProperty) — both DSL properties AGP/Compose Desktop require to be known during
+// configuration, so unlike generateWasmVersionInfo's doLast (below) there's no way to defer these
+// to execution time.
+//
+// Bug fix: this used to shell out via providers.exec() unconditionally. providers.exec's stdout
+// is a ValueSource, and Gradle's configuration cache must re-invoke any ValueSource used as a
+// task input on every build to check whether it changed — so every local commit forced a full
+// reconfigure ("output of the external process 'git' has changed"), paid by every local dev
+// iteration for a value nothing but a rarely-run packaging/profiling task's display needs. Gated
+// on CI the same way resolveAppVersion() gates on -PappVersion: CI gets the exact SHA; ordinary
+// local/dev builds use a stable "dev" placeholder and never start the git process at all.
+fun resolveGitCommitNow(): String = if (System.getenv("CI") != null) {
+    try {
+        val proc = ProcessBuilder("git", "rev-parse", "--short=8", "HEAD")
+            .directory(rootDir)
+            .redirectErrorStream(true)
+            .start()
+        val output = proc.inputStream.bufferedReader().readText().trim()
+        if (proc.waitFor() == 0 && output.isNotEmpty()) output else "unknown"
+    } catch (e: Exception) {
+        "unknown"
+    }
+} else {
+    "dev"
+}
+
+// wasmJs has no JVM system-property equivalent to pass the resolved version at runtime (unlike
+// the JVM target — see the "run" task's -Dapp.version below), so it is baked in at compile time
+// via a generated Kotlin constant instead. Consumed by DeviceInfo.js.kt.
+val generateWasmVersionInfo by tasks.registering {
+    group = "build"
+    description = "Generates a Kotlin constant with the resolved app version for the wasmJs target."
+    val outputDir = layout.buildDirectory.dir("generated/version/wasmJsMain/kotlin")
+    val version = resolveAppVersion()
+    // Bug fix: calling the script-level resolveGitCommitNow() from inside doLast crashes under
+    // the configuration cache ("Cannot invoke Build_gradle.resolveGitCommitNow() because
+    // this.this$0 is null") — invoking any build-script member function from a task-action
+    // closure requires capturing the enclosing script instance, which the configuration cache
+    // deliberately can't serialize/replay. Capturing a plain File as a local here instead is
+    // config-cache-safe (simple serializable value, not a script reference), so the git logic
+    // below is inlined rather than calling out to the shared helper.
+    val projectRootDir = rootDir
+    inputs.property("appVersion", version)
+    outputs.dir(outputDir)
+    doLast {
+        val gitCommit = try {
+            val proc = ProcessBuilder("git", "rev-parse", "--short=8", "HEAD")
+                .directory(projectRootDir)
+                .redirectErrorStream(true)
+                .start()
+            val output = proc.inputStream.bufferedReader().readText().trim()
+            if (proc.waitFor() == 0 && output.isNotEmpty()) output else "unknown"
+        } catch (e: Exception) {
+            "unknown"
+        }
+        val outFile = outputDir.get().asFile.resolve("dev/stapler/stelekit/performance/WasmVersionInfo.kt")
+        outFile.parentFile.mkdirs()
+        outFile.writeText(
+            """
+            // GENERATED — do not edit. Written by :kmp:generateWasmVersionInfo at build time.
+            package dev.stapler.stelekit.performance
+
+            internal const val WASM_APP_VERSION: String = "$version"
+            internal const val WASM_GIT_COMMIT: String = "$gitCommit"
+
+            """.trimIndent()
+        )
+    }
+}
+
+val generateDemoFileSystem by tasks.registering {
+    val demoGraphDir = layout.projectDirectory.dir(
+        "src/commonMain/resources/demo-graph"
+    )
+    inputs.dir(demoGraphDir).withPathSensitivity(PathSensitivity.RELATIVE)
+
+    val outputFile = layout.projectDirectory.file(
+        "src/commonMain/kotlin/dev/stapler/stelekit/platform/DemoFileSystem.kt"
+    )
+    outputs.file(outputFile)
+
+    doLast {
+        val graphDir = demoGraphDir.asFile
+        val out = outputFile.asFile
+
+        // Read all .md files from pages/ and journals/, sorted for idempotency.
+        // Exclude welcome-journal.md which is handled separately as the runtime template.
+        val pageEntries = graphDir.resolve("pages").let { pagesDir ->
+            if (pagesDir.isDirectory) pagesDir.walkTopDown()
+                .filter { it.isFile && it.extension == "md" }
+                .sortedBy { it.name }
+                .map { "pages/${it.name}" to it.readText() }
+                .toList()
+            else emptyList()
+        }
+
+        val journalEntries = graphDir.resolve("journals").let { journalsDir ->
+            if (journalsDir.isDirectory) journalsDir.walkTopDown()
+                .filter { it.isFile && it.extension == "md" }
+                .sortedBy { it.name }
+                .map { "journals/${it.name}" to it.readText() }
+                .toList()
+            else emptyList()
+        }
+
+        // Read journal template; embedded with placeholders intact for runtime substitution.
+        val journalTemplate = graphDir.resolve("welcome-journal.md").readText()
+
+        // Escape $ and """ for safe embedding in Kotlin triple-quoted string literals.
+        fun String.escapeForTripleQuotedString(): String =
+            this.replace("\$", "\${'$'}")
+                .replace("\"\"\"", "\${\"\\\"\\\"\\\"\"}")
+
+        val staticMapEntries = (pageEntries + journalEntries).joinToString("\n") { (key, content) ->
+            "        put(\"$key\", \"\"\"\n${content.escapeForTripleQuotedString()}\"\"\".trimIndent())"
+        }
+
+        val escapedTemplate = journalTemplate.escapeForTripleQuotedString()
+
+        // Shorthand: triple-quote in Kotlin string literal (cannot nest triple-quoted strings
+        // in a triple-quoted string, so build the header/footer via regular strings).
+        val tq = "\"\"\""   // triple-quote character sequence
+
+        out.parentFile.mkdirs()
+        out.writeText(buildString {
+            appendLine("// GENERATED — do not edit. Run :kmp:generateDemoFileSystem to regenerate.")
+            appendLine("// Source: kmp/src/commonMain/resources/demo-graph/")
+            appendLine("package dev.stapler.stelekit.platform")
+            appendLine()
+            appendLine("import kotlin.time.Clock")
+            appendLine("import kotlinx.datetime.TimeZone")
+            appendLine("import kotlinx.datetime.todayIn")
+            appendLine()
+            appendLine("/**")
+            appendLine(" * An in-memory FileSystem implementation for the browser demo.")
+            appendLine(" * Provides pre-seeded content so the wasmJs demo loads with meaningful pages")
+            appendLine(" * without requiring a real filesystem or SQLite driver.")
+            appendLine(" *")
+            appendLine(" * This file is generated by the :kmp:generateDemoFileSystem Gradle task.")
+            appendLine(" * Do not edit manually — changes will be overwritten on the next build.")
+            appendLine(" */")
+            appendLine("class DemoFileSystem : FileSystem {")
+            appendLine("    private val today = Clock.System.todayIn(TimeZone.currentSystemDefault())")
+            appendLine("    private val journalFileName =")
+            appendLine("        \"\${today.year}_\${today.monthNumber.toString().padStart(2, '0')}_\${today.dayOfMonth.toString().padStart(2, '0')}.md\"")
+            appendLine()
+            appendLine("    private val journalTemplate = $tq")
+            appendLine(escapedTemplate)
+            appendLine("    $tq.trimIndent()")
+            appendLine()
+            appendLine("    private val overrides = mutableMapOf<String, String>()")
+            appendLine()
+            appendLine("    private val demoFiles: Map<String, String> = buildMap {")
+            appendLine(staticMapEntries)
+            appendLine("        // Override with today's journal entry (date-substituted at runtime)")
+            appendLine("        put(")
+            appendLine("            \"journals/\${journalFileName}\",")
+            appendLine("            journalTemplate")
+            appendLine("                .replace(\"{DATE}\", \"\${today.year}-\${today.monthNumber.toString().padStart(2, '0')}-\${today.dayOfMonth.toString().padStart(2, '0')}\")")
+            appendLine("                .replace(\"{YEAR}\", today.year.toString())")
+            appendLine("                .replace(\"{MONTH}\", today.monthNumber.toString().padStart(2, '0'))")
+            appendLine("                .replace(\"{DAY}\", today.dayOfMonth.toString().padStart(2, '0'))")
+            appendLine("        )")
+            appendLine("    }")
+            appendLine()
+            appendLine("    override fun getDefaultGraphPath(): String = \"/demo\"")
+            appendLine("    override fun expandTilde(path: String): String = path")
+            appendLine()
+            appendLine("    override fun readFile(path: String): String? {")
+            appendLine("        return overrides[path] ?: demoFiles[path.removePrefix(\"/demo/\")]")
+            appendLine("    }")
+            appendLine()
+            appendLine("    // Demo mode: writes are persisted in-memory for the session duration.")
+            appendLine("    // Content does not survive a page reload, but reads within the same session")
+            appendLine("    // reflect edits made via writeFile.")
+            appendLine("    override fun writeFile(path: String, content: String): Boolean {")
+            appendLine("        overrides[path] = content")
+            appendLine("        return true")
+            appendLine("    }")
+            appendLine()
+            appendLine("    override fun listFiles(path: String): List<String> {")
+            appendLine("        // Return file NAMES only (not full paths) — callers reconstruct \"\$path/\$name\" themselves.")
+            appendLine("        val prefix = path.removePrefix(\"/demo/\").let { if (it.isEmpty()) \"\" else \"\$it/\" }")
+            appendLine("        return (demoFiles.keys + overrides.keys.map { it.removePrefix(\"/demo/\") })")
+            appendLine("            .filter {")
+            appendLine("                if (prefix.isEmpty()) {")
+            appendLine("                    // root: return only direct children (no nested paths)")
+            appendLine("                    !it.contains('/')")
+            appendLine("                } else {")
+            appendLine("                    it.startsWith(prefix)")
+            appendLine("                }")
+            appendLine("            }")
+            appendLine("            .map { it.removePrefix(prefix) }")
+            appendLine("            .distinct()")
+            appendLine("    }")
+            appendLine()
+            appendLine("    override fun listDirectories(path: String): List<String> {")
+            appendLine("        // Return directory NAMES only — callers construct full paths themselves.")
+            appendLine("        return if (path == \"/demo\" || path == \"/demo/\") {")
+            appendLine("            listOf(\"journals\", \"pages\")")
+            appendLine("        } else emptyList()")
+            appendLine("    }")
+            appendLine()
+            appendLine("    override fun fileExists(path: String): Boolean {")
+            appendLine("        return overrides.containsKey(path) || demoFiles.containsKey(path.removePrefix(\"/demo/\"))")
+            appendLine("    }")
+            appendLine()
+            appendLine("    // Only return true for directories that actually exist in the demo filesystem.")
+            appendLine("    // The previous implementation (`path.startsWith(\"/demo\")`) caused detectGitRoot()")
+            appendLine("    // to find a false `/demo/.git` directory and show the git detection banner incorrectly.")
+            appendLine("    private val knownDirectories = setOf(\"/demo\", \"/demo/journals\", \"/demo/pages\")")
+            appendLine("    override fun directoryExists(path: String): Boolean = path.trimEnd('/') in knownDirectories")
+            appendLine()
+            appendLine("    override fun createDirectory(path: String): Boolean = true")
+            appendLine("    override fun deleteFile(path: String): Boolean = true")
+            appendLine("    override fun pickDirectory(): String? = null")
+            appendLine("    override suspend fun pickDirectoryAsync(): String? = null")
+            appendLine("    override fun getLastModifiedTime(path: String): Long? = null")
+            appendLine("}")
+        })
+        logger.lifecycle("Generated DemoFileSystem.kt with ${pageEntries.size} page(s) and ${journalEntries.size} static journal(s)")
+    }
+}
+
+// Wire generateDemoFileSystem before all-platform compilation (commonMain + per-platform).
+// findByName is used instead of named to silently skip targets that are disabled.
+afterEvaluate {
+    tasks.findByName("compileCommonMainKotlinMetadata")?.dependsOn(generateDemoFileSystem)
+    tasks.findByName("compileKotlinJvm")?.dependsOn(generateDemoFileSystem)
+    // Match by name rather than enumerating variants — hardcoding Debug/Release missed
+    // compileKotlinAndroid entirely (that task doesn't exist for this target; see the
+    // fix this comment lives next to), and would go stale again if a build type or
+    // product flavor is added later (e.g. compileBenchmarkKotlinAndroid).
+    tasks.matching { it.name.startsWith("compile") && it.name.endsWith("KotlinAndroid") }
+        .configureEach { dependsOn(generateDemoFileSystem) }
+    tasks.findByName("compileKotlinWasmJs")?.dependsOn(generateDemoFileSystem)
+    tasks.findByName("compileKotlinWasmJs")?.dependsOn(generateWasmVersionInfo)
+}
+
+// Wire generateDemoFileSystem before jvmTest so DemoFileSystemSyncTest can find the file.
+tasks.named("jvmTest") {
+    dependsOn(generateDemoFileSystem)
 }
 
 // ── kotlinx-benchmark configuration ────────────────────────────────────────────
@@ -438,6 +803,15 @@ tasks.named<Test>("jvmTest") {
     systemProperty(
         "stelekit.sq.file",
         file("src/commonMain/sqldelight/dev/stapler/stelekit/db/SteleDatabase.sq").absolutePath
+    )
+    // Lets GraphContentDemoFileSystemWiringTest statically verify the effectiveFileSystem
+    // wiring in App.kt without mounting the composable (mounting StelekitApp/GraphContent end
+    // to end crashes SkikoComposeUiTest with "Unsupported concurrent change during composition"
+    // even with no demo graph involved — a pre-existing test-harness limitation, not a bug in
+    // App.kt itself).
+    systemProperty(
+        "stelekit.appkt.file",
+        file("src/commonMain/kotlin/dev/stapler/stelekit/ui/App.kt").absolutePath
     )
 
     // BlockHound is installed programmatically via BlockHoundTestBase.installBlockHound().
@@ -768,6 +1142,7 @@ compose.desktop {
             packageVersion = if ((parts.firstOrNull()?.toIntOrNull() ?: 1) == 0)
                 "1.${parts.drop(1).joinToString(".")}" else rawVersion
             jvmArgs("-Dapp.version=$rawVersion")
+            jvmArgs("-Dapp.gitCommit=${resolveGitCommitNow()}")
             modules("java.sql")
             macOS {
                 iconFile.set(project.file("src/jvmMain/resources/icons/icon.icns"))
@@ -786,6 +1161,28 @@ compose.desktop {
 // Alias runApp to desktopRun for convenience
 tasks.register("runApp") {
     dependsOn("run")
+}
+
+// JavaExec tasks (run, runSync) default to the Gradle daemon's own JVM, which tracks
+// org.gradle.java.home in the user's ~/.gradle/gradle.properties — not the project's
+// jvmToolchain(21). If the daemon JVM is older than 21, the JavaExec fails with
+// UnsupportedClassVersionError even though compilation (which always resolves its own
+// JDK 21 toolchain) succeeded. Pin both tasks to a real JDK 21 launcher explicitly.
+val jdk21Launcher = project.extensions.getByType(JavaToolchainService::class.java)
+    .launcherFor { languageVersion.set(JavaLanguageVersion.of(21)) }
+
+// ── SteleKit headless sync CLI ───────────────────────────────────────────────
+// Run with: ./gradlew :kmp:runSync -Pargs="--graph /path/to/graph"
+tasks.register<JavaExec>("runSync") {
+    group = "application"
+    description = "Run the SteleKit headless sync CLI"
+    classpath = kotlin.jvm().compilations["main"].output.allOutputs +
+                kotlin.jvm().compilations["main"].runtimeDependencyFiles
+    mainClass.set("dev.stapler.stelekit.cli.SyncMainKt")
+    javaLauncher.set(jdk21Launcher)
+    val argsStr = project.findProperty("args") as String? ?: ""
+    args = argsStr.split(" ").filter { it.isNotBlank() }
+    dependsOn("jvmJar")
 }
 
 // ── Detekt static analysis ──────────────────────────────────────────────────
@@ -822,14 +1219,48 @@ dependencies {
     "coreLibraryDesugaring"("com.android.tools:desugar_jdk_libs:2.1.4")
 }
 
+// ── Documentation coverage gate ──────────────────────────────────────────────
+// Verifies every Screen has a demo-graph page and a website /docs page.
+// DemoGraphCoverageTest + WebsiteDocsCoverageTest + DemoFileSystemSyncTest all
+// run inside jvmTest; generateDemoFileSystem is already a dependency of jvmTest
+// (wired above) so DemoFileSystemSyncTest always finds the generated file.
+tasks.register("checkDocCoverage") {
+    group = "verification"
+    description = "Assert every Screen has a demo-graph page, website /docs page, " +
+        "and that DemoFileSystem.kt is in sync. Subsumes generateDemoFileSystem + jvmTest."
+    dependsOn("generateDemoFileSystem", "jvmTest")
+}
+
 // ── Local CI check ───────────────────────────────────────────────────────────
 // Mirrors the four Gradle jobs in .github/workflows/ci.yml.
 // README sync (scripts/generate-readme.sh) must be run separately.
 // On headless Linux, wrap with: xvfb-run --auto-servernum ./gradlew ciCheck
+//
+// Always compiles instrumented test sources for all available platforms so type
+// errors in androidTest/ are caught locally without needing a device.
+//
+// Instrumented tests require a connected device or emulator — opt in explicitly:
+//   ./gradlew ciCheck -PciInstrumentedTests
+//
+// iOS compile tasks require macOS + Xcode and are skipped on Linux.
 tasks.register("ciCheck") {
     group = "verification"
-    description = "Run all Gradle CI checks locally (detekt + jvmTest + Android unit tests + assembleDebug)"
-    dependsOn(":kmp:detekt", ":kmp:jvmTest", ":kmp:testDebugUnitTest", ":androidApp:assembleDebug")
+    description = "Run all Gradle CI checks locally. Pass -PciInstrumentedTests to also run connectedDebugAndroidTest."
+    dependsOn(
+        ":kmp:detekt",
+        ":kmp:jvmTest",
+        ":kmp:testDebugUnitTest",
+        ":androidApp:assembleDebug",
+        ":kmp:checkDocCoverage",
+        // Always compile instrumented test sources — catches type errors without needing a device.
+        ":androidApp:compileDebugAndroidTestKotlin",
+        // Always compile WASM test sources — catches JVM-only API leaking into commonTest.
+        ":kmp:compileTestKotlinWasmJs",
+    )
+    // Instrumented tests: opt-in via -PciInstrumentedTests (configuration-cache-safe).
+    if (project.hasProperty("ciInstrumentedTests")) {
+        dependsOn(":androidApp:connectedDebugAndroidTest")
+    }
 }
 
 // ── always-on JFR profiling for desktop run ─────────────────────────────────
@@ -910,17 +1341,57 @@ afterEvaluate {
         }
     }
 
-    val resolvedAppVersion: String = (findProperty("appVersion") as? String)?.removePrefix("v")
-        ?: rootProject.file("version.txt").takeIf { it.exists() }?.readText()?.trim()
-        ?: "dev"
+    val resolvedAppVersion: String = resolveAppVersion()
 
     tasks.named<JavaExec>("run") {
         notCompatibleWithConfigurationCache("uses project.findProperty at execution time")
         // finalizedBy runs convertLastProfile even if run fails or is cancelled (Ctrl+C).
         finalizedBy(convertLastProfile)
+        // The Compose Desktop plugin already sets `executable` directly (to the Gradle
+        // daemon's own java binary) rather than using the lazy `javaLauncher` property, so
+        // setting `javaLauncher` here conflicts ("Toolchain from `executable` property does
+        // not match toolchain from `javaLauncher` property"). Override `executable` itself
+        // with the resolved JDK 21 binary instead.
+        setExecutable(jdk21Launcher.get().executablePath.asFile.absolutePath)
         systemProperty("app.version", resolvedAppVersion)
+        systemProperty("app.gitCommit", resolveGitCommitNow())
+
+        // Dev/test launches must never point at the real default graph path — running
+        // alongside an already-open real install (or repeated dev sessions) lets independent
+        // JVM processes contend for the same SQLite file, and silently bloats its WAL over
+        // time (observed: 5GB WAL for a 722MB db). Use an isolated scratch copy instead,
+        // seeded once from the real graph so dev testing has realistic content.
+        val devGraphDir = layout.buildDirectory.dir("devGraph").get().asFile
+        systemProperty("stelekit.devGraphPath", devGraphDir.absolutePath)
+        // Isolates SQLite db files (DriverFactory.jvmDatabaseDirectory) and the settings/graph-
+        // registry prefs file (PlatformSettings) from the real app-data directory — otherwise
+        // the persisted "last active graph" there overrides stelekit.devGraphPath above.
+        val devDataDir = layout.buildDirectory.dir("devData").get().asFile
+        systemProperty("stelekit.devDataDir", devDataDir.absolutePath)
 
         doFirst {
+            if (!devGraphDir.exists()) {
+                val realGraphDir = IoFile(System.getProperty("user.home"), "Documents/stelekit")
+                if (realGraphDir.exists()) {
+                    println("── Seeding dev graph: copying $realGraphDir -> $devGraphDir")
+                    try {
+                        realGraphDir.copyRecursively(devGraphDir)
+                    } catch (e: Exception) {
+                        // A partial copy would otherwise sit at devGraphDir forever — the
+                        // !devGraphDir.exists() guard above means it's never retried on a later
+                        // run. Delete the partial copy so the next `run` invocation re-seeds.
+                        devGraphDir.deleteRecursively()
+                        throw GradleException(
+                            "Failed to seed dev graph from $realGraphDir to $devGraphDir. " +
+                                "Deleted the partial copy — rerun the task to retry.",
+                            e,
+                        )
+                    }
+                } else {
+                    devGraphDir.mkdirs()
+                }
+            }
+
             val ts = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(Date())
             val jfr = IoFile(profilesDir, "run-$ts.jfr").also { it.parentFile.mkdirs() }
 
@@ -959,6 +1430,12 @@ sqldelight {
         create("SteleDatabase") {
             packageName.set("dev.stapler.stelekit.db")
             generateAsync.set(true)
+            srcDirs("src/commonMain/sqldelight")
+        }
+        create("TelemetryDatabase") {
+            packageName.set("dev.stapler.stelekit.db")
+            generateAsync.set(true)
+            srcDirs("src/commonMain/sqldelightTelemetry")
         }
     }
 }

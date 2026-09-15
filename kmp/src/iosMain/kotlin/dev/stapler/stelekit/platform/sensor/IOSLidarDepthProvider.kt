@@ -5,7 +5,6 @@ import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.calibration.DepthFrame
 import dev.stapler.stelekit.error.DomainError
-import kotlinx.cinterop.CPointer
 import kotlinx.coroutines.CancellationException
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.get
@@ -109,9 +108,7 @@ class IOSLidarDepthProvider : DepthSensorProvider {
                     for (x in 0 until width) {
                         val srcIdx = y * floatsPerRow + x
                         val dstIdx = y * width + x
-                        // ARKit gives metres; store as metres (DepthFrame.depthMapMm field name is
-                        // historical — the calibration chain interprets the unit from the provider).
-                        depthMapMm[dstIdx] = floatPtr[srcIdx]
+                        depthMapMm[dstIdx] = arKitMetresToMm(floatPtr[srcIdx])
                     }
                 }
             }
@@ -120,7 +117,8 @@ class IOSLidarDepthProvider : DepthSensorProvider {
 
             // Confidence map: ARKit provides ARConfidenceLevel (0=low, 1=medium, 2=high) as
             // a CVPixelBuffer with kCVPixelFormatType_OneComponent8.
-            val confidenceMap = FloatArray(pixelCount) { 0.85f } // default 85% if no confidence map
+            // Store raw 0–255 (DepthFrame.confidenceMap contract); CalibrationService divides by 255.
+            val confidenceMap = FloatArray(pixelCount) { ARKIT_CONFIDENCE_DEFAULT }
             val confBuffer = sceneDepth.confidenceMap
             if (confBuffer != null) {
                 CVPixelBufferLockBaseAddress(confBuffer, kCVPixelBufferLock_ReadOnly)
@@ -132,9 +130,8 @@ class IOSLidarDepthProvider : DepthSensorProvider {
                         for (x in 0 until width) {
                             val srcIdx = y * confBytesPerRow + x
                             val dstIdx = y * width + x
-                            // ARConfidenceLevel: 0=low (~33%), 1=medium (~67%), 2=high (~100%)
-                            val level = (confPtr[srcIdx].toInt() and 0xFF).coerceIn(0, 2)
-                            confidenceMap[dstIdx] = (level + 1) / 3f
+                            val level = confPtr[srcIdx].toInt() and 0xFF
+                            confidenceMap[dstIdx] = arKitConfidenceLevelToRaw(level)
                         }
                     }
                 }

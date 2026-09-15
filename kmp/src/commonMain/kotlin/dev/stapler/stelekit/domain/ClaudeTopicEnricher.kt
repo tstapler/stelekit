@@ -1,39 +1,45 @@
 package dev.stapler.stelekit.domain
 
-import io.ktor.client.HttpClient
-import io.ktor.client.call.body
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.client.request.headers
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
-import io.ktor.http.ContentType
-import io.ktor.http.contentType
-import io.ktor.http.isSuccess
-import io.ktor.serialization.kotlinx.json.json
-import kotlinx.coroutines.delay
-import kotlinx.serialization.SerialName
+import dev.stapler.stelekit.voice.ClaudeLlmFormatterProvider
+import dev.stapler.stelekit.voice.LlmFormatterProvider
+import dev.stapler.stelekit.voice.LlmResult
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
+/**
+ * Epic 8 Story 8.3: delegates to the shared, unified [LlmFormatterProvider] contract
+ * ([ClaudeLlmFormatterProvider] by default via [withDefaults]) instead of owning an
+ * independent `HttpClient` + hand-rolled retry-on-429 logic. Deletes the third, independent
+ * error-handling code path pitfalls research flagged — retries/circuit-breaking now go through
+ * [ClaudeLlmFormatterProvider]'s shared [arrow.resilience.CircuitBreaker] like every other
+ * consumer of that provider.
+ *
+ * [TopicEnricher]'s external interface (`enhance(rawText, localSuggestions)`) — and every one
+ * of its existing callers — is untouched.
+ */
 class ClaudeTopicEnricher(
-    private val apiKey: String,
-    private val httpClient: HttpClient,
+    private val claudeProvider: LlmFormatterProvider,
 ) : TopicEnricher {
 
     companion object {
-        private const val ANTHROPIC_VERSION = "2023-06-01"
-        private const val CLAUDE_MODEL = "claude-haiku-4-5-20251001"
-        private const val MESSAGES_URL = "https://api.anthropic.com/v1/messages"
         private const val MAX_INPUT_CHARS = 60_000 // ~15k tokens at ~4 chars/token
+
+        /**
+         * `max_tokens: 256` is a load-bearing wire-compatibility constant for this feature —
+         * distinct from voice formatting's dynamic, transcript-length-based estimate — so it's
+         * threaded through as [ClaudeLlmFormatterProvider]'s `maxTokensOverride`.
+         */
+        private const val TOPIC_ENRICHER_MAX_TOKENS = 256
 
         private val lenientJson = Json { ignoreUnknownKeys = true }
 
-        fun withDefaults(apiKey: String): ClaudeTopicEnricher {
-            val client = HttpClient {
-                install(ContentNegotiation) { json(lenientJson) }
-            }
-            return ClaudeTopicEnricher(apiKey, client)
-        }
+        /**
+         * Preserved for callers not yet threading the registry through — internally constructs
+         * a [ClaudeLlmFormatterProvider] and delegates; no independent HTTP call, no
+         * independent retry logic.
+         */
+        fun withDefaults(apiKey: String): ClaudeTopicEnricher =
+            ClaudeTopicEnricher(ClaudeLlmFormatterProvider.withDefaults(apiKey, maxTokensOverride = TOPIC_ENRICHER_MAX_TOKENS))
     }
 
     override suspend fun enhance(
@@ -53,79 +59,30 @@ class ClaudeTopicEnricher(
             append("<document>\n$truncatedText\n</document>")
         }
 
-        val response = httpClient.post(MESSAGES_URL) {
-            headers {
-                append("x-api-key", apiKey)
-                append("anthropic-version", ANTHROPIC_VERSION)
-            }
-            contentType(ContentType.Application.Json)
-            setBody(
-                MessagesRequest(
-                    model = CLAUDE_MODEL,
-                    maxTokens = 256,
-                    messages = listOf(Message(role = "user", content = prompt)),
-                ),
-            )
+        // ClaudeLlmFormatterProvider's format(transcript, systemPrompt) contract sends a fixed
+        // user turn and puts the real instructions in systemPrompt — match that convention by
+        // putting the full prompt here rather than in transcript (which this feature doesn't
+        // use; the circuit breaker/retry path only needs systemPrompt).
+        return when (val result = claudeProvider.format(transcript = "", systemPrompt = prompt)) {
+            is LlmResult.Success -> parseResponse(result.formattedText, localSuggestions)
+            is LlmResult.Failure -> localSuggestions
         }
-
-        if (response.status.value == 429) {
-            delay(2_000)
-            val retry = httpClient.post(MESSAGES_URL) {
-                headers {
-                    append("x-api-key", apiKey)
-                    append("anthropic-version", ANTHROPIC_VERSION)
-                }
-                contentType(ContentType.Application.Json)
-                setBody(
-                    MessagesRequest(
-                        model = CLAUDE_MODEL,
-                        maxTokens = 256,
-                        messages = listOf(Message(role = "user", content = prompt)),
-                    ),
-                )
-            }
-            if (!retry.status.isSuccess()) return localSuggestions
-            return parseResponse(retry.body(), localSuggestions)
-        }
-
-        if (!response.status.isSuccess()) return localSuggestions
-        val body = response.body<MessagesResponse>()
-        return parseResponse(body, localSuggestions)
     }
 
     private fun parseResponse(
-        body: MessagesResponse,
+        rawJson: String,
         fallback: List<TopicSuggestion>,
-    ): List<TopicSuggestion> {
-        val rawJson = body.content.firstOrNull { it.type == "text" }?.text ?: return fallback
-        return runCatching {
-            val parsed = lenientJson.decodeFromString<List<ClaudeCandidate>>(rawJson)
-            parsed.map { candidate ->
-                TopicSuggestion(
-                    term = candidate.term,
-                    confidence = candidate.confidence.coerceIn(0f, 1f),
-                    source = TopicSuggestion.Source.AI_ENHANCED,
-                )
-            }
-        }.getOrElse { fallback }
-    }
+    ): List<TopicSuggestion> = runCatching {
+        val parsed = lenientJson.decodeFromString<List<ClaudeCandidate>>(rawJson)
+        parsed.map { candidate ->
+            TopicSuggestion(
+                term = candidate.term,
+                confidence = candidate.confidence.coerceIn(0f, 1f),
+                source = TopicSuggestion.Source.AI_ENHANCED,
+            )
+        }
+    }.getOrElse { fallback }
 }
 
 @Serializable
 private data class ClaudeCandidate(val term: String, val confidence: Float)
-
-@Serializable
-private data class MessagesRequest(
-    val model: String,
-    @SerialName("max_tokens") val maxTokens: Int,
-    val messages: List<Message>,
-)
-
-@Serializable
-private data class Message(val role: String, val content: String)
-
-@Serializable
-private data class MessagesResponse(val content: List<ContentBlock> = emptyList())
-
-@Serializable
-private data class ContentBlock(val type: String, val text: String? = null)

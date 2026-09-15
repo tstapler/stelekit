@@ -3,8 +3,6 @@ package dev.stapler.stelekit.platform.measurement.usb
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
-import android.content.Intent
-import android.hardware.usb.UsbManager
 import dev.stapler.stelekit.platform.measurement.ExternalMeasurementDevice
 import dev.stapler.stelekit.platform.measurement.MeasurementDeviceFactory
 import dev.stapler.stelekit.platform.measurement.ble.NoOpBleScanner

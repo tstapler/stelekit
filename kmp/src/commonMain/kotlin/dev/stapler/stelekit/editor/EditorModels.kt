@@ -2,7 +2,6 @@ package dev.stapler.stelekit.editor
 
 import dev.stapler.stelekit.editor.text.TextRange
 import dev.stapler.stelekit.editor.text.TextSelection
-import kotlin.time.Instant
 
 // EditorState, EditorConfig, EditorMode, EditorTheme moved to dev.stapler.stelekit.editor.state
 // TextState, TextSelection, TextRange moved to dev.stapler.stelekit.editor.text

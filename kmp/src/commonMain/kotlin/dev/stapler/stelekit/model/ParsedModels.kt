@@ -24,6 +24,8 @@ sealed class BlockType {
     object ThematicBreak : BlockType()
     object Table : BlockType()
     object RawHtml : BlockType()
+    object ImageAnnotation : BlockType()
+    data class Unknown(val raw: String) : BlockType()
 }
 
 /**

@@ -16,11 +16,11 @@ class BlockSorterTest {
         //   - Child 1.1 (pos 0)
         //     - Grandchild (pos 0)
         
-        val root2 = TestUtils.createBlock(uuid = "2", content = "Root 2", position = 1)
-        val root1 = TestUtils.createBlock(uuid = "1", content = "Root 1", position = 0)
-        val child1_2 = TestUtils.createBlock(uuid = "12", parentUuid = "1", content = "Child 1.2", position = 1)
-        val child1_1 = TestUtils.createBlock(uuid = "11", parentUuid = "1", content = "Child 1.1", position = 0)
-        val grandchild = TestUtils.createBlock(uuid = "111", parentUuid = "11", content = "Grandchild", position = 0)
+        val root2 = TestUtils.createBlock(uuid = "2", content = "Root 2", position = "a1")
+        val root1 = TestUtils.createBlock(uuid = "1", content = "Root 1", position = "a0")
+        val child1_2 = TestUtils.createBlock(uuid = "12", parentUuid = "1", content = "Child 1.2", position = "a1")
+        val child1_1 = TestUtils.createBlock(uuid = "11", parentUuid = "1", content = "Child 1.1", position = "a0")
+        val grandchild = TestUtils.createBlock(uuid = "111", parentUuid = "11", content = "Grandchild", position = "a0")
         
         val input = listOf(root2, grandchild, child1_2, root1, child1_1) // Random order
         
