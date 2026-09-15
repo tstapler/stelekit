@@ -26,6 +26,7 @@ fun mermaidSvgAspectRatio(svg: String): Float {
     val height = viewBoxMatch?.groupValues?.get(2)?.toFloatOrNull()
         ?: HEIGHT_ATTR_REGEX.find(svg)?.groupValues?.get(1)?.toFloatOrNull()
 
-    if (width == null || height == null || width <= 0f || height <= 0f) return MERMAID_DEFAULT_ASPECT_RATIO
+    if (width == null || height == null) return MERMAID_DEFAULT_ASPECT_RATIO
+    if (width <= 0f || height <= 0f) return MERMAID_DEFAULT_ASPECT_RATIO
     return width / height
 }
