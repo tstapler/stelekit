@@ -1,7 +1,9 @@
 package dev.stapler.stelekit.ui.components
 
 import android.webkit.JavascriptInterface
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -32,7 +34,9 @@ class MermaidWebViewBridgeTest {
 
         bridge.onRenderResult("{not valid json at all")
 
-        val result = withTimeout(1_000) { deferred.await() }
+        // withTimeout in runTest uses virtual time (expires instantly); the bridge completes the
+        // deferred on a real Dispatchers.Default coroutine, so switch to a real-clock timeout.
+        val result = withContext(Dispatchers.Default) { withTimeout(1_000) { deferred.await() } }
         assertIs<MermaidRenderResult.Failed>(result)
     }
 
@@ -43,7 +47,7 @@ class MermaidWebViewBridgeTest {
 
         bridge.onRenderResult("""{"unexpected":"field"}""")
 
-        val result = withTimeout(1_000) { deferred.await() }
+        val result = withContext(Dispatchers.Default) { withTimeout(1_000) { deferred.await() } }
         assertIs<MermaidRenderResult.Failed>(result)
     }
 
@@ -54,7 +58,7 @@ class MermaidWebViewBridgeTest {
 
         bridge.onRenderResult("""{"svg":"<svg><circle/></svg>"}""")
 
-        val result = withTimeout(1_000) { deferred.await() }
+        val result = withContext(Dispatchers.Default) { withTimeout(1_000) { deferred.await() } }
         val rendered = assertIs<MermaidRenderResult.Rendered>(result)
         assertEquals("<svg><circle/></svg>", rendered.svg)
     }
