@@ -271,6 +271,15 @@ maven.install(
         # ── PDFBox — PDF text extraction for asset OCR pipeline (JVM only) ───
         "org.apache.pdfbox:pdfbox:3.0.4",
 
+        # ── GraalJS — hosts bundled mermaid.js for MermaidJvmEngine (JVM only) ──
+        "org.graalvm.polyglot:polyglot:24.1.1",
+        "org.graalvm.polyglot:js-community:24.1.1",
+
+        # ── Apache Batik — SVGTextElement.getBBox() shim for MermaidJvmEngine's
+        # headless-DOM mermaid.js layout pass (JVM only) ──
+        "org.apache.xmlgraphics:batik-bridge:1.18",
+        "org.apache.xmlgraphics:batik-anim:1.18",
+
         # ── ZXing — QR encode/decode for camera-qr-export (ADR-001/Story 2.1.2, JVM + Android) ──
         "com.google.zxing:core:3.5.4",
 

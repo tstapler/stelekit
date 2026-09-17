@@ -69,6 +69,15 @@ import dev.stapler.stelekit.ui.RecentPagesTest
 import dev.stapler.stelekit.ui.StelekitViewModelLlmSettingsTest
 import dev.stapler.stelekit.ui.StelekitViewModelLoadingTest
 import dev.stapler.stelekit.ui.components.ApplyAutocompleteSelectionTest
+import dev.stapler.stelekit.ui.components.BlockItemCodeFenceDispatchTest
+import dev.stapler.stelekit.ui.components.MermaidBlockFocusTest
+import dev.stapler.stelekit.ui.components.MermaidBlockInteractionTest
+import dev.stapler.stelekit.ui.components.MermaidBlockTest
+import dev.stapler.stelekit.ui.components.MermaidEngineActorTest
+import dev.stapler.stelekit.ui.components.MermaidJvmEngineTest
+import dev.stapler.stelekit.ui.components.MermaidRendererFallbackTest
+import dev.stapler.stelekit.ui.components.MermaidRendererSmokeTest
+import dev.stapler.stelekit.ui.components.MermaidSecurityDirectiveTest
 import dev.stapler.stelekit.ui.components.ParseMarkdownWithStylingTest
 import dev.stapler.stelekit.ui.components.SearchDialogTest
 import dev.stapler.stelekit.ui.components.SuggestionContextMenuTest
@@ -165,6 +174,15 @@ import org.junit.runners.Suite
     QrCodecJvmTest::class,
     QrCodecJvmRoundTripTest::class,
     ApplyAutocompleteSelectionTest::class,
+    BlockItemCodeFenceDispatchTest::class,
+    MermaidBlockFocusTest::class,
+    MermaidBlockInteractionTest::class,
+    MermaidBlockTest::class,
+    MermaidEngineActorTest::class,
+    MermaidJvmEngineTest::class,
+    MermaidRendererFallbackTest::class,
+    MermaidRendererSmokeTest::class,
+    MermaidSecurityDirectiveTest::class,
     ParseMarkdownWithStylingTest::class,
     SearchDialogTest::class,
     SuggestionContextMenuTest::class,

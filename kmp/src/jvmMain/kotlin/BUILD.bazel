@@ -48,6 +48,8 @@ kt_jvm_library(
         "//kmp/src/commonMain/resources:common_resources",
         # Desktop icon from jvmMain/resources/icons
         "//kmp/src/jvmMain/resources/icons:icon_resource",
+        # Bundled mermaid.js + headless-DOM shim for MermaidJvmEngine
+        "//kmp/src/jvmMain/resources/mermaid:mermaid_resources",
 
         # SQLDelight generated code + runtime (from commonMain)
         "//kmp/src/generated/sqldelight:sqldelight_generated_jvm",
@@ -119,6 +121,13 @@ kt_jvm_library(
 
         # PDFBox — PDF text extraction for asset OCR pipeline (from jvmMain)
         "@maven//:org_apache_pdfbox_pdfbox",
+
+        # GraalJS + Apache Batik — MermaidJvmEngine's GraalJS-hosted mermaid.js
+        # renderer and its SVGTextElement.getBBox() shim (from jvmMain)
+        "@maven//:org_graalvm_polyglot_polyglot",
+        "@maven//:org_graalvm_polyglot_js_community",
+        "@maven//:org_apache_xmlgraphics_batik_bridge",
+        "@maven//:org_apache_xmlgraphics_batik_anim",
 
         # ZXing — QR encode/decode for camera-qr-export (from commonMain expect / jvmMain actual)
         "@maven//:com_google_zxing_core",

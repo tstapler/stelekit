@@ -20,7 +20,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 
-private fun extractCodeBody(content: String): String {
+/** Strips a fenced code block's leading/trailing ``` or ~~~ fence lines. Shared with [MermaidBlock]. */
+internal fun extractCodeBody(content: String): String {
     val lines = content.lines()
     val isFenceLine: (String) -> Boolean = { it.trim().let { t -> t.startsWith("```") || t.startsWith("~~~") } }
     val start = if (lines.firstOrNull()?.let(isFenceLine) == true) 1 else 0
