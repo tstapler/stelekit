@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.85.1](https://github.com/tstapler/stelekit/compare/v0.85.0...v0.85.1) (2026-09-17)
+
+
+### Bug Fixes
+
+* **ci:** add gradle-ci-memory to release safety-gate jobs ([#334](https://github.com/tstapler/stelekit/issues/334)) ([080b566](https://github.com/tstapler/stelekit/commit/080b56619d92cd741dc779a554bbc8c343d95e44))
+
 ## [0.85.0](https://github.com/tstapler/stelekit/compare/v0.84.1...v0.85.0) (2026-09-17)
 
 
