@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.85.0](https://github.com/tstapler/stelekit/compare/v0.84.1...v0.85.0) (2026-09-17)
+
+
+### Features
+
+* **mermaid:** render Mermaid diagrams in code blocks ([#331](https://github.com/tstapler/stelekit/issues/331)) ([5e0b634](https://github.com/tstapler/stelekit/commit/5e0b634dbeb867a729a8fd7be6acf575fdf1d131))
+
+
+### Bug Fixes
+
+* **ci:** split release safety-gate tests onto separate runners ([#332](https://github.com/tstapler/stelekit/issues/332)) ([6c782f7](https://github.com/tstapler/stelekit/commit/6c782f786a8d134edd0cc3990322e55ac1adc868))
+
 ## [0.84.1](https://github.com/tstapler/stelekit/compare/v0.84.0...v0.84.1) (2026-09-15)
 
 
