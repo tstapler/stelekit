@@ -121,22 +121,28 @@ jobs:
   # testDebugUnitTest` invocation: the combined job intermittently failed
   # focus/timing-sensitive Compose UI tests (CapturePopupWindowUxTest et al.)
   # under Xvfb from CPU contention with the concurrently-running Robolectric
-  # suite on a single 2-core runner. bazel-ci.yml already runs the identical
-  # jvm_tests target in its own isolated job and has not seen this flake —
-  # mirroring that split here instead of retrying/loosening assertions.
+  # suite on a single 2-core runner.
   #
-  # Both jobs also need `gradle-ci-memory` (see that action's own doc): the
-  # repo's gradle.properties sets -Xmx4g/workers.max=4 for a local dev
-  # workstation, which on a 7GB ubuntu-latest runner reserves ~8g between the
-  # Gradle daemon and its forked Kotlin compile daemon before any test worker
-  # runs — this job hit that exact OOM (CoroutineDebugging.kt:42) cascading
-  # into ~20 unrelated test failures (Mermaid/GraalVM, QR decode, etc.) on
-  # the first live run after the job split. ci.yml's `android` job already
-  # carries this step for the same reason; it was missing here.
+  # test-kmp-jvm runs via Bazel (`bazel test //kmp:jvm_tests`), not Gradle's
+  # `jvmTest` — mirroring bazel-ci.yml's `bazel-jvm` job exactly, down to the
+  # xvfb-run flags. Two live releases in a row broke when this ran through
+  # Gradle instead: first an OutOfMemoryError (release 0.85.0 — the combined
+  # job's default heap wasn't enough once split off the Android suite it used
+  # to share a runner with), then — after capping the Gradle daemon heap with
+  # `gradle-ci-memory` to fix that — a silent ~6-hour hang with zero test
+  # output until GitHub's job timeout killed it (release 0.85.1). That
+  # composite action's heap values are validated for ci.yml's `android` job
+  # (Robolectric's JetifyTransform, per its own doc) — a materially lighter
+  # workload than `jvmTest`, which also runs a GraalVM/Truffle polyglot
+  # engine (Mermaid rendering) and Compose Desktop UI tests, and applying the
+  # same cap to it was unfounded. bazel-jvm runs the identical jvm_tests
+  # target on every commit without either failure mode, so route through it
+  # instead of re-tuning Gradle-daemon memory a third time.
   test-kmp-jvm:
     name: Test KMP (safety gate) / JVM
     runs-on: ubuntu-latest
     needs: [resolve-version, check-ci-status]
+    timeout-minutes: 30
     if: |
       always() &&
       needs.resolve-version.result == 'success' &&
@@ -144,23 +150,32 @@ jobs:
       needs.check-ci-status.outputs.ci_passed != 'true'
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: ./.github/actions/setup-bcp
+      - uses: bazel-contrib/setup-bazel@0.19.0
         with:
-          java-version: '21'
-          distribution: 'temurin'
-      - uses: ./.github/actions/gradle-ci-memory
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+          bazelisk-version: "1.x"
+          disk-cache: shared
+          repository-cache: true
+          external-cache: true
+          cache-save: ${{ github.event_name != 'pull_request' }}
       - name: Install Xvfb
-        run: sudo apt-get install -y xvfb
+        run: |
+          sudo apt-get install -y --no-install-recommends xvfb
+          mkdir -p /tmp/.X11-unix
       - name: Run JVM unit tests
-        run: xvfb-run --auto-servernum ./gradlew jvmTest --no-daemon --build-cache
+        run: |
+          xvfb-run --auto-servernum bazel test //kmp:jvm_tests \
+            --config=remote-cache \
+            --test_output=errors \
+            --sandbox_add_mount_pair=/tmp/.X11-unix \
+            --test_env=DISPLAY \
+            --test_env=XAUTHORITY
 
   test-kmp-android:
     name: Test KMP (safety gate) / Android
     runs-on: ubuntu-latest
     needs: [resolve-version, check-ci-status]
+    timeout-minutes: 30
     if: |
       always() &&
       needs.resolve-version.result == 'success' &&
