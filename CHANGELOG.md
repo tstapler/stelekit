@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.85.2](https://github.com/tstapler/stelekit/compare/v0.85.1...v0.85.2) (2026-09-17)
+
+
+### Bug Fixes
+
+* **ci:** run release safety-gate's JVM tests via Bazel ([#336](https://github.com/tstapler/stelekit/issues/336)) ([efcf0d1](https://github.com/tstapler/stelekit/commit/efcf0d19f6551365ea0e306cab8831258f18ea09))
+
 ## [0.85.1](https://github.com/tstapler/stelekit/compare/v0.85.0...v0.85.1) (2026-09-17)
 
 
