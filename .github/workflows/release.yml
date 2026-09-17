@@ -124,6 +124,15 @@ jobs:
   # suite on a single 2-core runner. bazel-ci.yml already runs the identical
   # jvm_tests target in its own isolated job and has not seen this flake —
   # mirroring that split here instead of retrying/loosening assertions.
+  #
+  # Both jobs also need `gradle-ci-memory` (see that action's own doc): the
+  # repo's gradle.properties sets -Xmx4g/workers.max=4 for a local dev
+  # workstation, which on a 7GB ubuntu-latest runner reserves ~8g between the
+  # Gradle daemon and its forked Kotlin compile daemon before any test worker
+  # runs — this job hit that exact OOM (CoroutineDebugging.kt:42) cascading
+  # into ~20 unrelated test failures (Mermaid/GraalVM, QR decode, etc.) on
+  # the first live run after the job split. ci.yml's `android` job already
+  # carries this step for the same reason; it was missing here.
   test-kmp-jvm:
     name: Test KMP (safety gate) / JVM
     runs-on: ubuntu-latest
@@ -139,6 +148,7 @@ jobs:
         with:
           java-version: '21'
           distribution: 'temurin'
+      - uses: ./.github/actions/gradle-ci-memory
       - uses: gradle/actions/setup-gradle@v4
         with:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
@@ -162,6 +172,7 @@ jobs:
         with:
           java-version: '21'
           distribution: 'temurin'
+      - uses: ./.github/actions/gradle-ci-memory
       - uses: gradle/actions/setup-gradle@v4
         with:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
