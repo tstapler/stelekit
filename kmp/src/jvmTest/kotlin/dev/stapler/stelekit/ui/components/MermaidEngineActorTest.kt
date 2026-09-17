@@ -97,6 +97,34 @@ class MermaidEngineActorTest {
      * timeout. A warm-up render (its result discarded) absorbs that cost before the two
      * timed/asserted concurrent calls, which then land on an already-initialized `Context`.
      */
+    /**
+     * REQ-10 follow-up — a static [MERMAID_RENDER_TIMEOUT_MS] floor can't tell a genuinely wedged
+     * `Context` apart from a render that's merely slow right now under CI CPU contention (see
+     * `MermaidEngineActorTest.render_should_returnDistinctResults_when_twoRealBlocksVisibleSimultaneously`'s
+     * own real-CI failure history). The actor widens its budget from recently observed latency
+     * instead: this call sequence would fail outright against a static 4000ms timeout, since the
+     * second call sleeps 6000ms — it only succeeds because the first (slow-but-successful) call
+     * seeded an adaptive estimate comfortably above that.
+     */
+    @Test
+    fun render_should_widenTimeoutBudget_when_priorRenderWasSlowButSucceeded() = runTest(timeout = 30.seconds) {
+        val callCount = AtomicInteger(0)
+        val engine = object : MermaidJvmEngine() {
+            override fun render(source: String): String {
+                val sleepMs = if (callCount.getAndIncrement() == 0) 2500L else 6000L
+                Thread.sleep(sleepMs)
+                return "<svg>$source</svg>"
+            }
+        }
+        val actor = MermaidEngineActor(engine)
+        try {
+            assertIs<MermaidRenderResult.Rendered>(actor.render(key(1)))
+            assertIs<MermaidRenderResult.Rendered>(actor.render(key(2)))
+        } finally {
+            actor.close()
+        }
+    }
+
     @Test
     fun render_should_returnDistinctResults_when_twoRealBlocksVisibleSimultaneously() = runTest {
         val actor = MermaidEngineActor()

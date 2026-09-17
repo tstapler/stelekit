@@ -34,7 +34,11 @@ private fun newBlockingRenderScope(): Pair<java.util.concurrent.ExecutorService,
  * specifically so tests can pass a fake [MermaidJvmEngine], bypassing [MermaidEngineActor]
  * entirely — see `MermaidRendererFallbackTest.renderMermaidWith_should_returnFailed_when_engineRenderExceedsTimeout`.
  */
-internal suspend fun renderMermaidWith(engine: MermaidJvmEngine, key: MermaidRenderKey): MermaidRenderResult {
+internal suspend fun renderMermaidWith(
+    engine: MermaidJvmEngine,
+    key: MermaidRenderKey,
+    timeoutMs: Long = MERMAID_RENDER_TIMEOUT_MS,
+): MermaidRenderResult {
     key.sourceLengthFailure()?.let { return it }
     val source = key.sourceText
 
@@ -42,7 +46,7 @@ internal suspend fun renderMermaidWith(engine: MermaidJvmEngine, key: MermaidRen
     var hung = false
     try {
         val deferred = scope.async { engine.render(source) }
-        val svg = withTimeoutOrNull(MERMAID_RENDER_TIMEOUT_MS) { deferred.await() }
+        val svg = withTimeoutOrNull(timeoutMs) { deferred.await() }
             ?: run {
                 deferred.cancel()
                 hung = true
