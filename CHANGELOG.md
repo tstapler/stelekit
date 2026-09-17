@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.85.3](https://github.com/tstapler/stelekit/compare/v0.85.2...v0.85.3) (2026-09-17)
+
+
+### Bug Fixes
+
+* **mermaid:** adapt JVM render timeout to observed latency ([#338](https://github.com/tstapler/stelekit/issues/338)) ([72333ea](https://github.com/tstapler/stelekit/commit/72333ea1d2ea049b04150d18c092cded9ff4e799))
+
 ## [0.85.2](https://github.com/tstapler/stelekit/compare/v0.85.1...v0.85.2) (2026-09-17)
 
 
