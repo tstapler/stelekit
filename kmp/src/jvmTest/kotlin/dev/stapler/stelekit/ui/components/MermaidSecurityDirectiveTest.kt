@@ -3,7 +3,10 @@ package dev.stapler.stelekit.ui.components
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
+import kotlin.time.Duration.Companion.minutes
 
 /**
  * Story 7.1.7a — an embedded `%%{init: {"securityLevel":"loose"}}%%` directive plus an
@@ -44,24 +47,30 @@ class MermaidSecurityDirectiveTest {
 
     /**
      * Isolates that the `%%{init}%%` directive line alone (no injection payload) doesn't itself
-     * break rendering. Retries once on a `Failed("timeout")` result: this exercises the shared
+     * break rendering. Retries on a `Failed("timeout")` result: this exercises the shared
      * `mermaidEngineActor` singleton, whose first-ever call pays GraalJS's cold-start cost (JS
      * bundle eval + `mermaid.initialize()`) — a real, already-documented risk (ADR-001's Open
-     * Items) that this test isn't the place to re-litigate. A second attempt on a warm context
-     * reliably completes well under budget.
+     * Items) that this test isn't the place to re-litigate — and whose later calls can be
+     * CPU-starved under CI load. Runs on real time, not `runTest`: the render blocks a real
+     * thread while the watchdog is virtual-time-aware, so virtual time would fire the timeout
+     * even when the engine would have completed.
      */
     @Test
-    fun renderMermaid_should_stillRender_when_initDirectivePresentWithBenignLabel() = runTest {
-        val source = """%%{init: {"securityLevel":"loose"}}%%
+    fun renderMermaid_should_stillRender_when_initDirectivePresentWithBenignLabel(): Unit = runBlocking {
+        withTimeout(5.minutes) {
+            val source = """%%{init: {"securityLevel":"loose"}}%%
             |graph TD; A[benign]-->B[end]
-        """.trimMargin()
+            """.trimMargin()
 
-        var result = renderMermaid(key(source))
-        if (result is MermaidRenderResult.Failed && result.reason == "timeout") {
-            result = renderMermaid(key(source))
+            var result = renderMermaid(key(source))
+            for (attempt in 1..2) {
+                if (result is MermaidRenderResult.Rendered) break
+                if (result is MermaidRenderResult.Failed && result.reason != "timeout") break
+                result = renderMermaid(key(source))
+            }
+            val rendered = result as? MermaidRenderResult.Rendered
+                ?: error("expected Rendered for a benign label, got $result")
+            assertTrue(rendered.svg.contains("<svg"))
         }
-        val rendered = result as? MermaidRenderResult.Rendered
-            ?: error("expected Rendered for a benign label, got $result")
-        assertTrue(rendered.svg.contains("<svg"))
     }
 }
