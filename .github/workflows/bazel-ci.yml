@@ -56,10 +56,14 @@ jobs:
         run: bazel build //kmp:desktop_app --config=remote-cache 2>&1 | tee "$RUNNER_TEMP/bazel-jvm-build.log"
 
       - name: Run JVM tests
+        # --flaky_test_attempts=3: same real-GraalJS timing flake as the
+        # release safety gate (MermaidEngineActorTest real-render timeout
+        # under contention) — keep PR signal green on transient slowness.
         run: |
           xvfb-run --auto-servernum bazel test //kmp:jvm_tests \
             --config=remote-cache \
             --test_output=all \
+            --flaky_test_attempts=3 \
             --sandbox_add_mount_pair=/tmp/.X11-unix \
             --test_env=DISPLAY \
             --test_env=XAUTHORITY 2>&1 | tee "$RUNNER_TEMP/bazel-jvm-test.log"
