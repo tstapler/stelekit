@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.85.4](https://github.com/tstapler/stelekit/compare/v0.85.3...v0.85.4) (2026-09-18)
+
+
+### Bug Fixes
+
+* **ci:** retry flaky real-engine mermaid test in JVM safety gate ([148e3f7](https://github.com/tstapler/stelekit/commit/148e3f70e139c4854fef1ff9254a239ad348be52))
+* **test:** derisk real-GraalJS mermaid tests from CI CPU contention ([3ebb330](https://github.com/tstapler/stelekit/commit/3ebb3308b6fe2e2f8bad8962b4b4d57673d52f44))
+
 ## [0.85.3](https://github.com/tstapler/stelekit/compare/v0.85.2...v0.85.3) (2026-09-17)
 
 
