@@ -429,6 +429,17 @@ internal fun BlockItem(
                                 onToggleSelect = onToggleSelect,
                                 onLongPressSelect = onLongPressSelect,
                                 modifier = Modifier.weight(1f),
+                                fallback = { fallbackContent, fallbackModifier ->
+                                    CodeFenceBlock(
+                                        content = fallbackContent,
+                                        language = "mermaid",
+                                        onStartEditing = onStartEditing,
+                                        modifier = fallbackModifier,
+                                        isInSelectionMode = isInSelectionMode,
+                                        onToggleSelect = onToggleSelect,
+                                        onLongPressSelect = onLongPressSelect,
+                                    )
+                                },
                             )
                         } else {
                             CodeFenceBlock(

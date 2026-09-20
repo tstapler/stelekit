@@ -36,6 +36,14 @@ class MermaidBlockScreenshotTest {
                         content = MERMAID_CONTENT,
                         onStartEditing = {},
                         renderer = { MermaidRenderResult.Failed("test") },
+                        fallback = { fallbackContent, fallbackModifier ->
+                            CodeFenceBlock(
+                                content = fallbackContent,
+                                language = "mermaid",
+                                onStartEditing = {},
+                                modifier = fallbackModifier,
+                            )
+                        },
                     )
                 }
             }

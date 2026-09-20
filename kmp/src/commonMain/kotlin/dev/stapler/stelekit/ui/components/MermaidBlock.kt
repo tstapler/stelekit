@@ -34,6 +34,19 @@ import androidx.compose.ui.unit.dp
 private const val GENERIC_MERMAID_ACCESSIBILITY_LABEL = "Mermaid diagram — tap to view source"
 
 /**
+ * Strips a fenced code block's leading/trailing ``` or ~~~ fence lines. Shared with
+ * [CodeFenceBlock] (same package) — lives here rather than there so the mermaid Bazel
+ * module owns its only parsing helper instead of depending on the UI monolith for it.
+ */
+fun extractCodeBody(content: String): String {
+    val lines = content.lines()
+    val isFenceLine: (String) -> Boolean = { it.trim().let { t -> t.startsWith("```") || t.startsWith("~~~") } }
+    val start = if (lines.firstOrNull()?.let(isFenceLine) == true) 1 else 0
+    val end = if (lines.lastOrNull()?.let(isFenceLine) == true) lines.size - 1 else lines.size
+    return if (start < end) lines.subList(start, end).joinToString("\n") else ""
+}
+
+/**
  * Simple line-prefix parse of mermaid's `accTitle:`/`accDescr:` directives (ux.md Surface 3) —
  * not a full mermaid grammar parse, just enough to recover the author-supplied accessible label.
  */
@@ -57,10 +70,13 @@ private fun mermaidAccessibilityLabel(sourceText: String): String {
 
 /**
  * Renders a ` ```mermaid ` fenced code block as a diagram (Task 6.1.1b), falling back to
- * [CodeFenceBlock]'s raw-text chrome — reused as-is for the loading, syntax-error, oversized-source,
+ * raw-text chrome — reused as-is for the loading, syntax-error, oversized-source,
  * and unsupported-platform states alike (ADR-001, ux.md Surface 1) — whenever a diagram isn't
  * available. [renderer] defaults to the platform [renderMermaid] entry point but is overridable so
  * tests can force a deterministic [MermaidRenderResult] without a live JS/WebView render.
+ * [fallback] renders that raw-text chrome; the production caller passes [CodeFenceBlock].
+ * It is an explicit parameter (not a direct call) so this file compiles without depending
+ * on the UI monolith — the mermaid Bazel module boundary.
  */
 @Composable
 fun MermaidBlock(
@@ -71,21 +87,14 @@ fun MermaidBlock(
     onToggleSelect: () -> Unit = {},
     onLongPressSelect: (() -> Unit)? = null,
     renderer: suspend (MermaidRenderKey) -> MermaidRenderResult = ::renderMermaid,
+    fallback: @Composable (content: String, modifier: Modifier) -> Unit,
 ) {
     val sourceText = remember(content) { extractCodeBody(content) }
 
     // Oversized/empty source is never handed to the renderer at all (REQ-8) — cheapest correct
-    // behavior for a pathological or empty diagram, matching CodeFenceBlock's existing empty-body handling.
+    // behavior for a pathological or empty diagram, matching the fallback's existing empty-body handling.
     if (sourceText.isEmpty() || sourceText.length > MAX_MERMAID_SOURCE_LENGTH) {
-        CodeFenceBlock(
-            content = content,
-            language = "mermaid",
-            onStartEditing = onStartEditing,
-            modifier = modifier,
-            isInSelectionMode = isInSelectionMode,
-            onToggleSelect = onToggleSelect,
-            onLongPressSelect = onLongPressSelect,
-        )
+        fallback(content, modifier)
         return
     }
 
@@ -99,6 +108,7 @@ fun MermaidBlock(
             onToggleSelect = onToggleSelect,
             onLongPressSelect = onLongPressSelect,
             renderer = renderer,
+            fallback = fallback,
         )
     }
 }
@@ -114,6 +124,7 @@ private fun MermaidRenderGate(
     onToggleSelect: () -> Unit,
     onLongPressSelect: (() -> Unit)?,
     renderer: suspend (MermaidRenderKey) -> MermaidRenderResult,
+    fallback: @Composable (content: String, modifier: Modifier) -> Unit,
 ) {
     val theme = currentThemeFingerprint()
     val key = remember(sourceText, theme, widthPx) { MermaidRenderKey(sourceText, theme, widthPx) }
@@ -146,15 +157,7 @@ private fun MermaidRenderGate(
     } else {
         // Failed, UnsupportedPlatform, and the not-yet-rendered (null) loading state all share
         // one visual — the raw fallback (ux.md Surface 1: "this IS the loading state").
-        CodeFenceBlock(
-            content = content,
-            language = "mermaid",
-            onStartEditing = onStartEditing,
-            isInSelectionMode = isInSelectionMode,
-            onToggleSelect = onToggleSelect,
-            onLongPressSelect = onLongPressSelect,
-            modifier = Modifier.fillMaxWidth(),
-        )
+        fallback(content, Modifier.fillMaxWidth())
     }
 }
 

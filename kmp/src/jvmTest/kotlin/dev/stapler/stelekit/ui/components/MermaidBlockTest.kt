@@ -1,9 +1,11 @@
 package dev.stapler.stelekit.ui.components
 
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import dev.stapler.stelekit.ui.theme.StelekitTheme
@@ -40,6 +42,18 @@ class MermaidBlockTest {
         return callCount to renderer
     }
 
+    // The production fallback chrome (BlockItem passes the real CodeFenceBlock); kept
+    // identical here so the fallback-path assertions below verify the real chrome.
+    private val realFallback: @Composable (String, Modifier) -> Unit =
+        { fallbackContent, fallbackModifier ->
+            CodeFenceBlock(
+                content = fallbackContent,
+                language = "mermaid",
+                onStartEditing = {},
+                modifier = fallbackModifier,
+            )
+        }
+
     @Test
     fun mermaidBlock_should_invokeRendererExactlyOnce_when_recomposedWithUnchangedKey() {
         val (callCount, renderer) = countingRenderer(MermaidRenderResult.Rendered(validSvg))
@@ -55,6 +69,7 @@ class MermaidBlockTest {
                         content = "```mermaid\ngraph TD; A-->B\n```",
                         onStartEditing = {},
                         renderer = renderer,
+                        fallback = realFallback,
                     )
                 }
             }
@@ -82,6 +97,7 @@ class MermaidBlockTest {
                         content = "```mermaid\n$oversizedBody\n```",
                         onStartEditing = {},
                         renderer = renderer,
+                        fallback = realFallback,
                     )
                 }
             }
@@ -104,6 +120,7 @@ class MermaidBlockTest {
                         content = "```mermaid\n$boundaryBody\n```",
                         onStartEditing = {},
                         renderer = renderer,
+                        fallback = realFallback,
                     )
                 }
             }
@@ -124,6 +141,7 @@ class MermaidBlockTest {
                         content = "```mermaid\n```",
                         onStartEditing = {},
                         renderer = renderer,
+                        fallback = realFallback,
                     )
                 }
             }

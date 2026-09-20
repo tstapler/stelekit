@@ -34,6 +34,14 @@ class MermaidBlockInteractionTest {
                         content = "```mermaid\ngraph TD; A-->B\n```",
                         onStartEditing = onStartEditing,
                         renderer = { MermaidRenderResult.Rendered(validSvg) },
+                        fallback = { fallbackContent, fallbackModifier ->
+                            CodeFenceBlock(
+                                content = fallbackContent,
+                                language = "mermaid",
+                                onStartEditing = onStartEditing,
+                                modifier = fallbackModifier,
+                            )
+                        },
                     )
                 }
             }

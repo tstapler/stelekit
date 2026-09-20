@@ -22,25 +22,31 @@ kt_android_library(
     name = "android_main",
     srcs = [
         "//kmp/src/commonMain/kotlin:kt_srcs",
+        "//kmp/src/commonMain/kotlin:mermaid_common_srcs",
         "//kmp/src/jvmCommonMain/kotlin:kt_srcs",
     ] + glob(["**/*.kt"]),
     common_srcs = [
         "//kmp/src/commonMain/kotlin:kt_srcs",
+        "//kmp/src/commonMain/kotlin:mermaid_common_srcs",
         "//kmp/src/commonMain/kotlin:platform_core_srcs",
         "//kmp/src/jvmCommonMain/kotlin:kt_expect_srcs",
     ],
+    custom_package = "dev.stapler.stelekit",
     kotlinc_opts = "//:kmp_android_kotlinc_opts",
     plugins = [
         "//:compose_compiler_plugin",
         "//:serialization_compiler_plugin",
     ],
-    custom_package = "dev.stapler.stelekit",
+    visibility = [
+        "//androidApp:__subpackages__",
+        "//kmp:__subpackages__",
+    ],
     deps = [
         # stats (Tier 1, extracted — ADR-001, tier_manifest.bzl:TIER_1_PACKAGES):
         # real fan-in from ui/App.kt, ui/screens/LibraryStats*.kt (commonMain)
         # — without this dep, stats/*.kt (now its own Bazel package, excluded
         # from kt_srcs's glob) is unresolved here.
-        "//kmp/src/commonMain/kotlin/dev/stapler/stelekit/stats:stats",
+        "//kmp/src/commonMain/kotlin/dev/stapler/stelekit/stats",
 
         # Android string resources (R.string.no_graph_*) — defined in kmp/ package
         # because kmp/src/androidMain/res/ has no own BUILD file.
@@ -179,7 +185,6 @@ kt_android_library(
         # Kotlin stdlib
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
     ],
-    visibility = ["//kmp:__subpackages__", "//androidApp:__subpackages__"],
 )
 
 # Exposes GitShadowWorktree.kt as a Bazel target so GitShadowWorktreeNoCoroutineScopeTest

@@ -48,6 +48,14 @@ class MermaidBlockFocusTest {
                                 content = "```mermaid\ngraph TD; A-->B\n```",
                                 onStartEditing = {},
                                 renderer = { MermaidRenderResult.Rendered(validSvg) },
+                                fallback = { fallbackContent, fallbackModifier ->
+                                    CodeFenceBlock(
+                                        content = fallbackContent,
+                                        language = "mermaid",
+                                        onStartEditing = {},
+                                        modifier = fallbackModifier,
+                                    )
+                                },
                             )
                         }
                         item {
