@@ -33,6 +33,7 @@ import dev.stapler.stelekit.ui.StelekitAppCoreServices
 import dev.stapler.stelekit.ui.StelekitAppDeps
 import dev.stapler.stelekit.ui.StelekitAppLifecycleHooks
 import dev.stapler.stelekit.ui.StelekitAppPlatformIntegrations
+import dev.stapler.stelekit.ui.components.warmMermaidEngine
 import dev.stapler.stelekit.ui.theme.setSystemDarkTheme
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.logging.Logger
@@ -133,6 +134,14 @@ fun main(args: Array<String>) {
         // Desktop quick-capture: hotkey popup + cold-start poller + socket fast path, all
         // owned for the whole process lifetime (see CaptureSurfaces below).
         val captureSurfaces = rememberCaptureSurfaces(fileSystem)
+
+        // Mermaid cold-start warm-up (ADR-001 Open Items): GraalJS pays bundle eval +
+        // mermaid.initialize() on the first render, which can exceed the render watchdog under
+        // load. Warming here on a background coroutine means the first user-visible diagram
+        // lands on an already-initialized Context. Best-effort by design (see warmMermaidEngine).
+        LaunchedEffect(Unit) {
+            warmMermaidEngine()
+        }
 
         logger.info("Starting Desktop Application with graph: $graphPath")
         errorTracker.recordBreadcrumb("Graph path resolved: $graphPath", "SYSTEM")

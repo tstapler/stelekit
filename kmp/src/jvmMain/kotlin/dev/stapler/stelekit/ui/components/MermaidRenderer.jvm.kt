@@ -68,3 +68,18 @@ internal suspend fun renderMermaidWith(
 
 actual suspend fun renderMermaid(key: MermaidRenderKey): MermaidRenderResult =
     mermaidEngineActor.render(key)
+
+/**
+ * Best-effort warm-up for the shared [mermaidEngineActor]: GraalJS evaluates the full bundle
+ * and runs `mermaid.initialize()` on the first render (ADR-001 measured 1.3–5.6s cold), so the
+ * first user-visible diagram would otherwise pay that cost under its watchdog budget. Warming
+ * once at app start (background) means real renders land on an initialized `Context`.
+ *
+ * Never throws — warm-up must not affect startup. A timed-out warm-up still swaps in a fresh
+ * engine via the actor, so the next real render simply re-warms.
+ */
+suspend fun warmMermaidEngine() {
+    runCatching {
+        mermaidEngineActor.render(MermaidRenderKey("graph TD; Warm-->Up", ThemeFingerprint(true, 1), 400))
+    }
+}
