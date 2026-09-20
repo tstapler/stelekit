@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.86.0](https://github.com/tstapler/stelekit/compare/v0.85.4...v0.86.0) (2026-09-20)
+
+
+### Features
+
+* **desktop:** warm Mermaid GraalJS engine at app start ([3e4d41c](https://github.com/tstapler/stelekit/commit/3e4d41cc9025d1de6c456129c6db38135371a4ea))
+
 ## [0.85.4](https://github.com/tstapler/stelekit/compare/v0.85.3...v0.85.4) (2026-09-18)
 
 
