@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.86.2](https://github.com/tstapler/stelekit/compare/v0.86.1...v0.86.2) (2026-09-21)
+
+
+### Bug Fixes
+
+* **android:** init NetworkMonitor, add network permissions, route logs to in-app viewer ([#343](https://github.com/tstapler/stelekit/issues/343)) ([fbfef9a](https://github.com/tstapler/stelekit/commit/fbfef9a70b4ac1eea45fc216a5f650c90d2d0983))
+
 ## [0.86.1](https://github.com/tstapler/stelekit/compare/v0.86.0...v0.86.1) (2026-09-21)
 
 
