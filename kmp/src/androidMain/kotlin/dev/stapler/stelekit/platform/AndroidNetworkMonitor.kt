@@ -30,6 +30,16 @@ actual class NetworkMonitor actual constructor() {
         }
     }
 
+    private var lastLogged: String? = null
+
+    /** isOnline is polled before every sync; log only when the verdict changes. */
+    private fun logChange(message: String) {
+        if (message != lastLogged) {
+            lastLogged = message
+            logger.info(message)
+        }
+    }
+
     private val connectivityManager: ConnectivityManager?
         get() = applicationContext?.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
 
@@ -47,12 +57,12 @@ actual class NetworkMonitor actual constructor() {
                 return false
             }
             if (caps == null) {
-                logger.warn("isOnline=false: no active network")
+                logChange("isOnline=false: no active network")
                 return false
             }
             val internet = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
             val validated = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-            logger.debug("isOnline check: internet=$internet validated=$validated caps=$caps")
+            logChange("isOnline=${internet && validated} (internet=$internet validated=$validated)")
             return internet && validated
         }
 

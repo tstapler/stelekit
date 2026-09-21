@@ -153,6 +153,9 @@ class AndroidGitRepository(
             }
         }
 
+    /** Strips `user:token@` from a remote URL before it is logged. */
+    private fun redactUserInfo(url: String) = url.replace(Regex("//[^/@]*@"), "//")
+
     override suspend fun clone(
         url: String,
         localPath: String,
@@ -160,7 +163,7 @@ class AndroidGitRepository(
         onProgress: (String) -> Unit,
     ): Either<DomainError.GitError, Unit> = withContext(PlatformDispatcher.IO) {
         try {
-            logger.info("clone: start url=$url localPath=$localPath auth=${auth::class.simpleName}")
+            logger.info("clone: start url=${redactUserInfo(url)} localPath=$localPath auth=${auth::class.simpleName}")
             val worktree = shadowWorktreeFor(localPath)
             insufficientShadowStorageError(worktree, localPath)?.let { return@withContext it.left() }
             // Resolve suspend credentials before entering JGit's synchronous territory
@@ -187,12 +190,12 @@ class AndroidGitRepository(
             logger.info("clone: done localPath=$localPath")
             Unit.right()
         } catch (e: TransportException) {
-            logger.error("clone: transport/auth failure for $url", e)
+            logger.error("clone: transport/auth failure for ${redactUserInfo(url)}", e)
             DomainError.GitError.AuthFailed(e.message ?: "Authentication failed").left()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            logger.error("clone: failed for $url", e)
+            logger.error("clone: failed for ${redactUserInfo(url)}", e)
             DomainError.GitError.CloneFailed(e.message ?: "Clone failed").left()
         }
     }

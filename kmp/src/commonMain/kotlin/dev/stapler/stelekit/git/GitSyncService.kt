@@ -69,6 +69,14 @@ class GitSyncService(
 ) {
     private val logger = Logger("GitSyncService")
 
+    /** Never [toString] a state directly: conflict/journal-merge states carry full note contents. */
+    private fun SyncState.logSummary(): String = when (this) {
+        is SyncState.ConflictPending -> "ConflictPending(files=${conflicts.size})"
+        is SyncState.JournalMergeReady -> "JournalMergeReady"
+        is SyncState.Error -> "Error(${error.message})"
+        else -> toString()
+    }
+
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
     val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
 
@@ -116,7 +124,7 @@ class GitSyncService(
 
     init {
         // Log every state transition so sync progress/failures are visible in the global log.
-        scope.launch { _syncState.collect { logger.info("syncState[$graphId] -> $it") } }
+        scope.launch { _syncState.collect { logger.info("syncState[$graphId] -> ${it.logSummary()}") } }
         // Populate localStatus immediately on construction (graph open) rather than waiting for
         // the first periodic poll tick or manual sync — see refreshLocalStatus's doc.
         if (graphId.isNotEmpty()) {

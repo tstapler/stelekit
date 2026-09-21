@@ -47,6 +47,16 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
 
     companion object {
         private val logger = dev.stapler.stelekit.logging.Logger("PlatformFileSystem")
+        private const val MAX_WARNS_PER_OP = 5
+        private val warnCounts = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger>()
+
+        /** Per-path failures can fire once per file on a revoked SAF grant; the log buffer copies
+         * up to 1000 entries per line, so cap each operation and note the cutoff. */
+        private fun warnThrottled(op: String, message: String, e: Throwable) {
+            val n = warnCounts.getOrPut(op) { java.util.concurrent.atomic.AtomicInteger() }.incrementAndGet()
+            if (n <= MAX_WARNS_PER_OP) logger.warn(message, e)
+            if (n == MAX_WARNS_PER_OP) logger.warn("$op: further failures suppressed")
+        }
         const val PREFS_NAME = "stelekit_prefs"
         const val KEY_SAF_TREE_URI = "saf_tree_uri"
 
@@ -359,9 +369,9 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         context?.contentResolver?.openInputStream(docUri)?.use {
             it.bufferedReader(Charsets.UTF_8).readText()
         }
-    } catch (e: SecurityException) { logger.warn("readFile: permission denied for $path", e); null }
-    catch (e: IllegalArgumentException) { logger.warn("readFile: invalid URI for $path", e); null }
-    catch (e: Exception) { logger.warn("readFile: unexpected error for $path", e); null }
+    } catch (e: SecurityException) { warnThrottled("readFile", "readFile: permission denied for $path", e); null }
+    catch (e: IllegalArgumentException) { warnThrottled("readFile", "readFile: invalid URI for $path", e); null }
+    catch (e: Exception) { warnThrottled("readFile", "readFile: unexpected error for $path", e); null }
 
     /** Extracts the relative path within the graph (e.g. "pages/Foo.md") from a saf:// URL. */
     private fun relativePathFromSaf(safPath: String): String {
@@ -390,8 +400,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
                 val stream = ctx.contentResolver.openOutputStream(uri, "wt") ?: return false
                 stream.use { it.write(data); it.flush() }
                 true
-            } catch (e: SecurityException) { logger.warn("writeFileBytes: permission denied for $path", e); false }
-            catch (e: Exception) { logger.warn("writeFileBytes: error writing to $path", e); false }
+            } catch (e: SecurityException) { warnThrottled("writeFileBytes", "writeFileBytes: permission denied for $path", e); false }
+            catch (e: Exception) { warnThrottled("writeFileBytes", "writeFileBytes: error writing to $path", e); false }
         }
         if (!path.startsWith("saf://")) return legacyWriteFileBytes(path, data)
         if (isDirectAccess()) {
@@ -468,9 +478,9 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             }
             knownExistingFiles.add(path)
             true
-        } catch (e: SecurityException) { logger.warn("writeFile: permission denied for $path", e); false }
-        catch (e: IllegalArgumentException) { logger.warn("writeFile: invalid URI for $path", e); false }
-        catch (e: Exception) { logger.warn("writeFile: unexpected error for $path", e); false }
+        } catch (e: SecurityException) { warnThrottled("writeFile", "writeFile: permission denied for $path", e); false }
+        catch (e: IllegalArgumentException) { warnThrottled("writeFile", "writeFile: invalid URI for $path", e); false }
+        catch (e: Exception) { warnThrottled("writeFile", "writeFile: unexpected error for $path", e); false }
     }
 
 
@@ -486,8 +496,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
                 .filter { it.mimeType != DocumentsContract.Document.MIME_TYPE_DIR }
                 .map { it.name }
                 .sorted()
-        } catch (e: SecurityException) { logger.warn("listFiles: permission denied for $path", e); emptyList() }
-        catch (e: IllegalArgumentException) { logger.warn("listFiles: invalid URI for $path", e); emptyList() }
+        } catch (e: SecurityException) { warnThrottled("listFiles", "listFiles: permission denied for $path", e); emptyList() }
+        catch (e: IllegalArgumentException) { warnThrottled("listFiles", "listFiles: invalid URI for $path", e); emptyList() }
     }
 
     actual override fun listDirectories(path: String): List<String> {
@@ -502,8 +512,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
                 .filter { it.mimeType == DocumentsContract.Document.MIME_TYPE_DIR }
                 .map { it.name }
                 .sorted()
-        } catch (e: SecurityException) { logger.warn("listDirectories: permission denied for $path", e); emptyList() }
-        catch (e: IllegalArgumentException) { logger.warn("listDirectories: invalid URI for $path", e); emptyList() }
+        } catch (e: SecurityException) { warnThrottled("listDirectories", "listDirectories: permission denied for $path", e); emptyList() }
+        catch (e: IllegalArgumentException) { warnThrottled("listDirectories", "listDirectories: invalid URI for $path", e); emptyList() }
     }
 
     actual override fun fileExists(path: String): Boolean {
@@ -515,8 +525,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         return try {
             val docUri = parseDocumentUri(path)
             queryDocumentMimeType(docUri)?.let { it != DocumentsContract.Document.MIME_TYPE_DIR } == true
-        } catch (e: SecurityException) { logger.warn("fileExists: permission denied for $path", e); false }
-        catch (e: IllegalArgumentException) { logger.warn("fileExists: invalid URI for $path", e); false }
+        } catch (e: SecurityException) { warnThrottled("fileExists", "fileExists: permission denied for $path", e); false }
+        catch (e: IllegalArgumentException) { warnThrottled("fileExists", "fileExists: invalid URI for $path", e); false }
     }
 
     actual override fun directoryExists(path: String): Boolean {
@@ -528,8 +538,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         return try {
             val docUri = parseDocumentUri(path)
             queryDocumentMimeType(docUri) == DocumentsContract.Document.MIME_TYPE_DIR
-        } catch (e: SecurityException) { logger.warn("directoryExists: permission denied for $path", e); false }
-        catch (e: IllegalArgumentException) { logger.warn("directoryExists: invalid URI for $path", e); false }
+        } catch (e: SecurityException) { warnThrottled("directoryExists", "directoryExists: permission denied for $path", e); false }
+        catch (e: IllegalArgumentException) { warnThrottled("directoryExists", "directoryExists: invalid URI for $path", e); false }
     }
 
     actual override fun createDirectory(path: String): Boolean {
@@ -584,9 +594,9 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             )
             if (deleted) knownExistingFiles.remove(path)
             deleted
-        } catch (e: SecurityException) { logger.warn("deleteFile: permission denied for $path", e); false }
-        catch (e: IllegalArgumentException) { logger.warn("deleteFile: invalid URI for $path", e); false }
-        catch (e: Exception) { logger.warn("deleteFile: unexpected error for $path", e); false }
+        } catch (e: SecurityException) { warnThrottled("deleteFile", "deleteFile: permission denied for $path", e); false }
+        catch (e: IllegalArgumentException) { warnThrottled("deleteFile", "deleteFile: invalid URI for $path", e); false }
+        catch (e: Exception) { warnThrottled("deleteFile", "deleteFile: unexpected error for $path", e); false }
     }
 
     actual override fun getLastModifiedTime(path: String): Long? {
@@ -598,8 +608,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         return try {
             val docUri = parseDocumentUri(path)
             queryDocumentLastModified(docUri)
-        } catch (e: SecurityException) { logger.warn("getLastModifiedTime: permission denied for $path", e); null }
-        catch (e: IllegalArgumentException) { logger.warn("getLastModifiedTime: invalid URI for $path", e); null }
+        } catch (e: SecurityException) { warnThrottled("getLastModifiedTime", "getLastModifiedTime: permission denied for $path", e); null }
+        catch (e: IllegalArgumentException) { warnThrottled("getLastModifiedTime", "getLastModifiedTime: invalid URI for $path", e); null }
     }
 
     /**
@@ -700,10 +710,10 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
                 genericCopyThenDelete(from, to)
             }
         } catch (e: SecurityException) {
-            logger.warn("renameFile: permission denied for $from -> $to", e)
+            warnThrottled("renameFile", "renameFile: permission denied for $from -> $to", e)
             false
         } catch (e: IllegalArgumentException) {
-            logger.warn("renameFile: invalid URI for $from -> $to", e)
+            warnThrottled("renameFile", "renameFile: invalid URI for $from -> $to", e)
             false
         }
     }
@@ -731,8 +741,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         return try {
             val docUri = parseDocumentUri(path)
             queryDocumentSize(docUri)
-        } catch (e: SecurityException) { logger.warn("getFileSize: permission denied for $path", e); null }
-        catch (e: IllegalArgumentException) { logger.warn("getFileSize: invalid URI for $path", e); null }
+        } catch (e: SecurityException) { warnThrottled("getFileSize", "getFileSize: permission denied for $path", e); null }
+        catch (e: IllegalArgumentException) { warnThrottled("getFileSize", "getFileSize: invalid URI for $path", e); null }
     }
 
     private fun legacyGetFileSize(path: String): Long? {
@@ -793,8 +803,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
                 .filter { it.mimeType != DocumentsContract.Document.MIME_TYPE_DIR }
                 .map { it.name to it.lastModified }
                 .sortedBy { it.first }
-        } catch (e: SecurityException) { logger.warn("listFilesWithModTimes: permission denied for $path", e); emptyList() }
-        catch (e: IllegalArgumentException) { logger.warn("listFilesWithModTimes: invalid URI for $path", e); emptyList() }
+        } catch (e: SecurityException) { warnThrottled("listFilesWithModTimes", "listFilesWithModTimes: permission denied for $path", e); emptyList() }
+        catch (e: IllegalArgumentException) { warnThrottled("listFilesWithModTimes", "listFilesWithModTimes: invalid URI for $path", e); emptyList() }
     }
 
     actual override fun pickDirectory(): String? = null // Handled via pickDirectoryAsync on Android
@@ -860,7 +870,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                logger.warn("pickDirectoryAsync: failed to refresh SAF state", e)
+                warnThrottled("pickDirectoryAsync", "pickDirectoryAsync: failed to refresh SAF state", e)
             }
         }
         return result
@@ -1040,10 +1050,10 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
                 .filter { it.mimeType != DocumentsContract.Document.MIME_TYPE_DIR }
                 .map { Triple(it.name, it.lastModified, it.size) }
         } catch (e: SecurityException) {
-            logger.warn("listFilesWithMetadata: permission denied for $path", e)
+            warnThrottled("listFilesWithMetadata", "listFilesWithMetadata: permission denied for $path", e)
             emptyList()
         } catch (e: IllegalArgumentException) {
-            logger.warn("listFilesWithMetadata: invalid URI for $path", e)
+            warnThrottled("listFilesWithMetadata", "listFilesWithMetadata: invalid URI for $path", e)
             emptyList()
         }
     }
@@ -1143,8 +1153,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             val stream = ctx.contentResolver.openOutputStream(uri, "wt") ?: return false
             stream.use { it.bufferedWriter(Charsets.UTF_8).apply { write(content); flush() } }
             true
-        } catch (e: SecurityException) { logger.warn("contentUriWriteFile: permission denied", e); false }
-        catch (e: Exception) { logger.warn("contentUriWriteFile: error writing to $uriString", e); false }
+        } catch (e: SecurityException) { warnThrottled("contentUriWriteFile", "contentUriWriteFile: permission denied", e); false }
+        catch (e: Exception) { warnThrottled("contentUriWriteFile", "contentUriWriteFile: error writing to $uriString", e); false }
     }
 
     // -------------------------------------------------------------------------

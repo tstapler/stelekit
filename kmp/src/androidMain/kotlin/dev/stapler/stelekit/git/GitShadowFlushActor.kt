@@ -81,7 +81,6 @@ internal class GitShadowFlushActor(
                 fileSystem.getLastModifiedTime(safPath)?.let { mtime ->
                     worktree.updateManifestEntry(relativePath, mtime, content.encodeToByteArray().size.toLong())
                 }
-                logger.debug("flushPage: flushed $relativePath to SAF")
                 Unit.right()
             } else {
                 // Task 3.1.2c: do NOT dequeue — leave queued for retry on the next flush(),
