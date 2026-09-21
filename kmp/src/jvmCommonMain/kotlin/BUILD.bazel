@@ -21,6 +21,15 @@ filegroup(
     visibility = ["//kmp:__subpackages__"],
 )
 
+# JVM actual for cache/PlatformLock (commonMain expect) — the mermaid module
+# compiles LruCache.kt, which instantiates PlatformLock, so mermaid_lib needs
+# this actual alongside the expect in //kmp/src/commonMain/kotlin:mermaid_common_srcs.
+filegroup(
+    name = "platform_lock_actual_srcs",
+    srcs = ["dev/stapler/stelekit/cache/PlatformLock.jvm.kt"],
+    visibility = ["//kmp:__subpackages__"],
+)
+
 # Files in jvmCommonMain that contain `expect` declarations (for jvmMain/androidMain actuals).
 # These must be passed as common_srcs so the Kotlin compiler treats them as the expect side
 # of the jvmCommonMain→jvmMain/androidMain expect/actual pair.

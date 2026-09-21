@@ -34,11 +34,13 @@ filegroup(
         exclude = [
             "dev/stapler/stelekit/stats/**",
             # Mermaid module (own Bazel targets — see mermaid_common_srcs below):
-            # the 7 ui/components/Mermaid*.kt files plus cache/LruCache.kt, the
-            # mermaid module's only monolith edge (dependency-free Tier-2 leaf,
-            # so no full cache-package extraction needed for the split).
+            # the 7 ui/components/Mermaid*.kt files plus cache/LruCache.kt and
+            # cache/PlatformLock.kt (LruCache's only monolith edges; both
+            # dependency-free apart from each other, so no full cache-package
+            # extraction needed for the split).
             "dev/stapler/stelekit/ui/components/Mermaid*.kt",
             "dev/stapler/stelekit/cache/LruCache.kt",
+            "dev/stapler/stelekit/cache/PlatformLock.kt",
         ],
     ),
     visibility = ["//kmp:__subpackages__"],
@@ -53,12 +55,14 @@ filegroup(
 #   - //kmp/src/androidMain/kotlin:android_main (Android; compiled in-unit there —
 #     Android needs no isolation, so no separate android mermaid target exists)
 # cache/LruCache.kt rides along: it is the mermaid module's only monolith edge
-# (used by MermaidCache + MermaidJvmEngine.JavaBridge) and is import-free, so the
-# monoliths take it back via a dep on the mermaid targets instead of compiling it.
+# (used by MermaidCache + MermaidJvmEngine.JavaBridge) and depends only on
+# cache/PlatformLock.kt (also in this filegroup), so the monoliths take both
+# back via a dep on the mermaid targets instead of compiling them.
 filegroup(
     name = "mermaid_common_srcs",
     srcs = [
         "dev/stapler/stelekit/cache/LruCache.kt",
+        "dev/stapler/stelekit/cache/PlatformLock.kt",
         "dev/stapler/stelekit/ui/components/MermaidBlock.kt",
         "dev/stapler/stelekit/ui/components/MermaidCache.kt",
         "dev/stapler/stelekit/ui/components/MermaidDiagramSurface.kt",

@@ -9,9 +9,10 @@ into one kotlinc invocation when targeting JVM.
 
 load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_binary", "kt_jvm_library")
 
-# Mermaid module — the 5 jvmMain mermaid files plus the 8 commonMain mermaid files
-# (//kmp/src/commonMain/kotlin:mermaid_common_srcs), compiled as one unit so the
-# common `expect` declarations (renderMermaid, MermaidDiagramSurface) resolve
+# Mermaid module — the 5 jvmMain mermaid files plus the 9 commonMain mermaid files
+# (//kmp/src/commonMain/kotlin:mermaid_common_srcs: 7 ui/components/Mermaid*.kt +
+# cache/LruCache.kt + cache/PlatformLock.kt) plus the PlatformLock JVM actual,
+# compiled as one unit so the common `expect` declarations (renderMermaid,
 # against their jvmMain `actual`s — same pattern as jvm_main_lib below, scoped to
 # mermaid. Only monolith edge left: none (MermaidBlock takes its CodeFenceBlock
 # fallback as a lambda; LruCache is compiled here). Result: Bazel rebuilds this
@@ -21,6 +22,7 @@ kt_jvm_library(
     name = "mermaid_lib",
     srcs = [
         "//kmp/src/commonMain/kotlin:mermaid_common_srcs",
+        "//kmp/src/jvmCommonMain/kotlin:platform_lock_actual_srcs",
     ] + [
         "dev/stapler/stelekit/ui/components/MermaidDiagramSurface.jvm.kt",
         "dev/stapler/stelekit/ui/components/MermaidEngineActor.kt",
