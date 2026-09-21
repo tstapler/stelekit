@@ -106,7 +106,6 @@ filegroup(
     name = "platform_core_srcs",
     srcs = [
         "dev/stapler/stelekit/cache/PlatformCacheConfig.kt",
-        "dev/stapler/stelekit/cache/PlatformLock.kt",
         "dev/stapler/stelekit/coroutines/PlatformDispatcher.kt",
         "dev/stapler/stelekit/db/DriverFactory.kt",
         "dev/stapler/stelekit/db/LibsqlSupport.kt",
