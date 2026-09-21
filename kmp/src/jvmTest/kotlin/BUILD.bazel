@@ -114,6 +114,11 @@ kt_jvm_test(
     kotlinc_opts = "//:kmp_jvm_kotlinc_opts",
     tags = [
         "requires-display",
+        # Exclusive: GraalJS renders are wall-clock-sensitive and CI runners have
+        # 2 cores — running this suite in parallel with :jvm_tests starved the
+        # engine so badly every render (including retries) exceeded the timeout
+        # ceiling. Exclusive serializes this target against other test actions.
+        "exclusive",
     ],
     test_class = "dev.stapler.stelekit.AllMermaidJvmTests",
     visibility = ["//visibility:public"],
