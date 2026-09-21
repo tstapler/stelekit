@@ -153,6 +153,9 @@ class AndroidGitRepository(
             }
         }
 
+    /** Strips `user:token@` from a remote URL before it is logged. */
+    private fun redactUserInfo(url: String) = url.replace(Regex("//[^/@]*@"), "//")
+
     override suspend fun clone(
         url: String,
         localPath: String,
@@ -160,6 +163,7 @@ class AndroidGitRepository(
         onProgress: (String) -> Unit,
     ): Either<DomainError.GitError, Unit> = withContext(PlatformDispatcher.IO) {
         try {
+            logger.info("clone: start url=${redactUserInfo(url)} localPath=$localPath auth=${auth::class.simpleName}")
             val worktree = shadowWorktreeFor(localPath)
             insufficientShadowStorageError(worktree, localPath)?.let { return@withContext it.left() }
             // Resolve suspend credentials before entering JGit's synchronous territory
@@ -183,12 +187,15 @@ class AndroidGitRepository(
             cmd.call().use { git ->
                 syncShadowAfterInitOrClone(localPath, git)
             }
+            logger.info("clone: done localPath=$localPath")
             Unit.right()
         } catch (e: TransportException) {
+            logger.error("clone: transport/auth failure for ${redactUserInfo(url)}", e)
             DomainError.GitError.AuthFailed(e.message ?: "Authentication failed").left()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            logger.error("clone: failed for ${redactUserInfo(url)}", e)
             DomainError.GitError.CloneFailed(e.message ?: "Clone failed").left()
         }
     }
@@ -220,13 +227,16 @@ class AndroidGitRepository(
                         0
                     }
 
+                    logger.info("fetch: ${config.remoteName}/${config.remoteBranch} hasChanges=$hasChanges remoteCommits=$remoteCommitCount")
                     FetchResult(hasRemoteChanges = hasChanges, remoteCommitCount = remoteCommitCount).right()
                 }
             } catch (e: TransportException) {
+                logger.error("fetch: transport/auth failure", e)
                 DomainError.GitError.AuthFailed(e.message ?: "Authentication failed").left()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                logger.error("fetch: failed", e)
                 DomainError.GitError.FetchFailed(e.message ?: "Fetch failed").left()
             }
         }
@@ -463,13 +473,16 @@ class AndroidGitRepository(
                         .setRemote(config.remoteName)
                         .also { configureTransport(it, config) }
                         .call()
+                    logger.info("push: ok remote=${config.remoteName}")
                     Unit.right()
                 }
             } catch (e: TransportException) {
+                logger.error("push: transport/auth failure", e)
                 DomainError.GitError.AuthFailed(e.message ?: "Push authentication failed").left()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                logger.error("push: failed", e)
                 DomainError.GitError.PushFailed(e.message ?: "Push failed").left()
             }
         }
