@@ -3,6 +3,7 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- MANAGE_EXTERNAL_STORAGE: when granted, replaces SAF with direct java.io.File POSIX
          access for orders-of-magnitude lower write latency. Play Store policy explicitly

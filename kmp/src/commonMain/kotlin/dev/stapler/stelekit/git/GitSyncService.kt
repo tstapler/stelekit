@@ -115,6 +115,8 @@ class GitSyncService(
     private val scope = CoroutineScope(SupervisorJob() + PlatformDispatcher.IO + exceptionHandler)
 
     init {
+        // Log every state transition so sync progress/failures are visible in the global log.
+        scope.launch { _syncState.collect { logger.info("syncState[$graphId] -> $it") } }
         // Populate localStatus immediately on construction (graph open) rather than waiting for
         // the first periodic poll tick or manual sync — see refreshLocalStatus's doc.
         if (graphId.isNotEmpty()) {
@@ -180,7 +182,9 @@ class GitSyncService(
             rateLimitRetryJob?.cancel()
 
             // 1. Network check
+            logger.info("sync/fetch start graphId=$graphId")
             if (!networkMonitor.isOnline) {
+                logger.warn("aborting: NetworkMonitor reports offline")
                 val err = DomainError.GitError.Offline
                 _syncState.value = SyncState.Error(err)
                 return@withContext err.left()
@@ -380,7 +384,9 @@ class GitSyncService(
             // Task 3.4.2c: a manual fetchOnly trigger always supersedes any pending scheduled retry.
             rateLimitRetryJob?.cancel()
 
+            logger.info("sync/fetch start graphId=$graphId")
             if (!networkMonitor.isOnline) {
+                logger.warn("aborting: NetworkMonitor reports offline")
                 val err = DomainError.GitError.Offline
                 _syncState.value = SyncState.Error(err)
                 return@withContext err.left()

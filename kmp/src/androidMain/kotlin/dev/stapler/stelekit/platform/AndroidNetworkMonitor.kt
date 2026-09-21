@@ -8,6 +8,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import dev.stapler.stelekit.logging.Logger
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -21,6 +22,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 actual class NetworkMonitor actual constructor() {
 
     companion object {
+        private val logger = Logger("NetworkMonitor")
         private var applicationContext: Context? = null
 
         fun init(context: Context) {
@@ -33,11 +35,25 @@ actual class NetworkMonitor actual constructor() {
 
     actual val isOnline: Boolean
         get() {
-            val cm = connectivityManager ?: return false
-            val network = cm.activeNetwork ?: return false
-            val caps = cm.getNetworkCapabilities(network) ?: return false
-            return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+            val cm = connectivityManager
+            if (cm == null) {
+                logger.error("isOnline=false: no application context — NetworkMonitor.init() was never called")
+                return false
+            }
+            val caps = try {
+                cm.activeNetwork?.let { cm.getNetworkCapabilities(it) }
+            } catch (e: SecurityException) {
+                logger.error("isOnline=false: missing ACCESS_NETWORK_STATE permission", e)
+                return false
+            }
+            if (caps == null) {
+                logger.warn("isOnline=false: no active network")
+                return false
+            }
+            val internet = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            val validated = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+            logger.debug("isOnline check: internet=$internet validated=$validated caps=$caps")
+            return internet && validated
         }
 
     actual fun observeConnectivity(): Flow<Boolean> = callbackFlow {
