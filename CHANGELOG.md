@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.86.1](https://github.com/tstapler/stelekit/compare/v0.86.0...v0.86.1) (2026-09-21)
+
+
+### Bug Fixes
+
+* **bazel:** include PlatformLock in mermaid module filegroups ([4652092](https://github.com/tstapler/stelekit/commit/46520924282d7e8a87fe6b4887822968ed2bccc2))
+* **bazel:** move PlatformLock actual out of monolith srcs ([8a0b48d](https://github.com/tstapler/stelekit/commit/8a0b48daeb74e9a94919534c3700ba506c2f418a))
+* **bazel:** run mermaid tests exclusively to avoid suite contention ([8568aab](https://github.com/tstapler/stelekit/commit/8568aabf92e900d2ed446b5fc14635380250dcd5))
+* **bazel:** widen PlatformLock visibility for mermaid module split ([cbdf671](https://github.com/tstapler/stelekit/commit/cbdf671e89f0d512bc5c36c9db9a4baee5bc4841))
+* **ci:** fail Bazel steps on build/test failure; drop PlatformLock from platform_core_srcs ([26a999a](https://github.com/tstapler/stelekit/commit/26a999aa0576ce27d95dedbb92e1b6d4ba88d5a6))
+* **mermaid:** cold-start render budget from measured latency; Maven Central mirror first ([177dc6f](https://github.com/tstapler/stelekit/commit/177dc6fb73061f60c8c26428cae99c6aa560dccc))
+
 ## [0.86.0](https://github.com/tstapler/stelekit/compare/v0.85.4...v0.86.0) (2026-09-20)
 
 
