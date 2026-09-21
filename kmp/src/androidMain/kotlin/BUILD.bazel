@@ -24,6 +24,7 @@ kt_android_library(
         "//kmp/src/commonMain/kotlin:kt_srcs",
         "//kmp/src/commonMain/kotlin:mermaid_common_srcs",
         "//kmp/src/jvmCommonMain/kotlin:kt_srcs",
+        "//kmp/src/jvmCommonMain/kotlin:platform_lock_actual_srcs",
     ] + glob(["**/*.kt"]),
     common_srcs = [
         "//kmp/src/commonMain/kotlin:kt_srcs",
