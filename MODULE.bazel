@@ -449,6 +449,10 @@ maven.install(
         "com.android.tools:desugar_jdk_libs:2.1.4",
     ],
     repositories = [
+        # Google's GCS mirror of Maven Central FIRST: identical content, far higher
+        # rate limits. Five CI jobs share one NAT egress; repo1.maven.org 429s the
+        # cold-cache stampede (every miss chases up to 5 registries). Mirror absorbs it.
+        "https://maven-central.storage-download.googleapis.com/maven2",
         "https://repo1.maven.org/maven2",
         "https://maven.google.com",
         "https://jitpack.io",

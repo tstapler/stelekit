@@ -62,7 +62,9 @@ class MermaidEngineActor(
     // spike measured 1.3-5.6s even for a *cold* call there); a real CI runner can be far more
     // contended, and a static deadline can't tell a genuinely-wedged Context apart from a render
     // that's merely slow right now because the CPU is starved — this lets the budget track actual
-    // recent conditions instead of a constant guessed on different hardware. Floors at
+    // recent conditions instead of a constant guessed on different hardware. The very
+    // first call on a fresh engine has no estimate yet and gets MERMAID_COLD_START_TIMEOUT_MS
+    // (cold init exceeds the floor below even uncontended); after that the budget floors at
     // MERMAID_RENDER_TIMEOUT_MS (still abandons a fast machine's genuine hang quickly) and
     // ceilings at MERMAID_RENDER_TIMEOUT_CEILING_MS (a truly wedged Context must still eventually
     // be abandoned and swapped out, never waited on forever). Read/written only under `mutex`.
@@ -70,7 +72,10 @@ class MermaidEngineActor(
     private var durationDeviationMs: Double = 0.0
 
     private fun nextTimeoutMs(): Long {
-        val srtt = smoothedDurationMs ?: return MERMAID_RENDER_TIMEOUT_MS
+        // No estimate yet means a fresh (or freshly swapped-in) engine whose next call pays
+        // the cold-start cost — budget it separately (MERMAID_COLD_START_TIMEOUT_MS) rather
+        // than the steady-state floor, which cold init exceeds even uncontended.
+        val srtt = smoothedDurationMs ?: return MERMAID_COLD_START_TIMEOUT_MS
         return (srtt + 4 * durationDeviationMs).toLong()
             .coerceIn(MERMAID_RENDER_TIMEOUT_MS, MERMAID_RENDER_TIMEOUT_CEILING_MS)
     }

@@ -65,7 +65,7 @@ class MermaidEngineActorTest {
      * single hang costs exactly one render, not all of them.
      */
     @Test
-    fun render_should_recoverOnNextCall_when_previousCallTimedOut() = runTest(timeout = 30.seconds) {
+    fun render_should_recoverOnNextCall_when_previousCallTimedOut() = runTest(timeout = 60.seconds) {
         val hangingEngine = object : MermaidJvmEngine() {
             override fun render(source: String): String {
                 Thread.sleep(Long.MAX_VALUE)
