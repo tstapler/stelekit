@@ -44,7 +44,7 @@ class GitCredentialConnectionStoreWasmJsTest {
     }
 
     @Test
-    fun `getSecret returns null for a connection id that was never saved`() {
+    fun `getSecret returns null for a connection id that was never saved`() = runTest {
         val store = GitCredentialConnectionStore(PlatformSettings(), CredentialStore())
         val neverSaved = GitCredentialConnection(
             id = "never-saved-id",

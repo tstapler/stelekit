@@ -29,7 +29,7 @@ class LlmCredentialStoreWasmJsTest {
     }
 
     @Test
-    fun `getApiKey returns null for a provider that was never configured`() {
+    fun `getApiKey returns null for a provider that was never configured`() = runTest {
         val store = LlmCredentialStore(CredentialStore())
         assertNull(store.getApiKey("mistral"))
     }

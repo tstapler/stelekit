@@ -60,7 +60,7 @@ class CredentialStoreTest {
     }
 
     @Test
-    fun `store writes to decryptedCache synchronously so an immediate retrieve in the same call stack returns the value`() {
+    fun `store writes to decryptedCache synchronously so an immediate retrieve in the same call stack returns the value`() = runTest {
         val store = CredentialStore()
         store.store("git_https_token_abc123", "ghp_xyz")
         assertEquals("ghp_xyz", store.retrieve("git_https_token_abc123"))
@@ -128,7 +128,7 @@ class CredentialStoreTest {
     }
 
     @Test
-    fun `isAvailable returns true when subtleCryptoAvailable reports SubtleCrypto is present`() {
+    fun `isAvailable returns true when subtleCryptoAvailable reports SubtleCrypto is present`() = runTest {
         assertTrue(CredentialStore().isAvailable())
     }
 
