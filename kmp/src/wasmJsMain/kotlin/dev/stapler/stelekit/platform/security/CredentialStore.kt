@@ -5,6 +5,7 @@ package dev.stapler.stelekit.platform.security
 
 import dev.stapler.stelekit.platform.EphemeralSettingsMode
 import kotlinx.browser.localStorage
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -36,22 +37,24 @@ actual class CredentialStore actual constructor() : CredentialAccess {
 
     actual override fun store(key: String, value: String) {
         decryptedCache[key] = value
-        val job = scope.launch { persistCredential(key, value) }
-        pendingJobs.add(job)
+        trackPendingJob(scope.launch { persistCredential(key, value) })
     }
 
     actual override fun retrieve(key: String): String? = decryptedCache[key]
 
     actual override fun delete(key: String) {
         decryptedCache.remove(key)
-        val job = scope.launch {
-            try {
-                if (!EphemeralSettingsMode.active) localStorage.removeItem(CIPHERTEXT_KEY_PREFIX + key)
-            } catch (e: Throwable) {
-                println("[SteleKit] CredentialStore delete failed for key '$key': ${e.message}")
-            }
-        }
-        pendingJobs.add(job)
+        trackPendingJob(
+            scope.launch {
+                try {
+                    if (!EphemeralSettingsMode.active) localStorage.removeItem(CIPHERTEXT_KEY_PREFIX + key)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Throwable) {
+                    println("[SteleKit] CredentialStore delete failed for key '$key': ${e.message}")
+                }
+            },
+        )
     }
 
     override fun isAvailable(): Boolean = subtleCryptoAvailable()
@@ -84,6 +87,14 @@ actual class CredentialStore actual constructor() : CredentialAccess {
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         private val pendingJobs = mutableListOf<Job>()
 
+        // Removes a job from pendingJobs once it finishes, so a long browser session with many
+        // credential writes doesn't leak Job references for the life of the tab — the list would
+        // otherwise only ever grow outside the test-only resetForTest()/flushForTest() helpers.
+        private fun trackPendingJob(job: Job) {
+            pendingJobs.add(job)
+            job.invokeOnCompletion { pendingJobs.remove(job) }
+        }
+
         /**
          * Boot-time-only: loads-or-generates the AES key from `localStorage`, then decrypts every
          * existing `credential_enc.*` entry into [decryptedCache]. **Must be called as a direct,
@@ -103,6 +114,8 @@ actual class CredentialStore actual constructor() : CredentialAccess {
                 // Ephemeral sessions never read real localStorage, not even to attempt-and-fail a
                 // decrypt — the in-memory-only key above can't decrypt real entries anyway.
                 if (!EphemeralSettingsMode.active) decryptExistingEntries(cryptoKey)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Throwable) {
                 println("[SteleKit] CredentialStore: preload failed, credentials unavailable this session: ${e.message}")
                 deferred.completeExceptionally(e)
@@ -146,6 +159,8 @@ actual class CredentialStore actual constructor() : CredentialAccess {
                 val ciphertext = subtleEncrypt(cryptoKey, iv, value.encodeToByteArray())
                 val payload = "${Base64.Default.encode(iv)}:${Base64.Default.encode(ciphertext)}"
                 localStorage.setItem(CIPHERTEXT_KEY_PREFIX + key, payload)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Throwable) {
                 println("[SteleKit] CredentialStore encrypt+persist failed for key '$key': ${e.message}")
             }

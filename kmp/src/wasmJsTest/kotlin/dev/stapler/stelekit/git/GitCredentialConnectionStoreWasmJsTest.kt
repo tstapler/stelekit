@@ -7,6 +7,7 @@ import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitCredentialConnection
 import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.platform.security.CredentialStore
+import kotlinx.browser.localStorage
 import kotlinx.coroutines.test.runTest
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
@@ -24,12 +25,22 @@ class GitCredentialConnectionStoreWasmJsTest {
     @BeforeTest
     fun setUp() = runTest {
         CredentialStore.resetForTest()
+        clearConnectionRegistry()
         CredentialStore.preload()
     }
 
     @AfterTest
     fun tearDown() {
         CredentialStore.resetForTest()
+        clearConnectionRegistry()
+    }
+
+    // GitCredentialConnectionStore.REGISTRY_KEY ("git_credential_connections") is real
+    // localStorage, not reset by CredentialStore.resetForTest() — a saved connection from one
+    // test case otherwise survives into the next (same class of leak fixed in
+    // MainCredentialMigrationTest.kt for the legacy github* keys).
+    private fun clearConnectionRegistry() {
+        localStorage.removeItem("git_credential_connections")
     }
 
     @Test
