@@ -220,4 +220,23 @@ class DemoGraphPersistenceTest {
             "displayName must remain 'Demo Graph' after a rejected rename",
         )
     }
+
+    @Test
+    fun `addGraph honours name and description and they survive a registry reload`() = kotlinx.coroutines.test.runTest {
+        val settings = InMemorySettings()
+        val id = makeGraphManager(settings).addGraph("/tmp/some-folder", null, "  Work notes ", " Team wiki ")
+
+        val info = makeGraphManager(settings).graphRegistry.value.graphs.first { it.id == id }
+        assertEquals("Work notes", info.displayName)
+        assertEquals("Team wiki", info.description)
+    }
+
+    @Test
+    fun `addGraph falls back to folder name and empty description`() = kotlinx.coroutines.test.runTest {
+        val gm = makeGraphManager()
+        val id = gm.addGraph("/tmp/some-folder")
+        val info = gm.graphRegistry.value.graphs.first { it.id == id }
+        assertEquals("some-folder", info.displayName)
+        assertEquals("", info.description)
+    }
 }

@@ -31,6 +31,8 @@ data class GraphInfo(
      * internal identity path and does not change when the graph is relinked to a differently-named
      * host folder. Null on every platform without a host-directory concept, and until first linked. */
     val hostDirName: String? = null,
+    /** Optional user-facing note to tell graphs apart in the switcher and header. */
+    val description: String = "",
 )
 
 /**

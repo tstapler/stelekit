@@ -41,14 +41,17 @@ bazel test //kmp:business_tests
 # UI test fails identically with `NoClassDefFoundError: Could not initialize class
 # sun.awt.X11.XToolkit` / `Can't connect to X11 window server using ':N' as the value of the
 # DISPLAY variable` — dozens of failures, all with this one root cause, not a real regression.
-# Fix: install a real virtual framebuffer once (`sudo pacman -S xorg-server-xvfb` on
-# Arch/Manjaro — same package this repo's CI installs via apt as `xvfb`), then always invoke
-# jvm_tests through it with the same flags bazel-ci.yml's bazel-jvm job uses:
-xvfb-run --auto-servernum bazel test //kmp:jvm_tests \
+#
+# ALWAYS check display status before running jvm_tests/jvmTest, never assume from the session
+# type alone — `scripts/jvm-display-check.sh` does the check (real DISPLAY vs. Wayland-only vs.
+# headless, and whether xvfb-run is installed) and reports its verdict on stderr:
+scripts/jvm-display-check.sh -- bazel test //kmp:jvm_tests \
   --sandbox_add_mount_pair=/tmp/.X11-unix --test_env=DISPLAY --test_env=XAUTHORITY
-# Without a working display, treat any bare `bazel test //kmp:jvm_tests` UI-test failures as
-# unverified rather than a regression, and fall back to `bazel test //kmp:business_tests`
-# (no UI, unaffected) for real local signal.
+# If it exits 1 (no display and no Xvfb), install Xvfb once (`sudo pacman -S xorg-server-xvfb` on
+# Arch/Manjaro — same package this repo's CI installs via apt as `xvfb`), or fall back to
+# `bazel test //kmp:business_tests` (no UI, unaffected) for real local signal in the meantime.
+# Treat any bare (non-wrapped) `bazel test //kmp:jvm_tests` UI-test failure as unverified rather
+# than a regression until the script confirms a real display was used.
 
 # Build Android APK (requires ANDROID_HOME to be set)
 bazel build //kmp:android_app --config=android
@@ -142,13 +145,18 @@ pgrep -f '<output_base_hash>' | xargs -r kill -9
 
 # Run all CI checks locally (detekt + jvmTest + Android unit tests + assembleDebug)
 # Also compiles androidTest/ and WASM test sources to catch platform-specific type errors without a device.
-./gradlew ciCheck
-# UI/screenshot tests require a display. Use the appropriate wrapper for your environment:
-#   Wayland (native display available):   ./gradlew ciCheck                  # display is already set
-#   X11 (DISPLAY set):                    ./gradlew ciCheck                  # display is already set
-#   Headless Linux / SSH (no display):    xvfb-run --auto-servernum ./gradlew ciCheck
-# Automatic detection (try Wayland/X11 first, fall back to xvfb-run):
-# [ -n "$WAYLAND_DISPLAY" ] || [ -n "$DISPLAY" ] && ./gradlew ciCheck || xvfb-run --auto-servernum ./gradlew ciCheck
+#
+# ciCheck's UI/screenshot tests (jvmTest) need a real X11 display. Never assume Wayland means no
+# display is needed, or that no display means Xvfb is needed but unavailable — a native Wayland
+# session has no X11 DISPLAY at all (XWayland doesn't start lazily), while an X11 session or a
+# Wayland session with XWayland already running both work directly. `scripts/jvm-display-check.sh`
+# checks which case this session is actually in and wraps with `xvfb-run --auto-servernum` only
+# when needed:
+scripts/jvm-display-check.sh -- ./gradlew ciCheck
+# If it reports no display and no Xvfb, either install Xvfb once (`sudo pacman -S xorg-server-xvfb`
+# on Arch/Manjaro) or run `./gradlew jvmTest --tests '*BusinessTest'` / `testDebugUnitTest`
+# (Robolectric — headless, no display needed) for signal in the meantime — see "Testing best
+# practices" below on when a Compose-behavior test belongs in androidUnitTest instead of jvmTest.
 # Run instrumented tests on a connected device/emulator (adb must see the device):
 ./gradlew ciCheck -PciInstrumentedTests
 # README sync is not covered by ciCheck — run separately:
@@ -472,6 +480,15 @@ profiling, SLO alerts). Test source sets:
 
 ### Testing best practices
 
+- **A Compose-behavior test (dialog gating, text/content assertions, click handlers) that doesn't
+  need true pixel rendering belongs in `androidUnitTest` (Robolectric, `./gradlew
+  testDebugUnitTest`), not `jvmTest`.** Robolectric runs headless — no X11 display, no Xvfb —
+  so these tests give real signal on any machine, including one with no display at all. Reserve
+  `jvmTest` for what actually needs a real renderer: Roborazzi screenshot tests and
+  desktop-platform-specific code. See `NewGraphFlowTest.kt` / `AddGraphAppOwnedTest.kt` for the
+  pattern. Always run `scripts/jvm-display-check.sh` (see the Bazel/Gradle command tables above)
+  before treating a `jvmTest` UI-test failure as real — check display availability, don't guess
+  it from the session type.
 - **Test pure logic in `commonMain`/`commonTest`, not per-platform.** If a function doesn't
   touch a platform API, it belongs in `commonMain` with its test in `commonTest` — one test
   run covers JVM, Android, iOS, and wasmJs simultaneously instead of four copies drifting

@@ -125,7 +125,7 @@ fun GitSetupScreen(
     detectedRepoRoot: String? = null,
     detectedWikiSubdir: String? = null,
     onSave: () -> Unit = {},
-    onCloneAndAdd: (suspend (url: String, localPath: String, auth: GitAuth, location: StorageLocation?, onProgress: (String) -> Unit) -> Either<DomainError.GitError, String>)? = null,
+    onCloneAndAdd: (suspend (url: String, localPath: String, auth: GitAuth, location: StorageLocation?, displayName: String?, description: String, onProgress: (String) -> Unit) -> Either<DomainError.GitError, String>)? = null,
     onCloneComplete: ((String) -> Unit)? = null,
     deviceFlowClient: GitHubDeviceFlowClient? = null,
 ) {
@@ -148,6 +148,8 @@ fun GitSetupScreen(
         mutableStateOf(existingConfig?.wikiSubdir ?: detectedWikiSubdir ?: "")
     }
     var wikiSubdirBrowserOpen by remember { mutableStateOf(false) }
+    var graphName by remember { mutableStateOf("") }
+    var graphDescription by remember { mutableStateOf("") }
 
     // Live .git check at repoRoot, replacing the old saf://-string-prefix heuristic (which never
     // covered wasm's OPFS-mirrored picker paths, only Android's). Null while unchecked/blank —
@@ -260,6 +262,19 @@ fun GitSetupScreen(
     // rather than reconstructed from that shorter field.
     var pendingSafRepoRoot by remember { mutableStateOf("") }
 
+    // Clone mode defaults to app-owned storage (no folder grant needed) where the platform has it;
+    // the user only sees a folder picker if they explicitly choose "Change".
+    fun selectAppStorage() {
+        val path = fileSystem.newAppOwnedGraphPath()
+        pendingAppOwnedGraphPath = path
+        repoRoot = path
+        cloneStorageLocation = StorageLocation.AppOwned(graphIdFromPath(fileSystem.expandTilde(path)))
+        wikiSubdir = ""
+    }
+    LaunchedEffect(Unit) {
+        if (!useExistingClone && fileSystem.supportsAppOwnedStorage && repoRoot.isBlank()) selectAppStorage()
+    }
+
     val stepLabel = when (step) {
         1 -> "Repository mode"
         2 -> "Repository path"
@@ -339,7 +354,17 @@ fun GitSetupScreen(
             when (step) {
                 1 -> Step1CloneMode(
                     useExistingClone = useExistingClone,
-                    onUseExistingClone = { useExistingClone = it },
+                    onUseExistingClone = { existing ->
+                        useExistingClone = existing
+                        if (!existing && fileSystem.supportsAppOwnedStorage && repoRoot.isBlank()) {
+                            selectAppStorage()
+                        } else if (existing && cloneStorageLocation is StorageLocation.AppOwned) {
+                            // app-storage path is meaningless for "use existing clone"
+                            cloneStorageLocation = null
+                            repoRoot = detectedRepoRoot ?: graphPath
+                            wikiSubdir = detectedWikiSubdir ?: ""
+                        }
+                    },
                     onNext = { step = 2 },
                 )
 
@@ -349,6 +374,10 @@ fun GitSetupScreen(
                     onRepoRootChange = { repoRoot = it },
                     cloneUrl = cloneUrl,
                     onCloneUrlChange = { cloneUrl = it },
+                    graphName = graphName,
+                    onGraphNameChange = { graphName = it },
+                    graphDescription = graphDescription,
+                    onGraphDescriptionChange = { graphDescription = it },
                     wikiSubdir = wikiSubdir,
                     onWikiSubdirChange = { newValue ->
                         // Reject rather than silently store a picked content:// URI here — a
@@ -357,7 +386,9 @@ fun GitSetupScreen(
                     },
                     onBack = { step = 1 },
                     onNext = { step = 3 },
-                    nextEnabled = repoRoot.isNotBlank() && (useExistingClone || cloneUrl.isNotBlank()),
+                    nextEnabled = repoRoot.isNotBlank() && (useExistingClone || cloneUrl.isNotBlank()) &&
+                        wikiSubdirError(wikiSubdir) == null,
+                    saveToAppStorage = !useExistingClone && cloneStorageLocation is StorageLocation.AppOwned,
                     onBrowseRepoRoot = if (!useExistingClone && fileSystem.supportsAppOwnedStorage) {
                         // Story 2.2.2: "clone a remote repository" destination — show
                         // UnifiedLocationPicker instead of jumping straight to the SAF folder
@@ -538,7 +569,7 @@ fun GitSetupScreen(
                                     )
                                     GitAuthType.NONE -> GitAuth.None
                                 }
-                                val cloneResult = onCloneAndAdd(cloneUrl, repoRoot, cloneAuth, cloneStorageLocation) { progress ->
+                                val cloneResult = onCloneAndAdd(cloneUrl, repoRoot, cloneAuth, cloneStorageLocation, graphName.ifBlank { repoNameFromUrl(cloneUrl) ?: "" }.takeIf { it.isNotBlank() }, graphDescription) { progress ->
                                     cloneProgress = progress
                                 }
                                 cloneInProgress = false
@@ -820,6 +851,10 @@ private fun Step2RepoPath(
     onRepoRootChange: (String) -> Unit,
     cloneUrl: String,
     onCloneUrlChange: (String) -> Unit,
+    graphName: String,
+    onGraphNameChange: (String) -> Unit,
+    graphDescription: String,
+    onGraphDescriptionChange: (String) -> Unit,
     wikiSubdir: String,
     onWikiSubdirChange: (String) -> Unit,
     onBack: () -> Unit,
@@ -829,6 +864,7 @@ private fun Step2RepoPath(
     onBrowseWikiSubdir: (() -> Unit)? = null,
     detectionUnavailable: Boolean = false,
     existingRepoNeedsAllFilesAccess: Boolean = false,
+    saveToAppStorage: Boolean = false,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Repository path", style = MaterialTheme.typography.titleMedium)
@@ -841,33 +877,67 @@ private fun Step2RepoPath(
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
+            OutlinedTextField(
+                value = graphName,
+                onValueChange = onGraphNameChange,
+                label = { Text("Graph name (optional)") },
+                placeholder = { Text(repoNameFromUrl(cloneUrl) ?: "Defaults to the repository name") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+            OutlinedTextField(
+                value = graphDescription,
+                onValueChange = onGraphDescriptionChange,
+                label = { Text("Description (optional)") },
+                modifier = Modifier.fillMaxWidth(),
+                maxLines = 3,
+            )
         }
 
-        Text(
-            "Pick the folder that directly contains .git — usually your project's top-level " +
-                "folder, not a notes/pages subfolder inside it. You can point at a subfolder " +
-                "separately below.",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-
-        OutlinedTextField(
-            value = repoRoot,
-            onValueChange = onRepoRootChange,
-            label = { Text("Local repository root path") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            trailingIcon = if (onBrowseRepoRoot != null) {
-                {
-                    IconButton(onClick = onBrowseRepoRoot) {
-                        Icon(
-                            imageVector = Icons.Default.FolderOpen,
-                            contentDescription = "Browse for directory",
-                        )
-                    }
+        if (saveToAppStorage) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Save to", style = MaterialTheme.typography.labelMedium)
+                    Text("App storage (default)", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        "Private to SteleKit — no folder access needed.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
-            } else null,
-        )
+                TextButton(onClick = { onBrowseRepoRoot?.invoke() }) { Text("Change…") }
+            }
+        } else {
+            Text(
+                "Pick the folder that directly contains .git — usually your project's top-level " +
+                    "folder, not a notes/pages subfolder inside it. You can point at a subfolder " +
+                    "separately below.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            OutlinedTextField(
+                value = repoRoot,
+                onValueChange = onRepoRootChange,
+                label = { Text("Local repository root path") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                trailingIcon = if (onBrowseRepoRoot != null) {
+                    {
+                        IconButton(onClick = onBrowseRepoRoot) {
+                            Icon(
+                                imageVector = Icons.Default.FolderOpen,
+                                contentDescription = "Browse for directory",
+                            )
+                        }
+                    }
+                } else null,
+            )
+        }
 
         if (existingRepoNeedsAllFilesAccess) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -899,7 +969,12 @@ private fun Step2RepoPath(
         OutlinedTextField(
             value = wikiSubdir,
             onValueChange = onWikiSubdirChange,
-            label = { Text("Wiki subdirectory (leave empty if notes are at repo root)") },
+            label = { Text("Notes subfolder (optional)") },
+            placeholder = { Text("e.g. logseq or notes/pages") },
+            supportingText = {
+                Text(wikiSubdirError(wikiSubdir) ?: "Relative to the repository root. Leave empty if notes are at the root.")
+            },
+            isError = wikiSubdirError(wikiSubdir) != null,
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
             trailingIcon = if (onBrowseWikiSubdir != null && repoRoot.isNotBlank()) {
@@ -1435,7 +1510,20 @@ private fun Step5TestAndSave(
  * carries a URI scheme. Guards against a picked `content://`/`saf://` URI landing in the Wiki
  * subdirectory field (which must always be a plain relative path under the repo root).
  */
+/** `owner/my-notes.git` → `my-notes`; null when [url] has no usable last segment. */
+internal fun repoNameFromUrl(url: String): String? =
+    url.trim().trimEnd('/').substringAfterLast('/').substringAfterLast(':')
+        .removeSuffix(".git").takeIf { it.isNotBlank() && !it.contains("://") }
+
 internal fun looksLikeUri(value: String): Boolean = value.contains("://")
+
+/** Null when [value] is a usable relative subfolder (or empty); otherwise a user-facing reason. */
+internal fun wikiSubdirError(value: String): String? = when {
+    value.startsWith("/") || value.startsWith("~") || value.contains('\\') || Regex("^[A-Za-z]:").containsMatchIn(value) ->
+        "Use a path relative to the repository root, e.g. notes/pages"
+    value.split('/').any { it == ".." } -> "\"..\" isn't allowed"
+    else -> null
+}
 
 /**
  * Populates the `PlatformSettings` keys ("githubOwner"/"githubRepo"/"githubBranch"/"githubToken")
