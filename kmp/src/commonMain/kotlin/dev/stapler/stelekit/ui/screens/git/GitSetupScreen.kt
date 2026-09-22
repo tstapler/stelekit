@@ -180,9 +180,9 @@ fun GitSetupScreen(
     val credentialStore = remember { CredentialStore() }
     // App-wide (not per-graph) — lets HTTPS_TOKEN/GITHUB_OAUTH credentials be reused across graphs
     // instead of re-pasting a PAT or redoing the OAuth device flow every time. PlatformSettings()
-    // is instantiated ad hoc here rather than threaded through as a parameter, matching the
-    // existing precedent in persistWebGitCredentials below (each instance shares the same
-    // underlying platform store — SharedPreferences/NSUserDefaults/localStorage — so this is safe).
+    // is instantiated ad hoc here rather than threaded through as a parameter — every instance
+    // shares the same underlying platform store (SharedPreferences/NSUserDefaults/localStorage),
+    // so this is safe.
     val connectionStore = remember(credentialStore) { GitCredentialConnectionStore(PlatformSettings(), credentialStore) }
     var httpsConnections by remember {
         mutableStateOf(connectionStore.listConnections(GitAuthType.HTTPS_TOKEN))
@@ -608,12 +608,6 @@ fun GitSetupScreen(
                                         fallbackKey = "git_github_oauth_$newGraphId",
                                     )
                                 } else null
-                                // Web git write-back fix (PR #239 review): the wasmJs configResolver
-                                // (browser/Main.kt) reads credentials from PlatformSettings, not from
-                                // CredentialStore (a no-op on web) — populate it here so a real web
-                                // user's saved PAT is actually reachable. See persistWebGitCredentials
-                                // KDoc for the reload-to-take-effect caveat and the GITHUB_OAUTH gap.
-                                persistWebGitCredentials(cloneUrl, remoteBranch, authType, httpsToken)
                                 val config = buildConfig(
                                     newGraphId,
                                     repoRoot, wikiSubdir, authType, sshKeyPath, remoteBranch, pollIntervalMinutes,
@@ -665,12 +659,6 @@ fun GitSetupScreen(
                                     fallbackKey = existingConfig?.oauthTokenKey ?: "git_github_oauth_$graphId",
                                 )
                             } else null
-                            // Web git write-back fix (PR #239 review): same PlatformSettings wiring as
-                            // the clone-and-add path above. cloneUrl is typically blank here (this is
-                            // the "use existing clone" / edit path, where Step2RepoPath never shows the
-                            // remote-URL field) — persistWebGitCredentials no-ops on a blank cloneUrl,
-                            // so the user's initial-setup PlatformSettings values are left untouched.
-                            persistWebGitCredentials(cloneUrl, remoteBranch, authType, httpsToken)
                             val config = buildConfig(
                                 graphId, repoRoot, wikiSubdir, authType,
                                 sshKeyPath, remoteBranch, pollIntervalMinutes,
@@ -1243,7 +1231,7 @@ private fun Step3Auth(
                     },
                 )
                 Text(
-                    "Token is encrypted on disk using device-specific keys. For stronger protection, use SSH key auth.",
+                    "Token is encrypted at rest. For stronger protection, use SSH key auth.",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1523,48 +1511,6 @@ internal fun wikiSubdirError(value: String): String? = when {
         "Use a path relative to the repository root, e.g. notes/pages"
     value.split('/').any { it == ".." } -> "\"..\" isn't allowed"
     else -> null
-}
-
-/**
- * Populates the `PlatformSettings` keys ("githubOwner"/"githubRepo"/"githubBranch"/"githubToken")
- * that `browser/Main.kt`'s `configResolver` reads once at wasmJs startup into
- * `PlatformFileSystem`/`WasmSectionSyncService`'s companion fields — the credential source the
- * write engine (`WasmGitRepository`) actually trusts. Without this, a web user's saved
- * `HTTPS_TOKEN` PAT (persisted via [CredentialStore], a no-op on wasmJs for a different, accepted
- * reason) is never visible to `configResolver`, and every `commit`/`fetch`/`push`/`merge` fails
- * with `AuthFailed("Unable to resolve git host configuration for this graph")`.
- *
- * [cloneUrl] is parsed via [GitHostAdapter.extractOwnerRepo] to derive `owner`/`repo`; no-ops
- * (does not overwrite any existing settings with blanks) when [authType] is not
- * [GitAuthType.HTTPS_TOKEN], [cloneUrl] is blank or unparseable, or [token] is blank.
- *
- * IMPORTANT — documented UX rough edge, not a correctness bug: this only takes effect for the
- * CURRENT session after a page reload on web, because `Main.kt` reads `PlatformSettings` exactly
- * once at startup. This function intentionally does not attempt to also update
- * `PlatformFileSystem`'s companion fields live — that would require a new expect/actual hook this
- * fix doesn't need to build.
- *
- * KNOWN FOLLOW-UP (explicitly out of scope for this fix): [GitAuthType.GITHUB_OAUTH]'s equivalent
- * gap — the OAuth device-flow token is also never written to `PlatformSettings` — is not handled
- * here and needs its own follow-up.
- *
- * Safe no-op-equivalent on JVM/Android: those platforms never read these specific
- * `PlatformSettings` keys back, so writing them there is harmless, just slightly redundant.
- */
-internal fun persistWebGitCredentials(
-    cloneUrl: String,
-    branch: String,
-    authType: GitAuthType,
-    token: String,
-) {
-    if (authType != GitAuthType.HTTPS_TOKEN) return
-    if (cloneUrl.isBlank() || token.isBlank()) return
-    val (owner, repo) = GitHostAdapter.extractOwnerRepo(cloneUrl) ?: return
-    val settings = PlatformSettings()
-    settings.putString("githubOwner", owner)
-    settings.putString("githubRepo", repo)
-    settings.putString("githubBranch", branch)
-    settings.putString("githubToken", token)
 }
 
 /**
