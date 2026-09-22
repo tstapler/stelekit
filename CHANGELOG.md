@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.87.0](https://github.com/tstapler/stelekit/compare/v0.86.2...v0.87.0) (2026-09-22)
+
+
+### Features
+
+* **graphs:** app-storage clone default, name/description, new-graph flow ([ceaa2fa](https://github.com/tstapler/stelekit/commit/ceaa2fa465819d86af746503a80ce87365d498ab))
+
 ## [0.86.2](https://github.com/tstapler/stelekit/compare/v0.86.1...v0.86.2) (2026-09-21)
 
 
