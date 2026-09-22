@@ -236,11 +236,11 @@ class GraphManager(
                 } else {
                     registry
                 }
-                // Refresh display names in case paths were stored before displayNameForPath was fixed
+                // Only backfill blank names — a non-blank name may be user-chosen (rename / New graph)
+                // and must survive restarts.
                 val refreshed = cleanedRegistry.copy(
                     graphs = cleanedRegistry.graphs.map { graph ->
-                        val freshName = fileSystem.displayNameForPath(graph.path)
-                        if (freshName != graph.displayName) graph.copy(displayName = freshName) else graph
+                        if (graph.displayName.isBlank()) graph.copy(displayName = fileSystem.displayNameForPath(graph.path)) else graph
                     }
                 )
                 _graphRegistry.value = refreshed
@@ -361,14 +361,19 @@ class GraphManager(
     fun graphIdFromPath(path: String): GraphId =
         GraphId(ContentHasher.sha256(path).take(16))
 
-    suspend fun addGraph(path: String, location: StorageLocation? = null): GraphId {
+    suspend fun addGraph(
+        path: String,
+        location: StorageLocation? = null,
+        displayName: String? = null,
+        description: String = "",
+    ): GraphId {
         // Use expanded path for consistent ID generation
         val expandedPath = fileSystem.expandTilde(path)
         val graphId = graphIdFromPath(expandedPath)
 
         // Move SAF Binder IPC off the main thread — these calls can take hundreds of ms
         // on real hardware and cause ANR when called from a LaunchedEffect.
-        val (displayName, isParanoidMode) = withContext(PlatformDispatcher.IO) {
+        val (derivedName, isParanoidMode) = withContext(PlatformDispatcher.IO) {
             val dn = fileSystem.displayNameForPath(expandedPath)
             // Warn if the SQLite database files are not gitignored.
             // The .db, .db-wal, and .db-shm files must never be committed to git
@@ -380,7 +385,8 @@ class GraphManager(
         val info = GraphInfo(
             id = graphId,
             path = expandedPath,
-            displayName = displayName,
+            displayName = displayName?.trim()?.takeIf { it.isNotEmpty() } ?: derivedName,
+            description = description.trim(),
             addedAt = Clock.System.now().toEpochMilliseconds(),
             isParanoidMode = isParanoidMode,
         )
@@ -449,9 +455,11 @@ class GraphManager(
         // a later relocate/link flow to lazily backfill it. Default null preserves every existing
         // caller's behavior unchanged.
         location: StorageLocation? = null,
+        displayName: String? = null,
+        description: String = "",
     ): Either<DomainError.GitError, GraphId> {
         val cloneResult = gitRepository.clone(url, localPath, auth, onProgress)
-        return cloneResult.map { addGraph(localPath, location) }
+        return cloneResult.map { addGraph(localPath, location, displayName, description) }
     }
 
     /**
@@ -563,6 +571,17 @@ class GraphManager(
         return true
     }
     
+    fun updateGraphDescription(id: GraphId, description: String): Boolean {
+        val registry = _graphRegistry.value
+        val index = registry.graphs.indexOfFirst { it.id == id }
+        if (index == -1 || registry.graphs[index].isDemo) return false
+        val updatedGraphs = registry.graphs.toMutableList()
+        updatedGraphs[index] = updatedGraphs[index].copy(description = description.trim())
+        _graphRegistry.value = registry.copy(graphs = updatedGraphs)
+        saveRegistry()
+        return true
+    }
+
     fun renameGraph(id: GraphId, newName: String): Boolean {
         val registry = _graphRegistry.value
         val graphIndex = registry.graphs.indexOfFirst { it.id == id }

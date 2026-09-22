@@ -10,6 +10,7 @@ import androidx.compose.foundation.background
 import dev.stapler.stelekit.capture.HotkeyRegistrationFailure
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -1429,6 +1430,16 @@ private fun GraphContent(deps: GraphContentDeps) {
                     // (see that lambda's comment), so the real picked path is stashed here rather
                     // than reconstructed from that shorter field.
                     var pendingNewGraphSafPath by remember { mutableStateOf("") }
+                    // "New graph..." flow: name/description live here so they survive the location
+                    // picker and the ADR-003 warning; newGraphFlow tells those shared dialogs to
+                    // return here instead of creating/opening a graph directly.
+                    var newGraphFlow by remember { mutableStateOf(false) }
+                    var showNewGraphDialog by remember { mutableStateOf(false) }
+                    var newGraphName by remember { mutableStateOf("") }
+                    var newGraphDescription by remember { mutableStateOf("") }
+                    var newGraphParent by remember { mutableStateOf("") }
+                    var newGraphLocation by remember { mutableStateOf<StorageLocation?>(null) }
+                    var newGraphPath by remember { mutableStateOf("") }
                     var pendingPlainGraphWarning by remember {
                         mutableStateOf<Pair<StorageLocation.AppOwned, String>?>(null)
                     }
@@ -1621,6 +1632,24 @@ private fun GraphContent(deps: GraphContentDeps) {
                                     }
                                     closeSidebarIfMobile()
                                 },
+                                onNewGraph = {
+                                    newGraphFlow = true
+                                    newGraphName = ""
+                                    newGraphDescription = ""
+                                    newGraphLocation = null
+                                    newGraphPath = ""
+                                    if (addGraphFlowMode(fileSystem) == AddGraphFlowMode.ShowLocationPicker) {
+                                        pendingNewGraphAppOwnedPath = fileSystem.newAppOwnedGraphPath()
+                                        newGraphPath = pendingNewGraphAppOwnedPath
+                                        newGraphLocation = StorageLocation.AppOwned(
+                                            graphManager.graphIdFromPath(fileSystem.expandTilde(newGraphPath)).value
+                                        )
+                                    } else {
+                                        newGraphParent = fileSystem.getDefaultGraphPath().substringBeforeLast('/')
+                                    }
+                                    showNewGraphDialog = true
+                                    closeSidebarIfMobile()
+                                },
                                 onRemoveGraph = { id ->
                                     scope.launch {
                                         if (!graphManager.removeGraph(GraphId(id))) {
@@ -1646,6 +1675,11 @@ private fun GraphContent(deps: GraphContentDeps) {
                                             dev.stapler.stelekit.db.UpdateGraphPathResult.DatabaseMoveFailed ->
                                                 viewModel.sendSnackbar("Failed to move the graph's database — check file permissions")
                                         }
+                                    }
+                                },
+                                onUpdateGraphDescription = { id, description ->
+                                    if (!graphManager.updateGraphDescription(GraphId(id), description)) {
+                                        viewModel.sendSnackbar("Failed to update graph description")
                                     }
                                 },
                                 onRenameGraph = { id, newName ->
@@ -2165,8 +2199,8 @@ private fun GraphContent(deps: GraphContentDeps) {
                                 gitConfigRepository = gitConfigRepository,
                                 activeGraphId = activeGraphId?.value,
                                 onCloneAndAdd = if (gitRepository != null) {
-                                    { url, localPath, auth, location, onProgress ->
-                                        graphManager.cloneAndAdd(gitRepository, url, localPath, auth, onProgress, location).map { it.value }
+                                    { url, localPath, auth, location, displayName, description, onProgress ->
+                                        graphManager.cloneAndAdd(gitRepository, url, localPath, auth, onProgress, location, displayName, description).map { it.value }
                                     }
                                 } else null,
                                 graphPath = activeGraphPath,
@@ -2220,7 +2254,84 @@ private fun GraphContent(deps: GraphContentDeps) {
                     // callback's comment. createNewGraph is shared by both this picker's SafFolder
                     // branch (no warning needed) and the AppOwned warning's "Create anyway" below.
                     val createNewGraph: (String, StorageLocation?) -> Unit = { path, location ->
-                        scope.launch { graphManager.switchGraph(graphManager.addGraph(path, location)) }
+                        val name = newGraphName.takeIf { newGraphFlow }
+                        val description = newGraphDescription.takeIf { newGraphFlow } ?: ""
+                        scope.launch {
+                            graphManager.switchGraph(graphManager.addGraph(path, location, name, description))
+                            newGraphFlow = false
+                        }
+                    }
+                    if (showNewGraphDialog) {
+                        val nameOk = isValidGraphFolderName(newGraphName)
+                        val newGraphMode = addGraphFlowMode(fileSystem)
+                        NewGraphDialog(
+                            name = newGraphName,
+                            onNameChange = { newGraphName = it },
+                            description = newGraphDescription,
+                            onDescriptionChange = { newGraphDescription = it },
+                            canCreate = nameOk && (newGraphMode != AddGraphFlowMode.ImmediateNativePicker || newGraphParent.isNotBlank()),
+                            onDismiss = { showNewGraphDialog = false; newGraphFlow = false },
+                            onCreate = {
+                                showNewGraphDialog = false
+                                val location = newGraphLocation
+                                when {
+                                    location is StorageLocation.AppOwned ->
+                                        pendingPlainGraphWarning = location to newGraphPath
+                                    location != null -> createNewGraph(newGraphPath, location)
+                                    else -> {
+                                        val path = newGraphPathFor(newGraphMode, newGraphParent, newGraphName) ?: return@NewGraphDialog
+                                        if (newGraphMode == AddGraphFlowMode.ShowNameDialog) {
+                                            createNewGraph(path, null)
+                                        } else if (fileSystem.directoryExists(path)) {
+                                            newGraphFlow = false
+                                            viewModel.sendSnackbar("A folder named \"${newGraphName.trim()}\" already exists there")
+                                        } else if (!fileSystem.createDirectory(path)) {
+                                            newGraphFlow = false
+                                            viewModel.sendSnackbar("Couldn't create $path")
+                                        } else {
+                                            createNewGraph(path, null)
+                                        }
+                                    }
+                                }
+                            },
+                            location = {
+                                if (newGraphMode == AddGraphFlowMode.ShowNameDialog) {
+                                    Text(
+                                        "Stored in your browser's private storage.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                } else if (newGraphMode == AddGraphFlowMode.ShowLocationPicker) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text("Save to", style = MaterialTheme.typography.labelMedium)
+                                            Text(
+                                                if (newGraphLocation is StorageLocation.AppOwned) "App storage (default)" else "Folder you picked",
+                                                style = MaterialTheme.typography.bodyLarge,
+                                            )
+                                        }
+                                        TextButton(onClick = {
+                                            showNewGraphDialog = false
+                                            showNewGraphLocationPicker = true
+                                        }) { Text("Change…") }
+                                    }
+                                } else {
+                                    OutlinedTextField(
+                                        value = newGraphParent,
+                                        onValueChange = { newGraphParent = it },
+                                        label = { Text("Parent folder") },
+                                        supportingText = { Text("Creates a folder named after the graph inside it.") },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        trailingIcon = {
+                                            IconButton(onClick = {
+                                                fileSystem.requestDirectoryPickerNow()
+                                                scope.launch { fileSystem.pickDirectoryAsync()?.let { newGraphParent = it } }
+                                            }) { Icon(Icons.Default.FolderOpen, contentDescription = "Browse for parent folder") }
+                                        },
+                                    )
+                                }
+                            },
+                        )
                     }
                     if (showNewGraphLocationPicker) {
                         UnifiedLocationPicker(
@@ -2248,6 +2359,12 @@ private fun GraphContent(deps: GraphContentDeps) {
                             },
                             onConfirm = { location ->
                                 showNewGraphLocationPicker = false
+                                if (newGraphFlow) {
+                                    newGraphLocation = location
+                                    newGraphPath = if (location is StorageLocation.SafFolder) pendingNewGraphSafPath else pendingNewGraphAppOwnedPath
+                                    showNewGraphDialog = true
+                                    return@UnifiedLocationPicker
+                                }
                                 when (location) {
                                     is StorageLocation.AppOwned ->
                                         // ADR-003: a plain (non-git) graph in AppOwned storage has
@@ -2259,7 +2376,7 @@ private fun GraphContent(deps: GraphContentDeps) {
                                         Unit
                                 }
                             },
-                            onDismiss = { showNewGraphLocationPicker = false },
+                            onDismiss = { showNewGraphLocationPicker = false; if (newGraphFlow) showNewGraphDialog = true },
                         )
                     }
 
@@ -2287,7 +2404,7 @@ private fun GraphContent(deps: GraphContentDeps) {
                                 // ux.md Surface 11: returns to an editable New-graph dialog rather
                                 // than all the way back to the sidebar.
                                 pendingPlainGraphWarning = null
-                                showNewGraphLocationPicker = true
+                                if (newGraphFlow) showNewGraphDialog = true else showNewGraphLocationPicker = true
                             },
                         )
                     }
@@ -2349,6 +2466,17 @@ internal fun addGraphFlowMode(fileSystem: FileSystem): AddGraphFlowMode = when {
     fileSystem.supportsAppOwnedStorage -> AddGraphFlowMode.ShowLocationPicker
     fileSystem.supportsNativeDirectoryPicker -> AddGraphFlowMode.ImmediateNativePicker
     else -> AddGraphFlowMode.ShowNameDialog
+}
+
+/**
+ * Where "New graph…" should put a graph created by name: `null` when [mode] uses a resolved
+ * [StorageLocation] instead (app storage / picked folder), otherwise the path to register. Only
+ * [AddGraphFlowMode.ImmediateNativePicker] needs the folder created on disk first.
+ */
+internal fun newGraphPathFor(mode: AddGraphFlowMode, parent: String, name: String): String? = when (mode) {
+    AddGraphFlowMode.ShowLocationPicker -> null
+    AddGraphFlowMode.ImmediateNativePicker -> "${parent.trimEnd('/')}/${name.trim()}"
+    AddGraphFlowMode.ShowNameDialog -> "/stelekit/${name.trim()}"
 }
 
 /**
