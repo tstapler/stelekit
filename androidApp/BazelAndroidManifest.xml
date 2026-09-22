@@ -5,5 +5,6 @@
     package="dev.stapler.stelekit">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
     <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="36" />
 </manifest>
