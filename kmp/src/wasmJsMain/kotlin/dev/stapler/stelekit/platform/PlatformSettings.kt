@@ -22,6 +22,12 @@ object EphemeralSettingsMode {
 
     /** Shared in-memory backing store for every [PlatformSettings] instance while [active]. */
     internal val store = mutableMapOf<String, String>()
+
+    /** Test-only: reverts [enable] and clears [store], so tests don't leak ephemeral state. */
+    internal fun resetForTest() {
+        active = false
+        store.clear()
+    }
 }
 
 actual class PlatformSettings actual constructor() : Settings {
