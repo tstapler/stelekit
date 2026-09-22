@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.87.1](https://github.com/tstapler/stelekit/compare/v0.87.0...v0.87.1) (2026-09-22)
+
+
+### Bug Fixes
+
+* **android:** declare ACCESS_LOCAL_NETWORK explicitly ([d37a21d](https://github.com/tstapler/stelekit/commit/d37a21d2853c5ea7cedc567ef53c1782fd062cac))
+
 ## [0.87.0](https://github.com/tstapler/stelekit/compare/v0.86.2...v0.87.0) (2026-09-22)
 
 
