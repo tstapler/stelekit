@@ -11,9 +11,9 @@ package dev.stapler.stelekit.ui.annotate
  */
 internal const val MAX_CANVAS_AREA_PX = 16_777_216L
 
-/** Pure so it's testable from `commonTest` without a browser — [ImageEncoder.wasmJs.kt] is the only caller today. */
+/** Pure so it's testable from `commonTest` without a browser — [ImageEncoder]'s wasmJs actual is the only caller today. */
 internal fun isValidBitmapSize(width: Int, height: Int): Boolean = width > 0 && height > 0
 
-/** Pure so it's testable from `commonTest` without a browser — [ImageEncoder.wasmJs.kt] is the only caller today. */
+/** Pure so it's testable from `commonTest` without a browser — [ImageEncoder]'s wasmJs actual is the only caller today. */
 internal fun exceedsCanvasAreaCeiling(width: Int, height: Int): Boolean =
     width.toLong() * height.toLong() > MAX_CANVAS_AREA_PX

@@ -12,6 +12,11 @@ package dev.stapler.stelekit.ui.annotate
  * JPEG has no alpha channel — this flattening step must happen before encode, since relying on
  * the browser's own implicit alpha handling is inconsistent and undocumented across engines
  * (see `project_plans/wasm-jpeg-export/research/pitfalls.md` §4).
+ *
+ * Assumes [pixels] is tightly packed — one entry per pixel in row-major order, no stride or
+ * buffer-offset gaps. True for [androidx.compose.ui.graphics.ImageBitmap.toPixelMap]'s
+ * zero-arg default (its only caller today); a cropped/offset `PixelMap` would need re-deriving
+ * the index math from its own `stride`/`bufferOffset` first.
  */
 internal fun flattenToOpaqueRgba(pixels: IntArray, width: Int, height: Int): ByteArray {
     val out = ByteArray(width * height * 4)

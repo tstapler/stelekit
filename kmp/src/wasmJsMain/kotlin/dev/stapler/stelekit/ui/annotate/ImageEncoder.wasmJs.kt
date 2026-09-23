@@ -20,12 +20,12 @@ actual object ImageEncoder {
         val width = bitmap.width
         val height = bitmap.height
         if (!isValidBitmapSize(width, height)) {
+            logEncodeFailure("invalid bitmap size ${width}x$height")
             return ByteArray(0)
         }
         if (exceedsCanvasAreaCeiling(width, height)) {
-            println(
-                "[SteleKit] wasmJs JPEG encode skipped: ${width}x$height exceeds " +
-                    "MAX_CANVAS_AREA_PX ($MAX_CANVAS_AREA_PX)",
+            logEncodeFailure(
+                "${width}x$height exceeds MAX_CANVAS_AREA_PX ($MAX_CANVAS_AREA_PX)",
             )
             return ByteArray(0)
         }
