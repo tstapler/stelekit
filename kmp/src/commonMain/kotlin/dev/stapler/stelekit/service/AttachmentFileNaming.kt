@@ -47,3 +47,26 @@ fun uniqueFileName(
         counter++
     }
 }
+
+/**
+ * Returns a unique filename under [assetsPath] using the same suffix-counter strategy
+ * as [uniqueFileName], but checks file existence via [dev.stapler.stelekit.platform.FileSystem]
+ * rather than okio, for use on Android SAF paths.
+ */
+internal fun uniqueFileName(
+    assetsPath: String,
+    stem: String,
+    ext: String,
+    fileSystem: dev.stapler.stelekit.platform.FileSystem,
+): String {
+    val safeStem = sanitizeFileNameComponent(stem, fallback = "attachment")
+    val safeExt = sanitizeFileNameComponent(ext, fallback = "")
+    val base = if (safeExt.isBlank()) safeStem else "$safeStem.$safeExt"
+    if (!fileSystem.fileExists("$assetsPath/$base")) return base
+    var counter = 1
+    while (true) {
+        val candidate = if (safeExt.isBlank()) "$safeStem-$counter" else "$safeStem-$counter.$safeExt"
+        if (!fileSystem.fileExists("$assetsPath/$candidate")) return candidate
+        counter++
+    }
+}

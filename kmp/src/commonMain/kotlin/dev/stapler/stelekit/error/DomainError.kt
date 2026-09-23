@@ -46,7 +46,7 @@ sealed interface DomainError {
         data class HttpError(val statusCode: Int, override val message: String) : NetworkError
         data class CircuitOpen(override val message: String = "Circuit breaker is open") : NetworkError
         data class Timeout(override val message: String) : NetworkError
-        data class RequestFailed(override val message: String) : NetworkError
+        data class RequestFailed(override val message: String, val retryable: Boolean = false) : NetworkError
     }
 
     sealed interface SensorError : DomainError {
@@ -93,6 +93,20 @@ sealed interface DomainError {
         data object EditingInProgress : GitError {
             override val message: String = "Cannot sync while editing is in progress"
         }
+        data class CredentialExpired(override val message: String) : GitError
+        data class RateLimited(val retryAfterSeconds: Int?) : GitError {
+            override val message: String = "Rate limited by GitHub/GitLab"
+        }
+        data class FileTooLarge(val path: String, val sizeBytes: Long, val maxBytes: Long) : GitError {
+            override val message: String =
+                "File too large to sync: $path ($sizeBytes bytes exceeds max of $maxBytes bytes)"
+        }
+        data class NetworkFailure(override val message: String) : GitError
+        data class WorkingTreeSyncFailed(val direction: String, val path: String, override val message: String) : GitError
+        data class WorkingTreeWriteBackFailed(val path: String, override val message: String) : GitError
+        data class WorkingTreeConcurrentEditDetected(val path: String) : GitError {
+            override val message: String = "Local file changed during sync: $path"
+        }
     }
 
     sealed interface AttachmentError : DomainError {
@@ -106,55 +120,151 @@ sealed interface DomainError {
         data class ClipboardFailed(override val message: String) : ExportError
         data class ShareFailed(override val message: String) : ExportError
     }
+
+    /**
+     * Five variants, not the original six (Story 1.1.2): `IncompleteTransfer(received, total)` and
+     * `TransferCancelled` were removed as dead code after an audit found no principled call site —
+     * see `ChunkBuffer.reassemble` and `QrTransferCoordinator.cancel` KDoc for why.
+     * `EnvelopeMalformed` was added afterward (see `TransferPayloadEnvelope`) for the one failure
+     * mode that can only occur AFTER `IntegrityCheckFailed`'s CRC32 gate already passed: the
+     * reassembled bytes are provably intact but don't parse as a valid name+markdown envelope.
+     */
+    sealed interface QrTransferError : DomainError {
+        data object ChunkDecodeFailed : QrTransferError {
+            override val message: String = "Failed to decode QR chunk"
+        }
+        data object IntegrityCheckFailed : QrTransferError {
+            override val message: String = "Transfer integrity check failed"
+        }
+        data class PayloadTooLarge(val sizeBytes: Int, val maxBytes: Int) : QrTransferError {
+            override val message: String = "Payload too large: $sizeBytes bytes exceeds max of $maxBytes bytes"
+        }
+        data object MarkdownParseFailed : QrTransferError {
+            override val message: String = "Failed to parse received markdown"
+        }
+        data object EnvelopeMalformed : QrTransferError {
+            override val message: String = "Transfer payload envelope is malformed"
+        }
+
+        /**
+         * [dev.stapler.stelekit.transfer.qrcode.QrImportService.import]'s overwrite path clears the
+         * pre-existing page's blocks before writing the new ones; if the new-block write then
+         * fails, the page row is deliberately left in place (never deleted — that would destroy the
+         * pre-existing page beyond what this failed operation should be allowed to touch) but its
+         * blocks may now be empty or partial. Distinct from [MarkdownParseFailed] so the UI can
+         * tell the user their previous content on this page may have been affected, not just that
+         * the new import failed.
+         */
+        data class OverwriteFailedPreviousContentAffected(val pageUuid: String) : QrTransferError {
+            override val message: String =
+                "Overwrite failed after clearing previous content for page $pageUuid — previous content may be lost"
+        }
+    }
+
+    /** Failure modes for relocate/link storage-move operations (ADR-001). */
+    sealed interface StorageError : DomainError {
+        data class VerificationFailed(val path: String, val reason: String) : StorageError {
+            override val message: String = "Verification failed for $path: $reason"
+        }
+        data class SourceInFlight(val reason: String) : StorageError {
+            override val message: String = "Source is still in flight: $reason"
+        }
+        data class DestinationNotWritable(val path: String) : StorageError {
+            override val message: String = "Destination not writable: $path"
+        }
+        data class PartialCopyDetected(val path: String) : StorageError {
+            override val message: String = "Partial copy detected at $path"
+        }
+        data class InsufficientSpace(val requiredBytes: Long, val availableBytes: Long) : StorageError {
+            override val message: String =
+                "Insufficient space: required $requiredBytes bytes, available $availableBytes bytes"
+        }
+        data class QuiesceTimedOut(val waitedMs: Long) : StorageError {
+            override val message: String = "Timed out after ${waitedMs}ms waiting for in-flight sync to quiesce"
+        }
+        data class RelocationFailed(val path: String) : StorageError {
+            override val message: String = "Failed to rename $path"
+        }
+
+        /**
+         * Worse than every other leaf here: the driver may now be stuck closed rather than back
+         * at its pre-move state (see `GraphRelocationCoordinator`, Story 3.1.5).
+         */
+        data class ReopenFailed(val graphId: String) : StorageError {
+            override val message: String = "Failed to reopen graph after relocate: $graphId"
+        }
+    }
 }
 
 fun Throwable.toDatabaseError(): DomainError.DatabaseError.WriteFailed =
     DomainError.DatabaseError.WriteFailed(message ?: "unknown")
 
 fun DomainError.toUiMessage(): String = when (this) {
-    is DomainError.DatabaseError.WriteFailed -> "Save failed: $message"
-    is DomainError.DatabaseError.ReadFailed -> "Read failed: $message"
-    is DomainError.DatabaseError.NotFound -> message
-    is DomainError.DatabaseError.TransactionFailed -> "Transaction failed: $message"
-    is DomainError.FileSystemError.NotFound -> message
-    is DomainError.FileSystemError.WriteFailed -> "File write failed: $message"
-    is DomainError.FileSystemError.ReadFailed -> "File read failed: $message"
-    is DomainError.FileSystemError.DeleteFailed -> "File delete failed: $message"
-    is DomainError.ParseError.EmptyFile -> message
-    is DomainError.ParseError.InvalidSyntax -> "Parse error: $message"
-    is DomainError.ParseError.MalformedMarkdown -> "Malformed markdown: $message"
-    is DomainError.ConflictError.DiskConflict -> "Disk conflict: $message"
-    is DomainError.ConflictError.ConcurrentWrite -> "Concurrent write conflict: $message"
-    is DomainError.ValidationError.InvalidUuid -> message
-    is DomainError.ValidationError.EmptyName -> "Invalid name: $message"
-    is DomainError.ValidationError.ConstraintViolation -> "Validation error: $message"
-    is DomainError.NetworkError.HttpError -> "HTTP $statusCode: $message"
-    is DomainError.NetworkError.CircuitOpen -> message
-    is DomainError.NetworkError.Timeout -> "Request timed out: $message"
-    is DomainError.NetworkError.RequestFailed -> "Request failed: $message"
-    is DomainError.SensorError.PermissionDenied -> message
-    is DomainError.SensorError.HardwareUnavailable -> message
-    is DomainError.SensorError.CaptureFailed -> "Capture failed: $message"
-    is DomainError.BleError.ConnectionFailed -> "BLE connection failed: $message"
-    is DomainError.BleError.Gatt133 -> "BLE GATT error after $attempts attempts: $message"
-    is DomainError.GitError.CloneFailed -> "Git clone failed: $message"
-    is DomainError.GitError.FetchFailed -> "Git fetch failed: $message"
-    is DomainError.GitError.PushFailed -> "Git push failed: $message"
-    is DomainError.GitError.AuthFailed -> "Git authentication failed: $message"
+    is DomainError.DatabaseError.WriteFailed -> "Save failed"
+    is DomainError.DatabaseError.ReadFailed -> "Read failed"
+    is DomainError.DatabaseError.NotFound -> "Not found"
+    is DomainError.DatabaseError.TransactionFailed -> "Transaction failed"
+    is DomainError.FileSystemError.NotFound -> "File not found"
+    is DomainError.FileSystemError.WriteFailed -> "File write failed"
+    is DomainError.FileSystemError.ReadFailed -> "File read failed"
+    is DomainError.FileSystemError.DeleteFailed -> "File delete failed"
+    is DomainError.ParseError.EmptyFile -> "File is empty"
+    is DomainError.ParseError.InvalidSyntax -> "Parse error"
+    is DomainError.ParseError.MalformedMarkdown -> "Malformed markdown"
+    is DomainError.ConflictError.DiskConflict -> "Disk conflict detected"
+    is DomainError.ConflictError.ConcurrentWrite -> "Concurrent write conflict"
+    is DomainError.ValidationError.InvalidUuid -> "Invalid identifier"
+    is DomainError.ValidationError.EmptyName -> "Name cannot be empty"
+    is DomainError.ValidationError.ConstraintViolation -> "Validation failed"
+    is DomainError.NetworkError.HttpError -> "Network error (HTTP $statusCode)"
+    is DomainError.NetworkError.CircuitOpen -> "Service temporarily unavailable"
+    is DomainError.NetworkError.Timeout -> "Request timed out"
+    is DomainError.NetworkError.RequestFailed -> "Request failed"
+    is DomainError.SensorError.PermissionDenied -> "Camera permission denied"
+    is DomainError.SensorError.HardwareUnavailable -> "Camera unavailable"
+    is DomainError.SensorError.CaptureFailed -> "Capture failed"
+    is DomainError.BleError.ConnectionFailed -> "BLE connection failed"
+    is DomainError.BleError.Gatt133 -> "BLE GATT error after $attempts attempts"
+    is DomainError.GitError.CloneFailed -> "Git clone failed"
+    is DomainError.GitError.FetchFailed -> "Git fetch failed"
+    is DomainError.GitError.PushFailed -> "Git push failed"
+    is DomainError.GitError.AuthFailed -> "Git authentication failed — check your credentials"
     is DomainError.GitError.MergeConflict -> message
-    is DomainError.GitError.CommitFailed -> "Git commit failed: $message"
-    is DomainError.GitError.NotAGitRepo -> message
-    is DomainError.GitError.DetachedHead -> message
-    is DomainError.GitError.StaleLockFile -> message
+    is DomainError.GitError.CommitFailed -> "Git commit failed"
+    is DomainError.GitError.NotAGitRepo -> "Not a git repository"
+    is DomainError.GitError.DetachedHead -> "Repository in detached HEAD state"
+    is DomainError.GitError.StaleLockFile -> "Git lock file found — another process may be using the repository"
     is DomainError.GitError.NotSupported -> message
     is DomainError.GitError.Offline -> message
     is DomainError.GitError.EditingInProgress -> message
-    is DomainError.AttachmentError.CopyFailed -> "Attachment failed: $message"
-    is DomainError.AttachmentError.PickerFailed -> "Could not open file picker: $message"
-    is DomainError.AttachmentError.AssetsDirectoryFailed -> "Cannot create assets directory: $message"
-    is DomainError.ExportError.SerializationFailed -> "Export failed: $message"
-    is DomainError.ExportError.ClipboardFailed -> "Clipboard write failed: $message"
-    is DomainError.ExportError.ShareFailed -> "Share failed: $message"
+    is DomainError.GitError.CredentialExpired -> "GitHub authentication expired — tap to re-connect"
+    is DomainError.GitError.RateLimited -> "Rate limited — retrying automatically"
+    is DomainError.GitError.FileTooLarge -> "File too large to sync: ${path}"
+    is DomainError.GitError.NetworkFailure -> "Network error — sync will retry"
+    is DomainError.GitError.WorkingTreeSyncFailed -> "Sync failed: $path"
+    is DomainError.GitError.WorkingTreeWriteBackFailed -> "Write-back failed: $path"
+    is DomainError.GitError.WorkingTreeConcurrentEditDetected -> message
+    is DomainError.AttachmentError.CopyFailed -> "Attachment failed"
+    is DomainError.AttachmentError.PickerFailed -> "Could not open file picker"
+    is DomainError.AttachmentError.AssetsDirectoryFailed -> "Cannot create assets directory"
+    is DomainError.ExportError.SerializationFailed -> "Export failed"
+    is DomainError.ExportError.ClipboardFailed -> "Clipboard write failed"
+    is DomainError.ExportError.ShareFailed -> "Share failed"
+    is DomainError.QrTransferError.ChunkDecodeFailed -> "Couldn't read that QR code — try again"
+    is DomainError.QrTransferError.IntegrityCheckFailed -> "This transfer looks corrupted — please try scanning again"
+    is DomainError.QrTransferError.PayloadTooLarge -> "This page is too large to send via QR"
+    is DomainError.QrTransferError.MarkdownParseFailed -> "Received data isn't valid page content"
+    is DomainError.QrTransferError.EnvelopeMalformed -> "This transfer didn't include valid page info — please try sending it again"
+    is DomainError.QrTransferError.OverwriteFailedPreviousContentAffected ->
+        "Overwrite failed — this page's previous content may have been affected. Please check it and try again"
+    is DomainError.StorageError.VerificationFailed -> "Verification failed — the copied files don't match the originals"
+    is DomainError.StorageError.SourceInFlight -> "Can't move right now — a sync is still in progress"
+    is DomainError.StorageError.DestinationNotWritable -> "Can't write to the selected location"
+    is DomainError.StorageError.PartialCopyDetected -> "Copy is incomplete — nothing was changed"
+    is DomainError.StorageError.InsufficientSpace -> "Not enough free space at the destination"
+    is DomainError.StorageError.QuiesceTimedOut -> "Timed out waiting for sync to finish — please try again"
+    is DomainError.StorageError.ReopenFailed -> "Move may have partially completed — please restart the app"
+    is DomainError.StorageError.RelocationFailed -> "Couldn't move file — nothing was changed"
 }
 
 fun DomainError.GitError.toSyncErrorMessage(): String = when (this) {
@@ -166,8 +276,15 @@ fun DomainError.GitError.toSyncErrorMessage(): String = when (this) {
     is DomainError.GitError.FetchFailed -> "Fetch failed — tap to retry"
     is DomainError.GitError.PushFailed -> "Push failed — tap to retry"
     is DomainError.GitError.CommitFailed -> "Commit failed — tap to retry"
-    is DomainError.GitError.CloneFailed -> "Clone failed: $message"
+    is DomainError.GitError.CloneFailed -> "Clone failed — check the repository URL and credentials"
     is DomainError.GitError.NotAGitRepo -> "Not a git repository"
     is DomainError.GitError.NotSupported -> "Git not supported on this platform"
     is DomainError.GitError.EditingInProgress -> "Editing in progress — sync will resume when idle"
+    is DomainError.GitError.CredentialExpired -> "GitHub authentication expired — tap to re-connect"
+    is DomainError.GitError.RateLimited -> "Rate limited by GitHub/GitLab — retrying automatically"
+    is DomainError.GitError.FileTooLarge -> "File too large to sync: $path"
+    is DomainError.GitError.NetworkFailure -> "Network error — sync will retry"
+    is DomainError.GitError.WorkingTreeSyncFailed -> "Sync failed — tap to retry"
+    is DomainError.GitError.WorkingTreeWriteBackFailed -> "Write-back failed — tap to retry"
+    is DomainError.GitError.WorkingTreeConcurrentEditDetected -> "Local file changed during sync — resolve to continue"
 }

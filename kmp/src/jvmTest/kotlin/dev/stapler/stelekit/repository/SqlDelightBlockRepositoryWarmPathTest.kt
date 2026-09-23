@@ -50,7 +50,7 @@ class SqlDelightBlockRepositoryWarmPathTest {
             uuid = BlockUuid("block-1"),
             pageUuid = PageUuid("page-1"),
             content = "original content",
-            position = 0,
+            position = "a0",
             createdAt = now,
             updatedAt = now,
         )
@@ -93,7 +93,7 @@ class SqlDelightBlockRepositoryWarmPathTest {
                 uuid = BlockUuid("blk-$i"),
                 pageUuid = PageUuid("page-2"),
                 content = "original $i",
-                position = i,
+                position = i.toString().padStart(11, '0'),
                 createdAt = now,
                 updatedAt = now,
             )
@@ -127,7 +127,7 @@ class SqlDelightBlockRepositoryWarmPathTest {
             uuid = BlockUuid("orphan-1"),
             pageUuid = PageUuid("non-existent-page"),
             content = "orphan content",
-            position = 0,
+            position = "a0",
             createdAt = now,
             updatedAt = now,
         )
@@ -153,7 +153,7 @@ class SqlDelightBlockRepositoryWarmPathTest {
                 uuid = BlockUuid("chunk-$i"),
                 pageUuid = PageUuid("page-chunked"),
                 content = "original $i",
-                position = i,
+                position = i.toString().padStart(11, '0'),
                 createdAt = now,
                 updatedAt = now,
             )
@@ -189,7 +189,7 @@ class SqlDelightBlockRepositoryWarmPathTest {
                 uuid = BlockUuid("perf-$i"),
                 pageUuid = PageUuid("page-perf"),
                 content = "content $i",
-                position = i,
+                position = i.toString().padStart(11, '0'),
                 createdAt = now,
                 updatedAt = now,
             )

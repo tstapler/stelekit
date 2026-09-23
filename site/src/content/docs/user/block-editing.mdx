@@ -1,0 +1,100 @@
+---
+title: Block Editing
+description: Create, indent, and organize blocks — the fundamental unit of content in SteleKit.
+---
+
+## What are blocks?
+
+Every line of text in SteleKit is a **block**. Blocks are the fundamental unit of content. A page
+is a named, ordered list of blocks. Blocks can be nested to any depth, creating an outline
+hierarchy — this is what makes SteleKit an outliner rather than a flat note editor.
+
+A simple page might look like this in the underlying Markdown:
+
+```markdown
+- Morning standup
+  - Blocked on API integration
+  - Need to sync with [[Alice]]
+- Read [[Architecture]] doc
+- TODO: write release notes
+```
+
+Each bullet is a block. The indented items are child blocks of "Morning standup."
+
+## How to access it
+
+Open any page by tapping its name in [All Pages](./all-pages), [Search](./search), or the
+sidebar. The block editor opens immediately and you can start typing.
+
+## Key interactions
+
+- **Click or tap** anywhere on the page to focus the editor and start typing
+- **Enter** — create a new block below the current block at the same indentation level
+- **Tab** — indent the current block (makes it a child of the block above)
+- **Shift+Tab** — unindent (promotes the block up one level in the hierarchy)
+- **Backspace on an empty block** — delete the block and move focus to the block above
+- **Click the bullet triangle** — collapse or expand the children under a parent block
+- **Shift+Enter** — insert a soft line break within the current block (stays in the same block)
+
+## Keyboard shortcuts
+
+| Shortcut | Action |
+|---|---|
+| Enter | New block below current |
+| Tab | Indent block |
+| Shift+Tab | Unindent block |
+| Backspace on empty | Delete block |
+| Shift+Enter | Soft newline within block |
+| Arrow Up | Move cursor to block above |
+| Arrow Down | Move cursor to block below |
+| Ctrl+Home | Jump to first block on the page |
+| Ctrl+End | Jump to last block on the page |
+
+## Inline formatting
+
+SteleKit supports standard Markdown inline syntax:
+
+| Syntax | Renders as |
+|---|---|
+| `**bold**` | **bold** |
+| `*italic*` | *italic* |
+| `` `code` `` | `code` |
+| `~~strikethrough~~` | ~~strikethrough~~ |
+| `[[Page Name]]` | Wikilink to another page |
+| `[text](url)` | External hyperlink |
+
+## Block properties
+
+Any block can have key-value properties as child blocks:
+
+```
+- My Task
+  - due:: 2024-02-01
+  - priority:: high
+  - card:: true
+```
+
+Properties with `card:: true` enroll the block in the [Flashcards](./flashcards) review queue.
+
+## Block states
+
+| State | Description |
+|---|---|
+| Focused | The block the cursor is in; shows an edit cursor |
+| Editing | Actively receiving keyboard input |
+| Read-only | Blocks shown in the sidebar references panel |
+| Collapsed | A parent block whose children are hidden; click the bullet triangle to expand |
+
+## Tips
+
+- Keep top-level blocks as main ideas; nest the supporting details beneath them
+- Use deep nesting for sub-tasks, evidence, or elaboration without cluttering the top level
+- A flat structure with many blocks works equally well — choose the depth that feels natural
+- Collapse a busy section to reduce visual noise while you work on another part of the page
+
+## Related features
+
+- [Daily Notes](./daily-notes) — use the block editor in your daily journal
+- [Backlinks](./backlinks) — see blocks on other pages that link to the current page
+- [Flashcards](./flashcards) — turn any block into a spaced-repetition review card
+- [Search](./search) — find content across all blocks in your graph

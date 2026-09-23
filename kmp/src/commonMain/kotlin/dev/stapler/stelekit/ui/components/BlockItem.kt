@@ -1,7 +1,6 @@
 package dev.stapler.stelekit.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -9,20 +8,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.zIndex
 import dev.stapler.stelekit.domain.AhoCorasickMatcher
 import dev.stapler.stelekit.model.Block
-import dev.stapler.stelekit.model.BlockTypes
-import dev.stapler.stelekit.model.BlockTypes.IMAGE_ANNOTATION
+import dev.stapler.stelekit.model.BlockType
 import dev.stapler.stelekit.ui.theme.StelekitTheme
 import dev.stapler.stelekit.ui.screens.FormatAction
+import dev.stapler.stelekit.ui.useLongPressToSelectBlock
 import dev.stapler.stelekit.ui.screens.SearchResultItem
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharedFlow
@@ -76,6 +72,7 @@ internal fun BlockItem(
     onResolveContent: suspend (String) -> String? = { null },
     onSearchPages: (String) -> Flow<List<SearchResultItem>> = { emptyFlow() },
     formatEvents: SharedFlow<FormatAction>? = null,
+    todoToggleEvents: SharedFlow<Unit>? = null,
     suggestionMatcher: AhoCorasickMatcher? = null,
     /** Called when the user requests to navigate all suggestions on screen (via context menu). */
     onNavigateAllSuggestions: (() -> Unit)? = null,
@@ -83,12 +80,18 @@ internal fun BlockItem(
     onDragStart: (uuid: String, startY: Float) -> Unit = { _, _ -> },
     onDrag: (deltaY: Float) -> Unit = {},
     onDragEnd: () -> Unit = {},
+    onLassoDragStart: (uuid: String) -> Unit = {},
+    onLassoDrag: (rootY: Float) -> Unit = {},
+    onLassoDragEnd: () -> Unit = {},
     dropAbove: Boolean = false,
     dropBelow: Boolean = false,
     dropAsChild: Boolean = false,
     onArchiveUrl: ((url: String, blockUuid: String) -> Unit)? = null,
     /** Called when user taps an image_annotation block thumbnail; receives the image annotation UUID. */
     onOpenAnnotationEditor: (imageAnnotationUuid: String) -> Unit = {},
+    hasSectionFilter: Boolean = false,
+    localPageNames: Set<String> = emptySet(),
+    onUnavailableLinkTap: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val focusRequester = remember { FocusRequester() }
@@ -228,6 +231,24 @@ internal fun BlockItem(
         }
     }
 
+    // GAP-005 (Story D.2.1): apply todo-toggle requests from the mobile toolbar's new overflow-row
+    // "☑ TODO" button when this block is being edited — mirrors the formatEvents collector above.
+    // BlockStateManager.todoToggleEvents (introduced Phase C.1) previously had no collector
+    // anywhere in the UI tree, so a future toolbar/palette trigger would have been the exact
+    // silently-non-functional "wired-looking but does nothing" anti-pattern this project's own
+    // audit flagged for the legacy `block.toggle-todo` command.
+    LaunchedEffect(isEditing, todoToggleEvents) {
+        if (isEditing && todoToggleEvents != null) {
+            todoToggleEvents.collect {
+                val newValue = applyTodoToggle(textFieldValue)
+                textFieldValue = newValue
+                onSelectionChange?.invoke(IntRange(newValue.selection.min, newValue.selection.max))
+                val newVersion = ++localVersion
+                onContentChange(newValue.text, newVersion)
+            }
+        }
+    }
+
     // Trigger load if not loaded
     LaunchedEffect(block.isLoaded) {
         if (!block.isLoaded) {
@@ -237,6 +258,22 @@ internal fun BlockItem(
 
     val haptic = LocalHapticFeedback.current
 
+    // Single source of truth for "genuine long-press on this row enters selection mode".
+    // Passed down into whichever block-type composable renders the content so tap and
+    // long-press are resolved by ONE gesture recognizer per row, instead of racing an
+    // outer row-level detector against an inner content-level one (the root cause of
+    // fast taps sometimes landing in selection mode instead of edit mode).
+    // Gated per-platform by useLongPressToSelectBlock() — off on Android (the gutter's
+    // detectGesturesAfterLongPress already claims long-press there) and on JVM/desktop (a
+    // stationary mouse-down while positioning a text cursor is ordinary behavior, and desktop
+    // has shift-click/Ctrl+A/drag-lasso as precise alternatives already).
+    val onLongPressSelect: (() -> Unit)? = if (useLongPressToSelectBlock()) ({
+        if (!isInSelectionMode) {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            onEnterSelectionMode()
+        }
+    }) else null
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -244,17 +281,6 @@ internal fun BlockItem(
                 if (isSelected) Modifier.background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f))
                 else Modifier
             )
-            .pointerInput(isInSelectionMode) {
-                detectTapGestures(
-                    onLongPress = {
-                        if (!isInSelectionMode) {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            onEnterSelectionMode()
-                        }
-                    },
-                    onTap = { if (isInSelectionMode) onToggleSelect() }
-                )
-            }
     ) {
         // Indentation guides
         repeat(block.level) { level ->
@@ -267,8 +293,20 @@ internal fun BlockItem(
             )
         }
 
-        Column {
+        // GAP-013 (Story D.3.1): DropZone.CHILD (reparent-as-child) previously rendered as only a
+        // divider/indent-shift — the same visual language as ABOVE/BELOW, differing solely by a
+        // 24dp indent on a thin line. That made it easy to mis-drop and silently reparent content
+        // with no distinct warning. A full-row background tint gives "this will become a child of
+        // the highlighted row" its own unambiguous affordance, on top of (not instead of) the
+        // existing indented divider.
         val dividerColor = MaterialTheme.colorScheme.primary
+        Column(
+            modifier = if (dropAsChild) {
+                Modifier.background(dividerColor.copy(alpha = 0.12f))
+            } else {
+                Modifier
+            }
+        ) {
         val indent = when {
             dropAsChild -> ((block.level + 1) * 24).dp
             dropAbove || dropBelow -> (block.level * 24).dp
@@ -303,6 +341,9 @@ internal fun BlockItem(
                 onDragStart = onDragStart,
                 onDrag = onDrag,
                 onDragEnd = onDragEnd,
+                onLassoDragStart = onLassoDragStart,
+                onLassoDrag = onLassoDrag,
+                onLassoDragEnd = onLassoDragEnd,
             )
 
             if (!block.isLoaded) {
@@ -351,48 +392,106 @@ internal fun BlockItem(
             } else {
                 // View mode — dispatch on block type
                 when (block.blockType) {
-                    IMAGE_ANNOTATION -> ImageAnnotationBlockItem(
+                    is BlockType.ImageAnnotation -> ImageAnnotationBlockItem(
                         block = block,
                         onOpenAnnotationEditor = onOpenAnnotationEditor,
                         onStartEditing = onStartEditing,
+                        isInSelectionMode = isInSelectionMode,
+                        onToggleSelect = onToggleSelect,
+                        onLongPressSelect = onLongPressSelect,
                         modifier = Modifier.weight(1f),
                     )
-                    BlockTypes.HEADING -> HeadingBlock(
+                    is BlockType.Heading -> HeadingBlock(
                         content = block.content,
                         level = headingLevelFromContent(block.content),
                         linkColor = linkColor,
                         onStartEditing = onStartEditing,
                         onLinkClick = onLinkClick,
+                        isInSelectionMode = isInSelectionMode,
+                        onToggleSelect = onToggleSelect,
+                        onLongPressSelect = onLongPressSelect,
                         modifier = Modifier.weight(1f),
                     )
-                    BlockTypes.THEMATIC_BREAK -> ThematicBreakBlock(
+                    is BlockType.ThematicBreak -> ThematicBreakBlock(
                         onStartEditing = onStartEditing,
+                        isInSelectionMode = isInSelectionMode,
+                        onToggleSelect = onToggleSelect,
+                        onLongPressSelect = onLongPressSelect,
                         modifier = Modifier.weight(1f),
                     )
-                    BlockTypes.CODE_FENCE -> CodeFenceBlock(
-                        content = block.content,
-                        language = codeFenceLanguage(block.content),
-                        onStartEditing = onStartEditing,
-                        modifier = Modifier.weight(1f),
-                    )
-                    BlockTypes.BLOCKQUOTE -> BlockquoteBlock(
+                    is BlockType.CodeFence -> {
+                        val language = codeFenceLanguage(block.content)
+                        if (language.equals("mermaid", ignoreCase = true)) {
+                            MermaidBlock(
+                                content = block.content,
+                                onStartEditing = onStartEditing,
+                                isInSelectionMode = isInSelectionMode,
+                                onToggleSelect = onToggleSelect,
+                                onLongPressSelect = onLongPressSelect,
+                                modifier = Modifier.weight(1f),
+                                fallback = { fallbackContent, fallbackModifier ->
+                                    CodeFenceBlock(
+                                        content = fallbackContent,
+                                        language = "mermaid",
+                                        onStartEditing = onStartEditing,
+                                        modifier = fallbackModifier,
+                                        isInSelectionMode = isInSelectionMode,
+                                        onToggleSelect = onToggleSelect,
+                                        onLongPressSelect = onLongPressSelect,
+                                    )
+                                },
+                            )
+                        } else {
+                            CodeFenceBlock(
+                                content = block.content,
+                                language = language,
+                                onStartEditing = onStartEditing,
+                                isInSelectionMode = isInSelectionMode,
+                                onToggleSelect = onToggleSelect,
+                                onLongPressSelect = onLongPressSelect,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+                    is BlockType.Blockquote -> BlockquoteBlock(
                         content = block.content,
                         linkColor = linkColor,
                         onStartEditing = onStartEditing,
                         onLinkClick = onLinkClick,
+                        isInSelectionMode = isInSelectionMode,
+                        onToggleSelect = onToggleSelect,
+                        onLongPressSelect = onLongPressSelect,
                         modifier = Modifier.weight(1f),
                     )
-                    BlockTypes.ORDERED_LIST_ITEM -> OrderedListItemBlock(
+                    is BlockType.OrderedListItem -> OrderedListItemBlock(
                         content = block.content,
                         number = orderedListNumber(block.content),
                         linkColor = linkColor,
                         onStartEditing = onStartEditing,
                         onLinkClick = onLinkClick,
+                        isInSelectionMode = isInSelectionMode,
+                        onToggleSelect = onToggleSelect,
+                        onLongPressSelect = onLongPressSelect,
                         modifier = Modifier.weight(1f),
                     )
-                    BlockTypes.TABLE -> TableBlock(
+                    is BlockType.Table -> TableBlock(
                         content = block.content,
                         onStartEditing = onStartEditing,
+                        isInSelectionMode = isInSelectionMode,
+                        onToggleSelect = onToggleSelect,
+                        onLongPressSelect = onLongPressSelect,
+                        modifier = Modifier.weight(1f),
+                    )
+                    is BlockType.RawHtml -> CodeFenceBlock(
+                        // Rendered like a code fence (monospace, no inline-markdown parsing)
+                        // per RawHtmlBlockNode's KDoc — raw HTML is passed through verbatim
+                        // and should not be interpreted as Markdown.
+                        content = block.content,
+                        language = "html",
+                        onStartEditing = onStartEditing,
+                        isInSelectionMode = isInSelectionMode,
+                        onToggleSelect = onToggleSelect,
+                        onLongPressSelect = onLongPressSelect,
                         modifier = Modifier.weight(1f),
                     )
                     else -> {
@@ -403,10 +502,13 @@ internal fun BlockItem(
                                 url = url,
                                 altText = altText,
                                 onStartEditing = onStartEditing,
+                                isInSelectionMode = isInSelectionMode,
+                                onToggleSelect = onToggleSelect,
+                                onLongPressSelect = onLongPressSelect,
                                 modifier = Modifier.weight(1f),
                             )
                         } else {
-                            BlockViewer( // BULLET, PARAGRAPH, RAW_HTML, unknown
+                            BlockViewer( // BULLET, PARAGRAPH, unknown
                                 content = block.content,
                                 textColor = textColor,
                                 linkColor = linkColor,
@@ -416,6 +518,9 @@ internal fun BlockItem(
                                 modifier = Modifier.weight(1f),
                                 isShiftDown = isShiftDown,
                                 onShiftClick = onShiftClick,
+                                isInSelectionMode = isInSelectionMode,
+                                onToggleSelect = onToggleSelect,
+                                onLongPressSelect = onLongPressSelect,
                                 suggestionMatcher = suggestionMatcher,
                                 onSuggestionClick = { canonicalName, contentStart, contentEnd ->
                                     suggestionState = SuggestionState(canonicalName, contentStart, contentEnd, block.content)
@@ -424,6 +529,9 @@ internal fun BlockItem(
                                     contextMenuState = SuggestionState(canonicalName, contentStart, contentEnd, block.content)
                                 },
                                 onUrlRightClick = onArchiveUrl?.let { archive -> { url -> archive(url, block.uuid.value) } },
+                                hasSectionFilter = hasSectionFilter,
+                                localPageNames = localPageNames,
+                                onUnavailableLinkTap = onUnavailableLinkTap,
                             )
                         }
                     }

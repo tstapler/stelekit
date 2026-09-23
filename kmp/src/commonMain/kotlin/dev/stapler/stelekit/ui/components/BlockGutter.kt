@@ -11,13 +11,41 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.ui.theme.StelekitTheme
 import dev.stapler.stelekit.ui.useLongPressForDrag
+
+/**
+ * Shared `detectDragGestures`/`detectDragGesturesAfterLongPress` branch — both the reorder
+ * drag handle and the lasso-select bullet need the same long-press-vs-immediate split.
+ */
+private fun Modifier.dragGesture(
+    useLongPress: Boolean,
+    onDragStart: (Offset) -> Unit,
+    onDrag: (PointerInputChange, Offset) -> Unit,
+    onDragEnd: () -> Unit,
+): Modifier = pointerInput(useLongPress) {
+    if (useLongPress) {
+        detectDragGesturesAfterLongPress(
+            onDragStart = onDragStart, onDrag = onDrag, onDragEnd = onDragEnd, onDragCancel = onDragEnd,
+        )
+    } else {
+        detectDragGestures(
+            onDragStart = onDragStart, onDrag = onDrag, onDragEnd = onDragEnd, onDragCancel = onDragEnd,
+        )
+    }
+}
 
 /**
  * The left-side gutter of a block row: drag handle, collapse/expand toggle,
@@ -39,26 +67,44 @@ internal fun BlockGutter(
     onDragStart: (uuid: String, startY: Float) -> Unit = { _, _ -> },
     onDrag: (deltaY: Float) -> Unit = {},
     onDragEnd: () -> Unit = {},
+    onLassoDragStart: (uuid: String) -> Unit = {},
+    onLassoDrag: (rootY: Float) -> Unit = {},
+    onLassoDragEnd: () -> Unit = {},
 ) {
     var isDragging by remember { mutableStateOf(false) }
     var isHovered by remember { mutableStateOf(false) }
     val useLongPress = useLongPressForDrag()
 
-    // Drag Handle or Checkbox (in selection mode)
-    if (isInSelectionMode) {
+    // Drag Handle or Checkbox (in selection mode).
+    // stelekit#238: entering selection mode is a *side effect* of starting a drag
+    // (onAutoSelectForDrag, fired from onDragStart when the dragged block wasn't already
+    // selected) — isInSelectionMode can flip true while this Box's pointerInput gesture is
+    // still active. Swapping to the Checkbox mid-drag would dispose that pointerInput scope,
+    // silently cancelling the drag before onDragEnd ever fires. Keep rendering the drag handle
+    // for the duration of an active drag regardless of isInSelectionMode.
+    if (isInSelectionMode && !isDragging) {
         Checkbox(
             checked = isSelected,
             onCheckedChange = { onToggleSelect() },
             modifier = Modifier.size(18.dp)
         )
     } else {
-        Icon(
-            imageVector = Icons.Default.DragHandle,
-            contentDescription = "Drag to move",
+        // The draggable/clickable hit area must independently meet the app's 48dp minimum
+        // touch target (ux.md criterion 19) — the same "small glyph, large hit box" pattern
+        // IconButton uses internally. The gesture detection (pointerInput/detectDragGestures)
+        // is attached to this outer 48dp Box, not the 18dp Icon, so the actual draggable
+        // region is genuinely 48dp rather than a cosmetic-only padding increase around a
+        // small hit area. The contentDescription lives here too so semantics bounds queries
+        // (e.g. onNodeWithContentDescription("Drag to move")) measure the real hit area.
+        Box(
             modifier = Modifier
-                .size(18.dp)
+                // padding is applied OUTSIDE the fixed-size touch target (as external gutter
+                // spacing) — it must not be allowed to shrink the 48dp hit area itself. size()
+                // therefore comes after padding so it forces an exact 48dp x 48dp region for
+                // everything nested inside it (semantics + both pointerInput gesture detectors).
                 .padding(end = 4.dp)
-                .graphicsLayer(alpha = if (isHovered || isDragging) 1f else 0.15f)
+                .size(48.dp)
+                .semantics { contentDescription = "Drag to move" }
                 .pointerInput(Unit) {
                     awaitPointerEventScope {
                         while (true) {
@@ -71,51 +117,38 @@ internal fun BlockGutter(
                         }
                     }
                 }
-                .pointerInput(useLongPress) {
-                    if (useLongPress) {
-                        detectDragGesturesAfterLongPress(
-                            onDragStart = { startOffset ->
-                                isDragging = true
-                                isHovered = false
-                                onDragStart(blockUuid, startOffset.y)
-                            },
-                            onDragEnd = {
-                                isDragging = false
-                                onDragEnd()
-                            },
-                            onDragCancel = {
-                                isDragging = false
-                                onDragEnd()
-                            },
-                            onDrag = { change, dragAmount ->
-                                change.consume()
-                                onDrag(dragAmount.y)
-                            }
-                        )
-                    } else {
-                        detectDragGestures(
-                            onDragStart = { startOffset ->
-                                isDragging = true
-                                isHovered = false
-                                onDragStart(blockUuid, startOffset.y)
-                            },
-                            onDragEnd = {
-                                isDragging = false
-                                onDragEnd()
-                            },
-                            onDragCancel = {
-                                isDragging = false
-                                onDragEnd()
-                            },
-                            onDrag = { change, dragAmount ->
-                                change.consume()
-                                onDrag(dragAmount.y)
-                            }
-                        )
-                    }
-                },
-            tint = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+                .dragGesture(
+                    useLongPress = useLongPress,
+                    onDragStart = { startOffset ->
+                        isDragging = true
+                        isHovered = false
+                        onDragStart(blockUuid, startOffset.y)
+                    },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        onDrag(dragAmount.y)
+                    },
+                    onDragEnd = {
+                        isDragging = false
+                        onDragEnd()
+                    },
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.DragHandle,
+                contentDescription = null,
+                modifier = Modifier
+                    .size(18.dp)
+                    // GAP-012 (Story D.3.1): 0.15 alpha made the handle near-invisible until
+                    // hover/drag, hiding an already-implemented, step-count-target-meeting
+                    // reorder mechanism from new users (corroborated by
+                    // docs/ux/journey-map.md's prior-art finding). 0.45 keeps a visible
+                    // "idle" affordance while still brightening further on hover/drag.
+                    .graphicsLayer(alpha = if (useLongPress || isHovered || isDragging) 1f else 0.45f),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 
     // Collapse/expand indicator (caret)
@@ -134,15 +167,33 @@ internal fun BlockGutter(
         Spacer(modifier = Modifier.width(4.dp))
     }
 
-    // Bullet point (Always shown)
+    // Bullet point (Always shown). Also the click-and-drag handle for lasso-selecting a
+    // contiguous run of blocks: dragging from here across other rows grows the selection to
+    // span anchor..pointer, mirroring shift-click's contiguous-range semantics (extendSelectionTo).
+    // Deliberately reuses the existing 6dp hit area rather than enlarging it — the drag handle
+    // above already owns an expanded 48dp touch target for reorder, and growing the bullet's own
+    // box would shift row height/layout and risk the Roborazzi screenshot goldens for no gain on
+    // desktop, where this gesture is primarily mouse-driven.
+    var bulletCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
     Box(
         modifier = Modifier
             .padding(end = 12.dp, top = 10.dp)
             .size(6.dp)
+            .onGloballyPositioned { bulletCoords = it }
+            .dragGesture(
+                useLongPress = useLongPress,
+                onDragStart = { _ -> onLassoDragStart(blockUuid) },
+                onDrag = { change, _ ->
+                    change.consume()
+                    onLassoDrag((bulletCoords?.localToRoot(change.position) ?: change.position).y)
+                },
+                onDragEnd = onLassoDragEnd,
+            )
             .background(
                 color = StelekitTheme.colors.bullet,
                 shape = androidx.compose.foundation.shape.CircleShape
             )
+            .semantics { contentDescription = "Select blocks" }
     )
 
     // DEBUG: Show level to diagnose indentation issues

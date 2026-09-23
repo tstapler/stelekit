@@ -9,7 +9,7 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -19,7 +19,6 @@ jobs:
   android-benchmark:
     name: Android Instrumented Benchmark
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event.pull_request.draft == false
 
     steps:
       - uses: actions/checkout@v4
@@ -43,13 +42,14 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Run Android instrumented benchmarks
+      - name: Run Android instrumented tests (capabilities + benchmarks)
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 30
           arch: x86_64
           profile: pixel_3a
           script: |
+            ./gradlew :kmp:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=dev.stapler.stelekit.testing.SqliteCapabilityTest --no-daemon
             ./gradlew :kmp:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=dev.stapler.stelekit.benchmark.AndroidGraphBenchmark --no-daemon
             adb logcat -d -s ANDROID_BENCH:I > /tmp/android-bench-logcat.txt || true
 

@@ -10,6 +10,9 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
+import kotlin.io.path.createTempDirectory
+import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
@@ -33,12 +36,45 @@ import kotlin.test.assertSame
  */
 class GraphManagerDatabaseLifecycleTest {
 
+    // Isolation gap found during a UX/credential-storage review session: every test here uses
+    // the literal path "/test" (and "/test/graph1"/"/test/graph2"), which DriverFactory.jvm.kt
+    // hashes into a deterministic graphId — so without this override, `DriverFactory()` writes
+    // real SQLite files to the actual dev-machine data directory (~/.local/share/stelekit,
+    // XDG_DATA_HOME, or %APPDATA%\SteleKit — see `jvmDatabaseDirectory()`), keyed by the SAME
+    // hash on every single run, forever. A run killed mid-test (e.g. a CI timeout) can leave a
+    // locked/inconsistent WAL file there that then fails every subsequent run with "database did
+    // not initialise" until someone manually finds and deletes it outside the repo — which is
+    // exactly what happened investigating this. `stelekit.devDataDir` is the same escape hatch
+    // `PlatformSettings`'s JVM actual already documents for the identical reason (dev/test
+    // launches must not share `./gradlew run`'s real app-data directory); this test class was
+    // simply never wired to set it.
+    private var originalDevDataDir: String? = null
+    private lateinit var tempDataDir: java.io.File
+
+    @BeforeTest
+    fun setUpIsolatedDataDir() {
+        originalDevDataDir = System.getProperty("stelekit.devDataDir")
+        tempDataDir = createTempDirectory("stelekit_graph_lifecycle_test_").toFile()
+        System.setProperty("stelekit.devDataDir", tempDataDir.absolutePath)
+    }
+
+    @AfterTest
+    fun tearDownIsolatedDataDir() {
+        if (originalDevDataDir != null) {
+            System.setProperty("stelekit.devDataDir", originalDevDataDir!!)
+        } else {
+            System.clearProperty("stelekit.devDataDir")
+        }
+        tempDataDir.deleteRecursively()
+    }
+
     private class StubSettings : Settings {
         private val store = mutableMapOf<String, String>()
         override fun getBoolean(key: String, defaultValue: Boolean) = store[key]?.toBoolean() ?: defaultValue
         override fun putBoolean(key: String, value: Boolean) { store[key] = value.toString() }
         override fun getString(key: String, defaultValue: String) = store.getOrDefault(key, defaultValue)
         override fun putString(key: String, value: String) { store[key] = value }
+        override fun containsKey(key: String) = store.containsKey(key)
     }
 
     private class StubFileSystem : FileSystem {
@@ -76,7 +112,7 @@ class GraphManagerDatabaseLifecycleTest {
         // Simulate a Compose LaunchedEffect: collect from a repository Flow
         val collectJob = launch(Dispatchers.Default) {
             try {
-                repoSet.pageRepository.getAllPages().collect { result ->
+                repoSet.pageRepository.getPages(50, 0).collect { result ->
                     collectedValues.add(result)
                 }
             } catch (e: Throwable) {
@@ -128,7 +164,7 @@ class GraphManagerDatabaseLifecycleTest {
         var collectionCrashed = false
         val collectJob = launch(Dispatchers.Default) {
             try {
-                repoSet.pageRepository.getAllPages().collect { }
+                repoSet.pageRepository.getPages(50, 0).collect { }
             } catch (e: Throwable) {
                 if (e !is kotlinx.coroutines.CancellationException) collectionCrashed = true
             }
@@ -220,6 +256,47 @@ class GraphManagerDatabaseLifecycleTest {
             graphManager.activeRepositorySet.value,
             "switchGraph(sameId) while init is in progress must not cancel the running init scope. " +
                 "Pre-fix: second call cancelled the scope; DB never opened; app crashed."
+        )
+
+        graphManager.shutdown()
+    }
+
+    // TC-GM-LIFECYCLE-005
+    @Test
+    fun `switchGraph to a new graph succeeds after a previous graph's scope was cancelled`() = runBlocking {
+        // Regression for the WASM "stuck on Initializing…" bug.
+        //
+        // Pre-fix: graphScope = CoroutineScope(coroutineScope.coroutineContext) shared the
+        // manager's SupervisorJob. Cancelling graphScope1 via `previousGraphScope?.cancel()` at
+        // the top of the SECOND switchGraph call killed coroutineScope itself. The third
+        // `launch { ... }` in the new graphScope ran in an already-cancelled context — the
+        // coroutine body never executed, so `deferred.complete(Unit)` was never called, and
+        // `awaitPendingMigration()` hung forever.
+        //
+        // Post-fix: each graphScope uses an independent SupervisorJob(), so cancelling one
+        // graph's scope has no effect on the manager scope or subsequent graph scopes.
+        val graphManager = GraphManager(
+            platformSettings = StubSettings(),
+            driverFactory = DriverFactory(),
+            fileSystem = StubFileSystem(),
+            defaultBackend = GraphBackend.SQLDELIGHT,
+        )
+
+        // Unique suffix avoids stale .db files from previous test runs (JDBC creates real files).
+        val runId = System.nanoTime()
+
+        // First graph — completes full init cycle (scope is created, then cancelled on switch).
+        graphManager.openGraph("/test/graph1-$runId")
+
+        // Second graph — must also complete init despite graph1's scope being cancelled.
+        // Pre-fix: this hangs forever at awaitPendingMigration().
+        graphManager.openGraph("/test/graph2-$runId")
+
+        assertNotNull(
+            graphManager.activeRepositorySet.value,
+            "openGraph() after a fully-completed previous graph must not hang at migration await. " +
+                "Pre-fix: CoroutineScope(coroutineScope.coroutineContext) shared the Job — " +
+                "cancelling graph1's scope killed the manager scope; graph2's launch never ran."
         )
 
         graphManager.shutdown()

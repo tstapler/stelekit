@@ -1,10 +1,12 @@
 package dev.stapler.stelekit.db
 
+import app.cash.sqldelight.coroutines.asFlow
+import app.cash.sqldelight.coroutines.mapToOneOrNull
+import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.logging.Logger
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.first
 import dev.stapler.stelekit.model.Block
-import dev.stapler.stelekit.model.BlockUuid
-import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.util.UuidGenerator
 import kotlin.time.Clock
 import kotlin.time.Clock.System
@@ -40,7 +42,7 @@ class OperationLogger(
     data class BlockSnapshot(
         val uuid: String,
         val content: String,
-        val position: Int,
+        val position: String,
         val parentUuid: String?,
         val leftUuid: String?,
         val properties: Map<String, String> = emptyMap(),
@@ -56,12 +58,19 @@ class OperationLogger(
     // In-memory Lamport clock; loaded from DB on first use
     private var seq: Long = -1L
 
-    @OptIn(DirectSqlWrite::class)
-    private suspend fun nextSeq(): Long {
+    // Must be called OUTSIDE any transaction. The asFlow()+mapToOneOrNull suspends to
+    // PlatformDispatcher.DB which may switch threads; inside a JDBC transaction that would
+    // break the thread-local connection binding and cause pool exhaustion.
+    private suspend fun ensureSeqInitialized() {
         if (seq < 0) {
             seq = db.steleDatabaseQueries.selectLogicalClock(sessionId)
-                .executeAsOneOrNull() ?: 0L
+                .asFlow().mapToOneOrNull(PlatformDispatcher.DB).first() ?: 0L
         }
+    }
+
+    @OptIn(DirectSqlWrite::class)
+    private suspend fun nextSeq(): Long {
+        // seq is guaranteed >= 0 here; ensureSeqInitialized() is called before every transaction.
         seq += 1
         restricted.upsertLogicalClock(sessionId, seq)
         return seq
@@ -115,6 +124,9 @@ class OperationLogger(
             val opId = UuidGenerator.generateV7()
             val payloadJson = json.encodeToString(payload)
             val now = clock.now().toEpochMilliseconds()
+            // Initialize seq BEFORE the transaction. The lazy SELECT may switch dispatchers,
+            // which would break JDBC's thread-local transaction binding if called inside.
+            ensureSeqInitialized()
             // Wrap clock bump + operation insert in one transaction so the two writes
             // share a single lock acquisition rather than two back-to-back ones.
             restricted.transaction {
@@ -142,8 +154,8 @@ class OperationLogger(
         uuid = uuid.value,
         content = content,
         position = position,
-        parentUuid = parentUuid,
-        leftUuid = leftUuid,
+        parentUuid = parentUuid?.value,
+        leftUuid = leftUuid?.value,
         properties = properties.mapValues { it.value },
     )
 }

@@ -48,7 +48,7 @@ class MigrationRegressionTest {
         uuid: String,
         pageUuid: String,
         content: String,
-        position: Int = 0,
+        position: String = "a0",
         properties: Map<String, String> = emptyMap(),
     ) = Block(
         uuid = BlockUuid(uuid),
@@ -73,11 +73,11 @@ class MigrationRegressionTest {
         repoSet.pageRepository.savePage(pageC)
 
         // Blocks — none have the "migrated" property yet
-        repoSet.blockRepository.saveBlock(makeBlock("blk-1", "page-a", "First note", 0))
-        repoSet.blockRepository.saveBlock(makeBlock("blk-2", "page-a", "Second note", 1))
-        repoSet.blockRepository.saveBlock(makeBlock("blk-3", "page-b", "Beta note", 0))
-        repoSet.blockRepository.saveBlock(makeBlock("blk-4", "page-b", "Another beta note", 1))
-        repoSet.blockRepository.saveBlock(makeBlock("blk-5", "page-c", "Gamma note", 0))
+        repoSet.blockRepository.saveBlock(makeBlock("blk-1", "page-a", "First note", "a0"))
+        repoSet.blockRepository.saveBlock(makeBlock("blk-2", "page-a", "Second note", "a1"))
+        repoSet.blockRepository.saveBlock(makeBlock("blk-3", "page-b", "Beta note", "a0"))
+        repoSet.blockRepository.saveBlock(makeBlock("blk-4", "page-b", "Another beta note", "a1"))
+        repoSet.blockRepository.saveBlock(makeBlock("blk-5", "page-c", "Gamma note", "a0"))
     }
 
     // ── Test lifecycle ─────────────────────────────────────────────────────────

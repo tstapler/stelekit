@@ -58,7 +58,7 @@ class NormalizeJournalNamesMigrationTest {
         journalDate = if (isJournal) journalDate else null,
     )
 
-    private fun makeBlock(uuid: String, pageUuid: String, content: String, position: Int = 0) = Block(
+    private fun makeBlock(uuid: String, pageUuid: String, content: String, position: String = "a0") = Block(
         uuid = BlockUuid(uuid),
         pageUuid = PageUuid(pageUuid),
         content = content,
@@ -87,9 +87,9 @@ class NormalizeJournalNamesMigrationTest {
     fun merges_hyphen_into_underscore_non_empty_blocks_moved(): Unit = runBlocking {
         val hyphenPage = makePage("page-hyp", hyphenName)
         val underscorePage = makePage("page-und", underscoreName)
-        val contentBlock = makeBlock("block-content", "page-hyp", "Important note", position = 0)
-        val emptyBlock = makeBlock("block-empty", "page-hyp", "", position = 1)
-        val existingBlock = makeBlock("block-existing", "page-und", "Existing entry", position = 0)
+        val contentBlock = makeBlock("block-content", "page-hyp", "Important note", position = "a0")
+        val emptyBlock = makeBlock("block-empty", "page-hyp", "", position = "a1")
+        val existingBlock = makeBlock("block-existing", "page-und", "Existing entry", position = "a0")
 
         harness.repoSet.pageRepository.savePage(hyphenPage)
         harness.repoSet.pageRepository.savePage(underscorePage)

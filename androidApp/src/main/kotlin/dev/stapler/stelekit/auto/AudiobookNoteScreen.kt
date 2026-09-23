@@ -18,11 +18,15 @@ import androidx.car.app.model.Template
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import dev.stapler.stelekit.SteleKitApplication
+import dev.stapler.stelekit.llm.LlmCredentialStore
+import dev.stapler.stelekit.llm.LlmSettings
+import dev.stapler.stelekit.llm.buildLlmProviderRegistry
 import dev.stapler.stelekit.voice.CarAudioRecorder
 import dev.stapler.stelekit.voice.VoiceCaptureState
 import dev.stapler.stelekit.voice.VoiceCaptureViewModel
 import dev.stapler.stelekit.voice.buildVoicePipeline
 import dev.stapler.stelekit.platform.PlatformSettings
+import dev.stapler.stelekit.platform.security.CredentialStore
 import dev.stapler.stelekit.voice.VoiceSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -58,29 +62,49 @@ class AudiobookNoteScreen(
         }
     }
 
-    private val vm: VoiceCaptureViewModel by lazy {
-        voiceViewModel ?: run {
-            val recorder = CarAudioRecorder(carContext)
-            val settings = VoiceSettings(PlatformSettings())
-            val pipeline = buildVoicePipeline(
-                audioRecorder = recorder,
-                settings = settings,
-                directSpeechProvider = null,
-            )
-            VoiceCaptureViewModel(
-                pipeline = pipeline,
-                journalService = NoOpJournalService(),
-            )
-        }
-    }
+    // buildVoicePipeline is now suspend (it live-checks LLM provider availability), so it can
+    // no longer be built inside a `by lazy { }` delegate. Instead the VM is constructed once,
+    // asynchronously, inside the onCreate lifecycle callback below (which already runs inside
+    // screenScope) and cached here — a suspend-safe holder in place of the old `by lazy`.
+    // Nullable: briefly `null` between onCreate firing and the pipeline finishing construction;
+    // callers below treat that window as "not ready yet" (falls back to the idle/main template,
+    // clicks become a no-op) rather than blocking the Android Auto main thread.
+    private var vm: VoiceCaptureViewModel? = null
 
     init {
         lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onCreate(owner: LifecycleOwner) {
                 observer.start()
-                // Observe VM state for voice note flow
+                // Build (or reuse the injected) VM, then observe its state for the voice note
+                // flow — both happen inside the same coroutine so `vm` is only ever assigned
+                // once fully constructed.
                 screenScope.launch {
-                    vm.state.collect { state ->
+                    val resolvedVm = voiceViewModel ?: run {
+                        val recorder = CarAudioRecorder(carContext)
+                        val settings = VoiceSettings(PlatformSettings())
+                        // LLM provider registry + settings (Epic 8) — built the same way
+                        // ui/App.kt and MainActivity build them, so Android Auto voice notes
+                        // get the user's configured LLM provider (remote or on-device)
+                        // instead of silently falling back to no-op formatting.
+                        val llmCredentialStore = LlmCredentialStore(CredentialStore())
+                        val llmSettings = LlmSettings(PlatformSettings())
+                        val llmProviderRegistry = buildLlmProviderRegistry(llmCredentialStore, llmSettings)
+                        val pipeline = buildVoicePipeline(
+                            audioRecorder = recorder,
+                            settings = settings,
+                            directSpeechProvider = null,
+                            registry = llmProviderRegistry,
+                            llmSettings = llmSettings,
+                        )
+                        VoiceCaptureViewModel(
+                            pipeline = pipeline,
+                            journalService = NoOpJournalService(),
+                        )
+                    }
+                    vm = resolvedVm
+                    invalidate()
+
+                    resolvedVm.state.collect { state ->
                         when (state) {
                             is VoiceCaptureState.Done -> {
                                 val bookInfo = observer.bookInfo.value
@@ -93,20 +117,20 @@ class AudiobookNoteScreen(
                                 result.fold(
                                     ifLeft = { error ->
                                         pendingError = error.message
-                                        pendingRetryAction = { vm.resetToIdle(); vm.onMicTapped() }
+                                        pendingRetryAction = { resolvedVm.resetToIdle(); resolvedVm.onMicTapped() }
                                         invalidate()
                                     },
                                     ifRight = {
                                         val words = state.insertedText.trim().split("\\s+".toRegex())
                                         lastNoteSnippet = words.takeLast(3).joinToString(" ")
-                                        vm.resetToIdle()
+                                        resolvedVm.resetToIdle()
                                         invalidate()
                                     }
                                 )
                             }
                             is VoiceCaptureState.Error -> {
                                 pendingError = state.message
-                                pendingRetryAction = { vm.dismissError() }
+                                pendingRetryAction = { resolvedVm.dismissError() }
                                 invalidate()
                             }
                             else -> invalidate()
@@ -117,7 +141,7 @@ class AudiobookNoteScreen(
 
             override fun onDestroy(owner: LifecycleOwner) {
                 observer.close()
-                vm.close()
+                vm?.close()
                 screenScope.cancel()
             }
         })
@@ -149,7 +173,9 @@ class AudiobookNoteScreen(
                 .build()
         }
 
-        return when (vm.state.value) {
+        // vm is null only in the brief window before onCreate's async pipeline construction
+        // finishes — treat that the same as Idle (falls through to the main grid template).
+        return when (vm?.state?.value) {
             is VoiceCaptureState.Recording -> buildRecordingTemplate()
             is VoiceCaptureState.Transcribing, is VoiceCaptureState.Formatting -> buildProcessingTemplate()
             else -> buildMainGridTemplate()
@@ -225,7 +251,7 @@ class AudiobookNoteScreen(
                     Action.Builder()
                         .setTitle("Stop")
                         .setOnClickListener {
-                            screenScope.launch { vm.onMicTapped() }
+                            screenScope.launch { vm?.onMicTapped() }
                         }
                         .build()
                 )
@@ -252,7 +278,7 @@ class AudiobookNoteScreen(
             return
         }
         observer.refreshBookInfo()
-        vm.onMicTapped()
+        vm?.onMicTapped()
         invalidate()
     }
 

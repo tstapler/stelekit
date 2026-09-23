@@ -221,4 +221,36 @@ class MigrationRunnerTest {
 
         actor.close()
     }
+
+    // ── Test 5: concurrent run of the same migration is detected cleanly ──────
+
+    @Test
+    fun concurrent_markRunning_for_same_migration_throws_typed_exception() = runBlocking {
+        val db = buildTestDb()
+        val changelogRepo = ChangelogRepository(db)
+        val checksum = MigrationChecksumComputer.compute("some-body")
+
+        // First call simulates the winning switchGraph() race.
+        changelogRepo.markRunning(
+            id = "V001",
+            graphId = "graph-race",
+            order = 0,
+            checksum = checksum,
+            description = "desc",
+        )
+
+        // Second call simulates a concurrent switchGraph() call racing for the same
+        // migration/graph pair. It must surface a clear, typed exception rather than a raw
+        // driver-specific primary-key-violation exception.
+        assertFailsWith<ConcurrentMigrationRunException> {
+            changelogRepo.markRunning(
+                id = "V001",
+                graphId = "graph-race",
+                order = 0,
+                checksum = checksum,
+                description = "desc",
+            )
+        }
+        Unit
+    }
 }

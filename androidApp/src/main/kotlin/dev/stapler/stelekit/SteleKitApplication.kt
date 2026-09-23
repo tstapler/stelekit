@@ -1,17 +1,21 @@
 package dev.stapler.stelekit
 
 import android.app.Application
-import android.util.Log
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.GraphManager
-import dev.stapler.stelekit.git.CredentialStore
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.platform.SteleKitContext
 import dev.stapler.stelekit.platform.WriteBehindQueue
+import dev.stapler.stelekit.app.R
+import dev.stapler.stelekit.performance.BuildInfo
 import dev.stapler.stelekit.platform.measurement.MeasurementDeviceRegistry
 import dev.stapler.stelekit.platform.measurement.ble.KableBleScanner
+import dev.stapler.stelekit.platform.ml.OnnxMonocularDepthEstimator
+import dev.stapler.stelekit.platform.security.CredentialStore
+import dev.stapler.stelekit.platform.sensor.AndroidCameraFrameSource
 import dev.stapler.stelekit.platform.sensor.AndroidCameraProvider
+import dev.stapler.stelekit.platform.sensor.AndroidMotionSensorProvider
 import dev.stapler.stelekit.platform.sensor.ARCoreDepthProvider
 import dev.stapler.stelekit.platform.sensor.SensorModule
 import kotlinx.coroutines.CompletableDeferred
@@ -52,12 +56,23 @@ class SteleKitApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // First, so every later startup failure and every feature logger reaches logcat
+        // (tags "SteleKit.<Logger tag>"); previously no sink was registered on Android.
+        dev.stapler.stelekit.logging.LogManager.addSink(dev.stapler.stelekit.logging.AndroidLogSink())
         try {
+            dev.stapler.stelekit.platform.NetworkMonitor.init(this)
+            BuildInfo.commitHash = getString(R.string.git_commit_hash)
+            BuildInfo.appVersion = packageManager.getPackageInfo(packageName, 0).versionName.orEmpty()
             SteleKitContext.init(this)
             DriverFactory.setContext(this)
             CredentialStore.init(this)
             SensorModule.cameraProvider = AndroidCameraProvider(applicationContext)
+            // Re-wired in MainActivity.onCreate() with the real runtime-permission launcher,
+            // same as cameraProvider above — no Activity launcher is available yet at this point.
+            SensorModule.cameraFrameSource = AndroidCameraFrameSource(applicationContext)
             SensorModule.depthSensorProvider = ARCoreDepthProvider(applicationContext)
+            SensorModule.motionSensorProvider = AndroidMotionSensorProvider(applicationContext)
+            SensorModule.monocularDepthEstimator = OnnxMonocularDepthEstimator(applicationContext)
             MeasurementDeviceRegistry.register(KableBleScanner(applicationContext))
             fileSystem = PlatformFileSystem().apply { init(applicationContext) }
             // Activate write-behind when MANAGE_EXTERNAL_STORAGE is not granted.
@@ -72,7 +87,7 @@ class SteleKitApplication : Application() {
                 // the database so consistency is preserved without blocking onCreate().
                 startupFlushJob = appScope.async(Dispatchers.IO) {
                     try { fileSystem.flushPendingWrites() }
-                    catch (e: Exception) { Log.w(TAG, "Startup write-behind flush failed", e) }
+                    catch (e: Exception) { logger.warn("Startup write-behind flush failed", e) }
                 }
             } else {
                 startupFlushJob = CompletableDeferred<Unit>().also { it.complete(Unit) }
@@ -84,7 +99,7 @@ class SteleKitApplication : Application() {
                 preFlightJob = startupFlushJob,
             )
         } catch (e: Throwable) {
-            Log.e(TAG, "Application init failed — widget/tile/share will show placeholder", e)
+            logger.error("Application init failed — widget/tile/share will show placeholder", e)
             if (!::fileSystem.isInitialized) {
                 fileSystem = PlatformFileSystem()
             }
@@ -92,6 +107,6 @@ class SteleKitApplication : Application() {
     }
 
     companion object {
-        private const val TAG = "SteleKitApplication"
+        private val logger = dev.stapler.stelekit.logging.Logger("SteleKitApplication")
     }
 }

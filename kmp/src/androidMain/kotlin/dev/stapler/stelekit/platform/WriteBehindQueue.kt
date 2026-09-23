@@ -1,6 +1,5 @@
 package dev.stapler.stelekit.platform
 
-import android.util.Log
 import java.io.File
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
@@ -16,7 +15,7 @@ class WriteBehindQueue(private val queueFile: File) {
     private val lock = ReentrantLock()
 
     companion object {
-        private const val TAG = "WriteBehindQueue"
+        private val logger = dev.stapler.stelekit.logging.Logger("WriteBehindQueue")
     }
 
     fun enqueue(pagePath: String) = lock.withLock {
@@ -24,7 +23,7 @@ class WriteBehindQueue(private val queueFile: File) {
             queueFile.parentFile?.mkdirs()
             queueFile.appendText("$pagePath\n", Charsets.UTF_8)
         } catch (e: Exception) {
-            Log.w(TAG, "enqueue: failed", e)
+            logger.warn("enqueue: failed", e)
         }
     }
 
@@ -35,7 +34,7 @@ class WriteBehindQueue(private val queueFile: File) {
             val remaining = lines.filter { it.trim() != pagePath.trim() }
             queueFile.writeText(remaining.joinToString("\n").let { if (it.isNotEmpty()) "$it\n" else it }, Charsets.UTF_8)
         } catch (e: Exception) {
-            Log.w(TAG, "dequeue: failed for $pagePath", e)
+            logger.warn("dequeue: failed for $pagePath", e)
         }
     }
 
@@ -47,7 +46,7 @@ class WriteBehindQueue(private val queueFile: File) {
                 .filter { it.isNotBlank() }
                 .distinct()
         } catch (e: Exception) {
-            Log.w(TAG, "getAll: failed", e)
+            logger.warn("getAll: failed", e)
             emptyList()
         }
     }

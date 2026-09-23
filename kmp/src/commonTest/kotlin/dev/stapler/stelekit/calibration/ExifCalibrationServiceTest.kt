@@ -7,6 +7,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
  * Unit tests for [ExifCalibrationService.estimate].
@@ -35,8 +36,8 @@ class ExifCalibrationServiceTest {
         assertEquals(CalibrationMethod.EXIF_FOCAL, cal.method)
         assertEquals(20, cal.confidencePercent)
         // Sanity: at 2m with 24mm equiv, ~500–2000 px/m range is plausible for 4000px wide image
-        assert(cal.pixelsPerMeter > 100.0) { "pixelsPerMeter should be positive and reasonable: ${cal.pixelsPerMeter}" }
-        assert(cal.pixelsPerMeter < 10_000.0) { "pixelsPerMeter too large: ${cal.pixelsPerMeter}" }
+        assertTrue(cal.pixelsPerMeter > 100.0, "pixelsPerMeter should be positive and reasonable: ${cal.pixelsPerMeter}")
+        assertTrue(cal.pixelsPerMeter < 10_000.0, "pixelsPerMeter too large: ${cal.pixelsPerMeter}")
     }
 
     @Test
@@ -68,8 +69,8 @@ class ExifCalibrationServiceTest {
         assertNotNull(cal)
         assertEquals(CalibrationMethod.EXIF_FOCAL, cal.method)
         assertEquals(20, cal.confidencePercent)
-        assert(cal.pixelsPerMeter > 100.0)
-        assert(cal.pixelsPerMeter < 10_000.0)
+        assertTrue(cal.pixelsPerMeter > 100.0)
+        assertTrue(cal.pixelsPerMeter < 10_000.0)
     }
 
     @Test

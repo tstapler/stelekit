@@ -1,7 +1,8 @@
 package dev.stapler.stelekit.ui.components
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,25 +20,21 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 
-private fun extractCodeBody(content: String): String {
-    val lines = content.lines()
-    val isFenceLine: (String) -> Boolean = { it.trim().let { t -> t.startsWith("```") || t.startsWith("~~~") } }
-    val start = if (lines.firstOrNull()?.let(isFenceLine) == true) 1 else 0
-    val end = if (lines.lastOrNull()?.let(isFenceLine) == true) lines.size - 1 else lines.size
-    return if (start < end) lines.subList(start, end).joinToString("\n") else ""
-}
-
 /**
  * Renders a fenced code block with optional language label,
  * monospace font, and horizontal scrolling.
  * Tapping the block enters edit mode.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun CodeFenceBlock(
     content: String,
     language: String,
     onStartEditing: () -> Unit,
     modifier: Modifier = Modifier,
+    isInSelectionMode: Boolean = false,
+    onToggleSelect: () -> Unit = {},
+    onLongPressSelect: (() -> Unit)? = null,
 ) {
     val codeText = remember(content) { extractCodeBody(content) }
 
@@ -45,7 +42,10 @@ internal fun CodeFenceBlock(
         modifier = modifier
             .clip(RoundedCornerShape(4.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .clickable { onStartEditing() }
+            .combinedClickable(
+                onLongClick = onLongPressSelect,
+                onClick = { if (isInSelectionMode) onToggleSelect() else onStartEditing() },
+            )
     ) {
         Column(
             modifier = Modifier.padding(12.dp)

@@ -49,7 +49,7 @@ class FlashcardReviewTest {
             pageUuid = PageUuid("test-page-1"),
             content = "What is the capital of France?",
             level = 0,
-            position = 0,
+            position = "a0",
             createdAt = now,
             updatedAt = now,
             properties = props

@@ -1,0 +1,130 @@
+"""
+jvmTest — JVM/Desktop test suite (minus screenshot/Roborazzi tests).
+
+Screenshot tests (*Screenshot*.kt, ui/screenshots/**) are excluded because they
+require Roborazzi which has no Bazel integration (kept in Gradle only).
+
+Mermaid engine tests (ui/components/Mermaid{EngineActor,JvmEngine,RendererFallback,
+RendererSmoke,SecurityDirective}Test.kt) are excluded here and run instead as
+//kmp/src/jvmTest/kotlin:mermaid_jvm_tests, so Bazel reruns them only when
+mermaid sources change. The MermaidBlock* Compose UI tests stay here — they
+depend on ui.theme from the monolith.
+
+Test framework: JUnit 4 via kotlin-test-junit (run by kt_jvm_test runner).
+
+To run: bazel test //kmp/src/jvmTest/kotlin:jvm_tests
+Or via alias: bazel test //kmp:jvm_tests
+"""
+
+load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_test")
+
+kt_jvm_test(
+    name = "jvm_tests",
+    srcs = glob(
+        ["**/*.kt"],
+        exclude = [
+            # Roborazzi screenshot tests — no Bazel integration; kept in Gradle
+            "**/*Screenshot*.kt",
+            "**/*Roborazzi*.kt",
+            "**/screenshots/**",
+            # Mermaid engine tests — own target below (mermaid_jvm_tests)
+            "dev/stapler/stelekit/AllMermaidJvmTests.kt",
+            "dev/stapler/stelekit/ui/components/MermaidEngineActorTest.kt",
+            "dev/stapler/stelekit/ui/components/MermaidJvmEngineTest.kt",
+            "dev/stapler/stelekit/ui/components/MermaidRendererFallbackTest.kt",
+            "dev/stapler/stelekit/ui/components/MermaidRendererSmokeTest.kt",
+            "dev/stapler/stelekit/ui/components/MermaidSecurityDirectiveTest.kt",
+        ],
+    ),
+    associates = ["//kmp/src/jvmMain/kotlin:jvm_main_lib"],
+    env = {
+        # Force software OpenGL for Compose Desktop tests on headless CI
+        "LIBGL_ALWAYS_SOFTWARE": "1",
+    },
+    env_inherit = [
+        "DISPLAY",
+        "XAUTHORITY",
+    ],
+    jvm_flags = [
+        # Required for JVM attach (BlockHound, async-profiler)
+        "-Djdk.attach.allowAttachSelf=true",
+        # Required by Compose Desktop test infrastructure
+        "--add-opens=java.base/java.lang=ALL-UNNAMED",
+        # Software rendering for CI (no GPU required)
+        "-Djava.awt.headless=false",
+    ],
+    kotlinc_opts = "//:kmp_jvm_kotlinc_opts",
+    plugins = [
+        "//:compose_compiler_plugin",
+        "//:serialization_compiler_plugin",
+    ],
+    tags = [
+        # Some tests open a Compose window — requires an X display on Linux CI
+        "requires-display",
+    ],
+    test_class = "dev.stapler.stelekit.AllJvmTests",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//kmp/src/commonMain/resources:common_resources",
+        "//kmp/src/commonTest/kotlin:common_test_fixtures",
+        "@maven//:com_google_zxing_core",
+        "@maven//:io_ktor_ktor_client_mock_jvm",
+        "@maven//:io_projectreactor_tools_blockhound",
+        "@maven//:org_jetbrains_compose_ui_ui_test_junit4_desktop",
+        "@maven//:org_jetbrains_kotlin_kotlin_reflect",
+        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+        "@maven//:org_jetbrains_kotlin_kotlin_test_junit",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
+    ],
+)
+
+# Mermaid engine tests — the GraalJS-backed tests split out of :jvm_tests so this
+# target rebuilds and reruns only when mermaid sources change (it depends on
+# //kmp/src/jvmMain/kotlin:mermaid_lib, never on the UI monolith). Only engine
+# tests live here: they import zero app code (same-package mermaid classes only).
+# The MermaidBlock* Compose UI tests stay in :jvm_tests — they depend on
+# ui.theme from the monolith.
+kt_jvm_test(
+    name = "mermaid_jvm_tests",
+    srcs = [
+        "dev/stapler/stelekit/AllMermaidJvmTests.kt",
+        "dev/stapler/stelekit/ui/components/MermaidEngineActorTest.kt",
+        "dev/stapler/stelekit/ui/components/MermaidJvmEngineTest.kt",
+        "dev/stapler/stelekit/ui/components/MermaidRendererFallbackTest.kt",
+        "dev/stapler/stelekit/ui/components/MermaidRendererSmokeTest.kt",
+        "dev/stapler/stelekit/ui/components/MermaidSecurityDirectiveTest.kt",
+    ],
+    associates = ["//kmp/src/jvmMain/kotlin:mermaid_lib"],
+    env = {
+        # Force software OpenGL for Compose Desktop tests on headless CI
+        "LIBGL_ALWAYS_SOFTWARE": "1",
+    },
+    env_inherit = [
+        "DISPLAY",
+        "XAUTHORITY",
+    ],
+    jvm_flags = [
+        # Required for JVM attach (BlockHound, async-profiler)
+        "-Djdk.attach.allowAttachSelf=true",
+        # Required by Compose Desktop test infrastructure
+        "--add-opens=java.base/java.lang=ALL-UNNAMED",
+        # Software rendering for CI (no GPU required)
+        "-Djava.awt.headless=false",
+    ],
+    kotlinc_opts = "//:kmp_jvm_kotlinc_opts",
+    tags = [
+        "requires-display",
+        # Exclusive: GraalJS renders are wall-clock-sensitive and CI runners have
+        # 2 cores — running this suite in parallel with :jvm_tests starved the
+        # engine so badly every render (including retries) exceeded the timeout
+        # ceiling. Exclusive serializes this target against other test actions.
+        "exclusive",
+    ],
+    test_class = "dev.stapler.stelekit.AllMermaidJvmTests",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+        "@maven//:org_jetbrains_kotlin_kotlin_test_junit",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
+    ],
+)

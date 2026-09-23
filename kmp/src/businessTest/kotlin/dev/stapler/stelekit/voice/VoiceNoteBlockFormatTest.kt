@@ -204,7 +204,7 @@ class VoiceNoteBlockFormatTest {
             "#+BEGIN_QUOTE must not appear in inline block")
 
         // Verify no transcript page was created (below threshold)
-        val allPages = pageRepo.getAllPages().first().getOrNull().orEmpty()
+        val allPages = pageRepo.getAllPagesSnapshot().getOrNull().orEmpty()
         val transcriptPages = allPages.filter { it.name.startsWith("Voice Note ") }
         assertTrue(transcriptPages.isEmpty(),
             "Expected no Voice Note transcript page for short (below-threshold) note")

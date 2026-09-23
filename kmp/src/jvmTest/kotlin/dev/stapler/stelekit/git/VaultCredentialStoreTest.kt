@@ -4,6 +4,7 @@
 package dev.stapler.stelekit.git
 
 import dev.stapler.stelekit.platform.FileSystem
+import dev.stapler.stelekit.platform.security.CredentialStore
 import dev.stapler.stelekit.vault.JvmCryptoEngine
 import java.io.File
 import java.nio.file.Files

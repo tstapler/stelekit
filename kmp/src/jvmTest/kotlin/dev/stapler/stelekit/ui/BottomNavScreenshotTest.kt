@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.AutoStories
-import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -44,7 +44,7 @@ class BottomNavScreenshotTest {
     val composeTestRule = createComposeRule()
 
     // ---------------------------------------------------------------------------
-    // Helper: renders the four-tab NavigationBar that mirrors the Android bottom nav
+    // Helper: renders the four-item NavigationBar that mirrors the Android bottom nav
     // ---------------------------------------------------------------------------
     @Suppress("TestFunctionName")
     private fun renderBottomNav(
@@ -82,10 +82,11 @@ class BottomNavScreenshotTest {
                                     label = { Text("Search") }
                                 )
                                 NavigationBarItem(
-                                    selected = currentScreen is Screen.Notifications,
+                                    // Menu is an action, not a destination — never selected
+                                    selected = false,
                                     onClick = {},
-                                    icon = { Icon(Icons.Default.Notifications, contentDescription = null) },
-                                    label = { Text("Notifications") }
+                                    icon = { Icon(Icons.Default.Menu, contentDescription = null) },
+                                    label = { Text("More") }
                                 )
                             }
                         }
@@ -103,25 +104,25 @@ class BottomNavScreenshotTest {
     fun bottomNav_rendersWithoutCrashing_whenCurrentScreenIsJournals() {
         renderBottomNav(currentScreen = Screen.Journals)
         composeTestRule.waitForIdle()
-        // Verify all four tab labels are present
+        // Verify all four tab labels are present (Notifications replaced by More drawer trigger)
         composeTestRule.onNodeWithText("Journals").assertIsDisplayed()
         composeTestRule.onNodeWithText("Pages").assertIsDisplayed()
         composeTestRule.onNodeWithText("Search").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Notifications").assertIsDisplayed()
+        composeTestRule.onNodeWithText("More").assertIsDisplayed()
     }
 
     @Test
     fun bottomNav_searchTabIsPresent_notFlashcards() {
         renderBottomNav(currentScreen = Screen.Journals)
         composeTestRule.waitForIdle()
-        // The key requirement: Search tab exists, Flashcards tab does not
+        // Search tab present; Flashcards is accessible via the drawer (More), not directly in nav
         composeTestRule.onNodeWithText("Search").assertIsDisplayed()
         composeTestRule.onNodeWithText("Flashcards").assertDoesNotExist()
     }
 
     @Test
     fun bottomNav_rendersWithoutCrashing_whenCurrentScreenIsAllPages() {
-        renderBottomNav(currentScreen = Screen.AllPages)
+        renderBottomNav(currentScreen = Screen.AllPages())
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithText("Pages").assertIsDisplayed()
         composeTestRule.onNodeWithText("Search").assertIsDisplayed()
@@ -150,7 +151,7 @@ class BottomNavScreenshotTest {
 
     @Test
     fun bottomNav_screenshot_light_pagesSelected() {
-        renderBottomNav(currentScreen = Screen.AllPages, themeMode = StelekitThemeMode.LIGHT)
+        renderBottomNav(currentScreen = Screen.AllPages(), themeMode = StelekitThemeMode.LIGHT)
         composeTestRule.waitForIdle()
         composeTestRule.onRoot()
             .captureRoboImage("build/outputs/roborazzi/bottom_nav_light_pages.png")

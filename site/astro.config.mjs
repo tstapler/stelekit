@@ -26,9 +26,13 @@ export default defineConfig({
 					items: [
 						{ label: 'Getting Started', slug: 'user/getting-started' },
 						{ label: 'Outliner', slug: 'user/outliner' },
-						{ label: 'Journals', slug: 'user/journals' },
+						{ label: 'Daily Notes', slug: 'user/daily-notes' },
+						{ label: 'Block Editing', slug: 'user/block-editing' },
 						{ label: 'Backlinks', slug: 'user/backlinks' },
 						{ label: 'Search', slug: 'user/search' },
+						{ label: 'Flashcards', slug: 'user/flashcards' },
+						{ label: 'All Pages', slug: 'user/all-pages' },
+						{ label: 'Unlinked References', slug: 'user/unlinked-references' },
 					],
 				},
 				{

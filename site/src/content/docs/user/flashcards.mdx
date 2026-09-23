@@ -1,0 +1,68 @@
+---
+title: Flashcards
+description: Turn any block into a spaced-repetition flashcard for active recall practice.
+---
+
+## What are Flashcards?
+
+SteleKit's Flashcards feature turns any block into a spaced-repetition review card. The scheduler
+surfaces cards at increasing intervals — cards you know well appear less often, while cards you
+find difficult appear more frequently. This technique is called spaced repetition and is one of
+the most effective methods for long-term memory retention.
+
+Unlike standalone flashcard apps, SteleKit cards live directly in your notes. The question is the
+block, the answer is a child block, and the `card:: true` property is all you need to enroll it
+in the review queue.
+
+## How to access it
+
+Tap or click the **Flashcards** icon in the sidebar to open the review queue. Cards due for
+review appear in order. The icon shows a badge with the number of cards due today.
+
+## Key interactions
+
+- Add `card:: true` as a child block property to mark any block as a flashcard
+- Review cards one at a time: read the front (the parent block), recall your answer, then reveal the back (child blocks)
+- Rate your recall after revealing the answer:
+  - **Again** — you did not remember; the card returns in a short interval
+  - **Hard** — you remembered with difficulty; interval increases slightly
+  - **Good** — you remembered well; standard interval increase
+  - **Easy** — you recalled instantly; larger interval increase
+- The scheduler adjusts each card's next review date based on your rating history
+- Cards that are not yet due do not appear — come back tomorrow for the next batch
+
+## How to create a flashcard
+
+Open any page and create the structure:
+
+```
+- What is spaced repetition?
+  - card:: true
+  - A memory technique that schedules reviews at increasing intervals based on recall difficulty.
+```
+
+The parent block (the question) is the front of the card. The child blocks below `card:: true`
+are the back of the card.
+
+## Keyboard shortcuts
+
+Flashcard review is currently a tap/click interface.
+
+| Action | How |
+|---|---|
+| Reveal answer | Tap the card or click the "Reveal" button |
+| Rate recall | Tap Again / Hard / Good / Easy |
+| Open source block | Tap the page name shown under the card |
+
+## Tips
+
+- Keep flashcard blocks short — one fact per card works best for recall
+- Review your queue every day for best long-term retention
+- Use nesting: question as the parent, answer as a child with `card:: true` as a sibling property
+- Archive cards you no longer need by removing `card:: true`
+
+## Related features
+
+- [Block Editing](./block-editing) — how to create and nest blocks
+- [Daily Notes](./daily-notes) — capture new cards quickly in your journal and formalize them later
+- [Search](./search) — find a specific block you turned into a flashcard

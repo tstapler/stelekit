@@ -29,6 +29,7 @@ class VoiceCaptureViewModel(
     // Default scope owns its lifecycle; callers in remember{} must not pass rememberCoroutineScope()
     // which is cancelled when the composable leaves composition. Tests inject a TestCoroutineScope.
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+    private val tagSuggestionEngine: dev.stapler.stelekit.tags.TagSuggestionEngine? = null,
 ) {
     private val logger = Logger("VoiceCaptureViewModel")
     private val _state = MutableStateFlow<VoiceCaptureState>(VoiceCaptureState.Idle)
@@ -187,11 +188,26 @@ class VoiceCaptureViewModel(
             return
         }
 
+        val suggestions = if (tagSuggestionEngine != null) {
+            try {
+                val local = tagSuggestionEngine.directMatch(formattedText)
+                val llm = tagSuggestionEngine.llmSuggest(formattedText)
+                    .getOrNull() ?: emptyList()
+                (local + llm).distinctBy { it.term.lowercase() }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.warn("Tag suggestion after voice capture failed: ${e.message}")
+                emptyList()
+            }
+        } else emptyList()
+
         _state.value = VoiceCaptureState.Done(
             insertedText = formattedText,
             isLikelyTruncated = isLikelyTruncated,
             transcriptPageTitle = if (useTranscriptPage) pageTitle else null,
             savedToPageName = targetPageName,
+            suggestedTags = suggestions,
         )
     }
 

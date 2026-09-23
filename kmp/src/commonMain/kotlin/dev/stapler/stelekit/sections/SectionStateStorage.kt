@@ -1,0 +1,38 @@
+package dev.stapler.stelekit.sections
+
+import dev.stapler.stelekit.logging.Logger
+import dev.stapler.stelekit.platform.Settings
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonPrimitive
+
+private const val KEY_SECTION_STATES = "section_states"
+private val logger = Logger("SectionStateStorage")
+
+fun Settings.getSectionStates(): Map<String, SectionState> {
+    val raw = getString(KEY_SECTION_STATES, "")
+    if (raw.isBlank()) return emptyMap()
+    return try {
+        val obj = Json.decodeFromString(JsonObject.serializer(), raw)
+        buildMap {
+            for ((id, value) in obj) {
+                val state = SectionState.entries.find {
+                    it.name.equals(value.jsonPrimitive.content, ignoreCase = true)
+                }
+                if (state != null) put(id, state)
+            }
+        }
+    } catch (e: Exception) {
+        logger.warn("Failed to parse section states from settings; resetting to empty: ${e.message}")
+        emptyMap()
+    }
+}
+
+fun Settings.putSectionStates(states: Map<String, SectionState>) {
+    val obj = buildJsonObject {
+        for ((id, state) in states) put(id, JsonPrimitive(state.name.lowercase()))
+    }
+    putString(KEY_SECTION_STATES, obj.toString())
+}

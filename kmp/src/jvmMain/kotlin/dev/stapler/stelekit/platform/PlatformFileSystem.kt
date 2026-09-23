@@ -2,11 +2,31 @@ package dev.stapler.stelekit.platform
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.awt.AWTKeyStroke
+import java.awt.KeyboardFocusManager
+import java.awt.event.KeyEvent
 import java.util.concurrent.CompletableFuture
 import javax.swing.JFileChooser
 import javax.swing.SwingUtilities
 
+/**
+ * Restores standard Tab/Shift+Tab focus traversal within this dialog's own component subtree.
+ * Needed because the desktop entry point (Main.kt) clears the JVM-wide default focus traversal
+ * keys so Compose's BlockEditor can own Tab/Shift+Tab — without a local override here, that empty
+ * default would propagate down into JFileChooser's Swing widgets too, breaking Tab navigation
+ * between its path field, file list, and buttons.
+ */
+internal fun JFileChooser.restoreDefaultTabTraversal() {
+    setFocusTraversalKeys(KeyboardFocusManager.FORWARD_TRAVERSAL_KEYS, setOf(AWTKeyStroke.getAWTKeyStroke(KeyEvent.VK_TAB, 0)))
+    setFocusTraversalKeys(KeyboardFocusManager.BACKWARD_TRAVERSAL_KEYS, setOf(AWTKeyStroke.getAWTKeyStroke(KeyEvent.VK_TAB, KeyEvent.SHIFT_DOWN_MASK)))
+}
+
 actual class PlatformFileSystem actual constructor() : JvmFileSystemBase(), FileSystem {
+
+    companion object {
+        /** Creates a [PlatformFileSystem] with [root] pre-registered in the security whitelist. */
+        fun withRoot(root: String): PlatformFileSystem = PlatformFileSystem().also { it.registerGraphRoot(root) }
+    }
 
     actual override fun getDefaultGraphPath(): String = super.getDefaultGraphPath()
 
@@ -45,6 +65,7 @@ actual class PlatformFileSystem actual constructor() : JvmFileSystemBase(), File
         SwingUtilities.invokeLater {
             val chooser = JFileChooser()
             chooser.fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
+            chooser.restoreDefaultTabTraversal()
             val result = chooser.showOpenDialog(null)
             future.complete(if (result == JFileChooser.APPROVE_OPTION) chooser.selectedFile.absolutePath else null)
         }
@@ -56,15 +77,69 @@ actual class PlatformFileSystem actual constructor() : JvmFileSystemBase(), File
         // showOpenDialog creates a nested AWT event loop (WaitDispatchSupport.enter) which
         // corrupts coroutine continuation state. Fix: move to IO, schedule dialog on the
         // real AWT EDT via invokeLater, block only the IO thread on the result.
+        if (java.awt.GraphicsEnvironment.isHeadless()) return null
         return withContext(Dispatchers.IO) {
-            val future = CompletableFuture<String?>()
-            SwingUtilities.invokeLater {
-                val chooser = JFileChooser()
-                chooser.fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
-                val result = chooser.showOpenDialog(null)
-                future.complete(if (result == JFileChooser.APPROVE_OPTION) chooser.selectedFile.absolutePath else null)
+            val isMacOS = System.getProperty("os.name", "").lowercase().contains("mac")
+            if (isMacOS) {
+                val future = CompletableFuture<String?>()
+                SwingUtilities.invokeLater {
+                    System.setProperty("apple.awt.fileDialogForDirectories", "true")
+                    try {
+                        val dialog = java.awt.FileDialog(null as java.awt.Frame?, "Select Repository Directory", java.awt.FileDialog.LOAD)
+                        dialog.isVisible = true
+                        val dir = dialog.directory
+                        val file = dialog.file
+                        future.complete(if (dir != null && file != null) "$dir$file" else null)
+                    } finally {
+                        System.clearProperty("apple.awt.fileDialogForDirectories")
+                    }
+                }
+                future.get()?.also { registerGraphRoot(it) }
+            } else {
+                val future = CompletableFuture<String?>()
+                SwingUtilities.invokeLater {
+                    val chooser = JFileChooser()
+                    chooser.fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
+                    chooser.restoreDefaultTabTraversal()
+                    val result = chooser.showOpenDialog(null)
+                    future.complete(if (result == JFileChooser.APPROVE_OPTION) chooser.selectedFile.absolutePath else null)
+                }
+                future.get()?.also { registerGraphRoot(it) }
             }
-            future.get()?.also { registerGraphRoot(it) }
+        }
+    }
+
+    override suspend fun pickFileAsync(): String? {
+        if (java.awt.GraphicsEnvironment.isHeadless()) return null
+        return withContext(Dispatchers.IO) {
+            val isMacOS = System.getProperty("os.name", "").lowercase().contains("mac")
+            if (isMacOS) {
+                val future = CompletableFuture<String?>()
+                SwingUtilities.invokeLater {
+                    val dialog = java.awt.FileDialog(null as java.awt.Frame?, "Select SSH Key File", java.awt.FileDialog.LOAD)
+                    dialog.isVisible = true
+                    val dir = dialog.directory
+                    val file = dialog.file
+                    future.complete(if (dir != null && file != null) "$dir$file" else null)
+                }
+                future.get()
+            } else {
+                val future = CompletableFuture<String?>()
+                SwingUtilities.invokeLater {
+                    val chooser = JFileChooser().apply {
+                        fileSelectionMode = JFileChooser.FILES_ONLY
+                        dialogTitle = "Select SSH Key File"
+                        isMultiSelectionEnabled = false
+                        restoreDefaultTabTraversal()
+                    }
+                    future.complete(
+                        if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION)
+                            chooser.selectedFile.absolutePath
+                        else null
+                    )
+                }
+                future.get()
+            }
         }
     }
 
@@ -74,6 +149,7 @@ actual class PlatformFileSystem actual constructor() : JvmFileSystemBase(), File
             SwingUtilities.invokeLater {
                 val chooser = JFileChooser()
                 chooser.selectedFile = java.io.File(getDownloadsPath(), suggestedName)
+                chooser.restoreDefaultTabTraversal()
                 val result = chooser.showSaveDialog(null)
                 future.complete(if (result == JFileChooser.APPROVE_OPTION) chooser.selectedFile.absolutePath else null)
             }

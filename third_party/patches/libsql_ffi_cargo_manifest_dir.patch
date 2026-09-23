@@ -1,0 +1,30 @@
+--- a/build.rs
++++ b/build.rs
+@@ -38,7 +38,7 @@
+         "bundled/bindings/bindgen.rs"
+     };
+
+-    let dir = env!("CARGO_MANIFEST_DIR");
++    let dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+
+-    let full_src_path = Path::new(dir).join(bindgen_rs_path);
++    let full_src_path = Path::new(&dir).join(bindgen_rs_path);
+     copy_with_cp(full_src_path, &out_path).unwrap();
+@@ -192,7 +192,7 @@
+         bindings::write_to_out_dir(header, bindgen_rs_path.as_ref());
+     }
+
+-    let dir = env!("CARGO_MANIFEST_DIR");
++    let dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+     copy_with_cp(format!("{dir}/{bindgen_rs_path}"), out_path).unwrap();
+
+     let mut cfg = cc::Build::new();
+@@ -453,7 +453,7 @@
+         bindings::write_to_out_dir(header, bindgen_rs_path.as_ref());
+     }
+
+-    let dir = env!("CARGO_MANIFEST_DIR");
++    let dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+     copy_with_cp(format!("{dir}/{bindgen_rs_path}"), out_path).unwrap();
+
+     let out_dir = env::var("OUT_DIR").unwrap();

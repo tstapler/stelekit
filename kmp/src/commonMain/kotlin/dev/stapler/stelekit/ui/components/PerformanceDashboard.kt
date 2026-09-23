@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -31,6 +32,7 @@ import androidx.compose.ui.unit.sp
 import dev.stapler.stelekit.performance.PerfExporter
 import dev.stapler.stelekit.performance.PercentileSummary
 import dev.stapler.stelekit.performance.PerformanceMonitor
+import dev.stapler.stelekit.performance.QueryPlanEntry
 import dev.stapler.stelekit.performance.QueryPlanRepository
 import dev.stapler.stelekit.performance.QueryPlanRow
 import dev.stapler.stelekit.performance.QueryStat
@@ -63,29 +65,81 @@ fun PerformanceDashboard(
     modifier: Modifier = Modifier,
 ) {
     var selectedTab by remember { mutableStateOf(0) }
-    val tabs = listOf("Histograms", "Spans", "Traces", "Plans", "SQL Stats")
+    // "Traces" shows the OTel span waterfall; "Events" shows PerformanceMonitor legacy events.
+    val tabs = listOf("Histograms", "Traces", "Events", "Plans", "SQL Stats")
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-    ) {
-        TabRow(selectedTabIndex = selectedTab) {
-            tabs.forEachIndexed { index, title ->
-                Tab(
-                    selected = selectedTab == index,
-                    onClick = { selectedTab = index },
-                    text = { Text(title) }
-                )
+    Scaffold(
+        modifier = modifier.fillMaxSize(),
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        contentWindowInsets = WindowInsets(0),
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .padding(padding)
+        ) {
+            // Export actions — visible on all tabs
+            if (perfExporter != null) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp, vertical = 0.dp),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(onClick = {
+                        scope.launch {
+                            val msg = try {
+                                val path = perfExporter.exportWithPicker()
+                                if (path != null) "Performance report exported" else "Export cancelled"
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                "Export failed. Check storage permissions."
+                            }
+                            snackbarHostState.showSnackbar(msg)
+                        }
+                    }) {
+                        Icon(Icons.Default.FileDownload, contentDescription = "Export performance report")
+                    }
+                    IconButton(onClick = {
+                        scope.launch {
+                            val msg = try {
+                                val path = perfExporter.exportLogsWithPicker()
+                                if (path != null) "Logs exported" else "Export cancelled"
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                "Log export failed."
+                            }
+                            snackbarHostState.showSnackbar(msg)
+                        }
+                    }) {
+                        Icon(Icons.Default.Description, contentDescription = "Export logs")
+                    }
+                }
             }
-        }
 
-        when (selectedTab) {
-            0 -> HistogramsTab(perfHistograms)
-            1 -> SpansTab(spanRepository, ringBuffer, perfExporter, perfSpans)
-            2 -> TracesTab()
-            3 -> QueryPlansTab(queryPlanRepository, queryStatsCollector)
-            4 -> QueryStatsTab(queryStatsRepository, perfQueryStats)
+            TabRow(selectedTabIndex = selectedTab) {
+                tabs.forEachIndexed { index, title ->
+                    Tab(
+                        selected = selectedTab == index,
+                        onClick = { selectedTab = index },
+                        text = { Text(title) }
+                    )
+                }
+            }
+
+            when (selectedTab) {
+                0 -> HistogramsTab(perfHistograms)
+                1 -> SpansTab(spanRepository, ringBuffer, perfSpans)
+                2 -> TracesTab()
+                3 -> QueryPlansTab(queryPlanRepository, queryStatsCollector)
+                4 -> QueryStatsTab(queryStatsRepository, perfQueryStats)
+            }
         }
     }
 }
@@ -165,11 +219,9 @@ private val durationPresets = listOf(0L, 50L, 100L, 250L, 500L)
 private fun SpansTab(
     spanRepository: SpanRepository?,
     ringBuffer: RingBufferSpanExporter?,
-    perfExporter: PerfExporter? = null,
     perfSpans: StateFlow<List<SerializedSpan>> = MutableStateFlow(emptyList()),
 ) {
     val scope = rememberCoroutineScope()
-    val snackbarHostState = remember { SnackbarHostState() }
 
     // Data is pre-collected by GraphContent (App.kt) — subscribe to the pre-populated
     // StateFlow so the tab shows data immediately without a blank flash.
@@ -216,12 +268,7 @@ private fun SpansTab(
         }
     }
 
-    Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        contentWindowInsets = WindowInsets(0),
-    ) { padding ->
-    Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+    Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
             // ── Toolbar row 1: controls ──────────────────────────────────
             Row(
@@ -256,23 +303,6 @@ private fun SpansTab(
                         contentDescription = if (paused) "Resume" else "Pause",
                         tint = if (paused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                     )
-                }
-                if (perfExporter != null) {
-                    IconButton(onClick = {
-                        scope.launch {
-                            val msg = try {
-                                val path = perfExporter.exportWithPicker()
-                                if (path != null) "Performance report exported" else "Export cancelled"
-                            } catch (e: CancellationException) {
-                                throw e
-                            } catch (e: Exception) {
-                                "Export failed. Check storage permissions."
-                            }
-                            snackbarHostState.showSnackbar(msg)
-                        }
-                    }) {
-                        Icon(Icons.Default.FileDownload, contentDescription = "Export JSON")
-                    }
                 }
                 IconButton(onClick = {
                     scope.launch { spanRepository?.clear(); ringBuffer?.clear() }
@@ -347,7 +377,6 @@ private fun SpansTab(
             }
         }
     }
-    } // Scaffold
 }
 
 private data class TraceGroup(
@@ -438,7 +467,7 @@ private fun TraceWaterfallRow(
                 Spacer(Modifier.width(6.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = rootSpan?.name ?: "trace",
+                        text = rootSpan?.name?.takeIf { it.isNotEmpty() } ?: "(unnamed span)",
                         style = MaterialTheme.typography.labelMedium,
                         fontFamily = FontFamily.Monospace,
                     )
@@ -829,7 +858,7 @@ private fun QueryPlansTab(
         return
     }
 
-    var plans by remember { mutableStateOf<Map<String, List<QueryPlanRow>>>(emptyMap()) }
+    var plans by remember { mutableStateOf<Map<String, QueryPlanEntry>>(emptyMap()) }
     var loading by remember { mutableStateOf(false) }
     var selectedKey by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -878,7 +907,8 @@ private fun QueryPlansTab(
                 contentPadding = PaddingValues(vertical = 4.dp)
             ) {
                 items(plans.keys.sorted()) { key ->
-                    val rows = plans[key] ?: emptyList()
+                    val entry = plans[key]
+                    val rows = entry?.rows ?: emptyList()
                     val hasScan = rows.any { it.detail.startsWith("SCAN ") && !it.detail.contains("USING") }
                     val bg = if (selectedKey == key) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
                     Surface(
@@ -900,7 +930,8 @@ private fun QueryPlansTab(
             VerticalDivider()
             val key = selectedKey
             if (key != null) {
-                val rows = plans[key] ?: emptyList()
+                val entry = plans[key]
+                val rows = entry?.rows ?: emptyList()
                 LazyColumn(
                     modifier = Modifier.weight(0.6f).fillMaxHeight(),
                     contentPadding = PaddingValues(16.dp),
@@ -911,6 +942,26 @@ private fun QueryPlansTab(
                             modifier = Modifier.padding(bottom = 8.dp))
                         HorizontalDivider()
                         Spacer(Modifier.height(8.dp))
+                    }
+                    if (entry?.sql != null) {
+                        item {
+                            Text("SQL", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(bottom = 4.dp))
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                shape = MaterialTheme.shapes.small,
+                            ) {
+                                Text(
+                                    entry.sql,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontFamily = FontFamily.Monospace,
+                                    modifier = Modifier.padding(8.dp),
+                                )
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            HorizontalDivider()
+                            Spacer(Modifier.height(8.dp))
+                        }
                     }
                     items(rows) { row ->
                         PlanRowItem(row)

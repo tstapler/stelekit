@@ -4,15 +4,23 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import kotlinx.datetime.LocalDate
 import dev.stapler.stelekit.docs.AllPagesDocs
 import dev.stapler.stelekit.docs.FlashcardsDocs
+import dev.stapler.stelekit.docs.GlobalUnlinkedReferencesDocs
+import dev.stapler.stelekit.docs.HelpExempt
 import dev.stapler.stelekit.docs.HelpPage
 import dev.stapler.stelekit.docs.JournalsDocs
 import dev.stapler.stelekit.docs.PageViewDocs
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.git.model.SyncState
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.GraphInfo
+import dev.stapler.stelekit.model.ImageAnnotationUuid
 import dev.stapler.stelekit.vault.VaultError
 import dev.stapler.stelekit.vault.VaultNamespace
+import dev.stapler.stelekit.asset.AssetUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.SectionId
+import dev.stapler.stelekit.sections.SectionManifest
+import dev.stapler.stelekit.sections.SectionState
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
 import dev.stapler.stelekit.ui.i18n.Language
 
@@ -32,22 +40,43 @@ sealed class Screen {
     data object Flashcards : Screen()
 
     @HelpPage(docs = AllPagesDocs::class)
-    data object AllPages : Screen()
+    data class AllPages(val conflictsOnly: Boolean = false) : Screen()
 
+    @HelpExempt(reason = "Internal diagnostics screen; developer tooling only, not reachable from user nav")
     data object LibraryStats : Screen()
+
+    @HelpExempt(reason = "System surface shown automatically; users do not navigate to it deliberately")
     data object Notifications : Screen()
+
+    @HelpExempt(reason = "Developer log viewer; reachable only from debug menu")
     data object Logs : Screen()
+
+    @HelpExempt(reason = "Developer profiling screen; reachable only from debug menu")
     data object Performance : Screen()
+
+    @HelpPage(docs = GlobalUnlinkedReferencesDocs::class)
     data object GlobalUnlinkedReferences : Screen()
+
+    @HelpExempt(reason = "Transient wizard step shown during onboarding; not a standing navigation destination")
     data object Import : Screen()
 
+    @HelpExempt(reason = "Shown programmatically when opening a paranoid-mode graph; not a user-initiated nav destination")
     data object VaultUnlock : Screen()
 
     @HelpPage(docs = PageViewDocs::class)
     data class PageView(val page: Page) : Screen()
 
     /** Full-screen gallery of annotated images. */
+    @HelpExempt(reason = "Full-screen gallery shown from image blocks; not a primary navigation destination")
     data object Gallery : Screen()
+
+    /** Asset browser for viewing and managing all graph assets. */
+    @HelpExempt(reason = "Asset management surface; power-user feature not in primary nav")
+    data object AssetBrowser : Screen()
+
+    /** Detail view for a single asset. */
+    @HelpExempt(reason = "Opened by tapping an asset in the browser; not a primary nav destination")
+    data class AssetDetail(val assetUuid: AssetUuid) : Screen()
 
     /**
      * Annotation editor for a single image annotation.
@@ -55,8 +84,9 @@ sealed class Screen {
      * [imageAnnotationUuid] is the UUID of the [ImageAnnotation] to open.
      * [pageUuid] is the UUID of the page that owns the block — used for "Go to page" navigation.
      */
+    @HelpExempt(reason = "Entered via image tap, not from sidebar nav; advanced feature for image annotation")
     data class AnnotationEditor(
-        val imageAnnotationUuid: String,
+        val imageAnnotationUuid: ImageAnnotationUuid,
         val pageUuid: String? = null,
     ) : Screen()
 }
@@ -66,13 +96,14 @@ data class AppState(
     val rightSidebarExpanded: Boolean = false,
     val settingsVisible: Boolean = false,
     val isLoading: Boolean = false,
+    val isContentFetching: Boolean = false,
     val isFullyLoaded: Boolean = false,  // True when all background loading is complete
     val themeMode: StelekitThemeMode = StelekitThemeMode.SYSTEM,
     val language: Language = Language.ENGLISH,
     val onboardingCompleted: Boolean = false,
     val currentScreen: Screen = Screen.Journals,
     val currentPage: Page? = null,
-    val currentGraphPath: String = "",
+    val currentGraphPath: String? = null,
     val commandPaletteVisible: Boolean = false,
     val searchDialogVisible: Boolean = false,
     val searchDialogInitialQuery: String = "",
@@ -89,13 +120,15 @@ data class AppState(
     val journalPages: List<Page> = emptyList(),
     val favoritePages: List<Page> = emptyList(),
     val recentPages: List<Page> = emptyList(),
-    val editingBlockId: String? = null,
+    val editingBlockId: BlockUuid? = null,
     val editingCursorIndex: Int? = null,
     // Debug settings
     val isDebugMode: Boolean = false,
     val isDebugMenuVisible: Boolean = false,
     // Accessibility
     val isLeftHanded: Boolean = false,
+    // Developer flags
+    val isLibsqlDriverEnabled: Boolean = false,
     // Multi-graph support
     val currentGraphId: String? = null,
     val currentGraphName: String = "",
@@ -103,8 +136,9 @@ data class AppState(
     val isGraphSwitching: Boolean = false,
     // Disk conflict — non-null when a file-watcher change was detected while editing
     val diskConflict: DiskConflict? = null,
-    // Write error — non-null when a background DB write failed persistently
-    val indexingError: String? = null,
+    // Pending conflicts — files changed externally while the user was on a different page.
+    // Keyed by filePath; shown as a dialog when the user next navigates to that page.
+    val pendingConflicts: Map<String, PendingConflict> = emptyMap(),
     // Fatal error — non-null when a Throwable-level crash was caught and converted to a
     // recoverable state. Shown on the error report screen so the user can copy the message.
     val fatalError: String? = null,
@@ -118,7 +152,19 @@ data class AppState(
     val gitSetupVisible: Boolean = false,
     val gitSetupInitialStep: Int = 1,
     val gitSetupOpenForClone: Boolean = false,
+    // LLM provider settings — mirrors gitSetupVisible/openGitSetup()/dismissGitSetup() (Epic 6
+    // Story 6.1). Drives direct-open + auto-selection of the "AI Providers" settings category.
+    val llmProviderSettingsVisible: Boolean = false,
     val conflictResolutionVisible: Boolean = false,
+    // Full-screen line-diff view for a disk conflict, reached via DiskConflictDialog's
+    // "View full comparison" button. Does not clear diskConflict — only suppresses the
+    // AlertDialog's rendering while true (see GraphDialogLayer).
+    val diskConflictViewFullVisible: Boolean = false,
+    val journalMergeReviewVisible: Boolean = false,
+    // LLM suggestion inbox — mirrors journalMergeReviewVisible's shape. Set true when
+    // LlmSuggestionInbox.pendingForGraph(currentGraphId) becomes non-empty; NOT auto-dismissed
+    // when it becomes empty via accept/reject (same "do NOT auto-dismiss" rule as journal merge).
+    val llmSuggestionReviewVisible: Boolean = false,
     // Export in-flight: true while an exportPage/exportSelectedBlocks coroutine is running
     val isExporting: Boolean = false,
     // Share dialog state
@@ -130,9 +176,30 @@ data class AppState(
     val shareIsGoogleAuthenticated: Boolean = false,
     val shareGoogleEmail: String? = null,
     val isExportingToDrive: Boolean = false,
+    // Section support
+    val currentManifest: SectionManifest? = null,
+    val currentSectionStates: Map<String, SectionState> = emptyMap(),
+    val defaultSection: SectionId = SectionId.Global,
+    val deviceSetupComplete: Boolean = false,
+    val sectionPickerVisible: Boolean = false,
+    val sectionPickerPage: Page? = null,
+    val deviceSetupWizardVisible: Boolean = false,
+    val sectionQuickToggleVisible: Boolean = false,
 ) {
     val canGoBack: Boolean get() = historyIndex > 0
     val canGoForward: Boolean get() = historyIndex < navigationHistory.size - 1
+    val hasSectionFilter: Boolean
+        get() = currentManifest?.sections?.isNotEmpty() == true &&
+            currentSectionStates.values.any { it != SectionState.ACTIVE }
+
+    /**
+     * File paths with an unresolved disk conflict — both deferred ([pendingConflicts]) and the
+     * one whose dialog is currently open ([diskConflict]), so the sidebar indicator is never
+     * momentarily wrong while a dialog is up. Single source of truth for the sidebar wiring in
+     * `App.kt` and the corresponding test assertions.
+     */
+    val pendingConflictFilePaths: Set<String>
+        get() = pendingConflicts.keys + listOfNotNull(diskConflict?.filePath)
 }
 
 /** Opens the global search dialog pre-filled with the given text. */
@@ -153,7 +220,27 @@ data class DiskConflict(
     val pageUuid: String,
     val pageName: String,
     val filePath: String,
-    val editingBlockUuid: String,
+    // Null when the pending-conflict page has no blocks yet — e.g. the auto-apply write in
+    // observeExternalFileChanges() is fire-and-forget, so navigating to a brand-new page before
+    // that write lands leaves checkAndShowPendingConflict() with no block to point at. Model this
+    // as null rather than a sentinel so callers are forced to handle "no target block" explicitly.
+    val editingBlockUuid: BlockUuid?,
     val localContent: String,
-    val diskContent: String
+    val diskContent: String,
+    val diskBlockContent: String? = null
+)
+
+/**
+ * A disk conflict detected while the user was NOT viewing the affected page. The disk
+ * content is applied to the DB immediately (so it is never lost even if the user never
+ * opens the page), but [previousContent] preserves what the first block held right before
+ * that overwrite, so [DiskConflict] can still offer an undo/review affordance if the user
+ * navigates to the page later.
+ */
+data class PendingConflict(
+    val filePath: String,
+    val pageName: String,
+    val diskContent: String,
+    val previousContent: String,
+    val pageExistedLocally: Boolean,
 )

@@ -34,6 +34,13 @@ enum class FormatAction(val prefix: String, val suffix: String) {
     QUOTE("> ", ""),
     NUMBERED_LIST("1. ", ""),
     HEADING("# ", ""),
+    // Structural inserts (Phase C.2, GAP-006/GAP-007) — applyFormatAction dispatches these to
+    // dedicated branches rather than the generic prefix/suffix wrap logic above. The prefix/
+    // suffix values are unused by those branches; CODE_BLOCK's non-empty suffix and
+    // TABLE_INSERT's empty prefix keep both excluded from the line-prefix strip-group filter
+    // (suffix.isEmpty() && prefix.isNotEmpty()) so neither contaminates QUOTE/NUMBERED_LIST/HEADING.
+    CODE_BLOCK("```\n", "\n```"),
+    TABLE_INSERT("", ""),
 }
 
 /**
@@ -46,7 +53,8 @@ class JournalsViewModel(
     val blockStateManager: BlockStateManager,
     // Default scope owns its lifecycle; callers in remember{} must not pass rememberCoroutineScope()
     // which is cancelled when the composable leaves composition. Tests inject a TestCoroutineScope.
-    scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+    private val activeSectionIds: List<String>? = null,
 ) {
     private val scope = scope
     private val logger = Logger("JournalsViewModel")
@@ -63,6 +71,7 @@ class JournalsViewModel(
     val selectedBlockUuids: StateFlow<Set<String>> = blockStateManager.selectedBlockUuids
     val isInSelectionMode: StateFlow<Boolean> = blockStateManager.isInSelectionMode
     val formatEvents: SharedFlow<FormatAction> = blockStateManager.formatEvents
+    val todoToggleEvents: SharedFlow<Unit> = blockStateManager.todoToggleEvents
     val canUndo: StateFlow<Boolean> = blockStateManager.canUndo
     val canRedo: StateFlow<Boolean> = blockStateManager.canRedo
     val loadingPageUuids: StateFlow<Set<String>> = blockStateManager.loadingPageUuids
@@ -89,7 +98,13 @@ class JournalsViewModel(
     private fun startPaginationObserver() {
         paginationJob?.cancel()
         paginationJob = scope.launch {
-            journalService.getJournalPages(totalVisibleCount, 0).collect { result ->
+            val sectionsFlow = activeSectionIds
+            val journalFlow = if (sectionsFlow != null) {
+                journalService.getJournalPagesBySections(sectionsFlow, totalVisibleCount, 0)
+            } else {
+                journalService.getJournalPages(totalVisibleCount, 0)
+            }
+            journalFlow.collect { result ->
                 val journals = result.getOrNull() ?: emptyList()
 
                 _uiState.update { it.copy(
@@ -164,6 +179,8 @@ class JournalsViewModel(
     fun selectAll(pageUuid: PageUuid) = blockStateManager.selectAll(pageUuid)
     fun clearSelection() = blockStateManager.clearSelection()
     fun deleteSelectedBlocks(): Job = blockStateManager.deleteSelectedBlocks()
+    fun moveSelectedBlocks(newParentUuid: BlockUuid?, insertAfterUuid: BlockUuid?): Job =
+        blockStateManager.moveSelectedBlocks(newParentUuid, insertAfterUuid)
     fun insertLinkAtCursor(blockUuid: BlockUuid, pageName: String, overrideCursorIndex: Int? = null) =
         blockStateManager.insertLinkAtCursor(blockUuid, pageName, overrideCursorIndex)
 

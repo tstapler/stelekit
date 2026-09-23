@@ -19,14 +19,11 @@ import dev.stapler.stelekit.model.CursorState
 import dev.stapler.stelekit.editor.commands.*
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.repository.BlockReadRepository
-import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.editor.text.ITextOperations
 import dev.stapler.stelekit.editor.state.EditorState
 import dev.stapler.stelekit.editor.state.EditorConfig
 import dev.stapler.stelekit.editor.state.EditorMode
 import dev.stapler.stelekit.editor.blocks.IBlockOperations
-import dev.stapler.stelekit.editor.blocks.DeleteStrategy
-import dev.stapler.stelekit.editor.format.IFormatProcessor
 import dev.stapler.stelekit.performance.PerformanceMonitor
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -215,18 +212,18 @@ class Editor(
         
         return if (currentPage != null) {
             // Create new block after focused block or at root
-            var parentUuid: String? = null
-            
+            var parentUuid: dev.stapler.stelekit.model.BlockUuid? = null
+
             if (focusedBlockUuid != null) {
                 val focusedBlock = blockRepository.getBlockByUuid(BlockUuid(focusedBlockUuid)).first().getOrNull()
                 // If we have a focused block, we likely want to create a sibling (same parent)
                 parentUuid = focusedBlock?.parentUuid
             }
-            
+
             blockOperations.createBlock(
                 pageId = currentPage.uuid.value,
                 content = content,
-                parentId = parentUuid
+                parentId = parentUuid?.value
             ).also { result ->
                 if (result.isRight()) {
                     // Update editor state
@@ -346,20 +343,6 @@ class Editor(
     }
 
     // Private helper methods
-
-    private fun getSelectedText(): String? {
-        val currentBlockUuid = _cursorState.value.blockId
-        return if (currentBlockUuid != null) {
-            textOperations.getTextState(currentBlockUuid).value.selection.let { textSelection ->
-                val textState = textOperations.getTextState(currentBlockUuid).value
-                if (textSelection.range.start >= 0 && textSelection.range.end <= textState.content.length) {
-                    textState.content.substring(textSelection.range.start, textSelection.range.end)
-                } else null
-            }
-        } else {
-            null
-        }
-    }
 
     private suspend fun refreshBlocks() {
         val currentPage = _currentPage.value

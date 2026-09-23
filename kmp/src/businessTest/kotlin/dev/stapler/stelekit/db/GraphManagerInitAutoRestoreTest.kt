@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.db
 
+import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.GraphInfo
 import dev.stapler.stelekit.model.GraphRegistry
 import dev.stapler.stelekit.platform.FileSystem
@@ -29,6 +30,7 @@ class GraphManagerInitAutoRestoreTest {
         override fun putBoolean(key: String, value: Boolean) { store[key] = value.toString() }
         override fun getString(key: String, defaultValue: String) = store.getOrDefault(key, defaultValue)
         override fun putString(key: String, value: String) { store[key] = value }
+        override fun containsKey(key: String) = store.containsKey(key)
     }
 
     private open class StubFileSystem : FileSystem {
@@ -50,14 +52,14 @@ class GraphManagerInitAutoRestoreTest {
 
     private fun makeSettings(graphId: String, isParanoidMode: Boolean): StubSettings {
         val graphInfo = GraphInfo(
-            id = graphId,
+            id = GraphId(graphId),
             path = "/test/graph",
             displayName = "Test Graph",
             addedAt = 0L,
             isParanoidMode = isParanoidMode,
         )
         val registry = GraphRegistry(
-            activeGraphId = graphId,
+            activeGraphId = GraphId(graphId),
             graphs = listOf(graphInfo),
         )
         return StubSettings(mapOf("graph_registry" to json.encodeToString(registry)))

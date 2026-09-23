@@ -12,7 +12,6 @@ import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.repository.BlockWriteRepository
 import dev.stapler.stelekit.editor.TextFormat

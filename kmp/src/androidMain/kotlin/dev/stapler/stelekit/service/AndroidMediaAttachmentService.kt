@@ -11,15 +11,17 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import arrow.core.Either
+import arrow.core.getOrElse
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.platform.FileSystem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
-import okio.FileSystem
+import okio.FileSystem as OkioFileSystem
 import okio.Path.Companion.toOkioPath
 import java.io.File
 import java.nio.file.Files
@@ -35,6 +37,7 @@ import kotlin.coroutines.resume
  */
 class AndroidMediaAttachmentService(
     private val context: Context,
+    private val fileSystem: FileSystem,
     private val launchGalleryPicker: suspend () -> Uri?,
 ) : MediaAttachmentService {
 
@@ -46,51 +49,75 @@ class AndroidMediaAttachmentService(
         if (uri == null) return null
 
         return withContext(PlatformDispatcher.IO) {
-            val assetsDir = File("$graphRoot/assets")
-            try {
-                assetsDir.mkdirs()
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e
-                return@withContext DomainError.AttachmentError.AssetsDirectoryFailed(
-                    e.message ?: "unknown"
+            if (graphRoot.startsWith("saf://")) {
+                pickAndAttachSaf(uri, graphRoot)
+            } else {
+                pickAndAttachLegacy(uri, graphRoot)
+            }
+        }
+    }
+
+    private fun pickAndAttachSaf(uri: Uri, graphRoot: String): Either<DomainError, AttachmentResult> {
+        val assetsPath = "$graphRoot/assets"
+        if (!fileSystem.directoryExists(assetsPath)) {
+            if (!fileSystem.createDirectory(assetsPath)) {
+                return DomainError.AttachmentError.AssetsDirectoryFailed(
+                    "Could not create assets directory: $assetsPath"
                 ).left()
             }
-
-            val displayName = resolveDisplayName(uri) ?: "attachment"
-            val stem = displayName.substringBeforeLast('.', displayName)
-            val ext = if (displayName.contains('.')) displayName.substringAfterLast('.') else ""
-            val uniqueName = uniqueFileName(assetsDir.toOkioPath(), stem, ext, FileSystem.SYSTEM)
-            val destFile = File(assetsDir, uniqueName)
-            val tmpFile = File(assetsDir, ".tmp-${java.util.UUID.randomUUID()}")
-
-            try {
-                val inputStream = context.contentResolver.openInputStream(uri)
-                    ?: return@withContext DomainError.AttachmentError.CopyFailed(
-                        "ContentResolver returned null for $uri"
-                    ).left()
-                inputStream.use { input ->
-                    tmpFile.outputStream().use { output -> input.copyTo(output) }
-                }
-                try {
-                    Files.move(tmpFile.toPath(), destFile.toPath(), StandardCopyOption.ATOMIC_MOVE)
-                } catch (e: java.nio.file.AtomicMoveNotSupportedException) {
-                    try {
-                        Files.move(tmpFile.toPath(), destFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
-                    } catch (e2: Exception) {
-                        if (e2 is CancellationException) throw e2
-                        tmpFile.delete()
-                        return@withContext DomainError.AttachmentError.CopyFailed(e2.message ?: "move failed").left()
-                    }
-                }
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e
-                tmpFile.delete()
-                return@withContext DomainError.AttachmentError.CopyFailed(
-                    e.message ?: "copy failed"
-                ).left()
-            }
-
+        }
+        val displayName = resolveDisplayName(uri) ?: "attachment"
+        val stem = displayName.substringBeforeLast('.', displayName)
+        val ext = if (displayName.contains('.')) displayName.substringAfterLast('.') else ""
+        val uniqueName = uniqueFileName(assetsPath, stem, ext, fileSystem)
+        val bytes = readUriBytes(uri).getOrElse { return it.left() }
+        return if (fileSystem.writeFileBytes("$assetsPath/$uniqueName", bytes)) {
             AttachmentResult(relativePath = "../assets/$uniqueName", displayName = uniqueName).right()
+        } else {
+            DomainError.AttachmentError.CopyFailed("writeFileBytes returned false for $assetsPath/$uniqueName").left()
+        }
+    }
+
+    private fun pickAndAttachLegacy(uri: Uri, graphRoot: String): Either<DomainError, AttachmentResult> {
+        val assetsDir = File("$graphRoot/assets")
+        try {
+            assetsDir.mkdirs()
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            return DomainError.AttachmentError.AssetsDirectoryFailed(e.message ?: "unknown").left()
+        }
+
+        val displayName = resolveDisplayName(uri) ?: "attachment"
+        val stem = displayName.substringBeforeLast('.', displayName)
+        val ext = if (displayName.contains('.')) displayName.substringAfterLast('.') else ""
+        val uniqueName = uniqueFileName(assetsDir.toOkioPath(), stem, ext, OkioFileSystem.SYSTEM)
+        val destFile = File(assetsDir, uniqueName)
+        val tmpFile = File(assetsDir, ".tmp-${java.util.UUID.randomUUID()}")
+
+        return try {
+            val inputStream = context.contentResolver.openInputStream(uri)
+                ?: return DomainError.AttachmentError.CopyFailed(
+                    "ContentResolver returned null for $uri"
+                ).left()
+            inputStream.use { input ->
+                tmpFile.outputStream().use { output -> input.copyTo(output) }
+            }
+            try {
+                Files.move(tmpFile.toPath(), destFile.toPath(), StandardCopyOption.ATOMIC_MOVE)
+            } catch (e: java.nio.file.AtomicMoveNotSupportedException) {
+                try {
+                    Files.move(tmpFile.toPath(), destFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                } catch (e2: Exception) {
+                    if (e2 is CancellationException) throw e2
+                    tmpFile.delete()
+                    return DomainError.AttachmentError.CopyFailed(e2.message ?: "move failed").left()
+                }
+            }
+            AttachmentResult(relativePath = "../assets/$uniqueName", displayName = uniqueName).right()
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            tmpFile.delete()
+            DomainError.AttachmentError.CopyFailed(e.message ?: "copy failed").left()
         }
     }
 
@@ -115,6 +142,23 @@ class AndroidMediaAttachmentService(
                 val mimeType = context.contentResolver.getType(uri) ?: continue
                 if (!mimeType.startsWith("image/")) continue
                 val ext = mimeType.substringAfter("image/").substringBefore(";").let { if (it == "jpeg") "jpg" else it }
+                if (graphRoot.startsWith("saf://")) {
+                    val assetsPath = "$graphRoot/assets"
+                    if (!fileSystem.directoryExists(assetsPath)) {
+                        if (!fileSystem.createDirectory(assetsPath)) {
+                            return@withContext DomainError.AttachmentError.AssetsDirectoryFailed(
+                                "Could not create assets directory: $assetsPath"
+                            ).left()
+                        }
+                    }
+                    val uniqueName = uniqueFileName(assetsPath, "clipboard", ext, fileSystem)
+                    val bytes = readUriBytes(uri).getOrElse { return@withContext it.left() }
+                    return@withContext if (fileSystem.writeFileBytes("$assetsPath/$uniqueName", bytes)) {
+                        AttachmentResult(relativePath = "../assets/$uniqueName", displayName = uniqueName).right()
+                    } else {
+                        DomainError.AttachmentError.CopyFailed("writeFileBytes returned false").left()
+                    }
+                }
                 val assetsDir = File("$graphRoot/assets")
                 try {
                     assetsDir.mkdirs()
@@ -122,7 +166,7 @@ class AndroidMediaAttachmentService(
                     if (e is CancellationException) throw e
                     return@withContext DomainError.AttachmentError.AssetsDirectoryFailed(e.message ?: "unknown").left()
                 }
-                val uniqueName = uniqueFileName(assetsDir.toOkioPath(), "clipboard", ext, FileSystem.SYSTEM)
+                val uniqueName = uniqueFileName(assetsDir.toOkioPath(), "clipboard", ext, OkioFileSystem.SYSTEM)
                 val destFile = File(assetsDir, uniqueName)
                 val tmpFile = File(assetsDir, ".tmp-${java.util.UUID.randomUUID()}")
                 try {
@@ -150,12 +194,25 @@ class AndroidMediaAttachmentService(
             null
         }
 
+    private fun readUriBytes(uri: Uri): Either<DomainError, ByteArray> {
+        val tmpFile = File(context.cacheDir, ".tmp-${java.util.UUID.randomUUID()}")
+        return try {
+            val inputStream = context.contentResolver.openInputStream(uri)
+                ?: return DomainError.AttachmentError.CopyFailed("ContentResolver returned null stream for $uri").left()
+            inputStream.use { input -> tmpFile.outputStream().use { output -> input.copyTo(output) } }
+            tmpFile.readBytes().right()
+        } catch (e: CancellationException) { throw e }
+        catch (e: Exception) { DomainError.AttachmentError.CopyFailed(e.message ?: "copy failed").left() }
+        finally { tmpFile.delete() }
+    }
+
     private fun resolveDisplayName(uri: Uri): String? {
         val cursor = context.contentResolver.query(
             uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null
         ) ?: return null
         return cursor.use { if (it.moveToFirst()) it.getString(0) else null }
     }
+
 }
 
 private class ContinuationHolder {
@@ -172,7 +229,10 @@ private class ContinuationHolder {
  * required on API 21+ via Google Play Services backport).
  */
 @Composable
-fun rememberAndroidMediaAttachmentService(context: Context): AndroidMediaAttachmentService {
+fun rememberAndroidMediaAttachmentService(
+    context: Context,
+    fileSystem: FileSystem,
+): AndroidMediaAttachmentService {
     val holder = remember { ContinuationHolder() }
 
     val launcher = rememberLauncherForActivityResult(
@@ -182,9 +242,10 @@ fun rememberAndroidMediaAttachmentService(context: Context): AndroidMediaAttachm
         holder.continuation = null
     }
 
-    return remember(context) {
+    return remember(context, fileSystem) {
         AndroidMediaAttachmentService(
             context = context,
+            fileSystem = fileSystem,
             launchGalleryPicker = {
                 suspendCancellableCoroutine { cont ->
                     holder.continuation = cont

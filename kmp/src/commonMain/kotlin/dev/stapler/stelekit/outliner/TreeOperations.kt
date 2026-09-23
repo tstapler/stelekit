@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.outliner
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.util.FractionalIndexing
 
 /**
  * Pure logic for tree manipulation operations.
@@ -33,9 +34,9 @@ object TreeOperations {
         // It becomes the last child of the new parent
         updates.add(
             block.copy(
-                parentUuid = newParent.uuid.value,
+                parentUuid = newParent.uuid,
                 level = newParent.level + 1,
-                leftUuid = lastChildOfNewParent?.uuid?.value // If null, it becomes the first child
+                leftUuid = lastChildOfNewParent?.uuid // If null, it becomes the first child
             )
         )
 
@@ -44,7 +45,7 @@ object TreeOperations {
         if (nextSibling != null) {
             updates.add(
                 nextSibling.copy(
-                    leftUuid = newParent.uuid.value // newParent was the block's left sibling
+                    leftUuid = newParent.uuid // newParent was the block's left sibling
                 )
             )
         }
@@ -83,7 +84,7 @@ object TreeOperations {
             block.copy(
                 parentUuid = parent.parentUuid,
                 level = parent.level,
-                leftUuid = parent.uuid.value
+                leftUuid = parent.uuid
             )
         )
 
@@ -91,7 +92,7 @@ object TreeOperations {
         if (nextSibling != null) {
             updates.add(
                 nextSibling.copy(
-                    leftUuid = prevSibling?.uuid?.value // Points to whatever was before the block (or null if block was first)
+                    leftUuid = prevSibling?.uuid // Points to whatever was before the block (or null if block was first)
                 )
             )
         }
@@ -104,7 +105,7 @@ object TreeOperations {
         if (parentNextSibling != null) {
             updates.add(
                 parentNextSibling.copy(
-                    leftUuid = block.uuid.value // Now points to the outdented block
+                    leftUuid = block.uuid // Now points to the outdented block
                 )
             )
         }
@@ -133,17 +134,17 @@ object TreeOperations {
             leftUuid = prevSibling.leftUuid,
             position = prevSibling.position
         ))
-        
+
         // Previous sibling (A) now follows current block (B)
         updates.add(prevSibling.copy(
-            leftUuid = block.uuid.value,
+            leftUuid = block.uuid,
             position = block.position
         ))
 
         // If there was a next sibling (C) following B, it now follows A
         if (nextSibling != null) {
             updates.add(nextSibling.copy(
-                leftUuid = prevSibling.uuid.value
+                leftUuid = prevSibling.uuid
             ))
         }
         
@@ -167,7 +168,7 @@ object TreeOperations {
 
         // Current block (A) now follows next sibling (B)
         updates.add(block.copy(
-            leftUuid = nextSibling.uuid.value,
+            leftUuid = nextSibling.uuid,
             position = nextSibling.position
         ))
 
@@ -180,7 +181,7 @@ object TreeOperations {
         // If there was a block (C) following B, it now follows A
         if (afterNextSibling != null) {
             updates.add(afterNextSibling.copy(
-                leftUuid = block.uuid.value
+                leftUuid = block.uuid
             ))
         }
         
@@ -209,13 +210,16 @@ object TreeOperations {
      * Reorders a list of siblings to ensure consistent leftUuid and position values.
      */
     fun reorderSiblings(siblings: List<Block>): List<Block> {
-        var currentLeftUuid: String? = null
-        return siblings.mapIndexed { index, b ->
+        var currentLeftUuid: dev.stapler.stelekit.model.BlockUuid? = null
+        var prevPosition: String? = null
+        return siblings.map { b ->
+            val position = FractionalIndexing.generateKeyBetween(prevPosition, null)
             val updated = b.copy(
                 leftUuid = currentLeftUuid,
-                position = index
+                position = position
             )
-            currentLeftUuid = updated.uuid.value
+            currentLeftUuid = updated.uuid
+            prevPosition = position
             updated
         }
     }

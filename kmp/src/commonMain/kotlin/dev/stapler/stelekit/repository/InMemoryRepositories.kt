@@ -3,11 +3,14 @@ package dev.stapler.stelekit.repository
 
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.util.FractionalIndexing
+import dev.stapler.stelekit.model.BlockPropertyKeys
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.model.Property
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.flowOf
 import arrow.core.Either
@@ -33,7 +36,7 @@ class InMemoryBlockRepository : BlockRepository {
 
     override fun getBlockChildren(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> {
         return blocks.map { map ->
-            map.values.filter { it.parentUuid == blockUuid.value }.sortedBy { it.position }.right()
+            map.values.filter { it.parentUuid == blockUuid }.sortedBy { it.position }.right()
         }
     }
 
@@ -53,7 +56,7 @@ class InMemoryBlockRepository : BlockRepository {
     ) {
         val block = allBlocks[uuid] ?: return
         result.add(BlockWithDepth(block, depth))
-        val children = allBlocks.values.filter { it.parentUuid == block.uuid.value }.sortedBy { it.position }
+        val children = allBlocks.values.filter { it.parentUuid == block.uuid }.sortedBy { it.position }
         children.forEach { child ->
             collectHierarchy(allBlocks, child.uuid.value, depth + 1, result)
         }
@@ -66,7 +69,7 @@ class InMemoryBlockRepository : BlockRepository {
             while (currentUuid != null) {
                 val block = map[currentUuid] ?: break
                 if (block.parentUuid != null) {
-                    val parent = map[block.parentUuid]
+                    val parent = map[block.parentUuid?.value]
                     if (parent != null) {
                         ancestors.add(parent)
                         currentUuid = parent.uuid.value
@@ -84,7 +87,7 @@ class InMemoryBlockRepository : BlockRepository {
     override fun getBlockParent(blockUuid: BlockUuid): Flow<Either<DomainError, Block?>> {
         return blocks.map { map ->
             val block = map[blockUuid.value] ?: return@map null.right()
-            val parent = block.parentUuid?.let { map[it] }
+            val parent = block.parentUuid?.let { map[it.value] }
             parent.right()
         }
     }
@@ -193,7 +196,7 @@ class InMemoryBlockRepository : BlockRepository {
             var index = 0
             while (index < uuidsToDelete.size) {
                 val currentUuid = uuidsToDelete[index]
-                val childBlocks = current.values.filter { it.parentUuid == currentUuid }
+                val childBlocks = current.values.filter { it.parentUuid?.value == currentUuid }
                 childBlocks.forEach { child ->
                     uuidsToDelete.add(child.uuid.value)
                 }
@@ -204,7 +207,7 @@ class InMemoryBlockRepository : BlockRepository {
             repairSiblingPositions(current, block.pageUuid.value, block.parentUuid)
         } else {
             // Orphan children - they become root blocks (parent = null, level = 0)
-            val children = current.values.filter { it.parentUuid == blockUuid.value }
+            val children = current.values.filter { it.parentUuid == blockUuid }
             for (child in children) {
                 val levelDelta = 0 - child.level
                 val updatedChild = child.copy(parentUuid = null, level = 0)
@@ -231,25 +234,26 @@ class InMemoryBlockRepository : BlockRepository {
     private fun repairSiblingPositions(
         current: MutableMap<String, Block>,
         pageUuid: String,
-        parentUuid: String?
+        parentUuid: BlockUuid?
     ) {
         val siblings = current.values
             .filter { it.pageUuid.value == pageUuid && it.parentUuid == parentUuid }
             .sortedBy { it.position }
 
-        var expectedPosition = 0
+        var prevPosition: String? = null
         for (sibling in siblings) {
+            val expectedPosition = FractionalIndexing.generateKeyBetween(prevPosition, null)
             if (sibling.position != expectedPosition) {
                 current[sibling.uuid.value] = sibling.copy(position = expectedPosition)
             }
-            expectedPosition++
+            prevPosition = expectedPosition
         }
     }
 
     override suspend fun moveBlock(
         blockUuid: BlockUuid,
         newParentUuid: BlockUuid?,
-        newPosition: Int
+        newPosition: String
     ): Either<DomainError, Unit> {
         val current = blocks.value.toMutableMap()
         val block = current[blockUuid.value] ?: return Unit.right()
@@ -258,7 +262,7 @@ class InMemoryBlockRepository : BlockRepository {
         val levelDelta = newLevel - block.level
 
         val updatedBlock = block.copy(
-            parentUuid = newParentUuid?.value,
+            parentUuid = newParentUuid,
             position = newPosition,
             level = newLevel
         )
@@ -284,10 +288,11 @@ class InMemoryBlockRepository : BlockRepository {
         if (blockIndex <= 0) return Unit.right() // No previous sibling
 
         val prevSibling = siblings[blockIndex - 1]
-        val prevSiblingChildren = current.values.filter { it.parentUuid == prevSibling.uuid.value }
-        val newPosition = if (prevSiblingChildren.isEmpty()) 0 else (prevSiblingChildren.maxOfOrNull { it.position } ?: -1) + 1
+        val prevSiblingChildren = current.values.filter { it.parentUuid == prevSibling.uuid }
+        val lastPrevSiblingChild = prevSiblingChildren.maxByOrNull { it.position }
+        val newPosition = FractionalIndexing.generateKeyBetween(lastPrevSiblingChild?.position, null)
 
-        val updatedBlock = block.copy(parentUuid = prevSibling.uuid.value, level = block.level + 1, position = newPosition)
+        val updatedBlock = block.copy(parentUuid = prevSibling.uuid, level = block.level + 1, position = newPosition)
         current[block.uuid.value] = updatedBlock
 
         adjustDescendantLevels(block.uuid.value, +1, current)
@@ -301,22 +306,18 @@ class InMemoryBlockRepository : BlockRepository {
         val block = current[blockUuid.value] ?: return Unit.right()
         val parentUuid = block.parentUuid ?: return Unit.right() // Already at root
 
-        val parent = current[parentUuid] ?: return Unit.right()
+        val parent = current[parentUuid.value] ?: return Unit.right()
         val grandParentUuid = parent.parentUuid
 
         val grandparentChildren = current.values
             .filter { it.pageUuid == block.pageUuid && it.parentUuid == grandParentUuid }
             .sortedBy { it.position }
 
-        val parentInGrandchildren = grandparentChildren.find { it.uuid.value == parentUuid }
-        val newPosition = (parentInGrandchildren?.position ?: -1) + 1
-
-        // Shift grandparent's children at or after newPosition to make room
-        for (sibling in grandparentChildren) {
-            if (sibling.position >= newPosition) {
-                current[sibling.uuid.value] = sibling.copy(position = sibling.position + 1)
-            }
+        val parentInGrandchildren = grandparentChildren.find { it.uuid == parentUuid }
+        val nextOfParent = grandparentChildren.firstOrNull {
+            it.uuid != parentUuid && it.position > (parentInGrandchildren?.position ?: "")
         }
+        val newPosition = FractionalIndexing.generateKeyBetween(parentInGrandchildren?.position, nextOfParent?.position)
 
         val updatedBlock = block.copy(parentUuid = grandParentUuid, level = parent.level, position = newPosition)
         current[block.uuid.value] = updatedBlock
@@ -377,17 +378,19 @@ class InMemoryBlockRepository : BlockRepository {
         current[blockUuid.value] = blockA.copy(content = blockA.content + separator + blockB.content)
 
         // 2. Reparent children of block B to block A
-        val childrenOfB = current.values.filter { it.parentUuid == blockB.uuid.value }.sortedBy { it.position }
-        val lastChildOfA = current.values.filter { it.parentUuid == blockA.uuid.value }.maxByOrNull { it.position }
-        var nextPosition = (lastChildOfA?.position ?: -1) + 1
+        val childrenOfB = current.values.filter { it.parentUuid == blockB.uuid }.sortedBy { it.position }
+        val lastChildOfA = current.values.filter { it.parentUuid == blockA.uuid }.maxByOrNull { it.position }
+        var nextPrevPosition: String? = lastChildOfA?.position
 
         val targetLevelForChildren = blockA.level + 1
 
         for (child in childrenOfB) {
             val levelDelta = targetLevelForChildren - child.level
+            val nextChildPosition = FractionalIndexing.generateKeyBetween(nextPrevPosition, null)
+            nextPrevPosition = nextChildPosition
             val updatedChild = child.copy(
-                parentUuid = blockA.uuid.value,
-                position = nextPosition++,
+                parentUuid = blockA.uuid,
+                position = nextChildPosition,
                 level = targetLevelForChildren
             )
             current[child.uuid.value] = updatedChild
@@ -419,21 +422,18 @@ class InMemoryBlockRepository : BlockRepository {
         val secondPart = block.content.substring(cursorPosition).trim()
 
         val updatedBlock = block.copy(content = firstPart)
-        val newPosition = block.position + 1
-
-        // Shift following siblings
-        val siblings = current.values.filter { it.pageUuid == block.pageUuid && it.parentUuid == block.parentUuid }
-        for (sibling in siblings) {
-            if (sibling.position >= newPosition) {
-                current[sibling.uuid.value] = sibling.copy(position = sibling.position + 1)
-            }
-        }
+        val nextSiblingPosition = current.values
+            .filter { it.pageUuid == block.pageUuid && it.parentUuid == block.parentUuid }
+            .sortedBy { it.position }
+            .firstOrNull { it.position > block.position }
+            ?.position
+        val newPosition = FractionalIndexing.generateKeyBetween(block.position, nextSiblingPosition)
 
         val newBlock = block.copy(
             uuid = newBlockUuid ?: BlockUuid(dev.stapler.stelekit.util.UuidGenerator.generateV7()),
             content = secondPart,
             position = newPosition,
-            level = block.level // New block must be at the same level
+            level = block.level
         )
 
         current[blockUuid.value] = updatedBlock
@@ -451,7 +451,7 @@ class InMemoryBlockRepository : BlockRepository {
         if (parentUuid in visited) return
         visited.add(parentUuid)
 
-        val children = current.values.filter { it.parentUuid == parentUuid }
+        val children = current.values.filter { it.parentUuid?.value == parentUuid }
         for (child in children) {
             val newLevel = child.level + delta
             if (newLevel >= 0) {
@@ -544,12 +544,6 @@ class InMemoryBlockRepository : BlockRepository {
 class InMemoryPageRepository : PageRepository {
     private val pages = MutableStateFlow<Map<String, Page>>(emptyMap())
 
-    override fun getAllPages(): Flow<Either<DomainError, List<Page>>> {
-        return pages.map { map ->
-            map.values.toList().right()
-        }
-    }
-
     override fun getPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
         return pages.map { map ->
             val result = map.values.sortedBy { it.name }.drop(offset).take(limit)
@@ -572,6 +566,40 @@ class InMemoryPageRepository : PageRepository {
         return pages.map { map ->
             map.values.sortedByDescending { it.updatedAt }.take(limit).right()
         }
+    }
+
+    override fun getFavoritePages(): Flow<Either<DomainError, List<Page>>> {
+        return pages.map { map ->
+            map.values.filter { it.isFavorite }.sortedBy { it.name }.right()
+        }
+    }
+
+    override fun getUnloadedPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
+        return pages.map { map ->
+            map.values.filter { !it.isContentLoaded }
+                .sortedBy { it.uuid.value }.drop(offset).take(limit).right()
+        }
+    }
+
+    override suspend fun countUnloadedPages(): Either<DomainError, Long> =
+        pages.value.values.count { !it.isContentLoaded }.toLong().right()
+
+    override fun getPageNameEntries(): Flow<Either<DomainError, List<PageNameEntry>>> {
+        return pages.map { map ->
+            map.values.map { PageNameEntry(it.name, it.isJournal) }.right()
+        }
+    }
+
+    override suspend fun getPagesByNames(names: Collection<String>): Either<DomainError, List<Page>> {
+        val lower = names.mapTo(HashSet()) { it.lowercase() }
+        return pages.value.values.filter { it.name.lowercase() in lower }.right()
+    }
+
+    override suspend fun getJournalPagesByDates(
+        dates: Collection<kotlinx.datetime.LocalDate>,
+    ): Either<DomainError, List<Page>> {
+        val dateSet = dates.toHashSet()
+        return pages.value.values.filter { it.journalDate != null && it.journalDate in dateSet }.right()
     }
 
     override fun getJournalPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
@@ -601,7 +629,7 @@ class InMemoryPageRepository : PageRepository {
         return pages.map { map ->
             val page = map.values.find { page ->
                 page.name.equals(name, ignoreCase = true) ||
-                    page.properties["alias"]?.split(",")?.any { it.trim().equals(name, ignoreCase = true) } == true
+                    page.properties[BlockPropertyKeys.ALIAS]?.split(",")?.any { it.trim().equals(name, ignoreCase = true) } == true
             }
             page.right()
         }
@@ -610,12 +638,6 @@ class InMemoryPageRepository : PageRepository {
     override fun getPagesInNamespace(namespace: String): Flow<Either<DomainError, List<Page>>> {
         return pages.map { map ->
             map.values.filter { it.namespace == namespace }.right()
-        }
-    }
-
-    override fun getUnloadedPages(): Flow<Either<DomainError, List<Page>>> {
-        return pages.map { map ->
-            map.values.filter { !it.isContentLoaded }.right()
         }
     }
 
@@ -697,11 +719,17 @@ class InMemorySearchRepository(
 
     override fun searchPagesByTitle(query: String, limit: Int): Flow<Either<DomainError, List<Page>>> {
         if (pageRepository == null || query.isEmpty()) return flowOf(emptyList<Page>().right())
-        return pageRepository.getAllPages().map { res ->
-            res.map { pages ->
-                pages.filter { it.name.contains(query, ignoreCase = true) || it.properties["alias"]?.contains(query, ignoreCase = true) == true }
-                    .take(limit)
-            }
+        // Test backend: one-shot bounded-batch snapshot (the alias-property filter has no
+        // SQL equivalent here). Production search uses FTS-backed repositories.
+        return flow {
+            emit(
+                pageRepository.getAllPagesSnapshot().map { pages ->
+                    pages.filter {
+                        it.name.contains(query, ignoreCase = true) ||
+                            it.properties[BlockPropertyKeys.ALIAS]?.contains(query, ignoreCase = true) == true
+                    }.take(limit)
+                }
+            )
         }
     }
 

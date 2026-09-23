@@ -26,12 +26,13 @@ class GraphWriterTest {
             val fileSystem = PlatformFileSystem()
             val writer = GraphWriter(fileSystem)
             
-            // Create a temp directory
-            val userHome = System.getProperty("user.home")
-            val tempDir = File(userHome, "stelekit_test_${System.currentTimeMillis()}")
-            tempDir.mkdirs()
+            val tempDir = java.nio.file.Files.createTempDirectory(
+                java.nio.file.Paths.get(System.getProperty("java.io.tmpdir")),
+                "stelekit_test_",
+            ).toFile()
             val graphPath = tempDir.absolutePath
-            
+            fileSystem.registerGraphRoot(graphPath)
+
             val now = Clock.System.now()
             
             try {
@@ -58,7 +59,7 @@ class GraphWriterTest {
                     pageUuid = PageUuid(pageUuid),
                     content = "Block A",
                     level = 0,
-                    position = 0,
+                    position = "a0",
                     parentUuid = null,
                     createdAt = now,
                     updatedAt = now,
@@ -70,8 +71,8 @@ class GraphWriterTest {
                     pageUuid = PageUuid(pageUuid),
                     content = "Block A1",
                     level = 1,
-                    position = 0,
-                    parentUuid = blockAUuid,
+                    position = "a0",
+                    parentUuid = BlockUuid(blockAUuid),
                     createdAt = now,
                     updatedAt = now,
                     properties = emptyMap()
@@ -83,7 +84,7 @@ class GraphWriterTest {
                     pageUuid = PageUuid(pageUuid),
                     content = "Block B",
                     level = 0,
-                    position = 1,
+                    position = "a1",
                     parentUuid = null,
                     createdAt = now,
                     updatedAt = now,
@@ -95,8 +96,8 @@ class GraphWriterTest {
                     pageUuid = PageUuid(pageUuid),
                     content = "Block B1",
                     level = 1,
-                    position = 0,
-                    parentUuid = blockBUuid,
+                    position = "a0",
+                    parentUuid = BlockUuid(blockBUuid),
                     createdAt = now,
                     updatedAt = now,
                     properties = emptyMap()
@@ -176,8 +177,10 @@ class GraphWriterTest {
 
     @Test
     fun `PlatformFileSystem writeFile logs exception when write fails`() {
-        val userHome = System.getProperty("user.home")
-        val tempDir = File(userHome, "stelekit_test_fs_${System.currentTimeMillis()}")
+        val tempDir = java.nio.file.Files.createTempDirectory(
+            java.nio.file.Paths.get(System.getProperty("java.io.tmpdir")),
+            "stelekit_test_fs_",
+        ).toFile()
         // Create a directory with the same name as the target file — forces an IOException
         val dirNamedAsFile = File(tempDir, "cannotwrite.md")
         tempDir.mkdirs()
@@ -185,6 +188,7 @@ class GraphWriterTest {
 
         try {
             val fileSystem = PlatformFileSystem()
+            fileSystem.registerGraphRoot(tempDir.absolutePath)
 
             LogManager.clearLogs()
 
@@ -199,6 +203,105 @@ class GraphWriterTest {
             assertNotNull(errorLogs.first().throwable, "Error log should include the exception for diagnosis")
         } finally {
             tempDir.deleteRecursively()
+        }
+    }
+
+    // ── TC-16/17: Pre-write hash conflict check ────────────────────────────────
+
+    /**
+     * TC-16: When [checkPreWriteConflict] returns true (external change detected), the write
+     * must be aborted — [onPreWriteConflict] is called and the file is not written to disk.
+     * [onPreWrite] must NOT be called (we bail before the saga starts, so no sentinel is set).
+     */
+    @Test
+    fun `TC-16 pre-write hash conflict aborts write and calls onPreWriteConflict without setting sentinel`() {
+        runBlocking {
+            val writtenPaths = mutableListOf<String>()
+            var preWriteCount = 0
+            var conflictCallCount = 0
+            var capturedPendingContent = ""
+            var capturedDiskContent = ""
+
+            val trackingFs = object : FakeFileSystem() {
+                override fun readFile(path: String): String? = "existing disk content"
+                override fun writeFile(path: String, content: String): Boolean {
+                    writtenPaths.add(path)
+                    return true
+                }
+            }
+
+            val writer = GraphWriter(
+                fileSystem = trackingFs,
+                onPreWrite = { preWriteCount++ },
+                checkPreWriteConflict = { _, _ -> true },  // always report conflict
+                onPreWriteConflict = { _, pendingContent, diskContent ->
+                    conflictCallCount++
+                    capturedPendingContent = pendingContent
+                    capturedDiskContent = diskContent
+                },
+            )
+
+            val now = Clock.System.now()
+            val page = Page(
+                uuid = PageUuid("tc16-uuid-1"),
+                name = "TestPageTC16",
+                createdAt = now,
+                updatedAt = now,
+                journalDate = null,
+                properties = emptyMap(),
+                filePath = "/tmp/pages/TestPageTC16.md",
+            )
+
+            writer.savePage(page, emptyList(), "/tmp")
+
+            assertTrue(writtenPaths.isEmpty(), "File must not be written when conflict detected")
+            assertEquals(0, preWriteCount, "onPreWrite (sentinel) must not be called — bail occurs before the saga")
+            assertEquals(1, conflictCallCount, "onPreWriteConflict must be called exactly once")
+            assertEquals("existing disk content", capturedDiskContent, "diskContent must be the on-disk content")
+            assertEquals("", capturedPendingContent,
+                "pendingContent for an empty-block page must be empty string")
+        }
+    }
+
+    /**
+     * TC-17: When [checkPreWriteConflict] returns false (hashes match, no external change),
+     * the write must proceed normally — file is written and [onPreWriteConflict] is not called.
+     */
+    @Test
+    fun `TC-17 pre-write hash check passes through when no conflict`() {
+        runBlocking {
+            val writtenPaths = mutableListOf<String>()
+            var conflictCallCount = 0
+
+            val trackingFs = object : FakeFileSystem() {
+                override fun readFile(path: String): String? = "disk content"
+                override fun writeFile(path: String, content: String): Boolean {
+                    writtenPaths.add(path)
+                    return true
+                }
+            }
+
+            val writer = GraphWriter(
+                fileSystem = trackingFs,
+                checkPreWriteConflict = { _, _ -> false },  // no conflict
+                onPreWriteConflict = { _, _, _ -> conflictCallCount++ },
+            )
+
+            val now = Clock.System.now()
+            val page = Page(
+                uuid = PageUuid("tc17-uuid-1"),
+                name = "TestPageTC17",
+                createdAt = now,
+                updatedAt = now,
+                journalDate = null,
+                properties = emptyMap(),
+                filePath = "/tmp/pages/TestPageTC17.md",
+            )
+
+            writer.savePage(page, emptyList(), "/tmp")
+
+            assertEquals(1, writtenPaths.size, "File must be written when no conflict detected")
+            assertEquals(0, conflictCallCount, "onPreWriteConflict must not be called when no conflict")
         }
     }
 

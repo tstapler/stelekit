@@ -1,0 +1,17 @@
+# Story 5.4 (Epic 5, llm-service): cinterop .def for the real FoundationModelsShim, extending
+# Story 5.2's PingShim.def pattern (now proven in shape, though still unverified in this
+# environment — see below) rather than starting cinterop-authoring from zero.
+#
+# Binds against FoundationModelsShim's Clang module (Xcode auto-generates its module map +
+# -Swift.h interface header when the FoundationModelsShim Xcode framework target builds —
+# see iosApp/README.md for the exact xcodebuild invocation that must run BEFORE this cinterop
+# task runs). The `-F<path>` framework search path is supplied per-target from
+# kmp/build.gradle.kts's `cinterops { create("FoundationModelsShim") { compilerOpts(...) } }`
+# block, not hardcoded here.
+#
+# NOT verified in this environment (Linux sandbox, no Xcode/cinterop toolchain available) —
+# see Task 5.4c in iosApp/README.md for the required manual "real gate" build verification.
+
+language = Objective-C
+modules = FoundationModelsShim
+package = shim.foundationmodels

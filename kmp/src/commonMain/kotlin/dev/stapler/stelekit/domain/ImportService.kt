@@ -90,28 +90,57 @@ object ImportService {
     /**
      * Wraps each plain-text occurrence of a term in [terms] with `[[term]]` syntax.
      *
-     * Occurrences already inside `[[…]]` are skipped (detected via lookbehind/lookahead).
-     * Matching is case-insensitive; the display form from [terms] is used as the link target.
-     * Terms are processed longest-first to avoid partial matches inside longer phrases.
+     * Occurrences already inside a pre-existing `[[…]]` span (present in [text] before this
+     * call) are skipped via [overlapsExistingLink]. Matching is case-insensitive; the display
+     * form from [terms] is used as the link target. All term matches are collected against the
+     * original (unmodified) [text] first, sorted by start offset (ties favor the longest term),
+     * then swept left-to-right accepting only matches whose start is at or past the previous
+     * accepted match's end. This greedy leftmost-then-longest sweep is what keeps the result
+     * order-independent and prevents a shorter term (e.g. "Network") from matching inside a
+     * longer term's own candidate span from this same call (e.g. "Neural Network Architecture"),
+     * which would otherwise produce corrupt nested brackets.
      */
     fun insertWikiLinks(text: String, terms: List<String>): String {
         if (terms.isEmpty()) return text
 
-        var result = text
-        // Longest-first prevents shorter terms clobbering longer phrase matches
-        val sortedTerms = terms.sortedByDescending { it.length }
+        data class Match(val start: Int, val end: Int, val term: String)
 
-        for (term in sortedTerms) {
-            val escapedTerm = Regex.escape(term)
-            // Negative lookbehind: not preceded by [[
-            // Negative lookahead: not followed by ]]
-            val pattern = Regex(
-                """(?<!\[\[)\b${escapedTerm}\b(?!\]\])""",
-                RegexOption.IGNORE_CASE,
-            )
-            result = pattern.replace(result) { "[[${term}]]" }
+        val existingLinkSpans = Regex("""\[\[.*?\]\]""").findAll(text)
+            .map { it.range }
+            .toList()
+        fun overlapsExistingLink(start: Int, end: Int) =
+            existingLinkSpans.any { it.first < end && start <= it.last }
+
+        // Collect every candidate match for every term against the original text, then
+        // sweep left-to-right keeping the first non-overlapping match — ties at the same
+        // start favor the longest term, mirroring the old longest-first intent.
+        val candidates = terms.filter { it.isNotEmpty() }
+            .flatMap { term ->
+                Regex("""\b${Regex.escape(term)}\b""", RegexOption.IGNORE_CASE)
+                    .findAll(text)
+                    .map { Match(it.range.first, it.range.last + 1, term) }
+            }
+            .filterNot { overlapsExistingLink(it.start, it.end) }
+            .sortedWith(compareBy({ it.start }, { -(it.end - it.start) }))
+
+        val accepted = mutableListOf<Match>()
+        var lastEnd = -1
+        for (m in candidates) {
+            if (m.start >= lastEnd) {
+                accepted.add(m)
+                lastEnd = m.end
+            }
         }
+        if (accepted.isEmpty()) return text
 
-        return result
+        val sb = StringBuilder()
+        var cursor = 0
+        for (m in accepted) {
+            sb.append(text, cursor, m.start)
+            sb.append("[[").append(m.term).append("]]")
+            cursor = m.end
+        }
+        sb.append(text, cursor, text.length)
+        return sb.toString()
     }
 }

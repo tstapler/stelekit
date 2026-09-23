@@ -7,13 +7,11 @@ import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 
-import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Validation
 import dev.stapler.stelekit.performance.PerformanceMonitor
-import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.ui.NotificationManager
 import kotlinx.coroutines.*
@@ -21,7 +19,6 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.time.Clock
-import kotlin.Result
 import kotlin.math.max
 
 /**

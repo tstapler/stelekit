@@ -3,10 +3,10 @@
 
 package dev.stapler.stelekit.ui.components
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import dev.stapler.stelekit.model.BlockPropertyKeys
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -39,14 +39,18 @@ import dev.stapler.stelekit.model.CalibrationMethod
  *  - `image-calibration` — calibration method string
  *  - `image-unit` — display unit string
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun ImageAnnotationBlockItem(
     block: Block,
     onOpenAnnotationEditor: (imageAnnotationUuid: String) -> Unit,
     onStartEditing: () -> Unit,
     modifier: Modifier = Modifier,
+    isInSelectionMode: Boolean = false,
+    onToggleSelect: () -> Unit = {},
+    onLongPressSelect: (() -> Unit)? = null,
 ) {
-    val imageAnnotationUuid = block.properties["image-id"] ?: ""
+    val imageAnnotationUuid = block.properties[BlockPropertyKeys.IMAGE_ID] ?: ""
     val imagePath = extractImagePath(block.content)
     val measurementCount = block.properties["image-measurement-count"]?.toIntOrNull() ?: 0
     val calibrationRaw = block.properties["image-calibration"] ?: CalibrationMethod.NONE.name
@@ -68,13 +72,16 @@ internal fun ImageAnnotationBlockItem(
                     contentDescription = "Open annotation editor"
                     role = Role.Button
                 }
-                .clickable {
-                    if (imageAnnotationUuid.isNotBlank()) {
-                        onOpenAnnotationEditor(imageAnnotationUuid)
-                    } else {
-                        onStartEditing()
-                    }
-                },
+                .combinedClickable(
+                    onLongClick = onLongPressSelect,
+                    onClick = {
+                        when {
+                            isInSelectionMode -> onToggleSelect()
+                            imageAnnotationUuid.isNotBlank() -> onOpenAnnotationEditor(imageAnnotationUuid)
+                            else -> onStartEditing()
+                        }
+                    },
+                ),
         ) {
             val imageLoader = rememberSteleKitImageLoader()
             AsyncImage(

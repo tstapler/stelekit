@@ -21,6 +21,9 @@ permissions:
   contents: read
   actions: read
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   update-fdroid:
     runs-on: ubuntu-latest
@@ -68,8 +71,8 @@ jobs:
               open(path, 'w').write(src.replace(OLD, NEW))
               print(f"Patched {path}")
           else:
-              print("ERROR: patch target not found — fdroidserver may have changed", file=sys.stderr)
-              sys.exit(1)
+              print("WARNING: patch target not found — fdroidserver may have changed; skipping patch", file=sys.stderr)
+              sys.stderr.flush()
           PYEOF
 
       - name: Restore fdroid repo signing keystore
@@ -88,19 +91,51 @@ jobs:
           printf 'keystore: /tmp/fdroid-keystore.p12\nkeystorepass: %s\nkeypass: %s\n' \
             "$FDROID_STORE_PASS" "$FDROID_KEY_PASS" >> fdroid/config.yml
 
-      - name: Download signed APKs from all releases
+      - name: Compute previous release tag for cache key
+        id: prev-tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PREV=$(gh release list --limit 2 --json tagName --jq '.[1].tagName // "none"')
+          echo "prev_tag=${PREV}" >> "$GITHUB_OUTPUT"
+          echo "Previous release tag: ${PREV}"
+
+      - name: Restore APK cache
+        uses: actions/cache@v4
+        with:
+          path: fdroid/repo
+          key: fdroid-apk-repo-${{ steps.prev-tag.outputs.prev_tag }}
+          restore-keys: |
+            fdroid-apk-repo-
+
+      - name: Download signed APKs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p fdroid/repo
-          DOWNLOADED=0
-          while IFS= read -r tag; do
-            if gh release download "$tag" \
+          if [ -n "$(find fdroid/repo -maxdepth 1 -name '*.apk' -print -quit 2>/dev/null)" ]; then
+            echo "APK cache hit — downloading only the latest release APK"
+            CURRENT_TAG=$(gh release list --limit 1 --json tagName --jq '.[0].tagName')
+            DOWNLOADED=0
+            if gh release download "$CURRENT_TAG" \
               --pattern "SteleKit-*-android.apk" \
-              --dir fdroid/repo/ 2>/dev/null; then
-              DOWNLOADED=$((DOWNLOADED + 1))
+              --dir fdroid/repo/ --clobber 2>/dev/null; then
+              DOWNLOADED=1
             fi
-          done < <(gh release list --limit 100 --json tagName --jq '.[].tagName')
+          else
+            # archive_older: 3 in fdroid/config.yml means fdroid update keeps only the
+            # 3 newest APKs in the live repo/; older ones go to archive/ which is never
+            # deployed. Downloading more than 3 on a cache miss wastes bandwidth.
+            echo "APK cache miss — downloading 3 most recent APKs (matches archive_older: 3)"
+            DOWNLOADED=0
+            while IFS= read -r tag; do
+              if gh release download "$tag" \
+                --pattern "SteleKit-*-android.apk" \
+                --dir fdroid/repo/ 2>/dev/null; then
+                DOWNLOADED=$((DOWNLOADED + 1))
+              fi
+            done < <(gh release list --limit 3 --json tagName --jq '.[].tagName')
+          fi
           echo "Downloaded $DOWNLOADED APK(s)"
           [ "$DOWNLOADED" -gt 0 ] || { echo "No APKs downloaded — refusing to publish empty F-Droid repo"; exit 1; }
 
@@ -113,9 +148,12 @@ jobs:
         run: uv run --directory fdroid python3 scan_apks.py repo/
 
       - name: Seed repo icon
-        run: |
-          mkdir -p fdroid/repo/icons
-          cp fdroid/icons/icon.png fdroid/repo/icons/icon.png
+        # `fdroid update` runs with cwd=fdroid/ (via --directory) and resolves the
+        # default repo_icon config value ("icon.png") relative to that cwd, then
+        # copies it into repo/icons/ itself. It must exist at fdroid/icon.png, not
+        # fdroid/repo/icons/icon.png — a mismatch here silently falls back to a
+        # generated QR-code placeholder instead of erroring.
+        run: cp fdroid/icons/icon.png fdroid/icon.png
 
       - name: Generate fdroid index
         run: uv run --directory fdroid fdroid update --create-metadata --verbose
@@ -127,8 +165,8 @@ jobs:
           # the artifact lands flat (no repo/ subdirectory), breaking the pages.yml check.
           #
           # APKs are included: the 100 MB Git file limit does not apply to Actions-deployed
-          # Pages artifacts. With archive_older:5, repo/ has at most 5 APKs (~500 MB total)
-          # which fits under the 900 MB site safety limit.
+          # Pages artifacts. With archive_older:3, repo/ has at most 3 APKs (~300 MB total).
+          # The Wasm demo adds ~450 MB, keeping total site size under the 900 MB safety limit.
           mkdir -p fdroid-staging/repo
           rsync -a fdroid/repo/ fdroid-staging/repo/
 

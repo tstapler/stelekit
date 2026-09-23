@@ -1,7 +1,6 @@
 package dev.stapler.stelekit.repository
 
 import arrow.core.Either
-import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 
@@ -11,9 +10,11 @@ import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.logging.Logger
+import dev.stapler.stelekit.util.FractionalIndexing
 import dev.stapler.stelekit.util.UuidGenerator
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.datetime.LocalDate
@@ -28,6 +29,10 @@ import kotlin.time.Clock
  */
 fun interface JournalDateResolver {
     suspend fun getPageByJournalDate(date: LocalDate): Page?
+
+    /** Section-aware lookup; defaults to global lookup for backward compatibility. */
+    suspend fun getJournalPageByDateAndSection(date: LocalDate, sectionId: String): Page? =
+        getPageByJournalDate(date)
 }
 
 /**
@@ -62,6 +67,9 @@ class JournalService(
             ?: pageRepository.getPageByName(underscoreName).first().getOrNull()
     }
 
+    override suspend fun getJournalPageByDateAndSection(date: LocalDate, sectionId: String): Page? =
+        pageRepository.getJournalPageByDateAndSection(date, sectionId).first().getOrNull()
+
     // ---- Journal queries ----
 
     fun getJournalPageByDate(date: LocalDate): Flow<Either<DomainError, Page?>> =
@@ -69,6 +77,19 @@ class JournalService(
 
     fun getJournalPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
         pageRepository.getJournalPages(limit, offset)
+
+    fun getJournalPagesBySections(
+        activeSectionIds: List<String>,
+        limit: Int,
+        offset: Int,
+    ): Flow<Either<DomainError, List<Page>>> {
+        if (activeSectionIds.isEmpty()) return pageRepository.getJournalPages(limit, offset)
+        // SectionId.Global maps to "" in the DB; include it by adding "" to the allowed set.
+        val allowedIds = buildSet { add(""); addAll(activeSectionIds) }
+        return pageRepository.getJournalPages(limit, offset).map { result ->
+            result.map { pages -> pages.filter { it.sectionId.toDbString() in allowedIds } }
+        }
+    }
 
     // ---- Today's journal creation ----
 
@@ -113,24 +134,24 @@ class JournalService(
             isJournal = true,
             journalDate = today
         )
-        if (writeActor != null) {
-            writeActor.savePage(newPage)
-        } else {
-            @OptIn(DirectRepositoryWrite::class)
-            pageRepository.savePage(newPage)
-        }
-
         val initialBlock = Block(
             uuid = BlockUuid(UuidGenerator.generateV7()),
             pageUuid = pageUuid,
             content = "",
-            position = 0,
+            position = "a0",
             createdAt = clock.now(),
             updatedAt = clock.now()
         )
         if (writeActor != null) {
-            writeActor.saveBlock(initialBlock)
+            @OptIn(DirectRepositoryWrite::class)
+            writeActor.execute {
+                val r = pageRepository.savePage(newPage)
+                if (r.isLeft()) return@execute r
+                blockRepository.saveBlock(initialBlock)
+            }
         } else {
+            @OptIn(DirectRepositoryWrite::class)
+            pageRepository.savePage(newPage)
             @OptIn(DirectRepositoryWrite::class)
             blockRepository.saveBlock(initialBlock)
         }
@@ -162,7 +183,7 @@ class JournalService(
     @OptIn(DirectRepositoryWrite::class)
     private suspend fun appendBlockToPage(page: Page, content: String) {
         val blocks = blockRepository.getBlocksForPage(page.uuid).first().getOrNull() ?: emptyList()
-        val nextPosition = (blocks.maxOfOrNull { it.position } ?: -1) + 1
+        val nextPosition = FractionalIndexing.generateKeyBetween(blocks.maxByOrNull { it.position }?.position, null)
         val newBlock = Block(
             uuid = BlockUuid(UuidGenerator.generateV7()),
             pageUuid = page.uuid,
@@ -199,22 +220,22 @@ class JournalService(
             updatedAt = clock.now(),
             isJournal = false,
         )
-        if (writeActor != null) {
-            writeActor.savePage(newPage)
-        } else {
-            pageRepository.savePage(newPage)
-        }
         val newBlock = Block(
             uuid = BlockUuid(UuidGenerator.generateV7()),
             pageUuid = pageUuid,
             content = content,
-            position = 0,
+            position = "a0",
             createdAt = clock.now(),
             updatedAt = clock.now(),
         )
         if (writeActor != null) {
-            writeActor.saveBlock(newBlock)
+            writeActor.execute {
+                val r = pageRepository.savePage(newPage)
+                if (r.isLeft()) return@execute r
+                blockRepository.saveBlock(newBlock)
+            }
         } else {
+            pageRepository.savePage(newPage)
             blockRepository.saveBlock(newBlock)
         }
         return newPage
@@ -257,35 +278,38 @@ class JournalService(
             }
         }
 
-        // Delete losers, salvaging any non-empty blocks
+        // Delete losers, salvaging any non-empty blocks — all per-page ops in one actor execute
         for (page in candidates) {
             if (page.uuid == keeper.uuid) continue
 
             val blocks = blockRepository.getBlocksForPage(page.uuid).first().getOrNull() ?: emptyList()
-            for (block in blocks) {
-                if (block.content.isNotBlank()) {
-                    // Re-parent to keeper
-                    if (writeActor != null) {
-                        writeActor.saveBlock(block.copy(pageUuid = keeper.uuid))
-                    } else {
-                        @OptIn(DirectRepositoryWrite::class)
-                        blockRepository.saveBlock(block.copy(pageUuid = keeper.uuid))
+            if (writeActor != null) {
+                @OptIn(DirectRepositoryWrite::class)
+                writeActor.execute {
+                    for (block in blocks) {
+                        if (block.content.isNotBlank()) {
+                            blockRepository.saveBlock(block.copy(pageUuid = keeper.uuid))
+                        } else {
+                            blockRepository.deleteBlock(block.uuid)
+                        }
                     }
-                    logger.info("Re-parented block ${block.uuid.value} to keeper page ${keeper.uuid.value}")
-                } else {
-                    if (writeActor != null) {
-                        writeActor.deleteBlock(block.uuid)
+                    pageRepository.deletePage(page.uuid)
+                    Unit.right()
+                }
+            } else {
+                @OptIn(DirectRepositoryWrite::class)
+                for (block in blocks) {
+                    if (block.content.isNotBlank()) {
+                        blockRepository.saveBlock(block.copy(pageUuid = keeper.uuid))
                     } else {
-                        @OptIn(DirectRepositoryWrite::class)
                         blockRepository.deleteBlock(block.uuid)
                     }
                 }
-            }
-            if (writeActor != null) {
-                writeActor.deletePage(page.uuid)
-            } else {
                 @OptIn(DirectRepositoryWrite::class)
                 pageRepository.deletePage(page.uuid)
+            }
+            blocks.filter { it.content.isNotBlank() }.forEach {
+                logger.info("Re-parented block ${it.uuid.value} to keeper page ${keeper.uuid.value}")
             }
             logger.info("Deleted duplicate page ${page.uuid.value} (name=${page.name})")
         }

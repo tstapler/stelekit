@@ -46,7 +46,7 @@ class DatabaseWriteActorTest {
 
     private fun block(id: String, pageId: String = "page-1") = Block(
         uuid = BlockUuid(id), pageUuid = PageUuid(pageId), content = "content $id",
-        position = 0, createdAt = now, updatedAt = now
+        position = "a0", createdAt = now, updatedAt = now
     )
 
     // ──────────────────────────── happy paths ────────────────────────────────

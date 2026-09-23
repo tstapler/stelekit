@@ -1,0 +1,28 @@
+- tags:: #reference #tags #highlight
+- SteleKit supports inline `#tags` for categorizing content and `==highlight==` for visual emphasis.
+- **Tags**
+	- Type `#` followed by a word anywhere in a block to tag it: `#idea`, `#reference`, `#todo`
+	- Multi-word tags use hyphens: `#project-alpha`, `#follow-up`
+	- Tags are searchable — use `Cmd+K` / `Ctrl+K` and type the tag name to find all tagged blocks.
+	- Tags appear in the block as styled inline text so they stand out visually.
+	- Example blocks using tags:
+		- Read this paper before the meeting #important #reading
+		- Idea: use tags as a lightweight status system #idea
+		- This reference lives here permanently #reference #evergreen
+- **Highlight**
+	- Wrap text in `==double equals==` to highlight it: `==key insight==` → ==key insight==
+	- Use highlight to mark the most important sentence in a block.
+	- Combine with bold for maximum emphasis: `**==critical==**` → **==critical==**
+	- Example:
+		- The most important rule: ==every block is linkable, searchable, and reviewable==.
+		- Highlights are rendered inline — ==they do not disrupt the outline flow==.
+- **Combining tags and highlight**
+	- Tags categorize a block; highlight emphasizes a phrase within the block text.
+	- They complement each other: tag the block's topic, highlight the key takeaway.
+	- Example:
+		- ==Spaced repetition== dramatically improves long-term recall — even brief daily review compounds over time. #learning #flashcards
+- **Tips**
+	- Keep tag names short and consistent — use the same tag across pages to group related content.
+	- Use search (Cmd+K / Ctrl+K) and type `#tag-name` to surface all blocks with that tag.
+	- Prefer highlight over bold when you want to mark something as important without implying strong text emphasis.
+- See [[Search]] to find tagged blocks, [[Markdown Formatting]] for all inline syntax, and [[Flashcards]] to turn highlighted blocks into spaced-repetition cards.

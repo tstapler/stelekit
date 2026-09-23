@@ -100,6 +100,28 @@ internal class PooledJdbcSqliteDriver(
         }
     }
 
+    /**
+     * Executes [block] with a single connection held for the entire duration.
+     *
+     * The connection is checked out from the pool before [block] runs and returned
+     * after it completes (or throws). This lets callers safely issue multi-statement
+     * sequences that must all run on the same JDBC connection — for example, wrapping
+     * DDL in an explicit `BEGIN`/`COMMIT` without risk of acquiring a different
+     * connection between statements.
+     *
+     * For in-memory databases the pool blocks until a connection is available (same
+     * semantics as [getConnection]). For file databases an overflow connection is
+     * created if the pool is exhausted.
+     */
+    suspend fun <T> withPinnedConnection(block: suspend (Connection) -> T): T {
+        val conn = getConnection()
+        return try {
+            block(conn)
+        } finally {
+            closeConnection(conn)
+        }
+    }
+
     // beginTransaction / endTransaction / rollbackTransaction manage autoCommit and are
     // provided by JdbcDriver via its ThreadLocal<ConnectionManager.Transaction>.
 

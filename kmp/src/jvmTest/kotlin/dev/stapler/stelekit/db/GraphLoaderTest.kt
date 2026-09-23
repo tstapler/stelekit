@@ -20,7 +20,7 @@ class GraphLoaderTest {
 
     /** Creates a minimal fixture graph and returns its root path. Caller must delete it. */
     private fun createFixtureGraph(): File {
-        val tempDir = File(System.getProperty("user.home"), "graphloader_test_${System.currentTimeMillis()}")
+        val tempDir = kotlin.io.path.createTempDirectory(kotlin.io.path.Path(System.getProperty("user.home")), "graphloader_test_").toFile()
         val pagesDir = File(tempDir, "pages").also { it.mkdirs() }
         val journalsDir = File(tempDir, "journals").also { it.mkdirs() }
 
@@ -62,14 +62,14 @@ class GraphLoaderTest {
     fun testLoadDemoGraph() = runBlocking {
         val graphDir = createFixtureGraph()
         try {
-            val fileSystem = PlatformFileSystem()
+            val fileSystem = PlatformFileSystem.withRoot(graphDir.absolutePath)
             val pageRepository = InMemoryPageRepository()
             val blockRepository = DatalogBlockRepository()
             val graphLoader = GraphLoader(fileSystem, pageRepository, blockRepository)
 
             graphLoader.loadGraph(graphDir.absolutePath) {}
 
-            val pages = pageRepository.getAllPages().first().getOrNull() ?: emptyList()
+            val pages = pageRepository.getAllPagesSnapshot().getOrNull() ?: emptyList()
             assertTrue(pages.isNotEmpty(), "No pages loaded")
 
             // Verify the fixture pages were loaded (name matching is case-insensitive in loader)
@@ -89,7 +89,7 @@ class GraphLoaderTest {
     fun testLoadGraphProgressive() = runBlocking {
         val graphDir = createFixtureGraph()
         try {
-            val fileSystem = PlatformFileSystem()
+            val fileSystem = PlatformFileSystem.withRoot(graphDir.absolutePath)
             val pageRepository = InMemoryPageRepository()
             val blockRepository = DatalogBlockRepository()
             val graphLoader = GraphLoader(fileSystem, pageRepository, blockRepository)
@@ -108,7 +108,7 @@ class GraphLoaderTest {
             assertTrue(phase1Complete, "Phase 1 should be complete")
             assertTrue(fullyLoaded, "Graph should be fully loaded")
 
-            val pages = pageRepository.getAllPages().first().getOrNull() ?: emptyList()
+            val pages = pageRepository.getAllPagesSnapshot().getOrNull() ?: emptyList()
             assertTrue(pages.isNotEmpty(), "Pages should be loaded")
 
             val contentsPage = pages.firstOrNull { it.name.lowercase().contains("contents") }

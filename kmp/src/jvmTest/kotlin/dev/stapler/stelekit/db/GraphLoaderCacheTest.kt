@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.db
 
+import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
@@ -131,7 +132,7 @@ class GraphLoaderCacheTest {
         h.loader.parseAndSavePage(FilePath(filePath), "- Block V1", ParseMode.FULL)
 
         // Verify V1 in DB
-        val pages = h.pageRepo.getAllPages().first().getOrNull() ?: emptyList()
+        val pages = h.pageRepo.getAllPagesSnapshot().getOrNull() ?: emptyList()
         assertFalse(pages.isEmpty(), "Page should be loaded after parseAndSavePage")
         val page = pages.first()
 
@@ -173,7 +174,7 @@ class GraphLoaderCacheTest {
         h.loader.setGraphPath("/graph")
         h.loader.parseAndSavePage(FilePath(filePath), "- Block V1", ParseMode.FULL)
 
-        val page = h.pageRepo.getAllPages().first().getOrNull()?.firstOrNull()
+        val page = h.pageRepo.getAllPagesSnapshot().getOrNull()?.firstOrNull()
         assertNotNull(page, "Page should be in DB after loading V1")
 
         // External write with same mtime (FAT granularity: both writes in same 2s window)
@@ -209,7 +210,7 @@ class GraphLoaderCacheTest {
         h.loader.setGraphPath("/graph")
         h.loader.parseAndSavePage(FilePath(filePath), "- Block V1", ParseMode.FULL)
 
-        val page = h.pageRepo.getAllPages().first().getOrNull()?.firstOrNull()
+        val page = h.pageRepo.getAllPagesSnapshot().getOrNull()?.firstOrNull()
         assertNotNull(page, "Page should be in DB")
 
         // Simulate: watcher detected external edit and marked dirty (skipped onReloadFile
@@ -260,7 +261,7 @@ class GraphLoaderCacheTest {
         // Force initial load to populate DB and store content hash
         h.loader.loadFullPage_forceLoad(filePath, contentV1)
 
-        val page = h.pageRepo.getAllPages().first().getOrNull()?.firstOrNull()
+        val page = h.pageRepo.getAllPagesSnapshot().getOrNull()?.firstOrNull()
         assertNotNull(page, "Page should be in DB")
 
         // Verify content hash was stored
@@ -302,7 +303,7 @@ class GraphLoaderCacheTest {
         // Force initial load
         h.loader.loadFullPage_forceLoad(filePath, contentV1)
 
-        val page = h.pageRepo.getAllPages().first().getOrNull()?.firstOrNull()
+        val page = h.pageRepo.getAllPagesSnapshot().getOrNull()?.firstOrNull()
         assertNotNull(page, "Page should be in DB")
 
         // Reset the read counter
@@ -354,7 +355,7 @@ class GraphLoaderCacheTest {
         // Load V1 so page.updatedAt is set
         h.loader.parseAndSavePage(FilePath(filePath), contentV1, ParseMode.FULL)
 
-        val page = h.pageRepo.getAllPages().first().getOrNull()?.firstOrNull()
+        val page = h.pageRepo.getAllPagesSnapshot().getOrNull()?.firstOrNull()
         assertNotNull(page, "Page should be in DB")
 
         // Verify V1 is loaded
@@ -397,19 +398,27 @@ class GraphLoaderCacheTest {
         h.loader.startWatching("/graph")
         h.loader.fileRegistry.scanDirectory("/graph/pages")
 
-        val page = h.pageRepo.getAllPages().first().getOrNull()?.firstOrNull()
+        val page = h.pageRepo.getAllPagesSnapshot().getOrNull()?.firstOrNull()
         assertNotNull(page, "Page should be in DB")
 
         // External edit: bump mtime and content
         h.fs.externalWrite(filePath, "- Block V2")
 
-        // Wait for watcher to fire (300ms > 2 × poll intervals + suppression window)
-        withContext(Dispatchers.Default) { delay(500L) }
+        // Poll for the watcher→dirty-set→reload pipeline to land instead of a fixed sleep.
+        // GraphFileWatcher's poll loop + suppression-channel timeout are real wall-clock waits
+        // (~300ms minimum under zero contention); under the full aggregate suite, contention on
+        // the shared Dispatchers.Default pool can push actual latency past any fixed guess. Retry
+        // loadFullPage + the assertion condition on a short interval up to a generous timeout so
+        // the test waits exactly as long as needed rather than gambling on a fixed margin.
+        var blocks: List<Block> = emptyList()
+        val deadline = System.currentTimeMillis() + 5_000L
+        while (System.currentTimeMillis() < deadline) {
+            h.loader.loadFullPage(page.uuid.value, force = false)
+            blocks = h.blockRepo.getBlocksForPage(page.uuid).first().getOrNull() ?: emptyList()
+            if (blocks.any { it.content == "Block V2" }) break
+            withContext(Dispatchers.Default) { delay(50L) }
+        }
 
-        // Navigation: loadFullPage should find dirty flag and reload
-        h.loader.loadFullPage(page.uuid.value, force = false)
-
-        val blocks = h.blockRepo.getBlocksForPage(page.uuid).first().getOrNull() ?: emptyList()
         assertTrue(blocks.any { it.content == "Block V2" },
             "End-to-end: watcher→dirtySet→loadFullPage must reload to V2; blocks=$blocks")
 
