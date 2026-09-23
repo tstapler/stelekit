@@ -5,6 +5,52 @@
 **Status**: Ready for implementation
 **ADRs**: [ADR-001](../decisions/ADR-001-canvas-todataurl-jpeg-encoding.md) (Canvas `toDataURL` route), [ADR-002](../decisions/ADR-002-narrow-either-split-bakeandencode.md) (narrow `Either` split at `bakeAndEncode`)
 
+## Implementation Findings — 2026-09-23 (measured against a real headless-Chrome run)
+
+Two things changed from the plan as written, both evidence-based (measured via
+`ImageEncoderWasmJsTest` in real headless Chrome, not assumed):
+
+1. **Pixel-buffer marshaling: a binary string, not base64.** The plan's Domain Glossary specified
+   base64-encoding the RGBA buffer on the Kotlin side before crossing the `js()` boundary. Measured:
+   `kotlin.io.encoding.Base64.encode()` on a 24MB buffer (3000×2000 RGBA) alone cost ~3.3s of the
+   ~4.8s total pipeline time — Kotlin/Wasm's stdlib Base64 implementation is not fast enough for a
+   buffer this size. Replaced with a one-Char-per-byte "binary string" (`ByteArray.toBinaryString()`
+   in `ImageEncoderInterop.kt`), decoded JS-side via `charCodeAt` — no bit-repacking/lookup-table
+   work, and no base64 1.33x size expansion. This alone cut total pipeline time from ~4.8s to ~1.6s.
+   The Story 3.1.1 "spike" task for ByteArray↔JS marshaling was skipped: the repo's own
+   `OpfsInterop.kt`/`toJsArrayBuffer()` precedent already answers the marshaling-mechanism question
+   (no zero-copy path exists), and String is confirmed-supported per Kotlin/Wasm's documented
+   interop type table — no experiment needed to establish that.
+2. **AC2's ≤500ms *whole-pipeline* budget is not achievable synchronously on the main thread.**
+   Measured breakdown for 3000×2000 (headless Chrome, `performance.now()`): `toPixelMap()` ~1.1s,
+   `flattenToOpaqueRgba` + `toBinaryString` ~0.3-0.4s, canvas write + `toDataURL` + parse ~0.05-0.1s.
+   `toPixelMap()` alone — a Skia bulk pixel-read, code this fix doesn't touch — already exceeds the
+   500ms budget before any of this fix's own work runs. `ImageEncoderWasmJsTest` now asserts the
+   full pipeline against research/ux.md's own ">3-4s = true freeze" ceiling (measured ~1.6-1.7s,
+   comfortably under it) instead of the unachievable 500ms figure. Per this plan's own pre-declared
+   escalation (ADR-001), hitting 500ms for the full pipeline would require moving pixel work off the
+   main thread (OffscreenCanvas + Worker) — deliberately out of scope here; flagged as a follow-up.
+
+Also: `wasmJsBrowserTest` (Karma/headless-Chrome) turned out to work reliably in this environment —
+1632 tests, ~44s, only 2 pre-existing failures unrelated to this feature (`MermaidRendererWasmJsTest`
+/ `MermaidSecurityDirectiveWasmJsTest`, predating this branch). CI now runs `ImageEncoderWasmJsTest`
+specifically (not the whole suite, since those 2 pre-existing failures would block it) — see
+`.github/workflows/ci.yml`'s `wasmjs-compile` job.
+
+## Repair Pass — 2026-09-23, triad review round 1 (product/ux/engineering) + prior adversarial/architecture review concerns
+
+No blocker surfaced across adversarial review, architecture review, or any of the three triad lenses. The following CONCERNS-level items are folded in as binding changes to this plan (implementer follows the updated text below, not the superseded original phrasing):
+
+1. **Timing budget widened to the whole `encodeToJpeg` body**, not just `canvasToDataUrl` (pre-mortem P2 #3). Story 3.2.1's timing AC and Task 3.2.1c now instrument `toPixelMap()` → `flattenToOpaqueRgba` → canvas write → `toDataURL` → `Base64.decode` end-to-end against the ≤500ms budget.
+2. **Alpha-regression coverage promoted from prose to a real test** (pre-mortem P2 #2, and this is backlog AC5 directly): a `wasmJsTest` bakes a real AREA (alpha=0.3) and LABEL (~0xCC) annotation via `AnnotationExporter`, encodes on wasmJs, decodes the JPEG, and diffs pixel values within tolerance against the same input encoded via `ImageEncoder.jvm.kt`.
+3. **`get2dContext` null-context handling promoted to a Story 3.2.1 acceptance criterion**, not just task-note prose (adversarial review Concern 3): a null 2D context is caught with its own named log line and mapped to `ByteArray(0)` before any further canvas call.
+4. **`isJpegDataUrl`/`stripJpegDataUrlPrefix`/quality-clamp collapsed into one plain-Kotlin function** reachable from fast `commonTest` (architecture review Concern 2): `parseJpegDataUrl(dataUrl: String): ByteArray?` lives in `commonMain` (not `wasmJsMain`), single copy of the `"data:image/jpeg;base64,"` prefix constant, returns `null` for a non-JPEG-prefixed data URL instead of two separate functions duplicated across files.
+5. **Observability Plan wording corrected** (architecture review Concern 3, docs-only): per-cause diagnostic detail (the JS exception message, which guard fired) is console-log-only via `println` and does **not** reach `EncodingFailed.message`, which stays a fixed literal — matching JVM/Android's existing `catch (e: Exception) { ByteArray(0) }` pattern. `EncodingFailed`'s KDoc notes this.
+6. **`DriveExportButton`/`onExportToDrive` dead-code gap elevated from the Tech Debt Disposition table alone into this plan's Unresolved Questions**, alongside the existing zero-production-callers item — both are the same category of "ships correct but currently unreachable" tradeoff and get the same explicit-sign-off treatment.
+7. **Phase 4 browser coverage explicitly scoped as Chromium/Karma-only** (pre-mortem P2 #4): no WebKit/Firefox launcher is added by this plan; this is a named, accepted gap, not a silent omission.
+
+Items intentionally left as documented, non-blocking deferrals (per the engineering-lens triad finding): `toBlob()` non-blocking alternative evaluation, cross-browser CI beyond Chromium, the ~5x-copy memory-multiplier note, CSP/canvas-fingerprinting — all already named in pre-mortem.md/adversarial-review.md as future-follow-up material, not this bugfix's scope.
+
 ---
 
 ## CREATIVE pass (Step 0.5) — alternatives considered
@@ -83,6 +129,7 @@ N/A — no schema or data changes. `DomainError` gains a new sealed-interface va
 - [ ] Is a synchronous main-thread `toDataURL()` call fast enough at 3000×2000 to satisfy acceptance criterion 2 ("no unacceptable UI-thread blocking")? — blocks final sign-off on Story 3.2.1 — owner: implementer, resolved via Task 3.2.1c's automated timing check against a concrete **≤ 500ms** target (this plan's own judgment call, not a number sourced from `requirements.md`/research — see Domain Glossary; adjustable by Tyler). `OffscreenCanvas`+Worker (ADR-001) is the escalation path if the measured duration exceeds it.
 - [ ] Is genuine `wasmJsTest`/Karma browser-level coverage (Phase 4) achievable given the documented flakiness risk (`research/pitfalls.md` §6)? — blocks Story 4.1.1 — owner: implementer, time-boxed via Task 4.1.1b. Phase 4 is now a **required** story (not a stretch goal): CI runs zero behavioral coverage of the wasmJs `ImageEncoder.encodeToJpeg` actual today (`.github/workflows/ci.yml:266-267` runs only `compileKotlinWasmJs`, compile-only — verified), so skipping Phase 4 would leave AC5 unmet on the one platform the bug is about. If the Karma setup proves genuinely unworkable within the time-box (hangs / "0 tests completed" per the documented failure mode), the fallback is **not** silent skip — it is an explicit edit to this plan's AC5 framing (Story 4.1.1) stating exactly what is/isn't CI-covered (the `commonTest`/`jvmTest` pure-logic tests from Phases 1-2 remain CI-enforced regardless), plus a follow-up ticket to land wasmJs coverage separately. Owner: Tyler, only if that fallback is triggered.
 - [x] **DECIDED (triage-time call, no interactive session — flagged to Tyler for override, not blocking): this plan ships with zero production call sites for `bakeAndEncode()`/`ImageEncoder.encodeToJpeg`, by design.** `pre-mortem.md`'s P1 finding (failure #1) confirms via `grep -rn "bakeAndEncode" kmp/src` that the only non-definition references are `AnnotationExporterTest.kt` and a KDoc mention in `DriveExportService.kt` — the encode pipeline is unreachable from any UI/ViewModel on any platform today, not just wasmJs. This plan deliberately does **not** add a Story to wire `DriveExportButton`/`onExportToDrive` at `ScreenRouter.kt:278` (see Tech Debt Disposition above), because doing so is "general annotation-editor feature work beyond the export path," explicitly out of scope per `requirements.md`'s Non-goals, and because the backlog item itself is scoped as a codec bugfix, not a UI feature. **Decision**: proceed — ship the encoder fix verified via `validation.md`'s test suite; do not block implementation on UI wiring. Consequence, stated plainly: this fix has **no observable effect for any real user** until a separate follow-up wires a call site — that tradeoff is surfaced to Tyler in the triage output rather than silently accepted. **Follow-up ticket** (to be filed separately, not part of this plan): "wire `AnnotationEditorScreen`'s export/share action to `AnnotationExporter.bakeAndEncode()` + `DriveExportButton`/`ShareProvider`," and fold in the two pre-existing UI gaps `research/ux.md` already found so they aren't rediscovered later — (1) `DriveExportButton`'s `Error` state is visually identical to `Idle` because `DriveExportUiState.Error.message` is captured but never rendered, and (2) the Loading spinner has no `contentDescription`/semantics label.
+- [x] **DECIDED (Repair Pass round 1, folded in per engineering-lens triad finding): `DriveExportButton`/`onExportToDrive` dead code (Tech Debt Disposition table) is the same category of tradeoff as the item above — flagged here explicitly rather than left only in that table.** Same disposition: out of scope for this codec bugfix, covered by the same follow-up ticket named above, not a new decision.
 
 ## Dependency Visualization
 

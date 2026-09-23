@@ -56,6 +56,7 @@ class DomainErrorTest {
             DomainError.ExportError.SerializationFailed("serialization failed"),
             DomainError.ExportError.ClipboardFailed("clipboard failed"),
             DomainError.ExportError.ShareFailed("share failed"),
+            DomainError.ExportError.EncodingFailed("encoding failed"),
             DomainError.QrTransferError.ChunkDecodeFailed,
             DomainError.QrTransferError.IntegrityCheckFailed,
             DomainError.QrTransferError.PayloadTooLarge(90000, 65536),
@@ -124,6 +125,7 @@ class DomainErrorTest {
                 is DomainError.ExportError.ClipboardFailed -> err.message
                 is DomainError.ExportError.SerializationFailed -> err.message
                 is DomainError.ExportError.ShareFailed -> err.message
+                is DomainError.ExportError.EncodingFailed -> err.message
                 DomainError.QrTransferError.ChunkDecodeFailed -> err.message
                 DomainError.QrTransferError.IntegrityCheckFailed -> err.message
                 is DomainError.QrTransferError.PayloadTooLarge -> err.message
@@ -209,6 +211,7 @@ class DomainErrorTest {
             DomainError.ExportError.ClipboardFailed("clipboard failed"),
             DomainError.ExportError.SerializationFailed("serialization failed"),
             DomainError.ExportError.ShareFailed("share failed"),
+            DomainError.ExportError.EncodingFailed("encoding failed"),
             DomainError.QrTransferError.ChunkDecodeFailed,
             DomainError.QrTransferError.IntegrityCheckFailed,
             DomainError.QrTransferError.PayloadTooLarge(90000, 65536),
