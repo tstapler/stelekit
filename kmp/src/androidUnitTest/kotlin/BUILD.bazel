@@ -40,7 +40,7 @@ kt_android_library(
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
         "@maven//:androidx_compose_ui_ui_test_junit4",
         "@maven//:androidx_compose_ui_ui_test_manifest",
-        "//kmp/src/commonTest/kotlin:git_testsupport",
+        "//kmp/src/commonTest/kotlin:git_testsupport_android",
     ],
 )
 
