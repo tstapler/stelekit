@@ -67,6 +67,7 @@ kt_jvm_test(
     deps = [
         "//kmp/src/commonMain/resources:common_resources",
         "//kmp/src/commonTest/kotlin:common_test_fixtures",
+        "//kmp/src/commonTest/kotlin:git_testsupport",
         "@maven//:com_google_zxing_core",
         "@maven//:io_ktor_ktor_client_mock_jvm",
         "@maven//:io_projectreactor_tools_blockhound",

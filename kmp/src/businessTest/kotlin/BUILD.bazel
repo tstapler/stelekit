@@ -62,6 +62,7 @@ kt_jvm_test(
         "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json_jvm",
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
         "//kmp/src/commonMain/resources:common_resources",
+        "//kmp/src/commonTest/kotlin:git_testsupport",
         ":demo_filesystem_as_resource",
         ":sqldatabase_schema_as_resource",
         ":git_shadow_worktree_as_resource",

@@ -92,6 +92,9 @@ import dev.stapler.stelekit.ui.screens.AllPagesViewModelTest
 import dev.stapler.stelekit.ui.screens.JournalsViewSqlDelightTest
 import dev.stapler.stelekit.ui.screens.JournalsViewUITest
 import dev.stapler.stelekit.ui.screens.PageViewUITest
+import dev.stapler.stelekit.ui.screens.git.GitSetupScreenHelpersTest
+import dev.stapler.stelekit.ui.screens.git.GitSetupScreenSaveLogicTest
+import dev.stapler.stelekit.ui.screens.git.WikiSubdirUriGuardTest
 import dev.stapler.stelekit.vault.crypto.CryptoEngineTest
 import dev.stapler.stelekit.vault.integration.GraphLayerCryptoTest
 import dev.stapler.stelekit.vault.integration.VaultRoundTripTest
@@ -195,6 +198,9 @@ import org.junit.runners.Suite
     JournalsViewSqlDelightTest::class,
     JournalsViewUITest::class,
     PageViewUITest::class,
+    GitSetupScreenHelpersTest::class,
+    GitSetupScreenSaveLogicTest::class,
+    WikiSubdirUriGuardTest::class,
     StelekitViewModelLoadingTest::class,
     StelekitViewModelLlmSettingsTest::class,
     LlmProviderListScreenTest::class,

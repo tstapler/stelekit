@@ -6,6 +6,13 @@ is also referenced by jvmTest sources (e.g. ImageAnnotationOfflineTest).  This
 kt_jvm_library exposes just the fixture files needed by jvmTest without pulling
 in the full commonTest suite.  Add files here as jvmTest grows its cross-source-
 set fixture usage.
+
+Note: this target bundles actual *Test.kt classes alongside fixtures (see srcs
+below) — depending on it pulls those test classes onto your classpath too. A
+target with its own classpath-scanning completeness guard (e.g. business_tests'
+AllBusinessTestsCompletenessTest) will misidentify them as unregistered tests
+of ITS OWN suite. Use :git_testsupport below instead if you only need the
+fixture classes (StubGitRepository etc., none of which carry @Test methods).
 """
 
 load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library")
@@ -21,6 +28,7 @@ kt_jvm_library(
         "dev/stapler/stelekit/search/FtsQueryBuilderTest.kt",
         "dev/stapler/stelekit/sections/SectionFilterTest.kt",
         "dev/stapler/stelekit/sections/SectionManifestParserTest.kt",
+        "dev/stapler/stelekit/ui/screens/git/GitSetupScreenHelpersTest.kt",
     ],
     kotlinc_opts = "//:kmp_jvm_kotlinc_opts",
     # Friend (not just deps) access to jvm_main_lib is required: SectionManifestParserTest
@@ -33,6 +41,28 @@ kt_jvm_library(
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
         "@maven//:org_jetbrains_kotlin_kotlin_test_junit",
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
+    ],
+    visibility = ["//kmp/src:__subpackages__"],
+)
+
+# git_testsupport — GitRepository/GitConfigRepository/FileSystem test doubles shared by
+# jvmTest/androidUnitTest/businessTest's GitSyncService-adjacent tests. Kept separate from
+# common_test_fixtures (above) because none of these files carry @Test methods, so consumers
+# with their own suite-completeness guard (business_tests) don't misclassify them.
+kt_jvm_library(
+    name = "git_testsupport",
+    srcs = [
+        "dev/stapler/stelekit/git/testsupport/SampleGitConfig.kt",
+        "dev/stapler/stelekit/git/testsupport/StubConfigRepository.kt",
+        "dev/stapler/stelekit/git/testsupport/StubFileSystem.kt",
+        "dev/stapler/stelekit/git/testsupport/StubGitRepository.kt",
+    ],
+    kotlinc_opts = "//:kmp_jvm_kotlinc_opts",
+    deps = [
+        "//kmp/src/jvmMain/kotlin:jvm_main_lib",
+        "@maven//:io_arrow_kt_arrow_core_jvm",
+        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm",
     ],
     visibility = ["//kmp/src:__subpackages__"],
 )
