@@ -87,10 +87,14 @@ library:
    closes the bug's literal `GitManager` interface text (`interface GitManager` in
    `platform/GitManager.kt`) at near-zero marginal cost, since both callers share one
    underlying engine.
-5. Credentials: the existing `CredentialStore`/`VaultCredentialStore` abstraction
-   (`platform/security/CredentialStore.kt`) is used as-is; the `wasmJs` actual
-   (`platform/security/CredentialStore.kt` in `wasmJsMain`) persists PATs, closing the
-   second half of this bug's title.
+5. Credentials: **correction** — at the time this bug was originally closed (PR #239), the
+   `wasmJs` actual of `CredentialStore` was still a no-op stub; PR #239 worked around that gap
+   with a separate plaintext `persistWebGitCredentials`/`PlatformSettings` channel, not with a
+   working `CredentialStore`. A real, encrypted-at-rest `wasmJs` `CredentialStore` actual
+   (`platform/security/CredentialStore.kt` in `wasmJsMain`, AES-256-GCM via WebCrypto) was
+   implemented separately by the `web-credential-persistence` project
+   (`project_plans/web-credential-persistence/`), which is what actually closes the second half
+   of this bug's title — not this fix.
 6. Git working-tree-shaped `GitRepository` methods with no REST-API equivalent
    (`isGitRepo`, `init`, `hasDetachedHead`, `removeStaleLockFile`, `stageSubdir`) map to
    conservative no-op/constant implementations rather than `NotSupported` errors; only

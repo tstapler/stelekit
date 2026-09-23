@@ -149,12 +149,6 @@ private suspend fun resolveAndSaveConfig(
     } else {
         null
     }
-    // Web git write-back fix (PR #239 review): the wasmJs configResolver (browser/Main.kt) reads
-    // credentials from PlatformSettings, not from CredentialStore (a no-op on web) — populate it
-    // here so a real web user's saved PAT is actually reachable. See persistWebGitCredentials'
-    // KDoc for the reload-to-take-effect caveat and the GITHUB_OAUTH gap. cloneUrl is blank on the
-    // "use existing clone" / edit path, where this call no-ops.
-    persistWebGitCredentials(form.cloneUrl, form.remoteBranch, form.authType, form.httpsToken)
     val config = buildConfig(
         graphId, form.repoRoot, form.wikiSubdir, form.authType,
         form.sshKeyPath, form.remoteBranch, form.pollIntervalMinutes,

@@ -9,7 +9,6 @@ import dev.stapler.stelekit.git.GitHostAdapter
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.git.model.GitHostType
-import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.platform.security.CredentialStore
 import dev.stapler.stelekit.util.ContentHasher
 import kotlin.time.Clock
@@ -32,40 +31,6 @@ internal fun wikiSubdirError(value: String): String? = when {
         "Use a path relative to the repository root, e.g. notes/pages"
     value.split('/').any { it == ".." } -> "\"..\" isn't allowed"
     else -> null
-}
-
-/**
- * Populates the `PlatformSettings` keys ("githubOwner"/"githubRepo"/"githubBranch"/"githubToken")
- * that `browser/Main.kt`'s `configResolver` reads once at wasmJs startup — the credential source
- * the write engine (`WasmGitRepository`) actually trusts. Without this, a web user's saved
- * `HTTPS_TOKEN` PAT (persisted via [CredentialStore], a no-op on wasmJs for a different, accepted
- * reason) is never visible to `configResolver`.
- *
- * [cloneUrl] is parsed via [GitHostAdapter.extractOwnerRepo] to derive `owner`/`repo`; no-ops
- * (does not overwrite any existing settings with blanks) when [authType] is not
- * [GitAuthType.HTTPS_TOKEN], [cloneUrl] is blank or unparseable, or [token] is blank.
- *
- * Only takes effect for the current session after a page reload on web, since `Main.kt` reads
- * `PlatformSettings` exactly once at startup — [GitAuthType.GITHUB_OAUTH]'s equivalent gap (the
- * device-flow token is never written here) is a known, separate follow-up.
- *
- * Safe no-op-equivalent on JVM/Android: those platforms never read these specific
- * `PlatformSettings` keys back, so writing them there is harmless, just slightly redundant.
- */
-internal fun persistWebGitCredentials(
-    cloneUrl: String,
-    branch: String,
-    authType: GitAuthType,
-    token: String,
-) {
-    if (authType != GitAuthType.HTTPS_TOKEN) return
-    if (cloneUrl.isBlank() || token.isBlank()) return
-    val (owner, repo) = GitHostAdapter.extractOwnerRepo(cloneUrl) ?: return
-    val settings = PlatformSettings()
-    settings.putString("githubOwner", owner)
-    settings.putString("githubRepo", repo)
-    settings.putString("githubBranch", branch)
-    settings.putString("githubToken", token)
 }
 
 /**

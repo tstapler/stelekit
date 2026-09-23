@@ -268,7 +268,7 @@ private fun NewHttpsTokenField(
                 }
             },
         )
-        MutedText("Token is encrypted on disk using device-specific keys. For stronger protection, use SSH key auth.")
+        MutedText("Token is encrypted at rest. For stronger protection, use SSH key auth.")
     }
 }
 

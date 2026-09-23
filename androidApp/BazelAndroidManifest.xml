@@ -3,6 +3,8 @@
      AGP 8.13.2 rejects package= in the main manifest; Bazel requires it. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="dev.stapler.stelekit">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
     <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="36" />
 </manifest>

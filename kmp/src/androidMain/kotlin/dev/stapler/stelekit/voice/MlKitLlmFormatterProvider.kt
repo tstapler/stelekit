@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Elastic-2.0
 package dev.stapler.stelekit.voice
 
-import android.util.Log
 import com.google.mlkit.genai.common.FeatureStatus
 import com.google.mlkit.genai.common.GenAiException
 import com.google.mlkit.genai.prompt.Generation
@@ -10,7 +9,7 @@ import com.google.mlkit.genai.prompt.GenerativeModel
 import dev.stapler.stelekit.llm.LlmProviderAvailability
 import kotlinx.coroutines.CancellationException
 
-private const val TAG = "MlKitLlmFormatter"
+private val logger = dev.stapler.stelekit.logging.Logger("MlKitLlmFormatter")
 
 /**
  * On-device LLM formatter backed by ML Kit Prompt API (Gemini Nano via AICore).
@@ -28,7 +27,7 @@ class MlKitLlmFormatterProvider private constructor(
         fun create(): MlKitLlmFormatterProvider? = runCatching {
             MlKitLlmFormatterProvider(Generation.getClient())
         }.getOrElse { e ->
-            Log.w(TAG, "Failed to create GenerativeModel", e)
+            logger.warn("Failed to create GenerativeModel", e)
             null
         }
     }
@@ -46,7 +45,7 @@ class MlKitLlmFormatterProvider private constructor(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.w(TAG, "checkStatus failed", e)
+            logger.warn("checkStatus failed", e)
             null
         }
         return mapMlKitFeatureStatus(statusCode)
@@ -56,13 +55,13 @@ class MlKitLlmFormatterProvider private constructor(
         return try {
             when (model.checkStatus()) {
                 FeatureStatus.AVAILABLE -> {
-                    Log.d(TAG, "Running on-device inference (${transcript.length} chars input)")
+                    logger.debug("Running on-device inference (${transcript.length} chars input)")
                     val response = model.generateContent(systemPrompt)
                     val text = response.candidates.firstOrNull()?.text?.trim()
                     if (text.isNullOrBlank()) {
                         LlmResult.Failure.ApiError(-1, "Empty response from on-device model")
                     } else {
-                        Log.d(TAG, "On-device inference complete (${text.length} chars output)")
+                        logger.debug("On-device inference complete (${text.length} chars output)")
                         LlmResult.Success(text, LlmProviderSupport.detectTruncation(text))
                     }
                 }
@@ -99,11 +98,11 @@ class MlKitLlmFormatterProvider private constructor(
             // mapMlKitFeatureStatus()'s shape for checkAvailability().
             val failure = mapGenAiErrorCode(e.errorCode, e.message)
             if (failure !is LlmResult.Failure.OnDeviceUnavailable) {
-                Log.e(TAG, "On-device inference error", e)
+                logger.error("On-device inference error", e)
             }
             failure
         } catch (e: Exception) {
-            Log.e(TAG, "On-device inference error", e)
+            logger.error("On-device inference error", e)
             LlmResult.Failure.ApiError(-1, "On-device LLM error: ${e.message}")
         }
     }

@@ -3,7 +3,6 @@
 
 package dev.stapler.stelekit.git
 
-import android.util.Log
 import java.io.File
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
@@ -22,7 +21,7 @@ class GitWriteBackQueue(private val queueFile: File) {
     private val lock = ReentrantLock()
 
     companion object {
-        private const val TAG = "GitWriteBackQueue"
+        private val logger = dev.stapler.stelekit.logging.Logger("GitWriteBackQueue")
     }
 
     fun enqueue(relativePath: String) = lock.withLock {
@@ -30,7 +29,7 @@ class GitWriteBackQueue(private val queueFile: File) {
             queueFile.parentFile?.mkdirs()
             queueFile.appendText("$relativePath\n", Charsets.UTF_8)
         } catch (e: Exception) {
-            Log.w(TAG, "enqueue: failed", e)
+            logger.warn("enqueue: failed", e)
         }
     }
 
@@ -51,10 +50,10 @@ class GitWriteBackQueue(private val queueFile: File) {
                 Charsets.UTF_8,
             )
             if (!tmpFile.renameTo(queueFile)) {
-                Log.w(TAG, "dequeue: atomic rename failed for $relativePath")
+                logger.warn("dequeue: atomic rename failed for $relativePath")
             }
         } catch (e: Exception) {
-            Log.w(TAG, "dequeue: failed for $relativePath", e)
+            logger.warn("dequeue: failed for $relativePath", e)
         }
     }
 
@@ -66,7 +65,7 @@ class GitWriteBackQueue(private val queueFile: File) {
                 .filter { it.isNotBlank() }
                 .distinct()
         } catch (e: Exception) {
-            Log.w(TAG, "getAll: failed", e)
+            logger.warn("getAll: failed", e)
             emptyList()
         }
     }

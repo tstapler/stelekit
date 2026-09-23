@@ -1,6 +1,5 @@
 package dev.stapler.stelekit.ui.components
 
-import android.util.Log
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
@@ -12,7 +11,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 
-private const val TAG = "MermaidRenderer"
+private val logger = dev.stapler.stelekit.logging.Logger("MermaidRenderer")
 private const val RENDER_HTML_URL = "file:///android_asset/mermaid/render.html"
 
 /**
@@ -36,7 +35,7 @@ actual suspend fun renderMermaid(key: MermaidRenderKey): MermaidRenderResult = w
         // A missing/broken WebView provider (some AOSP forks, stripped-down devices) throws
         // here rather than returning null — caught broadly per this repo's native-load-failure
         // rule (Application.onCreate's catch-Throwable precedent).
-        Log.w(TAG, "renderMermaid: WebView unavailable", e)
+        logger.warn("renderMermaid: WebView unavailable", e)
         MermaidRenderResult.UnsupportedPlatform
     }
 }

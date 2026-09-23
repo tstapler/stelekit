@@ -6,7 +6,6 @@ import android.content.Context
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
-import android.util.Log
 import androidx.car.app.CarContext
 import androidx.car.app.media.CarAudioRecord
 import kotlinx.coroutines.Dispatchers
@@ -19,7 +18,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.atomic.AtomicBoolean
 
-private const val TAG = "CarAudioRecorder"
+private val logger = dev.stapler.stelekit.logging.Logger("CarAudioRecorder")
 
 class CarAudioRecorder(
     private val carContext: CarContext,
@@ -41,7 +40,7 @@ class CarAudioRecorder(
             when (change) {
                 AudioManager.AUDIOFOCUS_LOSS,
                 AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
-                    Log.d(TAG, "Audio focus lost ($change) — stopping recording")
+                    logger.debug("Audio focus lost ($change) — stopping recording")
                     stopFlag.set(true)
                 }
                 else -> {}
@@ -82,7 +81,7 @@ class CarAudioRecorder(
             }
             carAudioRecord.stopRecording()
         } catch (e: Exception) {
-            Log.e(TAG, "CarAudioRecord error: ${e.message}", e)
+            logger.error("CarAudioRecord error: ${e.message}", e)
         } finally {
             abandonAudioFocus(audioManager)
         }

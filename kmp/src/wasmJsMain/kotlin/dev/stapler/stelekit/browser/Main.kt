@@ -21,6 +21,7 @@ import dev.stapler.stelekit.platform.HostAccessState
 import dev.stapler.stelekit.platform.EphemeralSettingsMode
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.PlatformSettings
+import dev.stapler.stelekit.platform.security.CredentialStore
 import dev.stapler.stelekit.sync.WasmSectionSyncService
 import dev.stapler.stelekit.repository.GraphBackend
 import dev.stapler.stelekit.model.DEMO_GRAPH_ID
@@ -83,6 +84,38 @@ private fun showBootError(message: String): Unit = js(
 internal fun shouldWarnOnUnload(dirtyCount: Int): Boolean = dirtyCount > 0
 
 private fun setShouldWarnMirror(shouldWarn: Boolean): Unit = js("window.__stelekit_should_warn = shouldWarn")
+
+/**
+ * web-credential-persistence (Task 1.4.1a): resolves a git HTTPS token from the real
+ * [CredentialStore], falling back to the legacy [PlatformFileSystem.githubToken] plaintext value
+ * during the transition window before [migrateLegacyGitCredential] has copied it over. `internal`
+ * (not inlined in the `configResolver` lambda literal) so it has its own test seam — see
+ * `MainCredentialWiringTest.kt`.
+ */
+internal fun resolveGitHttpsToken(httpsTokenKey: String?): String =
+    httpsTokenKey?.let { CredentialStore().retrieve(it) } ?: PlatformFileSystem.githubToken ?: ""
+
+/**
+ * web-credential-persistence (Task 1.4.2a): one-time, boot-local migration of
+ * [persistWebGitCredentials]'s legacy plaintext `githubToken` `PlatformSettings` value into the
+ * real, encrypted [CredentialStore] — check-before-write on the target key makes this idempotent,
+ * no separate "already migrated" flag needed. `internal` (not `private`) so it has its own test
+ * seam — see `MainCredentialMigrationTest.kt`. Not called from [runEphemeralSession]: that path's
+ * `PlatformSettings`/[CredentialStore] reads/writes already route through
+ * [EphemeralSettingsMode]'s in-memory map, so there is no real legacy plaintext to migrate there.
+ */
+internal suspend fun migrateLegacyGitCredential(graphId: String) {
+    val targetKey = "git_https_token_$graphId"
+    if (CredentialStore().retrieve(targetKey) != null) return
+    val legacy = PlatformSettings().getString("githubToken", "")
+    if (legacy.isBlank()) return
+    CredentialStore().store(targetKey, legacy)
+    val settings = PlatformSettings()
+    settings.putString("githubOwner", "")
+    settings.putString("githubRepo", "")
+    settings.putString("githubBranch", "")
+    settings.putString("githubToken", "")
+}
 
 private fun registerBeforeUnloadWarning(): Unit = js(
     """
@@ -175,6 +208,12 @@ fun main() {
         WasmSectionSyncService.githubToken = ghToken
         WasmSectionSyncService.graphId = graphId
 
+        // web-credential-persistence (Task 1.2.2a): must be a direct, awaited suspend call on the
+        // boot coroutine, never a detached scope.launch{} — configResolver and migration below
+        // both need the decrypted cache warm before they run (pre-mortem P1).
+        CredentialStore.preload()
+        migrateLegacyGitCredential(graphId)
+
         // Story 4.3.1: shared configResolver for the write engine (WasmGitRepository), built from
         // the same PlatformFileSystem.githubOwner/githubRepo/githubToken companion fields the read
         // path (readFileSuspend() above, WasmSectionSyncService) already trusts — one credential
@@ -186,7 +225,7 @@ fun main() {
             val repo = PlatformFileSystem.githubRepo
             if (owner.isEmpty() || repo.isEmpty()) return@resolver null
             val remoteUrl = "https://github.com/$owner/$repo"
-            GitHostAdapter.resolve(config, remoteUrl, PlatformFileSystem.githubToken ?: "")
+            GitHostAdapter.resolve(config, remoteUrl, resolveGitHttpsToken(config.httpsTokenKey))
         }
         val wasmGitRepository = WasmGitRepository.withDefaultClient(opfsFileSystem, configResolver)
 
@@ -406,6 +445,10 @@ fun main() {
 @OptIn(ExperimentalComposeUiApi::class)
 private suspend fun runEphemeralSession() {
     EphemeralSettingsMode.enable()
+    // Direct, awaited suspend call — same boot-ordering requirement as the normal path above.
+    // Not a real persistence step here (EphemeralSettingsMode.active is already true), just a
+    // fresh in-memory-only key so store()/retrieve() behave consistently for this session.
+    CredentialStore.preload()
 
     val fileSystem = PlatformFileSystem()
     fileSystem.markEphemeral()
@@ -417,7 +460,7 @@ private suspend fun runEphemeralSession() {
         val repo = PlatformFileSystem.githubRepo
         if (owner.isEmpty() || repo.isEmpty()) return@resolver null
         val remoteUrl = "https://github.com/$owner/$repo"
-        GitHostAdapter.resolve(config, remoteUrl, PlatformFileSystem.githubToken ?: "")
+        GitHostAdapter.resolve(config, remoteUrl, resolveGitHttpsToken(config.httpsTokenKey))
     }
     val wasmGitRepository = WasmGitRepository.withDefaultClient(fileSystem, configResolver)
 

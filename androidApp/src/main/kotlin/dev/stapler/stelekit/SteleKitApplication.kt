@@ -1,7 +1,6 @@
 package dev.stapler.stelekit
 
 import android.app.Application
-import android.util.Log
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.platform.PlatformFileSystem
@@ -57,7 +56,11 @@ class SteleKitApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // First, so every later startup failure and every feature logger reaches logcat
+        // (tags "SteleKit.<Logger tag>"); previously no sink was registered on Android.
+        dev.stapler.stelekit.logging.LogManager.addSink(dev.stapler.stelekit.logging.AndroidLogSink())
         try {
+            dev.stapler.stelekit.platform.NetworkMonitor.init(this)
             BuildInfo.commitHash = getString(R.string.git_commit_hash)
             BuildInfo.appVersion = packageManager.getPackageInfo(packageName, 0).versionName.orEmpty()
             SteleKitContext.init(this)
@@ -84,7 +87,7 @@ class SteleKitApplication : Application() {
                 // the database so consistency is preserved without blocking onCreate().
                 startupFlushJob = appScope.async(Dispatchers.IO) {
                     try { fileSystem.flushPendingWrites() }
-                    catch (e: Exception) { Log.w(TAG, "Startup write-behind flush failed", e) }
+                    catch (e: Exception) { logger.warn("Startup write-behind flush failed", e) }
                 }
             } else {
                 startupFlushJob = CompletableDeferred<Unit>().also { it.complete(Unit) }
@@ -96,7 +99,7 @@ class SteleKitApplication : Application() {
                 preFlightJob = startupFlushJob,
             )
         } catch (e: Throwable) {
-            Log.e(TAG, "Application init failed — widget/tile/share will show placeholder", e)
+            logger.error("Application init failed — widget/tile/share will show placeholder", e)
             if (!::fileSystem.isInitialized) {
                 fileSystem = PlatformFileSystem()
             }
@@ -104,6 +107,6 @@ class SteleKitApplication : Application() {
     }
 
     companion object {
-        private const val TAG = "SteleKitApplication"
+        private val logger = dev.stapler.stelekit.logging.Logger("SteleKitApplication")
     }
 }

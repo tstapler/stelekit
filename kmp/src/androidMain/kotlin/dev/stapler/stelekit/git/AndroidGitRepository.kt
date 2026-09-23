@@ -112,6 +112,7 @@ class AndroidGitRepository(
             cmd.call().use { git ->
                 shadow.syncShadowAfterInitOrClone(localPath, git)
             }
+            logger.info("clone: done localPath=$localPath")
             Unit.right()
         }
     }

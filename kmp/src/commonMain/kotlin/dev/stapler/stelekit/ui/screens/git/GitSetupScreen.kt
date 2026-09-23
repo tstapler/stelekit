@@ -143,9 +143,9 @@ fun GitSetupScreen(
     val credentialStore = remember { CredentialStore() }
     // App-wide (not per-graph) — lets HTTPS_TOKEN/GITHUB_OAUTH credentials be reused across graphs
     // instead of re-pasting a PAT or redoing the OAuth device flow every time. PlatformSettings()
-    // is instantiated ad hoc here rather than threaded through as a parameter, matching the
-    // existing precedent in persistWebGitCredentials below (each instance shares the same
-    // underlying platform store — SharedPreferences/NSUserDefaults/localStorage — so this is safe).
+    // is instantiated ad hoc here rather than threaded through as a parameter — every instance
+    // shares the same underlying platform store (SharedPreferences/NSUserDefaults/localStorage),
+    // so this is safe.
     val connectionStore = remember(credentialStore) { GitCredentialConnectionStore(PlatformSettings(), credentialStore) }
     var httpsConnections by remember {
         mutableStateOf(connectionStore.listConnections(GitAuthType.HTTPS_TOKEN))
