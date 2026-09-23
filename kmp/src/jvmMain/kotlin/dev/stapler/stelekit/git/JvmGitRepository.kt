@@ -9,27 +9,24 @@ import arrow.core.right
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
-import dev.stapler.stelekit.git.model.ConflictFile
-import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
-import dev.stapler.stelekit.git.model.wikiRoot
 import dev.stapler.stelekit.platform.security.CredentialAccess
 import dev.stapler.stelekit.platform.security.CredentialStore
 import kotlin.concurrent.Volatile
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.api.MergeCommand
-import org.eclipse.jgit.api.errors.TransportException
 import org.eclipse.jgit.merge.MergeStrategy
+import org.eclipse.jgit.revwalk.RevCommit
 import org.eclipse.jgit.storage.file.FileRepositoryBuilder
-import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider
-import org.eclipse.jgit.transport.sshd.SshdSessionFactoryBuilder
+import org.eclipse.jgit.lib.Repository
 import java.io.File
 
 /**
- * JVM (Desktop) implementation of GitRepository using JGit 7.x.
- * All I/O runs on PlatformDispatcher.IO.
+ * JVM (Desktop) implementation of GitRepository using JGit 7.x. All I/O runs on
+ * PlatformDispatcher.IO. See [JvmGitRepositoryAuth] for transport auth and
+ * [JvmGitConflictSupport] for conflict derivation — split out to keep this class under the
+ * file-size guideline.
  */
 class JvmGitRepository(
     credentialAccess: CredentialAccess = CredentialStore(),
@@ -45,37 +42,31 @@ class JvmGitRepository(
     @Volatile var credentialAccess: CredentialAccess = credentialAccess
         internal set
 
+    private val authConfigurer = JvmGitRepositoryAuth({ this.credentialAccess }, logger)
+
     override fun setCredentialAccess(access: CredentialAccess) { credentialAccess = access }
 
     override suspend fun isGitRepo(path: String): Boolean = withContext(PlatformDispatcher.IO) {
-        try {
+        runGitOpOrFalse {
             val gitDir = File(path, ".git")
-            if (gitDir.exists()) return@withContext true
+            if (gitDir.exists()) return@runGitOpOrFalse true
             // Also handle bare repos
             val builder = FileRepositoryBuilder()
             builder.setMustExist(true)
             builder.findGitDir(File(path))
             builder.gitDir != null
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            false
         }
     }
 
     override suspend fun init(repoRoot: String): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
-            try {
+            runGitOp({ e -> DomainError.GitError.CloneFailed("init failed: ${e.message}") }) {
                 // GitConfig.remoteBranch defaults to "main" — JGit's own default initial branch
                 // is "master" regardless of the host's `init.defaultBranch` git config, so a
                 // freshly-init'd (non-cloned) repo would otherwise never match the branch name
                 // fetch()/merge() look for.
                 Git.init().setDirectory(File(repoRoot)).setInitialBranch("main").call().close()
                 Unit.right()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                DomainError.GitError.CloneFailed("init failed: ${e.message}").left()
             }
         }
 
@@ -85,7 +76,10 @@ class JvmGitRepository(
         auth: GitAuth,
         onProgress: (String) -> Unit,
     ): Either<DomainError.GitError, Unit> = withContext(PlatformDispatcher.IO) {
-        try {
+        runGitTransportOp(
+            onAuthFailed = { e -> DomainError.GitError.AuthFailed(e.message ?: "Authentication failed") },
+            onFailed = { e -> DomainError.GitError.CloneFailed(e.message ?: "Clone failed") },
+        ) {
             // Resolve suspend credentials before entering JGit's synchronous territory
             val preResolvedToken: String? = if (auth is GitAuth.HttpsToken) auth.tokenProvider() else null
             val job = coroutineContext[kotlinx.coroutines.Job]
@@ -102,456 +96,293 @@ class JvmGitRepository(
                     override fun showDuration(enabled: Boolean) {}
                 })
 
-            configureAuth(cmd, auth, preResolvedToken)
+            authConfigurer.configureAuth(cmd, auth, preResolvedToken)
             cmd.call().close()
             Unit.right()
-        } catch (e: TransportException) {
-            DomainError.GitError.AuthFailed(e.message ?: "Authentication failed").left()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            DomainError.GitError.CloneFailed(e.message ?: "Clone failed").left()
         }
     }
 
-    override suspend fun fetch(config: GitConfig): Either<DomainError.GitError, FetchResult> =
+    override suspend fun testRemote(url: String, auth: GitAuth): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
-            try {
-                openGit(config.repoRoot).use { git ->
-                    val repo = git.repository
-                    val headBefore = repo.resolve("HEAD")
-
-                    git.fetch()
-                        .setRemote(config.remoteName)
-                        .also { configureAuthFromConfig(it, config) }
-                        .call()
-
-                    val remoteRef = repo.resolve("${config.remoteName}/${config.remoteBranch}")
-                    val hasChanges = remoteRef != null && remoteRef != headBefore
-
-                    val remoteCommitCount = if (hasChanges && headBefore != null && remoteRef != null) {
-                        try {
-                            val commits = git.log()
-                                .addRange(headBefore, remoteRef)
-                                .setMaxCount(100)
-                                .call()
-                                .toList()
-                            commits.size
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (_: Exception) {
-                            0
-                        }
-                    } else {
-                        0
-                    }
-
-                    FetchResult(hasRemoteChanges = hasChanges, remoteCommitCount = remoteCommitCount).right()
-                }
-            } catch (e: TransportException) {
-                DomainError.GitError.AuthFailed(e.message ?: "Authentication failed").left()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                DomainError.GitError.FetchFailed(e.message ?: "Fetch failed").left()
+            runGitTransportOp(
+                onAuthFailed = { e -> DomainError.GitError.AuthFailed(e.message ?: "Authentication failed") },
+                onFailed = { e -> DomainError.GitError.FetchFailed(e.message ?: "Connection test failed") },
+            ) {
+                val preResolvedToken: String? = if (auth is GitAuth.HttpsToken) auth.tokenProvider() else null
+                Git.lsRemoteRepository()
+                    .setRemote(url)
+                    .also { authConfigurer.configureAuth(it, auth, preResolvedToken) }
+                    .call()
+                Unit.right()
             }
         }
+
+    override suspend fun fetch(config: GitConfig): Either<DomainError.GitError, FetchResult> =
+        withContext(PlatformDispatcher.IO) {
+            runGitTransportOp(
+                onAuthFailed = { e -> DomainError.GitError.AuthFailed(e.message ?: "Authentication failed") },
+                onFailed = { e -> DomainError.GitError.FetchFailed(e.message ?: "Fetch failed") },
+            ) {
+                openGit(config.repoRoot).use { git -> doFetch(git, config) }
+            }
+        }
+
+    private fun doFetch(git: Git, config: GitConfig): Either<DomainError.GitError, FetchResult> {
+        val repo = git.repository
+        val headBefore = repo.resolve("HEAD")
+
+        git.fetch()
+            .setRemote(config.remoteName)
+            .also { authConfigurer.configureTransport(it, config) }
+            .call()
+
+        val remoteRef = repo.resolve("${config.remoteName}/${config.remoteBranch}")
+        val hasChanges = remoteRef != null && remoteRef != headBefore
+        val remoteCommitCount = if (hasChanges && headBefore != null && remoteRef != null) {
+            countRemoteCommitsBestEffort(git, headBefore, remoteRef)
+        } else {
+            0
+        }
+
+        return FetchResult(hasRemoteChanges = hasChanges, remoteCommitCount = remoteCommitCount).right()
+    }
 
     override suspend fun status(config: GitConfig): Either<DomainError.GitError, GitStatus> =
         withContext(PlatformDispatcher.IO) {
-            try {
-                openGit(config.repoRoot).use { git ->
-                    val statusResult = git.status()
-                        .also { cmd ->
-                            if (!config.wikiSubdir.isNullOrEmpty()) {
-                                cmd.addPath(config.wikiSubdir)
-                            }
-                        }
-                        .call()
-
-                    val modified = (statusResult.modified + statusResult.changed).toList()
-                    val untracked = statusResult.untracked.toList()
-                    val hasChanges = !statusResult.isClean
-
-                    GitStatus(
-                        hasLocalChanges = hasChanges,
-                        untrackedFiles = untracked,
-                        modifiedFiles = modified,
-                    ).right()
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                DomainError.GitError.FetchFailed("Status failed: ${e.message}").left()
+            runGitOp({ e -> DomainError.GitError.FetchFailed("Status failed: ${e.message}") }) {
+                openGit(config.repoRoot).use { git -> buildGitStatus(git, config) }
             }
         }
+
+    private fun buildGitStatus(git: Git, config: GitConfig): Either<DomainError.GitError, GitStatus> {
+        val statusCommand = git.status()
+        if (!config.wikiSubdir.isNullOrEmpty()) statusCommand.addPath(config.wikiSubdir)
+        val statusResult = statusCommand.call()
+
+        return GitStatus(
+            hasLocalChanges = !statusResult.isClean,
+            untrackedFiles = statusResult.untracked.toList(),
+            modifiedFiles = (statusResult.modified + statusResult.changed).toList(),
+        ).right()
+    }
 
     override suspend fun stageSubdir(config: GitConfig): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
-            try {
-                openGit(config.repoRoot).use { git ->
-                    val pattern = if (config.wikiSubdir.isNullOrEmpty()) "." else "${config.wikiSubdir}/"
-                    git.add().addFilepattern(pattern).call()
-                    // Also stage deletions
-                    git.add().setUpdate(true).addFilepattern(pattern).call()
-                    Unit.right()
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                DomainError.GitError.CommitFailed("Stage failed: ${e.message}").left()
+            runGitOp({ e -> DomainError.GitError.CommitFailed("Stage failed: ${e.message}") }) {
+                openGit(config.repoRoot).use { git -> stageWikiSubdir(git, config) }
             }
         }
 
+    private fun stageWikiSubdir(git: Git, config: GitConfig): Either<DomainError.GitError, Unit> {
+        val pattern = if (config.wikiSubdir.isNullOrEmpty()) "." else "${config.wikiSubdir}/"
+        git.add().addFilepattern(pattern).call()
+        // Also stage deletions
+        git.add().setUpdate(true).addFilepattern(pattern).call()
+        return Unit.right()
+    }
+
     override suspend fun commit(config: GitConfig, message: String): Either<DomainError.GitError, String> =
         withContext(PlatformDispatcher.IO) {
-            try {
+            runGitOp({ e -> DomainError.GitError.CommitFailed(e.message ?: "Commit failed") }) {
                 openGit(config.repoRoot).use { git ->
                     val commit = git.commit()
                         .setMessage(message)
                         .call()
                     commit.name.right()
                 }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                DomainError.GitError.CommitFailed(e.message ?: "Commit failed").left()
             }
         }
 
     override suspend fun merge(config: GitConfig): Either<DomainError.GitError, MergeResult> =
         withContext(PlatformDispatcher.IO) {
-            try {
-                openGit(config.repoRoot).use { git ->
-                    val repo = git.repository
-                    val remoteRef = repo.resolve("${config.remoteName}/${config.remoteBranch}")
-                        ?: return@withContext DomainError.GitError.FetchFailed(
-                            "Remote ref ${config.remoteName}/${config.remoteBranch} not found"
-                        ).left()
-
-                    val mergeResult = git.merge()
-                        .include(remoteRef)
-                        .setStrategy(MergeStrategy.RECURSIVE)
-                        .setFastForward(MergeCommand.FastForwardMode.NO_FF)
-                        .call()
-
-                    val hasConflicts = mergeResult.mergeStatus ==
-                        org.eclipse.jgit.api.MergeResult.MergeStatus.CONFLICTING
-
-                    val conflictFiles = if (hasConflicts) {
-                        mergeResult.conflicts?.keys?.map { filePath ->
-                            val absolutePath = "${config.repoRoot}/$filePath"
-                            val wikiRelPath = if (!config.wikiSubdir.isNullOrEmpty() &&
-                                filePath.startsWith("${config.wikiSubdir}/")) {
-                                filePath.removePrefix("${config.wikiSubdir}/")
-                            } else {
-                                filePath
-                            }
-                            // JGit already wrote real conflict-marker content directly into the
-                            // working tree at absolutePath (Desktop has no shadow indirection).
-                            // For markdown, prefer re-deriving that content via the block-aware
-                            // merge (tryBlockAwareConflict) over JGit's own line-level markers —
-                            // see that function's doc. Falls back to JGit's line-level marker
-                            // content, parsed the same way, for non-markdown/unparseable files.
-                            val jgitMarkerContent = runCatching { File(absolutePath).readText() }.getOrNull()
-                            val blockAware = tryBlockAwareConflict(repo, filePath, absolutePath, config.wikiRoot)
-                            val markerContent = blockAware?.markerText ?: jgitMarkerContent
-                            val hunks = blockAware?.hunks ?: markerContent?.let {
-                                ConflictResolver().parseConflictFile(absolutePath, it, config.wikiRoot)
-                                    .getOrNull()?.hunks
-                            } ?: emptyList()
-                            // Keep the working-tree file in sync with what the app will resolve
-                            // against — otherwise a block-merge conflict re-derivation would be
-                            // invisible to anything reading the file directly off disk.
-                            if (blockAware != null) {
-                                runCatching { File(absolutePath).writeText(blockAware.markerText) }
-                            }
-                            ConflictFile(
-                                filePath = absolutePath,
-                                wikiRelativePath = wikiRelPath,
-                                hunks = hunks,
-                                rawContent = markerContent,
-                                duplicateBlockIds = blockAware?.duplicateBlockIds ?: emptyList(),
-                            )
-                        } ?: emptyList()
-                    } else {
-                        emptyList()
-                    }
-
-                    // Determine changed files by comparing HEAD before and after merge
-                    val changedFiles = try {
-                        val headAfter = repo.resolve("HEAD")
-                        if (headAfter != null) {
-                            val revWalk = org.eclipse.jgit.revwalk.RevWalk(repo)
-                            val headCommit = revWalk.parseCommit(headAfter)
-                            val parentCommit = headCommit.parents.firstOrNull()?.let { revWalk.parseCommit(it) }
-                            val diffFormatter = org.eclipse.jgit.diff.DiffFormatter(
-                                org.eclipse.jgit.util.io.DisabledOutputStream.INSTANCE
-                            )
-                            diffFormatter.setRepository(repo)
-                            val files = if (parentCommit != null) {
-                                diffFormatter.scan(parentCommit.tree, headCommit.tree)
-                                    .map { "${config.repoRoot}/${it.newPath}" }
-                            } else {
-                                emptyList()
-                            }
-                            diffFormatter.close()
-                            revWalk.close()
-                            files
-                        } else {
-                            emptyList()
-                        }
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (_: Exception) {
-                        emptyList()
-                    }
-
-                    val wikiChangedFiles = if (!config.wikiSubdir.isNullOrEmpty()) {
-                        changedFiles.filter { it.startsWith("${config.repoRoot}/${config.wikiSubdir}/") }
-                    } else {
-                        changedFiles
-                    }
-
-                    MergeResult(
-                        hasConflicts = hasConflicts,
-                        conflicts = conflictFiles,
-                        changedFiles = wikiChangedFiles,
-                    ).right()
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                DomainError.GitError.FetchFailed("Merge failed: ${e.message}").left()
+            runGitOp({ e -> DomainError.GitError.FetchFailed("Merge failed: ${e.message}") }) {
+                openGit(config.repoRoot).use { git -> doMerge(git, config) }
             }
         }
+
+    private fun doMerge(git: Git, config: GitConfig): Either<DomainError.GitError, MergeResult> {
+        val repo = git.repository
+        val remoteRef = repo.resolve("${config.remoteName}/${config.remoteBranch}")
+            ?: return DomainError.GitError.FetchFailed(
+                "Remote ref ${config.remoteName}/${config.remoteBranch} not found"
+            ).left()
+
+        val mergeResult = git.merge()
+            .include(remoteRef)
+            .setStrategy(MergeStrategy.RECURSIVE)
+            .setFastForward(MergeCommand.FastForwardMode.NO_FF)
+            .call()
+
+        val hasConflicts = mergeResult.mergeStatus == org.eclipse.jgit.api.MergeResult.MergeStatus.CONFLICTING
+        val conflictFiles = JvmGitConflictSupport.buildConflictFiles(repo, mergeResult, config)
+
+        return MergeResult(
+            hasConflicts = hasConflicts,
+            conflicts = conflictFiles,
+            changedFiles = wikiSubdirFilteredChangedFiles(repo, config),
+        ).right()
+    }
+
+    /** Absolute paths, under `config.repoRoot`, changed between HEAD's pre- and post-merge parent. */
+    private fun wikiSubdirFilteredChangedFiles(repo: Repository, config: GitConfig): List<String> {
+        val changedFiles = computeChangedGitRelativePaths(repo).map { "${config.repoRoot}/$it" }
+        return if (!config.wikiSubdir.isNullOrEmpty()) {
+            changedFiles.filter { it.startsWith("${config.repoRoot}/${config.wikiSubdir}/") }
+        } else {
+            changedFiles
+        }
+    }
 
     override suspend fun push(config: GitConfig): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
-            try {
-                openGit(config.repoRoot).use { git ->
-                    val pushResults = git.push()
-                        .setRemote(config.remoteName)
-                        .also { configureAuthFromConfig(it, config) }
-                        .call()
-
-                    for (result in pushResults) {
-                        for (update in result.remoteUpdates) {
-                            if (update.status == org.eclipse.jgit.transport.RemoteRefUpdate.Status.REJECTED_NONFASTFORWARD ||
-                                update.status == org.eclipse.jgit.transport.RemoteRefUpdate.Status.REJECTED_OTHER_REASON) {
-                                return@withContext DomainError.GitError.PushFailed(
-                                    "Push rejected: ${update.status}"
-                                ).left()
-                            }
-                        }
-                    }
-                    Unit.right()
-                }
-            } catch (e: TransportException) {
-                DomainError.GitError.AuthFailed(e.message ?: "Push authentication failed").left()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                DomainError.GitError.PushFailed(e.message ?: "Push failed").left()
+            runGitTransportOp(
+                onAuthFailed = { e -> DomainError.GitError.AuthFailed(e.message ?: "Push authentication failed") },
+                onFailed = { e -> DomainError.GitError.PushFailed(e.message ?: "Push failed") },
+            ) {
+                openGit(config.repoRoot).use { git -> doPush(git, config) }
             }
         }
+
+    private fun doPush(git: Git, config: GitConfig): Either<DomainError.GitError, Unit> {
+        val pushResults = git.push()
+            .setRemote(config.remoteName)
+            .also { authConfigurer.configureTransport(it, config) }
+            .call()
+
+        val rejected = findRejectedUpdate(pushResults)
+        if (rejected != null) {
+            return DomainError.GitError.PushFailed("Push rejected: ${rejected.status}").left()
+        }
+        return Unit.right()
+    }
+
+    /** First remote ref update JGit rejected as a non-fast-forward or other conflict, if any. */
+    private fun findRejectedUpdate(
+        pushResults: Iterable<org.eclipse.jgit.transport.PushResult>,
+    ): org.eclipse.jgit.transport.RemoteRefUpdate? {
+        for (result in pushResults) {
+            for (update in result.remoteUpdates) {
+                if (update.status == org.eclipse.jgit.transport.RemoteRefUpdate.Status.REJECTED_NONFASTFORWARD ||
+                    update.status == org.eclipse.jgit.transport.RemoteRefUpdate.Status.REJECTED_OTHER_REASON) {
+                    return update
+                }
+            }
+        }
+        return null
+    }
 
     override suspend fun log(config: GitConfig, maxCount: Int): Either<DomainError.GitError, List<GitCommit>> =
         withContext(PlatformDispatcher.IO) {
-            try {
-                openGit(config.repoRoot).use { git ->
-                    val commits = git.log()
-                        .setMaxCount(maxCount)
-                        .call()
-                        .map { revCommit ->
-                            GitCommit(
-                                sha = revCommit.name,
-                                shortMessage = revCommit.shortMessage,
-                                authorName = revCommit.authorIdent.name,
-                                timestamp = revCommit.authorIdent.whenAsInstant.toEpochMilli(),
-                            )
-                        }
-                    commits.right()
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                DomainError.GitError.FetchFailed("Log failed: ${e.message}").left()
+            runGitOp({ e -> DomainError.GitError.FetchFailed("Log failed: ${e.message}") }) {
+                openGit(config.repoRoot).use { git -> buildGitLog(git, maxCount) }
             }
         }
 
+    private fun buildGitLog(git: Git, maxCount: Int): Either<DomainError.GitError, List<GitCommit>> {
+        val commits = git.log().setMaxCount(maxCount).call().map { revCommit -> toGitCommit(revCommit) }
+        return commits.right()
+    }
+
+    private fun toGitCommit(revCommit: RevCommit): GitCommit = GitCommit(
+        sha = revCommit.name,
+        shortMessage = revCommit.shortMessage,
+        authorName = revCommit.authorIdent.name,
+        timestamp = revCommit.authorIdent.whenAsInstant.toEpochMilli(),
+    )
+
     override suspend fun abortMerge(config: GitConfig): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
-            try {
-                openGit(config.repoRoot).use { git ->
-                    // ResetType.HARD, not MERGE: JGit 7.3.0's ResetCommand never implements
-                    // ResetType.MERGE/KEEP at all — both throw UnsupportedOperationException
-                    // unconditionally (verified by disassembling ResetCommand.class: its ResetType
-                    // switch routes MERGE and KEEP to the same throw; only HARD/MIXED/SOFT are
-                    // implemented). HARD's merge-state cleanup (MERGE_HEAD/MERGE_MSG removal,
-                    // RepositoryState MERGING -> SAFE) is unconditional on any ResetType other than
-                    // SOFT, so HARD correctly aborts the in-progress merge — empirically confirmed
-                    // against a real conflicted merge. See AndroidGitRepository.abortMerge()'s
-                    // matching comment for the full rationale (this platform has no shadow-worktree
-                    // reconciliation step to add, since Desktop reads/writes the real working tree
-                    // directly).
-                    git.reset()
-                        .setMode(org.eclipse.jgit.api.ResetCommand.ResetType.HARD)
-                        .call()
-                    Unit.right()
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                DomainError.GitError.CommitFailed("Abort merge failed: ${e.message}").left()
+            runGitOp({ e -> DomainError.GitError.CommitFailed("Abort merge failed: ${e.message}") }) {
+                openGit(config.repoRoot).use { git -> doAbortMerge(git) }
             }
         }
+
+    /**
+     * ResetType.HARD, not MERGE: JGit 7.3.0's `ResetCommand` never implements MERGE/KEEP at all —
+     * both throw `UnsupportedOperationException` unconditionally (verified by disassembling
+     * `ResetCommand.class`: its `ResetType` switch routes MERGE and KEEP to the same throw), a
+     * real pre-existing JGit limitation. HARD's merge-state cleanup (MERGE_HEAD/MERGE_MSG
+     * removal, RepositoryState MERGING -> SAFE) is unconditional on any type other than SOFT, so
+     * it correctly aborts the merge — empirically confirmed against a real conflict. See
+     * [AndroidGitRepository]'s `doAbortMerge` for the full rationale; this platform has no
+     * shadow-worktree reconciliation step to add, since Desktop reads/writes the real working
+     * tree directly.
+     */
+    private fun doAbortMerge(git: Git): Either<DomainError.GitError, Unit> {
+        git.reset()
+            .setMode(org.eclipse.jgit.api.ResetCommand.ResetType.HARD)
+            .call()
+        return Unit.right()
+    }
 
     override suspend fun checkoutFile(
         config: GitConfig,
         filePath: String,
         side: MergeSide,
     ): Either<DomainError.GitError, Unit> = withContext(PlatformDispatcher.IO) {
-        try {
-            openGit(config.repoRoot).use { git ->
-                val stage = when (side) {
-                    MergeSide.LOCAL -> org.eclipse.jgit.api.CheckoutCommand.Stage.OURS
-                    MergeSide.REMOTE -> org.eclipse.jgit.api.CheckoutCommand.Stage.THEIRS
-                }
-                git.checkout()
-                    .setStage(stage)
-                    .addPath(filePath.removePrefix("${config.repoRoot}/"))
-                    .call()
-                Unit.right()
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            DomainError.GitError.CommitFailed("Checkout file failed: ${e.message}").left()
+        runGitOp({ e -> DomainError.GitError.CommitFailed("Checkout file failed: ${e.message}") }) {
+            openGit(config.repoRoot).use { git -> doCheckoutFile(git, config, filePath, side) }
         }
+    }
+
+    private fun doCheckoutFile(
+        git: Git,
+        config: GitConfig,
+        filePath: String,
+        side: MergeSide,
+    ): Either<DomainError.GitError, Unit> {
+        val stage = when (side) {
+            MergeSide.LOCAL -> org.eclipse.jgit.api.CheckoutCommand.Stage.OURS
+            MergeSide.REMOTE -> org.eclipse.jgit.api.CheckoutCommand.Stage.THEIRS
+        }
+        git.checkout()
+            .setStage(stage)
+            .addPath(filePath.removePrefix("${config.repoRoot}/"))
+            .call()
+        return Unit.right()
     }
 
     override suspend fun markResolved(config: GitConfig, filePath: String): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
-            try {
+            runGitOp({ e -> DomainError.GitError.CommitFailed("Mark resolved failed: ${e.message}") }) {
                 openGit(config.repoRoot).use { git ->
                     val relativePath = filePath.removePrefix("${config.repoRoot}/")
                     git.add().addFilepattern(relativePath).call()
                     Unit.right()
                 }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                DomainError.GitError.CommitFailed("Mark resolved failed: ${e.message}").left()
             }
         }
 
     override suspend fun hasDetachedHead(config: GitConfig): Boolean =
         withContext(PlatformDispatcher.IO) {
-            try {
+            runGitOpOrFalse {
                 openGit(config.repoRoot).use { git ->
                     val fullBranch = git.repository.fullBranch ?: return@use false
                     !fullBranch.startsWith("refs/heads/")
                 }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                false
             }
         }
 
     override suspend fun removeStaleLockFile(config: GitConfig): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
-            try {
-                val lockFile = File(config.repoRoot, ".git/index.lock")
-                if (!lockFile.exists()) return@withContext Unit.right()
-
-                val ageMs = System.currentTimeMillis() - lockFile.lastModified()
-                return@withContext if (ageMs > 60_000L) {
-                    if (lockFile.delete()) {
-                        Unit.right()
-                    } else {
-                        DomainError.GitError.StaleLockFile(lockFile.absolutePath).left()
-                    }
-                } else {
-                    DomainError.GitError.StaleLockFile(lockFile.absolutePath).left()
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                DomainError.GitError.StaleLockFile("${config.repoRoot}/.git/index.lock").left()
+            runGitOp({ _ -> DomainError.GitError.StaleLockFile("${config.repoRoot}/.git/index.lock") }) {
+                deleteStaleLockFile(config)
             }
         }
+
+    private fun deleteStaleLockFile(config: GitConfig): Either<DomainError.GitError, Unit> {
+        val lockFile = File(config.repoRoot, ".git/index.lock")
+        if (!lockFile.exists()) return Unit.right()
+
+        val ageMs = System.currentTimeMillis() - lockFile.lastModified()
+        return if (ageMs > 60_000L) {
+            if (lockFile.delete()) Unit.right() else DomainError.GitError.StaleLockFile(lockFile.absolutePath).left()
+        } else {
+            DomainError.GitError.StaleLockFile(lockFile.absolutePath).left()
+        }
+    }
 
     // ── Private helpers ───────────────────────────────────────────────────────
 
-    private fun openGit(repoRoot: String): Git {
-        return Git.open(File(repoRoot))
-    }
-
-    @Suppress("UnusedPrivateProperty")
-    private fun configureAuthFromConfig(
-        cmd: org.eclipse.jgit.api.TransportCommand<*, *>,
-        config: GitConfig,
-    ) {
-        when (config.authType) {
-            GitAuthType.HTTPS_TOKEN -> {
-                val token = config.httpsTokenKey?.let { credentialAccess.retrieve(it) } ?: return
-                cmd.setCredentialsProvider(UsernamePasswordCredentialsProvider("", token))
-            }
-            GitAuthType.SSH_KEY -> {
-                val keyPath = config.sshKeyPath ?: return
-                // Retrieve stored passphrase (null = no passphrase or vault locked)
-                val passphrase = config.sshKeyPassphraseKey?.let { credentialAccess.retrieve(it) }
-                // TODO(vault-cred): Wire passphrase into MINA sshd KeyPasswordProvider for encrypted key support.
-                // The passphrase is retrieved correctly; the KeyPasswordProvider integration is a follow-up task.
-                val sshFactory = SshdSessionFactoryBuilder()
-                    .setPreferredAuthentications("publickey")
-                    .setHomeDirectory(File(System.getProperty("user.home")))
-                    .setSshDirectory(File(keyPath).parentFile ?: File(System.getProperty("user.home"), ".ssh"))
-                    .build(null)
-                cmd.setTransportConfigCallback { transport ->
-                    if (transport is org.eclipse.jgit.transport.SshTransport) {
-                        transport.sshSessionFactory = sshFactory
-                    }
-                }
-            }
-            GitAuthType.GITHUB_OAUTH -> {
-                val token = config.oauthTokenKey?.let { credentialAccess.retrieve(it) } ?: return
-                cmd.setCredentialsProvider(UsernamePasswordCredentialsProvider("x-oauth-basic", token))
-            }
-            GitAuthType.NONE -> {}
-        }
-    }
-
-    private fun configureAuth(
-        cmd: org.eclipse.jgit.api.TransportCommand<*, *>,
-        auth: GitAuth,
-        preResolvedToken: String?,
-    ) {
-        when (auth) {
-            is GitAuth.HttpsToken -> {
-                val token = preResolvedToken ?: run {
-                    logger.warn("HTTPS token unavailable for clone — proceeding unauthenticated")
-                    return
-                }
-                cmd.setCredentialsProvider(
-                    UsernamePasswordCredentialsProvider(auth.username, token)
-                )
-            }
-            is GitAuth.SshKey -> {
-                val sshFactory = SshdSessionFactoryBuilder()
-                    .setPreferredAuthentications("publickey")
-                    .setHomeDirectory(File(System.getProperty("user.home")))
-                    .setSshDirectory(File(auth.keyPath).parentFile ?: File(System.getProperty("user.home"), ".ssh"))
-                    .build(null)
-                cmd.setTransportConfigCallback { transport ->
-                    if (transport is org.eclipse.jgit.transport.SshTransport) {
-                        transport.sshSessionFactory = sshFactory
-                    }
-                }
-            }
-            is GitAuth.None -> { /* no auth configuration needed */ }
-        }
-    }
+    private fun openGit(repoRoot: String): Git = Git.open(File(repoRoot))
 }

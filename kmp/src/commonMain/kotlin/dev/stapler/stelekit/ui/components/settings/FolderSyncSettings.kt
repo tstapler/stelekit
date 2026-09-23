@@ -22,6 +22,7 @@ import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.StorageLocation
 import dev.stapler.stelekit.model.StorageMoveOperation
 import dev.stapler.stelekit.platform.HostAccessState
+import dev.stapler.stelekit.ui.components.MutedText
 import dev.stapler.stelekit.ui.components.StorageMoveChoiceDialog
 import dev.stapler.stelekit.ui.components.StorageMoveConfirmDialog
 import dev.stapler.stelekit.ui.components.UnifiedLocationPicker
@@ -215,11 +216,7 @@ fun FolderSyncSettings(
             // Critical Finding's failure mode (silent destruction of browser-only edits on
             // connect). Must be shown verbatim, before the button is ever clicked, and must never
             // be cut for space.
-            Text(
-                "Existing edits in this graph are kept — nothing is overwritten when you connect.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            MutedText("Existing edits in this graph are kept — nothing is overwritten when you connect.")
         }
     }
 }
