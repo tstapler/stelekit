@@ -31,6 +31,22 @@ Two things changed from the plan as written, both evidence-based (measured via
    escalation (ADR-001), hitting 500ms for the full pipeline would require moving pixel work off the
    main thread (OffscreenCanvas + Worker) — deliberately out of scope here; flagged as a follow-up.
 
+3. **`toUiMessage()` for `EncodingFailed` is bare `"Export failed"`, not `"Export failed: $message"`.**
+   Task 1.1.1b's text specified the latter, describing it as matching `SerializationFailed`'s
+   "existing" format — but `SerializationFailed`'s actual arm in `DomainError.kt` has no message
+   interpolation (`"Export failed"` only); the plan's description of it was inaccurate. The
+   implementation matches the real existing convention instead of the plan's incorrect claim about
+   it, per architecture review round 2.
+4. **AC5's alpha-flattening claim is now verified against an independent ground truth, not just
+   `flattenToOpaqueRgba`'s own unit tests.** `ImageEncoderWasmJsTest` draws a known semi-transparent
+   fill (alpha=0.3 and alpha=0xCC/255, matching AREA/LABEL), runs it through the real
+   `encodeToJpeg` pipeline, decodes the JPEG via the browser's own `<img>`/`getImageData`, and
+   compares against a reference pixel composited by the browser's *native* Canvas 2D
+   `fillStyle = 'rgba(...)'` (zero Kotlin math) — closing architecture review round 2's BLOCKER
+   that the original tests only proved `flattenToOpaqueRgba` was internally self-consistent, not
+   that its straight-alpha assumption matches what `toPixelMap()` actually returns on wasmJs.
+   Result: straight alpha confirmed — both tests pass within a 20/255 tolerance (JPEG quantization).
+
 Also: `wasmJsBrowserTest` (Karma/headless-Chrome) turned out to work reliably in this environment —
 1632 tests, ~44s, only 2 pre-existing failures unrelated to this feature (`MermaidRendererWasmJsTest`
 / `MermaidSecurityDirectiveWasmJsTest`, predating this branch). CI now runs `ImageEncoderWasmJsTest`

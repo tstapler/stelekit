@@ -28,3 +28,17 @@ internal fun flattenToOpaqueRgba(pixels: IntArray, width: Int, height: Int): Byt
     }
     return out
 }
+
+/**
+ * One `Char` per byte value (0–255) — the classic JS "binary string" idiom. Pure Kotlin so it's
+ * testable from `commonTest`; wasmJs's `putImageDataFromBinaryString` (`ImageEncoderInterop.kt`)
+ * is the only caller today, decoding it JS-side via `charCodeAt` as a single bulk interop call
+ * rather than a per-byte Kotlin↔JS round trip.
+ */
+internal fun ByteArray.toCharPerByteJsString(): String {
+    val chars = CharArray(size)
+    for (i in indices) {
+        chars[i] = (this[i].toInt() and 0xFF).toChar()
+    }
+    return chars.concatToString()
+}

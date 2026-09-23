@@ -58,4 +58,21 @@ class PixelBufferConverterTest {
             result.toList().subList(4, 8),
         )
     }
+
+    @Test
+    fun toCharPerByteJsString_roundTripsEveryByteValue() {
+        val bytes = ByteArray(256) { it.toByte() }
+
+        val result = bytes.toCharPerByteJsString()
+
+        assertEquals(256, result.length)
+        for (i in 0..255) {
+            assertEquals(i, result[i].code, "Expected char code $i at index $i, got ${result[i].code}")
+        }
+    }
+
+    @Test
+    fun toCharPerByteJsString_empty_producesEmptyString() {
+        assertEquals("", ByteArray(0).toCharPerByteJsString())
+    }
 }
