@@ -198,6 +198,7 @@ fun GitSetupScreen(
 
     // Step 5: connection test state
     var testState by remember { mutableStateOf<GitConnectionTestState>(GitConnectionTestState.Idle) }
+    var testConnectionJob by remember { mutableStateOf<Job?>(null) }
 
     // Save state
     var saving by remember { mutableStateOf(false) }
@@ -347,7 +348,8 @@ fun GitSetupScreen(
     }
 
     fun performTestConnection() {
-        scope.launch {
+        testConnectionJob?.cancel()
+        testConnectionJob = scope.launch {
             testState = GitConnectionTestState.InProgress
             val result = testGitConnection(currentFormSnapshot(), gitRepository, credentialStore)
             testState = if (result.isRight()) {
@@ -357,6 +359,14 @@ fun GitSetupScreen(
                 GitConnectionTestState.Failure("Connection failed: $errMsg")
             }
         }
+    }
+
+    // Finding #2: the underlying testRemote() JGit call is bounded (15s timeout), but that's still
+    // long enough that a visible way out is worth having rather than making the user wait it out.
+    fun cancelTestConnection() {
+        testConnectionJob?.cancel()
+        testConnectionJob = null
+        testState = GitConnectionTestState.Idle
     }
 
     fun performSave() {
@@ -385,7 +395,14 @@ fun GitSetupScreen(
                         onCloneComplete?.invoke(outcome.newGraphId)
                         onSave()
                     }
-                    is CloneAndSaveOutcome.SaveFailed -> saveError = "Failed to save configuration."
+                    is CloneAndSaveOutcome.SaveFailed -> {
+                        // The clone+register already succeeded (outcome.newGraphId is live in
+                        // GraphManager) — only the git config write failed. Tell the user their
+                        // clone is not lost, rather than leaving them wondering (finding #3).
+                        val label = formSnapshot.graphName.ifBlank { outcome.newGraphId }
+                        saveError = "Cloned \"$label\" successfully, but couldn't save the git sync " +
+                            "settings. You can configure sync later from the graph's settings."
+                    }
                 }
                 return@launch
             }
@@ -555,6 +572,7 @@ fun GitSetupScreen(
                     existingRepoNeedsAllFilesAccess = existingRepoNeedsAllFilesAccess,
                     onBack = { step = 4 },
                     onTestConnection = ::performTestConnection,
+                    onCancelTestConnection = ::cancelTestConnection,
                     cloneInProgress = cloneInProgress,
                     cloneProgress = cloneProgress,
                     cloneError = cloneError,

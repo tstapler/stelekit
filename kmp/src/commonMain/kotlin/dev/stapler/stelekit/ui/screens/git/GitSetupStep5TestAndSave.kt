@@ -37,6 +37,7 @@ internal fun Step5TestAndSave(
     saveError: String?,
     onBack: () -> Unit,
     onTestConnection: () -> Unit,
+    onCancelTestConnection: () -> Unit,
     cloneInProgress: Boolean = false,
     cloneProgress: String = "",
     cloneError: String? = null,
@@ -54,7 +55,11 @@ internal fun Step5TestAndSave(
             AllFilesAccessWarning()
         }
 
-        TestConnectionButton(testState = testState, onTestConnection = onTestConnection)
+        TestConnectionButton(
+            testState = testState,
+            onTestConnection = onTestConnection,
+            onCancelTestConnection = onCancelTestConnection,
+        )
 
         if (cloneInProgress) {
             CloneProgressRow(cloneProgress)
@@ -117,42 +122,54 @@ private fun AllFilesAccessWarning() {
 private fun TestConnectionButton(
     testState: GitConnectionTestState,
     onTestConnection: () -> Unit,
+    onCancelTestConnection: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(
-            onClick = onTestConnection,
-            enabled = testState !is GitConnectionTestState.InProgress,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            if (testState is GitConnectionTestState.InProgress) {
-                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                Spacer(modifier = Modifier.width(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(
+                onClick = onTestConnection,
+                enabled = testState !is GitConnectionTestState.InProgress,
+                modifier = Modifier.weight(1f),
+            ) {
+                if (testState is GitConnectionTestState.InProgress) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                Text("Test connection")
             }
-            Text("Test connection")
+            // Finding #2: testRemote() is bounded by a 15s timeout, but a disabled button with no
+            // way out until then is still worth an explicit escape hatch.
+            if (testState is GitConnectionTestState.InProgress) {
+                Spacer(modifier = Modifier.width(8.dp))
+                TextButton(onClick = onCancelTestConnection) { Text("Cancel") }
+            }
         }
 
-        val resultMessage = when (testState) {
-            is GitConnectionTestState.Success -> testState.message
-            is GitConnectionTestState.Failure -> testState.message
-            else -> null
-        }
-        if (resultMessage != null) {
-            val success = testState is GitConnectionTestState.Success
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = if (success) Icons.Default.Check else Icons.Default.Error,
-                    contentDescription = if (success) "Success" else "Error",
-                    tint = if (success) Color(0xFF047857) else MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(16.dp),
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = resultMessage,
-                    color = if (success) Color(0xFF047857) else MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-        }
+        TestResultRow(testState)
+    }
+}
+
+@Composable
+private fun TestResultRow(testState: GitConnectionTestState) {
+    val resultMessage = when (testState) {
+        is GitConnectionTestState.Success -> testState.message
+        is GitConnectionTestState.Failure -> testState.message
+        else -> null
+    } ?: return
+    val success = testState is GitConnectionTestState.Success
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            imageVector = if (success) Icons.Default.Check else Icons.Default.Error,
+            contentDescription = if (success) "Success" else "Error",
+            tint = if (success) Color(0xFF047857) else MaterialTheme.colorScheme.error,
+            modifier = Modifier.size(16.dp),
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = resultMessage,
+            color = if (success) Color(0xFF047857) else MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.bodySmall,
+        )
     }
 }
 

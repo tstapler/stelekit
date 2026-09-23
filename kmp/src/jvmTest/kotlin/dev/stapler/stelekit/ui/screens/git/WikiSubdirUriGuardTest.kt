@@ -30,20 +30,6 @@ class WikiSubdirUriGuardTest {
         assertFalse(looksLikeUri(""))
     }
 
-    @Test
-    fun `wikiSubdirError accepts relative paths and rejects absolute or escaping ones`() {
-        assertTrue(wikiSubdirError("") == null)
-        assertTrue(wikiSubdirError("notes/pages") == null)
-        listOf("/home/me/notes", "~/notes", "C:\\notes", "../up", "a/../b").forEach {
-            assertTrue(wikiSubdirError(it) != null, it)
-        }
-    }
-
-    @Test
-    fun `repoNameFromUrl extracts the repository name`() {
-        assertTrue(repoNameFromUrl("https://github.com/me/my-notes.git") == "my-notes")
-        assertTrue(repoNameFromUrl("git@github.com:me/wiki") == "wiki")
-        assertTrue(repoNameFromUrl("https://github.com/me/wiki/") == "wiki")
-        assertTrue(repoNameFromUrl("") == null)
-    }
+    // wikiSubdirError/repoNameFromUrl coverage moved to commonTest's GitSetupScreenHelpersTest so
+    // Android/iOS/wasmJs also exercise this pure commonMain logic, not just JVM.
 }

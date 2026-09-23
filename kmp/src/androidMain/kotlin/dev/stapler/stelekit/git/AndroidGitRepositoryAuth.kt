@@ -5,7 +5,6 @@ package dev.stapler.stelekit.git
 
 import com.jcraft.jsch.JSch
 import com.jcraft.jsch.Session
-import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.platform.security.CredentialAccess
@@ -13,7 +12,6 @@ import org.eclipse.jgit.api.TransportCommand
 import org.eclipse.jgit.transport.ssh.jsch.JschConfigSessionFactory
 import org.eclipse.jgit.transport.ssh.jsch.OpenSshConfig
 import org.eclipse.jgit.transport.SshTransport
-import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider
 import org.eclipse.jgit.util.FS
 
 /**
@@ -53,24 +51,12 @@ internal class AndroidGitAuthConfigurer(
 
     /** Used by [AndroidGitRepository.fetch]/[AndroidGitRepository.push] — auth sourced from [GitConfig]. */
     fun configureTransport(cmd: TransportCommand<*, *>, config: GitConfig) {
-        when (config.authType) {
-            GitAuthType.HTTPS_TOKEN -> {
-                val token = config.httpsTokenKey?.let { credentialAccess().retrieve(it) } ?: return
-                cmd.setCredentialsProvider(UsernamePasswordCredentialsProvider("", token))
-            }
-            GitAuthType.SSH_KEY -> {
-                val passphrase = config.sshKeyPassphraseKey?.let { credentialAccess().retrieve(it) }
-                cmd.setTransportConfigCallback { transport ->
-                    if (transport is SshTransport && config.sshKeyPath != null) {
-                        transport.sshSessionFactory = buildJschSessionFactory(config.sshKeyPath, passphrase)
-                    }
+        configureTransportAuth(cmd, config, credentialAccess()) { passphrase ->
+            cmd.setTransportConfigCallback { transport ->
+                if (transport is SshTransport && config.sshKeyPath != null) {
+                    transport.sshSessionFactory = buildJschSessionFactory(config.sshKeyPath, passphrase)
                 }
             }
-            GitAuthType.GITHUB_OAUTH -> {
-                val token = config.oauthTokenKey?.let { credentialAccess().retrieve(it) } ?: return
-                cmd.setCredentialsProvider(UsernamePasswordCredentialsProvider("x-oauth-basic", token))
-            }
-            GitAuthType.NONE -> {}
         }
     }
 

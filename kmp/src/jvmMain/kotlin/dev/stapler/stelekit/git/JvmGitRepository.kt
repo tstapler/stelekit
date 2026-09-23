@@ -104,17 +104,7 @@ class JvmGitRepository(
 
     override suspend fun testRemote(url: String, auth: GitAuth): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
-            runGitTransportOp(
-                onAuthFailed = { e -> DomainError.GitError.AuthFailed(e.message ?: "Authentication failed") },
-                onFailed = { e -> DomainError.GitError.FetchFailed(e.message ?: "Connection test failed") },
-            ) {
-                val preResolvedToken: String? = if (auth is GitAuth.HttpsToken) auth.tokenProvider() else null
-                Git.lsRemoteRepository()
-                    .setRemote(url)
-                    .also { authConfigurer.configureAuth(it, auth, preResolvedToken) }
-                    .call()
-                Unit.right()
-            }
+            testRemoteViaLsRemote(url, auth, authConfigurer::configureAuth)
         }
 
     override suspend fun fetch(config: GitConfig): Either<DomainError.GitError, FetchResult> =
