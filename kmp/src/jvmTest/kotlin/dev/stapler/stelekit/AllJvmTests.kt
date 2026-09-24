@@ -32,6 +32,7 @@ import dev.stapler.stelekit.domain.ClaudeTopicEnricherTest
 import dev.stapler.stelekit.domain.UrlFetcherJvmTest
 import dev.stapler.stelekit.export.ExportIntegrationTest
 import dev.stapler.stelekit.export.HtmlExporterTest
+import dev.stapler.stelekit.git.GitRepoHistoryStoreTest
 import dev.stapler.stelekit.integration.JournalParseReproTest
 import dev.stapler.stelekit.integration.PipelineReproductionTest
 import dev.stapler.stelekit.llm.RemoteLlmProviderTest
@@ -147,6 +148,7 @@ import org.junit.runners.Suite
     UrlFetcherJvmTest::class,
     ExportIntegrationTest::class,
     HtmlExporterTest::class,
+    GitRepoHistoryStoreTest::class,
     JournalParseReproTest::class,
     PipelineReproductionTest::class,
     ChangeApplierTest::class,
