@@ -9,17 +9,16 @@ import arrow.core.right
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.error.DomainError
-import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.git.model.SyncState
-import dev.stapler.stelekit.platform.FileSystem
+import dev.stapler.stelekit.git.testsupport.StubConfigRepository
+import dev.stapler.stelekit.git.testsupport.StubFileSystem
+import dev.stapler.stelekit.git.testsupport.StubGitRepository
+import dev.stapler.stelekit.git.testsupport.sampleConfig
 import dev.stapler.stelekit.platform.NetworkMonitor
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assume.assumeTrue
@@ -47,58 +46,6 @@ import kotlin.test.assertTrue
  */
 class GitSyncServiceRateLimitRetryTest {
 
-    private open class StubFileSystem : FileSystem {
-        override fun getDefaultGraphPath() = "/tmp"
-        override fun expandTilde(path: String) = path
-        override fun readFile(path: String): String? = null
-        override fun writeFile(path: String, content: String): Boolean = true
-        override fun listFiles(path: String): List<String> = emptyList()
-        override fun listDirectories(path: String): List<String> = emptyList()
-        override fun fileExists(path: String) = false
-        override fun directoryExists(path: String) = true
-        override fun createDirectory(path: String) = true
-        override fun deleteFile(path: String) = true
-        override fun pickDirectory(): String? = null
-        override fun getLastModifiedTime(path: String): Long? = null
-        override fun startExternalChangeDetection(scope: CoroutineScope, onChange: () -> Unit) {}
-        override fun stopExternalChangeDetection() {}
-    }
-
-    /** Strict [GitRepository] stub — each test overrides only the methods its scenario exercises. */
-    private open class StubGitRepository : GitRepository {
-        override suspend fun isGitRepo(path: String): Boolean = error("not implemented in stub")
-        override suspend fun init(repoRoot: String): Either<DomainError.GitError, Unit> = error("not implemented in stub")
-        override suspend fun clone(url: String, localPath: String, auth: GitAuth, onProgress: (String) -> Unit): Either<DomainError.GitError, Unit> = error("not implemented in stub")
-        override suspend fun fetch(config: GitConfig): Either<DomainError.GitError, FetchResult> = error("not implemented in stub")
-        override suspend fun status(config: GitConfig): Either<DomainError.GitError, GitStatus> = error("not implemented in stub")
-        override suspend fun stageSubdir(config: GitConfig): Either<DomainError.GitError, Unit> = error("not implemented in stub")
-        override suspend fun commit(config: GitConfig, message: String): Either<DomainError.GitError, String> = error("not implemented in stub")
-        override suspend fun merge(config: GitConfig): Either<DomainError.GitError, MergeResult> = error("not implemented in stub")
-        override suspend fun push(config: GitConfig): Either<DomainError.GitError, Unit> = error("not implemented in stub")
-        override suspend fun log(config: GitConfig, maxCount: Int): Either<DomainError.GitError, List<GitCommit>> = error("not implemented in stub")
-        override suspend fun abortMerge(config: GitConfig): Either<DomainError.GitError, Unit> = error("not implemented in stub")
-        override suspend fun checkoutFile(config: GitConfig, filePath: String, side: MergeSide): Either<DomainError.GitError, Unit> = error("not implemented in stub")
-        override suspend fun markResolved(config: GitConfig, filePath: String): Either<DomainError.GitError, Unit> = error("not implemented in stub")
-        override suspend fun hasDetachedHead(config: GitConfig): Boolean = false
-        override suspend fun removeStaleLockFile(config: GitConfig): Either<DomainError.GitError, Unit> = Unit.right()
-    }
-
-    private class StubConfigRepository(
-        private val configResult: Either<DomainError, GitConfig?>,
-    ) : GitConfigRepository {
-        override suspend fun getConfig(graphId: String): Either<DomainError, GitConfig?> = configResult
-        override suspend fun saveConfig(config: GitConfig): Either<DomainError, Unit> = Unit.right()
-        override suspend fun deleteConfig(graphId: String): Either<DomainError, Unit> = Unit.right()
-        override fun observeConfig(graphId: String): Flow<Either<DomainError, GitConfig?>> = flowOf(configResult)
-    }
-
-    private val sampleConfig = GitConfig(
-        graphId = "test-graph",
-        repoRoot = "/repo",
-        wikiSubdir = "",
-        authType = GitAuthType.NONE,
-    )
-
     private fun buildService(gitRepository: GitRepository): GitSyncService {
         val stubFs = StubFileSystem()
         val graphLoader = GraphLoader(
@@ -123,49 +70,64 @@ class GitSyncServiceRateLimitRetryTest {
         NetworkMonitor().isOnline,
     )
 
+    /** Mutable call counter closed over by a [StubGitRepository] override and read back by a test. */
+    private class CallCounter {
+        var value = 0
+            private set
+
+        fun increment(): Int = ++value
+    }
+
+    /**
+     * A [GitRepository] whose [fetch][GitRepository.fetch] increments [counter] and delegates the
+     * result to [onCall] — the common "count fetch calls, react by call number" shape shared by
+     * the `fetchOnly`-driven tests below.
+     */
+    private fun countingFetchRepo(
+        counter: CallCounter,
+        onCall: suspend (callCount: Int) -> Either<DomainError.GitError, FetchResult>,
+    ): GitRepository = object : StubGitRepository() {
+        override suspend fun fetch(config: GitConfig): Either<DomainError.GitError, FetchResult> =
+            onCall(counter.increment())
+    }
+
     // ── (a)/(b): no re-invocation before the delay elapses; exactly one re-invocation after ──
 
     @Test
     fun `scheduleRateLimitRetry does not re-invoke fetchOnly before retryAfterSeconds elapses, then fires exactly once`() {
         requireOnline()
         runBlocking {
-            var fetchCallCount = 0
-            val repo = object : StubGitRepository() {
-                override suspend fun fetch(config: GitConfig): Either<DomainError.GitError, FetchResult> {
-                    fetchCallCount++
-                    return if (fetchCallCount == 1) {
-                        DomainError.GitError.RateLimited(retryAfterSeconds = 1).left()
-                    } else {
-                        // A real suspension point here (unlike a synchronous return) is what
-                        // actually exercises scheduleRateLimitRetry's self-cancellation footgun:
-                        // the scheduled job invokes fetchOnly(), whose own cancel-at-top guard
-                        // would previously cancel its OWN still-running job if rateLimitRetryJob
-                        // hadn't been cleared first — the cancellation only manifests at the next
-                        // real suspension point, which a non-suspending stub body would never hit.
-                        delay(1)
-                        FetchResult(hasRemoteChanges = false, remoteCommitCount = 0).right()
-                    }
+            val counter = CallCounter()
+            val repo = countingFetchRepo(counter) { count ->
+                if (count == 1) {
+                    DomainError.GitError.RateLimited(retryAfterSeconds = 1).left()
+                } else {
+                    // A real suspension point (not a synchronous return) is what exercises the
+                    // self-cancellation footgun: the cancellation only manifests at the next
+                    // real suspend point, which a non-suspending stub body would never hit.
+                    delay(1)
+                    FetchResult(hasRemoteChanges = false, remoteCommitCount = 0).right()
                 }
             }
             val service = buildService(repo)
 
             service.fetchOnly("test-graph")
-            assertEquals(1, fetchCallCount)
+            assertEquals(1, counter.value)
             assertTrue(service.syncState.value is SyncState.RateLimited)
 
             // Well before the 1s scheduled retry, no re-invocation should have happened yet.
             delay(300)
-            assertEquals(1, fetchCallCount, "must not re-invoke fetchOnly before the stated delay elapses")
+            assertEquals(1, counter.value, "must not re-invoke fetchOnly before the stated delay elapses")
 
             // After the delay elapses, exactly one retry should fire.
             withTimeout(5_000) {
-                while (fetchCallCount < 2) delay(50)
+                while (counter.value < 2) delay(50)
             }
-            assertEquals(2, fetchCallCount, "must re-invoke fetchOnly exactly once after the delay")
+            assertEquals(2, counter.value, "must re-invoke fetchOnly exactly once after the delay")
 
             // Confirm it doesn't fire again.
             delay(300)
-            assertEquals(2, fetchCallCount, "must not fire more than once for a single scheduled retry")
+            assertEquals(2, counter.value, "must not fire more than once for a single scheduled retry")
 
             service.shutdown()
         }
@@ -177,23 +139,18 @@ class GitSyncServiceRateLimitRetryTest {
     fun `shutdown cancels a pending scheduled retry before it fires`() {
         requireOnline()
         runBlocking {
-            var fetchCallCount = 0
-            val repo = object : StubGitRepository() {
-                override suspend fun fetch(config: GitConfig): Either<DomainError.GitError, FetchResult> {
-                    fetchCallCount++
-                    return DomainError.GitError.RateLimited(retryAfterSeconds = 1).left()
-                }
-            }
+            val counter = CallCounter()
+            val repo = countingFetchRepo(counter) { DomainError.GitError.RateLimited(retryAfterSeconds = 1).left() }
             val service = buildService(repo)
 
             service.fetchOnly("test-graph")
-            assertEquals(1, fetchCallCount)
+            assertEquals(1, counter.value)
 
             service.shutdown()
 
             // Wait well past the 1s delay window — shutdown must have cancelled the scheduled retry.
             delay(1_500)
-            assertEquals(1, fetchCallCount, "shutdown must cancel the pending scheduled retry")
+            assertEquals(1, counter.value, "shutdown must cancel the pending scheduled retry")
         }
     }
 
@@ -203,31 +160,28 @@ class GitSyncServiceRateLimitRetryTest {
     fun `a manual fetchOnly call before the delay elapses cancels the pending scheduled retry - no double-fire`() {
         requireOnline()
         runBlocking {
-            var fetchCallCount = 0
-            val repo = object : StubGitRepository() {
-                override suspend fun fetch(config: GitConfig): Either<DomainError.GitError, FetchResult> {
-                    fetchCallCount++
-                    // First call: rate limited (schedules a retry). Every subsequent call: success.
-                    return if (fetchCallCount == 1) {
-                        DomainError.GitError.RateLimited(retryAfterSeconds = 1).left()
-                    } else {
-                        FetchResult(hasRemoteChanges = false, remoteCommitCount = 0).right()
-                    }
+            val counter = CallCounter()
+            // First call: rate limited (schedules a retry). Every subsequent call: success.
+            val repo = countingFetchRepo(counter) { count ->
+                if (count == 1) {
+                    DomainError.GitError.RateLimited(retryAfterSeconds = 1).left()
+                } else {
+                    FetchResult(hasRemoteChanges = false, remoteCommitCount = 0).right()
                 }
             }
             val service = buildService(repo)
 
             service.fetchOnly("test-graph")
-            assertEquals(1, fetchCallCount)
+            assertEquals(1, counter.value)
 
             // Manual trigger before the 1s scheduled retry fires — must cancel the pending job.
             delay(200)
             service.fetchOnly("test-graph")
-            assertEquals(2, fetchCallCount, "the manual call itself must have invoked fetch")
+            assertEquals(2, counter.value, "the manual call itself must have invoked fetch")
 
             // Wait past the original scheduled-retry window — it must NOT also fire (no double-fire).
             delay(1_200)
-            assertEquals(2, fetchCallCount, "the superseded scheduled retry must never fire")
+            assertEquals(2, counter.value, "the superseded scheduled retry must never fire")
 
             service.shutdown()
         }

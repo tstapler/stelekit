@@ -1,6 +1,8 @@
 package dev.stapler.stelekit
 
 import dev.stapler.stelekit.db.WalConfiguredCallbackTest
+import dev.stapler.stelekit.git.AndroidGitRepositoryTestRemoteTest
+import dev.stapler.stelekit.git.GitSyncBusyCounterSharedWiringTest
 import dev.stapler.stelekit.platform.LegacyPathValidationTest
 import dev.stapler.stelekit.platform.PlatformFileSystemPickerTest
 import dev.stapler.stelekit.platform.PlatformFileSystemSafTest
@@ -24,6 +26,8 @@ import org.junit.runners.Suite
 @RunWith(Suite::class)
 @Suite.SuiteClasses(
     WalConfiguredCallbackTest::class,
+    GitSyncBusyCounterSharedWiringTest::class,
+    AndroidGitRepositoryTestRemoteTest::class,
     LegacyPathValidationTest::class,
     PlatformFileSystemPickerTest::class,
     PlatformFileSystemSafTest::class,
@@ -50,5 +54,9 @@ import org.junit.runners.Suite
     // this target (FileNotFoundException) — kt_android_library's `associates` pulls in compiled
     // classes but not the android_main target's assets. Both are Bazel Android-test-harness
     // configuration gaps, not defects in the tests themselves; fixing them is out of scope here.
+    //
+    // NewGraphFlowTest is excluded for the same reason (1) above — it also calls
+    // ComposeContentTestRule.setContent, hitting the same resolved-jar/NoSuchMethodError gap.
+    // Runs fine under Gradle's testDebugUnitTest.
 )
 class AllAndroidUnitTests

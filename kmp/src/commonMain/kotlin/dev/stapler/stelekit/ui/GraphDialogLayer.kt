@@ -19,6 +19,7 @@ import dev.stapler.stelekit.performance.DebugBuildConfig
 import dev.stapler.stelekit.performance.FrameMetric
 import dev.stapler.stelekit.performance.DebugMenuState
 import dev.stapler.stelekit.platform.FileSystem
+import dev.stapler.stelekit.ui.screens.git.CloneMode
 import dev.stapler.stelekit.ui.screens.git.ConflictResolutionScreen
 import dev.stapler.stelekit.git.GitHubDeviceFlowClient
 import dev.stapler.stelekit.ui.screens.git.GitSetupScreen
@@ -262,7 +263,7 @@ private fun GitSetupDialogContent(
         graphPath = gitSync.graphPath,
         onCloneComplete = gitSync.onCloneComplete,
         initialStep = appState.gitSetupInitialStep,
-        initialUseExistingClone = !appState.gitSetupOpenForClone,
+        initialCloneMode = if (appState.gitSetupOpenForClone) CloneMode.CloneNewRepository else CloneMode.UseExistingClone,
         existingConfig = existingConfig,
         detectedRepoRoot = gitSync.detectedRepoRoot,
         detectedWikiSubdir = gitSync.detectedWikiSubdir,

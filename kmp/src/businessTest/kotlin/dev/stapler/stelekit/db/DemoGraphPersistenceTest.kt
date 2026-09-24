@@ -239,4 +239,34 @@ class DemoGraphPersistenceTest {
         assertEquals("some-folder", info.displayName)
         assertEquals("", info.description)
     }
+
+    @Test
+    fun `updateGraphDescription updates a normal graph's description and it survives a registry reload`() =
+        kotlinx.coroutines.test.runTest {
+            val settings = InMemorySettings()
+            val id = makeGraphManager(settings).addGraph("/tmp/some-folder", null, "Work notes", "Original description")
+
+            val result = makeGraphManager(settings).updateGraphDescription(id, " Updated description ")
+            assertTrue(result, "updateGraphDescription() must return true for a normal graph")
+
+            val reloaded = makeGraphManager(settings)
+            val info = reloaded.graphRegistry.value.graphs.first { it.id == id }
+            assertEquals("Updated description", info.description)
+        }
+
+    @Test
+    fun `updateGraphDescription returns false for demo graph`() {
+        val graphManager = makeGraphManager()
+
+        graphManager.addDemoGraph()
+        val result = graphManager.updateGraphDescription(DEMO_GRAPH_ID, "Custom Description")
+
+        assertFalse(result, "updateGraphDescription() must return false for the demo graph")
+        val demoEntry = graphManager.graphRegistry.value.graphs.first { it.id == DEMO_GRAPH_ID }
+        assertEquals(
+            "",
+            demoEntry.description,
+            "description must remain unchanged after a rejected updateGraphDescription",
+        )
+    }
 }

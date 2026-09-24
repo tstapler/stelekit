@@ -98,6 +98,22 @@ class JvmGitRepositoryTest {
     }
 
     /**
+     * Clones [config]'s `repoRoot` into a new bare directory (named from [prefix]) and adds it as
+     * the `origin` remote — shared setup for every merge/conflict/abort test below that needs a
+     * real remote to fetch from.
+     */
+    private fun cloneToNewBareOrigin(prefix: String): File {
+        val originDir = createTempDirectory(prefix).toFile()
+        Git.cloneRepository().setURI(config.repoRoot).setBare(true).setDirectory(originDir).call().close()
+        Git.open(File(config.repoRoot)).use { git ->
+            git.remoteAdd().setName("origin")
+                .setUri(org.eclipse.jgit.transport.URIish(originDir.absolutePath))
+                .call()
+        }
+        return originDir
+    }
+
+    /**
      * merge() must parse the real conflict-marker content JGit wrote directly into the working
      * tree into hunks (via [ConflictResolver.parseConflictFile]) for line-level resolution,
      * instead of always shipping an empty hunk list — the pre-existing gap the conflict-resolution
@@ -119,13 +135,7 @@ class JvmGitRepositoryTest {
         assertTrue(repository.stageSubdir(mergeConfig).isRight())
         assertTrue(repository.commit(mergeConfig, "base commit").isRight())
 
-        val originDir = createTempDirectory("stelekit_jvm_git_merge_origin_").toFile()
-        Git.cloneRepository().setURI(config.repoRoot).setBare(true).setDirectory(originDir).call().close()
-        Git.open(File(config.repoRoot)).use { git ->
-            git.remoteAdd().setName("origin")
-                .setUri(org.eclipse.jgit.transport.URIish(originDir.absolutePath))
-                .call()
-        }
+        val originDir = cloneToNewBareOrigin("stelekit_jvm_git_merge_origin_")
 
         val originWorkDir = createTempDirectory("stelekit_jvm_git_merge_origin_work_").toFile()
         Git.cloneRepository().setURI(originDir.absolutePath).setDirectory(originWorkDir).call().use { originGit ->
@@ -180,13 +190,7 @@ class JvmGitRepositoryTest {
         assertTrue(repository.stageSubdir(mergeConfig).isRight())
         assertTrue(repository.commit(mergeConfig, "base commit").isRight())
 
-        val originDir = createTempDirectory("stelekit_jvm_git_resolve_origin_").toFile()
-        Git.cloneRepository().setURI(config.repoRoot).setBare(true).setDirectory(originDir).call().close()
-        Git.open(File(config.repoRoot)).use { git ->
-            git.remoteAdd().setName("origin")
-                .setUri(org.eclipse.jgit.transport.URIish(originDir.absolutePath))
-                .call()
-        }
+        val originDir = cloneToNewBareOrigin("stelekit_jvm_git_resolve_origin_")
 
         val originWorkDir = createTempDirectory("stelekit_jvm_git_resolve_origin_work_").toFile()
         Git.cloneRepository().setURI(originDir.absolutePath).setDirectory(originWorkDir).call().use { originGit ->
@@ -253,13 +257,7 @@ class JvmGitRepositoryTest {
         assertTrue(repository.stageSubdir(mergeConfig).isRight())
         assertTrue(repository.commit(mergeConfig, "base commit").isRight())
 
-        val originDir = createTempDirectory("stelekit_jvm_git_merge_origin3_").toFile()
-        Git.cloneRepository().setURI(config.repoRoot).setBare(true).setDirectory(originDir).call().close()
-        Git.open(File(config.repoRoot)).use { git ->
-            git.remoteAdd().setName("origin")
-                .setUri(org.eclipse.jgit.transport.URIish(originDir.absolutePath))
-                .call()
-        }
+        val originDir = cloneToNewBareOrigin("stelekit_jvm_git_merge_origin3_")
 
         // remote edits "second"'s content only, keeping its id.
         val originWorkDir = createTempDirectory("stelekit_jvm_git_merge_origin_work3_").toFile()
@@ -322,13 +320,7 @@ class JvmGitRepositoryTest {
         assertTrue(repository.stageSubdir(mergeConfig).isRight())
         assertTrue(repository.commit(mergeConfig, "base commit").isRight())
 
-        val originDir = createTempDirectory("stelekit_jvm_git_merge_origin2_").toFile()
-        Git.cloneRepository().setURI(config.repoRoot).setBare(true).setDirectory(originDir).call().close()
-        Git.open(File(config.repoRoot)).use { git ->
-            git.remoteAdd().setName("origin")
-                .setUri(org.eclipse.jgit.transport.URIish(originDir.absolutePath))
-                .call()
-        }
+        val originDir = cloneToNewBareOrigin("stelekit_jvm_git_merge_origin2_")
 
         // remote reparents B under A only; C and D untouched.
         val originWorkDir = createTempDirectory("stelekit_jvm_git_merge_origin_work2_").toFile()
@@ -386,13 +378,7 @@ class JvmGitRepositoryTest {
         assertTrue(repository.stageSubdir(mergeConfig).isRight())
         assertTrue(repository.commit(mergeConfig, "base commit").isRight())
 
-        val originDir = createTempDirectory("stelekit_jvm_git_origin_").toFile()
-        Git.cloneRepository().setURI(config.repoRoot).setBare(true).setDirectory(originDir).call().close()
-        Git.open(File(config.repoRoot)).use { git ->
-            git.remoteAdd().setName("origin")
-                .setUri(org.eclipse.jgit.transport.URIish(originDir.absolutePath))
-                .call()
-        }
+        val originDir = cloneToNewBareOrigin("stelekit_jvm_git_origin_")
 
         val originWorkDir = createTempDirectory("stelekit_jvm_git_origin_work_").toFile()
         Git.cloneRepository().setURI(originDir.absolutePath).setDirectory(originWorkDir).call().use { originGit ->
@@ -442,5 +428,32 @@ class JvmGitRepositoryTest {
             (statusResult as Either.Right).value.hasLocalChanges,
             "expected a clean working tree after abortMerge",
         )
+    }
+
+    /**
+     * Regression test for the "Test connection" button in the clone-a-new-repo setup flow always
+     * failing with "repository not found: <local repoRoot>" (GitSetupScreen previously called
+     * [JvmGitRepository.fetch], which `Git.open()`s `config.repoRoot` — but that path is only
+     * created by [JvmGitRepository.clone] on Save, so it never exists yet at test time).
+     * [testRemote] must succeed against a real, reachable remote without any local repo present.
+     */
+    @Test
+    fun `testRemote succeeds against a remote with no local clone present`() = runTest {
+        val bareOrigin = createTempDirectory("stelekit_jvm_git_bare_origin_").toFile()
+        Git.init().setBare(true).setDirectory(bareOrigin).setInitialBranch("main").call().close()
+
+        val destination = File(tempDir, "not-cloned-yet")
+        assertFalse(destination.exists(), "destination must not exist — that's the bug this test guards against")
+
+        val result = repository.testRemote(bareOrigin.absolutePath, GitAuth.None)
+        assertTrue(result.isRight(), "testRemote failed against a real, empty bare remote: $result")
+        assertFalse(destination.exists(), "testRemote must not create/touch the future clone destination")
+    }
+
+    @Test
+    fun `testRemote reports failure for a nonexistent remote`() = runTest {
+        val missingRemote = File(tempDir, "does-not-exist").absolutePath
+        val result = repository.testRemote(missingRemote, GitAuth.None)
+        assertTrue(result.isLeft(), "expected testRemote to fail against a nonexistent remote")
     }
 }

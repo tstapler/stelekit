@@ -1414,7 +1414,6 @@ private fun GraphContent(deps: GraphContentDeps) {
                     val windowSizeClass = windowSizeClassFor(maxWidth)
                     val isMobile = windowSizeClass.isMobile
                     val snackbarHostState = remember { SnackbarHostState() }
-                    var showAddGraphDialog by remember { mutableStateOf(false) }
                     var demoBannerDismissed by remember { mutableStateOf(false) }
                     // Story 2.2.1: new-graph "App storage" flow (Android-only for now — gated on
                     // fileSystem.supportsAppOwnedStorage). showNewGraphLocationPicker/
@@ -1485,6 +1484,27 @@ private fun GraphContent(deps: GraphContentDeps) {
 
                     fun closeSidebarIfMobile() {
                         if (isMobile && appState.sidebarExpanded) viewModel.toggleSidebar()
+                    }
+
+                    // Shared by the sidebar's "New graph..." action and, on platforms with no
+                    // "open an existing folder" concept (AddGraphFlowMode.ShowNameDialog), by
+                    // "Open local folder..." too — see onAddGraph below.
+                    fun startNewGraphFlow() {
+                        newGraphFlow = true
+                        newGraphName = ""
+                        newGraphDescription = ""
+                        newGraphLocation = null
+                        newGraphPath = ""
+                        if (addGraphFlowMode(fileSystem) == AddGraphFlowMode.ShowLocationPicker) {
+                            pendingNewGraphAppOwnedPath = fileSystem.newAppOwnedGraphPath()
+                            newGraphPath = pendingNewGraphAppOwnedPath
+                            newGraphLocation = StorageLocation.AppOwned(
+                                graphManager.graphIdFromPath(fileSystem.expandTilde(newGraphPath)).value
+                            )
+                        } else {
+                            newGraphParent = fileSystem.getDefaultGraphPath().substringBeforeLast('/')
+                        }
+                        showNewGraphDialog = true
                     }
 
                     // Android back gesture — priority order: last registered = highest priority.
@@ -1628,26 +1648,18 @@ private fun GraphContent(deps: GraphContentDeps) {
                                                 }
                                             }
                                         }
-                                        AddGraphFlowMode.ShowNameDialog -> showAddGraphDialog = true
+                                        // Neither of the above applies (no app-owned storage, no
+                                        // native directory picker — e.g. OPFS-only web): there is
+                                        // no "existing folder" concept to open, so this collapses
+                                        // to the same "create a named graph" action as "New
+                                        // graph...". Was previously its own name-only AddGraphDialog
+                                        // duplicating this flow minus the description field.
+                                        AddGraphFlowMode.ShowNameDialog -> startNewGraphFlow()
                                     }
                                     closeSidebarIfMobile()
                                 },
                                 onNewGraph = {
-                                    newGraphFlow = true
-                                    newGraphName = ""
-                                    newGraphDescription = ""
-                                    newGraphLocation = null
-                                    newGraphPath = ""
-                                    if (addGraphFlowMode(fileSystem) == AddGraphFlowMode.ShowLocationPicker) {
-                                        pendingNewGraphAppOwnedPath = fileSystem.newAppOwnedGraphPath()
-                                        newGraphPath = pendingNewGraphAppOwnedPath
-                                        newGraphLocation = StorageLocation.AppOwned(
-                                            graphManager.graphIdFromPath(fileSystem.expandTilde(newGraphPath)).value
-                                        )
-                                    } else {
-                                        newGraphParent = fileSystem.getDefaultGraphPath().substringBeforeLast('/')
-                                    }
-                                    showNewGraphDialog = true
+                                    startNewGraphFlow()
                                     closeSidebarIfMobile()
                                 },
                                 onRemoveGraph = { id ->
@@ -2231,24 +2243,6 @@ private fun GraphContent(deps: GraphContentDeps) {
                         ),
                     )
 
-                    if (showAddGraphDialog) {
-                        AddGraphDialog(
-                            onConfirm = { name ->
-                                val path = "/stelekit/$name"
-                                scope.launch {
-                                    val newGraphId = graphManager.addGraph(path)
-                                    showAddGraphDialog = false
-                                    if (newGraphId != null) {
-                                        graphManager.switchGraph(newGraphId)
-                                    } else {
-                                        snackbarHostState.showSnackbar("Failed to open graph \"$name\"")
-                                    }
-                                }
-                            },
-                            onDismiss = { showAddGraphDialog = false },
-                        )
-                    }
-
                     // Story 2.2.1: replaces the immediate SAF-picker call in onAddGraph above,
                     // whenever fileSystem.supportsAppOwnedStorage (Android today) — see that
                     // callback's comment. createNewGraph is shared by both this picker's SafFolder
@@ -2482,8 +2476,9 @@ internal fun newGraphPathFor(mode: AddGraphFlowMode, parent: String, name: Strin
 /**
  * Pure platform-copy logic for `UnifiedLocationPicker`'s "App storage" row subtitle (Story 2.1.1,
  * `design/ux.md` §2) — factored out so the Android/Web wording is testable without mounting the
- * whole composable tree, mirroring [addGraphFlowMode] above. Shared by this file's `AddGraphDialog`
- * call site and `GitSetupScreen.kt`'s `Step2RepoPath` call site. Uses the same [platform] string
+ * whole composable tree, mirroring [addGraphFlowMode] above. Shared by this file's
+ * `UnifiedLocationPicker` call site (new-graph flow) and `GitSetupScreen.kt`'s `Step2RepoPath`
+ * call site. Uses the same [platform] string
  * convention as `pendingPlainGraphWarning`'s `warningCopy` above (see `getDeviceInfo`'s `platform`
  * field and `SloChecker.diskThresholdsFor`).
  */
@@ -2580,37 +2575,3 @@ private fun StatusBarContent(
     }
 }
 
-@Composable
-private fun AddGraphDialog(
-    onConfirm: (String) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var name by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Open Graph") },
-        text = {
-            Column {
-                Text("Enter a name for the graph. It will be stored in your browser's private storage.")
-                Spacer(modifier = Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Graph name") },
-                    singleLine = true,
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = { if (name.trim().isNotEmpty()) onConfirm(name.trim()) },
-                enabled = name.trim().isNotEmpty(),
-            ) {
-                Text("Open")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-        },
-    )
-}

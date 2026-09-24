@@ -74,6 +74,7 @@ class GraphManagerCloneTest {
 
         override suspend fun isGitRepo(path: String): Boolean = throw UnsupportedOperationException()
         override suspend fun init(repoRoot: String): Either<DomainError.GitError, Unit> = throw UnsupportedOperationException()
+        override suspend fun testRemote(url: String, auth: GitAuth): Either<DomainError.GitError, Unit> = throw UnsupportedOperationException()
         override suspend fun fetch(config: GitConfig): Either<DomainError.GitError, FetchResult> = throw UnsupportedOperationException()
         override suspend fun status(config: GitConfig): Either<DomainError.GitError, GitStatus> = throw UnsupportedOperationException()
         override suspend fun stageSubdir(config: GitConfig): Either<DomainError.GitError, Unit> = throw UnsupportedOperationException()

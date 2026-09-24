@@ -103,6 +103,8 @@ import dev.stapler.stelekit.editor.ImageAttachCallbackContractTest
 import dev.stapler.stelekit.export.ExportServiceJournalRangeTest
 import dev.stapler.stelekit.export.ExportServiceLinkedPagesTest
 import dev.stapler.stelekit.git.GitShadowWorktreeNoCoroutineScopeTest
+import dev.stapler.stelekit.git.GitSyncServiceConflictResolutionTest
+import dev.stapler.stelekit.git.GitSyncServiceErrorRoutingTest
 import dev.stapler.stelekit.git.GitSyncServiceRateLimitRetryTest
 import dev.stapler.stelekit.git.GitSyncServiceTest
 import dev.stapler.stelekit.git.merge.JournalMergeServiceTest
@@ -230,6 +232,8 @@ import org.junit.runners.Suite
     ExportServiceJournalRangeTest::class,
     ExportServiceLinkedPagesTest::class,
     GitShadowWorktreeNoCoroutineScopeTest::class,
+    GitSyncServiceConflictResolutionTest::class,
+    GitSyncServiceErrorRoutingTest::class,
     GitSyncServiceRateLimitRetryTest::class,
     GitSyncServiceTest::class,
     JournalMergeServiceTest::class,

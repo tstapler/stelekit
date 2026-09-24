@@ -14,16 +14,16 @@ import dev.stapler.stelekit.db.AndroidGraphMoveQuiesceStrategy
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.error.DomainError
-import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
+import dev.stapler.stelekit.git.testsupport.StubFileSystem
+import dev.stapler.stelekit.git.testsupport.StubGitRepository
+import dev.stapler.stelekit.git.testsupport.sampleConfig
 import dev.stapler.stelekit.model.StorageLocation
 import dev.stapler.stelekit.model.StorageMoveOperation
-import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.NetworkMonitor
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -86,24 +86,6 @@ class GitSyncBusyCounterSharedWiringTest {
         shadowConnectivityManager.setNetworkCapabilities(activeNetwork, capabilities)
     }
 
-    /** Minimal [FileSystem] stub — safe defaults for all methods, mirrors GitSyncServiceTest's. */
-    private class StubFileSystem : FileSystem {
-        override fun getDefaultGraphPath() = "/tmp"
-        override fun expandTilde(path: String) = path
-        override fun readFile(path: String): String? = null
-        override fun writeFile(path: String, content: String): Boolean = true
-        override fun listFiles(path: String): List<String> = emptyList()
-        override fun listDirectories(path: String): List<String> = emptyList()
-        override fun fileExists(path: String) = false
-        override fun directoryExists(path: String) = true
-        override fun createDirectory(path: String) = true
-        override fun deleteFile(path: String) = true
-        override fun pickDirectory(): String? = null
-        override fun getLastModifiedTime(path: String): Long? = null
-        override fun startExternalChangeDetection(scope: CoroutineScope, onChange: () -> Unit) {}
-        override fun stopExternalChangeDetection() {}
-    }
-
     /**
      * [GitRepository] stub whose [hasDetachedHead] signals [entered] (proving `sync()` reached
      * this point — and therefore already called `gitSyncBusyCounter.begin()`, which happens
@@ -115,22 +97,7 @@ class GitSyncBusyCounterSharedWiringTest {
     private class GateGitRepository(
         private val entered: CompletableDeferred<Unit>,
         private val gate: CompletableDeferred<Unit>,
-    ) : GitRepository {
-        override suspend fun isGitRepo(path: String): Boolean = error("not needed in this test")
-        override suspend fun init(repoRoot: String): Either<DomainError.GitError, Unit> = error("not needed in this test")
-        override suspend fun clone(url: String, localPath: String, auth: GitAuth, onProgress: (String) -> Unit): Either<DomainError.GitError, Unit> = error("not needed in this test")
-        override suspend fun fetch(config: GitConfig): Either<DomainError.GitError, FetchResult> = error("not needed in this test")
-        override suspend fun status(config: GitConfig): Either<DomainError.GitError, GitStatus> = error("not needed in this test")
-        override suspend fun stageSubdir(config: GitConfig): Either<DomainError.GitError, Unit> = error("not needed in this test")
-        override suspend fun commit(config: GitConfig, message: String): Either<DomainError.GitError, String> = error("not needed in this test")
-        override suspend fun merge(config: GitConfig): Either<DomainError.GitError, MergeResult> = error("not needed in this test")
-        override suspend fun push(config: GitConfig): Either<DomainError.GitError, Unit> = error("not needed in this test")
-        override suspend fun log(config: GitConfig, maxCount: Int): Either<DomainError.GitError, List<GitCommit>> = error("not needed in this test")
-        override suspend fun abortMerge(config: GitConfig): Either<DomainError.GitError, Unit> = error("not needed in this test")
-        override suspend fun checkoutFile(config: GitConfig, filePath: String, side: MergeSide): Either<DomainError.GitError, Unit> = error("not needed in this test")
-        override suspend fun markResolved(config: GitConfig, filePath: String): Either<DomainError.GitError, Unit> = error("not needed in this test")
-        override suspend fun removeStaleLockFile(config: GitConfig): Either<DomainError.GitError, Unit> = Unit.right()
-
+    ) : StubGitRepository() {
         override suspend fun hasDetachedHead(config: GitConfig): Boolean {
             entered.complete(Unit)
             gate.await()
@@ -146,13 +113,6 @@ class GitSyncBusyCounterSharedWiringTest {
         override fun observeConfig(graphId: String) = error("not needed in this test")
     }
 
-    private val sampleConfig = GitConfig(
-        graphId = "test-graph",
-        repoRoot = "/repo",
-        wikiSubdir = "",
-        authType = GitAuthType.NONE,
-    )
-
     private val op: StorageMoveOperation = StorageMoveOperation.Relocate(
         graphId = "test-graph",
         source = StorageLocation.SafFolder("test-graph", "content://tree/x"),
@@ -160,14 +120,17 @@ class GitSyncBusyCounterSharedWiringTest {
         deleteSourceAfterVerify = true,
     )
 
-    @Test
-    fun quiesce_should_ObserveBusyState_When_SameGitSyncBusyCounterDrivesRealGitSyncServiceSync() = runBlocking {
-        fakeOnlineNetworkMonitor()
+    /** Everything [quiesce_should_ObserveBusyState_When_SameGitSyncBusyCounterDrivesRealGitSyncServiceSync] needs, wired around one shared [GitSyncBusyCounter]. */
+    private class QuiesceHarness(
+        val sharedCounter: GitSyncBusyCounter,
+        val service: GitSyncService,
+        val strategy: AndroidGraphMoveQuiesceStrategy,
+        val entered: CompletableDeferred<Unit>,
+        val gate: CompletableDeferred<Unit>,
+    )
 
-        // The instance under test — must be the SAME object threaded into both construction
-        // sites, mirroring MainActivity.kt's sharedGitSyncBusyCounter wiring.
+    private fun buildQuiesceHarness(): QuiesceHarness {
         val sharedCounter = GitSyncBusyCounter()
-
         val entered = CompletableDeferred<Unit>()
         val gate = CompletableDeferred<Unit>()
         val stubFs = StubFileSystem()
@@ -185,23 +148,32 @@ class GitSyncBusyCounterSharedWiringTest {
             fileSystem = stubFs,
             gitSyncBusyCounter = sharedCounter,
         )
-
         val strategy = AndroidGraphMoveQuiesceStrategy(
             gitSyncBusyCounter = sharedCounter,
             // No shadow-worktree target — isolates the assertion to busy-counter wiring; see
             // MainActivity.kt's TODO for the still-unwired shadowWorktreeTarget half.
             shadowWorktreeTarget = { null },
         )
+        return QuiesceHarness(sharedCounter, service, strategy, entered, gate)
+    }
 
-        assertTrue(!sharedCounter.isBusy.value, "precondition: counter starts idle")
+    @Test
+    fun quiesce_should_ObserveBusyState_When_SameGitSyncBusyCounterDrivesRealGitSyncServiceSync() = runBlocking {
+        fakeOnlineNetworkMonitor()
 
-        val syncJob = launch { service.sync("test-graph") }
-        withTimeout(5_000) { entered.await() }
-        assertTrue(sharedCounter.isBusy.value, "sync() must mark the shared counter busy while in flight")
+        // The instance under test — must be the SAME object threaded into both construction
+        // sites, mirroring MainActivity.kt's sharedGitSyncBusyCounter wiring.
+        val h = buildQuiesceHarness()
+
+        assertTrue(!h.sharedCounter.isBusy.value, "precondition: counter starts idle")
+
+        val syncJob = launch { h.service.sync("test-graph") }
+        withTimeout(5_000) { h.entered.await() }
+        assertTrue(h.sharedCounter.isBusy.value, "sync() must mark the shared counter busy while in flight")
 
         var quiesceCompleted = false
         val quiesceJob = launch {
-            strategy.quiesce(op)
+            h.strategy.quiesce(op)
             quiesceCompleted = true
         }
         // gate is still unreleased, so sync() cannot have finished yet — quiesce() genuinely
@@ -212,13 +184,13 @@ class GitSyncBusyCounterSharedWiringTest {
 
         // Release sync()'s suspension point — it completes via the DetachedHead error path,
         // decrementing the shared counter in its `finally` block exactly like a real sync.
-        gate.complete(Unit)
+        h.gate.complete(Unit)
         withTimeout(5_000) { syncJob.join() }
         withTimeout(5_000) { quiesceJob.join() }
 
-        assertTrue(!sharedCounter.isBusy.value, "counter must be idle again once sync() finishes")
+        assertTrue(!h.sharedCounter.isBusy.value, "counter must be idle again once sync() finishes")
         assertTrue(quiesceCompleted, "quiesce() must complete once GitSyncService.sync() ends and decrements the SAME counter")
 
-        strategy.release(op)
+        h.strategy.release(op)
     }
 }

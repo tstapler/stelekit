@@ -3,16 +3,11 @@
 
 package dev.stapler.stelekit.git
 
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.updateAndGet
 
 /**
  * Tracks whether a [GitSyncService.sync] call is currently in flight.
@@ -20,19 +15,26 @@ import kotlinx.coroutines.flow.update
  * currently running" so a relocate never copies `.git` mid-operation.
  *
  * Modeled on [EditLock] — same counter/awaitIdle shape, different source of busy-ness.
- *
- * Owns its own CoroutineScope — never accept rememberCoroutineScope().
  */
 class GitSyncBusyCounter {
-    private val busyScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _busyCount = MutableStateFlow(0)
 
+    // Updated synchronously alongside _busyCount in begin()/end() rather than derived via
+    // .map { it > 0 }.stateIn(scope, ...) on a separate CoroutineScope/dispatcher — that
+    // derivation lags asynchronously behind _busyCount's own update, so a caller reading
+    // isBusy.value immediately after begin() returns can observe a stale `false` (confirmed:
+    // GitSyncBusyCounterSharedWiringTest's assertion right after sync() reaches its first
+    // suspension point is timing-dependent on the collector coroutine having already run).
+    private val _isBusy = MutableStateFlow(false)
+
     fun begin() {
-        _busyCount.update { it + 1 }
+        val count = _busyCount.updateAndGet { it + 1 }
+        _isBusy.value = count > 0
     }
 
     fun end() {
-        _busyCount.update { maxOf(it - 1, 0) }
+        val count = _busyCount.updateAndGet { maxOf(it - 1, 0) }
+        _isBusy.value = count > 0
     }
 
     /**
@@ -43,7 +45,5 @@ class GitSyncBusyCounter {
         _busyCount.first { it == 0 }
     }
 
-    val isBusy: StateFlow<Boolean> = _busyCount
-        .map { it > 0 }
-        .stateIn(busyScope, SharingStarted.Eagerly, false)
+    val isBusy: StateFlow<Boolean> = _isBusy.asStateFlow()
 }
