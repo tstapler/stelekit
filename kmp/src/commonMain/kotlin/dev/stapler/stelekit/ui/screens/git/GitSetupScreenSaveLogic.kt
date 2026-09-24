@@ -9,10 +9,12 @@ import dev.stapler.stelekit.git.GitAuth
 import dev.stapler.stelekit.git.GitConfigRepository
 import dev.stapler.stelekit.git.GitCredentialConnectionStore
 import dev.stapler.stelekit.git.GitHubDeviceFlowClient
+import dev.stapler.stelekit.git.GitRepoHistoryStore
 import dev.stapler.stelekit.git.GitRepository
 import dev.stapler.stelekit.git.GitSyncService
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
+import dev.stapler.stelekit.git.model.GitRepoHistoryKind
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.StorageLocation
 import dev.stapler.stelekit.platform.security.CredentialStore
@@ -103,6 +105,18 @@ internal sealed class SaveConfigOutcome {
 }
 
 /**
+ * Bundles the app-wide store dependencies [resolveAndSaveConfig] and its two callers share — one
+ * param instead of four, so adding [repoHistoryStore] didn't push those functions over the
+ * long-parameter-list check.
+ */
+internal data class GitSetupStores(
+    val credentialStore: CredentialStore,
+    val connectionStore: GitCredentialConnectionStore,
+    val gitConfigRepository: GitConfigRepository,
+    val repoHistoryStore: GitRepoHistoryStore,
+)
+
+/**
  * Resolves credential keys for [graphId] (reusing [existingConfig]'s keys as the fallback when a
  * field wasn't touched — null when there's no prior config, i.e. the clone-and-add path) and
  * persists a [GitConfig] built from [form]. Shared by [performCloneAndSave] (`existingConfig =
@@ -114,9 +128,7 @@ private suspend fun resolveAndSaveConfig(
     graphId: String,
     form: GitSetupFormSnapshot,
     existingConfig: GitConfig?,
-    credentialStore: CredentialStore,
-    connectionStore: GitCredentialConnectionStore,
-    gitConfigRepository: GitConfigRepository,
+    stores: GitSetupStores,
 ): Either<DomainError, Unit> {
     val httpsTokenKey = if (form.authType == GitAuthType.HTTPS_TOKEN) {
         resolveHttpsTokenKey(
@@ -124,17 +136,15 @@ private suspend fun resolveAndSaveConfig(
             httpsToken = form.httpsToken,
             cloneUrl = form.cloneUrl,
             selectedConnectionId = form.selectedHttpsConnectionId,
-            connectionStore = connectionStore,
-            credentialStore = credentialStore,
+            connectionStore = stores.connectionStore,
+            credentialStore = stores.credentialStore,
             fallbackKey = existingConfig?.httpsTokenKey,
         )
     } else {
         existingConfig?.httpsTokenKey
     }
-    val sshPassphraseKey = if (form.authType == GitAuthType.SSH_KEY && form.sshPassphrase.isNotBlank()) {
-        val passphraseKey = "git_ssh_passphrase_$graphId"
-        credentialStore.store(passphraseKey, form.sshPassphrase)
-        passphraseKey
+    val sshPassphraseKey = if (form.authType == GitAuthType.SSH_KEY) {
+        resolveSshPassphraseKey(graphId, form.sshPassphrase, existingConfig, stores.credentialStore)
     } else {
         existingConfig?.sshKeyPassphraseKey
     }
@@ -142,8 +152,8 @@ private suspend fun resolveAndSaveConfig(
         resolveOauthTokenKey(
             graphId = graphId,
             selectedConnectionId = form.selectedOauthConnectionId,
-            connectionStore = connectionStore,
-            credentialStore = credentialStore,
+            connectionStore = stores.connectionStore,
+            credentialStore = stores.credentialStore,
             fallbackKey = existingConfig?.oauthTokenKey ?: "git_github_oauth_$graphId",
         )
     } else {
@@ -156,7 +166,21 @@ private suspend fun resolveAndSaveConfig(
         sshKeyPassphraseKey = sshPassphraseKey,
         oauthTokenKey = oauthTokenKey,
     )
-    return gitConfigRepository.saveConfig(config)
+    return stores.gitConfigRepository.saveConfig(config).onRight { recordRepoHistory(form, stores.repoHistoryStore) }
+}
+
+/**
+ * Remembers [form]'s repository location once it's actually been saved successfully — the
+ * destination clone URL when cloning a new repo, the local path when pointing at one already on
+ * disk (see `GitRepoHistoryStore`'s KDoc for why these are tracked separately).
+ */
+private fun recordRepoHistory(form: GitSetupFormSnapshot, repoHistoryStore: GitRepoHistoryStore) {
+    val (value, kind) = if (form.cloneMode == CloneMode.CloneNewRepository) {
+        form.cloneUrl to GitRepoHistoryKind.CLONE_URL
+    } else {
+        form.repoRoot to GitRepoHistoryKind.LOCAL_PATH
+    }
+    repoHistoryStore.record(value, kind, form.wikiSubdir, Clock.System.now().toEpochMilliseconds())
 }
 
 /**
@@ -167,9 +191,7 @@ private suspend fun resolveAndSaveConfig(
  */
 internal suspend fun performCloneAndSave(
     form: GitSetupFormSnapshot,
-    credentialStore: CredentialStore,
-    connectionStore: GitCredentialConnectionStore,
-    gitConfigRepository: GitConfigRepository,
+    stores: GitSetupStores,
     onCloneAndAdd: suspend (
         url: String,
         localPath: String,
@@ -184,7 +206,7 @@ internal suspend fun performCloneAndSave(
 ): CloneAndSaveOutcome {
     onCloneInProgressChange(true)
     val cloneAuth = buildCloneAuth(
-        form.authType, form.httpsToken, form.sshKeyPath, form.sshPassphrase, form.graphId, credentialStore,
+        form.authType, form.httpsToken, form.sshKeyPath, form.sshPassphrase, form.graphId, stores.credentialStore,
     )
     val cloneResult = onCloneAndAdd(
         form.cloneUrl,
@@ -201,7 +223,7 @@ internal suspend fun performCloneAndSave(
     }
     val newGraphId = (cloneResult as Either.Right).value
 
-    val saveResult = resolveAndSaveConfig(newGraphId, form, null, credentialStore, connectionStore, gitConfigRepository)
+    val saveResult = resolveAndSaveConfig(newGraphId, form, null, stores)
     return if (saveResult.isRight()) {
         gitSetupLogger.info("saveConfig succeeded (clone-and-add) graphId=$newGraphId")
         CloneAndSaveOutcome.Saved(newGraphId)
@@ -217,12 +239,10 @@ internal suspend fun performCloneAndSave(
 internal suspend fun performSaveExistingConfig(
     form: GitSetupFormSnapshot,
     existingConfig: GitConfig?,
-    credentialStore: CredentialStore,
-    connectionStore: GitCredentialConnectionStore,
-    gitConfigRepository: GitConfigRepository,
+    stores: GitSetupStores,
     gitSyncService: GitSyncService,
 ): SaveConfigOutcome {
-    val result = resolveAndSaveConfig(form.graphId, form, existingConfig, credentialStore, connectionStore, gitConfigRepository)
+    val result = resolveAndSaveConfig(form.graphId, form, existingConfig, stores)
     return if (result.isRight()) {
         gitSetupLogger.info("saveConfig succeeded graphId=${form.graphId}")
         // Trigger an immediate background fetch

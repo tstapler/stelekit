@@ -72,6 +72,25 @@ internal fun resolveHttpsTokenKey(
 }
 
 /**
+ * Resolves the CredentialStore key to use for [GitConfig.sshKeyPassphraseKey] — stores a
+ * newly-entered passphrase under [graphId]'s graph-scoped key, or falls back to
+ * [existingConfig]'s key unchanged when the passphrase field wasn't touched (SSH_KEY connections
+ * aren't a reusable "connection" the way HTTPS/OAuth are, so there's no saved-connection list to
+ * check here).
+ */
+internal fun resolveSshPassphraseKey(
+    graphId: String,
+    sshPassphrase: String,
+    existingConfig: GitConfig?,
+    credentialStore: CredentialStore,
+): String? {
+    if (sshPassphrase.isBlank()) return existingConfig?.sshKeyPassphraseKey
+    val key = "git_ssh_passphrase_$graphId"
+    credentialStore.store(key, sshPassphrase)
+    return key
+}
+
+/**
  * Resolves the CredentialStore key to use for [GitConfig.oauthTokenKey]. When [selectedConnectionId]
  * names a saved connection (the user picked "Saved accounts" instead of running the device flow
  * again), copies that connection's secret into [graphId]'s graph-scoped key — the key every

@@ -3,16 +3,25 @@
 package dev.stapler.stelekit.ui.screens.git
 
 import arrow.core.Either
+import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.FetchResult
 import dev.stapler.stelekit.git.GitAuth
+import dev.stapler.stelekit.git.GitCredentialConnectionStore
+import dev.stapler.stelekit.git.GitRepoHistoryStore
+import dev.stapler.stelekit.git.buildTestGitSyncService
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
+import dev.stapler.stelekit.git.model.GitRepoHistoryKind
+import dev.stapler.stelekit.git.testsupport.StubConfigRepository
 import dev.stapler.stelekit.git.testsupport.StubGitRepository
+import dev.stapler.stelekit.git.testsupport.sampleConfig
 import dev.stapler.stelekit.platform.security.CredentialStore
+import dev.stapler.stelekit.ui.fixtures.InMemorySettings
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
@@ -87,5 +96,59 @@ class GitSetupScreenSaveLogicTest {
 
         assertTrue(result.isRight(), "expected testGitConnection to succeed: $result")
         assertTrue(fetchCalled, "UseExistingClone must route through fetch()")
+    }
+
+    // ── repo-history recording (#1 UX audit follow-up) ──────────────────────────
+
+    @Test
+    fun `performCloneAndSave records the clone URL in repo history on success`() = runTest {
+        val repoHistoryStore = GitRepoHistoryStore(InMemorySettings())
+        val stores = GitSetupStores(
+            credentialStore = CredentialStore(),
+            connectionStore = GitCredentialConnectionStore(InMemorySettings(), CredentialStore()),
+            gitConfigRepository = StubConfigRepository(sampleConfig.right()),
+            repoHistoryStore = repoHistoryStore,
+        )
+        val form = baseForm(CloneMode.CloneNewRepository).copy(
+            cloneUrl = "https://github.com/tstapler/notes.git",
+            wikiSubdir = "pages",
+        )
+
+        val outcome = performCloneAndSave(
+            form = form,
+            stores = stores,
+            onCloneAndAdd = { _, _, _, _, _, _, _ -> "new-graph-id".right() },
+            onCloneProgress = {},
+            onCloneInProgressChange = {},
+        )
+
+        assertTrue(outcome is CloneAndSaveOutcome.Saved, "expected a successful save: $outcome")
+        val entries = repoHistoryStore.recentEntries(GitRepoHistoryKind.CLONE_URL)
+        assertEquals(1, entries.size)
+        assertEquals("https://github.com/tstapler/notes.git", entries.single().value)
+        assertEquals("pages", entries.single().wikiSubdir)
+    }
+
+    @Test
+    fun `performCloneAndSave does not record anything when the clone fails`() = runTest {
+        val repoHistoryStore = GitRepoHistoryStore(InMemorySettings())
+        val stores = GitSetupStores(
+            credentialStore = CredentialStore(),
+            connectionStore = GitCredentialConnectionStore(InMemorySettings(), CredentialStore()),
+            gitConfigRepository = StubConfigRepository(sampleConfig.right()),
+            repoHistoryStore = repoHistoryStore,
+        )
+        val form = baseForm(CloneMode.CloneNewRepository).copy(cloneUrl = "https://github.com/tstapler/notes.git")
+
+        val outcome = performCloneAndSave(
+            form = form,
+            stores = stores,
+            onCloneAndAdd = { _, _, _, _, _, _, _ -> DomainError.GitError.CommitFailed("clone failed").left() },
+            onCloneProgress = {},
+            onCloneInProgressChange = {},
+        )
+
+        assertTrue(outcome is CloneAndSaveOutcome.CloneFailed, "expected a clone failure: $outcome")
+        assertTrue(repoHistoryStore.recentEntries(GitRepoHistoryKind.CLONE_URL).isEmpty())
     }
 }
