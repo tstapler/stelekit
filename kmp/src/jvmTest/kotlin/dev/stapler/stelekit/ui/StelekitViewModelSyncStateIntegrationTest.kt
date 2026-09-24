@@ -10,18 +10,13 @@ import arrow.core.right
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.error.DomainError
-import dev.stapler.stelekit.git.EditLock
 import dev.stapler.stelekit.git.GitRepository
 import dev.stapler.stelekit.git.GitStatus
 import dev.stapler.stelekit.git.GitSyncService
+import dev.stapler.stelekit.git.buildTestGitSyncService
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.git.model.SyncState
-import dev.stapler.stelekit.git.testsupport.StubConfigRepository
 import dev.stapler.stelekit.git.testsupport.StubGitRepository
-import dev.stapler.stelekit.git.testsupport.sampleConfig
-import dev.stapler.stelekit.platform.NetworkMonitor
-import dev.stapler.stelekit.repository.InMemoryBlockRepository
-import dev.stapler.stelekit.repository.InMemoryPageRepository
 import dev.stapler.stelekit.repository.InMemorySearchRepository
 import dev.stapler.stelekit.ui.fixtures.FakeBlockRepository
 import dev.stapler.stelekit.ui.fixtures.FakeFileSystem
@@ -48,24 +43,8 @@ import kotlin.test.assertEquals
  */
 class StelekitViewModelSyncStateIntegrationTest {
 
-    private fun buildGitSyncService(gitRepository: GitRepository): GitSyncService {
-        val fileSystem = FakeFileSystem()
-        val graphLoader = GraphLoader(
-            fileSystem = fileSystem,
-            pageRepository = InMemoryPageRepository(),
-            blockRepository = InMemoryBlockRepository(),
-        )
-        val graphWriter = GraphWriter(fileSystem)
-        return GitSyncService(
-            gitRepository = gitRepository,
-            graphLoader = graphLoader,
-            graphWriter = graphWriter,
-            editLock = EditLock(),
-            configRepository = StubConfigRepository(sampleConfig.right()),
-            networkMonitor = NetworkMonitor(),
-            fileSystem = fileSystem,
-        )
-    }
+    private fun buildGitSyncService(gitRepository: GitRepository): GitSyncService =
+        buildTestGitSyncService(gitRepository = gitRepository)
 
     /**
      * Builds a [StelekitViewModel] exactly as `jvmMain`'s `desktop/Main.kt` does today —
