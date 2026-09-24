@@ -119,6 +119,16 @@ sealed interface DomainError {
         data class SerializationFailed(override val message: String) : ExportError
         data class ClipboardFailed(override val message: String) : ExportError
         data class ShareFailed(override val message: String) : ExportError
+
+        /**
+         * JPEG encode failure at [dev.stapler.stelekit.ui.annotate.AnnotationExporter.bakeAndEncode]'s
+         * boundary — the underlying [dev.stapler.stelekit.ui.annotate.ImageEncoder.encodeToJpeg]
+         * actual returned an empty [ByteArray] (its own contract for "failed", matched on all four
+         * platforms). [message] is a fixed, non-diagnostic literal; the specific cause (JS
+         * exception, missing canvas context, oversized image) is logged via `println` at the
+         * wasmJs call site only, matching the existing `OpfsInterop.kt` convention.
+         */
+        data class EncodingFailed(override val message: String) : ExportError
     }
 
     /**
@@ -250,6 +260,7 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.ExportError.SerializationFailed -> "Export failed"
     is DomainError.ExportError.ClipboardFailed -> "Clipboard write failed"
     is DomainError.ExportError.ShareFailed -> "Share failed"
+    is DomainError.ExportError.EncodingFailed -> "Export failed"
     is DomainError.QrTransferError.ChunkDecodeFailed -> "Couldn't read that QR code — try again"
     is DomainError.QrTransferError.IntegrityCheckFailed -> "This transfer looks corrupted — please try scanning again"
     is DomainError.QrTransferError.PayloadTooLarge -> "This page is too large to send via QR"

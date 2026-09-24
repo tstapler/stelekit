@@ -241,7 +241,7 @@ jobs:
 
   # ── Wasm/JS compile check ─────────────────────────────────────────────────
   wasmjs-compile:
-    name: Wasm/JS Compile
+    name: Wasm/JS Compile & Tests
     runs-on: ubuntu-latest
 
     steps:
@@ -264,7 +264,7 @@ jobs:
       - name: Compile wasmJs test sources
         # Compiles (does not run) wasmJsTest — including WasmGitWriteServiceMockedIntegrationTest.kt
         # and WasmGitRepositoryTest.kt, which carry the regression proof for two previously-fixed
-        # BLOCKER bugs in the web git write-back feature. Actually running the tests
+        # BLOCKER bugs in the web git write-back feature. Actually running the full suite
         # (wasmJsBrowserTest) needs a headless-Chrome/Karma setup not yet wired into CI — a separate,
         # bigger infra task; compiling is the low-risk, high-value slice of that work.
         #
@@ -274,6 +274,18 @@ jobs:
         # command passes clean — do not re-add the flag; fix the failing file instead (move its
         # JVM-only-API usage out of commonTest).
         run: ./gradlew :kmp:compileTestKotlinWasmJs --no-daemon --build-cache -PenableJs=true
+
+      - name: Run wasmJs ImageEncoder browser tests
+        # Runs (not just compiles) ImageEncoderWasmJsTest in headless Chrome via Karma — real
+        # regression coverage for the Canvas-2D JPEG encoder, which cannot be exercised from
+        # jvmTest. Scoped to this one class, not the whole wasmJsTest suite: the full suite has
+        # 2 pre-existing unrelated failures (MermaidRendererWasmJsTest /
+        # MermaidSecurityDirectiveWasmJsTest, predating this change) that block whole-suite CI
+        # adoption — a separate cleanup, not part of this fix. GitHub's ubuntu-latest runner image
+        # ships Chrome preinstalled, so no extra browser install step is needed here.
+        run: |
+          ./gradlew :kmp:wasmJsBrowserTest --no-daemon --build-cache -PenableJs=true \
+            --tests "dev.stapler.stelekit.annotate.ImageEncoderWasmJsTest"
 
   # ── Wasm/JS e2e (Playwright) ───────────────────────────────────────────────
   wasmjs-e2e:
