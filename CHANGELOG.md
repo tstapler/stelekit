@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.87.2](https://github.com/tstapler/stelekit/compare/v0.87.1...v0.87.2) (2026-09-24)
+
+
+### Bug Fixes
+
+* **git-setup:** "Test connection" always failed for a new clone ([#351](https://github.com/tstapler/stelekit/issues/351)) ([13519d1](https://github.com/tstapler/stelekit/commit/13519d145f51e1fca7469796467a18421200ff6b))
+* **wasm:** implement real Canvas-2D JPEG encoder for annotation export ([#350](https://github.com/tstapler/stelekit/issues/350)) ([cb7edec](https://github.com/tstapler/stelekit/commit/cb7edec2e6dd5d11bfd5889f0ca2c6cac70bc2eb))
+* **wasm:** real encrypted CredentialStore actual on web ([#348](https://github.com/tstapler/stelekit/issues/348)) ([926b097](https://github.com/tstapler/stelekit/commit/926b097aab3e96df9a81c884140c5dcd551e9275))
+
 ## [0.87.1](https://github.com/tstapler/stelekit/compare/v0.87.0...v0.87.1) (2026-09-22)
 
 
