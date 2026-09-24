@@ -35,10 +35,13 @@ import dev.stapler.stelekit.git.GitAuth
 import dev.stapler.stelekit.git.GitConfigRepository
 import dev.stapler.stelekit.git.GitCredentialConnectionStore
 import dev.stapler.stelekit.git.GitHubDeviceFlowClient
+import dev.stapler.stelekit.git.GitRepoHistoryStore
 import dev.stapler.stelekit.git.GitRepository
 import dev.stapler.stelekit.git.GitSyncService
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
+import dev.stapler.stelekit.git.model.GitRepoHistoryEntry
+import dev.stapler.stelekit.git.model.GitRepoHistoryKind
 import dev.stapler.stelekit.model.StorageLocation
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.PlatformSettings
@@ -153,6 +156,12 @@ fun GitSetupScreen(
     var oauthConnections by remember {
         mutableStateOf(connectionStore.listConnections(GitAuthType.GITHUB_OAUTH))
     }
+    // App-wide, same PlatformSettings()-is-shared-storage reasoning as connectionStore above.
+    // Loaded once at composition start — a fresh entry recorded by this same save only matters to
+    // a *future* time the wizard is opened, so no refresh-after-save wiring is needed.
+    val repoHistoryStore = remember { GitRepoHistoryStore(PlatformSettings()) }
+    val localPathHistory = remember { repoHistoryStore.recentEntries(GitRepoHistoryKind.LOCAL_PATH) }
+    val cloneUrlHistory = remember { repoHistoryStore.recentEntries(GitRepoHistoryKind.CLONE_URL) }
     // Null selection means "enter/connect a new credential" — the manual entry UI stays visible.
     // Pre-selects the saved connection an existing config's token happens to match, so re-opening
     // the wizard on an already-configured graph doesn't show "enter a new token" over a value that
@@ -289,6 +298,17 @@ fun GitSetupScreen(
         }
     }
 
+    /** Fills the repoRoot/cloneUrl field (whichever is currently relevant) from a remembered entry. */
+    fun selectRepoHistoryEntry(entry: GitRepoHistoryEntry) {
+        wikiSubdir = entry.wikiSubdir
+        if (cloneMode == CloneMode.CloneNewRepository) {
+            cloneUrl = entry.value
+        } else {
+            repoRoot = entry.value
+            cloneStorageLocation = null
+        }
+    }
+
     fun browseRepoRoot() {
         if (cloneMode == CloneMode.CloneNewRepository && fileSystem.supportsAppOwnedStorage) {
             // Story 2.2.2: "clone a remote repository" destination — show UnifiedLocationPicker
@@ -376,14 +396,14 @@ fun GitSetupScreen(
             cloneError = null
             val formSnapshot = currentFormSnapshot()
 
+            val stores = GitSetupStores(credentialStore, connectionStore, gitConfigRepository, repoHistoryStore)
+
             // If cloning a new repo, clone first
             val cloneAndAdd = onCloneAndAdd
             if (cloneMode == CloneMode.CloneNewRepository && cloneAndAdd != null) {
                 val outcome = performCloneAndSave(
                     form = formSnapshot,
-                    credentialStore = credentialStore,
-                    connectionStore = connectionStore,
-                    gitConfigRepository = gitConfigRepository,
+                    stores = stores,
                     onCloneAndAdd = cloneAndAdd,
                     onCloneProgress = { cloneProgress = it },
                     onCloneInProgressChange = { cloneInProgress = it },
@@ -410,9 +430,7 @@ fun GitSetupScreen(
             val outcome = performSaveExistingConfig(
                 form = formSnapshot,
                 existingConfig = existingConfig,
-                credentialStore = credentialStore,
-                connectionStore = connectionStore,
-                gitConfigRepository = gitConfigRepository,
+                stores = stores,
                 gitSyncService = gitSyncService,
             )
             saving = false
@@ -507,6 +525,10 @@ fun GitSetupScreen(
                     nextEnabled = repoRoot.isNotBlank() && (cloneMode == CloneMode.UseExistingClone || cloneUrl.isNotBlank()) &&
                         wikiSubdirError(wikiSubdir) == null,
                     saveToAppStorage = cloneMode == CloneMode.CloneNewRepository && cloneStorageLocation is StorageLocation.AppOwned,
+                    showAppStorageChoice = cloneMode == CloneMode.CloneNewRepository && fileSystem.supportsAppOwnedStorage,
+                    onSelectAppStorage = { if (cloneStorageLocation !is StorageLocation.AppOwned) selectAppStorage() },
+                    repoHistory = if (cloneMode == CloneMode.CloneNewRepository) cloneUrlHistory else localPathHistory,
+                    onSelectHistoryEntry = ::selectRepoHistoryEntry,
                     onBrowseRepoRoot = ::browseRepoRoot,
                     onBrowseWikiSubdir = { wikiSubdirBrowserOpen = true },
                     // Android SAF/wasm OPFS picker grants are scoped to exactly the folder the

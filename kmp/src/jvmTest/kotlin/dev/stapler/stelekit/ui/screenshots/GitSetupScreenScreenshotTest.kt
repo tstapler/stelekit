@@ -11,6 +11,7 @@ import dev.stapler.stelekit.git.testsupport.StubConfigRepository
 import dev.stapler.stelekit.git.testsupport.StubGitRepository
 import dev.stapler.stelekit.git.testsupport.sampleConfig
 import dev.stapler.stelekit.ui.fixtures.FakeFileSystem
+import dev.stapler.stelekit.ui.screens.git.CloneMode
 import dev.stapler.stelekit.ui.screens.git.GitSetupScreen
 import dev.stapler.stelekit.ui.theme.StelekitTheme
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
@@ -82,4 +83,32 @@ class GitSetupScreenScreenshotTest {
 
     @Test
     fun git_setup_step5_test_and_save() = renderStep(5)
+
+    /**
+     * The App-storage-vs-custom-folder radio choice only renders when cloning a new repo on a
+     * platform with app-owned storage (Android today) — [renderStep]'s default `FakeFileSystem`
+     * has `supportsAppOwnedStorage = false`, so this needs its own fixture to actually show it.
+     */
+    @Test
+    fun git_setup_step2_clone_new_repo_app_storage_choice() {
+        val fileSystem = object : FakeFileSystem() {
+            override val supportsAppOwnedStorage: Boolean = true
+            override fun newAppOwnedGraphPath(): String = "app-owned-graph-1"
+        }
+        composeTestRule.setContent {
+            StelekitTheme(themeMode = StelekitThemeMode.LIGHT) {
+                GitSetupScreen(
+                    graphId = "screenshot-graph",
+                    gitRepository = StubGitRepository(),
+                    gitConfigRepository = StubConfigRepository(sampleConfig.right()),
+                    gitSyncService = buildTestGitSyncService(),
+                    fileSystem = fileSystem,
+                    onDismiss = {},
+                    initialStep = 2,
+                    initialCloneMode = CloneMode.CloneNewRepository,
+                )
+            }
+        }
+        composeTestRule.onRoot().captureRoboImage("build/outputs/roborazzi/git_setup_step2_app_storage_choice.png")
+    }
 }
