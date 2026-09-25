@@ -1,0 +1,124 @@
+// Copyright (c) 2026 Tyler Stapler
+// SPDX-License-Identifier: Elastic-2.0
+
+package dev.stapler.stelekit.git
+
+import arrow.core.Either
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.resilience.RetryPolicies
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.test.runTest
+import org.eclipse.jgit.api.errors.CanceledException
+import org.eclipse.jgit.api.errors.TransportException
+import org.eclipse.jgit.errors.NoRemoteRepositoryException
+import org.eclipse.jgit.transport.URIish
+import java.net.SocketException
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
+
+/**
+ * Tests for [runGitTransportOpWithRetry] (Story 1.2.2, ADR-002's single retry owner) using a fake
+ * `op` lambda that throws a configured sequence of exceptions — not [AndroidGitRepository]/
+ * [JvmGitRepository] end-to-end, which is [Story 1.2.2]'s remaining Integration row and depends on
+ * `StubGitRepository`'s not-yet-built failure-sequence support (Story 6.1.1).
+ */
+class GitTransportRetryTest {
+
+    private fun transientFailure() =
+        TransportException("Software caused connection abort", SocketException("Software caused connection abort"))
+
+    private fun permanentFailure() =
+        TransportException("not found", NoRemoteRepositoryException(URIish(), "repo-not-found"))
+
+    @Test
+    fun `runGitTransportOpWithRetry returns Right after the 3rd attempt when the first two throw a Transient SocketException, invoking preResolvedToken exactly once`() = runTest {
+        var tokenResolutions = 0
+        // Mirrors the real call sites: credentials are resolved once, outside the retried op.
+        val preResolvedToken = run { tokenResolutions++; "resolved-token" }
+        var callCount = 0
+
+        val result: Either<DomainError.GitError, Unit> = runGitTransportOpWithRetry(
+            schedule = RetryPolicies.gitTransportTransientImmediate,
+            beforeRetry = {},
+            onAuthFailed = { e -> DomainError.GitError.AuthFailed(e.message ?: "Authentication failed") },
+            onFailed = { e -> DomainError.GitError.CloneFailed(e.message ?: "Clone failed") },
+            onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
+        ) {
+            callCount++
+            if (callCount < 3) throw transientFailure()
+            check(preResolvedToken == "resolved-token") { "op must see the pre-resolved token, not re-resolve it" }
+            Unit.right()
+        }
+
+        assertEquals(1, tokenResolutions, "credentials must be resolved once, not once per retry attempt")
+        assertEquals(3, callCount)
+        assertIs<Either.Right<Unit>>(result)
+    }
+
+    @Test
+    fun `runGitTransportOpWithRetry returns Left after exactly 1 attempt when the failure classifies Permanent`() = runTest {
+        var callCount = 0
+
+        val result: Either<DomainError.GitError, Unit> = runGitTransportOpWithRetry(
+            schedule = RetryPolicies.gitTransportTransientImmediate,
+            beforeRetry = { error("beforeRetry must not run for a Permanent (non-retryable) failure") },
+            onAuthFailed = { e -> DomainError.GitError.AuthFailed(e.message ?: "Authentication failed") },
+            onFailed = { e -> DomainError.GitError.CloneFailed(e.message ?: "Clone failed") },
+            onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
+        ) {
+            callCount++
+            throw permanentFailure()
+        }
+
+        assertEquals(1, callCount, "a Permanent failure must fail fast, never entering the retry loop")
+        assertIs<Either.Left<DomainError.GitError>>(result)
+        assertIs<DomainError.GitError.AuthFailed>(result.value)
+    }
+
+    @Test
+    fun `runGitTransportOpWithRetry returns Left(RetryExhausted(attempts=5, last)) when every attempt classifies Transient and the schedule is exhausted`() = runTest {
+        var callCount = 0
+
+        val result: Either<DomainError.GitError, Unit> = runGitTransportOpWithRetry(
+            schedule = RetryPolicies.gitTransportTransient,
+            beforeRetry = {},
+            onAuthFailed = { e -> DomainError.GitError.AuthFailed(e.message ?: "Authentication failed") },
+            onFailed = { e -> DomainError.GitError.FetchFailed(e.message ?: "Fetch failed") },
+            onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
+        ) {
+            callCount++
+            throw transientFailure()
+        }
+
+        // gitTransportTransient grants 5 retries (~1s/2s/4s/8s/16s) before exhaustion — 6 total
+        // op invocations (the original attempt plus the 5 retries it grants).
+        assertEquals(6, callCount)
+        assertIs<Either.Left<DomainError.GitError>>(result)
+        val error = assertIs<DomainError.GitError.RetryExhausted>(result.value)
+        assertEquals(5, error.attempts)
+        assertIs<DomainError.GitError.FetchFailed>(error.lastError)
+    }
+
+    @Test
+    fun `runGitTransportOpWithRetry rethrows CancellationException without retrying when the failure classifies Cancelled`() = runTest {
+        var callCount = 0
+
+        assertFailsWith<CancellationException> {
+            runGitTransportOpWithRetry<Unit, Long>(
+                schedule = RetryPolicies.gitTransportTransientImmediate,
+                beforeRetry = { error("beforeRetry must not run for a Cancelled failure") },
+                onAuthFailed = { e -> DomainError.GitError.AuthFailed(e.message ?: "Authentication failed") },
+                onFailed = { e -> DomainError.GitError.CloneFailed(e.message ?: "Clone failed") },
+                onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
+            ) {
+                callCount++
+                throw CanceledException("clone cancelled")
+            }
+        }
+
+        assertEquals(1, callCount, "a Cancelled failure must never be retried")
+    }
+}

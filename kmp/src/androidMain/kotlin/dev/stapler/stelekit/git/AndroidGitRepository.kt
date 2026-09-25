@@ -14,6 +14,7 @@ import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.security.CredentialAccess
 import dev.stapler.stelekit.platform.security.CredentialStore
+import dev.stapler.stelekit.resilience.RetryPolicies
 import kotlinx.coroutines.withContext
 import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.api.MergeCommand
@@ -85,12 +86,21 @@ class AndroidGitRepository(
         auth: GitAuth,
         onProgress: (String) -> Unit,
     ): Either<DomainError.GitError, Unit> = withContext(PlatformDispatcher.IO) {
-        runGitTransportOp(
+        val retryLoopStartMs = System.currentTimeMillis()
+        runGitTransportOpWithRetry(
+            schedule = RetryPolicies.gitTransportTransient,
+            beforeRetry = {
+                deleteLockFileIfStaleForRetry(
+                    File(shadow.resolveForJGit(localPath), ".git/index.lock"),
+                    retryLoopStartMs,
+                )
+            },
             onAuthFailed = { e -> DomainError.GitError.AuthFailed(e.message ?: "Authentication failed") },
             onFailed = { e -> DomainError.GitError.CloneFailed(e.message ?: "Clone failed") },
+            onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
         ) {
             val worktree = shadow.shadowWorktreeFor(localPath)
-            shadow.insufficientShadowStorageError(worktree, localPath)?.let { return@runGitTransportOp it.left() }
+            shadow.insufficientShadowStorageError(worktree, localPath)?.let { return@runGitTransportOpWithRetry it.left() }
             // Resolve suspend credentials before entering JGit's synchronous territory
             val preResolvedToken: String? = if (auth is GitAuth.HttpsToken) auth.tokenProvider() else null
             val job = coroutineContext[kotlinx.coroutines.Job]
@@ -125,9 +135,13 @@ class AndroidGitRepository(
 
     override suspend fun fetch(config: GitConfig): Either<DomainError.GitError, FetchResult> =
         withContext(PlatformDispatcher.IO) {
-            runGitTransportOp(
+            val retryLoopStartMs = System.currentTimeMillis()
+            runGitTransportOpWithRetry(
+                schedule = RetryPolicies.gitTransportTransient,
+                beforeRetry = { deleteLockFileIfStaleForRetry(indexLockFile(config), retryLoopStartMs) },
                 onAuthFailed = { e -> DomainError.GitError.AuthFailed(e.message ?: "Authentication failed") },
                 onFailed = { e -> DomainError.GitError.FetchFailed(e.message ?: "Fetch failed") },
+                onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
             ) {
                 openGitWithoutFreshnessCheck(config).use { git -> doFetch(git, config) }
             }
@@ -266,9 +280,13 @@ class AndroidGitRepository(
 
     override suspend fun push(config: GitConfig): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
-            runGitTransportOp(
+            val retryLoopStartMs = System.currentTimeMillis()
+            runGitTransportOpWithRetry(
+                schedule = RetryPolicies.gitTransportTransient,
+                beforeRetry = { deleteLockFileIfStaleForRetry(indexLockFile(config), retryLoopStartMs) },
                 onAuthFailed = { e -> DomainError.GitError.AuthFailed(e.message ?: "Push authentication failed") },
                 onFailed = { e -> DomainError.GitError.PushFailed(e.message ?: "Push failed") },
+                onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
             ) {
                 openGitWithoutFreshnessCheck(config).use { git -> doPush(git, config) }
             }
@@ -426,8 +444,14 @@ class AndroidGitRepository(
             }
         }
 
+    /** `.git/index.lock` path for [config]'s repo — shared by [deleteStaleLockFile] (user-initiated,
+     * fixed 60s age) and [runGitTransportOpWithRetry]'s `beforeRetry` cleanup (retry-loop-relative
+     * age, Task 1.2.2c). */
+    private fun indexLockFile(config: GitConfig): File =
+        File(shadow.resolveForJGit(config.repoRoot), ".git/index.lock")
+
     private fun deleteStaleLockFile(config: GitConfig): Either<DomainError.GitError, Unit> {
-        val lockFile = File(shadow.resolveForJGit(config.repoRoot), ".git/index.lock")
+        val lockFile = indexLockFile(config)
         if (!lockFile.exists()) return Unit.right()
 
         val ageMs = System.currentTimeMillis() - lockFile.lastModified()

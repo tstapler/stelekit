@@ -11,6 +11,7 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import arrow.core.Either
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
@@ -121,12 +122,22 @@ class GitSyncWorker(
         val service = GitSyncServiceRegistry.getService(graphId)
         if (service != null) {
             return try {
-                service.fetchOnly(graphId)
-                Result.success()
+                // fetchOnly() communicates failure via Either.Left, not by throwing — the result
+                // must be inspected, not discarded, or every fetch failure silently reads as
+                // Result.success() regardless of what the catch block below does (Story 1.2.3).
+                when (service.fetchOnly(graphId)) {
+                    is Either.Left -> Result.failure()
+                    is Either.Right -> Result.success()
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
-                Result.retry()
+                // ADR-002: GitOperationSupport.runGitTransportOpWithRetry (Story 1.2.2) already
+                // retried internally before fetchOnly() ever threw/returned Left here — a second
+                // WorkManager-level Result.retry() would stack a second, uncoordinated retry
+                // layer on top of the first. Result.failure() leaves the next attempt to
+                // WorkManager's own 15-minute periodic schedule, not an early re-invocation.
+                Result.failure()
             }
         }
 
@@ -156,14 +167,21 @@ class GitSyncWorker(
                 context = applicationContext,
                 fileSystem = PlatformFileSystem(),
             )
-            gitRepository.fetch(config)
+            // As in the fast path above: fetch() communicates failure via Either.Left, not by
+            // throwing, so the result must be inspected here too (Story 1.2.3).
+            val fetchResult = gitRepository.fetch(config)
 
             driver.close()
-            Result.success()
+            when (fetchResult) {
+                is Either.Left -> Result.failure()
+                is Either.Right -> Result.success()
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
-            Result.retry()
+            // ADR-002: gitRepository.fetch() (Story 1.2.2e) already retried internally via
+            // runGitTransportOpWithRetry — see the fast path's identical comment above.
+            Result.failure()
         }
     }
 }

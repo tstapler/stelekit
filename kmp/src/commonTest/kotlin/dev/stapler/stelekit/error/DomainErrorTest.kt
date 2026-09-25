@@ -48,6 +48,7 @@ class DomainErrorTest {
             DomainError.GitError.WorkingTreeSyncFailed("saf-to-shadow", "/path", "sync failed"),
             DomainError.GitError.WorkingTreeWriteBackFailed("/path", "write-back failed"),
             DomainError.GitError.WorkingTreeConcurrentEditDetected("/path"),
+            DomainError.GitError.RetryExhausted(5, DomainError.GitError.FetchFailed("Fetch failed")),
             DomainError.BleError.ConnectionFailed("ble connect"),
             DomainError.BleError.Gatt133(3, "gatt error"),
             DomainError.SensorError.PermissionDenied("camera"),
@@ -114,6 +115,7 @@ class DomainErrorTest {
                 is DomainError.GitError.WorkingTreeSyncFailed -> err.message
                 is DomainError.GitError.WorkingTreeWriteBackFailed -> err.message
                 is DomainError.GitError.WorkingTreeConcurrentEditDetected -> err.message
+                is DomainError.GitError.RetryExhausted -> err.message
                 is DomainError.AttachmentError.CopyFailed -> err.message
                 is DomainError.AttachmentError.PickerFailed -> err.message
                 is DomainError.AttachmentError.AssetsDirectoryFailed -> err.message

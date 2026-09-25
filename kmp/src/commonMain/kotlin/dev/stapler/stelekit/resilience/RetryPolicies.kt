@@ -34,4 +34,24 @@ object RetryPolicies {
      */
     val testImmediate: Schedule<Throwable, Long> =
         Schedule.recurs<Throwable>(3)
+
+    /**
+     * Retry policy for git transport operations (clone/fetch/push) gated by
+     * `GitFailureClass.Transient` (`GitOperationSupport.kt`): jittered exponential backoff from
+     * 1s, stopping once the delay would exceed 16s — five retries (~1s, 2s, 4s, 8s, 16s) before
+     * `runGitTransportOpWithRetry` reports `DomainError.GitError.RetryExhausted` (Story 1.2.2).
+     * Jitter avoids many graphs recovering from the same network blip retrying in lockstep
+     * (thundering herd), matching [fileWatchReregistration]'s established idiom.
+     */
+    val gitTransportTransient: Schedule<Throwable, kotlin.time.Duration> =
+        Schedule.exponential<Throwable>(1.seconds)
+            .jittered()
+            .doUntil { _, duration -> duration > 16.seconds }
+
+    /**
+     * Zero-delay policy for unit tests: same retry count [gitTransportTransient] allows before
+     * exhaustion, but with no delay so tests run fast while still exercising the retry logic.
+     */
+    val gitTransportTransientImmediate: Schedule<Throwable, Long> =
+        Schedule.recurs<Throwable>(5)
 }
