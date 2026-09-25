@@ -5,7 +5,6 @@ package dev.stapler.stelekit.git
 
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
-import android.util.Log
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.db.GRAPH_DB_PREFIX
 import dev.stapler.stelekit.db.GRAPH_DB_SUFFIX
@@ -93,7 +92,7 @@ class GitShadowWorktree(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.w(TAG, "touchLastUsed: failed to update '$LAST_USED_FILE_NAME' marker", e)
+            logger.warn("touchLastUsed: failed to update '$LAST_USED_FILE_NAME' marker", e)
         }
     }
 
@@ -110,7 +109,7 @@ class GitShadowWorktree(
         ) {
             target
         } else {
-            Log.w(TAG, "safeWorktreeFile: path escape blocked for '$relativePath'")
+            logger.warn("safeWorktreeFile: path escape blocked for '$relativePath'")
             null
         }
     }
@@ -128,7 +127,7 @@ class GitShadowWorktree(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.w(TAG, "readShadowFile: failed to read '$relativePath'", e)
+            logger.warn("readShadowFile: failed to read '$relativePath'", e)
             null
         }
     }
@@ -150,7 +149,7 @@ class GitShadowWorktree(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.w(TAG, "writeShadowFile: failed to write '$relativePath'", e)
+            logger.warn("writeShadowFile: failed to write '$relativePath'", e)
             false
         }
     }
@@ -249,7 +248,7 @@ class GitShadowWorktree(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.w(TAG, "syncFromSafRoot: failed to write shadow file '$relativePath'", e)
+                logger.warn("syncFromSafRoot: failed to write shadow file '$relativePath'", e)
             }
         }
 
@@ -301,7 +300,7 @@ class GitShadowWorktree(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.w(TAG, "readManifest: failed to read/parse manifest, treating as empty", e)
+            logger.warn("readManifest: failed to read/parse manifest, treating as empty", e)
             SyncManifest(emptyList())
         }
     }
@@ -312,7 +311,7 @@ class GitShadowWorktree(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.w(TAG, "writeManifest: failed to write manifest", e)
+            logger.warn("writeManifest: failed to write manifest", e)
         }
     }
 
@@ -375,7 +374,7 @@ class GitShadowWorktree(
     }
 
     companion object {
-        private const val TAG = "GitShadowWorktree"
+        private val logger = dev.stapler.stelekit.logging.Logger("GitShadowWorktree")
         private const val MANIFEST_FILE_NAME = ".sync-manifest.json"
         private const val LAST_USED_FILE_NAME = ".last-used"
         private const val WRITE_BACK_QUEUE_FILE_NAME = ".writeback-queue"
@@ -429,7 +428,7 @@ class GitShadowWorktree(
                 when (isAppOwnedStorageLocation(context, graphId)) {
                     true -> continue
                     null -> {
-                        Log.w(TAG, "sweepOrphans: storage-location lookup failed for '$graphId' — leaving '${shadowDir.path}' untouched this pass")
+                        logger.warn("sweepOrphans: storage-location lookup failed for '$graphId' — leaving '${shadowDir.path}' untouched this pass")
                         continue
                     }
                     false -> Unit // no row (pre-existing graph) or a non-AppOwned kind — sweep as before
@@ -438,7 +437,7 @@ class GitShadowWorktree(
                 try {
                     shadowDir.deleteRecursively()
                 } catch (e: Exception) {
-                    Log.w(TAG, "sweepOrphans: failed to delete orphaned '${shadowDir.path}'", e)
+                    logger.warn("sweepOrphans: failed to delete orphaned '${shadowDir.path}'", e)
                 }
             }
         }
@@ -475,7 +474,7 @@ class GitShadowWorktree(
                 if (e.message?.contains("no such table", ignoreCase = true) == true) {
                     false // migration never ran against this file — equivalent to "no row"
                 } else {
-                    Log.w(TAG, "sweepOrphans: storage-location lookup failed for '$graphId'", e)
+                    logger.warn("sweepOrphans: storage-location lookup failed for '$graphId'", e)
                     null
                 }
             }

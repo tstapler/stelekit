@@ -218,11 +218,7 @@ private fun LocationPickerRow(
         Spacer(modifier = Modifier.width(8.dp))
         Column {
             Text(label, style = MaterialTheme.typography.bodyLarge)
-            Text(
-                subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            MutedText(subtitle)
         }
     }
 }

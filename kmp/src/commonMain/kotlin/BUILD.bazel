@@ -29,7 +29,48 @@ filegroup(
     # stays self-documenting from this file alone, per the Common Per-Package
     # Extraction Recipe (project_plans/commonmain-bazel-target-split/
     # implementation/plan.md).
-    srcs = glob(["**/*.kt"], exclude = ["dev/stapler/stelekit/stats/**"]),
+    srcs = glob(
+        ["**/*.kt"],
+        exclude = [
+            "dev/stapler/stelekit/stats/**",
+            # Mermaid module (own Bazel targets — see mermaid_common_srcs below):
+            # the 7 ui/components/Mermaid*.kt files plus cache/LruCache.kt and
+            # cache/PlatformLock.kt (LruCache's only monolith edges; both
+            # dependency-free apart from each other, so no full cache-package
+            # extraction needed for the split).
+            "dev/stapler/stelekit/ui/components/Mermaid*.kt",
+            "dev/stapler/stelekit/cache/LruCache.kt",
+            "dev/stapler/stelekit/cache/PlatformLock.kt",
+        ],
+    ),
+    visibility = ["//kmp:__subpackages__"],
+)
+
+# ── :mermaid_common_srcs ─────────────────────────────────────────────────────
+# The mermaid module's commonMain files, excluded from :kt_srcs above and compiled
+# instead in the mermaid Bazel targets so mermaid rebuilds/tests only on mermaid
+# changes:
+#   - //kmp/src/jvmMain/kotlin:mermaid_lib (JVM; plus the 5 jvmMain mermaid files)
+#   - //kmp/src/jvmTest/kotlin:mermaid_jvm_tests (JVM tests)
+#   - //kmp/src/androidMain/kotlin:android_main (Android; compiled in-unit there —
+#     Android needs no isolation, so no separate android mermaid target exists)
+# cache/LruCache.kt rides along: it is the mermaid module's only monolith edge
+# (used by MermaidCache + MermaidJvmEngine.JavaBridge) and depends only on
+# cache/PlatformLock.kt (also in this filegroup), so the monoliths take both
+# back via a dep on the mermaid targets instead of compiling them.
+filegroup(
+    name = "mermaid_common_srcs",
+    srcs = [
+        "dev/stapler/stelekit/cache/LruCache.kt",
+        "dev/stapler/stelekit/cache/PlatformLock.kt",
+        "dev/stapler/stelekit/ui/components/MermaidBlock.kt",
+        "dev/stapler/stelekit/ui/components/MermaidCache.kt",
+        "dev/stapler/stelekit/ui/components/MermaidDiagramSurface.kt",
+        "dev/stapler/stelekit/ui/components/MermaidLimits.kt",
+        "dev/stapler/stelekit/ui/components/MermaidRenderResult.kt",
+        "dev/stapler/stelekit/ui/components/MermaidRenderer.kt",
+        "dev/stapler/stelekit/ui/components/MermaidSvgAspectRatio.kt",
+    ],
     visibility = ["//kmp:__subpackages__"],
 )
 
@@ -65,7 +106,6 @@ filegroup(
     name = "platform_core_srcs",
     srcs = [
         "dev/stapler/stelekit/cache/PlatformCacheConfig.kt",
-        "dev/stapler/stelekit/cache/PlatformLock.kt",
         "dev/stapler/stelekit/coroutines/PlatformDispatcher.kt",
         "dev/stapler/stelekit/db/DriverFactory.kt",
         "dev/stapler/stelekit/db/LibsqlSupport.kt",
@@ -93,17 +133,17 @@ filegroup(
         "dev/stapler/stelekit/sections/PlatformSectionSync.kt",
         "dev/stapler/stelekit/sections/SectionManifestParser.kt",
         "dev/stapler/stelekit/transfer/qrcode/QrCodec.kt",
+        "dev/stapler/stelekit/ui/ModifierExtensions.kt",
+        "dev/stapler/stelekit/ui/PlatformBackHandler.kt",
+        "dev/stapler/stelekit/ui/PlatformBottomBar.kt",
+        "dev/stapler/stelekit/ui/PlatformClipboardProvider.kt",
+        "dev/stapler/stelekit/ui/PlatformShareProvider.kt",
         "dev/stapler/stelekit/ui/annotate/ImageEncoder.kt",
         "dev/stapler/stelekit/ui/components/CameraViewfinderDialog.kt",
         "dev/stapler/stelekit/ui/components/DebugMenuOverlay.kt",
         "dev/stapler/stelekit/ui/components/PageDropTargetModifier.kt",
         "dev/stapler/stelekit/ui/components/PlatformFrameTimeOverlay.kt",
         "dev/stapler/stelekit/ui/components/SearchDialog.kt",
-        "dev/stapler/stelekit/ui/ModifierExtensions.kt",
-        "dev/stapler/stelekit/ui/PlatformBackHandler.kt",
-        "dev/stapler/stelekit/ui/PlatformBottomBar.kt",
-        "dev/stapler/stelekit/ui/PlatformClipboardProvider.kt",
-        "dev/stapler/stelekit/ui/PlatformShareProvider.kt",
         "dev/stapler/stelekit/ui/theme/DynamicColorScheme.kt",
         "dev/stapler/stelekit/ui/transfer/PlatformCameraPreview.kt",
         "dev/stapler/stelekit/util/Time.kt",

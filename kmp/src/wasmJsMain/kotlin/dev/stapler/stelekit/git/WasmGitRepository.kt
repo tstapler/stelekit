@@ -243,6 +243,11 @@ class WasmGitRepository(
         onProgress: (String) -> Unit,
     ): Either<DomainError.GitError, Unit> = DomainError.GitError.NotSupported("web").left()
 
+    // The web "clone a new repo" flow doesn't exist (clone() above is NotSupported), so this is
+    // never reached in practice — kept consistent with clone() for interface completeness.
+    override suspend fun testRemote(url: String, auth: GitAuth): Either<DomainError.GitError, Unit> =
+        DomainError.GitError.NotSupported("web").left()
+
     // ================================ Shared helpers ================================
 
     private suspend fun resolveHostConfig(config: GitConfig): Either<DomainError.GitError, GitHostConfig> =

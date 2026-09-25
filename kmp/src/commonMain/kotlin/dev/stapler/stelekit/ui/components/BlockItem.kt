@@ -419,15 +419,40 @@ internal fun BlockItem(
                         onLongPressSelect = onLongPressSelect,
                         modifier = Modifier.weight(1f),
                     )
-                    is BlockType.CodeFence -> CodeFenceBlock(
-                        content = block.content,
-                        language = codeFenceLanguage(block.content),
-                        onStartEditing = onStartEditing,
-                        isInSelectionMode = isInSelectionMode,
-                        onToggleSelect = onToggleSelect,
-                        onLongPressSelect = onLongPressSelect,
-                        modifier = Modifier.weight(1f),
-                    )
+                    is BlockType.CodeFence -> {
+                        val language = codeFenceLanguage(block.content)
+                        if (language.equals("mermaid", ignoreCase = true)) {
+                            MermaidBlock(
+                                content = block.content,
+                                onStartEditing = onStartEditing,
+                                isInSelectionMode = isInSelectionMode,
+                                onToggleSelect = onToggleSelect,
+                                onLongPressSelect = onLongPressSelect,
+                                modifier = Modifier.weight(1f),
+                                fallback = { fallbackContent, fallbackModifier ->
+                                    CodeFenceBlock(
+                                        content = fallbackContent,
+                                        language = "mermaid",
+                                        onStartEditing = onStartEditing,
+                                        modifier = fallbackModifier,
+                                        isInSelectionMode = isInSelectionMode,
+                                        onToggleSelect = onToggleSelect,
+                                        onLongPressSelect = onLongPressSelect,
+                                    )
+                                },
+                            )
+                        } else {
+                            CodeFenceBlock(
+                                content = block.content,
+                                language = language,
+                                onStartEditing = onStartEditing,
+                                isInSelectionMode = isInSelectionMode,
+                                onToggleSelect = onToggleSelect,
+                                onLongPressSelect = onLongPressSelect,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
                     is BlockType.Blockquote -> BlockquoteBlock(
                         content = block.content,
                         linkColor = linkColor,

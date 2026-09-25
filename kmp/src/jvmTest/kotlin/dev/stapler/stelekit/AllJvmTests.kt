@@ -32,6 +32,7 @@ import dev.stapler.stelekit.domain.ClaudeTopicEnricherTest
 import dev.stapler.stelekit.domain.UrlFetcherJvmTest
 import dev.stapler.stelekit.export.ExportIntegrationTest
 import dev.stapler.stelekit.export.HtmlExporterTest
+import dev.stapler.stelekit.git.GitRepoHistoryStoreTest
 import dev.stapler.stelekit.integration.JournalParseReproTest
 import dev.stapler.stelekit.integration.PipelineReproductionTest
 import dev.stapler.stelekit.llm.RemoteLlmProviderTest
@@ -69,6 +70,10 @@ import dev.stapler.stelekit.ui.RecentPagesTest
 import dev.stapler.stelekit.ui.StelekitViewModelLlmSettingsTest
 import dev.stapler.stelekit.ui.StelekitViewModelLoadingTest
 import dev.stapler.stelekit.ui.components.ApplyAutocompleteSelectionTest
+import dev.stapler.stelekit.ui.components.BlockItemCodeFenceDispatchTest
+import dev.stapler.stelekit.ui.components.MermaidBlockFocusTest
+import dev.stapler.stelekit.ui.components.MermaidBlockInteractionTest
+import dev.stapler.stelekit.ui.components.MermaidBlockTest
 import dev.stapler.stelekit.ui.components.ParseMarkdownWithStylingTest
 import dev.stapler.stelekit.ui.components.SearchDialogTest
 import dev.stapler.stelekit.ui.components.SuggestionContextMenuTest
@@ -88,6 +93,9 @@ import dev.stapler.stelekit.ui.screens.AllPagesViewModelTest
 import dev.stapler.stelekit.ui.screens.JournalsViewSqlDelightTest
 import dev.stapler.stelekit.ui.screens.JournalsViewUITest
 import dev.stapler.stelekit.ui.screens.PageViewUITest
+import dev.stapler.stelekit.ui.screens.git.GitSetupScreenHelpersTest
+import dev.stapler.stelekit.ui.screens.git.GitSetupScreenSaveLogicTest
+import dev.stapler.stelekit.ui.screens.git.WikiSubdirUriGuardTest
 import dev.stapler.stelekit.vault.crypto.CryptoEngineTest
 import dev.stapler.stelekit.vault.integration.GraphLayerCryptoTest
 import dev.stapler.stelekit.vault.integration.VaultRoundTripTest
@@ -140,6 +148,7 @@ import org.junit.runners.Suite
     UrlFetcherJvmTest::class,
     ExportIntegrationTest::class,
     HtmlExporterTest::class,
+    GitRepoHistoryStoreTest::class,
     JournalParseReproTest::class,
     PipelineReproductionTest::class,
     ChangeApplierTest::class,
@@ -165,6 +174,10 @@ import org.junit.runners.Suite
     QrCodecJvmTest::class,
     QrCodecJvmRoundTripTest::class,
     ApplyAutocompleteSelectionTest::class,
+    BlockItemCodeFenceDispatchTest::class,
+    MermaidBlockFocusTest::class,
+    MermaidBlockInteractionTest::class,
+    MermaidBlockTest::class,
     ParseMarkdownWithStylingTest::class,
     SearchDialogTest::class,
     SuggestionContextMenuTest::class,
@@ -187,6 +200,9 @@ import org.junit.runners.Suite
     JournalsViewSqlDelightTest::class,
     JournalsViewUITest::class,
     PageViewUITest::class,
+    GitSetupScreenHelpersTest::class,
+    GitSetupScreenSaveLogicTest::class,
+    WikiSubdirUriGuardTest::class,
     StelekitViewModelLoadingTest::class,
     StelekitViewModelLlmSettingsTest::class,
     LlmProviderListScreenTest::class,

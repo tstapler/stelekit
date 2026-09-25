@@ -9,6 +9,61 @@ into one kotlinc invocation when targeting JVM.
 
 load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_binary", "kt_jvm_library")
 
+# Mermaid module — the 5 jvmMain mermaid files plus the 9 commonMain mermaid files
+# (//kmp/src/commonMain/kotlin:mermaid_common_srcs: 7 ui/components/Mermaid*.kt +
+# cache/LruCache.kt + cache/PlatformLock.kt) plus the PlatformLock JVM actual,
+# compiled as one unit so the common `expect` declarations (renderMermaid,
+# against their jvmMain `actual`s — same pattern as jvm_main_lib below, scoped to
+# mermaid. Only monolith edge left: none (MermaidBlock takes its CodeFenceBlock
+# fallback as a lambda; LruCache is compiled here). Result: Bazel rebuilds this
+# target — and reruns //kmp/src/jvmTest/kotlin:mermaid_jvm_tests — only when
+# mermaid sources change.
+kt_jvm_library(
+    name = "mermaid_lib",
+    srcs = [
+        "//kmp/src/commonMain/kotlin:mermaid_common_srcs",
+        "//kmp/src/jvmCommonMain/kotlin:platform_lock_actual_srcs",
+    ] + [
+        "dev/stapler/stelekit/ui/components/MermaidDiagramSurface.jvm.kt",
+        "dev/stapler/stelekit/ui/components/MermaidEngineActor.kt",
+        "dev/stapler/stelekit/ui/components/MermaidJvmEngine.kt",
+        "dev/stapler/stelekit/ui/components/MermaidRenderer.jvm.kt",
+        "dev/stapler/stelekit/ui/components/MermaidSvgCanvas.kt",
+    ],
+    common_srcs = [
+        "//kmp/src/commonMain/kotlin:mermaid_common_srcs",
+    ],
+    kotlinc_opts = "//:kmp_jvm_kotlinc_opts",
+    plugins = [
+        "//:compose_compiler_plugin",
+    ],
+    visibility = ["//kmp:__subpackages__"],
+    deps = [
+        # Bundled mermaid.js + headless-DOM shim for MermaidJvmEngine
+        "//kmp/src/jvmMain/resources/mermaid:mermaid_resources",
+
+        # Kotlinx (actor coroutines)
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm",
+
+        # Compose Desktop (MermaidBlock UI + Skia SVG surface;
+        # ui-graphics arrives transitively via foundation, as in jvm_main_lib)
+        "@maven//:org_jetbrains_compose_runtime_runtime_desktop",
+        "@maven//:org_jetbrains_compose_foundation_foundation_desktop",
+        "@maven//:org_jetbrains_compose_material3_material3_desktop",
+        "@maven//:org_jetbrains_compose_desktop_desktop_jvm_linux_x64",
+
+        # GraalJS + Apache Batik — MermaidJvmEngine's GraalJS-hosted mermaid.js
+        # renderer and its SVGTextElement.getBBox() shim
+        "@maven//:org_graalvm_polyglot_polyglot",
+        "@maven//:org_graalvm_polyglot_js_community",
+        "@maven//:org_apache_xmlgraphics_batik_bridge",
+        "@maven//:org_apache_xmlgraphics_batik_anim",
+
+        # Kotlin stdlib
+        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+    ],
+)
+
 # Desktop library — all JVM sources compiled together (commonMain + jvmCommonMain + jvmMain).
 # common_srcs marks the expect side of each expect/actual pair:
 #   - commonMain: expect declarations resolved by jvmCommonMain actuals (e.g. PlatformCacheConfig)
@@ -24,7 +79,12 @@ kt_jvm_library(
         "//kmp/src/jvmCommonMain/kotlin:kt_srcs",
     ] + glob(
         ["**/*.kt"],
-        exclude = ["**/benchmarks/**"],  # JMH benchmarks — Gradle-only (jmh plugin)
+        exclude = [
+            "**/benchmarks/**",  # JMH benchmarks — Gradle-only (jmh plugin)
+            # Mermaid module — compiled as //kmp/src/jvmMain/kotlin:mermaid_lib
+            # instead (see above); taken back here via deps below.
+            "dev/stapler/stelekit/ui/components/Mermaid*.kt",
+        ],
     ),
     common_srcs = [
         "//kmp/src/commonMain/kotlin:kt_srcs",
@@ -36,18 +96,25 @@ kt_jvm_library(
         "//:compose_compiler_plugin",
         "//:serialization_compiler_plugin",
     ],
+    visibility = ["//kmp:__subpackages__"],
     deps = [
+        # Mermaid module (own target — see above): BlockItem.kt routes mermaid
+        # fences to MermaidBlock, and the monolith uses cache/LruCache.kt, both
+        # compiled in mermaid_lib now that kt_srcs excludes them.
+        ":mermaid_lib",
+
         # stats (Tier 1, extracted — ADR-001, tier_manifest.bzl:TIER_1_PACKAGES):
         # real fan-in from ui/App.kt, ui/screens/LibraryStats*.kt (commonMain)
         # and jvmMain/desktop/ui/App.kt, jvmMain/stats/*.kt (same-package
         # actuals) — without this dep, stats/*.kt (now its own Bazel package,
         # excluded from kt_srcs's glob) is unresolved here.
-        "//kmp/src/commonMain/kotlin/dev/stapler/stelekit/stats:stats",
+        "//kmp/src/commonMain/kotlin/dev/stapler/stelekit/stats",
 
         # Resources (demo-graph, icons) from commonMain/resources
         "//kmp/src/commonMain/resources:common_resources",
         # Desktop icon from jvmMain/resources/icons
         "//kmp/src/jvmMain/resources/icons:icon_resource",
+        # (mermaid.js resources live on //kmp/src/jvmMain/kotlin:mermaid_lib now)
 
         # SQLDelight generated code + runtime (from commonMain)
         "//kmp/src/generated/sqldelight:sqldelight_generated_jvm",
@@ -120,6 +187,13 @@ kt_jvm_library(
         # PDFBox — PDF text extraction for asset OCR pipeline (from jvmMain)
         "@maven//:org_apache_pdfbox_pdfbox",
 
+        # GraalJS + Apache Batik — MermaidJvmEngine's GraalJS-hosted mermaid.js
+        # renderer and its SVGTextElement.getBBox() shim (from jvmMain)
+        "@maven//:org_graalvm_polyglot_polyglot",
+        "@maven//:org_graalvm_polyglot_js_community",
+        "@maven//:org_apache_xmlgraphics_batik_bridge",
+        "@maven//:org_apache_xmlgraphics_batik_anim",
+
         # ZXing — QR encode/decode for camera-qr-export (from commonMain expect / jvmMain actual)
         "@maven//:com_google_zxing_core",
 
@@ -129,19 +203,18 @@ kt_jvm_library(
         # Kotlin stdlib
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
     ],
-    visibility = ["//kmp:__subpackages__"],
 )
 
 # Desktop application binary
 kt_jvm_binary(
     name = "desktop_app",
-    main_class = "dev.stapler.stelekit.desktop.MainKt",
-    runtime_deps = [":jvm_main_lib"],
     jvm_flags = [
         # Required for JVM attach (async-profiler + JFR)
         "-Djdk.attach.allowAttachSelf=true",
         # Required by Compose Desktop for reflection into java.lang
         "--add-opens=java.base/java.lang=ALL-UNNAMED",
     ],
+    main_class = "dev.stapler.stelekit.desktop.MainKt",
     visibility = ["//visibility:public"],
+    runtime_deps = [":jvm_main_lib"],
 )

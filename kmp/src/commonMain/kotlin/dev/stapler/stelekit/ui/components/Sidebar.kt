@@ -10,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.ExpandLess
@@ -95,6 +96,7 @@ fun LeftSidebar(
     onToggleFavorite: (Page) -> Unit,
     onGraphSelected: (String) -> Unit = {},
     onAddGraph: () -> Unit = {},
+    onNewGraph: () -> Unit = {},
     onRemoveGraph: (String) -> Unit = {},
     onCollapse: () -> Unit = {},
     syncState: SyncState = SyncState.Idle,
@@ -116,6 +118,7 @@ fun LeftSidebar(
     onCloneGraph: () -> Unit = {},
     onUpdateGraphPath: (String, String) -> Unit = { _, _ -> },
     onRenameGraph: (String, String) -> Unit = { _, _ -> },
+    onUpdateGraphDescription: (String, String) -> Unit = { _, _ -> },
     onRelinkHostDirectory: (String) -> Unit = {},
     supportsHostDirectoryLink: Boolean = false,
     /** Story 3.2.2 — see [GraphSwitcher]'s parameter doc. */
@@ -190,10 +193,12 @@ fun LeftSidebar(
                 activeGraphId = activeGraphId,
                 onGraphSelected = onGraphSelected,
                 onAddGraph = onAddGraph,
+                onNewGraph = onNewGraph,
                 onRemoveGraph = onRemoveGraph,
                 onCloneGraph = onCloneGraph,
                 onUpdateGraphPath = onUpdateGraphPath,
                 onRenameGraph = onRenameGraph,
+                onUpdateGraphDescription = onUpdateGraphDescription,
                 onRelinkHostDirectory = onRelinkHostDirectory,
                 supportsHostDirectoryLink = supportsHostDirectoryLink,
                 storageLocationResolver = storageLocationResolver,
@@ -418,10 +423,12 @@ fun GraphSwitcher(
     activeGraphId: String? = null,
     onGraphSelected: (String) -> Unit,
     onAddGraph: () -> Unit,
+    onNewGraph: () -> Unit = {},
     onRemoveGraph: (String) -> Unit,
     onCloneGraph: () -> Unit = {},
     onUpdateGraphPath: (String, String) -> Unit = { _, _ -> },
     onRenameGraph: (String, String) -> Unit = { _, _ -> },
+    onUpdateGraphDescription: (String, String) -> Unit = { _, _ -> },
     /** Re-points a graph's host-folder link at a newly-picked folder (web-local-folder-livesync
      * only). Must call the platform's directory-picker synchronously from this click before
      * launching a coroutine — same transient-user-activation constraint as [onAddGraph]. No-op
@@ -481,6 +488,7 @@ fun GraphSwitcher(
     var choosingMoveFor by remember { mutableStateOf<PendingStorageMove?>(null) }
     var confirmingMove by remember { mutableStateOf<PendingStorageMove?>(null) }
     val moveStorageScope = rememberCoroutineScope()
+    val activeDescription = availableGraphs.firstOrNull { it.id.value == activeGraphId }?.description.orEmpty()
 
     Column(modifier = modifier) {
         // Current graph button
@@ -511,12 +519,22 @@ fun GraphSwitcher(
                     tint = MaterialTheme.colorScheme.primary
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = currentGraphName.ifEmpty { "Select Graph" },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier.weight(1f)
-                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = currentGraphName.ifEmpty { "Select Graph" },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                    if (activeDescription.isNotBlank()) {
+                        Text(
+                            text = activeDescription,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
                 if (hostAccessState == HostAccessState.Granted) {
                     Icon(
                         imageVector = Icons.Default.Link,
@@ -576,6 +594,8 @@ fun GraphSwitcher(
             if (!isCurrentSessionEphemeral()) {
                 GraphMenuActionItem(Icons.Default.Add, "Open local folder...") { onAddGraph(); expanded = false }
             }
+
+            GraphMenuActionItem(Icons.Default.CreateNewFolder, "New graph...") { onNewGraph(); expanded = false }
 
             GraphMenuActionItem(Icons.Default.CloudDownload, "Clone from URL...") { onCloneGraph(); expanded = false }
 
@@ -646,6 +666,9 @@ fun GraphSwitcher(
     val editingGraph = graphToEdit
     if (editingGraph != null) {
         var newName by remember(editingGraph.id.value) { mutableStateOf(editingGraph.displayName) }
+        var newDescription by remember(editingGraph.id.value) { mutableStateOf(editingGraph.description) }
+        val edited = newName.isNotBlank() &&
+            (newName != editingGraph.displayName || newDescription != editingGraph.description)
         AlertDialog(
             onDismissRequest = { graphToEdit = null },
             title = { Text("Edit Graph") },
@@ -656,6 +679,14 @@ fun GraphSwitcher(
                         onValueChange = { newName = it },
                         label = { Text("Name") },
                         singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = newDescription,
+                        onValueChange = { newDescription = it },
+                        label = { Text("Description (optional)") },
+                        maxLines = 3,
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Spacer(Modifier.height(12.dp))
@@ -709,12 +740,11 @@ fun GraphSwitcher(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        if (newName.isNotBlank() && newName != editingGraph.displayName) {
-                            onRenameGraph(editingGraph.id.value, newName)
-                        }
+                        if (newName != editingGraph.displayName) onRenameGraph(editingGraph.id.value, newName)
+                        if (newDescription != editingGraph.description) onUpdateGraphDescription(editingGraph.id.value, newDescription)
                         graphToEdit = null
                     },
-                    enabled = newName.isNotBlank() && newName != editingGraph.displayName,
+                    enabled = edited,
                 ) {
                     Text("Save")
                 }
@@ -875,7 +905,7 @@ fun GraphItem(
                     // Prefer the real linked host folder's name over the internal OPFS path —
                     // the path (e.g. "/stelekit/notes") tells the user nothing about which real
                     // folder on disk the graph is backed by once host-directory-livesync is wired up.
-                    text = graph.hostDirName?.let { "linked to: $it" } ?: graph.path,
+                    text = graph.description.ifBlank { null } ?: graph.hostDirName?.let { "linked to: $it" } ?: graph.path,
                     style = MaterialTheme.typography.bodySmall,
                     color = (if (isActive) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
                         .copy(alpha = 0.6f),

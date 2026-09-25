@@ -8,7 +8,6 @@ import android.os.FileObserver
 import android.os.Handler
 import android.os.Looper
 import android.provider.DocumentsContract
-import android.util.Log
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
@@ -61,7 +60,7 @@ class SafChangeDetector(
     private val rearmJobs = ConcurrentHashMap<String, Job>()
 
     companion object {
-        private const val TAG = "SafChangeDetector"
+        private val logger = dev.stapler.stelekit.logging.Logger("SafChangeDetector")
 
         // 2 s: short enough to catch sync-tool directory recreates within a reasonable window,
         // long enough not to spin if the directory is transiently absent during an atomic rename.
@@ -94,7 +93,7 @@ class SafChangeDetector(
         for (dir in dirsToWatch) {
             addObserverFor(dir, mask, mainHandler)
         }
-        Log.d(TAG, "startFileObservers: watching ${dirsToWatch.size} subdirs under $graphPath")
+        logger.debug("startFileObservers: watching ${dirsToWatch.size} subdirs under $graphPath")
     }
 
     /**
@@ -134,7 +133,7 @@ class SafChangeDetector(
             // Tear it down and re-arm once the directory reappears.
             self.stopWatching()
             fileObservers.remove(self)
-            Log.d(TAG, "handleFileEvent: dead-inode on ${dir.name} — scheduling re-arm")
+            logger.debug("handleFileEvent: dead-inode on ${dir.name} — scheduling re-arm")
             val key = dir.absolutePath
             rearmJobs[key]?.cancel()
             val rearmJob = activeScope?.launch(Dispatchers.IO) {
@@ -147,7 +146,7 @@ class SafChangeDetector(
                         if (!stopped) addObserverFor(dir, mask, mainHandler)
                     }
                     if (!stopped) mainHandler.post { onExternalChange() }
-                    Log.d(TAG, "handleFileEvent: re-armed FileObserver for ${dir.name}")
+                    logger.debug("handleFileEvent: re-armed FileObserver for ${dir.name}")
                 }
             }
             if (rearmJob != null) rearmJobs[key] = rearmJob else rearmJobs.remove(key)
@@ -178,7 +177,7 @@ class SafChangeDetector(
                 context.contentResolver.registerContentObserver(childrenUri, true, observer)
                 contentObservers.add(observer)
             } catch (e: Exception) {
-                Log.w(TAG, "startContentObserversAndPoller: failed to register for $docId", e)
+                logger.warn("startContentObserversAndPoller: failed to register for $docId", e)
             }
         }
 

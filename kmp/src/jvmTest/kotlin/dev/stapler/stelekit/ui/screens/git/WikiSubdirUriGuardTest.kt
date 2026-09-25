@@ -29,4 +29,7 @@ class WikiSubdirUriGuardTest {
         assertFalse(looksLikeUri("notes/pages"))
         assertFalse(looksLikeUri(""))
     }
+
+    // wikiSubdirError/repoNameFromUrl coverage moved to commonTest's GitSetupScreenHelpersTest so
+    // Android/iOS/wasmJs also exercise this pure commonMain logic, not just JVM.
 }

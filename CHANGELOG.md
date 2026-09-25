@@ -1,5 +1,102 @@
 # Changelog
 
+## [0.88.0](https://github.com/tstapler/stelekit/compare/v0.87.2...v0.88.0) (2026-09-24)
+
+
+### Features
+
+* **git-setup:** remember recent repos, clarify app-storage-vs-custom-folder choice ([#354](https://github.com/tstapler/stelekit/issues/354)) ([14738a5](https://github.com/tstapler/stelekit/commit/14738a559668e1ad435bd4672a757f1dcf924d94))
+
+## [0.87.2](https://github.com/tstapler/stelekit/compare/v0.87.1...v0.87.2) (2026-09-24)
+
+
+### Bug Fixes
+
+* **git-setup:** "Test connection" always failed for a new clone ([#351](https://github.com/tstapler/stelekit/issues/351)) ([13519d1](https://github.com/tstapler/stelekit/commit/13519d145f51e1fca7469796467a18421200ff6b))
+* **wasm:** implement real Canvas-2D JPEG encoder for annotation export ([#350](https://github.com/tstapler/stelekit/issues/350)) ([cb7edec](https://github.com/tstapler/stelekit/commit/cb7edec2e6dd5d11bfd5889f0ca2c6cac70bc2eb))
+* **wasm:** real encrypted CredentialStore actual on web ([#348](https://github.com/tstapler/stelekit/issues/348)) ([926b097](https://github.com/tstapler/stelekit/commit/926b097aab3e96df9a81c884140c5dcd551e9275))
+
+## [0.87.1](https://github.com/tstapler/stelekit/compare/v0.87.0...v0.87.1) (2026-09-22)
+
+
+### Bug Fixes
+
+* **android:** declare ACCESS_LOCAL_NETWORK explicitly ([d37a21d](https://github.com/tstapler/stelekit/commit/d37a21d2853c5ea7cedc567ef53c1782fd062cac))
+
+## [0.87.0](https://github.com/tstapler/stelekit/compare/v0.86.2...v0.87.0) (2026-09-22)
+
+
+### Features
+
+* **graphs:** app-storage clone default, name/description, new-graph flow ([ceaa2fa](https://github.com/tstapler/stelekit/commit/ceaa2fa465819d86af746503a80ce87365d498ab))
+
+## [0.86.2](https://github.com/tstapler/stelekit/compare/v0.86.1...v0.86.2) (2026-09-21)
+
+
+### Bug Fixes
+
+* **android:** init NetworkMonitor, add network permissions, route logs to in-app viewer ([#343](https://github.com/tstapler/stelekit/issues/343)) ([fbfef9a](https://github.com/tstapler/stelekit/commit/fbfef9a70b4ac1eea45fc216a5f650c90d2d0983))
+
+## [0.86.1](https://github.com/tstapler/stelekit/compare/v0.86.0...v0.86.1) (2026-09-21)
+
+
+### Bug Fixes
+
+* **bazel:** include PlatformLock in mermaid module filegroups ([4652092](https://github.com/tstapler/stelekit/commit/46520924282d7e8a87fe6b4887822968ed2bccc2))
+* **bazel:** move PlatformLock actual out of monolith srcs ([8a0b48d](https://github.com/tstapler/stelekit/commit/8a0b48daeb74e9a94919534c3700ba506c2f418a))
+* **bazel:** run mermaid tests exclusively to avoid suite contention ([8568aab](https://github.com/tstapler/stelekit/commit/8568aabf92e900d2ed446b5fc14635380250dcd5))
+* **bazel:** widen PlatformLock visibility for mermaid module split ([cbdf671](https://github.com/tstapler/stelekit/commit/cbdf671e89f0d512bc5c36c9db9a4baee5bc4841))
+* **ci:** fail Bazel steps on build/test failure; drop PlatformLock from platform_core_srcs ([26a999a](https://github.com/tstapler/stelekit/commit/26a999aa0576ce27d95dedbb92e1b6d4ba88d5a6))
+* **mermaid:** cold-start render budget from measured latency; Maven Central mirror first ([177dc6f](https://github.com/tstapler/stelekit/commit/177dc6fb73061f60c8c26428cae99c6aa560dccc))
+
+## [0.86.0](https://github.com/tstapler/stelekit/compare/v0.85.4...v0.86.0) (2026-09-20)
+
+
+### Features
+
+* **desktop:** warm Mermaid GraalJS engine at app start ([3e4d41c](https://github.com/tstapler/stelekit/commit/3e4d41cc9025d1de6c456129c6db38135371a4ea))
+
+## [0.85.4](https://github.com/tstapler/stelekit/compare/v0.85.3...v0.85.4) (2026-09-18)
+
+
+### Bug Fixes
+
+* **ci:** retry flaky real-engine mermaid test in JVM safety gate ([148e3f7](https://github.com/tstapler/stelekit/commit/148e3f70e139c4854fef1ff9254a239ad348be52))
+* **test:** derisk real-GraalJS mermaid tests from CI CPU contention ([3ebb330](https://github.com/tstapler/stelekit/commit/3ebb3308b6fe2e2f8bad8962b4b4d57673d52f44))
+
+## [0.85.3](https://github.com/tstapler/stelekit/compare/v0.85.2...v0.85.3) (2026-09-17)
+
+
+### Bug Fixes
+
+* **mermaid:** adapt JVM render timeout to observed latency ([#338](https://github.com/tstapler/stelekit/issues/338)) ([72333ea](https://github.com/tstapler/stelekit/commit/72333ea1d2ea049b04150d18c092cded9ff4e799))
+
+## [0.85.2](https://github.com/tstapler/stelekit/compare/v0.85.1...v0.85.2) (2026-09-17)
+
+
+### Bug Fixes
+
+* **ci:** run release safety-gate's JVM tests via Bazel ([#336](https://github.com/tstapler/stelekit/issues/336)) ([efcf0d1](https://github.com/tstapler/stelekit/commit/efcf0d19f6551365ea0e306cab8831258f18ea09))
+
+## [0.85.1](https://github.com/tstapler/stelekit/compare/v0.85.0...v0.85.1) (2026-09-17)
+
+
+### Bug Fixes
+
+* **ci:** add gradle-ci-memory to release safety-gate jobs ([#334](https://github.com/tstapler/stelekit/issues/334)) ([080b566](https://github.com/tstapler/stelekit/commit/080b56619d92cd741dc779a554bbc8c343d95e44))
+
+## [0.85.0](https://github.com/tstapler/stelekit/compare/v0.84.1...v0.85.0) (2026-09-17)
+
+
+### Features
+
+* **mermaid:** render Mermaid diagrams in code blocks ([#331](https://github.com/tstapler/stelekit/issues/331)) ([5e0b634](https://github.com/tstapler/stelekit/commit/5e0b634dbeb867a729a8fd7be6acf575fdf1d131))
+
+
+### Bug Fixes
+
+* **ci:** split release safety-gate tests onto separate runners ([#332](https://github.com/tstapler/stelekit/issues/332)) ([6c782f7](https://github.com/tstapler/stelekit/commit/6c782f786a8d134edd0cc3990322e55ac1adc868))
+
 ## [0.84.1](https://github.com/tstapler/stelekit/compare/v0.84.0...v0.84.1) (2026-09-15)
 
 

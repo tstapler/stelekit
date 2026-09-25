@@ -3,7 +3,6 @@
 
 package dev.stapler.stelekit.platform.google
 
-import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import dev.stapler.stelekit.platform.SteleKitContext
@@ -37,7 +36,7 @@ class AndroidGoogleTokenStore : GoogleTokenStore {
             throw e
         } catch (e: Exception) {
             // Do NOT fall back to plain SharedPreferences for tokens — fail loudly.
-            Log.e(TAG, "EncryptedSharedPreferences initialization failed. Google tokens cannot be stored securely.", e)
+            logger.error("EncryptedSharedPreferences initialization failed. Google tokens cannot be stored securely.", e)
             throw IllegalStateException(
                 "Android Keystore unavailable. Cannot store OAuth tokens securely. " +
                     "Google account features require a device with hardware-backed Keystore.",
@@ -93,7 +92,7 @@ class AndroidGoogleTokenStore : GoogleTokenStore {
     }
 
     private companion object {
-        private const val TAG = "AndroidGoogleTokenStore"
+        private val logger = dev.stapler.stelekit.logging.Logger("AndroidGoogleTokenStore")
         private const val KEY_ACCESS_TOKEN = "google_access_token"
         private const val KEY_REFRESH_TOKEN = "google_refresh_token"
         private const val KEY_EXPIRES_AT = "google_expires_at"

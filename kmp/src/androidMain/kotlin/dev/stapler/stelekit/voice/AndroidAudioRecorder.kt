@@ -13,7 +13,6 @@ import android.media.MediaMuxer
 import android.media.MediaRecorder
 import android.media.AudioFocusRequest
 import android.os.Build
-import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,7 +22,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.math.sqrt
 
-private const val TAG = "AndroidAudioRecorder"
+private val logger = dev.stapler.stelekit.logging.Logger("AndroidAudioRecorder")
 
 class AndroidAudioRecorder(
     private val context: Context,
@@ -176,17 +175,17 @@ class AndroidAudioRecorder(
             PlatformAudioFile("")
         } finally {
             runCatching { audioRecord?.stop() }
-                .onFailure { Log.w(TAG, "audioRecord.stop() failed", it) }
+                .onFailure { logger.warn("audioRecord.stop() failed", it) }
             runCatching { audioRecord?.release() }
-                .onFailure { Log.w(TAG, "audioRecord.release() failed", it) }
+                .onFailure { logger.warn("audioRecord.release() failed", it) }
             runCatching { mediaCodec?.stop() }
-                .onFailure { Log.w(TAG, "mediaCodec.stop() failed", it) }
+                .onFailure { logger.warn("mediaCodec.stop() failed", it) }
             runCatching { mediaCodec?.release() }
-                .onFailure { Log.w(TAG, "mediaCodec.release() failed", it) }
+                .onFailure { logger.warn("mediaCodec.release() failed", it) }
             runCatching { mediaMuxer?.stop() }
-                .onFailure { Log.w(TAG, "mediaMuxer.stop() failed", it) }
+                .onFailure { logger.warn("mediaMuxer.stop() failed", it) }
             runCatching { mediaMuxer?.release() }
-                .onFailure { Log.w(TAG, "mediaMuxer.release() failed", it) }
+                .onFailure { logger.warn("mediaMuxer.release() failed", it) }
             abandonAudioFocus(audioManager, focusRequest, focusChangeListener)
             _amplitudeFlow.value = 0f
         }

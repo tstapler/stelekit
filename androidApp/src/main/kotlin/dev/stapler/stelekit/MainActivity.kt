@@ -7,7 +7,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -125,7 +124,7 @@ class MainActivity : ComponentActivity() {
             }
             pendingFilePick?.complete(destFile.absolutePath)
         } catch (e: Exception) {
-            Log.e(TAG, "filePickerLauncher: failed to copy SSH key file", e)
+            logger.error("filePickerLauncher: failed to copy SSH key file", e)
             pendingFilePick?.complete(null)
         }
         pendingFilePick = null
@@ -134,9 +133,9 @@ class MainActivity : ComponentActivity() {
     private val folderPickerLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocumentTree()
     ) { treeUri: Uri? ->
-        Log.d(TAG, "folderPicker: result treeUri=$treeUri")
+        logger.debug("folderPicker: result treeUri=$treeUri")
         if (treeUri == null) {
-            Log.d(TAG, "folderPicker: user cancelled or no URI returned")
+            logger.debug("folderPicker: user cancelled or no URI returned")
             pendingFolderPick?.complete(null)
             pendingFolderPick = null
             return@registerForActivityResult
@@ -144,9 +143,9 @@ class MainActivity : ComponentActivity() {
 
         // Reject cloud provider URIs — only local ExternalStorageProvider is supported in v1
         val authority = treeUri.authority ?: ""
-        Log.d(TAG, "folderPicker: authority=$authority")
+        logger.debug("folderPicker: authority=$authority")
         if (authority != EXTERNAL_STORAGE_AUTHORITY) {
-            Log.w(TAG, "folderPicker: rejected non-local authority '$authority' (expected $EXTERNAL_STORAGE_AUTHORITY)")
+            logger.warn("folderPicker: rejected non-local authority '$authority' (expected $EXTERNAL_STORAGE_AUTHORITY)")
             pendingFolderPick?.complete(null)
             pendingFolderPick = null
             return@registerForActivityResult
@@ -158,9 +157,9 @@ class MainActivity : ComponentActivity() {
                 treeUri,
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             )
-            Log.d(TAG, "folderPicker: persistable permission taken for $treeUri")
+            logger.debug("folderPicker: persistable permission taken for $treeUri")
         } catch (e: SecurityException) {
-            Log.e(TAG, "folderPicker: failed to take persistable permission", e)
+            logger.error("folderPicker: failed to take persistable permission", e)
             pendingFolderPick?.complete(null)
             pendingFolderPick = null
             return@registerForActivityResult
@@ -175,17 +174,17 @@ class MainActivity : ComponentActivity() {
                     Uri.parse(oldUriStr),
                     Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                 )
-                Log.d(TAG, "folderPicker: released old grant for $oldUriStr")
+                logger.debug("folderPicker: released old grant for $oldUriStr")
             } catch (_: Exception) { /* best effort */ }
         }
 
         // 3. Persist the new URI
         prefs.edit().putString(PlatformFileSystem.KEY_SAF_TREE_URI, treeUri.toString()).apply()
-        Log.d(TAG, "folderPicker: URI persisted to SharedPreferences")
+        logger.debug("folderPicker: URI persisted to SharedPreferences")
 
         // 4. Complete the deferred with the saf:// path
         val safPath = PlatformFileSystem.toSafRoot(treeUri)
-        Log.d(TAG, "folderPicker: completing with safPath=$safPath")
+        logger.debug("folderPicker: completing with safPath=$safPath")
         pendingFolderPick?.complete(safPath)
         pendingFolderPick = null
     }
@@ -451,7 +450,7 @@ class MainActivity : ComponentActivity() {
         val app = application as? SteleKitApplication ?: return
         lifecycleScope.launch {
             try { app.fileSystem.flushPendingWrites() }
-            catch (e: Exception) { Log.w(TAG, "onStop write-behind flush failed", e) }
+            catch (e: Exception) { logger.warn("onStop write-behind flush failed", e) }
         }
     }
 
@@ -496,7 +495,7 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
-        private const val TAG = "MainActivity"
+        private val logger = dev.stapler.stelekit.logging.Logger("MainActivity")
         /** Authority for AOSP ExternalStorageProvider — the only provider supported in v1. */
         const val EXTERNAL_STORAGE_AUTHORITY = "com.android.externalstorage.documents"
         /**

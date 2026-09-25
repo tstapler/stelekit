@@ -103,6 +103,8 @@ import dev.stapler.stelekit.editor.ImageAttachCallbackContractTest
 import dev.stapler.stelekit.export.ExportServiceJournalRangeTest
 import dev.stapler.stelekit.export.ExportServiceLinkedPagesTest
 import dev.stapler.stelekit.git.GitShadowWorktreeNoCoroutineScopeTest
+import dev.stapler.stelekit.git.GitSyncServiceConflictResolutionTest
+import dev.stapler.stelekit.git.GitSyncServiceErrorRoutingTest
 import dev.stapler.stelekit.git.GitSyncServiceRateLimitRetryTest
 import dev.stapler.stelekit.git.GitSyncServiceTest
 import dev.stapler.stelekit.git.merge.JournalMergeServiceTest
@@ -138,6 +140,9 @@ import dev.stapler.stelekit.transfer.qrcode.QrTransferCoordinatorTest
 import dev.stapler.stelekit.transfer.qrcode.TransferSessionTest
 import dev.stapler.stelekit.ui.GalleryViewModelTest
 import dev.stapler.stelekit.ui.screens.DiskConflictFullScreenStateTest
+import dev.stapler.stelekit.ui.components.MermaidRenderKeyTest
+import dev.stapler.stelekit.ui.components.MermaidRenderResultTest
+import dev.stapler.stelekit.ui.components.MermaidSvgAspectRatioTest
 import dev.stapler.stelekit.ui.state.BlockInvalidationIntegrationTest
 import dev.stapler.stelekit.ui.transfer.QrDecodeViewModelTest
 import dev.stapler.stelekit.ui.transfer.QrEncodeViewModelTest
@@ -227,6 +232,8 @@ import org.junit.runners.Suite
     ExportServiceJournalRangeTest::class,
     ExportServiceLinkedPagesTest::class,
     GitShadowWorktreeNoCoroutineScopeTest::class,
+    GitSyncServiceConflictResolutionTest::class,
+    GitSyncServiceErrorRoutingTest::class,
     GitSyncServiceRateLimitRetryTest::class,
     GitSyncServiceTest::class,
     JournalMergeServiceTest::class,
@@ -262,6 +269,9 @@ import org.junit.runners.Suite
     TransferSessionTest::class,
     GalleryViewModelTest::class,
     DiskConflictFullScreenStateTest::class,
+    MermaidRenderKeyTest::class,
+    MermaidRenderResultTest::class,
+    MermaidSvgAspectRatioTest::class,
     BlockInvalidationIntegrationTest::class,
     QrDecodeViewModelTest::class,
     QrEncodeViewModelTest::class,

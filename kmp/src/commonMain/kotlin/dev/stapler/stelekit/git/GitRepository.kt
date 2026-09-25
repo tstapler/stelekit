@@ -24,6 +24,14 @@ interface GitRepository {
         auth: GitAuth,
         onProgress: (String) -> Unit,
     ): Either<DomainError.GitError, Unit>
+
+    /**
+     * Checks that [url] is reachable and [auth] is valid, without requiring a local clone
+     * (`git ls-remote` semantics). Used by the "clone a new repo" setup flow's "Test connection"
+     * step, where [fetch] can't be used yet — it opens an existing local repo at `config.repoRoot`,
+     * which doesn't exist until the clone (on Save) actually runs.
+     */
+    suspend fun testRemote(url: String, auth: GitAuth): Either<DomainError.GitError, Unit>
     suspend fun fetch(config: GitConfig): Either<DomainError.GitError, FetchResult>
     suspend fun status(config: GitConfig): Either<DomainError.GitError, GitStatus>
     suspend fun stageSubdir(config: GitConfig): Either<DomainError.GitError, Unit>

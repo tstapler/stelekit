@@ -3,6 +3,14 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- ACCESS_LOCAL_NETWORK: at targetSdk 36 this is already implicitly granted via INTERNET
+         (Android's Local Network Protections split-permission model), so declaring it here is a
+         no-op for behavior — it only makes the grant explicit instead of store tooling seeing it
+         appear/disappear from the OS's implicit grant. Becomes load-bearing (needs a runtime
+         request, or an NsdManager picker to avoid it) once targetSdk moves to 37.
+         https://developer.android.com/privacy-and-security/local-network-permission -->
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- MANAGE_EXTERNAL_STORAGE: when granted, replaces SAF with direct java.io.File POSIX
          access for orders-of-magnitude lower write latency. Play Store policy explicitly

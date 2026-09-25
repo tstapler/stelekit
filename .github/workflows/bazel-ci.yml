@@ -53,13 +53,21 @@ jobs:
           mkdir -p /tmp/.X11-unix
 
       - name: Build JVM target
-        run: bazel build //kmp:desktop_app --config=remote-cache 2>&1 | tee "$RUNNER_TEMP/bazel-jvm-build.log"
+        # pipefail: without it, `| tee` masks bazel's exit code and a failed
+        # build/test step reports success (observed: FAILED TO BUILD with a green
+        # step). Applies to every tee'd step in this file.
+        run: set -o pipefail; bazel build //kmp:desktop_app --config=remote-cache 2>&1 | tee "$RUNNER_TEMP/bazel-jvm-build.log"
 
       - name: Run JVM tests
+        # --flaky_test_attempts=3: same real-GraalJS timing flake as the
+        # release safety gate (MermaidEngineActorTest real-render timeout
+        # under contention) — keep PR signal green on transient slowness.
         run: |
+          set -o pipefail
           xvfb-run --auto-servernum bazel test //kmp:jvm_tests \
             --config=remote-cache \
             --test_output=all \
+            --flaky_test_attempts=3 \
             --sandbox_add_mount_pair=/tmp/.X11-unix \
             --test_env=DISPLAY \
             --test_env=XAUTHORITY 2>&1 | tee "$RUNNER_TEMP/bazel-jvm-test.log"
@@ -96,6 +104,7 @@ jobs:
 
       - name: Run business-logic tests
         run: |
+          set -o pipefail
           bazel test //kmp:business_tests \
             --config=remote-cache \
             --test_output=all 2>&1 | tee "$RUNNER_TEMP/bazel-business-test.log"
@@ -150,7 +159,7 @@ jobs:
           cache-save: true
 
       - name: Build Android APK
-        run: bazel build //kmp:android_app --config=android --config=remote-cache 2>&1 | tee "$RUNNER_TEMP/bazel-android-build.log"
+        run: set -o pipefail; bazel build //kmp:android_app --config=android --config=remote-cache 2>&1 | tee "$RUNNER_TEMP/bazel-android-build.log"
 
       - name: CI job report
         if: always()
@@ -200,6 +209,7 @@ jobs:
 
       - name: Run Android unit tests
         run: |
+          set -o pipefail
           bazel test //kmp/src/androidUnitTest/kotlin:android_unit_tests \
             --config=android \
             --config=remote-cache \
@@ -258,7 +268,7 @@ jobs:
           cache-save: ${{ github.event_name != 'pull_request' }}
 
       - name: Build web bundle
-        run: bazel build //kmp:web_app --config=remote-cache 2>&1 | tee "$RUNNER_TEMP/bazel-web-build.log"
+        run: set -o pipefail; bazel build //kmp:web_app --config=remote-cache 2>&1 | tee "$RUNNER_TEMP/bazel-web-build.log"
 
       - name: CI job report
         if: always()

@@ -6,8 +6,16 @@ is also referenced by jvmTest sources (e.g. ImageAnnotationOfflineTest).  This
 kt_jvm_library exposes just the fixture files needed by jvmTest without pulling
 in the full commonTest suite.  Add files here as jvmTest grows its cross-source-
 set fixture usage.
+
+Note: this target bundles actual *Test.kt classes alongside fixtures (see srcs
+below) — depending on it pulls those test classes onto your classpath too. A
+target with its own classpath-scanning completeness guard (e.g. business_tests'
+AllBusinessTestsCompletenessTest) will misidentify them as unregistered tests
+of ITS OWN suite. Use :git_testsupport below instead if you only need the
+fixture classes (StubGitRepository etc., none of which carry @Test methods).
 """
 
+load("@rules_kotlin//kotlin:android.bzl", "kt_android_library")
 load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library")
 
 kt_jvm_library(
@@ -21,6 +29,7 @@ kt_jvm_library(
         "dev/stapler/stelekit/search/FtsQueryBuilderTest.kt",
         "dev/stapler/stelekit/sections/SectionFilterTest.kt",
         "dev/stapler/stelekit/sections/SectionManifestParserTest.kt",
+        "dev/stapler/stelekit/ui/screens/git/GitSetupScreenHelpersTest.kt",
     ],
     kotlinc_opts = "//:kmp_jvm_kotlinc_opts",
     # Friend (not just deps) access to jvm_main_lib is required: SectionManifestParserTest
@@ -33,6 +42,55 @@ kt_jvm_library(
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
         "@maven//:org_jetbrains_kotlin_kotlin_test_junit",
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
+    ],
+    visibility = ["//kmp/src:__subpackages__"],
+)
+
+# git_testsupport — GitRepository/GitConfigRepository/FileSystem test doubles shared by
+# jvmTest/businessTest's GitSyncService-adjacent tests. Kept separate from common_test_fixtures
+# (above) because none of these files carry @Test methods, so consumers with their own
+# suite-completeness guard (business_tests) don't misclassify them.
+#
+# JVM-only: depends on jvm_main_lib, which bakes in JVM's `actual` implementations of KMP
+# `expect` classes (NetworkMonitor, PlatformFileSystem, CredentialStore, ...) compiled together
+# with commonMain. android_unit_test_lib must NOT depend on this target — putting both this
+# (JVM actuals) and android_main (Android actuals) on the same test classpath collides on the
+# same fully-qualified class names, causing NoSuchMethodError/NoSuchFieldError at runtime for
+# unrelated pre-existing tests (confirmed live on CI — see :git_testsupport_android below).
+_GIT_TESTSUPPORT_SRCS = [
+    "dev/stapler/stelekit/git/testsupport/SampleGitConfig.kt",
+    "dev/stapler/stelekit/git/testsupport/StubConfigRepository.kt",
+    "dev/stapler/stelekit/git/testsupport/StubFileSystem.kt",
+    "dev/stapler/stelekit/git/testsupport/StubGitRepository.kt",
+]
+
+kt_jvm_library(
+    name = "git_testsupport",
+    srcs = _GIT_TESTSUPPORT_SRCS,
+    kotlinc_opts = "//:kmp_jvm_kotlinc_opts",
+    deps = [
+        "//kmp/src/jvmMain/kotlin:jvm_main_lib",
+        "@maven//:io_arrow_kt_arrow_core_jvm",
+        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm",
+    ],
+    visibility = ["//kmp/src:__subpackages__"],
+)
+
+# git_testsupport_android — same sources as :git_testsupport, recompiled against android_main
+# instead of jvm_main_lib so android_unit_test_lib gets Android's own `actual` implementations,
+# not JVM's (see the collision explanation above).
+kt_android_library(
+    name = "git_testsupport_android",
+    srcs = _GIT_TESTSUPPORT_SRCS,
+    custom_package = "dev.stapler.stelekit.git.testsupport",
+    testonly = True,
+    kotlinc_opts = "//:kmp_android_kotlinc_opts",
+    deps = [
+        "//kmp/src/androidMain/kotlin:android_main",
+        "@maven//:io_arrow_kt_arrow_core_jvm",
+        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm",
     ],
     visibility = ["//kmp/src:__subpackages__"],
 )

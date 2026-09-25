@@ -63,6 +63,7 @@ kt_jvm_test(
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
         "@maven//:io_kotest_kotest_property_jvm",
         "//kmp/src/commonMain/resources:common_resources",
+        "//kmp/src/commonTest/kotlin:git_testsupport",
         ":demo_filesystem_as_resource",
         ":sqldatabase_schema_as_resource",
         ":git_shadow_worktree_as_resource",

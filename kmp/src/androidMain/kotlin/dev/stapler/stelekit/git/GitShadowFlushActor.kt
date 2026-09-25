@@ -3,7 +3,6 @@
 
 package dev.stapler.stelekit.git
 
-import android.util.Log
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
@@ -41,7 +40,7 @@ internal class GitShadowFlushActor(
     private val safRoot: String,
 ) {
     companion object {
-        private const val TAG = "GitShadowFlushActor"
+        private val logger = dev.stapler.stelekit.logging.Logger("GitShadowFlushActor")
     }
 
     /** Drain all pending write-backs to SAF. Returns one [Either] per queued path processed. */
@@ -57,7 +56,7 @@ internal class GitShadowFlushActor(
         val safPath = "$safRoot/$relativePath"
         return try {
             val content = worktree.readShadowFile(relativePath) ?: run {
-                Log.w(TAG, "flushPage: shadow missing for $relativePath — dequeuing without flush")
+                logger.warn("flushPage: shadow missing for $relativePath — dequeuing without flush")
                 queue.dequeue(relativePath)
                 return Unit.right()
             }
@@ -82,14 +81,13 @@ internal class GitShadowFlushActor(
                 fileSystem.getLastModifiedTime(safPath)?.let { mtime ->
                     worktree.updateManifestEntry(relativePath, mtime, content.encodeToByteArray().size.toLong())
                 }
-                Log.d(TAG, "flushPage: flushed $relativePath to SAF")
                 Unit.right()
             } else {
                 // Task 3.1.2c: do NOT dequeue — leave queued for retry on the next flush(),
                 // matching ShadowFlushActor's existing retry-by-leaving-queued semantics. Unlike
                 // that sibling's silent Log.w-only handling, the caller learns about this failure
                 // via the returned Either.
-                Log.w(TAG, "flushPage: SAF write failed for $relativePath — will retry")
+                logger.warn("flushPage: SAF write failed for $relativePath — will retry")
                 DomainError.GitError.WorkingTreeWriteBackFailed(safPath, "SAF write failed for $safPath").left()
             }
         } catch (e: CancellationException) {
@@ -98,7 +96,7 @@ internal class GitShadowFlushActor(
             // BLOCKER 3 fix (PR #327 review): catch Throwable, not Exception — an Error subclass
             // (e.g. OutOfMemoryError) must not escape uncaught here, same reasoning as this repo's
             // documented "Android Application.onCreate — catch Throwable, not Exception" rule.
-            Log.e(TAG, "flushPage: unexpected error for $relativePath", e)
+            logger.error("flushPage: unexpected error for $relativePath", e)
             DomainError.GitError.WorkingTreeWriteBackFailed(
                 safPath,
                 e.message ?: "unexpected error during write-back",
