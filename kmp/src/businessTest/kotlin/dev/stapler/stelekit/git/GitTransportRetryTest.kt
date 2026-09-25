@@ -6,6 +6,8 @@ package dev.stapler.stelekit.git
 import arrow.core.Either
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.git.testsupport.FailureSequence
+import dev.stapler.stelekit.git.testsupport.FailureSequenceGitRepository
 import dev.stapler.stelekit.resilience.RetryPolicies
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.currentTime
@@ -23,8 +25,14 @@ import kotlin.test.assertIs
 /**
  * Tests for [runGitTransportOpWithRetry] (Story 1.2.2, ADR-002's single retry owner) using a fake
  * `op` lambda that throws a configured sequence of exceptions — not [AndroidGitRepository]/
- * [JvmGitRepository] end-to-end, which is [Story 1.2.2]'s remaining Integration row and depends on
- * `StubGitRepository`'s not-yet-built failure-sequence support (Story 6.1.1).
+ * [JvmGitRepository] end-to-end, since those need a real Android `Context`/JGit setup unavailable
+ * in `businessTest`. Story 1.2.2's remaining Integration row instead drives a
+ * [FailureSequenceGitRepository] — the `GitRepository`-typed fake that stands in for
+ * `AndroidGitRepository` in tests precisely because both implement [GitRepository] — through
+ * [runGitTransportOpWithRetry], proving the retry-then-succeed interaction at the interface level
+ * (see `runGitTransportOpWithRetry retries a FailureSequenceGitRepository-faked clone() twice and
+ * succeeds on the 3rd attempt` below). Story 6.1.2 is the one test in this plan that proves the
+ * same behavior against a real JGit-thrown exception instead of a hand-constructed one.
  */
 class GitTransportRetryTest {
 
@@ -56,6 +64,36 @@ class GitTransportRetryTest {
 
         assertEquals(1, tokenResolutions, "credentials must be resolved once, not once per retry attempt")
         assertEquals(3, callCount)
+        assertIs<Either.Right<Unit>>(result)
+    }
+
+    /**
+     * Story 1.2.2's deferred Integration row (closed by Story 6.1.1's `FailureSequenceGitRepository`).
+     * `FailureSequenceGitRepository.clone()` itself doesn't route through [runGitTransportOpWithRetry]
+     * internally (it's a thin fake — see `StubGitRepository.kt`), so this test wraps the call site the
+     * same way [AndroidGitRepository.clone]/[JvmGitRepository.clone] do in production, proving that
+     * driving a real `GitRepository`-typed [FailureSequenceGitRepository.clone] call through the retry
+     * wrapper reproduces the retry-then-succeed behavior beyond a hand-rolled `op` lambda.
+     */
+    @Test
+    fun `runGitTransportOpWithRetry retries a FailureSequenceGitRepository-faked clone() twice and succeeds on the 3rd attempt`() = runTest {
+        val cloneSequence = FailureSequence<Either<DomainError.GitError, Unit>>(
+            failures = listOf(transientFailure(), transientFailure()),
+            onSuccess = { Unit.right() },
+        )
+        val repo = FailureSequenceGitRepository(cloneSequence = cloneSequence)
+
+        val result: Either<DomainError.GitError, Unit> = runGitTransportOpWithRetry(
+            schedule = RetryPolicies.gitTransportTransientImmediate,
+            beforeRetry = {},
+            onAuthFailed = { e -> DomainError.GitError.AuthFailed(e.message ?: "Authentication failed") },
+            onFailed = { e -> DomainError.GitError.CloneFailed(e.message ?: "Clone failed") },
+            onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
+        ) {
+            repo.clone(url = "https://example.invalid/graph.git", localPath = "/tmp/graph", auth = GitAuth.None) {}
+        }
+
+        assertEquals(3, cloneSequence.invocationCount, "clone() must be invoked once, then retried twice before succeeding")
         assertIs<Either.Right<Unit>>(result)
     }
 
