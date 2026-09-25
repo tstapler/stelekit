@@ -22,6 +22,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.minutes
 
 /**
@@ -92,7 +93,7 @@ class GitTransportRetryTest {
             onFailed = { e -> DomainError.GitError.CloneFailed(e.message ?: "Clone failed") },
             onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
         ) {
-            repo.clone(url = "https://example.invalid/graph.git", localPath = "/tmp/graph", auth = GitAuth.None) {}
+            repo.clone(url = "https://example.invalid/graph.git", localPath = "/tmp/graph", auth = GitAuth.None, onProgress = {}, onStateChange = {})
         }
 
         assertEquals(3, cloneSequence.invocationCount, "clone() must be invoked once, then retried twice before succeeding")
@@ -161,6 +162,38 @@ class GitTransportRetryTest {
         }
 
         assertEquals(1, callCount, "a Cancelled failure must never be retried")
+    }
+
+    /**
+     * Story 4.1.4 (Task 4.1.4d): a manually cancelled clone must never trigger Story 2.1.3's
+     * `beforeRetry` directory-content cleanup — that cleanup only runs ahead of an *automatic*
+     * retry, never a cancel. The test above already proves `beforeRetry` is never invoked for a
+     * `Cancelled` classification structurally (the loop's `Cancelled` branch never calls it); this
+     * test additionally proves the real-world consequence against a real directory: a partially
+     * populated clone target survives a manual cancel untouched.
+     */
+    @Test
+    fun `beforeRetry cleanup does not run following a manual cancel, leaving the partial target directory intact`() = runTest {
+        val dir = kotlin.io.path.createTempDirectory("stelekit_manual_cancel_dir_").toFile()
+        java.io.File(dir, "partial-pack-file").writeText("leftover from the cancelled attempt")
+
+        assertFailsWith<CancellationException> {
+            runGitTransportOpWithRetry<Unit, Long>(
+                schedule = RetryPolicies.gitTransportTransientImmediate,
+                beforeRetry = { deleteDirectoryContentsForRetry(dir) },
+                onAuthFailed = { e -> DomainError.GitError.AuthFailed(e.message ?: "Authentication failed") },
+                onFailed = { e -> DomainError.GitError.CloneFailed(e.message ?: "Clone failed") },
+                onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
+            ) {
+                throw CanceledException("user tapped Cancel")
+            }
+        }
+
+        assertTrue(
+            java.io.File(dir, "partial-pack-file").exists(),
+            "a manual cancel must leave the partially-cloned directory exactly as it was — no beforeRetry cleanup",
+        )
+        dir.deleteRecursively()
     }
 
     @Test

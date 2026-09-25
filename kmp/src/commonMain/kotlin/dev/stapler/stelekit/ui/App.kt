@@ -2212,7 +2212,7 @@ private fun GraphContent(deps: GraphContentDeps) {
                                 gitConfigRepository = gitConfigRepository,
                                 activeGraphId = activeGraphId?.value,
                                 onCloneAndAdd = if (gitRepository != null) {
-                                    { url, localPath, auth, location, displayName, description, onProgress ->
+                                    { url, localPath, auth, location, displayName, description, onProgress, onStateChange ->
                                         // git-sync-resilience Story 3.1.3: Android routes the
                                         // clone through GitCloneWorker (dataSync foreground
                                         // survival) instead of running it on this composable's
@@ -2220,13 +2220,17 @@ private fun GraphContent(deps: GraphContentDeps) {
                                         // null) stays on the pre-Epic-3.1 direct call.
                                         if (gitCloneWorkerLauncher != null) {
                                             val graphId = graphManager.graphIdFromPath(fileSystem.expandTilde(localPath)).value
-                                            gitCloneWorkerLauncher.launchClone(graphId, url, localPath, auth, onProgress)
-                                                .map { graphManager.addGraph(localPath, location, displayName, description).value }
+                                            gitCloneWorkerLauncher.launchClone(
+                                                graphId, url, localPath, auth, onProgress, onStateChange, displayName,
+                                            ).map { graphManager.addGraph(localPath, location, displayName, description).value }
                                         } else {
-                                            graphManager.cloneAndAdd(gitRepository, url, localPath, auth, onProgress, location, displayName, description).map { it.value }
+                                            graphManager.cloneAndAdd(
+                                                gitRepository, url, localPath, auth, onProgress, location, displayName, description, onStateChange,
+                                            ).map { it.value }
                                         }
                                     }
                                 } else null,
+                                onCancelClone = { gitCloneWorkerLauncher?.cancel(activeGraphId?.value ?: "") },
                                 graphPath = activeGraphPath,
                                 detectedRepoRoot = graphRegistry.graphs.firstOrNull { it.id == activeGraphId }?.detectedRepoRoot,
                                 detectedWikiSubdir = graphRegistry.graphs.firstOrNull { it.id == activeGraphId }?.detectedWikiSubdir,

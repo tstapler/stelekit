@@ -5,6 +5,7 @@ package dev.stapler.stelekit.git
 
 import android.content.Context
 import androidx.work.Data
+import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
@@ -14,13 +15,16 @@ import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.platform.security.CredentialStore
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.takeWhile
 
 /**
  * Android [GitCloneWorkerLauncher]: enqueues [GitCloneWorker] as a one-off request and suspends
- * until its [WorkInfo] reaches a terminal state (Story 3.1.3, Task 3.1.3b). A plain one-off
- * enqueue, not yet the unique-work name [WorkManagerSyncScheduler]'s periodic job shares (Story
- * 5.1.2, Phase 5 — out of scope here) — independently correct in the meantime. [GitCloneWorkTracker]
+ * until its [WorkInfo] reaches a terminal state (Story 3.1.3, Task 3.1.3b). Enqueued via
+ * [workNameFor]'s per-graph unique-work name (Task 4.1.4b) so [cancel] can target it with
+ * `cancelUniqueWork` — this name is scoped to this launcher only, **not** yet
+ * [dev.stapler.stelekit.git.WorkManagerSyncScheduler]'s periodic-job name (that unification across
+ * workers is Story 5.1.2, Phase 5, explicitly out of scope for this epic). [GitCloneWorkTracker]
  * records the enqueued request's id/start time regardless, giving Story 3.1.7's stuck-clone
  * watchdog a concrete, queryable identity per graph even before 5.1.2's convergence.
  */
@@ -31,7 +35,9 @@ class AndroidGitCloneWorkerLauncher(private val context: Context) : GitCloneWork
         url: String,
         localPath: String,
         auth: GitAuth,
-        onProgress: (String) -> Unit,
+        onProgress: (CloneProgress) -> Unit,
+        onStateChange: (GitTransportRetryState) -> Unit,
+        graphDisplayName: String?,
     ): Either<DomainError.GitError, Unit> {
         val inputData = Data.Builder()
             .putAll(
@@ -39,6 +45,7 @@ class AndroidGitCloneWorkerLauncher(private val context: Context) : GitCloneWork
                     GitCloneWorker.KEY_URL to url,
                     GitCloneWorker.KEY_LOCAL_PATH to localPath,
                     GitCloneWorker.KEY_GRAPH_ID to graphId,
+                    GitCloneWorker.KEY_GRAPH_DISPLAY_NAME to graphDisplayName,
                 )
             )
             .putAll(persistAuthAndBuildAuthData(graphId, auth))
@@ -49,7 +56,7 @@ class AndroidGitCloneWorkerLauncher(private val context: Context) : GitCloneWork
             .build()
 
         val workManager = WorkManager.getInstance(context)
-        workManager.enqueue(request)
+        workManager.enqueueUniqueWork(workNameFor(graphId), ExistingWorkPolicy.REPLACE, request)
         GitCloneWorkTracker.recordStart(context, graphId, request.id, System.currentTimeMillis())
 
         var terminalState: WorkInfo.State? = null
@@ -59,7 +66,9 @@ class AndroidGitCloneWorkerLauncher(private val context: Context) : GitCloneWork
                     terminalState = info?.state
                     false
                 } else {
-                    info.progress.getString(GitCloneWorker.KEY_PROGRESS_PHASE)?.let(onProgress)
+                    info.progress.getString(GitCloneWorker.KEY_PROGRESS_PHASE)?.let { phase ->
+                        onProgress(CloneProgress(phase, 0, 0))
+                    }
                     true
                 }
             }
@@ -68,10 +77,20 @@ class AndroidGitCloneWorkerLauncher(private val context: Context) : GitCloneWork
         GitCloneWorkTracker.clear(context, graphId)
         return when (terminalState) {
             WorkInfo.State.SUCCEEDED -> Unit.right()
+            // Task 4.1.4b: a manual cancel() below stops the unique work, which WorkManager
+            // surfaces here as WorkInfo.State.CANCELLED — mirror GitRepository.clone()'s own
+            // Cancelled contract (a thrown CancellationException, never an Either.Left) so every
+            // caller (GitSetupScreenSaveLogic.performCloneAndSave) handles cancellation the same
+            // way regardless of platform.
+            WorkInfo.State.CANCELLED -> throw CancellationException("Clone cancelled")
             else -> DomainError.GitError.CloneFailed(
                 "Clone worker did not complete successfully (state=$terminalState)"
             ).left()
         }
+    }
+
+    override fun cancel(graphId: String) {
+        WorkManager.getInstance(context).cancelUniqueWork(workNameFor(graphId))
     }
 
     /**
@@ -96,5 +115,11 @@ class AndroidGitCloneWorkerLauncher(private val context: Context) : GitCloneWork
             }
             GitAuth.None -> workDataOf(GitCloneWorker.KEY_AUTH_TYPE to GitCloneWorker.AUTH_NONE)
         }
+    }
+
+    companion object {
+        /** Per-graph unique-work name this launcher enqueues [GitCloneWorker] under — see this
+         * class's kdoc for why it's not (yet) shared with the periodic sync job's name. */
+        fun workNameFor(graphId: String): String = "git_clone_$graphId"
     }
 }

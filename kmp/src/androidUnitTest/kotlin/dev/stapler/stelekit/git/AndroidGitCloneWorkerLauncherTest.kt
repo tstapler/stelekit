@@ -74,7 +74,10 @@ class AndroidGitCloneWorkerLauncherTest {
             url = "https://example.invalid/graph.git",
             localPath = "/tmp/graph",
             auth = GitAuth.None,
-        ) {}
+            onProgress = {},
+            onStateChange = {},
+            graphDisplayName = null,
+        )
 
         assertIs<Either.Right<Unit>>(result)
         Unit
@@ -90,7 +93,10 @@ class AndroidGitCloneWorkerLauncherTest {
             url = "https://example.invalid/graph.git",
             localPath = "/tmp/graph",
             auth = GitAuth.None,
-        ) {}
+            onProgress = {},
+            onStateChange = {},
+            graphDisplayName = null,
+        )
 
         assertIs<Either.Left<DomainError.GitError>>(result)
         Unit

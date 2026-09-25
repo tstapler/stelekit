@@ -82,6 +82,7 @@ class AndroidGitRepositoryStorageGuardTest {
                 localPath = repoRoot,
                 auth = GitAuth.None,
                 onProgress = {},
+                onStateChange = {},
             )
 
             assertTrue(result.isLeft(), "expected clone to fail fast on insufficient storage, got: $result")
@@ -120,6 +121,7 @@ class AndroidGitRepositoryStorageGuardTest {
             localPath = repoRoot,
             auth = GitAuth.None,
             onProgress = {},
+            onStateChange = {},
         )
 
         assertTrue(result.isRight(), "expected clone to succeed when storage is ample, got: $result")

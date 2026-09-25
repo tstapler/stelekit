@@ -26,7 +26,8 @@ class IosGitRepository : GitRepository {
         url: String,
         localPath: String,
         auth: GitAuth,
-        onProgress: (String) -> Unit,
+        onProgress: (CloneProgress) -> Unit,
+        onStateChange: (GitTransportRetryState) -> Unit,
     ): Either<DomainError.GitError, Unit> = notSupported
 
     override suspend fun testRemote(url: String, auth: GitAuth): Either<DomainError.GitError, Unit> = notSupported

@@ -9,8 +9,10 @@ import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.domain.CaptureEnrichmentCoordinator
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.git.CloneProgress
 import dev.stapler.stelekit.git.GitAuth
 import dev.stapler.stelekit.git.GitRepository
+import dev.stapler.stelekit.git.GitTransportRetryState
 import dev.stapler.stelekit.llm.LlmCredentialStore
 import dev.stapler.stelekit.llm.LlmProviderRegistry
 import dev.stapler.stelekit.llm.LlmSettings
@@ -449,7 +451,7 @@ class GraphManager(
         url: String,
         localPath: String,
         auth: GitAuth,
-        onProgress: (String) -> Unit,
+        onProgress: (CloneProgress) -> Unit,
         // Story 2.2.2: the destination StorageLocation resolved by UnifiedLocationPicker, so the
         // cloned graph's storage_locations row is written at creation time instead of waiting for
         // a later relocate/link flow to lazily backfill it. Default null preserves every existing
@@ -457,8 +459,9 @@ class GraphManager(
         location: StorageLocation? = null,
         displayName: String? = null,
         description: String = "",
+        onStateChange: (GitTransportRetryState) -> Unit = {},
     ): Either<DomainError.GitError, GraphId> {
-        val cloneResult = gitRepository.clone(url, localPath, auth, onProgress)
+        val cloneResult = gitRepository.clone(url, localPath, auth, onProgress, onStateChange)
         return cloneResult.map { addGraph(localPath, location, displayName, description) }
     }
 

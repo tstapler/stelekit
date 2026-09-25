@@ -31,12 +31,14 @@ import androidx.compose.ui.unit.dp
 import arrow.core.Either
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.git.CloneProgress
 import dev.stapler.stelekit.git.GitAuth
 import dev.stapler.stelekit.git.GitConfigRepository
 import dev.stapler.stelekit.git.GitCredentialConnectionStore
 import dev.stapler.stelekit.git.GitHubDeviceFlowClient
 import dev.stapler.stelekit.git.GitRepository
 import dev.stapler.stelekit.git.GitSyncService
+import dev.stapler.stelekit.git.GitTransportRetryState
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.model.StorageLocation
@@ -88,7 +90,8 @@ fun GitSetupScreen(
     detectedRepoRoot: String? = null,
     detectedWikiSubdir: String? = null,
     onSave: () -> Unit = {},
-    onCloneAndAdd: (suspend (url: String, localPath: String, auth: GitAuth, location: StorageLocation?, displayName: String?, description: String, onProgress: (String) -> Unit) -> Either<DomainError.GitError, String>)? = null,
+    onCloneAndAdd: (suspend (url: String, localPath: String, auth: GitAuth, location: StorageLocation?, displayName: String?, description: String, onProgress: (CloneProgress) -> Unit, onStateChange: (GitTransportRetryState) -> Unit) -> Either<DomainError.GitError, String>)? = null,
+    onCancelClone: (() -> Unit)? = null,
     onCloneComplete: ((String) -> Unit)? = null,
     deviceFlowClient: GitHubDeviceFlowClient? = null,
 ) {
@@ -206,7 +209,10 @@ fun GitSetupScreen(
 
     // Clone state
     var cloneInProgress by remember { mutableStateOf(false) }
-    var cloneProgress by remember { mutableStateOf("") }
+    // git-sync-resilience Story 4.1.2/4.1.3: replaces the old bare `cloneProgress: String` — one
+    // sealed state drives Step 5's in-progress/terminal-failure rendering.
+    var retryState by remember { mutableStateOf<GitTransportRetryState>(GitTransportRetryState.Idle) }
+    var cloneCancelled by remember { mutableStateOf(false) }
     var cloneError by remember { mutableStateOf<String?>(null) }
 
     // Story 2.2.2: destination StorageLocation for a "clone a remote repository" flow, resolved by
@@ -379,14 +385,25 @@ fun GitSetupScreen(
             // If cloning a new repo, clone first
             val cloneAndAdd = onCloneAndAdd
             if (cloneMode == CloneMode.CloneNewRepository && cloneAndAdd != null) {
+                cloneCancelled = false
                 val outcome = performCloneAndSave(
                     form = formSnapshot,
                     credentialStore = credentialStore,
                     connectionStore = connectionStore,
                     gitConfigRepository = gitConfigRepository,
                     onCloneAndAdd = cloneAndAdd,
-                    onCloneProgress = { cloneProgress = it },
+                    // Story 4.1.3: merge live progress into an in-flight Retrying state (per
+                    // ADR-001/design/ux.md, a retry attempt's own transfer progress becomes
+                    // visible once it starts moving again) — Attempting's row never shows a
+                    // percentage, so a plain Attempting(progress) is enough there.
+                    onCloneProgress = { progress ->
+                        retryState = when (val current = retryState) {
+                            is GitTransportRetryState.Retrying -> current.copy(progress = progress)
+                            else -> GitTransportRetryState.Attempting(progress)
+                        }
+                    },
                     onCloneInProgressChange = { cloneInProgress = it },
+                    onRetryStateChange = { state -> retryState = state },
                 )
                 saving = false
                 when (outcome) {
@@ -402,6 +419,10 @@ fun GitSetupScreen(
                         val label = formSnapshot.graphName.ifBlank { outcome.newGraphId }
                         saveError = "Cloned \"$label\" successfully, but couldn't save the git sync " +
                             "settings. You can configure sync later from the graph's settings."
+                    }
+                    is CloneAndSaveOutcome.Cancelled -> {
+                        cloneCancelled = true
+                        retryState = GitTransportRetryState.Idle
                     }
                 }
                 return@launch
@@ -574,9 +595,11 @@ fun GitSetupScreen(
                     onTestConnection = ::performTestConnection,
                     onCancelTestConnection = ::cancelTestConnection,
                     cloneInProgress = cloneInProgress,
-                    cloneProgress = cloneProgress,
+                    retryState = retryState,
+                    cloneCancelled = cloneCancelled,
                     cloneError = cloneError,
                     onSave = ::performSave,
+                    onCancelClone = { onCancelClone?.invoke() },
                 )
             }
 

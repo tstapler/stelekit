@@ -25,13 +25,13 @@ class JvmGitCloneWorkerLauncherTest {
         var receivedUrl: String? = null
         var receivedLocalPath: String? = null
         var receivedAuth: GitAuth? = null
-        var progressCalls = mutableListOf<String>()
+        var progressCalls = mutableListOf<CloneProgress>()
 
         val fakeRepo = cloningStub { url, localPath, auth, onProgress ->
             receivedUrl = url
             receivedLocalPath = localPath
             receivedAuth = auth
-            onProgress("Receiving objects")
+            onProgress(CloneProgress("Receiving objects", 0, 0))
             Unit.right()
         }
         val launcher = JvmGitCloneWorkerLauncher(fakeRepo)
@@ -41,12 +41,15 @@ class JvmGitCloneWorkerLauncherTest {
             url = "https://example.invalid/graph.git",
             localPath = "/tmp/graph",
             auth = GitAuth.None,
-        ) { progressCalls += it }
+            onProgress = { progressCalls += it },
+            onStateChange = {},
+            graphDisplayName = null,
+        )
 
         assertEquals("https://example.invalid/graph.git", receivedUrl)
         assertEquals("/tmp/graph", receivedLocalPath)
         assertEquals(GitAuth.None, receivedAuth)
-        assertEquals(listOf("Receiving objects"), progressCalls)
+        assertEquals(listOf(CloneProgress("Receiving objects", 0, 0)), progressCalls)
         assertIs<Either.Right<Unit>>(result)
     }
 
@@ -56,7 +59,15 @@ class JvmGitCloneWorkerLauncherTest {
         val fakeRepo = cloningStub { _, _, _, _ -> expectedError.left() }
         val launcher = JvmGitCloneWorkerLauncher(fakeRepo)
 
-        val result = launcher.launchClone("graph-id", "https://example.invalid/graph.git", "/tmp/graph", GitAuth.None) {}
+        val result = launcher.launchClone(
+            graphId = "graph-id",
+            url = "https://example.invalid/graph.git",
+            localPath = "/tmp/graph",
+            auth = GitAuth.None,
+            onProgress = {},
+            onStateChange = {},
+            graphDisplayName = null,
+        )
 
         val error = assertIs<Either.Left<DomainError.GitError>>(result)
         assertEquals(expectedError, error.value)

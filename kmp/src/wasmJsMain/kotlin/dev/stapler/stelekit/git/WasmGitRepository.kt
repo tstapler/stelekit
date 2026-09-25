@@ -246,7 +246,8 @@ class WasmGitRepository(
         url: String,
         localPath: String,
         auth: GitAuth,
-        onProgress: (String) -> Unit,
+        onProgress: (CloneProgress) -> Unit,
+        onStateChange: (GitTransportRetryState) -> Unit,
     ): Either<DomainError.GitError, Unit> = DomainError.GitError.NotSupported("web").left()
 
     // The web "clone a new repo" flow doesn't exist (clone() above is NotSupported), so this is

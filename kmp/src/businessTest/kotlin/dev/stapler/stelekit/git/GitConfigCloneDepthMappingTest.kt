@@ -190,6 +190,7 @@ class GitConfigCloneDepthMappingTest {
                 localPath = destination.absolutePath,
                 auth = GitAuth.None,
                 onProgress = {},
+                onStateChange = {},
             )
             assertIs<arrow.core.Either.Right<Unit>>(cloneResult, "clone failed: $cloneResult")
 

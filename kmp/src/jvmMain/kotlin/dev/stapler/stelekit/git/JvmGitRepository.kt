@@ -76,10 +76,15 @@ class JvmGitRepository(
         url: String,
         localPath: String,
         auth: GitAuth,
-        onProgress: (String) -> Unit,
+        onProgress: (CloneProgress) -> Unit,
+        onStateChange: (GitTransportRetryState) -> Unit,
     ): Either<DomainError.GitError, Unit> = withContext(PlatformDispatcher.IO) {
+        // Task 4.1.1c: see AndroidGitRepository.clone()'s identical rationale.
+        val progressTracker = CloneProgressTracker()
         runGitTransportOpWithRetry(
             schedule = RetryPolicies.gitTransportTransient,
+            onStateChange = onStateChange,
+            currentProgress = { progressTracker.current },
             // Story 2.1.3: a first attempt whose fetch succeeded but was interrupted before
             // returning leaves a partially-populated, non-empty target directory — JGit's
             // CloneCommand refuses to clone into a non-empty directory, so a retry would
@@ -106,8 +111,12 @@ class JvmGitRepository(
                 .setTimeout(GIT_TRANSPORT_TIMEOUT_SECONDS)
                 .setProgressMonitor(object : org.eclipse.jgit.lib.ProgressMonitor {
                     override fun start(totalTasks: Int) {}
-                    override fun beginTask(title: String, totalWork: Int) { onProgress(title) }
-                    override fun update(completed: Int) {}
+                    override fun beginTask(title: String, totalWork: Int) {
+                        onProgress(progressTracker.onBeginTask(title, totalWork))
+                    }
+                    override fun update(completed: Int) {
+                        onProgress(progressTracker.onUpdate(completed))
+                    }
                     override fun endTask() {}
                     override fun isCancelled() = job?.isCancelled == true
                     override fun showDuration(enabled: Boolean) {}

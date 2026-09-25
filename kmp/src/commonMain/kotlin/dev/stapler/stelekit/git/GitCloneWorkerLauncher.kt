@@ -20,9 +20,10 @@ import dev.stapler.stelekit.error.DomainError
  * implementation must enqueue `GitCloneWorker` with serializable `Data`, and [graphId] is the key
  * `GitCloneWorker` uses to resolve auth secrets back out of `CredentialStore` (see its kdoc),
  * since a suspend `GitAuth` provider lambda can't cross that process-independent boundary.
- * [onProgress] stays `(String) -> Unit`, matching [GitRepository.clone]'s current signature —
- * plan.md's `CloneProgress` type (Task 4.1.1a) is a Phase 4 deliverable not yet implemented;
- * widening this signature to it is Phase 4's job.
+ *
+ * [onProgress] widened to `(CloneProgress) -> Unit` and [onStateChange] added (git-sync-resilience
+ * Story 4.1.1/4.1.2) — mirrors [GitRepository.clone]'s own widened signature, now that
+ * `CloneProgress`/`GitTransportRetryState` are Phase 4 deliverables.
  */
 interface GitCloneWorkerLauncher {
     suspend fun launchClone(
@@ -30,6 +31,18 @@ interface GitCloneWorkerLauncher {
         url: String,
         localPath: String,
         auth: GitAuth,
-        onProgress: (String) -> Unit,
+        onProgress: (CloneProgress) -> Unit,
+        onStateChange: (GitTransportRetryState) -> Unit = {},
+        graphDisplayName: String? = null,
     ): Either<DomainError.GitError, Unit>
+
+    /**
+     * Cancels the in-flight clone this launcher is running for [graphId] (Story 4.1.4) — a no-op
+     * if none is in flight. The cancellation surfaces back through [launchClone] as a thrown
+     * `kotlinx.coroutines.CancellationException` (mirroring `GitRepository.clone`'s own contract
+     * once `classifyGitFailure` sees the resulting `CanceledException`/`GitFailureClass.Cancelled`
+     * — see `GitOperationSupport.runGitTransportOpWithRetry`'s kdoc), never an `Either.Left`, so
+     * every caller handles cancellation uniformly regardless of platform.
+     */
+    fun cancel(graphId: String)
 }

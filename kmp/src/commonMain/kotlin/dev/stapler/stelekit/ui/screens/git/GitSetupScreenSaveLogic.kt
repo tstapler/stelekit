@@ -5,12 +5,14 @@ package dev.stapler.stelekit.ui.screens.git
 
 import arrow.core.Either
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.git.CloneProgress
 import dev.stapler.stelekit.git.GitAuth
 import dev.stapler.stelekit.git.GitConfigRepository
 import dev.stapler.stelekit.git.GitCredentialConnectionStore
 import dev.stapler.stelekit.git.GitHubDeviceFlowClient
 import dev.stapler.stelekit.git.GitRepository
 import dev.stapler.stelekit.git.GitSyncService
+import dev.stapler.stelekit.git.GitTransportRetryState
 import dev.stapler.stelekit.git.model.CloneDepthState
 import dev.stapler.stelekit.git.model.DEFAULT_CLONE_DEPTH
 import dev.stapler.stelekit.git.model.GitAuthType
@@ -18,6 +20,7 @@ import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.StorageLocation
 import dev.stapler.stelekit.platform.security.CredentialStore
+import kotlinx.coroutines.CancellationException
 import kotlin.time.Clock
 
 internal val gitSetupLogger = Logger("GitSetupScreen")
@@ -96,6 +99,12 @@ internal sealed class CloneAndSaveOutcome {
     data class CloneFailed(val message: String) : CloneAndSaveOutcome()
     data class Saved(val newGraphId: String) : CloneAndSaveOutcome()
     data class SaveFailed(val newGraphId: String) : CloneAndSaveOutcome()
+
+    /** Story 4.1.4: the user tapped Cancel mid-clone — `classifyGitFailure` saw the resulting
+     * `CanceledException`/`GitFailureClass.Cancelled`, so `onCloneAndAdd` rethrew a
+     * `kotlinx.coroutines.CancellationException` rather than returning an `Either.Left`. Not a
+     * failure the user needs to react to — Step 5 shows "Cancelled — your progress is saved." */
+    data object Cancelled : CloneAndSaveOutcome()
 }
 
 /** Outcome of [performSaveExistingConfig], reported back to the composable for UI/state updates. */
@@ -192,23 +201,39 @@ internal suspend fun performCloneAndSave(
         location: StorageLocation?,
         displayName: String?,
         description: String,
-        onProgress: (String) -> Unit,
+        onProgress: (CloneProgress) -> Unit,
+        onStateChange: (GitTransportRetryState) -> Unit,
     ) -> Either<DomainError.GitError, String>,
-    onCloneProgress: (String) -> Unit,
+    onCloneProgress: (CloneProgress) -> Unit,
     onCloneInProgressChange: (Boolean) -> Unit,
+    onRetryStateChange: (GitTransportRetryState) -> Unit = {},
 ): CloneAndSaveOutcome {
     onCloneInProgressChange(true)
     val cloneAuth = buildCloneAuth(
         form.authType, form.httpsToken, form.sshKeyPath, form.sshPassphrase, form.graphId, credentialStore,
     )
-    val cloneResult = onCloneAndAdd(
-        form.cloneUrl,
-        form.repoRoot,
-        cloneAuth,
-        form.cloneStorageLocation,
-        form.graphName.ifBlank { repoNameFromUrl(form.cloneUrl) ?: "" }.takeIf { it.isNotBlank() },
-        form.graphDescription,
-    ) { progress -> onCloneProgress(progress) }
+    // Task 4.1.4d: a manual cancel surfaces as a thrown CancellationException (not an
+    // Either.Left) — see CloneAndSaveOutcome.Cancelled's kdoc. Catching it here, rather than
+    // letting it propagate, is deliberate: it only means the *launcher's own* child job was
+    // cancelled (AndroidGitCloneWorkerLauncher.cancel()/JvmGitCloneWorkerLauncher.cancel()), not
+    // that this function's own ambient coroutine was — continuing to run afterward (to reset
+    // cloneInProgress and report the outcome) is exactly the desired UX, not a violation of
+    // structured concurrency.
+    val cloneResult = try {
+        onCloneAndAdd(
+            form.cloneUrl,
+            form.repoRoot,
+            cloneAuth,
+            form.cloneStorageLocation,
+            form.graphName.ifBlank { repoNameFromUrl(form.cloneUrl) ?: "" }.takeIf { it.isNotBlank() },
+            form.graphDescription,
+            { progress -> onCloneProgress(progress) },
+            { state -> onRetryStateChange(state) },
+        )
+    } catch (e: CancellationException) {
+        onCloneInProgressChange(false)
+        return CloneAndSaveOutcome.Cancelled
+    }
     onCloneInProgressChange(false)
 
     if (cloneResult.isLeft()) {

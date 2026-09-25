@@ -18,11 +18,25 @@ import dev.stapler.stelekit.platform.security.CredentialAccess
 interface GitRepository {
     suspend fun isGitRepo(path: String): Boolean
     suspend fun init(repoRoot: String): Either<DomainError.GitError, Unit>
+
+    /**
+     * [onProgress] widened from `(String) -> Unit` to `(CloneProgress) -> Unit` (git-sync-resilience
+     * Story 4.1.1) — forwards JGit's `ProgressMonitor.update(completed)`, previously a no-op, so a
+     * caller sees real completed/totalWork counts, not just a phase title.
+     *
+     * [onStateChange] (Story 4.1.2) surfaces [GitTransportRetryState] transitions (attempt/retry/
+     * terminal outcome) from the internal `runGitTransportOpWithRetry` loop — the single source of
+     * truth Step 5 and the Android foreground notification both render from. Defaults to a no-op so
+     * every pre-Phase-4 call site keeps compiling unchanged. Added only to [clone] — [fetch]/[push]
+     * don't surface it in this epic (Step 5's UI is clone-only per `design/ux.md`); see
+     * `GitOperationSupport.runGitTransportOpWithRetry`'s kdoc for the full rationale.
+     */
     suspend fun clone(
         url: String,
         localPath: String,
         auth: GitAuth,
-        onProgress: (String) -> Unit,
+        onProgress: (CloneProgress) -> Unit,
+        onStateChange: (GitTransportRetryState) -> Unit = {},
     ): Either<DomainError.GitError, Unit>
 
     /**
@@ -67,6 +81,39 @@ interface GitRepository {
 }
 
 data class FetchResult(val hasRemoteChanges: Boolean, val remoteCommitCount: Int)
+
+/**
+ * A single JGit `ProgressMonitor` callback, widened from a bare phase-title `String`
+ * (git-sync-resilience Story 4.1.1): [phase] is the current `beginTask` title (e.g. "Receiving
+ * objects"), [completed]/[totalWork] are JGit's own per-phase units — `totalWork == 0` means
+ * indeterminate (either no `beginTask` has fired yet, or JGit itself doesn't know the total for
+ * this phase). Never a whole-operation percentage — JGit reports progress per phase, not overall.
+ */
+data class CloneProgress(val phase: String, val completed: Int, val totalWork: Int)
+
+/**
+ * Pure, platform-independent state machine behind JGit's `ProgressMonitor` callbacks
+ * (`beginTask`/`update`) — shared by [dev.stapler.stelekit.git.AndroidGitRepository] and
+ * [dev.stapler.stelekit.git.JvmGitRepository]'s `clone()` (git-sync-resilience Task 4.1.1b/c) so
+ * the completed/totalWork-tracking logic isn't duplicated byte-for-byte on both platforms, and so
+ * it's unit-testable without a real JGit clone (see `CloneProgressTrackerTest`). [current] starts
+ * at `CloneProgress("", 0, 0)` — indeterminate — matching a callback fired before any `beginTask()`
+ * call.
+ */
+class CloneProgressTracker {
+    var current: CloneProgress = CloneProgress("", 0, 0)
+        private set
+
+    fun onBeginTask(title: String, totalWork: Int): CloneProgress {
+        current = CloneProgress(title, 0, totalWork)
+        return current
+    }
+
+    fun onUpdate(completed: Int): CloneProgress {
+        current = current.copy(completed = completed)
+        return current
+    }
+}
 
 data class GitStatus(
     val hasLocalChanges: Boolean,

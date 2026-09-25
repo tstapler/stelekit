@@ -481,6 +481,7 @@ class JvmGitRepositoryTest {
                 localPath = destination.absolutePath,
                 auth = GitAuth.None,
                 onProgress = {},
+                onStateChange = {},
             )
             assertTrue(result.isLeft(), "expected clone against an unroutable TEST-NET address to fail")
         }
@@ -524,6 +525,7 @@ class JvmGitRepositoryTest {
             localPath = destination.absolutePath,
             auth = GitAuth.None,
             onProgress = {},
+            onStateChange = {},
         )
         assertTrue(result.isRight(), "clone failed: $result")
 
@@ -565,6 +567,7 @@ class JvmGitRepositoryTest {
             localPath = destination.absolutePath,
             auth = GitAuth.None,
             onProgress = {},
+            onStateChange = {},
         )
         assertTrue(firstAttempt.isLeft(), "expected clone() to fail against a non-empty target directory: $firstAttempt")
 
@@ -575,6 +578,7 @@ class JvmGitRepositoryTest {
             localPath = destination.absolutePath,
             auth = GitAuth.None,
             onProgress = {},
+            onStateChange = {},
         )
         assertTrue(retriedAttempt.isRight(), "expected the retried clone to succeed once the directory is cleaned, got: $retriedAttempt")
         assertTrue(File(destination, ".git").exists(), "expected a real .git directory after the retried clone")
@@ -588,7 +592,7 @@ class JvmGitRepositoryTest {
     fun `log against a shallow-cloned repo returns up to maxCount commits without throwing`() = runTest {
         val bareOrigin = createBareOriginWithCommits("stelekit_shallow_log_origin_", DEFAULT_CLONE_DEPTH + 5)
         val destination = File(tempDir, "shallow-log-dest")
-        assertTrue(repository.clone(bareOrigin.absolutePath, destination.absolutePath, GitAuth.None) {}.isRight())
+        assertTrue(repository.clone(bareOrigin.absolutePath, destination.absolutePath, GitAuth.None, onProgress = {}, onStateChange = {}).isRight())
 
         val shallowConfig = config.copy(graphId = "shallow-log-graph", repoRoot = destination.absolutePath)
         val logResult = repository.log(shallowConfig, maxCount = 10)
@@ -607,7 +611,7 @@ class JvmGitRepositoryTest {
     fun `countRemoteCommitsBestEffort against a shallow-cloned repo returns a bounded non-negative count without throwing`() = runTest {
         val bareOrigin = createBareOriginWithCommits("stelekit_shallow_count_origin_", DEFAULT_CLONE_DEPTH + 5)
         val destination = File(tempDir, "shallow-count-dest")
-        assertTrue(repository.clone(bareOrigin.absolutePath, destination.absolutePath, GitAuth.None) {}.isRight())
+        assertTrue(repository.clone(bareOrigin.absolutePath, destination.absolutePath, GitAuth.None, onProgress = {}, onStateChange = {}).isRight())
 
         // Advance the remote by a few more commits within the shallow window, then fetch.
         val seedWorkDir = createTempDirectory("stelekit_shallow_count_seed2_").toFile()
@@ -628,5 +632,34 @@ class JvmGitRepositoryTest {
         val fetch = (fetchResult as Either.Right).value
         assertTrue(fetch.remoteCommitCount in 0..100, "expected a bounded non-negative count, got ${fetch.remoteCommitCount}")
         assertNotNull(fetch.remoteCommitCount)
+    }
+
+    // ── git-sync-resilience Story 4.1.1: CloneProgress forwarding ───────────────────────────────
+
+    /**
+     * Task 4.1.1c/REQ-6 — a real JGit clone against a local fixture repo must drive at least one
+     * non-zero [CloneProgress] callback through [JvmGitRepository.clone]'s widened `onProgress`
+     * parameter, not just a title-only signal.
+     */
+    @Test
+    fun `a real JGit clone drives at least one non-zero CloneProgress callback through onProgress`() = runTest {
+        val bareOrigin = createBareOriginWithCommits("stelekit_progress_clone_origin_", 5)
+        val destination = File(tempDir, "progress-clone-dest")
+        val progressCalls = mutableListOf<CloneProgress>()
+
+        val result = repository.clone(
+            url = bareOrigin.absolutePath,
+            localPath = destination.absolutePath,
+            auth = GitAuth.None,
+            onProgress = { progressCalls += it },
+            onStateChange = {},
+        )
+        assertTrue(result.isRight(), "clone failed: $result")
+
+        assertTrue(progressCalls.isNotEmpty(), "expected at least one CloneProgress callback")
+        assertTrue(
+            progressCalls.any { it.completed > 0 },
+            "expected at least one callback with completed > 0, got: $progressCalls",
+        )
     }
 }

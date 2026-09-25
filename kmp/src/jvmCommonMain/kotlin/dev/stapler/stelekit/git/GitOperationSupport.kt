@@ -84,6 +84,25 @@ fun classifyGitFailure(e: Exception): GitFailureClass {
 private const val MAX_CAUSE_CHAIN_DEPTH = 10
 
 /**
+ * Best-effort semantic tag for [GitTransportRetryState.NonRetryableFailure.reason]
+ * (git-sync-resilience Story 4.1.3's AC7) — distinguishes a repo-not-found
+ * ([NoRemoteRepositoryException]) failure from every other [GitFailureClass.Permanent] shape (an
+ * auth failure or an unrecognized one, both bucketed the same way [classifyGitFailure] already
+ * fail-closes them), so `GitSetupStep5TestAndSave.kt` can pick between two authored copies
+ * ("Authentication failed…" vs. "Repository not found…") without ever rendering `e.message`.
+ */
+fun permanentFailureReasonTag(e: Exception): String {
+    var cause: Throwable? = e
+    var depth = 0
+    while (cause != null && depth < MAX_CAUSE_CHAIN_DEPTH) {
+        if (cause is NoRemoteRepositoryException) return NonRetryableReason.NOT_FOUND
+        cause = cause.cause
+        depth++
+    }
+    return NonRetryableReason.AUTH
+}
+
+/**
  * Sealed classification of a caught git transport failure, produced by [classifyGitFailure] and
  * used to gate [runGitTransportOp]'s `onAuthFailed`/`onFailed` routing and (Story 1.2.2) the
  * retry loop's transient-only gate.
@@ -163,21 +182,37 @@ inline fun <T> runGitTransportOp(
  * merely started before the deadline) — tracked as the sum of every [Schedule.Decision.Continue.delay]
  * actually awaited by this loop, not a wall-clock timestamp, so it advances correctly under
  * `kotlinx-coroutines-test`'s virtual time in tests.
+ *
+ * [onStateChange] (Story 4.1.2, Task 4.1.2b) is produced *inside* this loop, driven by [onAttempt]'s
+ * same attempt/retry/terminal transitions, rather than derived separately at each call site — this
+ * keeps `AndroidGitRepository`/`JvmGitRepository`'s call sites simple (they only need to supply
+ * [currentProgress]) and guarantees Step 5 and the notification (both downstream consumers of the
+ * same [GitTransportRetryState] stream) can never observe a transition this loop itself didn't go
+ * through. Emitted once per discrete transition (attempt start / retry scheduled / terminal
+ * outcome), never per raw progress tick — [currentProgress] is polled only at those points, which
+ * is also where `design/ux.md`'s "announce at transitions, not every tick" debouncing naturally
+ * lives (Task 4.1.3b verifies no additional per-tick noise is introduced downstream). Defaults to a
+ * no-op so every pre-Story-4.1.2 caller (including every existing `businessTest` in
+ * `GitTransportRetryTest.kt`) keeps compiling and passing unchanged.
  */
 suspend fun <T, D> runGitTransportOpWithRetry(
     schedule: Schedule<Throwable, D>,
     onAttempt: (attempt: Int, failure: GitFailureClass?) -> Unit = { _, _ -> },
+    onStateChange: (GitTransportRetryState) -> Unit = {},
     beforeRetry: suspend () -> Unit,
     onAuthFailed: (Exception) -> DomainError.GitError,
     onFailed: (Exception) -> DomainError.GitError,
     onExhausted: (attempts: Int, last: DomainError.GitError) -> DomainError.GitError,
     maxElapsed: Duration = DEFAULT_GIT_TRANSPORT_RETRY_MAX_ELAPSED,
+    maxAttempts: Int = GIT_TRANSPORT_RETRY_MAX_ATTEMPTS,
+    currentProgress: () -> CloneProgress? = { null },
     op: suspend () -> Either<DomainError.GitError, T>,
 ): Either<DomainError.GitError, T> {
     var step = schedule.step
     var attempt = 1
     var retries = 0
     var elapsed = Duration.ZERO
+    onStateChange(GitTransportRetryState.Attempting(currentProgress() ?: CloneProgress("", 0, 0)))
     while (true) {
         try {
             val result = op()
@@ -193,17 +228,23 @@ suspend fun <T, D> runGitTransportOpWithRetry(
                 }
                 GitFailureClass.Permanent -> {
                     onAttempt(attempt, failureClass)
+                    onStateChange(GitTransportRetryState.NonRetryableFailure(permanentFailureReasonTag(e)))
                     return onAuthFailed(redactedTransportException(e)).left()
                 }
                 GitFailureClass.Transient -> {
                     onAttempt(attempt, failureClass)
                     val lastError = onFailed(redactedTransportException(e))
                     when (val decision = step(e)) {
-                        is Schedule.Decision.Done -> return onExhausted(retries, lastError).left()
+                        is Schedule.Decision.Done -> {
+                            onStateChange(GitTransportRetryState.Exhausted(lastError.message))
+                            return onExhausted(retries, lastError).left()
+                        }
                         is Schedule.Decision.Continue -> if (elapsed + decision.delay > maxElapsed) {
+                            onStateChange(GitTransportRetryState.Exhausted(lastError.message))
                             return onExhausted(retries, lastError).left()
                         } else {
                             retries++
+                            onStateChange(GitTransportRetryState.Retrying(attempt = retries, max = maxAttempts, progress = currentProgress()))
                             beforeRetry()
                             delay(decision.delay)
                             elapsed += decision.delay
@@ -220,6 +261,16 @@ suspend fun <T, D> runGitTransportOpWithRetry(
 /** Default [runGitTransportOpWithRetry] `maxElapsed` (Story 3.1.4) — comfortably under Android
  * 14's ~6-hour `dataSync` foreground-service aggregate cap. */
 val DEFAULT_GIT_TRANSPORT_RETRY_MAX_ELAPSED: Duration = 10.minutes
+
+/**
+ * Retry budget [RetryPolicies.gitTransportTransient] grants (its own kdoc: "five retries (~1s,
+ * 2s, 4s, 8s, 16s)" — matching `DomainError.GitError.RetryExhausted(attempts=5,...)`, already
+ * asserted by `GitTransportRetryTest.kt`'s pre-existing Story 1.2.2 tests). Used only to populate
+ * [GitTransportRetryState.Retrying]'s `max` field for Step 5/the notification — the generic
+ * `Schedule<Throwable, D>` type has no way to report its own attempt count, so this mirrors the one
+ * schedule actually used for clone/fetch/push rather than being derived from `schedule` itself.
+ */
+const val GIT_TRANSPORT_RETRY_MAX_ATTEMPTS = 5
 
 /**
  * Deletes [lockFile] only if it predates [retryLoopStartMs] — a lock created by this same retry

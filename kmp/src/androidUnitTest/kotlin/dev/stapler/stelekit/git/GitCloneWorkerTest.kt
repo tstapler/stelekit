@@ -129,7 +129,7 @@ class GitCloneWorkerTest {
 
     @Test
     fun `built via TestListenableWorkerBuilder against a StubGitRepository, doWork() completes end-to-end and returns Result success`() = runBlocking {
-        val worker = buildWorker(cloningStub { _, _, _, onProgress -> onProgress("Receiving objects"); Unit.right() })
+        val worker = buildWorker(cloningStub { _, _, _, onProgress -> onProgress(CloneProgress("Receiving objects", 0, 0)); Unit.right() })
 
         val result = worker.doWork()
 
@@ -159,7 +159,13 @@ class GitCloneWorkerTest {
     }
 
     @Test
-    fun `doWork() dismisses its foreground notification immediately on a failed clone rather than lingering`() = runBlocking {
+    fun `doWork() converts its foreground notification to a dismissible tap-to-retry one on a failed clone, rather than lingering as in-progress`() = runBlocking {
+        // Superseded by git-sync-resilience Task 4.1.5c: a terminal failure no longer tears the
+        // notification down outright (this test's pre-Epic-4.1 name/assertion) — it rebuilds it as
+        // dismissible ("tap to retry" content, setOngoing(false)) instead, per plan.md Story 4.1.5's
+        // AC ("converts to a normal (dismissible) notification on terminal failure"). Outright
+        // teardown is now reserved for success/cancellation (GitCloneWorkerNotificationTest.kt
+        // covers the dismissible-conversion behavior itself in more detail).
         val foregroundUpdater = RecordingForegroundUpdater()
         val repo = cloningStub { _, _, _, _ ->
             DomainError.GitError.RetryExhausted(5, DomainError.GitError.FetchFailed("net down")).left()
@@ -169,9 +175,11 @@ class GitCloneWorkerTest {
         worker.doWork()
 
         val notificationManager = androidx.core.app.NotificationManagerCompat.from(context)
+        val statusBarNotification = notificationManager.activeNotifications.firstOrNull { it.id == GitCloneWorker.NOTIFICATION_ID }
+        assertTrue(statusBarNotification != null, "a dismissible tap-to-retry notification must still be visible on failure/exhaustion")
         assertTrue(
-            notificationManager.activeNotifications.none { it.id == GitCloneWorker.NOTIFICATION_ID },
-            "the live in-progress notification must be torn down on failure/exhaustion, not left lingering",
+            statusBarNotification.notification.flags and android.app.Notification.FLAG_ONGOING_EVENT == 0,
+            "the notification must no longer be ongoing/non-dismissible once it's a terminal failure",
         )
     }
 }

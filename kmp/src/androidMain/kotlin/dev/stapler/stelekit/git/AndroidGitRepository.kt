@@ -85,10 +85,18 @@ class AndroidGitRepository(
         url: String,
         localPath: String,
         auth: GitAuth,
-        onProgress: (String) -> Unit,
+        onProgress: (CloneProgress) -> Unit,
+        onStateChange: (GitTransportRetryState) -> Unit,
     ): Either<DomainError.GitError, Unit> = withContext(PlatformDispatcher.IO) {
+        // Task 4.1.1b: tracks the last-seen beginTask title/totalWork so update()'s per-tick
+        // callback (and runGitTransportOpWithRetry's currentProgress supplier below) can report a
+        // real CloneProgress instead of a title-only signal, including before any beginTask() call
+        // (totalWork stays 0 — indeterminate — until JGit reports one).
+        val progressTracker = CloneProgressTracker()
         runGitTransportOpWithRetry(
             schedule = RetryPolicies.gitTransportTransient,
+            onStateChange = onStateChange,
+            currentProgress = { progressTracker.current },
             // Story 2.1.3: shadow-aware directory-content wipe before a retry — see
             // JvmGitRepository.clone()'s identical rationale. Operates on the resolved shadow
             // worktree path (not the SAF-facing localPath), matching every other JGit call site
@@ -112,8 +120,12 @@ class AndroidGitRepository(
                 .setTimeout(GIT_TRANSPORT_TIMEOUT_SECONDS)
                 .setProgressMonitor(object : org.eclipse.jgit.lib.ProgressMonitor {
                     override fun start(totalTasks: Int) {}
-                    override fun beginTask(title: String, totalWork: Int) { onProgress(title) }
-                    override fun update(completed: Int) {}
+                    override fun beginTask(title: String, totalWork: Int) {
+                        onProgress(progressTracker.onBeginTask(title, totalWork))
+                    }
+                    override fun update(completed: Int) {
+                        onProgress(progressTracker.onUpdate(completed))
+                    }
                     override fun endTask() {}
                     override fun isCancelled() = job?.isCancelled == true
                     // showDuration added in JGit 7.x; Bazel resolves to 7.x on Android too

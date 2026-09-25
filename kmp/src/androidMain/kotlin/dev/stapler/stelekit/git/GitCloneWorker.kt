@@ -6,7 +6,9 @@ package dev.stapler.stelekit.git
 import android.app.ForegroundServiceStartNotAllowedException
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import androidx.core.app.NotificationCompat
@@ -28,7 +30,8 @@ import kotlinx.coroutines.CancellationException
  * instead of dying with the Step 5 composable's own `rememberCoroutineScope()`. Enqueued by
  * [AndroidGitCloneWorkerLauncher]; delegates to [AndroidGitRepository.clone], which already
  * carries retry/timeout/shallow-clone behavior from Phases 1-2 — this worker only adds the
- * foreground-survival wrapper around it.
+ * foreground-survival wrapper around it, and (Epic 4.1) drives its live notification content from
+ * the same [GitTransportRetryState] stream Step 5 renders from.
  *
  * Auth secrets are never passed as plain WorkManager `Data` (Task 3.1.2a) — [AndroidGitCloneWorkerLauncher]
  * pre-resolves and persists them to [CredentialStore] under a [graphId]-scoped key (see
@@ -88,10 +91,12 @@ class GitCloneWorker @JvmOverloads constructor(
         val localPath = inputData.getString(KEY_LOCAL_PATH) ?: return Result.failure()
         val graphId = inputData.getString(KEY_GRAPH_ID) ?: return Result.failure()
         val sshKeyPath = inputData.getString(KEY_SSH_KEY_PATH)
+        val graphDisplayName = inputData.getString(KEY_GRAPH_DISPLAY_NAME)
 
         CredentialStore.init(applicationContext)
         val auth = resolveAuth(inputData.getString(KEY_AUTH_TYPE), graphId, sshKeyPath, CredentialStore())
 
+        var foregroundPromoted = true
         try {
             setForeground(getForegroundInfo())
         } catch (e: ForegroundServiceStartNotAllowedException) {
@@ -100,20 +105,33 @@ class GitCloneWorker @JvmOverloads constructor(
             // itself hasn't failed — only its background-survival guarantee is absent for this
             // run — so this logs and falls through to the transfer rather than failing.
             logger.warn("doWork: setForeground() denied, continuing without foreground promotion", e)
-            onForegroundDenied()
+            foregroundPromoted = false
+            onForegroundDenied(graphId, graphDisplayName)
         }
 
         val gitRepository = gitRepositoryOverride ?: AndroidGitRepository(
             context = applicationContext,
             fileSystem = PlatformFileSystem(),
         )
-        val result = gitRepository.clone(url, localPath, auth) { phase -> onCloneProgress(phase) }
+        val result = gitRepository.clone(
+            url,
+            localPath,
+            auth,
+            onProgress = { progress -> onCloneProgress(progress, graphId, graphDisplayName, foregroundPromoted) },
+            onStateChange = { state -> onRetryStateChange(state, graphId, graphDisplayName, foregroundPromoted) },
+        )
 
-        teardownNotification()
         return when (result) {
-            is Either.Right -> Result.success()
+            is Either.Right -> {
+                teardownNotification()
+                Result.success()
+            }
             is Either.Left -> {
                 logger.error("doWork: clone failed graphId=$graphId error=${result.value}")
+                // Task 4.1.5c: a terminal failure converts the notification to a dismissible
+                // "tap to retry" one instead of tearing it down outright — success/cancellation
+                // are the two paths that still dismiss it entirely.
+                postTerminalFailureNotification(graphId, graphDisplayName)
                 // ADR-002 / Story 3.1.5: runGitTransportOpWithRetry (inside
                 // AndroidGitRepository.clone()) already retried internally before ever returning
                 // Left here — this worker is a retry *consumer*, never a second retry owner.
@@ -124,49 +142,102 @@ class GitCloneWorker @JvmOverloads constructor(
     }
 
     /**
-     * Placeholder until `GitTransportRetryState.onStateChange` lands (Epic 4.1, Task 4.1.2b — see
-     * plan.md's own "wire a placeholder no-op callback now" guidance for this exact case). Once
-     * that callback exists, this should emit `GitTransportRetryState.Attempting(progress,
-     * foregroundPromoted = false)` through it so Step 5 doesn't imply a survivability guarantee
-     * that isn't in effect for this run.
+     * Task 4.1.2b/3.1.2e: `setForeground()` was denied for this run — surface
+     * `Attempting(progress, foregroundPromoted = false)` so Step 5/the notification never imply a
+     * background-survival guarantee that isn't actually in effect (the transfer itself still
+     * proceeds; only this signal changes).
      */
-    private fun onForegroundDenied() {}
-
-    private fun onCloneProgress(phase: String) {
-        setProgressAsync(workDataOf(KEY_PROGRESS_PHASE to phase))
-        postProgressNotification(phase)
+    private fun onForegroundDenied(graphId: String, graphDisplayName: String?) {
+        onRetryStateChange(
+            GitTransportRetryState.Attempting(CloneProgress("", 0, 0), foregroundPromoted = false),
+            graphId,
+            graphDisplayName,
+            foregroundPromoted = false,
+        )
     }
 
-    private fun postProgressNotification(phase: String) {
+    private fun onCloneProgress(progress: CloneProgress, graphId: String, graphDisplayName: String?, foregroundPromoted: Boolean) {
+        setProgressAsync(workDataOf(KEY_PROGRESS_PHASE to progress.phase))
+        // Task 4.1.5b: an indeterminate bar (no percent known yet) until totalWork is meaningfully
+        // known — postStateNotification/notificationProgressFor already encode that rule from the
+        // same CloneProgress this callback carries, so this just re-renders the Attempting state
+        // with fresh numbers on every JGit tick (setOnlyAlertOnce(true) keeps this silent).
+        postStateNotification(
+            GitTransportRetryState.Attempting(progress, foregroundPromoted),
+            graphId,
+            graphDisplayName,
+        )
+    }
+
+    private fun onRetryStateChange(state: GitTransportRetryState, graphId: String, graphDisplayName: String?, foregroundPromoted: Boolean) {
+        val effectiveState = if (state is GitTransportRetryState.Attempting && !foregroundPromoted) {
+            state.copy(foregroundPromoted = false)
+        } else {
+            state
+        }
+        when (effectiveState) {
+            is GitTransportRetryState.Exhausted, is GitTransportRetryState.NonRetryableFailure ->
+                postTerminalFailureNotification(graphId, graphDisplayName)
+            else -> postStateNotification(effectiveState, graphId, graphDisplayName)
+        }
+    }
+
+    /** Live, non-dismissible ("in progress") notification content for [state] — Task 4.1.5a/b. */
+    private fun postStateNotification(state: GitTransportRetryState, graphId: String, graphDisplayName: String?) {
         ensureNotificationChannel(applicationContext)
-        val notification = NotificationCompat.Builder(applicationContext, NOTIFICATION_CHANNEL_ID)
-            .setContentTitle(IN_PROGRESS_TITLE)
-            .setContentText(phase)
-            .setSmallIcon(android.R.drawable.stat_notify_sync)
+        val notification = baseNotificationBuilder(applicationContext, graphId, graphDisplayName)
+            .setContentText(notificationBodyFor(state))
             .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setAutoCancel(false)
+            .apply { applyProgressBar(this, state) }
             .build()
         notifySafely(applicationContext, NOTIFICATION_ID, notification)
     }
 
+    /**
+     * Task 4.1.5c: converts the live notification into a dismissible "tap to retry" one on a
+     * terminal failure (`Exhausted`/`NonRetryableFailure`) — `setOngoing(false)` +
+     * `setAutoCancel(true)`, distinct from [teardownNotification]'s outright cancel on
+     * success/manual-cancel.
+     */
+    private fun postTerminalFailureNotification(graphId: String, graphDisplayName: String?) {
+        ensureNotificationChannel(applicationContext)
+        val notification = baseNotificationBuilder(applicationContext, graphId, graphDisplayName)
+            .setContentText(SYNC_FAILED_TAP_TO_RETRY)
+            .setOngoing(false)
+            .setAutoCancel(true)
+            .setSmallIcon(android.R.drawable.stat_notify_error)
+            .build()
+        notifySafely(applicationContext, NOTIFICATION_ID, notification)
+    }
+
+    private fun applyProgressBar(builder: NotificationCompat.Builder, state: GitTransportRetryState): NotificationCompat.Builder {
+        val progress = notificationProgressPercent(state)
+        return if (progress != null) {
+            builder.setProgress(100, progress, false)
+        } else {
+            // Task 4.1.5b: indeterminate until a real percentage is known — never fake one.
+            builder.setProgress(0, 0, true)
+        }
+    }
+
     override suspend fun getForegroundInfo(): ForegroundInfo {
         ensureNotificationChannel(applicationContext)
-        val notification = NotificationCompat.Builder(applicationContext, NOTIFICATION_CHANNEL_ID)
-            .setContentTitle(IN_PROGRESS_TITLE)
+        val graphDisplayName = inputData.getString(KEY_GRAPH_DISPLAY_NAME)
+        val graphId = inputData.getString(KEY_GRAPH_ID)
+        val notification = baseNotificationBuilder(applicationContext, graphId, graphDisplayName)
             .setContentText("Starting…")
-            .setSmallIcon(android.R.drawable.stat_notify_sync)
             .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setProgress(0, 0, true)
             .build()
         return ForegroundInfo(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
     }
 
     /**
-     * The one shared teardown call every terminal path reuses (success, failure/RetryExhausted,
-     * uncaught Throwable, cancellation) — cancelling outright satisfies "not lingering as
-     * in-progress" for now; a richer dismissible "tap to retry" notification is Task 4.1.5c's job.
+     * The one shared teardown call every terminal path reuses (success, uncaught Throwable,
+     * cancellation) — cancels the notification outright. A terminal *failure* uses
+     * [postTerminalFailureNotification] instead (Task 4.1.5c) — it stays visible as
+     * dismissible/"tap to retry" rather than disappearing silently.
      */
     private fun teardownNotification() {
         try {
@@ -180,6 +251,7 @@ class GitCloneWorker @JvmOverloads constructor(
         const val KEY_URL = "url"
         const val KEY_LOCAL_PATH = "local_path"
         const val KEY_GRAPH_ID = "graph_id"
+        const val KEY_GRAPH_DISPLAY_NAME = "graph_display_name"
         const val KEY_AUTH_TYPE = "auth_type"
         const val KEY_SSH_KEY_PATH = "ssh_key_path"
         const val KEY_PROGRESS_PHASE = "progress_phase"
@@ -191,7 +263,11 @@ class GitCloneWorker @JvmOverloads constructor(
         internal const val NOTIFICATION_CHANNEL_ID = "stelekit_git_sync"
         internal const val NOTIFICATION_ID = 90020
         internal const val WATCHDOG_NOTIFICATION_ID = 90021
-        private const val IN_PROGRESS_TITLE = "Syncing graph"
+
+        /** Task 4.1.5c's exact "terminal failure" notification body — Exhausted and
+         * NonRetryableFailure share it; Step 5 (a richer surface) distinguishes the two with
+         * separate copy/styling (Story 4.1.3), but the notification's one-line body doesn't. */
+        const val SYNC_FAILED_TAP_TO_RETRY = "Sync failed — tap to retry"
 
         /** Story 3.1.7's exact user-facing copy for the stuck-clone battery-optimization watchdog. */
         const val STUCK_CLONE_WATCHDOG_MESSAGE =
@@ -224,6 +300,72 @@ class GitCloneWorker @JvmOverloads constructor(
             )
             else -> GitAuth.None
         }
+
+        /**
+         * Task 4.1.5a: title/deep-link content shared by every notification this worker posts —
+         * "Syncing {graph display name}" (never a raw URL/path, per `design/ux.md`'s jargon-
+         * avoidance rule), tapping deep-links toward Step 5. The `PendingIntent` targets the app's
+         * launcher activity with [KEY_GRAPH_ID] as an intent extra; **the navigation-read side (the
+         * app actually routing to Step 5 for that graph on a cold/warm start from this extra) is
+         * not wired here** — that's `androidApp`'s `MainActivity`/navigation-graph territory,
+         * outside this epic's file list (`GitCloneWorker.kt` only). Until that's connected, tapping
+         * the notification opens the app at its normal entry point rather than jumping straight to
+         * Step 5.
+         */
+        private fun baseNotificationBuilder(
+            context: Context,
+            graphId: String?,
+            graphDisplayName: String?,
+        ): NotificationCompat.Builder {
+            val title = "Syncing ${graphDisplayName?.takeIf { it.isNotBlank() } ?: "your graph"}"
+            return NotificationCompat.Builder(context, NOTIFICATION_CHANNEL_ID)
+                .setContentTitle(title)
+                .setSmallIcon(android.R.drawable.stat_notify_sync)
+                .setOnlyAlertOnce(true)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setContentIntent(deepLinkPendingIntent(context, graphId))
+        }
+
+        private fun deepLinkPendingIntent(context: Context, graphId: String?): PendingIntent? {
+            val launchIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+                ?: return null
+            launchIntent.putExtra(EXTRA_OPEN_GIT_SETUP_GRAPH_ID, graphId)
+            launchIntent.flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            return PendingIntent.getActivity(context, NOTIFICATION_ID, launchIntent, flags)
+        }
+
+        /** Intent extra a future `MainActivity`/navigation change would read to deep-link straight
+         * to Step 5 for this graph — see [baseNotificationBuilder]'s kdoc for the current gap. */
+        const val EXTRA_OPEN_GIT_SETUP_GRAPH_ID = "dev.stapler.stelekit.OPEN_GIT_SETUP_GRAPH_ID"
+
+        /** Body text for a live (non-terminal) [state] — Task 4.1.5a. Mirrors the *meaning* of
+         * Step 5's own [GitTransportRetryState] copy (`GitSetupStep5TestAndSave.kt`) so the two
+         * surfaces never disagree about what's happening, even though each surface's exact wording
+         * follows its own established convention (`design/ux.md`'s Surface A/D wireframes) — Step
+         * 5 splits primary/secondary text, this is one line for a system notification. */
+        internal fun notificationBodyFor(state: GitTransportRetryState): String = when (state) {
+            is GitTransportRetryState.Idle -> "Starting…"
+            is GitTransportRetryState.Attempting -> percentOf(state.progress)
+                ?.let { "Cloning — $it%" } ?: "Cloning…"
+            is GitTransportRetryState.Retrying -> {
+                val base = "Reconnecting… (attempt ${state.attempt} of ${state.max})"
+                state.progress?.let { percentOf(it) }?.let { "$base — $it%" } ?: base
+            }
+            is GitTransportRetryState.ResumingDeepen -> state.percent?.let { "Resuming — $it%" } ?: "Resuming…"
+            is GitTransportRetryState.Exhausted, is GitTransportRetryState.NonRetryableFailure ->
+                SYNC_FAILED_TAP_TO_RETRY
+        }
+
+        private fun notificationProgressPercent(state: GitTransportRetryState): Int? = when (state) {
+            is GitTransportRetryState.Attempting -> percentOf(state.progress)
+            is GitTransportRetryState.Retrying -> state.progress?.let { percentOf(it) }
+            is GitTransportRetryState.ResumingDeepen -> state.percent
+            else -> null
+        }
+
+        private fun percentOf(progress: CloneProgress): Int? =
+            if (progress.totalWork > 0) (progress.completed * 100 / progress.totalWork) else null
 
         private fun ensureNotificationChannel(context: Context) {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return

@@ -6,11 +6,13 @@ package dev.stapler.stelekit.git.testsupport
 import arrow.core.Either
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.git.CloneProgress
 import dev.stapler.stelekit.git.FetchResult
 import dev.stapler.stelekit.git.GitAuth
 import dev.stapler.stelekit.git.GitCommit
 import dev.stapler.stelekit.git.GitRepository
 import dev.stapler.stelekit.git.GitStatus
+import dev.stapler.stelekit.git.GitTransportRetryState
 import dev.stapler.stelekit.git.MergeResult
 import dev.stapler.stelekit.git.MergeSide
 import dev.stapler.stelekit.git.model.GitConfig
@@ -25,7 +27,13 @@ import dev.stapler.stelekit.git.model.GitConfig
 open class StubGitRepository : GitRepository {
     override suspend fun isGitRepo(path: String): Boolean = error("not implemented in stub")
     override suspend fun init(repoRoot: String): Either<DomainError.GitError, Unit> = error("not implemented in stub")
-    override suspend fun clone(url: String, localPath: String, auth: GitAuth, onProgress: (String) -> Unit): Either<DomainError.GitError, Unit> = error("not implemented in stub")
+    override suspend fun clone(
+        url: String,
+        localPath: String,
+        auth: GitAuth,
+        onProgress: (CloneProgress) -> Unit,
+        onStateChange: (GitTransportRetryState) -> Unit,
+    ): Either<DomainError.GitError, Unit> = error("not implemented in stub")
     override suspend fun testRemote(url: String, auth: GitAuth): Either<DomainError.GitError, Unit> = error("not implemented in stub")
     override suspend fun fetch(config: GitConfig): Either<DomainError.GitError, FetchResult> = error("not implemented in stub")
     override suspend fun unshallow(config: GitConfig): Either<DomainError.GitError, Unit> = error("not implemented in stub")
@@ -90,10 +98,15 @@ class FailureSequence<T>(
  * to one line per test.
  */
 fun cloningStub(
-    onClone: suspend (url: String, localPath: String, auth: GitAuth, onProgress: (String) -> Unit) -> Either<DomainError.GitError, Unit>,
+    onClone: suspend (url: String, localPath: String, auth: GitAuth, onProgress: (CloneProgress) -> Unit) -> Either<DomainError.GitError, Unit>,
 ): GitRepository = object : StubGitRepository() {
-    override suspend fun clone(url: String, localPath: String, auth: GitAuth, onProgress: (String) -> Unit) =
-        onClone(url, localPath, auth, onProgress)
+    override suspend fun clone(
+        url: String,
+        localPath: String,
+        auth: GitAuth,
+        onProgress: (CloneProgress) -> Unit,
+        onStateChange: (GitTransportRetryState) -> Unit,
+    ) = onClone(url, localPath, auth, onProgress)
 }
 
 open class FailureSequenceGitRepository(
@@ -101,8 +114,14 @@ open class FailureSequenceGitRepository(
     private val fetchSequence: FailureSequence<Either<DomainError.GitError, FetchResult>>? = null,
     private val pushSequence: FailureSequence<Either<DomainError.GitError, Unit>>? = null,
 ) : StubGitRepository() {
-    override suspend fun clone(url: String, localPath: String, auth: GitAuth, onProgress: (String) -> Unit): Either<DomainError.GitError, Unit> =
-        cloneSequence?.nextOrThrow() ?: super.clone(url, localPath, auth, onProgress)
+    override suspend fun clone(
+        url: String,
+        localPath: String,
+        auth: GitAuth,
+        onProgress: (CloneProgress) -> Unit,
+        onStateChange: (GitTransportRetryState) -> Unit,
+    ): Either<DomainError.GitError, Unit> =
+        cloneSequence?.nextOrThrow() ?: super.clone(url, localPath, auth, onProgress, onStateChange)
 
     override suspend fun fetch(config: GitConfig): Either<DomainError.GitError, FetchResult> =
         fetchSequence?.nextOrThrow() ?: super.fetch(config)

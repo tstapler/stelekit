@@ -8,11 +8,13 @@ import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.GraphId
+import dev.stapler.stelekit.git.CloneProgress
 import dev.stapler.stelekit.git.FetchResult
 import dev.stapler.stelekit.git.GitAuth
 import dev.stapler.stelekit.git.GitCommit
 import dev.stapler.stelekit.git.GitRepository
 import dev.stapler.stelekit.git.GitStatus
+import dev.stapler.stelekit.git.GitTransportRetryState
 import dev.stapler.stelekit.git.MergeResult
 import dev.stapler.stelekit.git.MergeSide
 import dev.stapler.stelekit.git.model.ConflictFile
@@ -69,7 +71,8 @@ class GraphManagerCloneTest {
             url: String,
             localPath: String,
             auth: GitAuth,
-            onProgress: (String) -> Unit,
+            onProgress: (CloneProgress) -> Unit,
+            onStateChange: (GitTransportRetryState) -> Unit,
         ): Either<DomainError.GitError, Unit> = cloneResult
 
         override suspend fun isGitRepo(path: String): Boolean = throw UnsupportedOperationException()

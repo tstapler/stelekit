@@ -71,7 +71,7 @@ class StubGitRepositoryFailureSequenceTest {
             onFailed = { e -> DomainError.GitError.CloneFailed(e.message ?: "Clone failed") },
             onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
         ) {
-            repo.clone("https://example.invalid/repo.git", "/tmp/repo", GitAuth.None) {}
+            repo.clone("https://example.invalid/repo.git", "/tmp/repo", GitAuth.None, onProgress = {}, onStateChange = {})
         }
 
         assertIs<Either.Right<Unit>>(result)
@@ -100,7 +100,7 @@ class StubGitRepositoryFailureSequenceTest {
             onFailed = { e -> DomainError.GitError.CloneFailed(e.message ?: "Clone failed") },
             onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
         ) {
-            repo.clone("https://example.invalid/repo.git", "/tmp/repo", GitAuth.None) {}
+            repo.clone("https://example.invalid/repo.git", "/tmp/repo", GitAuth.None, onProgress = {}, onStateChange = {})
         }
 
         assertIs<Either.Left<DomainError.GitError>>(result)
