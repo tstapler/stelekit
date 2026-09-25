@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.88.0](https://github.com/tstapler/stelekit/compare/v0.87.2...v0.88.0) (2026-09-24)
+
+
+### Features
+
+* **git-setup:** remember recent repos, clarify app-storage-vs-custom-folder choice ([#354](https://github.com/tstapler/stelekit/issues/354)) ([14738a5](https://github.com/tstapler/stelekit/commit/14738a559668e1ad435bd4672a757f1dcf924d94))
+
 ## [0.87.2](https://github.com/tstapler/stelekit/compare/v0.87.1...v0.87.2) (2026-09-24)
 
 
