@@ -8,6 +8,7 @@ import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.resilience.RetryPolicies
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
 import org.eclipse.jgit.api.errors.CanceledException
 import org.eclipse.jgit.api.errors.TransportException
@@ -120,5 +121,28 @@ class GitTransportRetryTest {
         }
 
         assertEquals(1, callCount, "a Cancelled failure must never be retried")
+    }
+
+    @Test
+    fun `runGitTransportOpWithRetry invokes a first-attempt-success op exactly once, with zero delay() calls`() = runTest {
+        var callCount = 0
+
+        val result: Either<DomainError.GitError, Unit> = runGitTransportOpWithRetry(
+            // The real production schedule (not *Immediate) so an accidental delay() call on the
+            // success path would advance virtual time and fail the currentTime assertion below —
+            // Schedule.recurs's zero-length delay would make that assertion a no-op.
+            schedule = RetryPolicies.gitTransportTransient,
+            beforeRetry = { error("beforeRetry must not run when the first attempt succeeds") },
+            onAuthFailed = { e -> DomainError.GitError.AuthFailed(e.message ?: "Authentication failed") },
+            onFailed = { e -> DomainError.GitError.CloneFailed(e.message ?: "Clone failed") },
+            onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
+        ) {
+            callCount++
+            Unit.right()
+        }
+
+        assertEquals(1, callCount, "a first-attempt success must never enter the retry loop")
+        assertEquals(0L, currentTime, "no delay() call may occur on the stable-network/first-attempt-success path")
+        assertIs<Either.Right<Unit>>(result)
     }
 }
