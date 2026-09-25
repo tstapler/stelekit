@@ -9,12 +9,14 @@ import dev.stapler.stelekit.git.model.HunkResolution
 import org.eclipse.jgit.lib.RepositoryState
 import java.io.File
 import kotlin.io.path.createTempDirectory
+import kotlin.system.measureTimeMillis
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.test.runTest
 import org.eclipse.jgit.api.Git
 
@@ -455,5 +457,34 @@ class JvmGitRepositoryTest {
         val missingRemote = File(tempDir, "does-not-exist").absolutePath
         val result = repository.testRemote(missingRemote, GitAuth.None)
         assertTrue(result.isLeft(), "expected testRemote to fail against a nonexistent remote")
+    }
+
+    /**
+     * Task 1.1.2d regression test — proves `GIT_TRANSPORT_TIMEOUT_SECONDS` is actually wired into
+     * [JvmGitRepository.clone]'s [org.eclipse.jgit.api.CloneCommand], not just present in source.
+     * `192.0.2.1` is TEST-NET-1 (RFC 5737) — reserved for documentation/examples, so it's
+     * guaranteed non-routable on any real network, unlike an arbitrary private address a CI
+     * runner's own network might actually route somewhere. The bound is
+     * `GIT_TRANSPORT_TIMEOUT_SECONDS` plus slack, not an exact figure, since a timeout-less call
+     * could otherwise hang indefinitely.
+     */
+    @Test
+    fun `clone against a non-routable TEST-NET address fails within GIT_TRANSPORT_TIMEOUT_SECONDS instead of hanging indefinitely`() = runTest(
+        timeout = (GIT_TRANSPORT_TIMEOUT_SECONDS + 30).seconds,
+    ) {
+        val destination = File(tempDir, "unroutable-clone-destination")
+        val elapsedMillis = measureTimeMillis {
+            val result = repository.clone(
+                url = "https://192.0.2.1/repo.git",
+                localPath = destination.absolutePath,
+                auth = GitAuth.None,
+                onProgress = {},
+            )
+            assertTrue(result.isLeft(), "expected clone against an unroutable TEST-NET address to fail")
+        }
+        assertTrue(
+            elapsedMillis < (GIT_TRANSPORT_TIMEOUT_SECONDS + 30) * 1000L,
+            "expected clone to fail within GIT_TRANSPORT_TIMEOUT_SECONDS (${GIT_TRANSPORT_TIMEOUT_SECONDS}s) plus slack, took ${elapsedMillis}ms",
+        )
     }
 }

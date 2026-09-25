@@ -13,9 +13,15 @@ import dev.stapler.stelekit.platform.security.CredentialAccess
 import kotlinx.coroutines.CancellationException
 import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.api.TransportCommand
+import org.eclipse.jgit.api.errors.CanceledException
 import org.eclipse.jgit.api.errors.TransportException
+import org.eclipse.jgit.errors.NoRemoteRepositoryException
 import org.eclipse.jgit.lib.ObjectId
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider
+import java.io.EOFException
+import java.net.SocketException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 
 /**
  * Runs [op] (which already returns the operation's own [Either]), converting any thrown failure
@@ -37,13 +43,65 @@ inline fun <T> runGitOp(
     }
 
 /**
+ * Classifies a caught JGit/transport [e] for retry gating, by walking its cause chain (bounded to
+ * guard against a cyclic `cause` reference) rather than switching on `e`'s own type alone —
+ * [runGitTransportOp] previously routed every [TransportException] to `onAuthFailed`, which
+ * misclassified a plain [SocketException] (a transient network drop) as an authentication
+ * failure. Unrecognized failure shapes (e.g. `InvalidRemoteException`, `RefNotAdvertisedException`)
+ * fail closed as [GitFailureClass.Permanent] — a permanent failure must never be misclassified as
+ * retryable, the sharpest regression risk for the retry logic this feeds (Story 1.2.2).
+ */
+fun classifyGitFailure(e: Exception): GitFailureClass {
+    var cause: Throwable? = e
+    var depth = 0
+    while (cause != null && depth < MAX_CAUSE_CHAIN_DEPTH) {
+        when (cause) {
+            is CanceledException -> return GitFailureClass.Cancelled
+            is SocketException, is SocketTimeoutException, is UnknownHostException, is EOFException ->
+                return GitFailureClass.Transient
+            is NoRemoteRepositoryException -> return GitFailureClass.Permanent
+            else -> {}
+        }
+        cause = cause.cause
+        depth++
+    }
+    // An auth-shaped message (HTTP 401/403/"not authorized") and every other unrecognized shape
+    // both fail closed here — the fail-closed default already covers the auth-message case, so
+    // no separate branch is needed.
+    return GitFailureClass.Permanent
+}
+
+/** Bounds [classifyGitFailure]'s cause-chain walk against a cyclic `cause` reference. */
+private const val MAX_CAUSE_CHAIN_DEPTH = 10
+
+/**
+ * Sealed classification of a caught git transport failure, produced by [classifyGitFailure] and
+ * used to gate [runGitTransportOp]'s `onAuthFailed`/`onFailed` routing and (Story 1.2.2) the
+ * retry loop's transient-only gate.
+ */
+sealed interface GitFailureClass {
+    /** A network-level hiccup (dropped socket, DNS blip, read timeout) — safe to retry. */
+    data object Transient : GitFailureClass
+
+    /** An auth/not-found/unrecognized failure — never retried; retrying would just repeat it. */
+    data object Permanent : GitFailureClass
+
+    /** The operation was cancelled (e.g. user tapped Cancel) — never retried. */
+    data object Cancelled : GitFailureClass
+}
+
+/**
  * Like [runGitOp], but additionally maps a JGit [TransportException] — thrown for remote
- * auth/connectivity failures — to [onAuthFailed] instead of the generic [onFailed]. Used by every
- * clone/fetch/push/testRemote call, the only operations that touch a remote transport. Every
- * caught exception's message is run through [redactUrlUserinfo] before either callback sees it,
- * so a PAT pasted as `https://ghp_xxx@host/...` (userinfo, not password — JGit's own redaction
- * only strips the password component) never reaches a [DomainError.GitError] and from there the
- * UI/logs.
+ * auth/connectivity failures — to [onAuthFailed] instead of the generic [onFailed], gated by
+ * [classifyGitFailure] so only a [GitFailureClass.Permanent]-classified exception (auth failure,
+ * repo-not-found, or an unrecognized shape) routes to `onAuthFailed`; a
+ * [GitFailureClass.Transient] `TransportException` (e.g. a bare `SocketException`) routes to
+ * `onFailed` instead — this is the fix for the pre-existing misclassification bug (a dropped
+ * socket reported to the user as an authentication failure). Used by every clone/fetch/push/
+ * testRemote call, the only operations that touch a remote transport. Every caught exception's
+ * message is run through [redactUrlUserinfo] before either callback sees it, so a PAT pasted as
+ * `https://ghp_xxx@host/...` (userinfo, not password — JGit's own redaction only strips the
+ * password component) never reaches a [DomainError.GitError] and from there the UI/logs.
  */
 inline fun <T> runGitTransportOp(
     onAuthFailed: (Exception) -> DomainError.GitError,
@@ -53,7 +111,11 @@ inline fun <T> runGitTransportOp(
     try {
         op()
     } catch (e: TransportException) {
-        onAuthFailed(redactedTransportException(e)).left()
+        if (classifyGitFailure(e) == GitFailureClass.Permanent) {
+            onAuthFailed(redactedTransportException(e)).left()
+        } else {
+            onFailed(redactedTransportException(e)).left()
+        }
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
@@ -137,6 +199,15 @@ fun configureHttpsOrNoAuth(
 /** `ls-remote` has no default JGit timeout — without one, a black-holed host leaves the "Test
  * connection" UI spinning forever. */
 private const val TEST_REMOTE_TIMEOUT_SECONDS = 15
+
+/**
+ * Applied via `.setTimeout(...)` to every clone/fetch/push [TransportCommand] on both platforms
+ * (`AndroidGitRepository`, `JvmGitRepository`) — without it, a stalled connection hangs until the
+ * OS tears the socket down instead of failing fast enough to reach the retry logic (Story 1.2.2).
+ * Deliberately much larger than [TEST_REMOTE_TIMEOUT_SECONDS]: a shallow clone still needs
+ * headroom to complete on a slow-but-healthy connection, unlike a lightweight `ls-remote` check.
+ */
+const val GIT_TRANSPORT_TIMEOUT_SECONDS = 300
 
 /**
  * Shared body of [AndroidGitRepository.testRemote]/[JvmGitRepository.testRemote] — checks that a

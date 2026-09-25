@@ -98,6 +98,7 @@ class AndroidGitRepository(
             val cmd = Git.cloneRepository()
                 .setURI(url)
                 .setDirectory(File(shadow.resolveForJGit(localPath)))
+                .setTimeout(GIT_TRANSPORT_TIMEOUT_SECONDS)
                 .setProgressMonitor(object : org.eclipse.jgit.lib.ProgressMonitor {
                     override fun start(totalTasks: Int) {}
                     override fun beginTask(title: String, totalWork: Int) { onProgress(title) }
@@ -138,6 +139,7 @@ class AndroidGitRepository(
 
         git.fetch()
             .setRemote(config.remoteName)
+            .setTimeout(GIT_TRANSPORT_TIMEOUT_SECONDS)
             .also { authConfigurer.configureTransport(it, config) }
             .call()
 
@@ -275,6 +277,7 @@ class AndroidGitRepository(
     private fun doPush(git: Git, config: GitConfig): Either<DomainError.GitError, Unit> {
         git.push()
             .setRemote(config.remoteName)
+            .setTimeout(GIT_TRANSPORT_TIMEOUT_SECONDS)
             .also { authConfigurer.configureTransport(it, config) }
             .call()
         return Unit.right()
