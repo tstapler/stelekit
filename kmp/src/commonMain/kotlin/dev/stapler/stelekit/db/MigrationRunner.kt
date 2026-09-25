@@ -831,6 +831,16 @@ object MigrationRunner {
                 """
             )
         ),
+        // git-sync-resilience Story 2.1.2: checkpoint-by-depth state for a graph's clone, so a
+        // resumed app session knows whether a deepen (unshallow) is pending. See GitConfig.kt's
+        // CloneDepthState for the sealed in-memory representation these two raw columns parse into.
+        Migration(
+            name = "git_config_clone_depth_state",
+            schemaOps = listOf(
+                SchemaOp.AddColumn("git_config", "clone_depth_state", "TEXT NOT NULL DEFAULT 'NONE'"),
+                SchemaOp.AddColumn("git_config", "shallow_depth", "INTEGER"),
+            ),
+        ),
     )
 
     /**

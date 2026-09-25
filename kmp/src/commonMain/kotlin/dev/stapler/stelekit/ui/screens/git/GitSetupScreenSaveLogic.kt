@@ -11,6 +11,8 @@ import dev.stapler.stelekit.git.GitCredentialConnectionStore
 import dev.stapler.stelekit.git.GitHubDeviceFlowClient
 import dev.stapler.stelekit.git.GitRepository
 import dev.stapler.stelekit.git.GitSyncService
+import dev.stapler.stelekit.git.model.CloneDepthState
+import dev.stapler.stelekit.git.model.DEFAULT_CLONE_DEPTH
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.logging.Logger
@@ -109,6 +111,11 @@ internal sealed class SaveConfigOutcome {
  * null`, `graphId` = the just-created graph) and [performSaveExistingConfig] (`graphId =
  * form.graphId`) — both paths resolve credential keys and call `saveConfig` identically; only what
  * happens after a successful save differs (a background fetch, vs. an `onCloneComplete` callback).
+ *
+ * [cloneDepthState] defaults to preserving [existingConfig]'s own value (or [CloneDepthState.None]
+ * when there is none) — [performSaveExistingConfig] relies on this default so re-saving an
+ * already-cloned graph's settings never resets its checkpoint state. [performCloneAndSave] passes
+ * an explicit [CloneDepthState.Shallow] instead, since a fresh clone just ran (Task 2.1.2f).
  */
 private suspend fun resolveAndSaveConfig(
     graphId: String,
@@ -117,6 +124,7 @@ private suspend fun resolveAndSaveConfig(
     credentialStore: CredentialStore,
     connectionStore: GitCredentialConnectionStore,
     gitConfigRepository: GitConfigRepository,
+    cloneDepthState: CloneDepthState = existingConfig?.cloneDepthState ?: CloneDepthState.None,
 ): Either<DomainError, Unit> {
     val httpsTokenKey = if (form.authType == GitAuthType.HTTPS_TOKEN) {
         resolveHttpsTokenKey(
@@ -155,6 +163,7 @@ private suspend fun resolveAndSaveConfig(
         httpsTokenKey = httpsTokenKey,
         sshKeyPassphraseKey = sshPassphraseKey,
         oauthTokenKey = oauthTokenKey,
+        cloneDepthState = cloneDepthState,
     )
     return gitConfigRepository.saveConfig(config)
 }
@@ -201,7 +210,12 @@ internal suspend fun performCloneAndSave(
     }
     val newGraphId = (cloneResult as Either.Right).value
 
-    val saveResult = resolveAndSaveConfig(newGraphId, form, null, credentialStore, connectionStore, gitConfigRepository)
+    // Task 2.1.2f: a clone that just ran defaults to shallow (Story 2.1.1) — stamp that checkpoint
+    // now, since this is the first moment a GitConfig row exists for this graph at all.
+    val saveResult = resolveAndSaveConfig(
+        newGraphId, form, null, credentialStore, connectionStore, gitConfigRepository,
+        cloneDepthState = CloneDepthState.Shallow(DEFAULT_CLONE_DEPTH),
+    )
     return if (saveResult.isRight()) {
         gitSetupLogger.info("saveConfig succeeded (clone-and-add) graphId=$newGraphId")
         CloneAndSaveOutcome.Saved(newGraphId)

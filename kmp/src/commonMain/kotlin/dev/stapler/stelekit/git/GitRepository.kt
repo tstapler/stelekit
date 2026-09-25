@@ -33,6 +33,19 @@ interface GitRepository {
      */
     suspend fun testRemote(url: String, auth: GitAuth): Either<DomainError.GitError, Unit>
     suspend fun fetch(config: GitConfig): Either<DomainError.GitError, FetchResult>
+
+    /**
+     * Widens a shallow clone to full history (`FetchCommand.setUnshallow(true)`) — the deepen
+     * capability backing [dev.stapler.stelekit.git.model.CloneDepthState.Shallow] →
+     * [dev.stapler.stelekit.git.model.CloneDepthState.FullHistory] (git-sync-resilience Story
+     * 2.1.4). Guards against widening onto a diverged remote (returns
+     * [DomainError.GitError.FetchFailed] instead of attempting a widen JGit might mishandle) but
+     * does **not** itself persist the resulting [dev.stapler.stelekit.git.model.CloneDepthState] —
+     * callers that hold a [GitConfigRepository] (see [dev.stapler.stelekit.git.GitSyncService.deepen])
+     * are responsible for saving the updated config on success. Backend capability only in this
+     * plan — no settings-screen UI entry point calls it yet.
+     */
+    suspend fun unshallow(config: GitConfig): Either<DomainError.GitError, Unit>
     suspend fun status(config: GitConfig): Either<DomainError.GitError, GitStatus>
     suspend fun stageSubdir(config: GitConfig): Either<DomainError.GitError, Unit>
     suspend fun commit(config: GitConfig, message: String): Either<DomainError.GitError, String>

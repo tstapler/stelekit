@@ -170,7 +170,9 @@ private class SteleDatabaseImpl(
           |    oauth_token_key         TEXT,
           |    poll_interval_minutes   INTEGER NOT NULL DEFAULT 5,
           |    auto_commit             INTEGER NOT NULL DEFAULT 1,
-          |    commit_message_template TEXT NOT NULL DEFAULT 'SteleKit: {date}'
+          |    commit_message_template TEXT NOT NULL DEFAULT 'SteleKit: {date}',
+          |    clone_depth_state       TEXT NOT NULL DEFAULT 'NONE',
+          |    shallow_depth           INTEGER
           |)
           """.trimMargin(), 0).await()
       driver.execute(null, """

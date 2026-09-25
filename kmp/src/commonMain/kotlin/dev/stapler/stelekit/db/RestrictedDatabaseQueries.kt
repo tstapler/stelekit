@@ -477,10 +477,13 @@ class RestrictedDatabaseQueries(
         poll_interval_minutes: Long,
         auto_commit: Long,
         commit_message_template: String,
+        clone_depth_state: String,
+        shallow_depth: Long?,
     ) = queries.insertOrReplaceGitConfig(
         graph_id, repo_root, wiki_subdir, remote_name, remote_branch,
         auth_type, ssh_key_path, ssh_key_passphrase_key, https_token_key, oauth_token_key,
         poll_interval_minutes, auto_commit, commit_message_template,
+        clone_depth_state, shallow_depth,
     )
 
     @DirectSqlWrite

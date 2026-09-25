@@ -117,6 +117,12 @@ class WasmGitRepository(
         return gitWriteService.fetch(hostConfig, fileSystem.getBaseSha())
     }
 
+    // Web's write-back model is checkout-less (see class doc) — there is no local shallow clone
+    // to widen, so this Story 2.1.4 capability is meaningless here, matching clone()/testRemote()
+    // below (Task 4.1.1f).
+    override suspend fun unshallow(config: GitConfig): Either<DomainError.GitError, Unit> =
+        DomainError.GitError.NotSupported("web").left()
+
     override suspend fun merge(config: GitConfig): Either<DomainError.GitError, MergeResult> {
         val hostConfig = resolveHostConfig(config).getOrElse { return it.left() }
         return when (val result = gitWriteService.merge(config, hostConfig, fileSystem.getBaseSha())) {

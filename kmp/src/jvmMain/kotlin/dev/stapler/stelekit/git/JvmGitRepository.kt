@@ -9,6 +9,7 @@ import arrow.core.right
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
+import dev.stapler.stelekit.git.model.DEFAULT_CLONE_DEPTH
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.platform.security.CredentialAccess
 import dev.stapler.stelekit.platform.security.CredentialStore
@@ -77,12 +78,17 @@ class JvmGitRepository(
         auth: GitAuth,
         onProgress: (String) -> Unit,
     ): Either<DomainError.GitError, Unit> = withContext(PlatformDispatcher.IO) {
-        val retryLoopStartMs = System.currentTimeMillis()
         runGitTransportOpWithRetry(
             schedule = RetryPolicies.gitTransportTransient,
-            beforeRetry = {
-                deleteLockFileIfStaleForRetry(File(localPath, ".git/index.lock"), retryLoopStartMs)
-            },
+            // Story 2.1.3: a first attempt whose fetch succeeded but was interrupted before
+            // returning leaves a partially-populated, non-empty target directory — JGit's
+            // CloneCommand refuses to clone into a non-empty directory, so a retry would
+            // otherwise fail deterministically on attempt 2 without ever reaching the network
+            // again. Wipe the directory's contents (not the directory itself) before retrying;
+            // per ADR-001 this re-transfers the bounded shallow pack rather than splicing a
+            // partial one. Manual cancel never reaches this hook (runGitTransportOpWithRetry
+            // only runs beforeRetry on a Transient-classified automatic retry).
+            beforeRetry = { deleteDirectoryContentsForRetry(File(localPath)) },
             onAuthFailed = { e -> DomainError.GitError.AuthFailed(e.message ?: "Authentication failed") },
             onFailed = { e -> DomainError.GitError.CloneFailed(e.message ?: "Clone failed") },
             onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
@@ -94,6 +100,9 @@ class JvmGitRepository(
             val cmd = Git.cloneRepository()
                 .setURI(url)
                 .setDirectory(File(localPath))
+                // Story 2.1.1/ADR-001: shallow by default — bounds a retry's cost to a small,
+                // fixed-size unit instead of the full repository history.
+                .setDepth(DEFAULT_CLONE_DEPTH)
                 .setTimeout(GIT_TRANSPORT_TIMEOUT_SECONDS)
                 .setProgressMonitor(object : org.eclipse.jgit.lib.ProgressMonitor {
                     override fun start(totalTasks: Int) {}
@@ -114,6 +123,39 @@ class JvmGitRepository(
         withContext(PlatformDispatcher.IO) {
             testRemoteViaLsRemote(url, auth, authConfigurer::configureAuth)
         }
+
+    override suspend fun unshallow(config: GitConfig): Either<DomainError.GitError, Unit> =
+        withContext(PlatformDispatcher.IO) {
+            val diverged = openGit(config.repoRoot).use { git ->
+                hasRemoteDivergedSinceShallowClone(git, config) { authConfigurer.configureTransport(it, config) }
+            }
+            if (diverged) {
+                return@withContext DomainError.GitError.FetchFailed(
+                    "Remote has diverged since the shallow clone — full history unavailable via automatic widen"
+                ).left()
+            }
+
+            val retryLoopStartMs = System.currentTimeMillis()
+            runGitTransportOpWithRetry(
+                schedule = RetryPolicies.gitTransportTransient,
+                beforeRetry = { deleteLockFileIfStaleForRetry(indexLockFile(config), retryLoopStartMs) },
+                onAuthFailed = { e -> DomainError.GitError.AuthFailed(e.message ?: "Authentication failed") },
+                onFailed = { e -> DomainError.GitError.FetchFailed(e.message ?: "Unshallow failed") },
+                onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
+            ) {
+                openGit(config.repoRoot).use { git -> doUnshallow(git, config) }
+            }
+        }
+
+    private fun doUnshallow(git: Git, config: GitConfig): Either<DomainError.GitError, Unit> {
+        git.fetch()
+            .setRemote(config.remoteName)
+            .setUnshallow(true)
+            .setTimeout(GIT_TRANSPORT_TIMEOUT_SECONDS)
+            .also { authConfigurer.configureTransport(it, config) }
+            .call()
+        return Unit.right()
+    }
 
     override suspend fun fetch(config: GitConfig): Either<DomainError.GitError, FetchResult> =
         withContext(PlatformDispatcher.IO) {
@@ -209,6 +251,12 @@ class JvmGitRepository(
             ?: return DomainError.GitError.FetchFailed(
                 "Remote ref ${config.remoteName}/${config.remoteBranch} not found"
             ).left()
+
+        // Story 2.1.5: fail closed rather than let JGit's shallow-history merge-base limitation
+        // silently produce a degraded/wrong merge.
+        if (isShallowHistoryInsufficientForMerge(repo, remoteRef)) {
+            return DomainError.GitError.ShallowHistoryInsufficient.left()
+        }
 
         val mergeResult = git.merge()
             .include(remoteRef)

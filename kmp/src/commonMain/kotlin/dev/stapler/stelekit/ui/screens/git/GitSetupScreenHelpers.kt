@@ -6,6 +6,7 @@ package dev.stapler.stelekit.ui.screens.git
 import dev.stapler.stelekit.git.GitAuth
 import dev.stapler.stelekit.git.GitCredentialConnectionStore
 import dev.stapler.stelekit.git.GitHostAdapter
+import dev.stapler.stelekit.git.model.CloneDepthState
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.git.model.GitHostType
@@ -142,6 +143,7 @@ internal fun buildConfig(
     httpsTokenKey: String? = null,
     sshKeyPassphraseKey: String? = null,
     oauthTokenKey: String? = null,
+    cloneDepthState: CloneDepthState = CloneDepthState.None,
 ): GitConfig = GitConfig(
     graphId = graphId,
     repoRoot = repoRoot,
@@ -153,4 +155,5 @@ internal fun buildConfig(
     httpsTokenKey = httpsTokenKey,
     sshKeyPassphraseKey = sshKeyPassphraseKey,
     oauthTokenKey = oauthTokenKey,
+    cloneDepthState = cloneDepthState,
 )

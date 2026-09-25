@@ -28,6 +28,7 @@ open class StubGitRepository : GitRepository {
     override suspend fun clone(url: String, localPath: String, auth: GitAuth, onProgress: (String) -> Unit): Either<DomainError.GitError, Unit> = error("not implemented in stub")
     override suspend fun testRemote(url: String, auth: GitAuth): Either<DomainError.GitError, Unit> = error("not implemented in stub")
     override suspend fun fetch(config: GitConfig): Either<DomainError.GitError, FetchResult> = error("not implemented in stub")
+    override suspend fun unshallow(config: GitConfig): Either<DomainError.GitError, Unit> = error("not implemented in stub")
     override suspend fun status(config: GitConfig): Either<DomainError.GitError, GitStatus> = error("not implemented in stub")
     override suspend fun stageSubdir(config: GitConfig): Either<DomainError.GitError, Unit> = error("not implemented in stub")
     override suspend fun commit(config: GitConfig, message: String): Either<DomainError.GitError, String> = error("not implemented in stub")

@@ -117,6 +117,18 @@ sealed interface DomainError {
         data class RetryExhausted(val attempts: Int, val lastError: GitError) : GitError {
             override val message: String = "Retry exhausted after $attempts attempts: ${lastError.message}"
         }
+
+        /**
+         * git-sync-resilience Story 2.1.5: returned by `merge()` instead of calling JGit's
+         * `MergeCommand` when a shallow clone's local history doesn't reliably cover the true
+         * merge base with the remote ref — see `isShallowHistoryInsufficientForMerge` in
+         * `GitOperationSupport.kt` for the absent/wrong-but-present detection this guards against.
+         */
+        data object ShallowHistoryInsufficient : GitError {
+            override val message: String =
+                "This graph's local history doesn't go back far enough to merge safely — " +
+                    "contact support or re-clone with full history"
+        }
     }
 
     sealed interface AttachmentError : DomainError {
@@ -265,6 +277,7 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.GitError.WorkingTreeWriteBackFailed -> "Write-back failed: $path"
     is DomainError.GitError.WorkingTreeConcurrentEditDetected -> message
     is DomainError.GitError.RetryExhausted -> message
+    is DomainError.GitError.ShallowHistoryInsufficient -> message
     is DomainError.AttachmentError.CopyFailed -> "Attachment failed"
     is DomainError.AttachmentError.PickerFailed -> "Could not open file picker"
     is DomainError.AttachmentError.AssetsDirectoryFailed -> "Cannot create assets directory"
@@ -310,4 +323,5 @@ fun DomainError.GitError.toSyncErrorMessage(): String = when (this) {
     is DomainError.GitError.WorkingTreeWriteBackFailed -> "Write-back failed — tap to retry"
     is DomainError.GitError.WorkingTreeConcurrentEditDetected -> "Local file changed during sync — resolve to continue"
     is DomainError.GitError.RetryExhausted -> "${lastError.toSyncErrorMessage()} (retried $attempts times)"
+    is DomainError.GitError.ShallowHistoryInsufficient -> "This graph's local history doesn't go back far enough to merge safely — re-clone with full history"
 }

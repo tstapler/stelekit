@@ -3,6 +3,7 @@
 package dev.stapler.stelekit.git
 
 import arrow.core.Either
+import dev.stapler.stelekit.git.model.DEFAULT_CLONE_DEPTH
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.git.model.HunkResolution
@@ -15,6 +16,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.test.runTest
@@ -486,5 +488,145 @@ class JvmGitRepositoryTest {
             elapsedMillis < (GIT_TRANSPORT_TIMEOUT_SECONDS + 30) * 1000L,
             "expected clone to fail within GIT_TRANSPORT_TIMEOUT_SECONDS (${GIT_TRANSPORT_TIMEOUT_SECONDS}s) plus slack, took ${elapsedMillis}ms",
         )
+    }
+
+    /** A local bare repo with [commitCount] commits on its default branch — a real fixture for
+     * clone()/fetch() tests that need more history than [DEFAULT_CLONE_DEPTH]. */
+    private fun createBareOriginWithCommits(prefix: String, commitCount: Int): File {
+        val bareOrigin = createTempDirectory(prefix).toFile()
+        Git.init().setBare(true).setDirectory(bareOrigin).setInitialBranch("main").call().close()
+        val seedWorkDir = createTempDirectory("${prefix}seed_").toFile()
+        Git.cloneRepository().setURI(bareOrigin.absolutePath).setDirectory(seedWorkDir).call().use { git ->
+            setIdentity(git)
+            repeat(commitCount) { i ->
+                File(seedWorkDir, "journal.md").writeText("entry $i\n")
+                git.add().addFilepattern(".").call()
+                git.commit().setMessage("commit $i").call()
+            }
+            git.push().call()
+        }
+        seedWorkDir.deleteRecursively()
+        return bareOrigin
+    }
+
+    /**
+     * Story 2.1.1 (Task 2.1.1d) — a fresh clone against a fixture repo with more than
+     * [DEFAULT_CLONE_DEPTH] commits of history must be shallow, not full: proves `.setDepth()` is
+     * actually wired into [JvmGitRepository.clone]'s `CloneCommand`, not just present in source.
+     */
+    @Test
+    fun `clone against a fixture repo with more than DEFAULT_CLONE_DEPTH commits leaves objectDatabase shallowCommits non-empty`() = runTest {
+        val bareOrigin = createBareOriginWithCommits("stelekit_shallow_clone_origin_", DEFAULT_CLONE_DEPTH + 10)
+        val destination = File(tempDir, "shallow-clone-dest")
+
+        val result = repository.clone(
+            url = bareOrigin.absolutePath,
+            localPath = destination.absolutePath,
+            auth = GitAuth.None,
+            onProgress = {},
+        )
+        assertTrue(result.isRight(), "clone failed: $result")
+
+        Git.open(destination).use { git ->
+            val shallowCommits = git.repository.objectDatabase.shallowCommits
+            assertTrue(shallowCommits.isNotEmpty(), "expected a shallow clone (non-empty shallowCommits), got: $shallowCommits")
+        }
+    }
+
+    /**
+     * Story 2.1.3 (Task 2.1.3c) — a retry after a simulated interrupted first clone attempt (a
+     * partially-populated, non-empty target directory left behind) must succeed instead of
+     * throwing JGit's "already exists and is not an empty directory" guard.
+     *
+     * A directory-exists error itself is JGit-thrown (not a network exception), so
+     * `classifyGitFailure` fails it closed as `Permanent` — by design, it must never be
+     * misclassified as retryable (Story 1.1.1's whole point). In real usage this scenario only
+     * arises because attempt 1 already failed for a genuinely *Transient* reason (a dropped
+     * connection mid-transfer) partway through writing files; `runGitTransportOpWithRetry` then
+     * runs `beforeRetry` — clone()'s `deleteDirectoryContentsForRetry(File(localPath))` — before
+     * attempt 2, so attempt 2 never actually sees a non-empty directory in production. This test
+     * can't organically reproduce a real mid-transfer network drop against a local `file://`
+     * fixture, so it drives the same two steps explicitly: (1) confirm clone() really does fail
+     * against the pre-seeded leftover directory (proving the precondition this scenario depends
+     * on), then (2) run the exact cleanup `beforeRetry` uses and confirm a real retried clone()
+     * call succeeds against the same real fixture — proving no residual JGit/filesystem state
+     * survives the cleanup to block the next attempt.
+     */
+    @Test
+    fun `clone retried after a simulated interrupted first attempt succeeds against a real fixture repo`() = runTest {
+        val bareOrigin = createBareOriginWithCommits("stelekit_retry_clone_origin_", 3)
+        val destination = File(tempDir, "retry-clone-dest")
+        destination.mkdirs()
+        File(destination, "partial-object-file").writeText("leftover from an interrupted clone")
+        assertTrue(destination.listFiles()?.isNotEmpty() == true, "precondition: destination must be non-empty")
+
+        val firstAttempt = repository.clone(
+            url = bareOrigin.absolutePath,
+            localPath = destination.absolutePath,
+            auth = GitAuth.None,
+            onProgress = {},
+        )
+        assertTrue(firstAttempt.isLeft(), "expected clone() to fail against a non-empty target directory: $firstAttempt")
+
+        deleteDirectoryContentsForRetry(destination) // the exact cleanup clone()'s beforeRetry runs
+
+        val retriedAttempt = repository.clone(
+            url = bareOrigin.absolutePath,
+            localPath = destination.absolutePath,
+            auth = GitAuth.None,
+            onProgress = {},
+        )
+        assertTrue(retriedAttempt.isRight(), "expected the retried clone to succeed once the directory is cleaned, got: $retriedAttempt")
+        assertTrue(File(destination, ".git").exists(), "expected a real .git directory after the retried clone")
+    }
+
+    /**
+     * Story 2.1.6 (Task 2.1.6a) — `log()`/`countRemoteCommitsBestEffort` must degrade gracefully
+     * (bounded, non-throwing) against a shallow-cloned repo, not just a full-history one.
+     */
+    @Test
+    fun `log against a shallow-cloned repo returns up to maxCount commits without throwing`() = runTest {
+        val bareOrigin = createBareOriginWithCommits("stelekit_shallow_log_origin_", DEFAULT_CLONE_DEPTH + 5)
+        val destination = File(tempDir, "shallow-log-dest")
+        assertTrue(repository.clone(bareOrigin.absolutePath, destination.absolutePath, GitAuth.None) {}.isRight())
+
+        val shallowConfig = config.copy(graphId = "shallow-log-graph", repoRoot = destination.absolutePath)
+        val logResult = repository.log(shallowConfig, maxCount = 10)
+        assertTrue(logResult.isRight(), "log() must not throw against a shallow repo: $logResult")
+        val commits = (logResult as Either.Right).value
+        assertTrue(commits.size <= 10, "expected at most maxCount commits, got ${commits.size}")
+        assertTrue(commits.isNotEmpty(), "expected at least one commit visible within the shallow window")
+    }
+
+    /**
+     * Story 2.1.6 (Task 2.1.6a) — `countRemoteCommitsBestEffort` against a shallow repo, after a
+     * fetch that advances the remote ref within the shallow window, must return a bounded
+     * non-negative count without throwing.
+     */
+    @Test
+    fun `countRemoteCommitsBestEffort against a shallow-cloned repo returns a bounded non-negative count without throwing`() = runTest {
+        val bareOrigin = createBareOriginWithCommits("stelekit_shallow_count_origin_", DEFAULT_CLONE_DEPTH + 5)
+        val destination = File(tempDir, "shallow-count-dest")
+        assertTrue(repository.clone(bareOrigin.absolutePath, destination.absolutePath, GitAuth.None) {}.isRight())
+
+        // Advance the remote by a few more commits within the shallow window, then fetch.
+        val seedWorkDir = createTempDirectory("stelekit_shallow_count_seed2_").toFile()
+        Git.cloneRepository().setURI(bareOrigin.absolutePath).setDirectory(seedWorkDir).call().use { git ->
+            setIdentity(git)
+            repeat(3) { i ->
+                File(seedWorkDir, "extra.md").writeText("extra $i\n")
+                git.add().addFilepattern(".").call()
+                git.commit().setMessage("extra commit $i").call()
+            }
+            git.push().call()
+        }
+        seedWorkDir.deleteRecursively()
+
+        val shallowConfig = config.copy(graphId = "shallow-count-graph", repoRoot = destination.absolutePath)
+        val fetchResult = repository.fetch(shallowConfig)
+        assertTrue(fetchResult.isRight(), "fetch failed against shallow repo: $fetchResult")
+        val fetch = (fetchResult as Either.Right).value
+        assertTrue(fetch.remoteCommitCount in 0..100, "expected a bounded non-negative count, got ${fetch.remoteCommitCount}")
+        assertNotNull(fetch.remoteCommitCount)
     }
 }

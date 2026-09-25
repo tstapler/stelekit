@@ -203,6 +203,7 @@ private fun dev.stapler.stelekit.db.Git_config.toGitConfig() =
         pollIntervalMinutes = poll_interval_minutes.toInt(),
         autoCommit = auto_commit != 0L,
         commitMessageTemplate = commit_message_template,
+        cloneDepthState = dev.stapler.stelekit.git.model.CloneDepthState.fromRaw(clone_depth_state, shallow_depth),
     )
 
 /**

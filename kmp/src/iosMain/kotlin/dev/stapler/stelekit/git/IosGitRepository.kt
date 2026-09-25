@@ -33,6 +33,8 @@ class IosGitRepository : GitRepository {
 
     override suspend fun fetch(config: GitConfig): Either<DomainError.GitError, FetchResult> = notSupported
 
+    override suspend fun unshallow(config: GitConfig): Either<DomainError.GitError, Unit> = notSupported
+
     override suspend fun status(config: GitConfig): Either<DomainError.GitError, GitStatus> = notSupported
 
     override suspend fun stageSubdir(config: GitConfig): Either<DomainError.GitError, Unit> = notSupported

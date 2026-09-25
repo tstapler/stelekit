@@ -19,6 +19,10 @@ import org.eclipse.jgit.api.errors.CanceledException
 import org.eclipse.jgit.api.errors.TransportException
 import org.eclipse.jgit.errors.NoRemoteRepositoryException
 import org.eclipse.jgit.lib.ObjectId
+import org.eclipse.jgit.lib.Repository
+import org.eclipse.jgit.revwalk.RevCommit
+import org.eclipse.jgit.revwalk.RevWalk
+import org.eclipse.jgit.revwalk.filter.RevFilter
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider
 import java.io.EOFException
 import java.io.File
@@ -212,6 +216,18 @@ fun deleteLockFileIfStaleForRetry(lockFile: File, retryLoopStartMs: Long) {
 }
 
 /**
+ * Clone's `beforeRetry` cleanup (Story 2.1.3): deletes [dir]'s contents, not [dir] itself, so a
+ * retry after an interrupted first attempt doesn't hit JGit's "already exists and is not an empty
+ * directory" guard. Re-transfers the bounded shallow pack from zero (ADR-001), not a partial-pack
+ * splice. Only runs for an automatic retry, never a manual cancel — structural, via
+ * [runGitTransportOpWithRetry]'s own `Cancelled`-skips-`beforeRetry` behavior.
+ */
+fun deleteDirectoryContentsForRetry(dir: File) {
+    if (!dir.exists()) return
+    dir.listFiles()?.forEach { it.deleteRecursively() }
+}
+
+/**
  * Strips a URL's userinfo (`scheme://TOKEN@host/...`) — JGit's `TransportException` redacts the
  * password component but not a bare-userinfo credential (e.g. a PAT pasted as
  * `https://ghp_xxx@host/...`), so this must run before any transport-exception message reaches a
@@ -262,6 +278,52 @@ fun countRemoteCommitsBestEffort(git: Git, from: ObjectId, to: ObjectId): Int = 
 }
 
 /**
+ * Story 2.1.5's shallow-history/merge-base collision guard, shared by
+ * [AndroidGitRepository.doMerge]/[JvmGitRepository.doMerge]: true when [repo]'s shallow history
+ * makes a merge against [remoteRef] unsafe to attempt. A no-op (`false`) when [repo] has no
+ * shallow boundary at all. Two distinct unsafe shapes (pre-mortem.md P1 #2 — JGit's own
+ * documented caveat that its merge-base search "cannot be counted on to work as expected" near a
+ * shallow boundary):
+ *  1. **Absent** — no merge base found within the shallow history at all.
+ *  2. **Wrong-but-present** — `RevWalk` *does* return a merge-base commit, but at least one of its
+ *     parents is missing from the local object database and isn't itself a shallow root — exactly
+ *     the shape JGit's caveat warns can surface a spurious ancestor instead of cleanly failing.
+ *
+ * The merge-base search itself can also throw [MissingObjectException] rather than cleanly
+ * returning — the real best-common-ancestor algorithm ([RevFilter.MERGE_BASE]) continues walking
+ * past a candidate to rule out a more recent one, which can dereference a missing parent before
+ * ever returning from [RevWalk.next]. That is caught here and also treated as insufficient — the
+ * plan's Task 2.1.5b explicitly names this as an acceptable alternative to the pre-return parent
+ * check above, and both shapes must fail closed identically.
+ */
+fun isShallowHistoryInsufficientForMerge(repo: Repository, remoteRef: ObjectId): Boolean {
+    val shallowCommits = repo.objectDatabase.shallowCommits
+    if (shallowCommits.isEmpty()) return false
+    val headId = repo.resolve("HEAD") ?: return false
+
+    return try {
+        RevWalk(repo).use { walk ->
+            walk.revFilter = RevFilter.MERGE_BASE
+            walk.markStart(walk.parseCommit(headId))
+            walk.markStart(walk.parseCommit(remoteRef))
+            val mergeBase: RevCommit = walk.next() ?: return true
+
+            for (i in 0 until mergeBase.parentCount) {
+                val parentId = mergeBase.getParent(i)
+                if (!repo.objectDatabase.has(parentId) && parentId !in shallowCommits) {
+                    return true
+                }
+            }
+        }
+        false
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: org.eclipse.jgit.errors.MissingObjectException) {
+        true
+    }
+}
+
+/**
  * Configures [cmd]'s credentials provider for [auth] when it's [GitAuth.HttpsToken] or
  * [GitAuth.None] — the two auth kinds handled identically by [AndroidGitAuthConfigurer.configureAuth]
  * and [JvmGitRepositoryAuth.configureAuth]. Returns `true` when handled; callers configure
@@ -283,6 +345,36 @@ fun configureHttpsOrNoAuth(
     }
     is GitAuth.None -> true
     is GitAuth.SshKey -> false
+}
+
+/**
+ * Ref-divergence guard before [org.eclipse.jgit.api.FetchCommand.setUnshallow] (Story 2.1.4,
+ * Task 2.1.4d): compares [config]'s remote branch as advertised right now (a cheap `ls-remote`,
+ * reusing [testRemoteViaLsRemote]'s shape) against the locally-known remote-tracking ref (as of
+ * the last fetch). Conservative by construction — any mismatch, including "can't tell" (a missing
+ * local ref, no matching advertised ref, or the `ls-remote` call itself failing), is treated as
+ * diverged, since this app has no way to distinguish "safe to widen" from "already resolved
+ * cleanly" without doing the full unshallow anyway. Never throws.
+ */
+suspend fun hasRemoteDivergedSinceShallowClone(
+    git: Git,
+    config: GitConfig,
+    configureAuth: (TransportCommand<*, *>) -> Unit,
+): Boolean = try {
+    val locallyKnownOid = git.repository.resolve("${config.remoteName}/${config.remoteBranch}")
+    val advertisedRefs = git.lsRemote()
+        .setRemote(config.remoteName)
+        .setHeads(true)
+        .also { configureAuth(it) }
+        .call()
+    val advertisedOid = advertisedRefs
+        .firstOrNull { it.name == "refs/heads/${config.remoteBranch}" }
+        ?.objectId
+    locallyKnownOid == null || advertisedOid == null || locallyKnownOid != advertisedOid
+} catch (e: CancellationException) {
+    throw e
+} catch (_: Exception) {
+    true
 }
 
 /** `ls-remote` has no default JGit timeout — without one, a black-holed host leaves the "Test
