@@ -309,6 +309,11 @@ class DemoGraphPersistenceTest {
             }
             startLatch.countDown()
             threads.forEach { it.join(5_000) }
+            assertTrue(
+                threads.none { it.isAlive },
+                "iteration $iteration: a worker thread did not finish within 5s — treat as an " +
+                    "inconclusive run, not a lost-update failure",
+            )
 
             val info = graphManager.graphRegistry.value.graphs.first { it.id == id }
             assertTrue(

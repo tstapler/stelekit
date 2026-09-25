@@ -59,9 +59,13 @@ actual class PlatformSettings actual constructor() : Settings {
 
     actual override fun containsKey(key: String): Boolean = props.containsKey(key)
 
+    // Synchronized: concurrent putString/putBoolean calls (e.g. GraphManager's registry
+    // mutators) would otherwise each open an independent FileOutputStream to prefsFile with no
+    // ordering guarantee, risking a torn write or a stale write silently "winning" on disk.
+    @Synchronized
     private fun save() {
         try {
-            FileOutputStream(prefsFile).use { 
+            FileOutputStream(prefsFile).use {
                 props.store(it, "SteleKit Preferences")
             }
         } catch (e: CancellationException) {
