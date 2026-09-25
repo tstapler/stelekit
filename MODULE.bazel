@@ -207,6 +207,10 @@ maven.install(
         # ── Jetbrains markdown (KMP — use -jvm classifier) ───────────────────
         "org.jetbrains:markdown-jvm:0.7.3",
 
+        # ── Kotest (KMP — use -jvm classifier) — property-based testing, matches
+        # kmp/build.gradle.kts's commonTest dependency ─────────────────────────
+        "io.kotest:kotest-property-jvm:6.2.4",
+
         # ── SQLDelight 2.3.2 ──────────────────────────────────────────────────
         "app.cash.sqldelight:runtime-jvm:2.3.2",
         "app.cash.sqldelight:coroutines-extensions-jvm:2.3.2",
