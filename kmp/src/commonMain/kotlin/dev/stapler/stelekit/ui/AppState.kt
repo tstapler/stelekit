@@ -2,6 +2,7 @@ package dev.stapler.stelekit.ui
 
 import androidx.compose.runtime.staticCompositionLocalOf
 import kotlinx.datetime.LocalDate
+import dev.stapler.stelekit.db.DiskConflictBlockMatcher
 import dev.stapler.stelekit.docs.AllPagesDocs
 import dev.stapler.stelekit.docs.FlashcardsDocs
 import dev.stapler.stelekit.docs.GlobalUnlinkedReferencesDocs
@@ -215,8 +216,14 @@ data class Command(
 /**
  * Represents a conflict between the user's in-progress edits and an external
  * change detected on disk by the file watcher.
+ *
+ * The constructor is private: [ifReal] is the only way to build one, so a call site can
+ * never surface a conflict dialog/banner without first passing
+ * [DiskConflictBlockMatcher.hasRealConflict] — the false-positive class this closes is a bug
+ * that recurred across many independent fixes because that check lived at each call site
+ * instead of being required by the type itself.
  */
-data class DiskConflict(
+data class DiskConflict private constructor(
     val pageUuid: String,
     val pageName: String,
     val filePath: String,
@@ -228,7 +235,23 @@ data class DiskConflict(
     val localContent: String,
     val diskContent: String,
     val diskBlockContent: String? = null
-)
+) {
+    companion object {
+        /** Returns null when there is nothing to review — see the class doc comment. */
+        fun ifReal(
+            pageUuid: String,
+            pageName: String,
+            filePath: String,
+            editingBlockUuid: BlockUuid?,
+            localContent: String,
+            diskContent: String,
+            diskBlockContent: String?,
+        ): DiskConflict? {
+            if (!DiskConflictBlockMatcher.hasRealConflict(localContent, diskBlockContent)) return null
+            return DiskConflict(pageUuid, pageName, filePath, editingBlockUuid, localContent, diskContent, diskBlockContent)
+        }
+    }
+}
 
 /**
  * A disk conflict detected while the user was NOT viewing the affected page. The disk

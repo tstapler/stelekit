@@ -1622,25 +1622,23 @@ class StelekitViewModel(
                 // FileRegistry's change signal is a whole-file byte comparison, so it fires on
                 // any disk write to the page — including one that simply persisted this exact
                 // edit (e.g. our own debounced save landing, or a disk copy that already matches).
-                // Only surface the dialog when the specific block being protected actually differs
-                // from its disk counterpart; otherwise this reproduces as a "conflict" with no
-                // difference to show in "View full comparison".
-                if (diskBlockContent != null && diskBlockContent == localContent) {
+                // DiskConflict.ifReal() is the only way to construct one — it enforces the
+                // hasRealConflict check at the type level, so this branch cannot skip it.
+                val conflict = DiskConflict.ifReal(
+                    pageUuid = currentPage.uuid.value,
+                    pageName = currentPage.name,
+                    filePath = event.filePath,
+                    editingBlockUuid = BlockUuid(conflictBlockUuid),
+                    localContent = localContent,
+                    diskContent = event.content,
+                    diskBlockContent = diskBlockContent
+                )
+                if (conflict == null) {
                     blockStateManager?.queuePageSave(currentPage.uuid.value)
                     return@collect
                 }
 
-                _uiState.update { it.copy(
-                    diskConflict = DiskConflict(
-                        pageUuid = currentPage.uuid.value,
-                        pageName = currentPage.name,
-                        filePath = event.filePath,
-                        editingBlockUuid = BlockUuid(conflictBlockUuid),
-                        localContent = localContent,
-                        diskContent = event.content,
-                        diskBlockContent = diskBlockContent
-                    )
-                )}
+                _uiState.update { it.copy(diskConflict = conflict) }
             }
         }
     }
@@ -1670,31 +1668,40 @@ class StelekitViewModel(
             val firstBlock = allBlocksForPage.minByOrNull { it.position }
             val latestPending = _uiState.value.pendingConflicts[filePath] ?: pending
 
-            // The disk content was already auto-applied to the DB at detection time (see
-            // observeExternalFileChanges), so firstBlock now holds the disk content, not the
-            // user's prior content — that prior content only survives in previousContent.
-            // Two cases are false positives, not real conflicts: content is unchanged (our own
-            // save landing on disk), or the page had no local content anywhere before this change
-            // (e.g. a host-directory import of a brand-new page) — in both cases there is no local
-            // edit to protect, so there is nothing to review. Note this is !pageExistedLocally, not
-            // previousContent.isBlank() — a blank *first* block doesn't mean the page had no local
-            // content, since real content can live in later blocks.
-            if (!latestPending.pageExistedLocally || latestPending.previousContent == latestPending.diskContent) {
+            // The page had no local content anywhere before this change (e.g. a host-directory
+            // import of a brand-new page) — there is no local edit to protect. Note this is
+            // !pageExistedLocally, not previousContent.isBlank(): a blank *first* block doesn't
+            // mean the page had no local content, since real content can live in later blocks.
+            if (!latestPending.pageExistedLocally) {
                 clearPendingConflict(filePath)
                 return@launch
             }
 
-            _uiState.update { state ->
-                state.copy(diskConflict = DiskConflict(
-                    pageUuid = screen.page.uuid.value,
-                    pageName = screen.page.name,
-                    filePath = filePath,
-                    editingBlockUuid = firstBlock?.uuid,
-                    localContent = latestPending.previousContent,
-                    diskContent = latestPending.diskContent,
-                    diskBlockContent = firstBlock?.content,
-                ))
+            // The disk content was already auto-applied to the DB at detection time (see
+            // observeExternalFileChanges), so firstBlock now holds the disk content, not the
+            // user's prior content — that prior content only survives in previousContent.
+            // DiskConflict.ifReal() enforces going through DiskConflictBlockMatcher rather than
+            // comparing previousContent against the raw whole-file diskContent — this call site
+            // used to skip that matching entirely, flagging a conflict on any multi-block page
+            // even when the block itself was unchanged on disk.
+            val diskBlockContent = firstBlock?.let {
+                tryMatchDiskBlockContent(allBlocksForPage, it.uuid.value, latestPending.diskContent)
             }
+            val conflict = DiskConflict.ifReal(
+                pageUuid = screen.page.uuid.value,
+                pageName = screen.page.name,
+                filePath = filePath,
+                editingBlockUuid = firstBlock?.uuid,
+                localContent = latestPending.previousContent,
+                diskContent = latestPending.diskContent,
+                diskBlockContent = diskBlockContent,
+            )
+            if (conflict == null) {
+                clearPendingConflict(filePath)
+                return@launch
+            }
+
+            _uiState.update { state -> state.copy(diskConflict = conflict) }
         }
         return true
     }
