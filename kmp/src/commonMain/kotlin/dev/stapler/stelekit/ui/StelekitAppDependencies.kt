@@ -82,6 +82,15 @@ data class StelekitAppPlatformIntegrations(
      */
     val gitRepository: dev.stapler.stelekit.git.GitRepository? = null,
     /**
+     * git-sync-resilience Story 3.1.3: platform seam for running a clone as a survivable
+     * operation. Pass `AndroidGitCloneWorkerLauncher(context)` on Android — routes the clone
+     * through `GitCloneWorker`'s `dataSync` foreground service instead of this composable's own
+     * `rememberCoroutineScope()`. Null (Desktop/iOS, or before a host wires one) falls back to
+     * [gitRepository]`.clone(...)` called directly on this scope, unchanged from pre-Epic-3.1
+     * behavior — Desktop has no foreground-service equivalent (out of scope per requirements).
+     */
+    val gitCloneWorkerLauncher: dev.stapler.stelekit.git.GitCloneWorkerLauncher? = null,
+    /**
      * Platform-specific crypto engine for paranoid-mode vault operations.
      * Pass `JvmCryptoEngine` on Desktop. Android support is pending an AndroidCryptoEngine.
      * When null, paranoid mode is unavailable.

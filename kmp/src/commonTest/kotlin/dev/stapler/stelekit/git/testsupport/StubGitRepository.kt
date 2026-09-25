@@ -83,6 +83,19 @@ class FailureSequence<T>(
  * `runGitTransportOpWithRetry`/`GitSyncService`/`GitCloneWorker` as needed — this is what Stories
  * 1.2.2, 3.1.2, 4.1.2, and 6.1.3 depend on.
  */
+/**
+ * Builds a [StubGitRepository] whose [GitRepository.clone] delegates to [onClone] — the common
+ * "override `clone()` only" test-double shape repeated across `GitCloneWorker`/
+ * `GitCloneWorkerLauncher` tests (git-sync-resilience Epic 3.1), extracted to cut that boilerplate
+ * to one line per test.
+ */
+fun cloningStub(
+    onClone: suspend (url: String, localPath: String, auth: GitAuth, onProgress: (String) -> Unit) -> Either<DomainError.GitError, Unit>,
+): GitRepository = object : StubGitRepository() {
+    override suspend fun clone(url: String, localPath: String, auth: GitAuth, onProgress: (String) -> Unit) =
+        onClone(url, localPath, auth, onProgress)
+}
+
 open class FailureSequenceGitRepository(
     private val cloneSequence: FailureSequence<Either<DomainError.GitError, Unit>>? = null,
     private val fetchSequence: FailureSequence<Either<DomainError.GitError, FetchResult>>? = null,

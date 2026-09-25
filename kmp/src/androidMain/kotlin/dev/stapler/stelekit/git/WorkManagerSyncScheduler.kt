@@ -9,6 +9,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import arrow.core.Either
@@ -18,6 +19,7 @@ import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.security.CredentialStore
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.first
 import java.util.concurrent.TimeUnit
 
 /**
@@ -117,6 +119,11 @@ class GitSyncWorker(
 
     override suspend fun doWork(): Result {
         val graphId = inputData.getString(KEY_GRAPH_ID) ?: return Result.failure()
+
+        // Story 3.1.7: a side-effecting observation only, piggybacked on this worker's existing
+        // periodic schedule — never allowed to affect this worker's own Result (ADR-002 governs
+        // GitCloneWorker's own retry ownership, not this unrelated watchdog check).
+        runCatching { checkAndSurfaceStuckGitCloneWorker(applicationContext, graphId) }
 
         // Fast path: app is running and service is registered
         val service = GitSyncServiceRegistry.getService(graphId)
@@ -226,4 +233,81 @@ object GitSyncServiceRegistry {
     }
 
     fun getService(graphId: String): GitSyncService? = services[graphId]
+}
+
+/**
+ * git-sync-resilience Story 3.1.7: threshold past which a `RUNNING` [GitCloneWorker] [WorkInfo]
+ * is presumed killed by OEM battery optimization (no exception thrown, `onStopped()` never
+ * invoked — a distinct silent-kill mechanism a correctly `setForeground()`'d service does not
+ * defeat, per pre-mortem.md P1 #1) rather than still legitimately transferring — comfortably past
+ * [GIT_TRANSPORT_TIMEOUT_SECONDS] (300s) and the retry loop's 10-minute `maxElapsed` wall-clock
+ * deadline (Story 3.1.4), both of which bound how long a legitimately-running clone can take.
+ */
+const val STUCK_CLONE_WATCHDOG_THRESHOLD_MINUTES = 30
+
+/**
+ * Pure watchdog check (Task 3.1.7a): true when [state] is `RUNNING` and [startTimeMs] is more
+ * than [STUCK_CLONE_WATCHDOG_THRESHOLD_MINUTES] before [nowMs] — the one failure mode in this
+ * plan with no thrown exception for `classifyGitFailure` to route at all. Deliberately
+ * independent of WorkManager/SharedPreferences so it's directly unit-testable; see
+ * [checkAndSurfaceStuckGitCloneWorker] for the real WorkManager-backed caller.
+ */
+fun isGitCloneWorkerStuck(state: WorkInfo.State?, startTimeMs: Long?, nowMs: Long): Boolean {
+    if (state != WorkInfo.State.RUNNING || startTimeMs == null) return false
+    return (nowMs - startTimeMs) > STUCK_CLONE_WATCHDOG_THRESHOLD_MINUTES * 60_000L
+}
+
+/**
+ * `SharedPreferences`-backed start-time bookkeeping for [GitCloneWorker]'s stuck-clone watchdog
+ * (Task 3.1.7a) — [WorkInfo] itself exposes no start-time field, so this app tracks it
+ * explicitly, keyed by graphId, alongside the enqueue in [AndroidGitCloneWorkerLauncher].
+ */
+object GitCloneWorkTracker {
+    private const val PREFS_NAME = "stelekit_git_clone_tracker"
+
+    fun recordStart(context: Context, graphId: String, workId: java.util.UUID, startTimeMs: Long) {
+        prefs(context).edit()
+            .putString(workIdKey(graphId), workId.toString())
+            .putLong(startTimeKey(graphId), startTimeMs)
+            .apply()
+    }
+
+    fun clear(context: Context, graphId: String) {
+        prefs(context).edit().remove(workIdKey(graphId)).remove(startTimeKey(graphId)).apply()
+    }
+
+    fun trackedWorkId(context: Context, graphId: String): java.util.UUID? =
+        prefs(context).getString(workIdKey(graphId), null)
+            ?.let { runCatching { java.util.UUID.fromString(it) }.getOrNull() }
+
+    fun startTime(context: Context, graphId: String): Long? =
+        prefs(context).getLong(startTimeKey(graphId), -1L).takeIf { it >= 0 }
+
+    private fun workIdKey(graphId: String) = "${graphId}_work_id"
+    private fun startTimeKey(graphId: String) = "${graphId}_start_ms"
+
+    private fun prefs(context: Context) = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+}
+
+/**
+ * Real WorkManager-backed caller of [isGitCloneWorkerStuck] (Task 3.1.7b) — queries the tracked
+ * work id's current [WorkInfo] and posts [GitCloneWorker.STUCK_CLONE_WATCHDOG_MESSAGE] if stuck.
+ * Called from [GitSyncWorker]'s existing periodic invocation; never throws (callers must guard —
+ * see `GitSyncWorker.doWork()`'s `runCatching` call site), since this is a side-effecting
+ * observation, not a retry decision.
+ */
+suspend fun checkAndSurfaceStuckGitCloneWorker(
+    context: Context,
+    graphId: String,
+    nowMs: Long = System.currentTimeMillis(),
+) {
+    val workId = GitCloneWorkTracker.trackedWorkId(context, graphId) ?: return
+    val info = WorkManager.getInstance(context).getWorkInfoByIdFlow(workId).first()
+    if (info == null || info.state.isFinished) {
+        GitCloneWorkTracker.clear(context, graphId)
+        return
+    }
+    if (isGitCloneWorkerStuck(info.state, GitCloneWorkTracker.startTime(context, graphId), nowMs)) {
+        GitCloneWorker.postStuckCloneWatchdogNotification(context)
+    }
 }

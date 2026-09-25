@@ -13,6 +13,8 @@ import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.platform.security.CredentialAccess
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
 import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.api.TransportCommand
 import org.eclipse.jgit.api.errors.CanceledException
@@ -152,6 +154,15 @@ inline fun <T> runGitTransportOp(
  * signalled `Done` (i.e. total op invocations minus one) — matching Story 1.2.2's
  * `RetryExhausted(attempts = 5, ...)` acceptance criterion for [RetryPolicies.gitTransportTransient]
  * (5 retries at ~1s/2s/4s/8s/16s, 6 total op invocations).
+ *
+ * [maxElapsed] (Story 3.1.4, Task 3.1.4a) bounds total retry wall-clock time independently of
+ * [schedule]'s own attempt-count termination — well under Android 14's ~6-hour `dataSync`
+ * aggregate cap, so a sustained outage doesn't hold [GitCloneWorker]'s foreground
+ * notification/wakelock alive indefinitely. Checked before *taking* each retry delay (i.e. a
+ * retry whose delay would push cumulative elapsed time past [maxElapsed] is refused, not one that
+ * merely started before the deadline) — tracked as the sum of every [Schedule.Decision.Continue.delay]
+ * actually awaited by this loop, not a wall-clock timestamp, so it advances correctly under
+ * `kotlinx-coroutines-test`'s virtual time in tests.
  */
 suspend fun <T, D> runGitTransportOpWithRetry(
     schedule: Schedule<Throwable, D>,
@@ -160,11 +171,13 @@ suspend fun <T, D> runGitTransportOpWithRetry(
     onAuthFailed: (Exception) -> DomainError.GitError,
     onFailed: (Exception) -> DomainError.GitError,
     onExhausted: (attempts: Int, last: DomainError.GitError) -> DomainError.GitError,
+    maxElapsed: Duration = DEFAULT_GIT_TRANSPORT_RETRY_MAX_ELAPSED,
     op: suspend () -> Either<DomainError.GitError, T>,
 ): Either<DomainError.GitError, T> {
     var step = schedule.step
     var attempt = 1
     var retries = 0
+    var elapsed = Duration.ZERO
     while (true) {
         try {
             val result = op()
@@ -187,10 +200,13 @@ suspend fun <T, D> runGitTransportOpWithRetry(
                     val lastError = onFailed(redactedTransportException(e))
                     when (val decision = step(e)) {
                         is Schedule.Decision.Done -> return onExhausted(retries, lastError).left()
-                        is Schedule.Decision.Continue -> {
+                        is Schedule.Decision.Continue -> if (elapsed + decision.delay > maxElapsed) {
+                            return onExhausted(retries, lastError).left()
+                        } else {
                             retries++
                             beforeRetry()
                             delay(decision.delay)
+                            elapsed += decision.delay
                             step = decision.step
                             attempt++
                         }
@@ -200,6 +216,10 @@ suspend fun <T, D> runGitTransportOpWithRetry(
         }
     }
 }
+
+/** Default [runGitTransportOpWithRetry] `maxElapsed` (Story 3.1.4) — comfortably under Android
+ * 14's ~6-hour `dataSync` foreground-service aggregate cap. */
+val DEFAULT_GIT_TRANSPORT_RETRY_MAX_ELAPSED: Duration = 10.minutes
 
 /**
  * Deletes [lockFile] only if it predates [retryLoopStartMs] — a lock created by this same retry

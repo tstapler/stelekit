@@ -173,6 +173,12 @@ private suspend fun resolveAndSaveConfig(
  * the newly created graph. [onCloneProgress]/[onCloneInProgressChange] are invoked at the exact
  * points the original inline implementation flipped `cloneProgress`/`cloneInProgress`, so the "Test
  * and save" step's progress UI is unaffected by this extraction.
+ *
+ * [onCloneAndAdd] stays an opaque platform-agnostic callback (git-sync-resilience Story 3.1.3):
+ * Android's DI wiring (`App.kt`) supplies an implementation backed by `GitCloneWorkerLauncher` so
+ * the clone survives backgrounding via `GitCloneWorker`'s `dataSync` foreground service; Desktop's
+ * calls `GitRepository.clone()` directly, unchanged. This function's own body needs no platform
+ * branching either way.
  */
 internal suspend fun performCloneAndSave(
     form: GitSetupFormSnapshot,

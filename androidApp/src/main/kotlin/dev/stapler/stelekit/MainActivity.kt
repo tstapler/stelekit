@@ -307,6 +307,12 @@ class MainActivity : ComponentActivity() {
             }
             val spanRecorder = remember { createAndroidSpanRecorder() }
             val gitRepository = remember { buildGitRepository(applicationContext, app.fileSystem) }
+            // git-sync-resilience Story 3.1.3: routes performCloneAndSave's Android call site
+            // through GitCloneWorker's dataSync foreground service instead of this composable's
+            // own rememberCoroutineScope() — see StelekitAppPlatformIntegrations.gitCloneWorkerLauncher.
+            val gitCloneWorkerLauncher = remember {
+                dev.stapler.stelekit.git.AndroidGitCloneWorkerLauncher(applicationContext)
+            }
             val attachmentService = rememberAndroidMediaAttachmentService(this@MainActivity, fileSystem)
 
             // CRITICAL finding (PR #327 review): shared with GitSyncService (via
@@ -414,6 +420,7 @@ class MainActivity : ComponentActivity() {
                     ),
                     platformIntegrations = StelekitAppPlatformIntegrations(
                         gitRepository = gitRepository,
+                        gitCloneWorkerLauncher = gitCloneWorkerLauncher,
                         attachmentService = attachmentService,
                         requestCameraPermission = ::requestCameraPermission,
                         graphMoveQuiesceStrategy = androidGraphMoveQuiesceStrategy,

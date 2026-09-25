@@ -5,6 +5,7 @@ package dev.stapler.stelekit.git
 
 import arrow.core.Either
 import arrow.core.right
+import arrow.resilience.Schedule
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.testsupport.FailureSequence
 import dev.stapler.stelekit.git.testsupport.FailureSequenceGitRepository
@@ -21,6 +22,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
+import kotlin.time.Duration.Companion.minutes
 
 /**
  * Tests for [runGitTransportOpWithRetry] (Story 1.2.2, ADR-002's single retry owner) using a fake
@@ -182,5 +184,58 @@ class GitTransportRetryTest {
         assertEquals(1, callCount, "a first-attempt success must never enter the retry loop")
         assertEquals(0L, currentTime, "no delay() call may occur on the stable-network/first-attempt-success path")
         assertIs<Either.Right<Unit>>(result)
+    }
+
+    // ── Story 3.1.4: wall-clock retry deadline ──────────────────────────────────────────────
+
+    @Test
+    fun `runGitTransportOpWithRetry stops and returns RetryExhausted once maxElapsed elapses, even though the schedule's own attempt count would allow more attempts`() = runTest {
+        var callCount = 0
+        // A fixed-interval schedule with no attempt-count cap of its own — only maxElapsed can
+        // stop it. 4-minute steps against a 10-minute deadline: elapsed 0->4 (take), 4->8 (take),
+        // 8->12 (refused, 12 > 10) — exhausted after 2 retries (3 total op invocations).
+        val uncappedSchedule: Schedule<Throwable, Long> = Schedule.spaced(4.minutes)
+
+        val result: Either<DomainError.GitError, Unit> = runGitTransportOpWithRetry(
+            schedule = uncappedSchedule,
+            beforeRetry = {},
+            onAuthFailed = { e -> DomainError.GitError.AuthFailed(e.message ?: "Authentication failed") },
+            onFailed = { e -> DomainError.GitError.FetchFailed(e.message ?: "Fetch failed") },
+            onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
+            maxElapsed = 10.minutes,
+        ) {
+            callCount++
+            throw transientFailure()
+        }
+
+        assertEquals(3, callCount, "deadline must stop the loop before the schedule's own (unbounded) termination")
+        assertIs<Either.Left<DomainError.GitError>>(result)
+        val error = assertIs<DomainError.GitError.RetryExhausted>(result.value)
+        assertEquals(2, error.attempts)
+        assertEquals(8.minutes.inWholeMilliseconds, currentTime, "must not await a retry whose delay would cross the deadline")
+    }
+
+    @Test
+    fun `the wall-clock deadline does not cut short a fast sequence of retries that would finish well under 10 minutes`() = runTest {
+        var callCount = 0
+
+        // gitTransportTransient's own schedule (~1s/2s/4s/8s/16s, ~31s total) is far under the
+        // 10-minute default maxElapsed — the deadline must never fire before the schedule's own
+        // exhaustion in this common case.
+        val result: Either<DomainError.GitError, Unit> = runGitTransportOpWithRetry(
+            schedule = RetryPolicies.gitTransportTransient,
+            beforeRetry = {},
+            onAuthFailed = { e -> DomainError.GitError.AuthFailed(e.message ?: "Authentication failed") },
+            onFailed = { e -> DomainError.GitError.FetchFailed(e.message ?: "Fetch failed") },
+            onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
+        ) {
+            callCount++
+            throw transientFailure()
+        }
+
+        assertEquals(6, callCount, "the schedule's own 5-retry budget must be exhausted, not cut short by the deadline")
+        assertIs<Either.Left<DomainError.GitError>>(result)
+        val error = assertIs<DomainError.GitError.RetryExhausted>(result.value)
+        assertEquals(5, error.attempts)
     }
 }
