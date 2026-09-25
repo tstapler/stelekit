@@ -86,14 +86,15 @@ class ErrorStateNoDeadEndTest {
         var savedAsNew = false
         var manuallyResolved = false
 
-        val conflict = dev.stapler.stelekit.ui.DiskConflict(
+        val conflict = dev.stapler.stelekit.ui.DiskConflict.ifReal(
             pageUuid = "page-1",
             pageName = "Groceries",
             filePath = "/graph/pages/groceries.md",
             editingBlockUuid = dev.stapler.stelekit.model.BlockUuid("block-1"),
             localContent = "- Buy milk (edited)",
             diskContent = "- Buy milk and eggs",
-        )
+            diskBlockContent = null,
+        ) ?: error("test fixture must construct a real conflict")
 
         composeTestRule.setContent {
             MaterialTheme {

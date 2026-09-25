@@ -97,4 +97,13 @@ object DiskConflictBlockMatcher {
         }
         return matchedContent
     }
+
+    /**
+     * Single source of truth for "does this block conflict with disk" — every conflict
+     * decision must route through this rather than re-deriving the comparison at each call
+     * site (a prior one didn't, and compared this block against the whole file instead).
+     * `null` (no structural match) fails safe as a conflict rather than silently discarding.
+     */
+    fun hasRealConflict(localContent: String, diskBlockContent: String?): Boolean =
+        diskBlockContent == null || diskBlockContent != localContent
 }
