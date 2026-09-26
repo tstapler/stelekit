@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.88.1](https://github.com/tstapler/stelekit/compare/v0.88.0...v0.88.1) (2026-09-26)
+
+
+### Bug Fixes
+
+* **db:** fix flaky DemoGraphPersistenceTest, consolidate GraphManager registry atomicity ([#358](https://github.com/tstapler/stelekit/issues/358)) ([5221abd](https://github.com/tstapler/stelekit/commit/5221abd1f734b04969e56ba8d8085cb291c9f240))
+* **ui:** compare disk-conflict blocks against their matched excerpt, not the whole file ([#356](https://github.com/tstapler/stelekit/issues/356)) ([b357cf4](https://github.com/tstapler/stelekit/commit/b357cf426eafcb48bd9f4638482f2c3551fa87ef))
+
 ## [0.88.0](https://github.com/tstapler/stelekit/compare/v0.87.2...v0.88.0) (2026-09-24)
 
 
