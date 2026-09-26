@@ -391,14 +391,13 @@ class GraphManager(
             isParanoidMode = isParanoidMode,
         )
         
-        val registry = _graphRegistry.value
-        if (!registry.graphIds.contains(graphId)) {
-            val updated = registry.copy(
-                graphs = registry.graphs + info
-            )
-            _graphRegistry.value = updated
-            saveRegistry()
+        var inserted = false
+        _graphRegistry.update { registry ->
+            inserted = !registry.graphIds.contains(graphId)
+            if (!inserted) return@update registry
+            registry.copy(graphs = registry.graphs + info)
         }
+        if (inserted) saveRegistry()
 
         if (location != null) {
             onGraphLocationDetermined(graphId.value, location).onLeft {
@@ -571,31 +570,36 @@ class GraphManager(
         return true
     }
     
-    fun updateGraphDescription(id: GraphId, description: String): Boolean {
-        val registry = _graphRegistry.value
-        val index = registry.graphs.indexOfFirst { it.id == id }
-        if (index == -1 || registry.graphs[index].isDemo) return false
-        val updatedGraphs = registry.graphs.toMutableList()
-        updatedGraphs[index] = updatedGraphs[index].copy(description = description.trim())
-        _graphRegistry.value = registry.copy(graphs = updatedGraphs)
-        saveRegistry()
-        return true
+    /**
+     * Single source of truth for "replace one editable graph's [GraphInfo] by id" — every
+     * mutator must route through this rather than a manual `val registry = _graphRegistry.value;
+     * ...; _graphRegistry.value = ...` read-then-set, which is not atomic against a concurrent
+     * writer (e.g. addGraph's fire-and-forget git-detection coroutine, or switchGraph). Whichever
+     * writer lands last silently clobbers the other's change. update{} re-reads the current value
+     * on each retry, so no writer's change is lost. This caused a real, order-dependent lost
+     * update in production (DemoGraphPersistenceTest flaked exactly this way in CI).
+     *
+     * Returns false without saving when [id] doesn't exist or is the demo graph (never editable).
+     */
+    private fun updateEditableGraphField(id: GraphId, transform: (GraphInfo) -> GraphInfo): Boolean {
+        var found = false
+        _graphRegistry.update { registry ->
+            val index = registry.graphs.indexOfFirst { it.id == id }
+            found = index != -1 && !registry.graphs[index].isDemo
+            if (!found) return@update registry
+            val updatedGraphs = registry.graphs.toMutableList()
+            updatedGraphs[index] = transform(updatedGraphs[index])
+            registry.copy(graphs = updatedGraphs)
+        }
+        if (found) saveRegistry()
+        return found
     }
 
-    fun renameGraph(id: GraphId, newName: String): Boolean {
-        val registry = _graphRegistry.value
-        val graphIndex = registry.graphs.indexOfFirst { it.id == id }
-        if (graphIndex == -1) return false
-        if (registry.graphs[graphIndex].isDemo) return false
+    fun updateGraphDescription(id: GraphId, description: String): Boolean =
+        updateEditableGraphField(id) { it.copy(description = description.trim()) }
 
-        val updatedGraphs = registry.graphs.toMutableList()
-        updatedGraphs[graphIndex] = updatedGraphs[graphIndex].copy(displayName = newName)
-
-        val updated = registry.copy(graphs = updatedGraphs)
-        _graphRegistry.value = updated
-        saveRegistry()
-        return true
-    }
+    fun renameGraph(id: GraphId, newName: String): Boolean =
+        updateEditableGraphField(id) { it.copy(displayName = newName) }
 
     /**
      * Records the real host-folder name last linked for [id] (web-local-folder-livesync only) —
@@ -606,20 +610,8 @@ class GraphManager(
      * and attaching the fresh handle) already happened in [dev.stapler.stelekit.platform.FileSystem];
      * this just persists the display metadata.
      */
-    fun updateHostDirName(id: GraphId, dirName: String?): Boolean {
-        val registry = _graphRegistry.value
-        val graphIndex = registry.graphs.indexOfFirst { it.id == id }
-        if (graphIndex == -1) return false
-        // Copilot review: matches renameGraph/updateGraphPath's immutability rule — the demo
-        // graph's metadata is never user-editable.
-        if (registry.graphs[graphIndex].isDemo) return false
-
-        val updatedGraphs = registry.graphs.toMutableList()
-        updatedGraphs[graphIndex] = updatedGraphs[graphIndex].copy(hostDirName = dirName)
-        _graphRegistry.value = registry.copy(graphs = updatedGraphs)
-        saveRegistry()
-        return true
-    }
+    fun updateHostDirName(id: GraphId, dirName: String?): Boolean =
+        updateEditableGraphField(id) { it.copy(hostDirName = dirName) }
 
     /**
      * Moves a graph to a new filesystem [newPath]. Because [GraphId] is derived from
@@ -656,9 +648,12 @@ class GraphManager(
             detectedWikiSubdir = null,
             gitDetectionDismissed = false,
         )
-        val updatedGraphs = registry.graphs.toMutableList()
-        updatedGraphs[graphIndex] = updatedInfo
-        _graphRegistry.value = registry.copy(graphs = updatedGraphs)
+        // Replace by id match (not the graphIndex captured before the async file-move above),
+        // and via update{} rather than a read-then-set of .value — a concurrent field-setter for
+        // a different graph could otherwise land during the file-move and get silently clobbered.
+        _graphRegistry.update { current ->
+            current.copy(graphs = current.graphs.map { g -> if (g.id == id) updatedInfo else g })
+        }
 
         if (registry.activeGraphId == id) {
             // Defer persistence to switchGraph(), which saves the re-keyed graph list together
@@ -1031,37 +1026,27 @@ class GraphManager(
         }
     }
 
-    private suspend fun updateGraphInfoDetection(graphId: GraphId, repoRoot: String, wikiSubdir: String) {
-        // Atomic update: prevents clobbering concurrent activeGraphId changes from switchGraph.
+    /**
+     * Atomic update: prevents clobbering concurrent writers (switchGraph's activeGraphId change,
+     * another field-setter for a different graph) — see [updateEditableGraphField]'s doc comment
+     * for why this must never be a manual read-then-set of `.value`. Applies to every graph
+     * regardless of [GraphInfo.isDemo], unlike [updateEditableGraphField].
+     */
+    private suspend fun updateGraphField(graphId: GraphId, transform: (GraphInfo) -> GraphInfo) {
         _graphRegistry.update { registry ->
-            val updatedGraphs = registry.graphs.map { g ->
-                if (g.id == graphId) g.copy(detectedRepoRoot = repoRoot, detectedWikiSubdir = wikiSubdir)
-                else g
-            }
-            registry.copy(graphs = updatedGraphs)
+            registry.copy(graphs = registry.graphs.map { g -> if (g.id == graphId) transform(g) else g })
         }
         saveRegistry()
     }
 
-    suspend fun setGitDetectionDismissed(graphId: GraphId, dismissed: Boolean) {
-        val registry = _graphRegistry.value
-        val updatedGraphs = registry.graphs.map { g ->
-            if (g.id == graphId) g.copy(gitDetectionDismissed = dismissed)
-            else g
-        }
-        _graphRegistry.value = registry.copy(graphs = updatedGraphs)
-        saveRegistry()
-    }
+    private suspend fun updateGraphInfoDetection(graphId: GraphId, repoRoot: String, wikiSubdir: String) =
+        updateGraphField(graphId) { it.copy(detectedRepoRoot = repoRoot, detectedWikiSubdir = wikiSubdir) }
 
-    suspend fun setBrowserOnlySyncBannerDismissed(graphId: GraphId, dismissed: Boolean) {
-        val registry = _graphRegistry.value
-        val updatedGraphs = registry.graphs.map { g ->
-            if (g.id == graphId) g.copy(browserOnlySyncBannerDismissed = dismissed)
-            else g
-        }
-        _graphRegistry.value = registry.copy(graphs = updatedGraphs)
-        saveRegistry()
-    }
+    suspend fun setGitDetectionDismissed(graphId: GraphId, dismissed: Boolean) =
+        updateGraphField(graphId) { it.copy(gitDetectionDismissed = dismissed) }
+
+    suspend fun setBrowserOnlySyncBannerDismissed(graphId: GraphId, dismissed: Boolean) =
+        updateGraphField(graphId) { it.copy(browserOnlySyncBannerDismissed = dismissed) }
 
     private fun checkGitignoreForDatabase(graphPath: String) {
         val gitignorePath = "$graphPath/.gitignore"
