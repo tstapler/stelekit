@@ -6,12 +6,15 @@ package dev.stapler.stelekit.ui
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.GraphRegistry
 import dev.stapler.stelekit.model.StorageLocation
 import dev.stapler.stelekit.model.StorageMoveOperation
 import dev.stapler.stelekit.platform.HostAccessState
 import dev.stapler.stelekit.transfer.GraphMergeService
+import dev.stapler.stelekit.ui.components.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -38,7 +41,7 @@ internal class GraphContentLeftSidebarInputs(
     val activeSectionIds: List<String>?,
     val vaultManager: dev.stapler.stelekit.vault.VaultManager?,
     val syncState: dev.stapler.stelekit.git.model.SyncState,
-    val gitLastSyncAt: kotlinx.datetime.Instant?,
+    val gitLastSyncAt: Long?,
     val storageLocationResolver: dev.stapler.stelekit.db.StorageLocationResolver?,
     val gitRepository: dev.stapler.stelekit.git.GitRepository?,
     val onStorageLocationChoose: (StorageMoveOperation) -> Unit,

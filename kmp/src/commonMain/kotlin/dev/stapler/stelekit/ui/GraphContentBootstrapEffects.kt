@@ -12,6 +12,7 @@ import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.service.AttachmentResult
 import dev.stapler.stelekit.service.MediaAttachmentService
+import dev.stapler.stelekit.service.toMarkdown
 import dev.stapler.stelekit.ui.state.BlockStateManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch

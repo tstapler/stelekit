@@ -13,10 +13,11 @@ import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.ImageAnnotation
 import dev.stapler.stelekit.model.ImageSource
 import dev.stapler.stelekit.model.PageUuid
-import dev.stapler.stelekit.performance.SensorModule
 import dev.stapler.stelekit.platform.sensor.PlatformImageFile
+import dev.stapler.stelekit.platform.sensor.SensorModule
 import dev.stapler.stelekit.service.MediaAttachmentService
 import dev.stapler.stelekit.service.markdownImageLink
+import dev.stapler.stelekit.service.toMarkdown
 import dev.stapler.stelekit.ui.components.CameraViewfinderDialog
 import dev.stapler.stelekit.ui.components.CapturePreviewDialog
 import dev.stapler.stelekit.ui.components.EditorCapabilities

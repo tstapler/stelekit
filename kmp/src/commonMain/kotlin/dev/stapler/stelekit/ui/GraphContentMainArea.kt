@@ -7,7 +7,6 @@ package dev.stapler.stelekit.ui
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.weight
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -20,6 +19,8 @@ import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.GraphRegistry
 import dev.stapler.stelekit.platform.HostAccessState
+import dev.stapler.stelekit.ui.components.BrowserOnlySyncBanner
+import dev.stapler.stelekit.ui.components.HostReconnectBanner
 import dev.stapler.stelekit.ui.components.git.GitDetectionBanner
 import kotlinx.coroutines.CoroutineScope
 

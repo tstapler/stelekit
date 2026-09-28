@@ -6,6 +6,8 @@ package dev.stapler.stelekit.ui
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import arrow.core.Either
 import dev.stapler.stelekit.db.GraphEpoch
 import dev.stapler.stelekit.logging.Logger
@@ -253,7 +255,7 @@ private fun applyCreatedVault(
     ctx: VaultActionContext,
     tempManager: VaultManager,
     cryptoEngine: dev.stapler.stelekit.vault.CryptoEngine,
-    unlockResult: dev.stapler.stelekit.vault.VaultUnlockResult,
+    unlockResult: VaultManager.UnlockResult,
     onVaultCreated: (VaultManager) -> Unit,
 ) {
     val layer = CryptoLayer(cryptoEngine, unlockResult.dek)

@@ -8,6 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import dev.stapler.stelekit.sections.SectionState
+import dev.stapler.stelekit.sections.getSectionStates
 import dev.stapler.stelekit.ui.screens.AllPagesViewModel
 import dev.stapler.stelekit.ui.screens.JournalsViewModel
 import dev.stapler.stelekit.ui.screens.LibraryStatsViewModel

@@ -1162,57 +1162,27 @@ private fun GraphContent(deps: GraphContentDeps) {
                             )
                         },
                         statusBar = {
+                            // See GraphContentStatusAndBottomBar.kt.
                             if (!isMobile) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    StatusBarContent(
-                                        encryptionState = if (encryptionManager.isEncryptionEnabled(appState.currentGraphPath.orEmpty())) {
-                                            EncryptionState.ENCRYPTED
-                                        } else {
-                                            EncryptionState.UNENCRYPTED
-                                        },
-                                        statusMessage = appState.statusMessage,
-                                        activeGraphName = activeGraphInfo?.displayName ?: "",
-                                        pluginCount = pluginHost.getAllPlugins().size,
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                    val vmForLockBtn = vaultManager
-                                    if (isParanoidMode && vmForLockBtn != null) {
-                                        IconButton(onClick = {
-                                            viewModel.flushAndLockVault(graphLoader, graphWriter, vmForLockBtn)
-                                        }) {
-                                            Icon(
-                                                imageVector = Icons.Filled.Lock,
-                                                contentDescription = "Lock vault",
-                                            )
-                                        }
-                                    }
-                                }
+                                GraphContentDesktopStatusRow(
+                                    viewModel,
+                                    GraphContentStatusRowInputs(
+                                        appState = appState,
+                                        encryptionManager = encryptionManager,
+                                        activeGraphInfo = activeGraphInfo,
+                                        pluginHost = pluginHost,
+                                        activeVaultManager = vaultManager.takeIf { isParanoidMode },
+                                        graphIoStack = graphIoStack,
+                                    ),
+                                )
                             }
                             SnackbarHost(hostState = snackbarHostState)
                         },
                         bottomBar = {
-                            PlatformBottomBar(
-                                currentScreen = appState.currentScreen,
-                                onNavigate = { screen ->
-                                    viewModel.navigateTo(screen)
-                                    closeSidebarIfMobile()
-                                },
-                                onSearch = { viewModel.setSearchDialogVisible(true) },
-                                onToggleSidebar = { viewModel.toggleSidebar() },
-                                isLeftHanded = appState.isLeftHanded,
-                                voiceCaptureButton = {
-                                    VoiceCaptureButton(
-                                        state = voiceCaptureState,
-                                        onTap = { voiceCaptureViewModel.onMicTapped() },
-                                        onDismissError = { voiceCaptureViewModel.dismissError() },
-                                        onAutoReset = { voiceCaptureViewModel.resetToIdle() },
-                                        amplitudeFlow = voicePipeline.effectiveAmplitudeFlow,
-                                        isSupported = voicePipeline.isSupported,
-                                    )
-                                },
+                            GraphContentBottomBar(
+                                appState,
+                                GraphContentBottomBarInputs(viewModel, voiceCaptureViewModel, voiceCaptureState, voicePipeline),
+                                ::closeSidebarIfMobile,
                             )
                         }
                     )
@@ -1581,7 +1551,7 @@ private fun onGraphKeyEvent(keyEvent: KeyEvent, handlers: GraphKeyEventHandlers)
 }
 
 /** Fowler's Remove Flag Argument: replaces a boolean `isEncrypted` branched on in the body. */
-private enum class EncryptionState { ENCRYPTED, UNENCRYPTED }
+internal enum class EncryptionState { ENCRYPTED, UNENCRYPTED }
 
 @Composable
 private fun RowScope.EncryptionStatus(state: EncryptionState) {
@@ -1605,7 +1575,7 @@ private fun RowScope.EncryptionStatus(state: EncryptionState) {
  * no ViewModel dependency. See ADR-001.
  */
 @Composable
-private fun StatusBarContent(
+internal fun StatusBarContent(
     encryptionState: EncryptionState,
     statusMessage: String,
     activeGraphName: String,
