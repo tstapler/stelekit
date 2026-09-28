@@ -24,83 +24,39 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalClipboardManager
-import dev.stapler.stelekit.db.GraphEpoch
 import dev.stapler.stelekit.db.GraphManager
-import dev.stapler.stelekit.db.GraphRelocationCoordinator
-import dev.stapler.stelekit.db.GraphWriter
-import dev.stapler.stelekit.db.StorageMoveUiState
 import dev.stapler.stelekit.migration.registerAllMigrations
-import dev.stapler.stelekit.db.SidecarManager
-import dev.stapler.stelekit.platform.DemoFileSystem
 import dev.stapler.stelekit.platform.HostAccessState
-import dev.stapler.stelekit.service.markdownImageLink
-import dev.stapler.stelekit.service.toMarkdown
-import dev.stapler.stelekit.export.ExportService
-import dev.stapler.stelekit.export.HtmlExporter
-import dev.stapler.stelekit.export.JsonExporter
-import dev.stapler.stelekit.export.MarkdownExporter
-import dev.stapler.stelekit.export.PlainTextExporter
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.DEMO_GRAPH_ID
 import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.StorageLocation
-import dev.stapler.stelekit.model.StorageMoveOperation
 import dev.stapler.stelekit.performance.DebugBuildConfig
 import dev.stapler.stelekit.performance.DebugMenuState
 import dev.stapler.stelekit.performance.LocalSpanRecorder
-import dev.stapler.stelekit.performance.PlatformJankStatsEffect
 import dev.stapler.stelekit.platform.*
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.repository.*
 import dev.stapler.stelekit.ui.components.*
-import dev.stapler.stelekit.ui.components.git.GitDetectionBanner
 import dev.stapler.stelekit.ui.components.settings.SettingsCategory
 import dev.stapler.stelekit.ui.components.settings.SettingsDialog
 import dev.stapler.stelekit.ui.i18n.I18n
 import dev.stapler.stelekit.ui.i18n.Language
 import dev.stapler.stelekit.ui.i18n.LocalI18n
 import dev.stapler.stelekit.ui.i18n.t
-import dev.stapler.stelekit.ui.onboarding.Onboarding
-import dev.stapler.stelekit.ui.screens.AllPagesViewModel
 import dev.stapler.stelekit.ui.screens.EmptyGraphStateScreen
-import dev.stapler.stelekit.ui.screens.LibraryStatsViewModel
-import dev.stapler.stelekit.ui.screens.JournalsViewModel
 import dev.stapler.stelekit.ui.screens.LibrarySetupScreen
-import dev.stapler.stelekit.ui.screens.PageView
 import dev.stapler.stelekit.ui.screens.PermissionRecoveryScreen
-import dev.stapler.stelekit.ui.screens.SearchViewModel
 import dev.stapler.stelekit.ui.screens.VaultUnlockScreen
-import dev.stapler.stelekit.vault.VaultManager.VaultEvent
 import dev.stapler.stelekit.voice.VoiceCaptureState
-import dev.stapler.stelekit.voice.VoiceCaptureViewModel
-import dev.stapler.stelekit.tags.LlmTagProvider
-import dev.stapler.stelekit.tags.TagSettings
-import dev.stapler.stelekit.tags.TagSuggestionEngine
-import dev.stapler.stelekit.tags.TagSuggestionViewModel
 import dev.stapler.stelekit.ui.theme.StelekitTheme
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
-import dev.stapler.stelekit.coroutines.PlatformDispatcher
-import dev.stapler.stelekit.performance.PercentileSummary
-import dev.stapler.stelekit.performance.QueryStat
-import dev.stapler.stelekit.performance.SerializedSpan
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.datetime.plus
-import arrow.core.Either
-import dev.stapler.stelekit.sections.SectionState
-import dev.stapler.stelekit.sections.getSectionStates
-import dev.stapler.stelekit.db.ImageImportService
-import dev.stapler.stelekit.error.toUiMessage
-import dev.stapler.stelekit.model.ImageSource
-import dev.stapler.stelekit.platform.sensor.SensorModule
-import dev.stapler.stelekit.platform.sensor.PlatformImageFile
 
 /** Runs [importOperation] bounded by [timeoutMs], returning `null` on timeout instead of hanging. */
 internal suspend fun <T> withImportTimeout(
@@ -176,7 +132,7 @@ internal fun InitializingScreenThemed(platformSettings: Settings) {
 }
 
 @Composable
-private fun InitializingDebugAccessButtons(modifier: Modifier, onOpen: (InitializingDebugScreen) -> Unit) {
+private fun InitializingDebugAccessButtons(onOpen: (InitializingDebugScreen) -> Unit, modifier: Modifier = Modifier) {
     Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         IconButton(onClick = { onOpen(InitializingDebugScreen.SETTINGS) }) {
             Icon(Icons.Default.Settings, contentDescription = "Settings")
@@ -242,12 +198,12 @@ fun StelekitApp(
     )
     val graphManager = graphManagerState.graphManager
 
-    if (PermissionGateAndGraphInit(fileSystem, graphPath, graphManager, scope)) return
+    if (permissionGateAndGraphInit(fileSystem, graphPath, graphManager, scope)) return
 
     val notificationManager = remember { NotificationManager() }
     LaunchedEffect(notificationManager) { deps.lifecycleHooks.onNotificationManagerReady?.invoke(notificationManager) }
 
-    if (EmptyGraphGate(graphManager, fileSystem, scope, graphManagerState.activeGraphId)) return
+    if (emptyGraphGate(graphManager, fileSystem, scope, graphManagerState.activeGraphId)) return
 
     MainGraphContentHost(fileSystem, deps, platformSettings, graphManagerState, notificationManager)
 }
@@ -368,7 +324,7 @@ private fun initialGraphPath(graphManager: GraphManager, graphPath: String): Str
  * (idempotently) and activates [graphPath]/the persisted graph path before returning false.
  */
 @Composable
-private fun PermissionGateAndGraphInit(
+private fun permissionGateAndGraphInit(
     fileSystem: FileSystem,
     graphPath: String,
     graphManager: GraphManager,
@@ -409,7 +365,7 @@ private fun PermissionGateAndGraphInit(
 }
 
 /**
- * Renders whichever setup/recovery screen [PermissionGateAndGraphInit] determined is needed: SAF
+ * Renders whichever setup/recovery screen [permissionGateAndGraphInit] determined is needed: SAF
  * permission revoked → recovery screen; no path at all (first launch) → setup screen. [isSafPath]
  * is computed locally from [currentGraphPath] rather than taken as a parameter so this stays a
  * plain string/callback signature (see [EncryptionState] for why a boolean *parameter* branched on
@@ -453,14 +409,14 @@ private fun InitializeGraphFromPath(graphManager: GraphManager, currentGraphPath
  * Shown when the user has explicitly removed their only graph (see [GraphManager.removeGraph]'s
  * "last real graph" path) — checking `graphsExplicitlyEmptied` rather than `activeGraphId == null`
  * alone is deliberate: the latter is also transiently true for one frame on a brand-new install
- * before [PermissionGateAndGraphInit]'s LaunchedEffect self-heals by adding/activating a default
+ * before [permissionGateAndGraphInit]'s LaunchedEffect self-heals by adding/activating a default
  * graph, which would otherwise flash this screen on every first launch. Session-scoped (a page
  * reload creates a fresh GraphManager, resetting the flag) — matches removeGraph's own "graph
  * files are not deleted" precedent, so nothing durable needs undoing here either. Returns true when
  * the empty-graph screen was shown — [StelekitApp] should return early in that case.
  */
 @Composable
-private fun EmptyGraphGate(
+private fun emptyGraphGate(
     graphManager: GraphManager,
     fileSystem: FileSystem,
     scope: kotlinx.coroutines.CoroutineScope,
@@ -493,16 +449,22 @@ private fun ObservePermissionRevocationOnResume(
     onPermissionGrantedChange: (Boolean) -> Unit,
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
+    // rememberUpdatedState, not a direct reference: the effect is intentionally keyed on
+    // lifecycleOwner alone (see class doc) and must not restart just because these lambdas'
+    // identity changed on a recomposition — it still calls today's version of each on every
+    // lifecycle event.
+    val currentPermissionGranted by rememberUpdatedState(permissionGranted)
+    val currentOnPermissionGrantedChange by rememberUpdatedState(onPermissionGrantedChange)
     DisposableEffect(lifecycleOwner) {
         var priorPermissionState =
-            if (permissionGranted()) PriorPermissionState.WAS_GRANTED else PriorPermissionState.WAS_NOT_GRANTED
+            if (currentPermissionGranted()) PriorPermissionState.WAS_GRANTED else PriorPermissionState.WAS_NOT_GRANTED
         val observer = LifecycleEventObserver { _, event ->
             priorPermissionState = nextPriorPermissionState(
                 event = event,
                 priorPermissionState = priorPermissionState,
-                permissionGranted = permissionGranted,
+                permissionGranted = currentPermissionGranted,
                 fileSystem = fileSystem,
-                onPermissionGrantedChange = onPermissionGrantedChange,
+                onPermissionGrantedChange = currentOnPermissionGrantedChange,
             )
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -906,7 +868,6 @@ private fun GraphContent(deps: GraphContentDeps) {
                     val isMobile = windowSizeClass.isMobile
                     val snackbarHostState = remember { SnackbarHostState() }
                     val demoBannerDismissedState = remember { mutableStateOf(false) }
-                    var demoBannerDismissed by demoBannerDismissedState
                     // See GraphContentNewGraphFlow.kt for the "New graph…" flow's state/dialogs.
                     val newGraphFlowController = rememberGraphContentNewGraphFlowController(deps)
                     LaunchedEffect(Unit) {

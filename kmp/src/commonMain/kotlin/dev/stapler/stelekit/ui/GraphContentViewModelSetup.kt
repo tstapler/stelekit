@@ -117,7 +117,7 @@ private fun rememberStelekitViewModel(
     effectiveFileSystem: dev.stapler.stelekit.platform.FileSystem,
     graphIoStack: GraphContentGraphIoStack,
     seed: ViewModelSeedInputs,
-    onCreated: (StelekitViewModel) -> Unit,
+    onCreate: (StelekitViewModel) -> Unit,
 ): StelekitViewModel {
     val repos = deps.repos
     val graphManager = deps.graphManager
@@ -129,7 +129,7 @@ private fun rememberStelekitViewModel(
         StelekitViewModel(
             buildViewModelDependencies(deps, effectiveFileSystem, graphIoStack, seed)
         ).also {
-            onCreated(it)
+            onCreate(it)
             it.startAutoSave()
         }
     }

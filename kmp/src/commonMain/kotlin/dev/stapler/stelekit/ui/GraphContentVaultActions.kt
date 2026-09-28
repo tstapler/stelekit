@@ -46,7 +46,7 @@ internal class GraphContentVaultActions(
  * lifecycle effects that react to vault state: closing the CryptoLayer when the vault locks (so
  * loader/writer don't use the zeroed DEK VaultManager.lock() leaves behind), and bootstrapping
  * `loadGraph` once a paranoid-mode graph is unlocked (or immediately, for a non-paranoid graph —
- * see [rememberBootstrapGraphLoad]).
+ * see [BootstrapGraphLoad]).
  */
 @Composable
 internal fun rememberGraphContentVaultActions(
@@ -63,8 +63,8 @@ internal fun rememberGraphContentVaultActions(
     val cryptoEngine = deps.platformIntegrations.cryptoEngine
     val activeGraphPath = vaultSetup.activeGraphPath
 
-    rememberBootstrapGraphLoad(vaultSetup, viewModel)
-    observeVaultLockCleanup(ctx)
+    BootstrapGraphLoad(vaultSetup, viewModel)
+    ObserveVaultLockCleanup(ctx)
 
     val onVaultUnlock: (CharArray, VaultNamespace) -> Unit = handler@{ passphrase, _ ->
         val vm = vaultManager ?: run { passphrase.fill(' '); return@handler }
@@ -166,7 +166,7 @@ private fun buildListActiveSlotsHandler(
  * below) so the CryptoLayer is in place before any file reads.
  */
 @Composable
-private fun rememberBootstrapGraphLoad(vaultSetup: GraphContentVaultSetup, viewModel: StelekitViewModel) {
+private fun BootstrapGraphLoad(vaultSetup: GraphContentVaultSetup, viewModel: StelekitViewModel) {
     val isParanoidMode = vaultSetup.isParanoidModeState.value
     LaunchedEffect(Unit) {
         if (!isParanoidMode && viewModel.uiState.value.currentGraphPath == null) {
@@ -189,7 +189,7 @@ private fun rememberBootstrapGraphLoad(vaultSetup: GraphContentVaultSetup, viewM
  * lock() is triggered programmatically (not via vaultState).
  */
 @Composable
-private fun observeVaultLockCleanup(ctx: VaultActionContext) {
+private fun ObserveVaultLockCleanup(ctx: VaultActionContext) {
     val vaultManager = ctx.vaultSetup.vaultManagerState.value
     val gitRepository = ctx.deps.platformIntegrations.gitRepository
     LaunchedEffect(vaultManager) {

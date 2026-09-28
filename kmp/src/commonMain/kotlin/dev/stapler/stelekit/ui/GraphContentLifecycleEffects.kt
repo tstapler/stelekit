@@ -6,6 +6,8 @@ package dev.stapler.stelekit.ui
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -29,9 +31,13 @@ internal fun ObserveGraphContentLifecycle(
     vaultManager: () -> VaultManager?,
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
+    // rememberUpdatedState, not a direct reference: the effect is intentionally keyed on
+    // lifecycleOwner/voiceCaptureViewModel alone (see class doc) and must not restart just
+    // because this lambda's identity changed on a recomposition.
+    val currentVaultManager by rememberUpdatedState(vaultManager)
     DisposableEffect(lifecycleOwner, voiceCaptureViewModel) {
         val observer = LifecycleEventObserver { _, event ->
-            handleGraphContentLifecycleEvent(event, viewModel, voiceCaptureViewModel, graphIoStack, vaultManager)
+            handleGraphContentLifecycleEvent(event, viewModel, voiceCaptureViewModel, graphIoStack, currentVaultManager)
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }

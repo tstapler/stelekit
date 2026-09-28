@@ -52,7 +52,7 @@ internal fun rememberGraphContentGraphIoStack(
             graphId = deps.graphManager.getActiveGraphId()?.value,
         )
     }
-    wireGraphLoaderFlushCallbacks(effectiveFileSystem, graphLoader, repos)
+    WireGraphLoaderFlushCallbacks(effectiveFileSystem, graphLoader, repos)
 
     val graphWriter = rememberGraphWriter(effectiveFileSystem, repos, graphLoader, sidecarManager, activeGraphInfo)
 
@@ -134,7 +134,7 @@ private suspend fun reindexImageSidecarsIfEmpty(
  * - onFlushFailed: removes sentinel when write fails so the file is not permanently suppressed.
  */
 @Composable
-private fun wireGraphLoaderFlushCallbacks(
+private fun WireGraphLoaderFlushCallbacks(
     effectiveFileSystem: FileSystem,
     graphLoader: dev.stapler.stelekit.db.GraphLoader,
     repos: RepositorySet,
