@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.service
 
+import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.ui.NotificationManager
 import kotlinx.coroutines.test.runTest
 import kotlin.random.Random
@@ -15,9 +16,15 @@ class WasmMediaAttachmentServiceTest {
 
     private fun uniqueGraphRoot(): String = "/stelekit-test/${Random.nextInt(0, Int.MAX_VALUE)}"
 
+    private fun newService(): WasmMediaAttachmentService {
+        val service = WasmMediaAttachmentService(PlatformFileSystem())
+        service.attachNotificationManager(NotificationManager())
+        return service
+    }
+
     @Test
     fun attachBytes_writesFileToOpfsAssetsDir_forFreshName() = runTest {
-        val service = WasmMediaAttachmentService(NotificationManager())
+        val service = newService()
         val graphRoot = uniqueGraphRoot()
 
         val result = service.attachBytes(byteArrayOf(1, 2, 3, 4), "test.png", graphRoot)
@@ -29,7 +36,7 @@ class WasmMediaAttachmentServiceTest {
 
     @Test
     fun attachBytes_appliesDashOneSuffix_whenNameAlreadyExists() = runTest {
-        val service = WasmMediaAttachmentService(NotificationManager())
+        val service = newService()
         val graphRoot = uniqueGraphRoot()
 
         service.attachBytes(byteArrayOf(1, 2), "dup.png", graphRoot)

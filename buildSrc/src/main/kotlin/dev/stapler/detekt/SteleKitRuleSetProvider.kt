@@ -20,6 +20,11 @@ class SteleKitRuleSetProvider : RuleSetProvider {
             RememberKeyForConstructorArgsRule(config),
             NoRunBlockingInLifecycleRule(config),
             UnthemedTextInBackgroundContainerRule(config),
+            MustUseTypedLazyItemsRule(config),
+            JvmOnlyApiInCommonMainRule(config),
+            IndexWithoutAnalyzeRule(config),
+            ActorWriteInLoopRule(config),
+            MissingHelpPageAnnotationRule(config),
         ),
     )
 }

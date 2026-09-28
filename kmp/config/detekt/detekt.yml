@@ -28,6 +28,20 @@ stelekit:
     active: true
   UnthemedTextInBackgroundContainer:
     active: true
+  MustUseTypedLazyItems:
+    active: true
+    excludes: ['**/TypedLazyItems.kt', '**/*Test.kt', '**/test/**', '**/*Spec.kt']
+  JvmOnlyApiInCommonMain:
+    active: true
+    excludes: ['**/jvmMain/**', '**/jvmTest/**', '**/androidMain/**', '**/androidUnitTest/**',
+               '**/iosMain/**', '**/buildSrc/**']
+  IndexWithoutAnalyze:
+    active: true
+  ActorWriteInLoop:
+    active: true
+  MissingHelpPageAnnotation:
+    active: true
+    excludes: ['**/buildSrc/**', '**/*Test.kt', '**/test/**']
 
 # Compose Multiplatform rules (io.nlopez.compose.rules)
 Compose:
@@ -309,9 +323,9 @@ style:
     ignoreAnnotated:
       - 'Composable'
   UnusedImports:
-    active: false
+    active: true
   UnusedPrivateMember:
-    active: false
+    active: true
   ForbiddenComment:
     active: false
 

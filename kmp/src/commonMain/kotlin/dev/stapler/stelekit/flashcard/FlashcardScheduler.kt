@@ -5,6 +5,7 @@
 package dev.stapler.stelekit.flashcard
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockPropertyKeys
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.plus
@@ -56,8 +57,8 @@ object FlashcardScheduler {
      * - Either it has no `card-next-review` property (new card) or that date ≤ [today].
      */
     fun isDue(block: Block, today: LocalDate): Boolean {
-        if (block.properties["card"] != "true") return false
-        val dateStr = block.properties["card-next-review"]
+        if (block.properties[BlockPropertyKeys.CARD] != "true") return false
+        val dateStr = block.properties[BlockPropertyKeys.CARD_NEXT_REVIEW]
         return if (dateStr == null) {
             true // new card — always due
         } else {
@@ -83,7 +84,7 @@ object FlashcardScheduler {
             val newEase = minOf(MAX_EASE, ease + EASE_PASS_DELTA)
             val nextReview = today.plus(newInterval, DateTimeUnit.DAY)
             block.properties.toMutableMap().apply {
-                put("card-next-review", nextReview.toString())
+                put(BlockPropertyKeys.CARD_NEXT_REVIEW, nextReview.toString())
                 put("card-ease", formatEase(newEase))
                 put("card-interval", newInterval.toString())
             }
@@ -91,7 +92,7 @@ object FlashcardScheduler {
             val newEase = maxOf(MIN_EASE, ease - EASE_FAIL_DELTA)
             val nextReview = today.plus(1, DateTimeUnit.DAY)
             block.properties.toMutableMap().apply {
-                put("card-next-review", nextReview.toString())
+                put(BlockPropertyKeys.CARD_NEXT_REVIEW, nextReview.toString())
                 put("card-ease", formatEase(newEase))
                 put("card-interval", "1")
             }

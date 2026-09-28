@@ -51,7 +51,7 @@ class CacheInvalidationTest : BlockHoundTestBase() {
         updatedAt = now()
     )
 
-    private fun block(uuid: String, pageUuid: String, content: String = "", position: Int = 0) = Block(
+    private fun block(uuid: String, pageUuid: String, content: String = "", position: String = "a0") = Block(
         uuid = BlockUuid(uuid),
         pageUuid = PageUuid(pageUuid),
         content = content,
@@ -85,8 +85,8 @@ class CacheInvalidationTest : BlockHoundTestBase() {
         assertEquals(1, hierarchyB1.size, "page B should start with 1 block in hierarchy")
 
         // Add a child to each root without touching hierarchy cache (saveBlock doesn't evict)
-        blockRepo.saveBlock(block("child-a", pageAUuid, content = "child of A", position = 0).copy(parentUuid = rootA))
-        blockRepo.saveBlock(block("child-b", pageBUuid, content = "child of B", position = 0).copy(parentUuid = rootB))
+        blockRepo.saveBlock(block("child-a", pageAUuid, content = "child of A", position = "a0").copy(parentUuid = BlockUuid(rootA)))
+        blockRepo.saveBlock(block("child-b", pageBUuid, content = "child of B", position = "a0").copy(parentUuid = BlockUuid(rootB)))
 
         // Evict only page A's hierarchy
         blockRepo.evictHierarchyForPage(pageAUuid)
@@ -123,7 +123,7 @@ class CacheInvalidationTest : BlockHoundTestBase() {
         val targetUuid = "block-target"
         val siblingUuid = "block-sibling"
         blockRepo.saveBlock(block(targetUuid, pageUuid, content = "original target"))
-        blockRepo.saveBlock(block(siblingUuid, pageUuid, content = "sibling", position = 1))
+        blockRepo.saveBlock(block(siblingUuid, pageUuid, content = "sibling", position = "a1"))
 
         // Warm up block cache by reading both blocks
         val target1 = blockRepo.getBlockByUuid(BlockUuid(targetUuid)).first().getOrNull()
@@ -167,7 +167,7 @@ class CacheInvalidationTest : BlockHoundTestBase() {
         assertEquals(1, h1.size)
 
         // Add a child (saveBlock does not evict hierarchy cache)
-        blockRepo.saveBlock(block("child-clear", pageUuid, content = "child").copy(parentUuid = rootUuid))
+        blockRepo.saveBlock(block("child-clear", pageUuid, content = "child").copy(parentUuid = BlockUuid(rootUuid)))
 
         // Stale cache: child is not visible yet
         val h2Stale = blockRepo.getBlockHierarchy(BlockUuid(rootUuid)).first().getOrNull()!!
@@ -203,7 +203,7 @@ class CacheInvalidationTest : BlockHoundTestBase() {
         val pageUuid = "page-actor"
         pageRepo.savePage(page(pageUuid, "Actor Page"))
         blockRepo.saveBlock(block("parent-actor", pageUuid))
-        blockRepo.saveBlock(block("child-actor", pageUuid).copy(parentUuid = "parent-actor"))
+        blockRepo.saveBlock(block("child-actor", pageUuid).copy(parentUuid = BlockUuid("parent-actor")))
 
         // Warm blockCache for "parent-actor" by traversing child's ancestor chain.
         blockRepo.getBlockAncestors(BlockUuid("child-actor")).first()
@@ -211,7 +211,7 @@ class CacheInvalidationTest : BlockHoundTestBase() {
 
         // Introduce a second child that hasn't had its ancestors fetched yet.
         // This avoids the ancestorsCache shortcut so the traversal actually reads blockCache.
-        blockRepo.saveBlock(block("child-actor-2", pageUuid).copy(parentUuid = "parent-actor"))
+        blockRepo.saveBlock(block("child-actor-2", pageUuid).copy(parentUuid = BlockUuid("parent-actor")))
 
         // Route an update to "parent-actor" through the actor, including all children so that
         // SQLite's ON DELETE CASCADE (which fires for INSERT OR REPLACE since 3.26) doesn't
@@ -221,8 +221,8 @@ class CacheInvalidationTest : BlockHoundTestBase() {
         // same transaction.
         actor.saveBlocks(listOf(
             block("parent-actor", pageUuid, content = "updated"),
-            block("child-actor", pageUuid).copy(parentUuid = "parent-actor"),
-            block("child-actor-2", pageUuid).copy(parentUuid = "parent-actor"),
+            block("child-actor", pageUuid).copy(parentUuid = BlockUuid("parent-actor")),
+            block("child-actor-2", pageUuid).copy(parentUuid = BlockUuid("parent-actor")),
         ))
 
         blockRepo.cacheStats() // drain any counters from the saveBlocks path

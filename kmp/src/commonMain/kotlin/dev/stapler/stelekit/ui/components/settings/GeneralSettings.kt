@@ -26,6 +26,10 @@ fun GeneralSettings(
     onLanguageChange: (Language) -> Unit,
     isLeftHanded: Boolean = false,
     onLeftHandedChange: (Boolean) -> Unit = {},
+    // Desktop-only (Story 1.4.2): the quick-capture hotkey combo, revisitable here after the
+    // one-time FirstRunHotkeyNotice is dismissed. Null (default) hides the section — Android/
+    // iOS/web builds never wire a value in since there's no global hotkey to show.
+    hotkeyComboLabel: String? = null,
 ) {
     SettingsSection("Appearance") {
         SettingsRow("Theme") {
@@ -72,5 +76,13 @@ fun GeneralSettings(
             checked = isLeftHanded,
             onCheckedChange = onLeftHandedChange
         )
+    }
+
+    if (hotkeyComboLabel != null) {
+        SettingsSection("Keyboard Shortcuts") {
+            SettingsRow("Quick Capture") {
+                Text(hotkeyComboLabel, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
     }
 }

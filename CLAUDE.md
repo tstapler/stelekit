@@ -6,7 +6,118 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 SteleKit is a Kotlin Multiplatform (KMP) migration of Logseq — a Markdown-based outliner/note-taking app. It targets Desktop (JVM), Android, iOS, and Web from a single shared codebase in the `kmp/` module.
 
-## Build & Run Commands
+## Bazel Build Commands
+
+**Bazel is the canonical build system.** Use Bazel for all JVM/Desktop, Android, and Web
+work. Gradle is kept only for iOS (no Bazel KMP support yet), screenshot tests
+(Roborazzi), and benchmarks until those are migrated (Epic 7).
+
+| Gradle (legacy) | Bazel (canonical) |
+|--------|-------|
+| `./gradlew run` | `bazel run //kmp:desktop_app` |
+| `./gradlew jvmTest` | `bazel test //kmp:jvm_tests` |
+| `./gradlew allTests` | `bazel test //...` |
+| `./gradlew ciCheck` | `bazel test //... --config=ci` |
+| `./gradlew installAndroid` | `bazel mobile-install //kmp:android_app --config=android` |
+| `./gradlew packageDistributionForCurrentOS` | _(Gradle only — see Future Epic D)_ |
+| `./gradlew testDebugUnitTest` | `bazel test //kmp/src/androidUnitTest/kotlin:android_unit_tests --config=android` |
+| `./gradlew wasmJsBrowserDistribution` | `bazel build //kmp:web_app` |
+
+```bash
+# Launch desktop app
+bazel run //kmp:desktop_app
+
+# Run all JVM tests (excluding screenshot tests which remain Gradle-only)
+bazel test //kmp:jvm_tests
+
+# Run only business-logic tests (no UI, fastest)
+bazel test //kmp:business_tests
+
+# `bazel test //kmp:jvm_tests` includes Compose Desktop UI tests, which need a real X11 display.
+# On a native Wayland session (`echo $XDG_SESSION_TYPE` → wayland) there is no X11 DISPLAY at all
+# for Bazel's sandbox to use — even with xorg-xwayland installed, nothing lazily starts it inside
+# a plain shell/agent session, and a shell's inherited DISPLAY/XAUTHORITY env vars (e.g. from a
+# stale Claude Code shell snapshot) can point at a socket that no longer exists. Symptom: every
+# UI test fails identically with `NoClassDefFoundError: Could not initialize class
+# sun.awt.X11.XToolkit` / `Can't connect to X11 window server using ':N' as the value of the
+# DISPLAY variable` — dozens of failures, all with this one root cause, not a real regression.
+#
+# ALWAYS check display status before running jvm_tests/jvmTest, never assume from the session
+# type alone — `scripts/jvm-display-check.sh` does the check (real DISPLAY vs. Wayland-only vs.
+# headless, and whether xvfb-run is installed) and reports its verdict on stderr:
+scripts/jvm-display-check.sh -- bazel test //kmp:jvm_tests \
+  --sandbox_add_mount_pair=/tmp/.X11-unix --test_env=DISPLAY --test_env=XAUTHORITY
+# If it exits 1 (no display and no Xvfb), install Xvfb once (`sudo pacman -S xorg-server-xvfb` on
+# Arch/Manjaro — same package this repo's CI installs via apt as `xvfb`), or fall back to
+# `bazel test //kmp:business_tests` (no UI, unaffected) for real local signal in the meantime.
+# Treat any bare (non-wrapped) `bazel test //kmp:jvm_tests` UI-test failure as unverified rather
+# than a regression until the script confirms a real display was used.
+
+# Build Android APK (requires ANDROID_HOME to be set)
+bazel build //kmp:android_app --config=android
+
+# Build web (WASM/JS) bundle — output: bazel-bin/kmp/web_dist.tar.gz
+# Note: delegates to Gradle internally until rules_kotlin#567 lands
+bazel build //kmp:web_app
+
+# Run all Bazel tests
+bazel test //...
+
+# Cap any build/test invocation so a starved or hung action can't run for
+# hours unattended — see "Bazel server orphaning" below for why this matters
+# especially inside a Claude Code worktree.
+timeout 30m bazel build //kmp:android_app --config=android
+
+# MANDATORY: Re-generate SQLDelight sources whenever any .sq file changes.
+# Bazel uses the committed generated sources in kmp/src/generated/sqldelight/ directly
+# (it does NOT run codegen at build time). Forgetting this step causes unresolved reference
+# errors in Bazel CI even though Gradle builds succeed (Gradle regenerates at build time).
+./gradlew :kmp:generateCommonMainSteleDatabase
+rsync -a kmp/build/generated/sqldelight/code/SteleDatabase/commonMain/ kmp/src/generated/sqldelight/
+./gradlew :kmp:generateCommonMainTelemetryDatabase
+rsync -a kmp/build/generated/sqldelight/code/TelemetryDatabase/commonMain/ kmp/src/generated/sqldelight-telemetry/
+# Then commit kmp/src/generated/sqldelight/ and kmp/src/generated/sqldelight-telemetry/
+# The CI job "SQLDelight generated sources" in ci.yml enforces this automatically.
+```
+
+### Bazel server orphaning and runaway builds
+
+Each workspace directory (including every Claude Code agent worktree under
+`.claude/worktrees/`) gets its own persistent Bazel server, keyed by a hash of
+that path under `~/.cache/bazel/_bazel_$USER/`. Worktree teardown does not run
+`bazel shutdown` first, so when an agent's worktree is removed, its Bazel
+server doesn't stop — it just keeps running with no client left to hand
+results to. `startup --max_idle_secs=1800` (this repo's `.bazelrc`) reaps a
+server that's sitting idle after that, but it does **not** help a server
+that's stuck actively running: Bazel has no default wall-clock timeout on a
+build/compile action (only `bazel test` has `--test_timeout`), so a single
+starved action can run for hours. This happened for real on 2026-09-05: a
+`KotlinCompile` action ran 62,206s (~17.3h) inside an abandoned worktree's
+Bazel server on a machine running many concurrent agents, consuming ~22GB RAM
+across its worker processes before being found and killed by hand.
+
+Mitigations in place:
+- `startup --max_idle_secs=1800` in `.bazelrc` — reap truly-idle orphans within 30m instead of 3h.
+- Wrap any bazel invocation you expect to run unattended (agent sessions, scripts) in `timeout <N> bazel ...` so a starved build can't run indefinitely.
+
+If you're about to end an agent session/worktree that ran Bazel, run `bazel shutdown` from inside it first — it only tears down that workspace's own server, not anyone else's.
+
+To find and clear existing orphans:
+```bash
+# List each running server's output_base and workspace_directory, flagging any
+# whose workspace no longer exists on disk (workspace_directory is in the
+# server's `cmdline` file, not `server.pid.txt` — that one's just a bare PID).
+for d in ~/.cache/bazel/_bazel_$USER/*/; do
+  [ -f "$d/server/cmdline" ] || continue
+  ws=$(tr '\0' '\n' < "$d/server/cmdline" | grep -oP '(?<=--workspace_directory=).*')
+  [ -d "$ws" ] || echo "ORPHAN: $d -> $ws"
+done
+
+# Kill a specific orphaned server + its worker processes by output_base hash
+pgrep -f '<output_base_hash>' | xargs -r kill -9
+```
+
+## Gradle Build & Run Commands
 
 **Always use `./gradlew`, never the system `gradle` command.** The wrapper pins Gradle 9.5.0; the system install is 9.3.1 and cannot share daemons with wrapper builds — using it silently doubles the daemon count and memory footprint.
 
@@ -33,15 +144,31 @@ SteleKit is a Kotlin Multiplatform (KMP) migration of Logseq — a Markdown-base
 ./gradlew packageDistributionForCurrentOS
 
 # Run all CI checks locally (detekt + jvmTest + Android unit tests + assembleDebug)
-./gradlew ciCheck
-# UI/screenshot tests require a display. Use the appropriate wrapper for your environment:
-#   Wayland (native display available):   ./gradlew ciCheck                  # display is already set
-#   X11 (DISPLAY set):                    ./gradlew ciCheck                  # display is already set
-#   Headless Linux / SSH (no display):    xvfb-run --auto-servernum ./gradlew ciCheck
-# Automatic detection (try Wayland/X11 first, fall back to xvfb-run):
-# [ -n "$WAYLAND_DISPLAY" ] || [ -n "$DISPLAY" ] && ./gradlew ciCheck || xvfb-run --auto-servernum ./gradlew ciCheck
+# Also compiles androidTest/ and WASM test sources to catch platform-specific type errors without a device.
+#
+# ciCheck's UI/screenshot tests (jvmTest) need a real X11 display. Never assume Wayland means no
+# display is needed, or that no display means Xvfb is needed but unavailable — a native Wayland
+# session has no X11 DISPLAY at all (XWayland doesn't start lazily), while an X11 session or a
+# Wayland session with XWayland already running both work directly. `scripts/jvm-display-check.sh`
+# checks which case this session is actually in and wraps with `xvfb-run --auto-servernum` only
+# when needed:
+scripts/jvm-display-check.sh -- ./gradlew ciCheck
+# If it reports no display and no Xvfb, either install Xvfb once (`sudo pacman -S xorg-server-xvfb`
+# on Arch/Manjaro) or run `./gradlew jvmTest --tests '*BusinessTest'` / `testDebugUnitTest`
+# (Robolectric — headless, no display needed) for signal in the meantime — see "Testing best
+# practices" below on when a Compose-behavior test belongs in androidUnitTest instead of jvmTest.
+# Run instrumented tests on a connected device/emulator (adb must see the device):
+./gradlew ciCheck -PciInstrumentedTests
 # README sync is not covered by ciCheck — run separately:
 # bash scripts/generate-readme.sh && git diff --exit-code README.md
+
+# Run wasmJs tests in a real headless browser (not just compiled — CI only compiles wasmJs
+# test sources today, see ci.yml's "Compile wasmJs test sources" step comment).
+./gradlew :kmp:wasmJsBrowserTest
+# If this fails with "No provider for framework:mocha" / "Cannot load webpack": Kotlin's
+# shared web-tooling installer defaults to Yarn Berry's `pnpm` node linker, which Karma's
+# plugin auto-discovery can't see through (isolated node_modules). Fix once per machine:
+./scripts/fix-wasm-karma-tooling.sh
 
 # Lint all GitHub Actions workflow files (mirrors the workflow-lint CI job)
 # Install once: curl -sSfL https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz | tar -xz -C ~/.local/bin actionlint
@@ -51,8 +178,9 @@ actionlint -color
 uvx 'zizmor==1.25.2' .
 
 # Run benchmark locally — mirrors CI, generates flamegraph PNGs (requires async-profiler + librsvg)
-./scripts/benchmark-local.sh                        # synthetic graph only
-./scripts/benchmark-local.sh /path/to/your/graph   # include real-graph test
+./scripts/benchmark-local.sh /path/to/your/graph   # real graph (recommended — most representative)
+./scripts/benchmark-local.sh                        # synthetic XLARGE only (7978 pages, matches real graph scale)
+# BENCH_CONFIG=SMALL ./scripts/benchmark-local.sh  # quick smoke (200 pages, same as CI)
 
 # Or run the Gradle task directly (flamegraph PNGs require flamegraph.pl + rsvg-convert separately)
 ./gradlew :kmp:jvmTestProfile -PgraphPath=/path/to/your/graph
@@ -283,6 +411,29 @@ class SomeManager(...) {
 val manager = remember { SomeManager() }
 ```
 
+### Uncaught coroutine Throwables kill the process on Android — guard long-lived scopes
+
+An uncaught `Throwable` (notably `OutOfMemoryError`) escaping any coroutine reaches the platform default uncaught-exception handler. **On Android that handler kills the process ("app keeps stopping"); on desktop JVM it only prints** — so this class of crash never reproduces on desktop. Under heap pressure the OOM is thrown in whichever coroutine allocates next, not necessarily the one doing the heavy work, so per-call-site `catch(Throwable)` is not sufficient.
+
+Rules:
+- Every long-lived `CoroutineScope` that hosts user-path collectors or fire-and-forget launches must attach a `CoroutineExceptionHandler` (see `StelekitViewModel.scope`, `GraphLoader.parallelScope`). Surface errors as `fatalError` UI state where possible.
+- Standing `collect { }` bodies and `stateIn` upstream chains on such scopes are the unguarded vectors — a repository flow's `catchDbError()` does not protect them.
+- Regression tests: `StelekitViewModelCrashReproductionTest`, `PageNameIndexResilienceTest`, `LargeGraphWarmStartCrashTest` (8 030-page warm start with a recording default uncaught-exception handler).
+
+### Graph-scale reads must be paginated, projected, or chunked — never O(graph)
+
+Every DB write invalidates SQLDelight queries on the written table, so a standing collector of an unbounded query re-materializes its **entire result set per write burst**. During graph import/reconcile on an 8 000+ page graph this causes GC thrash (UI hang) and `OutOfMemoryError` (crash) on Android. **`PageRepository` therefore has no `getAllPages()` / unbounded `getUnloadedPages()` at all — the absence is compile-time enforced.** Do not add unbounded reads back to any repository interface.
+
+Patterns, by consumer type:
+- **Standing UI observers** (sidebar, etc.): bounded queries only — `getFavoritePages()` (`WHERE is_favorite = 1`), `getPages(limit, offset)`, `getPageByUuid` point lookups.
+- **Standing whole-graph observers** (e.g. `PageNameIndex`): use a **projection** (`getPageNameEntries()` — name + is_journal only), plus `conflate()` + `distinctUntilChanged()` + debounce as backpressure, plus `Throwable` guards.
+- **Bulk reconcile** (`GraphLoader.loadDirectory`): per-chunk `IN`-clause lookups — `getPagesByNames(chunk)` / `getJournalPagesByDates(chunk)` — never a full-table preload. `IN` lists chunked ≤500 (`SQLITE_MAX_VARIABLE_NUMBER` = 999 on Android API < 30).
+- **Background indexing** (`GraphLoader.indexRemainingPages`): drain loop over `getUnloadedPages(limit, offset)` (`INDEX_BATCH_SIZE` = 100); offset advances past permanently-failing rows via an attempted-UUID set so the loop is guaranteed to terminate; `countUnloadedPages()` provides the O(1) progress denominator.
+- **Whole-graph one-shots** (export, migration tooling, benchmarks, tests): `getAllPagesSnapshot()` — a suspend interface method that pages through `getPages(limit, offset)` in bounded batches (never a single unbounded query, never a reactive flow).
+- Do not pin full-table snapshots in fields (the former `cachedAllPages` pattern is forbidden).
+
+Regression tests: `LargeGraphWarmStartCrashTest` (asserts ≤100-row batches across a full 8 030-page warm start), `GraphLoaderIndexBatchingTest` (bounded drain + termination with permanently-failing pages), `QueryPlanAuditTest` (audits query plans for the bounded query set).
+
 ### Android Application.onCreate — catch Throwable, not Exception
 
 `Application.onCreate()` must use `catch (e: Throwable)`, not `catch (e: Exception)`. Native library loading failures (`UnsatisfiedLinkError`, `NoClassDefFoundError`) are `Error` subclasses, not `Exception`. Catching only `Exception` lets them propagate uncaught and crash the app at startup before the UI is shown. See `SteleKitApplication.kt`.
@@ -316,11 +467,63 @@ When a workflow is called via `workflow_call`, `github.event_name` inside the ca
 
 ## Testing Infrastructure
 
-See `kmp/TESTING_README.md` for the full testing guide. Test source sets:
-- `commonTest` — shared utilities
-- `businessTest` — business logic without UI
-- `jvmTest` — JVM UI + integration tests (uses Roborazzi for screenshot tests)
-- `androidUnitTest` — Android local unit tests
+See `kmp/TESTING_README.md` for the exploratory/performance testing guide (jank detection,
+profiling, SLO alerts). Test source sets:
+- `commonTest` — shared utilities, and the default home for any test that only touches
+  `commonMain` code (pure functions, domain models, parsers) — see kotest guidance below
+- `businessTest` — business logic without UI (depends on `commonTest`)
+- `jvmTest` — JVM UI + integration tests (uses Roborazzi for screenshot tests; also runs
+  everything in `businessTest`)
+- `androidUnitTest` — Android local unit tests (Robolectric)
+- `iosTest` — iOS-target tests
+- `wasmJsTest` — Web (WASM/JS) tests, only compiled when `-PenableJs=true`
+
+### Testing best practices
+
+- **A Compose-behavior test (dialog gating, text/content assertions, click handlers) that doesn't
+  need true pixel rendering belongs in `androidUnitTest` (Robolectric, `./gradlew
+  testDebugUnitTest`), not `jvmTest`.** Robolectric runs headless — no X11 display, no Xvfb —
+  so these tests give real signal on any machine, including one with no display at all. Reserve
+  `jvmTest` for what actually needs a real renderer: Roborazzi screenshot tests and
+  desktop-platform-specific code. See `NewGraphFlowTest.kt` / `AddGraphAppOwnedTest.kt` for the
+  pattern. Always run `scripts/jvm-display-check.sh` (see the Bazel/Gradle command tables above)
+  before treating a `jvmTest` UI-test failure as real — check display availability, don't guess
+  it from the session type.
+- **Test pure logic in `commonMain`/`commonTest`, not per-platform.** If a function doesn't
+  touch a platform API, it belongs in `commonMain` with its test in `commonTest` — one test
+  run covers JVM, Android, iOS, and wasmJs simultaneously instead of four copies drifting
+  apart. `HostReconciliation.kt` / `HostReconciliationTest.kt` is the reference example.
+- **Prefer property-based tests over enumerating examples** for pure functions with a large or
+  structured input space (parsers, classifiers, encoders, anything with an equality/symmetry
+  invariant). `kotest-property` is on the classpath in `commonTest` — use `Arb`/`checkAll`
+  (wrapped in `runTest { }` from `kotlinx-coroutines-test`) to assert invariants across many
+  generated inputs rather than a fixed example table. Keep a handful of example-based `@Test`s
+  alongside for the obvious/named cases — property tests are for edge cases you wouldn't think
+  to enumerate, not a replacement for readable baseline coverage.
+- **`kotest-assertions-core` and `kotest-property` are plain KMP libraries, not the Kotest Spec
+  runner.** They're used from ordinary `kotlin.test`-annotated `@Test` functions (no
+  `StringSpec`/`FunSpec`, no Kotest Gradle plugin, no KSP) — this project deliberately did not
+  adopt the Kotest test framework/runner because its wasmJs support is feature-limited
+  (annotation-based config doesn't work there) and JUnit5 (`kotlin.test`) already covers every
+  target this project builds for.
+- **Root-cause failing tests before loosening assertions.** A flaky or failing test is a signal,
+  not an obstacle — see the "No fix without root cause" rule; don't add tolerances, retries, or
+  `@Ignore` to make a red test green without first stating why it's red.
+- **Regression tests for structural invariants** (e.g. the SQLDelight/`MigrationRunner` sync
+  check, the `@DirectSqlWrite` write-gating enforcement, the bounded-read audits) belong in
+  `businessTest` or `jvmTest` next to the mechanism they guard — see the existing examples
+  referenced throughout this file's architecture sections above.
+
+## Release Process
+
+Releases are managed by [Release Please](https://github.com/googleapis/release-please) (`.github/workflows/release.yml`), driven by Conventional Commits on `main`. There is no manual version bump — `version.txt` and `CHANGELOG.md` are only ever edited by the bot.
+
+1. **Every push to `main`** runs the `release-please` job, which opens or updates a single standing PR titled `chore(main): release X.Y.Z` (find it with `gh pr list --search "head:release-please"`). It aggregates every `fix:`/`feat:` commit since the last release into `CHANGELOG.md`, bumps `version.txt`, and computes the next semver bump from the commit types (`fix:` → patch, `feat:` → minor, `!`/`BREAKING CHANGE:` → major).
+2. **This PR is docs/config-only** (`version.txt`, `CHANGELOG.md`, `.release-please-manifest.json`) — it never contains source changes, so it does not need the adversarial code-review gate; the source changes it summarizes were already reviewed in their own commits/PRs.
+3. **Merging that PR is what cuts the release.** On merge, `release-please` sets `release_created=true` and the same workflow run builds and publishes: Android release APK, Desktop (Linux/Windows/macOS) distributables, a GitHub Release tagged `vX.Y.Z`, the Homebrew formula, and the F-Droid index.
+4. **The website redeploys independently of releases.** `.github/workflows/pages.yml` triggers on every push to `main` (not just release merges) and rebuilds/deploys the wasmJs web app via `./gradlew :kmp:wasmJsBrowserDistribution -PenableJs=true` — it does **not** pass `-PappVersion`, so the web build's version string always falls back to whatever is currently committed in `version.txt`. This means a plain push to `main` (before any release PR is merged) already ships the latest web app under the previous version number.
+5. **To force an immediate release without waiting for a release-please PR merge**, use `workflow_dispatch` on `release.yml` with an explicit `version` input (e.g. `v1.2.3`) — this skips Release Please and builds/publishes immediately: `gh workflow run release.yml -f version=v1.2.3`.
+6. **App version at runtime** is resolved by the shared `resolveAppVersion()` function in `kmp/build.gradle.kts`: explicit `-PappVersion` (used by CI release builds, sourced from the release tag) → committed `version.txt` (local/dev builds and the web deploy) → `"dev"` fallback. JVM/Desktop reads it via `-Dapp.version` system property (`DeviceInfo.jvm.kt`); wasmJs has no runtime system-property equivalent, so it's baked in at compile time by the `generateWasmVersionInfo` Gradle task into a generated `WASM_APP_VERSION` constant consumed by `DeviceInfo.js.kt`.
 
 ## Key Files
 

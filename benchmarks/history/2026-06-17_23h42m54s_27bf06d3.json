@@ -1,0 +1,141 @@
+{
+  "timestamp": "2026-06-17 23:42:54 UTC",
+  "gitSha": "27bf06d3",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 0,
+  "phase2Ms": 0,
+  "phase3Ms": 0,
+  "totalMs": 0,
+  "jankBaselineP50Ms": 1,
+  "jankBaselineP95Ms": 20,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.05,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 477,
+      "pct": 39.6
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 87,
+      "pct": 7.2
+    },
+    {
+      "frame": "java.util.LinkedHashMap$Entry_[k]",
+      "samples": 79,
+      "pct": 6.6
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 66,
+      "pct": 5.5
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 53,
+      "pct": 4.4
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 42,
+      "pct": 3.5
+    },
+    {
+      "frame": "java.util.LinkedHashMap_[k]",
+      "samples": 25,
+      "pct": 2.1
+    },
+    {
+      "frame": "java.util.HashMap$Node[]_[k]",
+      "samples": 24,
+      "pct": 2.0
+    },
+    {
+      "frame": "char[]_[k]",
+      "samples": 23,
+      "pct": 1.9
+    },
+    {
+      "frame": "dev.stapler.stelekit.parsing.lexer.Token_[k]",
+      "samples": 22,
+      "pct": 1.8
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 13097,
+      "pct": 94.5
+    },
+    {
+      "frame": "/tmp/sqlite-3.51.3.0-6a3ba321-89f6-4981-9106-664a811680c9-libsqlitejdbc.so",
+      "samples": 275,
+      "pct": 2.0
+    },
+    {
+      "frame": "pthread_cond_signal",
+      "samples": 56,
+      "pct": 0.4
+    },
+    {
+      "frame": "fsync",
+      "samples": 40,
+      "pct": 0.3
+    },
+    {
+      "frame": "SR_handler",
+      "samples": 38,
+      "pct": 0.3
+    },
+    {
+      "frame": "__libc_pwrite",
+      "samples": 24,
+      "pct": 0.2
+    },
+    {
+      "frame": "pread",
+      "samples": 21,
+      "pct": 0.2
+    },
+    {
+      "frame": "munmap",
+      "samples": 19,
+      "pct": 0.1
+    },
+    {
+      "frame": "prctl",
+      "samples": 11,
+      "pct": 0.1
+    },
+    {
+      "frame": "syscall",
+      "samples": 7,
+      "pct": 0.1
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 1,
+      "totalMs": 1
+    },
+    {
+      "table": "blocks_fts",
+      "op": "insert",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 0,
+      "totalMs": 0
+    }
+  ]
+}

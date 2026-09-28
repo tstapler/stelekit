@@ -11,3 +11,8 @@ actual fun Modifier.platformNavigationInput(
 }
 
 actual fun useLongPressForDrag(): Boolean = false
+
+// Unchanged from prior behavior: Web can be mouse- or touch-driven, and unlike JVM/desktop it
+// has no confirmed report of this misfiring — leave long-press-to-select as the multi-select
+// entry point here rather than guessing.
+actual fun useLongPressToSelectBlock(): Boolean = true

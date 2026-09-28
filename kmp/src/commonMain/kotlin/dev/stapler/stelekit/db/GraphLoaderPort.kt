@@ -1,12 +1,17 @@
 package dev.stapler.stelekit.db
 
+import arrow.core.Either
+import arrow.core.left
+import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageName
 import dev.stapler.stelekit.parsing.ParseMode
+import dev.stapler.stelekit.sections.SectionFilter
 import dev.stapler.stelekit.vault.CryptoLayer
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.datetime.LocalDate
 
 /**
  * Port interface for [GraphLoader] used by [dev.stapler.stelekit.ui.StelekitViewModel].
@@ -20,6 +25,13 @@ interface GraphLoaderPort {
      * background indexing skips these pages to avoid clobbering in-progress edits.
      */
     fun setActivePageUuids(uuids: StateFlow<Set<String>>?)
+
+    /**
+     * Sets the flow of page UUIDs that have unsaved block edits. The file watcher skips
+     * auto-reload only for pages in this set — pages that are open but unedited (e.g. the
+     * journals page being viewed) are still reloaded when an external change is detected.
+     */
+    fun setUnsavedPageUuids(uuids: StateFlow<Set<String>>?)
 
     /**
      * Emitted when the file watcher detects an external modification to a file.
@@ -87,4 +99,34 @@ interface GraphLoaderPort {
         mode: ParseMode = ParseMode.FULL,
         priority: DatabaseWriteActor.Priority = DatabaseWriteActor.Priority.HIGH,
     )
+
+    /**
+     * Force-parses [content] into the database, bypassing the mtime freshness guard that
+     * [parseAndSavePage] applies. Used to auto-apply a host-directory change for a page that
+     * isn't currently open — the OPFS mirror's mtime is not updated when a conflicting host
+     * change is detected, so the normal guard would otherwise silently skip the reload. The
+     * default implementation falls back to plain [parseAndSavePage]; [GraphLoader] overrides
+     * this to bypass the guard.
+     */
+    suspend fun applyExternalFileChange(
+        filePath: FilePath,
+        content: String,
+        mode: ParseMode = ParseMode.FULL,
+        priority: DatabaseWriteActor.Priority = DatabaseWriteActor.Priority.HIGH,
+    ) = parseAndSavePage(filePath, content, mode, priority)
+
+    /**
+     * Creates (or re-parses) the journal file for [sectionId] on [date] and returns the Page.
+     * Creates the directory and empty file if absent. sectionId = "" for the global journal.
+     */
+    suspend fun createSectionJournalPage(
+        sectionId: String,
+        date: LocalDate,
+    ): Either<DomainError, Page> = DomainError.DatabaseError.WriteFailed("not implemented").left()
+
+    /**
+     * Updates the section filter used for section-aware path assignment and drain filtering.
+     * Called after the section manifest and states are loaded. Pass null to disable filtering.
+     */
+    fun updateSectionFilter(filter: SectionFilter?) {}
 }

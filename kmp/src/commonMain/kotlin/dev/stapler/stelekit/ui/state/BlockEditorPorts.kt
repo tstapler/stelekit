@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.ui.state
 
+import dev.stapler.stelekit.clipboard.BlockClipboard
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.ui.screens.FormatAction
@@ -39,18 +40,23 @@ interface BlockStructurePort {
     fun handleBackspace(blockUuid: BlockUuid): Job
     fun deleteSelectedBlocks(): Job
     fun moveSelectedBlocks(newParentUuid: BlockUuid?, insertAfterUuid: BlockUuid?): Job
+    fun pasteBlocks(afterBlockUuid: BlockUuid): Job
 }
 
 /** Selection: multi-select mode, range extension. */
 interface BlockSelectionPort {
     val isInSelectionMode: StateFlow<Boolean>
     val selectedBlockUuids: StateFlow<Set<String>>
+    val blockClipboard: StateFlow<BlockClipboard>
     fun enterSelectionMode(uuid: BlockUuid)
     fun toggleBlockSelection(uuid: BlockUuid)
     fun extendSelectionTo(uuid: BlockUuid)
     fun extendSelectionByOne(up: Boolean)
     fun selectAll(pageUuid: PageUuid)
     fun clearSelection()
+    fun copySelectedBlocks(): Job
+    fun cutSelectedBlocks(): Job
+    fun clearClipboard()
 }
 
 /** Navigation and collapse state. */

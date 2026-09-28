@@ -1,7 +1,6 @@
 package dev.stapler.stelekit.performance
 
-import dev.stapler.stelekit.db.DriverFactory
-import dev.stapler.stelekit.db.SteleDatabase
+import dev.stapler.stelekit.db.createTelemetryDatabaseInMemory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -14,8 +13,7 @@ class HistogramRegressionTest {
 
     @Test
     fun `cache_block hit rate is recorded and P50 equals recorded value`() = runBlocking {
-        val driver = DriverFactory().createDriver("jdbc:sqlite::memory:")
-        val database = SteleDatabase(driver)
+        val database = createTelemetryDatabaseInMemory()
         val scope = CoroutineScope(Dispatchers.IO)
         val writer = HistogramWriter(database, scope)
 
@@ -39,8 +37,7 @@ class HistogramRegressionTest {
 
     @Test
     fun `navigation P95 stays within 50ms bucket when all samples are 40ms`() = runBlocking {
-        val driver = DriverFactory().createDriver("jdbc:sqlite::memory:")
-        val database = SteleDatabase(driver)
+        val database = createTelemetryDatabaseInMemory()
         val scope = CoroutineScope(Dispatchers.IO)
         val writer = HistogramWriter(database, scope)
 

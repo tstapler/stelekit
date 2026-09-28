@@ -1,0 +1,24 @@
+"""
+Checked-in SQLDelight generated sources.
+
+Regeneration: run `./gradlew :kmp:generateCommonMainSteleDatabase` then
+  rsync -a kmp/build/generated/sqldelight/code/SteleDatabase/commonMain/ kmp/src/generated/sqldelight/
+after any change to kmp/src/commonMain/sqldelight/*.sq files.
+
+See ADR-001 for rationale on checked-in vs. rule-generated strategy.
+"""
+
+load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library")
+
+# JVM target for desktop/tests
+kt_jvm_library(
+    name = "sqldelight_generated_jvm",
+    srcs = glob(["**/*.kt"]),
+    deps = [
+        "@maven//:app_cash_sqldelight_runtime_jvm",
+        "@maven//:app_cash_sqldelight_coroutines_extensions_jvm",
+        "@maven//:app_cash_sqldelight_async_extensions_jvm",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm",
+    ],
+    visibility = ["//kmp:__subpackages__"],
+)

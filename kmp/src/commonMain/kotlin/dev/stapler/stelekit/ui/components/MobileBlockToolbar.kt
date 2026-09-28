@@ -6,8 +6,15 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.CheckBox
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ContentCut
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.automirrored.filled.FormatIndentDecrease
 import androidx.compose.material.icons.automirrored.filled.FormatIndentIncrease
@@ -25,6 +32,39 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.stapler.stelekit.ui.screens.FormatAction
 
+/**
+ * Specification for a single formatting-overflow-row button.
+ *
+ * Extracted per `project_plans/rich-editing-experience/implementation/architecture-review.md`'s
+ * nitpick threshold ("extract once a 4th call site needs the full icon+label+shortcut+enabled+
+ * onClick tuple") — the formatting overflow row grew to 11 near-identical `TextButton` call
+ * sites, well past that trigger. [label] carries the composable content (glyph/text styling
+ * varies per button — bold "B", italic "I", monospace "</>", etc.) rather than a plain string,
+ * since no single font-weight/style/family/color shape covers all 11 buttons.
+ */
+private data class FormatButtonSpec(
+    val description: String,
+    val onClick: () -> Unit,
+    val label: @Composable () -> Unit
+)
+
+/**
+ * ux.md (i)/criterion 14's exact wording for the Undo/Redo disabled state while a
+ * [dev.stapler.stelekit.ui.DiskConflict] is pending resolution.
+ */
+private const val DISK_CONFLICT_BLOCKED_TOOLTIP = "Resolve file conflict to continue"
+
+@Composable
+private fun FormatToolbarButton(spec: FormatButtonSpec) {
+    TextButton(
+        onClick = spec.onClick,
+        modifier = Modifier.semantics { contentDescription = spec.description }
+    ) {
+        spec.label()
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MobileBlockToolbar(
     editingBlockId: String?,
@@ -35,13 +75,36 @@ fun MobileBlockToolbar(
     onAddBlock: (String) -> Unit = {},
     onUndo: () -> Unit = {},
     onRedo: () -> Unit = {},
+    /**
+     * (i)/ux.md criterion 14: true while a [dev.stapler.stelekit.ui.DiskConflict] is pending
+     * resolution. Undo/Redo render `enabled = false` with a "Resolve file conflict to continue"
+     * tooltip/label instead of their normal Undo/Redo affordance, matching
+     * `AnnotationToolbar`'s existing `canUndo`/`canRedo` grayed-disabled visual language. Callers
+     * must pass a live value (e.g. `collectAsState()`-derived) so Undo/Redo re-enable
+     * automatically once the conflict resolves — never a cached/stale snapshot.
+     */
+    hasDiskConflictPending: Boolean = false,
     onFormat: (FormatAction) -> Unit = {},
     onLinkPicker: (() -> Unit)? = null,
+    onSuggestTags: (() -> Unit)? = null,
     onAttachImage: (() -> Unit)? = null,
+    onCaptureImage: (() -> Unit)? = null,
+    /** GAP-005 (Story D.2.1): toggles the currently-editing block's TODO/DOING/DONE marker. */
+    onTodoToggle: () -> Unit = {},
+    /** GAP-011 / Story D.4.2: explicit, discoverable, non-long-press entry point into block
+     * multi-select — additive fallback alongside the existing long-press entry (`BlockItem.kt`),
+     * not a replacement for it. */
+    onEnterSelectionMode: (String) -> Unit = {},
     isInSelectionMode: Boolean = false,
     selectedCount: Int = 0,
+    onCopyBlocks: () -> Unit = {},
+    onCutBlocks: () -> Unit = {},
     onDeleteSelected: () -> Unit = {},
     onClearSelection: () -> Unit = {},
+    clipboardEmpty: Boolean = true,
+    onPaste: () -> Unit = {},
+    onClearClipboard: () -> Unit = {},
+    onSelectAll: (() -> Unit)? = null,
     isLeftHanded: Boolean = false,
     modifier: Modifier = Modifier
 ) {
@@ -67,6 +130,12 @@ fun MobileBlockToolbar(
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Row {
+                    IconButton(onClick = onCopyBlocks) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy selected")
+                    }
+                    IconButton(onClick = onCutBlocks) {
+                        Icon(Icons.Default.ContentCut, contentDescription = "Cut selected")
+                    }
                     IconButton(onClick = onDeleteSelected) {
                         Icon(Icons.Default.Delete, contentDescription = "Delete selected")
                     }
@@ -85,65 +154,100 @@ fun MobileBlockToolbar(
                             .fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceEvenly
                     ) {
-                        TextButton(
-                            onClick = { onFormat(FormatAction.BOLD) },
-                            modifier = Modifier.semantics { contentDescription = "Bold" }
-                        ) {
-                            Text("B", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                        }
-                        TextButton(
-                            onClick = { onFormat(FormatAction.ITALIC) },
-                            modifier = Modifier.semantics { contentDescription = "Italic" }
-                        ) {
-                            Text(
-                                "I", fontWeight = FontWeight.Normal, fontSize = 16.sp,
-                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
-                            )
-                        }
-                        TextButton(
-                            onClick = { onFormat(FormatAction.STRIKETHROUGH) },
-                            modifier = Modifier.semantics { contentDescription = "Strikethrough" }
-                        ) {
-                            Text(
-                                "S", fontSize = 16.sp,
-                                textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough
-                            )
-                        }
-                        TextButton(
-                            onClick = { onFormat(FormatAction.CODE) },
-                            modifier = Modifier.semantics { contentDescription = "Code" }
-                        ) {
-                            Text(
-                                "</>", fontSize = 14.sp,
-                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
-                            )
-                        }
-                        TextButton(
-                            onClick = { onFormat(FormatAction.HIGHLIGHT) },
-                            modifier = Modifier.semantics { contentDescription = "Highlight" }
-                        ) {
-                            Text("H", fontSize = 16.sp, color = MaterialTheme.colorScheme.tertiary)
-                        }
-                        TextButton(
-                            onClick = { onFormat(FormatAction.QUOTE) },
-                            modifier = Modifier.semantics { contentDescription = "Quote" }
-                        ) {
-                            Text(">_", fontSize = 14.sp,
-                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
-                        }
-                        TextButton(
-                            onClick = { onFormat(FormatAction.NUMBERED_LIST) },
-                            modifier = Modifier.semantics { contentDescription = "Numbered list" }
-                        ) {
-                            Text("1.", fontSize = 14.sp,
-                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
-                        }
-                        TextButton(
-                            onClick = { onFormat(FormatAction.HEADING) },
-                            modifier = Modifier.semantics { contentDescription = "Heading" }
-                        ) {
-                            Text("H1", fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                        }
+                        val formattingButtons = listOf(
+                            FormatButtonSpec(
+                                description = "Bold",
+                                onClick = { onFormat(FormatAction.BOLD) }
+                            ) {
+                                Text("B", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            },
+                            FormatButtonSpec(
+                                description = "Italic",
+                                onClick = { onFormat(FormatAction.ITALIC) }
+                            ) {
+                                Text(
+                                    "I", fontWeight = FontWeight.Normal, fontSize = 16.sp,
+                                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                                )
+                            },
+                            FormatButtonSpec(
+                                description = "Strikethrough",
+                                onClick = { onFormat(FormatAction.STRIKETHROUGH) }
+                            ) {
+                                Text(
+                                    "S", fontSize = 16.sp,
+                                    textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough
+                                )
+                            },
+                            FormatButtonSpec(
+                                description = "Code",
+                                onClick = { onFormat(FormatAction.CODE) }
+                            ) {
+                                Text(
+                                    "</>", fontSize = 14.sp,
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                )
+                            },
+                            FormatButtonSpec(
+                                description = "Highlight",
+                                onClick = { onFormat(FormatAction.HIGHLIGHT) }
+                            ) {
+                                Text("H", fontSize = 16.sp, color = MaterialTheme.colorScheme.tertiary)
+                            },
+                            FormatButtonSpec(
+                                description = "Quote",
+                                onClick = { onFormat(FormatAction.QUOTE) }
+                            ) {
+                                Text(
+                                    ">_", fontSize = 14.sp,
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                )
+                            },
+                            FormatButtonSpec(
+                                description = "Numbered list",
+                                onClick = { onFormat(FormatAction.NUMBERED_LIST) }
+                            ) {
+                                Text(
+                                    "1.", fontSize = 14.sp,
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                )
+                            },
+                            FormatButtonSpec(
+                                description = "Heading",
+                                onClick = { onFormat(FormatAction.HEADING) }
+                            ) {
+                                Text("H1", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            },
+                            // GAP-005 / D.2.1 (design/ux.md surface (a)): TODO is modeled via the
+                            // dedicated TodoState/applyTodoToggle plumbing (Phase C.1), not a
+                            // FormatAction case — dispatched through onTodoToggle, not onFormat.
+                            FormatButtonSpec(
+                                description = "Toggle TODO",
+                                onClick = onTodoToggle
+                            ) {
+                                Text("☑ TODO", fontSize = 13.sp)
+                            },
+                            // GAP-008 / D.2.1: surfaces FormatAction.CODE_BLOCK (Phase C.2.1) to the
+                            // mobile toolbar — previously keyboard-only.
+                            FormatButtonSpec(
+                                description = "Code block",
+                                onClick = { onFormat(FormatAction.CODE_BLOCK) }
+                            ) {
+                                Text(
+                                    "{ } Code block", fontSize = 13.sp,
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                )
+                            },
+                            // GAP-009 / D.2.1: surfaces FormatAction.TABLE_INSERT (Phase C.2.2) to the
+                            // mobile toolbar — previously no insertion affordance existed anywhere.
+                            FormatButtonSpec(
+                                description = "Table",
+                                onClick = { onFormat(FormatAction.TABLE_INSERT) }
+                            ) {
+                                Text("▦ Table", fontSize = 13.sp)
+                            }
+                        )
+                        formattingButtons.forEach { spec -> FormatToolbarButton(spec) }
                     }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
                 }
@@ -187,12 +291,28 @@ fun MobileBlockToolbar(
                                 fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
                             )
                         }
+                        if (onSuggestTags != null) {
+                            IconButton(
+                                onClick = onSuggestTags,
+                                modifier = Modifier.semantics { contentDescription = "Suggest tags" }
+                            ) {
+                                Icon(Icons.Default.Label, contentDescription = null)
+                            }
+                        }
                         if (onAttachImage != null) {
                             IconButton(
                                 onClick = onAttachImage,
                                 modifier = Modifier.semantics { contentDescription = "Attach image" }
                             ) {
                                 Icon(Icons.Default.AttachFile, contentDescription = null)
+                            }
+                        }
+                        if (onCaptureImage != null) {
+                            IconButton(
+                                onClick = onCaptureImage,
+                                modifier = Modifier.semantics { contentDescription = "Capture photo" }
+                            ) {
+                                Icon(Icons.Default.CameraAlt, contentDescription = null)
                             }
                         }
                     }
@@ -216,11 +336,33 @@ fun MobileBlockToolbar(
 
                 // Second row: undo/redo (always visible) + structural actions (editing only)
                 val undoRedo: @Composable RowScope.() -> Unit = {
-                    IconButton(onClick = onUndo) {
-                        Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = "Undo")
+                    val undoDescription = if (hasDiskConflictPending) {
+                        DISK_CONFLICT_BLOCKED_TOOLTIP
+                    } else {
+                        "Undo"
                     }
-                    IconButton(onClick = onRedo) {
-                        Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = "Redo")
+                    TooltipBox(
+                        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                        tooltip = { PlainTooltip { Text(undoDescription) } },
+                        state = rememberTooltipState(),
+                    ) {
+                        IconButton(onClick = onUndo, enabled = !hasDiskConflictPending) {
+                            Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = undoDescription)
+                        }
+                    }
+                    val redoDescription = if (hasDiskConflictPending) {
+                        DISK_CONFLICT_BLOCKED_TOOLTIP
+                    } else {
+                        "Redo"
+                    }
+                    TooltipBox(
+                        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                        tooltip = { PlainTooltip { Text(redoDescription) } },
+                        state = rememberTooltipState(),
+                    ) {
+                        IconButton(onClick = onRedo, enabled = !hasDiskConflictPending) {
+                            Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = redoDescription)
+                        }
                     }
                 }
                 val structuralActions: @Composable RowScope.() -> Unit = {
@@ -233,6 +375,25 @@ fun MobileBlockToolbar(
                         }
                         IconButton(onClick = { onAddBlock(editingBlockId) }) {
                             Icon(Icons.Default.Add, contentDescription = "New Block")
+                        }
+                        // GAP-011 / Story D.4.2: explicit, non-long-press entry point into
+                        // multi-select — for mouse-only desktop sessions and assistive-tech users
+                        // who cannot perform a long-press. Additive alongside the existing
+                        // long-press entry (BlockItem.kt), which is unchanged.
+                        IconButton(onClick = { onEnterSelectionMode(editingBlockId) }) {
+                            Icon(Icons.Default.CheckCircle, contentDescription = "Select blocks")
+                        }
+                    } else if (onSelectAll != null) {
+                        IconButton(onClick = onSelectAll) {
+                            Icon(Icons.Default.CheckBox, contentDescription = "Select all blocks")
+                        }
+                    }
+                    if (!clipboardEmpty) {
+                        IconButton(onClick = onPaste) {
+                            Icon(Icons.Default.ContentPaste, contentDescription = "Paste")
+                        }
+                        IconButton(onClick = onClearClipboard) {
+                            Icon(Icons.Default.Close, contentDescription = "Clear clipboard")
                         }
                     }
                 }

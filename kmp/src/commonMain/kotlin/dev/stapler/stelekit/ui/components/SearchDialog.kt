@@ -7,7 +7,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -28,7 +27,6 @@ import dev.stapler.stelekit.ui.LocalWindowSizeClass
 import dev.stapler.stelekit.ui.isMobile
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import arrow.core.Either
@@ -36,11 +34,13 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.repository.SearchScope
 import dev.stapler.stelekit.ui.screens.ParsedQuery
-import dev.stapler.stelekit.ui.screens.PreviewPanelContent
 import dev.stapler.stelekit.ui.screens.SearchResultItem
 import dev.stapler.stelekit.ui.screens.SearchViewModel
 import dev.stapler.stelekit.util.toTitleCase
 import kotlinx.coroutines.flow.Flow
+
+@Composable
+expect fun SearchDialogWindowEffect()
 
 private val REGEX_TAG_FILTER = Regex("""#\S+""")
 private val REGEX_SCOPE_FILTER = Regex("""/(pages?|blocks?|journal|current)\b""", RegexOption.IGNORE_CASE)
@@ -101,6 +101,7 @@ fun SearchDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
+        SearchDialogWindowEffect()
         val isMobile = LocalWindowSizeClass.current.isMobile
 
         val keyEventHandler: (KeyEvent) -> Boolean = { keyEvent ->
@@ -218,7 +219,10 @@ fun SearchDialog(
                     if (showingEmpty && uiState.recentPages.isNotEmpty()) {
                         // Show recent pages list
                         LazyColumn(
-                            modifier = (if (isMobile) Modifier.fillMaxSize() else Modifier.heightIn(max = 300.dp)).fillMaxWidth()
+                            modifier = (if (isMobile) Modifier.fillMaxSize() else Modifier.heightIn(max = 300.dp)).fillMaxWidth(),
+                            // Top inset so the first row clears the card's rounded corner/shadow
+                            // instead of sitting flush against it (was rendering half-hidden).
+                            contentPadding = PaddingValues(top = 8.dp)
                         ) {
                             item {
                                 Text(
@@ -264,7 +268,11 @@ fun SearchDialog(
                                 Column(modifier = if (isMobile) Modifier.fillMaxSize() else Modifier) {
                                     LazyColumn(
                                         state = listState,
-                                        modifier = (if (isMobile) Modifier.weight(1f) else Modifier.heightIn(max = 400.dp)).fillMaxWidth()
+                                        modifier = (if (isMobile) Modifier.weight(1f) else Modifier.heightIn(max = 400.dp)).fillMaxWidth(),
+                                        // Same top inset as the recent-pages list above — keeps the
+                                        // first row (often the "Create page" item) fully clear of the
+                                        // card's rounded corner/shadow so it isn't visually cut off.
+                                        contentPadding = PaddingValues(top = 8.dp)
                                     ) {
                                         itemsIndexed(uiState.results) { index, item ->
                                             when (item) {
@@ -511,6 +519,7 @@ fun SearchResultRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(min = 48.dp)
             .background(if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) else Color.Transparent)
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 8.dp),
@@ -580,6 +589,7 @@ fun SearchResultRow(
     subtitle: String,
     isSelected: Boolean,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
     snippet: String? = null
 ) = SearchResultRow(
     title = title,
@@ -588,7 +598,8 @@ fun SearchResultRow(
     inlineTags = emptyList(),
     snippet = snippet,
     isSelected = isSelected,
-    onClick = onClick
+    onClick = onClick,
+    modifier = modifier,
 )
 
 /**

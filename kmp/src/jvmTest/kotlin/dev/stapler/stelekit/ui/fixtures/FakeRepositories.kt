@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.flowOf
+import dev.stapler.stelekit.util.FractionalIndexing
 import kotlin.time.Clock
 import kotlinx.datetime.LocalDate
 
@@ -40,6 +41,8 @@ class InMemorySettings : Settings {
     override fun putString(key: String, value: String) {
         store[key] = value
     }
+
+    override fun containsKey(key: String): Boolean = store.containsKey(key)
 }
 
 open class FakeFileSystem : FileSystem {
@@ -66,9 +69,6 @@ open class FakePageRepository(initialPages: List<Page> = emptyList()) : PageRepo
 
     override fun getPageByName(name: String): Flow<Either<DomainError, Page?>> =
         _pages.map { pages -> pages.values.find { it.name == name }.right() }
-
-    override fun getAllPages(): Flow<Either<DomainError, List<Page>>> =
-        _pages.map { it.values.toList().right() }
 
     override fun getJournalPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
         _pages.map { pages ->
@@ -97,8 +97,32 @@ open class FakePageRepository(initialPages: List<Page> = emptyList()) : PageRepo
     override fun getRecentPages(limit: Int): Flow<Either<DomainError, List<Page>>> =
         _pages.map { pages -> pages.values.sortedByDescending { it.updatedAt }.take(limit).right() }
 
-    override fun getUnloadedPages(): Flow<Either<DomainError, List<Page>>> =
-        _pages.map { pages -> pages.values.filter { !it.isContentLoaded }.right() }
+    override fun getFavoritePages(): Flow<Either<DomainError, List<Page>>> =
+        _pages.map { pages -> pages.values.filter { it.isFavorite }.sortedBy { it.name }.right() }
+
+    override fun getUnloadedPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
+        _pages.map { pages ->
+            pages.values.filter { !it.isContentLoaded }
+                .sortedBy { it.uuid.value }.drop(offset).take(limit).right()
+        }
+
+    override suspend fun countUnloadedPages(): Either<DomainError, Long> =
+        _pages.value.values.count { !it.isContentLoaded }.toLong().right()
+
+    override fun getPageNameEntries(): Flow<Either<DomainError, List<dev.stapler.stelekit.repository.PageNameEntry>>> =
+        _pages.map { pages ->
+            pages.values.map { dev.stapler.stelekit.repository.PageNameEntry(it.name, it.isJournal) }.right()
+        }
+
+    override suspend fun getPagesByNames(names: Collection<String>): Either<DomainError, List<Page>> {
+        val lower = names.mapTo(HashSet()) { it.lowercase() }
+        return _pages.value.values.filter { it.name.lowercase() in lower }.right()
+    }
+
+    override suspend fun getJournalPagesByDates(dates: Collection<LocalDate>): Either<DomainError, List<Page>> {
+        val dateSet = dates.toHashSet()
+        return _pages.value.values.filter { it.journalDate != null && it.journalDate in dateSet }.right()
+    }
 
     override suspend fun savePage(page: Page): Either<DomainError, Unit> {
         _pages.value = _pages.value + (page.uuid.value to page)
@@ -154,13 +178,13 @@ open class FakeBlockRepository(blocksByPage: Map<String, List<Block>> = emptyMap
 
     override fun getBlockChildren(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> =
         _blocks.map { blocks ->
-            blocks.values.filter { it.parentUuid == blockUuid.value }.sortedBy { it.position }.right()
+            blocks.values.filter { it.parentUuid == blockUuid }.sortedBy { it.position }.right()
         }
 
     override fun getBlockSiblings(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> =
         _blocks.map { blocks ->
             val block = blocks[blockUuid.value] ?: return@map emptyList<Block>().right()
-            blocks.values.filter { it.parentUuid == block.parentUuid && it.uuid.value != blockUuid.value }.sortedBy { it.position }.right()
+            blocks.values.filter { it.parentUuid == block.parentUuid && it.uuid != blockUuid }.sortedBy { it.position }.right()
         }
 
     override suspend fun saveBlock(block: Block): Either<DomainError, Unit> {
@@ -193,7 +217,7 @@ open class FakeBlockRepository(blocksByPage: Map<String, List<Block>> = emptyMap
         if (deleteChildren) {
             val toDelete = mutableSetOf(blockUuid.value)
             fun collectChildren(uuid: String) {
-                current.values.filter { it.parentUuid == uuid }.forEach {
+                current.values.filter { it.parentUuid?.value == uuid }.forEach {
                     toDelete.add(it.uuid.value)
                     collectChildren(it.uuid.value)
                 }
@@ -201,7 +225,7 @@ open class FakeBlockRepository(blocksByPage: Map<String, List<Block>> = emptyMap
             collectChildren(blockUuid.value)
             _blocks.value = current - toDelete
         } else {
-            val children = current.values.filter { it.parentUuid == blockUuid.value }
+            val children = current.values.filter { it.parentUuid == blockUuid }
             for (child in children) {
                 val levelDelta = 0 - child.level
                 val updatedChild = child.copy(parentUuid = null, level = 0)
@@ -231,14 +255,14 @@ open class FakeBlockRepository(blocksByPage: Map<String, List<Block>> = emptyMap
         return Unit.right()
     }
 
-    override suspend fun moveBlock(blockUuid: BlockUuid, newParentUuid: BlockUuid?, newPosition: Int): Either<DomainError, Unit> {
+    override suspend fun moveBlock(blockUuid: BlockUuid, newParentUuid: BlockUuid?, newPosition: String): Either<DomainError, Unit> {
         val current = _blocks.value.toMutableMap()
         val block = current[blockUuid.value] ?: return Unit.right()
 
         val newLevel = if (newParentUuid == null) 0 else (current[newParentUuid.value]?.level ?: -1) + 1
         val levelDelta = newLevel - block.level
 
-        current[blockUuid.value] = block.copy(parentUuid = newParentUuid?.value, position = newPosition, level = newLevel)
+        current[blockUuid.value] = block.copy(parentUuid = newParentUuid, position = newPosition, level = newLevel)
 
         if (levelDelta != 0) {
             val updates = mutableMapOf<String, Block>()
@@ -262,10 +286,11 @@ open class FakeBlockRepository(blocksByPage: Map<String, List<Block>> = emptyMap
         if (blockIndex <= 0) return Unit.right()
 
         val prevSibling = siblings[blockIndex - 1]
-        val prevSiblingChildren = current.values.filter { it.parentUuid == prevSibling.uuid.value }
-        val newPosition = if (prevSiblingChildren.isEmpty()) 0 else prevSiblingChildren.maxOf { it.position } + 1
+        val prevSiblingChildren = current.values.filter { it.parentUuid == prevSibling.uuid }
+        val lastChildPosition = prevSiblingChildren.maxByOrNull { it.position }?.position
+        val newPosition = FractionalIndexing.generateKeyBetween(lastChildPosition, null)
 
-        current[block.uuid.value] = block.copy(parentUuid = prevSibling.uuid.value, level = block.level + 1, position = newPosition)
+        current[block.uuid.value] = block.copy(parentUuid = prevSibling.uuid, level = block.level + 1, position = newPosition)
 
         val updates = mutableMapOf<String, Block>()
         adjustDescendantLevels(block.uuid.value, +1, current, updates)
@@ -280,21 +305,19 @@ open class FakeBlockRepository(blocksByPage: Map<String, List<Block>> = emptyMap
         val block = current[blockUuid.value] ?: return Unit.right()
         val parentUuid = block.parentUuid ?: return Unit.right()
 
-        val parent = current[parentUuid] ?: return Unit.right()
+        val parent = current[parentUuid.value] ?: return Unit.right()
         val grandParentUuid = parent.parentUuid
 
         val grandparentChildren = current.values
             .filter { it.pageUuid == block.pageUuid && it.parentUuid == grandParentUuid }
             .sortedBy { it.position }
 
-        val parentInGrandchildren = grandparentChildren.find { it.uuid.value == parentUuid }
-        val newPosition = (parentInGrandchildren?.position ?: -1) + 1
-
-        for (sibling in grandparentChildren) {
-            if (sibling.position >= newPosition) {
-                current[sibling.uuid.value] = sibling.copy(position = sibling.position + 1)
-            }
-        }
+        val parentInGrandchildren = grandparentChildren.find { it.uuid == parentUuid }
+        val parentPosition = parentInGrandchildren?.position
+        val nextSiblingPosition = grandparentChildren
+            .filter { parentPosition == null || it.position > parentPosition }
+            .minByOrNull { it.position }?.position
+        val newPosition = FractionalIndexing.generateKeyBetween(parentPosition, nextSiblingPosition)
 
         current[block.uuid.value] = block.copy(parentUuid = grandParentUuid, level = parent.level, position = newPosition)
 
@@ -346,13 +369,15 @@ open class FakeBlockRepository(blocksByPage: Map<String, List<Block>> = emptyMap
 
         current[blockUuid.value] = blockA.copy(content = blockA.content + separator + blockB.content)
 
-        val childrenOfB = current.values.filter { it.parentUuid == blockB.uuid.value }.sortedBy { it.position }
-        val lastChildOfA = current.values.filter { it.parentUuid == blockA.uuid.value }.maxByOrNull { it.position }
-        var nextPos = (lastChildOfA?.position ?: -1) + 1
+        val childrenOfB = current.values.filter { it.parentUuid == blockB.uuid }.sortedBy { it.position }
+        val lastChildOfA = current.values.filter { it.parentUuid == blockA.uuid }.maxByOrNull { it.position }
+        var lastPos: String? = lastChildOfA?.position
         val levelDelta = blockA.level + 1 - blockB.level
 
         for (child in childrenOfB) {
-            val updated = child.copy(parentUuid = blockA.uuid.value, position = nextPos++, level = child.level + levelDelta)
+            val newPos = FractionalIndexing.generateKeyBetween(lastPos, null)
+            val updated = child.copy(parentUuid = blockA.uuid, position = newPos, level = child.level + levelDelta)
+            lastPos = newPos
             current[child.uuid.value] = updated
             val updates = mutableMapOf<String, Block>()
             adjustDescendantLevels(child.uuid.value, levelDelta, current, updates)
@@ -369,10 +394,10 @@ open class FakeBlockRepository(blocksByPage: Map<String, List<Block>> = emptyMap
         val firstPart = block.content.substring(0, cursorPosition).trim()
         val secondPart = block.content.substring(cursorPosition).trim()
 
-        val newPos = block.position + 1
-        current.values.filter { it.parentUuid == block.parentUuid && it.pageUuid == block.pageUuid && it.position >= newPos }.forEach {
-            current[it.uuid.value] = it.copy(position = it.position + 1)
-        }
+        val nextSiblingPos = current.values
+            .filter { it.parentUuid == block.parentUuid && it.pageUuid == block.pageUuid && it.position > block.position }
+            .minByOrNull { it.position }?.position
+        val newPos = FractionalIndexing.generateKeyBetween(block.position, nextSiblingPos)
 
         current[blockUuid.value] = block.copy(content = firstPart)
         val newBlock = block.copy(
@@ -408,7 +433,7 @@ open class FakeBlockRepository(blocksByPage: Map<String, List<Block>> = emptyMap
         visited.add(parentUuid)
 
         val currentBlocks = snapshot + updates
-        val children = currentBlocks.values.filter { it.parentUuid == parentUuid }
+        val children = currentBlocks.values.filter { it.parentUuid?.value == parentUuid }
 
         for (child in children) {
             val newLevel = child.level + delta
@@ -457,7 +482,7 @@ class PopulatedFakeBlockRepository : FakeBlockRepository() {
                 uuid = BlockUuid("block-1"),
                 pageUuid = PageUuid("page-1"),
                 content = "Block 1",
-                position = 0,
+                position = "a0",
                 createdAt = now,
                 updatedAt = now
             ),
@@ -465,7 +490,7 @@ class PopulatedFakeBlockRepository : FakeBlockRepository() {
                 uuid = BlockUuid("block-2"),
                 pageUuid = PageUuid("page-1"),
                 content = "Block 2",
-                position = 1,
+                position = "a1",
                 createdAt = now,
                 updatedAt = now
             )

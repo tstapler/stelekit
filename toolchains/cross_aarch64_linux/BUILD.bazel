@@ -1,0 +1,113 @@
+# Cross-compiling cc_toolchain: x86_64-linux exec -> aarch64-linux-gnu target.
+#
+# Root cause this works around: Bazel's default autoconfigured C++ toolchain
+# (`local_config_cc`, wired in by bzlmod's built-in `cc` module extension) is
+# native-only — it only supports compiling for the exact host platform Bazel
+# runs on. `rust_shared_library`/`cargo_build_script` targets (specifically
+# `@@rules_rust+//ffi/cc/allocator_library:cc_allocator_library`, a transitive
+# dep of the libsql JNI bridge) require a real `cc_toolchain` for whatever
+# `--platforms=` target is requested, so cross-compiling the Rust library to
+# aarch64-unknown-linux-gnu from the x86_64 GitHub Actions runner fails
+# toolchain resolution for `@@bazel_tools//tools/cpp:toolchain_type` even
+# after a matching Rust toolchain is registered (MODULE.bazel's
+# `rust.toolchain(extra_target_triples = [...])`) — the Rust and C++
+# toolchain types resolve independently, and only the Rust one was fixed.
+#
+# The fix: define an explicit cc_toolchain that shells out to the
+# `aarch64-linux-gnu-gcc` cross-compiler + binutils already installed by
+# build-native-libs.yml's "Install cross-linker" step
+# (`apt-get install gcc-aarch64-linux-gnu`, which also pulls in
+# `libc6-dev-arm64-cross` providing the aarch64 sysroot under
+# /usr/aarch64-linux-gnu/), and register it only for the
+# x86_64-linux -> aarch64-linux target/exec pair so it cannot shadow the
+# working native toolchains (x86_64-linux, macOS, Windows).
+#
+# `cc_toolchain_config` here is the same rule Bazel's own `cc_autoconf` uses
+# internally to generate `local_config_cc` (re-exported publicly by rules_cc
+# at @rules_cc//cc/private/toolchain/unix_cc_toolchain_config.bzl) — it is
+# the standard, documented way to hand-declare a Unix cc_toolchain.
+
+load("@rules_cc//cc/private/toolchain:unix_cc_toolchain_config.bzl", "cc_toolchain_config")
+load("@rules_cc//cc:defs.bzl", "cc_toolchain")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_toolchain_config(
+    name = "aarch64_linux_toolchain_config",
+    cpu = "aarch64",
+    compiler = "gcc",
+    toolchain_identifier = "cross-aarch64-linux-gnu",
+    host_system_name = "x86_64-unknown-linux-gnu",
+    target_system_name = "aarch64-linux-gnu",
+    target_libc = "gnu",
+    abi_version = "gcc",
+    abi_libc_version = "glibc_unknown",
+    cxx_builtin_include_directories = [
+        "/usr/aarch64-linux-gnu/include",
+        "/usr/aarch64-linux-gnu/include/c++",
+        "/usr/lib/gcc-cross/aarch64-linux-gnu",
+        "/usr/lib/gcc-cross/aarch64-linux-gnu/include",
+        "/usr/include",
+    ],
+    tool_paths = {
+        "gcc": "/usr/bin/aarch64-linux-gnu-gcc",
+        "cpp": "/usr/bin/aarch64-linux-gnu-cpp",
+        "g++": "/usr/bin/aarch64-linux-gnu-g++",
+        "ar": "/usr/bin/aarch64-linux-gnu-ar",
+        "ld": "/usr/bin/aarch64-linux-gnu-ld",
+        "nm": "/usr/bin/aarch64-linux-gnu-nm",
+        "objcopy": "/usr/bin/aarch64-linux-gnu-objcopy",
+        "objdump": "/usr/bin/aarch64-linux-gnu-objdump",
+        "strip": "/usr/bin/aarch64-linux-gnu-strip",
+        "gcov": "/usr/bin/aarch64-linux-gnu-gcov",
+        "llvm-cov": "/usr/bin/aarch64-linux-gnu-gcov",
+        "dwp": "/usr/bin/dwp",
+    },
+    compile_flags = [
+        "-fstack-protector",
+        "-Wall",
+        "-fno-omit-frame-pointer",
+    ],
+    link_flags = [
+        "-fuse-ld=bfd",
+        "-Wl,--build-id=md5",
+        "-Wl,--hash-style=gnu",
+        "-no-canonical-prefixes",
+    ],
+    opt_compile_flags = [
+        "-O2",
+        "-DNDEBUG",
+    ],
+    unfiltered_compile_flags = [
+        "-no-canonical-prefixes",
+    ],
+)
+
+cc_toolchain(
+    name = "aarch64_linux_cc_toolchain",
+    toolchain_identifier = "cross-aarch64-linux-gnu",
+    toolchain_config = ":aarch64_linux_toolchain_config",
+    all_files = "@bazel_tools//tools/cpp:empty",
+    ar_files = "@bazel_tools//tools/cpp:empty",
+    as_files = "@bazel_tools//tools/cpp:empty",
+    compiler_files = "@bazel_tools//tools/cpp:empty",
+    dwp_files = "@bazel_tools//tools/cpp:empty",
+    linker_files = "@bazel_tools//tools/cpp:empty",
+    objcopy_files = "@bazel_tools//tools/cpp:empty",
+    strip_files = "@bazel_tools//tools/cpp:empty",
+    supports_param_files = 0,
+)
+
+toolchain(
+    name = "aarch64_linux_toolchain",
+    exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    target_compatible_with = [
+        "@platforms//cpu:aarch64",
+        "@platforms//os:linux",
+    ],
+    toolchain = ":aarch64_linux_cc_toolchain",
+    toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+)

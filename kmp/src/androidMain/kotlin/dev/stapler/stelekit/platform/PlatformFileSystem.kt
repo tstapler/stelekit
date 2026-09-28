@@ -5,17 +5,17 @@ import android.net.Uri
 import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
-import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.withLock
 
 actual class PlatformFileSystem actual constructor() : FileSystem {
     private var context: Context? = null
     private var onPickDirectory: (suspend () -> String?)? = null
     private var onPickSaveFile: (suspend (suggestedName: String, mimeType: String) -> String?)? = null
+    private var onPickFile: (suspend () -> String?)? = null
     private val maxPathLength = 4096
     private val maxFileSize = 100 * 1024 * 1024
     private val homeDir: String by lazy {
@@ -37,18 +37,28 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     private val knownExistingFiles: MutableSet<String> = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap())
     private val knownExistingDirs: MutableSet<String> = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap())
 
+    // Cached result of StorageManager.getStorageVolumes() — avoids Binder IPC on repeated calls.
+    // Keyed by treeRootDocId since the volume root is stable within a graph session.
+    private var cachedVolumeRoot: java.io.File? = null
+    private var cachedVolumeDocId: String? = null
+
     // Write-behind queue — non-null when MANAGE_EXTERNAL_STORAGE is not granted.
     private var writeBehindQueue: WriteBehindQueue? = null
 
     companion object {
-        private const val TAG = "PlatformFileSystem"
+        private val logger = dev.stapler.stelekit.logging.Logger("PlatformFileSystem")
+        private const val MAX_WARNS_PER_OP = 5
+        private val warnCounts = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger>()
+
+        /** Per-path failures can fire once per file on a revoked SAF grant; the log buffer copies
+         * up to 1000 entries per line, so cap each operation and note the cutoff. */
+        private fun warnThrottled(op: String, message: String, e: Throwable) {
+            val n = warnCounts.getOrPut(op) { java.util.concurrent.atomic.AtomicInteger() }.incrementAndGet()
+            if (n <= MAX_WARNS_PER_OP) logger.warn(message, e)
+            if (n == MAX_WARNS_PER_OP) logger.warn("$op: further failures suppressed")
+        }
         const val PREFS_NAME = "stelekit_prefs"
         const val KEY_SAF_TREE_URI = "saf_tree_uri"
-
-        // Set to false after the first invalidateStaleShadow call in this process.
-        // Allows a full shadow purge on cold start so external writes (e.g. Termux)
-        // are always picked up rather than served from the stale on-device cache.
-        private val freshProcess = AtomicBoolean(true)
 
         fun toSafRoot(treeUri: Uri): String = "saf://${Uri.encode(Uri.decode(treeUri.toString()))}"
 
@@ -63,7 +73,59 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
                 false
             }
         }
+
+        /**
+         * Converts a saf:// path to a real filesystem path.
+         * Requires API 30+ and MANAGE_EXTERNAL_STORAGE permission.
+         * Returns null if conversion is not possible (no permission, old API, non-SAF path).
+         *
+         * [isStorageManager] is injectable for testing (Robolectric can't shadow
+         * Environment.isExternalStorageManager()).
+         */
+        @Suppress("MagicNumber")
+        fun resolveSafToRealPath(
+            safPath: String,
+            context: Context,
+            isStorageManager: () -> Boolean = {
+                android.os.Build.VERSION.SDK_INT >= 30 &&
+                android.os.Environment.isExternalStorageManager()
+            },
+        ): String? {
+            if (!safPath.startsWith("saf://")) return null
+            if (!isStorageManager()) return null
+            val withoutScheme = safPath.removePrefix("saf://")
+            val slashIdx = withoutScheme.indexOf('/')
+            val encodedTreeUri = if (slashIdx >= 0) withoutScheme.substring(0, slashIdx) else withoutScheme
+            val relPath = if (slashIdx >= 0) withoutScheme.substring(slashIdx + 1) else ""
+            val treeUri = try { Uri.parse(Uri.decode(encodedTreeUri)) } catch (_: Exception) { return null }
+            val docId = try { DocumentsContract.getTreeDocumentId(treeUri) } catch (_: Exception) { return null }
+                ?: return null
+            val colonIdx = docId.indexOf(':')
+            if (colonIdx < 0) return null
+            val volumeName = docId.substring(0, colonIdx)
+            val relativeInVolume = docId.substring(colonIdx + 1)
+            val volumeRoot: java.io.File = if (volumeName == "primary") {
+                android.os.Environment.getExternalStorageDirectory()
+            } else {
+                val sm = context.getSystemService(android.os.storage.StorageManager::class.java) ?: return null
+                sm.storageVolumes.firstOrNull { it.uuid?.equals(volumeName, ignoreCase = true) == true }
+                    ?.directory ?: return null
+            }
+            val graphRoot = java.io.File(volumeRoot, relativeInVolume)
+            return if (relPath.isEmpty()) graphRoot.absolutePath else java.io.File(graphRoot, relPath).absolutePath
+        }
     }
+
+    /**
+     * Registers a callback for picking SSH key files from device storage.
+     * The callback must copy the file to app-private storage (context.getDir("ssh_keys", ...))
+     * and return the app-private path. Do NOT call takePersistableUriPermission on the URI.
+     */
+    fun initFilePicker(onPickFile: suspend () -> String?) {
+        this.onPickFile = onPickFile
+    }
+
+    override suspend fun pickFileAsync(): String? = onPickFile?.invoke()
 
     fun init(context: Context, onPickDirectory: (suspend () -> String?)? = null) {
         this.context = context
@@ -72,32 +134,32 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         // Restore persisted SAF URI
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val uriStr = prefs.getString(KEY_SAF_TREE_URI, null)
-        Log.d(TAG, "init: stored SAF URI = $uriStr")
+        logger.debug("init: stored SAF URI = $uriStr")
         if (uriStr != null) {
             try {
                 val uri = Uri.parse(uriStr)
                 val held = context.contentResolver.persistedUriPermissions
-                Log.d(TAG, "init: ${held.size} persistable grants held: ${held.map { "${it.uri} r=${it.isReadPermission} w=${it.isWritePermission}" }}")
+                logger.debug("init: ${held.size} persistable grants held: ${held.map { "${it.uri} r=${it.isReadPermission} w=${it.isWritePermission}" }}")
                 val valid = isSafPermissionValid(context, uri)
-                Log.d(TAG, "init: isSafPermissionValid($uri) = $valid")
+                logger.debug("init: isSafPermissionValid($uri) = $valid")
                 if (valid) {
                     treeUri = uri
                     treeRootDocId = DocumentsContract.getTreeDocumentId(uri).also { docId ->
                         shadowCache = ShadowFileCache(context, ShadowFileCache.graphIdFor(docId))
                     }
-                    Log.d(TAG, "init: SAF restored — treeRootDocId=$treeRootDocId")
+                    logger.debug("init: SAF restored — treeRootDocId=$treeRootDocId")
                 } else {
-                    Log.w(TAG, "init: stored URI has no valid persistable permission — clearing")
+                    logger.warn("init: stored URI has no valid persistable permission — clearing")
                     prefs.edit().remove(KEY_SAF_TREE_URI).apply()
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e(TAG, "init: corrupt URI string — clearing", e)
+                logger.error("init: corrupt URI string — clearing", e)
                 prefs.edit().remove(KEY_SAF_TREE_URI).apply()
             }
         } else {
-            Log.d(TAG, "init: no stored SAF URI — user needs to pick a folder")
+            logger.debug("init: no stored SAF URI — user needs to pick a folder")
         }
     }
 
@@ -143,16 +205,6 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         val treeDocId = DocumentsContract.getTreeDocumentId(resolvedTreeUri)
         val childDocId = if (relativePath.isEmpty()) treeDocId else "$treeDocId/$relativePath"
         return DocumentsContract.buildDocumentUriUsingTree(resolvedTreeUri, childDocId)
-    }
-
-    private fun parseTreeUri(safPath: String): Uri {
-        // Same encoding issue as parseDocumentUri — use stored treeUri directly.
-        return treeUri ?: run {
-            val withoutScheme = safPath.removePrefix("saf://")
-            val slashIdx = withoutScheme.indexOf('/')
-            val encodedTreePart = if (slashIdx >= 0) withoutScheme.substring(0, slashIdx) else withoutScheme
-            Uri.parse(Uri.decode(encodedTreePart))
-        }
     }
 
     /** Returns the stored tree URI (used by MainActivity to pre-fill the folder picker hint). */
@@ -259,10 +311,17 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         val volumeRoot: java.io.File = if (volumeName == "primary") {
             android.os.Environment.getExternalStorageDirectory()
         } else {
-            val ctx = context ?: return null
-            val sm = ctx.getSystemService(android.os.storage.StorageManager::class.java) ?: return null
-            sm.storageVolumes.firstOrNull { it.uuid?.equals(volumeName, ignoreCase = true) == true }
-                ?.directory ?: return null
+            if (cachedVolumeDocId == docId && cachedVolumeRoot != null) {
+                cachedVolumeRoot!!
+            } else {
+                val ctx = context ?: return null
+                val sm = ctx.getSystemService(android.os.storage.StorageManager::class.java) ?: return null
+                val root = sm.storageVolumes.firstOrNull { it.uuid?.equals(volumeName, ignoreCase = true) == true }
+                    ?.directory ?: return null
+                cachedVolumeRoot = root
+                cachedVolumeDocId = docId
+                root
+            }
         }
         // saf://... path: strip "saf://{encodedTreeUri}/{relativePath}"; relativePath is everything after first '/'
         val withoutScheme = safPath.removePrefix("saf://")
@@ -276,6 +335,18 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     // FileSystem implementation — SAF paths
     // -------------------------------------------------------------------------
 
+    override fun resolveAssetUri(graphRoot: String, relativePath: String): String? {
+        if (!graphRoot.startsWith("saf://")) return null
+        val fullPath = "$graphRoot/$relativePath"
+        if (isDirectAccess()) {
+            val realPath = resolveToRealPath(fullPath)
+            if (realPath != null) return "file://$realPath"
+        }
+        return try {
+            parseDocumentUri(fullPath).toString()
+        } catch (_: Exception) { null }
+    }
+
     actual override fun readFile(path: String): String? {
         if (!path.startsWith("saf://")) return legacyReadFile(path)
         if (isDirectAccess()) {
@@ -287,9 +358,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         if (relativePath.isNotEmpty()) {
             val shadow = shadowCache?.resolve(relativePath)
             if (shadow != null) {
-                try { return shadow.readText() } catch (_: Exception) {
-                    Log.d(TAG, "readFile: shadow miss for $relativePath — falling back to SAF")
-                }
+                try { return shadow.readText() } catch (_: Exception) { /* shadow unreadable: fall back to SAF; per-file, so not logged */ }
             }
         }
         return safReadContent(path)
@@ -300,15 +369,75 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         context?.contentResolver?.openInputStream(docUri)?.use {
             it.bufferedReader(Charsets.UTF_8).readText()
         }
-    } catch (e: SecurityException) { Log.w(TAG, "readFile: permission denied for $path", e); null }
-    catch (e: IllegalArgumentException) { Log.w(TAG, "readFile: invalid URI for $path", e); null }
-    catch (e: Exception) { Log.w(TAG, "readFile: unexpected error for $path", e); null }
+    } catch (e: SecurityException) { warnThrottled("readFile", "readFile: permission denied for $path", e); null }
+    catch (e: IllegalArgumentException) { warnThrottled("readFile", "readFile: invalid URI for $path", e); null }
+    catch (e: Exception) { warnThrottled("readFile", "readFile: unexpected error for $path", e); null }
 
     /** Extracts the relative path within the graph (e.g. "pages/Foo.md") from a saf:// URL. */
     private fun relativePathFromSaf(safPath: String): String {
         val withoutScheme = safPath.removePrefix("saf://")
         val slashIdx = withoutScheme.indexOf('/')
         return if (slashIdx >= 0) withoutScheme.substring(slashIdx + 1) else ""
+    }
+
+    override fun readFileBytes(path: String): ByteArray? {
+        if (!path.startsWith("saf://")) return legacyReadFileBytes(path)
+        if (isDirectAccess()) {
+            val realPath = resolveToRealPath(path)
+            if (realPath != null) return legacyReadFileBytes(realPath)
+        }
+        return try {
+            val docUri = parseDocumentUri(path)
+            context?.contentResolver?.openInputStream(docUri)?.use { it.readBytes() }
+        } catch (e: Exception) { null }
+    }
+
+    override fun writeFileBytes(path: String, data: ByteArray): Boolean {
+        if (path.startsWith("content://")) {
+            return try {
+                val ctx = context ?: return false
+                val uri = Uri.parse(path)
+                val stream = ctx.contentResolver.openOutputStream(uri, "wt") ?: return false
+                stream.use { it.write(data); it.flush() }
+                true
+            } catch (e: SecurityException) { warnThrottled("writeFileBytes", "writeFileBytes: permission denied for $path", e); false }
+            catch (e: Exception) { warnThrottled("writeFileBytes", "writeFileBytes: error writing to $path", e); false }
+        }
+        if (!path.startsWith("saf://")) return legacyWriteFileBytes(path, data)
+        if (isDirectAccess()) {
+            val realPath = resolveToRealPath(path)
+            if (realPath != null) return legacyWriteFileBytes(realPath, data)
+        }
+        return try {
+            var docUri = parseDocumentUri(path)
+            val ctx = context ?: return false
+            if (path !in knownExistingFiles) {
+                val docFile = DocumentFile.fromSingleUri(ctx, docUri)
+                if (docFile == null || !docFile.exists()) {
+                    val fileName = path.substringAfterLast('/')
+                    val parentPath = path.substring(0, path.lastIndexOf('/'))
+                    if (parentPath !in knownExistingDirs && !directoryExists(parentPath)) {
+                        if (!createDirectory(parentPath)) return false
+                    }
+                    knownExistingDirs.add(parentPath)
+                    val parentDocUri = parseDocumentUri(parentPath)
+                    val mimeType = when (fileName.substringAfterLast('.').lowercase()) {
+                        "jpg", "jpeg" -> "image/jpeg"
+                        "png" -> "image/png"
+                        "webp" -> "image/webp"
+                        else -> "application/octet-stream"
+                    }
+                    docUri = DocumentsContract.createDocument(
+                        ctx.contentResolver, parentDocUri, mimeType, fileName
+                    ) ?: return false
+                }
+            }
+            ctx.contentResolver.openOutputStream(docUri, "w")?.use { stream ->
+                stream.write(data)
+            }
+            knownExistingFiles.add(path)
+            true
+        } catch (e: Exception) { false }
     }
 
     actual override fun writeFile(path: String, content: String): Boolean {
@@ -349,10 +478,11 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             }
             knownExistingFiles.add(path)
             true
-        } catch (e: SecurityException) { Log.w(TAG, "writeFile: permission denied for $path", e); false }
-        catch (e: IllegalArgumentException) { Log.w(TAG, "writeFile: invalid URI for $path", e); false }
-        catch (e: Exception) { Log.w(TAG, "writeFile: unexpected error for $path", e); false }
+        } catch (e: SecurityException) { warnThrottled("writeFile", "writeFile: permission denied for $path", e); false }
+        catch (e: IllegalArgumentException) { warnThrottled("writeFile", "writeFile: invalid URI for $path", e); false }
+        catch (e: Exception) { warnThrottled("writeFile", "writeFile: unexpected error for $path", e); false }
     }
+
 
     actual override fun listFiles(path: String): List<String> {
         if (!path.startsWith("saf://")) return legacyListFiles(path)
@@ -366,8 +496,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
                 .filter { it.mimeType != DocumentsContract.Document.MIME_TYPE_DIR }
                 .map { it.name }
                 .sorted()
-        } catch (e: SecurityException) { Log.w(TAG, "listFiles: permission denied for $path", e); emptyList() }
-        catch (e: IllegalArgumentException) { Log.w(TAG, "listFiles: invalid URI for $path", e); emptyList() }
+        } catch (e: SecurityException) { warnThrottled("listFiles", "listFiles: permission denied for $path", e); emptyList() }
+        catch (e: IllegalArgumentException) { warnThrottled("listFiles", "listFiles: invalid URI for $path", e); emptyList() }
     }
 
     actual override fun listDirectories(path: String): List<String> {
@@ -382,8 +512,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
                 .filter { it.mimeType == DocumentsContract.Document.MIME_TYPE_DIR }
                 .map { it.name }
                 .sorted()
-        } catch (e: SecurityException) { Log.w(TAG, "listDirectories: permission denied for $path", e); emptyList() }
-        catch (e: IllegalArgumentException) { Log.w(TAG, "listDirectories: invalid URI for $path", e); emptyList() }
+        } catch (e: SecurityException) { warnThrottled("listDirectories", "listDirectories: permission denied for $path", e); emptyList() }
+        catch (e: IllegalArgumentException) { warnThrottled("listDirectories", "listDirectories: invalid URI for $path", e); emptyList() }
     }
 
     actual override fun fileExists(path: String): Boolean {
@@ -395,8 +525,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         return try {
             val docUri = parseDocumentUri(path)
             queryDocumentMimeType(docUri)?.let { it != DocumentsContract.Document.MIME_TYPE_DIR } == true
-        } catch (e: SecurityException) { Log.w(TAG, "fileExists: permission denied for $path", e); false }
-        catch (e: IllegalArgumentException) { Log.w(TAG, "fileExists: invalid URI for $path", e); false }
+        } catch (e: SecurityException) { warnThrottled("fileExists", "fileExists: permission denied for $path", e); false }
+        catch (e: IllegalArgumentException) { warnThrottled("fileExists", "fileExists: invalid URI for $path", e); false }
     }
 
     actual override fun directoryExists(path: String): Boolean {
@@ -408,8 +538,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         return try {
             val docUri = parseDocumentUri(path)
             queryDocumentMimeType(docUri) == DocumentsContract.Document.MIME_TYPE_DIR
-        } catch (e: SecurityException) { Log.w(TAG, "directoryExists: permission denied for $path", e); false }
-        catch (e: IllegalArgumentException) { Log.w(TAG, "directoryExists: invalid URI for $path", e); false }
+        } catch (e: SecurityException) { warnThrottled("directoryExists", "directoryExists: permission denied for $path", e); false }
+        catch (e: IllegalArgumentException) { warnThrottled("directoryExists", "directoryExists: invalid URI for $path", e); false }
     }
 
     actual override fun createDirectory(path: String): Boolean {
@@ -464,9 +594,9 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             )
             if (deleted) knownExistingFiles.remove(path)
             deleted
-        } catch (e: SecurityException) { Log.w(TAG, "deleteFile: permission denied for $path", e); false }
-        catch (e: IllegalArgumentException) { Log.w(TAG, "deleteFile: invalid URI for $path", e); false }
-        catch (e: Exception) { Log.w(TAG, "deleteFile: unexpected error for $path", e); false }
+        } catch (e: SecurityException) { warnThrottled("deleteFile", "deleteFile: permission denied for $path", e); false }
+        catch (e: IllegalArgumentException) { warnThrottled("deleteFile", "deleteFile: invalid URI for $path", e); false }
+        catch (e: Exception) { warnThrottled("deleteFile", "deleteFile: unexpected error for $path", e); false }
     }
 
     actual override fun getLastModifiedTime(path: String): Long? {
@@ -478,8 +608,177 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         return try {
             val docUri = parseDocumentUri(path)
             queryDocumentLastModified(docUri)
-        } catch (e: SecurityException) { Log.w(TAG, "getLastModifiedTime: permission denied for $path", e); null }
-        catch (e: IllegalArgumentException) { Log.w(TAG, "getLastModifiedTime: invalid URI for $path", e); null }
+        } catch (e: SecurityException) { warnThrottled("getLastModifiedTime", "getLastModifiedTime: permission denied for $path", e); null }
+        catch (e: IllegalArgumentException) { warnThrottled("getLastModifiedTime", "getLastModifiedTime: invalid URI for $path", e); null }
+    }
+
+    /**
+     * Renames/moves [from] to [to]. Dispatches on each path's own backend rather than a single
+     * prefix check — [from]/[to] are always within the same [dev.stapler.stelekit.model.StorageLocation]
+     * backend in practice (see [dev.stapler.stelekit.db.AtomicFileRelocationStep]'s staging-to-destination
+     * repoint), but every branch degrades gracefully to a copy+delete fallback rather than failing
+     * outright, so a mixed pair or an unsupported SAF provider still succeeds.
+     */
+    override fun renameFile(from: String, to: String): Boolean {
+        val fromReal = !from.startsWith("saf://") && !from.startsWith("content://")
+        val toReal = !to.startsWith("saf://") && !to.startsWith("content://")
+        if (fromReal && toReal) return legacyRenameFile(from, to)
+        if (from.startsWith("saf://") && to.startsWith("saf://")) {
+            if (isDirectAccess()) {
+                val realFrom = resolveToRealPath(from)
+                val realTo = resolveToRealPath(to)
+                if (realFrom != null && realTo != null) {
+                    val ok = legacyRenameFile(realFrom, realTo)
+                    if (ok) invalidateShadow(from)
+                    return ok
+                }
+            }
+            val ok = safRenameFile(from, to)
+            if (ok) invalidateShadow(from)
+            return ok
+        }
+        // Mixed backends (e.g. real <-> content://) — not produced by any current caller, but the
+        // per-path-dispatching read/write/delete primitives already handle any combination.
+        return genericCopyThenDelete(from, to)
+    }
+
+    private fun legacyRenameFile(from: String, to: String): Boolean {
+        return try {
+            val validatedFrom = validateLegacyPath(expandTilde(from))
+            val validatedTo = validateLegacyPath(expandTilde(to))
+            val oldFile = File(validatedFrom)
+            if (!oldFile.exists()) return false
+            val newFile = File(validatedTo)
+            if (newFile.exists()) return true
+            newFile.parentFile?.let { if (!it.exists()) it.mkdirs() }
+            val renamed = oldFile.renameTo(newFile)
+            if (!renamed) {
+                // Cross-volume renames fail with a plain renameTo — fall back to copy+delete,
+                // matching JvmFileSystemBase.renameFile's approach.
+                oldFile.copyTo(newFile, overwrite = true)
+                oldFile.delete()
+            }
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * SAF rename/move via [DocumentsContract]. A same-directory move is a pure display-name
+     * rename ([DocumentsContract.renameDocument]); a cross-directory move needs
+     * [DocumentsContract.moveDocument] (API 24+, always available at this app's minSdk 26) followed
+     * by a rename if the destination name differs from the source's. Some providers (e.g. some
+     * removable-storage/cloud document providers) don't advertise `FLAG_SUPPORTS_MOVE` and return
+     * null / throw — [genericCopyThenDelete] covers that case via plain stream copy + delete.
+     */
+    private fun safRenameFile(from: String, to: String): Boolean {
+        val ctx = context ?: return false
+        return try {
+            val fromDocUri = parseDocumentUri(from)
+            val fromParentUri = parseParentDocUri(from)
+            val toParentUri = parseParentDocUri(to)
+            val toName = to.substringAfterLast('/')
+            val resultUri: Uri? = if (fromParentUri == toParentUri) {
+                try {
+                    DocumentsContract.renameDocument(ctx.contentResolver, fromDocUri, toName)
+                } catch (_: Exception) { null }
+            } else {
+                val moved = try {
+                    DocumentsContract.moveDocument(ctx.contentResolver, fromDocUri, fromParentUri, toParentUri)
+                } catch (_: Exception) { null }
+                if (moved == null) {
+                    null
+                } else {
+                    val movedName = DocumentFile.fromSingleUri(ctx, moved)?.name
+                    if (movedName != null && movedName != toName) {
+                        try {
+                            DocumentsContract.renameDocument(ctx.contentResolver, moved, toName)
+                        } catch (_: Exception) { null } ?: moved
+                    } else {
+                        moved
+                    }
+                }
+            }
+            if (resultUri != null) {
+                knownExistingFiles.remove(from)
+                knownExistingFiles.add(to)
+                true
+            } else {
+                genericCopyThenDelete(from, to)
+            }
+        } catch (e: SecurityException) {
+            warnThrottled("renameFile", "renameFile: permission denied for $from -> $to", e)
+            false
+        } catch (e: IllegalArgumentException) {
+            warnThrottled("renameFile", "renameFile: invalid URI for $from -> $to", e)
+            false
+        }
+    }
+
+    /** Last-resort rename fallback: read the whole source, write it at the destination, delete the source. */
+    private fun genericCopyThenDelete(from: String, to: String): Boolean {
+        val data = readFileBytes(from) ?: return false
+        if (!writeFileBytes(to, data)) return false
+        return deleteFile(from)
+    }
+
+    /**
+     * Byte size of the file at [path] via a real stat call — [java.io.File.length] for real-path
+     * cases, a [DocumentsContract.Document.COLUMN_SIZE] cursor query (mirrors
+     * [queryDocumentLastModified]'s idiom) for SAF, [OpenableColumns.SIZE] for `content://`.
+     * Overrides [FileSystem.getFileSize]'s default, which reads the whole file into memory.
+     */
+    override fun getFileSize(path: String): Long? {
+        if (path.startsWith("content://")) return contentUriSize(path)
+        if (!path.startsWith("saf://")) return legacyGetFileSize(path)
+        if (isDirectAccess()) {
+            val realPath = resolveToRealPath(path)
+            if (realPath != null) return legacyGetFileSize(realPath)
+        }
+        return try {
+            val docUri = parseDocumentUri(path)
+            queryDocumentSize(docUri)
+        } catch (e: SecurityException) { warnThrottled("getFileSize", "getFileSize: permission denied for $path", e); null }
+        catch (e: IllegalArgumentException) { warnThrottled("getFileSize", "getFileSize: invalid URI for $path", e); null }
+    }
+
+    private fun legacyGetFileSize(path: String): Long? {
+        return try {
+            val expandedPath = expandTilde(path)
+            val validatedPath = validateLegacyPath(expandedPath)
+            val file = File(validatedPath)
+            if (file.exists() && file.isFile) file.length() else null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun queryDocumentSize(docUri: Uri): Long? {
+        val ctx = context ?: return null
+        return ctx.contentResolver.query(
+            docUri,
+            arrayOf(DocumentsContract.Document.COLUMN_SIZE),
+            null, null, null
+        )?.use { cursor ->
+            val idx = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
+            if (idx >= 0 && cursor.moveToFirst() && !cursor.isNull(idx)) cursor.getLong(idx) else null
+        }
+    }
+
+    private fun contentUriSize(uriString: String): Long? {
+        val ctx = context ?: return null
+        return try {
+            val uri = Uri.parse(uriString)
+            ctx.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+                val idx = cursor.getColumnIndex(OpenableColumns.SIZE)
+                if (idx >= 0 && cursor.moveToFirst() && !cursor.isNull(idx)) cursor.getLong(idx) else null
+            }
+        } catch (_: Exception) { null }
     }
 
     override fun listFilesWithModTimes(path: String): List<Pair<String, Long>> {
@@ -504,11 +803,21 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
                 .filter { it.mimeType != DocumentsContract.Document.MIME_TYPE_DIR }
                 .map { it.name to it.lastModified }
                 .sortedBy { it.first }
-        } catch (e: SecurityException) { Log.w(TAG, "listFilesWithModTimes: permission denied for $path", e); emptyList() }
-        catch (e: IllegalArgumentException) { Log.w(TAG, "listFilesWithModTimes: invalid URI for $path", e); emptyList() }
+        } catch (e: SecurityException) { warnThrottled("listFilesWithModTimes", "listFilesWithModTimes: permission denied for $path", e); emptyList() }
+        catch (e: IllegalArgumentException) { warnThrottled("listFilesWithModTimes", "listFilesWithModTimes: invalid URI for $path", e); emptyList() }
     }
 
     actual override fun pickDirectory(): String? = null // Handled via pickDirectoryAsync on Android
+
+    // Story 2.2.1/2.2.2: "App storage" backs a graph with a real path under context.filesDir —
+    // no SAF grant, no ACTION_OPEN_DOCUMENT_TREE launch. validateLegacyPath() below allows
+    // filesDir as a second containment root so read/write of that path actually works.
+    override val supportsAppOwnedStorage: Boolean get() = true
+
+    override fun newAppOwnedGraphPath(): String {
+        val ctx = context ?: error("PlatformFileSystem.init(context) not called")
+        return java.io.File(ctx.filesDir, "graphs/${java.util.UUID.randomUUID()}").absolutePath
+    }
 
     /**
      * Registers the callback that launches ACTION_CREATE_DOCUMENT and returns the chosen
@@ -550,18 +859,18 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
                             treeRootDocId = DocumentsContract.getTreeDocumentId(uri).also { docId ->
                                 shadowCache = ShadowFileCache(ctx, ShadowFileCache.graphIdFor(docId))
                             }
-                            Log.d(TAG, "pickDirectoryAsync: SAF state refreshed — treeRootDocId=$treeRootDocId")
+                            logger.debug("pickDirectoryAsync: SAF state refreshed — treeRootDocId=$treeRootDocId")
                         } else {
-                            Log.w(TAG, "pickDirectoryAsync: permission not valid for $uri after pick")
+                            logger.warn("pickDirectoryAsync: permission not valid for $uri after pick")
                         }
                     } else {
-                        Log.w(TAG, "pickDirectoryAsync: no URI in SharedPreferences after pick")
+                        logger.warn("pickDirectoryAsync: no URI in SharedPreferences after pick")
                     }
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.w(TAG, "pickDirectoryAsync: failed to refresh SAF state", e)
+                warnThrottled("pickDirectoryAsync", "pickDirectoryAsync: failed to refresh SAF state", e)
             }
         }
         return result
@@ -610,6 +919,54 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         writeBehindQueue = queue
     }
 
+    private var onFlushComplete: (suspend (String) -> Unit)? = null
+    private var onFlushPreWrite: (suspend (String) -> Unit)? = null
+    private var onFlushFailed: (suspend (String) -> Unit)? = null
+    private var spanEmitter: dev.stapler.stelekit.performance.SpanEmitter? = null
+    private var gitShadowKeyProvider: (() -> String?)? = null
+
+    /** Registers the [dev.stapler.stelekit.performance.SpanEmitter] used to instrument write-behind SAF flushes. */
+    override fun setSpanEmitter(spanEmitter: dev.stapler.stelekit.performance.SpanEmitter?) {
+        this.spanEmitter = spanEmitter
+    }
+
+    /**
+     * Registers a callback invoked after each successful write-behind SAF flush.
+     * Used to call [dev.stapler.stelekit.db.GraphLoader.markFileWrittenByUs] so the
+     * FileRegistry records the post-flush SAF mtime and suppresses the subsequent poll event
+     * (critical for encrypted .md.stek files where the content-hash guard is disabled).
+     */
+    override fun setOnFlushComplete(callback: (suspend (String) -> Unit)?) {
+        onFlushComplete = callback
+    }
+
+    /**
+     * Registers a callback invoked before each write-behind SAF write begins.
+     * Used to call [dev.stapler.stelekit.db.GraphLoader.preMarkFileWrite] to set the
+     * Long.MAX_VALUE sentinel, closing the race window for encrypted .md.stek files.
+     */
+    override fun setOnFlushPreWrite(callback: (suspend (String) -> Unit)?) {
+        onFlushPreWrite = callback
+    }
+
+    /**
+     * Registers a callback invoked when a write-behind SAF write fails.
+     * Used to call [dev.stapler.stelekit.db.GraphLoader.clearFilePendingWrite] to remove
+     * the Long.MAX_VALUE sentinel so the file is not permanently suppressed.
+     */
+    override fun setOnFlushFailed(callback: (suspend (String) -> Unit)?) {
+        onFlushFailed = callback
+    }
+
+    /**
+     * Registers the provider for the git shadow-worktree lock key — see [GitWorktreeLocks] and
+     * [flushPendingWrites]. Set by `AndroidGitRepository.shadowWorktreeFor` on every real
+     * shadow-worktree resolution (plan.md Task 5.2.1c).
+     */
+    override fun setGitShadowKeyProvider(provider: (() -> String?)?) {
+        gitShadowKeyProvider = provider
+    }
+
     override fun markDirty(path: String, content: String): Boolean {
         val queue = writeBehindQueue ?: return false
         if (!path.startsWith("saf://")) return false
@@ -619,23 +976,45 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         return true
     }
 
+    // Task 5.2.1c: when a git shadow worktree is configured for the active graph, serialize this
+    // flush against GitShadowWorktree.syncFromSafRoot() on the same GitWorktreeLocks Mutex — both
+    // sides mutate the same underlying SAF files. Known accepted limitation: gitShadowKeyProvider
+    // is a single app-wide closure (see AndroidGitRepository.shadowWorktreeFor), so there is a
+    // brief staleness window across a graph switch before the new graph's first git operation
+    // re-sets it — documented in plan.md Task 5.2.1c, not fixed here. No lock at all (unchanged
+    // behavior) when git sync was never configured for this graph.
     override suspend fun flushPendingWrites() {
+        val key = gitShadowKeyProvider?.invoke()
+        if (key != null) {
+            GitWorktreeLocks.lockFor(key).withLock { flushPendingWritesLocked() }
+        } else {
+            flushPendingWritesLocked()
+        }
+    }
+
+    private suspend fun flushPendingWritesLocked() {
         val queue = writeBehindQueue ?: return
         val cache = shadowCache ?: return
-        ShadowFlushActor(this, cache, queue).flush()
+        ShadowFlushActor(
+            this, cache, queue,
+            onPreFlush = onFlushPreWrite,
+            onFlushed = onFlushComplete,
+            onFlushFailed = onFlushFailed,
+            spanEmitter = spanEmitter,
+        ).flush()
     }
 
     override suspend fun invalidateStaleShadow(graphPath: String) {
         val cache = shadowCache ?: return
         if (!graphPath.startsWith("saf://")) return
 
-        // On the first call in this process, purge the entire shadow directory.
-        // External tools (e.g. Termux) can write files while the app is dead; the
-        // SAF provider may return stale metadata on cold start, making mtime-based
-        // invalidation unreliable. A full purge guarantees freshness at the cost of
-        // one SAF-backed startup for each cold-start cycle.
-        if (freshProcess.getAndSet(false)) {
-            Log.d(TAG, "invalidateStaleShadow: first call after process start — purging shadow for $graphPath")
+        // On the first access of this cache instance (per graph, not per process), purge
+        // the entire shadow directory. External tools (e.g. Termux) can write files while
+        // the app is dead; the SAF provider may return stale metadata on startup, making
+        // mtime-based invalidation unreliable. A full purge guarantees freshness.
+        // Scoped per-instance so graph switches also trigger a full purge for the new graph.
+        if (cache.isFirstAccess()) {
+            logger.debug("invalidateStaleShadow: first access for this graph — purging shadow for $graphPath")
             cache.deleteAll()
             return
         }
@@ -671,10 +1050,10 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
                 .filter { it.mimeType != DocumentsContract.Document.MIME_TYPE_DIR }
                 .map { Triple(it.name, it.lastModified, it.size) }
         } catch (e: SecurityException) {
-            Log.w(TAG, "listFilesWithMetadata: permission denied for $path", e)
+            warnThrottled("listFilesWithMetadata", "listFilesWithMetadata: permission denied for $path", e)
             emptyList()
         } catch (e: IllegalArgumentException) {
-            Log.w(TAG, "listFilesWithMetadata: invalid URI for $path", e)
+            warnThrottled("listFilesWithMetadata", "listFilesWithMetadata: invalid URI for $path", e)
             emptyList()
         }
     }
@@ -690,10 +1069,21 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         cache.syncFromSaf("journals", journalsMods) { fileName -> safReadContent("$journalsPath/$fileName") }
     }
 
+    override fun resolveLoadableUri(path: String): String? {
+        if (path.startsWith("saf://")) {
+            return try {
+                parseDocumentUri(path).toString()
+            } catch (_: Exception) { null }
+        }
+        return super.resolveLoadableUri(path)
+    }
+
     override fun hasStoragePermission(): Boolean {
         val uri = treeUri ?: return false
         return isSafPermissionValid(context ?: return false, uri)
     }
+
+    override fun hasAllFilesAccess(): Boolean = isDirectAccess()
 
     override fun displayNameForPath(path: String): String {
         if (path.startsWith("content://")) return displayNameForContentUri(path)
@@ -758,12 +1148,13 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         return try {
             val ctx = context ?: return false
             val uri = Uri.parse(uriString)
-            ctx.contentResolver.openOutputStream(uri, "wt")?.use { stream -> // "wt" = write-truncate
-                stream.bufferedWriter(Charsets.UTF_8).apply { write(content); flush() }
-            }
+            // "wt" = write-truncate. Return false when openOutputStream is null — the provider
+            // refused the write rather than returning a valid stream.
+            val stream = ctx.contentResolver.openOutputStream(uri, "wt") ?: return false
+            stream.use { it.bufferedWriter(Charsets.UTF_8).apply { write(content); flush() } }
             true
-        } catch (e: SecurityException) { Log.w(TAG, "contentUriWriteFile: permission denied", e); false }
-        catch (e: Exception) { Log.w(TAG, "contentUriWriteFile: error writing to $uriString", e); false }
+        } catch (e: SecurityException) { warnThrottled("contentUriWriteFile", "contentUriWriteFile: permission denied", e); false }
+        catch (e: Exception) { warnThrottled("contentUriWriteFile", "contentUriWriteFile: error writing to $uriString", e); false }
     }
 
     // -------------------------------------------------------------------------
@@ -783,6 +1174,54 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         } catch (e: Exception) {
             null
         }
+    }
+
+    private fun legacyReadFileBytes(path: String): ByteArray? {
+        return try {
+            val expandedPath = expandTilde(path)
+            val canonicalPath = File(expandedPath).canonicalPath
+            val homePath = File(homeDir).canonicalPath
+            val ctx = context
+            // Mirrors validateLegacyPath's allowed-root set (homeDir, filesDir/graphs) but adds
+            // cacheDir/externalCacheDir: legitimate legacy attachment sources such as
+            // AndroidCameraProvider's captures/, AndroidPhotoPickerLauncher's photo_import_*.jpg,
+            // and AndroidAudioRecorder's voice_*.m4a all stage under cacheDir before being copied
+            // into a graph (ImageImportService). filesDir is scoped to graphs/, not the whole
+            // directory, since no caller legitimately reads a filesDir path outside it (the app's
+            // SQLite databases and shared_prefs live directly under filesDir).
+            val allowedRoots = buildList {
+                add(homePath)
+                if (ctx != null) {
+                    add(ctx.cacheDir.canonicalPath)
+                    add(File(ctx.filesDir, "graphs").canonicalPath)
+                    ctx.externalCacheDir?.canonicalPath?.let { add(it) }
+                }
+            }
+            // A plain startsWith(root) is not a directory-boundary check: a sibling directory
+            // whose name merely has `root` as a string prefix (e.g. "$root-evil/x") would satisfy
+            // it too. Require either an exact match or a "/"-bounded prefix (see validateLegacyPath).
+            require(allowedRoots.any { canonicalPath == it || canonicalPath.startsWith("$it/") }) {
+                "Path must be within an allowed directory"
+            }
+            val file = File(canonicalPath)
+            if (!file.exists() || !file.isFile) return null
+            if (file.length() > maxFileSize) return null
+            file.readBytes()
+        } catch (e: CancellationException) { throw e }
+        catch (e: Exception) { null }
+    }
+
+    private fun legacyWriteFileBytes(path: String, data: ByteArray): Boolean {
+        return try {
+            val expandedPath = expandTilde(path)
+            val validatedPath = validateLegacyPath(expandedPath)
+            val file = File(validatedPath)
+            val parentDir = file.parentFile
+            if (parentDir != null && !parentDir.exists()) parentDir.mkdirs()
+            file.writeBytes(data)
+            true
+        } catch (e: CancellationException) { throw e }
+        catch (e: Exception) { false }
     }
 
     private fun legacyWriteFile(path: String, content: String): Boolean {
@@ -919,9 +1358,19 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         val normalized = path.replace(Regex("[/\\\\]+"), "/")
         val expandedPath = expandTilde(normalized)
         val canonicalPath = File(expandedPath).canonicalPath
-        // Enforce containment within the public Documents directory to prevent path traversal
+        // Enforce containment within an allowed root to prevent path traversal. homeDir (the
+        // public Documents directory) is the historical default-graph root; filesDir/graphs is
+        // the app-private root newAppOwnedGraphPath() actually hands out for "App storage" graphs
+        // (Story 2.2.1/2.2.2) — scoped to that subdirectory, not all of filesDir, so this check
+        // can't be used to reach the app's databases/prefs/cache under filesDir's other children.
         val homePath = File(homeDir).canonicalPath
-        require(canonicalPath.startsWith(homePath)) { "Path must be within the allowed directory" }
+        val allowedRoots = listOfNotNull(homePath, context?.filesDir?.let { File(it, "graphs").canonicalPath })
+        // A plain startsWith(root) is not a directory-boundary check: a sibling directory whose
+        // name merely has `root` as a string prefix (e.g. "$root-evil/x") would satisfy it too.
+        // Require either an exact match or a "/"-bounded prefix.
+        require(allowedRoots.any { canonicalPath == it || canonicalPath.startsWith("$it/") }) {
+            "Path must be within the allowed directory"
+        }
         return canonicalPath
     }
 }

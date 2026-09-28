@@ -29,6 +29,8 @@ class IosGitRepository : GitRepository {
         onProgress: (String) -> Unit,
     ): Either<DomainError.GitError, Unit> = notSupported
 
+    override suspend fun testRemote(url: String, auth: GitAuth): Either<DomainError.GitError, Unit> = notSupported
+
     override suspend fun fetch(config: GitConfig): Either<DomainError.GitError, FetchResult> = notSupported
 
     override suspend fun status(config: GitConfig): Either<DomainError.GitError, GitStatus> = notSupported

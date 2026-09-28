@@ -202,4 +202,18 @@ class ExtractSuggestionsTest {
         assertEquals(1, result.size, "Plain-text 'Python' after a wiki link should be suggested")
         assertEquals("Python", result[0].canonicalName)
     }
+
+    @Test
+    fun plainTextImmediatelyAfterWikiLink_repeatingLinkedText_notMisLocated() {
+        // Regression: indexOf(searchFrom) used to find "abc" *inside* the "[[abc]]"
+        // span (already consumed by the wiki link) instead of the real trailing "abc",
+        // because the wiki-link node never advanced the search cursor.
+        val content = "[[abc]]abc"
+        val result = extractSuggestions(content, matcher("abc"))
+        assertEquals(1, result.size)
+        val span = result[0]
+        assertEquals(7, span.start)
+        assertEquals(10, span.end)
+        assertEquals("abc", content.substring(span.start, span.end))
+    }
 }

@@ -2,8 +2,6 @@ package dev.stapler.stelekit.outliner
 
 import kotlinx.datetime.LocalDate
 import kotlinx.coroutines.CancellationException
-import kotlinx.datetime.format
-import kotlinx.datetime.format.char
 
 /**
  * Utility for handling Logseq journal pages.

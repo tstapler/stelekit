@@ -29,6 +29,14 @@ interface LogSink {
     fun close() {}
 }
 
+/**
+ * Opaque token returned by [LogManager.addSink]. Call [close] to remove and close the sink.
+ * Callers that need to deregister a sink later must hold this handle.
+ */
+fun interface SinkHandle {
+    fun close()
+}
+
 object LogManager {
     private val _logs = MutableStateFlow<List<LogEntry>>(emptyList())
     val logs: StateFlow<List<LogEntry>> = _logs.asStateFlow()
@@ -39,10 +47,22 @@ object LogManager {
     /** Minimum level for in-memory log buffer and sinks. */
     var minLevel: LogLevel = LogLevel.DEBUG
 
-    fun addSink(sink: LogSink) {
+    /**
+     * Registers [sink] and returns a [SinkHandle] whose [SinkHandle.close] removes and
+     * closes it. Callers that need to deregister a sink later (e.g. per-graph observability
+     * sinks) must hold this handle — there is no other way to remove a specific sink.
+     * Process-lifetime sinks (e.g. file log) may discard the handle.
+     */
+    fun addSink(sink: LogSink): SinkHandle {
         sinks.add(sink)
+        return SinkHandle {
+            sinks.remove(sink)
+            sink.close()
+        }
     }
 
+    /** @deprecated Use the [SinkHandle] returned by [addSink] to remove a specific sink. */
+    @Deprecated("Hold and close the SinkHandle returned by addSink() instead.")
     fun removeSink(sink: LogSink) {
         sinks.remove(sink)
         sink.close()

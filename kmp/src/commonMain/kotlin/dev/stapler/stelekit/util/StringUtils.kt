@@ -19,3 +19,13 @@ fun String.toTitleCase(): String {
         }
     }.joinToString(" ")
 }
+
+/**
+ * Prefixes every line after the first with [continuationIndent], for serializing multi-line
+ * block content as bullet text + indented continuation lines (Logseq convention).
+ */
+fun String.indentContinuationLines(continuationIndent: String): String {
+    val lines = split("\n")
+    if (lines.size <= 1) return this
+    return lines.first() + lines.drop(1).joinToString("") { "\n$continuationIndent$it" }
+}

@@ -151,3 +151,19 @@ class SearchDocs : HowToDoc {
         )
     )
 }
+
+class GlobalUnlinkedReferencesDocs : MinimalFeatureDoc {
+    override val howTo = HowToContent(
+        title = "Unlinked References",
+        steps = listOf(
+            "Open the Global Unlinked References view from the sidebar",
+            "Review each suggested link — it shows a block that mentions a page name but has no [[wikilink]]",
+            "Tap 'Link' to convert the mention to a wikilink, or 'Ignore' to dismiss it"
+        )
+    )
+    override val reference = ReferenceContent(
+        title = "Unlinked References",
+        description = "Lists blocks across your entire graph that mention a page name as plain text " +
+            "without creating a [[wikilink]]. Linking these improves graph connectivity and backlink coverage."
+    )
+}

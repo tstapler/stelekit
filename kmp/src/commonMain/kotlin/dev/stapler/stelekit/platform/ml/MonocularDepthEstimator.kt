@@ -4,6 +4,8 @@ import arrow.core.Either
 import arrow.core.left
 import androidx.compose.ui.graphics.ImageBitmap
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.ui.annotate.DepthModelUiState
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * Abstraction over monocular depth estimation via ML (Depth Anything V2 via ONNX Runtime).
@@ -64,4 +66,15 @@ class NoOpMonocularDepthEstimator : MonocularDepthEstimator {
 
     override suspend fun estimateDepth(imageBitmap: ImageBitmap): Either<DomainError, FloatArray> =
         DomainError.SensorError.HardwareUnavailable("MonocularDepthEstimator").left()
+}
+
+/**
+ * Capability interface for a [MonocularDepthEstimator] whose model must be downloaded before
+ * use. Implemented only by platforms with a downloadable asset (Android today) — see ADR-002
+ * for why this is not part of the base [MonocularDepthEstimator] interface.
+ */
+interface DownloadableDepthModel {
+    val modelState: StateFlow<DepthModelUiState>
+    suspend fun downloadModel(): Either<DomainError, Unit>
+    fun cancelDownload()
 }

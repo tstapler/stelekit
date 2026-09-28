@@ -1,23 +1,18 @@
 package dev.stapler.stelekit.editor.state
 
-import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.editor.text.DefaultTextOperations
 import dev.stapler.stelekit.editor.text.ITextOperations
-import dev.stapler.stelekit.editor.text.TextState
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.performance.PerformanceMonitor
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
 import kotlin.time.Instant
 
 /**

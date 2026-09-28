@@ -15,13 +15,13 @@ object TestUtils {
         parentUuid: String? = null,
         content: String = "",
         level: Int = 0,
-        position: Int = 0
+        position: String = "a0"
     ): Block {
         val now = Clock.System.now()
         return Block(
             uuid = BlockUuid(uuid),
             pageUuid = PageUuid(pageUuid),
-            parentUuid = parentUuid,
+            parentUuid = parentUuid?.let { BlockUuid(it) },
             leftUuid = null,
             content = content,
             level = level,

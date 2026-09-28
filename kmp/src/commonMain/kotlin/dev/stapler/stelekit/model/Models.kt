@@ -2,7 +2,6 @@ package dev.stapler.stelekit.model
 
 import kotlin.time.Instant
 import kotlinx.datetime.LocalDate
-import kotlinx.serialization.Serializable
 
 /**
  * Security validation for input data
@@ -12,6 +11,10 @@ object Validation {
     private const val MAX_NAME_LENGTH = 255
     private const val MAX_CONTENT_LENGTH = 10000000
 
+    /** C0 (0x00-0x1F) and C1 (0x80-0x9F) control codes, excluding `\n`/`\r`/`\t`. */
+    private fun isRestrictedControlChar(c: Char): Boolean =
+        (c.code in 0x00..0x1F || c.code in 0x80..0x9F) && c != '\n' && c != '\r' && c != '\t'
+
     fun validateString(input: String?, maxLength: Int = MAX_STRING_LENGTH, allowWhitespace: Boolean = false): String {
         require(input != null) { "Input cannot be null" }
         require(input.length <= maxLength) { "Input exceeds maximum length of $maxLength" }
@@ -19,7 +22,7 @@ object Validation {
         if (!allowWhitespace) {
             require(!input.any { it.code in 0x00..0x1F || it.code in 0x80..0x9F }) { "Input contains control characters" }
         } else {
-            require(!input.any { (it.code in 0x00..0x1F || it.code in 0x80..0x9F) && it != '\n' && it != '\r' && it != '\t' }) { "Input contains restricted control characters" }
+            require(!input.any(::isRestrictedControlChar)) { "Input contains restricted control characters" }
         }
         return input.trim()
     }
@@ -37,9 +40,20 @@ object Validation {
         return validated
     }
 
+    /**
+     * Validates content, silently stripping restricted control characters (C0/C1 codes other than
+     * `\n`/`\r`/`\t`) rather than throwing. Parsed file content — and any other content that ends
+     * up in a [Page]/[Block]/[Property]/[Notification] — can carry these from pasted PDF/OCR text;
+     * stripping here means a single malformed value degrades instead of aborting construction (and,
+     * for parser call sites, the whole page/graph load).
+     */
     fun validateContent(content: String?): String {
-        return validateString(content, MAX_CONTENT_LENGTH, allowWhitespace = true)
+        require(content != null) { "Input cannot be null" }
+        return validateString(sanitizeContent(content), MAX_CONTENT_LENGTH, allowWhitespace = true)
     }
+
+    fun sanitizeContent(content: String): String =
+        content.filterNot(::isRestrictedControlChar)
 
     fun validateUuid(uuid: String?): String {
         val validated = validateString(uuid, 36)
@@ -53,13 +67,37 @@ object Validation {
     }
 
     fun validateUuid(uuid: PageUuid): PageUuid {
-        validateString(uuid.value, 36)
+        validateUuidString(uuid.value)
         return uuid
     }
 
     fun validateUuid(uuid: BlockUuid): BlockUuid {
-        validateString(uuid.value, 36)
+        validateUuidString(uuid.value)
         return uuid
+    }
+
+    private fun validateUuidString(value: String) {
+        validateString(value, 36)
+        require(value.isNotBlank()) { "UUID cannot be blank" }
+        require(value.all { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' || it == '-' }) {
+            "Invalid UUID format: $value"
+        }
+    }
+}
+
+sealed class SectionId {
+    data object Global : SectionId()
+    data class Named(val id: String) : SectionId() {
+        init { require(id.isNotBlank()) { "SectionId.Named id must not be blank" } }
+    }
+
+    fun toDbString(): String = when (this) {
+        is Global -> ""
+        is Named -> id
+    }
+
+    companion object {
+        fun fromDbString(s: String): SectionId = if (s.isBlank()) Global else Named(s)
     }
 }
 
@@ -76,7 +114,8 @@ data class Page(
     val isJournal: Boolean = false,
     val journalDate: LocalDate? = null,
     /** True when page content (blocks) has been fully loaded from file */
-    val isContentLoaded: Boolean = true
+    val isContentLoaded: Boolean = true,
+    val sectionId: SectionId = SectionId.Global,
 ) {
     init {
         Validation.validateUuid(uuid)
@@ -90,27 +129,21 @@ data class Page(
     }
 }
 
-private val validBlockTypes = setOf(
-    "bullet", "paragraph", "heading", "code_fence", "blockquote",
-    "ordered_list_item", "thematic_break", "table", "raw_html",
-    "image_annotation"
-)
-
 data class Block(
     val uuid: BlockUuid,
     val pageUuid: PageUuid,
-    val parentUuid: String? = null,
-    val leftUuid: String? = null,
+    val parentUuid: BlockUuid? = null,
+    val leftUuid: BlockUuid? = null,
     val content: String,
     val level: Int = 0,
-    val position: Int,
+    val position: String,
     val createdAt: Instant,
     val updatedAt: Instant,
     val version: Long = 0,
     val properties: Map<String, String> = emptyMap(),
     val isLoaded: Boolean = true, // Indicates if the content is fully loaded
     val contentHash: String? = null, // SHA-256 of normalised content; null until first save
-    val blockType: String = "bullet" // Structural discriminator for the block type
+    val blockType: BlockType = BlockType.Bullet // Structural discriminator for the block type
 ) {
     init {
         Validation.validateUuid(uuid)
@@ -119,12 +152,11 @@ data class Block(
         leftUuid?.let { Validation.validateUuid(it) }
         Validation.validateContent(content)
         require(level >= 0) { "Level must be non-negative" }
-        require(position >= 0) { "Position must be non-negative" }
+        require(position.isNotBlank()) { "Position must not be blank" }
         properties.forEach { (key, value) ->
             Validation.validateName(key)
             Validation.validateContent(value)
         }
-        require(blockType in validBlockTypes) { "Invalid blockType: $blockType" }
     }
 }
 
@@ -147,12 +179,17 @@ enum class NotificationType {
     INFO, WARNING, ERROR, SUCCESS
 }
 
+sealed class NotificationDuration {
+    data object Permanent : NotificationDuration()
+    data class AutoDismiss(val millis: Long) : NotificationDuration()
+}
+
 data class Notification(
     val id: String,
     val content: String,
     val type: NotificationType = NotificationType.INFO,
     val timestamp: Instant,
-    val timeout: Long? = 3000
+    val duration: NotificationDuration = NotificationDuration.AutoDismiss(3000),
 ) {
     init {
         Validation.validateContent(content)

@@ -6,8 +6,6 @@ package dev.stapler.stelekit.git
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
-import app.cash.sqldelight.coroutines.asFlow
-import app.cash.sqldelight.coroutines.mapToOneOrNull
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.DirectSqlWrite
@@ -16,10 +14,12 @@ import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.map
+import dev.stapler.stelekit.repository.asDbFlowOrNull
+import app.cash.sqldelight.coroutines.asFlow
+import app.cash.sqldelight.coroutines.mapToOneOrNull
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
 /**
@@ -38,7 +38,7 @@ class SqlDelightGitConfigRepository(
     override suspend fun getConfig(graphId: String): Either<DomainError, GitConfig?> =
         withContext(PlatformDispatcher.DB) {
             try {
-                val row = queries.selectGitConfig(graphId).executeAsOneOrNull()
+                val row = queries.selectGitConfig(graphId).asFlow().mapToOneOrNull(PlatformDispatcher.DB).first()
                 row?.toModel().right()
             } catch (e: CancellationException) {
                 throw e
@@ -54,13 +54,14 @@ class SqlDelightGitConfigRepository(
                 database.steleDatabaseQueries.insertOrReplaceGitConfig(
                     graph_id = config.graphId,
                     repo_root = config.repoRoot,
-                    wiki_subdir = config.wikiSubdir,
+                    wiki_subdir = config.wikiSubdir.orEmpty(),
                     remote_name = config.remoteName,
                     remote_branch = config.remoteBranch,
                     auth_type = config.authType.name,
                     ssh_key_path = config.sshKeyPath,
                     ssh_key_passphrase_key = config.sshKeyPassphraseKey,
                     https_token_key = config.httpsTokenKey,
+                    oauth_token_key = config.oauthTokenKey,
                     poll_interval_minutes = config.pollIntervalMinutes.toLong(),
                     auto_commit = if (config.autoCommit) 1L else 0L,
                     commit_message_template = config.commitMessageTemplate,
@@ -90,21 +91,19 @@ class SqlDelightGitConfigRepository(
 
     override fun observeConfig(graphId: String): Flow<Either<DomainError, GitConfig?>> =
         queries.selectGitConfig(graphId)
-            .asFlow()
-            .mapToOneOrNull(PlatformDispatcher.DB)
-            .map<Git_config?, Either<DomainError, GitConfig?>> { row -> row?.toModel().right() }
-            .catch { e -> emit(DomainError.DatabaseError.ReadFailed(e.message ?: "unknown").left()) }
+            .asDbFlowOrNull(PlatformDispatcher.DB) { it.toModel() }
 
     private fun Git_config.toModel(): GitConfig = GitConfig(
         graphId = graph_id,
         repoRoot = repo_root,
-        wikiSubdir = wiki_subdir,
+        wikiSubdir = wiki_subdir.ifEmpty { null },
         remoteName = remote_name,
         remoteBranch = remote_branch,
         authType = runCatching { GitAuthType.valueOf(auth_type) }.getOrDefault(GitAuthType.NONE),
         sshKeyPath = ssh_key_path,
         sshKeyPassphraseKey = ssh_key_passphrase_key,
         httpsTokenKey = https_token_key,
+        oauthTokenKey = oauth_token_key,
         pollIntervalMinutes = poll_interval_minutes.toInt(),
         autoCommit = auto_commit != 0L,
         commitMessageTemplate = commit_message_template,

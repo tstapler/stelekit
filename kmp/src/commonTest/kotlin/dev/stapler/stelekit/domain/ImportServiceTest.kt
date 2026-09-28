@@ -98,4 +98,27 @@ class ImportServiceInsertTest {
         val result = ImportService.insertWikiLinks(text, emptyList())
         assertEquals(text, result)
     }
+
+    @Test
+    fun insertWikiLinks_termNestedInsideLongerTerm_noNestedBrackets() {
+        // Regression: sequential per-term mutation used to let "Network" match inside
+        // the already-wrapped "[[Neural Network Architecture]]", producing
+        // "[[Neural [[Network]] Architecture]]".
+        val result = ImportService.insertWikiLinks(
+            "The Neural Network Architecture paper is great",
+            listOf("Neural Network Architecture", "Network"),
+        )
+        assertEquals("The [[Neural Network Architecture]] paper is great", result)
+        assertFalse(result.contains("[[Network]]"))
+    }
+
+    @Test
+    fun insertWikiLinks_termNestedInsideLongerTerm_orderIndependent() {
+        // Same input, reversed term order — result must not depend on list order.
+        val result = ImportService.insertWikiLinks(
+            "The Neural Network Architecture paper is great",
+            listOf("Network", "Neural Network Architecture"),
+        )
+        assertEquals("The [[Neural Network Architecture]] paper is great", result)
+    }
 }

@@ -1,0 +1,141 @@
+{
+  "timestamp": "2026-06-18 00:53:09 UTC",
+  "gitSha": "00df5755",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 0,
+  "phase2Ms": 0,
+  "phase3Ms": 0,
+  "totalMs": 0,
+  "jankBaselineP50Ms": 1,
+  "jankBaselineP95Ms": 41,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.02,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 441,
+      "pct": 39.8
+    },
+    {
+      "frame": "java.util.LinkedHashMap$Entry_[k]",
+      "samples": 93,
+      "pct": 8.4
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 78,
+      "pct": 7.0
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 65,
+      "pct": 5.9
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 40,
+      "pct": 3.6
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 32,
+      "pct": 2.9
+    },
+    {
+      "frame": "dev.stapler.stelekit.parsing.lexer.Token_[k]",
+      "samples": 25,
+      "pct": 2.3
+    },
+    {
+      "frame": "java.util.LinkedHashMap_[k]",
+      "samples": 21,
+      "pct": 1.9
+    },
+    {
+      "frame": "java.nio.DirectByteBuffer_[k]",
+      "samples": 19,
+      "pct": 1.7
+    },
+    {
+      "frame": "char[]_[k]",
+      "samples": 15,
+      "pct": 1.4
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 13618,
+      "pct": 96.0
+    },
+    {
+      "frame": "/tmp/sqlite-3.51.3.0-9c330abf-fd08-45e4-969c-d815f384d314-libsqlitejdbc.so",
+      "samples": 162,
+      "pct": 1.1
+    },
+    {
+      "frame": "fsync",
+      "samples": 120,
+      "pct": 0.8
+    },
+    {
+      "frame": "pthread_cond_signal",
+      "samples": 35,
+      "pct": 0.2
+    },
+    {
+      "frame": "__libc_pwrite",
+      "samples": 31,
+      "pct": 0.2
+    },
+    {
+      "frame": "SR_handler",
+      "samples": 28,
+      "pct": 0.2
+    },
+    {
+      "frame": "munmap",
+      "samples": 17,
+      "pct": 0.1
+    },
+    {
+      "frame": "pread",
+      "samples": 10,
+      "pct": 0.1
+    },
+    {
+      "frame": "kotlin/jvm/internal/Intrinsics.checkNotNullParameter_[i]",
+      "samples": 4,
+      "pct": 0.0
+    },
+    {
+      "frame": "I2C/C2I adapters(0xbb)",
+      "samples": 3,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "blocks_fts",
+      "op": "insert",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 0,
+      "totalMs": 0
+    },
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 0,
+      "totalMs": 0
+    }
+  ]
+}

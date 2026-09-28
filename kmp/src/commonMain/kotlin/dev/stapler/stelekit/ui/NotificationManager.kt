@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.ui
 
 import dev.stapler.stelekit.model.Notification
+import dev.stapler.stelekit.model.NotificationDuration
 import dev.stapler.stelekit.model.NotificationType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -24,17 +25,19 @@ class NotificationManager {
     private val jobs = mutableMapOf<String, Job>()
 
     fun show(
-        content: String, 
-        type: NotificationType = NotificationType.INFO, 
-        timeout: Long? = 3000
+        content: String,
+        type: NotificationType = NotificationType.INFO,
+        timeout: Long? = 3000,
     ) {
+        val duration = if (timeout == null) NotificationDuration.Permanent
+                       else NotificationDuration.AutoDismiss(timeout)
         val id = generateUuid()
         val notification = Notification(
             id = id,
             content = content,
             type = type,
             timestamp = Clock.System.now(),
-            timeout = timeout
+            duration = duration,
         )
 
         // Add to active
@@ -49,9 +52,10 @@ class NotificationManager {
         _history.value = currentHistory
 
         // Handle auto-clear
-        if (timeout != null && timeout > 0) {
+        val millis = (duration as? NotificationDuration.AutoDismiss)?.millis
+        if (millis != null && millis > 0) {
             val job = scope.launch {
-                delay(timeout)
+                delay(millis)
                 clear(id)
             }
             jobs[id] = job

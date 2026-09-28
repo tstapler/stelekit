@@ -1,6 +1,5 @@
 package dev.stapler.stelekit.ui.screens
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.BasicText
@@ -24,8 +23,10 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.unit.dp
@@ -33,23 +34,42 @@ import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
-import dev.stapler.stelekit.outliner.BlockSorter
+import dev.stapler.stelekit.model.SectionId
 import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.performance.NavigationTracingEffect
 import dev.stapler.stelekit.repository.PageRepository
 import dev.stapler.stelekit.ui.state.BlockStateManager
 import dev.stapler.stelekit.ui.StelekitViewModel
 import androidx.compose.runtime.CompositionLocalProvider
-import dev.stapler.stelekit.ui.components.BlockList
+import dev.stapler.stelekit.sections.SectionManifest
+import dev.stapler.stelekit.ui.components.PageContent
 import dev.stapler.stelekit.ui.components.EditorCapabilities
 import dev.stapler.stelekit.ui.components.EditorToolbar
 import dev.stapler.stelekit.ui.components.LocalGraphRootPath
+import dev.stapler.stelekit.ui.components.SectionBadge
 import dev.stapler.stelekit.ui.components.parseMarkdownWithStyling
 import dev.stapler.stelekit.ui.components.pageDropTarget
 import dev.stapler.stelekit.ui.components.ReferencesPanel
 import dev.stapler.stelekit.ui.components.SuggestionItem
 import dev.stapler.stelekit.ui.components.SuggestionNavigatorPanel
 import dev.stapler.stelekit.ui.i18n.t
+import dev.stapler.stelekit.llm.PendingLlmSuggestion
+import dev.stapler.stelekit.tags.BulkScanState
+import dev.stapler.stelekit.tags.JournalScanEntry
+import dev.stapler.stelekit.tags.TagSuggestionViewModel
+import dev.stapler.stelekit.tags.TagSuggestionState
+import dev.stapler.stelekit.tags.WikiLinkExtractor
+import dev.stapler.stelekit.transfer.qrcode.QrTransferSettings
+import dev.stapler.stelekit.ui.transfer.QrEncodeScreen
+import dev.stapler.stelekit.ui.transfer.QrEncodeViewModel
+import dev.stapler.stelekit.ui.transfer.SendViaQrMenuItem
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import kotlin.time.Clock
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
+import dev.stapler.stelekit.ui.components.tags.SuggestionBottomSheet
 
 /**
  * Page view screen.
@@ -73,10 +93,32 @@ fun PageView(
     capabilities: EditorCapabilities = EditorCapabilities(),
     onReloadFromDisk: (() -> Unit)? = null,
     isExporting: Boolean = false,
+    tagSuggestionViewModel: TagSuggestionViewModel? = null,
+    currentManifest: SectionManifest? = null,
+    onSectionBadgeClick: (() -> Unit)? = null,
+    /** Story 7.6 — bounded synthesis proposal generator. Null hides the menu trigger entirely
+     * (mirrors [tagSuggestionViewModel]'s optional-wiring pattern); when present, results are
+     * surfaced via the LLM suggestion inbox StelekitViewModel already observes. */
+    llmSynthesisService: dev.stapler.stelekit.llm.LlmSynthesisService? = null,
+    currentGraphId: String? = null,
+    /**
+     * ux.md (i)/criterion 14: true while `AppState.diskConflict` is non-null. Passed straight
+     * through to [EditorToolbar]/`MobileBlockToolbar`'s Undo/Redo — must be a live value (see
+     * `ScreenRouter`'s `appState.diskConflict != null` call site) so Undo/Redo re-enable
+     * automatically once the conflict resolves.
+     */
+    hasDiskConflictPending: Boolean = false,
+    /**
+     * Story 3.1.4 — QR transfer feature flag. Null hides the "Send via QR" menu trigger entirely
+     * (mirrors [tagSuggestionViewModel]'s optional-wiring pattern); when present and
+     * [QrTransferSettings.enabled], the menu item appears and opens [QrEncodeScreen].
+     */
+    qrTransferSettings: QrTransferSettings? = null,
 ) {
     NavigationTracingEffect("PageView/${page.name}")
     val focusManager = LocalFocusManager.current
     var toolbarHeight by remember { mutableStateOf(0) }
+    val pageViewScope = androidx.compose.runtime.rememberCoroutineScope()
 
     if (isDebugMode) {
         val recomposeCount = remember { androidx.compose.runtime.mutableIntStateOf(0) }
@@ -92,12 +134,89 @@ fun PageView(
     val isInSelectionMode by blockStateManager.isInSelectionMode.collectAsState()
     val loadingPageUuids by blockStateManager.loadingPageUuids.collectAsState()
     val suggestionMatcher by viewModel.suggestionMatcher.collectAsState()
+    val localPageNames by viewModel.localPageNames.collectAsState()
+    val hasSectionFilter by remember(viewModel) {
+        viewModel.uiState.map { it.hasSectionFilter }
+    }.collectAsState(initial = false)
+
+    val blockClipboard by blockStateManager.blockClipboard.collectAsState()
+
+    val tagSuggestionState by tagSuggestionViewModel?.state?.collectAsState()
+        ?: remember { mutableStateOf(TagSuggestionState.Idle) }
+    val scanState by tagSuggestionViewModel?.scanState?.collectAsState()
+        ?: remember { mutableStateOf<BulkScanState>(BulkScanState.Idle) }
+
+    LaunchedEffect(scanState) {
+        if (scanState is BulkScanState.Complete) {
+            delay(3_000)
+            tagSuggestionViewModel?.resetScan()
+        }
+    }
 
     // Navigator panel state — empty list means closed
     var navigatorSuggestions by remember { mutableStateOf<List<SuggestionItem>>(emptyList()) }
     var navigatorIndex by remember { mutableStateOf(0) }
 
+    // GAP-010 (Story D.3.1): true while BlockList has an active block drag — suspends this
+    // LazyColumn's own scrolling so blockBounds can never desynchronize mid-drag.
+    var isBlockDragging by remember { mutableStateOf(false) }
+
+    // Story 3.1.4 — QR transfer sender overlay.
+    var showQrEncodeScreen by remember { mutableStateOf(false) }
+
     val blocks = allBlocks[page.uuid.value] ?: emptyList()
+    val cutBlockUuids = if (blockClipboard.isCut) blockClipboard.entries.map { it.block.uuid.value }.toSet() else emptySet()
+
+    // Shared scan trigger: proposes matcher results immediately, then starts async LLM scan.
+    // Keyed on blocks + matcher so the lambda always closes over fresh values.
+    val onScanPage = remember(blocks, suggestionMatcher, currentGraphId) {
+        trigger@{
+            val firstBlock = blocks.firstOrNull { it.content.isNotBlank() } ?: return@trigger
+            val now = Clock.System.now().toEpochMilliseconds()
+            val graphId = currentGraphId ?: ""
+            // Matcher results are synchronous — propose immediately so review screen opens at once.
+            suggestionMatcher?.let { matcher ->
+                blocks.forEach { block ->
+                    matcher.findAll(block.content).forEach { span ->
+                        // ponytail: skip if already inside [[...]] — prefix check only, not a full parser
+                        val alreadyLinked = span.start >= 2 &&
+                            block.content.substring(span.start - 2, span.start) == "[["
+                        if (!alreadyLinked) {
+                            viewModel.proposeLlmSuggestion(
+                                PendingLlmSuggestion.UnlinkedReference(
+                                    // deterministic ID deduplicates re-scans of the same block+match
+                                    id = "unlinked::${block.uuid.value}::${span.canonicalName}::${span.start}",
+                                    graphId = graphId,
+                                    sourceProviderId = "aho-corasick-matcher",
+                                    proposedAtEpochMs = now,
+                                    rationale = null,
+                                    pageUuid = page.uuid.value,
+                                    blockUuid = block.uuid.value,
+                                    targetPageName = span.canonicalName,
+                                    matchStart = span.start,
+                                    matchEnd = span.end,
+                                    currentContentSnapshot = block.content,
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+            // LLM scan runs asynchronously; banner tracks its progress.
+            tagSuggestionViewModel?.scanEntries(listOf(
+                JournalScanEntry(
+                    pageUuid = page.uuid.value,
+                    targetBlockUuid = firstBlock.uuid.value,
+                    contentSnapshot = firstBlock.content,
+                    fullContent = blocks.take(20).joinToString("\n") { it.content }.take(500),
+                    alreadyLinked = WikiLinkExtractor.extractPageNames(
+                        blocks.joinToString("\n") { it.content }
+                    ),
+                    graphId = graphId,
+                )
+            ))
+        }
+    }
 
     // Start observing this page's blocks on enter, stop on leave
     DisposableEffect(page.uuid.value) {
@@ -108,6 +227,7 @@ fun PageView(
     }
 
     val toolbarHeightDp = with(LocalDensity.current) { toolbarHeight.toDp() }
+    val clipboardManager = LocalClipboardManager.current
 
     // Provide the graph root path so that ImageBlock / rememberSteleKitImageLoader can resolve
     // relative Logseq asset paths (e.g. `../assets/image.png`).
@@ -136,6 +256,18 @@ fun PageView(
                 blockStateManager.clearSelection()
                 true
             }
+            event.key == Key.C && event.isCtrlPressed && isInSelectionMode && selectedBlockUuids.isNotEmpty() -> {
+                blockStateManager.copySelectedBlocks()
+                true
+            }
+            event.key == Key.X && event.isCtrlPressed && isInSelectionMode && selectedBlockUuids.isNotEmpty() -> {
+                blockStateManager.cutSelectedBlocks()
+                true
+            }
+            event.key == Key.V && event.isCtrlPressed && !isInSelectionMode && editingBlockUuid != null && !blockClipboard.isEmpty -> {
+                editingBlockUuid?.let { blockStateManager.pasteBlocks(it) }
+                true
+            }
             event.key == Key.E && event.isCtrlPressed && event.isShiftPressed -> {
                 if (isInSelectionMode) {
                     viewModel.exportSelectedBlocks("markdown")
@@ -148,6 +280,8 @@ fun PageView(
         }
     }) {
         LazyColumn(
+            // GAP-010: suspend scroll for the duration of any active block drag.
+            userScrollEnabled = !isBlockDragging,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 24.dp)
@@ -155,6 +289,10 @@ fun PageView(
                 .pointerInput(Unit) {
                     detectTapGestures(onTap = {
                         focusManager.clearFocus()
+                        // Tapping empty page background is the expected/discoverable way to
+                        // back out of an accidental selection — Escape works too but isn't
+                        // obvious, and there was previously no way to exit via a plain tap.
+                        blockStateManager.clearSelection()
                     })
                 },
             contentPadding = PaddingValues(top = 16.dp, bottom = toolbarHeightDp + 8.dp)
@@ -230,6 +368,71 @@ fun PageView(
                                     }
                                 )
                             }
+                            if (page.filePath != null) {
+                                HorizontalDivider()
+                                DropdownMenuItem(
+                                    text = { Text("Copy path") },
+                                    onClick = {
+                                        exportMenuExpanded = false
+                                        clipboardManager.setText(AnnotatedString(page.filePath))
+                                    }
+                                )
+                            }
+                            if (tagSuggestionViewModel != null) {
+                                HorizontalDivider()
+                                DropdownMenuItem(
+                                    text = { Text("Suggest tags for page") },
+                                    onClick = {
+                                        exportMenuExpanded = false
+                                        val pageContent = blocks
+                                            .take(20)
+                                            .joinToString("\n") { it.content }
+                                            .take(500)
+                                        val alreadyLinked = WikiLinkExtractor.extractPageNames(
+                                            blocks.joinToString("\n") { it.content }
+                                        )
+                                        tagSuggestionViewModel.requestSuggestions(
+                                            blockUuid = page.uuid.value,
+                                            blockContent = pageContent,
+                                            alreadyLinkedTerms = alreadyLinked,
+                                        )
+                                    }
+                                )
+                                if (tagSuggestionViewModel.hasLlmProvider) {
+                                    DropdownMenuItem(
+                                        text = { Text("Scan page for tag suggestions") },
+                                        onClick = {
+                                            exportMenuExpanded = false
+                                            onScanPage()
+                                        }
+                                    )
+                                }
+                            }
+                            if (llmSynthesisService != null && currentGraphId != null) {
+                                HorizontalDivider()
+                                DropdownMenuItem(
+                                    text = { Text("Synthesize suggestions for page") },
+                                    onClick = {
+                                        exportMenuExpanded = false
+                                        val graphIdForRun = currentGraphId
+                                        val blocksForRun = blocks
+                                        pageViewScope.launch {
+                                            llmSynthesisService.synthesizeForPage(graphIdForRun, page, blocksForRun)
+                                                .onLeft { error -> viewModel.sendSnackbar(error.message) }
+                                        }
+                                    }
+                                )
+                            }
+                            if (qrTransferSettings != null) {
+                                HorizontalDivider()
+                                SendViaQrMenuItem(
+                                    settings = qrTransferSettings,
+                                    onClick = {
+                                        exportMenuExpanded = false
+                                        showQrEncodeScreen = true
+                                    },
+                                )
+                            }
                         }
                     }
                 }
@@ -242,102 +445,93 @@ fun PageView(
                     )
                 }
 
+                // Section badge — shown when page belongs to a section and the manifest is available
+                val pageSectionId = page.sectionId
+                if (pageSectionId is SectionId.Named && currentManifest != null) {
+                    val section = currentManifest.sections.find { it.id == pageSectionId.id }
+                    if (section != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        SectionBadge(
+                            section = section,
+                            // Disable click for journal pages (FR-14 / story constraint)
+                            onClick = if (!page.isJournal) onSectionBadgeClick else null,
+                        )
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(16.dp))
                 HorizontalDivider()
                 Spacer(modifier = Modifier.height(16.dp))
             }
 
-            // Blocks content
-            item {
-                if (blocks.isEmpty()) {
-                    if (!page.isContentLoaded || page.uuid.value in loadingPageUuids) {
-                        Box(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                        }
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { blockStateManager.addBlockToPage(page.uuid) }
-                                .padding(vertical = 8.dp)
-                        ) {
-                            Text(
-                                text = "Click to write...",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                modifier = Modifier.padding(start = 8.dp, top = 4.dp, bottom = 4.dp)
-                            )
-                        }
-                    }
-                } else {
-                    val sortedBlocks = remember(blocks) { BlockSorter.sort(blocks) }
-
-                    BlockList(
-                        blocks = sortedBlocks,
-                        isDebugMode = isDebugMode,
-                        editingBlockUuid = editingBlockUuid?.value,
-                        editingCursorIndex = editingCursorIndex,
-                        collapsedBlocks = collapsedBlockUuids,
-                        selectedBlockUuids = selectedBlockUuids,
-                        isInSelectionMode = isInSelectionMode,
-                        onToggleSelect = { uuid -> blockStateManager.toggleBlockSelection(BlockUuid(uuid)) },
-                        onEnterSelectionMode = { uuid -> blockStateManager.enterSelectionMode(BlockUuid(uuid)) },
-                        onShiftClick = { uuid -> blockStateManager.extendSelectionTo(BlockUuid(uuid)) },
-                        onShiftArrowUp = { blockStateManager.extendSelectionByOne(up = true) },
-                        onShiftArrowDown = { blockStateManager.extendSelectionByOne(up = false) },
-                        onStartEditing = { uuid -> blockStateManager.requestEditBlock(BlockUuid(uuid)) },
-                        onStopEditing = { blockUuid -> blockStateManager.stopEditingBlock(BlockUuid(blockUuid)) },
-                        onContentChange = { blockUuid, newContent, version ->
-                            blockStateManager.updateBlockContent(BlockUuid(blockUuid), newContent, version)
-                        },
-                        onLinkClick = onLinkClick,
-                        onNewBlock = { uuid -> blockStateManager.addNewBlock(BlockUuid(uuid)) },
-                        onSplitBlock = { uuid, pos -> blockStateManager.splitBlock(BlockUuid(uuid), pos) },
-                        onMergeBlock = { uuid -> blockStateManager.mergeBlock(BlockUuid(uuid)) },
-                        onIndent = { blockUuid -> blockStateManager.indentBlock(BlockUuid(blockUuid)) },
-                        onOutdent = { blockUuid -> blockStateManager.outdentBlock(BlockUuid(blockUuid)) },
-                        onMoveUp = { blockUuid -> blockStateManager.moveBlockUp(BlockUuid(blockUuid)) },
-                        onMoveDown = { blockUuid -> blockStateManager.moveBlockDown(BlockUuid(blockUuid)) },
-                        onLoadContent = { pageUuid -> blockStateManager.loadPageContent(PageUuid(pageUuid)) },
-                        onBackspace = { blockUuid -> blockStateManager.handleBackspace(BlockUuid(blockUuid)) },
-                        onToggleCollapse = { blockUuid -> blockStateManager.toggleBlockCollapse(BlockUuid(blockUuid)) },
-                        onFocusUp = { blockUuid -> blockStateManager.focusPreviousBlock(BlockUuid(blockUuid)) },
-                        onFocusDown = { blockUuid -> blockStateManager.focusNextBlock(BlockUuid(blockUuid)) },
-                        onResolveContent = { uuid -> viewModel.getBlockContent(uuid) },
-                        onSearchPages = { query -> viewModel.searchPages(query) },
-                        formatEvents = blockStateManager.formatEvents,
-                        suggestionMatcher = suggestionMatcher,
-                        onNavigateAllSuggestions = { suggestions ->
-                            navigatorSuggestions = suggestions
-                            navigatorIndex = 0
-                        },
-                        onMoveSelectedBlocks = { newParentUuid, insertAfterUuid ->
-                            blockStateManager.moveSelectedBlocks(
-                                newParentUuid?.let { BlockUuid(it) },
-                                insertAfterUuid?.let { BlockUuid(it) }
-                            )
-                        },
-                        onAutoSelectForDrag = { uuid -> blockStateManager.enterSelectionMode(BlockUuid(uuid)) },
-                        onBlockSelectionChange = { blockUuid, range ->
-                            blockStateManager.updateEditingSelection(
-                                if (blockUuid == editingBlockUuid?.value) range else null
-                            )
-                        },
-                        onOpenAnnotationEditor = { uuid ->
-                            viewModel.navigateToAnnotationEditor(uuid, page.uuid.value)
-                        },
-                    )
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp)
-                            .clickable { blockStateManager.addBlockToPage(page.uuid) }
+            if (tagSuggestionViewModel != null && tagSuggestionViewModel.hasLlmProvider) {
+                item(key = "page_scan_banner") {
+                    ScanBanner(
+                        scanState = scanState,
+                        enabled = blocks.isNotEmpty(),
+                        onScan = onScanPage,
+                        onCancel = { tagSuggestionViewModel.cancelScan() },
                     )
                 }
+            }
+
+            // Blocks content
+            item {
+                PageContent(
+                    blocks = blocks,
+                    isLoading = !page.isContentLoaded || page.uuid.value in loadingPageUuids,
+                    isDebugMode = isDebugMode,
+                    editingBlockUuid = editingBlockUuid?.value,
+                    editingCursorIndex = editingCursorIndex,
+                    collapsedBlocks = collapsedBlockUuids,
+                    selectedBlockUuids = selectedBlockUuids,
+                    isInSelectionMode = isInSelectionMode,
+                    cutBlockUuids = cutBlockUuids,
+                    suggestionMatcher = suggestionMatcher,
+                    localPageNames = localPageNames,
+                    hasSectionFilter = hasSectionFilter,
+                    formatEvents = blockStateManager.formatEvents,
+                    onAddBlockToPage = { blockStateManager.addBlockToPage(page.uuid) },
+                    onStartEditing = { uuid -> blockStateManager.requestEditBlock(BlockUuid(uuid)) },
+                    onStopEditing = { uuid -> blockStateManager.stopEditingBlock(BlockUuid(uuid)) },
+                    onContentChange = { uuid, content, version -> blockStateManager.updateBlockContent(BlockUuid(uuid), content, version) },
+                    onLinkClick = onLinkClick,
+                    onNewBlock = { uuid -> blockStateManager.addNewBlock(BlockUuid(uuid)) },
+                    onSplitBlock = { uuid, pos -> blockStateManager.splitBlock(BlockUuid(uuid), pos) },
+                    onMergeBlock = { uuid -> blockStateManager.mergeBlock(BlockUuid(uuid)) },
+                    onBackspace = { uuid -> blockStateManager.handleBackspace(BlockUuid(uuid)) },
+                    onLoadContent = { pageUuid -> blockStateManager.loadPageContent(PageUuid(pageUuid)) },
+                    onToggleCollapse = { uuid -> blockStateManager.toggleBlockCollapse(BlockUuid(uuid)) },
+                    onIndent = { uuid -> blockStateManager.indentBlock(BlockUuid(uuid)) },
+                    onOutdent = { uuid -> blockStateManager.outdentBlock(BlockUuid(uuid)) },
+                    onMoveUp = { uuid -> blockStateManager.moveBlockUp(BlockUuid(uuid)) },
+                    onMoveDown = { uuid -> blockStateManager.moveBlockDown(BlockUuid(uuid)) },
+                    onFocusUp = { uuid -> blockStateManager.focusPreviousBlock(BlockUuid(uuid)) },
+                    onFocusDown = { uuid -> blockStateManager.focusNextBlock(BlockUuid(uuid)) },
+                    onToggleSelect = { uuid -> blockStateManager.toggleBlockSelection(BlockUuid(uuid)) },
+                    onEnterSelectionMode = { uuid -> blockStateManager.enterSelectionMode(BlockUuid(uuid)) },
+                    onShiftClick = { uuid -> blockStateManager.extendSelectionTo(BlockUuid(uuid)) },
+                    onShiftArrowUp = { blockStateManager.extendSelectionByOne(up = true) },
+                    onShiftArrowDown = { blockStateManager.extendSelectionByOne(up = false) },
+                    onMoveSelectedBlocks = { newParentUuid, insertAfterUuid ->
+                        blockStateManager.moveSelectedBlocks(
+                            newParentUuid?.let { BlockUuid(it) },
+                            insertAfterUuid?.let { BlockUuid(it) }
+                        )
+                    },
+                    onAutoSelectForDrag = { uuid -> blockStateManager.enterSelectionMode(BlockUuid(uuid)) },
+                    onDragStateChange = { isDragging -> isBlockDragging = isDragging },
+                    onBlockSelectionChange = { uuid, range ->
+                        blockStateManager.updateEditingSelection(if (uuid == editingBlockUuid?.value) range else null)
+                    },
+                    onResolveContent = { uuid -> viewModel.getBlockContent(uuid) },
+                    onSearchPages = { query -> viewModel.searchPages(query) },
+                    onNavigateAllSuggestions = { suggestions ->
+                        navigatorSuggestions = suggestions
+                        navigatorIndex = 0
+                    },
+                    onOpenAnnotationEditor = { uuid -> viewModel.navigateToAnnotationEditor(uuid, page.uuid.value) },
+                )
             }
 
             // References section
@@ -393,11 +587,68 @@ fun PageView(
             capabilities = capabilities,
             searchViewModel = searchViewModel,
             isLeftHanded = isLeftHanded,
+            hasDiskConflictPending = hasDiskConflictPending,
+            onSuggestTags = if (tagSuggestionViewModel != null) { blockUuid, content ->
+                if (content.isNotBlank()) {
+                    val alreadyLinked = WikiLinkExtractor.extractPageNames(content)
+                    tagSuggestionViewModel.requestSuggestions(
+                        blockUuid = blockUuid,
+                        blockContent = content,
+                        alreadyLinkedTerms = alreadyLinked,
+                    )
+                }
+            } else null,
+            onSelectAll = { blockStateManager.selectAll(page.uuid) },
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .onSizeChanged { toolbarHeight = it.height },
         )
+
+        if (tagSuggestionViewModel != null) {
+            SuggestionBottomSheet(
+                state = tagSuggestionState,
+                onAcceptTag = { uuid, term ->
+                    // When page-scope was triggered, uuid is the page uuid (not a block uuid).
+                    // Find the actual target block: use the block matching uuid, or fall back to first block.
+                    val targetBlockUuid = blocks.firstOrNull { it.uuid.value == uuid }?.uuid
+                        ?: blocks.firstOrNull()?.uuid
+                    targetBlockUuid?.let {
+                        blockStateManager.appendToBlock(it, " [[$term]]")
+                    }
+                },
+                onDismiss = { tagSuggestionViewModel.dismiss() },
+                onRetry = { tagSuggestionViewModel.retryLastRequest() },
+            )
+        }
     }
 
     } // CompositionLocalProvider(LocalGraphRootPath)
+
+    // Story 3.1.4 — QR transfer sender overlay, opened from the "Send via QR" menu action above.
+    if (showQrEncodeScreen && qrTransferSettings != null) {
+        val qrEncodeViewModel = remember(page.uuid) {
+            QrEncodeViewModel(
+                pageRepository = pageRepository,
+                blockRepository = blockRepository,
+                settings = qrTransferSettings,
+            )
+        }
+        DisposableEffect(qrEncodeViewModel) {
+            onDispose { qrEncodeViewModel.close() }
+        }
+        Dialog(
+            onDismissRequest = { showQrEncodeScreen = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            QrEncodeScreen(
+                pageUuid = page.uuid,
+                pageName = page.name,
+                blockCount = blocks.size,
+                viewModel = qrEncodeViewModel,
+                settings = qrTransferSettings,
+                onDismiss = { showQrEncodeScreen = false },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+    }
 }

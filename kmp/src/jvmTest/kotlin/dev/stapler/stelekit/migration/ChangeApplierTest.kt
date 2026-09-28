@@ -45,7 +45,7 @@ class ChangeApplierTest {
         uuid: String,
         pageUuid: String,
         content: String,
-        position: Int = 0,
+        position: String = "a0",
         properties: Map<String, String> = emptyMap(),
     ) = Block(
         uuid = BlockUuid(uuid),

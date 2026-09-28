@@ -11,7 +11,11 @@ import dev.stapler.stelekit.auto.AudiobookNote
 import dev.stapler.stelekit.auto.AudiobookNoteWriter
 import dev.stapler.stelekit.auto.BookInfo
 import dev.stapler.stelekit.auto.NoOpJournalService
+import dev.stapler.stelekit.llm.LlmCredentialStore
+import dev.stapler.stelekit.llm.LlmSettings
+import dev.stapler.stelekit.llm.buildLlmProviderRegistry
 import dev.stapler.stelekit.platform.PlatformSettings
+import dev.stapler.stelekit.platform.security.CredentialStore
 import dev.stapler.stelekit.voice.AndroidAudioRecorder
 import dev.stapler.stelekit.voice.AndroidSpeechRecognizerProvider
 import dev.stapler.stelekit.voice.VoiceCaptureState
@@ -79,10 +83,18 @@ class VoiceCaptureWidgetViewModel(app: Application) : AndroidViewModel(app) {
                 val settings = VoiceSettings(PlatformSettings())
                 val deviceStt = if (AndroidSpeechRecognizerProvider.isAvailable(ctx))
                     AndroidSpeechRecognizerProvider(ctx, requestMicPermission) else null
+                // LLM provider registry + settings (Epic 8) — built the same way ui/App.kt and
+                // MainActivity build them, so the widget's voice notes get the user's
+                // configured LLM provider instead of silently falling back to no-op formatting.
+                val llmCredentialStore = LlmCredentialStore(CredentialStore())
+                val llmSettings = LlmSettings(PlatformSettings())
+                val llmProviderRegistry = buildLlmProviderRegistry(llmCredentialStore, llmSettings)
                 val pipeline = buildVoicePipeline(
                     audioRecorder = recorder,
                     settings = settings,
                     directSpeechProvider = if (settings.getUseDeviceStt()) deviceStt else null,
+                    registry = llmProviderRegistry,
+                    llmSettings = llmSettings,
                 )
 
                 // When book context is present: inject NoOpJournalService so VoiceCaptureViewModel

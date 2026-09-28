@@ -6,8 +6,8 @@ dbgChannel.postMessage({ msg: 'worker-module-loaded', initModuleType: typeof sql
 
 let db = null;
 
-async function init(dbPath) {
-  dbgChannel.postMessage({ msg: 'init-called', dbPath });
+async function init(dbPath, mode) {
+  dbgChannel.postMessage({ msg: 'init-called', dbPath, mode });
   let sqlite3;
   try {
     sqlite3 = await sqlite3InitModule({ print: console.log, printErr: console.error });
@@ -15,6 +15,15 @@ async function init(dbPath) {
   } catch (initErr) {
     dbgChannel.postMessage({ msg: 'sqlite3-init-failed', error: String(initErr) });
     throw initErr;
+  }
+  if (mode === 'ephemeral') {
+    // Deliberate in-memory-only mode (the "open temporarily" flow) — never touches OPFS, so no
+    // pool VFS is installed at all. Distinct from the try/catch fallback below: that path only
+    // reaches ':memory:' when OPFS itself is unavailable, and warns because it's an unrequested
+    // degradation of a graph the user expects to persist. This path is the requested behavior.
+    db = new sqlite3.oo1.DB(':memory:');
+    self.postMessage({ type: 'ready', backend: 'memory' });
+    return;
   }
   try {
     const poolUtil = await sqlite3.installOpfsSAHPoolVfs({
@@ -33,10 +42,10 @@ async function init(dbPath) {
 }
 
 self.onmessage = async (e) => {
-  const { type, id, sql, bind, dbPath, successful } = e.data;
+  const { type, id, sql, bind, dbPath, mode, successful } = e.data;
   try {
     if (type === 'init') {
-      await init(dbPath);
+      await init(dbPath, mode);
       return;
     }
     if (type === 'exec' || type === 'query') {

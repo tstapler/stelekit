@@ -1,27 +1,30 @@
 package dev.stapler.stelekit.performance
 
 import dev.stapler.stelekit.db.DirectSqlWrite
-import dev.stapler.stelekit.db.RestrictedDatabaseQueries
-import dev.stapler.stelekit.db.SteleDatabase
+import dev.stapler.stelekit.db.RestrictedTelemetryQueries
+import dev.stapler.stelekit.db.TelemetryDatabase
+import kotlinx.coroutines.sync.Mutex
 
 /**
  * CRUD operations over the [debug_flags] SQLDelight table.
  * All reads/writes are synchronous (called from Dispatchers.IO).
  */
-class DebugFlagRepository(private val database: SteleDatabase) {
-    private val restricted = RestrictedDatabaseQueries(database.steleDatabaseQueries)
+class DebugFlagRepository(private val database: TelemetryDatabase, writeMutex: Mutex = Mutex()) {
+    private val restricted = RestrictedTelemetryQueries(database.telemetryQueries, writeMutex)
 
     @OptIn(DirectSqlWrite::class)
     suspend fun setFlag(key: String, enabled: Boolean) {
-        restricted.upsertDebugFlag(
-            key = key,
-            value_ = if (enabled) 1L else 0L,
-            updated_at = HistogramWriter.epochMs()
-        )
+        restricted.withWriteLock {
+            restricted.upsertDebugFlag(
+                key = key,
+                value_ = if (enabled) 1L else 0L,
+                updated_at = HistogramWriter.epochMs()
+            )
+        }
     }
 
     fun getFlag(key: String, default: Boolean = false): Boolean {
-        val row = database.steleDatabaseQueries.selectDebugFlag(key).executeAsOneOrNull()
+        val row = database.telemetryQueries.selectDebugFlag(key).executeAsOneOrNull()
         return if (row != null) row != 0L else default
     }
 
@@ -35,10 +38,16 @@ class DebugFlagRepository(private val database: SteleDatabase) {
     )
 
     suspend fun saveDebugMenuState(state: DebugMenuState) {
-        setFlag("frame_overlay", state.isFrameOverlayEnabled)
-        setFlag("otel_stdout", state.isOtelStdoutEnabled)
-        setFlag("jank_stats", state.isJankStatsEnabled)
-        setFlag("query_tracing", state.isQueryTracingEnabled)
-        setFlag("span_capture", state.isSpanCaptureEnabled)
+        val now = HistogramWriter.epochMs()
+        @OptIn(DirectSqlWrite::class)
+        restricted.withWriteLock {
+            restricted.transaction {
+                restricted.upsertDebugFlag("frame_overlay", if (state.isFrameOverlayEnabled) 1L else 0L, now)
+                restricted.upsertDebugFlag("otel_stdout", if (state.isOtelStdoutEnabled) 1L else 0L, now)
+                restricted.upsertDebugFlag("jank_stats", if (state.isJankStatsEnabled) 1L else 0L, now)
+                restricted.upsertDebugFlag("query_tracing", if (state.isQueryTracingEnabled) 1L else 0L, now)
+                restricted.upsertDebugFlag("span_capture", if (state.isSpanCaptureEnabled) 1L else 0L, now)
+            }
+        }
     }
 }

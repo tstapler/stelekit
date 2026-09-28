@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.CircularProgressIndicator
@@ -35,6 +36,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import dev.stapler.stelekit.tags.LlmSuggestionStatus
+import dev.stapler.stelekit.ui.components.tags.TagChipRow
 import dev.stapler.stelekit.voice.VoiceCaptureState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -51,6 +54,14 @@ private const val FIXED_PULSE_MAX_SCALE = 1.25f
 // Duration the Done state is shown before auto-resetting to Idle.
 private const val DONE_AUTO_RESET_MS = 5_000L
 
+/**
+ * Shown instead of "Start recording" when [VoiceCaptureButton]'s `isSupported` is false — i.e.
+ * the wired [dev.stapler.stelekit.voice.AudioRecorder] is the [dev.stapler.stelekit.voice.NoOpAudioRecorder]
+ * fallback and no [dev.stapler.stelekit.voice.DirectSpeechProvider] is configured (every platform
+ * except Android today). Surfaced up front, before any tap, per GAP-002.
+ */
+const val VOICE_CAPTURE_UNSUPPORTED_DESCRIPTION = "Voice capture isn't available on this device"
+
 @Composable
 fun VoiceCaptureButton(
     state: VoiceCaptureState,
@@ -58,11 +69,31 @@ fun VoiceCaptureButton(
     onDismissError: () -> Unit,
     onAutoReset: () -> Unit = {},
     amplitudeFlow: Flow<Float>? = null,
+    onAcceptTag: ((term: String) -> Unit)? = null,
+    isSupported: Boolean = true,
 ) {
     when (state) {
         VoiceCaptureState.Idle -> {
-            FloatingActionButton(onClick = onTap) {
-                Icon(Icons.Default.Mic, contentDescription = "Start recording")
+            if (isSupported) {
+                FloatingActionButton(onClick = onTap) {
+                    Icon(Icons.Default.Mic, contentDescription = "Start recording")
+                }
+            } else {
+                // Honestly reflect unavailability instead of presenting a fully-interactive
+                // control that would silently record nothing (GAP-002) — disabled up front,
+                // before the user ever taps, rather than only discoverable via a confusing
+                // error message after a Recording pulse.
+                FloatingActionButton(
+                    onClick = {},
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.semantics {
+                        contentDescription = VOICE_CAPTURE_UNSUPPORTED_DESCRIPTION
+                        disabled()
+                    },
+                ) {
+                    Icon(Icons.Default.MicOff, contentDescription = null)
+                }
             }
         }
 
@@ -122,11 +153,11 @@ fun VoiceCaptureButton(
                 delay(DONE_AUTO_RESET_MS)
                 onAutoReset()
             }
-            if (state.isLikelyTruncated) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                if (state.isLikelyTruncated) {
                     Surface(
                         shape = MaterialTheme.shapes.small,
                         color = MaterialTheme.colorScheme.tertiaryContainer,
@@ -147,16 +178,25 @@ fun VoiceCaptureButton(
                     ) {
                         Icon(Icons.Default.Warning, contentDescription = null)
                     }
+                } else {
+                    FloatingActionButton(
+                        onClick = onAutoReset,
+                        containerColor = ColorSuccess,
+                        modifier = Modifier.semantics {
+                            contentDescription = "Note saved. Tap to dismiss."
+                        },
+                    ) {
+                        Icon(Icons.Default.Check, contentDescription = null)
+                    }
                 }
-            } else {
-                FloatingActionButton(
-                    onClick = onAutoReset,
-                    containerColor = ColorSuccess,
-                    modifier = Modifier.semantics {
-                        contentDescription = "Note saved. Tap to dismiss."
-                    },
-                ) {
-                    Icon(Icons.Default.Check, contentDescription = null)
+                // Show tag suggestions chip row if tags are available and callback is wired
+                if (state.suggestedTags.isNotEmpty() && onAcceptTag != null) {
+                    TagChipRow(
+                        suggestions = state.suggestedTags.filter { !it.autoApplied },
+                        llmStatus = LlmSuggestionStatus.Resolved,
+                        onAccept = { suggestion -> onAcceptTag(suggestion.term) },
+                        onDismiss = { /* dismiss silently */ },
+                    )
                 }
             }
         }

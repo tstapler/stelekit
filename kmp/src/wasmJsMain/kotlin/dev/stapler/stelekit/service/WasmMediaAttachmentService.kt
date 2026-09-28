@@ -9,26 +9,66 @@ import arrow.core.right
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.NotificationType
+import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.opfsWriteFileBytes
-import dev.stapler.stelekit.platform.uniqueOpfsFileName
+import dev.stapler.stelekit.platform.toJsUint8Array
 import dev.stapler.stelekit.ui.NotificationManager
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.await
 import kotlinx.coroutines.withContext
 
 /**
- * WASM/web implementation of [MediaAttachmentService].
+ * WASM/web implementation of [MediaAttachmentService]: [pickAndAttach] backs the toolbar
+ * file-picker button, [attachBytes] backs drag-and-drop. Both share [uniqueFileName]'s
+ * [fileSystem]-cache-backed dedup and the write-then-register-blob-URL sequence so a file
+ * attached either way is visible to, and deduped against, the other.
  *
- * Only [attachBytes] is supported today — there is no toolbar file picker or clipboard-paste
- * wiring on web yet (see project_plans/wasm-image-drop's "Explicitly out of scope").
+ * [notificationManager] is attached post-construction via [attachNotificationManager] since
+ * `StelekitApp` creates its `NotificationManager` after `deps.platformIntegrations` is built —
+ * mirrors `CaptureController.attachNotificationManager`'s same "attach once ready" pattern on
+ * Desktop.
  */
-class WasmMediaAttachmentService(
-    private val notificationManager: NotificationManager,
-) : MediaAttachmentService {
+class WasmMediaAttachmentService(private val fileSystem: FileSystem) : MediaAttachmentService {
+
+    private var notificationManager: NotificationManager? = null
+
+    fun attachNotificationManager(nm: NotificationManager) {
+        notificationManager = nm
+    }
 
     override suspend fun pickAndAttach(
         graphRoot: String,
-        pageRelativePath: String
-    ): Either<DomainError, AttachmentResult>? = null
+        pageRelativePath: String,
+    ): Either<DomainError, AttachmentResult>? {
+        val fileObj = try {
+            pickImageFileJs().await()
+        } catch (e: Throwable) {
+            return null  // user cancelled or browser denied
+        }
+        val name = jsFileName(fileObj)
+        val arrayBuffer = try {
+            fileArrayBuffer(fileObj).await()
+        } catch (e: Throwable) {
+            return DomainError.AttachmentError.CopyFailed(e.message ?: "read failed").left()
+        }
+
+        val assetsPath = "$graphRoot/assets"
+        fileSystem.createDirectory(assetsPath)
+
+        val stem = if ('.' in name) name.substringBeforeLast('.') else name
+        val ext = if ('.' in name) name.substringAfterLast('.') else ""
+        val uniqueName = uniqueFileName(assetsPath, stem, ext, fileSystem)
+
+        val destPath = "$assetsPath/$uniqueName"
+        return try {
+            opfsWriteFileBytes(destPath, arrayBuffer)
+            val blobUrl = createObjectUrlFromBuffer(arrayBuffer, mimeTypeForExt(ext))
+            fileSystem.registerBlobUrl(destPath, blobUrl)
+            AttachmentResult(relativePath = "../assets/$uniqueName", displayName = uniqueName).right()
+        } catch (e: Throwable) {
+            DomainError.AttachmentError.CopyFailed(e.message ?: "OPFS write failed").left()
+        }
+    }
 
     override suspend fun attachBytes(
         bytes: ByteArray,
@@ -36,18 +76,55 @@ class WasmMediaAttachmentService(
         graphRoot: String
     ): Either<DomainError, AttachmentResult> = withContext(PlatformDispatcher.IO) {
         try {
-            val assetsDirPath = "$graphRoot/assets"
+            val assetsPath = "$graphRoot/assets"
+            fileSystem.createDirectory(assetsPath)
+
             val stem = suggestedName.substringBeforeLast('.', suggestedName)
             val ext = suggestedName.substringAfterLast('.', "")
-            val uniqueName = uniqueOpfsFileName(assetsDirPath, stem, ext)
-            opfsWriteFileBytes("$assetsDirPath/$uniqueName", bytes)
+            val uniqueName = uniqueFileName(assetsPath, stem, ext, fileSystem)
+
+            val destPath = "$assetsPath/$uniqueName"
+            val arrayBuffer = bytes.toJsUint8Array()
+            opfsWriteFileBytes(destPath, arrayBuffer)
+            val blobUrl = createObjectUrlFromBuffer(arrayBuffer, mimeTypeForExt(ext))
+            fileSystem.registerBlobUrl(destPath, blobUrl)
             AttachmentResult(relativePath = "../assets/$uniqueName", displayName = uniqueName).right()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
             val message = e.message ?: "OPFS write failed"
-            notificationManager.show("Image attachment failed: $message", NotificationType.ERROR)
+            notificationManager?.show("Image attachment failed: $message", NotificationType.ERROR)
             DomainError.AttachmentError.CopyFailed(message).left()
         }
     }
 }
+
+private fun createObjectUrlFromBuffer(buffer: JsAny, mimeType: String): String =
+    js("URL.createObjectURL(new Blob([buffer], { type: mimeType }))")
+
+private fun mimeTypeForExt(ext: String): String = when (ext.lowercase()) {
+    "jpg", "jpeg" -> "image/jpeg"
+    "png" -> "image/png"
+    "gif" -> "image/gif"
+    "webp" -> "image/webp"
+    "svg" -> "image/svg+xml"
+    "bmp" -> "image/bmp"
+    "avif" -> "image/avif"
+    else -> "application/octet-stream"
+}
+
+private fun pickImageFileJs(): kotlin.js.Promise<JsAny> = js("""(function() {
+    return new Promise(function(resolve, reject) {
+        var input = document.createElement('input');
+        input.type = 'file'; input.accept = 'image/*';
+        input.addEventListener('change', function() {
+            if (input.files && input.files[0]) resolve(input.files[0]);
+            else reject(new Error('no-file'));
+        });
+        input.addEventListener('cancel', function() { reject(new Error('cancelled')); });
+        input.click();
+    });
+})()""")
+
+private fun jsFileName(file: JsAny): String = js("file.name")
+private fun fileArrayBuffer(file: JsAny): kotlin.js.Promise<JsAny> = js("file.arrayBuffer()")

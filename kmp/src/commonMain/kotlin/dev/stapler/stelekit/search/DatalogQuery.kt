@@ -1,15 +1,10 @@
 package dev.stapler.stelekit.search
 
 import arrow.core.Either
-import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 
-import dev.stapler.stelekit.model.Block
-import dev.stapler.stelekit.model.Page
-import dev.stapler.stelekit.repository.PageRepository
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 /**
@@ -73,13 +68,6 @@ class DatalogEngine {
      */
     suspend fun execute(_query: DatalogQuery): Either<DomainError, List<Any>> {
         return emptyList<Any>().right()
-    }
-
-    /**
-     * Placeholder for advanced query optimization
-     */
-    private fun optimize(query: DatalogQuery): DatalogQuery {
-        return query
     }
 }
 

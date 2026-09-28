@@ -6,6 +6,7 @@ interface FileSystem {
     fun getDefaultGraphPath(): String
     fun expandTilde(path: String): String
     fun readFile(path: String): String?
+    suspend fun readFileSuspend(path: String): String? = readFile(path)
     fun writeFile(path: String, content: String): Boolean
     fun listFiles(path: String): List<String>
     fun listDirectories(path: String): List<String>
@@ -14,8 +15,54 @@ interface FileSystem {
     fun createDirectory(path: String): Boolean
     fun deleteFile(path: String): Boolean
     fun pickDirectory(): String?
+    val supportsNativeDirectoryPicker: Boolean get() = true
     suspend fun pickDirectoryAsync(): String? = pickDirectory()
+
+    /**
+     * True on platforms with a true app-private storage backend that needs zero external grant —
+     * Android's `filesDir` today (Story 2.2.1/2.2.2); Web's OPFS is the analogous Epic 2.3 case.
+     * Gates the "App storage" destination in [dev.stapler.stelekit.ui.components.UnifiedLocationPicker]
+     * call sites — false (the default) on Desktop/iOS, which already have unrestricted filesystem
+     * access and gain nothing from a second, app-private storage mode.
+     */
+    val supportsAppOwnedStorage: Boolean get() = false
+
+    /**
+     * Allocates a fresh, unique app-private root path for a brand-new [dev.stapler.stelekit.model.StorageLocation.AppOwned]
+     * graph. Only ever called when [supportsAppOwnedStorage] is true; the default throws since no
+     * other platform implements this concept.
+     */
+    fun newAppOwnedGraphPath(): String =
+        throw UnsupportedOperationException("newAppOwnedGraphPath is not supported on this platform")
+
+    /**
+     * Synchronously kicks off the native directory picker so the platform call happens inside the
+     * caller's click-handler call stack rather than after a `scope.launch` dispatch. Must be called
+     * directly from a Compose `onClick` before any `scope.launch { pickDirectoryAsync() }` — on the
+     * wasmJs actual, deferring `window.showDirectoryPicker()` past the click's synchronous stack
+     * risks losing the browser's "transient user activation" and failing with `SecurityError`.
+     * No-op on every platform except the wasmJs actual, which is the only one with this constraint.
+     */
+    fun requestDirectoryPickerNow() { /* no-op */ }
+
+    /**
+     * Returns (and clears) the message from the last [pickDirectoryAsync] failure that was NOT a
+     * user cancellation, or null if the last attempt was cancelled/succeeded/hasn't run. Lets
+     * callers distinguish "user closed the picker" (show nothing) from a real failure (surface it)
+     * without changing [pickDirectoryAsync]'s existing null-on-any-failure return contract.
+     * No-op on every platform except the wasmJs actual.
+     */
+    fun consumeLastPickerError(): String? = null
     fun getLastModifiedTime(path: String): Long?
+
+    /**
+     * Byte size of the file at [path], or null if it doesn't exist. Default implementation reads
+     * the whole file just to measure it — correct everywhere but not cheap; platforms with a
+     * native stat-like call (`java.io.File.length()`, Android `DocumentFile.length()`) should
+     * override this. Added for [dev.stapler.stelekit.db.BulkCopyVerifier]'s insufficient-space
+     * pre-flight check (Story 3.1.1 Task 3.1.1d), the only current caller.
+     */
+    fun getFileSize(path: String): Long? = readFileBytes(path)?.size?.toLong()
 
     /**
      * Returns file names paired with their last-modified timestamps in one pass.
@@ -26,7 +73,46 @@ interface FileSystem {
     fun listFilesWithModTimes(path: String): List<Pair<String, Long>> =
         listFiles(path).map { name -> name to (getLastModifiedTime("$path/$name") ?: 0L) }
 
+    /**
+     * Recursively lists every file under [path] (relative to [path], using `/` separators),
+     * paired with its last-modified timestamp. Excludes any directory literally named `.git`
+     * at the root of the walk (git metadata has no SAF-side counterpart to mirror).
+     *
+     * Default implementation recurses using [listFiles]/[listDirectories]/[getLastModifiedTime] —
+     * sufficient for every platform's `FileSystem` actual, including Android's SAF-backed
+     * `PlatformFileSystem` (those three primitives are already SAF-aware there). Declared with a
+     * default body so only Android's shadow-worktree git sync (the sole current caller) needs to
+     * reason about this; `JvmFileSystem`/iOS/wasmJs actuals need zero changes to keep compiling
+     * (see stelekit's Android git shadow-worktree plan, Phase 1).
+     */
+    suspend fun listFilesRecursiveWithModTimes(path: String): List<Pair<String, Long>> {
+        val result = mutableListOf<Pair<String, Long>>()
+
+        fun walk(dir: String, relPrefix: String) {
+            for (fileName in listFiles(dir)) {
+                val relPath = if (relPrefix.isEmpty()) fileName else "$relPrefix/$fileName"
+                val mtime = getLastModifiedTime("$dir/$fileName") ?: 0L
+                result += relPath to mtime
+            }
+            for (dirName in listDirectories(dir)) {
+                if (relPrefix.isEmpty() && dirName == ".git") continue
+                val relPath = if (relPrefix.isEmpty()) dirName else "$relPrefix/$dirName"
+                walk("$dir/$dirName", relPath)
+            }
+        }
+
+        walk(path, "")
+        return result
+    }
+
     fun hasStoragePermission(): Boolean = true
+    /**
+     * True when this platform can resolve a picked directory to a real `java.io.File` path
+     * usable directly by JGit (Desktop/iOS: always; Android: only with `MANAGE_EXTERNAL_STORAGE`
+     * granted — a plain SAF grant gives read/write access to a folder's content but never a real
+     * file path, since JGit has no concept of `content://` URIs).
+     */
+    fun hasAllFilesAccess(): Boolean = true
     fun getLibraryDisplayName(): String? = null
     /** Human-readable name for a given graph path. Defaults to the last path segment. */
     fun displayNameForPath(path: String): String =
@@ -46,6 +132,41 @@ interface FileSystem {
      * Callers must pass the result directly to [writeFile].
      */
     suspend fun pickSaveFileAsync(suggestedName: String, mimeType: String = "application/json"): String? = null
+
+    suspend fun pickFileAsync(): String? = null
+
+    /**
+     * Re-points an already-tracked graph's host-directory connection at a newly-picked folder,
+     * reusing [existingPath] (the graph's existing internal path) rather than deriving a new one —
+     * unlike [pickDirectoryAsync], which always creates a brand-new graph. Imports the newly
+     * picked folder's contents into [existingPath] and returns the picked folder's own name (for
+     * display), or null if the user cancelled, picking failed, or this platform has no concept of
+     * a host directory separate from its own storage (every platform except the wasmJs actual).
+     * Callers must call [requestDirectoryPickerNow] synchronously from the triggering click first,
+     * exactly as [pickDirectoryAsync] callers do.
+     */
+    suspend fun relinkHostDirectoryAsync(existingPath: String): String? = null
+
+    /**
+     * Story 3.3.3 (AppOwned→HostFolder move direction): shows the native directory picker and
+     * returns just the picked folder's name — unlike [pickDirectoryAsync]/[relinkHostDirectoryAsync],
+     * imports nothing and attaches no live handle, so an abandoned preview pick can't leave a
+     * throwaway OPFS import or mis-attached host handle behind. The real connect happens later, at
+     * confirm time, via `GraphRelocationCoordinator`'s `HostLinkStep` →
+     * `HostDirectorySync.connectHostDirectory`, which does its own `showDirectoryPicker()` call.
+     * Same [requestDirectoryPickerNow] synchronous-click requirement as [pickDirectoryAsync]. Null
+     * on cancel, failure, or a platform with no host-folder concept (only wasmJs has one today).
+     */
+    suspend fun pickHostFolderNamePreview(): String? = null
+
+    /**
+     * True only on platforms with a host-directory-livesync concept separate from their own
+     * storage (currently the wasmJs actual, gated on browser support for `showDirectoryPicker`).
+     * Distinct from [supportsNativeDirectoryPicker] — that flag covers the native "add a new
+     * graph" folder dialog available on desktop/Android/iOS too, where a graph's [relinkHostDirectoryAsync]
+     * has no meaning since its path already *is* the real folder.
+     */
+    val supportsHostDirectoryLink: Boolean get() = false
 
     /**
      * Read raw bytes from a file. Used by paranoid-mode decryption to read STEK-format files.
@@ -90,6 +211,48 @@ interface FileSystem {
     /** Flush all pending write-behind pages to SAF. No-op on platforms without write-behind. */
     suspend fun flushPendingWrites() {}
 
+    /**
+     * Registers a callback invoked after each successful write-behind flush to SAF.
+     * Used to call [dev.stapler.stelekit.db.GraphLoader.markFileWrittenByUs] so that
+     * the FileRegistry can record the post-flush SAF mtime and suppress the next poll event.
+     * No-op on platforms without write-behind.
+     */
+    fun setOnFlushComplete(callback: (suspend (String) -> Unit)?) {}
+
+    /**
+     * Registers a callback invoked immediately before each write-behind SAF write begins.
+     * Used to call [dev.stapler.stelekit.db.GraphLoader.preMarkFileWrite] so that FileRegistry
+     * sets the Long.MAX_VALUE sentinel, closing the race window where a concurrent
+     * detectChanges poll emits a spurious event between writeFile() and onFlushed().
+     * No-op on platforms without write-behind.
+     */
+    fun setOnFlushPreWrite(callback: (suspend (String) -> Unit)?) {}
+
+    /**
+     * Registers a callback invoked when a write-behind SAF write fails after [setOnFlushPreWrite].
+     * Used to call [dev.stapler.stelekit.db.GraphLoader.clearFilePendingWrite] to remove the
+     * Long.MAX_VALUE sentinel so the file is not permanently suppressed.
+     * No-op on platforms without write-behind.
+     */
+    fun setOnFlushFailed(callback: (suspend (String) -> Unit)?) {}
+
+    /**
+     * Registers the [dev.stapler.stelekit.performance.SpanEmitter] used to emit a
+     * "file.write.deferred" span for each write-behind SAF flush, feeding the disk-IO SLO
+     * ([dev.stapler.stelekit.performance.SloChecker]). No-op on platforms without write-behind.
+     */
+    fun setSpanEmitter(spanEmitter: dev.stapler.stelekit.performance.SpanEmitter?) {}
+
+    /**
+     * Registers a provider for the Android SAF shadow-git-worktree lock key (`GitShadowWorktree`'s
+     * `shadowKey`), so [flushPendingWrites] can serialize against a concurrent git shadow-worktree
+     * sync for the same graph (`GitWorktreeLocks`, plan.md Task 5.2.1c). Follows the same
+     * cross-layer callback pattern as [setOnFlushComplete]/[setOnFlushPreWrite]/[setOnFlushFailed]/
+     * [setSpanEmitter] above — `PlatformFileSystem` has no `GitConfig`/`repoRoot` in scope to
+     * derive this key itself. No-op on platforms without a git shadow worktree.
+     */
+    fun setGitShadowKeyProvider(provider: (() -> String?)?) {}
+
     /** Updates the shadow copy after a SAF write. No-op on non-SAF file systems. */
     fun updateShadow(path: String, content: String) { /* no-op */ }
 
@@ -114,4 +277,79 @@ interface FileSystem {
      * but warms the cache for subsequent reads. No-op on non-SAF file systems.
      */
     suspend fun syncShadow(graphPath: String) { /* no-op */ }
+
+    /**
+     * Current [HostAccessState] of [graphPath]'s connection to a host directory picked via the
+     * File System Access API (web-local-folder-livesync project). Only the wasmJs actual
+     * overrides this; every other platform has no concept of a "host directory" separate from
+     * its own storage, so the default returns [HostAccessState.NotApplicable] and performs no I/O.
+     */
+    suspend fun hostDirectoryAccessState(graphPath: String): HostAccessState = HostAccessState.NotApplicable
+
+    /**
+     * Registers a callback invoked when the web-local-folder-livesync reconciliation pass
+     * (`HostDirectorySync.runHostReconciliation`, Epic 3.2) classifies a plaintext path as
+     * `ReconciliationOutcome.HostChangedConflict` OR `HostOnlyNew` — `(fullGraphRootedPath,
+     * hostContent) -> Unit`. The path is graph-rooted (e.g. `"/stelekit/g/journals/2026_08_12.md"`),
+     * not repo-relative, so `GraphLoader`'s `path.contains("/journals/")` journal-detection idiom
+     * still matches. Wired from `App.kt` to `graphLoader::emitExternalFileChange` at the same point
+     * the existing write-behind flush callbacks (`setOnFlushPreWrite`/`setOnFlushComplete`/
+     * `setOnFlushFailed`) are wired, so `HostDirectorySync`/`PlatformFileSystem` never import
+     * `GraphLoader` directly (architecture-review.md Blocker 1's independence goal — matches the
+     * precedent those three callbacks already established). No-op on every platform except the
+     * wasmJs actual, which is the only one with a concept of a host directory to reconcile against.
+     */
+    fun setOnHostConflict(callback: ((path: String, hostContent: String) -> Unit)?) { /* no-op */ }
+
+    /**
+     * Bytes-aware sibling of [setOnHostConflict] for `.md.stek` (paranoid-mode) content — fires
+     * when `HostDirectorySync.runHostReconciliation`'s `.md.stek` branch classifies a path as
+     * `ReconciliationOutcome.HostOnlyNew` — `(fullGraphRootedPath, hostBytes) -> Unit`. Ciphertext
+     * can't round-trip through [setOnHostConflict]'s `String` parameter (adversarial-review.md
+     * Blocker 4), so this callback carries raw bytes; the wired implementation must decrypt via
+     * `GraphLoader`'s `CryptoLayer` before forwarding to `emitExternalFileChange`. `.md.stek`
+     * `HostChangedConflict` intentionally does NOT fire this callback (out of scope — Epic 3.1-3.3).
+     * No-op on every platform except the wasmJs actual.
+     */
+    fun setOnHostBytesConflict(callback: ((path: String, hostBytes: ByteArray) -> Unit)?) { /* no-op */ }
+
+    /**
+     * Registers a callback invoked when a web-local-folder-livesync write-through flush
+     * (`HostDirectorySync.flushHostWrite`, Epic 4.2) fails — permission revoked, `NotFoundError`,
+     * quota, or any other thrown error. Wired the same way as [setOnHostConflict] (`App.kt`, at
+     * the point `GraphLoader` first exists) to a small forwarding method on `GraphLoader` that
+     * reuses its existing `writeErrors` channel — no new error surface (Epic 4.4, Task 4.4.1b).
+     * No-op on every platform except the wasmJs actual.
+     */
+    fun setOnHostWriteFailed(callback: ((dev.stapler.stelekit.error.DomainError.FileSystemError.WriteFailed) -> Unit)?) { /* no-op */ }
+
+    /**
+     * Returns a platform-loadable URI string for a file at [graphRoot]/[relativePath].
+     * On Android SAF paths this returns the `content://` document URI (or a `file://`
+     * real path when MANAGE_EXTERNAL_STORAGE is granted); on other platforms returns null
+     * to fall through to the default `file://` construction in the caller.
+     */
+    fun resolveAssetUri(graphRoot: String, relativePath: String): String? = null
+
+    /**
+     * Registers a blob/object URL for [path] so platforms that can't serve files via
+     * `file://` URLs (e.g. WASM/browser) can still return a loadable URL from
+     * [resolveAssetUri]. No-op on platforms that use native file paths.
+     */
+    fun registerBlobUrl(path: String, url: String) {}
+
+    /**
+     * Converts a raw file [path] (absolute or saf://) to a URI string that Coil can load.
+     *
+     * - `saf://…` paths → `content://` document URI (Android only; overridden in PlatformFileSystem)
+     * - Absolute file paths (starting with `/`) → `file://…`
+     * - Already-loadable schemes (`file://`, `content://`, `http…`) → returned as-is
+     * - Anything else → null (caller falls back to passing the path directly to Coil)
+     */
+    fun resolveLoadableUri(path: String): String? = when {
+        path.startsWith("file://") || path.startsWith("content://") ||
+                path.startsWith("http://") || path.startsWith("https://") -> path
+        path.startsWith("/") -> "file://$path"
+        else -> null
+    }
 }

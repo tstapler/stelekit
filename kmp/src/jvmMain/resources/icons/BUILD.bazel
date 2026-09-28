@@ -1,3 +1,13 @@
+load("@rules_java//java:defs.bzl", "java_library")
+
+# icon.png as a classpath resource so painterResource("icons/icon.png") resolves at runtime.
+java_library(
+    name = "icon_resource",
+    resources = ["icon.png"],
+    resource_strip_prefix = "kmp/src/jvmMain/resources",
+    visibility = ["//kmp:__subpackages__"],
+)
+
 genrule(
     name = "icon_icns",
     srcs = ["icon.png"],

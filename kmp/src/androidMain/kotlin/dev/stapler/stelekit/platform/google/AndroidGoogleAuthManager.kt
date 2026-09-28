@@ -7,7 +7,6 @@ import android.content.Intent
 import android.net.Uri
 import arrow.core.Either
 import arrow.core.left
-import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.platform.SteleKitContext
 import kotlinx.coroutines.channels.BufferOverflow

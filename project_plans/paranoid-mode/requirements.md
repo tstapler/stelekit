@@ -118,6 +118,24 @@ Paranoid Mode is an opt-in security feature for SteleKit that encrypts all graph
 
 ---
 
+## FR-9 Hidden Activation Gesture ("Low-key Mode" Easter Egg)
+
+Paranoid Mode must not advertise itself in the main UI — the target user doesn't want the existence of encrypted notes to be obvious to someone glancing at their screen or device.
+
+**FR-9.1** The only entry point to enable Paranoid Mode is a tap/click sequence on the **version number** displayed in the Settings → About screen. Tapping the version number 5 times within 3 seconds triggers the activation flow. No other UI element surfaces Paranoid Mode.
+
+**FR-9.2** Tap-count feedback: after the 2nd tap, a subtle transient label appears below the version number (auto-hides after 2 s): *"N more taps to unlock Low-key Mode"* (N counts down from 3). No feedback on taps 1 or 5 — the first tap is silent; the 5th tap immediately launches the creation flow.
+
+**FR-9.3** On the 5th tap, the label is replaced by a one-time sheet / bottom-sheet (mobile) or modal dialog (desktop): *"Low-key Mode — enable encrypted graphs with plausible deniability?"* with **Enable** and **Cancel** actions. **Enable** navigates to FR-3 (Paranoid Mode Creation Flow / Vault Creation Wizard). The bottom-sheet is the same component used elsewhere in the app — no special "secret" styling that itself draws attention.
+
+**FR-9.4** Once any paranoid-mode graph has been created, a permanent "Low-key Mode" entry appears in Settings → Graph (per-graph) for that graph only. The global Settings → About tap sequence remains active for creating additional paranoid-mode graphs.
+
+**FR-9.5** The tap target is ≥ 44 × 44 dp to be reliably tappable on mobile without a keyboard. The version text may be visually small, but the touch target extends invisibly around it.
+
+**FR-9.6** This activation path works identically on Desktop JVM (mouse clicks) and Web/WASM (pointer events). No keyboard shortcut is provided or required for this entry point.
+
+---
+
 ## Acceptance Criteria
 
 1. A new graph created in paranoid mode has no plaintext files on disk after the first save.

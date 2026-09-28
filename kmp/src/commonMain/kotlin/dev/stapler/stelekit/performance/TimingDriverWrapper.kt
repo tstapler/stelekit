@@ -92,7 +92,7 @@ class TimingDriverWrapper(
         val endMs = HistogramWriter.epochMs()
         val attrs = buildMap {
             put("db.table", table)
-            put("session.id", AppSession.id)
+            putAll(AppSession.autoAttributes())
             if (errorMsg != null) put("error.message", errorMsg)
         }
         ringBuffer!!.record(

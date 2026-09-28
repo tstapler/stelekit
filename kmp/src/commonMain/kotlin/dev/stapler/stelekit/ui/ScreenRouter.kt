@@ -31,6 +31,8 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import dev.stapler.stelekit.db.GraphWriterPort
 import dev.stapler.stelekit.domain.NoOpUrlFetcher
 import dev.stapler.stelekit.domain.UrlFetcher
@@ -38,9 +40,12 @@ import dev.stapler.stelekit.performance.NavigationTracingEffect
 import dev.stapler.stelekit.performance.PercentileSummary
 import dev.stapler.stelekit.performance.QueryStat
 import dev.stapler.stelekit.performance.SerializedSpan
+import dev.stapler.stelekit.platform.sensor.SensorModule
 import dev.stapler.stelekit.repository.RepositorySet
+import dev.stapler.stelekit.transfer.qrcode.QrImportService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 import dev.stapler.stelekit.ui.annotate.AnnotationEditorScreen
 import dev.stapler.stelekit.ui.annotate.AnnotationEditorViewModel
 import dev.stapler.stelekit.ui.components.*
@@ -55,6 +60,9 @@ import dev.stapler.stelekit.ui.screens.LibraryStatsScreen
 import dev.stapler.stelekit.ui.screens.LibraryStatsViewModel
 import dev.stapler.stelekit.ui.screens.PageView
 import dev.stapler.stelekit.ui.screens.SearchViewModel
+import dev.stapler.stelekit.tags.TagSuggestionViewModel
+import dev.stapler.stelekit.ui.transfer.QrDecodeScreen
+import dev.stapler.stelekit.ui.transfer.QrDecodeViewModel
 
 /**
  * Routes the current [Screen] to its composable. Owns screen transition animations.
@@ -84,12 +92,25 @@ internal fun ScreenRouter(
     perfSpans: StateFlow<List<SerializedSpan>> = MutableStateFlow(emptyList()),
     perfHistograms: StateFlow<Map<String, PercentileSummary>> = MutableStateFlow(emptyMap()),
     perfQueryStats: StateFlow<List<QueryStat>> = MutableStateFlow(emptyList()),
+    tagSuggestionViewModel: TagSuggestionViewModel? = null,
+    /**
+     * Story 4.1.1: threaded down to [PageView]'s "Send via QR" menu item (Story 3.1.4). Null hides
+     * the menu trigger entirely, mirroring [PageView]'s own null-hides-trigger contract.
+     */
+    qrTransferSettings: dev.stapler.stelekit.transfer.qrcode.QrTransferSettings? = null,
+    /**
+     * Story 3.2.4/S7 equivalent of the [qrTransferSettings] wiring above: threaded down to
+     * [dev.stapler.stelekit.ui.screens.ImportScreen]'s "Import via camera" menu item and used to
+     * build the [QrImportService] backing [QrDecodeViewModel]. Null disables the entry point
+     * entirely, same null-hides-trigger contract as the send side.
+     */
+    graphLoader: dev.stapler.stelekit.db.GraphLoader? = null,
 ) {
     if (appState.fatalError != null) {
         FatalErrorScreen(
             message = appState.fatalError,
             onDismiss = { viewModel.clearFatalError() },
-            onRetry = { viewModel.loadGraph(appState.currentGraphPath) },
+            onRetry = { viewModel.loadGraph(appState.currentGraphPath.orEmpty()) },
         )
         return
     }
@@ -132,7 +153,7 @@ internal fun ScreenRouter(
                 blockRepository = repos.blockRepository,
                 pageRepository = repos.pageRepository,
                 blockStateManager = blockStateManager,
-                currentGraphPath = appState.currentGraphPath,
+                currentGraphPath = appState.currentGraphPath.orEmpty(),
                 onToggleFavorite = { viewModel.toggleFavorite(it) },
                 onRefresh = { viewModel.refreshCurrentPage() },
                 onLinkClick = { viewModel.navigateToPageByName(it) },
@@ -144,27 +165,59 @@ internal fun ScreenRouter(
                 capabilities = capabilities,
                 onReloadFromDisk = { viewModel.reloadCurrentPageFromDisk() },
                 isExporting = appState.isExporting,
+                tagSuggestionViewModel = tagSuggestionViewModel,
+                currentManifest = appState.currentManifest,
+                onSectionBadgeClick = { viewModel.showSectionPicker(currentScreen.page) },
+                hasDiskConflictPending = appState.diskConflict != null,
+                qrTransferSettings = qrTransferSettings,
             )
             is Screen.Journals -> JournalsView(
                 viewModel = journalsViewModel,
                 isDebugMode = appState.isDebugMode,
                 onLinkClick = { viewModel.navigateToPageByName(it) },
+                graphPath = appState.currentGraphPath.orEmpty(),
                 searchViewModel = searchViewModel,
                 onSearchPages = { query -> viewModel.searchPages(query) },
                 suggestionMatcher = suggestionMatcher,
                 isLeftHanded = appState.isLeftHanded,
                 onOpenAnnotationEditor = { uuid -> viewModel.navigateToAnnotationEditor(uuid) },
                 capabilities = capabilities,
+                tagSuggestionViewModel = tagSuggestionViewModel,
+                currentGraphId = appState.currentGraphId,
+                conflictFilePaths = appState.pendingConflictFilePaths,
+                hasDiskConflictPending = appState.diskConflict != null,
+                onExportEntry = { page, blocks, formatId ->
+                    viewModel.exportScopeToClipboard(
+                        shareScope = dev.stapler.stelekit.ui.ShareScope.CurrentPage,
+                        page = page,
+                        allBlocks = blocks,
+                        selectedUuids = emptySet(),
+                        formatId = formatId,
+                    )
+                },
             )
             is Screen.Flashcards -> {
                 NavigationTracingEffect("Flashcards")
                 FlashcardsScreen(blockStateManager)
             }
-            is Screen.AllPages -> AllPagesScreen(
-                viewModel = allPagesViewModel,
-                onPageClick = { page -> viewModel.navigateTo(Screen.PageView(page)) },
-                onBulkDelete = { uuids -> viewModel.bulkDeletePages(uuids) }
-            )
+            is Screen.AllPages -> {
+                // Reconcile against the full-graph snapshot whenever it's loaded: pages can be
+                // deleted/renamed via paths that don't run through the ViewModel (e.g. an
+                // external git pull/merge reconciled by GraphLoader), which would otherwise leave
+                // a stale key in pendingConflicts forever — see reconcilePendingConflicts().
+                val isLoading by allPagesViewModel.isLoading.collectAsState()
+                val livePaths by allPagesViewModel.allFilePaths.collectAsState()
+                LaunchedEffect(isLoading, livePaths) {
+                    if (!isLoading) viewModel.reconcilePendingConflicts(livePaths)
+                }
+                AllPagesScreen(
+                    viewModel = allPagesViewModel,
+                    onPageClick = { page -> viewModel.navigateTo(Screen.PageView(page)) },
+                    onBulkDelete = { uuids -> viewModel.bulkDeletePages(uuids) },
+                    conflictFilePaths = appState.pendingConflictFilePaths,
+                    conflictsOnly = currentScreen.conflictsOnly,
+                )
+            }
             is Screen.LibraryStats -> LibraryStatsScreen(viewModel = libraryStatsViewModel)
             is Screen.Notifications -> {
                 NavigationTracingEffect("Notifications")
@@ -192,12 +245,12 @@ internal fun ScreenRouter(
                 pageRepository = repos.pageRepository,
                 blockRepository = repos.blockRepository,
                 writeActor = repos.writeActor,
-                graphPath = appState.currentGraphPath,
+                graphPath = appState.currentGraphPath.orEmpty(),
                 suggestionMatcher = suggestionMatcher,
                 onNavigateTo = { viewModel.navigateTo(it) },
             )
             is Screen.Import -> {
-                val graphPath = appState.currentGraphPath
+                val graphPath = appState.currentGraphPath.orEmpty()
                 val importViewModel = remember(graphPath) {
                     dev.stapler.stelekit.ui.screens.ImportViewModel(
                         pageRepository = repos.pageRepository,
@@ -210,6 +263,10 @@ internal fun ScreenRouter(
                 DisposableEffect(importViewModel) {
                     onDispose { importViewModel.close() }
                 }
+                // Story 3.2.4/S7 — decode-side equivalent of the QrEncodeScreen wiring in
+                // PageView.kt: "Import via camera" opens QrDecodeScreen in an overlay Dialog.
+                var showQrDecodeScreen by remember { mutableStateOf(false) }
+                val writeActor = repos.writeActor
                 dev.stapler.stelekit.ui.screens.ImportScreen(
                     viewModel = importViewModel,
                     onDismiss = {
@@ -219,7 +276,44 @@ internal fun ScreenRouter(
                             viewModel.navigateToPageByName(savedName)
                         }
                     },
+                    qrTransferSettings = qrTransferSettings,
+                    onImportViaCamera = { showQrDecodeScreen = true },
                 )
+                // Split into two conditions (each under detekt's complexity threshold) rather than
+                // one 4-term && chain — local vals preserve Kotlin's smart-cast to non-null inside
+                // the inner block, which QrImportService/QrDecodeScreen below depend on.
+                if (showQrDecodeScreen) {
+                    val settings = qrTransferSettings
+                    val loader = graphLoader
+                    val actor = writeActor
+                    if (settings != null && loader != null && actor != null) {
+                        val qrDecodeViewModel = remember(graphPath) {
+                            QrDecodeViewModel(
+                                cameraFrameSource = SensorModule.cameraFrameSource,
+                                qrImportService = QrImportService(
+                                    graphLoader = loader,
+                                    pageRepository = repos.pageRepository,
+                                    writeActor = actor,
+                                ),
+                                settings = settings,
+                            )
+                        }
+                        DisposableEffect(qrDecodeViewModel) {
+                            onDispose { qrDecodeViewModel.close() }
+                        }
+                        Dialog(
+                            onDismissRequest = { showQrDecodeScreen = false },
+                            properties = DialogProperties(usePlatformDefaultWidth = false),
+                        ) {
+                            QrDecodeScreen(
+                                viewModel = qrDecodeViewModel,
+                                settings = settings,
+                                onDismiss = { showQrDecodeScreen = false },
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                    }
+                }
             }
             is Screen.VaultUnlock -> {
                 // Vault unlock is handled by the outer StelekitApp scaffold — no-op here
@@ -245,6 +339,45 @@ internal fun ScreenRouter(
                 )
             }
 
+            is Screen.AssetBrowser -> {
+                NavigationTracingEffect("AssetBrowser")
+                val assetBrowserViewModel = remember {
+                    dev.stapler.stelekit.ui.assets.AssetBrowserViewModel(assetRepository = repos.assetRepository, writeActor = repos.writeActor)
+                }
+                dev.stapler.stelekit.ui.assets.AssetBrowserScreen(
+                    viewModel = assetBrowserViewModel,
+                    onNavigateBack = { viewModel.goBack() },
+                    onNavigateToAsset = { uuid -> viewModel.navigateTo(Screen.AssetDetail(uuid)) },
+                )
+            }
+
+            is Screen.AssetDetail -> {
+                NavigationTracingEffect("AssetDetail")
+                val assetDetailViewModel = remember(currentScreen.assetUuid) {
+                    dev.stapler.stelekit.ui.assets.AssetDetailViewModel(
+                        assetRepository = repos.assetRepository,
+                        assetUuid = currentScreen.assetUuid,
+                        imageAnnotationRepository = repos.imageAnnotationRepository,
+                        blockRepository = repos.blockRepository,
+                        writeActor = repos.writeActor,
+                        graphPath = appState.currentGraphPath.orEmpty(),
+                    )
+                }
+                val annotateScope = rememberCoroutineScope()
+                dev.stapler.stelekit.ui.assets.AssetDetailScreen(
+                    viewModel = assetDetailViewModel,
+                    onNavigateBack = { viewModel.goBack() },
+                    onNavigateToPage = { pageUuid -> viewModel.navigateToPageByUuid(pageUuid) },
+                    onAnnotate = { asset ->
+                        annotateScope.launch {
+                            assetDetailViewModel.resolveOrCreateAnnotation(asset)?.let { annotationUuid ->
+                                viewModel.navigateToAnnotationEditor(annotationUuid, asset.pageUuids.firstOrNull())
+                            }
+                        }
+                    },
+                )
+            }
+
             is Screen.AnnotationEditor -> {
                 NavigationTracingEffect("AnnotationEditor")
                 val imageAnnotationUuid = currentScreen.imageAnnotationUuid
@@ -257,13 +390,24 @@ internal fun ScreenRouter(
                 DisposableEffect(annotationEditorViewModel) {
                     onDispose { annotationEditorViewModel.close() }
                 }
+                // depth-model-download-stall: safe cast — only Android's OnnxMonocularDepthEstimator
+                // implements DownloadableDepthModel (ADR-002); NoOp/iOS estimators don't, so the
+                // depth-estimation panel simply doesn't render there.
+                val downloadableDepthModel = SensorModule.monocularDepthEstimator as?
+                    dev.stapler.stelekit.platform.ml.DownloadableDepthModel
+                LaunchedEffect(downloadableDepthModel) {
+                    downloadableDepthModel?.modelState?.collect { uiState ->
+                        annotationEditorViewModel.updateDepthModelUiState(uiState)
+                    }
+                }
+                val depthModelScope = rememberCoroutineScope()
                 // Collect the annotation reactively; initialize the viewModel once on first non-null load.
                 var initialized by remember(imageAnnotationUuid) { mutableStateOf(false) }
                 var resolvedAnnotation by remember(imageAnnotationUuid) {
                     mutableStateOf<dev.stapler.stelekit.model.ImageAnnotation?>(null)
                 }
                 LaunchedEffect(imageAnnotationUuid) {
-                    repos.imageAnnotationRepository.getImageAnnotationByUuid(imageAnnotationUuid)
+                    repos.imageAnnotationRepository.getImageAnnotationByUuid(imageAnnotationUuid.value)
                         .collect { either ->
                             either.onRight { annotation ->
                                 resolvedAnnotation = annotation
@@ -286,6 +430,18 @@ internal fun ScreenRouter(
                                 viewModel.goBack()
                             }
                         },
+                        onDownloadDepthModel = downloadableDepthModel?.let {
+                            { depthModelScope.launch { it.downloadModel() } }
+                        },
+                        onCancelDownloadDepthModel = downloadableDepthModel?.let {
+                            { it.cancelDownload() }
+                        },
+                        // Real depth estimation (running inference on a captured bitmap) is
+                        // unrelated to the download-stall bug this wiring exists for and needs its
+                        // own bitmap-sourcing work — left null so the panel shows "coming soon"
+                        // instead of a silently-dead button (see project_plans/
+                        // depth-model-download-stall/implementation/adversarial-review.md Blocker 3).
+                        onEstimateDepth = null,
                     )
                 }
             }
