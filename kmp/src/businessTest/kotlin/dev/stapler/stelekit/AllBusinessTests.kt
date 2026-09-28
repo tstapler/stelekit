@@ -102,13 +102,23 @@ import dev.stapler.stelekit.docs.JourneyStepCountRubricTest
 import dev.stapler.stelekit.editor.ImageAttachCallbackContractTest
 import dev.stapler.stelekit.export.ExportServiceJournalRangeTest
 import dev.stapler.stelekit.export.ExportServiceLinkedPagesTest
+import dev.stapler.stelekit.git.GitCloneRetryCleanupTest
+import dev.stapler.stelekit.git.GitConfigCloneDepthMappingTest
+import dev.stapler.stelekit.git.GitOperationSupportClassifierTest
+import dev.stapler.stelekit.git.GitRepositoryUnshallowTest
 import dev.stapler.stelekit.git.GitShadowWorktreeNoCoroutineScopeTest
+import dev.stapler.stelekit.git.GitSyncBusyCounterFetchOnlyTest
 import dev.stapler.stelekit.git.GitSyncServiceConflictResolutionTest
 import dev.stapler.stelekit.git.GitSyncServiceErrorRoutingTest
 import dev.stapler.stelekit.git.GitSyncServiceRateLimitRetryTest
 import dev.stapler.stelekit.git.GitSyncServiceTest
+import dev.stapler.stelekit.git.GitTransportFaultInjectionTest
+import dev.stapler.stelekit.git.GitTransportRetryStateTest
+import dev.stapler.stelekit.git.GitTransportRetryTest
+import dev.stapler.stelekit.git.ShallowMergeTest
 import dev.stapler.stelekit.git.merge.JournalMergeServiceTest
 import dev.stapler.stelekit.git.merge.LogseqMergeDriverTest
+import dev.stapler.stelekit.git.testsupport.StubGitRepositoryFailureSequenceTest
 import dev.stapler.stelekit.llm.AndroidOnDeviceFallbackTest
 import dev.stapler.stelekit.llm.CustomProviderUrlValidationTest
 import dev.stapler.stelekit.llm.LlmCredentialMigrationTest
@@ -128,6 +138,7 @@ import dev.stapler.stelekit.platform.measurement.MeasurementInjectionTest
 import dev.stapler.stelekit.platform.security.CredentialAccessTest
 import dev.stapler.stelekit.repository.AssetRepositoryTest
 import dev.stapler.stelekit.repository.WikilinkBatchInsertTest
+import dev.stapler.stelekit.resilience.RetryPoliciesTest
 import dev.stapler.stelekit.sections.DeviceProfileTest
 import dev.stapler.stelekit.sections.ThreeStateSubscriptionTest
 import dev.stapler.stelekit.tags.LlmTagProviderTest
@@ -231,11 +242,21 @@ import org.junit.runners.Suite
     ImageAttachCallbackContractTest::class,
     ExportServiceJournalRangeTest::class,
     ExportServiceLinkedPagesTest::class,
+    GitCloneRetryCleanupTest::class,
+    GitConfigCloneDepthMappingTest::class,
+    GitOperationSupportClassifierTest::class,
+    GitRepositoryUnshallowTest::class,
     GitShadowWorktreeNoCoroutineScopeTest::class,
+    GitSyncBusyCounterFetchOnlyTest::class,
     GitSyncServiceConflictResolutionTest::class,
     GitSyncServiceErrorRoutingTest::class,
     GitSyncServiceRateLimitRetryTest::class,
     GitSyncServiceTest::class,
+    GitTransportFaultInjectionTest::class,
+    GitTransportRetryStateTest::class,
+    GitTransportRetryTest::class,
+    ShallowMergeTest::class,
+    StubGitRepositoryFailureSequenceTest::class,
     JournalMergeServiceTest::class,
     LogseqMergeDriverTest::class,
     AndroidOnDeviceFallbackTest::class,
@@ -257,6 +278,7 @@ import org.junit.runners.Suite
     CredentialAccessTest::class,
     AssetRepositoryTest::class,
     WikilinkBatchInsertTest::class,
+    RetryPoliciesTest::class,
     DeviceProfileTest::class,
     ThreeStateSubscriptionTest::class,
     LlmTagProviderTest::class,
