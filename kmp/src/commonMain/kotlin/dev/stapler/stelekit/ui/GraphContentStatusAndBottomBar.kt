@@ -22,14 +22,6 @@ import dev.stapler.stelekit.voice.VoiceCaptureState
 import dev.stapler.stelekit.voice.VoiceCaptureViewModel
 import dev.stapler.stelekit.voice.VoicePipelineConfig
 
-/**
- * The desktop status bar row: encryption/graph-name/status-message plus a lock-vault button when
- * an unlocked vault manager is active. [activeVaultManager] is pre-gated by `isParanoidMode` at
- * the call site rather than taken as a separate flag argument. Split out from [GraphContent]
- * purely for length/nesting — see ADR-001-style decomposition rationale at [GraphContent]'s own
- * doc; the mobile-vs-desktop `isMobile` check stays at that call site for the same reason
- * [EncryptionState] avoids a boolean *parameter* branched on directly.
- */
 /** Non-state collaborators [GraphContentDesktopStatusRow] needs (bundled for parameter-count relief). */
 internal class GraphContentStatusRowInputs(
     val appState: AppState,
@@ -40,6 +32,14 @@ internal class GraphContentStatusRowInputs(
     val graphIoStack: GraphContentGraphIoStack,
 )
 
+/**
+ * The desktop status bar row: encryption/graph-name/status-message plus a lock-vault button when
+ * an unlocked vault manager is active. [GraphContentStatusRowInputs.activeVaultManager] is
+ * pre-gated by `isParanoidMode` at the call site rather than taken as a separate flag argument.
+ * Split out from [GraphContent] purely for length/nesting — see ADR-001-style decomposition
+ * rationale at [GraphContent]'s own doc; the mobile-vs-desktop `isMobile` check stays at that call
+ * site for the same reason [EncryptionState] avoids a boolean *parameter* branched on directly.
+ */
 @Composable
 internal fun GraphContentDesktopStatusRow(viewModel: StelekitViewModel, inputs: GraphContentStatusRowInputs) {
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

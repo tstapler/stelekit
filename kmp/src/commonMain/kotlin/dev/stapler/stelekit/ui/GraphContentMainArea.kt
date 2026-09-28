@@ -57,17 +57,17 @@ internal fun GraphContentMainArea(
     viewModel: StelekitViewModel,
     inputs: GraphContentMainAreaInputs,
 ) {
-    val activeGraphInfo2 = inputs.graphRegistry.graphs.firstOrNull { it.id == inputs.activeGraphId }
+    val activeGraphInfo = inputs.graphRegistry.graphs.firstOrNull { it.id == inputs.activeGraphId }
     // appState.gitConfig used to default to null and never get assigned anywhere (verified via
     // repo-wide grep), so every UI element gated on it — the sidebar "git configured" indicator,
     // this banner's suppression check — was permanently wrong regardless of the graph's real
     // GitConfigRepository state. Reload it from the repository whenever the active graph changes.
     LaunchedEffect(inputs.activeGraphId) {
-        reloadGitConfig(inputs, viewModel, activeGraphInfo2)
+        reloadGitConfig(inputs, viewModel, activeGraphInfo)
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        GraphContentBanners(deps, viewModel, inputs, activeGraphInfo2)
+        GraphContentBanners(deps, viewModel, inputs, activeGraphInfo)
         Box(modifier = Modifier.weight(1f)) {
             GraphContentScreenAndCapture(deps, viewModel, inputs)
         }
@@ -77,13 +77,13 @@ internal fun GraphContentMainArea(
 private suspend fun reloadGitConfig(
     inputs: GraphContentMainAreaInputs,
     viewModel: StelekitViewModel,
-    activeGraphInfo2: dev.stapler.stelekit.model.GraphInfo?,
+    activeGraphInfo: dev.stapler.stelekit.model.GraphInfo?,
 ) {
     val gid = inputs.activeGraphId?.value ?: return
     val repoConfig = inputs.gitConfigRepository?.getConfig(gid)?.getOrNull()
     inputs.graphContentLogger.info(
         "gitConfig loaded graph=$gid configured=${repoConfig != null} " +
-            "detectedRepoRoot=${activeGraphInfo2?.detectedRepoRoot}"
+            "detectedRepoRoot=${activeGraphInfo?.detectedRepoRoot}"
     )
     viewModel.setGitConfig(repoConfig)
 }
@@ -99,18 +99,18 @@ private class BannerVisibility(
 private fun computeBannerVisibility(
     deps: GraphContentDeps,
     inputs: GraphContentMainAreaInputs,
-    activeGraphInfo2: dev.stapler.stelekit.model.GraphInfo?,
+    activeGraphInfo: dev.stapler.stelekit.model.GraphInfo?,
     hostReconnectBannerDismissedFor: Pair<String?, String?>?,
 ): BannerVisibility {
-    val showGitBanner = activeGraphInfo2?.detectedRepoRoot != null &&
+    val showGitBanner = activeGraphInfo?.detectedRepoRoot != null &&
         inputs.appState.gitConfig == null &&
-        activeGraphInfo2.gitDetectionDismissed == false
-    val showBrowserOnlySyncBanner = activeGraphInfo2 != null &&
-        activeGraphInfo2.isDemo == false &&
+        activeGraphInfo.gitDetectionDismissed == false
+    val showBrowserOnlySyncBanner = activeGraphInfo != null &&
+        activeGraphInfo.isDemo == false &&
         inputs.hostAccessState == HostAccessState.NotApplicable &&
         deps.fileSystem.supportsNativeDirectoryPicker &&
         deps.webSyncDeps.onConnectHostDirectory != null &&
-        activeGraphInfo2.browserOnlySyncBannerDismissed == false
+        activeGraphInfo.browserOnlySyncBannerDismissed == false
     // SyncDegraded: permission still reads as Granted, but the write-through queue is stuck — the
     // startup log line ("reconnectHostDirectory(...): Granted") looks like sync is working, and
     // nothing else prints a warning, so this condition was previously visible only in the small
@@ -119,7 +119,7 @@ private fun computeBannerVisibility(
         inputs.hostWriteStuck &&
         inputs.hostWritePendingCount > 0
     val hostReconnectBannerConditionKind = if (hostSyncDegraded) "degraded" else inputs.hostAccessState::class.simpleName
-    val showHostReconnectBanner = activeGraphInfo2 != null &&
+    val showHostReconnectBanner = activeGraphInfo != null &&
         (inputs.hostAccessState is HostAccessState.PromptNeeded ||
             inputs.hostAccessState is HostAccessState.Denied ||
             hostSyncDegraded) &&
@@ -133,17 +133,17 @@ private fun GraphContentBanners(
     deps: GraphContentDeps,
     viewModel: StelekitViewModel,
     inputs: GraphContentMainAreaInputs,
-    activeGraphInfo2: dev.stapler.stelekit.model.GraphInfo?,
+    activeGraphInfo: dev.stapler.stelekit.model.GraphInfo?,
 ) {
     // Keyed by (graphId, condition kind), not just graphId: dismissing the banner for one failure
     // kind (e.g. Denied) must not suppress it for a later, unrelated one (e.g. SyncDegraded) on
     // the same graph.
     var hostReconnectBannerDismissedFor by remember { mutableStateOf<Pair<String?, String?>?>(null) }
-    val visibility = computeBannerVisibility(deps, inputs, activeGraphInfo2, hostReconnectBannerDismissedFor)
+    val visibility = computeBannerVisibility(deps, inputs, activeGraphInfo, hostReconnectBannerDismissedFor)
 
     if (visibility.showGitBanner) {
         GitDetectionBanner(
-            repoRoot = activeGraphInfo2!!.detectedRepoRoot!!,
+            repoRoot = activeGraphInfo!!.detectedRepoRoot!!,
             onSetupSync = { viewModel.openGitSetup() },
             onDismiss = {
                 val gid = inputs.activeGraphId ?: return@GitDetectionBanner
