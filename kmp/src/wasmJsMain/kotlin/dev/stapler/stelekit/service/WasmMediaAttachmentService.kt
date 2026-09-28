@@ -19,19 +19,15 @@ import kotlinx.coroutines.withContext
 
 /**
  * WASM/web implementation of [MediaAttachmentService]: [pickAndAttach] backs the toolbar
- * file-picker button, [attachBytes] backs drag-and-drop. Both share [uniqueFileName]'s
- * [fileSystem]-cache-backed dedup and the write-then-register-blob-URL sequence so a file
- * attached either way is visible to, and deduped against, the other.
- *
- * [notificationManager] is attached post-construction via [attachNotificationManager] since
- * `StelekitApp` creates its `NotificationManager` after `deps.platformIntegrations` is built —
- * mirrors `CaptureController.attachNotificationManager`'s same "attach once ready" pattern on
- * Desktop.
+ * file-picker button, [attachBytes] backs drag-and-drop — both go through [persistAttachment].
  */
 class WasmMediaAttachmentService(private val fileSystem: FileSystem) : MediaAttachmentService {
 
     private var notificationManager: NotificationManager? = null
 
+    // Attached post-construction since StelekitApp creates its NotificationManager after
+    // deps.platformIntegrations is built — mirrors CaptureController.attachNotificationManager
+    // on Desktop.
     fun attachNotificationManager(nm: NotificationManager) {
         notificationManager = nm
     }

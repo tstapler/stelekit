@@ -47,11 +47,17 @@ internal fun ensureListenerInstalled() {
     listenerInstalled = true
     installBodyDropListener { fileArray ->
         dropScope.launch {
-            val handler = activeDropHandler ?: return@launch
+            val handlerAtDropTime = activeDropHandler ?: return@launch
             val count = jsFileArrayLength(fileArray)
             val dropped = (0 until count)
                 .mapNotNull { i -> readDroppedImageOrNull(jsFileArrayGet(fileArray, i)) }
-            if (dropped.isNotEmpty()) handler(dropped)
+            // Re-check identity: the page may have navigated away (swapping activeDropHandler
+            // via SideEffect/onDispose) while the suspending per-file reads above were in
+            // flight — deliver only to the handler still current when reads finished, not a
+            // stale one captured before navigation.
+            if (dropped.isNotEmpty() && activeDropHandler === handlerAtDropTime) {
+                handlerAtDropTime(dropped)
+            }
         }
     }
 }

@@ -104,13 +104,9 @@ class MeasurementInjectionTest {
         assertEquals(DeviceConnectionState.DISCONNECTED, vm.deviceConnectionState.value)
     }
 
-    // Test functions below wrap their bodies in `withContext(Dispatchers.Default)` (a real,
-    // non-virtual dispatcher) rather than delaying directly in `runTest`'s TestScope: the
-    // ViewModel under test owns its own internal `Dispatchers.Default` scope (never
-    // test-injectable, per this repo's coroutine-scope-ownership rule) and these `delay()` calls
-    // must be genuine wall-clock waits for that scope's work to complete, not virtual-time-skipped
-    // by `runTest`'s TestCoroutineScheduler. Multiplatform equivalent of the JVM/Native-only
-    // `kotlinx.coroutines.runBlocking` these tests used before wasmJs test compilation was enabled.
+    // Test functions below wrap their bodies in withContext(Dispatchers.Default) — a real,
+    // wall-clock dispatcher — because delay() here must actually wait for the ViewModel's own
+    // (non-test-injectable) Dispatchers.Default scope, not be virtual-time-skipped by runTest.
 
     @Test
     fun `injectMeasurementFromDevice updates annotation valueMeters from BLE reading`() = runTest {
