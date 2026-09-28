@@ -30,6 +30,48 @@ private fun restoreCreateWritable(original: JsAny?): Unit = js(
     "(function() { FileSystemFileHandle.prototype.createWritable = original; })()",
 )
 
+// Rejects at the write() step instead of createWritable() — createWritable() must succeed so a
+// real writable stream is obtained first, otherwise opfsWriteFileBytes's abort-on-failure path
+// (OpfsInterop.kt's `if (handle != null) writableAbort(handle)`) is never reached, since `writable`
+// is only assigned after createWritable() resolves.
+private fun monkeypatchWritableWriteToReject(): JsAny? = js(
+    """
+    (function() {
+        var original = FileSystemWritableFileStream.prototype.write;
+        FileSystemWritableFileStream.prototype.write = function() {
+            return Promise.reject(new Error('simulated OPFS write failure'));
+        };
+        return original || null;
+    })()
+    """,
+)
+
+private fun restoreWritableWrite(original: JsAny?): Unit = js(
+    "(function() { FileSystemWritableFileStream.prototype.write = original; })()",
+)
+
+// Spies on abort() (records a call, then delegates) so the write-failure test can assert the
+// OPFS lock-leak fix actually ran, not just that the operation failed.
+private fun spyOnWritableAbort(): JsAny? = js(
+    """
+    (function() {
+        var original = FileSystemWritableFileStream.prototype.abort;
+        globalThis.__stelekitWritableAbortCalled = false;
+        FileSystemWritableFileStream.prototype.abort = function() {
+            globalThis.__stelekitWritableAbortCalled = true;
+            return original ? original.call(this) : Promise.resolve();
+        };
+        return original || null;
+    })()
+    """,
+)
+
+private fun restoreWritableAbort(original: JsAny?): Unit = js(
+    "(function() { FileSystemWritableFileStream.prototype.abort = original; })()",
+)
+
+private fun wasWritableAbortCalled(): Boolean = js("!!globalThis.__stelekitWritableAbortCalled")
+
 /**
  * Real-OPFS round trip for [WasmMediaAttachmentService], run in headless Chromium via
  * `wasmJsBrowserTest` (see WasmBenchmarkTest.kt's doc comment — real browser APIs, not a mock).
@@ -83,5 +125,28 @@ class WasmMediaAttachmentServiceTest {
 
         val error = assertNotNull(result.fold({ it }, { null }), "expected Either.Left, got $result")
         assertIs<DomainError.AttachmentError.CopyFailed>(error)
+    }
+
+    @Test
+    fun attachBytes_abortsWritableStream_whenWriteFailsAfterCreatingWritable() = runTest {
+        // Rejects write() (not createWritable()) so a real writable stream exists first, and spies
+        // on abort() — this is the one path the test above can't cover: createWritable() succeeding
+        // then write() failing is exactly the case opfsWriteFileBytes's writableAbort() call exists
+        // for (PR #361 Gate-2 review, MAJOR 4: an un-aborted stream leaks OPFS's exclusive file lock).
+        val service = newService()
+        val graphRoot = uniqueGraphRoot()
+
+        val originalWrite = monkeypatchWritableWriteToReject()
+        val originalAbort = spyOnWritableAbort()
+        val result = try {
+            service.attachBytes(byteArrayOf(1, 2, 3), "fail-write.png", graphRoot)
+        } finally {
+            restoreWritableWrite(originalWrite)
+            restoreWritableAbort(originalAbort)
+        }
+
+        val error = assertNotNull(result.fold({ it }, { null }), "expected Either.Left, got $result")
+        assertIs<DomainError.AttachmentError.CopyFailed>(error)
+        assertEquals(true, wasWritableAbortCalled(), "expected writable.abort() to be called after write() rejected")
     }
 }
