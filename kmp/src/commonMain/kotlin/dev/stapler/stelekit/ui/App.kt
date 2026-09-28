@@ -171,6 +171,7 @@ fun StelekitApp(
      * When null (default), the panel is rendered but the buttons are no-ops.
      */
     googleAuthManager: dev.stapler.stelekit.platform.google.GoogleAuthManager? = null,
+    notificationManager: NotificationManager = remember { NotificationManager() },
 ) {
     val platformSettings = remember { PlatformSettings() }
     val scope = rememberCoroutineScope()
@@ -297,8 +298,6 @@ fun StelekitApp(
             graphManager.switchGraph(graphId)
         }
     }
-
-    val notificationManager = remember { NotificationManager() }
 
     val repos = activeRepoSet
 
@@ -1204,10 +1203,19 @@ private fun GraphContent(
                                             if (pageUuid != null) {
                                                 scope.launch {
                                                     files.forEach { file ->
-                                                        val result = attachmentService.attachFilePath(
-                                                            filePath = file.toString(),
-                                                            graphRoot = graphRoot
-                                                        ) ?: return@forEach
+                                                        val result = when (file) {
+                                                            is dev.stapler.stelekit.service.DroppedFileBytes ->
+                                                                attachmentService.attachBytes(
+                                                                    bytes = file.bytes,
+                                                                    suggestedName = file.suggestedName,
+                                                                    graphRoot = graphRoot
+                                                                )
+                                                            else ->
+                                                                attachmentService.attachFilePath(
+                                                                    filePath = file.toString(),
+                                                                    graphRoot = graphRoot
+                                                                )
+                                                        } ?: return@forEach
                                                         result.fold(
                                                             ifLeft = { err: dev.stapler.stelekit.error.DomainError ->
                                                                 graphContentLogger.warn("Drag-and-drop attachment failed: $err")

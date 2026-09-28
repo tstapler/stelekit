@@ -2,6 +2,7 @@ package dev.stapler.stelekit.error
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class DomainErrorTest {
 
@@ -96,7 +97,7 @@ class DomainErrorTest {
                 is DomainError.ExportError.SerializationFailed -> err.message
                 is DomainError.ExportError.ShareFailed -> err.message
             }
-            assert(msg.isNotEmpty()) { "Expected non-empty message for $err" }
+            assertTrue(msg.isNotEmpty(), "Expected non-empty message for $err")
         }
     }
 
@@ -161,7 +162,7 @@ class DomainErrorTest {
             DomainError.ExportError.ShareFailed("share failed"),
         )
         for (err in errors) {
-            assert(err.toUiMessage().isNotEmpty()) { "Expected non-empty UI message for $err" }
+            assertTrue(err.toUiMessage().isNotEmpty(), "Expected non-empty UI message for $err")
         }
     }
 }

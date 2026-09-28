@@ -64,6 +64,24 @@ interface MediaAttachmentService {
     ): Either<DomainError, AttachmentResult>? = null
 
     /**
+     * Copies already-in-memory file bytes (no filesystem path available) into the graph's
+     * `assets/` directory. Used for platforms where a dropped/pasted file exists only as bytes
+     * (e.g. a browser `File`/`Blob` on wasmJs).
+     *
+     * Returns [Either.Right] with [AttachmentResult] on success.
+     * Returns [Either.Left] with [DomainError.AttachmentError] on failure.
+     * Returns `null` if the platform does not support this operation.
+     *
+     * Default implementation returns `null` (no-op) so existing implementations need not
+     * override unless they support bytes-only attachment.
+     */
+    suspend fun attachBytes(
+        bytes: ByteArray,
+        suggestedName: String,
+        graphRoot: String
+    ): Either<DomainError, AttachmentResult>? = null
+
+    /**
      * Returns true if the platform clipboard currently contains image data that
      * [pasteFromClipboard] can read. This check is synchronous so it can be called
      * from a key-event handler without launching a coroutine.

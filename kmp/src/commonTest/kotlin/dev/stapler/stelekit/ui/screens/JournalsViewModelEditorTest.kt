@@ -40,6 +40,14 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
+// java.util.UUID is not available in commonTest; matches NotificationManager.kt's commonMain
+// random-hex UUID helper.
+private fun randomTestUuid(): String {
+    val chars = "0123456789abcdef"
+    fun randomHex(length: Int) = (1..length).map { chars.random() }.joinToString("")
+    return "${randomHex(8)}-${randomHex(4)}-${randomHex(4)}-${randomHex(4)}-${randomHex(12)}"
+}
+
 /**
  * Tests for JournalsViewModel editor operations:
  * - mergeBlock: Merge current block content into previous block
@@ -241,7 +249,7 @@ class JournalsViewModelEditorTest {
             }
 
             val newBlock = block.copy(
-                uuid = newBlockUuid ?: BlockUuid(java.util.UUID.randomUUID().toString()),
+                uuid = newBlockUuid ?: BlockUuid(randomTestUuid()),
                 content = secondPart,
                 position = newPosition
             )

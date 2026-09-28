@@ -4,6 +4,7 @@
 
 package dev.stapler.stelekit.browser
 
+import androidx.compose.runtime.remember
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.window.ComposeViewport
 import kotlinx.browser.document
@@ -14,6 +15,8 @@ import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.repository.GraphBackend
+import dev.stapler.stelekit.service.WasmMediaAttachmentService
+import dev.stapler.stelekit.ui.NotificationManager
 import dev.stapler.stelekit.ui.StelekitApp
 import kotlinx.browser.localStorage
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -82,10 +85,17 @@ fun main() {
         markSteleKitReady()
 
         ComposeViewport(document.body!!) {
+            val sharedNotificationManager = remember { NotificationManager() }
             StelekitApp(
                 fileSystem = fileSystem,
                 graphPath = graphPath,
                 graphManager = graphManager,
+                notificationManager = sharedNotificationManager,
+                attachmentService = if (useDemoFallback) {
+                    null
+                } else {
+                    WasmMediaAttachmentService(notificationManager = sharedNotificationManager)
+                },
             )
         }
     }

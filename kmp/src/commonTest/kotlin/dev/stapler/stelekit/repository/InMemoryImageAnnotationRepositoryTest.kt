@@ -3,7 +3,7 @@ package dev.stapler.stelekit.repository
 import arrow.core.Either
 import dev.stapler.stelekit.model.ImageAnnotation
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -24,7 +24,7 @@ class InMemoryImageAnnotationRepositoryTest {
     )
 
     @Test
-    fun save_should_returnRight_when_annotationIsValid() = runBlocking {
+    fun save_should_returnRight_when_annotationIsValid() = runTest {
         val r = repo()
         val result = r.saveImageAnnotation(annotation())
         assertIs<Either.Right<Unit>>(result)
@@ -32,7 +32,7 @@ class InMemoryImageAnnotationRepositoryTest {
     }
 
     @Test
-    fun getByUuid_should_returnAnnotation_when_saved() = runBlocking {
+    fun getByUuid_should_returnAnnotation_when_saved() = runTest {
         val r = repo()
         val ann = annotation()
         r.saveImageAnnotation(ann)
@@ -42,7 +42,7 @@ class InMemoryImageAnnotationRepositoryTest {
     }
 
     @Test
-    fun save_should_replaceExisting_when_uuidAlreadyExists() = runBlocking {
+    fun save_should_replaceExisting_when_uuidAlreadyExists() = runTest {
         val r = repo()
         val original = annotation().copy(filePath = "/graph/assets/images/original.jpg")
         val updated = annotation().copy(filePath = "/graph/assets/images/updated.jpg")
@@ -56,7 +56,7 @@ class InMemoryImageAnnotationRepositoryTest {
     }
 
     @Test
-    fun delete_should_removeAnnotation_when_uuidExists() = runBlocking {
+    fun delete_should_removeAnnotation_when_uuidExists() = runTest {
         val r = repo()
         val ann = annotation()
         r.saveImageAnnotation(ann)
@@ -67,7 +67,7 @@ class InMemoryImageAnnotationRepositoryTest {
     }
 
     @Test
-    fun getByPage_should_returnOnlyMatchingAnnotations() = runBlocking {
+    fun getByPage_should_returnOnlyMatchingAnnotations() = runTest {
         val r = repo()
         r.saveImageAnnotation(annotation("ann-001").copy(pageUuid = "page-A"))
         r.upsert(annotation("ann-002").copy(pageUuid = "page-B"))
@@ -80,7 +80,7 @@ class InMemoryImageAnnotationRepositoryTest {
     }
 
     @Test
-    fun getByTag_should_returnOnlyTaggedAnnotations() = runBlocking {
+    fun getByTag_should_returnOnlyTaggedAnnotations() = runTest {
         val r = repo()
         r.upsert(annotation("ann-001").copy(tags = listOf("site-A", "indoor")))
         r.upsert(annotation("ann-002").copy(tags = listOf("site-B")))

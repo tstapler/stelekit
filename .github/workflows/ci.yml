@@ -246,7 +246,7 @@ jobs:
 
   # ── Wasm/JS compile check ─────────────────────────────────────────────────
   wasmjs-compile:
-    name: Wasm/JS Compile
+    name: Wasm/JS Compile & Test
     runs-on: ubuntu-latest
     if: github.event.pull_request.draft == false
 
@@ -265,3 +265,14 @@ jobs:
 
       - name: Compile wasmJs target
         run: ./gradlew :kmp:compileKotlinWasmJs --no-daemon --build-cache -PenableJs=true
+
+      - name: Run wasmJs browser tests
+        run: ./gradlew :kmp:wasmJsBrowserTest --no-daemon --build-cache -PenableJs=true
+
+      - name: Publish wasmJs test report
+        uses: mikepenz/action-junit-report@v4
+        if: always()
+        with:
+          report_paths: '**/build/test-results/wasmJsBrowserTest/**/TEST-*.xml'
+          fail_on_failure: true
+          require_tests: true
