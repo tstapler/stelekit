@@ -2216,8 +2216,11 @@ private fun GraphContent(deps: GraphContentDeps) {
                                         // git-sync-resilience Story 3.1.3: Android routes the
                                         // clone through GitCloneWorker (dataSync foreground
                                         // survival) instead of running it on this composable's
-                                        // own coroutine scope. Desktop (gitCloneWorkerLauncher ==
-                                        // null) stays on the pre-Epic-3.1 direct call.
+                                        // own coroutine scope; Desktop (Story 4.1.4) routes
+                                        // through JvmGitCloneWorkerLauncher for the same reason —
+                                        // both give Cancel something to cancel. A platform with no
+                                        // launcher wired (gitCloneWorkerLauncher == null, e.g. iOS)
+                                        // stays on the pre-Epic-3.1 direct call.
                                         if (gitCloneWorkerLauncher != null) {
                                             val graphId = graphManager.graphIdFromPath(fileSystem.expandTilde(localPath)).value
                                             gitCloneWorkerLauncher.launchClone(

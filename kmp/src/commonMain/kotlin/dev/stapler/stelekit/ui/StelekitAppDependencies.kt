@@ -85,9 +85,11 @@ data class StelekitAppPlatformIntegrations(
      * git-sync-resilience Story 3.1.3: platform seam for running a clone as a survivable
      * operation. Pass `AndroidGitCloneWorkerLauncher(context)` on Android — routes the clone
      * through `GitCloneWorker`'s `dataSync` foreground service instead of this composable's own
-     * `rememberCoroutineScope()`. Null (Desktop/iOS, or before a host wires one) falls back to
-     * [gitRepository]`.clone(...)` called directly on this scope, unchanged from pre-Epic-3.1
-     * behavior — Desktop has no foreground-service equivalent (out of scope per requirements).
+     * `rememberCoroutineScope()`. Pass `JvmGitCloneWorkerLauncher(gitRepository)` on Desktop
+     * (Story 4.1.4) — no foreground-service concept there, but the launcher still gives Cancel a
+     * `Deferred` it can cancel independently of the caller's own coroutine. Null (iOS, or before a
+     * host wires one) falls back to [gitRepository]`.clone(...)` called directly on this scope,
+     * unchanged from pre-Epic-3.1 behavior, and Cancel is a no-op.
      */
     val gitCloneWorkerLauncher: dev.stapler.stelekit.git.GitCloneWorkerLauncher? = null,
     /**
