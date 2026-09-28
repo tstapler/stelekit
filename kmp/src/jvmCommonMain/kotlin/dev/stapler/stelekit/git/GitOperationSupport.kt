@@ -236,11 +236,11 @@ suspend fun <T, D> runGitTransportOpWithRetry(
                     val lastError = onFailed(redactedTransportException(e))
                     when (val decision = step(e)) {
                         is Schedule.Decision.Done -> {
-                            onStateChange(GitTransportRetryState.Exhausted(lastError.message))
+                            onStateChange(GitTransportRetryState.Exhausted(lastError.message, maxAttempts = maxAttempts))
                             return onExhausted(retries, lastError).left()
                         }
                         is Schedule.Decision.Continue -> if (elapsed + decision.delay > maxElapsed) {
-                            onStateChange(GitTransportRetryState.Exhausted(lastError.message))
+                            onStateChange(GitTransportRetryState.Exhausted(lastError.message, maxAttempts = maxAttempts))
                             return onExhausted(retries, lastError).left()
                         } else {
                             retries++

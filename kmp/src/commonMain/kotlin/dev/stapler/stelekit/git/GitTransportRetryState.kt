@@ -52,8 +52,14 @@ sealed interface GitTransportRetryState {
     /** Every automatic retry attempt was exhausted (`DomainError.GitError.RetryExhausted`) — a
      * retryable failure the user can manually retry from the same checkpoint. [reason] is a
      * diagnostic string (e.g. for logs) — Step 5's UI never renders it directly, always showing
-     * fixed authored copy instead (Story 4.1.3's AC). */
-    data class Exhausted(val reason: String) : GitTransportRetryState
+     * fixed authored copy instead (Story 4.1.3's AC). [maxAttempts] is the real retry budget that
+     * was actually exhausted for this run — `runGitTransportOpWithRetry` always passes its own
+     * live `maxAttempts` value here (mirroring `GIT_TRANSPORT_RETRY_MAX_ATTEMPTS`), so Step 5's
+     * "Couldn't finish after N attempts" copy is templated from this field and can never drift
+     * from the real constant (Story 4.1.3 spec-compliance fix). Defaults to
+     * `GIT_TRANSPORT_RETRY_MAX_ATTEMPTS`'s current value (5) only for call sites that construct
+     * this state without exercising that copy. */
+    data class Exhausted(val reason: String, val maxAttempts: Int = 5) : GitTransportRetryState
 
     /**
      * A `GitFailureClass.Permanent` failure — never retried. [reason] is one of

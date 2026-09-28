@@ -91,13 +91,22 @@ class GitSetupStep5RetryStateTest {
 
     @Test
     fun `Exhausted renders the exact warning copy with a Warning icon and a Try again action`() {
-        setStep5(retryState = GitTransportRetryState.Exhausted("network down"))
+        setStep5(retryState = GitTransportRetryState.Exhausted("network down", maxAttempts = 5))
 
         composeTestRule.onNodeWithText(
-            "Couldn't finish after 4 attempts. Check your connection and try again — your progress is saved."
+            "Couldn't finish after 5 attempts. Check your connection and try again — your progress is saved."
         ).assertIsDisplayed()
         composeTestRule.onNodeWithContentDescription("Warning").assertIsDisplayed()
         composeTestRule.onNodeWithText("Try again").assertIsDisplayed().assertIsEnabled()
+    }
+
+    @Test
+    fun `Exhausted's copy templates the attempt count from state, not a hardcoded literal`() {
+        setStep5(retryState = GitTransportRetryState.Exhausted("network down", maxAttempts = 7))
+
+        composeTestRule.onNodeWithText(
+            "Couldn't finish after 7 attempts. Check your connection and try again — your progress is saved."
+        ).assertIsDisplayed()
     }
 
     @Test

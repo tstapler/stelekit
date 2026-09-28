@@ -80,7 +80,7 @@ internal fun Step5TestAndSave(
         when {
             cloneInProgress -> CloneProgressRow(retryState, onCancelClone)
             cloneCancelled -> CancelledRow()
-            retryState is GitTransportRetryState.Exhausted -> ExhaustedRow(onTryAgain = onSave)
+            retryState is GitTransportRetryState.Exhausted -> ExhaustedRow(onTryAgain = onSave, maxAttempts = retryState.maxAttempts)
             retryState is GitTransportRetryState.NonRetryableFailure -> NonRetryableFailureRow(retryState.reason)
             else -> {}
         }
@@ -263,16 +263,15 @@ private fun percentOf(progress: CloneProgress): Int? =
  * "Try again," which calls the exact same entry point as the original "Save configuration"
  * action (plan.md AC / UX Acceptance Test 2), not a special-cased retry function.
  *
- * The exact copy — including the literal "4 attempts" — is plan.md Story 4.1.3's own quoted
- * Acceptance Criterion text (also `design/ux.md`'s Step 3 AC6/validation.md's UX criterion 6),
- * authored fixed copy rather than a template interpolating the real retry count. Note this is
- * inconsistent with `RetryPolicies.gitTransportTransient`'s actual budget of 5 retries (already
- * covered by Epic 1.2's `GitTransportRetryTest.kt`, which asserts
- * `RetryExhausted(attempts=5,...)`) — a pre-existing gap between the already-merged retry policy
- * and this epic's authored UX copy, not something introduced or silently "corrected" here.
+ * [maxAttempts] is templated into the copy from `GitTransportRetryState.Exhausted.maxAttempts`
+ * (the real retry budget for this run) rather than hardcoded — plan.md Story 4.1.3's own quoted
+ * Acceptance Criterion text said "4 attempts", which had already drifted from
+ * `RetryPolicies.gitTransportTransient`'s actual budget of 5 (asserted by
+ * `GitTransportRetryTest.kt`'s `RetryExhausted(attempts=5,...)`); templating from live state means
+ * this copy can never drift from the real constant again.
  */
 @Composable
-private fun ExhaustedRow(onTryAgain: () -> Unit) {
+private fun ExhaustedRow(onTryAgain: () -> Unit, maxAttempts: Int) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
@@ -283,7 +282,7 @@ private fun ExhaustedRow(onTryAgain: () -> Unit) {
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
-                "Couldn't finish after 4 attempts. Check your connection and try again — your progress is saved.",
+                "Couldn't finish after $maxAttempts attempts. Check your connection and try again — your progress is saved.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.tertiary,
             )

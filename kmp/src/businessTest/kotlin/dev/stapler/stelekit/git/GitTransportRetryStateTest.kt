@@ -113,7 +113,13 @@ class GitTransportRetryStateTest {
         }
 
         assertIs<Either.Left<DomainError.GitError>>(result)
-        assertIs<GitTransportRetryState.Exhausted>(states.last())
+        val exhausted = assertIs<GitTransportRetryState.Exhausted>(states.last())
+        assertEquals(
+            GIT_TRANSPORT_RETRY_MAX_ATTEMPTS,
+            exhausted.maxAttempts,
+            "Exhausted.maxAttempts must mirror the real retry budget, not a hardcoded literal — " +
+                "this is what Step 5's \"Couldn't finish after N attempts\" copy templates from",
+        )
         assertEquals(5, states.count { it is GitTransportRetryState.Retrying }, "one Retrying transition per retry attempt granted")
     }
 }
