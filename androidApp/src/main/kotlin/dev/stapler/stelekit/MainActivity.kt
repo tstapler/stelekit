@@ -35,9 +35,11 @@ import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.platform.security.CredentialStore
 import dev.stapler.stelekit.git.AndroidGitRepository
+import dev.stapler.stelekit.git.GitCloneWorker
 import dev.stapler.stelekit.git.GitShadowWorktree
 import dev.stapler.stelekit.git.GitSyncBusyCounter
 import dev.stapler.stelekit.git.GitSyncServiceRegistry
+import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.service.rememberAndroidMediaAttachmentService
 import dev.stapler.stelekit.ui.StelekitApp
 import dev.stapler.stelekit.ui.StelekitAppCoreServices
@@ -45,6 +47,7 @@ import dev.stapler.stelekit.ui.StelekitAppDeps
 import dev.stapler.stelekit.ui.StelekitAppLifecycleHooks
 import dev.stapler.stelekit.ui.StelekitAppPlatformIntegrations
 import dev.stapler.stelekit.ui.StelekitAppVoiceConfig
+import dev.stapler.stelekit.ui.StelekitViewModel
 import android.speech.SpeechRecognizer
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -70,6 +73,14 @@ class MainActivity : ComponentActivity() {
 
     private var graphManager: GraphManager? = null
     private var onMemoryPressureHandler: (() -> Unit)? = null
+    /**
+     * Story 4.1.5: graph id read from [GitCloneWorker.EXTRA_OPEN_GIT_SETUP_GRAPH_ID] on a
+     * notification tap — either a cold start ([onCreate]) or a warm one ([onNewIntent], since
+     * the notification's `PendingIntent` targets this activity with
+     * `FLAG_ACTIVITY_SINGLE_TOP`/`FLAG_ACTIVITY_CLEAR_TOP`). Consumed (reset to null) once the
+     * deep-link effect below has switched to the graph and opened Git Setup at Step 5 for it.
+     */
+    private var pendingGitSetupGraphId by mutableStateOf<String?>(null)
     private var pendingFolderPick: CompletableDeferred<String?>? = null
     private var pendingMicPermission: CompletableDeferred<Boolean>? = null
     private var pendingCameraPermission: CompletableDeferred<Boolean>? = null
@@ -193,6 +204,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        // Story 4.1.5: cold-start deep link from a GitCloneWorker notification tap — see
+        // pendingGitSetupGraphId's kdoc. onNewIntent handles the warm-start case below.
+        pendingGitSetupGraphId = intent.getStringExtra(GitCloneWorker.EXTRA_OPEN_GIT_SETUP_GRAPH_ID)
+
         // Re-wire camera provider with this Activity's runtime permission launcher.
         // SteleKitApplication sets a no-callback provider at process start; the callback
         // requires a registered launcher which is only available after Activity.onCreate().
@@ -315,6 +330,11 @@ class MainActivity : ComponentActivity() {
             }
             val attachmentService = rememberAndroidMediaAttachmentService(this@MainActivity, fileSystem)
 
+            // Story 4.1.5: mirrors graphManager's onGraphManagerReady pattern above — kept current
+            // by onViewModelReady so the deep-link LaunchedEffect further below always acts on the
+            // active graph's live ViewModel, including after a switchGraph-triggered recreation.
+            var activeViewModel by remember { mutableStateOf<StelekitViewModel?>(null) }
+
             // CRITICAL finding (PR #327 review): shared with GitSyncService (via
             // StelekitAppPlatformIntegrations.gitSyncBusyCounter, passed below) so
             // AndroidGraphMoveQuiesceStrategy.quiesce()'s awaitIdle() actually observes real
@@ -393,6 +413,30 @@ class MainActivity : ComponentActivity() {
                 else GitSyncServiceRegistry.unregister(graphId.value)
             }
 
+            // Story 4.1.5: drives the notification deep link once both a target graph id
+            // (pendingGitSetupGraphId) and the active graph's ViewModel (activeViewModel, kept
+            // current via onViewModelReady below) are available. Switching graphs recreates
+            // GraphContent — and this ViewModel — via key(activeGraphId) in StelekitApp, so this
+            // effect re-runs once onViewModelReady delivers the new instance for the target graph.
+            // The branching itself lives in resolveGitSetupDeepLinkAction (a pure function) so it
+            // can be unit-tested without a live Activity/Compose tree.
+            LaunchedEffect(pendingGitSetupGraphId, activeViewModel, appGm) {
+                when (
+                    val action = resolveGitSetupDeepLinkAction(
+                        pendingGraphId = pendingGitSetupGraphId,
+                        activeGraphId = appGm?.getActiveGraphId()?.value,
+                        viewModelAvailable = activeViewModel != null && appGm != null,
+                    )
+                ) {
+                    is GitSetupDeepLinkAction.SwitchGraph -> appGm?.switchGraph(action.graphId)
+                    GitSetupDeepLinkAction.OpenStep5 -> {
+                        activeViewModel?.openGitSetupForRetry()
+                        pendingGitSetupGraphId = null
+                    }
+                    GitSetupDeepLinkAction.None -> Unit
+                }
+            }
+
             StelekitApp(
                 fileSystem = fileSystem,
                 // When the benchmark extra is absent and SAF permission is not yet
@@ -417,6 +461,7 @@ class MainActivity : ComponentActivity() {
                     lifecycleHooks = StelekitAppLifecycleHooks(
                         onGraphManagerReady = { gm -> graphManager = gm },
                         onMemoryPressure = { handler -> onMemoryPressureHandler = handler },
+                        onViewModelReady = { vm -> activeViewModel = vm },
                     ),
                     platformIntegrations = StelekitAppPlatformIntegrations(
                         gitRepository = gitRepository,
@@ -436,6 +481,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        // Story 4.1.5: warm-start deep link from a GitCloneWorker notification tap — see
+        // pendingGitSetupGraphId's kdoc. onCreate handles the cold-start case.
+        intent.getStringExtra(GitCloneWorker.EXTRA_OPEN_GIT_SETUP_GRAPH_ID)?.let {
+            pendingGitSetupGraphId = it
+        }
         // Handle OAuth 2.0 deep-link callback: com.stelekit.app:/oauth2redirect?code=...
         val data = intent.data
         if (data?.scheme == "com.stelekit.app" && data.path == "/oauth2redirect") {
@@ -533,3 +583,36 @@ internal fun buildGitRepository(context: Context, fileSystem: FileSystem): Andro
         pathResolver = { path -> PlatformFileSystem.resolveSafToRealPath(path, context) },
         fileSystem = fileSystem,
     )
+
+/**
+ * Story 4.1.5: what MainActivity's git-setup deep-link [LaunchedEffect] should do next, given a
+ * pending `EXTRA_OPEN_GIT_SETUP_GRAPH_ID` graph id, the currently active graph id, and whether the
+ * active graph's [StelekitViewModel] is available yet. Extracted to a pure top-level `internal
+ * fun` (mirroring [buildGitRepository]'s precedent) so [MainActivityGitSetupDeepLinkTest] can
+ * exercise the branching directly instead of driving a live Activity/Compose tree.
+ */
+internal sealed interface GitSetupDeepLinkAction {
+    /** The pending graph isn't active yet — switch to it first. `GraphManager.switchGraph`
+     * recreates `GraphContent`'s `StelekitViewModel` via `key(activeGraphId)`, so the caller's
+     * effect naturally re-evaluates once the new instance arrives via `onViewModelReady`. */
+    data class SwitchGraph(val graphId: GraphId) : GitSetupDeepLinkAction
+
+    /** The pending graph is already active and its ViewModel is available — open Step 5. */
+    data object OpenStep5 : GitSetupDeepLinkAction
+
+    /** Nothing to do: no pending deep link, or the ViewModel isn't ready yet. */
+    data object None : GitSetupDeepLinkAction
+}
+
+internal fun resolveGitSetupDeepLinkAction(
+    pendingGraphId: String?,
+    activeGraphId: String?,
+    viewModelAvailable: Boolean,
+): GitSetupDeepLinkAction {
+    if (pendingGraphId == null || !viewModelAvailable) return GitSetupDeepLinkAction.None
+    return if (activeGraphId != pendingGraphId) {
+        GitSetupDeepLinkAction.SwitchGraph(GraphId(pendingGraphId))
+    } else {
+        GitSetupDeepLinkAction.OpenStep5
+    }
+}

@@ -69,6 +69,15 @@ data class StelekitAppLifecycleHooks(
     /** Called once the [NotificationManager] instance is ready — Desktop wires this to
      * `CaptureController.attachNotificationManager` so capture saves can surface a toast. */
     val onNotificationManagerReady: ((NotificationManager) -> Unit)? = null,
+    /**
+     * Called with the active graph's [StelekitViewModel] whenever [GraphContent] (re)creates it —
+     * on first composition and again after every `key(activeGraphId)` graph switch. Lets a host
+     * drive deep-link navigation that depends on the ViewModel's `AppState` (e.g. Story 4.1.5's
+     * `GitCloneWorker` notification tap, which must land on Git Setup Step 5 for a specific graph
+     * rather than the app's generic home screen — see `MainActivity.EXTRA_OPEN_GIT_SETUP_GRAPH_ID`
+     * handling).
+     */
+    val onViewModelReady: ((StelekitViewModel) -> Unit)? = null,
 )
 
 /**
@@ -261,6 +270,8 @@ data class GraphContentDeps(
     val graphManager: GraphManager,
     val notificationManager: NotificationManager,
     val onMemoryPressure: (((() -> Unit) -> Unit))? = null,
+    /** Forwards [StelekitAppLifecycleHooks.onViewModelReady] — see its doc. */
+    val onViewModelReady: ((StelekitViewModel) -> Unit)? = null,
     val coreServices: StelekitAppCoreServices = StelekitAppCoreServices(),
     val voiceConfig: StelekitAppVoiceConfig = StelekitAppVoiceConfig(),
     val platformIntegrations: StelekitAppPlatformIntegrations = StelekitAppPlatformIntegrations(),

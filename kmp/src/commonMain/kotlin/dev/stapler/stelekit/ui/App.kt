@@ -345,6 +345,7 @@ fun StelekitApp(
                     graphManager = graphManager,
                     notificationManager = notificationManager,
                     onMemoryPressure = deps.lifecycleHooks.onMemoryPressure,
+                    onViewModelReady = deps.lifecycleHooks.onViewModelReady,
                     coreServices = deps.coreServices,
                     voiceConfig = deps.voiceConfig,
                     platformIntegrations = deps.platformIntegrations,
@@ -411,6 +412,7 @@ private fun GraphContent(deps: GraphContentDeps) {
     val graphManager = deps.graphManager
     val notificationManager = deps.notificationManager
     val onMemoryPressure = deps.onMemoryPressure
+    val onViewModelReady = deps.onViewModelReady
     val pluginHost = deps.coreServices.pluginHost
     val encryptionManager = deps.coreServices.encryptionManager
     val urlFetcher = deps.coreServices.urlFetcher
@@ -755,6 +757,7 @@ private fun GraphContent(deps: GraphContentDeps) {
             it.startAutoSave()
         }
     }
+    LaunchedEffect(viewModel) { onViewModelReady?.invoke(viewModel) }
 
     // Phase 3 (Story 3.1.5/Epic 3.4): the composition root for "Move storage location…" — the
     // only place a real GraphRelocationCoordinator gets constructed, since it needs this
