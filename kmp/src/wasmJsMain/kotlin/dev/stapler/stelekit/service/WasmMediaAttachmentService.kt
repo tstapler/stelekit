@@ -17,6 +17,8 @@ import dev.stapler.stelekit.ui.components.fileArrayBufferPromise
 import dev.stapler.stelekit.ui.components.jsFileName
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.await
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
@@ -26,6 +28,12 @@ import kotlinx.coroutines.withContext
 class WasmMediaAttachmentService(private val fileSystem: FileSystem) : MediaAttachmentService {
 
     private var notificationManager: NotificationManager? = null
+
+    // Serializes the uniqueFileName() check-then-write pair below. App.kt's onFileDrop launches
+    // a fresh coroutine per drop event on a shared scope, so two near-simultaneous drops of a
+    // same-named file could both pass the existence check before either write landed, silently
+    // clobbering one (PR #361 Gate-2 review, BLOCKER 1).
+    private val writeMutex = Mutex()
 
     // Attached post-construction since StelekitApp creates its NotificationManager after
     // deps.platformIntegrations is built — mirrors CaptureController.attachNotificationManager
@@ -80,10 +88,14 @@ class WasmMediaAttachmentService(private val fileSystem: FileSystem) : MediaAtta
 
             val stem = if ('.' in suggestedName) suggestedName.substringBeforeLast('.') else suggestedName
             val ext = if ('.' in suggestedName) suggestedName.substringAfterLast('.') else ""
-            val uniqueName = uniqueFileName(assetsPath, stem, ext, fileSystem)
 
-            val destPath = "$assetsPath/$uniqueName"
-            opfsWriteFileBytes(destPath, arrayBuffer)
+            val uniqueName: String
+            val destPath: String
+            writeMutex.withLock {
+                uniqueName = uniqueFileName(assetsPath, stem, ext, fileSystem)
+                destPath = "$assetsPath/$uniqueName"
+                opfsWriteFileBytes(destPath, arrayBuffer)
+            }
             val blobUrl = createObjectUrlFromBuffer(arrayBuffer, mimeTypeForExt(ext))
             fileSystem.registerBlobUrl(destPath, blobUrl)
             AttachmentResult(relativePath = "../assets/$uniqueName", displayName = uniqueName).right()

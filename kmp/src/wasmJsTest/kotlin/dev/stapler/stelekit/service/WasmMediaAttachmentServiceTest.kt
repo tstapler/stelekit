@@ -1,12 +1,34 @@
 package dev.stapler.stelekit.service
 
+import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.ui.NotificationManager
 import kotlinx.coroutines.test.runTest
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+
+// js() calls must be top-level functions in Kotlin/Wasm — not inside a class or companion object
+// (mirrors FolderSyncSettingsMoveDestinationPickerTest.kt's established idiom for this codebase).
+// Monkeypatches FileSystemFileHandle.prototype.createWritable to force a rejected Promise, so
+// opfsWriteFileBytes throws without touching real OPFS write behavior for any other test.
+private fun monkeypatchCreateWritableToReject(): JsAny? = js(
+    """
+    (function() {
+        var original = FileSystemFileHandle.prototype.createWritable;
+        FileSystemFileHandle.prototype.createWritable = function() {
+            return Promise.reject(new Error('simulated OPFS write failure'));
+        };
+        return original || null;
+    })()
+    """,
+)
+
+private fun restoreCreateWritable(original: JsAny?): Unit = js(
+    "(function() { FileSystemFileHandle.prototype.createWritable = original; })()",
+)
 
 /**
  * Real-OPFS round trip for [WasmMediaAttachmentService], run in headless Chromium via
@@ -45,5 +67,21 @@ class WasmMediaAttachmentServiceTest {
         val attachment = assertNotNull(second.fold({ null }, { it }), "expected Either.Right, got $second")
         assertEquals("../assets/dup-1.png", attachment.relativePath)
         assertEquals("dup-1.png", attachment.displayName)
+    }
+
+    @Test
+    fun attachBytes_returnsCopyFailedLeft_whenOpfsWriteThrows() = runTest {
+        val service = newService()
+        val graphRoot = uniqueGraphRoot()
+
+        val original = monkeypatchCreateWritableToReject()
+        val result = try {
+            service.attachBytes(byteArrayOf(1, 2, 3), "fail.png", graphRoot)
+        } finally {
+            restoreCreateWritable(original)
+        }
+
+        val error = assertNotNull(result.fold({ it }, { null }), "expected Either.Left, got $result")
+        assertIs<DomainError.AttachmentError.CopyFailed>(error)
     }
 }
