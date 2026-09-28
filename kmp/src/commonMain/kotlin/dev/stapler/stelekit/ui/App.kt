@@ -9,9 +9,13 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.background
 import dev.stapler.stelekit.capture.HotkeyRegistrationFailure
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,6 +23,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -56,7 +62,10 @@ import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.repository.*
 import dev.stapler.stelekit.ui.components.*
 import dev.stapler.stelekit.ui.components.git.GitDetectionBanner
+import dev.stapler.stelekit.ui.components.settings.SettingsCategory
+import dev.stapler.stelekit.ui.components.settings.SettingsDialog
 import dev.stapler.stelekit.ui.i18n.I18n
+import dev.stapler.stelekit.ui.i18n.Language
 import dev.stapler.stelekit.ui.i18n.LocalI18n
 import dev.stapler.stelekit.ui.i18n.t
 import dev.stapler.stelekit.ui.onboarding.Onboarding
@@ -128,6 +137,115 @@ private fun PermissionRecoveryScreenThemed(
 private fun FirstLaunchSetupScreenThemed(folderPickError: String?, onRequestFolder: () -> Unit) {
     StelekitTheme(themeMode = StelekitThemeMode.SYSTEM) {
         LibrarySetupScreen(onChooseFolder = onRequestFolder, errorMessage = folderPickError)
+    }
+}
+
+private enum class InitializingDebugScreen { SETTINGS, PERFORMANCE, LOGS }
+
+/**
+ * Pre-repos "Initializing…" state — the Sidebar (and with it, the settings-gear button and
+ * Logs/Performance nav entries) can't mount yet: it's built from repos-backed data (page lists,
+ * graph registry, sync state) that doesn't exist until [repos] is non-null. Without an escape
+ * hatch here, a slow or wedged load — e.g. flipping `db.libsql.enabled` to a driver that hangs
+ * on open — leaves the user with no way back to the toggle that caused it.
+ *
+ * These buttons are a minimal stand-in for that missing entry point, not a reimplementation of
+ * it: they open the same [SettingsDialog]/[PerformanceDashboard]/[LogDashboard] the real menu
+ * navigates to, which already work without repos (the developer toggle reads/writes
+ * [platformSettings] directly; Performance/Logs read process-global singletons).
+ */
+@Composable
+private fun InitializingScreenThemed(platformSettings: Settings) {
+    var openScreen by remember { mutableStateOf<InitializingDebugScreen?>(null) }
+
+    StelekitTheme(themeMode = StelekitThemeMode.SYSTEM) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            LoadingOverlay("Initializing…")
+            InitializingDebugAccessButtons(
+                modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
+                onOpen = { openScreen = it },
+            )
+        }
+
+        InitializingSettingsDialog(
+            visible = openScreen == InitializingDebugScreen.SETTINGS,
+            onDismiss = { openScreen = null },
+            platformSettings = platformSettings,
+        )
+
+        if (openScreen == InitializingDebugScreen.PERFORMANCE || openScreen == InitializingDebugScreen.LOGS) {
+            InitializingFullScreenDialog(screen = openScreen, onDismiss = { openScreen = null })
+        }
+    }
+}
+
+@Composable
+private fun InitializingDebugAccessButtons(modifier: Modifier, onOpen: (InitializingDebugScreen) -> Unit) {
+    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        IconButton(onClick = { onOpen(InitializingDebugScreen.SETTINGS) }) {
+            Icon(Icons.Default.Settings, contentDescription = "Settings")
+        }
+        IconButton(onClick = { onOpen(InitializingDebugScreen.PERFORMANCE) }) {
+            Icon(Icons.Default.BarChart, contentDescription = "Performance")
+        }
+        IconButton(onClick = { onOpen(InitializingDebugScreen.LOGS) }) {
+            Icon(Icons.Default.Description, contentDescription = "Logs")
+        }
+    }
+}
+
+@Composable
+private fun InitializingSettingsDialog(visible: Boolean, onDismiss: () -> Unit, platformSettings: Settings) {
+    var libsqlEnabled by remember {
+        mutableStateOf(platformSettings.getBoolean("db.libsql.enabled", false))
+    }
+    SettingsDialog(
+        visible = visible,
+        onDismiss = onDismiss,
+        currentTheme = StelekitThemeMode.SYSTEM,
+        onThemeChange = {},
+        currentLanguage = Language.ENGLISH,
+        onLanguageChange = {},
+        onReindex = {},
+        initialCategory = SettingsCategory.DEVELOPER,
+        isLibsqlDriverEnabled = libsqlEnabled,
+        onLibsqlDriverToggle = { enabled ->
+            libsqlEnabled = enabled
+            platformSettings.putBoolean("db.libsql.enabled", enabled)
+        },
+    )
+}
+
+@Composable
+private fun InitializingFullScreenDialog(screen: InitializingDebugScreen?, onDismiss: () -> Unit) {
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(modifier = Modifier.fillMaxSize()) {
+            InitializingDialogContent(screen, onDismiss)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun InitializingDialogContent(screen: InitializingDebugScreen?, onDismiss: () -> Unit) {
+    val isPerformance = screen == InitializingDebugScreen.PERFORMANCE
+    Column(Modifier.fillMaxSize()) {
+        TopAppBar(
+            title = { Text(if (isPerformance) "Performance" else "Logs") },
+            navigationIcon = { CloseDialogButton(onDismiss) },
+        )
+        if (isPerformance) {
+            PerformanceDashboard(modifier = Modifier.weight(1f))
+        } else {
+            LogDashboard(modifier = Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+private fun CloseDialogButton(onDismiss: () -> Unit) {
+    IconButton(onClick = onDismiss) {
+        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close")
     }
 }
 
@@ -327,10 +445,11 @@ fun StelekitApp(
     val graphMergeService = remember { dev.stapler.stelekit.transfer.GraphMergeService() }
 
     if (repos == null || !migrationReady) {
-        // Show loading state while repositories are being initialized or migration is running
-        StelekitTheme(themeMode = StelekitThemeMode.SYSTEM) {
-            LoadingOverlay("Initializing…")
-        }
+        // Show loading state while repositories are being initialized or migration is running.
+        // Includes an escape hatch to Settings/Performance/Logs — see InitializingScreenThemed's
+        // doc for why a stuck load would otherwise leave the user with no way back to the
+        // toggle that caused it (e.g. db.libsql.enabled).
+        InitializingScreenThemed(platformSettings)
         return
     }
 
