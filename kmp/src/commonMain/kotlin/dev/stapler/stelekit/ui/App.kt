@@ -1509,23 +1509,42 @@ private fun onGraphKeyEvent(keyEvent: KeyEvent, handlers: GraphKeyEventHandlers)
     }
 }
 
-/** Fowler's Remove Flag Argument: replaces a boolean `isEncrypted` branched on in the body. */
+/**
+ * Fowler's Remove Flag Argument: [EncryptedStatus]/[UnencryptedStatus] are two distinct call
+ * paths, each rendering its own icon/text directly — neither converts [EncryptionState] back into
+ * a boolean and branches on it internally.
+ */
 internal enum class EncryptionState { ENCRYPTED, UNENCRYPTED }
 
 @Composable
-private fun RowScope.EncryptionStatus(state: EncryptionState) {
-    val isEncrypted = state == EncryptionState.ENCRYPTED
+private fun RowScope.EncryptedStatus() {
     Icon(
-        imageVector = if (isEncrypted) Icons.Default.Lock else Icons.Default.LockOpen,
+        imageVector = Icons.Default.Lock,
         contentDescription = null,
         modifier = Modifier.size(14.dp),
-        tint = if (isEncrypted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+        tint = MaterialTheme.colorScheme.primary,
     )
     Spacer(modifier = Modifier.width(8.dp))
     Text(
-        text = if (isEncrypted) t("status.encrypted") else t("status.not_encrypted"),
+        text = t("status.encrypted"),
         style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+@Composable
+private fun RowScope.UnencryptedStatus() {
+    Icon(
+        imageVector = Icons.Default.LockOpen,
+        contentDescription = null,
+        modifier = Modifier.size(14.dp),
+        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Spacer(modifier = Modifier.width(8.dp))
+    Text(
+        text = t("status.not_encrypted"),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 }
 
@@ -1548,7 +1567,10 @@ internal fun StatusBarContent(
             .padding(horizontal = 16.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        EncryptionStatus(encryptionState)
+        when (encryptionState) {
+            EncryptionState.ENCRYPTED -> EncryptedStatus()
+            EncryptionState.UNENCRYPTED -> UnencryptedStatus()
+        }
         Spacer(modifier = Modifier.weight(1f))
         Text(
             text = activeGraphName,
