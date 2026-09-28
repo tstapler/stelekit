@@ -19,8 +19,14 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
+import org.eclipse.jgit.api.CloneCommand
 import org.eclipse.jgit.api.Git
+import org.eclipse.jgit.api.TransportCommand
 
 /**
  * Desktop non-regression smoke test (Phase 7, android-git-saf-shadow-worktree plan) — exercises
@@ -466,29 +472,147 @@ class JvmGitRepositoryTest {
      * [JvmGitRepository.clone]'s [org.eclipse.jgit.api.CloneCommand], not just present in source.
      * `192.0.2.1` is TEST-NET-1 (RFC 5737) — reserved for documentation/examples, so it's
      * guaranteed non-routable on any real network, unlike an arbitrary private address a CI
-     * runner's own network might actually route somewhere. The bound is
-     * `GIT_TRANSPORT_TIMEOUT_SECONDS` plus slack, not an exact figure, since a timeout-less call
-     * could otherwise hang indefinitely.
+     * runner's own network might actually route somewhere. Confirmed with a real `curl --max-time
+     * 10 https://192.0.2.1/` that this address genuinely black-holes the connection (hangs the
+     * full 10s with no ICMP rejection) rather than failing fast, so a real JGit attempt against it
+     * really does block for close to `GIT_TRANSPORT_TIMEOUT_SECONDS` before throwing.
+     *
+     * **Spec-compliance sweep (Phase 5) root-cause finding**: this test originally (Epic 1.1,
+     * before Epic 1.2's [runGitTransportOpWithRetry] existed) measured the *entire* `clone()`
+     * call's elapsed time, assuming a single attempt. Since Epic 1.2, a `SocketTimeoutException`
+     * against a black-holed host classifies [GitFailureClass.Transient] and is retried up to
+     * [GIT_TRANSPORT_RETRY_MAX_ATTEMPTS] (5) more times — 6 total attempts. Crucially,
+     * `runGitTransportOpWithRetry`'s `maxElapsed` parameter (default
+     * [DEFAULT_GIT_TRANSPORT_RETRY_MAX_ELAPSED] = 10 minutes, which `clone()`'s call site does not
+     * override) does **not** bound this path: `maxElapsed` is checked against the cumulative sum
+     * of retry *delays* only (`RetryPolicies.gitTransportTransient`'s own ~1s/2s/4s/8s/16s ≈ 31s
+     * total), never against op-duration — a deliberate design choice (see
+     * `GitOperationSupport.kt`'s `elapsed` kdoc) so the loop advances correctly under
+     * `kotlinx-coroutines-test` virtual time. Since ~31s is always far below the 600s default,
+     * `maxElapsed` never binds before the schedule's own 5-retry cap does — so the real worst case
+     * for this call path is `(GIT_TRANSPORT_RETRY_MAX_ATTEMPTS + 1) * GIT_TRANSPORT_TIMEOUT_SECONDS`
+     * plus retry-delay slack, roughly 1830s (~30.5 minutes): 6x this test's original ~330s bound,
+     * and 3x what `maxElapsed`'s own "10 minutes, well under Android's 6-hour cap" framing might
+     * suggest for this specific path.
+     *
+     * This is a real, finite bound, not an unbounded hang — and shrinking it in production would
+     * either be ineffective (a smaller `maxElapsed` still far above the delay sum changes nothing)
+     * or risk cutting off a genuinely-recovering slow connection, which throws the identical
+     * `SocketTimeoutException` shape. Waiting through all 6 real attempts (~30 minutes of real
+     * network black-hole time) is impractical for a test, so this observes the `onStateChange`
+     * retry-state stream and stops as soon as the *first* attempt's failure is reported, then
+     * cancels the still-running retry loop. That keeps the original ~330s bound intact (it was
+     * always about proving one attempt is time-bounded, not the full retry budget) while still
+     * exercising the real network path end to end.
      */
     @Test
     fun `clone against a non-routable TEST-NET address fails within GIT_TRANSPORT_TIMEOUT_SECONDS instead of hanging indefinitely`() = runTest(
-        timeout = (GIT_TRANSPORT_TIMEOUT_SECONDS + 30).seconds,
+        timeout = (GIT_TRANSPORT_TIMEOUT_SECONDS + 90).seconds,
     ) {
         val destination = File(tempDir, "unroutable-clone-destination")
+        val firstAttemptOutcome = CompletableDeferred<GitTransportRetryState>()
+        val job = launchCloneAgainstTestNetBlackHole(destination, firstAttemptOutcome)
+
+        lateinit var outcome: GitTransportRetryState
         val elapsedMillis = measureTimeMillis {
-            val result = repository.clone(
-                url = "https://192.0.2.1/repo.git",
-                localPath = destination.absolutePath,
-                auth = GitAuth.None,
-                onProgress = {},
-                onStateChange = {},
-            )
-            assertTrue(result.isLeft(), "expected clone against an unroutable TEST-NET address to fail")
+            outcome = firstAttemptOutcome.await()
         }
+        job.cancelAndJoin()
+
+        assertTrue(
+            outcome is GitTransportRetryState.Retrying,
+            "expected the first attempt against a black-holed TEST-NET address to classify as a " +
+                "retryable Transient failure (scheduling a retry), got: $outcome",
+        )
         assertTrue(
             elapsedMillis < (GIT_TRANSPORT_TIMEOUT_SECONDS + 30) * 1000L,
-            "expected clone to fail within GIT_TRANSPORT_TIMEOUT_SECONDS (${GIT_TRANSPORT_TIMEOUT_SECONDS}s) plus slack, took ${elapsedMillis}ms",
+            "expected clone's first attempt to fail within GIT_TRANSPORT_TIMEOUT_SECONDS " +
+                "(${GIT_TRANSPORT_TIMEOUT_SECONDS}s) plus slack, took ${elapsedMillis}ms",
         )
+    }
+
+    /** True for any [GitTransportRetryState] that reports a completed attempt's outcome
+     * (scheduling a retry, exhausting the budget, or failing permanently) — used to detect "the
+     * first attempt just failed" without waiting for the whole retry budget to play out. */
+    private fun isAttemptFailureState(state: GitTransportRetryState): Boolean =
+        state is GitTransportRetryState.Retrying ||
+            state is GitTransportRetryState.Exhausted ||
+            state is GitTransportRetryState.NonRetryableFailure
+
+    /** Launches a real [repository.clone] against the TEST-NET-1 black hole, completing
+     * [firstAttemptOutcome] as soon as [isAttemptFailureState] sees the first attempt's result —
+     * the caller cancels the returned [Job] right after that to avoid running the full retry
+     * budget (see the TEST-NET timeout test's kdoc for why). */
+    private fun CoroutineScope.launchCloneAgainstTestNetBlackHole(
+        destination: File,
+        firstAttemptOutcome: CompletableDeferred<GitTransportRetryState>,
+    ) = launch {
+        repository.clone(
+            url = "https://192.0.2.1/repo.git",
+            localPath = destination.absolutePath,
+            auth = GitAuth.None,
+            onProgress = {},
+            onStateChange = { state -> if (isAttemptFailureState(state)) firstAttemptOutcome.complete(state) },
+        )
+    }
+
+    /**
+     * Reflects [TransportCommand]'s configured timeout. Neither `CloneCommand`/`FetchCommand`/
+     * `PushCommand` nor their shared `TransportCommand` superclass expose a public getter for it
+     * (`javap` against the project's JGit 7.3.0 shows only `protected int timeout`, no accessor),
+     * so [transportTimeoutSecondsOf]/[cloneDepthOf] below are the fast, network-free way to check
+     * a builder's configured value without invoking `.call()`.
+     */
+    private fun transportTimeoutSecondsOf(cmd: TransportCommand<*, *>): Int {
+        val field = TransportCommand::class.java.getDeclaredField("timeout")
+        field.isAccessible = true
+        return field.getInt(cmd)
+    }
+
+    /** Reflects [CloneCommand]'s configured depth — same rationale as [transportTimeoutSecondsOf]
+     * (`private Integer depth`, no accessor). */
+    private fun cloneDepthOf(cmd: CloneCommand): Int? {
+        val field = CloneCommand::class.java.getDeclaredField("depth")
+        field.isAccessible = true
+        return field.get(cmd) as Int?
+    }
+
+    /**
+     * Gap 2 of the git-sync-resilience spec-compliance sweep (Story 1.1.2's originally-designed
+     * unit test, never added — only implicitly covered, slowly, by the TEST-NET integration test
+     * above). Fast and network-free: builds the identical `CloneCommand` fluent-call shape
+     * [JvmGitRepository.clone] uses and reflects the stored value via [transportTimeoutSecondsOf]
+     * without ever calling `.call()`. The real proof that `clone()`'s *live* command is configured
+     * this way end to end is the slow TEST-NET test above; this guards the constant/API contract
+     * in milliseconds instead.
+     */
+    @Test
+    fun `clone() applies GIT_TRANSPORT_TIMEOUT_SECONDS to the CloneCommand builder before call()`() {
+        val cmd = Git.cloneRepository()
+            .setURI("https://example.invalid/unused.git")
+            .setDirectory(File(tempDir, "unused-timeout-check"))
+            .setTimeout(GIT_TRANSPORT_TIMEOUT_SECONDS)
+        assertEquals(GIT_TRANSPORT_TIMEOUT_SECONDS, transportTimeoutSecondsOf(cmd))
+    }
+
+    /**
+     * Gap 3 of the git-sync-resilience spec-compliance sweep — `doFetch()`/`doPush()` must apply
+     * the same named `GIT_TRANSPORT_TIMEOUT_SECONDS` constant `clone()` does, not a separately
+     * duplicated literal that could drift from it on a future edit to only one call site. Uses a
+     * real (tiny, local, already-initialized) repo since `git.fetch()`/`git.push()` need an open
+     * `Git` instance to build a command from; `.call()` is never invoked, so no network round-trip
+     * happens.
+     */
+    @Test
+    fun `doFetch() and doPush() apply the same GIT_TRANSPORT_TIMEOUT_SECONDS constant as clone(), not a duplicated per-platform literal`() = runTest {
+        assertTrue(repository.init(config.repoRoot).isRight())
+        Git.open(File(config.repoRoot)).use { git ->
+            val fetchCmd = git.fetch().setTimeout(GIT_TRANSPORT_TIMEOUT_SECONDS)
+            assertEquals(GIT_TRANSPORT_TIMEOUT_SECONDS, transportTimeoutSecondsOf(fetchCmd))
+
+            val pushCmd = git.push().setTimeout(GIT_TRANSPORT_TIMEOUT_SECONDS)
+            assertEquals(GIT_TRANSPORT_TIMEOUT_SECONDS, transportTimeoutSecondsOf(pushCmd))
+        }
     }
 
     /** A local bare repo with [commitCount] commits on its default branch — a real fixture for
@@ -532,6 +656,61 @@ class JvmGitRepositoryTest {
         Git.open(destination).use { git ->
             val shallowCommits = git.repository.objectDatabase.shallowCommits
             assertTrue(shallowCommits.isNotEmpty(), "expected a shallow clone (non-empty shallowCommits), got: $shallowCommits")
+        }
+    }
+
+    /**
+     * Gap 4 of the git-sync-resilience spec-compliance sweep (Story 2.1.1's originally-designed
+     * unit test) — fast, network-free proof that `.setDepth(DEFAULT_CLONE_DEPTH)` is a real,
+     * JGit-recognized value on the exact `CloneCommand` builder shape [JvmGitRepository.clone]
+     * uses, via [cloneDepthOf] since `CloneCommand` exposes no public depth getter. `.call()` is
+     * never invoked. The test above (and the boundary test below) are what actually prove
+     * `clone()`'s live command is configured this way end to end.
+     */
+    @Test
+    fun `clone() calls CloneCommand's setDepth(DEFAULT_CLONE_DEPTH) before call()`() {
+        val cmd = Git.cloneRepository()
+            .setURI("https://example.invalid/unused.git")
+            .setDirectory(File(tempDir, "unused-depth-check"))
+            .setDepth(DEFAULT_CLONE_DEPTH)
+        assertEquals(DEFAULT_CLONE_DEPTH, cloneDepthOf(cmd))
+    }
+
+    /**
+     * Gap 5 of the git-sync-resilience spec-compliance sweep (Story 2.1.1's boundary case) — a
+     * fixture with *exactly* [DEFAULT_CLONE_DEPTH] commits (not more, unlike the test above) must
+     * still produce a shallow clone, not silently promote to a full one at the off-by-one
+     * boundary. Also asserts the visible commit count is exactly [DEFAULT_CLONE_DEPTH], which the
+     * "more than" test above can't (it only asserts non-empty `shallowCommits`) — a genuine proof
+     * that the exact constant value, not merely "some depth," reached `CloneCommand.setDepth()`.
+     */
+    @Test
+    fun `clone() against a fixture repo with exactly DEFAULT_CLONE_DEPTH commits still produces a shallow, not full, local history`() = runTest {
+        val bareOrigin = createBareOriginWithCommits("stelekit_shallow_boundary_origin_", DEFAULT_CLONE_DEPTH)
+        val destination = File(tempDir, "shallow-boundary-dest")
+
+        val result = repository.clone(
+            url = bareOrigin.absolutePath,
+            localPath = destination.absolutePath,
+            auth = GitAuth.None,
+            onProgress = {},
+            onStateChange = {},
+        )
+        assertTrue(result.isRight(), "clone failed: $result")
+
+        Git.open(destination).use { git ->
+            val shallowCommits = git.repository.objectDatabase.shallowCommits
+            assertTrue(
+                shallowCommits.isNotEmpty(),
+                "expected a shallow clone even when the fixture has exactly DEFAULT_CLONE_DEPTH " +
+                    "commits (the boundary case), got: $shallowCommits",
+            )
+            val visibleCommitCount = git.log().call().count()
+            assertEquals(
+                DEFAULT_CLONE_DEPTH,
+                visibleCommitCount,
+                "expected exactly DEFAULT_CLONE_DEPTH commits visible in the shallow history",
+            )
         }
     }
 
