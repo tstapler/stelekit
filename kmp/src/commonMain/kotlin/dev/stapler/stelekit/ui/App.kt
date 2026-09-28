@@ -155,7 +155,7 @@ private enum class InitializingDebugScreen { SETTINGS }
  * graph's page names, paths, and content previews. Settings has no such cross-graph read surface.
  */
 @Composable
-private fun InitializingScreenThemed(platformSettings: Settings) {
+internal fun InitializingScreenThemed(platformSettings: Settings) {
     var openScreen by remember { mutableStateOf<InitializingDebugScreen?>(null) }
 
     StelekitTheme(themeMode = StelekitThemeMode.SYSTEM) {
