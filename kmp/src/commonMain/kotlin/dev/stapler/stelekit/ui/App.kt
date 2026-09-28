@@ -9,12 +9,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.background
 import dev.stapler.stelekit.capture.HotkeyRegistrationFailure
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.BarChart
-import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -23,8 +20,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -140,19 +135,26 @@ private fun FirstLaunchSetupScreenThemed(folderPickError: String?, onRequestFold
     }
 }
 
-private enum class InitializingDebugScreen { SETTINGS, PERFORMANCE, LOGS }
+private enum class InitializingDebugScreen { SETTINGS }
 
 /**
- * Pre-repos "Initializing…" state — the Sidebar (and with it, the settings-gear button and
- * Logs/Performance nav entries) can't mount yet: it's built from repos-backed data (page lists,
- * graph registry, sync state) that doesn't exist until [repos] is non-null. Without an escape
- * hatch here, a slow or wedged load — e.g. flipping `db.libsql.enabled` to a driver that hangs
- * on open — leaves the user with no way back to the toggle that caused it.
+ * Pre-repos "Initializing…" state — the Sidebar (and with it, the settings-gear button) can't
+ * mount yet: it's built from repos-backed data (page lists, graph registry, sync state) that
+ * doesn't exist until [repos] is non-null. Without an escape hatch here, a slow or wedged load —
+ * e.g. flipping `db.libsql.enabled` to a driver that hangs on open — leaves the user with no way
+ * back to the toggle that caused it.
  *
- * These buttons are a minimal stand-in for that missing entry point, not a reimplementation of
- * it: they open the same [SettingsDialog]/[PerformanceDashboard]/[LogDashboard] the real menu
- * navigates to, which already work without repos (the developer toggle reads/writes
- * [platformSettings] directly; Performance/Logs read process-global singletons).
+ * This button is a minimal stand-in for that missing entry point, not a reimplementation of it:
+ * it opens the same [SettingsDialog] the real menu navigates to, which already works without
+ * repos (the developer toggle reads/writes [platformSettings] directly).
+ *
+ * Scoped to Settings only, deliberately: `GraphManager.switchGraph()` nulls the active
+ * `RepositorySet` on *every* graph switch, not just cold start, so this screen — and any button
+ * on it — is reachable mid-session too, including while switching into or out of a locked/vault
+ * graph. `LogManager` and `PerformanceMonitor` are process-global singletons never scoped or
+ * cleared per graph, and `LogDashboard` has a Share/export button — Performance/Logs buttons here
+ * would let a completely unauthenticated action (switching graphs) exfiltrate a *different*
+ * graph's page names, paths, and content previews. Settings has no such cross-graph read surface.
  */
 @Composable
 private fun InitializingScreenThemed(platformSettings: Settings) {
@@ -172,10 +174,6 @@ private fun InitializingScreenThemed(platformSettings: Settings) {
             onDismiss = { openScreen = null },
             platformSettings = platformSettings,
         )
-
-        if (openScreen == InitializingDebugScreen.PERFORMANCE || openScreen == InitializingDebugScreen.LOGS) {
-            InitializingFullScreenDialog(screen = openScreen, onDismiss = { openScreen = null })
-        }
     }
 }
 
@@ -184,12 +182,6 @@ private fun InitializingDebugAccessButtons(modifier: Modifier, onOpen: (Initiali
     Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         IconButton(onClick = { onOpen(InitializingDebugScreen.SETTINGS) }) {
             Icon(Icons.Default.Settings, contentDescription = "Settings")
-        }
-        IconButton(onClick = { onOpen(InitializingDebugScreen.PERFORMANCE) }) {
-            Icon(Icons.Default.BarChart, contentDescription = "Performance")
-        }
-        IconButton(onClick = { onOpen(InitializingDebugScreen.LOGS) }) {
-            Icon(Icons.Default.Description, contentDescription = "Logs")
         }
     }
 }
@@ -214,39 +206,6 @@ private fun InitializingSettingsDialog(visible: Boolean, onDismiss: () -> Unit, 
             platformSettings.putBoolean("db.libsql.enabled", enabled)
         },
     )
-}
-
-@Composable
-private fun InitializingFullScreenDialog(screen: InitializingDebugScreen?, onDismiss: () -> Unit) {
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(modifier = Modifier.fillMaxSize()) {
-            InitializingDialogContent(screen, onDismiss)
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun InitializingDialogContent(screen: InitializingDebugScreen?, onDismiss: () -> Unit) {
-    val isPerformance = screen == InitializingDebugScreen.PERFORMANCE
-    Column(Modifier.fillMaxSize()) {
-        TopAppBar(
-            title = { Text(if (isPerformance) "Performance" else "Logs") },
-            navigationIcon = { CloseDialogButton(onDismiss) },
-        )
-        if (isPerformance) {
-            PerformanceDashboard(modifier = Modifier.weight(1f))
-        } else {
-            LogDashboard(modifier = Modifier.weight(1f))
-        }
-    }
-}
-
-@Composable
-private fun CloseDialogButton(onDismiss: () -> Unit) {
-    IconButton(onClick = onDismiss) {
-        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close")
-    }
 }
 
 /** Shown when the user has explicitly removed their only graph — see [StelekitApp]'s call site. */
@@ -318,9 +277,9 @@ private fun MainGraphContentHost(
 
     if (repos == null || !graphManagerState.migrationReady) {
         // Show loading state while repositories are being initialized or migration is running.
-        // Includes an escape hatch to Settings/Performance/Logs — see InitializingScreenThemed's
-        // doc for why a stuck load would otherwise leave the user with no way back to the
-        // toggle that caused it (e.g. db.libsql.enabled).
+        // Includes an escape hatch to Settings — see InitializingScreenThemed's doc for why a
+        // stuck load would otherwise leave the user with no way back to the toggle that caused
+        // it (e.g. db.libsql.enabled), and why Performance/Logs are deliberately not exposed here.
         InitializingScreenThemed(platformSettings)
         return
     }
