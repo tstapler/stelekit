@@ -82,6 +82,21 @@ filegroup(
     visibility = ["//kmp:__subpackages__"],
 )
 
+# Exposes the GraphContent files GraphContentDemoFileSystemWiringTest statically
+# scans for effectiveFileSystem call sites, so the test can bundle them as
+# classpath resources and read them under Bazel's sandbox — App.kt itself is
+# only compiled into jvm_main_lib there (via kt_srcs), not staged as a readable
+# source file at test runtime, same rationale as demo_filesystem_source above.
+filegroup(
+    name = "graph_content_wiring_test_sources",
+    srcs = [
+        "dev/stapler/stelekit/ui/App.kt",
+        "dev/stapler/stelekit/ui/GraphContentGraphIoSetup.kt",
+        "dev/stapler/stelekit/ui/GraphContentViewModelSetup.kt",
+    ],
+    visibility = ["//kmp:__subpackages__"],
+)
+
 # ── :platform_core_srcs (Epic 1.6) ────────────────────────────────────────────
 # The verified subset of files across cache/coroutines/db/llm/model/performance/
 # platform/sections/transfer/ui that carry a real `expect`/`actual` declaration
