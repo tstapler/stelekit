@@ -13,7 +13,10 @@ import okio.Path
  */
 internal fun sanitizeFileNameComponent(value: String, fallback: String = "attachment"): String {
     val sanitized = value.replace(Regex("[^A-Za-z0-9_.\\-]"), "")
-    return if (sanitized.isBlank()) fallback else sanitized
+    // "." and ".." survive the character filter above (dots are a legal filename char) but are
+    // reserved directory-traversal tokens on every platform this runs on — reject them
+    // explicitly rather than relying on incidental collision checks or platform API rejection.
+    return if (sanitized.isBlank() || sanitized == "." || sanitized == "..") fallback else sanitized
 }
 
 /**

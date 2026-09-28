@@ -3,6 +3,10 @@ package dev.stapler.stelekit.platform
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
+// Base64-string bridge, not a direct/zero-copy ByteArray<->Uint8Array marshal: Kotlin/Wasm has
+// no stable zero-copy path for that today. Costs ~33% size inflation plus full-buffer copies on
+// both sides — acceptable for image-sized attachments, revisit if Kotlin/Wasm interop gains a
+// direct bridge. See ADR-002-base64-bridge-for-arraybuffer-bytearray.md.
 private fun base64ToUint8Array(base64: String): JsAny = js("""
     (function() {
         var binary = atob(base64);

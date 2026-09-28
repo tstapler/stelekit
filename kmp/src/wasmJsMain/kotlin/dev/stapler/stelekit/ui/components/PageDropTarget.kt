@@ -8,6 +8,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import dev.stapler.stelekit.logging.Logger
+import dev.stapler.stelekit.platform.fileSize
 import dev.stapler.stelekit.service.DroppedFileBytes
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -35,11 +36,21 @@ private val dropScope = CoroutineScope(
 internal var activeDropHandler: ((List<Any>) -> Unit)? = null
 internal var listenerInstalled = false
 
+// A generous cap for a single dropped image, not a product limit: without one, an accidentally
+// (or maliciously) dropped multi-GB file would be read fully into memory — through the
+// Base64 bridge's ~33% inflation and multiple full-buffer copies (ADR-002) — and could hang or
+// crash the tab. 50 MB comfortably covers real photos/screenshots/scans.
+private const val MAX_DROPPED_IMAGE_BYTES = 50L * 1024 * 1024
+
 // Per-file try/catch: an unreadable file (e.g. a mid-drag permission error) must not abort
 // the rest of a multi-file drop batch.
 private suspend fun readDroppedImageOrNull(file: JsAny): DroppedFileBytes? {
     val name = jsFileName(file)
     if (!name.isImageFileName()) return null
+    if (fileSize(file) > MAX_DROPPED_IMAGE_BYTES) {
+        logger.warn("Skipping dropped file \"$name\": exceeds $MAX_DROPPED_IMAGE_BYTES byte limit")
+        return null
+    }
     return try {
         DroppedFileBytes(name, readFileBytes(file))
     } catch (e: CancellationException) {
@@ -49,6 +60,14 @@ private suspend fun readDroppedImageOrNull(file: JsAny): DroppedFileBytes? {
         null
     }
 }
+
+// internal (not private): PageDropTargetListenerLifecycleTest drives this directly with
+// deterministic fake handlers to verify the stale-delivery guard without depending on real
+// async/DOM timing, which can't reliably interleave a handler swap between "read started" and
+// "read finished" (dropScope.launch's dispatch means the swap-then-await race isn't observable
+// via wall-clock delays in a test — this function isolates just the decision it protects).
+internal fun shouldDeliverDrop(dropped: List<Any>, handlerAtDropTime: (List<Any>) -> Unit): Boolean =
+    dropped.isNotEmpty() && activeDropHandler === handlerAtDropTime
 
 internal fun ensureListenerInstalled() {
     if (listenerInstalled) return
@@ -63,7 +82,7 @@ internal fun ensureListenerInstalled() {
             // via SideEffect/onDispose) while the suspending per-file reads above were in
             // flight — deliver only to the handler still current when reads finished, not a
             // stale one captured before navigation.
-            if (dropped.isNotEmpty() && activeDropHandler === handlerAtDropTime) {
+            if (shouldDeliverDrop(dropped, handlerAtDropTime)) {
                 handlerAtDropTime(dropped)
             }
         }
