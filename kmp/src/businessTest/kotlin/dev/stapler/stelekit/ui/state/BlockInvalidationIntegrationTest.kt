@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.ui.state
 
 import arrow.core.Either
+import dev.stapler.stelekit.db.BlockUpdateEvent
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.error.DomainError
@@ -16,6 +17,7 @@ import dev.stapler.stelekit.repository.InMemoryPageRepository
 import kotlin.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
@@ -100,6 +102,7 @@ class BlockInvalidationIntegrationTest {
      */
     private suspend fun setupFivePageBsm(
         testScheduler: kotlinx.coroutines.test.TestCoroutineScheduler,
+        pushFlow: MutableSharedFlow<BlockUpdateEvent>? = null,
     ): TestSetup {
         val invalidationFlow = MutableSharedFlow<Set<PageUuid>>(replay = 0, extraBufferCapacity = 64)
         val blockRepo = PerPageCountingBlockRepository()
@@ -122,6 +125,7 @@ class BlockInvalidationIntegrationTest {
             graphLoader = graphLoader,
             scope = scope,
             invalidationSource = invalidationFlow,
+            pushSource = pushFlow,
         )
 
         // Observe all 5 pages
@@ -207,6 +211,69 @@ class BlockInvalidationIntegrationTest {
             assertEquals(0, setup.blockRepo.getCount(pageUuid),
                 "$pageUuid must NOT be re-queried when not in the invalidation set")
         }
+
+        setup.bsm.close()
+    }
+
+    /**
+     * Regression for the voice-capture "note vanished from the journal" bug: a brand-new block
+     * (never previously seen by this BSM instance) pushed via [BlockUpdateEvent.BlockReplaced] —
+     * exactly what [dev.stapler.stelekit.db.DatabaseWriteActor.saveBlock] emits for
+     * JournalService.appendBlockToPage's external inserts — must be appended to the observed
+     * page's block list, not silently dropped because no existing block shares its UUID.
+     */
+    @Test
+    fun pushedBlockReplace_forNewBlockUuid_isAppendedNotDropped() = runTest {
+        val pushFlow = MutableSharedFlow<BlockUpdateEvent>(replay = 0, extraBufferCapacity = 64)
+        val setup = setupFivePageBsm(testScheduler, pushFlow = pushFlow)
+        advanceUntilIdle()
+
+        val targetPage = setup.pageUuids[0]
+        val newBlock = makeBlock("brand-new-voice-note-block", targetPage.value, position = "a1")
+
+        pushFlow.emit(BlockUpdateEvent.BlockReplaced(targetPage, newBlock))
+        advanceUntilIdle()
+
+        val observedUuids = setup.bsm.blocks.value[targetPage.value].orEmpty().map { it.uuid }
+        assertTrue(
+            newBlock.uuid in observedUuids,
+            "A newly-written block pushed via BlockReplaced must appear in the observed page's " +
+                "block list instead of being dropped",
+        )
+
+        setup.bsm.close()
+    }
+
+    /**
+     * Same class of bug as [pushedBlockReplace_forNewBlockUuid_isAppendedNotDropped], but for
+     * [BlockUpdateEvent.BlockPropertiesPatched]: the payload carries no content/position, so a
+     * cache-miss can't be appended like a full block — it must fall back to a DB re-pull instead
+     * of silently dropping the patch.
+     */
+    @Test
+    fun pushedPropertiesPatch_forUncachedBlockUuid_reQueriesInsteadOfDropping() = runTest {
+        val pushFlow = MutableSharedFlow<BlockUpdateEvent>(replay = 0, extraBufferCapacity = 64)
+        val setup = setupFivePageBsm(testScheduler, pushFlow = pushFlow)
+        advanceUntilIdle()
+
+        val targetPage = setup.pageUuids[0]
+        // Simulate a block whose properties write already landed in the DB (as it would have by
+        // the time DatabaseWriteActor emits the push) but that this BSM's cache never saw created.
+        val uncachedBlock = makeBlock("uncached-block", targetPage.value, position = "a1")
+            .copy(properties = mapOf("status" to "done"))
+        setup.blockRepo.inner.saveBlock(uncachedBlock)
+        setup.blockRepo.resetCounts()
+
+        pushFlow.emit(BlockUpdateEvent.BlockPropertiesPatched(targetPage, uncachedBlock.uuid, uncachedBlock.properties))
+        advanceUntilIdle()
+
+        assertEquals(1, setup.blockRepo.getCount(targetPage),
+            "A properties patch for a block missing from the cache must trigger exactly one re-pull")
+        val observed = setup.bsm.blocks.value[targetPage.value].orEmpty()
+        assertTrue(
+            observed.any { it.uuid == uncachedBlock.uuid && it.properties == uncachedBlock.properties },
+            "The re-pull must surface the block with its properties instead of leaving it missing",
+        )
 
         setup.bsm.close()
     }
