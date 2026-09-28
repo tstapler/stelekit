@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.88.2](https://github.com/tstapler/stelekit/compare/v0.88.1...v0.88.2) (2026-09-28)
+
+
+### Bug Fixes
+
+* **ui-state:** don't drop pushed block writes on cache miss ([#359](https://github.com/tstapler/stelekit/issues/359)) ([4a3a96f](https://github.com/tstapler/stelekit/commit/4a3a96f00b1ecaa1baf8e12ac4fdcfe1f37eb661))
+
 ## [0.88.1](https://github.com/tstapler/stelekit/compare/v0.88.0...v0.88.1) (2026-09-26)
 
 
