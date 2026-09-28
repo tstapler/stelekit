@@ -16,6 +16,7 @@ import dev.stapler.stelekit.vault.CryptoLayer
 import dev.stapler.stelekit.vault.VaultError
 import dev.stapler.stelekit.vault.VaultManager
 import dev.stapler.stelekit.vault.VaultNamespace
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -69,7 +70,20 @@ internal fun rememberGraphContentVaultActions(
         val vm = vaultManager ?: run { passphrase.fill(' '); return@handler }
         val engine = cryptoEngine ?: run { passphrase.fill(' '); return@handler }
         vaultState = VaultState.Unlocking
-        env.scope.launch { vaultState = unlockVault(ctx, vm, engine, passphrase) }
+        env.scope.launch {
+            // Throwable (not just Exception) is caught below: an uncaught Throwable on this plain
+            // rememberCoroutineScope() (no CoroutineExceptionHandler) would otherwise kill the
+            // Android process — see GraphContentCameraCapture's saveCapturedImage for the same
+            // pattern/rationale.
+            vaultState = try {
+                unlockVault(ctx, vm, engine, passphrase)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                env.graphContentLogger.error("Vault unlock crashed: ${e.message}", e)
+                VaultState.Error(VaultError.InvalidCredential("Unlock failed — try again"))
+            }
+        }
     }
 
     val onCreateVault: (suspend (CharArray) -> Either<VaultError, Unit>)? =
@@ -119,10 +133,20 @@ private fun buildLockVaultHandler(
     if (vaultManager == null) return null
     return {
         scope.launch {
-            ctx.graphIoStack.graphWriter.flush()
-            ctx.graphIoStack.graphLoader.closeAndClearCryptoLayer()
-            ctx.graphIoStack.graphWriter.closeAndClearCryptoLayer()
-            vaultManager.lock()
+            // Throwable (not just Exception) is caught below: an uncaught Throwable on this plain
+            // rememberCoroutineScope() (no CoroutineExceptionHandler) would otherwise kill the
+            // Android process — see GraphContentCameraCapture's saveCapturedImage for the same
+            // pattern/rationale.
+            try {
+                ctx.graphIoStack.graphWriter.flush()
+                ctx.graphIoStack.graphLoader.closeAndClearCryptoLayer()
+                ctx.graphIoStack.graphWriter.closeAndClearCryptoLayer()
+                vaultManager.lock()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                ctx.graphContentLogger.error("Vault lock crashed: ${e.message}", e)
+            }
         }
         Unit
     }

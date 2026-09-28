@@ -9,7 +9,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.platform.google.GoogleAuthManager
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -39,6 +41,7 @@ private class GoogleAuthMutableState(
 internal fun rememberGraphContentGoogleAuthState(
     googleAuthManager: GoogleAuthManager?,
     scope: CoroutineScope,
+    graphContentLogger: Logger,
 ): GraphContentGoogleAuthState {
     val state = remember { GoogleAuthMutableState() }
 
@@ -50,11 +53,11 @@ internal fun rememberGraphContentGoogleAuthState(
     }
 
     val onConnectGoogle: (() -> Unit)? = if (googleAuthManager != null) {
-        { scope.launch { connectGoogle(googleAuthManager, state) } }
+        { scope.launch { connectGoogle(googleAuthManager, state, graphContentLogger) } }
     } else null
 
     val onDisconnectGoogle: (() -> Unit)? = if (googleAuthManager != null) {
-        { scope.launch { disconnectGoogle(googleAuthManager, state) } }
+        { scope.launch { disconnectGoogle(googleAuthManager, state, graphContentLogger) } }
     } else null
 
     return GraphContentGoogleAuthState(
@@ -67,28 +70,47 @@ internal fun rememberGraphContentGoogleAuthState(
     )
 }
 
-private suspend fun connectGoogle(googleAuthManager: GoogleAuthManager, state: GoogleAuthMutableState) {
+private suspend fun connectGoogle(googleAuthManager: GoogleAuthManager, state: GoogleAuthMutableState, graphContentLogger: Logger) {
     state.isConnecting.value = true
     state.authError.value = null
-    when (val result = googleAuthManager.authenticate()) {
-        is arrow.core.Either.Right -> {
-            state.isAuthenticated.value = true
-            state.connectedEmail.value = result.value
+    // Throwable (not just Exception) is caught below: an uncaught Throwable on this plain
+    // rememberCoroutineScope() (no CoroutineExceptionHandler) would otherwise kill the Android
+    // process — see GraphContentCameraCapture's saveCapturedImage for the same pattern/rationale.
+    try {
+        when (val result = googleAuthManager.authenticate()) {
+            is arrow.core.Either.Right -> {
+                state.isAuthenticated.value = true
+                state.connectedEmail.value = result.value
+            }
+            is arrow.core.Either.Left -> {
+                val error = result.value
+                // Browser launched — auth completes via deep-link callback; nothing to show.
+                val isBrowserLaunched = error is dev.stapler.stelekit.error.DomainError.NetworkError.HttpError &&
+                    error.statusCode == 202
+                if (!isBrowserLaunched) state.authError.value = error.message
+            }
         }
-        is arrow.core.Either.Left -> {
-            val error = result.value
-            // Browser launched — auth completes via deep-link callback; nothing to show.
-            val isBrowserLaunched = error is dev.stapler.stelekit.error.DomainError.NetworkError.HttpError &&
-                error.statusCode == 202
-            if (!isBrowserLaunched) state.authError.value = error.message
-        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        graphContentLogger.error("Google auth connect crashed: ${e.message}", e)
+        state.authError.value = "Connection failed — try again"
+    } finally {
+        state.isConnecting.value = false
     }
-    state.isConnecting.value = false
 }
 
-private suspend fun disconnectGoogle(googleAuthManager: GoogleAuthManager, state: GoogleAuthMutableState) {
-    googleAuthManager.signOut()
-    state.isAuthenticated.value = false
-    state.connectedEmail.value = null
-    state.authError.value = null
+private suspend fun disconnectGoogle(googleAuthManager: GoogleAuthManager, state: GoogleAuthMutableState, graphContentLogger: Logger) {
+    // Throwable (not just Exception) is caught below — same rationale as connectGoogle above.
+    try {
+        googleAuthManager.signOut()
+        state.isAuthenticated.value = false
+        state.connectedEmail.value = null
+        state.authError.value = null
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        graphContentLogger.error("Google auth disconnect crashed: ${e.message}", e)
+        state.authError.value = "Disconnect failed — try again"
+    }
 }

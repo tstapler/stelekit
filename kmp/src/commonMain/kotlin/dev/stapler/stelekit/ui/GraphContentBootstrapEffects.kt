@@ -14,6 +14,7 @@ import dev.stapler.stelekit.service.AttachmentResult
 import dev.stapler.stelekit.service.MediaAttachmentService
 import dev.stapler.stelekit.service.toMarkdown
 import dev.stapler.stelekit.ui.state.BlockStateManager
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -65,10 +66,19 @@ private suspend fun attachImageFromCommandPalette(
     viewModel: StelekitViewModel,
     env: GraphContentBootstrapEnv,
 ) {
-    val editingBlockUuid = env.blockStateManager.editingBlockUuid.value
-    val graphRoot = viewModel.uiState.value.currentGraphPath ?: return
-    val result = attachmentService.pickAndAttach(graphRoot = graphRoot, pageRelativePath = "") ?: return
-    applyAttachmentResult(result, editingBlockUuid, env)
+    // Throwable (not just Exception) is caught below: an uncaught Throwable on this plain
+    // rememberCoroutineScope() (no CoroutineExceptionHandler) would otherwise kill the Android
+    // process — see GraphContentCameraCapture's saveCapturedImage for the same pattern/rationale.
+    try {
+        val editingBlockUuid = env.blockStateManager.editingBlockUuid.value
+        val graphRoot = viewModel.uiState.value.currentGraphPath ?: return
+        val result = attachmentService.pickAndAttach(graphRoot = graphRoot, pageRelativePath = "") ?: return
+        applyAttachmentResult(result, editingBlockUuid, env)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        env.graphContentLogger.error("Image attachment from command palette crashed: ${e.message}", e)
+    }
 }
 
 private fun applyAttachmentResult(

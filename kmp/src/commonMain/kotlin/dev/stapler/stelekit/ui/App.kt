@@ -807,7 +807,7 @@ private fun GraphContent(deps: GraphContentDeps) {
     val onListActiveSlots = vaultActions.onListActiveSlots
 
     // See GraphContentGoogleAuth.kt — threaded into SettingsDialog via GraphDialogLayer.
-    val googleAuthState = rememberGraphContentGoogleAuthState(googleAuthManager, scope)
+    val googleAuthState = rememberGraphContentGoogleAuthState(googleAuthManager, scope, graphContentLogger)
     val isGoogleAuthenticated = googleAuthState.isAuthenticated
     val googleConnectedEmail = googleAuthState.connectedEmail
     val isGoogleConnecting = googleAuthState.isConnecting
