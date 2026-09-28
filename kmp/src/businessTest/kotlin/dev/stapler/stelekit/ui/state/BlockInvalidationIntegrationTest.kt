@@ -215,13 +215,8 @@ class BlockInvalidationIntegrationTest {
         setup.bsm.close()
     }
 
-    /**
-     * Regression for the voice-capture "note vanished from the journal" bug: a brand-new block
-     * (never previously seen by this BSM instance) pushed via [BlockUpdateEvent.BlockReplaced] —
-     * exactly what [dev.stapler.stelekit.db.DatabaseWriteActor.saveBlock] emits for
-     * JournalService.appendBlockToPage's external inserts — must be appended to the observed
-     * page's block list, not silently dropped because no existing block shares its UUID.
-     */
+    /** Regression: a brand-new block (never cached) pushed via [BlockUpdateEvent.BlockReplaced]
+     * must be appended, not silently dropped for having no matching UUID. */
     @Test
     fun pushedBlockReplace_forNewBlockUuid_isAppendedNotDropped() = runTest {
         val pushFlow = MutableSharedFlow<BlockUpdateEvent>(replay = 0, extraBufferCapacity = 64)
@@ -244,12 +239,8 @@ class BlockInvalidationIntegrationTest {
         setup.bsm.close()
     }
 
-    /**
-     * Same class of bug as [pushedBlockReplace_forNewBlockUuid_isAppendedNotDropped], but for
-     * [BlockUpdateEvent.BlockPropertiesPatched]: the payload carries no content/position, so a
-     * cache-miss can't be appended like a full block — it must fall back to a DB re-pull instead
-     * of silently dropping the patch.
-     */
+    /** Same bug class, for [BlockUpdateEvent.BlockPropertiesPatched]: its payload carries no
+     * content/position, so a cache-miss must fall back to a DB re-pull instead of being dropped. */
     @Test
     fun pushedPropertiesPatch_forUncachedBlockUuid_reQueriesInsteadOfDropping() = runTest {
         val pushFlow = MutableSharedFlow<BlockUpdateEvent>(replay = 0, extraBufferCapacity = 64)

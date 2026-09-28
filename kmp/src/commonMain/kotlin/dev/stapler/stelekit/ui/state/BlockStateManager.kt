@@ -609,10 +609,12 @@ class BlockStateManager(
             if (source != null) {
                 // Push path — events arrive from the actor after each hot-path write.
                 // BlocksWritten: full list (structural ops: delete, merge) — merged with dirty-set.
-                // Patch variants: single-field mutations applied in-place; zero DB re-query.
-                // Use collect (not collectLatest) — applying updates is instant; cancellation
-                // mid-apply would leave _blocks partially updated. Rapid edits are serialized
-                // by the actor queue so no stacking occurs.
+                // Patch variants: single-field mutations applied in-place — except
+                // BlockPropertiesPatched on a cache miss, which awaits a DB re-pull (see
+                // applyPropertiesPatch) rather than dropping the patch.
+                // Use collect (not collectLatest) — applying updates is instant in the common
+                // case; cancellation mid-apply would leave _blocks partially updated. Rapid edits
+                // are serialized by the actor queue so no stacking occurs.
                 pushSource?.let { push ->
                     launch {
                         push.collect { event ->
@@ -743,13 +745,14 @@ class BlockStateManager(
         _dirtyBlocks.update { it - blockUuid.value }
     }
 
-    /** Resolves [block] vs. [incoming] using dirty-set semantics: a pending unconfirmed local
-     * edit newer than [incoming]'s version wins; otherwise [incoming] is accepted. */
-    private fun reconcileIncomingBlock(block: Block, incoming: Block): Block {
-        val dirtyVersion = _dirtyBlocks.value[block.uuid.value]
-        if (dirtyVersion != null && dirtyVersion > incoming.version) return block
-        _dirtyBlocks.update { it - block.uuid.value }
-        return incoming
+    /** Dirty-set conflict resolution shared by the block-replace and properties-patch merge paths:
+     * a pending unconfirmed local edit newer than [incomingVersion] wins ([onKeepLocal]); otherwise
+     * the dirty flag is cleared and the incoming value is accepted ([onAccept]). */
+    private fun <T> resolveDirtyConflict(uuid: BlockUuid, incomingVersion: Long, onKeepLocal: () -> T, onAccept: () -> T): T {
+        val dirtyVersion = _dirtyBlocks.value[uuid.value]
+        if (dirtyVersion != null && dirtyVersion > incomingVersion) return onKeepLocal()
+        _dirtyBlocks.update { it - uuid.value }
+        return onAccept()
     }
 
     /** Merges [incoming] into [pageBlocks]: reconciles it against a matching existing block, or
@@ -758,7 +761,10 @@ class BlockStateManager(
      * has no existing entry to replace and must not be silently dropped. */
     private fun mergeIncomingBlock(pageBlocks: List<Block>, incoming: Block): List<Block> {
         if (pageBlocks.none { it.uuid == incoming.uuid }) return pageBlocks + incoming
-        return pageBlocks.map { block -> if (block.uuid == incoming.uuid) reconcileIncomingBlock(block, incoming) else block }
+        return pageBlocks.map { block ->
+            if (block.uuid != incoming.uuid) block
+            else resolveDirtyConflict(block.uuid, incoming.version, onKeepLocal = { block }, onAccept = { incoming })
+        }
     }
 
     private fun applyBlockReplace(pageUuidStr: String, incoming: Block) {
@@ -768,33 +774,29 @@ class BlockStateManager(
         }
     }
 
-    /** Resolves a properties patch for an already-matched [block] using dirty-set semantics,
-     * mirroring [reconcileIncomingBlock] but copying only [properties] onto the existing block. */
-    private fun reconcilePropertiesPatch(block: Block, properties: Map<String, String>): Block {
-        val dirtyVersion = _dirtyBlocks.value[block.uuid.value]
-        if (dirtyVersion != null && dirtyVersion > block.version) return block
-        _dirtyBlocks.update { it - block.uuid.value }
-        return block.copy(properties = properties)
-    }
+    /** Reconciles a properties-only patch onto the block in [pageBlocks] matching [blockUuid],
+     * via [resolveDirtyConflict]; other blocks pass through unchanged. */
+    private fun reconcilePropertiesForBlock(pageBlocks: List<Block>, blockUuid: BlockUuid, properties: Map<String, String>): List<Block> =
+        pageBlocks.map { block ->
+            if (block.uuid != blockUuid) block
+            else resolveDirtyConflict(block.uuid, block.version, onKeepLocal = { block }, onAccept = { block.copy(properties = properties) })
+        }
 
-    /** Applies a properties-only patch to an already-cached block. Unlike [applyBlockReplace],
-     * a missing block can't be appended here — the payload carries no content/position to
-     * synthesize a full [Block] from — so if the cache doesn't have [blockUuid] yet (e.g. it
-     * missed that block's own creation push), this re-pulls the page from DB instead of
-     * silently dropping the patch; the DB row already reflects the completed write. */
+    /** Applies a properties-only patch, re-pulling the page from DB on a cache miss instead of
+     * dropping it (unlike [applyBlockReplace], there's no content/position here to synthesize a
+     * new [Block] from). The hit/miss decision happens inside the single [_blocks] update, not a
+     * separate check before it — that would let a concurrent write remove the block in between and
+     * silently drop the patch. Any future patch-only event must follow the same rule. */
     private suspend fun applyPropertiesPatch(pageUuid: PageUuid, blockUuid: BlockUuid, properties: Map<String, String>) {
         val pageUuidStr = pageUuid.value
-        if (_blocks.value[pageUuidStr]?.none { it.uuid == blockUuid } != false) {
-            pullBlocksForPage(pageUuid)
-            return
-        }
+        var missed = false
         _blocks.update { current ->
-            val pageBlocks = current[pageUuidStr] ?: return@update current
-            val updated = pageBlocks.map { block ->
-                if (block.uuid == blockUuid) reconcilePropertiesPatch(block, properties) else block
-            }
-            current + (pageUuidStr to updated)
+            val pageBlocks = current[pageUuidStr] ?: emptyList()
+            missed = pageBlocks.none { it.uuid == blockUuid }
+            if (missed) return@update current
+            current + (pageUuidStr to reconcilePropertiesForBlock(pageBlocks, blockUuid, properties))
         }
+        if (missed) pullBlocksForPage(pageUuid)
     }
 
     fun blocksForPage(pageUuid: String): List<Block> =
