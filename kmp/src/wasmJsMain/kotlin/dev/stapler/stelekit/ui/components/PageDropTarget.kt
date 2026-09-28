@@ -10,17 +10,25 @@ import androidx.compose.ui.composed
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.service.DroppedFileBytes
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
-private val dropScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-
 // Matches App.kt's "GraphContent" tag convention for drag-and-drop-related logging (this file
 // has no access to App.kt's composable-local `graphContentLogger`, which is scoped inside
 // `StelekitApp`, not a top-level singleton).
 private val logger = Logger("GraphContent")
+
+// A CoroutineExceptionHandler here is defense-in-depth, not a crash guard: WASM/JS's
+// Dispatchers.Default is single-threaded, so an uncaught throw here would only be logged
+// to the console by the platform default handler anyway, never kill the page.
+private val dropScope = CoroutineScope(
+    SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, e ->
+        logger.error("Unhandled error while processing a dropped file", e)
+    }
+)
 
 // internal (not private): PageDropTargetListenerLifecycleTest (wasmJsTest, same module) drives
 // these directly to verify listener-swap behavior without a full Compose composition.

@@ -29,9 +29,10 @@ class ByteBufferInteropTest {
     }
 
     @Test
-    fun byteBuffer_roundTripsEmptyByteArray_withoutThrowing() {
-        val encoded = ByteArray(0).toJsUint8Array()
-        assertTrue(encoded != null)
+    fun byteBuffer_roundTripsEmptyByteArray_withoutThrowing() = runTest {
+        val decoded = roundTrip("${uniqueGraphRoot()}/empty.bin", ByteArray(0))
+
+        assertContentEquals(ByteArray(0), decoded)
     }
 
     @Test

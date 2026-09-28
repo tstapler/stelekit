@@ -13,6 +13,8 @@ import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.opfsWriteFileBytes
 import dev.stapler.stelekit.platform.toJsUint8Array
 import dev.stapler.stelekit.ui.NotificationManager
+import dev.stapler.stelekit.ui.components.fileArrayBufferPromise
+import dev.stapler.stelekit.ui.components.jsFileName
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.await
 import kotlinx.coroutines.withContext
@@ -38,12 +40,16 @@ class WasmMediaAttachmentService(private val fileSystem: FileSystem) : MediaAtta
     ): Either<DomainError, AttachmentResult>? {
         val fileObj = try {
             pickImageFileJs().await()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Throwable) {
             return null  // user cancelled or browser denied
         }
         val name = jsFileName(fileObj)
         val arrayBuffer = try {
-            fileArrayBuffer(fileObj).await()
+            fileArrayBufferPromise(fileObj).await()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Throwable) {
             return DomainError.AttachmentError.CopyFailed(e.message ?: "read failed").left()
         }
@@ -117,6 +123,3 @@ private fun pickImageFileJs(): kotlin.js.Promise<JsAny> = js("""(function() {
         input.click();
     });
 })()""")
-
-private fun jsFileName(file: JsAny): String = js("file.name")
-private fun fileArrayBuffer(file: JsAny): kotlin.js.Promise<JsAny> = js("file.arrayBuffer()")

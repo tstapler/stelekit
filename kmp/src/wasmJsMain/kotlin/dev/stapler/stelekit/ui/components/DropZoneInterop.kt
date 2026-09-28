@@ -26,7 +26,11 @@ internal fun installBodyDropListener(onFiles: (JsAny) -> Unit): Unit = js("""
 internal fun jsFileArrayLength(arr: JsAny): Int = js("arr.length | 0")
 internal fun jsFileArrayGet(arr: JsAny, index: Int): JsAny = js("arr[index]")
 internal fun jsFileName(file: JsAny): String = js("file.name")
-private fun fileArrayBufferPromise(file: JsAny): kotlin.js.Promise<JsAny> = js("file.arrayBuffer()")
+
+// internal (not private): reused by WasmMediaAttachmentService.pickAndAttach — both entry points
+// need the raw promise, not just awaited bytes, since pickAndAttach still writes a JsAny
+// ArrayBuffer through persistAttachment rather than a ByteArray.
+internal fun fileArrayBufferPromise(file: JsAny): kotlin.js.Promise<JsAny> = js("file.arrayBuffer()")
 
 internal suspend fun readFileBytes(file: JsAny): ByteArray {
     val buffer: JsAny = fileArrayBufferPromise(file).await()

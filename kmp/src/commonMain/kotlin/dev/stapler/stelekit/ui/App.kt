@@ -33,6 +33,8 @@ import dev.stapler.stelekit.migration.registerAllMigrations
 import dev.stapler.stelekit.db.SidecarManager
 import dev.stapler.stelekit.platform.DemoFileSystem
 import dev.stapler.stelekit.platform.HostAccessState
+import dev.stapler.stelekit.service.AttachmentResult
+import dev.stapler.stelekit.service.DroppedFileBytes
 import dev.stapler.stelekit.service.markdownImageLink
 import dev.stapler.stelekit.service.toMarkdown
 import dev.stapler.stelekit.export.ExportService
@@ -95,6 +97,7 @@ import arrow.core.Either
 import dev.stapler.stelekit.sections.SectionState
 import dev.stapler.stelekit.sections.getSectionStates
 import dev.stapler.stelekit.db.ImageImportService
+import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.error.toUiMessage
 import dev.stapler.stelekit.model.ImageSource
 import dev.stapler.stelekit.platform.sensor.SensorModule
@@ -1877,7 +1880,7 @@ private fun GraphContent(deps: GraphContentDeps) {
                                 urlFetcher = urlFetcher,
                                 qrTransferSettings = qrTransferSettings,
                                 graphLoader = graphLoader,
-                                capabilities = dev.stapler.stelekit.ui.components.EditorCapabilities(
+                                capabilities = EditorCapabilities(
                                     onAttachImage = if (attachmentService != null) {
                                         { editingBlockUuid ->
                                             scope.launch {
@@ -1887,10 +1890,10 @@ private fun GraphContent(deps: GraphContentDeps) {
                                                     pageRelativePath = ""
                                                 ) ?: return@launch
                                                 result.fold(
-                                                    ifLeft = { err: dev.stapler.stelekit.error.DomainError ->
+                                                    ifLeft = { err: DomainError ->
                                                         graphContentLogger.warn("Image attachment failed: $err")
                                                     },
-                                                    ifRight = { attachment: dev.stapler.stelekit.service.AttachmentResult ->
+                                                    ifRight = { attachment: AttachmentResult ->
                                                         blockStateManager.insertTextAtCursor(editingBlockUuid, attachment.toMarkdown())
                                                     }
                                                 )
@@ -1905,7 +1908,7 @@ private fun GraphContent(deps: GraphContentDeps) {
                                                 scope.launch {
                                                     files.forEach { file ->
                                                         val result = when (file) {
-                                                            is dev.stapler.stelekit.service.DroppedFileBytes ->
+                                                            is DroppedFileBytes ->
                                                                 attachmentService.attachBytes(
                                                                     bytes = file.bytes,
                                                                     suggestedName = file.suggestedName,
@@ -1918,10 +1921,10 @@ private fun GraphContent(deps: GraphContentDeps) {
                                                                 )
                                                         } ?: return@forEach
                                                         result.fold(
-                                                            ifLeft = { err: dev.stapler.stelekit.error.DomainError ->
+                                                            ifLeft = { err: DomainError ->
                                                                 graphContentLogger.warn("Drag-and-drop attachment failed: $err")
                                                             },
-                                                            ifRight = { attachment: dev.stapler.stelekit.service.AttachmentResult ->
+                                                            ifRight = { attachment: AttachmentResult ->
                                                                 blockStateManager.addBlockWithContent(
                                                                     pageUuid = pageUuid,
                                                                     content = attachment.toMarkdown()
