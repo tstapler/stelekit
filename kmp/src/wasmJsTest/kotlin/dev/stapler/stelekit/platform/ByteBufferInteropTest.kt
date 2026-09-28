@@ -17,7 +17,7 @@ class ByteBufferInteropTest {
     private fun uniqueGraphRoot(): String = "/stelekit-test/bytebuffer-${Random.nextInt(0, Int.MAX_VALUE)}"
 
     private suspend fun roundTrip(path: String, original: ByteArray): ByteArray {
-        opfsWriteFileBytes(path, original)
+        opfsWriteFileBytes(path, original.toJsUint8Array())
         val root = getOpfsRoot()
         val parts = path.removePrefix("/").split("/")
         var dir: JsAny = root

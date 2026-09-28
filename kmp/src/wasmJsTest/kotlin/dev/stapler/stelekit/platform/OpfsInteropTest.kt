@@ -3,13 +3,14 @@ package dev.stapler.stelekit.platform
 import kotlinx.coroutines.test.runTest
 import kotlin.random.Random
 import kotlin.test.Test
-import kotlin.test.assertEquals
+import kotlin.test.assertContentEquals
 import kotlin.test.assertFailsWith
-import kotlin.test.assertTrue
 
 /**
- * Real-OPFS coverage for the byte-write/dedup plumbing added for wasm-image-drop, run in
- * headless Chromium via `wasmJsBrowserTest`.
+ * Real-OPFS coverage for the byte-write plumbing added for wasm-image-drop, run in headless
+ * Chromium via `wasmJsBrowserTest`. Dedup (photo.jpg -> photo-1.jpg) is covered by
+ * `WasmMediaAttachmentServiceTest` instead, via the shared `uniqueFileName`/`FileSystem`-cache
+ * path `attachBytes` and `pickAndAttach` both actually use.
  */
 class OpfsInteropTest {
 
@@ -19,10 +20,16 @@ class OpfsInteropTest {
     fun opfsWriteFileBytes_writesBytesReadableImmediatelyAfterAwait() = runTest {
         val dir = uniqueDir()
         val bytes = byteArrayOf(9, 8, 7, 6)
+        val path = "$dir/photo.png"
 
-        opfsWriteFileBytes("$dir/photo.png", bytes)
+        opfsWriteFileBytes(path, bytes.toJsUint8Array())
 
-        assertTrue(opfsFileExists(dir, "photo.png"))
+        var handle: JsAny = getOpfsRoot()
+        for (part in dir.removePrefix("/").split("/")) {
+            handle = getDirectoryHandle(handle, part, false)
+        }
+        val fileHandle = getFileHandle(handle, "photo.png", false)
+        assertContentEquals(bytes, readOpfsFileBytes(fileHandle))
     }
 
     @Test
@@ -30,27 +37,7 @@ class OpfsInteropTest {
         val dir = uniqueDir()
 
         assertFailsWith<Throwable> {
-            opfsWriteFileBytes("$dir/", byteArrayOf(1))
+            opfsWriteFileBytes("$dir/", byteArrayOf(1).toJsUint8Array())
         }
-    }
-
-    @Test
-    fun uniqueOpfsFileName_returnsBaseName_whenNoExistingFile() = runTest {
-        val dir = uniqueDir()
-
-        val name = uniqueOpfsFileName(dir, "photo", "png")
-
-        assertEquals("photo.png", name)
-    }
-
-    @Test
-    fun uniqueOpfsFileName_returnsDashTwoSuffix_whenBaseAndDashOneExist() = runTest {
-        val dir = uniqueDir()
-        opfsWriteFileBytes("$dir/photo.png", byteArrayOf(1))
-        opfsWriteFileBytes("$dir/photo-1.png", byteArrayOf(2))
-
-        val name = uniqueOpfsFileName(dir, "photo", "png")
-
-        assertEquals("photo-2.png", name)
     }
 }

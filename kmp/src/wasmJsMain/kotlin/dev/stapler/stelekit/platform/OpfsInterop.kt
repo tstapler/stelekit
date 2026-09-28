@@ -139,60 +139,6 @@ internal suspend fun opfsWriteFile(path: String, content: String) {
     }
 }
 
-private fun writableWriteBytes(writable: JsAny, bytes: JsAny): kotlin.js.Promise<JsAny> =
-    js("writable.write(bytes)")
-
-/**
- * Writes [bytes] to OPFS at [path], creating parent directories as needed.
- *
- * Unlike [opfsWriteFile], this does not catch/swallow failures — a rejected write promise
- * propagates as a thrown [Throwable] so the caller (e.g. `WasmMediaAttachmentService`) can
- * convert it into a proper `Either.Left` instead of silently losing the attachment.
- */
-internal suspend fun opfsWriteFileBytes(path: String, bytes: ByteArray) {
-    val root = getOpfsRoot()
-    val parts = path.removePrefix("/").split("/")
-    var dir: JsAny = root
-    for (part in parts.dropLast(1)) {
-        dir = getDirectoryHandle(dir, part, true)
-    }
-    val fileName = parts.last()
-    val fileHandle = getFileHandle(dir, fileName, true)
-    val writable: JsAny = fileHandleCreateWritable(fileHandle).await()
-    @Suppress("UNUSED_VARIABLE") val _write: JsAny = writableWriteBytes(writable, bytes.toJsUint8Array()).await()
-    @Suppress("UNUSED_VARIABLE") val _close: JsAny = writableClose(writable).await()
-}
-
-/** Probes live OPFS state for [fileName] under [dirPath], creating parent directories as needed. */
-internal suspend fun opfsFileExists(dirPath: String, fileName: String): Boolean = try {
-    val root = getOpfsRoot()
-    var dir: JsAny = root
-    for (part in dirPath.removePrefix("/").split("/")) {
-        dir = getDirectoryHandle(dir, part, true)
-    }
-    getFileHandle(dir, fileName, false)
-    true
-} catch (e: Throwable) {
-    false
-}
-
-/**
- * Async sibling of [dev.stapler.stelekit.service.uniqueFileName] that probes live OPFS state
- * instead of a synchronous `okio.FileSystem` — dedup suffix counter (photo.jpg → photo-1.jpg).
- */
-internal suspend fun uniqueOpfsFileName(dirPath: String, stem: String, ext: String): String {
-    val safeStem = dev.stapler.stelekit.service.sanitizeFileNameComponent(stem, fallback = "attachment")
-    val safeExt = dev.stapler.stelekit.service.sanitizeFileNameComponent(ext, fallback = "")
-    val base = if (safeExt.isBlank()) safeStem else "$safeStem.$safeExt"
-    if (!opfsFileExists(dirPath, base)) return base
-    var counter = 1
-    while (true) {
-        val candidate = if (safeExt.isBlank()) "$safeStem-$counter" else "$safeStem-$counter.$safeExt"
-        if (!opfsFileExists(dirPath, candidate)) return candidate
-        counter++
-    }
-}
-
 internal fun createObjectUrlFromFile(file: JsAny): String = js("URL.createObjectURL(file)")
 
 internal suspend fun readOpfsFileAsObjectUrl(fileHandle: JsAny): String? = try {

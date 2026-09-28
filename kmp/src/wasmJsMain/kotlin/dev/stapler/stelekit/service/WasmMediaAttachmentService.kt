@@ -51,40 +51,36 @@ class WasmMediaAttachmentService(private val fileSystem: FileSystem) : MediaAtta
         } catch (e: Throwable) {
             return DomainError.AttachmentError.CopyFailed(e.message ?: "read failed").left()
         }
-
-        val assetsPath = "$graphRoot/assets"
-        fileSystem.createDirectory(assetsPath)
-
-        val stem = if ('.' in name) name.substringBeforeLast('.') else name
-        val ext = if ('.' in name) name.substringAfterLast('.') else ""
-        val uniqueName = uniqueFileName(assetsPath, stem, ext, fileSystem)
-
-        val destPath = "$assetsPath/$uniqueName"
-        return try {
-            opfsWriteFileBytes(destPath, arrayBuffer)
-            val blobUrl = createObjectUrlFromBuffer(arrayBuffer, mimeTypeForExt(ext))
-            fileSystem.registerBlobUrl(destPath, blobUrl)
-            AttachmentResult(relativePath = "../assets/$uniqueName", displayName = uniqueName).right()
-        } catch (e: Throwable) {
-            DomainError.AttachmentError.CopyFailed(e.message ?: "OPFS write failed").left()
-        }
+        return persistAttachment(name, arrayBuffer, graphRoot)
     }
 
     override suspend fun attachBytes(
         bytes: ByteArray,
         suggestedName: String,
         graphRoot: String
+    ): Either<DomainError, AttachmentResult> =
+        persistAttachment(suggestedName, bytes.toJsUint8Array(), graphRoot)
+
+    /**
+     * Shared write-then-register-blob-URL sequence for both [pickAndAttach] and [attachBytes] —
+     * a single source of truth so the two entry points can't drift on dedup, dispatcher, or
+     * failure-toast behavior the way they did before this was extracted (a file-picker OPFS
+     * failure went silent while an identical drag-drop failure toasted).
+     */
+    private suspend fun persistAttachment(
+        suggestedName: String,
+        arrayBuffer: JsAny,
+        graphRoot: String,
     ): Either<DomainError, AttachmentResult> = withContext(PlatformDispatcher.IO) {
         try {
             val assetsPath = "$graphRoot/assets"
             fileSystem.createDirectory(assetsPath)
 
-            val stem = suggestedName.substringBeforeLast('.', suggestedName)
-            val ext = suggestedName.substringAfterLast('.', "")
+            val stem = if ('.' in suggestedName) suggestedName.substringBeforeLast('.') else suggestedName
+            val ext = if ('.' in suggestedName) suggestedName.substringAfterLast('.') else ""
             val uniqueName = uniqueFileName(assetsPath, stem, ext, fileSystem)
 
             val destPath = "$assetsPath/$uniqueName"
-            val arrayBuffer = bytes.toJsUint8Array()
             opfsWriteFileBytes(destPath, arrayBuffer)
             val blobUrl = createObjectUrlFromBuffer(arrayBuffer, mimeTypeForExt(ext))
             fileSystem.registerBlobUrl(destPath, blobUrl)
