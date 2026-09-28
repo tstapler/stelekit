@@ -6,16 +6,9 @@ package dev.stapler.stelekit.service
 import okio.FileSystem
 import okio.Path
 
-/**
- * Strips characters that are unsafe in a filename component.
- * Retains only alphanumerics, hyphens, underscores, and dots.
- * Callers that pass an empty [fallback] should supply a non-empty default.
- */
+/** Strips characters unsafe in a filename component, and rejects the traversal tokens "."/".." (both survive the character filter, since dots are otherwise legal). Callers passing an empty [fallback] should supply a non-empty default. */
 internal fun sanitizeFileNameComponent(value: String, fallback: String = "attachment"): String {
     val sanitized = value.replace(Regex("[^A-Za-z0-9_.\\-]"), "")
-    // "." and ".." survive the character filter above (dots are a legal filename char) but are
-    // reserved directory-traversal tokens on every platform this runs on — reject them
-    // explicitly rather than relying on incidental collision checks or platform API rejection.
     return if (sanitized.isBlank() || sanitized == "." || sanitized == "..") fallback else sanitized
 }
 
