@@ -1084,6 +1084,7 @@ private fun GraphContent(deps: GraphContentDeps) {
                                         showNewGraphLocationPicker = true
                                     },
                                     scope = scope,
+                                    closeSidebarIfMobile = ::closeSidebarIfMobile,
                                 ),
                             )
                         },

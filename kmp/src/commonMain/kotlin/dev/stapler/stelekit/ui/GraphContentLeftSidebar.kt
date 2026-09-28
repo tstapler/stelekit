@@ -48,6 +48,7 @@ internal class GraphContentLeftSidebarInputs(
     val onStartNewGraphFlow: () -> Unit,
     val onShowNewGraphLocationPicker: (appOwnedPath: String) -> Unit,
     val scope: CoroutineScope,
+    val closeSidebarIfMobile: () -> Unit,
 )
 
 /**
@@ -64,10 +65,6 @@ internal fun GraphContentLeftSidebar(
     val graphManager = deps.graphManager
     val appState = inputs.appState
     var demoBannerDismissed by inputs.demoBannerDismissedState
-
-    fun closeSidebarIfMobile() {
-        if (inputs.isMobile && appState.sidebarExpanded) viewModel.toggleSidebar()
-    }
 
     LeftSidebar(
         expanded = appState.sidebarExpanded,
@@ -91,24 +88,24 @@ internal fun GraphContentLeftSidebar(
         onImportMergedPages = { importMergedPages(inputs, deps, viewModel) },
         onPageClick = { page ->
             viewModel.navigateTo(Screen.PageView(page))
-            closeSidebarIfMobile()
+            inputs.closeSidebarIfMobile()
         },
         onNavigate = { route ->
             viewModel.navigateTo(route)
-            closeSidebarIfMobile()
+            inputs.closeSidebarIfMobile()
         },
         onToggleFavorite = { viewModel.toggleFavorite(it) },
         onGraphSelected = { id ->
             inputs.scope.launch { graphManager.switchGraph(GraphId(id)) }
-            closeSidebarIfMobile()
+            inputs.closeSidebarIfMobile()
         },
         onAddGraph = {
             handleAddGraph(deps, viewModel, inputs)
-            closeSidebarIfMobile()
+            inputs.closeSidebarIfMobile()
         },
         onNewGraph = {
             inputs.onStartNewGraphFlow()
-            closeSidebarIfMobile()
+            inputs.closeSidebarIfMobile()
         },
         onRemoveGraph = { id ->
             inputs.scope.launch {
