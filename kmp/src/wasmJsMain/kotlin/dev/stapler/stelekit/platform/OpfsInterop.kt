@@ -70,6 +70,13 @@ internal suspend fun readOpfsFile(fileHandle: JsAny): String? = try {
     null
 }
 
+/** Reads a file's raw bytes back out of OPFS, for tests and callers that need binary content. */
+internal suspend fun readOpfsFileBytes(fileHandle: JsAny): ByteArray {
+    val file: JsAny = fileHandleGetFile(fileHandle).await()
+    val buffer: JsAny = fileArrayBuffer(file).await()
+    return jsArrayBufferToByteArray(buffer)
+}
+
 /**
  * Epic 3.4 (Task 3.4.1a): resolves a file handle's underlying `File` object without reading any
  * content (`.text()`/`.arrayBuffer()`) — the same `handle.getFile()` call [readOpfsFile]/
@@ -87,6 +94,7 @@ internal fun fileHandleCreateWritable(handle: JsAny): kotlin.js.Promise<JsAny> =
 internal fun writableWrite(writable: JsAny, content: String): kotlin.js.Promise<JsAny> = js("writable.write(content)")
 internal fun writableWriteBuffer(writable: JsAny, buffer: JsAny): kotlin.js.Promise<JsAny> = js("writable.write(buffer)")
 internal fun writableClose(writable: JsAny): kotlin.js.Promise<JsAny> = js("writable.close()")
+internal fun writableAbort(writable: JsAny): kotlin.js.Promise<JsAny> = js("writable.abort()")
 internal fun dirRemoveEntry(dir: JsAny, name: String): kotlin.js.Promise<JsAny> = js("dir.removeEntry(name)")
 private fun dirRemoveEntryRecursivePromise(dir: JsAny, name: String): kotlin.js.Promise<JsAny> =
     js("dir.removeEntry(name, { recursive: true })")
@@ -171,6 +179,7 @@ internal suspend fun readOpfsFileAsBytes(fileHandle: JsAny): ByteArray? = try {
 }
 
 internal suspend fun opfsWriteFileBytes(path: String, data: JsAny) {
+    var writable: JsAny? = null
     try {
         val root = getOpfsRoot()
         val parts = path.removePrefix("/").split("/")
@@ -179,11 +188,24 @@ internal suspend fun opfsWriteFileBytes(path: String, data: JsAny) {
             dir = getDirectoryHandle(dir, part, true)
         }
         val fileHandle = getFileHandle(dir, parts.last(), true)
-        val writable: JsAny = fileHandleCreateWritable(fileHandle).await()
-        @Suppress("UNUSED_VARIABLE") val _write: JsAny = writableWriteBuffer(writable, data).await()
-        @Suppress("UNUSED_VARIABLE") val _close: JsAny = writableClose(writable).await()
+        val openWritable: JsAny = fileHandleCreateWritable(fileHandle).await()
+        writable = openWritable
+        @Suppress("UNUSED_VARIABLE") val _write: JsAny = writableWriteBuffer(openWritable, data).await()
+        @Suppress("UNUSED_VARIABLE") val _close: JsAny = writableClose(openWritable).await()
     } catch (e: Throwable) {
         println("[SteleKit] OPFS binary write failed for $path: ${e.message}")
+        // An unclosed FileSystemWritableFileStream holds an exclusive lock on the target file
+        // until closed/aborted/GC'd (File System Access spec) — without this, a retried attach
+        // at the same path fails with NoModificationAllowedError until reload (PR #361 Gate-2
+        // review, MAJOR 4). Best-effort: if abort() itself fails there's nothing more we can do.
+        val handle = writable
+        if (handle != null) {
+            try {
+                writableAbort(handle).await()
+            } catch (abortError: Throwable) {
+                println("[SteleKit] OPFS abort after failed write also failed for $path: ${abortError.message}")
+            }
+        }
         throw e
     }
 }

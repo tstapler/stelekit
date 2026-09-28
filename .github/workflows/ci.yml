@@ -275,17 +275,31 @@ jobs:
         # JVM-only-API usage out of commonTest).
         run: ./gradlew :kmp:compileTestKotlinWasmJs --no-daemon --build-cache -PenableJs=true
 
-      - name: Run wasmJs ImageEncoder browser tests
-        # Runs (not just compiles) ImageEncoderWasmJsTest in headless Chrome via Karma — real
-        # regression coverage for the Canvas-2D JPEG encoder, which cannot be exercised from
-        # jvmTest. Scoped to this one class, not the whole wasmJsTest suite: the full suite has
-        # 2 pre-existing unrelated failures (MermaidRendererWasmJsTest /
+      - name: Run wasmJs browser tests
+        # Runs (not just compiles) real-browser wasmJsTest classes in headless Chrome via Karma:
+        # ImageEncoderWasmJsTest (pre-existing Canvas-2D JPEG encoder coverage) plus the
+        # wasm-image-drop suite (OPFS byte writes, the ArrayBuffer<->ByteArray bridge, and the
+        # document.body drop-listener lifecycle). Scoped via --tests, not the whole wasmJsTest
+        # suite: the full suite has 2 pre-existing unrelated failures (MermaidRendererWasmJsTest /
         # MermaidSecurityDirectiveWasmJsTest, predating this change) that block whole-suite CI
         # adoption — a separate cleanup, not part of this fix. GitHub's ubuntu-latest runner image
         # ships Chrome preinstalled, so no extra browser install step is needed here.
         run: |
           ./gradlew :kmp:wasmJsBrowserTest --no-daemon --build-cache -PenableJs=true \
-            --tests "dev.stapler.stelekit.annotate.ImageEncoderWasmJsTest"
+            --tests "dev.stapler.stelekit.annotate.ImageEncoderWasmJsTest" \
+            --tests "dev.stapler.stelekit.service.WasmMediaAttachmentServiceTest" \
+            --tests "dev.stapler.stelekit.platform.ByteBufferInteropTest" \
+            --tests "dev.stapler.stelekit.platform.OpfsInteropTest" \
+            --tests "dev.stapler.stelekit.ui.components.DropZoneInteropTest" \
+            --tests "dev.stapler.stelekit.ui.components.PageDropTargetListenerLifecycleTest"
+
+      - name: Publish wasmJs test report
+        uses: mikepenz/action-junit-report@v4
+        if: always()
+        with:
+          report_paths: '**/build/test-results/wasmJsBrowserTest/**/TEST-*.xml'
+          fail_on_failure: true
+          require_tests: true
 
   # ── Wasm/JS e2e (Playwright) ───────────────────────────────────────────────
   wasmjs-e2e:

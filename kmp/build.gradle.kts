@@ -1200,6 +1200,12 @@ detekt {
 }
 
 tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
+    // Detekt analyzes src/commonMain/kotlin directly (not through a compile task), so it needs
+    // its own explicit dependency on generateDemoFileSystem — Gradle's task-graph validation
+    // flags this as an undeclared implicit dependency otherwise (the generator writes
+    // DemoFileSystem.kt into that same source directory; see generateDemoFileSystem's other
+    // wiring above for compile tasks and jvmTest).
+    dependsOn(generateDemoFileSystem)
     jvmTarget = "21"
     reports {
         html.required.set(true)

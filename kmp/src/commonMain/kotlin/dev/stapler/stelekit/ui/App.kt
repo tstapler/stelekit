@@ -33,6 +33,9 @@ import dev.stapler.stelekit.migration.registerAllMigrations
 import dev.stapler.stelekit.db.SidecarManager
 import dev.stapler.stelekit.platform.DemoFileSystem
 import dev.stapler.stelekit.platform.HostAccessState
+import dev.stapler.stelekit.service.AttachmentResult
+import dev.stapler.stelekit.service.DroppedFileBytes
+import dev.stapler.stelekit.service.MediaAttachmentService
 import dev.stapler.stelekit.service.markdownImageLink
 import dev.stapler.stelekit.service.toMarkdown
 import dev.stapler.stelekit.export.ExportService
@@ -95,6 +98,7 @@ import arrow.core.Either
 import dev.stapler.stelekit.sections.SectionState
 import dev.stapler.stelekit.sections.getSectionStates
 import dev.stapler.stelekit.db.ImageImportService
+import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.error.toUiMessage
 import dev.stapler.stelekit.model.ImageSource
 import dev.stapler.stelekit.platform.sensor.SensorModule
@@ -1877,7 +1881,7 @@ private fun GraphContent(deps: GraphContentDeps) {
                                 urlFetcher = urlFetcher,
                                 qrTransferSettings = qrTransferSettings,
                                 graphLoader = graphLoader,
-                                capabilities = dev.stapler.stelekit.ui.components.EditorCapabilities(
+                                capabilities = EditorCapabilities(
                                     onAttachImage = if (attachmentService != null) {
                                         { editingBlockUuid ->
                                             scope.launch {
@@ -1887,10 +1891,10 @@ private fun GraphContent(deps: GraphContentDeps) {
                                                     pageRelativePath = ""
                                                 ) ?: return@launch
                                                 result.fold(
-                                                    ifLeft = { err: dev.stapler.stelekit.error.DomainError ->
+                                                    ifLeft = { err: DomainError ->
                                                         graphContentLogger.warn("Image attachment failed: $err")
                                                     },
-                                                    ifRight = { attachment: dev.stapler.stelekit.service.AttachmentResult ->
+                                                    ifRight = { attachment: AttachmentResult ->
                                                         blockStateManager.insertTextAtCursor(editingBlockUuid, attachment.toMarkdown())
                                                     }
                                                 )
@@ -1903,23 +1907,20 @@ private fun GraphContent(deps: GraphContentDeps) {
                                             val pageUuid = (appState.currentScreen as? Screen.PageView)?.page?.uuid
                                             if (pageUuid != null && graphRoot != null) {
                                                 scope.launch {
-                                                    files.forEach { file ->
-                                                        val result = attachmentService.attachFilePath(
-                                                            filePath = file.toString(),
-                                                            graphRoot = graphRoot
-                                                        ) ?: return@forEach
-                                                        result.fold(
-                                                            ifLeft = { err: dev.stapler.stelekit.error.DomainError ->
-                                                                graphContentLogger.warn("Drag-and-drop attachment failed: $err")
-                                                            },
-                                                            ifRight = { attachment: dev.stapler.stelekit.service.AttachmentResult ->
-                                                                blockStateManager.addBlockWithContent(
-                                                                    pageUuid = pageUuid,
-                                                                    content = attachment.toMarkdown()
-                                                                )
-                                                            }
-                                                        )
-                                                    }
+                                                    handleFileDrop(
+                                                        files = files,
+                                                        attachmentService = attachmentService,
+                                                        graphRoot = graphRoot,
+                                                        onAttached = { markdown ->
+                                                            blockStateManager.addBlockWithContent(
+                                                                pageUuid = pageUuid,
+                                                                content = markdown
+                                                            )
+                                                        },
+                                                        onError = { err ->
+                                                            graphContentLogger.warn("Drag-and-drop attachment failed: $err")
+                                                        },
+                                                    )
                                                 }
                                             }
                                         }
@@ -2447,6 +2448,42 @@ private data class GraphKeyEventHandlers(
     val onForward: () -> Unit,
     val onDebugMenu: () -> Unit = {},
 )
+
+/**
+ * Pure drag-and-drop attach logic — factored out of `GraphContent`'s `onFileDrop` wiring (PR #361
+ * Gate-2 review) so the per-file dispatch and success/failure handling is unit-testable without
+ * mounting the Compose tree, mirroring [addGraphFlowMode] below. Iterates [files], attaching each
+ * one via [attachmentService] ([DroppedFileBytes] goes through `attachBytes`, everything else
+ * (a platform file-path token) through `attachFilePath`), then invokes [onAttached] with the
+ * resulting markdown on success or [onError] with the [DomainError] on failure. A `null` result
+ * (the platform doesn't support that attach path) is skipped silently, matching the
+ * pre-extraction behavior.
+ */
+internal suspend fun handleFileDrop(
+    files: List<Any>,
+    attachmentService: MediaAttachmentService,
+    graphRoot: String,
+    onAttached: (markdown: String) -> Unit,
+    onError: (DomainError) -> Unit,
+) {
+    files.forEach { file ->
+        val result = when (file) {
+            is DroppedFileBytes -> attachmentService.attachBytes(
+                bytes = file.bytes,
+                suggestedName = file.suggestedName,
+                graphRoot = graphRoot,
+            )
+            else -> attachmentService.attachFilePath(
+                filePath = file.toString(),
+                graphRoot = graphRoot,
+            )
+        } ?: return@forEach
+        result.fold(
+            ifLeft = onError,
+            ifRight = { attachment: AttachmentResult -> onAttached(attachment.toMarkdown()) },
+        )
+    }
+}
 
 /** Which "add a new graph" UI [onAddGraph] should show, given this platform's [FileSystem]. */
 internal enum class AddGraphFlowMode { ShowLocationPicker, ImmediateNativePicker, ShowNameDialog }

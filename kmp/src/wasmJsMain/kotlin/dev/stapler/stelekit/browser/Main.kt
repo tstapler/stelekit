@@ -4,6 +4,7 @@
 
 package dev.stapler.stelekit.browser
 
+import androidx.compose.runtime.remember
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.window.ComposeViewport
 import kotlinx.browser.document
@@ -339,13 +340,24 @@ fun main() {
         markGraphDialogCapable(dev.stapler.stelekit.platform.showDirectoryPickerSupported())
 
         ComposeViewport(document.body!!) {
+            val wasmAttachmentService = remember { WasmMediaAttachmentService(fileSystem) }
             StelekitApp(
                 fileSystem = fileSystem,
                 graphPath = graphPath,
                 deps = dev.stapler.stelekit.ui.StelekitAppDeps(
                     graphManager = graphManager,
+                    lifecycleHooks = dev.stapler.stelekit.ui.StelekitAppLifecycleHooks(
+                        // WasmMediaAttachmentService.attachBytes (drag-and-drop) needs a
+                        // NotificationManager to surface a failure toast, but StelekitApp creates
+                        // that instance after deps is built — attach it once ready, mirroring
+                        // CaptureController.attachNotificationManager's same pattern on Desktop.
+                        onNotificationManagerReady = { nm -> wasmAttachmentService.attachNotificationManager(nm) },
+                    ),
                     platformIntegrations = dev.stapler.stelekit.ui.StelekitAppPlatformIntegrations(
-                        attachmentService = WasmMediaAttachmentService(fileSystem),
+                        // Demo-fallback mode has no persistent OPFS content to write attachments
+                        // into (matches graphMoveQuiesceStrategy/hostLinkStep/insufficientSpaceCheck's
+                        // gate below), so the attach-image affordance is hidden entirely there.
+                        attachmentService = if (useDemoFallback) null else wasmAttachmentService,
                         gitRepository = wasmGitRepository,
                         // Phase 3 (Epic 3.3): relocate has no meaning in demo-fallback mode (no
                         // persistent OPFS content to move), so both are left null there.
