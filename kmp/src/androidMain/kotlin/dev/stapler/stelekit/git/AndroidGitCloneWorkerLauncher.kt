@@ -21,12 +21,14 @@ import kotlinx.coroutines.flow.takeWhile
 /**
  * Android [GitCloneWorkerLauncher]: enqueues [GitCloneWorker] as a one-off request and suspends
  * until its [WorkInfo] reaches a terminal state (Story 3.1.3, Task 3.1.3b). Enqueued via
- * [workNameFor]'s per-graph unique-work name (Task 4.1.4b) so [cancel] can target it with
- * `cancelUniqueWork` — this name is scoped to this launcher only, **not** yet
- * [dev.stapler.stelekit.git.WorkManagerSyncScheduler]'s periodic-job name (that unification across
- * workers is Story 5.1.2, Phase 5, explicitly out of scope for this epic). [GitCloneWorkTracker]
- * records the enqueued request's id/start time regardless, giving Story 3.1.7's stuck-clone
- * watchdog a concrete, queryable identity per graph even before 5.1.2's convergence.
+ * [WorkManagerSyncScheduler.workNameFor]'s per-graph unique-work name — the SAME name the periodic
+ * [GitSyncWorker] job uses (Story 5.1.2) — through `beginUniqueWork`/`APPEND_OR_REPLACE`, so
+ * WorkManager's own uniqueness guarantee serializes a foreground clone/fetch/push against the
+ * periodic background fetch instead of letting them race at the JGit level
+ * (`research/architecture.md` §4, `research/pitfalls.md` §3.4). [cancel] targets the same shared
+ * name with `cancelUniqueWork`. [GitCloneWorkTracker] records the enqueued request's id/start
+ * time regardless, giving Story 3.1.7's stuck-clone watchdog a concrete, queryable identity per
+ * graph.
  */
 class AndroidGitCloneWorkerLauncher(private val context: Context) : GitCloneWorkerLauncher {
 
@@ -56,7 +58,8 @@ class AndroidGitCloneWorkerLauncher(private val context: Context) : GitCloneWork
             .build()
 
         val workManager = WorkManager.getInstance(context)
-        workManager.enqueueUniqueWork(workNameFor(graphId), ExistingWorkPolicy.REPLACE, request)
+        val workName = WorkManagerSyncScheduler.workNameFor(graphId)
+        workManager.beginUniqueWork(workName, ExistingWorkPolicy.APPEND_OR_REPLACE, request).enqueue()
         GitCloneWorkTracker.recordStart(context, graphId, request.id, System.currentTimeMillis())
 
         var terminalState: WorkInfo.State? = null
@@ -90,7 +93,7 @@ class AndroidGitCloneWorkerLauncher(private val context: Context) : GitCloneWork
     }
 
     override fun cancel(graphId: String) {
-        WorkManager.getInstance(context).cancelUniqueWork(workNameFor(graphId))
+        WorkManager.getInstance(context).cancelUniqueWork(WorkManagerSyncScheduler.workNameFor(graphId))
     }
 
     /**
@@ -115,11 +118,5 @@ class AndroidGitCloneWorkerLauncher(private val context: Context) : GitCloneWork
             }
             GitAuth.None -> workDataOf(GitCloneWorker.KEY_AUTH_TYPE to GitCloneWorker.AUTH_NONE)
         }
-    }
-
-    companion object {
-        /** Per-graph unique-work name this launcher enqueues [GitCloneWorker] under — see this
-         * class's kdoc for why it's not (yet) shared with the periodic sync job's name. */
-        fun workNameFor(graphId: String): String = "git_clone_$graphId"
     }
 }

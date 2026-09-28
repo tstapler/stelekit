@@ -69,7 +69,9 @@ class WorkManagerSyncScheduler(
         /** Android's floor for periodic work — matches [schedule]'s existing clamp. */
         private const val MIN_INTERVAL_MINUTES = 15L
 
-        private fun workNameFor(graphId: String) = "stelekit_git_sync_$graphId"
+        /** Not `private` (Story 5.1.2): [AndroidGitCloneWorkerLauncher] shares this name so
+         * WorkManager's own uniqueness guarantee serializes it against the periodic job. */
+        internal fun workNameFor(graphId: String) = "stelekit_git_sync_$graphId"
 
         /**
          * Pauses [graphId]'s scheduled periodic sync job ahead of a relocate/link's copy step
@@ -151,6 +153,13 @@ class GitSyncWorker(
         // Slow path: process was killed and WorkManager restarted it.
         // Application.onCreate() has run, so DriverFactory is initialized.
         // Perform a standalone fetch directly without a full GitSyncService.
+
+        // Story 5.1.3: belt-and-suspenders — yield if a GitCloneWorker is already RUNNING for
+        // this graph in this freshly-restarted process, rather than racing it at the JGit level.
+        if (isGitCloneWorkerRunningFor(applicationContext, graphId)) {
+            return Result.success()
+        }
+
         return try {
             CredentialStore.init(applicationContext)
             DriverFactory.setContext(applicationContext)
@@ -310,4 +319,20 @@ suspend fun checkAndSurfaceStuckGitCloneWorker(
     if (isGitCloneWorkerStuck(info.state, GitCloneWorkTracker.startTime(context, graphId), nowMs)) {
         GitCloneWorker.postStuckCloneWatchdogNotification(context)
     }
+}
+
+/**
+ * git-sync-resilience Story 5.1.3: pure yield-decision — true only for a [WorkInfo.State.RUNNING]
+ * [GitCloneWorker]. Split out (mirroring [isGitCloneWorkerStuck]) so the decision is directly
+ * unit-testable without a real WorkManager-tracked work item.
+ */
+fun shouldSlowPathYieldToGitCloneWorker(state: WorkInfo.State?): Boolean = state == WorkInfo.State.RUNNING
+
+/** Real WorkManager-backed caller of [shouldSlowPathYieldToGitCloneWorker] (Story 5.1.3), keyed
+ * by [GitCloneWorkTracker]'s tracked id rather than the shared unique-work name (Story 5.1.2), to
+ * avoid confusing a running [GitCloneWorker] with [GitSyncWorker] itself. */
+suspend fun isGitCloneWorkerRunningFor(context: Context, graphId: String): Boolean {
+    val workId = GitCloneWorkTracker.trackedWorkId(context, graphId) ?: return false
+    val info = WorkManager.getInstance(context).getWorkInfoByIdFlow(workId).first()
+    return shouldSlowPathYieldToGitCloneWorker(info?.state)
 }

@@ -409,6 +409,12 @@ class GitSyncService(
      */
     suspend fun fetchOnly(graphId: String): Either<DomainError.GitError, FetchResult> =
         withContext(PlatformDispatcher.IO) {
+            // Bracket the whole pipeline so gitSyncBusyCounter is decremented on every
+            // return@withContext exit path below, not just the success path — mirrors sync()'s
+            // bracketing (git-sync-resilience Story 5.1.1).
+            gitSyncBusyCounter.begin()
+            try {
+
             // Task 3.4.2c: a manual fetchOnly trigger always supersedes any pending scheduled retry.
             rateLimitRetryJob?.cancel()
 
@@ -460,6 +466,9 @@ class GitSyncService(
                     }
                     fetchResult.right()
                 }
+            }
+            } finally {
+                gitSyncBusyCounter.end()
             }
         }
 
