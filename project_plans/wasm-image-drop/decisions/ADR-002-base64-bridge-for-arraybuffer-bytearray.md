@@ -47,3 +47,14 @@ Both directions cross the Wasm↔JS boundary exactly once per file (a `String`),
 - If a future feature needs much larger binary transfers, revisit — a chunked transfer or a
   different bridge (e.g. `kotlinx-browser`'s typed-array adapters) may be worth the dependency
   cost at that size.
+
+## Update (2026-09-28 merge with origin/main)
+
+`OpfsInterop.kt` on `main` independently grew a *second* `ByteArray ↔ JsAny` bridge
+(`ByteArray.toJsArrayBuffer()`/`JsAny.toKotlinByteArray()`) for paranoid-mode encrypted writes, a
+per-element JS-array-push loop whose own doc comment says it is "acceptable for markdown-page-sized
+... content, not large blobs." This feature keeps its own base64 bridge (`ByteBufferInterop.kt`)
+for `attachBytes`'s write path rather than switching to that one — the whole point of this ADR was
+avoiding a per-element cliff on multi-MB image bytes, and paranoid-mode's bridge is exactly that
+cliff, just accepted at a size (markdown pages) where it doesn't matter. The two bridges are
+intentionally not unified; each is sized to its own caller.
