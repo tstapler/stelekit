@@ -46,10 +46,13 @@ import java.io.File
  *    actual mechanism: `DemoFileSystem` yields many pages, an empty raw filesystem yields
  *    exactly the one auto-created journal page.
  * 2. [graphContentSourceWiring_usesEffectiveFileSystemAtAllFiveCallSites] — a static check of
- *    App.kt's source (path injected via the `stelekit.appkt.file` Gradle system property) that
- *    fails immediately if any of the five call sites in `GraphContent` are reverted to raw
- *    `fileSystem`, closing the gap the behavioral test alone can't (it only exercises the
- *    `viewModel`/`graphLoader` sites, not `sidecarManager`/`imageSidecarManager`/`imageImportService`).
+ *    the `ui/` package's source (concatenated across every `GraphContent*.kt` file, via the
+ *    `stelekit.ui.dir` Gradle system property) that fails immediately if any of the five call
+ *    sites are reverted to raw `fileSystem`, closing the gap the behavioral test alone can't (it
+ *    only exercises the `viewModel`/`graphLoader` sites, not
+ *    `sidecarManager`/`imageSidecarManager`/`imageImportService`). Scanning the whole package
+ *    (rather than just App.kt) survives `GraphContent` being split across files, as it already
+ *    has been once (into GraphContentGraphIoSetup.kt / GraphContentViewModelSetup.kt).
  */
 class GraphContentDemoFileSystemWiringTest {
 
@@ -124,9 +127,12 @@ class GraphContentDemoFileSystemWiringTest {
 
     @Test
     fun graphContentSourceWiring_usesEffectiveFileSystemAtAllFiveCallSites() {
-        val path = System.getProperty("stelekit.appkt.file")
-            ?: error("stelekit.appkt.file system property not set — check build.gradle.kts jvmTest config")
-        val source = File(path).readText()
+        val dirPath = System.getProperty("stelekit.ui.dir")
+            ?: error("stelekit.ui.dir system property not set — check build.gradle.kts jvmTest config")
+        val uiDir = File(dirPath)
+        val source = uiDir.listFiles { f -> f.isFile && f.name.endsWith(".kt") }
+            ?.joinToString("\n") { it.readText() }
+            ?: error("no .kt files found under $dirPath")
 
         assertTrue(
             "sidecarManager must use effectiveFileSystem",
@@ -142,11 +148,11 @@ class GraphContentDemoFileSystemWiringTest {
         )
         assertTrue(
             "ImageSidecarIndexer must use effectiveFileSystem",
-            source.contains("dev.stapler.stelekit.db.sidecar.ImageSidecarIndexer(\n                    fileSystem = effectiveFileSystem,"),
+            source.contains("dev.stapler.stelekit.db.sidecar.ImageSidecarIndexer(\n        fileSystem = effectiveFileSystem,"),
         )
         assertTrue(
             "StelekitViewModelDependencies (the viewModel remember block) must use effectiveFileSystem",
-            source.contains("StelekitViewModelDependencies(\n                fileSystem = effectiveFileSystem,"),
+            source.contains("StelekitViewModelDependencies(\n        fileSystem = effectiveFileSystem,"),
         )
     }
 }
