@@ -7,6 +7,7 @@
 
 * **bazel:** bump rules_android 0.7.1 -&gt; 0.7.3 to fix broken dex-extension fetch ([#365](https://github.com/tstapler/stelekit/issues/365)) ([68dd481](https://github.com/tstapler/stelekit/commit/68dd4814647506db90f7fc87d4938108c1f992ee))
 * **ui:** Settings/Performance/Logs access during pre-repos loading + App.kt decomposition ([#363](https://github.com/tstapler/stelekit/issues/363)) ([cb93e67](https://github.com/tstapler/stelekit/commit/cb93e67f19166917771454191caa89a1a12c9ecf))
+* **ui:** stop stuck Shift flag from turning clicks into range-selects ([#364](https://github.com/tstapler/stelekit/issues/364)) ([d0209c9](https://github.com/tstapler/stelekit/commit/d0209c90d440c68afdf2b287b13d0aa552759e32))
 * **wasm:** drag-and-drop image attachment for web target ([#361](https://github.com/tstapler/stelekit/issues/361)) ([e3c6e77](https://github.com/tstapler/stelekit/commit/e3c6e778aa8329956a6e2c0e4bc3b4fffd31ab55))
 
 ## [0.88.2](https://github.com/tstapler/stelekit/compare/v0.88.1...v0.88.2) (2026-09-28)
