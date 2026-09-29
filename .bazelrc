@@ -103,6 +103,9 @@ build:ci --experimental_repository_downloader_retries=5
 # Vendoring it (`bazel vendor --vendor_dir=vendor --repo='@@rules_android+'`)
 # removes the network fetch for this repo entirely; re-run that command and
 # commit the result after bumping the rules_android version in MODULE.bazel.
+# Its module extension also fetches @@rules_android++com_android_dex_extension+com_android_dex
+# from android.googlesource.com (503s in CI) — vendor it too:
+#   bazel vendor --vendor_dir=vendor --repo='@@rules_android++com_android_dex_extension+com_android_dex'
 common --vendor_dir=vendor
 
 # ── Remote HTTP cache (bazel-cache-proxy) ─────────────────────────────────────

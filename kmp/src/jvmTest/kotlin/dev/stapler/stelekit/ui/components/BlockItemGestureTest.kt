@@ -7,7 +7,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.click
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithText
 import dev.stapler.stelekit.model.Block
@@ -118,10 +122,22 @@ class BlockItemGestureTest {
     @Test
     fun shiftClick_extendsSelection_notEditMode() {
         val recorder = render(isShiftDown = true)
-        composeTestRule.onNodeWithText("Plain block text").performClick()
+        val node = composeTestRule.onNodeWithText("Plain block text")
+        node.performKeyInput { keyDown(Key.ShiftLeft) }
+        node.performMouseInput { click() }
+        node.performKeyInput { keyUp(Key.ShiftLeft) }
 
         assertEquals(1, recorder.shiftClickCalls)
         assertEquals(0, recorder.startEditingCalls)
+    }
+
+    @Test
+    fun staleShiftFlag_withoutPhysicalShift_click_startsEditing() {
+        val recorder = render(isShiftDown = true)
+        composeTestRule.onNodeWithText("Plain block text").performClick()
+
+        assertEquals(1, recorder.startEditingCalls)
+        assertEquals(0, recorder.shiftClickCalls)
     }
 
     @Test
