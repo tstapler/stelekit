@@ -14,6 +14,7 @@
 """Bazel rule for Android local test."""
 
 load("//providers:providers.bzl", "AndroidFilteredJdepsInfo")
+load("//rules:add_constraints.bzl", "add_constraints")
 load("//rules:attrs.bzl", "attrs")
 load("//rules:common.bzl", "common")
 load("//rules:java.bzl", "java")
@@ -56,7 +57,11 @@ DEFAULT_GC_FLAGS = ["-Xmx8g"]
 
 # disable class loading by default for faster classloading and consistent environment across
 # local and remote execution
-DEFAULT_VERIFY_FLAGS = ["-Xverify:none"]
+DEFAULT_VERIFY_FLAGS = [
+    "-XX:+UnlockDiagnosticVMOptions",
+    "-XX:-BytecodeVerificationLocal",
+    "-XX:-BytecodeVerificationRemote",
+]
 
 def _validations_processor(ctx, **_unused_sub_ctxs):
     _check_src_pkg(ctx, True)
@@ -108,6 +113,8 @@ def _process_resources(ctx, java_package, manifest_ctx, **_unused_sub_ctxs):
         java_package = java_package,
         shrink_resources = attrs.tristate.no,
         build_java_with_final_resources = True,
+        generate_out_symbols = False,
+        crunch_png = False,
         aapt = get_android_toolchain(ctx).aapt2.files_to_run,
         android_jar = get_android_sdk(ctx).android_jar,
         busybox = get_android_toolchain(ctx).android_resources_busybox.files_to_run,
@@ -160,11 +167,7 @@ def _process_jvm(ctx, resources_ctx, **_unused_sub_ctxs):
         plugins = utils.collect_providers(JavaPluginInfo, ctx.attr.plugins),
         java_toolchain = common.get_java_toolchain(ctx),
     )
-    if getattr(java_common, "add_constraints", None):
-        java_info = java_common.add_constraints(
-            java_info,
-            constraints = ["android"],
-        )
+    java_info = add_constraints(java_info, constraints = ["android"])
 
     # TODO(timpeut): some conformance tests require a filtered JavaInfo
     # with no transitive_ deps.
@@ -246,17 +249,19 @@ def _process_deploy_jar(ctx, java_package, jvm_ctx, proto_ctx, resources_ctx, **
 
     java.singlejar(
         ctx,
-        # TODO(timpeut): investigate whether we need to filter the stub classpath as well
-        [f for f in classpath.to_list() if f.short_path.endswith(".jar")],
+        classpath,
         ctx.outputs.deploy_jar,
         mnemonic = "JavaDeployJar",
         include_build_data = True,
+        compression = False,
+        preserve_compression = True,
         java_toolchain = common.get_java_toolchain(ctx),
     )
     return ProviderInfo(
         name = "deploy_jar_ctx",
         value = struct(
             classpath = classpath,
+            deploy_jar = ctx.outputs.deploy_jar,
         ),
         runfiles = ctx.runfiles(files = res_runfiles, transitive_files = classpath),
     )
@@ -286,24 +291,9 @@ def _preprocess_stub(ctx, **_unused_sub_ctxs):
     )
 
 def _process_stub(ctx, deploy_jar_ctx, jvm_ctx, stub_preprocess_ctx, **_unused_sub_ctxs):
-    runfiles = []
-
-    merged_instr = None
-    if ctx.configuration.coverage_enabled:
-        merged_instr = ctx.actions.declare_file(ctx.label.name + "_merged_instr.jar")
-        java.singlejar(
-            ctx,
-            [f for f in deploy_jar_ctx.classpath.to_list() if f.short_path.endswith(".jar")],
-            merged_instr,
-            mnemonic = "JavaDeployJar",
-            include_build_data = True,
-            java_toolchain = common.get_java_toolchain(ctx),
-        )
-        runfiles.append(merged_instr)
+    runfiles = [deploy_jar_ctx.deploy_jar]
 
     stub = ctx.actions.declare_file(ctx.label.name)
-    classpath_file = ctx.actions.declare_file(ctx.label.name + "_classpath")
-    runfiles.append(classpath_file)
     test_class = _get_test_class(ctx)
     if not test_class:
         # fatal error
@@ -315,12 +305,10 @@ def _process_stub(ctx, deploy_jar_ctx, jvm_ctx, stub_preprocess_ctx, **_unused_s
         ctx,
         stub_preprocess_ctx.substitutes,
         stub,
-        classpath_file,
-        deploy_jar_ctx.classpath,
+        deploy_jar_ctx.deploy_jar,
         _get_jvm_flags(ctx, test_class, jvm_ctx.android_properties_file, jvm_ctx.additional_jvm_flags),
         jvm_ctx.java_start_class,
         jvm_ctx.coverage_start_class,
-        merged_instr,
     )
 
     return ProviderInfo(
@@ -441,19 +429,14 @@ def _create_stub(
         ctx,
         substitutes,
         stub_file,
-        classpath_file,
-        runfiles,
+        deploy_jar,
         jvm_flags,
         java_start_class,
-        coverage_start_class,
-        merged_instr):
+        coverage_start_class):
     subs = {
         "%needs_runfiles%": "1",
         "%runfiles_manifest_only%": "",
-        # To avoid cracking open the depset, classpath is read from a separate
-        # file created in its own action. Needed as expand_template does not
-        # support ctx.actions.args().
-        "%classpath%": "$(eval echo $(<%s))" % (classpath_file.short_path),
+        "%classpath%": "\"${J3}%s\"" % deploy_jar.short_path,
         "%java_start_class%": java_start_class,
         "%jvm_flags%": " ".join(jvm_flags),
         "%workspace_prefix%": ctx.workspace_name + "/",
@@ -463,7 +446,7 @@ def _create_stub(
         prefix = ctx.attr._runfiles_root_prefix[BuildSettingInfo].value
         subs["%set_jacoco_metadata%"] = (
             "export JACOCO_METADATA_JAR=${JAVA_RUNFILES}/" + prefix +
-            merged_instr.short_path
+            deploy_jar.short_path
         )
         subs["%set_jacoco_main_class%"] = (
             "export JACOCO_MAIN_CLASS=" + coverage_start_class
@@ -484,22 +467,7 @@ def _create_stub(
         substitutions = subs,
         is_executable = True,
     )
-
-    args = ctx.actions.args()
-    args.add_joined(
-        runfiles,
-        join_with = ":",
-        map_each = _get_classpath,
-    )
-    args.set_param_file_format("multiline")
-    ctx.actions.write(
-        output = classpath_file,
-        content = args,
-    )
     return stub_file
-
-def _get_classpath(s):
-    return "${J3}" + s.short_path
 
 def _get_jvm_flags(ctx, main_class, robolectric_properties_path, additional_jvm_flags):
     return [
@@ -521,6 +489,7 @@ def _get_jvm_flags(ctx, main_class, robolectric_properties_path, additional_jvm_
     ]
 
 def _zip_file(ctx, f, dir_name, out_zip):
+    singlejar = common.get_java_toolchain(ctx)[java_common.JavaToolchainInfo].single_jar
     cmd = """
 base=$(pwd)
 tmp_dir=$(mktemp -d)
@@ -528,9 +497,9 @@ tmp_dir=$(mktemp -d)
 cd $tmp_dir
 mkdir -p {dir_name}
 cp $base/{f} {dir_name}
-$base/{zip_tool} -jt -X -q $base/{out_zip} {dir_name}/$(basename {f})
+$base/{singlejar} --output $base/{out_zip} --normalize --exclude_build_data --warn_duplicate_resources --resources {dir_name}/$(basename {f})
 """.format(
-        zip_tool = get_android_toolchain(ctx).zip_tool.files_to_run.executable.path,
+        singlejar = singlejar.executable.path,
         f = f.path,
         dir_name = dir_name,
         out_zip = out_zip.path,
@@ -538,7 +507,7 @@ $base/{zip_tool} -jt -X -q $base/{out_zip} {dir_name}/$(basename {f})
     ctx.actions.run_shell(
         command = cmd,
         inputs = [f],
-        tools = [get_android_toolchain(ctx).zip_tool.files_to_run],
+        tools = [singlejar],
         outputs = [out_zip],
         mnemonic = "AddToZip",
         toolchain = ANDROID_TOOLCHAIN_TYPE,

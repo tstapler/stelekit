@@ -17,7 +17,9 @@ load("//providers:providers.bzl", "AndroidDexInfo", "AndroidPreDexJarInfo")
 load("//rules:acls.bzl", "acls")
 load("//rules:android_neverlink_aspect.bzl", "StarlarkAndroidNeverlinkInfo")
 load("//rules:common.bzl", "common")
+load("//rules:dex.bzl", _dex = "dex")
 load("//rules:java.bzl", "java")
+load("//rules:min_sdk_version.bzl", "min_sdk_version")
 load(
     "//rules:processing_pipeline.bzl",
     "ProviderInfo",
@@ -32,6 +34,7 @@ load(
     "utils",
 )
 load("//rules:visibility.bzl", "PROJECT_VISIBILITY")
+load("//rules/flags:flags.bzl", _flags = "flags")
 
 visibility(PROJECT_VISIBILITY)
 
@@ -72,7 +75,6 @@ def process_r8(ctx, validation_ctx, jvm_ctx, packaged_resources_ctx, build_info_
         java_toolchain = common.get_java_toolchain(ctx),
         build_target = ctx.label.name,
         deploy_manifest_lines = build_info_ctx.deploy_manifest_lines,
-        check_desugar_deps = ctx.fragments.android.check_desugar_deps,
     )
 
     dexes_zip = ctx.actions.declare_file(ctx.label.name + "_dexes.zip")
@@ -80,15 +82,45 @@ def process_r8(ctx, validation_ctx, jvm_ctx, packaged_resources_ctx, build_info_
 
     android_jar = get_android_sdk(ctx).android_jar
     proguard_specs = proguard.get_proguard_specs(ctx, packaged_resources_ctx.resource_proguard_config)
-    min_sdk_version = getattr(ctx.attr, "min_sdk_version", None)
+    desugared_lib_config = ctx.file._desugared_lib_config
+
+    # Optionally extract proguard specs embedded in the deploy JAR (META-INF/proguard/
+    # and META-INF/com.android.tools/) so they are passed to R8.
+    if _flags.get(ctx).r8_extract_embedded_proguard_specs:
+        jar_embedded_proguard = ctx.actions.declare_file(ctx.label.name + "_jar_embedded_proguard.pro")
+        jar_extractor_args = ctx.actions.args()
+        jar_extractor_args.add("--input_jar", deploy_jar)
+        jar_extractor_args.add("--output_proguard_file", jar_embedded_proguard)
+        ctx.actions.run(
+            executable = get_android_toolchain(ctx).jar_embedded_proguard_extractor.files_to_run,
+            arguments = [jar_extractor_args],
+            inputs = [deploy_jar],
+            outputs = [jar_embedded_proguard],
+            mnemonic = "JarEmbeddedProguardExtractor",
+            progress_message = "Extracting proguard specs from deploy jar for %{label}",
+            toolchain = None,
+        )
+        proguard_specs = proguard_specs + [jar_embedded_proguard]
+
+    # Get min SDK version from attribute, manifest_values, or depot floor
+    effective_min_sdk = min_sdk_version.DEPOT_FLOOR
+    min_sdk_attr = getattr(ctx.attr, "min_sdk_version", 0)
+    if min_sdk_attr:
+        effective_min_sdk = max(effective_min_sdk, min_sdk_attr)
+    manifest_values = getattr(ctx.attr, "manifest_values", {})
+    if "minSdkVersion" in manifest_values:
+        manifest_min_sdk_str = manifest_values["minSdkVersion"]
+        if manifest_min_sdk_str.isdigit():
+            effective_min_sdk = max(effective_min_sdk, int(manifest_min_sdk_str))
+        else:
+            fail("minSdkVersion must be an integer")
 
     neverlink_infos = utils.collect_providers(StarlarkAndroidNeverlinkInfo, ctx.attr.deps)
     neverlink_jars = depset(transitive = [info.transitive_neverlink_libraries for info in neverlink_infos])
 
     args = ctx.actions.args()
     args.add("--release")
-    if min_sdk_version:
-        args.add("--min-api", min_sdk_version)
+    args.add("--min-api", effective_min_sdk)
     args.add("--output", dexes_zip)
     args.add_all(proguard_specs, before_each = "--pg-conf")
     args.add("--lib", android_jar)
@@ -96,30 +128,63 @@ def process_r8(ctx, validation_ctx, jvm_ctx, packaged_resources_ctx, build_info_
     args.add(deploy_jar)  # jar to optimize + desugar + dex
     args.add("--pg-map-output", proguard_mappings_output_file)
 
+    r8_inputs = [android_jar, deploy_jar] + proguard_specs
+    if ctx.fragments.android.desugar_java8_libs and desugared_lib_config:
+        args.add("--desugared-lib", desugared_lib_config)
+        r8_inputs.append(desugared_lib_config)
+
     java.run(
         ctx = ctx,
         host_javabase = common.get_host_javabase(ctx),
         executable = get_android_toolchain(ctx).r8.files_to_run,
         arguments = [args],
-        inputs = depset([android_jar, deploy_jar] + proguard_specs, transitive = [neverlink_jars]),
+        inputs = depset(r8_inputs, transitive = [neverlink_jars]),
         outputs = [dexes_zip, proguard_mappings_output_file],
         mnemonic = "AndroidR8",
         jvm_flags = ["-Xmx8G"],
         progress_message = "R8 Optimizing, Desugaring, and Dexing %{label}",
     )
 
+    # When R8 runs with --desugared-lib, it rewrites java.* API calls to j$.*
+    # backport references, but does NOT include the j$.* implementation classes
+    # in its output. Append the prebuilt desugared library DEX so the j$.*
+    # classes are available at runtime.
+    if ctx.fragments.android.desugar_java8_libs and desugared_lib_config:
+        final_classes_dex_zip = ctx.actions.declare_file(ctx.label.name + "_final_dexes.zip")
+        java8_legacy_dex = utils.only(
+            get_android_toolchain(ctx).java8_legacy_dex.files.to_list(),
+        )
+        _dex.append_desugar_dexes(
+            ctx,
+            output = final_classes_dex_zip,
+            input = dexes_zip,
+            dexes = [java8_legacy_dex],
+            dex_zips_merger = get_android_toolchain(ctx).dex_zips_merger.files_to_run,
+        )
+
+        # DexReducer (append_desugar_dexes) strips non-.dex entries from its output.
+        # Use R8's direct output (dexes_zip) for resource extraction because R8 renames
+        # META-INF/services/* files to match obfuscated class names. Using the unprocessed
+        # deploy_jar would provide original filenames that don't match the renamed code.
+        java_resource_jar = dexes_zip
+    else:
+        final_classes_dex_zip = dexes_zip
+
+        # R8 preserves Java resources (including META-INF/services) in its output zip
+        # with correctly renamed filenames, and no DexReducer runs in this path, so no
+        # separate resource jar is needed.
+        java_resource_jar = None
+
     android_dex_info = AndroidDexInfo(
         deploy_jar = deploy_jar,
-        final_classes_dex_zip = dexes_zip,
-        # R8 preserves the Java resources (i.e. non-Java-class files) in its output zip, so no need
-        # to provide a Java resources zip.
-        java_resource_jar = None,
+        final_classes_dex_zip = final_classes_dex_zip,
+        java_resource_jar = java_resource_jar,
     )
 
     return ProviderInfo(
         name = "r8_ctx",
         value = struct(
-            final_classes_dex_zip = dexes_zip,
+            final_classes_dex_zip = final_classes_dex_zip,
             dex_info = android_dex_info,
             providers = [
                 android_dex_info,

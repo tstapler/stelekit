@@ -13,6 +13,8 @@
 # limitations under the License.
 """Creates the apk(s)."""
 
+load("//rules:acls.bzl", "acls")
+load("//rules:java.bzl", _java = "java")
 load("//rules:utils.bzl", "compilation_mode", "get_android_sdk")
 load("//rules:visibility.bzl", "PROJECT_VISIBILITY")
 load(":utils.bzl", "utils")
@@ -31,6 +33,7 @@ def _compile_android_manifest(ctx, manifest, resources_zip, out_manifest):
     args.add("-sdk_jar", android_jar)
     args.add("-res", resources_zip)
     args.add("-force_debuggable", compilation_mode.get(ctx) != compilation_mode.OPT)
+    args.add("-feature_flags", acls.get_aapt2_feature_flags(str(ctx.label)))
 
     ctx.actions.run(
         executable = ctx.executable._android_kit,
@@ -60,7 +63,7 @@ def _patch_split_manifests(ctx, orig_manifest, split_manifests, out_manifest_pac
         progress_message = "MI Patch split manifests",
     )
 
-def _make_split_apk(ctx, dirs, artifacts, debug_signing_keys, debug_signing_lineage_file, key_rotation_min_sdk, out):
+def _make_split_apk(ctx, dirs, artifacts, debug_signing_keys, debug_signing_lineage_file, key_rotation_min_sdk, zipalign_alignment, out):
     unsigned = utils.isolated_declare_file(ctx, out.basename + "_unsigned", sibling = out)
 
     args = ctx.actions.args()
@@ -87,7 +90,7 @@ def _make_split_apk(ctx, dirs, artifacts, debug_signing_keys, debug_signing_line
         progress_message = "MI Making split app %s" % out.path,
     )
 
-    _zipalign_sign(ctx, unsigned, out, debug_signing_keys, debug_signing_lineage_file, key_rotation_min_sdk)
+    _zipalign_sign(ctx, unsigned, out, debug_signing_keys, debug_signing_lineage_file, key_rotation_min_sdk, zipalign_alignment)
 
 def make_split_apks(
         ctx,
@@ -101,6 +104,7 @@ def make_split_apks(
         debug_signing_keys,
         debug_signing_lineage_file,
         key_rotation_min_sdk,
+        zipalign_alignment,
         sibling):
     """Create a split for each dex and for resources"""
     manifest_package_name = utils.isolated_declare_file(ctx, "manifest_package_name.txt", sibling = sibling)
@@ -134,7 +138,25 @@ def make_split_apks(
         )
 
         if jar_resources:
-            artifacts[name] = jar_resources
+            # Pre-merge per-library jar_resources zips with singlejar so that
+            # META-INF/services/* entries are concatenated rather than
+            # silently dropped by repack's name-deduplication. ServiceLoader
+            # expects entries from every dep that contributes to a given
+            # service path to be merged into a single file.
+            merged_jar_resources = utils.isolated_declare_file(
+                ctx,
+                "merged_jar_resources.jar",
+                sibling = sibling,
+            )
+            _java.singlejar(
+                ctx,
+                inputs = jar_resources,
+                output = merged_jar_resources,
+                java_toolchain = ctx.attr._java_toolchain,
+                mnemonic = "MIMergeJarResources",
+                progress_message = "MI Merge jar resources",
+            )
+            artifacts[name] = [merged_jar_resources]
 
         if swigdeps_file:
             dirs[name] = [swigdeps_file]
@@ -159,6 +181,7 @@ def make_split_apks(
             debug_signing_keys,
             debug_signing_lineage_file,
             key_rotation_min_sdk,
+            zipalign_alignment,
             split,
         )
         splits.append(split)
@@ -185,12 +208,12 @@ def make_split_apks(
     # Resources are now in the base apk to support RRO. Previously they were a separate split, but
     # base reinstalls no longer require a full reinstall.
     base = utils.isolated_declare_file(ctx, "splits/base.apk", sibling = sibling)
-    _make_split_apk(ctx, [compiled], [resource_apk, java8_legacy], debug_signing_keys, debug_signing_lineage_file, key_rotation_min_sdk, base)
+    _make_split_apk(ctx, [compiled], [resource_apk, java8_legacy], debug_signing_keys, debug_signing_lineage_file, key_rotation_min_sdk, zipalign_alignment, base)
     splits.append(base)
 
     return manifest_package_name, splits
 
-def _zipalign_sign(ctx, unsigned_apk, signed_apk, debug_signing_keys, debug_signing_lineage_file, key_rotation_min_sdk):
+def _zipalign_sign(ctx, unsigned_apk, signed_apk, debug_signing_keys, debug_signing_lineage_file, key_rotation_min_sdk, zipalign_alignment):
     """Zipalign and signs the given apk."""
 
     signing_params = ((("--lineage %s " % debug_signing_lineage_file.path) if debug_signing_lineage_file else "") +
@@ -216,10 +239,11 @@ jvm=$3
 apk_signer=$4
 signing_params=$5
 signed_apk=$6
+zipalign_alignment=$7
 tmp_dir=$(mktemp -d)
 tmp_apk="${tmp_dir}/zipaligned.apk"
-${zipalign} -P 16 4 ${unsigned_apk} ${tmp_apk}
-${jvm} -jar ${apk_signer} sign ${signing_params} --out ${signed_apk} ${tmp_apk}
+${zipalign} -P 16 ${zipalign_alignment} ${unsigned_apk} ${tmp_apk}
+${jvm} -jar ${apk_signer} sign ${signing_params} --alignment-preserved true --out ${signed_apk} ${tmp_apk}
 """
     ctx.actions.run_shell(
         command = cmd,
@@ -230,6 +254,7 @@ ${jvm} -jar ${apk_signer} sign ${signing_params} --out ${signed_apk} ${tmp_apk}
             utils.first(ctx.attr._apk_signer[DefaultInfo].files.to_list()).path,
             signing_params,
             signed_apk.path,
+            str(zipalign_alignment),
         ],
         tools = [ctx.executable._zipalign],
         inputs = (debug_signing_keys +

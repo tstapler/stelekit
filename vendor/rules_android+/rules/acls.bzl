@@ -31,6 +31,7 @@ load("//rules/acls:aapt2_feature_flags.bzl", "AAPT2_FEATURE_FLAGS")
 load("//rules/acls:aar_import_deps_checker.bzl", "AAR_IMPORT_DEPS_CHECKER_FALLBACK", "AAR_IMPORT_DEPS_CHECKER_ROLLOUT")
 load("//rules/acls:aar_import_explicit_exports_manifest.bzl", "AAR_IMPORT_EXPLICIT_EXPORTS_MANIFEST")
 load("//rules/acls:aar_import_exports_r_java.bzl", "AAR_IMPORT_EXPORTS_R_JAVA")
+load("//rules/acls:aar_import_propagate_native_libs.bzl", "AAR_IMPORT_PROPAGATE_NATIVE_LIBS_FALLBACK")
 load("//rules/acls:allow_resource_conflicts.bzl", "ALLOW_RESOURCE_CONFLICTS")
 load("//rules/acls:android_apk_to_bundle_features_lockdown.bzl", "ANDROID_APK_TO_BUNDLE_FEATURES")
 load("//rules/acls:android_application_with_sandboxed_sdks_allowlist.bzl", "ANDROID_APPLICATION_WITH_SANDBOXED_SDKS_ALLOWLIST")
@@ -55,18 +56,17 @@ load("//rules/acls:android_test_lockdown.bzl", "ANDROID_TEST_LOCKDOWN_GENERATOR_
 load("//rules/acls:b122039567.bzl", "B122039567")
 load("//rules/acls:baseline_profiles_optimizer_integration.bzl", "BASELINE_PROFILES_OPTIMIZER_INTEGRATION", "BASELINE_PROFILES_OPTIMIZER_INTEGRATION_FALLBACK")
 load("//rules/acls:baseline_profiles_rollout.bzl", "BASELINE_PROFILES_ROLLOUT")
+load("//rules/acls:bytecode_transformers.bzl", "BYTECODE_TRANSFORMERS")
 load("//rules/acls:d8_optimization_metadata.bzl", "D8_OPTIMIZATION_METADATA")
 load("//rules/acls:databinding.bzl", "DATABINDING_ALLOWED", "DATABINDING_DISALLOWED")
 load("//rules/acls:desugaring_runtime_jar_classpath.bzl", "DESUGAR_USE_RUNTIME_JARS")
 load("//rules/acls:dex2oat_opts.bzl", "CAN_USE_DEX2OAT_OPTIONS")
 load("//rules/acls:disable_optimizing_dexer.bzl", "DISABLE_OPTIMIZING_DEXER")
-load("//rules/acls:drop_multidex_attrs.bzl", "DROP_MULTIDEX_ATTRS")
 load("//rules/acls:enable_exported_lint_checks.bzl", "ENABLE_EXPORTED_LINT_CHECKS")
 load("//rules/acls:force_final_resources.bzl", "FORCE_FINAL_ANDROID_BINARY_RESOURCES")
 load("//rules/acls:gpu_override.bzl", "CAN_USE_GPU_OVERRIDE")
 load("//rules/acls:install_apps_in_data.bzl", "INSTALL_APPS_IN_DATA")
 load("//rules/acls:lint_registry_rollout.bzl", "LINT_REGISTRY_FALLBACK", "LINT_REGISTRY_ROLLOUT")
-load("//rules/acls:local_test_multi_proto.bzl", "LOCAL_TEST_MULTI_PROTO_PKG")
 load("//rules/acls:optimizer_execution_requirements.bzl", "OPTIMIZER_EXECUTION_REQUIREMENTS")
 load(
     "//rules/acls:partial_jetification_targets.bzl",
@@ -147,9 +147,6 @@ def _in_gpu_override(fqn):
 
 def _in_install_apps_in_data(fqn):
     return matches(fqn, AIT_INSTALL_APPS_IN_DATA_DICT)
-
-def _in_local_test_multi_proto(fqn):
-    return matches(fqn, LOCAL_TEST_MULTI_PROTO_PKG_DICT)
 
 def _in_test_to_instrument_test_rollout(fqn):
     return not matches(fqn, TEST_TO_INSTRUMENT_TEST_FALLBACK_DICT) and matches(fqn, TEST_TO_INSTRUMENT_TEST_ROLLOUT_DICT)
@@ -232,8 +229,11 @@ def _get_aapt2_feature_flags(_):
 def _use_baseline_as_startup_profile(fqn):
     return matches(fqn, USE_BASELINE_AS_STARTUP_PROFILE_ROLLOUT_DICT) and not matches(fqn, USE_BASELINE_AS_STARTUP_PROFILE_FALLBACK_DICT)
 
-def _in_drop_multidex_attrs(fqn):
-    return matches(fqn, DROP_MULTIDEX_ATTRS_DICT)
+def _in_allowed_bytecode_transformers(fqn):
+    return matches(fqn, BYTECODE_TRANSFORMERS_DICT)
+
+def _in_aar_import_propagate_native_libs(fqn):
+    return not matches(fqn, AAR_IMPORT_PROPAGATE_NATIVE_LIBS_FALLBACK_DICT)
 
 def make_dict(lst):
     """Do not use this method outside of acls directory."""
@@ -273,7 +273,6 @@ B122039567_DICT = make_dict(B122039567)
 CAN_USE_DEX2OAT_OPTIONS_DICT = make_dict(CAN_USE_DEX2OAT_OPTIONS)
 CAN_USE_GPU_OVERRIDE_DICT = make_dict(CAN_USE_GPU_OVERRIDE)
 AIT_INSTALL_APPS_IN_DATA_DICT = make_dict(INSTALL_APPS_IN_DATA)
-LOCAL_TEST_MULTI_PROTO_PKG_DICT = make_dict(LOCAL_TEST_MULTI_PROTO_PKG)
 TEST_TO_INSTRUMENT_TEST_FALLBACK_DICT = make_dict(TEST_TO_INSTRUMENT_TEST_FALLBACK)
 TEST_TO_INSTRUMENT_TEST_ROLLOUT_DICT = make_dict(TEST_TO_INSTRUMENT_TEST_ROLLOUT)
 ALLOW_RESOURCE_CONFLICTS_DICT = make_dict(ALLOW_RESOURCE_CONFLICTS)
@@ -307,7 +306,8 @@ RESOURCE_TRANSLATION_MERGING_FALLBACK_DICT = make_dict(RESOURCE_TRANSLATION_MERG
 ENABLE_EXPORTED_LINT_CHECKS_DICT = make_dict(ENABLE_EXPORTED_LINT_CHECKS)
 USE_BASELINE_AS_STARTUP_PROFILE_ROLLOUT_DICT = make_dict(USE_BASELINE_AS_STARTUP_PROFILE_ROLLOUT)
 USE_BASELINE_AS_STARTUP_PROFILE_FALLBACK_DICT = make_dict(USE_BASELINE_AS_STARTUP_PROFILE_FALLBACK)
-DROP_MULTIDEX_ATTRS_DICT = make_dict(DROP_MULTIDEX_ATTRS)
+BYTECODE_TRANSFORMERS_DICT = make_dict(BYTECODE_TRANSFORMERS)
+AAR_IMPORT_PROPAGATE_NATIVE_LIBS_FALLBACK_DICT = make_dict(AAR_IMPORT_PROPAGATE_NATIVE_LIBS_FALLBACK)
 
 def matches(fqn, dct):
     # Labels with workspace names ("@workspace//pkg:target") are not supported.
@@ -383,7 +383,6 @@ acls = struct(
     in_dex2oat_opts = _in_dex2oat_opts,
     in_gpu_override = _in_gpu_override,
     in_install_apps_in_data = _in_install_apps_in_data,
-    in_local_test_multi_proto = _in_local_test_multi_proto,
     in_test_to_instrument_test_rollout = _in_test_to_instrument_test_rollout,
     in_allow_resource_conflicts = _in_allow_resource_conflicts,
     in_partial_jetification_targets = _in_partial_jetification_targets,
@@ -408,7 +407,8 @@ acls = struct(
     in_enable_exported_lint_checks = _in_enable_exported_lint_checks,
     get_aapt2_feature_flags = _get_aapt2_feature_flags,
     use_baseline_as_startup_profile = _use_baseline_as_startup_profile,
-    in_drop_multidex_attrs = _in_drop_multidex_attrs,
+    in_allowed_bytecode_transformers = _in_allowed_bytecode_transformers,
+    in_aar_import_propagate_native_libs = _in_aar_import_propagate_native_libs,
 )
 
 # Visible for testing

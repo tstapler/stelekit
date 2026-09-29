@@ -202,3 +202,26 @@ uploads/
 /bazel-*
 # Machine-specific overrides (ANDROID_HOME, tool paths) — see .bazelrc.user.example
 .bazelrc.user
+
+# --------------------
+# Vendor directory is exempt from every pattern above
+# --------------------
+# vendor/ holds vendored third-party source (see the header comment near
+# /vendor/bazel-external above: "everything else under /vendor... is
+# committed"). That source can legitimately contain directory names that
+# collide with generic ignore patterns meant for build output elsewhere —
+# e.g. rules_android's Java sources use the "com.google.devtools.build"
+# package path, a nested "build/" dir the unanchored Gradle/Android-Studio
+# `build/` patterns above also match, silently dropping
+# vendor/rules_android+/src/tools/java(tests)/ from every commit (same
+# failure class already hit once for `android/`, anchored to `/android/`
+# above — this fix is the general form, since `build/` can't be anchored to
+# repo-root without breaking its real job of ignoring every module's Gradle
+# output dir). Placed last so it wins over every pattern above regardless of
+# what's added there in the future.
+!/vendor/**
+# Re-exclude the one real machine-local artifact under vendor/ that
+# `!/vendor/**` above would otherwise also un-ignore: a symlink into this
+# machine's own Bazel cache directory, meaningless on any other checkout.
+# Must stay after the negation above (last-match-wins).
+/vendor/bazel-external
