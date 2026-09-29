@@ -1,0 +1,41 @@
+// Copyright 2020 The Bazel Authors. All rights reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+package com.google.devtools.build.android.r8;
+
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+
+/** Utilities related to the R8 code base */
+public class R8Utils {
+  public static final String INTERFACE_COMPANION_SUFFIX = "$-CC";
+  public static final String DESUGAR_INTERFACE_COMPANION_SUFFIX = "$$CC";
+
+  private R8Utils() {}
+
+  public static void setEnableVerboseSyntheticNames(Object commandBuilder) {
+    try {
+      Class<?> commandBuilderClass = commandBuilder.getClass();
+      Method setEnableVerboseSyntheticNamesMethod =
+          commandBuilderClass.getDeclaredMethod(
+              "setEnableVerboseSyntheticNames", boolean.class);
+      setEnableVerboseSyntheticNamesMethod.invoke(commandBuilder, true);
+    } catch (IllegalAccessException e) {
+      // Intentionally empty.
+    } catch (InvocationTargetException e) {
+      // Intentionally empty.
+    } catch (NoSuchMethodException e) {
+      // Intentionally empty.
+    }
+  }
+}

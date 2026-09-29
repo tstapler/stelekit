@@ -503,6 +503,14 @@ AndroidBuildStampInfo = provider(
     ),
 )
 
+AndroidBytecodeTransformerInfo = provider(
+    doc = "AndroidBytecodeTransformerInfo",
+    fields = dict(
+        transformer_fn = "A partial function to perform bytecode transformation. " +
+                         "Called using partial.call(). Accepts context, input jar, output jar.",
+    ),
+)
+
 # Keep these symobols until rules/providers.bzl is deleted from release.
 AndroidResourcesInfo = None
 AndroidManifestInfo = None

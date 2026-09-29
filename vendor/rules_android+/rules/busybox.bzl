@@ -14,6 +14,7 @@
 """Bazel ResourcesBusyBox Commands."""
 
 load("//rules:visibility.bzl", "PROJECT_VISIBILITY")
+load(":busybox_compat.bzl", "AAPT2_COMPAT_FLAGS")
 load(":java.bzl", _java = "java")
 
 visibility(PROJECT_VISIBILITY)
@@ -23,6 +24,12 @@ _ANDROID_RESOURCES_STRICT_DEPS = "android_resources_strict_deps"
 # Feature which would cause AndroidCompiledResourceMerger actions to pass a flag with the same
 # name to ResourceProcessorBusyBox.
 _FEATURE_ANNOTATE_R_FIELDS_FROM_TRANSITIVE_DEPS = "annotate_r_fields_from_transitive_deps"
+
+# Disables the complex optimizations of the C2 compiler to favor faster startup times.
+_C1_ONLY_FLAGS = [
+    "-XX:+TieredCompilation",
+    "-XX:TieredStopAtLevel=1",
+]
 
 def _sanitize_assets_dir(assets_dir):
     sanitized_assets_dir = "/".join(
@@ -191,6 +198,9 @@ def _extract_filters(
             out_filters.append(item)
     return sorted(out_filters)
 
+def _format_compat_flags(flags):
+    return ",".join(["%s:%s" % (k, str(v).lower()) for k, v in flags.items()])
+
 def _package(
         ctx,
         out_r_src_jar = None,
@@ -227,6 +237,7 @@ def _package(
         version_name = None,
         version_code = None,
         feature_flags = "",
+        crunch_png = True,
         android_jar = None,
         aapt = None,
         busybox = None,
@@ -284,6 +295,7 @@ def _package(
         code and resources by instructing AAPT2 to emit conditional Proguard keep rules.
       version_name: A string. The version name to stamp the generated manifest with. Optional.
       version_code: A string. The version code to stamp the generated manifest with. Optional.
+      crunch_png: A boolean. Determines whether `aapt2 compile` should crunch PNG files.
       android_jar: A File. The Android Jar.
       aapt: A FilesToRunProvider. The AAPT executable.
       busybox: A FilesToRunProvider. The ResourceProcessorBusyBox executable.
@@ -372,7 +384,8 @@ def _package(
     if out_file:
         args.add("--packagePath", out_file)
         output_files.append(out_file)
-    args.add("--useAaptCruncher=no")  # Unnecessary, used for AAPT1 only but added here to minimize diffs.
+    if not crunch_png:
+        args.add("--useAapt2Cruncher=no")
     if package_type:
         args.add("--packageType", package_type)
     if debug:
@@ -409,6 +422,7 @@ def _package(
         args.add("--packageForR", java_package)
     if feature_flags:
         args.add("--featureFlags", feature_flags)
+    args.add("--aapt2_compat_flags=%s" % _format_compat_flags(AAPT2_COMPAT_FLAGS))
 
     args.add_joined(
         "--resourceApks",
@@ -423,12 +437,13 @@ def _package(
         ctx = ctx,
         host_javabase = host_javabase,
         executable = busybox,
-        tools = [aapt, busybox],
+        tools = [aapt],
         arguments = [args],
         inputs = depset(input_files, transitive = transitive_input_files),
         outputs = output_files,
         mnemonic = "PackageAndroidResources",
         progress_message = "Packaging Android Resources in %s" % ctx.label,
+        jvm_flags = _C1_ONLY_FLAGS,
     )
 
 def _parse(
@@ -473,6 +488,7 @@ def _parse(
         outputs = [out_symbols],
         mnemonic = "ParseAndroidResources",
         progress_message = "Parsing Android Resources in %s" % out_symbols.short_path,
+        jvm_flags = _C1_ONLY_FLAGS,
     )
 
 def _make_merge_assets_flags(resources_node):
@@ -551,7 +567,6 @@ def _merge_assets(
         ctx = ctx,
         host_javabase = host_javabase,
         executable = busybox,
-        tools = [busybox],
         arguments = [args],
         inputs = depset(
             assets + [symbols],
@@ -561,6 +576,7 @@ def _merge_assets(
         mnemonic = "MergeAndroidAssets",
         progress_message =
             "Merging Android Assets in %s" % out_assets_zip.short_path,
+        jvm_flags = _C1_ONLY_FLAGS,
     )
 
 def _validate_and_link(
@@ -636,6 +652,7 @@ def _validate_and_link(
     input_files.extend(resource_apks)
     if feature_flags:
         args.add("--featureFlags", feature_flags)
+    args.add("--aapt2_compat_flags=%s" % _format_compat_flags(AAPT2_COMPAT_FLAGS))
 
     _set_warning_level(ctx, args)
 
@@ -650,6 +667,7 @@ def _validate_and_link(
         mnemonic = "LinkAndroidResources",
         progress_message =
             "Linking Android Resources in " + out_file.short_path,
+        jvm_flags = _C1_ONLY_FLAGS,
     )
 
 def _compile(
@@ -658,6 +676,7 @@ def _compile(
         assets = [],
         assets_dir = None,
         resource_files = [],
+        crunch_png = True,
         busybox = None,
         aapt = None,
         host_javabase = None):
@@ -670,7 +689,9 @@ def _compile(
       assets: A list of Files. The list of assets files or directories
         to process.
       assets_dir: String. The name of the assets directory.
+      crunch_png: Boolean. Determines whether `aapt2 compile` should crunch PNG
       busybox: A FilesToRunProvider. The ResourceProcessorBusyBox executable.
+        files.
       aapt: AAPT. Tool for compiling resources.
       host_javabase: Target. The host javabase.
     """
@@ -692,6 +713,8 @@ def _compile(
             assets_dir = assets_dir,
         ),
     )
+    if not crunch_png:
+        args.add("--useAapt2Cruncher=no")
     args.add("--output", out_file)
 
     _set_warning_level(ctx, args)
@@ -706,6 +729,7 @@ def _compile(
         outputs = [out_file],
         mnemonic = "CompileAndroidResources",
         progress_message = "Compiling Android Resources in %s" % out_file.short_path,
+        jvm_flags = _C1_ONLY_FLAGS,
     )
 
 def _make_merge_compiled_flags(resources_node_info):
@@ -807,13 +831,13 @@ def _merge_compiled(
         ctx = ctx,
         host_javabase = host_javabase,
         executable = busybox,
-        tools = [busybox],
         arguments = [args],
         inputs = depset(input_files, transitive = transitive_input_files),
         outputs = output_files,
         mnemonic = "StarlarkMergeCompiledAndroidResources",
         progress_message =
             "Merging compiled Android Resources in " + out_class_jar.short_path,
+        jvm_flags = _C1_ONLY_FLAGS,
     )
 
 def _java_run(ctx, mnemonic = None, *args, **kwargs):
@@ -936,12 +960,12 @@ def _merge_manifests(
         ctx = ctx,
         host_javabase = host_javabase,
         executable = busybox,
-        tools = [busybox],
         arguments = [args],
         inputs = depset(directs, transitive = transitives),
         outputs = outputs,
         mnemonic = "MergeManifests",
         progress_message = "Merging Android Manifests in %s" % out_file.short_path,
+        jvm_flags = _C1_ONLY_FLAGS,
     )
 
 def _process_databinding(
@@ -996,6 +1020,7 @@ def _process_databinding(
         outputs = [out_databinding_info] + out_databinding_processed_resources,
         mnemonic = "StarlarkProcessDatabinding",
         progress_message = "Processing data binding",
+        jvm_flags = _C1_ONLY_FLAGS,
     )
 
 def _make_generate_binay_r_flags(resources_node):
@@ -1067,7 +1092,6 @@ def _generate_binary_r(
         ctx = ctx,
         host_javabase = host_javabase,
         executable = busybox,
-        tools = [busybox],
         arguments = [args],
         inputs = depset([r_txt, manifest], transitive = transitive_r_txts + transitive_manifests),
         outputs = [out_class_jar],
@@ -1142,7 +1166,6 @@ def _make_aar(
         ctx = ctx,
         host_javabase = host_javabase,
         executable = busybox,
-        tools = [busybox],
         arguments = [args],
         inputs = (
             resource_files +
@@ -1153,6 +1176,7 @@ def _make_aar(
         outputs = [out_aar],
         mnemonic = "StarlarkAARGenerator",
         progress_message = "Generating AAR package for %s" % ctx.label,
+        jvm_flags = _C1_ONLY_FLAGS,
     )
 
 def _shrink(
@@ -1304,6 +1328,7 @@ def _optimize(
         in_apk,
         resource_path_shortening_map = None,
         resource_optimization_config = None,
+        enable_sparse_encoding = False,
         aapt = None,
         busybox = None,
         host_javabase = None):
@@ -1315,6 +1340,7 @@ def _optimize(
         in_apk: File. The resource ap_ package to be optimized.
         resource_path_shortening_map: File. The output path shortening map. Optional.
         resource_optimization_config: File. The input optimization config. Optional.
+        enable_sparse_encoding: Boolean. Enable sparse encoding, no-op unless minSdk 32+
         aapt: FilesToRunProvider. The AAPT executable.
         busybox: FilesToRunProvider. The ResourceBusyBox executable.
         host_javabase: Target. The host javabase.
@@ -1338,6 +1364,8 @@ def _optimize(
         args.add("--collapse-resource-names")
         args.add("--resources-config-path", resource_optimization_config)
         input_files.append(resource_optimization_config)
+    if enable_sparse_encoding:
+        args.add("--enable-sparse-encoding")
     args.add("-o", out_apk)
     args.add(in_apk)
 

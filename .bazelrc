@@ -24,6 +24,13 @@ startup --max_idle_secs=1800
 # ── JVM toolchain ─────────────────────────────────────────────────────────────
 build --java_runtime_version=21
 build --tool_java_runtime_version=21
+# Language level, not just the runtime JDK used to run javac: rules_android
+# 0.7.2+'s vendored DexFileSplitter.java uses `record` (Java 16+), compiled
+# as a [for tool] (exec-config) action, so --tool_java_language_version must
+# be set explicitly — it doesn't inherit from --tool_java_runtime_version and
+# otherwise defaults below 16.
+build --java_language_version=21
+build --tool_java_language_version=21
 
 # ── Android SDK ───────────────────────────────────────────────────────────────
 # android_sdk_repository_extension runs at repo-loading time (before config
