@@ -154,8 +154,8 @@ def rules_android_prereqs(dev_mode = False):
         url = "https://github.com/bazelbuild/rules_python/releases/download/1.6.0/rules_python-1.6.0.tar.gz",
     )
 
-    BAZEL_WORKER_API_VERSION = "0.0.8"
-    BAZEL_WORKER_API_HASH = "a58c8c1e53aec7d66498168b0525bfd87add4d3cfd18e3ed03d5bed929dd68fc"
+    BAZEL_WORKER_API_VERSION = "0.0.11"
+    BAZEL_WORKER_API_HASH = "be4fab72014dc0bd92ead5146fe9ae9939bdcd262453699bb52b61e42f864e85"
     maybe(
         http_archive,
         name = "bazel_worker_api",
@@ -219,9 +219,9 @@ def rules_android_prereqs(dev_mode = False):
         maybe(
             http_archive,
             name = "rules_bazel_integration_test",
-            sha256 = "04d7816612a7aa25b1d9cd40e4bbad7e7da7a7731cf4a9bece69e9711ea26d4b",
+            sha256 = "e9ec35bb70a340ce13a85b583e8dd1366f8dde9fca70b8b1f91e0114312d5701",
             urls = [
-                "https://github.com/bazel-contrib/rules_bazel_integration_test/releases/download/v0.27.0/rules_bazel_integration_test.v0.27.0.tar.gz",
+                "https://github.com/bazel-contrib/rules_bazel_integration_test/releases/download/v0.37.1/rules_bazel_integration_test.v0.37.1.tar.gz",
             ],
         )
 

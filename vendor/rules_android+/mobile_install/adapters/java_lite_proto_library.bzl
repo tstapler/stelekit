@@ -26,7 +26,7 @@ visibility(PROJECT_VISIBILITY)
 
 def _aspect_attrs():
     """Attrs of the rule requiring traversal by the aspect."""
-    return ["deps", "_aspect_proto_toolchain_for_javalite"]
+    return ["deps", "_aspect_proto_toolchain_for_javalite", "_proto_toolchain_for_javalite"]
 
 def _adapt(target, ctx):
     """Adapts the rule and target data.
@@ -40,19 +40,24 @@ def _adapt(target, ctx):
     """
     if not ctx.rule.attr.deps:
         return []
+    toolchain_dep = []
+    if getattr(ctx.rule.attr, "_aspect_proto_toolchain_for_javalite", None):
+        toolchain_dep.append(ctx.rule.attr._aspect_proto_toolchain_for_javalite)
+    if getattr(ctx.rule.attr, "_proto_toolchain_for_javalite", None):
+        toolchain_dep.append(ctx.rule.attr._proto_toolchain_for_javalite)
     return [
         providers.make_mi_android_dex_info(
             deps = providers.collect(
                 MIAndroidDexInfo,
                 ctx.rule.attr.deps,
-                [ctx.rule.attr._aspect_proto_toolchain_for_javalite],
+                toolchain_dep,
             ),
         ),
         providers.make_mi_java_resources_info(
             deps = providers.collect(
                 MIJavaResourcesInfo,
                 ctx.rule.attr.deps,
-                [ctx.rule.attr._aspect_proto_toolchain_for_javalite],
+                toolchain_dep,
             ),
         ),
     ]

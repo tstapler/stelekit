@@ -19,6 +19,7 @@ load(
     "AndroidBundleInfo",
     "AndroidFeatureModuleInfo",
     "AndroidIdeInfo",
+    "AndroidOptimizationInfo",
     "AndroidPreDexJarInfo",
     "AndroidSandboxedSdkBundleInfo",
     "ApkInfo",
@@ -374,6 +375,11 @@ def _impl(ctx):
         metadata["com.android.tools.build.profiles/baseline.prof"] = base_art_profile_info.baseline_profile
         metadata["com.android.tools.build.profiles/baseline.profm"] = base_art_profile_info.baseline_profile_metadata
 
+    if AndroidOptimizationInfo in ctx.attr.base_module:
+        opt_info = ctx.attr.base_module[AndroidOptimizationInfo]
+        if opt_info.d8_optimization_info:
+            metadata["com.android.tools/d8.json"] = opt_info.d8_optimization_info
+
     # Create .aab
     _bundletool.build(
         ctx,
@@ -528,4 +534,5 @@ def android_application_macro(_android_binary, **attrs):
         manifest_values = attrs.get("manifest_values"),
         visibility = attrs.get("visibility", None),
         tags = attrs.get("tags", []),
+        exec_properties = attrs.get("exec_properties", None),
     )

@@ -31,6 +31,7 @@ bzl_library(
         "attrs.bzl",
         "bundletool.bzl",
         "busybox.bzl",
+        "busybox_compat.bzl",
         "common.bzl",
         "data_binding.bzl",
         "desugar.bzl",
@@ -49,6 +50,7 @@ bzl_library(
     ],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":add_constraints_bzl",
         ":visibility_bzl",
         "//providers:providers_bzl",
         "//rules/acls:bzl",
@@ -57,6 +59,15 @@ bzl_library(
         "@bazel_skylib//lib:paths",
         "@rules_java//java/common",
         "@rules_java//java/private:android_support",
+    ],
+)
+
+bzl_library(
+    name = "add_constraints_bzl",
+    srcs = ["add_constraints.bzl"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":visibility_bzl",
     ],
 )
 
@@ -99,6 +110,7 @@ bzl_library(
     visibility = [
         "//mobile_install:__pkg__",
         "//stardoc:__pkg__",
+        "//test/rules/android_binary/r8_integration:__pkg__",
         "//test/rules/android_sdk_repository:__pkg__",
     ],
     deps = [
