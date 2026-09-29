@@ -813,6 +813,13 @@ tasks.named<Test>("jvmTest") {
         "stelekit.appkt.file",
         file("src/commonMain/kotlin/dev/stapler/stelekit/ui/App.kt").absolutePath
     )
+    // Same rationale as stelekit.appkt.file, widened to the whole ui/ package: GraphContent's
+    // call sites have moved across GraphContent*.kt files as the composable has been split up,
+    // so GraphContentDemoFileSystemWiringTest scans every file here rather than just App.kt.
+    systemProperty(
+        "stelekit.ui.dir",
+        file("src/commonMain/kotlin/dev/stapler/stelekit/ui").absolutePath
+    )
 
     // BlockHound is installed programmatically via BlockHoundTestBase.installBlockHound().
     // The -javaagent approach (reactor.blockhound:blockhound) crashes on Java 21+ due to

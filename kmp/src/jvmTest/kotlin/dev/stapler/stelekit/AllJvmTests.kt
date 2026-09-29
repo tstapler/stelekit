@@ -61,8 +61,10 @@ import dev.stapler.stelekit.transfer.qrcode.QrCodecJvmRoundTripTest
 import dev.stapler.stelekit.transfer.qrcode.QrCodecJvmTest
 import dev.stapler.stelekit.ui.DemoBannerTest
 import dev.stapler.stelekit.ui.DiskConflictResolutionTest
+import dev.stapler.stelekit.ui.GraphContentDemoFileSystemWiringTest
 import dev.stapler.stelekit.ui.GraphSwitcherDemoFilterTest
 import dev.stapler.stelekit.ui.DragDropReorderTest
+import dev.stapler.stelekit.ui.InitializingScreenThemedTest
 import dev.stapler.stelekit.ui.KeyboardShortcutTest
 import dev.stapler.stelekit.ui.MigrationReadyLoadingTest
 import dev.stapler.stelekit.ui.OutlinerRegressionTest
@@ -186,6 +188,8 @@ import org.junit.runners.Suite
     SyncStatusBadgeTest::class,
     TopBarTest::class,
     DemoBannerTest::class,
+    GraphContentDemoFileSystemWiringTest::class,
+    InitializingScreenThemedTest::class,
     GraphSwitcherDemoFilterTest::class,
     DiskConflictResolutionTest::class,
     DragDropReorderTest::class,
