@@ -40,16 +40,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
 /**
- * Everything [GraphContentActiveShell] needs beyond [GraphContentDeps]/[StelekitViewModel]
- * (Parameter Object pattern) — the already-built stacks and one-shot setup results from
- * [GraphContent]'s own preamble. Those stay in [GraphContent] itself rather than moving here
- * wholesale: several of them (`vaultSetup`, `graphIoStack`, `viewModelStack`, ...) are computed
- * unconditionally before the onboarding/vault gate so their `remember`/state survives switching
- * in and out of this shell — see [GraphContent]'s own doc for why.
- *
- * [llmRegistryRefreshTokenState] and [debugMenuStateState] are passed as [MutableState] rather
- * than plain values because this shell *writes* them (credential-added, debug-menu-changed) while
- * a `remember`/effect back in [GraphContent] needs to observe those writes.
+ * Parameter object for [GraphContentActiveShell] — the stacks/results [GraphContent] already
+ * built (see its doc for why they stay there). [llmRegistryRefreshTokenState] and
+ * [debugMenuStateState] are shared [MutableState] refs, not copies: don't rewrap either in a
+ * fresh `remember { }` here, or writes stop reaching [GraphContent].
  */
 internal class GraphContentActiveShellInputs(
     val scope: CoroutineScope,
@@ -78,13 +72,9 @@ internal class GraphContentActiveShellInputs(
 )
 
 /**
- * The active graph shell: window-size-aware [MainLayout] (top bar, sidebars, main content,
- * status/bottom bars), [GraphDialogLayer], the "New graph…" flow dialogs, and the storage-move
- * progress dialog. Split out from [GraphContent] purely for length/nesting — see ADR-001-style
- * decomposition rationale at [GraphContent]'s own doc.
- *
- * If this is split across files again, update [GraphContentDemoFileSystemWiringTest]'s Bazel
- * filegroup and file list — its doc comment names the exact files to add.
+ * The active graph shell: [MainLayout], [GraphDialogLayer], and the New-graph/storage-move
+ * dialogs — split out of [GraphContent] purely for length/nesting (see ADR-001). If split again,
+ * update [GraphContentDemoFileSystemWiringTest]'s Bazel filegroup/file list.
  */
 @Composable
 internal fun GraphContentActiveShell(

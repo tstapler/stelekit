@@ -4,7 +4,6 @@
 
 package dev.stapler.stelekit.ui
 
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.background
 import dev.stapler.stelekit.capture.HotkeyRegistrationFailure
@@ -17,8 +16,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.*
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -26,13 +23,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalClipboardManager
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.migration.registerAllMigrations
-import dev.stapler.stelekit.platform.HostAccessState
 import dev.stapler.stelekit.logging.Logger
-import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.DEMO_GRAPH_ID
 import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.StorageLocation
-import dev.stapler.stelekit.performance.DebugBuildConfig
 import dev.stapler.stelekit.performance.DebugMenuState
 import dev.stapler.stelekit.performance.LocalSpanRecorder
 import dev.stapler.stelekit.platform.*
@@ -49,7 +43,6 @@ import dev.stapler.stelekit.ui.screens.EmptyGraphStateScreen
 import dev.stapler.stelekit.ui.screens.LibrarySetupScreen
 import dev.stapler.stelekit.ui.screens.PermissionRecoveryScreen
 import dev.stapler.stelekit.ui.screens.VaultUnlockScreen
-import dev.stapler.stelekit.voice.VoiceCaptureState
 import dev.stapler.stelekit.ui.theme.StelekitTheme
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
 import kotlinx.coroutines.CancellationException
@@ -668,9 +661,7 @@ private fun GraphContent(deps: GraphContentDeps) {
     // rebuild after the user adds/edits/removes a credential through the new Settings UI —
     // LlmCredentialStore itself isn't reactive (no Flow), so this is the simplest way to keep
     // the provider list in sync within a session without adding a new observable layer.
-    // Exposed as a MutableState (not a destructured `var ... by`) so GraphContentActiveShell can
-    // increment it from onLlmCredentialsChange while this remember-key below — which lives in
-    // GraphContent, on the other side of the shell extraction — still observes the same instance.
+    // MutableState, not a destructured `var ... by` — see GraphContentActiveShellInputs's doc.
     val llmRegistryRefreshTokenState = remember { androidx.compose.runtime.mutableStateOf(0) }
     val llmSettings = remember(platformSettings) { dev.stapler.stelekit.llm.LlmSettings(platformSettings) }
     val llmProviderRegistry = remember(llmCredentialStore, llmSettings, llmRegistryRefreshTokenState.value) {
@@ -742,25 +733,11 @@ private fun GraphContent(deps: GraphContentDeps) {
         vaultSetup, graphIoStack, deps, GraphContentVaultEnv(scope, graphContentLogger), viewModel,
     )
     val onVaultUnlock = vaultActions.onVaultUnlock
-    val onCreateVault = vaultActions.onCreateVault
-    val onAddKeyslot = vaultActions.onAddKeyslot
-    val onRemoveKeyslot = vaultActions.onRemoveKeyslot
-    val onLockVault = vaultActions.onLockVault
-    val onListActiveSlots = vaultActions.onListActiveSlots
 
     // See GraphContentGoogleAuth.kt — threaded into SettingsDialog via GraphDialogLayer.
     val googleAuthState = rememberGraphContentGoogleAuthState(googleAuthManager, scope, graphContentLogger)
-    val isGoogleAuthenticated = googleAuthState.isAuthenticated
-    val googleConnectedEmail = googleAuthState.connectedEmail
-    val isGoogleConnecting = googleAuthState.isConnecting
-    val googleAuthError = googleAuthState.authError
-    val onConnectGoogle = googleAuthState.onConnect
-    val onDisconnectGoogle = googleAuthState.onDisconnect
 
-    // Exposed as a MutableState (not a destructured `var ... by`) so GraphContentActiveShell can
-    // write it from onDebugStateChange while this LaunchedEffect and perfTelemetry below — which
-    // live in GraphContent, on the other side of the shell extraction — still observe the same
-    // instance.
+    // MutableState, not a destructured `var ... by` — see GraphContentActiveShellInputs's doc.
     val debugMenuStateState = remember {
         mutableStateOf(repos.debugFlagRepository?.loadDebugMenuState() ?: DebugMenuState())
     }
