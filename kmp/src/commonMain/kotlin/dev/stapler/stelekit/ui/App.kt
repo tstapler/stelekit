@@ -118,7 +118,10 @@ internal fun InitializingScreenThemed(platformSettings: Settings) {
         Box(modifier = Modifier.fillMaxSize()) {
             LoadingOverlay("Initializing…")
             InitializingDebugAccessButtons(
-                modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .windowInsetsPadding(WindowInsets.safeDrawing)
+                    .padding(8.dp),
                 onOpen = { openScreen = it },
             )
         }
@@ -632,8 +635,6 @@ private fun GraphContent(deps: GraphContentDeps) {
     val onMemoryPressure = deps.onMemoryPressure
     val pluginHost = deps.coreServices.pluginHost
     val encryptionManager = deps.coreServices.encryptionManager
-    val urlFetcher = deps.coreServices.urlFetcher
-    val libraryStatsProvider = deps.coreServices.libraryStatsProvider
     val voicePipeline = deps.coreServices.voicePipeline
     val spanRecorder = deps.coreServices.spanRecorder
     val voiceSettings = deps.voiceConfig.voiceSettings
@@ -645,29 +646,8 @@ private fun GraphContent(deps: GraphContentDeps) {
     val attachmentService = deps.platformIntegrations.attachmentService
     val hotkeyComboLabel = deps.hotkeyComboLabel
     val googleAuthManager = deps.platformIntegrations.googleAuthManager
-    val requestCameraPermission = deps.platformIntegrations.requestCameraPermission
-    val graphMoveQuiesceStrategy = deps.platformIntegrations.graphMoveQuiesceStrategy
-    val hostLinkStep = deps.platformIntegrations.hostLinkStep
     val storageLocationResolver = deps.platformIntegrations.storageLocationResolver
-    val insufficientSpaceCheck = deps.platformIntegrations.insufficientSpaceCheck
-    val gitSyncBusyCounter = deps.platformIntegrations.gitSyncBusyCounter
     val localChangesCountFlow = deps.webSyncDeps.localChangesCountFlow
-    val hostAccessStateFlow = deps.webSyncDeps.hostAccessStateFlow
-    val hostWritePendingCountFlow = deps.webSyncDeps.hostWritePendingCountFlow
-    val hostWriteStuckFlow = deps.webSyncDeps.hostWriteStuckFlow
-    val onReconnectHostDirectory = deps.webSyncDeps.onReconnectHostDirectory
-    val onConnectHostDirectory = deps.webSyncDeps.onConnectHostDirectory
-    val onUnlinkHostDirectory = deps.webSyncDeps.onUnlinkHostDirectory
-    val graphMergeService = deps.graphMergeService
-    val mergePendingPageCount by graphMergeService.pendingPageCount.collectAsState()
-
-    // Epic 2.3 (Task 2.3.1c): resolved here (not passed as raw StateFlow into StelekitViewModel,
-    // unlike localChangesCountFlow) — FolderSyncStatusBadge is a pure sidebar-header composable,
-    // not part of syncState, so collectAsState() directly feeds its call site below.
-    val hostAccessState = hostAccessStateFlow?.collectAsState()?.value ?: HostAccessState.NotApplicable
-    val hostWritePendingCount = hostWritePendingCountFlow?.collectAsState()?.value ?: 0
-    // Epic 4.4 (Task 4.4.1c): SyncDegraded signal — see FolderSyncStatusBadge's state table.
-    val hostWriteStuck = hostWriteStuckFlow?.collectAsState()?.value ?: false
 
     CompositionLocalProvider(
         LocalSpanRecorder provides spanRecorder,
@@ -688,9 +668,12 @@ private fun GraphContent(deps: GraphContentDeps) {
     // rebuild after the user adds/edits/removes a credential through the new Settings UI —
     // LlmCredentialStore itself isn't reactive (no Flow), so this is the simplest way to keep
     // the provider list in sync within a session without adding a new observable layer.
-    var llmRegistryRefreshToken by remember { androidx.compose.runtime.mutableStateOf(0) }
+    // Exposed as a MutableState (not a destructured `var ... by`) so GraphContentActiveShell can
+    // increment it from onLlmCredentialsChange while this remember-key below — which lives in
+    // GraphContent, on the other side of the shell extraction — still observes the same instance.
+    val llmRegistryRefreshTokenState = remember { androidx.compose.runtime.mutableStateOf(0) }
     val llmSettings = remember(platformSettings) { dev.stapler.stelekit.llm.LlmSettings(platformSettings) }
-    val llmProviderRegistry = remember(llmCredentialStore, llmSettings, llmRegistryRefreshToken) {
+    val llmProviderRegistry = remember(llmCredentialStore, llmSettings, llmRegistryRefreshTokenState.value) {
         dev.stapler.stelekit.llm.buildLlmProviderRegistry(llmCredentialStore, llmSettings)
     }
 
@@ -746,9 +729,6 @@ private fun GraphContent(deps: GraphContentDeps) {
     // See GraphContentStorageMove.kt: GraphRelocationCoordinator, StorageMoveUiState, and the
     // Move-storage-location callbacks wired into the sidebar and StorageMoveProgressDialog.
     val storageMoveController = rememberGraphContentStorageMoveController(deps, graphWriter, scope, graphContentLogger, viewModel)
-    var storageMoveState by storageMoveController.stateState
-    val storageMoveGraphName by storageMoveController.graphNameState
-    val onStorageLocationChoose = storageMoveController.onStorageLocationChoose
 
     // See GraphContentBootstrapEffects.kt: memory-pressure registration + /image command wiring.
     WireGraphContentBootstrapEffects(
@@ -777,9 +757,14 @@ private fun GraphContent(deps: GraphContentDeps) {
     val onConnectGoogle = googleAuthState.onConnect
     val onDisconnectGoogle = googleAuthState.onDisconnect
 
-    var debugMenuState by remember {
+    // Exposed as a MutableState (not a destructured `var ... by`) so GraphContentActiveShell can
+    // write it from onDebugStateChange while this LaunchedEffect and perfTelemetry below — which
+    // live in GraphContent, on the other side of the shell extraction — still observe the same
+    // instance.
+    val debugMenuStateState = remember {
         mutableStateOf(repos.debugFlagRepository?.loadDebugMenuState() ?: DebugMenuState())
     }
+    val debugMenuState = debugMenuStateState.value
 
     // Sync span capture toggle → ring buffer enabled flag so histograms remain always-on
     // but span recording only runs when explicitly requested.
@@ -817,378 +802,59 @@ private fun GraphContent(deps: GraphContentDeps) {
     ObserveGraphContentLifecycle(viewModel, voiceCaptureViewModel, graphIoStack) { vaultManager }
 
     val appState by viewModel.uiState.collectAsState()
-    val voiceCaptureState by voiceCaptureViewModel.state.collectAsState()
-    val graphRegistry by graphManager.graphRegistry.collectAsState()
-    val activeGraphId = graphRegistry.activeGraphId
-    val syncState by viewModel.syncState.collectAsState()
-    val gitLastSyncAt by viewModel.gitLastSyncAt.collectAsState()
 
     StelekitTheme(themeMode = appState.themeMode) {
         CompositionLocalProvider(LocalI18n provides I18n(appState.language)) {
-            if (!appState.onboardingCompleted) {
-                GraphContentOnboarding(fileSystem, graphManager, viewModel, scope)
-            } else {
-                val focusManager = LocalFocusManager.current
-                if (isParanoidMode && vaultState !is VaultState.Unlocked) {
+            when {
+                !appState.onboardingCompleted -> {
+                    GraphContentOnboarding(fileSystem, graphManager, viewModel, scope)
+                }
+                isParanoidMode && vaultState !is VaultState.Unlocked -> {
                     VaultUnlockScreen(
                         graphName = activeGraphInfo?.displayName ?: activeGraphPath,
                         vaultState = vaultState,
                         onUnlock = onVaultUnlock,
                     )
-                } else {
-                BoxWithConstraints(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .pointerInput(Unit) {
-                            detectTapGestures(onTap = { focusManager.clearFocus() })
-                        }
-                        .platformNavigationInput(
-                            onBack = { viewModel.goBack() },
-                            onForward = { viewModel.goForward() }
-                        )
-                        .onKeyEvent { keyEvent ->
-                            onGraphKeyEvent(
-                                keyEvent = keyEvent,
-                                handlers = GraphKeyEventHandlers(
-                                    onCommandPalette = { viewModel.setCommandPaletteVisible(true) },
-                                    onSearch = { viewModel.setSearchDialogVisible(true) },
-                                    onToggleSidebar = { viewModel.toggleSidebar() },
-                                    onToggleRightSidebar = { viewModel.toggleRightSidebar() },
-                                    onSettings = { viewModel.setSettingsVisible(true) },
-                                    onUndo = { journalsViewModel.undo() },
-                                    onRedo = { journalsViewModel.redo() },
-                                    onBack = { viewModel.goBack() },
-                                    onForward = { viewModel.goForward() },
-                                    onDebugMenu = { viewModel.showDebugMenu() },
-                                ),
-                            )
-                        }
-                ) {
-                    val windowSizeClass = windowSizeClassFor(maxWidth)
-                    val isMobile = windowSizeClass.isMobile
-                    val snackbarHostState = remember { SnackbarHostState() }
-                    val demoBannerDismissedState = remember { mutableStateOf(false) }
-                    // See GraphContentNewGraphFlow.kt for the "New graph…" flow's state/dialogs.
-                    val newGraphFlowController = rememberGraphContentNewGraphFlowController(deps)
-                    LaunchedEffect(Unit) {
-                        viewModel.snackbarEvents.collect { msg ->
-                            try {
-                                snackbarHostState.showSnackbar(msg)
-                            } catch (e: kotlinx.coroutines.CancellationException) {
-                                throw e
-                            } catch (e: Exception) {
-                                graphContentLogger.warn("showSnackbar failed: $e")
-                            }
-                        }
-                    }
-                    // Epic 8 Story 8.2: one-time notice for existing installs whose tag
-                    // suggestion LLM tier was explicitly disabled by the migration guard above
-                    // (see showTagSuggestionOnDeviceNotice) so they know on-device support now
-                    // exists and how to turn it on.
-                    LaunchedEffect(showTagSuggestionOnDeviceNotice) {
-                        if (showTagSuggestionOnDeviceNotice) {
-                            try {
-                                snackbarHostState.showSnackbar("On-device tag suggestions are now available — enable in Settings")
-                            } catch (e: kotlinx.coroutines.CancellationException) {
-                                throw e
-                            } catch (e: Exception) {
-                                graphContentLogger.warn("showSnackbar failed: $e")
-                            }
-                        }
-                    }
-
-                    CompositionLocalProvider(
-                        LocalWindowSizeClass provides windowSizeClass,
-                        LocalOpenSearchWithText provides { text -> viewModel.setSearchDialogVisible(true, text) },
-                        LocalFileSystem provides effectiveFileSystem,
-                    ) {
-
-                    // Auto-manage sidebar based on layout: open on desktop, closed on mobile.
-                    // Fires once per isMobile change — handles fold/unfold transitions too.
-                    LaunchedEffect(isMobile) {
-                        if (isMobile && appState.sidebarExpanded) viewModel.toggleSidebar()
-                        else if (!isMobile && !appState.sidebarExpanded) viewModel.toggleSidebar()
-                    }
-
-                    fun closeSidebarIfMobile() {
-                        if (isMobile && appState.sidebarExpanded) viewModel.toggleSidebar()
-                    }
-
-                    // Android back gesture — priority order: last registered = highest priority.
-                    // goBack fires only when nothing else intercepts the event.
-                    PlatformBackHandler(enabled = appState.canGoBack) { viewModel.goBack() }
-                    // Dismiss dialogs before navigating back.
-                    PlatformBackHandler(enabled = appState.commandPaletteVisible) { viewModel.setCommandPaletteVisible(false) }
-                    PlatformBackHandler(enabled = appState.searchDialogVisible) { viewModel.setSearchDialogVisible(false) }
-                    PlatformBackHandler(enabled = appState.settingsVisible) { viewModel.setSettingsVisible(false) }
-                    // Cancel an in-progress voice capture before any navigation back.
-                    PlatformBackHandler(
-                        enabled = voiceCaptureState is VoiceCaptureState.Recording ||
-                            voiceCaptureState is VoiceCaptureState.Transcribing ||
-                            voiceCaptureState is VoiceCaptureState.Formatting,
-                    ) { voiceCaptureViewModel.cancel() }
-                    // Highest priority: close sidebar on mobile before anything else.
-                    PlatformBackHandler(enabled = isMobile && appState.sidebarExpanded) { viewModel.toggleSidebar() }
-
-                    // Collect linked references for the current page
-                    val linkedReferences by produceState(
-                        initialValue = emptyList<Block>(),
-                        key1 = appState.currentPage?.name,
-                        key2 = repos
-                    ) {
-                        val pageName = appState.currentPage?.name
-                        if (pageName == null || repos == null) {
-                            value = emptyList()
-                        } else {
-                            repos.blockRepository.getLinkedReferences(pageName)
-                                .collect { result -> value = result.getOrNull() ?: emptyList() }
-                        }
-                    }
-
-                    MainLayout(
-                        sidebarExpanded = appState.sidebarExpanded,
-                        onSidebarDismiss = { viewModel.toggleSidebar() },
-                        topBar = {
-                            TopBar(
-                                appState = appState,
-                                platformSettings = platformSettings,
-                                onSettingsClick = { viewModel.setSettingsVisible(true) },
-                                onNewPageClick = { viewModel.setSearchDialogVisible(true) },
-                                onNavigate = { viewModel.navigateTo(it) },
-                                onThemeChange = { viewModel.setThemeMode(it) },
-                                onLanguageChange = { viewModel.setLanguage(it) },
-                                onResetOnboarding = { viewModel.setOnboardingCompleted(false) },
-                                onToggleDebug = { viewModel.toggleDebugMode() },
-                                onGoBack = { viewModel.goBack() },
-                                onGoForward = { viewModel.goForward() },
-                                onMenuToggle = { viewModel.toggleSidebar() },
-                                onShareClick = { viewModel.showShareDialog() },
-                                onShowDebugMenu = if (DebugBuildConfig.isDebugBuild) {{ viewModel.showDebugMenu() }} else null,
-                            )
-                        },
-                        leftSidebar = {
-                            GraphContentLeftSidebar(
-                                deps,
-                                viewModel,
-                                GraphContentLeftSidebarInputs(
-                                    appState = appState,
-                                    isMobile = isMobile,
-                                    demoBannerDismissedState = demoBannerDismissedState,
-                                    hostAccessState = hostAccessState,
-                                    hostWritePendingCount = hostWritePendingCount,
-                                    hostWriteStuck = hostWriteStuck,
-                                    onReconnectHostDirectory = onReconnectHostDirectory,
-                                    mergePendingPageCount = mergePendingPageCount,
-                                    graphMergeService = graphMergeService,
-                                    activeGraphInfo = activeGraphInfo,
-                                    graphRegistry = graphRegistry,
-                                    activeGraphId = activeGraphId,
-                                    activeGraphPath = activeGraphPath,
-                                    activeSectionIds = activeSectionIds,
-                                    vaultManager = vaultManager,
-                                    syncState = syncState,
-                                    gitLastSyncAt = gitLastSyncAt,
-                                    storageLocationResolver = storageLocationResolver,
-                                    gitRepository = gitRepository,
-                                    onStorageLocationChoose = onStorageLocationChoose,
-                                    onStartNewGraphFlow = newGraphFlowController.onStartNewGraphFlow,
-                                    onShowNewGraphLocationPicker = { appOwnedPath ->
-                                        newGraphFlowController.pendingNewGraphAppOwnedPathState.value = appOwnedPath
-                                        newGraphFlowController.showNewGraphLocationPickerState.value = true
-                                    },
-                                    scope = scope,
-                                    closeSidebarIfMobile = ::closeSidebarIfMobile,
-                                ),
-                            )
-                        },
-                        rightSidebar = {
-                            RightSidebar(
-                                expanded = appState.rightSidebarExpanded,
-                                onClose = { viewModel.toggleRightSidebar() },
-                                currentPageName = appState.currentPage?.name,
-                                linkedReferences = linkedReferences,
-                                onNavigateToPage = { pageUuid -> viewModel.navigateToPageByUuid(pageUuid) }
-                            )
-                        },
-                        content = {
-                            // See GraphContentMainArea.kt / GraphContentCameraCapture.kt: connectivity
-                            // banners, ScreenRouter wiring, and the camera-capture dialogs.
-                            GraphContentMainArea(
-                                deps,
-                                viewModel,
-                                GraphContentMainAreaInputs(
-                                    appState = appState,
-                                    activeGraphId = activeGraphId,
-                                    graphRegistry = graphRegistry,
-                                    hostAccessState = hostAccessState,
-                                    hostWriteStuck = hostWriteStuck,
-                                    hostWritePendingCount = hostWritePendingCount,
-                                    gitConfigRepository = gitConfigRepository,
-                                    graphIoStack = graphIoStack,
-                                    viewModelStack = viewModelStack,
-                                    supportingViewModels = supportingViewModels,
-                                    tagVoiceStack = tagVoiceStack,
-                                    perfTelemetry = perfTelemetry,
-                                    scope = scope,
-                                    graphContentLogger = graphContentLogger,
-                                ),
-                            )
-                        },
-                        statusBar = {
-                            // See GraphContentStatusAndBottomBar.kt.
-                            if (!isMobile) {
-                                GraphContentDesktopStatusRow(
-                                    viewModel,
-                                    GraphContentStatusRowInputs(
-                                        appState = appState,
-                                        encryptionManager = encryptionManager,
-                                        activeGraphInfo = activeGraphInfo,
-                                        pluginHost = pluginHost,
-                                        activeVaultManager = vaultManager.takeIf { isParanoidMode },
-                                        graphIoStack = graphIoStack,
-                                    ),
-                                )
-                            }
-                            SnackbarHost(hostState = snackbarHostState)
-                        },
-                        bottomBar = {
-                            GraphContentBottomBar(
-                                appState,
-                                GraphContentBottomBarInputs(viewModel, voiceCaptureViewModel, voiceCaptureState, voicePipeline),
-                                ::closeSidebarIfMobile,
-                            )
-                        }
-                    )
-
-                    GraphDialogLayer(
-                        appState = appState,
-                        searchViewModel = searchViewModel,
-                        viewModel = viewModel,
-                        notificationManager = notificationManager,
-                        fileSystem = fileSystem,
-                        frameMetric = frameMetricState,
-                        deps = GraphDialogLayerDeps(
-                            settings = SettingsDialogDeps(
-                                voiceSettings = voiceSettings,
-                                llmCredentialStore = llmCredentialStore,
-                                llmProviderRegistry = llmProviderRegistry,
-                                llmSettings = llmSettings,
-                                onLlmCredentialsChange = { llmRegistryRefreshToken++ },
-                                onRebuildVoicePipeline = onRebuildVoicePipeline,
-                                deviceSttAvailable = deviceSttAvailable,
-                                deviceLlmAvailable = deviceLlmAvailable,
-                                isParanoidMode = isParanoidMode,
-                                isVaultUnlocked = vaultState is VaultState.Unlocked,
-                                onCreateVault = onCreateVault,
-                                onAddKeyslot = onAddKeyslot,
-                                onRemoveKeyslot = onRemoveKeyslot,
-                                onLockVault = onLockVault,
-                                onListActiveSlots = onListActiveSlots,
-                                isGoogleAuthenticated = isGoogleAuthenticated,
-                                googleConnectedEmail = googleConnectedEmail,
-                                isGoogleConnecting = isGoogleConnecting,
-                                googleAuthError = googleAuthError,
-                                onConnectGoogle = onConnectGoogle,
-                                onDisconnectGoogle = onDisconnectGoogle,
-                                tagSettings = tagSettings,
-                                hasLlmKey = hasTagSuggestionLlmProvider,
-                                hostAccessState = hostAccessState,
-                                onConnectHostDirectory = onConnectHostDirectory,
-                                onMoveStorageLocation = storageLocationResolver?.let { resolver ->
-                                    { resolver.resolveOrBackfill(activeGraphId?.value ?: "") }
-                                },
-                                storageMoveGraphName = activeGraphInfo?.displayName ?: "this graph",
-                                onStorageLocationChoose = onStorageLocationChoose,
-                                // Story 3.3.3 (AppOwned→HostFolder direction): a name-only preview
-                                // pick (see FileSystem.pickHostFolderNamePreview's doc for why it
-                                // doesn't reuse pickDirectoryAsync/relinkHostDirectoryAsync) wrapped
-                                // as the StorageLocation FolderSyncSettings's UnifiedLocationPicker
-                                // needs to name the destination — the real connect (its own native
-                                // picker call) happens later, when the user confirms Link.
-                                onBrowseRequestForMove = {
-                                    fileSystem.pickHostFolderNamePreview()?.let { name ->
-                                        StorageLocation.HostFolder(activeGraphId?.value ?: "", name)
-                                    }
-                                },
-                                onBrowseClickForMove = {
-                                    // Must run synchronously here, not inside the suspend lambda
-                                    // above — same transient-user-activation constraint as every
-                                    // other showDirectoryPicker()-backed click in this file.
-                                    fileSystem.requestDirectoryPickerNow()
-                                },
-                                onUnlinkHostDirectory = onUnlinkHostDirectory,
-                                hotkeyComboLabel = hotkeyComboLabel,
-                            ),
-                            gitSync = GitSyncDeps(
-                                gitSyncService = gitSyncService,
-                                gitRepository = gitRepository,
-                                gitConfigRepository = gitConfigRepository,
-                                activeGraphId = activeGraphId?.value,
-                                onCloneAndAdd = if (gitRepository != null) {
-                                    { url, localPath, auth, location, displayName, description, onProgress ->
-                                        graphManager.cloneAndAdd(gitRepository, url, localPath, auth, onProgress, location, displayName, description).map { it.value }
-                                    }
-                                } else null,
-                                graphPath = activeGraphPath,
-                                detectedRepoRoot = graphRegistry.graphs.firstOrNull { it.id == activeGraphId }?.detectedRepoRoot,
-                                detectedWikiSubdir = graphRegistry.graphs.firstOrNull { it.id == activeGraphId }?.detectedWikiSubdir,
-                                onCloneComplete = { newGraphId ->
-                                    scope.launch { graphManager.switchGraph(GraphId(newGraphId)) }
-                                },
-                                onAuthError = { viewModel.openGitSetupForCredentials() },
-                            ),
-                            share = ShareDialogDeps(
-                                shareProvider = shareProvider,
-                                exportService = exportService,
-                                driveClient = null, // DriveApiClient injected from platform entry point in a future phase
-                                shareGoogleAuthManager = googleAuthManager,
-                                currentPage = appState.currentPage,
-                                currentBlocks = appState.currentPage?.let {
-                                    blockStateManager.blocksForPage(it.uuid.value)
-                                } ?: emptyList(),
-                                selectedBlockUuids = blockStateManager.selectedBlockUuids.collectAsState().value,
-                            ),
-                            debugState = debugMenuState,
-                            loadPageBlocks = { pageUuidStr -> repos.blockRepository.getBlocksForPage(dev.stapler.stelekit.model.PageUuid(pageUuidStr)) },
-                            onDebugStateChange = { newState ->
-                                debugMenuState = newState
-                                viewModel.onDebugMenuStateChange(newState)
-                            },
+                }
+                else -> {
+                    GraphContentActiveShell(
+                        deps,
+                        viewModel,
+                        GraphContentActiveShellInputs(
+                            scope = scope,
+                            graphContentLogger = graphContentLogger,
+                            llmCredentialStore = llmCredentialStore,
+                            llmRegistryRefreshTokenState = llmRegistryRefreshTokenState,
+                            llmSettings = llmSettings,
+                            llmProviderRegistry = llmProviderRegistry,
+                            showTagSuggestionOnDeviceNotice = showTagSuggestionOnDeviceNotice,
+                            activeGraphInfo = activeGraphInfo,
+                            activeGraphPath = activeGraphPath,
+                            effectiveFileSystem = effectiveFileSystem,
+                            isParanoidMode = isParanoidMode,
+                            vaultState = vaultState,
+                            vaultManager = vaultManager,
+                            graphIoStack = graphIoStack,
+                            gitSyncStack = gitSyncStack,
+                            viewModelStack = viewModelStack,
+                            storageMoveController = storageMoveController,
+                            vaultActions = vaultActions,
+                            googleAuthState = googleAuthState,
+                            debugMenuStateState = debugMenuStateState,
+                            perfTelemetry = perfTelemetry,
+                            supportingViewModels = supportingViewModels,
+                            tagVoiceStack = tagVoiceStack,
                         ),
                     )
-
-                    // See GraphContentNewGraphFlow.kt for NewGraphDialog/UnifiedLocationPicker/
-                    // PlainGraphAppOwnedWarningDialog — the three dialogs that step through
-                    // "New graph…".
-                    GraphContentNewGraphDialogs(deps, viewModel, scope, newGraphFlowController)
-
-                    // Epic 3.4/Story 3.1.5: renders the coordinator's live Flow<StorageMoveUiState>,
-                    // started by onStorageLocationChoose above. Cancel just cancels the collecting
-                    // job and clears state — the coordinator's own NonCancellable cleanup (reopen,
-                    // quiesce release) still runs even though no terminal state reaches this dialog
-                    // on that path (see GraphRelocationCoordinator.relocate's doc).
-                    storageMoveState?.let { state ->
-                        StorageMoveProgressDialog(
-                            graphName = storageMoveGraphName,
-                            state = state,
-                            onCancel = storageMoveController.onCancel,
-                            onRetry = storageMoveController.onRetry,
-                            onSummaryAcknowledge = storageMoveController.onAcknowledge,
-                            onReopenFailedAcknowledge = storageMoveController.onAcknowledge,
-                        )
-                    }
-
-                    } // CompositionLocalProvider(LocalWindowSizeClass)
                 }
-                } // vault unlocked else
-            }
+            } // when
         }
     }
     } // CompositionLocalProvider(LocalSpanRecorder, LocalFileSystem)
 }
 
 /** Bundles [onGraphKeyEvent]'s per-shortcut callbacks (Parameter Object pattern). */
-private data class GraphKeyEventHandlers(
+internal data class GraphKeyEventHandlers(
     val onCommandPalette: () -> Unit,
     val onSearch: () -> Unit,
     val onToggleSidebar: () -> Unit,
@@ -1247,7 +913,7 @@ internal fun appStorageSubtitleFor(platform: String): String = if (platform == "
  * Extracted from GraphContent to make shortcut logic testable without a Compose runtime.
  * See ADR-001.
  */
-private fun onGraphKeyEvent(keyEvent: KeyEvent, handlers: GraphKeyEventHandlers): Boolean {
+internal fun onGraphKeyEvent(keyEvent: KeyEvent, handlers: GraphKeyEventHandlers): Boolean {
     if (keyEvent.type != KeyEventType.KeyDown) return false
     val isMod = keyEvent.isCtrlPressed || keyEvent.isMetaPressed
     val isShift = keyEvent.isShiftPressed
