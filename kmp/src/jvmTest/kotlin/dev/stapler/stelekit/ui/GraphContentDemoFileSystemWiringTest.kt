@@ -46,9 +46,11 @@ import java.io.File
  *    actual mechanism: `DemoFileSystem` yields many pages, an empty raw filesystem yields
  *    exactly the one auto-created journal page.
  * 2. [graphContentSourceWiring_usesEffectiveFileSystemAtAllFiveCallSites] — a static check of the
- *    source of App.kt, GraphContentGraphIoSetup.kt, and GraphContentViewModelSetup.kt (the three
- *    files the five effectiveFileSystem call sites currently live in, after `GraphContent` was
- *    split across files) that fails immediately if any of them regress to raw `fileSystem`,
+ *    source of App.kt, GraphContentActiveShell.kt, GraphContentGraphIoSetup.kt, and
+ *    GraphContentViewModelSetup.kt. The five effectiveFileSystem call sites currently live in the
+ *    latter three (GraphContentActiveShell.kt is scanned defensively — it's `GraphContent`'s own
+ *    render-tree extraction, so a future edit moving one of the sites into it is exactly the
+ *    regression this test exists to catch) — fails immediately if any of them regress to raw `fileSystem`,
  *    closing the gap the behavioral test alone can't (it only exercises the
  *    `viewModel`/`graphLoader` sites, not `sidecarManager`/`imageSidecarManager`/
  *    `imageImportService`). Each file's source is read via a classpath resource first — bundled
@@ -152,7 +154,12 @@ class GraphContentDemoFileSystemWiringTest {
 
     @Test
     fun graphContentSourceWiring_usesEffectiveFileSystemAtAllFiveCallSites() {
-        val wiringFiles = listOf("App.kt", "GraphContentGraphIoSetup.kt", "GraphContentViewModelSetup.kt")
+        val wiringFiles = listOf(
+            "App.kt",
+            "GraphContentActiveShell.kt",
+            "GraphContentGraphIoSetup.kt",
+            "GraphContentViewModelSetup.kt",
+        )
         val source = wiringFiles.joinToString("\n") { readWiringSource(it) }
 
         assertTrue(

@@ -91,6 +91,7 @@ filegroup(
     name = "graph_content_wiring_test_sources",
     srcs = [
         "dev/stapler/stelekit/ui/App.kt",
+        "dev/stapler/stelekit/ui/GraphContentActiveShell.kt",
         "dev/stapler/stelekit/ui/GraphContentGraphIoSetup.kt",
         "dev/stapler/stelekit/ui/GraphContentViewModelSetup.kt",
     ],
