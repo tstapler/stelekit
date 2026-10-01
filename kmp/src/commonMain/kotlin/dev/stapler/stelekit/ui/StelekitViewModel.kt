@@ -574,6 +574,19 @@ class StelekitViewModel(
         onJournalPageCreated = { page -> navigateTo(Screen.PageView(page)) },
     )
 
+    // See ShareExportCoordinator's class doc for why this shares _uiState directly rather than
+    // owning a separate StateFlow, and why blockStateManager is passed as a plain dependency
+    // rather than a provider lambda.
+    private val shareExportCoordinator = ShareExportCoordinator(
+        exportService = exportService,
+        notificationManager = notificationManager,
+        pageRepository = pageRepository,
+        blockRepository = blockRepository,
+        blockStateManager = blockStateManager,
+        scope = scope,
+        uiState = _uiState,
+    )
+
     private val _indexingProgress = MutableStateFlow<IndexingState>(IndexingState.Idle)
     val indexingProgress: StateFlow<IndexingState> = _indexingProgress.asStateFlow()
 
@@ -1891,34 +1904,22 @@ class StelekitViewModel(
     }
 
     // ===== Share Dialog =====
+    // Implementation lives in ShareExportCoordinator (see its class doc and
+    // project_plans/stelekit-viewmodel-decomposition/plan.md, Phase 4). These forwarders
+    // preserve StelekitViewModel's public API for existing call sites.
 
     /** Opens the share dialog. */
-    fun showShareDialog() {
-        _uiState.update { it.copy(shareDialogVisible = true) }
-    }
+    fun showShareDialog() = shareExportCoordinator.showShareDialog()
 
     /** Closes the share dialog. */
-    fun hideShareDialog() {
-        _uiState.update { it.copy(shareDialogVisible = false) }
-    }
+    fun hideShareDialog() = shareExportCoordinator.hideShareDialog()
 
     /** Updates the share format selection (persists across dialog invocations in the session). */
-    fun setShareFormat(format: String) {
-        _uiState.update { it.copy(shareFormat = format) }
-    }
+    fun setShareFormat(format: String) = shareExportCoordinator.setShareFormat(format)
 
     /** Updates the share scope selection (persists across dialog invocations in the session). */
-    fun setShareScope(scope: ShareScope) {
-        _uiState.update { it.copy(shareScope = scope) }
-    }
+    fun setShareScope(scope: ShareScope) = shareExportCoordinator.setShareScope(scope)
 
-    /**
-     * Exports the current page as HTML and uploads it to Google Docs.
-     * Runs on the ViewModel's own scope (never rememberCoroutineScope — that scope
-     * is cancelled when the composable leaves composition).
-     * On success: opens the created document in the browser.
-     * On error: shows a snackbar notification.
-     */
     /**
      * Resolve export content for any [ShareScope].
      *
@@ -1933,28 +1934,9 @@ class StelekitViewModel(
         formatId: String,
         journalFrom: LocalDate? = null,
         journalTo: LocalDate? = null,
-    ): Either<DomainError, String> {
-        val svc = exportService
-            ?: return ExportError.SerializationFailed("Export service unavailable").left()
-        return when (shareScope) {
-            ShareScope.CurrentPage -> svc.exportToString(page, allBlocks, formatId)
-            ShareScope.SelectedBlocks -> svc.exportToString(
-                page,
-                svc.subtreeBlocks(allBlocks, selectedUuids),
-                formatId,
-            )
-            ShareScope.PageAndLinks -> svc.exportPageWithLinks(
-                page, allBlocks, formatId, pageRepository, blockRepository,
-            )
-            ShareScope.JournalRange -> {
-                val from = journalFrom
-                    ?: return ExportError.SerializationFailed("Start date not set for journal export").left()
-                val to = journalTo
-                    ?: return ExportError.SerializationFailed("End date not set for journal export").left()
-                svc.exportJournalRange(from, to, formatId, pageRepository, blockRepository)
-            }
-        }
-    }
+    ): Either<DomainError, String> = shareExportCoordinator.resolveExportContent(
+        shareScope, page, allBlocks, selectedUuids, formatId, journalFrom, journalTo,
+    )
 
     /** Exports the resolved scope content to the clipboard. Errors surface via [notificationManager]. */
     fun exportScopeToClipboard(
@@ -1966,97 +1948,28 @@ class StelekitViewModel(
         journalFrom: LocalDate? = null,
         journalTo: LocalDate? = null,
         onDone: () -> Unit = {},
-    ) {
-        val svc = exportService ?: return
-        scope.launch {
-            try {
-                when (shareScope) {
-                    ShareScope.CurrentPage ->
-                        svc.exportToClipboard(page, allBlocks, formatId)
-                    ShareScope.SelectedBlocks ->
-                        svc.exportToClipboard(
-                            page,
-                            svc.subtreeBlocks(allBlocks, selectedUuids),
-                            formatId,
-                        )
-                    else -> {
-                        val result = resolveExportContent(
-                            shareScope, page, allBlocks, selectedUuids, formatId,
-                            journalFrom, journalTo,
-                        )
-                        result.fold(
-                            ifLeft = { err ->
-                                withContext(Dispatchers.Main) {
-                                    notificationManager?.show(
-                                        "Export failed: ${err.message}",
-                                        NotificationType.ERROR,
-                                    )
-                                }
-                            },
-                            ifRight = { content ->
-                                if (formatId == "html") {
-                                    val plainResult = resolveExportContent(
-                                        shareScope, page, allBlocks, selectedUuids,
-                                        "plain-text", journalFrom, journalTo,
-                                    )
-                                    svc.clipboard.writeHtml(content, plainResult.getOrNull() ?: content)
-                                } else {
-                                    svc.clipboard.writeText(content)
-                                }
-                            },
-                        )
-                    }
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    notificationManager?.show("Clipboard export failed: ${e.message}", NotificationType.ERROR)
-                }
-            } finally {
-                withContext(Dispatchers.Main) { onDone() }
-            }
-        }
-    }
+    ) = shareExportCoordinator.exportScopeToClipboard(
+        shareScope, page, allBlocks, selectedUuids, formatId, journalFrom, journalTo, onDone,
+    )
 
     /** Launches Google OAuth in the ViewModel scope, updates [AppState.shareIsGoogleAuthenticated] on completion. */
-    fun launchGoogleAuth(manager: GoogleAuthManager) {
-        scope.launch {
-            val result = manager.authenticate()
-            val authenticated = result.isRight()
-            val email = if (authenticated) manager.getConnectedEmail() else null
-            _uiState.update { it.copy(
-                shareIsGoogleAuthenticated = authenticated,
-                shareGoogleEmail = email,
-            ) }
-            if (!authenticated) {
-                withContext(Dispatchers.Main) {
-                    notificationManager?.show(
-                        "Google sign-in failed: ${result.fold({ it.message }, { "" })}",
-                        NotificationType.ERROR,
-                    )
-                }
-            }
-        }
-    }
+    fun launchGoogleAuth(manager: GoogleAuthManager) = shareExportCoordinator.launchGoogleAuth(manager)
 
     /** Re-queries auth state from [manager] and syncs to [AppState]. Call when the dialog opens. */
-    fun refreshShareGoogleAuthState(manager: GoogleAuthManager) {
-        scope.launch {
-            val authenticated = manager.isAuthenticated()
-            val email = if (authenticated) manager.getConnectedEmail() else null
-            _uiState.update { it.copy(
-                shareIsGoogleAuthenticated = authenticated,
-                shareGoogleEmail = email,
-            ) }
-        }
-    }
+    fun refreshShareGoogleAuthState(manager: GoogleAuthManager) =
+        shareExportCoordinator.refreshShareGoogleAuthState(manager)
 
     /** Sets the journal date range for a [ShareScope.JournalRange] export. */
-    fun setShareJournalDateRange(from: LocalDate?, to: LocalDate?) {
-        _uiState.update { it.copy(shareJournalFromDate = from, shareJournalToDate = to) }
-    }
+    fun setShareJournalDateRange(from: LocalDate?, to: LocalDate?) =
+        shareExportCoordinator.setShareJournalDateRange(from, to)
 
+    /**
+     * Exports the current page as HTML and uploads it to Google Docs.
+     * Runs on the ViewModel's own scope (never rememberCoroutineScope — that scope
+     * is cancelled when the composable leaves composition).
+     * On success: opens the created document in the browser.
+     * On error: shows a snackbar notification.
+     */
     fun shareToGoogleDocs(
         shareScope: ShareScope,
         page: Page,
@@ -2065,56 +1978,9 @@ class StelekitViewModel(
         driveClient: dev.stapler.stelekit.platform.google.DriveUploader,
         journalFrom: LocalDate? = null,
         journalTo: LocalDate? = null,
-    ) {
-        _uiState.update { it.copy(isExportingToDrive = true) }
-        scope.launch(Dispatchers.Default) {
-            try {
-                val htmlResult = resolveExportContent(
-                    shareScope, page, allBlocks, selectedUuids, "html", journalFrom, journalTo,
-                )
-                htmlResult.fold(
-                    ifLeft = { err ->
-                        withContext(Dispatchers.Main) {
-                            notificationManager?.show("Export failed: ${err.message}", NotificationType.ERROR)
-                        }
-                    },
-                    ifRight = { html ->
-                        val uploadResult = driveClient.uploadFile(
-                            fileName = page.name,
-                            mimeType = "application/vnd.google-apps.document",
-                            bytes = html.encodeToByteArray(),
-                            parentFolderId = null,
-                        )
-                        uploadResult.fold(
-                            ifLeft = { err ->
-                                withContext(Dispatchers.Main) {
-                                    notificationManager?.show(
-                                        "Google Docs upload failed: ${err.message}",
-                                        NotificationType.ERROR,
-                                    )
-                                }
-                            },
-                            ifRight = { fileId ->
-                                dev.stapler.stelekit.platform.openInBrowser(
-                                    "https://docs.google.com/document/d/$fileId/edit",
-                                )
-                            }
-                        )
-                    }
-                )
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    notificationManager?.show("Google Docs export failed: ${e.message}", NotificationType.ERROR)
-                }
-            } finally {
-                withContext(Dispatchers.Main + NonCancellable) {
-                    _uiState.update { it.copy(isExportingToDrive = false) }
-                }
-            }
-        }
-    }
+    ) = shareExportCoordinator.shareToGoogleDocs(
+        shareScope, page, allBlocks, selectedUuids, driveClient, journalFrom, journalTo,
+    )
 
     fun setThemeMode(mode: StelekitThemeMode) {
         _uiState.update { it.copy(themeMode = mode) }
@@ -2436,91 +2302,27 @@ class StelekitViewModel(
     }
 
     // ===== Export =====
+    // Implementation lives in ShareExportCoordinator (see its class doc and
+    // project_plans/stelekit-viewmodel-decomposition/plan.md, Phase 4). These forwarders
+    // preserve StelekitViewModel's public API for existing call sites.
 
     /**
      * Injects the platform-specific [ClipboardProvider] so export operations can write
      * to the system clipboard. Called once from the composable root after construction.
      */
-    fun setClipboardProvider(provider: ClipboardProvider) {
-        exportService?.clipboard = provider
-    }
+    fun setClipboardProvider(provider: ClipboardProvider) = shareExportCoordinator.setClipboardProvider(provider)
 
     /**
      * Exports the current page to [formatId] and copies the result to the clipboard.
      * No-op when there is no current page or no [ExportService] configured.
      */
-    fun exportPage(formatId: String) {
-        val page = _uiState.value.currentPage ?: return
-        val blocks = blockStateManager?.blocksForPage(page.uuid.value) ?: return
-        val sortedBlocks = BlockSorter.sort(blocks)
-        if (exportService == null) {
-            notificationManager?.show("Export unavailable", NotificationType.ERROR)
-            return
-        }
-        if (_uiState.value.isExporting) return
-        _uiState.update { it.copy(isExporting = true) }
-        scope.launch(Dispatchers.Default) {
-            try {
-                val result = exportService.exportToClipboard(page, sortedBlocks, formatId)
-                withContext(Dispatchers.Main) {
-                    result.onRight {
-                        notificationManager?.show("Copied as ${formatDisplayName(formatId)}", NotificationType.SUCCESS)
-                    }.onLeft { e ->
-                        notificationManager?.show("Export failed: ${e.message}", NotificationType.ERROR)
-                    }
-                }
-            } finally {
-                withContext(Dispatchers.Main) {
-                    _uiState.update { it.copy(isExporting = false) }
-                }
-            }
-        }
-    }
+    fun exportPage(formatId: String) = shareExportCoordinator.exportPage(formatId)
 
     /**
      * Exports the currently selected blocks (and their subtrees) to [formatId].
      * Falls back to [exportPage] when no blocks are selected.
      */
-    fun exportSelectedBlocks(formatId: String) {
-        val page = _uiState.value.currentPage ?: return
-        val selectedUuids = blockStateManager?.selectedBlockUuids?.value ?: emptySet()
-        if (selectedUuids.isEmpty()) {
-            exportPage(formatId)
-            return
-        }
-        val allBlocks = blockStateManager?.blocksForPage(page.uuid.value) ?: return
-        if (exportService == null) {
-            notificationManager?.show("Export unavailable", NotificationType.ERROR)
-            return
-        }
-        if (_uiState.value.isExporting) return
-        _uiState.update { it.copy(isExporting = true) }
-        scope.launch(Dispatchers.Default) {
-            try {
-                val subtreeBlocks = exportService.subtreeBlocks(allBlocks, selectedUuids)
-                val result = exportService.exportToClipboard(page, subtreeBlocks, formatId)
-                withContext(Dispatchers.Main) {
-                    result.onRight {
-                        notificationManager?.show("Copied as ${formatDisplayName(formatId)}", NotificationType.SUCCESS)
-                    }.onLeft { e ->
-                        notificationManager?.show("Export failed: ${e.message}", NotificationType.ERROR)
-                    }
-                }
-            } finally {
-                withContext(Dispatchers.Main) {
-                    _uiState.update { it.copy(isExporting = false) }
-                }
-            }
-        }
-    }
-
-    private fun formatDisplayName(formatId: String): String = when (formatId) {
-        "markdown" -> "Markdown"
-        "plain-text" -> "Plain Text"
-        "html" -> "HTML"
-        "json" -> "JSON"
-        else -> formatId
-    }
+    fun exportSelectedBlocks(formatId: String) = shareExportCoordinator.exportSelectedBlocks(formatId)
 
     // ===== Rename Page =====
 
