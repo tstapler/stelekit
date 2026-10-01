@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.89.0](https://github.com/tstapler/stelekit/compare/v0.88.4...v0.89.0) (2026-10-01)
+
+
+### Features
+
+* **logs:** save logs to Downloads and add graph diagnostics report ([#376](https://github.com/tstapler/stelekit/issues/376)) ([c8cf89a](https://github.com/tstapler/stelekit/commit/c8cf89ac4ded0487037ce84a3ce4b7e8916ebd7d))
+
 ## [0.88.4](https://github.com/tstapler/stelekit/compare/v0.88.3...v0.88.4) (2026-10-01)
 
 
