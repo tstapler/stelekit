@@ -142,7 +142,13 @@ jobs:
     name: Test KMP (safety gate) / JVM
     runs-on: ubuntu-latest
     needs: [resolve-version, check-ci-status]
-    timeout-minutes: 30
+    # Bumped from 30: the JVM test step now retries up to 3x (see below) to
+    # absorb transient external-fetch failures (e.g. rules_android's
+    # com_android_dex 503 from android.googlesource.com, run 36392773809).
+    # Bazel's repository/disk cache (set up below, persists for this job)
+    # makes a retry resume from cache rather than re-fetching/re-building
+    # everything, so the worst case is bounded well under 3x a cold run.
+    timeout-minutes: 90
     if: |
       always() &&
       needs.resolve-version.result == 'success' &&
@@ -168,14 +174,28 @@ jobs:
         # under CI CPU contention (release 0.85.3) even with the adaptive
         # timeout from #338 — a slow render is contention, not a product bug.
         # Bazel retries only the failed test, not the whole 762-test suite.
-        run: |
-          xvfb-run --auto-servernum bazel test //kmp:jvm_tests \
-            --config=remote-cache \
-            --test_output=errors \
-            --flaky_test_attempts=3 \
-            --sandbox_add_mount_pair=/tmp/.X11-unix \
-            --test_env=DISPLAY \
-            --test_env=XAUTHORITY
+        #
+        # nick-fields/retry wraps the whole invocation to also absorb transient
+        # Bazel external-repository fetch failures (e.g. a 503 from
+        # android.googlesource.com fetching rules_android's com_android_dex —
+        # see run 36392773809, which aborted at the analysis phase before any
+        # test ran and left v0.88.2 published with zero assets). That class of
+        # failure has no retry at the http_archive level, so the retry has to
+        # live here. A retry resumes from the repository/disk cache set up
+        # above rather than re-fetching or rebuilding everything from scratch.
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 25
+          max_attempts: 3
+          retry_wait_seconds: 30
+          command: |
+            xvfb-run --auto-servernum bazel test //kmp:jvm_tests \
+              --config=remote-cache \
+              --test_output=errors \
+              --flaky_test_attempts=3 \
+              --sandbox_add_mount_pair=/tmp/.X11-unix \
+              --test_env=DISPLAY \
+              --test_env=XAUTHORITY
 
   test-kmp-android:
     name: Test KMP (safety gate) / Android
@@ -718,6 +738,60 @@ jobs:
 
             ---
             _Full changelog is auto-generated below._
+
+  # ── Release asset tripwire ─────────────────────────────────────────────────
+  # Safety net for the scenario that happened to v0.88.2: release-please
+  # publishes the GitHub Release itself (outside this workflow), but if
+  # test-kmp-jvm/android fail, the android-release/desktop-* jobs are skipped
+  # (their `if:` requires test-kmp-* to be success-or-skipped) and github-release
+  # is skipped too (it requires all four build jobs == 'success') — leaving a
+  # live release with zero attached assets and no obvious signal that happened.
+  # This does NOT auto-retry the pipeline (too risky to do unattended); it just
+  # flags the gap loudly in the job summary with the manual backfill command.
+  check-release-assets:
+    name: Check release assets
+    runs-on: ubuntu-latest
+    needs: [resolve-version, android-release, desktop-linux, desktop-macos, desktop-windows, github-release]
+    if: always() && needs.resolve-version.result == 'success'
+    permissions:
+      contents: read
+    steps:
+      - name: Verify expected assets are attached
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VER: ${{ needs.resolve-version.outputs.version }}
+        run: |
+          EXPECTED=6  # android apk, linux appimage/deb/rpm, macos dmg, windows msi
+          ASSET_COUNT=$(gh release view "$VER" --repo "${{ github.repository }}" --json assets --jq '.assets | length' 2>/dev/null || echo "")
+
+          if [ -z "$ASSET_COUNT" ]; then
+            {
+              echo "## :warning: Release $VER not found"
+              echo ""
+              echo "No GitHub Release named \`$VER\` exists yet, or it could not be queried."
+              echo "If a release is expected, check whether \`release-please\` ran and investigate directly:"
+              echo ""
+              echo '```'
+              echo "gh release view $VER"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$ASSET_COUNT" -lt "$EXPECTED" ]; then
+            {
+              echo "## :rotating_light: Release $VER is missing assets"
+              echo ""
+              echo "Expected $EXPECTED build assets, found **$ASSET_COUNT** attached to \`$VER\`."
+              echo "This usually means the safety-gate tests (\`test-kmp-jvm\`/\`test-kmp-android\`) or a"
+              echo "build job failed or was skipped, so \`github-release\` never ran to attach artifacts —"
+              echo "see run ${{ github.run_id }} for which job(s) failed."
+              echo ""
+              echo "**To backfill manually once the underlying failure is fixed:**"
+              echo '```'
+              echo "gh workflow run release.yml -f version=$VER"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Release $VER has all $ASSET_COUNT expected assets." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   # ── Homebrew formula update ────────────────────────────────────────────────
   # Runs after artifact upload. Its own concurrency group (homebrew-formula)
