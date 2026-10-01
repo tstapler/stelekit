@@ -46,6 +46,11 @@ private fun cameraImportEnabled(inputs: GraphContentMainAreaInputs): Boolean =
 @Composable
 internal fun GraphContentScreenAndCapture(deps: GraphContentDeps, viewModel: StelekitViewModel, inputs: GraphContentMainAreaInputs) {
     val captureState = remember { CaptureState() }
+    val diagnosticsCollector = remember(deps.graphManager, deps.fileSystem, deps.repos, deps.platformSettings) {
+        dev.stapler.stelekit.diagnostics.GraphDiagnosticsCollector(
+            deps.graphManager, deps.fileSystem, deps.repos, deps.platformSettings,
+        )
+    }
 
     ScreenRouter(
         screen = inputs.appState.currentScreen,
@@ -62,6 +67,7 @@ internal fun GraphContentScreenAndCapture(deps: GraphContentDeps, viewModel: Ste
         urlFetcher = deps.coreServices.urlFetcher,
         qrTransferSettings = inputs.tagVoiceStack.qrTransferSettings,
         graphLoader = inputs.graphIoStack.graphLoader,
+        graphDiagnostics = diagnosticsCollector::collect,
         capabilities = buildEditorCapabilities(deps, viewModel, inputs, captureState),
         onImportImage = buildOnImportImage(deps, viewModel, inputs, captureState),
         platformSettings = deps.platformSettings,
