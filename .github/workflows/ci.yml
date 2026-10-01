@@ -137,6 +137,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history needed for the baseline-ratchet merge-base diff below
 
       - uses: actions/setup-java@v4
         with:
@@ -151,6 +153,19 @@ jobs:
 
       - name: Run Detekt
         run: ./gradlew :kmp:detekt --no-daemon --build-cache
+
+      - name: Detekt baseline ratchet (no new grandfathered findings)
+        # Only meaningful against a PR's target branch; a push to main has no base to diff.
+        if: github.event_name == 'pull_request'
+        run: |
+          MERGE_BASE=$(git merge-base HEAD "${{ github.event.pull_request.base.sha }}")
+          BASE_COUNT=$(git show "$MERGE_BASE:kmp/config/detekt/baseline.xml" 2>/dev/null | grep -c '<ID>' || true)
+          HEAD_COUNT=$(grep -c '<ID>' kmp/config/detekt/baseline.xml || true)
+          echo "baseline.xml findings — merge-base: $BASE_COUNT, HEAD: $HEAD_COUNT"
+          if [ "$HEAD_COUNT" -gt "$BASE_COUNT" ]; then
+            echo "::error::kmp/config/detekt/baseline.xml grew from $BASE_COUNT to $HEAD_COUNT findings. Re-running detektBaseline to silence a new violation instead of fixing it is not allowed — fix the violation, or if it's a deliberate exception, adjust kmp/config/detekt/detekt.yml instead."
+            exit 1
+          fi
 
       - uses: actions/upload-artifact@v4
         if: always()
