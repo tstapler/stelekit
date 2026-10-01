@@ -331,14 +331,18 @@ style:
 
 complexity:
   active: true
-  # Compose composables and parsers are legitimately long — structural complexity
+  # Compose composables and parsers are legitimately long — per-function/method complexity
   # rules add noise without actionable signal in this codebase.
   CyclomaticComplexMethod:
     active: false
   LongMethod:
     active: false
+  # Class-scoped, unlike the function-scoped rules above — a long composable never trips these.
+  # Re-enabled because StelekitViewModel grew to 2,773 lines / 139 functions unflagged
+  # (see docs/reference/hotspot-ranking.md); thresholds set from this repo's own distribution.
   LargeClass:
-    active: false
+    active: true
+    threshold: 500
   NestedBlockDepth:
     active: true
     threshold: 6
@@ -346,7 +350,14 @@ complexity:
   LongParameterList:
     active: false
   TooManyFunctions:
-    active: false
+    active: true
+    thresholdInClasses: 20
+    thresholdInObjects: 20
+    # File/interface/enum scope wasn't analyzed for this gate — leave effectively off so a
+    # file of many small @Composable functions doesn't trip the default thresholdInFiles: 11.
+    thresholdInFiles: 1000
+    thresholdInInterfaces: 1000
+    thresholdInEnums: 1000
   CognitiveComplexMethod:
     active: false
   StringLiteralDuplication:
