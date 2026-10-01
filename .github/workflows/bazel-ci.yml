@@ -20,7 +20,10 @@ jobs:
   bazel-jvm:
     name: Bazel JVM tests
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Bumped from 30 to cover the retry wrapping below (transient external-fetch
+    # failures, e.g. rules_android's com_android_dex 503 — see release.yml's
+    # test-kmp-jvm comment for the incident this guards against).
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
 
@@ -56,21 +59,40 @@ jobs:
         # pipefail: without it, `| tee` masks bazel's exit code and a failed
         # build/test step reports success (observed: FAILED TO BUILD with a green
         # step). Applies to every tee'd step in this file.
-        run: set -o pipefail; bazel build //kmp:desktop_app --config=remote-cache 2>&1 | tee "$RUNNER_TEMP/bazel-jvm-build.log"
+        #
+        # nick-fields/retry absorbs transient Bazel external-repository fetch
+        # failures (e.g. rules_android's com_android_dex 503 from
+        # android.googlesource.com — see release.yml's test-kmp-jvm comment).
+        # A retry resumes from the shared disk/repository cache set up above
+        # rather than rebuilding from scratch.
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 12
+          max_attempts: 2
+          retry_wait_seconds: 30
+          command: set -o pipefail; bazel build //kmp:desktop_app --config=remote-cache 2>&1 | tee "$RUNNER_TEMP/bazel-jvm-build.log"
 
       - name: Run JVM tests
         # --flaky_test_attempts=3: same real-GraalJS timing flake as the
         # release safety gate (MermaidEngineActorTest real-render timeout
         # under contention) — keep PR signal green on transient slowness.
-        run: |
-          set -o pipefail
-          xvfb-run --auto-servernum bazel test //kmp:jvm_tests \
-            --config=remote-cache \
-            --test_output=all \
-            --flaky_test_attempts=3 \
-            --sandbox_add_mount_pair=/tmp/.X11-unix \
-            --test_env=DISPLAY \
-            --test_env=XAUTHORITY 2>&1 | tee "$RUNNER_TEMP/bazel-jvm-test.log"
+        # nick-fields/retry (outer) absorbs transient external-fetch failures;
+        # --flaky_test_attempts (inner) absorbs individual flaky test timing —
+        # different failure classes, both worth keeping.
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 20
+          max_attempts: 2
+          retry_wait_seconds: 30
+          command: |
+            set -o pipefail
+            xvfb-run --auto-servernum bazel test //kmp:jvm_tests \
+              --config=remote-cache \
+              --test_output=all \
+              --flaky_test_attempts=3 \
+              --sandbox_add_mount_pair=/tmp/.X11-unix \
+              --test_env=DISPLAY \
+              --test_env=XAUTHORITY 2>&1 | tee "$RUNNER_TEMP/bazel-jvm-test.log"
 
       - name: CI job report
         if: always()
@@ -84,7 +106,8 @@ jobs:
   bazel-business:
     name: Bazel business-logic tests
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Bumped from 30 to cover the retry wrapping below — see bazel-jvm's comment.
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
 
@@ -103,11 +126,18 @@ jobs:
           cache-save: ${{ github.event_name != 'pull_request' }}
 
       - name: Run business-logic tests
-        run: |
-          set -o pipefail
-          bazel test //kmp:business_tests \
-            --config=remote-cache \
-            --test_output=all 2>&1 | tee "$RUNNER_TEMP/bazel-business-test.log"
+        # nick-fields/retry absorbs transient Bazel external-repository fetch
+        # failures — see bazel-jvm's "Build JVM target" step comment.
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 20
+          max_attempts: 2
+          retry_wait_seconds: 30
+          command: |
+            set -o pipefail
+            bazel test //kmp:business_tests \
+              --config=remote-cache \
+              --test_output=all 2>&1 | tee "$RUNNER_TEMP/bazel-business-test.log"
 
       - name: CI job report
         if: always()
@@ -119,7 +149,10 @@ jobs:
   bazel-android:
     name: Bazel Android build
     runs-on: ubuntu-latest
-    timeout-minutes: 65
+    # Bumped from 65 to cover the retry wrapping below. This job is the most
+    # directly exposed to the com_android_dex fetch flake (--config=android
+    # pulls rules_android) — see bazel-jvm's comment for the incident.
+    timeout-minutes: 125
     steps:
       - uses: actions/checkout@v4
 
@@ -159,7 +192,15 @@ jobs:
           cache-save: true
 
       - name: Build Android APK
-        run: set -o pipefail; bazel build //kmp:android_app --config=android --config=remote-cache 2>&1 | tee "$RUNNER_TEMP/bazel-android-build.log"
+        # nick-fields/retry absorbs transient Bazel external-repository fetch
+        # failures (e.g. rules_android's com_android_dex 503) — see bazel-jvm's
+        # "Build JVM target" step comment.
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 55
+          max_attempts: 2
+          retry_wait_seconds: 30
+          command: set -o pipefail; bazel build //kmp:android_app --config=android --config=remote-cache 2>&1 | tee "$RUNNER_TEMP/bazel-android-build.log"
 
       - name: CI job report
         if: always()
@@ -171,7 +212,8 @@ jobs:
   bazel-android-tests:
     name: Bazel Android unit tests
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Bumped from 30 to cover the retry wrapping below — see bazel-jvm's comment.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -208,13 +250,21 @@ jobs:
           cache-save: ${{ github.event_name != 'pull_request' }}
 
       - name: Run Android unit tests
-        run: |
-          set -o pipefail
-          bazel test //kmp/src/androidUnitTest/kotlin:android_unit_tests \
-            --config=android \
-            --config=remote-cache \
-            --test_output=all \
-            --experimental_ui_max_stdouterr_bytes=4194304 2>&1 | tee "$RUNNER_TEMP/bazel-android-tests.log"
+        # nick-fields/retry absorbs transient Bazel external-repository fetch
+        # failures (--config=android pulls rules_android, same as bazel-android's
+        # build step) — see bazel-jvm's "Build JVM target" step comment.
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 22
+          max_attempts: 2
+          retry_wait_seconds: 30
+          command: |
+            set -o pipefail
+            bazel test //kmp/src/androidUnitTest/kotlin:android_unit_tests \
+              --config=android \
+              --config=remote-cache \
+              --test_output=all \
+              --experimental_ui_max_stdouterr_bytes=4194304 2>&1 | tee "$RUNNER_TEMP/bazel-android-tests.log"
 
       - name: CI job report
         if: always()
@@ -229,7 +279,8 @@ jobs:
   bazel-web:
     name: Bazel web (WASM/JS via Gradle genrule)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Bumped from 30 to cover the retry wrapping below — see bazel-jvm's comment.
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@v4
 
@@ -268,7 +319,14 @@ jobs:
           cache-save: ${{ github.event_name != 'pull_request' }}
 
       - name: Build web bundle
-        run: set -o pipefail; bazel build //kmp:web_app --config=remote-cache 2>&1 | tee "$RUNNER_TEMP/bazel-web-build.log"
+        # nick-fields/retry absorbs transient Bazel external-repository fetch
+        # failures — see bazel-jvm's "Build JVM target" step comment.
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 22
+          max_attempts: 2
+          retry_wait_seconds: 30
+          command: set -o pipefail; bazel build //kmp:web_app --config=remote-cache 2>&1 | tee "$RUNNER_TEMP/bazel-web-build.log"
 
       - name: CI job report
         if: always()
