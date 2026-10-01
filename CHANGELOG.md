@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.88.4](https://github.com/tstapler/stelekit/compare/v0.88.3...v0.88.4) (2026-10-01)
+
+
+### Bug Fixes
+
+* **ui:** loading-screen debug button safe-area + GraphContent shell extraction ([#367](https://github.com/tstapler/stelekit/issues/367)) ([e45ed72](https://github.com/tstapler/stelekit/commit/e45ed726774026275ea0ae1e4b020fab25c356ea))
+
 ## [0.88.3](https://github.com/tstapler/stelekit/compare/v0.88.2...v0.88.3) (2026-09-29)
 
 
