@@ -2,7 +2,11 @@
 // SPDX-License-Identifier: Elastic-2.0
 package dev.stapler.stelekit.ui
 
+import android.content.ContentValues
 import android.content.Intent
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.core.content.FileProvider
@@ -12,7 +16,11 @@ import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.export.ShareProvider
 import dev.stapler.stelekit.platform.SteleKitContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
+
+private val UNSAFE_FILENAME_CHARS = Regex("[^a-zA-Z0-9._-]")
 
 @Composable
 actual fun rememberShareProvider(): ShareProvider = remember { AndroidShareProvider() }
@@ -92,5 +100,52 @@ class AndroidShareProvider : ShareProvider {
             if (e is kotlinx.coroutines.CancellationException) throw e
             DomainError.ExportError.ShareFailed(e.message ?: "Failed to share file").left()
         }
+    }
+
+    /**
+     * Inserts into the public Downloads collection via MediaStore, which needs no storage
+     * permission on API 29+. Below API 29 (minSdk is 26) it would need WRITE_EXTERNAL_STORAGE,
+     * so those devices fall back to the share-sheet path.
+     */
+    override suspend fun saveToDownloads(
+        content: String,
+        suggestedName: String,
+        extension: String,
+    ): Either<DomainError, String> {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            return saveToFile(content, suggestedName, extension).map { "$suggestedName.$extension" }
+        }
+        return withContext(Dispatchers.IO) {
+            try {
+                val resolver = SteleKitContext.context.contentResolver
+                val displayName = "${suggestedName.replace(UNSAFE_FILENAME_CHARS, "_")}.$extension"
+                val values = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, displayName)
+                    put(MediaStore.Downloads.MIME_TYPE, mimeTypeFor(extension))
+                    put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                    put(MediaStore.Downloads.IS_PENDING, 1)
+                }
+                val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                    ?: return@withContext DomainError.ExportError.ShareFailed("MediaStore refused to create $displayName").left()
+                val stream = resolver.openOutputStream(uri)
+                if (stream == null) {
+                    resolver.delete(uri, null, null)
+                    return@withContext DomainError.ExportError.ShareFailed("Could not open $displayName for writing").left()
+                }
+                stream.use { it.write(content.toByteArray()) }
+                resolver.update(uri, ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }, null, null)
+                "Downloads/$displayName".right()
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                DomainError.ExportError.ShareFailed(e.message ?: "Failed to save to Downloads").left()
+            }
+        }
+    }
+
+    private fun mimeTypeFor(extension: String): String = when (extension) {
+        "md" -> "text/markdown"
+        "html" -> "text/html"
+        "json" -> "application/json"
+        else -> "text/plain"
     }
 }
