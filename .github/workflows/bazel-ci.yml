@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened]  # no ready_for_review: `opened` already fires for drafts, so this avoids a pointless duplicate full CI run on every draft->ready flip
   workflow_dispatch:
 
 permissions:
