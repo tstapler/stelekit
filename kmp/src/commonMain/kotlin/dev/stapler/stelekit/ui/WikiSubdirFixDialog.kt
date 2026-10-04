@@ -31,6 +31,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -51,8 +54,12 @@ fun WikiSubdirFixDialog(
     onMerge: (DryRunPreview) -> Unit,
     onLeave: () -> Unit,
     mismatchInfo: DirectoryScanResult,
+    configuredPath: String = "",
     dryRunPreview: DryRunPreview = DryRunPreview(),
 ) {
+    val configuredLabel = configuredPath.ifBlank { "(Root)" }
+    val foundLabel = mismatchInfo.name.ifBlank { mismatchInfo.path }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -67,7 +74,7 @@ fun WikiSubdirFixDialog(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = "Configured: ${mismatchInfo.path} | Found: ${mismatchInfo.name}",
+                    text = "Configured: $configuredLabel | Found: $foundLabel",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                     modifier = Modifier.padding(top = 4.dp),
@@ -85,7 +92,7 @@ fun WikiSubdirFixDialog(
                 // Move option (red, high risk)
                 OptionCardLarge(
                     title = "Move",
-                    description = "Relocate all content from ${mismatchInfo.name} to ${mismatchInfo.path}",
+                    description = "Relocate all content from $foundLabel to $configuredLabel",
                     warningText = "WARNING: This action will move files and cannot be undone unless you have backups.",
                     icon = Icons.Filled.ArrowForward,
                     color = MaterialTheme.colorScheme.error,
@@ -97,7 +104,7 @@ fun WikiSubdirFixDialog(
                 // Merge option (yellow, medium risk)
                 OptionCardLarge(
                     title = "Merge",
-                    description = "Create ${mismatchInfo.path} and copy content from ${mismatchInfo.name} (existing location preserved)",
+                    description = "Create $configuredLabel and copy content from $foundLabel (existing location preserved)",
                     warningText = "INFO: This will copy files, leaving the original location intact for future use.",
                     icon = Icons.Filled.Merge,
                     color = MaterialTheme.colorScheme.secondary,
@@ -313,6 +320,7 @@ enum class ChangeType {
 @Composable
 fun WikiSubdirFixBanner(
     mismatchInfo: DirectoryScanResult,
+    configuredPath: String = "",
     dryRunPreview: DryRunPreview = DryRunPreview(),
     onDismiss: () -> Unit,
     onResolveClick: () -> Unit,
@@ -323,7 +331,9 @@ fun WikiSubdirFixBanner(
             containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f),
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .semantics { liveRegion = LiveRegionMode.Assertive },
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -347,10 +357,12 @@ fun WikiSubdirFixBanner(
                         color = MaterialTheme.colorScheme.error,
                     )
 
-                    val detailText = if (mismatchInfo.path != mismatchInfo.name && mismatchInfo.path.isNotBlank()) {
-                        "Configured notes folder expects content at ${mismatchInfo.path}, but found in '${mismatchInfo.name}'"
+                    val configuredLabel = configuredPath.ifBlank { "(Root)" }
+                    val foundLabel = mismatchInfo.name.ifBlank { mismatchInfo.path }
+                    val detailText = if (configuredPath.isNotBlank() && configuredPath != foundLabel) {
+                        "Configured notes folder expects content at $configuredLabel, but found in '$foundLabel'"
                     } else {
-                        "No notes found at configured location — found notes in '${mismatchInfo.name}' instead"
+                        "No notes found at configured location — found notes in '$foundLabel' instead"
                     }
                     Text(
                         text = detailText,

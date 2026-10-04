@@ -147,7 +147,7 @@ interface GraphLoaderPort {
     suspend fun reloadFiles(filePaths: List<FilePath>) {}
 
     /**
-     * Pure memory-to-model parser: converts raw markdown text into a un-persisted Page + List<Block>.
+     * Pure memory-to-model parser: converts raw markdown text into an unpersisted Page + List<Block>.
      */
     suspend fun importMarkdownString(
         markdown: String,

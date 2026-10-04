@@ -16,7 +16,7 @@ import kotlin.time.Duration.Companion.seconds
  * The cache respects the performance constraint of 50-500ms per directory listing
  * by limiting scan frequency based on configured thresholds.
  *
- * @param ttl Cache time-to-live in milliseconds
+ * @param ttl Cache time-to-live as a [Duration]
  * @param pageThreshold Page count threshold for triggering scans on SAF platforms
  * @param localThreshold Page count threshold for triggering scans on local platforms
  * @param maxTotalScans Maximum total scans before cache is invalidated

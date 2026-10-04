@@ -409,11 +409,15 @@ class GraphManager(
         // Fire-and-forget git detection & candidate scan; updates registry when complete
         coroutineScope.launch(PlatformDispatcher.IO) {
             val detected = detectGitRoot(expandedPath)
-            val repoRoot = detected?.first ?: expandedPath
-            val wikiSubdir = detected?.second ?: ""
-            val effectivePath = if (wikiSubdir.isEmpty()) repoRoot else "$repoRoot/$wikiSubdir"
+            val repoRoot = detected?.first
+            val scanRoot = repoRoot ?: expandedPath
+            val gitConfigRepo = createGitConfigRepository()
+            val gitConfig = gitConfigRepo?.getConfig(graphId.value)?.getOrNull()
+            val wikiSubdir = gitConfig?.wikiSubdir ?: detected?.second ?: ""
+            val effectiveRoot = repoRoot ?: expandedPath
+            val effectivePath = if (wikiSubdir.isEmpty()) effectiveRoot else "$effectiveRoot/$wikiSubdir"
             val hasContent = fileSystem.directoryExists("$effectivePath/pages") || fileSystem.directoryExists("$effectivePath/journals")
-            val candidates = dev.stapler.stelekit.diagnostics.scanForWikiCandidates(repoRoot, fileSystem)
+            val candidates = dev.stapler.stelekit.diagnostics.scanForWikiCandidates(scanRoot, fileSystem)
             val contentMismatch = !hasContent && candidates.isNotEmpty()
             updateGraphInfoDetection(
                 graphId = graphId,
@@ -679,11 +683,15 @@ class GraphManager(
 
         coroutineScope.launch(PlatformDispatcher.IO) {
             val detected = detectGitRoot(expandedNewPath)
-            val repoRoot = detected?.first ?: expandedNewPath
-            val wikiSubdir = detected?.second ?: ""
-            val effectivePath = if (wikiSubdir.isEmpty()) repoRoot else "$repoRoot/$wikiSubdir"
+            val repoRoot = detected?.first
+            val scanRoot = repoRoot ?: expandedNewPath
+            val gitConfigRepo = createGitConfigRepository()
+            val gitConfig = gitConfigRepo?.getConfig(newId.value)?.getOrNull()
+            val wikiSubdir = gitConfig?.wikiSubdir ?: detected?.second ?: ""
+            val effectiveRoot = repoRoot ?: expandedNewPath
+            val effectivePath = if (wikiSubdir.isEmpty()) effectiveRoot else "$effectiveRoot/$wikiSubdir"
             val hasContent = fileSystem.directoryExists("$effectivePath/pages") || fileSystem.directoryExists("$effectivePath/journals")
-            val candidates = dev.stapler.stelekit.diagnostics.scanForWikiCandidates(repoRoot, fileSystem)
+            val candidates = dev.stapler.stelekit.diagnostics.scanForWikiCandidates(scanRoot, fileSystem)
             val contentMismatch = !hasContent && candidates.isNotEmpty()
             updateGraphInfoDetection(
                 graphId = newId,
@@ -1062,7 +1070,7 @@ class GraphManager(
         saveRegistry()
     }
 
-    private suspend fun updateGraphInfoDetection(graphId: GraphId, repoRoot: String, wikiSubdir: String, effectivePath: String?, contentMismatch: Boolean, candidates: List<DirectoryScanResult> = emptyList()) =
+    private suspend fun updateGraphInfoDetection(graphId: GraphId, repoRoot: String?, wikiSubdir: String, effectivePath: String?, contentMismatch: Boolean, candidates: List<DirectoryScanResult> = emptyList()) =
         updateGraphField(graphId) { it.copy(
             detectedRepoRoot = repoRoot,
             detectedWikiSubdir = wikiSubdir,
@@ -1070,6 +1078,22 @@ class GraphManager(
             contentMismatchDetected = contentMismatch,
             directoryScanCandidates = candidates
         ) }
+
+    suspend fun updateEffectivePathFromGitConfig(graphId: GraphId, gitConfig: dev.stapler.stelekit.git.model.GitConfig?) {
+        updateGraphField(graphId) { info ->
+            val repoRoot = info.detectedRepoRoot
+            val wikiSubdir = gitConfig?.wikiSubdir ?: info.detectedWikiSubdir ?: ""
+            val root = repoRoot ?: info.path
+            val effectivePath = if (wikiSubdir.isEmpty()) root else "$root/$wikiSubdir"
+            val hasContent = fileSystem.directoryExists("$effectivePath/pages") || fileSystem.directoryExists("$effectivePath/journals")
+            val candidates = info.directoryScanCandidates
+            val contentMismatch = !hasContent && candidates.isNotEmpty()
+            info.copy(
+                effectivePath = effectivePath,
+                contentMismatchDetected = contentMismatch
+            )
+        }
+    }
 
     suspend fun setGitDetectionDismissed(graphId: GraphId, dismissed: Boolean) =
         updateGraphField(graphId) { it.copy(gitDetectionDismissed = dismissed) }

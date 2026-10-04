@@ -16,6 +16,8 @@ import dev.stapler.stelekit.platform.FileSystem
  * @param fs FileSystem implementation to use for scanning
  * @return List of DirectoryScanResult representing potential wiki content locations
  */
+const val MAX_NESTED_PROBES = 40
+
 fun scanForWikiCandidates(
     configuredRoot: String,
     fs: FileSystem,
@@ -32,7 +34,11 @@ fun scanForWikiCandidates(
     // Skip app-internal directories
     val appInternalPrefixes = setOf(".stelekit", ".git", ".obsidian")
 
+    var probes = 0
     for (dir in rootDirs) {
+        if (probes >= MAX_NESTED_PROBES) break
+        probes++
+
         // Skip if it's an app-internal directory
         if (dir.startsWith(".") || appInternalPrefixes.any { dir.startsWith(it) }) {
             continue

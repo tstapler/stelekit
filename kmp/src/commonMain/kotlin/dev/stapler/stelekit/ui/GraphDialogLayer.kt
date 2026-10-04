@@ -392,15 +392,14 @@ private fun DiskConflictHost(appState: AppState, viewModel: StelekitViewModel) {
 @Composable
 private fun WikiSubdirFixHost(appState: AppState, viewModel: StelekitViewModel) {
     val activeGraphInfo = appState.availableGraphs.firstOrNull { it.id.value == appState.currentGraphId }
-    val showDialog = appState.wikiSubdirFixDialogVisible ||
-        (activeGraphInfo?.contentMismatchDetected == true && activeGraphInfo.directoryScanCandidates.isNotEmpty() && !activeGraphInfo.contentMismatchBannerDismissed)
-    if (showDialog && activeGraphInfo != null) {
+    if (appState.wikiSubdirFixDialogVisible && activeGraphInfo != null) {
         val mismatchInfo = activeGraphInfo.directoryScanCandidates.firstOrNull() ?: dev.stapler.stelekit.diagnostics.DirectoryScanResult(
             path = activeGraphInfo.effectivePath ?: activeGraphInfo.path,
             pages = true,
             journals = true,
             name = activeGraphInfo.detectedWikiSubdir ?: activeGraphInfo.displayName,
         )
+        val configuredPath = appState.gitConfig?.wikiSubdir ?: activeGraphInfo.detectedWikiSubdir ?: ""
         WikiSubdirFixDialog(
             onDismiss = { viewModel.dismissWikiSubdirFixDialog() },
             onMove = { preview ->
@@ -417,6 +416,7 @@ private fun WikiSubdirFixHost(appState: AppState, viewModel: StelekitViewModel) 
                 }
             },
             mismatchInfo = mismatchInfo,
+            configuredPath = configuredPath,
         )
     }
 }

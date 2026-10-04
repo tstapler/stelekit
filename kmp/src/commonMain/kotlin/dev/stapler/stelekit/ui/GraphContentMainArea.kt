@@ -108,9 +108,9 @@ private fun computeBannerVisibility(
         inputs.appState.gitConfig == null &&
         activeGraphInfo.gitDetectionDismissed == false
 
-    // Content mismatch banner (new) - show when git config exists but actual content differs
-    val showContentMismatchBanner = activeGraphInfo?.detectedRepoRoot != null &&
-        inputs.appState.gitConfig != null &&
+    // Content mismatch banner - show whenever mismatch is detected on a non-demo graph and not dismissed
+    val showContentMismatchBanner = activeGraphInfo != null &&
+        activeGraphInfo.isDemo == false &&
         activeGraphInfo.contentMismatchDetected == true &&
         activeGraphInfo.contentMismatchBannerDismissed == false
 
@@ -171,8 +171,10 @@ private fun GraphContentBanners(
             journals = true,
             name = activeGraphInfo?.detectedWikiSubdir ?: activeGraphInfo?.displayName ?: "",
         )
+        val configuredPath = inputs.appState.gitConfig?.wikiSubdir ?: activeGraphInfo?.detectedWikiSubdir ?: ""
         WikiSubdirFixBanner(
             mismatchInfo = mismatchInfo,
+            configuredPath = configuredPath,
             onDismiss = {
                 val gid = inputs.activeGraphId ?: return@WikiSubdirFixBanner
                 viewModel.dismissContentMismatchBanner(gid.value)
