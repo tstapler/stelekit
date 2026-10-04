@@ -34,7 +34,7 @@ fun scanForWikiCandidates(
 
     for (dir in rootDirs) {
         // Skip if it's an app-internal directory
-        if (appInternalPrefixes.any { dir.startsWith(".") }) {
+        if (dir.startsWith(".") || appInternalPrefixes.any { dir.startsWith(it) }) {
             continue
         }
 

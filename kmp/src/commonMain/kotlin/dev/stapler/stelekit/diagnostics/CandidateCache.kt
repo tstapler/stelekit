@@ -40,8 +40,12 @@ class CandidateCache(
         currentTime: Long,
     ): Boolean {
         // Check if cache is expired
-        if (cachedTimestamp > 0L && (currentTime - cachedTimestamp) < ttl.inWholeMilliseconds) {
-            return false
+        if (cachedTimestamp > 0L) {
+            if ((currentTime - cachedTimestamp) < ttl.inWholeMilliseconds) {
+                return false
+            } else {
+                clear()
+            }
         }
 
         // Check if maximum scans reached
@@ -78,6 +82,7 @@ class CandidateCache(
 
         // Check if cache is expired
         if ((currentTime - cachedTimestamp) >= ttl.inWholeMilliseconds) {
+            clear()
             return null
         }
 

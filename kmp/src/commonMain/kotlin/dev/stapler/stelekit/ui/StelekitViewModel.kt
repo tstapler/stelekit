@@ -324,6 +324,12 @@ class StelekitViewModel(
     /** Dismisses the content mismatch detection banner for the given graph. */
     fun dismissContentMismatchBanner(graphId: String) = gitSyncCoordinator.dismissContentMismatchBanner(graphId)
 
+    /** Opens the wiki subdirectory fix dialog. */
+    fun openWikiSubdirFixDialog() = gitSyncCoordinator.openWikiSubdirFixDialog()
+
+    /** Dismisses the wiki subdirectory fix dialog. */
+    fun dismissWikiSubdirFixDialog() = gitSyncCoordinator.dismissWikiSubdirFixDialog()
+
     // --- LLM approval-gated edit workflow (Epic 7) ---
 
     /** Live pending-suggestion map — exposed for the review screen. */

@@ -164,6 +164,24 @@ private fun GraphContentBanners(
             },
         )
     }
+    if (visibility.showContentMismatchBanner) {
+        val mismatchInfo = activeGraphInfo?.directoryScanCandidates?.firstOrNull() ?: dev.stapler.stelekit.diagnostics.DirectoryScanResult(
+            path = activeGraphInfo?.effectivePath ?: activeGraphInfo?.path ?: "",
+            pages = true,
+            journals = true,
+            name = activeGraphInfo?.detectedWikiSubdir ?: activeGraphInfo?.displayName ?: "",
+        )
+        WikiSubdirFixBanner(
+            mismatchInfo = mismatchInfo,
+            onDismiss = {
+                val gid = inputs.activeGraphId ?: return@WikiSubdirFixBanner
+                viewModel.dismissContentMismatchBanner(gid.value)
+            },
+            onResolveClick = {
+                viewModel.openWikiSubdirFixDialog()
+            },
+        )
+    }
     if (visibility.showBrowserOnlySyncBanner) {
         BrowserOnlySyncBanner(
             onEnableSync = { viewModel.setSettingsVisible(true) },

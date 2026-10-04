@@ -73,6 +73,7 @@ internal fun GraphDialogLayer(
     JournalMergeReviewHost(appState, viewModel)
     LlmSuggestionReviewHost(appState, viewModel)
     DiskConflictHost(appState, viewModel)
+    WikiSubdirFixHost(appState, viewModel)
     RenamePageDialogHost(appState, viewModel)
     ShareDialogHost(appState, viewModel, deps.share)
     DeviceSetupWizardHost(appState, viewModel)
@@ -385,6 +386,38 @@ private fun DiskConflictHost(appState: AppState, viewModel: StelekitViewModel) {
                 onDismiss = { viewModel.hideDiskConflictFullView() },
             )
         }
+    }
+}
+
+@Composable
+private fun WikiSubdirFixHost(appState: AppState, viewModel: StelekitViewModel) {
+    val activeGraphInfo = appState.availableGraphs.firstOrNull { it.id.value == appState.currentGraphId }
+    val showDialog = appState.wikiSubdirFixDialogVisible ||
+        (activeGraphInfo?.contentMismatchDetected == true && activeGraphInfo.directoryScanCandidates.isNotEmpty() && !activeGraphInfo.contentMismatchBannerDismissed)
+    if (showDialog && activeGraphInfo != null) {
+        val mismatchInfo = activeGraphInfo.directoryScanCandidates.firstOrNull() ?: dev.stapler.stelekit.diagnostics.DirectoryScanResult(
+            path = activeGraphInfo.effectivePath ?: activeGraphInfo.path,
+            pages = true,
+            journals = true,
+            name = activeGraphInfo.detectedWikiSubdir ?: activeGraphInfo.displayName,
+        )
+        WikiSubdirFixDialog(
+            onDismiss = { viewModel.dismissWikiSubdirFixDialog() },
+            onMove = { preview ->
+                viewModel.dismissWikiSubdirFixDialog()
+            },
+            onMerge = { preview ->
+                viewModel.dismissWikiSubdirFixDialog()
+            },
+            onLeave = {
+                viewModel.dismissWikiSubdirFixDialog()
+                val gid = appState.currentGraphId
+                if (gid != null) {
+                    viewModel.dismissContentMismatchBanner(gid)
+                }
+            },
+            mismatchInfo = mismatchInfo,
+        )
     }
 }
 

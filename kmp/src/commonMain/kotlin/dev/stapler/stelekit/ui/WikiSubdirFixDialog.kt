@@ -347,8 +347,13 @@ fun WikiSubdirFixBanner(
                         color = MaterialTheme.colorScheme.error,
                     )
 
+                    val detailText = if (mismatchInfo.path != mismatchInfo.name && mismatchInfo.path.isNotBlank()) {
+                        "Configured notes folder expects content at ${mismatchInfo.path}, but found in '${mismatchInfo.name}'"
+                    } else {
+                        "No notes found at configured location — found notes in '${mismatchInfo.name}' instead"
+                    }
                     Text(
-                        text = "Configured notes folder expects content at ${mismatchInfo.path}, but found at ${mismatchInfo.name}",
+                        text = detailText,
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 2,

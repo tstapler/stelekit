@@ -153,4 +153,9 @@ interface GraphLoaderPort {
         markdown: String,
         pageName: PageName,
     ): Either<DomainError, Pair<Page, List<Block>>> = DomainError.DatabaseError.WriteFailed("not implemented").left()
+
+    /** Callback invoked when candidate subdirectories are discovered during warm reconcile. */
+    var onCandidatesDiscovered: (suspend (List<dev.stapler.stelekit.diagnostics.DirectoryScanResult>) -> Unit)?
+        get() = null
+        set(value) {}
 }

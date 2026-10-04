@@ -157,6 +157,9 @@ class GraphLoader(
     /** Called after a full bulk import completes. Used to trigger WAL checkpoint. */
     var onBulkImportComplete: (suspend () -> Unit)? = null
 
+    /** Called when candidate subdirectories are discovered during warm reconcile. */
+    override var onCandidatesDiscovered: (suspend (List<dev.stapler.stelekit.diagnostics.DirectoryScanResult>) -> Unit)? = null
+
     /**
      * Backing field for the CryptoLayer used to decrypt/encrypt files in paranoid mode.
      * Volatile so changes published by [setCryptoLayer] are visible across coroutine threads.
@@ -638,6 +641,7 @@ class GraphLoader(
                             if (scanCandidates.isNotEmpty()) {
                                 logger.info("Warm reconcile discovered ${scanCandidates.size} candidate(s): ${scanCandidates.joinToString { it.path }}")
                             }
+                            onCandidatesDiscovered?.invoke(scanCandidates)
                         }
                         // Sanitize must run before re-scanning so any renamed files are visible
                         // to loadJournalsImmediate and loadDirectory below.

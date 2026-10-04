@@ -1080,6 +1080,17 @@ class GraphManager(
     suspend fun setContentMismatchBannerDismissed(graphId: GraphId, dismissed: Boolean) =
         updateGraphField(graphId) { it.copy(contentMismatchBannerDismissed = dismissed) }
 
+    suspend fun updateGraphCandidates(graphId: GraphId, candidates: List<DirectoryScanResult>) =
+        updateGraphField(graphId) { g ->
+            val effectivePath = g.effectivePath ?: g.path
+            val hasContent = fileSystem.directoryExists("$effectivePath/pages") || fileSystem.directoryExists("$effectivePath/journals")
+            val contentMismatch = !hasContent && candidates.isNotEmpty()
+            g.copy(
+                directoryScanCandidates = candidates,
+                contentMismatchDetected = contentMismatch
+            )
+        }
+
     private fun checkGitignoreForDatabase(graphPath: String) {
         val gitignorePath = "$graphPath/.gitignore"
         if (!fileSystem.fileExists(gitignorePath)) {

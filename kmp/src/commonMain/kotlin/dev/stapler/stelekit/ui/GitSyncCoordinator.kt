@@ -230,4 +230,14 @@ class GitSyncCoordinator(
             onDismissBrowserOnlySyncBanner?.invoke(graphId)
         }
     }
+
+    /** Opens the wiki subdirectory fix dialog. */
+    fun openWikiSubdirFixDialog() {
+        uiState.update { it.copy(wikiSubdirFixDialogVisible = true) }
+    }
+
+    /** Dismisses the wiki subdirectory fix dialog. */
+    fun dismissWikiSubdirFixDialog() {
+        uiState.update { it.copy(wikiSubdirFixDialogVisible = false) }
+    }
 }
