@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.90.0](https://github.com/tstapler/stelekit/compare/v0.89.0...v0.90.0) (2026-10-04)
+
+
+### Features
+
+* **ui:** add wiki subdirectory candidate detection and resolution banner ([#382](https://github.com/tstapler/stelekit/issues/382)) ([5c15607](https://github.com/tstapler/stelekit/commit/5c1560721948e87638973e4799b5670677605c61))
+
 ## [0.89.0](https://github.com/tstapler/stelekit/compare/v0.88.4...v0.89.0) (2026-10-01)
 
 
