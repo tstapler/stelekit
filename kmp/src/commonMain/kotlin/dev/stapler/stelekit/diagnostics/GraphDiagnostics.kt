@@ -93,12 +93,9 @@ class GraphDiagnosticsCollector(
 
         // The loader only scans <root>/pages and <root>/journals. If the real graph is one folder
         // down (a repo with the wiki in a subdirectory), the loader sees nothing — flag it.
-        for (dir in rootDirs.map { it.substringAfterLast('/') }.take(MAX_NESTED_PROBES)) {
-            val hasPages = fileSystem.directoryExists("$root/$dir/pages")
-            val hasJournals = fileSystem.directoryExists("$root/$dir/journals")
-            if (hasPages || hasJournals) {
-                appendLine("NESTED GRAPH CANDIDATE: $root/$dir (pages=$hasPages journals=$hasJournals)")
-            }
+        val candidates = scanForWikiCandidates(root, fileSystem)
+        for (candidate in candidates) {
+            appendLine("NESTED GRAPH CANDIDATE: $root/${candidate.path} (pages=${candidate.pages} journals=${candidate.journals})")
         }
 
         val names = journalFiles.map { it.substringAfterLast('/') }

@@ -58,6 +58,7 @@ class GitSyncCoordinator(
     private val localChangesCountFlow: StateFlow<Int>?,
     private val activeGraphIdProvider: () -> String?,
     private val onDismissGitDetection: (suspend (graphId: String) -> Unit)?,
+    private val onDismissContentMismatchBanner: (suspend (graphId: String) -> Unit)?,
     private val onDismissBrowserOnlySyncBanner: (suspend (graphId: String) -> Unit)?,
     private val scope: CoroutineScope,
     private val uiState: MutableStateFlow<AppState>,
@@ -213,6 +214,13 @@ class GitSyncCoordinator(
     fun dismissGitDetection(graphId: String) {
         scope.launch {
             onDismissGitDetection?.invoke(graphId)
+        }
+    }
+
+    /** Dismisses the content mismatch banner for the given graph. */
+    fun dismissContentMismatchBanner(graphId: String) {
+        scope.launch {
+            onDismissContentMismatchBanner?.invoke(graphId)
         }
     }
 

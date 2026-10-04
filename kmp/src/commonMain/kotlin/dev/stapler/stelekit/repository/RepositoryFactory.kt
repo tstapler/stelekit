@@ -101,7 +101,6 @@ fun RepositorySet.createGraphLoader(
         spanRepository = spanRepository,
         sidecarManager = sidecarManager,
         watcherPollIntervalMs = watcherPollIntervalMs,
-        graphId = graphId,
     ).also { it.onBulkImportComplete = onBulkImportComplete }
 
 /**

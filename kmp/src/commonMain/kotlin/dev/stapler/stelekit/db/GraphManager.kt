@@ -24,6 +24,7 @@ import dev.stapler.stelekit.migration.InterruptedMigrationException
 import dev.stapler.stelekit.migration.MigrationRegistry
 import dev.stapler.stelekit.migration.MigrationRunner
 import dev.stapler.stelekit.migration.MigrationTamperedError
+import dev.stapler.stelekit.diagnostics.DirectoryScanResult
 import dev.stapler.stelekit.model.DEMO_GRAPH_ID
 import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.GraphInfo
@@ -405,12 +406,23 @@ class GraphManager(
             }
         }
 
-        // Fire-and-forget git detection; updates registry when complete
+        // Fire-and-forget git detection & candidate scan; updates registry when complete
         coroutineScope.launch(PlatformDispatcher.IO) {
             val detected = detectGitRoot(expandedPath)
-            if (detected != null) {
-                updateGraphInfoDetection(graphId, detected.first, detected.second)
-            }
+            val repoRoot = detected?.first ?: expandedPath
+            val wikiSubdir = detected?.second ?: ""
+            val effectivePath = if (wikiSubdir.isEmpty()) repoRoot else "$repoRoot/$wikiSubdir"
+            val hasContent = fileSystem.directoryExists("$effectivePath/pages") || fileSystem.directoryExists("$effectivePath/journals")
+            val candidates = dev.stapler.stelekit.diagnostics.scanForWikiCandidates(repoRoot, fileSystem)
+            val contentMismatch = !hasContent && candidates.isNotEmpty()
+            updateGraphInfoDetection(
+                graphId = graphId,
+                repoRoot = repoRoot,
+                wikiSubdir = wikiSubdir,
+                effectivePath = effectivePath,
+                contentMismatch = contentMismatch,
+                candidates = candidates
+            )
         }
 
         return graphId
@@ -667,9 +679,20 @@ class GraphManager(
 
         coroutineScope.launch(PlatformDispatcher.IO) {
             val detected = detectGitRoot(expandedNewPath)
-            if (detected != null) {
-                updateGraphInfoDetection(newId, detected.first, detected.second)
-            }
+            val repoRoot = detected?.first ?: expandedNewPath
+            val wikiSubdir = detected?.second ?: ""
+            val effectivePath = if (wikiSubdir.isEmpty()) repoRoot else "$repoRoot/$wikiSubdir"
+            val hasContent = fileSystem.directoryExists("$effectivePath/pages") || fileSystem.directoryExists("$effectivePath/journals")
+            val candidates = dev.stapler.stelekit.diagnostics.scanForWikiCandidates(repoRoot, fileSystem)
+            val contentMismatch = !hasContent && candidates.isNotEmpty()
+            updateGraphInfoDetection(
+                graphId = newId,
+                repoRoot = repoRoot,
+                wikiSubdir = wikiSubdir,
+                effectivePath = effectivePath,
+                contentMismatch = contentMismatch,
+                candidates = candidates
+            )
         }
 
         return UpdateGraphPathResult.Success(newId)
@@ -1039,14 +1062,23 @@ class GraphManager(
         saveRegistry()
     }
 
-    private suspend fun updateGraphInfoDetection(graphId: GraphId, repoRoot: String, wikiSubdir: String) =
-        updateGraphField(graphId) { it.copy(detectedRepoRoot = repoRoot, detectedWikiSubdir = wikiSubdir) }
+    private suspend fun updateGraphInfoDetection(graphId: GraphId, repoRoot: String, wikiSubdir: String, effectivePath: String?, contentMismatch: Boolean, candidates: List<DirectoryScanResult> = emptyList()) =
+        updateGraphField(graphId) { it.copy(
+            detectedRepoRoot = repoRoot,
+            detectedWikiSubdir = wikiSubdir,
+            effectivePath = effectivePath,
+            contentMismatchDetected = contentMismatch,
+            directoryScanCandidates = candidates
+        ) }
 
     suspend fun setGitDetectionDismissed(graphId: GraphId, dismissed: Boolean) =
         updateGraphField(graphId) { it.copy(gitDetectionDismissed = dismissed) }
 
     suspend fun setBrowserOnlySyncBannerDismissed(graphId: GraphId, dismissed: Boolean) =
         updateGraphField(graphId) { it.copy(browserOnlySyncBannerDismissed = dismissed) }
+
+    suspend fun setContentMismatchBannerDismissed(graphId: GraphId, dismissed: Boolean) =
+        updateGraphField(graphId) { it.copy(contentMismatchBannerDismissed = dismissed) }
 
     private fun checkGitignoreForDatabase(graphPath: String) {
         val gitignorePath = "$graphPath/.gitignore"

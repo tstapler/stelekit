@@ -128,6 +128,7 @@ class StelekitViewModel(
     private val activeGraphIdProvider: () -> String? = deps.activeGraphIdProvider
     private val onDismissGitDetection: (suspend (graphId: String) -> Unit)? = deps.onDismissGitDetection
     private val onDismissBrowserOnlySyncBanner: (suspend (graphId: String) -> Unit)? = deps.onDismissBrowserOnlySyncBanner
+    private val onDismissContentMismatchBanner: (suspend (graphId: String) -> Unit)? = deps.onDismissContentMismatchBanner
     private val onSectionsLoaded = deps.onSectionsLoaded
     private val spanEmitter = dev.stapler.stelekit.performance.SpanEmitter(deps.ringBuffer)
     // ── LLM approval-gated edit workflow (Epic 7) ──────────────────────────────
@@ -320,6 +321,9 @@ class StelekitViewModel(
     /** Dismisses the "not synced to disk" browser-only-storage banner for the given graph. */
     fun dismissBrowserOnlySyncBanner(graphId: String) = gitSyncCoordinator.dismissBrowserOnlySyncBanner(graphId)
 
+    /** Dismisses the content mismatch detection banner for the given graph. */
+    fun dismissContentMismatchBanner(graphId: String) = gitSyncCoordinator.dismissContentMismatchBanner(graphId)
+
     // --- LLM approval-gated edit workflow (Epic 7) ---
 
     /** Live pending-suggestion map — exposed for the review screen. */
@@ -336,14 +340,16 @@ class StelekitViewModel(
     private fun observeLlmSuggestions() {
         scope.launch {
             llmSuggestionInbox.pending.collect { pending ->
-                val currentGraphId = activeGraphIdProvider() ?: _uiState.value.currentGraphId
-                val hasPendingForCurrentGraph = currentGraphId != null &&
-                    pending.values.any { it.graphId == currentGraphId }
-                if (hasPendingForCurrentGraph) {
+                if (shouldShowLlmSuggestionReview(pending)) {
                     _uiState.update { it.copy(llmSuggestionReviewVisible = true) }
                 }
             }
         }
+    }
+
+    private fun shouldShowLlmSuggestionReview(pending: Map<String, dev.stapler.stelekit.llm.PendingLlmSuggestion>): Boolean {
+        val currentGraphId = activeGraphIdProvider() ?: _uiState.value.currentGraphId ?: return false
+        return pending.values.any { it.graphId == currentGraphId }
     }
 
     /** Routes a suggestion from TagSuggestionViewModel's scan into the inbox. */
@@ -459,6 +465,7 @@ class StelekitViewModel(
         activeGraphIdProvider = activeGraphIdProvider,
         onDismissGitDetection = onDismissGitDetection,
         onDismissBrowserOnlySyncBanner = onDismissBrowserOnlySyncBanner,
+        onDismissContentMismatchBanner = onDismissContentMismatchBanner,
         scope = scope,
         uiState = _uiState,
     )

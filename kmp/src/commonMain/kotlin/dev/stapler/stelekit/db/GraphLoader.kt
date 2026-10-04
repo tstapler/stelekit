@@ -82,6 +82,8 @@ class GraphLoader(
      * actually guards this loader's poll loop during a relocate/link (Story 1.3.2). Null (the
      * default) preserves prior behavior for callers that don't have or don't need a graph id. */
     private val graphId: String? = null,
+    /** Directory scanning cache for wiki-subdir-UX detection. */
+    private val candidateCache: dev.stapler.stelekit.diagnostics.CandidateCache = dev.stapler.stelekit.diagnostics.CandidateCache(),
 ) : GraphLoaderPort {
     private val logger = Logger("GraphLoader")
     private val markdownParser = MarkdownParser()
@@ -628,6 +630,15 @@ class GraphLoader(
                     try {
                         val heapAtStart = heapSummary()
                         logger.info("Warm reconcile starting ($heapAtStart)")
+                        val currentTime = Clock.System.now().toEpochMilliseconds()
+                        val currentPageCount = pageRepository.getPageNameEntries().first().getOrNull()?.size ?: 0
+                        if (candidateCache.shouldScan(currentPageCount, graphPath.startsWith("saf://"), currentTime)) {
+                            val scanCandidates = dev.stapler.stelekit.diagnostics.scanForWikiCandidates(graphPath, fileSystem)
+                            candidateCache.cacheResult(scanCandidates, currentTime)
+                            if (scanCandidates.isNotEmpty()) {
+                                logger.info("Warm reconcile discovered ${scanCandidates.size} candidate(s): ${scanCandidates.joinToString { it.path }}")
+                            }
+                        }
                         // Sanitize must run before re-scanning so any renamed files are visible
                         // to loadJournalsImmediate and loadDirectory below.
                         sanitizeDirectory(pagesDir)
@@ -905,7 +916,7 @@ class GraphLoader(
      * Call this immediately before [reloadFiles] after git merge completes.
      * Always paired with [endGitMerge].
      */
-    suspend fun beginGitMerge(pathsBeingMerged: List<String>) {
+    override suspend fun beginGitMerge(pathsBeingMerged: List<String>) {
         fileWatcher.beginGitMerge(pathsBeingMerged)
     }
 
@@ -913,7 +924,7 @@ class GraphLoader(
      * Clears the git-merge suppression set, restoring normal file-watcher behaviour.
      * Must be called after [reloadFiles] completes (or if merge is aborted).
      */
-    suspend fun endGitMerge() {
+    override suspend fun endGitMerge() {
         fileWatcher.endGitMerge()
     }
 
@@ -925,7 +936,7 @@ class GraphLoader(
      * Files with conflict markers are skipped by the existing [ConflictMarkerDetector]
      * guard inside [parseAndSavePage].
      */
-    suspend fun reloadFiles(filePaths: List<FilePath>) {
+    override suspend fun reloadFiles(filePaths: List<FilePath>) {
         for (path in filePaths) {
             val content = readFileDecrypted(path.value) ?: continue
             parseAndSavePage(path, content, ParseMode.FULL, DatabaseWriteActor.Priority.HIGH, forceReload = true)
@@ -1562,7 +1573,7 @@ class GraphLoader(
      * nor its [Block]s are persisted by this call — the caller writes them via
      * [DatabaseWriteActor].
      */
-    suspend fun importMarkdownString(
+    override suspend fun importMarkdownString(
         markdown: String,
         pageName: PageName,
     ): Either<DomainError, Pair<Page, List<Block>>> {
