@@ -22,7 +22,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -156,9 +155,9 @@ fun OptionCardLarge(
     warningText: String,
     icon: ImageVector,
     color: Color,
-    isDangerous: Boolean = false,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    isDangerous: Boolean = false,
 ) {
     Card(
         onClick = onClick,
@@ -266,6 +265,7 @@ fun ChangeItem(
 @Composable
 fun ChangeTypeBadge(
     type: ChangeType,
+    modifier: Modifier = Modifier,
 ) {
     val (text, color) = when (type) {
         ChangeType.MOVE -> Pair("MOVE", MaterialTheme.colorScheme.error)
@@ -279,7 +279,7 @@ fun ChangeTypeBadge(
         fontSize = 10.sp,
         color = color,
         fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(horizontal = 8.dp),
+        modifier = modifier.padding(horizontal = 8.dp),
     )
 }
 
@@ -320,11 +320,11 @@ enum class ChangeType {
 @Composable
 fun WikiSubdirFixBanner(
     mismatchInfo: DirectoryScanResult,
-    configuredPath: String = "",
-    dryRunPreview: DryRunPreview = DryRunPreview(),
     onDismiss: () -> Unit,
     onResolveClick: () -> Unit,
     modifier: Modifier = Modifier,
+    configuredPath: String = "",
+    dryRunPreview: DryRunPreview = DryRunPreview(),
 ) {
     Card(
         colors = CardDefaults.cardColors(
