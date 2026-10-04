@@ -167,6 +167,9 @@ private fun buildViewModelDependencies(
         onDismissBrowserOnlySyncBanner = { graphId ->
             graphManager.setBrowserOnlySyncBannerDismissed(GraphId(graphId), true)
         },
+        onDismissContentMismatchBanner = { graphId ->
+            graphManager.setContentMismatchBannerDismissed(GraphId(graphId), true)
+        },
         onSectionsLoaded = seed.onSectionsLoaded,
         scope = seed.viewModelScope,
     )

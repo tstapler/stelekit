@@ -50,7 +50,14 @@ internal fun rememberGraphContentGraphIoStack(
             effectiveFileSystem,
             sidecarManager = sidecarManager,
             graphId = deps.graphManager.getActiveGraphId()?.value,
-        )
+        ).also { loader ->
+            loader.onCandidatesDiscovered = { candidates ->
+                val gid = deps.graphManager.getActiveGraphId()
+                if (gid != null) {
+                    deps.graphManager.updateGraphCandidates(gid, candidates)
+                }
+            }
+        }
     }
     WireGraphLoaderFlushCallbacks(effectiveFileSystem, graphLoader, repos)
 

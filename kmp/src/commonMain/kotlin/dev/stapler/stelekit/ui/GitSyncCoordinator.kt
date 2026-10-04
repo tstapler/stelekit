@@ -58,6 +58,7 @@ class GitSyncCoordinator(
     private val localChangesCountFlow: StateFlow<Int>?,
     private val activeGraphIdProvider: () -> String?,
     private val onDismissGitDetection: (suspend (graphId: String) -> Unit)?,
+    private val onDismissContentMismatchBanner: (suspend (graphId: String) -> Unit)?,
     private val onDismissBrowserOnlySyncBanner: (suspend (graphId: String) -> Unit)?,
     private val scope: CoroutineScope,
     private val uiState: MutableStateFlow<AppState>,
@@ -216,10 +217,27 @@ class GitSyncCoordinator(
         }
     }
 
+    /** Dismisses the content mismatch banner for the given graph. */
+    fun dismissContentMismatchBanner(graphId: String) {
+        scope.launch {
+            onDismissContentMismatchBanner?.invoke(graphId)
+        }
+    }
+
     /** Dismisses the "not synced to disk" browser-only-storage banner for the given graph. */
     fun dismissBrowserOnlySyncBanner(graphId: String) {
         scope.launch {
             onDismissBrowserOnlySyncBanner?.invoke(graphId)
         }
+    }
+
+    /** Opens the wiki subdirectory fix dialog. */
+    fun openWikiSubdirFixDialog() {
+        uiState.update { it.copy(wikiSubdirFixDialogVisible = true) }
+    }
+
+    /** Dismisses the wiki subdirectory fix dialog. */
+    fun dismissWikiSubdirFixDialog() {
+        uiState.update { it.copy(wikiSubdirFixDialogVisible = false) }
     }
 }

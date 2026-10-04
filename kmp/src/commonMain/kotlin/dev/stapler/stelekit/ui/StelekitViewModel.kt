@@ -124,6 +124,7 @@ class StelekitViewModel(
     private val activeGraphIdProvider: () -> String? = deps.activeGraphIdProvider
     private val onDismissGitDetection: (suspend (graphId: String) -> Unit)? = deps.onDismissGitDetection
     private val onDismissBrowserOnlySyncBanner: (suspend (graphId: String) -> Unit)? = deps.onDismissBrowserOnlySyncBanner
+    private val onDismissContentMismatchBanner: (suspend (graphId: String) -> Unit)? = deps.onDismissContentMismatchBanner
     private val onSectionsLoaded = deps.onSectionsLoaded
     private val spanEmitter = dev.stapler.stelekit.performance.SpanEmitter(deps.ringBuffer)
     // ── LLM approval-gated edit workflow (Epic 7) ──────────────────────────────
@@ -306,6 +307,14 @@ class StelekitViewModel(
     /** Dismisses the "not synced to disk" browser-only-storage banner for the given graph. */
     fun dismissBrowserOnlySyncBanner(graphId: String) = gitSyncCoordinator.dismissBrowserOnlySyncBanner(graphId)
 
+    /** Dismisses the content mismatch detection banner for the given graph. */
+    fun dismissContentMismatchBanner(graphId: String) = gitSyncCoordinator.dismissContentMismatchBanner(graphId)
+
+    /** Opens the wiki subdirectory fix dialog. */
+    fun openWikiSubdirFixDialog() = gitSyncCoordinator.openWikiSubdirFixDialog()
+
+    /** Dismisses the wiki subdirectory fix dialog. */
+    fun dismissWikiSubdirFixDialog() = gitSyncCoordinator.dismissWikiSubdirFixDialog()
     // Track recent pages manually to avoid "recently loaded" issues
     private var recentPageUuids: MutableList<String> = mutableListOf()
 
@@ -368,6 +377,7 @@ class StelekitViewModel(
         activeGraphIdProvider = activeGraphIdProvider,
         onDismissGitDetection = onDismissGitDetection,
         onDismissBrowserOnlySyncBanner = onDismissBrowserOnlySyncBanner,
+        onDismissContentMismatchBanner = onDismissContentMismatchBanner,
         scope = scope,
         uiState = _uiState,
     )

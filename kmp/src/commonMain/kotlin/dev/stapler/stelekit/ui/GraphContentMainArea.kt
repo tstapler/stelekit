@@ -91,6 +91,7 @@ private suspend fun reloadGitConfig(
 /** Which of [GraphContentBanners]' banners should show, plus the "degraded" reason for the badge. */
 private class BannerVisibility(
     val showGitBanner: Boolean,
+    val showContentMismatchBanner: Boolean,
     val showBrowserOnlySyncBanner: Boolean,
     val hostSyncDegraded: Boolean,
     val showHostReconnectBanner: Boolean,
@@ -102,15 +103,25 @@ private fun computeBannerVisibility(
     activeGraphInfo: dev.stapler.stelekit.model.GraphInfo?,
     hostReconnectBannerDismissedFor: Pair<String?, String?>?,
 ): BannerVisibility {
+    // Git detection banner (existing)
     val showGitBanner = activeGraphInfo?.detectedRepoRoot != null &&
         inputs.appState.gitConfig == null &&
         activeGraphInfo.gitDetectionDismissed == false
+
+    // Content mismatch banner - show whenever mismatch is detected on a non-demo graph and not dismissed
+    val showContentMismatchBanner = activeGraphInfo != null &&
+        activeGraphInfo.isDemo == false &&
+        activeGraphInfo.contentMismatchDetected == true &&
+        activeGraphInfo.contentMismatchBannerDismissed == false
+
+    // Browser-only sync banner (existing)
     val showBrowserOnlySyncBanner = activeGraphInfo != null &&
         activeGraphInfo.isDemo == false &&
         inputs.hostAccessState == HostAccessState.NotApplicable &&
         deps.fileSystem.supportsNativeDirectoryPicker &&
         deps.webSyncDeps.onConnectHostDirectory != null &&
         activeGraphInfo.browserOnlySyncBannerDismissed == false
+
     // SyncDegraded: permission still reads as Granted, but the write-through queue is stuck — the
     // startup log line ("reconnectHostDirectory(...): Granted") looks like sync is working, and
     // nothing else prints a warning, so this condition was previously visible only in the small
@@ -118,13 +129,15 @@ private fun computeBannerVisibility(
     val hostSyncDegraded = inputs.hostAccessState is HostAccessState.Granted &&
         inputs.hostWriteStuck &&
         inputs.hostWritePendingCount > 0
+
     val hostReconnectBannerConditionKind = if (hostSyncDegraded) "degraded" else inputs.hostAccessState::class.simpleName
     val showHostReconnectBanner = activeGraphInfo != null &&
         (inputs.hostAccessState is HostAccessState.PromptNeeded ||
             inputs.hostAccessState is HostAccessState.Denied ||
             hostSyncDegraded) &&
         hostReconnectBannerDismissedFor != (inputs.activeGraphId?.value to hostReconnectBannerConditionKind)
-    return BannerVisibility(showGitBanner, showBrowserOnlySyncBanner, hostSyncDegraded, showHostReconnectBanner)
+
+    return BannerVisibility(showGitBanner, showContentMismatchBanner, showBrowserOnlySyncBanner, hostSyncDegraded, showHostReconnectBanner)
 }
 
 /** Connectivity banners: git-detected, browser-only-sync, host-reconnect (in that stacking order). */
@@ -148,6 +161,26 @@ private fun GraphContentBanners(
             onDismiss = {
                 val gid = inputs.activeGraphId ?: return@GitDetectionBanner
                 viewModel.dismissGitDetection(gid.value)
+            },
+        )
+    }
+    if (visibility.showContentMismatchBanner) {
+        val mismatchInfo = activeGraphInfo?.directoryScanCandidates?.firstOrNull() ?: dev.stapler.stelekit.diagnostics.DirectoryScanResult(
+            path = activeGraphInfo?.effectivePath ?: activeGraphInfo?.path ?: "",
+            pages = true,
+            journals = true,
+            name = activeGraphInfo?.detectedWikiSubdir ?: activeGraphInfo?.displayName ?: "",
+        )
+        val configuredPath = inputs.appState.gitConfig?.wikiSubdir ?: activeGraphInfo?.detectedWikiSubdir ?: ""
+        WikiSubdirFixBanner(
+            mismatchInfo = mismatchInfo,
+            configuredPath = configuredPath,
+            onDismiss = {
+                val gid = inputs.activeGraphId ?: return@WikiSubdirFixBanner
+                viewModel.dismissContentMismatchBanner(gid.value)
+            },
+            onResolveClick = {
+                viewModel.openWikiSubdirFixDialog()
             },
         )
     }

@@ -186,6 +186,7 @@ data class AppState(
     val sectionPickerPage: Page? = null,
     val deviceSetupWizardVisible: Boolean = false,
     val sectionQuickToggleVisible: Boolean = false,
+    val wikiSubdirFixDialogVisible: Boolean = false,
 ) {
     val canGoBack: Boolean get() = historyIndex > 0
     val canGoForward: Boolean get() = historyIndex < navigationHistory.size - 1
