@@ -5,6 +5,7 @@ package dev.stapler.stelekit.ui.screens.git
 
 import arrow.core.Either
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.error.toSyncErrorMessage
 import dev.stapler.stelekit.git.CloneProgress
 import dev.stapler.stelekit.git.GitAuth
 import dev.stapler.stelekit.git.GitConfigRepository
@@ -237,7 +238,7 @@ internal suspend fun performCloneAndSave(
     onCloneInProgressChange(false)
 
     if (cloneResult.isLeft()) {
-        return CloneAndSaveOutcome.CloneFailed("Clone failed: ${(cloneResult as Either.Left).value.message}")
+        return CloneAndSaveOutcome.CloneFailed(cloneFailureCopy((cloneResult as Either.Left).value))
     }
     val newGraphId = (cloneResult as Either.Right).value
 
@@ -338,3 +339,8 @@ internal suspend fun startOAuthFlow(
     onConnected(username, token)
     onDialogStateChange(OAuthDialogState.Success(username))
 }
+
+
+/** Authored copy only (UX AC9): raw transport text such as "Software caused connection abort" never reaches the UI. */
+internal fun cloneFailureCopy(error: DomainError): String =
+    (error as? DomainError.GitError)?.toSyncErrorMessage() ?: "Clone failed — check your connection and try again"
