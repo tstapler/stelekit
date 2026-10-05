@@ -195,4 +195,35 @@ class ShallowMergeTest {
             )
         }
     }
+
+    /**
+     * Review follow-up on pre-mortem P1 #2: the merge base is itself the shallow-boundary commit
+     * (its real parent is absent locally, and JGit grafts it to zero parents), with both heads
+     * diverged beyond it. Both heads reach it through real edges, so no more-recent common
+     * ancestor can exist — it is the correct base, not a "wrong-but-present" one, and rejecting it
+     * would block every sync after a shallow clone where both sides committed. Pins that
+     * [isShallowHistoryInsufficientForMerge] accepts it.
+     */
+    @Test
+    fun `merge accepts a merge base that is itself the shallow boundary commit when both heads descend from it`() = runTest {
+        val repoDir = tempDir("stelekit_shallow_merge_boundary_base_")
+        Git.init().setDirectory(repoDir).setInitialBranch("main").call().use { git ->
+            val repo = git.repository
+            val emptyTree = repo.insertEmptyTree()
+
+            val absentRealParent = ObjectId.fromString("e".repeat(40))
+            val boundary = repo.insertCommit(emptyTree, listOf(absentRealParent), "shallow boundary == merge base")
+            val localHead = repo.insertCommit(emptyTree, listOf(boundary), "local edit")
+            val remoteHead = repo.insertCommit(emptyTree, listOf(boundary), "remote edit")
+
+            repo.forceSetRef("refs/heads/main", localHead)
+            repo.forceSetRef("refs/remotes/origin/main", remoteHead)
+            repo.objectDatabase.setShallowCommits(setOf(boundary))
+
+            assertTrue(
+                !isShallowHistoryInsufficientForMerge(repo, remoteHead),
+                "a shallow-boundary merge base reached by both heads is the true base and must be accepted",
+            )
+        }
+    }
 }

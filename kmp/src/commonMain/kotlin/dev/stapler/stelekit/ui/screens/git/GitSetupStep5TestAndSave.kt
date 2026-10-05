@@ -314,6 +314,7 @@ private fun NonRetryableFailureRow(reason: String) {
 
 private fun nonRetryableCopyFor(reason: String): String = when (reason) {
     NonRetryableReason.NOT_FOUND -> "Repository not found — check the URL on the previous step."
+    NonRetryableReason.OTHER -> "Sync failed — check free storage space and try again from Step 5."
     else -> "Authentication failed — check your token/SSH key in Step 3."
 }
 

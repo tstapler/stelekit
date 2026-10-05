@@ -78,4 +78,6 @@ sealed interface GitTransportRetryState {
 object NonRetryableReason {
     const val AUTH = "auth"
     const val NOT_FOUND = "not-found"
+    /** A permanent failure that isn't a transport/auth error (e.g. disk full, internal JGit error). */
+    const val OTHER = "other"
 }

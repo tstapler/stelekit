@@ -99,7 +99,9 @@ fun permanentFailureReasonTag(e: Exception): String {
         cause = cause.cause
         depth++
     }
-    return NonRetryableReason.AUTH
+    // Only a TransportException is auth-shaped (matches runGitTransportOp's routing); anything
+    // else (full disk IOException, JGitInternalException, ...) must not render auth copy.
+    return if (e is TransportException) NonRetryableReason.AUTH else NonRetryableReason.OTHER
 }
 
 /**
@@ -154,7 +156,7 @@ inline fun <T> runGitTransportOp(
  * Like [runGitTransportOp], but wraps [op] in a bounded, jittered exponential-backoff retry loop
  * (ADR-002: the single retry owner for git transport operations) — only a
  * [GitFailureClass.Transient]-classified failure is retried; [GitFailureClass.Permanent] fails
- * immediately (routed to [onAuthFailed]) and [GitFailureClass.Cancelled] rethrows as
+ * immediately (routed to [onAuthFailed] for a [TransportException], [onFailed] otherwise) and [GitFailureClass.Cancelled] rethrows as
  * [CancellationException] without consuming any retry budget. [beforeRetry] runs once before each
  * retry attempt (not before the first) — the pre-retry stale-lock cleanup (Task 1.2.2c) and,
  * later, clone's directory cleanup (Story 2.1.3).
@@ -212,6 +214,10 @@ suspend fun <T, D> runGitTransportOpWithRetry(
     var attempt = 1
     var retries = 0
     var elapsed = Duration.ZERO
+    fun giveUp(lastError: DomainError.GitError): Either<DomainError.GitError, T> {
+        onStateChange(GitTransportRetryState.Exhausted(lastError.message, maxAttempts = maxAttempts))
+        return onExhausted(retries, lastError).left()
+    }
     onStateChange(GitTransportRetryState.Attempting(currentProgress() ?: CloneProgress("", 0, 0)))
     while (true) {
         try {
@@ -229,19 +235,16 @@ suspend fun <T, D> runGitTransportOpWithRetry(
                 GitFailureClass.Permanent -> {
                     onAttempt(attempt, failureClass)
                     onStateChange(GitTransportRetryState.NonRetryableFailure(permanentFailureReasonTag(e)))
-                    return onAuthFailed(redactedTransportException(e)).left()
+                    val redacted = redactedTransportException(e)
+                    return if (e is TransportException) onAuthFailed(redacted).left() else onFailed(redacted).left()
                 }
                 GitFailureClass.Transient -> {
                     onAttempt(attempt, failureClass)
                     val lastError = onFailed(redactedTransportException(e))
                     when (val decision = step(e)) {
-                        is Schedule.Decision.Done -> {
-                            onStateChange(GitTransportRetryState.Exhausted(lastError.message, maxAttempts = maxAttempts))
-                            return onExhausted(retries, lastError).left()
-                        }
+                        is Schedule.Decision.Done -> return giveUp(lastError)
                         is Schedule.Decision.Continue -> if (elapsed + decision.delay > maxElapsed) {
-                            onStateChange(GitTransportRetryState.Exhausted(lastError.message, maxAttempts = maxAttempts))
-                            return onExhausted(retries, lastError).left()
+                            return giveUp(lastError)
                         } else {
                             retries++
                             onStateChange(GitTransportRetryState.Retrying(attempt = retries, max = maxAttempts, progress = currentProgress()))
@@ -427,7 +430,7 @@ fun configureHttpsOrNoAuth(
  * diverged, since this app has no way to distinguish "safe to widen" from "already resolved
  * cleanly" without doing the full unshallow anyway. Never throws.
  */
-suspend fun hasRemoteDivergedSinceShallowClone(
+fun hasRemoteDivergedSinceShallowClone(
     git: Git,
     config: GitConfig,
     configureAuth: (TransportCommand<*, *>) -> Unit,

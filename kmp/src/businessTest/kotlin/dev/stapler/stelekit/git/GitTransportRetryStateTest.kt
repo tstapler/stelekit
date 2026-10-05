@@ -122,4 +122,35 @@ class GitTransportRetryStateTest {
         )
         assertEquals(5, states.count { it is GitTransportRetryState.Retrying }, "one Retrying transition per retry attempt granted")
     }
+
+    @Test
+    fun `a Permanent non-transport failure routes to onFailed with the OTHER reason tag, never onAuthFailed`() = runTest {
+        val states = mutableListOf<GitTransportRetryState>()
+        var authCalls = 0
+        var failedCalls = 0
+
+        val result: Either<DomainError.GitError, Unit> = runGitTransportOpWithRetry(
+            schedule = RetryPolicies.gitTransportTransientImmediate,
+            onStateChange = { states += it },
+            beforeRetry = { error("beforeRetry must not run for a Permanent failure") },
+            onAuthFailed = { e -> authCalls++; DomainError.GitError.AuthFailed(e.message ?: "auth") },
+            onFailed = { e -> failedCalls++; DomainError.GitError.CloneFailed(e.message ?: "clone") },
+            onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
+        ) {
+            throw java.io.IOException("No space left on device")
+        }
+
+        val left = assertIs<Either.Left<DomainError.GitError>>(result)
+        assertIs<DomainError.GitError.CloneFailed>(left.value)
+        assertEquals(0, authCalls)
+        assertEquals(1, failedCalls)
+        assertEquals(NonRetryableReason.OTHER, assertIs<GitTransportRetryState.NonRetryableFailure>(states.last()).reason)
+    }
+
+    @Test
+    fun `permanentFailureReasonTag tags a plain TransportException AUTH and a non-transport exception OTHER`() {
+        assertEquals(NonRetryableReason.AUTH, permanentFailureReasonTag(TransportException("401 Unauthorized")))
+        assertEquals(NonRetryableReason.OTHER, permanentFailureReasonTag(java.io.IOException("disk full")))
+        assertEquals(NonRetryableReason.NOT_FOUND, permanentFailureReasonTag(permanentFailure()))
+    }
 }
