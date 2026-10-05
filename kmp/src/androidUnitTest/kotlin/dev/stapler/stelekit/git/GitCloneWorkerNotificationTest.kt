@@ -153,7 +153,7 @@ class GitCloneWorkerNotificationTest {
         buildWorker(repo).doWork()
 
         val notification = NotificationManagerCompat.from(context).activeNotifications
-            .first { it.id == GitCloneWorker.NOTIFICATION_ID }
+            .first { it.id == GitCloneWorker.FAILURE_NOTIFICATION_ID }
             .notification
         assertEquals(GitCloneWorker.SYNC_FAILED_TAP_TO_RETRY, notification.extras.getCharSequence(android.app.Notification.EXTRA_TEXT)?.toString())
         assertFalse(notification.flags and android.app.Notification.FLAG_ONGOING_EVENT != 0, "a terminal failure must not stay ongoing")

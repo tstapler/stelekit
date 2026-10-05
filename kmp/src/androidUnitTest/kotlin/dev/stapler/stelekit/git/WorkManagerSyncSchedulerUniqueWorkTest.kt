@@ -19,6 +19,7 @@ import androidx.work.WorkManager
 import androidx.work.testing.SynchronousExecutor
 import androidx.work.testing.WorkManagerTestInitHelper
 import androidx.work.workDataOf
+import kotlinx.coroutines.runBlocking
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -120,21 +121,16 @@ class WorkManagerSyncSchedulerUniqueWorkTest {
     }
 
     /**
-     * A `GitCloneWorker` appended via `beginUniqueWork(..., APPEND_OR_REPLACE, ...)` behind a
-     * periodic `GitSyncWorker` under the same unique-work name is chained as its dependent: it sits
-     * `BLOCKED` rather than independently `ENQUEUED`, so WorkManager cannot start it alongside the
-     * periodic job.
+     * Regression for the shared-unique-name hazard: a clone chained behind a periodic job via
+     * `APPEND_OR_REPLACE` sits `BLOCKED` forever (a periodic run's completion never unblocks
+     * dependents, per decompiled work-runtime 2.9.1). [AndroidGitCloneWorkerLauncher] therefore
+     * pauses the periodic job, runs the clone fresh under the name, and restores the periodic job.
      *
-     * Non-blocking by design: an earlier revision gated a running periodic worker on a
-     * `CompletableDeferred` to assert `RUNNING`, but the test driver's serial executor is held by the
-     * blocked worker, so any `WorkManager` call from the test thread mid-run deadlocks. The periodic
-     * job's initial delay keeps it `ENQUEUED` (never run) for the duration of the test. This does
-     * not exercise the `RUNNING` state itself; real-device validation covers that (Phase 3 gate).
-     * Also note (decompiled work-runtime 2.9.1): a periodic run's completion never unblocks
-     * dependents, so no assertion is made about the clone's state after the periodic job runs.
+     * Non-blocking by design: the periodic job's initial delay keeps it `ENQUEUED` (never run) so
+     * the test driver's serial executor is never held by a gated worker.
      */
     @Test
-    fun `GitCloneWorker appended under the same workNameFor(graphId) as a periodic GitSyncWorker is chained as BLOCKED, not independently runnable`() {
+    fun `launchClone over an existing periodic job reaches SUCCEEDED instead of being left BLOCKED, and restores the periodic job`() = runBlocking {
         val graphId = "unique-work-concurrency"
         val workName = WorkManagerSyncScheduler.workNameFor(graphId)
         initTestWorkManager()
@@ -147,13 +143,40 @@ class WorkManagerSyncSchedulerUniqueWorkTest {
         workManager.enqueueUniquePeriodicWork(workName, ExistingPeriodicWorkPolicy.UPDATE, periodicRequest).result.get()
         assertEquals(WorkInfo.State.ENQUEUED, workManager.getWorkInfoById(periodicRequest.id).get().state)
 
+        val result = AndroidGitCloneWorkerLauncher(context, blockedTimeoutMs = 5_000L).launchClone(
+            graphId = graphId,
+            url = "https://example.invalid/graph.git",
+            localPath = "/tmp/graph",
+            auth = GitAuth.None,
+            onProgress = {},
+            onStateChange = {},
+            graphDisplayName = null,
+        )
+
+        assertTrue(result.isRight(), "clone over a periodic job must complete, not hang BLOCKED: $result")
+        val infos = workManager.getWorkInfosForUniqueWork(workName).get()
+        assertTrue(
+            infos.any { !it.state.isFinished },
+            "the periodic sync job must be restored after the clone terminates, got ${infos.map { it.state }}",
+        )
+    }
+
+    @Test
+    fun `GitCloneWorker appended under the same workNameFor(graphId) as a periodic GitSyncWorker via APPEND_OR_REPLACE is still chained BLOCKED - the hazard the launcher avoids`() {
+        val graphId = "unique-work-append-hazard"
+        val workName = WorkManagerSyncScheduler.workNameFor(graphId)
+        initTestWorkManager()
+        val workManager = WorkManager.getInstance(context)
+
+        val periodicRequest = PeriodicWorkRequestBuilder<GitSyncWorker>(15, TimeUnit.MINUTES)
+            .setInitialDelay(1, TimeUnit.HOURS)
+            .setInputData(workDataOf(GitSyncWorker.KEY_GRAPH_ID to graphId))
+            .build()
+        workManager.enqueueUniquePeriodicWork(workName, ExistingPeriodicWorkPolicy.UPDATE, periodicRequest).result.get()
+
         val cloneRequest = OneTimeWorkRequestBuilder<GitCloneWorker>().build()
         workManager.beginUniqueWork(workName, ExistingWorkPolicy.APPEND_OR_REPLACE, cloneRequest).enqueue().result.get()
 
-        assertEquals(
-            WorkInfo.State.BLOCKED,
-            workManager.getWorkInfoById(cloneRequest.id).get().state,
-            "GitCloneWorker must be chained behind the periodic GitSyncWorker sharing its unique-work name, not independently runnable",
-        )
+        assertEquals(WorkInfo.State.BLOCKED, workManager.getWorkInfoById(cloneRequest.id).get().state)
     }
 }

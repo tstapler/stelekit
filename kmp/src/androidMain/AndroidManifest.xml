@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <!-- GPS tagging for image annotations (Story 8.2.4).
          Required by AndroidMotionSensorProvider to request location updates.
          Requested at runtime before MotionSensorProvider.startSensing() is called;
@@ -76,6 +77,14 @@
             android:name="dev.stapler.stelekit.platform.measurement.ble.AndroidMeasurementForegroundService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
+
+        <!-- GitCloneWorker's ForegroundInfo uses FOREGROUND_SERVICE_TYPE_DATA_SYNC; on API 34+
+             WorkManager's SystemForegroundService must declare the matching type or
+             startForeground throws InvalidForegroundServiceTypeException. -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
     </application>
 
 

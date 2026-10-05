@@ -52,6 +52,7 @@ class GitCloneWorker @JvmOverloads constructor(
     context: Context,
     params: WorkerParameters,
     private val gitRepositoryOverride: GitRepository? = null,
+    private val credentialAccessOverride: CredentialAccess? = null,
 ) : CoroutineWorker(context, params) {
 
     private val logger = Logger("GitCloneWorker")
@@ -83,6 +84,13 @@ class GitCloneWorker @JvmOverloads constructor(
             logger.error("doWork: uncaught throwable, failing worker", e)
             teardownNotification()
             return Result.failure()
+        } finally {
+            // Every terminal path (success, failure, cancellation, Throwable) drops the transient
+            // PAT/passphrase the launcher persisted; only process death mid-run leaves it for the
+            // WorkManager-restarted run, which is why this isn't done at the start.
+            inputData.getString(KEY_GRAPH_ID)?.let {
+                clearTransientCredentials(applicationContext, it, credentialAccessOverride)
+            }
         }
     }
 
@@ -93,8 +101,14 @@ class GitCloneWorker @JvmOverloads constructor(
         val sshKeyPath = inputData.getString(KEY_SSH_KEY_PATH)
         val graphDisplayName = inputData.getString(KEY_GRAPH_DISPLAY_NAME)
 
-        CredentialStore.init(applicationContext)
-        val auth = resolveAuth(inputData.getString(KEY_AUTH_TYPE), graphId, sshKeyPath, CredentialStore())
+        // A stale failure notification from a previous run for this graph must not linger.
+        cancelFailureNotification()
+
+        val credentialAccess = credentialAccessOverride ?: run {
+            CredentialStore.init(applicationContext)
+            CredentialStore()
+        }
+        val auth = resolveAuth(inputData.getString(KEY_AUTH_TYPE), graphId, sshKeyPath, credentialAccess)
 
         var foregroundPromoted = true
         try {
@@ -113,12 +127,21 @@ class GitCloneWorker @JvmOverloads constructor(
             context = applicationContext,
             fileSystem = PlatformFileSystem(),
         )
+        val throttle = ProgressThrottle()
+        var terminalReasonTag: String? = null
         val result = gitRepository.clone(
             url,
             localPath,
             auth,
-            onProgress = { progress -> onCloneProgress(progress, graphId, graphDisplayName, foregroundPromoted) },
-            onStateChange = { state -> onRetryStateChange(state, graphId, graphDisplayName, foregroundPromoted) },
+            onProgress = { progress ->
+                if (throttle.shouldEmit(progress)) {
+                    onCloneProgress(progress, graphId, graphDisplayName, foregroundPromoted)
+                }
+            },
+            onStateChange = { state ->
+                if (state is GitTransportRetryState.NonRetryableFailure) terminalReasonTag = state.reason
+                onRetryStateChange(state, graphId, graphDisplayName, foregroundPromoted)
+            },
         )
 
         return when (result) {
@@ -131,12 +154,15 @@ class GitCloneWorker @JvmOverloads constructor(
                 // Task 4.1.5c: a terminal failure converts the notification to a dismissible
                 // "tap to retry" one instead of tearing it down outright — success/cancellation
                 // are the two paths that still dismiss it entirely.
+                teardownNotification()
                 postTerminalFailureNotification(graphId, graphDisplayName)
                 // ADR-002 / Story 3.1.5: runGitTransportOpWithRetry (inside
                 // AndroidGitRepository.clone()) already retried internally before ever returning
                 // Left here — this worker is a retry *consumer*, never a second retry owner.
                 // Always Result.failure(), never Result.retry() — do not "helpfully" add it back.
-                Result.failure()
+                // The payload carries the terminal error kind so the launcher can rebuild the
+                // DomainError and terminal GitTransportRetryState for Step 5.
+                Result.failure(GitCloneWorkerData.encodeFailure(result.value, terminalReasonTag))
             }
         }
     }
@@ -157,7 +183,7 @@ class GitCloneWorker @JvmOverloads constructor(
     }
 
     private fun onCloneProgress(progress: CloneProgress, graphId: String, graphDisplayName: String?, foregroundPromoted: Boolean) {
-        setProgressAsync(workDataOf(KEY_PROGRESS_PHASE to progress.phase))
+        setProgressAsync(GitCloneWorkerData.encodeState(GitTransportRetryState.Attempting(progress, foregroundPromoted)))
         // Task 4.1.5b: an indeterminate bar (no percent known yet) until totalWork is meaningfully
         // known — postStateNotification/notificationProgressFor already encode that rule from the
         // same CloneProgress this callback carries, so this just re-renders the Attempting state
@@ -175,6 +201,8 @@ class GitCloneWorker @JvmOverloads constructor(
         } else {
             state
         }
+        // Published for the launcher (and through it Step 5) — same stream the notification renders.
+        setProgressAsync(GitCloneWorkerData.encodeState(effectiveState))
         when (effectiveState) {
             is GitTransportRetryState.Exhausted, is GitTransportRetryState.NonRetryableFailure ->
                 postTerminalFailureNotification(graphId, graphDisplayName)
@@ -208,7 +236,18 @@ class GitCloneWorker @JvmOverloads constructor(
             .setAutoCancel(true)
             .setSmallIcon(android.R.drawable.stat_notify_error)
             .build()
-        notifySafely(applicationContext, NOTIFICATION_ID, notification)
+        // Separate id: the foreground notification (NOTIFICATION_ID) is owned by WorkManager's
+        // foreground service and is removed when the worker finishes, which would take a failure
+        // notification sharing its id with it.
+        notifySafely(applicationContext, FAILURE_NOTIFICATION_ID, notification)
+    }
+
+    private fun cancelFailureNotification() {
+        try {
+            NotificationManagerCompat.from(applicationContext).cancel(FAILURE_NOTIFICATION_ID)
+        } catch (e: SecurityException) {
+            logger.warn("cancelFailureNotification: cancel denied", e)
+        }
     }
 
     private fun applyProgressBar(builder: NotificationCompat.Builder, state: GitTransportRetryState): NotificationCompat.Builder {
@@ -263,6 +302,7 @@ class GitCloneWorker @JvmOverloads constructor(
         internal const val NOTIFICATION_CHANNEL_ID = "stelekit_git_sync"
         internal const val NOTIFICATION_ID = 90020
         internal const val WATCHDOG_NOTIFICATION_ID = 90021
+        internal const val FAILURE_NOTIFICATION_ID = 90022
 
         /** Task 4.1.5c's exact "terminal failure" notification body — Exhausted and
          * NonRetryableFailure share it; Step 5 (a richer surface) distinguishes the two with
@@ -283,6 +323,26 @@ class GitCloneWorker @JvmOverloads constructor(
 
         /** [CredentialStore] key for a resolved SSH key passphrase — see [httpsTokenCredentialKey]. */
         fun sshPassphraseCredentialKey(graphId: String) = "git_clone_ssh_passphrase_$graphId"
+
+        /** Removes the transient clone credentials persisted for [graphId]; never throws. */
+        internal fun clearTransientCredentials(
+            context: Context,
+            graphId: String,
+            credentialAccess: CredentialAccess? = null,
+        ) {
+            try {
+                val store = credentialAccess ?: run {
+                    CredentialStore.init(context)
+                    CredentialStore()
+                }
+                store.delete(httpsTokenCredentialKey(graphId))
+                store.delete(sshPassphraseCredentialKey(graphId))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                Logger("GitCloneWorker").warn("clearTransientCredentials: failed", e)
+            }
+        }
 
         private fun resolveAuth(
             authType: String?,
@@ -305,12 +365,9 @@ class GitCloneWorker @JvmOverloads constructor(
          * Task 4.1.5a: title/deep-link content shared by every notification this worker posts —
          * "Syncing {graph display name}" (never a raw URL/path, per `design/ux.md`'s jargon-
          * avoidance rule), tapping deep-links toward Step 5. The `PendingIntent` targets the app's
-         * launcher activity with [KEY_GRAPH_ID] as an intent extra; **the navigation-read side (the
-         * app actually routing to Step 5 for that graph on a cold/warm start from this extra) is
-         * not wired here** — that's `androidApp`'s `MainActivity`/navigation-graph territory,
-         * outside this epic's file list (`GitCloneWorker.kt` only). Until that's connected, tapping
-         * the notification opens the app at its normal entry point rather than jumping straight to
-         * Step 5.
+         * launcher activity with [EXTRA_OPEN_GIT_SETUP_GRAPH_ID] as an intent extra, which
+         * `MainActivity` reads and routes to Git Setup Step 5 via
+         * `StelekitViewModel.openGitSetupForRetry`.
          */
         private fun baseNotificationBuilder(
             context: Context,
@@ -335,8 +392,7 @@ class GitCloneWorker @JvmOverloads constructor(
             return PendingIntent.getActivity(context, NOTIFICATION_ID, launchIntent, flags)
         }
 
-        /** Intent extra a future `MainActivity`/navigation change would read to deep-link straight
-         * to Step 5 for this graph — see [baseNotificationBuilder]'s kdoc for the current gap. */
+        /** Intent extra `MainActivity` reads to deep-link straight to Step 5 for this graph. */
         const val EXTRA_OPEN_GIT_SETUP_GRAPH_ID = "dev.stapler.stelekit.OPEN_GIT_SETUP_GRAPH_ID"
 
         /** Body text for a live (non-terminal) [state] — Task 4.1.5a. Mirrors the *meaning* of

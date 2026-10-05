@@ -79,6 +79,7 @@ class GitCloneWorkerTest {
         gitRepository: GitRepository,
         foregroundUpdater: ForegroundUpdater = RecordingForegroundUpdater(),
         inputData: Data = defaultInputData(),
+        credentialAccess: dev.stapler.stelekit.platform.security.CredentialAccess? = null,
     ): GitCloneWorker =
         TestListenableWorkerBuilder<GitCloneWorker>(context)
             .setInputData(inputData)
@@ -89,7 +90,7 @@ class GitCloneWorkerTest {
                     appContext: Context,
                     workerClassName: String,
                     workerParameters: WorkerParameters,
-                ): ListenableWorker = GitCloneWorker(appContext, workerParameters, gitRepository)
+                ): ListenableWorker = GitCloneWorker(appContext, workerParameters, gitRepository, credentialAccess)
             })
             .build()
 
@@ -145,7 +146,8 @@ class GitCloneWorkerTest {
 
         val result = worker.doWork()
 
-        assertEquals(ListenableWorker.Result.failure(), result)
+        val failure = result as ListenableWorker.Result.Failure
+        assertEquals(GitCloneWorkerData.ERROR_RETRY_EXHAUSTED, failure.outputData.getString(GitCloneWorkerData.KEY_ERROR_KIND))
     }
 
     @Test
@@ -155,7 +157,24 @@ class GitCloneWorkerTest {
 
         val result = worker.doWork()
 
-        assertEquals(ListenableWorker.Result.failure(), result)
+        val failure = result as ListenableWorker.Result.Failure
+        assertEquals(GitCloneWorkerData.ERROR_AUTH, failure.outputData.getString(GitCloneWorkerData.KEY_ERROR_KIND))
+    }
+
+    @Test
+    fun `doWork() removes the transient clone credentials on every terminal path`() = runBlocking {
+        val store = InMemoryCredentialAccess()
+        val key = GitCloneWorker.httpsTokenCredentialKey("graph-1")
+        store.store(key, "secret-pat")
+        val worker = buildWorker(
+            cloningStub { _, _, _, _ -> DomainError.GitError.AuthFailed("bad token").left() },
+            inputData = defaultInputData(GitCloneWorker.AUTH_HTTPS_TOKEN),
+            credentialAccess = store,
+        )
+
+        worker.doWork()
+
+        assertEquals(null, store.retrieve(key), "transient PAT must be deleted after a terminal failure")
     }
 
     @Test
@@ -175,7 +194,7 @@ class GitCloneWorkerTest {
         worker.doWork()
 
         val notificationManager = androidx.core.app.NotificationManagerCompat.from(context)
-        val statusBarNotification = notificationManager.activeNotifications.firstOrNull { it.id == GitCloneWorker.NOTIFICATION_ID }
+        val statusBarNotification = notificationManager.activeNotifications.firstOrNull { it.id == GitCloneWorker.FAILURE_NOTIFICATION_ID }
         assertTrue(statusBarNotification != null, "a dismissible tap-to-retry notification must still be visible on failure/exhaustion")
         assertTrue(
             statusBarNotification.notification.flags and android.app.Notification.FLAG_ONGOING_EVENT == 0,

@@ -111,7 +111,7 @@ class GitCloneWorkerFastFailIntegrationTest {
             val result = worker.doWork()
             val elapsedMs = System.currentTimeMillis() - startMs
 
-            assertEquals(ListenableWorker.Result.failure(), result)
+            assertTrue(result is ListenableWorker.Result.Failure, "expected Result.failure, got $result")
             assertEquals(
                 1,
                 cloneSequence.invocationCount,
@@ -124,7 +124,7 @@ class GitCloneWorkerFastFailIntegrationTest {
 
             val notificationManager = NotificationManagerCompat.from(context)
             val statusBarNotification = notificationManager.activeNotifications
-                .firstOrNull { it.id == GitCloneWorker.NOTIFICATION_ID }
+                .firstOrNull { it.id == GitCloneWorker.FAILURE_NOTIFICATION_ID }
             assertTrue(
                 statusBarNotification != null,
                 "the foreground notification must be converted to a dismissible failure-state notification immediately, not torn down silently",

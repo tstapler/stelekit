@@ -38,7 +38,11 @@ class WorkManagerSyncScheduler(
 
     private val workName get() = workNameFor(graphId)
 
-    override fun schedule(intervalMinutes: Int) {
+    override fun schedule(intervalMinutes: Int) = schedule(intervalMinutes, ExistingPeriodicWorkPolicy.UPDATE)
+
+    /** [policy] `CANCEL_AND_REENQUEUE` is for [resumeFor]: after a clone ran under the shared
+     * unique name, `UPDATE` can't convert the finished one-time work back into a periodic job. */
+    internal fun schedule(intervalMinutes: Int, policy: ExistingPeriodicWorkPolicy) {
         val repeatInterval = maxOf(intervalMinutes.toLong(), MIN_INTERVAL_MINUTES)
 
         val constraints = Constraints.Builder()
@@ -56,7 +60,7 @@ class WorkManagerSyncScheduler(
 
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             workName,
-            ExistingPeriodicWorkPolicy.UPDATE,
+            policy,
             request,
         )
     }
@@ -96,7 +100,8 @@ class WorkManagerSyncScheduler(
          * source of truth for the interval.
          */
         fun resumeFor(context: Context, graphId: String) {
-            WorkManagerSyncScheduler(context, graphId).schedule(MIN_INTERVAL_MINUTES.toInt())
+            WorkManagerSyncScheduler(context, graphId)
+                .schedule(MIN_INTERVAL_MINUTES.toInt(), ExistingPeriodicWorkPolicy.CANCEL_AND_REENQUEUE)
         }
     }
 }

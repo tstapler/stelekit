@@ -425,6 +425,7 @@ private fun GraphContent(deps: GraphContentDeps) {
     val deviceLlmAvailable = deps.voiceConfig.deviceLlmAvailable
     val gitRepository = deps.platformIntegrations.gitRepository
     val gitCloneWorkerLauncher = deps.platformIntegrations.gitCloneWorkerLauncher
+    val inFlightCloneTracker = remember { dev.stapler.stelekit.git.InFlightCloneTracker() }
     val cryptoEngine = deps.platformIntegrations.cryptoEngine
     val attachmentService = deps.platformIntegrations.attachmentService
     val hotkeyComboLabel = deps.hotkeyComboLabel
@@ -2226,9 +2227,11 @@ private fun GraphContent(deps: GraphContentDeps) {
                                         // stays on the pre-Epic-3.1 direct call.
                                         if (gitCloneWorkerLauncher != null) {
                                             val graphId = graphManager.graphIdFromPath(fileSystem.expandTilde(localPath)).value
-                                            gitCloneWorkerLauncher.launchClone(
-                                                graphId, url, localPath, auth, onProgress, onStateChange, displayName,
-                                            ).map { graphManager.addGraph(localPath, location, displayName, description).value }
+                                            inFlightCloneTracker.track(graphId) {
+                                                gitCloneWorkerLauncher.launchClone(
+                                                    graphId, url, localPath, auth, onProgress, onStateChange, displayName,
+                                                )
+                                            }.map { graphManager.addGraph(localPath, location, displayName, description).value }
                                         } else {
                                             graphManager.cloneAndAdd(
                                                 gitRepository, url, localPath, auth, onProgress, location, displayName, description, onStateChange,
@@ -2236,7 +2239,7 @@ private fun GraphContent(deps: GraphContentDeps) {
                                         }
                                     }
                                 } else null,
-                                onCancelClone = { gitCloneWorkerLauncher?.cancel(activeGraphId?.value ?: "") },
+                                onCancelClone = { inFlightCloneTracker.cancel(gitCloneWorkerLauncher) },
                                 graphPath = activeGraphPath,
                                 detectedRepoRoot = graphRegistry.graphs.firstOrNull { it.id == activeGraphId }?.detectedRepoRoot,
                                 detectedWikiSubdir = graphRegistry.graphs.firstOrNull { it.id == activeGraphId }?.detectedWikiSubdir,
