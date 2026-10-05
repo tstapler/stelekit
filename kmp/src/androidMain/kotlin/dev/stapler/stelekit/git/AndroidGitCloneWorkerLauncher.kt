@@ -62,6 +62,7 @@ class AndroidGitCloneWorkerLauncher(
         val workManager = WorkManager.getInstance(context)
         val workName = WorkManagerSyncScheduler.workNameFor(graphId)
         var resumePeriodic = false
+        var enqueuedId: UUID? = null
         try {
             val inputData = Data.Builder()
                 .putAll(
@@ -86,8 +87,14 @@ class AndroidGitCloneWorkerLauncher(
 
             GitCloneWorkTracker.recordStart(context, graphId, request.id, System.currentTimeMillis())
             workManager.beginUniqueWork(workName, ExistingWorkPolicy.REPLACE, request).enqueue()
+            enqueuedId = request.id
 
             return awaitTerminal(workManager, request.id, onProgress, onStateChange)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // Caller left (e.g. Step 5 scope disposed): the finally below deletes the transient
+            // credentials, so a still-queued worker must not outlive them and read a null token.
+            enqueuedId?.let { workManager.cancelWorkById(it) }
+            throw e
         } finally {
             GitCloneWorker.clearTransientCredentials(context, graphId, credentialAccessOverride)
             GitCloneWorkTracker.clear(context, graphId)

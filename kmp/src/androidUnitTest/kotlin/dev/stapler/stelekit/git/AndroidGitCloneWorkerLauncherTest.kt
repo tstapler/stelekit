@@ -15,6 +15,8 @@ import androidx.work.testing.WorkManagerTestInitHelper
 import arrow.core.Either
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.platform.security.CredentialStore
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Before
 import org.junit.Test
@@ -23,6 +25,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 /**
  * Tests [AndroidGitCloneWorkerLauncher] (git-sync-resilience Story 3.1.3, Task 3.1.3b) against a
@@ -166,6 +169,43 @@ class AndroidGitCloneWorkerLauncherTest {
 
         assertIs<Either.Right<Unit>>(result)
         Unit
+    }
+
+    @Test
+    fun `launchClone() cancels the enqueued worker when the caller is cancelled`() = runBlocking {
+        // Real (non-synchronous) executor so the slow worker leaves launchClone suspended.
+        val started = java.util.concurrent.CountDownLatch(1)
+        val config = Configuration.Builder()
+            .setExecutor(java.util.concurrent.Executors.newFixedThreadPool(2))
+            .setWorkerFactory(object : WorkerFactory() {
+                override fun createWorker(
+                    appContext: Context,
+                    workerClassName: String,
+                    workerParameters: WorkerParameters,
+                ): ListenableWorker? = object : Worker(appContext, workerParameters) {
+                    override fun doWork(): Result {
+                        started.countDown()
+                        repeat(200) { if (isStopped) return Result.success(); Thread.sleep(25) }
+                        return Result.success()
+                    }
+                }
+            })
+            .build()
+        WorkManagerTestInitHelper.initializeTestWorkManager(context, config)
+        val graphId = "graph-caller-cancel"
+        val workManager = androidx.work.WorkManager.getInstance(context)
+
+        val job = launch(kotlinx.coroutines.Dispatchers.Default) {
+            AndroidGitCloneWorkerLauncher(context).launchClone(
+                graphId, "https://example.invalid/g.git", "/tmp/g", GitAuth.None, {}, {}, null,
+            )
+        }
+        assertTrue(started.await(10, java.util.concurrent.TimeUnit.SECONDS), "worker should start")
+        job.cancelAndJoin()
+
+        val infos = workManager.getWorkInfosForUniqueWork(WorkManagerSyncScheduler.workNameFor(graphId)).get()
+        assertTrue(infos.isNotEmpty() && infos.all { it.state == androidx.work.WorkInfo.State.CANCELLED || it.state.isFinished && it.state != androidx.work.WorkInfo.State.RUNNING },
+            "worker must not keep running after the caller is cancelled: $infos")
     }
 
     @Test
