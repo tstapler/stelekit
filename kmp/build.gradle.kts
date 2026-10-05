@@ -17,6 +17,7 @@ plugins {
     id("io.github.takahirom.roborazzi") version "1.59.0"
     id("org.jetbrains.kotlinx.benchmark")
     id("io.gitlab.arturbosch.detekt")
+    id("jacoco")
 }
 
 kotlin {
@@ -869,6 +870,14 @@ tasks.register<Test>("jvmTestFast") {
         "stelekit.sq.file",
         file("src/commonMain/sqldelight/dev/stapler/stelekit/db/SteleDatabase.sq").absolutePath
     )
+    systemProperty(
+        "stelekit.appkt.file",
+        file("src/commonMain/kotlin/dev/stapler/stelekit/ui/App.kt").absolutePath
+    )
+    systemProperty(
+        "stelekit.ui.dir",
+        file("src/commonMain/kotlin/dev/stapler/stelekit/ui").absolutePath
+    )
 
     jvmArgs(
         "-Djdk.attach.allowAttachSelf=true",
@@ -1487,4 +1496,24 @@ android {
         // this is a known lint tooling bug triggered by certain Kotlin when-expressions.
         disable += setOf("LogConditional", "LongLogTag", "LogTagMismatch")
     }
+}
+
+// ── Jacoco Code Coverage Configuration ──────────────────────────────────────────
+jacoco {
+    toolVersion = "0.8.12"
+}
+
+tasks.register<JacocoReport>("jacocoTestReport") {
+    dependsOn("jvmTest")
+    reports {
+        xml.required.set(true)
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir("reports/jacoco/html"))
+        xml.outputLocation.set(layout.buildDirectory.file("reports/jacoco/jacoco.xml"))
+    }
+    val classesTree = fileTree("${layout.buildDirectory.get()}/classes/kotlin/jvm/main")
+    val mainSrc = "${projectDir}/src/commonMain/kotlin"
+    sourceDirectories.setFrom(files(mainSrc))
+    classDirectories.setFrom(files(classesTree))
+    executionData.setFrom(fileTree(layout.buildDirectory.get()).include("jacoco/jvmTest.exec", "outputs/unit_test_code_coverage/**/*.exec"))
 }
