@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.91.0](https://github.com/tstapler/stelekit/compare/v0.90.0...v0.91.0) (2026-10-05)
+
+
+### Features
+
+* **wiki-subdir:** resolve effective graph path and add notes subdirectory to edit graph ([#384](https://github.com/tstapler/stelekit/issues/384)) ([aeb2f1c](https://github.com/tstapler/stelekit/commit/aeb2f1ce4e6f3c099654e71a2e145b00576899f8))
+
+
+### Bug Fixes
+
+* **wiki-subdir:** address Copilot review feedback on path resolution and validation ([a3911b9](https://github.com/tstapler/stelekit/commit/a3911b9776925694e188bfbe65bb244ec6ee29b9))
+
 ## [0.90.0](https://github.com/tstapler/stelekit/compare/v0.89.0...v0.90.0) (2026-10-04)
 
 
