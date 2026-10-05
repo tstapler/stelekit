@@ -1094,7 +1094,6 @@ class GraphManager(
             )
         }
     }
-
     suspend fun updateWikiSubdir(graphId: GraphId, wikiSubdir: String) {
         updateGraphField(graphId) { info ->
             val root = info.detectedRepoRoot ?: info.path
