@@ -16,15 +16,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.*
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalClipboardManager
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.migration.registerAllMigrations
 import dev.stapler.stelekit.logging.Logger
-import dev.stapler.stelekit.model.DEMO_GRAPH_ID
 import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.StorageLocation
 import dev.stapler.stelekit.performance.DebugMenuState
@@ -33,18 +29,11 @@ import dev.stapler.stelekit.platform.*
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.repository.*
 import dev.stapler.stelekit.ui.components.*
-import dev.stapler.stelekit.ui.components.settings.SettingsCategory
-import dev.stapler.stelekit.ui.components.settings.SettingsDialog
 import dev.stapler.stelekit.ui.i18n.I18n
-import dev.stapler.stelekit.ui.i18n.Language
 import dev.stapler.stelekit.ui.i18n.LocalI18n
 import dev.stapler.stelekit.ui.i18n.t
-import dev.stapler.stelekit.ui.screens.EmptyGraphStateScreen
-import dev.stapler.stelekit.ui.screens.LibrarySetupScreen
-import dev.stapler.stelekit.ui.screens.PermissionRecoveryScreen
 import dev.stapler.stelekit.ui.screens.VaultUnlockScreen
 import dev.stapler.stelekit.ui.theme.StelekitTheme
-import dev.stapler.stelekit.ui.theme.StelekitThemeMode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -58,17 +47,6 @@ internal suspend fun <T> withImportTimeout(
 ): T? = withTimeoutOrNull(timeoutMs) { importOperation() }
 
 
-/** Shown when the user has explicitly removed their only graph — see [StelekitApp]'s call site. */
-@Composable
-private fun EmptyGraphScreen(
-    onCreateGraph: (() -> Unit)?,
-    errorMessage: String?,
-    onTryDemo: () -> Unit,
-) {
-    StelekitTheme(themeMode = StelekitThemeMode.SYSTEM) {
-        EmptyGraphStateScreen(onCreateGraph = onCreateGraph, onTryDemo = onTryDemo, errorMessage = errorMessage)
-    }
-}
 
 /**
  * Root Composable for the Logseq application.
@@ -212,27 +190,6 @@ internal fun initialGraphPath(graphManager: GraphManager, graphPath: String): St
 }
 
 
-/** Whether storage permission was granted the last time the app was paused. */
-private enum class PriorPermissionState { WAS_GRANTED, WAS_NOT_GRANTED }
-
-/** Returns the updated [PriorPermissionState] for [ObservePermissionRevocationOnResume]. */
-private fun nextPriorPermissionState(
-    event: Lifecycle.Event,
-    priorPermissionState: PriorPermissionState,
-    permissionGranted: () -> Boolean,
-    fileSystem: FileSystem,
-    onPermissionGrantedChange: (Boolean) -> Unit,
-): PriorPermissionState = when (event) {
-    Lifecycle.Event.ON_PAUSE ->
-        if (permissionGranted()) PriorPermissionState.WAS_GRANTED else PriorPermissionState.WAS_NOT_GRANTED
-    Lifecycle.Event.ON_RESUME -> {
-        if (priorPermissionState == PriorPermissionState.WAS_GRANTED) {
-            onPermissionGrantedChange(fileSystem.hasStoragePermission())
-        }
-        priorPermissionState
-    }
-    else -> priorPermissionState
-}
 
 /** Builds [EmptyGraphScreen]'s `onCreateGraph` handler — null when the platform has no native picker. */
 internal fun buildCreateGraphHandler(
