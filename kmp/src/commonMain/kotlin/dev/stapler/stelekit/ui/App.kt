@@ -57,106 +57,6 @@ internal suspend fun <T> withImportTimeout(
     importOperation: suspend () -> T,
 ): T? = withTimeoutOrNull(timeoutMs) { importOperation() }
 
-/** SAF permission was revoked after being granted — folder content is still there, just re-grant. */
-@Composable
-private fun PermissionRecoveryScreenThemed(
-    libraryDisplayName: String?,
-    folderPickError: String?,
-    onRequestFolder: () -> Unit,
-) {
-    StelekitTheme(themeMode = StelekitThemeMode.SYSTEM) {
-        PermissionRecoveryScreen(
-            folderName = libraryDisplayName,
-            onReconnectFolder = onRequestFolder,
-            onChooseDifferentFolder = onRequestFolder,
-            errorMessage = folderPickError,
-        )
-    }
-}
-
-/** First launch — no folder chosen yet. */
-@Composable
-private fun FirstLaunchSetupScreenThemed(folderPickError: String?, onRequestFolder: () -> Unit) {
-    StelekitTheme(themeMode = StelekitThemeMode.SYSTEM) {
-        LibrarySetupScreen(onChooseFolder = onRequestFolder, errorMessage = folderPickError)
-    }
-}
-
-private enum class InitializingDebugScreen { SETTINGS }
-
-/**
- * Pre-repos "Initializing…" state — the Sidebar (and with it, the settings-gear button) can't
- * mount yet: it's built from repos-backed data (page lists, graph registry, sync state) that
- * doesn't exist until [repos] is non-null. Without an escape hatch here, a slow or wedged load —
- * e.g. flipping `db.libsql.enabled` to a driver that hangs on open — leaves the user with no way
- * back to the toggle that caused it.
- *
- * This button is a minimal stand-in for that missing entry point, not a reimplementation of it:
- * it opens the same [SettingsDialog] the real menu navigates to, which already works without
- * repos (the developer toggle reads/writes [platformSettings] directly).
- *
- * Scoped to Settings only, deliberately: `GraphManager.switchGraph()` nulls the active
- * `RepositorySet` on *every* graph switch, not just cold start, so this screen — and any button
- * on it — is reachable mid-session too, including while switching into or out of a locked/vault
- * graph. `LogManager` and `PerformanceMonitor` are process-global singletons never scoped or
- * cleared per graph, and `LogDashboard` has a Share/export button — Performance/Logs buttons here
- * would let a completely unauthenticated action (switching graphs) exfiltrate a *different*
- * graph's page names, paths, and content previews. Settings has no such cross-graph read surface.
- */
-@Composable
-internal fun InitializingScreenThemed(platformSettings: Settings) {
-    var openScreen by remember { mutableStateOf<InitializingDebugScreen?>(null) }
-
-    StelekitTheme(themeMode = StelekitThemeMode.SYSTEM) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            LoadingOverlay("Initializing…")
-            InitializingDebugAccessButtons(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .windowInsetsPadding(WindowInsets.safeDrawing)
-                    .padding(8.dp),
-                onOpen = { openScreen = it },
-            )
-        }
-
-        InitializingSettingsDialog(
-            visible = openScreen == InitializingDebugScreen.SETTINGS,
-            onDismiss = { openScreen = null },
-            platformSettings = platformSettings,
-        )
-    }
-}
-
-@Composable
-private fun InitializingDebugAccessButtons(onOpen: (InitializingDebugScreen) -> Unit, modifier: Modifier = Modifier) {
-    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        IconButton(onClick = { onOpen(InitializingDebugScreen.SETTINGS) }) {
-            Icon(Icons.Default.Settings, contentDescription = "Settings")
-        }
-    }
-}
-
-@Composable
-private fun InitializingSettingsDialog(visible: Boolean, onDismiss: () -> Unit, platformSettings: Settings) {
-    var libsqlEnabled by remember {
-        mutableStateOf(platformSettings.getBoolean("db.libsql.enabled", false))
-    }
-    SettingsDialog(
-        visible = visible,
-        onDismiss = onDismiss,
-        currentTheme = StelekitThemeMode.SYSTEM,
-        onThemeChange = {},
-        currentLanguage = Language.ENGLISH,
-        onLanguageChange = {},
-        onReindex = {},
-        initialCategory = SettingsCategory.DEVELOPER,
-        isLibsqlDriverEnabled = libsqlEnabled,
-        onLibsqlDriverToggle = { enabled ->
-            libsqlEnabled = enabled
-            platformSettings.putBoolean("db.libsql.enabled", enabled)
-        },
-    )
-}
 
 /** Shown when the user has explicitly removed their only graph — see [StelekitApp]'s call site. */
 @Composable
@@ -306,167 +206,11 @@ private fun rememberGraphManagerState(
  * don't force a graph switch (and an unnecessary migration cycle) on every launch when the user
  * has already chosen a different graph.
  */
-private fun initialGraphPath(graphManager: GraphManager, graphPath: String): String {
+internal fun initialGraphPath(graphManager: GraphManager, graphPath: String): String {
     val persistedPath = graphManager.getActiveGraphInfo()?.path
     return if (!persistedPath.isNullOrEmpty()) persistedPath else graphPath
 }
 
-/**
- * Android SAF permission gate — reactive so state refreshes after folder pick. Prefers the
- * GraphManager's persisted active graph over the filesystem default so we don't force a graph
- * switch (and an unnecessary migration cycle) on every launch when the user has already chosen a
- * different graph. Returns true when the setup/recovery screen was shown (SAF permission is
- * required but missing) — [StelekitApp] should return early in that case. Otherwise, registers
- * (idempotently) and activates [graphPath]/the persisted graph path before returning false.
- */
-@Composable
-private fun permissionGateAndGraphInit(
-    fileSystem: FileSystem,
-    graphPath: String,
-    graphManager: GraphManager,
-    scope: kotlinx.coroutines.CoroutineScope,
-): Boolean {
-    var currentGraphPath by remember { mutableStateOf(initialGraphPath(graphManager, graphPath)) }
-    var permissionGranted by remember { mutableStateOf(fileSystem.hasStoragePermission()) }
-    var folderPickError by remember { mutableStateOf<String?>(null) }
-
-    val appLogger = remember { Logger("StelekitApp") }
-    val isSafPath = currentGraphPath.startsWith("saf://")
-
-    // ON_RESUME re-check: detect permission revoked mid-session (e.g. user cleared app storage
-    // from Android Settings while the app was backgrounded).
-    ObservePermissionRevocationOnResume(
-        fileSystem = fileSystem,
-        permissionGranted = { permissionGranted },
-        onPermissionGrantedChange = { permissionGranted = it },
-    )
-
-    // Show the setup/recovery screen only when SAF permission is required. Non-SAF paths (e.g.
-    // /data/local/tmp/ benchmark paths or desktop paths) don't require a document-tree grant, so
-    // skip the screen for those.
-    if (!permissionGranted && (isSafPath || currentGraphPath.isEmpty())) {
-        PermissionGateScreen(fileSystem, currentGraphPath, folderPickError) {
-            fileSystem.requestDirectoryPickerNow()
-            launchFolderPick(scope, fileSystem, appLogger, FolderPickCallbacks(
-                onPathPicked = { currentGraphPath = it },
-                onPermissionGrantedChange = { permissionGranted = it },
-                onError = { folderPickError = it },
-            ))
-        }
-        return true
-    }
-
-    InitializeGraphFromPath(graphManager, currentGraphPath)
-    return false
-}
-
-/**
- * Renders whichever setup/recovery screen [permissionGateAndGraphInit] determined is needed: SAF
- * permission revoked → recovery screen; no path at all (first launch) → setup screen. [isSafPath]
- * is computed locally from [currentGraphPath] rather than taken as a parameter so this stays a
- * plain string/callback signature (see [EncryptionState] for why a boolean *parameter* branched on
- * directly is the pattern to avoid — a locally-derived boolean is not that).
- */
-@Composable
-private fun PermissionGateScreen(
-    fileSystem: FileSystem,
-    currentGraphPath: String,
-    folderPickError: String?,
-    onRequestFolder: () -> Unit,
-) {
-    val isSafPath = currentGraphPath.startsWith("saf://")
-    if (isSafPath) {
-        // Permission was revoked — show recovery screen
-        PermissionRecoveryScreenThemed(fileSystem.getLibraryDisplayName(), folderPickError, onRequestFolder)
-    } else {
-        // First launch — no folder chosen yet
-        FirstLaunchSetupScreenThemed(folderPickError, onRequestFolder)
-    }
-}
-
-/**
- * Registers (idempotently) and activates [currentGraphPath]. Always calls addGraph so
- * repositories are initialized — idempotent (returns the existing ID if already registered) and
- * handles reconnect after SAF permission loss, where activeGraphId may be non-null from the
- * persisted registry but the in-memory repos have not been set up in this process. Skips the demo
- * path — demo is managed by `addDemoGraph()` and must not be registered as a real graph here.
- */
-@Composable
-private fun InitializeGraphFromPath(graphManager: GraphManager, currentGraphPath: String) {
-    LaunchedEffect(currentGraphPath) {
-        if (currentGraphPath.isNotEmpty() && graphManager.getActiveGraphInfo()?.id != DEMO_GRAPH_ID) {
-            val graphId = graphManager.addGraph(currentGraphPath)
-            graphManager.switchGraph(graphId)
-        }
-    }
-}
-
-/**
- * Shown when the user has explicitly removed their only graph (see [GraphManager.removeGraph]'s
- * "last real graph" path) — checking `graphsExplicitlyEmptied` rather than `activeGraphId == null`
- * alone is deliberate: the latter is also transiently true for one frame on a brand-new install
- * before [permissionGateAndGraphInit]'s LaunchedEffect self-heals by adding/activating a default
- * graph, which would otherwise flash this screen on every first launch. Session-scoped (a page
- * reload creates a fresh GraphManager, resetting the flag) — matches removeGraph's own "graph
- * files are not deleted" precedent, so nothing durable needs undoing here either. Returns true when
- * the empty-graph screen was shown — [StelekitApp] should return early in that case.
- */
-@Composable
-private fun emptyGraphGate(
-    graphManager: GraphManager,
-    fileSystem: FileSystem,
-    scope: kotlinx.coroutines.CoroutineScope,
-    activeGraphId: GraphId?,
-): Boolean {
-    val graphsExplicitlyEmptied by graphManager.graphsExplicitlyEmptied.collectAsState()
-    if (!(graphsExplicitlyEmptied && activeGraphId == null)) return false
-
-    var emptyStateError by remember { mutableStateOf<String?>(null) }
-    val onEmptyGraphError: (String?) -> Unit = { emptyStateError = it }
-    EmptyGraphScreen(
-        onCreateGraph = buildCreateGraphHandler(fileSystem, graphManager, scope, onEmptyGraphError),
-        errorMessage = emptyStateError,
-        onTryDemo = { scope.launch { tryLoadDemoGraph(graphManager, onEmptyGraphError) } },
-    )
-    return true
-}
-
-/**
- * ON_RESUME re-check: detect permission revoked mid-session (e.g. user cleared app storage from
- * Android Settings while the app was backgrounded). The wasGrantedBeforePause guard prevents a
- * spurious PermissionRecoveryScreen flash when returning from the folder picker, which also
- * causes an ON_PAUSE → ON_RESUME cycle. [permissionGranted] is a live-read lambda (not a plain
- * Boolean) so the effect — created once per [lifecycleOwner] — always observes the current value.
- */
-@Composable
-private fun ObservePermissionRevocationOnResume(
-    fileSystem: FileSystem,
-    permissionGranted: () -> Boolean,
-    onPermissionGrantedChange: (Boolean) -> Unit,
-) {
-    val lifecycleOwner = LocalLifecycleOwner.current
-    // rememberUpdatedState, not a direct reference: the effect is intentionally keyed on
-    // lifecycleOwner alone (see class doc) and must not restart just because these lambdas'
-    // identity changed on a recomposition — it still calls today's version of each on every
-    // lifecycle event.
-    val currentPermissionGranted by rememberUpdatedState(permissionGranted)
-    val currentOnPermissionGrantedChange by rememberUpdatedState(onPermissionGrantedChange)
-    DisposableEffect(lifecycleOwner) {
-        var priorPermissionState =
-            if (currentPermissionGranted()) PriorPermissionState.WAS_GRANTED else PriorPermissionState.WAS_NOT_GRANTED
-        val observer = LifecycleEventObserver { _, event ->
-            priorPermissionState = nextPriorPermissionState(
-                event = event,
-                priorPermissionState = priorPermissionState,
-                permissionGranted = currentPermissionGranted,
-                fileSystem = fileSystem,
-                onPermissionGrantedChange = currentOnPermissionGrantedChange,
-            )
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
-}
 
 /** Whether storage permission was granted the last time the app was paused. */
 private enum class PriorPermissionState { WAS_GRANTED, WAS_NOT_GRANTED }
@@ -491,7 +235,7 @@ private fun nextPriorPermissionState(
 }
 
 /** Builds [EmptyGraphScreen]'s `onCreateGraph` handler — null when the platform has no native picker. */
-private fun buildCreateGraphHandler(
+internal fun buildCreateGraphHandler(
     fileSystem: FileSystem,
     graphManager: GraphManager,
     scope: kotlinx.coroutines.CoroutineScope,
@@ -518,7 +262,7 @@ private suspend fun createGraphViaPicker(
 }
 
 /** Body of [StelekitApp]'s `onTryDemo` handler for [EmptyGraphScreen]. */
-private suspend fun tryLoadDemoGraph(graphManager: GraphManager, onError: (String) -> Unit) {
+internal suspend fun tryLoadDemoGraph(graphManager: GraphManager, onError: (String) -> Unit) {
     try {
         val graphId = graphManager.addDemoGraph()
         graphManager.switchGraph(graphId)
@@ -530,14 +274,14 @@ private suspend fun tryLoadDemoGraph(graphManager: GraphManager, onError: (Strin
 }
 
 /** Bundles [pickFolderAndUpdateState]'s three result callbacks (Parameter Object pattern). */
-private class FolderPickCallbacks(
+internal class FolderPickCallbacks(
     val onPathPicked: (String) -> Unit,
     val onPermissionGrantedChange: (Boolean) -> Unit,
     val onError: (String?) -> Unit,
 )
 
 /** Runs [pickFolderAndUpdateState] on [scope] — kept as its own function so call sites stay a single statement. */
-private fun launchFolderPick(
+internal fun launchFolderPick(
     scope: kotlinx.coroutines.CoroutineScope,
     fileSystem: FileSystem,
     appLogger: Logger,
