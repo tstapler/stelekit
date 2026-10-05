@@ -625,6 +625,8 @@ class StelekitViewModel(
         loadGraph(path)
     }
 
+    fun loadGraph(notesPath: dev.stapler.stelekit.model.EffectiveNotesPath) = loadGraph(notesPath.value)
+
     @OptIn(DirectRepositoryWrite::class)
     fun loadGraph(path: String) {
         // Set loading state synchronously so callers observe isFullyLoaded=false immediately,

@@ -1094,6 +1094,25 @@ class GraphManager(
             )
         }
     }
+    suspend fun updateWikiSubdir(graphId: GraphId, wikiSubdir: String) {
+        updateGraphField(graphId) { info ->
+            val root = info.detectedRepoRoot ?: info.path
+            val effectivePath = if (wikiSubdir.isEmpty()) root else "$root/$wikiSubdir"
+            val hasContent = fileSystem.directoryExists("$effectivePath/pages") || fileSystem.directoryExists("$effectivePath/journals")
+            val candidates = info.directoryScanCandidates
+            val contentMismatch = !hasContent && candidates.isNotEmpty()
+            info.copy(
+                detectedWikiSubdir = wikiSubdir,
+                effectivePath = effectivePath,
+                contentMismatchDetected = contentMismatch
+            )
+        }
+        val gitConfigRepo = createGitConfigRepository()
+        val existingConfig = gitConfigRepo?.getConfig(graphId.value)?.getOrNull()
+        if (existingConfig != null) {
+            gitConfigRepo.saveConfig(existingConfig.copy(wikiSubdir = wikiSubdir))
+        }
+    }
 
     suspend fun setGitDetectionDismissed(graphId: GraphId, dismissed: Boolean) =
         updateGraphField(graphId) { it.copy(gitDetectionDismissed = dismissed) }
