@@ -50,6 +50,11 @@ class JvmGitCloneWorkerLauncher(private val gitRepository: GitRepository) : GitC
         currentClone = deferred
         try {
             return deferred.await()
+        } catch (e: CancellationException) {
+            // The clone runs in this launcher's own scope, so a cancelled caller would otherwise
+            // leave it running detached.
+            deferred.cancel()
+            throw e
         } finally {
             currentClone = null
         }

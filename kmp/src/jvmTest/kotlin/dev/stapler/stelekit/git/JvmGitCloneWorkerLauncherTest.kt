@@ -8,7 +8,12 @@ import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.testsupport.cloningStub
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -71,5 +76,28 @@ class JvmGitCloneWorkerLauncherTest {
 
         val error = assertIs<Either.Left<DomainError.GitError>>(result)
         assertEquals(expectedError, error.value)
+    }
+
+    @Test
+    fun `cancelling the launchClone() caller cancels the in-flight clone`() = runBlocking {
+        val started = CompletableDeferred<Unit>()
+        val cloneCancelled = CompletableDeferred<Unit>()
+        val fakeRepo = cloningStub { _, _, _, _ ->
+            started.complete(Unit)
+            try {
+                awaitCancellation()
+            } finally {
+                cloneCancelled.complete(Unit)
+            }
+        }
+        val launcher = JvmGitCloneWorkerLauncher(fakeRepo)
+
+        val caller = launch {
+            launcher.launchClone("g", "https://example.invalid/g.git", "/tmp/g", GitAuth.None, {}, {}, null)
+        }
+        withTimeout(5_000) { started.await() }
+        caller.cancel()
+
+        withTimeout(5_000) { cloneCancelled.await() }
     }
 }
