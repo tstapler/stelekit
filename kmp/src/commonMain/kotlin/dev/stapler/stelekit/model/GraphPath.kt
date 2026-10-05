@@ -73,13 +73,18 @@ sealed interface GraphLocation {
             detectedWikiSubdir: String? = null,
             effectivePathStr: String? = null,
         ): GraphLocation {
-            val subdir = WikiSubdir(detectedWikiSubdir ?: "")
+            val root = detectedRepoRoot ?: path
+            val subdirStr = detectedWikiSubdir
+                ?: if (effectivePathStr != null && effectivePathStr.startsWith(root)) {
+                    effectivePathStr.removePrefix(root).trimStart('/')
+                } else ""
+            val subdir = WikiSubdir(subdirStr)
             if (path == "__demo__") return Demo
             val isSaf = path.startsWith("saf://") || path.startsWith("content://")
             return if (isSaf) {
                 Saf(SafUri(path), subdir)
             } else {
-                Local(detectedRepoRoot ?: path, subdir)
+                Local(root, subdir)
             }
         }
     }

@@ -1089,6 +1089,7 @@ class GraphManager(
             val candidates = info.directoryScanCandidates
             val contentMismatch = !hasContent && candidates.isNotEmpty()
             info.copy(
+                detectedWikiSubdir = wikiSubdir,
                 effectivePath = effectivePath,
                 contentMismatchDetected = contentMismatch
             )

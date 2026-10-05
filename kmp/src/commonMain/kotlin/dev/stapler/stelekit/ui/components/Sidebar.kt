@@ -34,6 +34,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Sync
+import dev.stapler.stelekit.ui.screens.git.looksLikeUri
+import dev.stapler.stelekit.ui.screens.git.wikiSubdirError
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -671,7 +673,8 @@ fun GraphSwitcher(
         var newName by remember(editingGraph.id.value) { mutableStateOf(editingGraph.displayName) }
         var newDescription by remember(editingGraph.id.value) { mutableStateOf(editingGraph.description) }
         var newWikiSubdir by remember(editingGraph.id.value) { mutableStateOf(editingGraph.detectedWikiSubdir ?: "") }
-        val edited = newName.isNotBlank() &&
+        val subdirErr = wikiSubdirError(newWikiSubdir) ?: if (looksLikeUri(newWikiSubdir)) "URI schemes are not allowed" else null
+        val edited = newName.isNotBlank() && subdirErr == null &&
             (newName != editingGraph.displayName || newDescription != editingGraph.description || newWikiSubdir != (editingGraph.detectedWikiSubdir ?: ""))
         AlertDialog(
             onDismissRequest = { graphToEdit = null },
@@ -698,6 +701,8 @@ fun GraphSwitcher(
                         value = newWikiSubdir,
                         onValueChange = { newWikiSubdir = it },
                         label = { Text("Notes Subdirectory (optional)") },
+                        isError = subdirErr != null,
+                        supportingText = subdirErr?.let { err -> { Text(err) } },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )

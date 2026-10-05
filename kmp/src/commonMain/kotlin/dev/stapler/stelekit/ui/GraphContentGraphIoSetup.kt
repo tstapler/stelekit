@@ -43,7 +43,7 @@ internal fun rememberGraphContentGraphIoStack(
     val imageIo = rememberImageIoSetup(effectiveFileSystem, repos, activeGraphPath, graphContentLogger)
 
     val sidecarManager = imageIo.sidecarManager
-    val graphLoader = remember(effectiveFileSystem, repos, sidecarManager) {
+    val graphLoader = remember(effectiveFileSystem, repos, sidecarManager, activeGraphPath) {
         // graphId threads through to GraphFileWatcher so MoveInProgressFlag actually guards
         // this graph's watcher poll loop during a relocate/link (Story 1.3.2).
         repos.createGraphLoader(

@@ -4,6 +4,8 @@
 
 package dev.stapler.stelekit.ui
 
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
@@ -40,7 +42,8 @@ internal fun rememberGraphContentVaultSetup(
     fileSystem: FileSystem,
     cryptoEngine: dev.stapler.stelekit.vault.CryptoEngine?,
 ): GraphContentVaultSetup {
-    val activeGraphInfo = remember { graphManager.getActiveGraphInfo() }
+    val graphRegistry by graphManager.graphRegistry.collectAsState()
+    val activeGraphInfo = remember(graphRegistry) { graphManager.getActiveGraphInfo() }
     val activeGraphPath = activeGraphInfo?.effectivePath ?: activeGraphInfo?.path ?: ""
 
     val effectiveFileSystem: FileSystem = remember(activeGraphInfo?.isDemo) {
