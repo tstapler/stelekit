@@ -135,24 +135,33 @@ class WorkManagerSyncSchedulerRetryOwnerTest {
         assertIs<ListenableWorker.Result.Failure>(result)
     }
 
-    // NOTE (Story 1.2.3, validation.md's slow-path row): a real end-to-end test of the slow path
-    // — seed a real on-disk git_config row, point AndroidGitRepository.fetch() at an unreachable
-    // remote, let RetryPolicies.gitTransportTransient's real 5-retry budget exhaust — is not
-    // automatable in this Robolectric environment. Two stacked, pre-existing infra blockers were
-    // found while attempting it: (1) DriverFactory's production default (RequeryDriverProvider)
-    // links a native `sqlite3x` binary absent from java.library.path under Robolectric's
-    // plain-JVM process (UnsatisfiedLinkError) — worked around by swapping
-    // DriverFactory.driverProvider to a Robolectric-compatible FrameworkSQLiteOpenHelperFactory,
-    // as the two tests above rely on for DB-adjacent setup — but (2) Robolectric's own bundled
-    // native SQLite build lacks the `fts5` module this app's schema requires at CREATE TABLE
-    // time (`SQLiteException: no such module: fts5`), and *any* driver creation against a fresh
-    // DB hits this — which `doWork()`'s slow path always does internally, regardless of test
-    // setup. The slow path's production fix (checking fetch()'s Either result — the same
-    // discard-bug the fast path had — and Result.failure() on exhaustion, both above) is
-    // implemented and compiles; only this dedicated regression test is blocked. Skipped
-    // alongside validation.md's StubGitRepository-dependent Story 1.2.2 integration row (Story
-    // 6.1.1, not yet built) — both should be revisited once GitSyncWorker's slow path gets an
-    // injectable GitRepository/DB seam, or Robolectric's SQLite shadow gains fts5 support.
+    // Story 1.2.3 slow path: exercised via runSlowPathFetch, the DB-free seam GitSyncWorker.doWork()
+    // delegates to (a real driver needs the `fts5` SQLite module Robolectric's build lacks).
+    private fun repoReturning(result: Either<DomainError.GitError, FetchResult>) =
+        object : StubGitRepository() {
+            override suspend fun fetch(config: GitConfig) = result
+        }
+
+    @Test
+    fun `slow path returns Result failure(), not retry(), when fetch() returns Left(RetryExhausted)`() {
+        val result = runBlocking {
+            runSlowPathFetch(
+                loadConfig = { sampleConfig },
+                gitRepository = repoReturning(
+                    DomainError.GitError.RetryExhausted(5, DomainError.GitError.FetchFailed("boom")).left(),
+                ),
+            )
+        }
+        assertIs<ListenableWorker.Result.Failure>(result)
+    }
+
+    @Test
+    fun `slow path returns success when fetch() succeeds, and success when no config row exists`() {
+        val ok = runBlocking { runSlowPathFetch({ sampleConfig }, repoReturning(FetchResult(false, 0).right())) }
+        assertIs<ListenableWorker.Result.Success>(ok)
+        val noRow = runBlocking { runSlowPathFetch({ null }, repoReturning(FetchResult(false, 0).right())) }
+        assertIs<ListenableWorker.Result.Success>(noRow)
+    }
 
     /**
      * Drives [GitSyncWorker] through the real [WorkManager] enqueue/execution path (not a direct

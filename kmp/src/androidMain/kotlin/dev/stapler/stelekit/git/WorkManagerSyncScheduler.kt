@@ -7,6 +7,7 @@ import android.content.Context
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ListenableWorker
 import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkInfo
@@ -169,34 +170,19 @@ class GitSyncWorker(
             CredentialStore.init(applicationContext)
             DriverFactory.setContext(applicationContext)
 
-            val factory = DriverFactory()
-            val dbUrl = factory.getDatabaseUrl(graphId)
-            val driver = factory.createDriver(dbUrl)
-            val db = dev.stapler.stelekit.db.SteleDatabase(driver)
-
-            val row = db.steleDatabaseQueries.selectGitConfig(graphId).executeAsOneOrNull()
-                ?: run { driver.close(); return Result.success() }
-
-            val config = row.toGitConfig()
             // A throwaway, uninitialized PlatformFileSystem() is deliberately fine here (unlike
             // MainActivity's construction site — see buildGitRepository): fetch() only updates
             // remote-tracking refs and never touches the working tree, so no ensureFresh/shadow
             // write-back happens on this call path even though resolveForJGit's shadowWorktreeFor
             // still correctly targets the shadow directory. The user's next foreground merge()
             // call is what surfaces fetched changes into SAF (plan.md Task 5.1.2b).
-            val gitRepository = AndroidGitRepository(
-                context = applicationContext,
-                fileSystem = PlatformFileSystem(),
+            runSlowPathFetch(
+                loadConfig = { loadGitConfigFromDb(graphId) },
+                gitRepository = AndroidGitRepository(
+                    context = applicationContext,
+                    fileSystem = PlatformFileSystem(),
+                ),
             )
-            // As in the fast path above: fetch() communicates failure via Either.Left, not by
-            // throwing, so the result must be inspected here too (Story 1.2.3).
-            val fetchResult = gitRepository.fetch(config)
-
-            driver.close()
-            when (fetchResult) {
-                is Either.Left -> Result.failure()
-                is Either.Right -> Result.success()
-            }
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
@@ -204,6 +190,34 @@ class GitSyncWorker(
             // runGitTransportOpWithRetry — see the fast path's identical comment above.
             Result.failure()
         }
+    }
+
+    private fun loadGitConfigFromDb(graphId: String): dev.stapler.stelekit.git.model.GitConfig? {
+        val factory = DriverFactory()
+        val driver = factory.createDriver(factory.getDatabaseUrl(graphId))
+        try {
+            val db = dev.stapler.stelekit.db.SteleDatabase(driver)
+            return db.steleDatabaseQueries.selectGitConfig(graphId).executeAsOneOrNull()?.toGitConfig()
+        } finally {
+            driver.close()
+        }
+    }
+}
+
+/**
+ * The slow path's decision logic, split from [GitSyncWorker.doWork]'s DB/driver setup so it is
+ * testable without a real SQLite driver (Robolectric's bundled SQLite lacks the `fts5` module the
+ * app schema needs). fetch() reports failure via `Either.Left`, not by throwing, so the result
+ * must be inspected (Story 1.2.3, ADR-002: failure, never retry — the retry loop already ran).
+ */
+internal suspend fun runSlowPathFetch(
+    loadConfig: suspend () -> dev.stapler.stelekit.git.model.GitConfig?,
+    gitRepository: GitRepository,
+): ListenableWorker.Result {
+    val config = loadConfig() ?: return ListenableWorker.Result.success()
+    return when (gitRepository.fetch(config)) {
+        is Either.Left -> ListenableWorker.Result.failure()
+        is Either.Right -> ListenableWorker.Result.success()
     }
 }
 
