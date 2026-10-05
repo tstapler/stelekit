@@ -705,24 +705,16 @@ class BlockStateManager(
      * preserved at the end of the list so they don't disappear on reactive re-emissions.
      */
     private fun mergeBlocks(localBlocks: List<Block>, incomingBlocks: List<Block>): List<Block> {
-        val merged = incomingBlocks.map { incoming ->
-            val dirtyVersion = _dirtyBlocks.value[incoming.uuid.value]
-            if (dirtyVersion != null && dirtyVersion > incoming.version) {
-                // Block has a local edit not yet confirmed — keep local version
-                val local = localBlocks.find { it.uuid == incoming.uuid }
-                local ?: incoming
-            } else {
-                // DB version is current — accept it and clear dirty flag
-                _dirtyBlocks.update { it - incoming.uuid.value }
-                incoming
-            }
+        val result = BlockTreeAlgorithms.mergeBlocks(
+            localBlocks = localBlocks,
+            incomingBlocks = incomingBlocks,
+            dirtyBlocks = _dirtyBlocks.value,
+            pendingNewBlockUuids = pendingNewBlockUuids.value,
+        )
+        if (result.clearedDirtyUuids.isNotEmpty()) {
+            _dirtyBlocks.update { it - result.clearedDirtyUuids }
         }
-        // Append pending new blocks that aren't yet in the DB (won't appear in incomingBlocks
-        // until the write commits). Once the write commits, they'll be in incomingBlocks and
-        // removed from pendingNewBlockUuids before the next emission.
-        val incomingUuids = incomingBlocks.mapTo(HashSet()) { it.uuid }
-        val pending = localBlocks.filter { it.uuid.value in pendingNewBlockUuids.value && it.uuid !in incomingUuids }
-        return if (pending.isEmpty()) merged else merged + pending
+        return result.mergedBlocks
     }
 
     // ---- In-place patch helpers (Phase 3 push path) ----
@@ -760,11 +752,15 @@ class BlockStateManager(
      * voice capture appending via JournalService.appendBlockToPage -> DatabaseWriteActor.saveBlock)
      * has no existing entry to replace and must not be silently dropped. */
     private fun mergeIncomingBlock(pageBlocks: List<Block>, incoming: Block): List<Block> {
-        if (pageBlocks.none { it.uuid == incoming.uuid }) return pageBlocks + incoming
-        return pageBlocks.map { block ->
-            if (block.uuid != incoming.uuid) block
-            else resolveDirtyConflict(block.uuid, incoming.version, onKeepLocal = { block }, onAccept = { incoming })
+        val result = BlockTreeAlgorithms.mergeIncomingBlock(
+            pageBlocks = pageBlocks,
+            incoming = incoming,
+            dirtyBlocks = _dirtyBlocks.value,
+        )
+        if (result.clearedDirtyUuids.isNotEmpty()) {
+            _dirtyBlocks.update { it - result.clearedDirtyUuids }
         }
+        return result.mergedBlocks
     }
 
     private fun applyBlockReplace(pageUuidStr: String, incoming: Block) {

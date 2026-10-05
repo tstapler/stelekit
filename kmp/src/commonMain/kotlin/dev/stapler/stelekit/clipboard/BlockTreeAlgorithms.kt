@@ -96,4 +96,72 @@ object BlockTreeAlgorithms {
 
         return result
     }
+
+    data class MergeResult(
+        val mergedBlocks: List<Block>,
+        val clearedDirtyUuids: Set<String>,
+    )
+
+    /**
+     * Merge incoming DB blocks with local state using dirty-set semantics.
+     * Dirty blocks keep their local version; clean blocks accept the DB version.
+     * Pending new blocks (optimistically inserted, DB write still in-flight) are
+     * preserved at the end of the list so they don't disappear on reactive re-emissions.
+     */
+    fun mergeBlocks(
+        localBlocks: List<Block>,
+        incomingBlocks: List<Block>,
+        dirtyBlocks: Map<String, Long>,
+        pendingNewBlockUuids: Set<String>,
+    ): MergeResult {
+        val clearedDirty = mutableSetOf<String>()
+        val merged = incomingBlocks.map { incoming ->
+            val dirtyVersion = dirtyBlocks[incoming.uuid.value]
+            if (dirtyVersion != null && dirtyVersion > incoming.version) {
+                val local = localBlocks.find { it.uuid == incoming.uuid }
+                local ?: incoming
+            } else {
+                if (dirtyBlocks.containsKey(incoming.uuid.value)) {
+                    clearedDirty.add(incoming.uuid.value)
+                }
+                incoming
+            }
+        }
+        val incomingUuids = incomingBlocks.mapTo(HashSet()) { it.uuid }
+        val pending = localBlocks.filter { it.uuid.value in pendingNewBlockUuids && it.uuid !in incomingUuids }
+        return MergeResult(
+            mergedBlocks = if (pending.isEmpty()) merged else merged + pending,
+            clearedDirtyUuids = clearedDirty,
+        )
+    }
+
+    /**
+     * Reconciles a single incoming block against existing page blocks.
+     */
+    fun mergeIncomingBlock(
+        pageBlocks: List<Block>,
+        incoming: Block,
+        dirtyBlocks: Map<String, Long>,
+    ): MergeResult {
+        val clearedDirty = mutableSetOf<String>()
+        if (pageBlocks.none { it.uuid == incoming.uuid }) {
+            return MergeResult(pageBlocks + incoming, clearedDirty)
+        }
+        val merged = pageBlocks.map { block ->
+            if (block.uuid != incoming.uuid) {
+                block
+            } else {
+                val dirtyVersion = dirtyBlocks[block.uuid.value]
+                if (dirtyVersion != null && dirtyVersion > incoming.version) {
+                    block
+                } else {
+                    if (dirtyBlocks.containsKey(block.uuid.value)) {
+                        clearedDirty.add(block.uuid.value)
+                    }
+                    incoming
+                }
+            }
+        }
+        return MergeResult(merged, clearedDirty)
+    }
 }
