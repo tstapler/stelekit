@@ -175,8 +175,16 @@ class WorkManagerSyncSchedulerRetryOwnerTest {
         val workManager = WorkManager.getInstance(context)
         workManager.enqueue(request).result.get()
 
-        val info = workManager.getWorkInfoById(request.id).get()
-        assertEquals(WorkInfo.State.FAILED, info.state, "must not be re-enqueued (ENQUEUED/RUNNING) after Result.failure()")
+        // GitSyncWorker is a CoroutineWorker: it runs on a coroutine dispatcher, not the test
+        // SynchronousExecutor, so the state right after enqueue can still be RUNNING. Wait for a
+        // terminal state; a Result.retry() would surface as ENQUEUED and never terminate.
+        val deadline = System.nanoTime() + 10_000_000_000L
+        var state = workManager.getWorkInfoById(request.id).get().state
+        while (!state.isFinished && state != WorkInfo.State.ENQUEUED && System.nanoTime() < deadline) {
+            Thread.sleep(25)
+            state = workManager.getWorkInfoById(request.id).get().state
+        }
+        assertEquals(WorkInfo.State.FAILED, state, "must not be re-enqueued (ENQUEUED/RUNNING) after Result.failure()")
     }
 
     companion object {
