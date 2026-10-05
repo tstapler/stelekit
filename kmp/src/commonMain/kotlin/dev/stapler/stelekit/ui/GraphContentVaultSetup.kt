@@ -41,7 +41,7 @@ internal fun rememberGraphContentVaultSetup(
     cryptoEngine: dev.stapler.stelekit.vault.CryptoEngine?,
 ): GraphContentVaultSetup {
     val activeGraphInfo = remember { graphManager.getActiveGraphInfo() }
-    val activeGraphPath = activeGraphInfo?.path ?: ""
+    val activeGraphPath = activeGraphInfo?.effectivePath ?: activeGraphInfo?.path ?: ""
 
     val effectiveFileSystem: FileSystem = remember(activeGraphInfo?.isDemo) {
         if (activeGraphInfo?.isDemo == true) DemoFileSystem() else fileSystem

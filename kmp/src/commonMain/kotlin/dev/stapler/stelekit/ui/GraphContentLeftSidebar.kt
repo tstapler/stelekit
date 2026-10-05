@@ -125,6 +125,11 @@ internal fun GraphContentLeftSidebar(
                 viewModel.sendSnackbar("Failed to rename graph")
             }
         },
+        onUpdateWikiSubdir = { id, newSubdir ->
+            inputs.scope.launch {
+                graphManager.updateWikiSubdir(GraphId(id), newSubdir)
+            }
+        },
         onRelinkHostDirectory = { id -> relinkHostDirectory(inputs, deps, viewModel, id) },
         supportsHostDirectoryLink = fileSystem.supportsHostDirectoryLink,
         storageLocationResolver = inputs.storageLocationResolver,

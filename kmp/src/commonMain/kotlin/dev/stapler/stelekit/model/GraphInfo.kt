@@ -39,7 +39,19 @@ data class GraphInfo(
     val description: String = "",
     /** Directory scanning candidates discovered during wiki-subdir-UX detection. */
     val directoryScanCandidates: List<DirectoryScanResult> = emptyList(),
-)
+) {
+    val effectiveNotesPath: EffectiveNotesPath
+        get() = EffectiveNotesPath(effectivePath ?: path)
+
+    val wikiSubdirObj: WikiSubdir
+        get() = WikiSubdir(detectedWikiSubdir ?: "")
+
+    val repoRootObj: RepoRoot
+        get() = RepoRoot(detectedRepoRoot ?: path)
+
+    val location: GraphLocation
+        get() = GraphLocation.from(path, detectedRepoRoot, detectedWikiSubdir, effectivePath)
+}
 
 /**
  * Registry of all known graphs and which one is active.
