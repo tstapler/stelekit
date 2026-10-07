@@ -51,7 +51,8 @@ class RecentPagesTest {
     private fun makeViewModel(
         pageRepo: FakePageRepository,
         settings: Settings,
-        graphPath: String
+        graphPath: String,
+        initialGraphPathProvider: () -> String? = { null },
     ): StelekitViewModel {
         settings.putString("lastGraphPath", graphPath)
         val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
@@ -80,8 +81,30 @@ class RecentPagesTest {
                 platformSettings = settings,
                 scope = scope,
                 blockStateManager = bsm,
+                initialGraphPathProvider = initialGraphPathProvider,
             )
         ).also { viewModelRef = it }
+    }
+
+    // -------------------------------------------------------------------------
+    // The registry (via initialGraphPathProvider) owns the graph path; the legacy
+    // lastGraphPath setting is only a fallback and must never override it.
+    // -------------------------------------------------------------------------
+    @Test
+    fun initialGraphPath_follows_the_registry_over_a_stale_legacy_setting() = runBlocking {
+        val vm = makeViewModel(
+            FakePageRepository(emptyList()), InMemorySettings(), "/tmp/stale-other-graph",
+            initialGraphPathProvider = { "/tmp/registry-graph/logseq" },
+        )
+
+        assertEquals("/tmp/registry-graph/logseq", vm.uiState.value.currentGraphPath)
+    }
+
+    @Test
+    fun initialGraphPath_falls_back_to_the_legacy_setting_without_a_registry_graph() = runBlocking {
+        val vm = makeViewModel(FakePageRepository(emptyList()), InMemorySettings(), "/tmp/legacy-graph")
+
+        assertEquals("/tmp/legacy-graph", vm.uiState.value.currentGraphPath)
     }
 
     // -------------------------------------------------------------------------

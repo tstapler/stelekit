@@ -358,7 +358,8 @@ class StelekitViewModel(
         AppState(
             isLoading = true,
             onboardingCompleted = platformSettings.getBoolean("onboardingCompleted", false),
-            currentGraphPath = platformSettings.getString("lastGraphPath", "").ifEmpty { null },
+            currentGraphPath = deps.initialGraphPathProvider()?.ifEmpty { null }
+                ?: platformSettings.getString("lastGraphPath", "").ifEmpty { null },
             isLeftHanded = platformSettings.getBoolean("isLeftHanded", false),
             isLibsqlDriverEnabled = platformSettings.getBoolean("db.libsql.enabled", false),
             defaultSection = SectionId.fromDbString(platformSettings.getString("defaultSection", "")),
@@ -471,7 +472,7 @@ class StelekitViewModel(
         // Initialize graph if path exists
         val path = _uiState.value.currentGraphPath
         val onboarded = _uiState.value.onboardingCompleted
-        logger.info("init: lastGraphPath='$path' onboardingCompleted=$onboarded")
+        logger.info("init: graphPath='$path' onboardingCompleted=$onboarded")
         if (path != null && onboarded) {
             loadGraph(path)
         }

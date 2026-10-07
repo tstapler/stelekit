@@ -241,7 +241,8 @@ class GraphManager(
                 // and must survive restarts.
                 val refreshed = cleanedRegistry.copy(
                     graphs = cleanedRegistry.graphs.map { graph ->
-                        if (graph.displayName.isBlank()) graph.copy(displayName = fileSystem.displayNameForPath(graph.path)) else graph
+                        val named = if (graph.displayName.isBlank()) graph.copy(displayName = fileSystem.displayNameForPath(graph.path)) else graph
+                        clearMalformedSafDetection(named)
                     }
                 )
                 _graphRegistry.value = refreshed
@@ -798,7 +799,11 @@ class GraphManager(
         val currentGraphId = registry.activeGraphId
         val isAlreadyTargetGraph = currentGraphId == id && !forceReinit
         val hasReadyOrInitializingRepositories = _activeRepositorySet.value != null || activeGraphJobs.containsKey(id)
-        if (isAlreadyTargetGraph && hasReadyOrInitializingRepositories) return
+        if (isAlreadyTargetGraph && hasReadyOrInitializingRepositories) {
+            // A picker flow may have just overwritten lastGraphPath with the raw repo root.
+            persistNotesPath(graphInfo)
+            return
+        }
         currentGraphId?.let {
             activeGraphJobs.remove(it)?.cancel()
             evictCoordinatorFor(it)
@@ -937,6 +942,8 @@ class GraphManager(
             }
         }
 
+        persistNotesPath(getGraphInfo(id) ?: graphInfo)
+
         // Update active graph — use atomic update {} to avoid clobbering concurrent registry
         // mutations (e.g. git detection updating detectedRepoRoot on a background IO coroutine).
         _graphRegistry.update { it.copy(activeGraphId = id) }
@@ -1018,6 +1025,31 @@ class GraphManager(
         }
     }
 
+    /**
+     * Older builds ran POSIX git-root detection over `saf://` URIs and persisted garbage
+     * (`detectedRepoRoot="saf:/"`, `detectedWikiSubdir` = the whole encoded URI). detectGitRoot() now
+     * skips SAF paths, so drop the stale fields rather than let them feed effectivePath.
+     */
+    private fun clearMalformedSafDetection(graph: GraphInfo): GraphInfo {
+        val isSaf = graph.path.startsWith("saf://") || graph.path.startsWith("content://")
+        val malformed = graph.detectedRepoRoot?.let { it.startsWith("saf:") || it.startsWith("content:") } == true ||
+            graph.detectedWikiSubdir?.contains("://") == true ||
+            graph.detectedWikiSubdir?.startsWith("content%3A") == true
+        return if (isSaf && malformed) {
+            graph.copy(detectedRepoRoot = null, detectedWikiSubdir = null, effectivePath = null)
+        } else graph
+    }
+
+    /**
+     * Mirrors [info]'s notes folder into the legacy `lastGraphPath` setting for readers outside the
+     * registry (the sync CLI, single-graph migration). StelekitViewModel no longer reads it while a
+     * graph is active — it takes the path from the registry via initialGraphPathProvider.
+     */
+    private fun persistNotesPath(info: GraphInfo) {
+        if (info.isDemo) return
+        platformSettings.putString("lastGraphPath", info.effectiveNotesPath.value)
+    }
+
     private suspend fun detectGitRoot(graphPath: String): Pair<String, String>? {
         // Android SAF-opened graphs are "saf://{encodedTreeUri}/{relativePath}" (see
         // PlatformFileSystem.toSafRoot), never a literal "content://" prefix — this check never
@@ -1067,6 +1099,8 @@ class GraphManager(
         _graphRegistry.update { registry ->
             registry.copy(graphs = registry.graphs.map { g -> if (g.id == graphId) transform(g) else g })
         }
+        // Detection can resolve effectivePath (repo root + wikiSubdir) after switchGraph already ran.
+        if (_graphRegistry.value.activeGraphId == graphId) getGraphInfo(graphId)?.let(::persistNotesPath)
         saveRegistry()
     }
 

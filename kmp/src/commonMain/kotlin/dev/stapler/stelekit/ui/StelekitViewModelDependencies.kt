@@ -75,6 +75,12 @@ data class StelekitViewModelDependencies(
     // ── Git sync ─────────────────────────────────────────────────────────────
     val activeGitSyncService: StateFlow<GitSyncService?> = MutableStateFlow(null),
     val activeGraphIdProvider: () -> String? = { null },
+    /**
+     * The active graph's notes folder (repo root + wikiSubdir), resolved from the graph registry.
+     * Null or empty falls back to the legacy `lastGraphPath` setting (first launch, demo graph,
+     * tests) — the registry is the source of truth whenever a real graph is active.
+     */
+    val initialGraphPathProvider: () -> String? = { null },
     val onDismissGitDetection: (suspend (graphId: String) -> Unit)? = null,
     val onDismissBrowserOnlySyncBanner: (suspend (graphId: String) -> Unit)? = null,
     val onDismissContentMismatchBanner: (suspend (graphId: String) -> Unit)? = null,
