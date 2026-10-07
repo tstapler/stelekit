@@ -484,6 +484,9 @@ class StelekitViewModel(
 
     private val pageSize = 50
 
+    private fun cachedGraphPathKey(): String =
+        activeGraphIdProvider()?.let { "$CACHED_GRAPH_PATH_KEY:$it" } ?: CACHED_GRAPH_PATH_KEY
+
     private fun observeSpecialPages() {
         scope.launch {
             // Load recents for the current graph before starting collection
@@ -602,7 +605,8 @@ class StelekitViewModel(
             blockRepository.clear()
             
             // Clear cached path to force GraphLoader to do a full scan
-            platformSettings.putString("cached_graph_path", "")
+            platformSettings.putString(cachedGraphPathKey(), "")
+            platformSettings.putString(CACHED_GRAPH_PATH_KEY, "") // legacy seed, else loadGraph falls back to it
             
             // Reload
             loadGraph(path)
@@ -654,7 +658,11 @@ class StelekitViewModel(
                     
                     logger.info("Loading graph progressively from: $path (Page count: $pageCount)")
                     
-                    var cachedPath = platformSettings.getString("cached_graph_path", "")
+                    // Per-graph marker: a switch must not look like "same graph" (stale cache) or wipe the
+                    // other graph's incremental cache. The legacy global key seeds a graph's first load.
+                    val cacheKey = cachedGraphPathKey()
+                    var cachedPath = platformSettings.getString(cacheKey, "")
+                        .ifEmpty { platformSettings.getString(CACHED_GRAPH_PATH_KEY, "") }
                     
                     if (pageCount == 0L) {
                         logger.info("Database is empty - forcing full re-index")
@@ -665,7 +673,7 @@ class StelekitViewModel(
                         logger.info("Switching graph from '$cachedPath' to '$path' - Clearing persistent cache")
                         pageRepository.clear()
                         blockRepository.clear()
-                        platformSettings.putString("cached_graph_path", path)
+                        platformSettings.putString(cacheKey, path)
                     } else {
                         logger.info("Loading same graph '$path' - Keeping persistent cache for incremental load")
                     }
@@ -2337,6 +2345,7 @@ class StelekitViewModel(
         sectionManagementCoordinator.setSectionQuickToggleVisible(visible)
 
     companion object {
+        private const val CACHED_GRAPH_PATH_KEY = "cached_graph_path"
         private const val MIN_MIDNIGHT_DELAY_MS = 1_000L
     }
 }

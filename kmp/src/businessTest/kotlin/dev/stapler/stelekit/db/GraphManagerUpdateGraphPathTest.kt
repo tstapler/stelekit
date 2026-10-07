@@ -28,7 +28,8 @@ class GraphManagerUpdateGraphPathTest {
     private class RecordingSettings : Settings {
         private val delegate = StubSettings()
         private val json = Json { ignoreUnknownKeys = true }
-        val savedRegistries = mutableListOf<GraphRegistry>()
+        // Appended from the fire-and-forget detection coroutine while tests read it.
+        val savedRegistries = java.util.concurrent.CopyOnWriteArrayList<GraphRegistry>()
         override fun getBoolean(key: String, defaultValue: Boolean) = delegate.getBoolean(key, defaultValue)
         override fun putBoolean(key: String, value: Boolean) = delegate.putBoolean(key, value)
         override fun getString(key: String, defaultValue: String) = delegate.getString(key, defaultValue)

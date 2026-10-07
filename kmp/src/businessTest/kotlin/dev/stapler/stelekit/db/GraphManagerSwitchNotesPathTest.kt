@@ -9,9 +9,11 @@ import dev.stapler.stelekit.repository.GraphBackend
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
  * StelekitViewModel loads whatever `lastGraphPath` holds when GraphContent is rebuilt for a new
@@ -35,6 +37,14 @@ class GraphManagerSwitchNotesPathTest {
     private val safId = GraphId("bbbbbbbbbbbbbbbb")
     private val safPath = "saf://content%3A%2F%2Fcom.android.externalstorage.documents%2Ftree%2Fprimary%3ADocuments%2Fpersonal-wiki"
 
+    private val managers = mutableListOf<GraphManager>()
+
+    @AfterTest
+    fun shutdownManagers() {
+        managers.forEach { it.shutdown() }
+        managers.clear()
+    }
+
     private fun newManager(graphs: List<GraphInfo>, settings: StubSettings = StubSettings()): Pair<GraphManager, StubSettings> {
         settings.putString(
             "graph_registry",
@@ -45,7 +55,7 @@ class GraphManagerSwitchNotesPathTest {
             driverFactory = DriverFactory(),
             fileSystem = StubFileSystem(),
             defaultBackend = GraphBackend.IN_MEMORY,
-        )
+        ).also { managers += it }
         return manager to settings
     }
 
@@ -94,19 +104,96 @@ class GraphManagerSwitchNotesPathTest {
         assertEquals("/data/graphs/clone/logseq", settings.getString("lastGraphPath", ""))
     }
 
-    @Test
-    fun `malformed SAF detection persisted by older builds is cleared on load`() = runTest {
-        val broken = saf().copy(
-            detectedRepoRoot = "saf:/",
-            detectedWikiSubdir = "content%3A%2F%2Fcom.android.externalstorage.documents%2Ftree%2Fprimary%3Apersonal-wiki%2Flogseq",
-            effectivePath = "saf:/content%3A%2F%2Fbroken",
-        )
-        val (manager, _) = newManager(listOf(clone(), broken))
+    private class SafRow(
+        val name: String,
+        val path: String,
+        val root: String?,
+        val subdir: String?,
+        val expectCleared: Boolean,
+    )
 
-        val loaded = manager.getGraphInfo(safId)!!
-        assertNull(loaded.detectedRepoRoot)
-        assertNull(loaded.detectedWikiSubdir)
-        assertNull(loaded.effectivePath)
-        assertEquals(safPath, loaded.effectiveNotesPath.value)
+    @Test
+    fun `malformed SAF detection is cleared only for SAF graphs with garbage`() = runTest {
+        val tree = "content%3A%2F%2Fcom.android.externalstorage.documents%2Ftree%2Fprimary%3Apersonal-wiki%2Flogseq"
+        val rows = listOf(
+            SafRow("saf root + uri subdir", safPath, "saf:/", tree, expectCleared = true),
+            SafRow("saf root + encoded content subdir", safPath, null, "content%3A%2F%2Fx", expectCleared = true),
+            SafRow("content root prefix", "content://tree/x", "content://tree", null, expectCleared = true),
+            SafRow("saf with sane detection is kept", safPath, null, "logseq", expectCleared = false),
+            SafRow("non-saf path with odd values is kept", "/data/g", "saf:/", tree, expectCleared = false),
+        )
+        for (row in rows) {
+            val id = GraphId("cccccccccccccccc")
+            val g = GraphInfo(
+                id = id, path = row.path, displayName = row.name, addedAt = 0L,
+                detectedRepoRoot = row.root, detectedWikiSubdir = row.subdir, effectivePath = "stale",
+            )
+            val (manager, _) = newManager(listOf(g))
+            val loaded = manager.getGraphInfo(id)!!
+            if (row.expectCleared) {
+                assertNull(loaded.detectedRepoRoot, row.name)
+                assertNull(loaded.detectedWikiSubdir, row.name)
+                assertNull(loaded.effectivePath, row.name)
+            } else {
+                assertEquals(row.root, loaded.detectedRepoRoot, row.name)
+                assertEquals(row.subdir, loaded.detectedWikiSubdir, row.name)
+                assertEquals("stale", loaded.effectivePath, row.name)
+            }
+        }
+    }
+
+    @Test
+    fun `a wikiSubdir change on the active graph updates the mirror`() = runTest {
+        val (manager, settings) = newManager(listOf(clone(), saf()))
+        manager.awaitPendingMigration()
+
+        manager.updateWikiSubdir(cloneId, "notes")
+
+        assertEquals("/data/graphs/clone/notes", settings.getString("lastGraphPath", ""))
+    }
+
+    @Test
+    fun `a change to a non-active graph leaves the mirror on the active graph`() = runTest {
+        val (manager, settings) = newManager(listOf(clone(), saf()))
+        manager.awaitPendingMigration()
+
+        manager.updateWikiSubdir(safId, "notes")
+
+        assertEquals("/data/graphs/clone/logseq", settings.getString("lastGraphPath", ""))
+    }
+
+    @Test
+    fun `switching to the demo graph does not touch lastGraphPath`() = runTest {
+        val (manager, settings) = newManager(listOf(clone(), saf()))
+        manager.awaitPendingMigration()
+
+        manager.switchGraph(manager.addDemoGraph())
+
+        assertEquals("/data/graphs/clone/logseq", settings.getString("lastGraphPath", ""))
+    }
+
+    @Test
+    fun `relocating the graph content re-points the notes path and the mirror`() = runTest {
+        val (manager, settings) = newManager(listOf(clone(), saf()))
+        manager.awaitPendingMigration()
+
+        manager.updateGraphContentPath(cloneId, "/moved/clone")
+
+        assertEquals("/moved/clone/logseq", manager.getGraphInfo(cloneId)!!.effectiveNotesPath.value)
+        assertEquals("/moved/clone/logseq", settings.getString("lastGraphPath", ""))
+    }
+
+    @Test
+    fun `updateGraphPath drops the stale effective path of the old location`() = runTest {
+        val (manager, _) = newManager(listOf(clone(), saf()))
+        manager.awaitPendingMigration()
+
+        val result = manager.updateGraphPath(cloneId, "/new/clone")
+
+        val newId = (result as UpdateGraphPathResult.Success).newId
+        assertTrue(
+            !manager.getGraphInfo(newId)!!.effectiveNotesPath.value.startsWith("/data/graphs/clone"),
+            "effective path must not keep pointing at the old folder",
+        )
     }
 }

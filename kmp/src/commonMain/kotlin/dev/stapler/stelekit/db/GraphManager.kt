@@ -663,6 +663,8 @@ class GraphManager(
             // The new folder may not share the old repo root — force re-detection.
             detectedRepoRoot = null,
             detectedWikiSubdir = null,
+            // Falls back to the new path until the re-detection below lands.
+            effectivePath = null,
             gitDetectionDismissed = false,
         )
         // Replace by id match (not the graphIndex captured before the async file-move above),
@@ -801,7 +803,7 @@ class GraphManager(
         val hasReadyOrInitializingRepositories = _activeRepositorySet.value != null || activeGraphJobs.containsKey(id)
         if (isAlreadyTargetGraph && hasReadyOrInitializingRepositories) {
             // A picker flow may have just overwritten lastGraphPath with the raw repo root.
-            persistNotesPath(graphInfo)
+            mirrorActiveNotesPath()
             return
         }
         currentGraphId?.let {
@@ -942,11 +944,10 @@ class GraphManager(
             }
         }
 
-        persistNotesPath(getGraphInfo(id) ?: graphInfo)
-
         // Update active graph — use atomic update {} to avoid clobbering concurrent registry
         // mutations (e.g. git detection updating detectedRepoRoot on a background IO coroutine).
         _graphRegistry.update { it.copy(activeGraphId = id) }
+        mirrorActiveNotesPath()
         _graphsExplicitlyEmptied.value = false
         saveRegistry()
     }
@@ -1041,13 +1042,29 @@ class GraphManager(
     }
 
     /**
-     * Mirrors [info]'s notes folder into the legacy `lastGraphPath` setting for readers outside the
-     * registry (the sync CLI, single-graph migration). StelekitViewModel no longer reads it while a
-     * graph is active — it takes the path from the registry via initialGraphPathProvider.
+     * Legacy mirror of the active graph's notes folder in `lastGraphPath`, for readers outside the
+     * registry (sync CLI, single-graph migration). Always derives from the registry's current
+     * active graph, so concurrent callers converge instead of the last writer winning with a
+     * stale graph.
      */
-    private fun persistNotesPath(info: GraphInfo) {
-        if (info.isDemo) return
-        platformSettings.putString("lastGraphPath", info.effectiveNotesPath.value)
+    private fun mirrorActiveNotesPath() {
+        val registry = _graphRegistry.value
+        val active = registry.graphs.firstOrNull { it.id == registry.activeGraphId } ?: return
+        if (active.isDemo) return
+        val notesPath = active.effectiveNotesPath.value
+        if (platformSettings.getString("lastGraphPath", "") != notesPath) {
+            platformSettings.putString("lastGraphPath", notesPath)
+        }
+    }
+
+    /** Re-points a graph at its moved folder; detection results tied to the old location are dropped. */
+    private fun GraphInfo.relocatedTo(newPath: String): GraphInfo {
+        val subdir = detectedWikiSubdir.orEmpty()
+        return copy(
+            path = newPath,
+            detectedRepoRoot = if (detectedRepoRoot == path) newPath else detectedRepoRoot,
+            effectivePath = if (subdir.isEmpty()) null else "$newPath/$subdir",
+        )
     }
 
     private suspend fun detectGitRoot(graphPath: String): Pair<String, String>? {
@@ -1100,7 +1117,7 @@ class GraphManager(
             registry.copy(graphs = registry.graphs.map { g -> if (g.id == graphId) transform(g) else g })
         }
         // Detection can resolve effectivePath (repo root + wikiSubdir) after switchGraph already ran.
-        if (_graphRegistry.value.activeGraphId == graphId) getGraphInfo(graphId)?.let(::persistNotesPath)
+        mirrorActiveNotesPath()
         saveRegistry()
     }
 
@@ -1250,9 +1267,10 @@ class GraphManager(
             val idx = registry.graphs.indexOfFirst { it.id == id }
             if (idx == -1) return@update registry
             val updatedGraphs = registry.graphs.toMutableList()
-            updatedGraphs[idx] = updatedGraphs[idx].copy(path = newPath)
+            updatedGraphs[idx] = updatedGraphs[idx].relocatedTo(newPath)
             registry.copy(graphs = updatedGraphs)
         }
+        mirrorActiveNotesPath()
         saveRegistry()
     }
 

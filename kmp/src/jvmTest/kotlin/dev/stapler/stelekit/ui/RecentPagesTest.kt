@@ -107,6 +107,16 @@ class RecentPagesTest {
         assertEquals("/tmp/legacy-graph", vm.uiState.value.currentGraphPath)
     }
 
+    @Test
+    fun initialGraphPath_treats_an_empty_registry_path_as_absent() = runBlocking {
+        val vm = makeViewModel(
+            FakePageRepository(emptyList()), InMemorySettings(), "/tmp/legacy-graph",
+            initialGraphPathProvider = { "" },
+        )
+
+        assertEquals("/tmp/legacy-graph", vm.uiState.value.currentGraphPath)
+    }
+
     // -------------------------------------------------------------------------
     // Test 1: per-graph isolation — settings keys are namespaced per graph
     // -------------------------------------------------------------------------
