@@ -89,6 +89,10 @@ class GraphManager(
     private val coroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val logger = Logger("GraphManager")
     private val json = Json { ignoreUnknownKeys = true }
+    private val _backgroundDetection = MutableStateFlow<kotlinx.coroutines.Job?>(null)
+
+    /** Waits for the latest [addGraph] fire-and-forget git/wiki detection, which saves the registry. */
+    suspend fun awaitBackgroundDetection() { _backgroundDetection.value?.join() }
     private val _graphRegistry = MutableStateFlow(GraphRegistry())
     val graphRegistry: StateFlow<GraphRegistry> = _graphRegistry.asStateFlow()
     
@@ -409,12 +413,20 @@ class GraphManager(
         }
 
         // Fire-and-forget git detection & candidate scan; updates registry when complete
-        coroutineScope.launch(PlatformDispatcher.IO) {
+        _backgroundDetection.value = coroutineScope.launch(PlatformDispatcher.IO) {
             val detected = detectGitRoot(expandedPath)
             val repoRoot = detected?.first
             val scanRoot = repoRoot ?: expandedPath
-            val gitConfigRepo = createGitConfigRepository()
-            val gitConfig = gitConfigRepo?.getConfig(graphId.value)?.getOrNull()
+            // Best-effort: this launch is fire-and-forget, so a DB failure here (read-only or closed
+            // database) must degrade to "no stored git config" rather than escape as an uncaught throw.
+            val gitConfig = try {
+                createGitConfigRepository()?.getConfig(graphId.value)?.getOrNull()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.warn("addGraph: git config lookup failed for graph $graphId: ${e.message}")
+                null
+            }
             val wikiSubdir = gitConfig?.wikiSubdir ?: detected?.second ?: ""
             val effectiveRoot = repoRoot ?: expandedPath
             val effectivePath = if (wikiSubdir.isEmpty()) effectiveRoot else "$effectiveRoot/$wikiSubdir"
