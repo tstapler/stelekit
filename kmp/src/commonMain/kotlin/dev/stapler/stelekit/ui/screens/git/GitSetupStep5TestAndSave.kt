@@ -46,6 +46,7 @@ internal fun Step5TestAndSave(
     onBack: () -> Unit,
     onTestConnection: () -> Unit,
     onCancelTestConnection: () -> Unit,
+    onSave: () -> Unit,
     cloneInProgress: Boolean = false,
     // git-sync-resilience Story 4.1.3: replaces the old bare `cloneProgress: String` — one sealed
     // state drives both the in-progress row (Attempting/Retrying/ResumingDeepen) and the two
@@ -57,7 +58,6 @@ internal fun Step5TestAndSave(
     cloneCancelled: Boolean = false,
     cloneError: String? = null,
     existingRepoNeedsAllFilesAccess: Boolean = false,
-    onSave: () -> Unit,
     onCancelClone: () -> Unit = {},
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
