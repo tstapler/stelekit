@@ -184,6 +184,21 @@ class GraphManagerSwitchNotesPathTest {
     }
 
     @Test
+    fun `relocating a graph nested inside a repo does not duplicate its subdir`() = runTest {
+        val nested = GraphInfo(
+            id = cloneId, path = "/repo/wiki", displayName = "nested", addedAt = 0L,
+            detectedRepoRoot = "/repo", detectedWikiSubdir = "wiki", effectivePath = "/repo/wiki",
+        )
+        val (manager, _) = newManager(listOf(nested, saf()))
+        manager.awaitPendingMigration()
+
+        manager.updateGraphContentPath(cloneId, "/new/wiki")
+
+        assertEquals("/new/wiki", manager.getGraphInfo(cloneId)!!.effectiveNotesPath.value)
+        assertNull(manager.getGraphInfo(cloneId)!!.detectedRepoRoot)
+    }
+
+    @Test
     fun `updateGraphPath drops the stale effective path of the old location`() = runTest {
         val (manager, _) = newManager(listOf(clone(), saf()))
         manager.awaitPendingMigration()

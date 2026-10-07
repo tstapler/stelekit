@@ -1059,10 +1059,15 @@ class GraphManager(
 
     /** Re-points a graph at its moved folder; detection results tied to the old location are dropped. */
     private fun GraphInfo.relocatedTo(newPath: String): GraphInfo {
+        // A subdir is only re-derivable when the repo root is the graph folder itself; for a graph
+        // nested in a repo it is relative to a root that did not move, so fall back to re-detection.
+        if (detectedRepoRoot != null && detectedRepoRoot != path) {
+            return copy(path = newPath, detectedRepoRoot = null, detectedWikiSubdir = null, effectivePath = null)
+        }
         val subdir = detectedWikiSubdir.orEmpty()
         return copy(
             path = newPath,
-            detectedRepoRoot = if (detectedRepoRoot == path) newPath else detectedRepoRoot,
+            detectedRepoRoot = detectedRepoRoot?.let { newPath },
             effectivePath = if (subdir.isEmpty()) null else "$newPath/$subdir",
         )
     }
