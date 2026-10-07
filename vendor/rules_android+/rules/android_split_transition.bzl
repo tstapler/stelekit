@@ -32,7 +32,14 @@ load(":utils.bzl", "utils")
 
 visibility(PROJECT_VISIBILITY)
 
-def _android_split_transition_impl(settings, _):
+def _android_split_transition_impl(settings, attrs):
+    settings = dict(settings)
+
+    # Propagate the bytecode_transformer setting. This is used for incremental bytecode injection,
+    # and is read in the dex_desugar_aspect.
+    if getattr(attrs, "bytecode_transformer", None):
+        settings["//rules/flags:bytecode_transformer"] = getattr(attrs, "bytecode_transformer", None)
+
     # Always use `--android_platforms` when toolchain resolution is enabled.
     platforms_to_split = utils.get_cls(settings, "android_platforms")
     if not platforms_to_split:
@@ -83,28 +90,28 @@ def _handle_android_platforms(settings, platforms_to_split):
 
 def _cc_flags_from_android(settings, new_settings):
     new_settings[utils.add_cls_prefix("compiler")] = utils.get_cls(settings, "android_compiler")
-    new_settings[utils.add_cls_prefix("dynamic_mode")] = utils.get_cls(settings, "android_dynamic_mode")
+    new_settings[utils.add_cls_prefix("dynamic_mode")] = "off"
 
     new_settings[utils.add_cls_prefix("Android configuration distinguisher")] = "android"
 
 _INPUTS = [
     "//command_line_option:Android configuration distinguisher",
     "//command_line_option:android_compiler",
-    "//command_line_option:android_dynamic_mode",
     "//command_line_option:android_platforms",
     "//command_line_option:compiler",
     "//command_line_option:dynamic_mode",
     "//command_line_option:platforms",
+    "//rules/flags:bytecode_transformer",
 ]
 
 _OUTPUTS = [
     "//command_line_option:Android configuration distinguisher",
     "//command_line_option:android_compiler",
-    "//command_line_option:android_dynamic_mode",
     "//command_line_option:android_platforms",
     "//command_line_option:compiler",
     "//command_line_option:dynamic_mode",
     "//command_line_option:platforms",
+    "//rules/flags:bytecode_transformer",
 ]
 android_split_transition = transition(
     implementation = _android_split_transition_impl,

@@ -34,6 +34,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Sync
+import dev.stapler.stelekit.ui.screens.git.looksLikeUri
+import dev.stapler.stelekit.ui.screens.git.wikiSubdirError
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -119,6 +121,7 @@ fun LeftSidebar(
     onUpdateGraphPath: (String, String) -> Unit = { _, _ -> },
     onRenameGraph: (String, String) -> Unit = { _, _ -> },
     onUpdateGraphDescription: (String, String) -> Unit = { _, _ -> },
+    onUpdateWikiSubdir: (String, String) -> Unit = { _, _ -> },
     onRelinkHostDirectory: (String) -> Unit = {},
     supportsHostDirectoryLink: Boolean = false,
     /** Story 3.2.2 — see [GraphSwitcher]'s parameter doc. */
@@ -199,6 +202,7 @@ fun LeftSidebar(
                 onUpdateGraphPath = onUpdateGraphPath,
                 onRenameGraph = onRenameGraph,
                 onUpdateGraphDescription = onUpdateGraphDescription,
+                onUpdateWikiSubdir = onUpdateWikiSubdir,
                 onRelinkHostDirectory = onRelinkHostDirectory,
                 supportsHostDirectoryLink = supportsHostDirectoryLink,
                 storageLocationResolver = storageLocationResolver,
@@ -429,6 +433,7 @@ fun GraphSwitcher(
     onUpdateGraphPath: (String, String) -> Unit = { _, _ -> },
     onRenameGraph: (String, String) -> Unit = { _, _ -> },
     onUpdateGraphDescription: (String, String) -> Unit = { _, _ -> },
+    onUpdateWikiSubdir: (String, String) -> Unit = { _, _ -> },
     /** Re-points a graph's host-folder link at a newly-picked folder (web-local-folder-livesync
      * only). Must call the platform's directory-picker synchronously from this click before
      * launching a coroutine — same transient-user-activation constraint as [onAddGraph]. No-op
@@ -667,8 +672,10 @@ fun GraphSwitcher(
     if (editingGraph != null) {
         var newName by remember(editingGraph.id.value) { mutableStateOf(editingGraph.displayName) }
         var newDescription by remember(editingGraph.id.value) { mutableStateOf(editingGraph.description) }
-        val edited = newName.isNotBlank() &&
-            (newName != editingGraph.displayName || newDescription != editingGraph.description)
+        var newWikiSubdir by remember(editingGraph.id.value) { mutableStateOf(editingGraph.detectedWikiSubdir ?: "") }
+        val subdirErr = wikiSubdirError(newWikiSubdir) ?: if (looksLikeUri(newWikiSubdir)) "URI schemes are not allowed" else null
+        val edited = newName.isNotBlank() && subdirErr == null &&
+            (newName != editingGraph.displayName || newDescription != editingGraph.description || newWikiSubdir != (editingGraph.detectedWikiSubdir ?: ""))
         AlertDialog(
             onDismissRequest = { graphToEdit = null },
             title = { Text("Edit Graph") },
@@ -687,6 +694,16 @@ fun GraphSwitcher(
                         onValueChange = { newDescription = it },
                         label = { Text("Description (optional)") },
                         maxLines = 3,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = newWikiSubdir,
+                        onValueChange = { newWikiSubdir = it },
+                        label = { Text("Notes Subdirectory (optional)") },
+                        isError = subdirErr != null,
+                        supportingText = subdirErr?.let { err -> { Text(err) } },
+                        singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Spacer(Modifier.height(12.dp))
@@ -742,6 +759,7 @@ fun GraphSwitcher(
                     onClick = {
                         if (newName != editingGraph.displayName) onRenameGraph(editingGraph.id.value, newName)
                         if (newDescription != editingGraph.description) onUpdateGraphDescription(editingGraph.id.value, newDescription)
+                        if (newWikiSubdir != (editingGraph.detectedWikiSubdir ?: "")) onUpdateWikiSubdir(editingGraph.id.value, newWikiSubdir)
                         graphToEdit = null
                     },
                     enabled = edited,

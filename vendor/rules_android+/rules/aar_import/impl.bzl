@@ -27,6 +27,7 @@ load(
     "//rules:java.bzl",
     _java = "java",
 )
+load("//rules:native_deps.bzl", "merge_transitive_native_libs")
 load(
     "//rules:resources.bzl",
     _resources = "resources",
@@ -39,6 +40,7 @@ load(
     _utils = "utils",
 )
 load("//rules:visibility.bzl", "PROJECT_VISIBILITY")
+load("//rules/flags:flags.bzl", _flags = "flags")
 load("@rules_java//java/common:java_common.bzl", "java_common")
 load("@rules_java//java/common:java_info.bzl", "JavaInfo")
 load("@rules_java//java/common:proguard_spec_info.bzl", "ProguardSpecInfo")
@@ -150,7 +152,7 @@ def _process_resources(
         aar_resources_extractor_tool,
     )
 
-    resources_ctx = _resources.process_starlark(
+    resources_ctx = _resources.process(
         ctx,
         manifest = manifest,
         assets = [assets],
@@ -181,7 +183,7 @@ def _process_resources(
 </manifest>
 """ % package)
 
-    return struct(**resources_ctx)
+    return resources_ctx
 
 def _extract_jars(
         ctx,
@@ -432,10 +434,13 @@ def _collect_proguard(
         ctx,
         out_proguard,
         aar,
-        aar_embedded_proguard_extractor):
+        aar_embedded_proguard_extractor,
+        extract_r8_rules = False):
     args = ctx.actions.args()
     args.add("--input_aar", aar)
     args.add("--output_proguard_file", out_proguard)
+    if extract_r8_rules and _acls.use_r8(str(ctx.label)):
+        args.add("--extract_r8_rules")
     ctx.actions.run(
         executable = aar_embedded_proguard_extractor,
         arguments = [args],
@@ -559,6 +564,9 @@ def impl(ctx):
         ),
     )
 
+    if _acls.in_aar_import_propagate_native_libs(str(ctx.label)):
+        providers.append(merge_transitive_native_libs(ctx, ctx.attr.deps + ctx.attr.exports))
+
     # Will be empty if there's no proguard.txt file in the aar
     proguard_spec = create_aar_artifact(ctx, "proguard.txt")
     providers.append(_collect_proguard(
@@ -566,6 +574,7 @@ def impl(ctx):
         proguard_spec,
         aar,
         _get_android_toolchain(ctx).aar_embedded_proguard_extractor.files_to_run,
+        extract_r8_rules = _flags.get(ctx).aar_import_extract_r8_rules if _acls.use_r8(str(ctx.label)) else False,
     ))
 
     lint_providers = _process_lint_rules(

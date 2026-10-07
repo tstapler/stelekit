@@ -15,9 +15,9 @@
 
 load("//providers:providers.bzl", "AndroidLibraryResourceClassJarProvider", "ResourcesNodeInfo", "StarlarkAndroidResourcesInfo")
 load("//rules:acls.bzl", "acls")
+load("//rules:add_constraints.bzl", "add_constraints")
 load("//rules:min_sdk_version.bzl", _min_sdk_version = "min_sdk_version")
 load("//rules:visibility.bzl", "PROJECT_VISIBILITY")
-load("@rules_java//java/common:java_common.bzl", "java_common")
 load("@rules_java//java/common:java_info.bzl", "JavaInfo")
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load(":attrs.bzl", _attrs = "attrs")
@@ -286,6 +286,7 @@ def _legacy_merge_manifests(
     manifest_args.set_param_file_format("multiline")
     manifest_args.add_joined(mergee_manifests, map_each = _legacy_mergee_manifest, join_with = "\n")
     ctx.actions.run_shell(
+        mnemonic = "StarlarkLegacyMergeManifestsParams",
         command = """
 # Sorts the mergee manifests by path and combines with other busybox args.
 set -e
@@ -498,7 +499,9 @@ def _package(
         should_compile_java_srcs = True,
         generate_minsdk_proguard_config = False,
         build_java_with_final_resources = False,
+        generate_out_symbols = True,
         feature_flags = "",
+        crunch_png = True,
         aapt = None,
         has_local_proguard_specs = False,
         android_jar = None,
@@ -565,6 +568,9 @@ def _package(
         non-final resources for linking against when building any srcs. This is
         generally only desirable for test targets that aren't potentially
         running compile-time optimizations.
+      generate_out_symbols: boolean. Whether to generate the merged symbols binary file.
+      feature_flags: string. The string value for --feature-flags to pass to aapt2.
+      crunch_png: boolean. Determines whether `aapt2 compile` should crunch PNG files.
       aapt: FilesToRunProvider. The aapt executable or FilesToRunProvider.
       has_local_proguard_specs: If the target has proguard specs.
       android_jar: File. The Android jar.
@@ -734,12 +740,13 @@ def _package(
     resource_files_zip = ctx.actions.declare_file(
         "_migrated/" + ctx.label.name + "_files/resource_files.zip",
     )
+    out_symbols = ctx.actions.declare_file("_migrated/" + ctx.label.name + "_symbols/merged.bin") if generate_out_symbols else None
     _busybox.package(
         ctx,
         out_file = resource_apk,
         out_r_src_jar = r_java,
         out_r_txt = r_txt,
-        out_symbols = ctx.actions.declare_file("_migrated/" + ctx.label.name + "_symbols/merged.bin"),
+        out_symbols = out_symbols,
         out_manifest = processed_manifest,
         out_proguard_cfg = proguard_cfg,
         out_main_dex_proguard_cfg = main_dex_proguard_cfg,
@@ -769,6 +776,7 @@ def _package(
         version_name = manifest_values[_VERSION_NAME] if _VERSION_NAME in manifest_values else None,
         version_code = manifest_values[_VERSION_CODE] if _VERSION_CODE in manifest_values else None,
         feature_flags = feature_flags,
+        crunch_png = crunch_png,
         android_jar = android_jar,
         aapt = aapt,
         busybox = busybox,
@@ -838,6 +846,8 @@ def _package(
         compile_jar = compile_class_jar,
         source_jar = r_java,
     )
+
+    java_info = add_constraints(java_info, constraints = ["android"])
 
     packaged_resources_ctx[_R_JAVA] = java_info
     packaged_resources_ctx[_DATA_BINDING_LAYOUT_INFO] = data_binding_layout_info
@@ -918,6 +928,7 @@ def _compile(
         out_compiled_resources = None,
         out_r_pb = None,
         resource_files = [],
+        crunch_png = True,
         aapt = None,
         android_kit = None,
         busybox = None,
@@ -929,6 +940,7 @@ def _compile(
       out_compiled_resources: File. The compiled resources output file.
       out_r_pb: File. The R.pb output file.
       resource_files: A list of Files. The resource files can be directories.
+      crunch_png: boolean. Determines whether `aapt2 compile` should crunch PNG files.
       aapt: FilesToRunProvider. The aapt executable or FilesToRunProvider.
       android_kit: FilesToRunProvider. The android_kit executable or
         FilesToRunProvider.
@@ -941,6 +953,7 @@ def _compile(
         ctx,
         out_file = out_compiled_resources,
         resource_files = resource_files,
+        crunch_png = crunch_png,
         aapt = aapt,
         busybox = busybox,
         host_javabase = host_javabase,
@@ -1180,7 +1193,7 @@ def _validate_manifest(
 
     return output
 
-def _process_starlark(
+def _process(
         ctx,
         java_package = None,
         manifest = None,
@@ -1198,6 +1211,7 @@ def _process_starlark(
         neverlink = False,
         enable_data_binding = False,
         fix_resource_transitivity = False,
+        crunch_png = True,
         aapt = None,
         android_jar = None,
         android_kit = None,
@@ -1247,6 +1261,7 @@ def _process_starlark(
         produce build failures.
       fix_resource_transitivity: Whether to ensure that transitive resources are
         correctly marked as transitive.
+      crunch_png: boolean. Determines whether `aapt2 compile` should crunch PNG files.
       aapt: FilesToRunProvider. The aapt executable or FilesToRunProvider.
       android_jar: File. The android Jar.
       android_kit: FilesToRunProvider. The android_kit executable or
@@ -1260,7 +1275,7 @@ def _process_starlark(
       zip_tool: FilesToRunProvider. The zip tool executable or FilesToRunProvider.
 
     Returns:
-      A dict containing _ResourcesProcessContextInfo provider fields.
+      A _ResourcesProcessContextInfo.
     """
     if (xsltproc and not instrument_xslt) or (not xsltproc and instrument_xslt):
         fail(
@@ -1294,6 +1309,7 @@ def _process_starlark(
         # TODO(b/156530953): Move the validation result to the validation_outputs list when we are
         # done rolling out Starlark resources processing
         _VALIDATION_RESULTS: [],
+        _VALIDATION_OUTPUTS: [],
         _DEFINES_RESOURCES: defines_resources,
         _R_JAVA: None,
         _DATA_BINDING_LAYOUT_INFO: None,
@@ -1493,6 +1509,7 @@ def _process_starlark(
                 out_file = compiled_assets,
                 assets = assets,
                 assets_dir = assets_dir,
+                crunch_png = crunch_png,
                 aapt = aapt,
                 busybox = busybox,
                 host_javabase = host_javabase,
@@ -1522,6 +1539,7 @@ def _process_starlark(
             ctx,
             out_file = compiled_resources,
             resource_files = processed_resources,
+            crunch_png = crunch_png,
             aapt = aapt,
             busybox = busybox,
             host_javabase = host_javabase,
@@ -1606,6 +1624,8 @@ def _process_starlark(
         )
 
         packages_to_r_txts_depset.setdefault(java_package, []).append(depset([out_aapt2_r_txt]))
+
+        java_info = add_constraints(java_info, constraints = ["android"])
 
         resources_ctx[_R_JAVA] = java_info
         resources_ctx[_DATA_BINDING_LAYOUT_INFO] = data_binding_layout_info
@@ -1786,71 +1806,7 @@ def _process_starlark(
         ),
     )
 
-    return resources_ctx
-
-def _process(
-        ctx,
-        manifest = None,
-        resource_files = None,
-        defined_assets = False,
-        assets = None,
-        defined_assets_dir = False,
-        assets_dir = None,
-        exports_manifest = False,
-        java_package = None,
-        custom_package = None,
-        neverlink = False,
-        enable_data_binding = False,
-        deps = [],
-        resource_apks = [],
-        exports = [],
-        feature_flags = "",
-        android_jar = None,
-        android_kit = None,
-        aapt = None,
-        busybox = None,
-        xsltproc = None,
-        instrument_xslt = None,
-        java_toolchain = None,
-        host_javabase = None,
-        enable_res_v3 = False,
-        res_v3_dummy_manifest = None,
-        res_v3_dummy_r_txt = None,
-        fix_resource_transitivity = False,
-        zip_tool = None):
-    out_ctx = _process_starlark(
-        ctx,
-        java_package = java_package,
-        manifest = manifest,
-        defined_assets = defined_assets,
-        assets = assets,
-        defined_assets_dir = defined_assets_dir,
-        assets_dir = assets_dir,
-        exports_manifest = exports_manifest,
-        stamp_manifest = True if java_package else False,
-        deps = deps,
-        resource_apks = resource_apks,
-        exports = exports,
-        feature_flags = feature_flags,
-        resource_files = resource_files,
-        enable_data_binding = enable_data_binding,
-        fix_resource_transitivity = fix_resource_transitivity,
-        neverlink = neverlink,
-        android_jar = android_jar,
-        aapt = aapt,
-        android_kit = android_kit,
-        busybox = busybox,
-        instrument_xslt = instrument_xslt,
-        xsltproc = xsltproc,
-        java_toolchain = java_toolchain,
-        host_javabase = host_javabase,
-        zip_tool = zip_tool,
-    )
-
-    if _VALIDATION_OUTPUTS not in out_ctx:
-        out_ctx[_VALIDATION_OUTPUTS] = []
-
-    return _ResourcesProcessContextInfo(**out_ctx)
+    return _ResourcesProcessContextInfo(**resources_ctx)
 
 def _shrink(
         ctx,
@@ -1965,6 +1921,7 @@ def _optimize(
         resources_apk = None,
         resource_optimization_config = None,
         is_resource_shrunk = False,
+        enable_sparse_encoding = False,
         aapt = None,
         busybox = None,
         host_javabase = None):
@@ -1976,6 +1933,7 @@ def _optimize(
         resource_optimization_config: File. The resource optimization config outputted
           by resource shrinking. It will only be used if resource name obfuscation is enabled.
         is_resource_shrunk: Boolean. Whether the resources has been shrunk or not.
+        enable_sparse_encoding: Boolean. Whether to enable sparse encoding, no-op unless minSdk 32+.
         aapt: FilesToRunProvider. The AAPT executable.
         busybox: FilesToRunProvider. The ResourceBusyBox executable.
         host_javabase: Target. The host javabase.
@@ -1991,7 +1949,8 @@ def _optimize(
     use_resource_path_shortening_map = _is_resource_path_shortening_enabled(ctx)
     use_resource_optimization_config = _is_resource_name_obfuscation_enabled(ctx, is_resource_shrunk)
 
-    if not (use_resource_path_shortening_map or use_resource_optimization_config):
+    if not (use_resource_path_shortening_map or use_resource_optimization_config or
+            enable_sparse_encoding):
         return _ResourcesOptimizeContextInfo(**optimize_ctx)
 
     optimized_resource_apk = ctx.actions.declare_file(ctx.label.name + "_optimized.ap_")
@@ -2008,6 +1967,7 @@ def _optimize(
         in_apk = resources_apk,
         resource_path_shortening_map = optimize_ctx[_RESOURCE_PATH_SHORTENING_MAP],
         resource_optimization_config = resource_optimization_config if use_resource_optimization_config else None,
+        enable_sparse_encoding = enable_sparse_encoding,
         aapt = aapt,
         busybox = busybox,
         host_javabase = host_javabase,
@@ -2028,7 +1988,6 @@ def _is_resource_name_obfuscation_enabled(ctx, is_resource_shrunk):
 
 resources = struct(
     process = _process,
-    process_starlark = _process_starlark,
     package = _package,
     make_aar = _make_aar,
 

@@ -5,12 +5,16 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -25,11 +29,17 @@ import dev.stapler.stelekit.logging.LogLevel
 import dev.stapler.stelekit.logging.LogManager
 import dev.stapler.stelekit.ui.rememberShareProvider
 import kotlin.time.Clock
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
+/**
+ * @param diagnostics Builds the graph diagnostics report shown by the info button. Null hides the
+ *   button (e.g. when no graph is active).
+ */
 @Composable
 fun LogDashboard(
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    diagnostics: (suspend () -> String)? = null,
 ) {
     val logs by LogManager.logs.collectAsState()
     var filterLevel by remember { mutableStateOf<LogLevel?>(null) }
@@ -37,6 +47,14 @@ fun LogDashboard(
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val shareProvider = rememberShareProvider()
+    var statusMessage by remember { mutableStateOf<String?>(null) }
+    var diagnosticsReport by remember { mutableStateOf<String?>(null) }
+    var diagnosticsRunning by remember { mutableStateOf(false) }
+
+    suspend fun saveToDownloads(body: String, baseName: String) {
+        statusMessage = shareProvider.saveToDownloads(body, baseName, "txt")
+            .fold({ "Save failed: ${it.message}" }, { "Saved to $it" })
+    }
 
     val filteredLogs = remember(logs, filterLevel, searchQuery) {
         logs.filter { entry ->
@@ -52,20 +70,31 @@ fun LogDashboard(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
+        Text(
+            "App Logs",
+            style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.padding(start = 16.dp, top = 16.dp, end = 16.dp)
+        )
+
+        // Search sits on its own row: beside the icons it pushed the export buttons off-screen
+        // on phone-width displays.
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            placeholder = { Text("Search logs...") },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            singleLine = true
+        )
+
         // Toolbar
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.End
         ) {
-            Text(
-                "App Logs",
-                style = MaterialTheme.typography.headlineSmall,
-                modifier = Modifier.weight(1f)
-            )
-
             // Scroll Buttons
             IconButton(onClick = { 
                 scope.launch { listState.animateScrollToItem(0) }
@@ -78,15 +107,6 @@ fun LogDashboard(
             }) {
                 Icon(Icons.Default.ArrowDownward, contentDescription = "Scroll to Bottom")
             }
-
-            // Search
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                placeholder = { Text("Search logs...") },
-                modifier = Modifier.width(200.dp),
-                singleLine = true
-            )
 
             // Level Filter
             var filterExpanded by remember { mutableStateOf(false) }
@@ -137,7 +157,39 @@ fun LogDashboard(
                     )
                 }
             }) {
-                Icon(Icons.Default.Share, contentDescription = "Export Logs")
+                Icon(Icons.Default.Share, contentDescription = "Share Logs")
+            }
+
+            // Save the currently filtered logs straight to the Downloads folder
+            IconButton(onClick = {
+                scope.launch {
+                    val body = filteredLogs.asReversed().joinToString("\n\n") { it.toExportText() }
+                    saveToDownloads(body, "stelekit-logs-${Clock.System.now().epochSeconds}")
+                }
+            }) {
+                Icon(Icons.Default.FileDownload, contentDescription = "Save Logs to Downloads")
+            }
+
+            if (diagnostics != null) {
+                IconButton(
+                    enabled = !diagnosticsRunning,
+                    onClick = {
+                        scope.launch {
+                            diagnosticsRunning = true
+                            diagnosticsReport = try {
+                                diagnostics()
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                "Diagnostics failed: ${e::class.simpleName}: ${e.message}"
+                            } finally {
+                                diagnosticsRunning = false
+                            }
+                        }
+                    }
+                ) {
+                    Icon(Icons.Default.Info, contentDescription = "Graph Diagnostics")
+                }
             }
 
             // Clear
@@ -146,7 +198,28 @@ fun LogDashboard(
             }
         }
 
+        statusMessage?.let { message ->
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+            )
+        }
+
         HorizontalDivider()
+
+        diagnosticsReport?.let { report ->
+            DiagnosticsDialog(
+                report = report,
+                onShare = { scope.launch { shareProvider.shareText(report) } },
+                onSave = {
+                    scope.launch { saveToDownloads(report, "stelekit-diagnostics-${Clock.System.now().epochSeconds}") }
+                    diagnosticsReport = null
+                },
+                onDismiss = { diagnosticsReport = null },
+            )
+        }
 
         // Log List
         SelectionContainer(modifier = Modifier.fillMaxSize()) {
@@ -162,6 +235,35 @@ fun LogDashboard(
             }
         }
     }
+}
+
+@Composable
+private fun DiagnosticsDialog(
+    report: String,
+    onShare: () -> Unit,
+    onSave: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Graph diagnostics") },
+        text = {
+            SelectionContainer {
+                Text(
+                    text = report,
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 10.sp),
+                    modifier = Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())
+                )
+            }
+        },
+        confirmButton = {
+            Row {
+                TextButton(onClick = onShare) { Text("Share") }
+                TextButton(onClick = onSave) { Text("Save to Downloads") }
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+    )
 }
 
 @Composable

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Folder
@@ -24,6 +25,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -33,8 +35,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
+import dev.stapler.stelekit.git.model.GitRepoHistoryEntry
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.ui.components.MutedText
 import kotlinx.coroutines.withContext
@@ -57,50 +61,48 @@ internal fun Step2RepoPath(
     nextEnabled: Boolean = repoRoot.isNotBlank(),
     onBrowseRepoRoot: (() -> Unit)? = null,
     onBrowseWikiSubdir: (() -> Unit)? = null,
-    // ponytail: detectionUnavailable/existingRepoNeedsAllFilesAccess/saveToAppStorage each gate a
-    // genuinely independent, mutually-exclusive display state (not one flag secretly doing two
-    // things) — left as plain booleans rather than forced into an enum that wouldn't add clarity.
+    // ponytail: detectionUnavailable/existingRepoNeedsAllFilesAccess/saveToAppStorage/
+    // showAppStorageChoice each gate a genuinely independent, mutually-exclusive display state
+    // (not one flag secretly doing two things) — left as plain booleans rather than forced into
+    // an enum that wouldn't add clarity.
     detectionUnavailable: Boolean = false,
     existingRepoNeedsAllFilesAccess: Boolean = false,
     saveToAppStorage: Boolean = false,
+    // True only where an App-storage-vs-custom-folder choice actually exists (cloning a new repo
+    // on a platform with app-owned storage, i.e. Android today) — everywhere else this screen has
+    // only ever shown a plain path field, unaffected by any of this.
+    showAppStorageChoice: Boolean = false,
+    onSelectAppStorage: (() -> Unit)? = null,
+    repoHistory: List<GitRepoHistoryEntry> = emptyList(),
+    onSelectHistoryEntry: ((GitRepoHistoryEntry) -> Unit)? = null,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Repository path", style = MaterialTheme.typography.titleMedium)
 
         if (cloneMode == CloneMode.CloneNewRepository) {
-            OutlinedTextField(
-                value = cloneUrl,
-                onValueChange = onCloneUrlChange,
-                label = { Text("Remote URL (HTTPS or SSH)") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-            )
-            OutlinedTextField(
-                value = graphName,
-                onValueChange = onGraphNameChange,
-                label = { Text("Graph name (optional)") },
-                placeholder = { Text(repoNameFromUrl(cloneUrl) ?: "Defaults to the repository name") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-            )
-            OutlinedTextField(
-                value = graphDescription,
-                onValueChange = onGraphDescriptionChange,
-                label = { Text("Description (optional)") },
-                modifier = Modifier.fillMaxWidth(),
-                maxLines = 3,
+            CloneUrlSection(
+                repoHistory = repoHistory,
+                onSelectHistoryEntry = onSelectHistoryEntry ?: {},
+                cloneUrl = cloneUrl,
+                onCloneUrlChange = onCloneUrlChange,
+                graphName = graphName,
+                onGraphNameChange = onGraphNameChange,
+                graphDescription = graphDescription,
+                onGraphDescriptionChange = onGraphDescriptionChange,
             )
         }
 
-        if (saveToAppStorage) {
-            RepoRootAppStorageSummary(onChangeClick = { onBrowseRepoRoot?.invoke() })
-        } else {
-            RepoRootPathField(
-                repoRoot = repoRoot,
-                onRepoRootChange = onRepoRootChange,
-                onBrowseRepoRoot = onBrowseRepoRoot,
-            )
-        }
+        RepoRootSection(
+            cloneMode = cloneMode,
+            showAppStorageChoice = showAppStorageChoice,
+            saveToAppStorage = saveToAppStorage,
+            onSelectAppStorage = onSelectAppStorage ?: {},
+            repoHistory = repoHistory,
+            onSelectHistoryEntry = onSelectHistoryEntry ?: {},
+            repoRoot = repoRoot,
+            onRepoRootChange = onRepoRootChange,
+            onBrowseRepoRoot = onBrowseRepoRoot,
+        )
 
         RepoRootAccessWarning(
             existingRepoNeedsAllFilesAccess = existingRepoNeedsAllFilesAccess,
@@ -115,6 +117,87 @@ internal fun Step2RepoPath(
         )
 
         GitSetupNavRow(onBack = onBack, onNext = onNext, nextEnabled = nextEnabled)
+    }
+}
+
+/** Clone-URL + graph name/description fields, shown only for [CloneMode.CloneNewRepository]. */
+@Composable
+private fun CloneUrlSection(
+    repoHistory: List<GitRepoHistoryEntry>,
+    onSelectHistoryEntry: (GitRepoHistoryEntry) -> Unit,
+    cloneUrl: String,
+    onCloneUrlChange: (String) -> Unit,
+    graphName: String,
+    onGraphNameChange: (String) -> Unit,
+    graphDescription: String,
+    onGraphDescriptionChange: (String) -> Unit,
+) {
+    // Compose-rules MultipleEmitters: this function must be self-contained in its own layout
+    // rather than relying on the caller's Column, so it renders correctly regardless of context.
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (repoHistory.isNotEmpty()) {
+            RecentRepoList(repoHistory, onSelectHistoryEntry)
+        }
+        OutlinedTextField(
+            value = cloneUrl,
+            onValueChange = onCloneUrlChange,
+            label = { Text("Remote URL (HTTPS or SSH)") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+        )
+        OutlinedTextField(
+            value = graphName,
+            onValueChange = onGraphNameChange,
+            label = { Text("Graph name (optional)") },
+            placeholder = { Text(repoNameFromUrl(cloneUrl) ?: "Defaults to the repository name") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+        )
+        OutlinedTextField(
+            value = graphDescription,
+            onValueChange = onGraphDescriptionChange,
+            label = { Text("Description (optional)") },
+            modifier = Modifier.fillMaxWidth(),
+            maxLines = 3,
+        )
+    }
+}
+
+/**
+ * The repo-destination field — either the App-storage-vs-custom-folder radio choice (only where
+ * [showAppStorageChoice] applies) or a plain path field, each with its own "Recent" picker above
+ * it when [repoHistory] has entries for the currently relevant field.
+ *
+ * ponytail: [showAppStorageChoice]/[saveToAppStorage] are the same independent, mutually-exclusive
+ * display gates [Step2RepoPath]'s own KDoc explains — not one flag secretly doing two things.
+ */
+@Composable
+private fun RepoRootSection(
+    cloneMode: CloneMode,
+    showAppStorageChoice: Boolean,
+    saveToAppStorage: Boolean,
+    onSelectAppStorage: () -> Unit,
+    repoHistory: List<GitRepoHistoryEntry>,
+    onSelectHistoryEntry: (GitRepoHistoryEntry) -> Unit,
+    repoRoot: String,
+    onRepoRootChange: (String) -> Unit,
+    onBrowseRepoRoot: (() -> Unit)?,
+) {
+    // Compose-rules MultipleEmitters: see CloneUrlSection's comment above.
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (showAppStorageChoice) {
+            RepoRootStorageChoice(
+                saveToAppStorage = saveToAppStorage,
+                onSelectAppStorage = onSelectAppStorage,
+                onSelectCustomFolder = { onBrowseRepoRoot?.invoke() },
+            )
+        } else if (cloneMode == CloneMode.UseExistingClone && repoHistory.isNotEmpty()) {
+            RecentRepoList(repoHistory, onSelectHistoryEntry)
+        }
+        // App storage needs no path field — nothing to type or browse to.
+        if (!showAppStorageChoice || !saveToAppStorage) {
+            RepoRootPathField(repoRoot = repoRoot, onRepoRootChange = onRepoRootChange, onBrowseRepoRoot = onBrowseRepoRoot)
+        }
     }
 }
 
@@ -149,19 +232,87 @@ private fun WikiSubdirField(
     )
 }
 
+/**
+ * Explicit App-storage-vs-custom-folder chooser for the "clone a remote repository" destination —
+ * previously this was a passive "Save to: App storage (default) [Change…]" summary card, which
+ * read as a fait accompli rather than a choice between two options (UX finding from the wizard's
+ * screenshot audit). Mirrors [Step1CloneMode]'s exact radio-row convention so both "which mode am
+ * I in" choices in this wizard look and behave the same way.
+ */
 @Composable
-private fun RepoRootAppStorageSummary(onChangeClick: () -> Unit) {
+private fun RepoRootStorageChoice(
+    saveToAppStorage: Boolean,
+    onSelectAppStorage: () -> Unit,
+    onSelectCustomFolder: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("Save to", style = MaterialTheme.typography.labelMedium)
+        StorageChoiceRow(
+            label = "App storage",
+            subtitle = "Private to SteleKit — no folder access needed.",
+            selected = saveToAppStorage,
+            onClick = onSelectAppStorage,
+        )
+        StorageChoiceRow(
+            label = "Custom folder",
+            subtitle = "Choose where the clone is saved on disk.",
+            selected = !saveToAppStorage,
+            onClick = onSelectCustomFolder,
+        )
+    }
+}
+
+@Composable
+private fun StorageChoiceRow(label: String, subtitle: String, selected: Boolean, onClick: () -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().selectable(
+            selected = selected,
+            role = Role.RadioButton,
+            onClick = onClick,
+        ),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text("Save to", style = MaterialTheme.typography.labelMedium)
-            Text("App storage (default)", style = MaterialTheme.typography.bodyLarge)
-            MutedText("Private to SteleKit — no folder access needed.")
+        RadioButton(selected = selected, onClick = null)
+        Spacer(modifier = Modifier.width(8.dp))
+        Column {
+            Text(label, style = MaterialTheme.typography.bodyLarge)
+            MutedText(subtitle)
         }
-        TextButton(onClick = onChangeClick) { Text("Change…") }
+    }
+}
+
+/**
+ * "Recent" picker above the repo-URL/repo-path field — mirrors [GitSetupStep3Auth]'s "Saved
+ * tokens"/"Saved accounts" rows exactly (same [Role.RadioButton] row shape), since this is the
+ * same "remembered X, pick one or enter a new one" pattern applied to repository locations
+ * instead of credentials (see `GitRepoHistoryStore`'s KDoc). Unlike Step 3's saved-credential
+ * rows, picking an entry here doesn't hide the field below it — the field stays the single
+ * source of truth and a pick just fills it, so editing what was picked needs no extra "switch
+ * back to manual entry" step.
+ */
+@Composable
+private fun RecentRepoList(
+    entries: List<GitRepoHistoryEntry>,
+    onSelect: (GitRepoHistoryEntry) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("Recent", style = MaterialTheme.typography.labelMedium)
+        entries.forEach { entry -> RecentRepoRow(entry, onClick = { onSelect(entry) }) }
+    }
+}
+
+@Composable
+private fun RecentRepoRow(entry: GitRepoHistoryEntry, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().selectable(selected = false, role = Role.RadioButton, onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = false, onClick = null)
+        Spacer(modifier = Modifier.width(8.dp))
+        Column {
+            Text(entry.value, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
+            if (entry.wikiSubdir.isNotBlank()) MutedText("Notes in ${entry.wikiSubdir}")
+        }
     }
 }
 

@@ -150,4 +150,16 @@ class GraphManagerCloneTest {
         )
         assertEquals(graphCountBefore, graphCountAfter, "Graph count should not change after a failed clone")
     }
+
+    @Test
+    fun `updateWikiSubdir updates graph info effectivePath`() = runTest {
+        val gm = graphManager()
+        val graphId = gm.addGraph("/tmp/my-repo")
+        
+        gm.updateWikiSubdir(graphId, "logseq")
+
+        val info = gm.graphRegistry.value.graphs.first { it.id == graphId }
+        assertEquals("logseq", info.detectedWikiSubdir)
+        assertEquals("/tmp/my-repo/logseq", info.effectivePath)
+    }
 }

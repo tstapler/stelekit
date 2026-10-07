@@ -41,18 +41,34 @@ _DIRS_TO_LINK = [
 
 _MIN_BUILD_TOOLS_VERSION = parse_android_revision("35.0.0")
 
+
+def _readdir_only_dirs(dir_path):
+    """Calls starlark path#readdir(), but skips non-directory paths.
+
+    Parameters:
+        dir_path : path
+            A Starlark `path` object.
+    Returns:
+        list[path]
+    """
+    paths = []
+    for p in dir_path.readdir():
+        if p.is_dir:
+            paths.append(p)
+    return paths
+
 def _read_api_levels(repo_ctx, android_sdk_path):
     platforms_dir = "%s/%s" % (android_sdk_path, _PLATFORMS_DIR)
     api_levels = []
     platforms_path = repo_ctx.path(platforms_dir)
     if not platforms_path.exists:
         return api_levels
-    for entry in platforms_path.readdir():
+    for entry in _readdir_only_dirs(platforms_path):
         name = entry.basename
         if name.startswith("android-"):
             level = name[len("android-"):]
-            if level.isdigit():
-                api_levels.append(int(level))
+            if is_android_revision(level):
+                api_levels.append(str(level))
     return api_levels
 
 def _newest_build_tools(repo_ctx, android_sdk_path):
@@ -61,7 +77,7 @@ def _newest_build_tools(repo_ctx, android_sdk_path):
     build_tools_path = repo_ctx.path(build_tools_dir)
     if not build_tools_path.exists:
         return None
-    for entry in build_tools_path.readdir():
+    for entry in _readdir_only_dirs(build_tools_path):
         name = entry.basename
         if is_android_revision(name):
             revision = parse_android_revision(name)
@@ -77,9 +93,9 @@ def _find_system_images(repo_ctx, android_sdk_path):
         return system_images
 
     # The directory structure needed is "system-images/android-API/apis-enabled/arch"
-    for api_entry in system_images_path.readdir():
-        for enabled_entry in api_entry.readdir():
-            for arch_entry in enabled_entry.readdir():
+    for api_entry in _readdir_only_dirs(system_images_path):
+        for enabled_entry in _readdir_only_dirs(api_entry):
+            for arch_entry in _readdir_only_dirs(enabled_entry):
                 image_path = "%s/%s/%s/%s" % (
                     _SYSTEM_IMAGES_DIR,
                     api_entry.basename,
@@ -114,9 +130,15 @@ def _android_sdk_repository_impl(repo_ctx):
         fail("No Android SDK apis found in the Android SDK at %s. Please install APIs from the Android SDK Manager." % android_sdk_path)
 
     # Determine default SDK level.
-    default_api_level = max(api_levels)
+    parsed_default_api_levels = [parse_android_revision(api_level) for api_level in api_levels]
+
+    default_api_level = max(parsed_default_api_levels, key=lambda level: (
+        level.major,
+        level.minor,
+        level.micro,
+    )).version
     if repo_ctx.attr.api_level:
-        default_api_level = int(repo_ctx.attr.api_level)
+        default_api_level = str(repo_ctx.attr.api_level)
     if default_api_level not in api_levels:
         fail("Android SDK api level %s was requested but it is not installed in the Android SDK at %s. The api levels found were %s. Please choose an available api level or install api level %s from the Android SDK Manager." % (
             default_api_level,
@@ -153,8 +175,8 @@ def _android_sdk_repository_impl(repo_ctx):
             "__repository_name__": repo_ctx.name,
             "__build_tools_version__": build_tools.version,
             "__build_tools_directory__": build_tools.dir,
-            "__api_levels__": ",".join([str(level) for level in api_levels]),
-            "__default_api_level__": str(default_api_level),
+            "__api_levels__": ",".join(['"{}"'.format(level) for level in api_levels]),
+            "__default_api_level__": default_api_level,
             "__system_image_dirs__": "\n".join(["'%s'," % d for d in system_images]),
             # TODO(katre): implement these.
             #"__exported_files__": "",

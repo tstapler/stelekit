@@ -17,6 +17,19 @@ Or via alias: bazel test //kmp:jvm_tests
 """
 
 load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_test")
+load("@rules_java//java:defs.bzl", "java_library")
+
+# Bundles App.kt/GraphContentGraphIoSetup.kt/GraphContentViewModelSetup.kt as
+# classpath resources (named by their bare filename) so
+# GraphContentDemoFileSystemWiringTest can read their source text under Bazel's
+# sandbox, where App.kt itself is only compiled into jvm_main_lib (via kt_srcs),
+# never staged as a readable file at test runtime — same idiom as
+# businessTest's sqldatabase_schema_as_resource / git_shadow_worktree_as_resource.
+java_library(
+    name = "graph_content_wiring_test_sources_as_resources",
+    resources = ["//kmp/src/commonMain/kotlin:graph_content_wiring_test_sources"],
+    resource_strip_prefix = "kmp/src/commonMain/kotlin/dev/stapler/stelekit/ui",
+)
 
 kt_jvm_test(
     name = "jvm_tests",
@@ -68,6 +81,7 @@ kt_jvm_test(
         "//kmp/src/commonMain/resources:common_resources",
         "//kmp/src/commonTest/kotlin:common_test_fixtures",
         "//kmp/src/commonTest/kotlin:git_testsupport",
+        ":graph_content_wiring_test_sources_as_resources",
         "@maven//:com_google_zxing_core",
         "@maven//:io_ktor_ktor_client_mock_jvm",
         "@maven//:io_projectreactor_tools_blockhound",

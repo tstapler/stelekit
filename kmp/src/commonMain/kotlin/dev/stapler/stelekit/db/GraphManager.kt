@@ -26,6 +26,7 @@ import dev.stapler.stelekit.migration.InterruptedMigrationException
 import dev.stapler.stelekit.migration.MigrationRegistry
 import dev.stapler.stelekit.migration.MigrationRunner
 import dev.stapler.stelekit.migration.MigrationTamperedError
+import dev.stapler.stelekit.diagnostics.DirectoryScanResult
 import dev.stapler.stelekit.model.DEMO_GRAPH_ID
 import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.GraphInfo
@@ -393,14 +394,13 @@ class GraphManager(
             isParanoidMode = isParanoidMode,
         )
         
-        val registry = _graphRegistry.value
-        if (!registry.graphIds.contains(graphId)) {
-            val updated = registry.copy(
-                graphs = registry.graphs + info
-            )
-            _graphRegistry.value = updated
-            saveRegistry()
+        var inserted = false
+        _graphRegistry.update { registry ->
+            inserted = !registry.graphIds.contains(graphId)
+            if (!inserted) return@update registry
+            registry.copy(graphs = registry.graphs + info)
         }
+        if (inserted) saveRegistry()
 
         if (location != null) {
             onGraphLocationDetermined(graphId.value, location).onLeft {
@@ -408,12 +408,27 @@ class GraphManager(
             }
         }
 
-        // Fire-and-forget git detection; updates registry when complete
+        // Fire-and-forget git detection & candidate scan; updates registry when complete
         coroutineScope.launch(PlatformDispatcher.IO) {
             val detected = detectGitRoot(expandedPath)
-            if (detected != null) {
-                updateGraphInfoDetection(graphId, detected.first, detected.second)
-            }
+            val repoRoot = detected?.first
+            val scanRoot = repoRoot ?: expandedPath
+            val gitConfigRepo = createGitConfigRepository()
+            val gitConfig = gitConfigRepo?.getConfig(graphId.value)?.getOrNull()
+            val wikiSubdir = gitConfig?.wikiSubdir ?: detected?.second ?: ""
+            val effectiveRoot = repoRoot ?: expandedPath
+            val effectivePath = if (wikiSubdir.isEmpty()) effectiveRoot else "$effectiveRoot/$wikiSubdir"
+            val hasContent = fileSystem.directoryExists("$effectivePath/pages") || fileSystem.directoryExists("$effectivePath/journals")
+            val candidates = dev.stapler.stelekit.diagnostics.scanForWikiCandidates(scanRoot, fileSystem)
+            val contentMismatch = !hasContent && candidates.isNotEmpty()
+            updateGraphInfoDetection(
+                graphId = graphId,
+                repoRoot = repoRoot,
+                wikiSubdir = wikiSubdir,
+                effectivePath = effectivePath,
+                contentMismatch = contentMismatch,
+                candidates = candidates
+            )
         }
 
         return graphId
@@ -574,31 +589,36 @@ class GraphManager(
         return true
     }
     
-    fun updateGraphDescription(id: GraphId, description: String): Boolean {
-        val registry = _graphRegistry.value
-        val index = registry.graphs.indexOfFirst { it.id == id }
-        if (index == -1 || registry.graphs[index].isDemo) return false
-        val updatedGraphs = registry.graphs.toMutableList()
-        updatedGraphs[index] = updatedGraphs[index].copy(description = description.trim())
-        _graphRegistry.value = registry.copy(graphs = updatedGraphs)
-        saveRegistry()
-        return true
+    /**
+     * Single source of truth for "replace one editable graph's [GraphInfo] by id" — every
+     * mutator must route through this rather than a manual `val registry = _graphRegistry.value;
+     * ...; _graphRegistry.value = ...` read-then-set, which is not atomic against a concurrent
+     * writer (e.g. addGraph's fire-and-forget git-detection coroutine, or switchGraph). Whichever
+     * writer lands last silently clobbers the other's change. update{} re-reads the current value
+     * on each retry, so no writer's change is lost. This caused a real, order-dependent lost
+     * update in production (DemoGraphPersistenceTest flaked exactly this way in CI).
+     *
+     * Returns false without saving when [id] doesn't exist or is the demo graph (never editable).
+     */
+    private fun updateEditableGraphField(id: GraphId, transform: (GraphInfo) -> GraphInfo): Boolean {
+        var found = false
+        _graphRegistry.update { registry ->
+            val index = registry.graphs.indexOfFirst { it.id == id }
+            found = index != -1 && !registry.graphs[index].isDemo
+            if (!found) return@update registry
+            val updatedGraphs = registry.graphs.toMutableList()
+            updatedGraphs[index] = transform(updatedGraphs[index])
+            registry.copy(graphs = updatedGraphs)
+        }
+        if (found) saveRegistry()
+        return found
     }
 
-    fun renameGraph(id: GraphId, newName: String): Boolean {
-        val registry = _graphRegistry.value
-        val graphIndex = registry.graphs.indexOfFirst { it.id == id }
-        if (graphIndex == -1) return false
-        if (registry.graphs[graphIndex].isDemo) return false
+    fun updateGraphDescription(id: GraphId, description: String): Boolean =
+        updateEditableGraphField(id) { it.copy(description = description.trim()) }
 
-        val updatedGraphs = registry.graphs.toMutableList()
-        updatedGraphs[graphIndex] = updatedGraphs[graphIndex].copy(displayName = newName)
-
-        val updated = registry.copy(graphs = updatedGraphs)
-        _graphRegistry.value = updated
-        saveRegistry()
-        return true
-    }
+    fun renameGraph(id: GraphId, newName: String): Boolean =
+        updateEditableGraphField(id) { it.copy(displayName = newName) }
 
     /**
      * Records the real host-folder name last linked for [id] (web-local-folder-livesync only) —
@@ -609,20 +629,8 @@ class GraphManager(
      * and attaching the fresh handle) already happened in [dev.stapler.stelekit.platform.FileSystem];
      * this just persists the display metadata.
      */
-    fun updateHostDirName(id: GraphId, dirName: String?): Boolean {
-        val registry = _graphRegistry.value
-        val graphIndex = registry.graphs.indexOfFirst { it.id == id }
-        if (graphIndex == -1) return false
-        // Copilot review: matches renameGraph/updateGraphPath's immutability rule — the demo
-        // graph's metadata is never user-editable.
-        if (registry.graphs[graphIndex].isDemo) return false
-
-        val updatedGraphs = registry.graphs.toMutableList()
-        updatedGraphs[graphIndex] = updatedGraphs[graphIndex].copy(hostDirName = dirName)
-        _graphRegistry.value = registry.copy(graphs = updatedGraphs)
-        saveRegistry()
-        return true
-    }
+    fun updateHostDirName(id: GraphId, dirName: String?): Boolean =
+        updateEditableGraphField(id) { it.copy(hostDirName = dirName) }
 
     /**
      * Moves a graph to a new filesystem [newPath]. Because [GraphId] is derived from
@@ -659,9 +667,12 @@ class GraphManager(
             detectedWikiSubdir = null,
             gitDetectionDismissed = false,
         )
-        val updatedGraphs = registry.graphs.toMutableList()
-        updatedGraphs[graphIndex] = updatedInfo
-        _graphRegistry.value = registry.copy(graphs = updatedGraphs)
+        // Replace by id match (not the graphIndex captured before the async file-move above),
+        // and via update{} rather than a read-then-set of .value — a concurrent field-setter for
+        // a different graph could otherwise land during the file-move and get silently clobbered.
+        _graphRegistry.update { current ->
+            current.copy(graphs = current.graphs.map { g -> if (g.id == id) updatedInfo else g })
+        }
 
         if (registry.activeGraphId == id) {
             // Defer persistence to switchGraph(), which saves the re-keyed graph list together
@@ -675,9 +686,24 @@ class GraphManager(
 
         coroutineScope.launch(PlatformDispatcher.IO) {
             val detected = detectGitRoot(expandedNewPath)
-            if (detected != null) {
-                updateGraphInfoDetection(newId, detected.first, detected.second)
-            }
+            val repoRoot = detected?.first
+            val scanRoot = repoRoot ?: expandedNewPath
+            val gitConfigRepo = createGitConfigRepository()
+            val gitConfig = gitConfigRepo?.getConfig(newId.value)?.getOrNull()
+            val wikiSubdir = gitConfig?.wikiSubdir ?: detected?.second ?: ""
+            val effectiveRoot = repoRoot ?: expandedNewPath
+            val effectivePath = if (wikiSubdir.isEmpty()) effectiveRoot else "$effectiveRoot/$wikiSubdir"
+            val hasContent = fileSystem.directoryExists("$effectivePath/pages") || fileSystem.directoryExists("$effectivePath/journals")
+            val candidates = dev.stapler.stelekit.diagnostics.scanForWikiCandidates(scanRoot, fileSystem)
+            val contentMismatch = !hasContent && candidates.isNotEmpty()
+            updateGraphInfoDetection(
+                graphId = newId,
+                repoRoot = repoRoot,
+                wikiSubdir = wikiSubdir,
+                effectivePath = effectivePath,
+                contentMismatch = contentMismatch,
+                candidates = candidates
+            )
         }
 
         return UpdateGraphPathResult.Success(newId)
@@ -1034,37 +1060,83 @@ class GraphManager(
         }
     }
 
-    private suspend fun updateGraphInfoDetection(graphId: GraphId, repoRoot: String, wikiSubdir: String) {
-        // Atomic update: prevents clobbering concurrent activeGraphId changes from switchGraph.
+    /**
+     * Atomic update: prevents clobbering concurrent writers (switchGraph's activeGraphId change,
+     * another field-setter for a different graph) — see [updateEditableGraphField]'s doc comment
+     * for why this must never be a manual read-then-set of `.value`. Applies to every graph
+     * regardless of [GraphInfo.isDemo], unlike [updateEditableGraphField].
+     */
+    private suspend fun updateGraphField(graphId: GraphId, transform: (GraphInfo) -> GraphInfo) {
         _graphRegistry.update { registry ->
-            val updatedGraphs = registry.graphs.map { g ->
-                if (g.id == graphId) g.copy(detectedRepoRoot = repoRoot, detectedWikiSubdir = wikiSubdir)
-                else g
-            }
-            registry.copy(graphs = updatedGraphs)
+            registry.copy(graphs = registry.graphs.map { g -> if (g.id == graphId) transform(g) else g })
         }
         saveRegistry()
     }
 
-    suspend fun setGitDetectionDismissed(graphId: GraphId, dismissed: Boolean) {
-        val registry = _graphRegistry.value
-        val updatedGraphs = registry.graphs.map { g ->
-            if (g.id == graphId) g.copy(gitDetectionDismissed = dismissed)
-            else g
+    private suspend fun updateGraphInfoDetection(graphId: GraphId, repoRoot: String?, wikiSubdir: String, effectivePath: String?, contentMismatch: Boolean, candidates: List<DirectoryScanResult> = emptyList()) =
+        updateGraphField(graphId) { it.copy(
+            detectedRepoRoot = repoRoot,
+            detectedWikiSubdir = wikiSubdir,
+            effectivePath = effectivePath,
+            contentMismatchDetected = contentMismatch,
+            directoryScanCandidates = candidates
+        ) }
+
+    suspend fun updateEffectivePathFromGitConfig(graphId: GraphId, gitConfig: dev.stapler.stelekit.git.model.GitConfig?) {
+        updateGraphField(graphId) { info ->
+            val repoRoot = info.detectedRepoRoot
+            val wikiSubdir = gitConfig?.wikiSubdir ?: info.detectedWikiSubdir ?: ""
+            val root = repoRoot ?: info.path
+            val effectivePath = if (wikiSubdir.isEmpty()) root else "$root/$wikiSubdir"
+            val hasContent = fileSystem.directoryExists("$effectivePath/pages") || fileSystem.directoryExists("$effectivePath/journals")
+            val candidates = info.directoryScanCandidates
+            val contentMismatch = !hasContent && candidates.isNotEmpty()
+            info.copy(
+                detectedWikiSubdir = wikiSubdir,
+                effectivePath = effectivePath,
+                contentMismatchDetected = contentMismatch
+            )
         }
-        _graphRegistry.value = registry.copy(graphs = updatedGraphs)
-        saveRegistry()
+    }
+    suspend fun updateWikiSubdir(graphId: GraphId, wikiSubdir: String) {
+        updateGraphField(graphId) { info ->
+            val root = info.detectedRepoRoot ?: info.path
+            val effectivePath = if (wikiSubdir.isEmpty()) root else "$root/$wikiSubdir"
+            val hasContent = fileSystem.directoryExists("$effectivePath/pages") || fileSystem.directoryExists("$effectivePath/journals")
+            val candidates = info.directoryScanCandidates
+            val contentMismatch = !hasContent && candidates.isNotEmpty()
+            info.copy(
+                detectedWikiSubdir = wikiSubdir,
+                effectivePath = effectivePath,
+                contentMismatchDetected = contentMismatch
+            )
+        }
+        val gitConfigRepo = createGitConfigRepository()
+        val existingConfig = gitConfigRepo?.getConfig(graphId.value)?.getOrNull()
+        if (existingConfig != null) {
+            gitConfigRepo.saveConfig(existingConfig.copy(wikiSubdir = wikiSubdir))
+        }
     }
 
-    suspend fun setBrowserOnlySyncBannerDismissed(graphId: GraphId, dismissed: Boolean) {
-        val registry = _graphRegistry.value
-        val updatedGraphs = registry.graphs.map { g ->
-            if (g.id == graphId) g.copy(browserOnlySyncBannerDismissed = dismissed)
-            else g
+    suspend fun setGitDetectionDismissed(graphId: GraphId, dismissed: Boolean) =
+        updateGraphField(graphId) { it.copy(gitDetectionDismissed = dismissed) }
+
+    suspend fun setBrowserOnlySyncBannerDismissed(graphId: GraphId, dismissed: Boolean) =
+        updateGraphField(graphId) { it.copy(browserOnlySyncBannerDismissed = dismissed) }
+
+    suspend fun setContentMismatchBannerDismissed(graphId: GraphId, dismissed: Boolean) =
+        updateGraphField(graphId) { it.copy(contentMismatchBannerDismissed = dismissed) }
+
+    suspend fun updateGraphCandidates(graphId: GraphId, candidates: List<DirectoryScanResult>) =
+        updateGraphField(graphId) { g ->
+            val effectivePath = g.effectivePath ?: g.path
+            val hasContent = fileSystem.directoryExists("$effectivePath/pages") || fileSystem.directoryExists("$effectivePath/journals")
+            val contentMismatch = !hasContent && candidates.isNotEmpty()
+            g.copy(
+                directoryScanCandidates = candidates,
+                contentMismatchDetected = contentMismatch
+            )
         }
-        _graphRegistry.value = registry.copy(graphs = updatedGraphs)
-        saveRegistry()
-    }
 
     private fun checkGitignoreForDatabase(graphPath: String) {
         val gitignorePath = "$graphPath/.gitignore"

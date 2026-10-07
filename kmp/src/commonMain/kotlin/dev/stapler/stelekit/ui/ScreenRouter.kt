@@ -105,6 +105,8 @@ internal fun ScreenRouter(
      * entirely, same null-hides-trigger contract as the send side.
      */
     graphLoader: dev.stapler.stelekit.db.GraphLoader? = null,
+    /** Builds the report behind the Logs screen's diagnostics button; null hides the button. */
+    graphDiagnostics: (suspend () -> String)? = null,
 ) {
     if (appState.fatalError != null) {
         FatalErrorScreen(
@@ -225,7 +227,7 @@ internal fun ScreenRouter(
             }
             is Screen.Logs -> {
                 NavigationTracingEffect("Logs")
-                LogDashboard()
+                LogDashboard(diagnostics = graphDiagnostics)
             }
             is Screen.Performance -> {
                 NavigationTracingEffect("Performance")

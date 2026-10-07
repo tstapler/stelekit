@@ -3,6 +3,7 @@ package dev.stapler.stelekit.db
 import arrow.core.Either
 import arrow.core.left
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageName
@@ -69,6 +70,17 @@ interface GraphLoaderPort {
     )
 
     /**
+     * Loads the graph progressively using a strongly-typed [dev.stapler.stelekit.model.EffectiveNotesPath].
+     */
+    suspend fun loadGraphProgressive(
+        notesPath: dev.stapler.stelekit.model.EffectiveNotesPath,
+        immediateJournalCount: Int = 10,
+        onProgress: (String) -> Unit,
+        onPhase1Complete: () -> Unit,
+        onFullyLoaded: () -> Unit,
+    ) = loadGraphProgressive(notesPath.value, immediateJournalCount, onProgress, onPhase1Complete, onFullyLoaded)
+
+    /**
      * Finds and fully indexes all pages that were only partially loaded (METADATA_ONLY).
      */
     suspend fun indexRemainingPages(onProgress: (String) -> Unit)
@@ -129,4 +141,32 @@ interface GraphLoaderPort {
      * Called after the section manifest and states are loaded. Pass null to disable filtering.
      */
     fun updateSectionFilter(filter: SectionFilter?) {}
+
+    /**
+     * Adds [pathsBeingMerged] to the sticky git-merge suppression set.
+     */
+    suspend fun beginGitMerge(pathsBeingMerged: List<String>) {}
+
+    /**
+     * Clears the git-merge suppression set.
+     */
+    suspend fun endGitMerge() {}
+
+    /**
+     * Explicitly reloads [filePaths] from disk and saves them to the database.
+     */
+    suspend fun reloadFiles(filePaths: List<FilePath>) {}
+
+    /**
+     * Pure memory-to-model parser: converts raw markdown text into an unpersisted Page + List<Block>.
+     */
+    suspend fun importMarkdownString(
+        markdown: String,
+        pageName: PageName,
+    ): Either<DomainError, Pair<Page, List<Block>>> = DomainError.DatabaseError.WriteFailed("not implemented").left()
+
+    /** Callback invoked when candidate subdirectories are discovered during warm reconcile. */
+    var onCandidatesDiscovered: (suspend (List<dev.stapler.stelekit.diagnostics.DirectoryScanResult>) -> Unit)?
+        get() = null
+        set(value) {}
 }

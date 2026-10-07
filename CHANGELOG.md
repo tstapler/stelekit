@@ -1,5 +1,70 @@
 # Changelog
 
+## [0.91.0](https://github.com/tstapler/stelekit/compare/v0.90.0...v0.91.0) (2026-10-05)
+
+
+### Features
+
+* **wiki-subdir:** resolve effective graph path and add notes subdirectory to edit graph ([#384](https://github.com/tstapler/stelekit/issues/384)) ([aeb2f1c](https://github.com/tstapler/stelekit/commit/aeb2f1ce4e6f3c099654e71a2e145b00576899f8))
+
+
+### Bug Fixes
+
+* **wiki-subdir:** address Copilot review feedback on path resolution and validation ([a3911b9](https://github.com/tstapler/stelekit/commit/a3911b9776925694e188bfbe65bb244ec6ee29b9))
+
+## [0.90.0](https://github.com/tstapler/stelekit/compare/v0.89.0...v0.90.0) (2026-10-04)
+
+
+### Features
+
+* **ui:** add wiki subdirectory candidate detection and resolution banner ([#382](https://github.com/tstapler/stelekit/issues/382)) ([5c15607](https://github.com/tstapler/stelekit/commit/5c1560721948e87638973e4799b5670677605c61))
+
+## [0.89.0](https://github.com/tstapler/stelekit/compare/v0.88.4...v0.89.0) (2026-10-01)
+
+
+### Features
+
+* **logs:** save logs to Downloads and add graph diagnostics report ([#376](https://github.com/tstapler/stelekit/issues/376)) ([c8cf89a](https://github.com/tstapler/stelekit/commit/c8cf89ac4ded0487037ce84a3ce4b7e8916ebd7d))
+
+## [0.88.4](https://github.com/tstapler/stelekit/compare/v0.88.3...v0.88.4) (2026-10-01)
+
+
+### Bug Fixes
+
+* **ui:** loading-screen debug button safe-area + GraphContent shell extraction ([#367](https://github.com/tstapler/stelekit/issues/367)) ([e45ed72](https://github.com/tstapler/stelekit/commit/e45ed726774026275ea0ae1e4b020fab25c356ea))
+
+## [0.88.3](https://github.com/tstapler/stelekit/compare/v0.88.2...v0.88.3) (2026-09-29)
+
+
+### Bug Fixes
+
+* **bazel:** bump rules_android 0.7.1 -&gt; 0.7.3 to fix broken dex-extension fetch ([#365](https://github.com/tstapler/stelekit/issues/365)) ([68dd481](https://github.com/tstapler/stelekit/commit/68dd4814647506db90f7fc87d4938108c1f992ee))
+* **ui:** Settings/Performance/Logs access during pre-repos loading + App.kt decomposition ([#363](https://github.com/tstapler/stelekit/issues/363)) ([cb93e67](https://github.com/tstapler/stelekit/commit/cb93e67f19166917771454191caa89a1a12c9ecf))
+* **ui:** stop stuck Shift flag from turning clicks into range-selects ([#364](https://github.com/tstapler/stelekit/issues/364)) ([d0209c9](https://github.com/tstapler/stelekit/commit/d0209c90d440c68afdf2b287b13d0aa552759e32))
+* **wasm:** drag-and-drop image attachment for web target ([#361](https://github.com/tstapler/stelekit/issues/361)) ([e3c6e77](https://github.com/tstapler/stelekit/commit/e3c6e778aa8329956a6e2c0e4bc3b4fffd31ab55))
+
+## [0.88.2](https://github.com/tstapler/stelekit/compare/v0.88.1...v0.88.2) (2026-09-28)
+
+
+### Bug Fixes
+
+* **ui-state:** don't drop pushed block writes on cache miss ([#359](https://github.com/tstapler/stelekit/issues/359)) ([4a3a96f](https://github.com/tstapler/stelekit/commit/4a3a96f00b1ecaa1baf8e12ac4fdcfe1f37eb661))
+
+## [0.88.1](https://github.com/tstapler/stelekit/compare/v0.88.0...v0.88.1) (2026-09-26)
+
+
+### Bug Fixes
+
+* **db:** fix flaky DemoGraphPersistenceTest, consolidate GraphManager registry atomicity ([#358](https://github.com/tstapler/stelekit/issues/358)) ([5221abd](https://github.com/tstapler/stelekit/commit/5221abd1f734b04969e56ba8d8085cb291c9f240))
+* **ui:** compare disk-conflict blocks against their matched excerpt, not the whole file ([#356](https://github.com/tstapler/stelekit/issues/356)) ([b357cf4](https://github.com/tstapler/stelekit/commit/b357cf426eafcb48bd9f4638482f2c3551fa87ef))
+
+## [0.88.0](https://github.com/tstapler/stelekit/compare/v0.87.2...v0.88.0) (2026-09-24)
+
+
+### Features
+
+* **git-setup:** remember recent repos, clarify app-storage-vs-custom-folder choice ([#354](https://github.com/tstapler/stelekit/issues/354)) ([14738a5](https://github.com/tstapler/stelekit/commit/14738a559668e1ad435bd4672a757f1dcf924d94))
+
 ## [0.87.2](https://github.com/tstapler/stelekit/compare/v0.87.1...v0.87.2) (2026-09-24)
 
 

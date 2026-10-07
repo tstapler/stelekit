@@ -30,13 +30,12 @@ single_version_override(
     patch_strip = 1,
 )
 bazel_dep(name = "rules_cc", version = "0.1.1")
-bazel_dep(name = "rules_android", version = "0.7.1")
+bazel_dep(name = "rules_android", version = "0.7.3")
 single_version_override(
     module_name = "rules_android",
     patches = [
         "//third_party/patches:rules_android_unzip.patch",
         "//third_party/patches:rules_android_zip.patch",
-        "//third_party/patches:rules_android_zip_action.patch",
     ],
     patch_strip = 1,
 )
@@ -73,7 +72,16 @@ android_sdk_repository_extension.configure(
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 http_archive(
     name = "unzip_src",
-    urls = ["https://downloads.sourceforge.net/infozip/unzip60.tar.gz"],
+    # SourceForge's downloads.sourceforge.net CDN has intermittent Cloudflare 522 outages
+    # (broke CI and the v0.89.0 release build on 2026-10-01). Our own GitHub release is tried
+    # first since we control its availability; the other mirrors are independent fallbacks,
+    # all verified byte-identical (sha256 below) to the original SourceForge tarball.
+    urls = [
+        "https://github.com/tstapler/stelekit/releases/download/ci-vendored-deps-infozip-v1/unzip60.tar.gz",
+        "https://distfiles.macports.org/unzip/unzip60.tar.gz",
+        "https://ftp.osuosl.org/pub/blfs/conglomeration/unzip/unzip60.tar.gz",
+        "https://downloads.sourceforge.net/infozip/unzip60.tar.gz",
+    ],
     sha256 = "036d96991646d0449ed0aa952e4fbe21b476ce994abc276e49d30e686708bd37",
     strip_prefix = "unzip60",
     build_file = "//:third_party/unzip.BUILD",
@@ -96,7 +104,12 @@ http_archive(
 
 http_archive(
     name = "zip_src",
-    urls = ["https://downloads.sourceforge.net/infozip/zip30.tar.gz"],
+    # Same SourceForge-outage rationale as unzip_src above.
+    urls = [
+        "https://github.com/tstapler/stelekit/releases/download/ci-vendored-deps-infozip-v1/zip30.tar.gz",
+        "https://ftp.osuosl.org/pub/blfs/conglomeration/zip/zip30.tar.gz",
+        "https://downloads.sourceforge.net/infozip/zip30.tar.gz",
+    ],
     sha256 = "f0e8bb1f9b7eb0b01285495a2699df3a4b766784c1765a8f1aeedf63c0806369",
     strip_prefix = "zip30",
     build_file = "//:third_party/zip.BUILD",
@@ -206,6 +219,10 @@ maven.install(
 
         # ── Jetbrains markdown (KMP — use -jvm classifier) ───────────────────
         "org.jetbrains:markdown-jvm:0.7.3",
+
+        # ── Kotest (KMP — use -jvm classifier) — property-based testing, matches
+        # kmp/build.gradle.kts's commonTest dependency ─────────────────────────
+        "io.kotest:kotest-property-jvm:6.2.4",
 
         # ── SQLDelight 2.3.2 ──────────────────────────────────────────────────
         "app.cash.sqldelight:runtime-jvm:2.3.2",

@@ -5,7 +5,7 @@ on:
     branches: [main, master]
   pull_request:
     branches: [main, master]
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened]  # no ready_for_review: `opened` already fires for drafts, so this avoids a pointless duplicate full CI run on every draft->ready flip
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -137,6 +137,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history needed for the baseline-ratchet merge-base diff below
 
       - uses: actions/setup-java@v4
         with:
@@ -151,6 +153,19 @@ jobs:
 
       - name: Run Detekt
         run: ./gradlew :kmp:detekt --no-daemon --build-cache
+
+      - name: Detekt baseline ratchet (no new grandfathered findings)
+        # Only meaningful against a PR's target branch; a push to main has no base to diff.
+        if: github.event_name == 'pull_request'
+        run: |
+          MERGE_BASE=$(git merge-base HEAD "${{ github.event.pull_request.base.sha }}")
+          BASE_COUNT=$(git show "$MERGE_BASE:kmp/config/detekt/baseline.xml" 2>/dev/null | grep -c '<ID>' || true)
+          HEAD_COUNT=$(grep -c '<ID>' kmp/config/detekt/baseline.xml || true)
+          echo "baseline.xml findings — merge-base: $BASE_COUNT, HEAD: $HEAD_COUNT"
+          if [ "$HEAD_COUNT" -gt "$BASE_COUNT" ]; then
+            echo "::error::kmp/config/detekt/baseline.xml grew from $BASE_COUNT to $HEAD_COUNT findings. Re-running detektBaseline to silence a new violation instead of fixing it is not allowed — fix the violation, or if it's a deliberate exception, adjust kmp/config/detekt/detekt.yml instead."
+            exit 1
+          fi
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -275,17 +290,31 @@ jobs:
         # JVM-only-API usage out of commonTest).
         run: ./gradlew :kmp:compileTestKotlinWasmJs --no-daemon --build-cache -PenableJs=true
 
-      - name: Run wasmJs ImageEncoder browser tests
-        # Runs (not just compiles) ImageEncoderWasmJsTest in headless Chrome via Karma — real
-        # regression coverage for the Canvas-2D JPEG encoder, which cannot be exercised from
-        # jvmTest. Scoped to this one class, not the whole wasmJsTest suite: the full suite has
-        # 2 pre-existing unrelated failures (MermaidRendererWasmJsTest /
+      - name: Run wasmJs browser tests
+        # Runs (not just compiles) real-browser wasmJsTest classes in headless Chrome via Karma:
+        # ImageEncoderWasmJsTest (pre-existing Canvas-2D JPEG encoder coverage) plus the
+        # wasm-image-drop suite (OPFS byte writes, the ArrayBuffer<->ByteArray bridge, and the
+        # document.body drop-listener lifecycle). Scoped via --tests, not the whole wasmJsTest
+        # suite: the full suite has 2 pre-existing unrelated failures (MermaidRendererWasmJsTest /
         # MermaidSecurityDirectiveWasmJsTest, predating this change) that block whole-suite CI
         # adoption — a separate cleanup, not part of this fix. GitHub's ubuntu-latest runner image
         # ships Chrome preinstalled, so no extra browser install step is needed here.
         run: |
           ./gradlew :kmp:wasmJsBrowserTest --no-daemon --build-cache -PenableJs=true \
-            --tests "dev.stapler.stelekit.annotate.ImageEncoderWasmJsTest"
+            --tests "dev.stapler.stelekit.annotate.ImageEncoderWasmJsTest" \
+            --tests "dev.stapler.stelekit.service.WasmMediaAttachmentServiceTest" \
+            --tests "dev.stapler.stelekit.platform.ByteBufferInteropTest" \
+            --tests "dev.stapler.stelekit.platform.OpfsInteropTest" \
+            --tests "dev.stapler.stelekit.ui.components.DropZoneInteropTest" \
+            --tests "dev.stapler.stelekit.ui.components.PageDropTargetListenerLifecycleTest"
+
+      - name: Publish wasmJs test report
+        uses: mikepenz/action-junit-report@v4
+        if: always()
+        with:
+          report_paths: '**/build/test-results/wasmJsBrowserTest/**/TEST-*.xml'
+          fail_on_failure: true
+          require_tests: true
 
   # ── Wasm/JS e2e (Playwright) ───────────────────────────────────────────────
   wasmjs-e2e:

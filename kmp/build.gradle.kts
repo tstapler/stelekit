@@ -17,6 +17,7 @@ plugins {
     id("io.github.takahirom.roborazzi") version "1.59.0"
     id("org.jetbrains.kotlinx.benchmark")
     id("io.gitlab.arturbosch.detekt")
+    id("jacoco")
 }
 
 kotlin {
@@ -817,6 +818,13 @@ tasks.named<Test>("jvmTest") {
         "stelekit.appkt.file",
         file("src/commonMain/kotlin/dev/stapler/stelekit/ui/App.kt").absolutePath
     )
+    // Same rationale as stelekit.appkt.file, widened to the whole ui/ package: GraphContent's
+    // call sites have moved across GraphContent*.kt files as the composable has been split up,
+    // so GraphContentDemoFileSystemWiringTest scans every file here rather than just App.kt.
+    systemProperty(
+        "stelekit.ui.dir",
+        file("src/commonMain/kotlin/dev/stapler/stelekit/ui").absolutePath
+    )
 
     // BlockHound is installed programmatically via BlockHoundTestBase.installBlockHound().
     // The -javaagent approach (reactor.blockhound:blockhound) crashes on Java 21+ due to
@@ -865,6 +873,14 @@ tasks.register<Test>("jvmTestFast") {
     systemProperty(
         "stelekit.sq.file",
         file("src/commonMain/sqldelight/dev/stapler/stelekit/db/SteleDatabase.sq").absolutePath
+    )
+    systemProperty(
+        "stelekit.appkt.file",
+        file("src/commonMain/kotlin/dev/stapler/stelekit/ui/App.kt").absolutePath
+    )
+    systemProperty(
+        "stelekit.ui.dir",
+        file("src/commonMain/kotlin/dev/stapler/stelekit/ui").absolutePath
     )
 
     jvmArgs(
@@ -1204,6 +1220,12 @@ detekt {
 }
 
 tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
+    // Detekt analyzes src/commonMain/kotlin directly (not through a compile task), so it needs
+    // its own explicit dependency on generateDemoFileSystem — Gradle's task-graph validation
+    // flags this as an undeclared implicit dependency otherwise (the generator writes
+    // DemoFileSystem.kt into that same source directory; see generateDemoFileSystem's other
+    // wiring above for compile tasks and jvmTest).
+    dependsOn(generateDemoFileSystem)
     jvmTarget = "21"
     reports {
         html.required.set(true)
@@ -1478,4 +1500,24 @@ android {
         // this is a known lint tooling bug triggered by certain Kotlin when-expressions.
         disable += setOf("LogConditional", "LongLogTag", "LogTagMismatch")
     }
+}
+
+// ── Jacoco Code Coverage Configuration ──────────────────────────────────────────
+jacoco {
+    toolVersion = "0.8.12"
+}
+
+tasks.register<JacocoReport>("jacocoTestReport") {
+    dependsOn("jvmTest")
+    reports {
+        xml.required.set(true)
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir("reports/jacoco/html"))
+        xml.outputLocation.set(layout.buildDirectory.file("reports/jacoco/jacoco.xml"))
+    }
+    val classesTree = fileTree("${layout.buildDirectory.get()}/classes/kotlin/jvm/main")
+    val mainSrc = "${projectDir}/src/commonMain/kotlin"
+    sourceDirectories.setFrom(files(mainSrc))
+    classDirectories.setFrom(files(classesTree))
+    executionData.setFrom(fileTree(layout.buildDirectory.get()).include("jacoco/jvmTest.exec", "outputs/unit_test_code_coverage/**/*.exec"))
 }

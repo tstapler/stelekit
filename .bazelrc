@@ -24,6 +24,13 @@ startup --max_idle_secs=1800
 # ── JVM toolchain ─────────────────────────────────────────────────────────────
 build --java_runtime_version=21
 build --tool_java_runtime_version=21
+# Language level, not just the runtime JDK used to run javac: rules_android
+# 0.7.2+'s vendored DexFileSplitter.java uses `record` (Java 16+), compiled
+# as a [for tool] (exec-config) action, so --tool_java_language_version must
+# be set explicitly — it doesn't inherit from --tool_java_runtime_version and
+# otherwise defaults below 16.
+build --java_language_version=21
+build --tool_java_language_version=21
 
 # ── Android SDK ───────────────────────────────────────────────────────────────
 # android_sdk_repository_extension runs at repo-loading time (before config
@@ -96,6 +103,9 @@ build:ci --experimental_repository_downloader_retries=5
 # Vendoring it (`bazel vendor --vendor_dir=vendor --repo='@@rules_android+'`)
 # removes the network fetch for this repo entirely; re-run that command and
 # commit the result after bumping the rules_android version in MODULE.bazel.
+# Its module extension also fetches @@rules_android++com_android_dex_extension+com_android_dex
+# from android.googlesource.com (503s in CI) — vendor it too:
+#   bazel vendor --vendor_dir=vendor --repo='@@rules_android++com_android_dex_extension+com_android_dex'
 common --vendor_dir=vendor
 
 # ── Remote HTTP cache (bazel-cache-proxy) ─────────────────────────────────────

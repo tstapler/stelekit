@@ -32,6 +32,7 @@ import dev.stapler.stelekit.domain.ClaudeTopicEnricherTest
 import dev.stapler.stelekit.domain.UrlFetcherJvmTest
 import dev.stapler.stelekit.export.ExportIntegrationTest
 import dev.stapler.stelekit.export.HtmlExporterTest
+import dev.stapler.stelekit.git.GitRepoHistoryStoreTest
 import dev.stapler.stelekit.integration.JournalParseReproTest
 import dev.stapler.stelekit.integration.PipelineReproductionTest
 import dev.stapler.stelekit.llm.RemoteLlmProviderTest
@@ -60,8 +61,10 @@ import dev.stapler.stelekit.transfer.qrcode.QrCodecJvmRoundTripTest
 import dev.stapler.stelekit.transfer.qrcode.QrCodecJvmTest
 import dev.stapler.stelekit.ui.DemoBannerTest
 import dev.stapler.stelekit.ui.DiskConflictResolutionTest
+import dev.stapler.stelekit.ui.GraphContentDemoFileSystemWiringTest
 import dev.stapler.stelekit.ui.GraphSwitcherDemoFilterTest
 import dev.stapler.stelekit.ui.DragDropReorderTest
+import dev.stapler.stelekit.ui.InitializingScreenThemedTest
 import dev.stapler.stelekit.ui.KeyboardShortcutTest
 import dev.stapler.stelekit.ui.MigrationReadyLoadingTest
 import dev.stapler.stelekit.ui.OutlinerRegressionTest
@@ -147,6 +150,7 @@ import org.junit.runners.Suite
     UrlFetcherJvmTest::class,
     ExportIntegrationTest::class,
     HtmlExporterTest::class,
+    GitRepoHistoryStoreTest::class,
     JournalParseReproTest::class,
     PipelineReproductionTest::class,
     ChangeApplierTest::class,
@@ -184,6 +188,8 @@ import org.junit.runners.Suite
     SyncStatusBadgeTest::class,
     TopBarTest::class,
     DemoBannerTest::class,
+    GraphContentDemoFileSystemWiringTest::class,
+    InitializingScreenThemedTest::class,
     GraphSwitcherDemoFilterTest::class,
     DiskConflictResolutionTest::class,
     DragDropReorderTest::class,

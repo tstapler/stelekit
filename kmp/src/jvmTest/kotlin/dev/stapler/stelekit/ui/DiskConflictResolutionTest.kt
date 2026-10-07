@@ -182,20 +182,50 @@ class DiskConflictResolutionTest {
 
     @Test
     fun diskConflict_model_has_all_fields() {
-        val conflict = DiskConflict(
+        val conflict = DiskConflict.ifReal(
             pageUuid = "page-1",
             pageName = "My Page",
             filePath = "/path/to/page.md",
             editingBlockUuid = BlockUuid("block-1"),
             localContent = "user typed this",
-            diskContent = "- disk has this\n"
-        )
+            diskContent = "- disk has this\n",
+            diskBlockContent = null,
+        ) ?: error("test fixture must construct a real conflict")
         assertEquals("page-1", conflict.pageUuid)
         assertEquals("My Page", conflict.pageName)
         assertEquals("/path/to/page.md", conflict.filePath)
         assertEquals(BlockUuid("block-1"), conflict.editingBlockUuid)
         assertEquals("user typed this", conflict.localContent)
         assertEquals("- disk has this\n", conflict.diskContent)
+    }
+
+    @Test
+    fun `DiskConflict_ifReal returns null when the matched disk excerpt equals local content`() {
+        val conflict = DiskConflict.ifReal(
+            pageUuid = "page-1",
+            pageName = "My Page",
+            filePath = "/path/to/page.md",
+            editingBlockUuid = BlockUuid("block-1"),
+            localContent = "same content",
+            diskContent = "- same content\n",
+            diskBlockContent = "same content",
+        )
+        assertNull(conflict, "identical local/disk content is not a conflict — DiskConflict must be unconstructable")
+    }
+
+    @Test
+    fun `DiskConflict_ifReal returns a real instance when the matched disk excerpt differs`() {
+        val conflict = DiskConflict.ifReal(
+            pageUuid = "page-1",
+            pageName = "My Page",
+            filePath = "/path/to/page.md",
+            editingBlockUuid = BlockUuid("block-1"),
+            localContent = "local edit",
+            diskContent = "- disk edit\n",
+            diskBlockContent = "disk edit",
+        )
+        assertNotNull(conflict)
+        assertEquals("disk edit", conflict.diskBlockContent)
     }
 
     @Test
@@ -463,6 +493,50 @@ class DiskConflictResolutionTest {
         assertTrue(
             vm.uiState.value.diskConflict != null,
             "a page with real local content in a non-first block must still show the conflict dialog"
+        )
+    }
+
+    @Test
+    fun checkAndShowPendingConflict_autoResolves_When_FirstBlockUnchanged_ButLaterBlockAddedOnDisk() = runBlocking {
+        // Regression test: previousContent (first block's text) must be compared against that
+        // block's disk-matched excerpt, not the whole raw disk file. A second block appended on
+        // disk changes the whole-file text even though the first block itself is unchanged —
+        // that must not surface a conflict dialog.
+        val secondBlock = testBlock.copy(
+            uuid = BlockUuid("block-second"),
+            content = "A second block",
+            position = "a1",
+        )
+        val pageRepo = FakePageRepository(listOf(testPage))
+        val blockRepo = FakeBlockRepository(mapOf(testPageUuid to listOf(testBlock, secondBlock)))
+        val graphLoader = testGraphLoader(pageRepo, blockRepo)
+        val vm = makeViewModel(pageRepo = pageRepo, blockRepo = blockRepo, graphLoader = graphLoader)
+        vm.startAutoSave()
+
+        // Whole-file disk content differs from testBlock.content ("Original content") because
+        // of the newly-added second bullet, even though the first bullet's text is unchanged.
+        graphLoader.emitExternalFileChange(
+            testFilePath,
+            "- Original content\n- A newly added second block from elsewhere"
+        )
+        assertNotNull(
+            vm.uiState.value.pendingConflicts[testFilePath],
+            "off-page external change must populate pendingConflicts before navigation"
+        )
+
+        vm.navigateTo(Screen.PageView(testPage))
+
+        withTimeout(2_000) {
+            vm.uiState.first { it.diskConflict != null || it.pendingConflicts[testFilePath] == null }
+        }
+        assertNull(
+            vm.uiState.value.diskConflict,
+            "the first block's own content is unchanged on disk, so no conflict dialog should appear " +
+                "even though the whole file differs due to an unrelated added block"
+        )
+        assertNull(
+            vm.uiState.value.pendingConflicts[testFilePath],
+            "the pending conflict should be auto-cleared once resolved as a false positive"
         )
     }
 

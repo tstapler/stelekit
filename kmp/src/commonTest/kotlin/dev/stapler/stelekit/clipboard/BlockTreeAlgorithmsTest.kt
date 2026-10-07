@@ -185,4 +185,71 @@ class BlockTreeAlgorithmsTest {
         assertEquals(afterBlock.uuid.value, pastedR1.leftUuid?.value, "First root leftUuid must equal afterBlock.uuid")
         assertEquals("new-r1", pastedR2.leftUuid?.value, "Second root leftUuid must equal first root's new UUID")
     }
+
+    // ---- mergeBlocks tests ----
+
+    @Test
+    fun mergeBlocks_dirty_block_newer_than_incoming_retains_local() {
+        val local = block("b1").copy(content = "local content", version = 2L)
+        val incoming = block("b1").copy(content = "db content", version = 1L)
+        val dirtyBlocks = mapOf("b1" to 2L)
+
+        val result = BlockTreeAlgorithms.mergeBlocks(
+            localBlocks = listOf(local),
+            incomingBlocks = listOf(incoming),
+            dirtyBlocks = dirtyBlocks,
+            pendingNewBlockUuids = emptySet(),
+        )
+
+        assertEquals("local content", result.mergedBlocks.first().content)
+        assertTrue(result.clearedDirtyUuids.isEmpty())
+    }
+
+    @Test
+    fun mergeBlocks_clean_block_accepts_incoming_and_clears_dirty() {
+        val local = block("b1").copy(content = "local content", version = 1L)
+        val incoming = block("b1").copy(content = "db content", version = 2L)
+        val dirtyBlocks = mapOf("b1" to 1L)
+
+        val result = BlockTreeAlgorithms.mergeBlocks(
+            localBlocks = listOf(local),
+            incomingBlocks = listOf(incoming),
+            dirtyBlocks = dirtyBlocks,
+            pendingNewBlockUuids = emptySet(),
+        )
+
+        assertEquals("db content", result.mergedBlocks.first().content)
+        assertTrue(result.clearedDirtyUuids.contains("b1"))
+    }
+
+    @Test
+    fun mergeBlocks_appends_pending_new_blocks() {
+        val pendingBlock = block("p1").copy(content = "pending")
+        val incoming = block("b1").copy(content = "db content")
+
+        val result = BlockTreeAlgorithms.mergeBlocks(
+            localBlocks = listOf(incoming, pendingBlock),
+            incomingBlocks = listOf(incoming),
+            dirtyBlocks = emptyMap(),
+            pendingNewBlockUuids = setOf("p1"),
+        )
+
+        assertEquals(2, result.mergedBlocks.size)
+        assertEquals("p1", result.mergedBlocks[1].uuid.value)
+    }
+
+    @Test
+    fun mergeIncomingBlock_appends_new_block_when_absent() {
+        val pageBlocks = listOf(block("b1"))
+        val incoming = block("b2")
+
+        val result = BlockTreeAlgorithms.mergeIncomingBlock(
+            pageBlocks = pageBlocks,
+            incoming = incoming,
+            dirtyBlocks = emptyMap(),
+        )
+
+        assertEquals(2, result.mergedBlocks.size)
+        assertEquals("b2", result.mergedBlocks[1].uuid.value)
+    }
 }
