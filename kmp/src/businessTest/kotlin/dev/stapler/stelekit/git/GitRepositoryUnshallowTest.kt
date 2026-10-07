@@ -25,6 +25,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import org.eclipse.jgit.api.Git
+import org.eclipse.jgit.transport.RefSpec
 
 /**
  * git-sync-resilience Story 2.1.4 — [JvmGitRepository.unshallow] and [GitSyncService.deepen]
@@ -62,7 +63,7 @@ class GitRepositoryUnshallowTest {
                 git.add().addFilepattern(".").call()
                 git.commit().setMessage("commit $i").call()
             }
-            git.push().call()
+            git.push().setRefSpecs(RefSpec("HEAD:refs/heads/main")).call()
         }
 
         val destination = tempDir("stelekit_unshallow_dest_")
@@ -129,7 +130,7 @@ class GitRepositoryUnshallowTest {
             File(advanceWorkDir, "journal.md").writeText("a diverging remote commit\n")
             git.add().addFilepattern(".").call()
             git.commit().setMessage("remote advanced after the shallow clone").call()
-            git.push().call()
+            git.push().setRefSpecs(RefSpec("HEAD:refs/heads/main")).call()
         }
 
         val repository = JvmGitRepository()
