@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.92.0](https://github.com/tstapler/stelekit/compare/v0.91.0...v0.92.0) (2026-10-08)
+
+
+### Features
+
+* **git:** resilient clone/fetch/push for large repos (retry, resume, background) ([#386](https://github.com/tstapler/stelekit/issues/386)) ([6d630d7](https://github.com/tstapler/stelekit/commit/6d630d7c4e6f4e5285c865869a7ce09a86432eac))
+
+
+### Bug Fixes
+
+* **graphs:** load the active graph's own notes folder on switch ([#388](https://github.com/tstapler/stelekit/issues/388)) ([a7a0ec5](https://github.com/tstapler/stelekit/commit/a7a0ec51b78a66a41039f94ae2c547b580172050))
+* **ui:** remove unused imports and dead helpers in App.kt ([b3051f0](https://github.com/tstapler/stelekit/commit/b3051f034d09ced36db8ac6be81537deb848c193))
+
 ## [0.91.0](https://github.com/tstapler/stelekit/compare/v0.90.0...v0.91.0) (2026-10-05)
 
 
