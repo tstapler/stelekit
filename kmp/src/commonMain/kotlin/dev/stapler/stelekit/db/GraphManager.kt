@@ -9,8 +9,10 @@ import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.domain.CaptureEnrichmentCoordinator
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.git.CloneProgress
 import dev.stapler.stelekit.git.GitAuth
 import dev.stapler.stelekit.git.GitRepository
+import dev.stapler.stelekit.git.GitTransportRetryState
 import dev.stapler.stelekit.llm.LlmCredentialStore
 import dev.stapler.stelekit.llm.LlmProviderRegistry
 import dev.stapler.stelekit.llm.LlmSettings
@@ -87,6 +89,10 @@ class GraphManager(
     private val coroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val logger = Logger("GraphManager")
     private val json = Json { ignoreUnknownKeys = true }
+    private val _backgroundDetection = MutableStateFlow<kotlinx.coroutines.Job?>(null)
+
+    /** Waits for the latest [addGraph] fire-and-forget git/wiki detection, which saves the registry. */
+    suspend fun awaitBackgroundDetection() { _backgroundDetection.value?.join() }
     private val _graphRegistry = MutableStateFlow(GraphRegistry())
     val graphRegistry: StateFlow<GraphRegistry> = _graphRegistry.asStateFlow()
     
@@ -408,12 +414,20 @@ class GraphManager(
         }
 
         // Fire-and-forget git detection & candidate scan; updates registry when complete
-        coroutineScope.launch(PlatformDispatcher.IO) {
+        _backgroundDetection.value = coroutineScope.launch(PlatformDispatcher.IO) {
             val detected = detectGitRoot(expandedPath)
             val repoRoot = detected?.first
             val scanRoot = repoRoot ?: expandedPath
-            val gitConfigRepo = createGitConfigRepository()
-            val gitConfig = gitConfigRepo?.getConfig(graphId.value)?.getOrNull()
+            // Best-effort: this launch is fire-and-forget, so a DB failure here (read-only or closed
+            // database) must degrade to "no stored git config" rather than escape as an uncaught throw.
+            val gitConfig = try {
+                createGitConfigRepository()?.getConfig(graphId.value)?.getOrNull()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.warn("addGraph: git config lookup failed for graph $graphId: ${e.message}")
+                null
+            }
             val wikiSubdir = gitConfig?.wikiSubdir ?: detected?.second ?: ""
             val effectiveRoot = repoRoot ?: expandedPath
             val effectivePath = if (wikiSubdir.isEmpty()) effectiveRoot else "$effectiveRoot/$wikiSubdir"
@@ -465,7 +479,7 @@ class GraphManager(
         url: String,
         localPath: String,
         auth: GitAuth,
-        onProgress: (String) -> Unit,
+        onProgress: (CloneProgress) -> Unit,
         // Story 2.2.2: the destination StorageLocation resolved by UnifiedLocationPicker, so the
         // cloned graph's storage_locations row is written at creation time instead of waiting for
         // a later relocate/link flow to lazily backfill it. Default null preserves every existing
@@ -473,8 +487,9 @@ class GraphManager(
         location: StorageLocation? = null,
         displayName: String? = null,
         description: String = "",
+        onStateChange: (GitTransportRetryState) -> Unit = {},
     ): Either<DomainError.GitError, GraphId> {
-        val cloneResult = gitRepository.clone(url, localPath, auth, onProgress)
+        val cloneResult = gitRepository.clone(url, localPath, auth, onProgress, onStateChange)
         return cloneResult.map { addGraph(localPath, location, displayName, description) }
     }
 

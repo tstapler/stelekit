@@ -12,6 +12,7 @@ import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.git.merge.JournalMergeService
+import dev.stapler.stelekit.git.model.CloneDepthState
 import dev.stapler.stelekit.git.model.ConflictFile
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.SyncState
@@ -110,6 +111,25 @@ class GitSyncService(
     suspend fun refreshLocalStatus(graphId: String) {
         val config = configRepository.getConfig(graphId).getOrNull() ?: return
         _localStatus.value = gitRepository.status(config).getOrNull()
+    }
+
+    /**
+     * Widens [graphId]'s shallow clone to full history (git-sync-resilience Story 2.1.4) and, on
+     * success, persists the resulting [CloneDepthState.FullHistory] checkpoint. [GitRepository]
+     * implementations don't hold a [GitConfigRepository] reference themselves (see
+     * [GitRepository.unshallow]'s doc), so this is the call site responsible for that — this class
+     * is the one collaborator that already holds both. No settings-screen UI calls this yet
+     * (backend capability only, per plan.md).
+     */
+    suspend fun deepen(graphId: String): Either<DomainError, Unit> {
+        val config = when (val result = configRepository.getConfig(graphId)) {
+            is Either.Left -> return result
+            is Either.Right -> result.value ?: return DomainError.DatabaseError.NotFound("GitConfig", graphId).left()
+        }
+        return gitRepository.unshallow(config).fold(
+            { it.left() },
+            { configRepository.saveConfig(config.copy(cloneDepthState = CloneDepthState.FullHistory)) },
+        )
     }
 
     // Owns its own scope — never accept rememberCoroutineScope()
@@ -389,6 +409,12 @@ class GitSyncService(
      */
     suspend fun fetchOnly(graphId: String): Either<DomainError.GitError, FetchResult> =
         withContext(PlatformDispatcher.IO) {
+            // Bracket the whole pipeline so gitSyncBusyCounter is decremented on every
+            // return@withContext exit path below, not just the success path — mirrors sync()'s
+            // bracketing (git-sync-resilience Story 5.1.1).
+            gitSyncBusyCounter.begin()
+            try {
+
             // Task 3.4.2c: a manual fetchOnly trigger always supersedes any pending scheduled retry.
             rateLimitRetryJob?.cancel()
 
@@ -440,6 +466,9 @@ class GitSyncService(
                     }
                     fetchResult.right()
                 }
+            }
+            } finally {
+                gitSyncBusyCounter.end()
             }
         }
 

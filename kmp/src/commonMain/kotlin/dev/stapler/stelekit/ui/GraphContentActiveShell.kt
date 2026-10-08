@@ -95,6 +95,8 @@ internal fun GraphContentActiveShell(
     val deviceSttAvailable = deps.voiceConfig.deviceSttAvailable
     val deviceLlmAvailable = deps.voiceConfig.deviceLlmAvailable
     val gitRepository = deps.platformIntegrations.gitRepository
+    val gitCloneWorkerLauncher = deps.platformIntegrations.gitCloneWorkerLauncher
+    val inFlightCloneTracker = remember { dev.stapler.stelekit.git.InFlightCloneTracker() }
     val hotkeyComboLabel = deps.hotkeyComboLabel
     val googleAuthManager = deps.platformIntegrations.googleAuthManager
     val storageLocationResolver = deps.platformIntegrations.storageLocationResolver
@@ -456,10 +458,26 @@ internal fun GraphContentActiveShell(
                     gitConfigRepository = gitConfigRepository,
                     activeGraphId = activeGraphId?.value,
                     onCloneAndAdd = if (gitRepository != null) {
-                        { url, localPath, auth, location, displayName, description, onProgress ->
-                            graphManager.cloneAndAdd(gitRepository, url, localPath, auth, onProgress, location, displayName, description).map { it.value }
+                        { url, localPath, auth, location, displayName, description, onProgress, onStateChange ->
+                            // git-sync-resilience Story 3.1.3: Android routes the clone through
+                            // GitCloneWorker (dataSync foreground survival) and Desktop (Story 4.1.4)
+                            // through JvmGitCloneWorkerLauncher, so Cancel has something to cancel.
+                            // A platform with no launcher wired (e.g. iOS) stays on the direct call.
+                            if (gitCloneWorkerLauncher != null) {
+                                val graphId = graphManager.graphIdFromPath(fileSystem.expandTilde(localPath)).value
+                                inFlightCloneTracker.track(graphId) {
+                                    gitCloneWorkerLauncher.launchClone(
+                                        graphId, url, localPath, auth, onProgress, onStateChange, displayName,
+                                    )
+                                }.map { graphManager.addGraph(localPath, location, displayName, description).value }
+                            } else {
+                                graphManager.cloneAndAdd(
+                                    gitRepository, url, localPath, auth, onProgress, location, displayName, description, onStateChange,
+                                ).map { it.value }
+                            }
                         }
                     } else null,
+                    onCancelClone = { inFlightCloneTracker.cancel(gitCloneWorkerLauncher) },
                     graphPath = activeGraphPath,
                     detectedRepoRoot = graphRegistry.graphs.firstOrNull { it.id == activeGraphId }?.detectedRepoRoot,
                     detectedWikiSubdir = graphRegistry.graphs.firstOrNull { it.id == activeGraphId }?.detectedWikiSubdir,

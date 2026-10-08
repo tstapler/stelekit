@@ -2447,6 +2447,8 @@ public class SteleDatabaseQueries(
     poll_interval_minutes: Long,
     auto_commit: Long,
     commit_message_template: String,
+    clone_depth_state: String,
+    shallow_depth: Long?,
   ) -> T): Query<T> = SelectGitConfigQuery(graph_id) { cursor ->
     mapper(
       cursor.getString(0)!!,
@@ -2461,7 +2463,9 @@ public class SteleDatabaseQueries(
       cursor.getString(9),
       cursor.getLong(10)!!,
       cursor.getLong(11)!!,
-      cursor.getString(12)!!
+      cursor.getString(12)!!,
+      cursor.getString(13)!!,
+      cursor.getLong(14)
     )
   }
 
@@ -4675,14 +4679,17 @@ public class SteleDatabaseQueries(
     poll_interval_minutes: Long,
     auto_commit: Long,
     commit_message_template: String,
+    clone_depth_state: String,
+    shallow_depth: Long?,
   ): Long {
     val result = driver.execute(66_633_213, """
         |INSERT OR REPLACE INTO git_config(
         |    graph_id, repo_root, wiki_subdir, remote_name, remote_branch,
         |    auth_type, ssh_key_path, ssh_key_passphrase_key, https_token_key, oauth_token_key,
-        |    poll_interval_minutes, auto_commit, commit_message_template
-        |) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """.trimMargin(), 13) {
+        |    poll_interval_minutes, auto_commit, commit_message_template,
+        |    clone_depth_state, shallow_depth
+        |) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """.trimMargin(), 15) {
           var parameterIndex = 0
           bindString(parameterIndex++, graph_id)
           bindString(parameterIndex++, repo_root)
@@ -4697,6 +4704,8 @@ public class SteleDatabaseQueries(
           bindLong(parameterIndex++, poll_interval_minutes)
           bindLong(parameterIndex++, auto_commit)
           bindString(parameterIndex++, commit_message_template)
+          bindString(parameterIndex++, clone_depth_state)
+          bindLong(parameterIndex++, shallow_depth)
         }.await()
     notifyQueries(66_633_213) { emit ->
       emit("git_config")
@@ -7265,7 +7274,7 @@ public class SteleDatabaseQueries(
       driver.removeListener("git_config", listener = listener)
     }
 
-    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(1_451_609_335, """SELECT git_config.graph_id, git_config.repo_root, git_config.wiki_subdir, git_config.remote_name, git_config.remote_branch, git_config.auth_type, git_config.ssh_key_path, git_config.ssh_key_passphrase_key, git_config.https_token_key, git_config.oauth_token_key, git_config.poll_interval_minutes, git_config.auto_commit, git_config.commit_message_template FROM git_config WHERE graph_id = ?""", mapper, 1) {
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(1_451_609_335, """SELECT git_config.graph_id, git_config.repo_root, git_config.wiki_subdir, git_config.remote_name, git_config.remote_branch, git_config.auth_type, git_config.ssh_key_path, git_config.ssh_key_passphrase_key, git_config.https_token_key, git_config.oauth_token_key, git_config.poll_interval_minutes, git_config.auto_commit, git_config.commit_message_template, git_config.clone_depth_state, git_config.shallow_depth FROM git_config WHERE graph_id = ?""", mapper, 1) {
       var parameterIndex = 0
       bindString(parameterIndex++, graph_id)
     }

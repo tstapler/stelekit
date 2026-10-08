@@ -26,6 +26,7 @@ import dev.stapler.stelekit.capture.PendingCapturePoller
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.domain.UrlFetcherJvm
 import dev.stapler.stelekit.service.JvmMediaAttachmentService
+import dev.stapler.stelekit.git.JvmGitCloneWorkerLauncher
 import dev.stapler.stelekit.git.JvmGitRepository
 import dev.stapler.stelekit.ui.StelekitApp
 import dev.stapler.stelekit.ui.StelekitAppCaptureDeps
@@ -184,6 +185,10 @@ fun main(args: Array<String>) {
 
             val attachmentService = remember { JvmMediaAttachmentService() }
             val gitRepository = remember { JvmGitRepository() }
+            // Story 4.1.4: wires Cancel up on Desktop — without this, gitCloneWorkerLauncher stays
+            // null and App.kt's onCancelClone silently no-ops. Owns its own CoroutineScope
+            // internally (see JvmGitCloneWorkerLauncher's kdoc), so remember-ing it here is safe.
+            val gitCloneWorkerLauncher = remember(gitRepository) { JvmGitCloneWorkerLauncher(gitRepository) }
             StelekitApp(
                 fileSystem = fileSystem,
                 graphPath = graphPath,
@@ -196,6 +201,7 @@ fun main(args: Array<String>) {
                         cryptoEngine = dev.stapler.stelekit.vault.JvmCryptoEngine(),
                         attachmentService = attachmentService,
                         gitRepository = gitRepository,
+                        gitCloneWorkerLauncher = gitCloneWorkerLauncher,
                     ),
                     lifecycleHooks = StelekitAppLifecycleHooks(
                         onGraphManagerReady = { gm -> captureSurfaces.attachGraphManager(gm) },

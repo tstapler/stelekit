@@ -251,7 +251,10 @@ class DemoGraphPersistenceTest {
     fun `updateGraphDescription updates a normal graph's description and it survives a registry reload`() =
         kotlinx.coroutines.test.runTest {
             val settings = InMemorySettings()
-            val id = makeGraphManager(settings).addGraph("/tmp/some-folder", null, "Work notes", "Original description")
+            val first = makeGraphManager(settings)
+            val id = first.addGraph("/tmp/some-folder", null, "Work notes", "Original description")
+            // Its background detection re-saves the registry; letting it land after the update would clobber it.
+            first.awaitBackgroundDetection()
 
             val result = makeGraphManager(settings).updateGraphDescription(id, " Updated description ")
             assertTrue(result, "updateGraphDescription() must return true for a normal graph")

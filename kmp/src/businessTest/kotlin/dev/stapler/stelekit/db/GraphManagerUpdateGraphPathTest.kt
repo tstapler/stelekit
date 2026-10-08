@@ -11,6 +11,8 @@ import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 
@@ -28,15 +30,18 @@ class GraphManagerUpdateGraphPathTest {
     private class RecordingSettings : Settings {
         private val delegate = StubSettings()
         private val json = Json { ignoreUnknownKeys = true }
-        // Appended from the fire-and-forget detection coroutine while tests read it.
-        val savedRegistries = java.util.concurrent.CopyOnWriteArrayList<GraphRegistry>()
+        // addGraph's background detection saves the registry from another thread, so keep this atomic.
+        private val saved = MutableStateFlow<List<GraphRegistry>>(emptyList())
+        val savedRegistries: List<GraphRegistry> get() = saved.value
+        fun clearSaved() { saved.value = emptyList() }
         override fun getBoolean(key: String, defaultValue: Boolean) = delegate.getBoolean(key, defaultValue)
         override fun putBoolean(key: String, value: Boolean) = delegate.putBoolean(key, value)
         override fun getString(key: String, defaultValue: String) = delegate.getString(key, defaultValue)
         override fun putString(key: String, value: String) {
             delegate.putString(key, value)
             if (key == "graph_registry") {
-                savedRegistries.add(json.decodeFromString(GraphRegistry.serializer(), value))
+                val snapshot = json.decodeFromString(GraphRegistry.serializer(), value)
+                saved.update { it + snapshot }
             }
         }
         override fun containsKey(key: String) = delegate.containsKey(key)
@@ -286,7 +291,7 @@ class GraphManagerUpdateGraphPathTest {
         val graphManager = newManager(fs, settings)
         val oldId = graphManager.addGraph("/old/path")
         graphManager.switchGraph(oldId)
-        settings.savedRegistries.clear()
+        settings.clearSaved()
 
         val oldDbPath = DriverFactory().getDatabaseUrl(oldId.value).substringAfter("jdbc:sqlite:")
         fs.existingPaths.add(oldDbPath)

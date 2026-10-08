@@ -277,6 +277,13 @@ class StelekitViewModel(
     /** Opens the git setup wizard in clone-from-URL mode (pre-selects clone, starts at step 2). */
     fun openGitSetupForClone() = gitSyncCoordinator.openGitSetupForClone()
 
+    /** Opens the git setup wizard pre-navigated to Step 5 (test connection/retry) — the
+     * notification-tap deep link a stuck/failed sync's [dev.stapler.stelekit.git.GitCloneWorker]
+     * notification targets (Story 4.1.5). */
+    fun openGitSetupForRetry() {
+        _uiState.update { it.copy(gitSetupVisible = true, gitSetupInitialStep = 5) }
+    }
+
     /** Dismisses the conflict resolution screen. */
     fun dismissConflictResolution() = gitSyncCoordinator.dismissConflictResolution()
 

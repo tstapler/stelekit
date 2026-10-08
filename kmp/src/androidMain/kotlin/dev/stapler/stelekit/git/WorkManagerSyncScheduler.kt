@@ -7,16 +7,20 @@ import android.content.Context
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ListenableWorker
 import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import arrow.core.Either
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.security.CredentialStore
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.first
 import java.util.concurrent.TimeUnit
 
 /**
@@ -35,7 +39,11 @@ class WorkManagerSyncScheduler(
 
     private val workName get() = workNameFor(graphId)
 
-    override fun schedule(intervalMinutes: Int) {
+    override fun schedule(intervalMinutes: Int) = schedule(intervalMinutes, ExistingPeriodicWorkPolicy.UPDATE)
+
+    /** [policy] `CANCEL_AND_REENQUEUE` is for [resumeFor]: after a clone ran under the shared
+     * unique name, `UPDATE` can't convert the finished one-time work back into a periodic job. */
+    internal fun schedule(intervalMinutes: Int, policy: ExistingPeriodicWorkPolicy) {
         val repeatInterval = maxOf(intervalMinutes.toLong(), MIN_INTERVAL_MINUTES)
 
         val constraints = Constraints.Builder()
@@ -53,7 +61,7 @@ class WorkManagerSyncScheduler(
 
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             workName,
-            ExistingPeriodicWorkPolicy.UPDATE,
+            policy,
             request,
         )
     }
@@ -66,7 +74,9 @@ class WorkManagerSyncScheduler(
         /** Android's floor for periodic work — matches [schedule]'s existing clamp. */
         private const val MIN_INTERVAL_MINUTES = 15L
 
-        private fun workNameFor(graphId: String) = "stelekit_git_sync_$graphId"
+        /** Not `private` (Story 5.1.2): [AndroidGitCloneWorkerLauncher] shares this name so
+         * WorkManager's own uniqueness guarantee serializes it against the periodic job. */
+        internal fun workNameFor(graphId: String) = "stelekit_git_sync_$graphId"
 
         /**
          * Pauses [graphId]'s scheduled periodic sync job ahead of a relocate/link's copy step
@@ -91,7 +101,8 @@ class WorkManagerSyncScheduler(
          * source of truth for the interval.
          */
         fun resumeFor(context: Context, graphId: String) {
-            WorkManagerSyncScheduler(context, graphId).schedule(MIN_INTERVAL_MINUTES.toInt())
+            WorkManagerSyncScheduler(context, graphId)
+                .schedule(MIN_INTERVAL_MINUTES.toInt(), ExistingPeriodicWorkPolicy.CANCEL_AND_REENQUEUE)
         }
     }
 }
@@ -117,54 +128,96 @@ class GitSyncWorker(
     override suspend fun doWork(): Result {
         val graphId = inputData.getString(KEY_GRAPH_ID) ?: return Result.failure()
 
+        // Story 3.1.7: a side-effecting observation only, piggybacked on this worker's existing
+        // periodic schedule — never allowed to affect this worker's own Result (ADR-002 governs
+        // GitCloneWorker's own retry ownership, not this unrelated watchdog check).
+        runCatching { checkAndSurfaceStuckGitCloneWorker(applicationContext, graphId) }
+
         // Fast path: app is running and service is registered
         val service = GitSyncServiceRegistry.getService(graphId)
         if (service != null) {
             return try {
-                service.fetchOnly(graphId)
-                Result.success()
+                // fetchOnly() communicates failure via Either.Left, not by throwing — the result
+                // must be inspected, not discarded, or every fetch failure silently reads as
+                // Result.success() regardless of what the catch block below does (Story 1.2.3).
+                when (service.fetchOnly(graphId)) {
+                    is Either.Left -> Result.failure()
+                    is Either.Right -> Result.success()
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
-                Result.retry()
+                // ADR-002: GitOperationSupport.runGitTransportOpWithRetry (Story 1.2.2) already
+                // retried internally before fetchOnly() ever threw/returned Left here — a second
+                // WorkManager-level Result.retry() would stack a second, uncoordinated retry
+                // layer on top of the first. Result.failure() leaves the next attempt to
+                // WorkManager's own 15-minute periodic schedule, not an early re-invocation.
+                Result.failure()
             }
         }
 
         // Slow path: process was killed and WorkManager restarted it.
         // Application.onCreate() has run, so DriverFactory is initialized.
         // Perform a standalone fetch directly without a full GitSyncService.
+
+        // Story 5.1.3: belt-and-suspenders — yield if a GitCloneWorker is already RUNNING for
+        // this graph in this freshly-restarted process, rather than racing it at the JGit level.
+        if (isGitCloneWorkerRunningFor(applicationContext, graphId)) {
+            return Result.success()
+        }
+
         return try {
             CredentialStore.init(applicationContext)
             DriverFactory.setContext(applicationContext)
 
-            val factory = DriverFactory()
-            val dbUrl = factory.getDatabaseUrl(graphId)
-            val driver = factory.createDriver(dbUrl)
-            val db = dev.stapler.stelekit.db.SteleDatabase(driver)
-
-            val row = db.steleDatabaseQueries.selectGitConfig(graphId).executeAsOneOrNull()
-                ?: run { driver.close(); return Result.success() }
-
-            val config = row.toGitConfig()
             // A throwaway, uninitialized PlatformFileSystem() is deliberately fine here (unlike
             // MainActivity's construction site — see buildGitRepository): fetch() only updates
             // remote-tracking refs and never touches the working tree, so no ensureFresh/shadow
             // write-back happens on this call path even though resolveForJGit's shadowWorktreeFor
             // still correctly targets the shadow directory. The user's next foreground merge()
             // call is what surfaces fetched changes into SAF (plan.md Task 5.1.2b).
-            val gitRepository = AndroidGitRepository(
-                context = applicationContext,
-                fileSystem = PlatformFileSystem(),
+            runSlowPathFetch(
+                loadConfig = { loadGitConfigFromDb(graphId) },
+                gitRepository = AndroidGitRepository(
+                    context = applicationContext,
+                    fileSystem = PlatformFileSystem(),
+                ),
             )
-            gitRepository.fetch(config)
-
-            driver.close()
-            Result.success()
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
-            Result.retry()
+            // ADR-002: gitRepository.fetch() (Story 1.2.2e) already retried internally via
+            // runGitTransportOpWithRetry — see the fast path's identical comment above.
+            Result.failure()
         }
+    }
+
+    private fun loadGitConfigFromDb(graphId: String): dev.stapler.stelekit.git.model.GitConfig? {
+        val factory = DriverFactory()
+        val driver = factory.createDriver(factory.getDatabaseUrl(graphId))
+        try {
+            val db = dev.stapler.stelekit.db.SteleDatabase(driver)
+            return db.steleDatabaseQueries.selectGitConfig(graphId).executeAsOneOrNull()?.toGitConfig()
+        } finally {
+            driver.close()
+        }
+    }
+}
+
+/**
+ * The slow path's decision logic, split from [GitSyncWorker.doWork]'s DB/driver setup so it is
+ * testable without a real SQLite driver (Robolectric's bundled SQLite lacks the `fts5` module the
+ * app schema needs). fetch() reports failure via `Either.Left`, not by throwing, so the result
+ * must be inspected (Story 1.2.3, ADR-002: failure, never retry — the retry loop already ran).
+ */
+internal suspend fun runSlowPathFetch(
+    loadConfig: suspend () -> dev.stapler.stelekit.git.model.GitConfig?,
+    gitRepository: GitRepository,
+): ListenableWorker.Result {
+    val config = loadConfig() ?: return ListenableWorker.Result.success()
+    return when (gitRepository.fetch(config)) {
+        is Either.Left -> ListenableWorker.Result.failure()
+        is Either.Right -> ListenableWorker.Result.success()
     }
 }
 
@@ -185,6 +238,7 @@ private fun dev.stapler.stelekit.db.Git_config.toGitConfig() =
         pollIntervalMinutes = poll_interval_minutes.toInt(),
         autoCommit = auto_commit != 0L,
         commitMessageTemplate = commit_message_template,
+        cloneDepthState = dev.stapler.stelekit.git.model.CloneDepthState.fromRaw(clone_depth_state, shallow_depth),
     )
 
 /**
@@ -207,4 +261,97 @@ object GitSyncServiceRegistry {
     }
 
     fun getService(graphId: String): GitSyncService? = services[graphId]
+}
+
+/**
+ * git-sync-resilience Story 3.1.7: threshold past which a `RUNNING` [GitCloneWorker] [WorkInfo]
+ * is presumed killed by OEM battery optimization (no exception thrown, `onStopped()` never
+ * invoked — a distinct silent-kill mechanism a correctly `setForeground()`'d service does not
+ * defeat, per pre-mortem.md P1 #1) rather than still legitimately transferring — comfortably past
+ * [GIT_TRANSPORT_TIMEOUT_SECONDS] (300s) and the retry loop's 10-minute `maxElapsed` wall-clock
+ * deadline (Story 3.1.4), both of which bound how long a legitimately-running clone can take.
+ */
+const val STUCK_CLONE_WATCHDOG_THRESHOLD_MINUTES = 30
+
+/**
+ * Pure watchdog check (Task 3.1.7a): true when [state] is `RUNNING` and [startTimeMs] is more
+ * than [STUCK_CLONE_WATCHDOG_THRESHOLD_MINUTES] before [nowMs] — the one failure mode in this
+ * plan with no thrown exception for `classifyGitFailure` to route at all. Deliberately
+ * independent of WorkManager/SharedPreferences so it's directly unit-testable; see
+ * [checkAndSurfaceStuckGitCloneWorker] for the real WorkManager-backed caller.
+ */
+fun isGitCloneWorkerStuck(state: WorkInfo.State?, startTimeMs: Long?, nowMs: Long): Boolean {
+    if (state != WorkInfo.State.RUNNING || startTimeMs == null) return false
+    return (nowMs - startTimeMs) > STUCK_CLONE_WATCHDOG_THRESHOLD_MINUTES * 60_000L
+}
+
+/**
+ * `SharedPreferences`-backed start-time bookkeeping for [GitCloneWorker]'s stuck-clone watchdog
+ * (Task 3.1.7a) — [WorkInfo] itself exposes no start-time field, so this app tracks it
+ * explicitly, keyed by graphId, alongside the enqueue in [AndroidGitCloneWorkerLauncher].
+ */
+object GitCloneWorkTracker {
+    private const val PREFS_NAME = "stelekit_git_clone_tracker"
+
+    fun recordStart(context: Context, graphId: String, workId: java.util.UUID, startTimeMs: Long) {
+        prefs(context).edit()
+            .putString(workIdKey(graphId), workId.toString())
+            .putLong(startTimeKey(graphId), startTimeMs)
+            .apply()
+    }
+
+    fun clear(context: Context, graphId: String) {
+        prefs(context).edit().remove(workIdKey(graphId)).remove(startTimeKey(graphId)).apply()
+    }
+
+    fun trackedWorkId(context: Context, graphId: String): java.util.UUID? =
+        prefs(context).getString(workIdKey(graphId), null)
+            ?.let { runCatching { java.util.UUID.fromString(it) }.getOrNull() }
+
+    fun startTime(context: Context, graphId: String): Long? =
+        prefs(context).getLong(startTimeKey(graphId), -1L).takeIf { it >= 0 }
+
+    private fun workIdKey(graphId: String) = "${graphId}_work_id"
+    private fun startTimeKey(graphId: String) = "${graphId}_start_ms"
+
+    private fun prefs(context: Context) = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+}
+
+/**
+ * Real WorkManager-backed caller of [isGitCloneWorkerStuck] (Task 3.1.7b) — queries the tracked
+ * work id's current [WorkInfo] and posts [GitCloneWorker.STUCK_CLONE_WATCHDOG_MESSAGE] if stuck.
+ * Called from [GitSyncWorker]'s existing periodic invocation; never throws (callers must guard —
+ * see `GitSyncWorker.doWork()`'s `runCatching` call site), since this is a side-effecting
+ * observation, not a retry decision.
+ */
+suspend fun checkAndSurfaceStuckGitCloneWorker(
+    context: Context,
+    graphId: String,
+    nowMs: Long = System.currentTimeMillis(),
+) {
+    val workId = GitCloneWorkTracker.trackedWorkId(context, graphId) ?: return
+    val info = WorkManager.getInstance(context).getWorkInfoByIdFlow(workId).first()
+    if (info == null || info.state.isFinished) {
+        GitCloneWorkTracker.clear(context, graphId)
+        return
+    }
+    if (isGitCloneWorkerStuck(info.state, GitCloneWorkTracker.startTime(context, graphId), nowMs)) {
+        GitCloneWorker.postStuckCloneWatchdogNotification(context)
+    }
+}
+
+/**
+ * git-sync-resilience Story 5.1.3: pure yield-decision — true only for a [WorkInfo.State.RUNNING]
+ * [GitCloneWorker]. Split out (mirroring [isGitCloneWorkerStuck]) so the decision is directly
+ * unit-testable without a real WorkManager-tracked work item.
+ */
+fun shouldSlowPathYieldToGitCloneWorker(state: WorkInfo.State?): Boolean = state == WorkInfo.State.RUNNING
+
+/** Real WorkManager-backed caller of [shouldSlowPathYieldToGitCloneWorker] (Story 5.1.3), keyed
+ * by [GitCloneWorkTracker]'s tracked id rather than the shared unique-work name (Story 5.1.2), to
+ * avoid confusing a running [GitCloneWorker] with [GitSyncWorker] itself. */
+suspend fun isGitCloneWorkerRunningFor(context: Context, graphId: String): Boolean {
+    val workId = GitCloneWorkTracker.trackedWorkId(context, graphId) ?: return false
+    val info = WorkManager.getInstance(context).getWorkInfoByIdFlow(workId).first()
+    return shouldSlowPathYieldToGitCloneWorker(info?.state)
 }

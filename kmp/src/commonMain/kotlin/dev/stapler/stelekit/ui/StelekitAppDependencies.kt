@@ -69,6 +69,15 @@ data class StelekitAppLifecycleHooks(
     /** Called once the [NotificationManager] instance is ready — Desktop wires this to
      * `CaptureController.attachNotificationManager` so capture saves can surface a toast. */
     val onNotificationManagerReady: ((NotificationManager) -> Unit)? = null,
+    /**
+     * Called with the active graph's [StelekitViewModel] whenever [GraphContent] (re)creates it —
+     * on first composition and again after every `key(activeGraphId)` graph switch. Lets a host
+     * drive deep-link navigation that depends on the ViewModel's `AppState` (e.g. Story 4.1.5's
+     * `GitCloneWorker` notification tap, which must land on Git Setup Step 5 for a specific graph
+     * rather than the app's generic home screen — see `MainActivity.EXTRA_OPEN_GIT_SETUP_GRAPH_ID`
+     * handling).
+     */
+    val onViewModelReady: ((StelekitViewModel) -> Unit)? = null,
 )
 
 /**
@@ -81,6 +90,17 @@ data class StelekitAppPlatformIntegrations(
      * `AndroidGitRepository` on Android. When null, git sync is disabled.
      */
     val gitRepository: dev.stapler.stelekit.git.GitRepository? = null,
+    /**
+     * git-sync-resilience Story 3.1.3: platform seam for running a clone as a survivable
+     * operation. Pass `AndroidGitCloneWorkerLauncher(context)` on Android — routes the clone
+     * through `GitCloneWorker`'s `dataSync` foreground service instead of this composable's own
+     * `rememberCoroutineScope()`. Pass `JvmGitCloneWorkerLauncher(gitRepository)` on Desktop
+     * (Story 4.1.4) — no foreground-service concept there, but the launcher still gives Cancel a
+     * `Deferred` it can cancel independently of the caller's own coroutine. Null (iOS, or before a
+     * host wires one) falls back to [gitRepository]`.clone(...)` called directly on this scope,
+     * unchanged from pre-Epic-3.1 behavior, and Cancel is a no-op.
+     */
+    val gitCloneWorkerLauncher: dev.stapler.stelekit.git.GitCloneWorkerLauncher? = null,
     /**
      * Platform-specific crypto engine for paranoid-mode vault operations.
      * Pass `JvmCryptoEngine` on Desktop. Android support is pending an AndroidCryptoEngine.
@@ -250,6 +270,8 @@ data class GraphContentDeps(
     val graphManager: GraphManager,
     val notificationManager: NotificationManager,
     val onMemoryPressure: (((() -> Unit) -> Unit))? = null,
+    /** Forwards [StelekitAppLifecycleHooks.onViewModelReady] — see its doc. */
+    val onViewModelReady: ((StelekitViewModel) -> Unit)? = null,
     val coreServices: StelekitAppCoreServices = StelekitAppCoreServices(),
     val voiceConfig: StelekitAppVoiceConfig = StelekitAppVoiceConfig(),
     val platformIntegrations: StelekitAppPlatformIntegrations = StelekitAppPlatformIntegrations(),

@@ -103,6 +103,32 @@ class MigrationRunnerSchemaSyncTest {
         )
     }
 
+    // ── Test 1b: git_config_clone_depth_state's AddColumn ops are registered ──────
+
+    /**
+     * git-sync-resilience Story 2.1.2 doesn't add a new table (git_config already exists) — it
+     * adds two columns via [MigrationRunner.SchemaOp.AddColumn], which Test 1 above can't see
+     * (it only extracts `CREATE TABLE IF NOT EXISTS` names). This is the structural-invariant
+     * equivalent for that shape: the two `AddColumn` ops declared in `SteleDatabase.sq`'s
+     * `git_config` `CREATE TABLE` must actually be registered in [MigrationRunner.all].
+     */
+    @Test
+    fun `git_config_clone_depth_state's two AddColumn ops are registered in MigrationRunner all`() {
+        val migration = MigrationRunner.all.firstOrNull { it.name == "git_config_clone_depth_state" }
+        assertTrue(migration != null, "Expected a 'git_config_clone_depth_state' Migration entry in MigrationRunner.all")
+
+        val addColumnOps = migration!!.schemaOps.filterIsInstance<MigrationRunner.SchemaOp.AddColumn>()
+        val columns = addColumnOps.map { it.table to it.column }.toSet()
+        assertTrue(
+            columns.contains("git_config" to "clone_depth_state"),
+            "Expected an AddColumn(git_config, clone_depth_state) op, got: $columns"
+        )
+        assertTrue(
+            columns.contains("git_config" to "shallow_depth"),
+            "Expected an AddColumn(git_config, shallow_depth) op, got: $columns"
+        )
+    }
+
     // ── Test 2: integration — SQL correctness ─────────────────────────────────────
 
     @Test

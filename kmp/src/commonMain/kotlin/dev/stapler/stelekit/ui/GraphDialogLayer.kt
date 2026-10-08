@@ -261,6 +261,7 @@ private fun GitSetupDialogContent(
             }
         },
         onCloneAndAdd = gitSync.onCloneAndAdd,
+        onCancelClone = gitSync.onCancelClone,
         graphPath = gitSync.graphPath,
         onCloneComplete = gitSync.onCloneComplete,
         initialStep = appState.gitSetupInitialStep,
