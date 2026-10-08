@@ -50,9 +50,11 @@ class LlmTagProvider(
         return try {
             withTimeout(timeoutSeconds.seconds) {
                 when (val result = provider.format(truncatedContent, systemPrompt)) {
-                    is LlmResult.Success -> parseResponse(result.formattedText, filtered).also {
-                        logger.debug("on-device tags: ${filtered.size} candidates, raw=${result.formattedText.take(200)} -> ${it.size} matched")
-                    }.right()
+                    is LlmResult.Success -> {
+                        val parsed = parseResponse(result.formattedText, filtered)
+                        logger.debug("on-device tags: ${filtered.size} candidates -> ${parsed.size} matched")
+                        parsed.right()
+                    }
                     is LlmResult.Failure.ApiError -> DomainError.NetworkError.HttpError(
                         result.code, result.message
                     ).left()
@@ -121,16 +123,21 @@ $tagList
         val vocabLower = vocabulary.associateBy { it.lowercase() }
         val results = mutableListOf<TagSuggestion>()
         val seen = mutableSetOf<String>()
+        // Lightly cleaned first so ".NET" / "St." survive; aggressive trim is the fallback.
+        fun match(candidate: String): String? {
+            val light = candidate.trim()
+                .replace(LEADING_MARKER, "")
+                .removePrefix("[[").removeSuffix("]]")
+                .trim().trim('"', '\'', '`').trim()
+            if (light.isBlank()) return null
+            vocabLower[light.lowercase()]?.let { return it }
+            val aggressive = light.trim('*', '.', '"', '\'', '`').trim()
+            return vocabLower[aggressive.lowercase()]
+        }
         responseText.lines()
-            .flatMap { it.split(',') }
-            .forEach { raw ->
-                val cleaned = raw.trim()
-                    .replace(LEADING_MARKER, "")
-                    .removePrefix("[[").removeSuffix("]]")
-                    .trim().trim('"', '\'', '`', '*', '.')
-                    .trim()
-                if (cleaned.isBlank()) return@forEach
-                val canonical = vocabLower[cleaned.lowercase()] ?: return@forEach
+            // A whole line wins over comma-splitting so names like "Smith, John" still match.
+            .flatMap { line -> match(line)?.let { listOf(it) } ?: line.split(',').mapNotNull { match(it) } }
+            .forEach { canonical ->
                 if (!seen.add(canonical)) return@forEach
                 // Positional confidence decay: CONFIDENCE_MAX at position 0, decrement CONFIDENCE_DECAY per position
                 val confidence = (CONFIDENCE_MAX - (results.size) * CONFIDENCE_DECAY).coerceIn(CONFIDENCE_MIN, CONFIDENCE_MAX)

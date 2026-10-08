@@ -18,6 +18,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -33,10 +35,10 @@ import dev.stapler.stelekit.tags.TagSuggestionState
 fun SuggestionBottomSheet(
     state: TagSuggestionState,
     onAcceptTag: (blockUuid: String, term: String) -> Unit,
-    onAcceptAll: (blockUuid: String, terms: List<String>) -> Unit = { _, _ -> },
     onDismiss: () -> Unit,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
+    onAcceptAll: ((blockUuid: String, terms: List<String>) -> Unit)? = null,
 ) {
     val isVisible = state is TagSuggestionState.Ready || state is TagSuggestionState.Loading
     if (!isVisible) return
@@ -86,21 +88,32 @@ fun SuggestionBottomSheet(
                 is TagSuggestionState.Ready -> {
                     // Local hits are flagged autoApplied (hidden by TagChipRow); here they are the
                     // main offer — existing pages the user can link in one tap.
+                    // Accepted terms are hidden locally: the state's suggestions don't drop them, so
+                    // re-tapping (or "Link all") would append the same link twice.
+                    val accepted = remember(state.blockUuid) { mutableStateListOf<String>() }
                     val allSuggestions = (state.localSuggestions + state.llmSuggestions)
                         .distinctBy { it.term.lowercase() }
+                        .filter { it.term.lowercase() !in accepted }
                         .map { it.copy(autoApplied = false) }
 
                     TagChipRow(
                         suggestions = allSuggestions,
                         llmStatus = state.llmStatus,
-                        onAccept = { suggestion -> onAcceptTag(state.blockUuid, suggestion.term) },
+                        onAccept = { suggestion ->
+                            accepted += suggestion.term.lowercase()
+                            onAcceptTag(state.blockUuid, suggestion.term)
+                        },
                         onDismiss = { /* dismiss silently */ },
                         modifier = Modifier.padding(top = 8.dp),
                     )
 
-                    if (allSuggestions.size > 1) {
+                    if (onAcceptAll != null && allSuggestions.size > 1) {
                         TextButton(
-                            onClick = { onAcceptAll(state.blockUuid, allSuggestions.map { it.term }) },
+                            onClick = {
+                                val terms = allSuggestions.map { it.term }
+                                accepted += terms.map { it.lowercase() }
+                                onAcceptAll(state.blockUuid, terms)
+                            },
                             modifier = Modifier.semantics { contentDescription = "Link all suggested tags" },
                         ) {
                             Text("Link all ${allSuggestions.size}")
