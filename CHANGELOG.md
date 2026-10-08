@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.92.1](https://github.com/tstapler/stelekit/compare/v0.92.0...v0.92.1) (2026-10-08)
+
+
+### Bug Fixes
+
+* **tags:** show existing-page matches with Link all, tolerate messy LLM output ([#389](https://github.com/tstapler/stelekit/issues/389)) ([b6ebf98](https://github.com/tstapler/stelekit/commit/b6ebf986acc198e55364b42ff3b40a39b9aab3be))
+
 ## [0.92.0](https://github.com/tstapler/stelekit/compare/v0.91.0...v0.92.0) (2026-10-08)
 
 
