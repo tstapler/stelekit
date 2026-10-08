@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.db
 
+import dev.stapler.stelekit.diagnostics.GraphDiagnosticsCollector
 import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.GraphInfo
 import dev.stapler.stelekit.model.GraphRegistry
@@ -210,5 +211,22 @@ class GraphManagerSwitchNotesPathTest {
             !manager.getGraphInfo(newId)!!.effectiveNotesPath.value.startsWith("/data/graphs/clone"),
             "effective path must not keep pointing at the old folder",
         )
+    }
+
+    @Test
+    fun `diagnostics report the effective notes path and whether the mirror matches`() = runTest {
+        val (manager, settings) = newManager(listOf(clone(), saf()))
+        manager.awaitPendingMigration()
+        manager.switchGraph(safId)
+        manager.switchGraph(cloneId)
+        val repos = manager.awaitPendingMigration()!!
+
+        val matching = GraphDiagnosticsCollector(manager, StubFileSystem(), repos, settings).collect()
+        assertTrue("effectiveNotesPath=/data/graphs/clone/logseq (wikiSubdir=logseq)" in matching, matching)
+        assertTrue("lastGraphPath matches effectiveNotesPath=true" in matching, matching)
+
+        settings.putString("lastGraphPath", safPath)
+        val stale = GraphDiagnosticsCollector(manager, StubFileSystem(), repos, settings).collect()
+        assertTrue("lastGraphPath matches effectiveNotesPath=false" in stale, stale)
     }
 }
