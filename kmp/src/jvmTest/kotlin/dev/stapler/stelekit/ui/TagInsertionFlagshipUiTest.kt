@@ -40,13 +40,12 @@ import org.junit.Test
  * `PageView.kt` wires them) rather than asserting on `TagSuggestionViewModel` state alone.
  *
  * Note on suggestion source: [dev.stapler.stelekit.tags.TagSuggestionEngine.directMatch] (Tier 1,
- * local/AhoCorasick) always returns `autoApplied = true` results, and
- * [dev.stapler.stelekit.ui.components.tags.TagChipRow] filters out every `autoApplied`
- * suggestion before rendering a chip (`TagChipRow.kt:32`) — so a Tier-1 local match is never
- * itself the thing the user taps. The only suggestions that ever render as a tappable
- * `FilterChip` are Tier-2 LLM suggestions (`autoApplied = false` unconditionally). This test
- * therefore wires a fast, synchronous fake LLM provider so a real chip renders, and exercises
- * exactly the tap sequence a real user performs: tap "Suggest tags", then tap the chip.
+ * local/AhoCorasick) returns `autoApplied = true` results, which
+ * [dev.stapler.stelekit.ui.components.tags.TagChipRow] hides; `SuggestionBottomSheet` clears that
+ * flag, so local matches (existing pages) ARE rendered as tappable chips in the sheet alongside
+ * Tier-2 LLM suggestions. This test wires a fast, synchronous fake LLM provider so a real chip
+ * renders, and exercises exactly the tap sequence a real user performs: tap "Suggest tags", then
+ * tap the chip.
  */
 class TagInsertionFlagshipUiTest : ComposeUITestBase() {
 
