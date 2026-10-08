@@ -616,6 +616,13 @@ fun PageView(
                         blockStateManager.appendToBlock(it, " [[$term]]")
                     }
                 },
+                onAcceptAll = { uuid, terms ->
+                    val targetBlockUuid = blocks.firstOrNull { it.uuid.value == uuid }?.uuid
+                        ?: blocks.firstOrNull()?.uuid
+                    targetBlockUuid?.let {
+                        blockStateManager.appendToBlock(it, terms.joinToString("") { term -> " [[$term]]" })
+                    }
+                },
                 onDismiss = { tagSuggestionViewModel.dismiss() },
                 onRetry = { tagSuggestionViewModel.retryLastRequest() },
             )

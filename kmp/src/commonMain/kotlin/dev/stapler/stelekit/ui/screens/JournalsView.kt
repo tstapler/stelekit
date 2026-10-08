@@ -353,6 +353,11 @@ fun JournalsView(
                         dev.stapler.stelekit.model.BlockUuid(uuid), " [[$term]]"
                     )
                 },
+                onAcceptAll = { uuid, terms ->
+                    viewModel.blockStateManager.appendToBlock(
+                        dev.stapler.stelekit.model.BlockUuid(uuid), terms.joinToString("") { " [[$it]]" }
+                    )
+                },
                 onDismiss = { tagSuggestionViewModel.dismiss() },
                 onRetry = { tagSuggestionViewModel.retryLastRequest() },
             )

@@ -4,6 +4,7 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.voice.LlmFormatterProvider
 import dev.stapler.stelekit.voice.LlmResult
 import kotlinx.coroutines.CancellationException
@@ -15,6 +16,8 @@ class LlmTagProvider(
     private val provider: LlmFormatterProvider,
     private val timeoutSeconds: Long = 90,
 ) {
+    private val logger = Logger("LlmTagProvider")
+
     companion object {
         private const val MAX_BLOCK_CHARS = 500
         private const val MAX_VOCABULARY_SIZE = 200
@@ -22,6 +25,7 @@ class LlmTagProvider(
         private const val CONFIDENCE_DECAY = 0.02f
         private const val CONFIDENCE_MIN = 0.50f
         private val WORD_SPLIT = Regex("\\W+")
+        private val LEADING_MARKER = Regex("^(?:[-*•]|\\d+[.)])\\s*")
     }
 
     /**
@@ -46,7 +50,9 @@ class LlmTagProvider(
         return try {
             withTimeout(timeoutSeconds.seconds) {
                 when (val result = provider.format(truncatedContent, systemPrompt)) {
-                    is LlmResult.Success -> parseResponse(result.formattedText, filtered).right()
+                    is LlmResult.Success -> parseResponse(result.formattedText, filtered).also {
+                        logger.debug("on-device tags: ${filtered.size} candidates, raw=${result.formattedText.take(200)} -> ${it.size} matched")
+                    }.right()
                     is LlmResult.Failure.ApiError -> DomainError.NetworkError.HttpError(
                         result.code, result.message
                     ).left()
@@ -106,22 +112,34 @@ $tagList
 """.trimIndent()
     }
 
-    private fun parseResponse(responseText: String, vocabulary: List<String>): List<TagSuggestion> {
+    /**
+     * Small on-device models rarely honor "one name per line" exactly — they emit bullets,
+     * numbering, `[[links]]`, quotes, or comma-separated lists. Normalize all of those before
+     * matching against the vocabulary, otherwise every answer is silently dropped.
+     */
+    internal fun parseResponse(responseText: String, vocabulary: List<String>): List<TagSuggestion> {
         val vocabLower = vocabulary.associateBy { it.lowercase() }
-        val lines = responseText.lines()
         val results = mutableListOf<TagSuggestion>()
-        lines.forEachIndexed { index, line ->
-            val cleaned = line.trim().removePrefix("- ").trim()
-            if (cleaned.isBlank()) return@forEachIndexed
-            val canonical = vocabLower[cleaned.lowercase()] ?: return@forEachIndexed
-            // Positional confidence decay: CONFIDENCE_MAX at position 0, decrement CONFIDENCE_DECAY per position
-            val confidence = (CONFIDENCE_MAX - index * CONFIDENCE_DECAY).coerceIn(CONFIDENCE_MIN, CONFIDENCE_MAX)
-            results += TagSuggestion(
-                term = canonical,
-                confidence = confidence,
-                source = TagSuggestion.Source.LLM,
-            )
-        }
+        val seen = mutableSetOf<String>()
+        responseText.lines()
+            .flatMap { it.split(',') }
+            .forEach { raw ->
+                val cleaned = raw.trim()
+                    .replace(LEADING_MARKER, "")
+                    .removePrefix("[[").removeSuffix("]]")
+                    .trim().trim('"', '\'', '`', '*', '.')
+                    .trim()
+                if (cleaned.isBlank()) return@forEach
+                val canonical = vocabLower[cleaned.lowercase()] ?: return@forEach
+                if (!seen.add(canonical)) return@forEach
+                // Positional confidence decay: CONFIDENCE_MAX at position 0, decrement CONFIDENCE_DECAY per position
+                val confidence = (CONFIDENCE_MAX - (results.size) * CONFIDENCE_DECAY).coerceIn(CONFIDENCE_MIN, CONFIDENCE_MAX)
+                results += TagSuggestion(
+                    term = canonical,
+                    confidence = confidence,
+                    source = TagSuggestion.Source.LLM,
+                )
+            }
         return results
     }
 }

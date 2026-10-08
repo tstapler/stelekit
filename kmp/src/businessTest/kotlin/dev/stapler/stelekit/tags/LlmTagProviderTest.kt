@@ -76,4 +76,25 @@ class LlmTagProviderTest {
             result.leftOrNull(),
         )
     }
+
+    @Test
+    fun `suggestTags tolerates bullets, numbering, wiki links and comma lists`() = runTest {
+        val formatter = LlmFormatterProvider { _, _ ->
+            LlmResult.Success("1. Galvanic Corrosion\n* [[Aluminum]]\n\"steel\", `Fastener`.\nUnknown", false)
+        }
+        val provider = LlmTagProvider(formatter, timeoutSeconds = 5)
+
+        val result = provider.suggestTags(
+            TagSuggestionRequest(
+                blockUuid = "b",
+                blockContent = "galvanic corrosion aluminum steel fastener",
+                pageVocabulary = listOf("Galvanic Corrosion", "Aluminum", "Steel", "Fastener"),
+            ),
+        )
+
+        assertEquals(
+            listOf("Galvanic Corrosion", "Aluminum", "Steel", "Fastener"),
+            result.getOrNull()?.map { it.term },
+        )
+    }
 }

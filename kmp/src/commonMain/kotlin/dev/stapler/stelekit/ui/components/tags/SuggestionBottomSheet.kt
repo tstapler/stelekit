@@ -33,6 +33,7 @@ import dev.stapler.stelekit.tags.TagSuggestionState
 fun SuggestionBottomSheet(
     state: TagSuggestionState,
     onAcceptTag: (blockUuid: String, term: String) -> Unit,
+    onAcceptAll: (blockUuid: String, terms: List<String>) -> Unit = { _, _ -> },
     onDismiss: () -> Unit,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
@@ -83,7 +84,11 @@ fun SuggestionBottomSheet(
                     }
                 }
                 is TagSuggestionState.Ready -> {
-                    val allSuggestions = state.localSuggestions + state.llmSuggestions
+                    // Local hits are flagged autoApplied (hidden by TagChipRow); here they are the
+                    // main offer — existing pages the user can link in one tap.
+                    val allSuggestions = (state.localSuggestions + state.llmSuggestions)
+                        .distinctBy { it.term.lowercase() }
+                        .map { it.copy(autoApplied = false) }
 
                     TagChipRow(
                         suggestions = allSuggestions,
@@ -92,6 +97,15 @@ fun SuggestionBottomSheet(
                         onDismiss = { /* dismiss silently */ },
                         modifier = Modifier.padding(top = 8.dp),
                     )
+
+                    if (allSuggestions.size > 1) {
+                        TextButton(
+                            onClick = { onAcceptAll(state.blockUuid, allSuggestions.map { it.term }) },
+                            modifier = Modifier.semantics { contentDescription = "Link all suggested tags" },
+                        ) {
+                            Text("Link all ${allSuggestions.size}")
+                        }
+                    }
 
                     when (val status = state.llmStatus) {
                         is LlmSuggestionStatus.Pending -> status.caption?.let { caption ->
@@ -159,7 +173,15 @@ fun SuggestionBottomSheet(
                                 }
                             }
                         }
-                        LlmSuggestionStatus.NotStarted, LlmSuggestionStatus.Resolved -> Unit
+                        LlmSuggestionStatus.Resolved -> if (allSuggestions.isEmpty()) {
+                            Text(
+                                text = "No new tag suggestions for this block.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 16.dp),
+                            )
+                        }
+                        LlmSuggestionStatus.NotStarted -> Unit
                     }
                 }
                 else -> Unit
