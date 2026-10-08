@@ -10,10 +10,12 @@ import arrow.core.right
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
+import dev.stapler.stelekit.git.model.DEFAULT_CLONE_DEPTH
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.security.CredentialAccess
 import dev.stapler.stelekit.platform.security.CredentialStore
+import dev.stapler.stelekit.resilience.RetryPolicies
 import kotlinx.coroutines.withContext
 import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.api.MergeCommand
@@ -83,14 +85,29 @@ class AndroidGitRepository(
         url: String,
         localPath: String,
         auth: GitAuth,
-        onProgress: (String) -> Unit,
+        onProgress: (CloneProgress) -> Unit,
+        onStateChange: (GitTransportRetryState) -> Unit,
     ): Either<DomainError.GitError, Unit> = withContext(PlatformDispatcher.IO) {
-        runGitTransportOp(
+        // Task 4.1.1b: tracks the last-seen beginTask title/totalWork so update()'s per-tick
+        // callback (and runGitTransportOpWithRetry's currentProgress supplier below) can report a
+        // real CloneProgress instead of a title-only signal, including before any beginTask() call
+        // (totalWork stays 0 — indeterminate — until JGit reports one).
+        val progressTracker = CloneProgressTracker()
+        runGitTransportOpWithRetry(
+            schedule = RetryPolicies.gitTransportTransient,
+            onStateChange = onStateChange,
+            currentProgress = { progressTracker.current },
+            // Story 2.1.3: shadow-aware directory-content wipe before a retry — see
+            // JvmGitRepository.clone()'s identical rationale. Operates on the resolved shadow
+            // worktree path (not the SAF-facing localPath), matching every other JGit call site
+            // on this platform.
+            beforeRetry = { deleteDirectoryContentsForRetry(File(shadow.resolveForJGit(localPath))) },
             onAuthFailed = { e -> DomainError.GitError.AuthFailed(e.message ?: "Authentication failed") },
             onFailed = { e -> DomainError.GitError.CloneFailed(e.message ?: "Clone failed") },
+            onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
         ) {
             val worktree = shadow.shadowWorktreeFor(localPath)
-            shadow.insufficientShadowStorageError(worktree, localPath)?.let { return@runGitTransportOp it.left() }
+            shadow.insufficientShadowStorageError(worktree, localPath)?.let { return@runGitTransportOpWithRetry it.left() }
             // Resolve suspend credentials before entering JGit's synchronous territory
             val preResolvedToken: String? = if (auth is GitAuth.HttpsToken) auth.tokenProvider() else null
             val job = coroutineContext[kotlinx.coroutines.Job]
@@ -98,10 +115,17 @@ class AndroidGitRepository(
             val cmd = Git.cloneRepository()
                 .setURI(url)
                 .setDirectory(File(shadow.resolveForJGit(localPath)))
+                // Story 2.1.1/ADR-001: shallow by default.
+                .setDepth(DEFAULT_CLONE_DEPTH)
+                .setTimeout(GIT_TRANSPORT_TIMEOUT_SECONDS)
                 .setProgressMonitor(object : org.eclipse.jgit.lib.ProgressMonitor {
                     override fun start(totalTasks: Int) {}
-                    override fun beginTask(title: String, totalWork: Int) { onProgress(title) }
-                    override fun update(completed: Int) {}
+                    override fun beginTask(title: String, totalWork: Int) {
+                        onProgress(progressTracker.onBeginTask(title, totalWork))
+                    }
+                    override fun update(completed: Int) {
+                        onProgress(progressTracker.onUpdate(completed))
+                    }
                     override fun endTask() {}
                     override fun isCancelled() = job?.isCancelled == true
                     // showDuration added in JGit 7.x; Bazel resolves to 7.x on Android too
@@ -122,11 +146,48 @@ class AndroidGitRepository(
             testRemoteViaLsRemote(url, auth, authConfigurer::configureAuth)
         }
 
+    override suspend fun unshallow(config: GitConfig): Either<DomainError.GitError, Unit> =
+        withContext(PlatformDispatcher.IO) {
+            val diverged = openGitWithoutFreshnessCheck(config).use { git ->
+                hasRemoteDivergedSinceShallowClone(git, config) { authConfigurer.configureTransport(it, config) }
+            }
+            if (diverged) {
+                return@withContext DomainError.GitError.FetchFailed(
+                    "Remote has diverged since the shallow clone — full history unavailable via automatic widen"
+                ).left()
+            }
+
+            val retryLoopStartMs = System.currentTimeMillis()
+            runGitTransportOpWithRetry(
+                schedule = RetryPolicies.gitTransportTransient,
+                beforeRetry = { deleteLockFileIfStaleForRetry(indexLockFile(config), retryLoopStartMs) },
+                onAuthFailed = { e -> DomainError.GitError.AuthFailed(e.message ?: "Authentication failed") },
+                onFailed = { e -> DomainError.GitError.FetchFailed(e.message ?: "Unshallow failed") },
+                onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
+            ) {
+                openGitWithoutFreshnessCheck(config).use { git -> doUnshallow(git, config) }
+            }
+        }
+
+    private fun doUnshallow(git: Git, config: GitConfig): Either<DomainError.GitError, Unit> {
+        git.fetch()
+            .setRemote(config.remoteName)
+            .setUnshallow(true)
+            .setTimeout(GIT_TRANSPORT_TIMEOUT_SECONDS)
+            .also { authConfigurer.configureTransport(it, config) }
+            .call()
+        return Unit.right()
+    }
+
     override suspend fun fetch(config: GitConfig): Either<DomainError.GitError, FetchResult> =
         withContext(PlatformDispatcher.IO) {
-            runGitTransportOp(
+            val retryLoopStartMs = System.currentTimeMillis()
+            runGitTransportOpWithRetry(
+                schedule = RetryPolicies.gitTransportTransient,
+                beforeRetry = { deleteLockFileIfStaleForRetry(indexLockFile(config), retryLoopStartMs) },
                 onAuthFailed = { e -> DomainError.GitError.AuthFailed(e.message ?: "Authentication failed") },
                 onFailed = { e -> DomainError.GitError.FetchFailed(e.message ?: "Fetch failed") },
+                onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
             ) {
                 openGitWithoutFreshnessCheck(config).use { git -> doFetch(git, config) }
             }
@@ -138,6 +199,7 @@ class AndroidGitRepository(
 
         git.fetch()
             .setRemote(config.remoteName)
+            .setTimeout(GIT_TRANSPORT_TIMEOUT_SECONDS)
             .also { authConfigurer.configureTransport(it, config) }
             .call()
 
@@ -213,6 +275,12 @@ class AndroidGitRepository(
         val remoteRef = repo.resolve("${config.remoteName}/${config.remoteBranch}")
             ?: return DomainError.GitError.FetchFailed("Remote ref not found").left()
 
+        // Story 2.1.5: fail closed rather than let JGit's shallow-history merge-base limitation
+        // silently produce a degraded/wrong merge.
+        if (isShallowHistoryInsufficientForMerge(repo, remoteRef)) {
+            return DomainError.GitError.ShallowHistoryInsufficient.left()
+        }
+
         val mergeResult = git.merge()
             .include(remoteRef)
             .setStrategy(MergeStrategy.RECURSIVE)
@@ -264,9 +332,13 @@ class AndroidGitRepository(
 
     override suspend fun push(config: GitConfig): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
-            runGitTransportOp(
+            val retryLoopStartMs = System.currentTimeMillis()
+            runGitTransportOpWithRetry(
+                schedule = RetryPolicies.gitTransportTransient,
+                beforeRetry = { deleteLockFileIfStaleForRetry(indexLockFile(config), retryLoopStartMs) },
                 onAuthFailed = { e -> DomainError.GitError.AuthFailed(e.message ?: "Push authentication failed") },
                 onFailed = { e -> DomainError.GitError.PushFailed(e.message ?: "Push failed") },
+                onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
             ) {
                 openGitWithoutFreshnessCheck(config).use { git -> doPush(git, config) }
             }
@@ -275,6 +347,7 @@ class AndroidGitRepository(
     private fun doPush(git: Git, config: GitConfig): Either<DomainError.GitError, Unit> {
         git.push()
             .setRemote(config.remoteName)
+            .setTimeout(GIT_TRANSPORT_TIMEOUT_SECONDS)
             .also { authConfigurer.configureTransport(it, config) }
             .call()
         return Unit.right()
@@ -423,8 +496,14 @@ class AndroidGitRepository(
             }
         }
 
+    /** `.git/index.lock` path for [config]'s repo — shared by [deleteStaleLockFile] (user-initiated,
+     * fixed 60s age) and [runGitTransportOpWithRetry]'s `beforeRetry` cleanup (retry-loop-relative
+     * age, Task 1.2.2c). */
+    private fun indexLockFile(config: GitConfig): File =
+        File(shadow.resolveForJGit(config.repoRoot), ".git/index.lock")
+
     private fun deleteStaleLockFile(config: GitConfig): Either<DomainError.GitError, Unit> {
-        val lockFile = File(shadow.resolveForJGit(config.repoRoot), ".git/index.lock")
+        val lockFile = indexLockFile(config)
         if (!lockFile.exists()) return Unit.right()
 
         val ageMs = System.currentTimeMillis() - lockFile.lastModified()

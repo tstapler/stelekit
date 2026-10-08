@@ -117,7 +117,7 @@ class GitSetupScreenSaveLogicTest {
         val outcome = performCloneAndSave(
             form = form,
             stores = stores,
-            onCloneAndAdd = { _, _, _, _, _, _, _ -> "new-graph-id".right() },
+            onCloneAndAdd = { _, _, _, _, _, _, _, _ -> "new-graph-id".right() },
             onCloneProgress = {},
             onCloneInProgressChange = {},
         )
@@ -143,7 +143,7 @@ class GitSetupScreenSaveLogicTest {
         val outcome = performCloneAndSave(
             form = form,
             stores = stores,
-            onCloneAndAdd = { _, _, _, _, _, _, _ -> DomainError.GitError.CommitFailed("clone failed").left() },
+            onCloneAndAdd = { _, _, _, _, _, _, _, _ -> DomainError.GitError.CommitFailed("clone failed").left() },
             onCloneProgress = {},
             onCloneInProgressChange = {},
         )

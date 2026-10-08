@@ -89,7 +89,8 @@ data class GitSyncDeps(
     val activeGraphId: String? = null,
     // location (Story 2.2.2): the destination StorageLocation UnifiedLocationPicker resolved in
     // GitSetupScreen's Step2RepoPath — null for the pre-feature "Browse…"-only flow.
-    val onCloneAndAdd: (suspend (url: String, localPath: String, auth: GitAuth, location: dev.stapler.stelekit.model.StorageLocation?, displayName: String?, description: String, onProgress: (String) -> Unit) -> Either<DomainError.GitError, String>)? = null,
+    val onCloneAndAdd: (suspend (url: String, localPath: String, auth: GitAuth, location: dev.stapler.stelekit.model.StorageLocation?, displayName: String?, description: String, onProgress: (dev.stapler.stelekit.git.CloneProgress) -> Unit, onStateChange: (dev.stapler.stelekit.git.GitTransportRetryState) -> Unit) -> Either<DomainError.GitError, String>)? = null,
+    val onCancelClone: (() -> Unit)? = null,
     val graphPath: String = "",
     // Auto-detected by GraphManager.detectGitRoot() (walks up from graphPath looking for `.git`);
     // threaded through so GitSetupScreen can prefill Step2RepoPath instead of discarding detection

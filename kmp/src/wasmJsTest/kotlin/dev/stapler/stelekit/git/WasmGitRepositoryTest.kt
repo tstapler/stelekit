@@ -129,6 +129,7 @@ class WasmGitRepositoryTest {
             localPath = config.repoRoot,
             auth = GitAuth.None,
             onProgress = {},
+            onStateChange = {},
         )
 
         assertEquals(Either.Left(DomainError.GitError.NotSupported("web")), result)

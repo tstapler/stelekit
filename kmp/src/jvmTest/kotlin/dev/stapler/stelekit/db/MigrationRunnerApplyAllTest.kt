@@ -78,6 +78,85 @@ class MigrationRunnerApplyAllTest {
         return names
     }
 
+    /** Creates a pre-migration `git_config` row — the on-disk shape of a graph cloned before
+     * git-sync-resilience Story 2.1.2 shipped, with no `clone_depth_state`/`shallow_depth`
+     * columns at all. */
+    private fun createGitConfigTableWithoutCloneDepthColumns() {
+        val conn = driver.getConnection()
+        try {
+            conn.prepareStatement(
+                """
+                CREATE TABLE git_config (
+                    graph_id                TEXT NOT NULL PRIMARY KEY,
+                    repo_root               TEXT NOT NULL,
+                    wiki_subdir             TEXT NOT NULL DEFAULT '',
+                    remote_name             TEXT NOT NULL DEFAULT 'origin',
+                    remote_branch           TEXT NOT NULL DEFAULT 'main',
+                    auth_type               TEXT NOT NULL DEFAULT 'NONE',
+                    ssh_key_path            TEXT,
+                    ssh_key_passphrase_key  TEXT,
+                    https_token_key         TEXT,
+                    oauth_token_key         TEXT,
+                    poll_interval_minutes   INTEGER NOT NULL DEFAULT 5,
+                    auto_commit             INTEGER NOT NULL DEFAULT 1,
+                    commit_message_template TEXT NOT NULL DEFAULT 'SteleKit: {date}'
+                )
+                """.trimIndent()
+            ).execute()
+            conn.prepareStatement(
+                "INSERT INTO git_config (graph_id, repo_root) VALUES ('pre-existing-graph', '/tmp/pre-existing')"
+            ).execute()
+        } finally {
+            driver.closeConnection(conn)
+        }
+    }
+
+    // ── Test 6: git_config_clone_depth_state migration ──────────────────────────
+
+    /**
+     * Regression test for git-sync-resilience Story 2.1.2's migration (plan.md's Migration Plan
+     * section, validation.md's Migration row): an existing pre-migration `git_config` row must
+     * read back with the two new columns defaulted (`clone_depth_state='NONE'`,
+     * `shallow_depth=NULL`) and no data loss on its existing columns, after `applyAll` runs.
+     */
+    @Test
+    fun `git_config_clone_depth_state migration adds clone_depth_state and shallow_depth to an existing pre-migration git_config row, defaulting to NONE and null respectively, with no data loss`() = runBlocking {
+        createGitConfigTableWithoutCloneDepthColumns()
+        assertFalse(
+            columnNames("git_config").contains("clone_depth_state"),
+            "Precondition failed: git_config should NOT have clone_depth_state before migration"
+        )
+
+        // Applies only this one migration (like the copy-alter/idempotent tests above), not the
+        // full MigrationRunner.all history — earlier migrations in the full list assume pages/
+        // blocks tables this test's minimal fixture deliberately doesn't create.
+        val migration = MigrationRunner.all.first { it.name == "git_config_clone_depth_state" }
+        MigrationRunner.applyAll(driver, listOf(migration))
+
+        val cols = columnNames("git_config")
+        assertTrue(cols.contains("clone_depth_state"), "git_config must have clone_depth_state after migration")
+        assertTrue(cols.contains("shallow_depth"), "git_config must have shallow_depth after migration")
+
+        val conn = driver.getConnection()
+        try {
+            val rs = conn.prepareStatement(
+                "SELECT repo_root, clone_depth_state, shallow_depth FROM git_config WHERE graph_id = 'pre-existing-graph'"
+            ).executeQuery()
+            assertTrue(rs.next(), "pre-existing row must survive the migration")
+            assertEquals("/tmp/pre-existing", rs.getString("repo_root"), "existing column data must not be lost")
+            assertEquals("NONE", rs.getString("clone_depth_state"), "existing row must default to clone_depth_state='NONE'")
+            rs.getLong("shallow_depth")
+            assertTrue(rs.wasNull(), "existing row must default to shallow_depth=NULL")
+        } finally {
+            driver.closeConnection(conn)
+        }
+
+        assertTrue(
+            appliedMigrationNames().contains("git_config_clone_depth_state"),
+            "git_config_clone_depth_state must be recorded in schema_migrations"
+        )
+    }
+
     /** Creates the pages table without the backlink_count column — the pre-fix schema. */
     private fun createPagesTableWithoutBacklinkCount() {
         val conn = driver.getConnection()

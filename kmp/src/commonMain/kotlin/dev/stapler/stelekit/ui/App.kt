@@ -122,6 +122,7 @@ private fun MainGraphContentHost(
                 graphManager = graphManager,
                 notificationManager = notificationManager,
                 onMemoryPressure = deps.lifecycleHooks.onMemoryPressure,
+                onViewModelReady = deps.lifecycleHooks.onViewModelReady,
                 coreServices = deps.coreServices,
                 voiceConfig = deps.voiceConfig,
                 platformIntegrations = deps.platformIntegrations,
@@ -417,6 +418,7 @@ private fun GraphContent(deps: GraphContentDeps) {
     val exportService = viewModelStack.exportService
     val shareProvider = viewModelStack.shareProvider
     val viewModel = viewModelStack.viewModel
+    LaunchedEffect(viewModel) { deps.onViewModelReady?.invoke(viewModel) }
 
     // See GraphContentStorageMove.kt: GraphRelocationCoordinator, StorageMoveUiState, and the
     // Move-storage-location callbacks wired into the sidebar and StorageMoveProgressDialog.

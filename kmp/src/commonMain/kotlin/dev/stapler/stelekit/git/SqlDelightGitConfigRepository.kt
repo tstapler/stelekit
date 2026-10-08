@@ -12,8 +12,11 @@ import dev.stapler.stelekit.db.DirectSqlWrite
 import dev.stapler.stelekit.db.Git_config
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.git.model.CloneDepthState
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
+import dev.stapler.stelekit.git.model.toRawDepth
+import dev.stapler.stelekit.git.model.toRawState
 import dev.stapler.stelekit.repository.asDbFlowOrNull
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToOneOrNull
@@ -65,6 +68,8 @@ class SqlDelightGitConfigRepository(
                     poll_interval_minutes = config.pollIntervalMinutes.toLong(),
                     auto_commit = if (config.autoCommit) 1L else 0L,
                     commit_message_template = config.commitMessageTemplate,
+                    clone_depth_state = config.cloneDepthState.toRawState(),
+                    shallow_depth = config.cloneDepthState.toRawDepth(),
                 )
                 Unit.right()
             } catch (e: CancellationException) {
@@ -107,5 +112,6 @@ class SqlDelightGitConfigRepository(
         pollIntervalMinutes = poll_interval_minutes.toInt(),
         autoCommit = auto_commit != 0L,
         commitMessageTemplate = commit_message_template,
+        cloneDepthState = CloneDepthState.fromRaw(clone_depth_state, shallow_depth),
     )
 }

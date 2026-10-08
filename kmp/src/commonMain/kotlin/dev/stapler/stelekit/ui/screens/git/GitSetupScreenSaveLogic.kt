@@ -5,6 +5,8 @@ package dev.stapler.stelekit.ui.screens.git
 
 import arrow.core.Either
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.error.toSyncErrorMessage
+import dev.stapler.stelekit.git.CloneProgress
 import dev.stapler.stelekit.git.GitAuth
 import dev.stapler.stelekit.git.GitConfigRepository
 import dev.stapler.stelekit.git.GitCredentialConnectionStore
@@ -12,12 +14,16 @@ import dev.stapler.stelekit.git.GitHubDeviceFlowClient
 import dev.stapler.stelekit.git.GitRepoHistoryStore
 import dev.stapler.stelekit.git.GitRepository
 import dev.stapler.stelekit.git.GitSyncService
+import dev.stapler.stelekit.git.GitTransportRetryState
+import dev.stapler.stelekit.git.model.CloneDepthState
+import dev.stapler.stelekit.git.model.DEFAULT_CLONE_DEPTH
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.git.model.GitRepoHistoryKind
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.StorageLocation
 import dev.stapler.stelekit.platform.security.CredentialStore
+import kotlinx.coroutines.CancellationException
 import kotlin.time.Clock
 
 internal val gitSetupLogger = Logger("GitSetupScreen")
@@ -96,6 +102,12 @@ internal sealed class CloneAndSaveOutcome {
     data class CloneFailed(val message: String) : CloneAndSaveOutcome()
     data class Saved(val newGraphId: String) : CloneAndSaveOutcome()
     data class SaveFailed(val newGraphId: String) : CloneAndSaveOutcome()
+
+    /** Story 4.1.4: the user tapped Cancel mid-clone — `classifyGitFailure` saw the resulting
+     * `CanceledException`/`GitFailureClass.Cancelled`, so `onCloneAndAdd` rethrew a
+     * `kotlinx.coroutines.CancellationException` rather than returning an `Either.Left`. Not a
+     * failure the user needs to react to — Step 5 shows "Cancelled — your progress is saved." */
+    data object Cancelled : CloneAndSaveOutcome()
 }
 
 /** Outcome of [performSaveExistingConfig], reported back to the composable for UI/state updates. */
@@ -123,12 +135,18 @@ internal data class GitSetupStores(
  * null`, `graphId` = the just-created graph) and [performSaveExistingConfig] (`graphId =
  * form.graphId`) — both paths resolve credential keys and call `saveConfig` identically; only what
  * happens after a successful save differs (a background fetch, vs. an `onCloneComplete` callback).
+ *
+ * [cloneDepthState] defaults to preserving [existingConfig]'s own value (or [CloneDepthState.None]
+ * when there is none) — [performSaveExistingConfig] relies on this default so re-saving an
+ * already-cloned graph's settings never resets its checkpoint state. [performCloneAndSave] passes
+ * an explicit [CloneDepthState.Shallow] instead, since a fresh clone just ran (Task 2.1.2f).
  */
 private suspend fun resolveAndSaveConfig(
     graphId: String,
     form: GitSetupFormSnapshot,
     existingConfig: GitConfig?,
     stores: GitSetupStores,
+    cloneDepthState: CloneDepthState = existingConfig?.cloneDepthState ?: CloneDepthState.None,
 ): Either<DomainError, Unit> {
     val httpsTokenKey = if (form.authType == GitAuthType.HTTPS_TOKEN) {
         resolveHttpsTokenKey(
@@ -165,6 +183,7 @@ private suspend fun resolveAndSaveConfig(
         httpsTokenKey = httpsTokenKey,
         sshKeyPassphraseKey = sshPassphraseKey,
         oauthTokenKey = oauthTokenKey,
+        cloneDepthState = cloneDepthState,
     )
     return stores.gitConfigRepository.saveConfig(config).onRight { recordRepoHistory(form, stores.repoHistoryStore) }
 }
@@ -188,6 +207,12 @@ private fun recordRepoHistory(form: GitSetupFormSnapshot, repoHistoryStore: GitR
  * the newly created graph. [onCloneProgress]/[onCloneInProgressChange] are invoked at the exact
  * points the original inline implementation flipped `cloneProgress`/`cloneInProgress`, so the "Test
  * and save" step's progress UI is unaffected by this extraction.
+ *
+ * [onCloneAndAdd] stays an opaque platform-agnostic callback (git-sync-resilience Story 3.1.3):
+ * Android's DI wiring (`App.kt`) supplies an implementation backed by `GitCloneWorkerLauncher` so
+ * the clone survives backgrounding via `GitCloneWorker`'s `dataSync` foreground service; Desktop's
+ * calls `GitRepository.clone()` directly, unchanged. This function's own body needs no platform
+ * branching either way.
  */
 internal suspend fun performCloneAndSave(
     form: GitSetupFormSnapshot,
@@ -199,31 +224,52 @@ internal suspend fun performCloneAndSave(
         location: StorageLocation?,
         displayName: String?,
         description: String,
-        onProgress: (String) -> Unit,
+        onProgress: (CloneProgress) -> Unit,
+        onStateChange: (GitTransportRetryState) -> Unit,
     ) -> Either<DomainError.GitError, String>,
-    onCloneProgress: (String) -> Unit,
+    onCloneProgress: (CloneProgress) -> Unit,
     onCloneInProgressChange: (Boolean) -> Unit,
+    onRetryStateChange: (GitTransportRetryState) -> Unit = {},
 ): CloneAndSaveOutcome {
     onCloneInProgressChange(true)
     val cloneAuth = buildCloneAuth(
         form.authType, form.httpsToken, form.sshKeyPath, form.sshPassphrase, form.graphId, stores.credentialStore,
     )
-    val cloneResult = onCloneAndAdd(
-        form.cloneUrl,
-        form.repoRoot,
-        cloneAuth,
-        form.cloneStorageLocation,
-        form.graphName.ifBlank { repoNameFromUrl(form.cloneUrl) ?: "" }.takeIf { it.isNotBlank() },
-        form.graphDescription,
-    ) { progress -> onCloneProgress(progress) }
+    // Task 4.1.4d: a manual cancel surfaces as a thrown CancellationException (not an
+    // Either.Left) — see CloneAndSaveOutcome.Cancelled's kdoc. Catching it here, rather than
+    // letting it propagate, is deliberate: it only means the *launcher's own* child job was
+    // cancelled (AndroidGitCloneWorkerLauncher.cancel()/JvmGitCloneWorkerLauncher.cancel()), not
+    // that this function's own ambient coroutine was — continuing to run afterward (to reset
+    // cloneInProgress and report the outcome) is exactly the desired UX, not a violation of
+    // structured concurrency.
+    val cloneResult = try {
+        onCloneAndAdd(
+            form.cloneUrl,
+            form.repoRoot,
+            cloneAuth,
+            form.cloneStorageLocation,
+            form.graphName.ifBlank { repoNameFromUrl(form.cloneUrl) ?: "" }.takeIf { it.isNotBlank() },
+            form.graphDescription,
+            { progress -> onCloneProgress(progress) },
+            { state -> onRetryStateChange(state) },
+        )
+    } catch (e: CancellationException) {
+        onCloneInProgressChange(false)
+        return CloneAndSaveOutcome.Cancelled
+    }
     onCloneInProgressChange(false)
 
     if (cloneResult.isLeft()) {
-        return CloneAndSaveOutcome.CloneFailed("Clone failed: ${(cloneResult as Either.Left).value.message}")
+        return CloneAndSaveOutcome.CloneFailed(cloneFailureCopy((cloneResult as Either.Left).value))
     }
     val newGraphId = (cloneResult as Either.Right).value
 
-    val saveResult = resolveAndSaveConfig(newGraphId, form, null, stores)
+    // Task 2.1.2f: a clone that just ran defaults to shallow (Story 2.1.1) — stamp that checkpoint
+    // now, since this is the first moment a GitConfig row exists for this graph at all.
+    val saveResult = resolveAndSaveConfig(
+        newGraphId, form, null, stores,
+        cloneDepthState = CloneDepthState.Shallow(DEFAULT_CLONE_DEPTH),
+    )
     return if (saveResult.isRight()) {
         gitSetupLogger.info("saveConfig succeeded (clone-and-add) graphId=$newGraphId")
         CloneAndSaveOutcome.Saved(newGraphId)
@@ -313,3 +359,8 @@ internal suspend fun startOAuthFlow(
     onConnected(username, token)
     onDialogStateChange(OAuthDialogState.Success(username))
 }
+
+
+/** Authored copy only (UX AC9): raw transport text such as "Software caused connection abort" never reaches the UI. */
+internal fun cloneFailureCopy(error: DomainError): String =
+    (error as? DomainError.GitError)?.toSyncErrorMessage() ?: "Clone failed — check your connection and try again"
