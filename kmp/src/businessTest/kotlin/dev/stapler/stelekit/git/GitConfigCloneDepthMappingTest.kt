@@ -24,6 +24,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import org.eclipse.jgit.api.Git
+import org.eclipse.jgit.transport.RefSpec
 
 /**
  * git-sync-resilience Story 2.1.2 (Task 2.1.2g) — [SqlDelightGitConfigRepository]'s
@@ -179,7 +180,7 @@ class GitConfigCloneDepthMappingTest {
                 File(seedWorkDir, "journal.md").writeText("# seed\n")
                 seedGit.add().addFilepattern(".").call()
                 seedGit.commit().setMessage("seed commit").call()
-                seedGit.push().call()
+                seedGit.push().setRefSpecs(RefSpec("HEAD:refs/heads/main")).call()
             }
 
             val destination = createTempDirectory("stelekit_clone_depth_dest_").toFile().also { tempDirs += it }
