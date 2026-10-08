@@ -163,6 +163,9 @@ private fun buildViewModelDependencies(
         activeGitSyncService = graphManager.activeGitSyncService,
         localChangesCountFlow = deps.webSyncDeps.localChangesCountFlow,
         activeGraphIdProvider = { graphManager.getActiveGraphId()?.value },
+        initialGraphPathProvider = {
+            graphManager.getActiveGraphInfo()?.takeIf { !it.isDemo }?.effectiveNotesPath?.value
+        },
         onDismissGitDetection = { graphId -> graphManager.setGitDetectionDismissed(GraphId(graphId), true) },
         onDismissBrowserOnlySyncBanner = { graphId ->
             graphManager.setBrowserOnlySyncBannerDismissed(GraphId(graphId), true)

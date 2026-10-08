@@ -247,7 +247,8 @@ class GraphManager(
                 // and must survive restarts.
                 val refreshed = cleanedRegistry.copy(
                     graphs = cleanedRegistry.graphs.map { graph ->
-                        if (graph.displayName.isBlank()) graph.copy(displayName = fileSystem.displayNameForPath(graph.path)) else graph
+                        val named = if (graph.displayName.isBlank()) graph.copy(displayName = fileSystem.displayNameForPath(graph.path)) else graph
+                        clearMalformedSafDetection(named)
                     }
                 )
                 _graphRegistry.value = refreshed
@@ -677,6 +678,8 @@ class GraphManager(
             // The new folder may not share the old repo root — force re-detection.
             detectedRepoRoot = null,
             detectedWikiSubdir = null,
+            // Falls back to the new path until the re-detection below lands.
+            effectivePath = null,
             gitDetectionDismissed = false,
         )
         // Replace by id match (not the graphIndex captured before the async file-move above),
@@ -813,7 +816,11 @@ class GraphManager(
         val currentGraphId = registry.activeGraphId
         val isAlreadyTargetGraph = currentGraphId == id && !forceReinit
         val hasReadyOrInitializingRepositories = _activeRepositorySet.value != null || activeGraphJobs.containsKey(id)
-        if (isAlreadyTargetGraph && hasReadyOrInitializingRepositories) return
+        if (isAlreadyTargetGraph && hasReadyOrInitializingRepositories) {
+            // A picker flow may have just overwritten lastGraphPath with the raw repo root.
+            mirrorActiveNotesPath()
+            return
+        }
         currentGraphId?.let {
             activeGraphJobs.remove(it)?.cancel()
             evictCoordinatorFor(it)
@@ -955,6 +962,7 @@ class GraphManager(
         // Update active graph — use atomic update {} to avoid clobbering concurrent registry
         // mutations (e.g. git detection updating detectedRepoRoot on a background IO coroutine).
         _graphRegistry.update { it.copy(activeGraphId = id) }
+        mirrorActiveNotesPath()
         _graphsExplicitlyEmptied.value = false
         saveRegistry()
     }
@@ -1033,6 +1041,52 @@ class GraphManager(
         }
     }
 
+    /**
+     * Older builds ran POSIX git-root detection over `saf://` URIs and persisted garbage
+     * (`detectedRepoRoot="saf:/"`, `detectedWikiSubdir` = the whole encoded URI). detectGitRoot() now
+     * skips SAF paths, so drop the stale fields rather than let them feed effectivePath.
+     */
+    private fun clearMalformedSafDetection(graph: GraphInfo): GraphInfo {
+        val isSaf = graph.path.startsWith("saf://") || graph.path.startsWith("content://")
+        val malformed = graph.detectedRepoRoot?.let { it.startsWith("saf:") || it.startsWith("content:") } == true ||
+            graph.detectedWikiSubdir?.contains("://") == true ||
+            graph.detectedWikiSubdir?.startsWith("content%3A") == true
+        return if (isSaf && malformed) {
+            graph.copy(detectedRepoRoot = null, detectedWikiSubdir = null, effectivePath = null)
+        } else graph
+    }
+
+    /**
+     * Legacy mirror of the active graph's notes folder in `lastGraphPath`, for readers outside the
+     * registry (sync CLI, single-graph migration). Always derives from the registry's current
+     * active graph, so concurrent callers converge instead of the last writer winning with a
+     * stale graph.
+     */
+    private fun mirrorActiveNotesPath() {
+        val registry = _graphRegistry.value
+        val active = registry.graphs.firstOrNull { it.id == registry.activeGraphId } ?: return
+        if (active.isDemo) return
+        val notesPath = active.effectiveNotesPath.value
+        if (platformSettings.getString("lastGraphPath", "") != notesPath) {
+            platformSettings.putString("lastGraphPath", notesPath)
+        }
+    }
+
+    /** Re-points a graph at its moved folder; detection results tied to the old location are dropped. */
+    private fun GraphInfo.relocatedTo(newPath: String): GraphInfo {
+        // A subdir is only re-derivable when the repo root is the graph folder itself; for a graph
+        // nested in a repo it is relative to a root that did not move, so fall back to re-detection.
+        if (detectedRepoRoot != null && detectedRepoRoot != path) {
+            return copy(path = newPath, detectedRepoRoot = null, detectedWikiSubdir = null, effectivePath = null)
+        }
+        val subdir = detectedWikiSubdir.orEmpty()
+        return copy(
+            path = newPath,
+            detectedRepoRoot = detectedRepoRoot?.let { newPath },
+            effectivePath = if (subdir.isEmpty()) null else "$newPath/$subdir",
+        )
+    }
+
     private suspend fun detectGitRoot(graphPath: String): Pair<String, String>? {
         // Android SAF-opened graphs are "saf://{encodedTreeUri}/{relativePath}" (see
         // PlatformFileSystem.toSafRoot), never a literal "content://" prefix — this check never
@@ -1082,6 +1136,8 @@ class GraphManager(
         _graphRegistry.update { registry ->
             registry.copy(graphs = registry.graphs.map { g -> if (g.id == graphId) transform(g) else g })
         }
+        // Detection can resolve effectivePath (repo root + wikiSubdir) after switchGraph already ran.
+        mirrorActiveNotesPath()
         saveRegistry()
     }
 
@@ -1231,9 +1287,10 @@ class GraphManager(
             val idx = registry.graphs.indexOfFirst { it.id == id }
             if (idx == -1) return@update registry
             val updatedGraphs = registry.graphs.toMutableList()
-            updatedGraphs[idx] = updatedGraphs[idx].copy(path = newPath)
+            updatedGraphs[idx] = updatedGraphs[idx].relocatedTo(newPath)
             registry.copy(graphs = updatedGraphs)
         }
+        mirrorActiveNotesPath()
         saveRegistry()
     }
 

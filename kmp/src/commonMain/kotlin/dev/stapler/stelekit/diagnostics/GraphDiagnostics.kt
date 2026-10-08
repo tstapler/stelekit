@@ -69,9 +69,12 @@ class GraphDiagnosticsCollector(
         appendLine("## Active graph: ${active.displayName}")
         appendLine("path=${active.path}")
         appendLine("pathExists=${fileSystem.directoryExists(active.path)}")
+        val notesPath = active.effectiveNotesPath.value
+        appendLine("effectiveNotesPath=$notesPath (wikiSubdir=${active.detectedWikiSubdir ?: "<none>"})")
+        appendLine("lastGraphPath matches effectiveNotesPath=${settings.getString("lastGraphPath", "") == notesPath}")
         appendLine()
 
-        val disk = appendDisk(active.path)
+        val disk = appendDisk(notesPath)
         val db = appendDatabase()
         appendDiff(disk, db)
     }
