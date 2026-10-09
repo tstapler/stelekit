@@ -275,7 +275,7 @@ Placement follows CLAUDE.md: Compose-behavior tests (wording, semantics, focus, 
 
 ## Repair pass 6 additions (triad)
 
-Rows added for the new plan content. Same aliases as above. "Gate" = release gate in plan.md "Scope Cut Line".
+Rows added for the new plan content. Same aliases as above. "Gate" = release gate in plan.md "Release gates, ordering and derived scope".
 
 | Req / UX | File | Test name | Type | Notes / Gate |
 |---|---|---|---|---|
@@ -324,7 +324,7 @@ N/A. plan.md's Migration Plan adds no table (queries only, plus `src-id::` block
 - All public service methods: happy path + error paths covered (rows above per REQ).
 - All external integrations (filesystem, SAF, DB, GraphManager lifecycle): unit-level fakes plus at least one integration test (REQ-7, REQ-12).
 - UX acceptance criteria: each of UX-01..UX-51 has a test or manual step in the UX table above.
-- Known gaps, to be stated in the PR: UX-28 jvmTest, UX-39 TalkBack, UX-41/UX-43/UX-47 on real iOS/Web and the dark-theme half of UX-40 depend on a human or a display; Story 4.2.2 Direct Share (optional) has no tests because it is cut-line; `merge_force_inbox` was cut from v1 and has no tests (the structural "no ForcedInbox reason" row guards against it creeping back); the removed apply-on-activate tests are replaced by `IosWebCopyGatingTest` and the pull-copy tests (`PullCopyFlowTest`, `SourceReaderParityTest`, `MarkdownSourceGraphReaderParseTest`). iOS/Web pull-copy has no CI-run test against a real iOS bookmark or browser directory handle: that is Spike 0.1.5 (manual, recorded in ADR-001), so real-device source reading is UNVERIFIED until it runs, and pull omits assets, linked-page closure and tag/property filters in v1. Spike 0.1.1's Android device pass and Spike 0.1.4 against a real graph are manual or environment-dependent and are recorded in ADR-001, not in CI.
+- Known gaps, to be stated in the PR: UX-28 jvmTest, UX-39 TalkBack, UX-41/UX-43/UX-47 on real iOS/Web and the dark-theme half of UX-40 depend on a human or a display; Story 4.2.2 Direct Share (Gate 2, ordered late) has no test rows yet; they are specified when the story is built, and its system-chooser behavior needs a manual Android device check; `merge_force_inbox` was cut from v1 and has no tests (the structural "no ForcedInbox reason" row guards against it creeping back); the removed apply-on-activate tests are replaced by `IosWebCopyGatingTest` and the pull-copy tests (`PullCopyFlowTest`, `SourceReaderParityTest`, `MarkdownSourceGraphReaderParseTest`). iOS/Web pull-copy has no CI-run test against a real iOS bookmark or browser directory handle: that is Spike 0.1.5 (manual, recorded in ADR-001), so real-device source reading is UNVERIFIED until it runs, and pull omits assets, linked-page closure and tag/property filters in v1. Spike 0.1.1's Android device pass and Spike 0.1.4 against a real graph are manual or environment-dependent and are recorded in ADR-001, not in CI.
 
 ## Repair pass 7 additions (triad round 2)
 
@@ -335,7 +335,7 @@ Gate 1 now includes the conflict review screen (UX-19, ConflictReviewTest) and t
 | UX S13 Android visibility | APP/QueuedShareIndicatorTest | queuedBadge_should_ShowOnGraphSwitcherAndAppStartNotice_When_InboxHasItems | Robolectric | Task 4.4.1d; Gate 1; not Settings only |
 | UX S10 Back fallback | APP/CaptureActivityTargetTest | back_should_ShowRecentCaptureNoticeAtNextStart_When_ToastHostGone | Robolectric | Story 4.2.1 fallback |
 | UX S5 graph switch mid-run | BT/ui/CopyDialogsTest | progress_should_ShowBackgroundNotice_When_GraphSwitchedMidPushCopy; pullSwitch_should_ConfirmStop_When_GraphSwitchAttemptedMidPullCopy | Robolectric | Story 3.3.1 AC (pull row is Gate 3) |
-| UX S2 Gate 1 variant | BT/ui/CopyPagesPickerTest | picker_should_HideLinkedPagesToggleAndLeaveDestinationEmpty_When_Gate2FlagOff | Robolectric | Scope Cut Line |
+| UX S2 Gate 1 variant | BT/ui/CopyPagesPickerTest | picker_should_HideLinkedPagesToggleAndLeaveDestinationEmpty_When_Gate2FlagOff | Robolectric | Release gates (plan) |
 | UX S1 subtitle | AU/ui/CopyEntryTest | entry_should_ShowSubtitleAddsPagesCombinesWithExisting | Robolectric | adopted mitigation |
 
 ### Wording validation step (Repair pass 7)

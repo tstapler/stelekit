@@ -28,7 +28,7 @@
 | S11 | Desktop quick capture graph chooser | Interactive | 4.3.1 |
 | S12 | Settings: capture target | Interactive | 4.1.1c |
 | S13 | Queued shares indicator and rescue actions Copy text/Discard/Retry now (Gate 1, committed; rescue actions moved from Gate 2 in Repair pass 7) | Interactive | 4.4.1, 4.4.1d |
-| S14 | Android Direct Share shortcuts (optional, first on the cut list; not in the token budget) | Interactive (system UI) | 4.2.2 |
+| S14 | Android Direct Share shortcuts (Gate 2, ordered late: needs an Android device pass) | Interactive (system UI) | 4.2.2 |
 | S15 | Merge and share log output | Non-interactive | Observability |
 
 ---
@@ -47,7 +47,7 @@ Flow:
 1. User taps "Copy pages to..." -> S2 opens with nothing selected. Source = current graph.
 2. User taps "Copy this page to..." -> S2 opens with that page preselected (1 selected) and focus on the Destination control.
 3. Replaces both "export pages for merge" and "Merge captured pages". No hidden mode survives a graph switch.
-4. iOS/Web (pull direction, Stories 4.5.1-4.5.3): the sidebar item, the command palette entry and the graph-switcher row overflow read "Copy pages from..." / "Copy pages from <graph> to <current graph>" (the switcher entry is cuttable). Tapping opens S2 with the SOURCE chooser (S3 pull variant) first; the current graph is the destination and is shown in the header as "Copying into <current graph>". Push ("Copy pages to...") is not offered on these platforms.
+4. iOS/Web (pull direction, Stories 4.5.1-4.5.3): the sidebar item, the command palette entry and the graph-switcher row overflow read "Copy pages from..." / "Copy pages from <graph> to <current graph>" (the switcher entry is ordered last within Epic 4.5). Tapping opens S2 with the SOURCE chooser (S3 pull variant) first; the current graph is the destination and is shown in the header as "Copying into <current graph>". Push ("Copy pages to...") is not offered on these platforms.
 
 Subtitle (Repair pass 7): the sidebar and command-palette entry shows the secondary line "Adds pages; combines with existing ones" under "Copy pages to..." (mitigates the verb implying a plain duplicate).
 
@@ -361,7 +361,7 @@ Panel:  "Work graph needs to be open or reachable to add these."
 - Errors: drain fails after activation -> chip becomes "2 shares couldn't be added" with the panel reason; items are never dropped automatically. A corrupt item is quarantined, never deleted: chip "1 share couldn't be read" with Copy text where recoverable.
 - Accessibility: each item is ONE merged node, "Queued share for Work graph: 'meeting notes...', Today 09:14", with `customActions` Copy text / Discard / Retry now (labels include the graph name); the count is a polite live region; after Discard focus moves to the next item; 200% font scale wraps; RTL mirrors; Web: Tab/Enter reach every action with a visible focus ring.
 
-## S14. Android Direct Share shortcuts (optional)
+## S14. Android Direct Share shortcuts (Gate 2, ordered late)
 
 - System chooser lists "Work graph" and "Personal graph". Choosing one opens S10 with that graph pre-set for that share only (does not change last-used or default).
 - If the shortcut points to a deleted graph: S10 opens in its unavailable state (graph name shown from the shortcut label, actions Save to fallback / Retry / Queue for later). Shortcuts are republished on registry change; stale ones are removed.
