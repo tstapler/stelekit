@@ -28,7 +28,7 @@
 | S11 | Desktop quick capture graph chooser | Interactive | 4.3.1 |
 | S12 | Settings: capture target | Interactive | 4.1.1c |
 | S13 | Queued shares indicator and rescue actions Copy text/Discard/Retry now (Gate 1, committed; rescue actions moved from Gate 2 in Repair pass 7) | Interactive | 4.4.1, 4.4.1d |
-| S14 | Android Direct Share shortcuts (optional, first on the cut list; not in the appetite) | Interactive (system UI) | 4.2.2 |
+| S14 | Android Direct Share shortcuts (optional, first on the cut list; not in the token budget) | Interactive (system UI) | 4.2.2 |
 | S15 | Merge and share log output | Non-interactive | Observability |
 
 ---

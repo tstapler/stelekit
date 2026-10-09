@@ -140,21 +140,21 @@ Phase 5: 5.1 Large-graph/regression/wasm/iOS compile ─► docs
 
 ## Scope Cut Line and derived scope
 
-The original 3-6 week appetite is SUPERSEDED by the 2026-10-08 re-baseline (Gate 1 about 11-17 weeks at the point estimate, about 23 weeks at the +40% edge and 4 h/day; see "Effort estimate"). The task count is not an effort measure (about 141 `##### Task` headings, 93 of them labelled "~5 min", which is a checklist granularity, not a schedule). The schedulable unit is the story; see "Effort estimate" below, which does NOT fit the original 3-6 weeks. The plan states the cut line now rather than discovering it in week 4. Release gates are mirrored in requirements.md.
+The original 3-6 week appetite is SUPERSEDED. Effort is now expressed in tokens, cost classes and agent waves (ESTIMATION.md); human-time figures are retired. See "Effort estimate" below for the Gate 1 and full-scope token totals against the proposed budget (OWNER CONFIRMATION NEEDED). The task count is not an effort measure: there are about 150 `##### Task` headings, which are checklist granularity, while the schedulable unit is the story. The plan states the cut line now rather than discovering it late. Release gates are mirrored in requirements.md.
 
 **Release gates (Repair pass 6)**
 - **Gate 0**: Phase 0 spikes 0.1.1-0.1.5 and the go/no-go checkpoint. Only this is authorised now.
 - **Gate 1 (core slice, first release)**: the pure merge function (Stories 1.1.x, 1.2.x); Desktop + Android push copy (Epics 2.1-2.4 except 2.4.3 which may trail, Story 2.5.1 Undo, Stories 3.1.1, 3.2.1, 3.3.1, 3.4.1, 3.4.2); the default capture graph (Story 4.1.1, 4.1.2); the share-target graph override (4.1.3, 4.2.1, 4.3.1); a minimal share inbox that queues and counts failed shares (Story 4.4.1 base: enqueue, drain, indicator, atomic persistence) because REQ-17 forbids silent loss, WITH its rescue actions Copy text / Discard / Retry now (Task 4.4.1d) and the persistent Android indicator; `ConflictReviewScreen` (Story 3.3.2), because Gate 1 flags conflicts and must let the user resolve them; Phase 5 tests and docs. (Repair pass 7, 2026-10-08: Story 3.3.2 and Task 4.4.1d moved INTO Gate 1 from Gate 2 so that no Gate 1 surface dead-ends, UX-30.) Undo and the minimal inbox are in Gate 1 because requirements REQ-16/REQ-17 need them, not because the core definition names them (flagged for owner confirmation).
-- **Gate 2 (requirement-complete; committed, NOT on the cut list)**: linked pages and assets UI and engine (Story 2.4.3, REQ-5); last-used copy destination (Task 3.1.1d); the `UNASSIGNED` inbox slot (no-graphs-configured shares, ADR-004; 2 h of Story 4.4.1).
-- **Gate 1 variant of S2 (picker)**: Gate 1 ships the picker WITHOUT the "Include linked pages" toggle and its assets sub-toggle (hidden, not disabled: there is no explanation a Gate 1 user could act on), and WITHOUT a preselected last-used destination (the Destination control starts empty; helper line "Choose a destination"). Everything else in S2 (search, filters, select-all, counters, Review) is Gate 1. Task 3.2.1 therefore renders the two controls behind a `gate2LinkedPages` flag that is off until Story 2.4.3 lands; no extra hours (the flag is part of the 15 h of 3.2.1). (The Android Back confirmation toast, Task 4.2.1h, is in Gate 1 with the Back auto-save it explains.)
+- **Gate 2 (requirement-complete; committed, NOT on the cut list)**: linked pages and assets UI and engine (Story 2.4.3, REQ-5); last-used copy destination (Task 3.1.1d); the `UNASSIGNED` inbox slot (no-graphs-configured shares, ADR-004, a small slice of Story 4.4.1).
+- **Gate 1 variant of S2 (picker)**: Gate 1 ships the picker WITHOUT the "Include linked pages" toggle and its assets sub-toggle (hidden, not disabled: there is no explanation a Gate 1 user could act on), and WITHOUT a preselected last-used destination (the Destination control starts empty; helper line "Choose a destination"). Everything else in S2 (search, filters, select-all, counters, Review) is Gate 1. Task 3.2.1 therefore renders the two controls behind a `gate2LinkedPages` flag that is off until Story 2.4.3 lands; no extra cost (the flag is part of Story 3.2.1). (The Android Back confirmation toast, Task 4.2.1h, is in Gate 1 with the Back auto-save it explains.)
 - **Gate 3 (iOS/Web pull-copy, user decision 4, conditional on the demand criterion in requirements.md and Spike 0.1.5)**: Epic 4.5.
 - **Optional / cut list**: below.
 
-**iOS/Web pull-copy placement**: Epic 4.5 is scheduled AFTER the core slice (below) and after the Phase 2 mid-point checkpoint, in parallel with Phase 4 where staffing allows. Estimate (superseded by the hour table in "Effort estimate"): 3 stories, about 41 h (7-10 working days at 4-6 h/day, ~10% of the full-scope hours; the earlier "16 tasks, ~1 week, ~15%" figure counted 5-minute checklist items); it reuses `mergePage`, `StagedPage`, `PageMergeService`, `ActiveTargetWriter`, the picker/dry-run/result/undo UI, so new code is the source reader, the capability type, the direction variant and its tests.
+**iOS/Web pull-copy placement**: Epic 4.5 is scheduled AFTER the core slice (below) and after the Phase 2 mid-point checkpoint, in parallel with Phase 4 where agent waves allow. Cost: 3 stories, about 520k raw tokens (about 9% of the full-scope raw total; see the token table in "Effort estimate"); it reuses `mergePage`, `StagedPage`, `PageMergeService`, `ActiveTargetWriter`, the picker/dry-run/result/undo UI, so new code is the source reader, the capability type, the direction variant and its tests.
 
-**Core slice (Gate 1, must ship)**: see the Gate 1 definition above. Mid-point checkpoint: end of Phase 2 (go/no-go on whether Phase 3-4 fit), in addition to the Phase 0 checkpoint. **Numeric overrun threshold (Repair pass 7)**: at the end of Phase 2, compare actual hours logged for Phases 0-2 with the table's hours for the stories actually built (29 + 46 + 120 = 195 h, less 10 h if Story 2.4.3 is deferred to Gate 2 = 185 h). If actuals exceed the table by more than 25%, STOP and re-plan: re-estimate Phases 3-4 with the measured ratio of actual to estimated hours, report the new Gate 1 finish estimate to the owner, and take the cut-or-extend decision (option (b) of the effort estimate, or a new appetite) before starting Phase 3. At 25% or less over, continue and record the ratio. Actual hours come from the owner's own per-story log (not invented here).
+**Core slice (Gate 1, must ship)**: see the Gate 1 definition above. Mid-point checkpoint: end of Phase 2 (go/no-go on whether Phases 3-4 fit the budget), in addition to the Phase 0 checkpoint. **Numeric overrun threshold (tokens)**: at the end of Phase 2, compare tokens actually spent on Phases 0-2 (all agents, including review and verify) with the token-table value for the stories built: 3,075k raw x 1.75 = about 5.4M verified (Story 2.4.3 deferred to Gate 2, so excluded). If actual spend exceeds that by more than 25% (above about 6.7M), STOP and re-plan: recompute Phases 3-4 with the measured ratio of actual to estimated tokens, report the new Gate 1 total to the owner, and take the cut-or-extend decision (cut deeper, or raise the token budget explicitly) before starting Phase 3. At 25% or less over, continue and record the ratio. Actual tokens come from the session/task-notification token counts (not invented here).
 
-**Cut first, in order (all optional, nothing else depends on them)**: Story 4.2.2 Direct Share shortcuts (UX S14); then, as a DOWN-SCOPING of iOS/Web pull-copy (Epic 4.5, see below), never as a silent drop. REMOVED from this list in Repair pass 6: `ConflictReviewScreen` (3.3.2) and the pending-shares rescue actions "Copy text"/"Discard" (S13), because they back stated requirements ("true conflicts flagged", "never silent loss"); MOVED INTO GATE 1 in Repair pass 7 (they are not cuttable and Gate 1 would dead-end without them). The linked-page closure UI (`Depth1` toggle) is NOT silently cuttable either: REQ-5 puts linked pages/assets in scope, so cutting it needs an amendment to requirements.md; Story 2.4.3 may ship engine-first within Gate 2. Pull-copy down-scoping order: (a) the graph-switcher row entry point (Task 4.5.3e) and the journal date-range filter, (b) the second of the two platforms (ship pull-copy on whichever platform passes Spike 0.1.5 and compiles first), (c) Story 4.5.3 mid-run Retry-failed polish beyond the S6 default. If after (a)-(c) the appetite is still exceeded, the iOS/Web destination chooser reverts to "no source available" with Close; that reversal contradicts the v1 decision and needs the user's explicit call.
+**Cut first, in order (all optional, nothing else depends on them)**: Story 4.2.2 Direct Share shortcuts (UX S14); then, as a DOWN-SCOPING of iOS/Web pull-copy (Epic 4.5, see below), never as a silent drop. REMOVED from this list in Repair pass 6: `ConflictReviewScreen` (3.3.2) and the pending-shares rescue actions "Copy text"/"Discard" (S13), because they back stated requirements ("true conflicts flagged", "never silent loss"); MOVED INTO GATE 1 in Repair pass 7 (they are not cuttable and Gate 1 would dead-end without them). The linked-page closure UI (`Depth1` toggle) is NOT silently cuttable either: REQ-5 puts linked pages/assets in scope, so cutting it needs an amendment to requirements.md; Story 2.4.3 may ship engine-first within Gate 2. Pull-copy down-scoping order: (a) the graph-switcher row entry point (Task 4.5.3e) and the journal date-range filter, (b) the second of the two platforms (ship pull-copy on whichever platform passes Spike 0.1.5 and compiles first), (c) Story 4.5.3 mid-run Retry-failed polish beyond the S6 default. If after (a)-(c) the token budget is still exceeded, the iOS/Web destination chooser reverts to "no source available" with Close; that reversal contradicts the v1 decision and needs the user's explicit call.
 
 **Derived / optional scope (no explicit requirement line; each is justified by an NFR or a requirement it supports)**:
 
@@ -185,12 +185,12 @@ The original 3-6 week appetite is SUPERSEDED by the 2026-10-08 re-baseline (Gate
 | 0.1.3 uuid round trip / collision | Facts recorded | Replace-with-cascade outcome makes the clobber guard (Task 1.2.1c) mandatory and amends ADR-002 before Phase 1 continues; not a stop |
 | 0.1.5 iOS/Web read-only source | Per platform and storage kind recorded | Negative: Gate 3 is cut or narrowed for that platform with the S3 "no source available" state (not queued); a user decision that conflicts with the v1 commitment goes back to the owner; not a stop for Gate 1 |
 
-**Go decision** (owner records it as a dated note at the top of this file): GO to Phase 1 iff 0.1.1 and 0.1.4 pass (R1 and R2 not triggered), 0.1.2/0.1.3/0.1.5 are recorded, and the owner has answered the open items in requirements.md (primary persona/frequency, A-DEMAND thresholds; the appetite re-baseline was answered 2026-10-08). NO-GO or RE-PLAN otherwise.
+**Go decision** (owner records it as a dated note at the top of this file): GO to Phase 1 iff 0.1.1 and 0.1.4 pass (R1 and R2 not triggered), 0.1.2/0.1.3/0.1.5 are recorded, and the owner has answered the open items in requirements.md (primary persona/frequency, A-DEMAND thresholds; the token budget: the 2026-10-08 re-baseline answer was given against retired human-time numbers, so OWNER CONFIRMATION NEEDED: budget in tokens). NO-GO or RE-PLAN otherwise.
 
 **Product inputs to the Go decision (Repair pass 7; all OWNER, nothing here is measured)**:
-- **Pre-build demand probe** (cheap, runs in parallel with the spikes): the owner self-logs for 2 weeks, or does a one-off count over recent history, of (a) cross-graph page copies done by hand and (b) shares made while a non-target graph was active, with the graph switches and taps each took. Result recorded as a dated note next to the Go decision. A result near zero is the cheapest available evidence for the Freeze criterion and should prompt the owner to reconsider before spending Gate 1's roughly 333 h; thresholds are the owner's (OWNER INPUT NEEDED).
+- **Pre-build demand probe** (cheap, runs in parallel with the spikes): the owner self-logs for 2 weeks, or does a one-off count over recent history, of (a) cross-graph page copies done by hand and (b) shares made while a non-target graph was active, with the graph switches and taps each took. Result recorded as a dated note next to the Go decision. A result near zero is the cheapest available evidence for the Freeze criterion and should prompt the owner to reconsider before spending Gate 1's roughly 8.8M tokens (likely case); thresholds are the owner's (OWNER INPUT NEEDED).
 - **Falsifiable user-value claim** (requirements.md): today a share to a non-active graph takes N graph switches (N UNMEASURED; the probe measures it); success = 0 switches and 1 tap (Save) with the default destination.
-- **Opportunity-cost line** (OWNER INPUT NEEDED): what roughly 3-4 months of the single implementer's time displaces. Not invented here; the owner states it in the Go note.
+- **Opportunity-cost line** (OWNER INPUT NEEDED): what roughly 8.8M tokens of agent spend (Gate 1 likely case) plus the owner's review attention displaces. Not invented here; the owner states it in the Go note.
 - **Android long-run host decision** (moved here from Unresolved Questions): application scope versus WorkManager for 8k-page copies is decided at Phase 1 start, not left to Story 3.3.1c. DEFAULT: application scope (SteleKitApplication-owned scope with a CoroutineExceptionHandler) plus a persisted interrupted marker and the S9 notice; switch to WorkManager only if the Epic 5.1 soak shows the process is killed mid-run in practice. Owner: implementer records the choice (or confirms the default) in this file before Task 3.3.1c starts.
 - **Wording validation** is scheduled before the Gate 1 release (see validation.md "Wording validation step"), not after Gate 2.
 
@@ -208,61 +208,100 @@ Branch `fix/graph-switch-notes-path` (11 commits ahead of `main`, VERIFIED by `g
 
 **Explicit dependency (Repair pass 7)**: the Lock PR (Task 2.1.1c) and therefore ALL of Phase 2 depend on `fix/graph-switch-notes-path` being merged to `main` first. Owner of that merge: the user. Date: none set (OWNER INPUT NEEDED: the user should either merge it, or say it will not merge soon so the lock PR can be based on the branch instead). This is a critical-path item: if it is still unmerged when Phase 1 completes, Phase 2 cannot start on the hot file and the schedule slips by the wait.
 
-## Effort estimate (Repair pass 6)
+## Effort estimate (Repair pass 8: re-expressed in tokens)
 
-**Basis and honesty**: hours are the plan author's per-story judgement (tests, review round-trips and CI iteration included), NOT measurements and NOT derived from the "~5 min" task labels; assume about +/-40%. One working day is taken as 4-6 productive hours (5 as midpoint). Each total below was derived by summing this table.
+**Basis**: per `~/.claude/skills/sdd/skills/ESTIMATION.md`. Human-time figures (hours, days, weeks) are retired for this plan; the owner's 2026-10-08 instruction is that agent-executed work is costed in tokens. Cost-class bands (per worker-agent run: XS under 30k, S 30-80k, M 80-180k, L 180-300k) are **INFERRED**, not measured on implementers; recalibrate after the first real implementer run. Class midpoints used for the sums: XS 20k, S 55k, M 130k, L 240k. Each story's class was assigned from the files it touches and the exploration it needs (the old hour figures were used only as a relative-size hint, never converted by a constant). A "task" heading is a checklist item; a worker run batches adjacent tasks that touch the same files, so "2xM" means two M-sized runs. No story is L: the biggest (2.3.1, 2.3.2, 2.4.1, 2.4.2) are already split into two M runs along existing task boundaries.
 
-| Story | h | | Story | h |
+### Gate 1 core slice (includes all of Phase 0)
+
+| Story | tasks | cost class | est. tokens (raw) | wall-clock blocker |
 |---|---|---|---|---|
-| 0.1.1 real-FS reconcile + device | 8 | | 3.1.1 selection VM (+3.1.1d last-used 3, +3.1.1e probing state 1) | 12 |
-| 0.1.2 SAF atomic replace | 3 | | 3.2.1 picker (+skeleton, large text, RTL, Web keys 3) | 15 |
-| 0.1.3 uuid round trip | 2 | | 3.3.1 dry-run/progress/result (+Stop wording, loading 2) | 16 |
-| 0.1.4 RoundTripGuard pass rate | 8 | | 3.3.2 conflict review (Gate 1 since Repair pass 7; +a11y, wording, loading 4) | 12 |
-| 0.1.5 iOS/Web read-only probe | 8 | | 3.4.1 entry points | 5 |
-| **Phase 0 subtotal** | **29** | | 3.4.2 delete `GraphMergeService` | 4 |
-| 1.1.1 merge function | 8 | | **Phase 3 subtotal** | **64** |
-| 1.1.2 property tests | 6 | | 4.1.1 capture settings + resolver | 6 |
-| 1.1.3 converters/rendering | 6 | | 4.1.2 `JournalAppender` extract | 6 |
-| 1.1.4 identity + splicer + guard | 14 | | 4.1.3 append to non-active graph | 12 |
-| 1.2.1 uuid remap | 6 | | 4.2.1 Android overlay (+Back toast, resolver loading 3) | 19 |
-| 1.2.2 `PageFileResolver` (+journal rules, traversal tests 1) | 6 | | 4.3.1 Desktop chooser | 10 |
-| **Phase 1 subtotal** | **46** | | 4.4.1 share inbox (base 12 + rescue actions 4 = 16 in Gate 1; + unassigned slot 2 in Gate 2 = 18) | 18 |
-| 2.1.1 locator + write lock (own PR) | 14 | | **Phase 4 subtotal (4.1-4.4; excl. optional 4.2.2 = 6)** | **71** |
-| 2.1.2 router readiness | 10 | | 4.5.1 direction/gating/quick-add (+4.5.1f 3) | 11 |
-| 2.2.1 staging dir | 5 | | 4.5.2 `SourceGraphReader` | 14 |
-| 2.2.2 manifest | 4 | | 4.5.3 pull flow (+name-index loading 2) | 16 |
-| 2.3.1 `MarkdownTargetWriter` (+traversal/symlink 3) | 17 | | **Epic 4.5 subtotal** | **41** |
-| 2.3.2 `ActiveTargetWriter` + router + contract + recopy property | 16 | | 5.1.1 large-graph/resilience | 10 |
-| 2.3.3 capabilities | 4 | | 5.1.2 docs | 3 |
-| 2.4.1 bounded queries (split, see Task 2.4.1d1-d7) | 16 | | 5.1.3 Bazel check + log-line contract | 5 |
-| 2.4.2 plan/apply | 16 | | **Phase 5 subtotal** | **18** |
-| 2.4.3 linked pages/assets (Gate 2) | 10 | | | |
-| 2.5.1 undo | 8 | | | |
-| **Phase 2 subtotal** | **120** | | | |
+| 0.1.1 real-FS reconcile + device | 3 | M+S | 185k | Android real-device pass |
+| 0.1.2 SAF atomic replace | 2 | S | 55k | Android SAF device check |
+| 0.1.3 uuid round trip / collision | 3 | S | 55k | - |
+| 0.1.4 RoundTripGuard pass rate on a real graph | 3 | M | 130k | owner supplies a real graph |
+| 0.1.5 iOS/Web read-only probe | 2 | 2xS | 110k | iOS/Web browser and device checks |
+| 1.1.1 merge function | 5 | M+S | 185k | - |
+| 1.1.2 property tests | 3 | M | 130k | - |
+| 1.1.3 converters/rendering | 3 | S | 55k | - |
+| 1.1.4 identity + splicer + guard | 4 | 2xM | 260k | - |
+| 1.2.1 uuid remap | 3 | M | 130k | - |
+| 1.2.2 `PageFileResolver` | 5 | M | 130k | - |
+| 2.1.1 locator + write lock (own PR) | 3 | M+S | 185k | merge of `fix/graph-switch-notes-path` first |
+| 2.1.2 router readiness | 3 | M | 130k | - |
+| 2.2.1 staging dir | 3 | S | 55k | - |
+| 2.2.2 manifest | 2 | S | 55k | - |
+| 2.3.1 `MarkdownTargetWriter` | 5 | 2xM | 260k | - |
+| 2.3.2 `ActiveTargetWriter` + router + contract | 5 | 2xM | 260k | - |
+| 2.3.3 capabilities | 2 | S | 55k | - |
+| 2.4.1 bounded queries + SQLDelight regen | 4 | 2xM | 260k | - |
+| 2.4.2 plan/apply | 7 | 2xM | 260k | - |
+| 2.5.1 undo | 2 | M | 130k | - |
+| 3.1.1 selection VM (incl. 3.1.1d, Gate 2) | 5 | M | 130k | - |
+| 3.2.1 picker | 6 | 2xM | 260k | - |
+| 3.3.1 dry-run/progress/result | 5 | 2xM | 260k | - |
+| 3.3.2 conflict review | 3 | M | 130k | - |
+| 3.4.1 entry points | 3 | S | 55k | - |
+| 3.4.2 delete `GraphMergeService` | 2 | XS | 20k | - |
+| 4.1.1 capture settings + resolver | 3 | S | 55k | - |
+| 4.1.2 `JournalAppender` extract | 3 | S | 55k | - |
+| 4.1.3 append to non-active graph | 3 | M | 130k | - |
+| 4.2.1 Android overlay | 8 | 2xM | 260k | Android device pass (Epic 5.1) |
+| 4.3.1 Desktop chooser | 5 | M | 130k | - |
+| 4.4.1 share inbox (base + rescue actions) | 4 | 2xM | 260k | - |
+| 5.1.1 large-graph/resilience | 3 | M | 130k | soak run |
+| 5.1.2 docs | 2 | XS | 20k | - |
+| 5.1.3 Bazel check + log-line contract | 2 | S | 55k | - |
 
-| Scope | Hours | Days at 6 / 5 / 4 h/day | Weeks (5-day) at 6 / 5 / 4 |
-|---|---|---|---|
-| Phase 0 only (authorised now) | 29 | 4.8 / 5.8 / 7.2 | 1.0 / 1.2 / 1.4 |
-| **Gate 1 core slice incl. all of Phase 0** (29 + 46 + 110 (Phase 2 less 2.4.3) + 61 (Phase 3 less 3.1.1d) + 69 (Phase 4 less the 2 h unassigned slot; includes base inbox 12 + rescue actions 4) + 18) | **333** | 55.5 / 66.6 / 83.3 | 11.1 / 13.3 / 16.7 |
-| Gate 1 at the +/-40% band (200 h to 466 h) | 200 to 466 | 33.3 to 77.7 at 6 h/day; 50.0 to 116.6 at 4 h/day | 6.7 to 15.5 at 6 h/day; 10.0 to 23.3 at 4 h/day |
-| Gate 2 additions (2.4.3 10 + 3.1.1d 3 + inbox `UNASSIGNED` slot 2) | 15 | | |
-| Gate 3 (Epic 4.5) | 41 | | |
-| **Full scope** (Gates 1-3; excludes optional 4.2.2 = 6 h) | **389** | 64.8 / 77.8 / 97.2 | 13.0 / 15.6 / 19.4 |
+Gate 2 additions (raw): Story 2.4.3 linked pages/assets (3 tasks, M, 130k); Task 3.1.1d last-used destination (XS, 20k); inbox `UNASSIGNED` slot in Story 4.4.1 (XS, 20k). Gate 3 (Epic 4.5, raw): 4.5.1 (6 tasks, M, 130k), 4.5.2 (5 tasks, M, 130k; wall-clock blocker iOS/Web checks from Spike 0.1.5), 4.5.3 (7 tasks, 2xM, 260k). Optional, excluded: Story 4.2.2 Direct Share (2 tasks, S, 55k). Task 3.1.1d is counted in Story 3.1.1's row above, so the Gate 1 row total includes 20k that Gate 2 owns; this is within the INFERRED error and kept for simplicity.
 
-Check: 333 + 15 + 41 = 389. (Gate 1 was 317 and Gate 2 was 31 before Repair pass 7 moved Story 3.3.2 (12 h) and the inbox rescue actions (4 h) into Gate 1: 317 + 16 = 333; 31 - 16 = 15; the full-scope total is unchanged.)
+### Totals (tokens, all agents including review and verify)
 
-**Staffing assumption (Repair pass 7)**: the hour-to-week conversion assumes ONE implementer working the critical path serially (Phase 0, 1, 2, then 3 and 4), 4-6 productive hours per day, with Android (SAF, device passes) and Desktop work interleaved, not parallel. Parallel agent workers (subagent-driven implementation) can take independent stories off the critical path (for example Story 1.2.1, 2.2.x, 4.1.1/4.1.2, and the Phase 3 screens once the 2.4 interfaces exist) and could shorten calendar time, but they do NOT remove review, CI iteration, or the serial chain 2.1.1c, 2.1.2, 2.3.x, 2.4.2. The table is therefore the single-implementer figure; any speed-up from parallel workers is to be measured at the Phase 2 checkpoint, not assumed.
+| Scope | raw (sum of table) | low (x1.5) | likely (x1.75) | high (x2) |
+|---|---|---|---|---|
+| Phase 0 only (authorised now) | 535k | 0.80M | 0.94M | 1.07M |
+| Phases 0-2 as built for Gate 1 (checkpoint value) | 3,075k | 4.61M | 5.38M | 6.15M |
+| **Gate 1 core slice incl. Phase 0** | **5,025k** | **7.5M** | **8.8M** | **10.1M** |
+| Gate 2 additions | 170k | 0.26M | 0.30M | 0.34M |
+| Gate 3 (Epic 4.5) | 520k | 0.78M | 0.91M | 1.04M |
+| **Full scope (Gates 1-3; excludes optional 4.2.2)** | **5,715k** | **8.6M** | **10.0M** | **11.4M** |
 
-**Does it fit the original 3-6 weeks (15-30 working days)? No.** The full scope needs about 13-19 weeks. The Gate 1 core slice (333 h after Repair pass 7) needs about 11-17 weeks at the point estimate and about 23 weeks at the +40% edge and 4 h/day; it does not fit the 6-week top end even at the optimistic edge (200 h at 6 h/day is about 6.7 weeks). Only Phase 0 plus a deeper cut fits. **Owner decision made 2026-10-08: option (a), re-baseline; Undo and the minimal inbox stay in Gate 1.** Original options: (a) re-baseline the Large appetite to roughly 11-17 weeks for Gate 1 (it was 11-16 weeks when Gate 1 was 317 h) (and treat Gates 2/3 as follow-on appetites gated by the demand criterion), or (b) cut deeper before Phase 1, for example ship Gate 1 as Desktop-only push copy plus active-graph share override (drops Android off-graph/SAF work, Spike 0.1.2 consequences and most of Story 4.2.1) and add Android later; neither option has been costed beyond this table.
+Verification multiplier x1.5 (low) / x1.75 (likely) / x2 (high) is applied to the raw sums (spec-compliance and code-quality review per story, `6-verify` layers, CI reruns). Low and high therefore reflect the multiplier range only; the INFERRED class bands add further uncertainty not shown here.
 
-## Phase 0: Spikes (the first and ONLY authorised work before the go/no-go checkpoint; timeboxes equal the Effort estimate hours: 0.1.1 and 0.1.4 are 8 h (1 day) each, 0.1.5 is 8 h (0.5 day per platform, two platforms), 0.1.2 is 3 h, 0.1.3 is 2 h; total 29 h; output = test + note appended to the ADR)
+**Planning overhead already spent (VERIFIED from task-notification `subagent_tokens`)**: about 3.5M subagent tokens across 29 agent runs, plus about 50k on the coordinator thread. This is sunk and NOT part of the budget below. Including it, Gate 1 likely is about 12.3M and full scope likely about 13.6M lifetime.
+
+**Appetite budget (Large band, 3-15M; OWNER CONFIRMATION NEEDED: budget in tokens)**: proposed **10M tokens for Gate 1** (just above the 8.8M likely, at the high end of the multiplier range 10.1M) and **12M tokens for Gates 1-3 combined** (full high 11.4M). Gates 2 and 3 remain follow-on spends gated by the A-DEMAND criterion. The 2026-10-08 re-baseline answer ("11-16 weeks") was given against human-time numbers that are now retired, so it does not carry over to this budget.
+
+**Critical path in agent waves (INFERRED; Gate 1)**: 14 waves.
+1. Wave 1-2: Phase 0. Spikes 0.1.2, 0.1.3, 0.1.4, 0.1.5 run concurrently; 0.1.1 follows 0.1.4 (guard strictness first). Then the Go checkpoint (wall-clock blocker).
+2. Wave 3: Stories 1.1.1, 1.1.4, 1.2.2 concurrently. Wave 4: 1.1.2, 1.1.3, 1.2.1 concurrently (all gated on 1.1.4).
+3. Wave 5: 2.1.1 (lock PR, own PR after the notes-path merge), 2.2.1, 2.2.2, 2.3.3, 2.4.1 concurrently. Wave 6: 2.1.2. Wave 7: 2.3.1 and 2.3.2 concurrently (port defined first in 2.3.1a). Wave 8: 2.4.2. Wave 9: 2.5.1. Then the Phase 2 token checkpoint.
+4. Wave 10: 3.1.1, 4.1.1, 4.1.2. Wave 11: 3.2.1, 3.3.1, 4.1.3, 4.3.1, 4.4.1. Wave 12: 3.3.2, 3.4.1, 4.2.1. Wave 13: 3.4.2.
+5. Wave 14: Phase 5 (5.1.1, 5.1.2, 5.1.3 concurrently), then the `6-verify` pass.
+Serial chain that cannot be fanned out: 2.1.1, 2.1.2, 2.3.2, 2.4.2, 3.3.1, 5.1.1 (shared `GraphManager`/router files and the plan/apply interfaces). Parallel speed-up beyond the wave grouping above is to be measured at the Phase 2 checkpoint, not assumed.
+
+**Overrun threshold**: stop and re-plan when tokens spent exceed the table value for the stories done by more than 25% (see "Scope Cut Line", end-of-Phase-2 checkpoint: about 5.4M verified expected for Phases 0-2, threshold about 6.7M). The same +25% rule applies to the budget as a whole (Gate 1: 10M x 1.25 = 12.5M hard stop requires an explicit owner decision).
+
+**Wall-clock blockers (the only calendar time in this plan; owners in brackets)**
+- Owner decisions (OWNER): primary persona and frequency; A-DEMAND expand/freeze thresholds; opportunity-cost line; Android long-run host default (application scope, plan Phase 0 checkpoint); Gate 1 scope confirmation (Undo, minimal inbox, ConflictReview, rescue actions: confirmed 2026-10-08, restated for the token budget); token budget confirmation.
+- 2-week owner self-log demand probe (OWNER; observation window, runs in parallel with the spikes).
+- Android real-device pass for Spike 0.1.1 (OWNER, needs a device).
+- Spike 0.1.2 SAF device check (OWNER, needs a device with a SAF-backed graph).
+- Merge of `fix/graph-switch-notes-path` to `main` before the lock PR, Task 2.1.1c (the user).
+- iOS and Web browser/device checks for Spike 0.1.5 (OWNER).
+- Human review latency for the lock PR and the release PRs (OWNER).
+Duration is the agent-wave critical path above plus the longest chain of these blockers; the blockers, not the code, set the calendar.
+
+**Staffing assumption**: waves assume parallel worker agents on independent stories, with review and CI iteration folded into the x1.5-2 multiplier.
+
+## Phase 0: Spikes (the first and ONLY authorised work before the go/no-go checkpoint; scoped by cost class in "Effort estimate", not by time; output = test + note appended to the ADR)
 
 **Run order**: Spike 0.1.2 first (its answer sizes the Android story and the Scope Cut Line), then 0.1.4 (determines guard strictness before any writer exists), 0.1.1, 0.1.3, 0.1.5 (iOS/Web read-only source access; parallelisable with 0.1.3). All five are authorised now; nothing in Phase 1 or later is started until the "Phase 0 checkpoint" decision is recorded. Throw-away spike code (Tasks 0.1.4a, 0.1.5a) is not production code and is replaced in Phase 1.
 
 ### Epic 0.1: Verify unverified architecture assumptions
 **Goal**: Convert the two architecture-research INFERRED claims and the UUID round-trip gap into executable evidence before building on them.
 
-#### Story 0.1.1: Spike - markdown written into a closed graph reconciles cleanly on a REAL filesystem (1 day)
+#### Story 0.1.1: Spike - markdown written into a closed graph reconciles cleanly on a REAL filesystem (cost class M+S)
 **As a** developer, **I want** proof, on a real temp directory with the real `GraphLoader`, file watcher and `FileRegistry` (not `FakeFileSystem`), that a file written into a non-active graph is indexed on next open with no `DiskConflict`, **so that** ADR-001's off-graph writer is safe. A `FakeFileSystem` run does not count: the watcher, `FileRegistry` hash/mtime state and SAF behave differently on real disks (pre-mortem failure #1).
 **Gates**: Stories 2.3.1 and 4.1.3 do not start until the JVM test below is green AND the manual Android pass is recorded.
 **Acceptance Criteria**:
@@ -281,20 +320,20 @@ Check: 333 + 15 + 41 = 389. (Gate 1 was 317 and Gate 2 was 31 before Repair pass
 ##### Task 0.1.1a: Write the reconcile test on a real temp directory with the real loader/watcher/`FileRegistry` (~half day)
 - Mirror setup of existing `GraphManager*Test` and `LargeGraphWarmStartCrashTest` (`kmp/src/jvmTest/kotlin/dev/stapler/stelekit/db/`); no production changes.
 - Files: `kmp/src/jvmTest/kotlin/dev/stapler/stelekit/db/OffGraphWriteReconcileSpikeTest.kt`
-##### Task 0.1.1b: Run the manual Android device pass (plain folder and SAF), record results (~2 hours)
-##### Task 0.1.1c: Record result, append "Spike result" section to ADR-001 (date, JVM output, device notes); update Unresolved Questions and unblock/keep-blocked Stories 2.3.1 and 4.1.3 (~15 min)
+##### Task 0.1.1b: Run the manual Android device pass (plain folder and SAF), record results
+##### Task 0.1.1c: Record result, append "Spike result" section to ADR-001 (date, JVM output, device notes); update Unresolved Questions and unblock/keep-blocked Stories 2.3.1 and 4.1.3
 
-#### Story 0.1.2: Spike - SAF atomic replace (3 h)
+#### Story 0.1.2: Spike - SAF atomic replace (cost class S)
 **As a** developer, **I want** to know if SAF supports temp-file + rename replace, **so that** I pick the write strategy for SAF graphs.
 **Acceptance Criteria**:
 - A documented yes/no with evidence.
   - *Given* a SAF tree URI of a test graph on an emulator/device, *When* writing `Spike.md.tmp` then renaming over existing `Spike.md`, *Then* either `Spike.md` holds the new content with no leftover `.tmp` (yes) or the call throws/duplicates (`Spike (1).md`) (no, recorded).
 **Files**: `kmp/src/androidUnitTest/kotlin/dev/stapler/stelekit/platform/SafAtomicReplaceSpikeTest.kt` (new, Robolectric where feasible), notes in ADR-001
 
-##### Task 0.1.2a: Read `kmp/src/androidMain/kotlin/dev/stapler/stelekit/platform/PlatformFileSystem.kt` write/rename paths; write spike test or manual device script (~5 min)
-##### Task 0.1.2b: Run on emulator (`bazel`/`./gradlew` android config), record outcome; if "no": mark SAF targets `SafInboxOnly` (copy: disabled with reason; share: queued) in ADR-001, Story 2.3.1 and Story 2.3.3, and record the degraded Android story from the Scope Cut Line (~5 min). RUN THIS SPIKE FIRST.
+##### Task 0.1.2a: Read `kmp/src/androidMain/kotlin/dev/stapler/stelekit/platform/PlatformFileSystem.kt` write/rename paths; write spike test or manual device script
+##### Task 0.1.2b: Run on emulator (`bazel`/`./gradlew` android config), record outcome; if "no": mark SAF targets `SafInboxOnly` (copy: disabled with reason; share: queued) in ADR-001, Story 2.3.1 and Story 2.3.3, and record the degraded Android story from the Scope Cut Line. RUN THIS SPIKE FIRST.
 
-#### Story 0.1.3: Spike - `id::` and UUID round trip, import and collision behavior (2 h)
+#### Story 0.1.3: Spike - `id::` and UUID round trip, import and collision behavior (cost class S)
 **As a** developer, **I want** verified UUID behavior, **so that** idempotent remap (ADR-002) rests on facts.
 **Acceptance Criteria**:
 - Round trip preserves UUID.
@@ -304,11 +343,11 @@ Check: 333 + 15 + 41 = 389. (Gate 1 was 317 and Gate 2 was 31 before Repair pass
 - `QrImportService.import` UUID handling documented.
 **Files**: `{BT}/transfer/MergeUuidRoundTripSpikeTest.kt` (new), `{BT}/AllBusinessTests.kt`, `project_plans/cross-graph-merge-share-target/decisions/ADR-002-merge-identity-and-conflict-model.md`
 
-##### Task 0.1.3a: Test serializer->parser round trip for uuid and `id` in `Block.properties` (~4 min)
-##### Task 0.1.3b: Test duplicate-uuid insert via `SqlDelightBlockRepository` (in-memory driver) and read `QrImportService.kt` import path (~5 min)
-##### Task 0.1.3c: Append "Spike result" to ADR-002 (collision outcome sizes the clobber guard in Task 1.2.1c; `id::` emission is NOT conditional any more - it is Task 1.1.4a). Cite `QrImportService` at `transfer/qrcode/QrImportService.kt` (~3 min)
+##### Task 0.1.3a: Test serializer->parser round trip for uuid and `id` in `Block.properties`
+##### Task 0.1.3b: Test duplicate-uuid insert via `SqlDelightBlockRepository` (in-memory driver) and read `QrImportService.kt` import path
+##### Task 0.1.3c: Append "Spike result" to ADR-002 (collision outcome sizes the clobber guard in Task 1.2.1c; `id::` emission is NOT conditional any more - it is Task 1.1.4a). Cite `QrImportService` at `transfer/qrcode/QrImportService.kt`
 
-#### Story 0.1.4: Spike - `RoundTripGuard` pass rate over a real exported graph (1 day; runs BEFORE any writer is built)
+#### Story 0.1.4: Spike - `RoundTripGuard` pass rate over a real exported graph (cost class M; runs BEFORE any writer is built)
 **As a** developer, **I want** the measured fraction of real pages with `serialize(parse(file)) == file`, **so that** the guard's strictness is settled before the writers exist, instead of discovering mid-Phase 1 that most off-graph writes will refuse (pre-mortem failure #2).
 **Gates**: Stories 2.3.1, the off-graph path of 2.3.2, and 4.1.3. Story 1.1.4's guard implementation takes its strictness from this result.
 **Acceptance Criteria**:
@@ -321,10 +360,10 @@ Check: 333 + 15 + 41 = 389. (Gate 1 was 317 and Gate 2 was 31 before Repair pass
 - Permanent regression: the measured fixtures that fail are added as named fixtures to Story 1.1.4's `merge-fixtures/` (with the guard result asserted).
 **Files**: `kmp/src/jvmTest/kotlin/dev/stapler/stelekit/merge/RoundTripGuardPassRateSpikeTest.kt` (new; jvmTest because it walks a real directory; skipped with an explicit "no graph supplied" message when neither input is available), notes in ADR-001
 ##### Task 0.1.4a: Land a throw-away `RoundTripGuard` (exact form) and `MarkdownPageParser` + `LogseqPageSerializer` round trip used only by the spike; Story 1.1.4 later replaces it with the production guard (~half day)
-##### Task 0.1.4b: Run on the author's graph and on the synthetic XLARGE graph, record pass %, failure groups and decision in ADR-001 and in Unresolved Questions (~2 hours)
-##### Task 0.1.4c: If P < 95%, specify the "structure-stable" predicate in ADR-001 and update Story 1.1.4's guard AC accordingly before any writer task starts (~1 hour)
+##### Task 0.1.4b: Run on the author's graph and on the synthetic XLARGE graph, record pass %, failure groups and decision in ADR-001 and in Unresolved Questions
+##### Task 0.1.4c: If P < 95%, specify the "structure-stable" predicate in ADR-001 and update Story 1.1.4's guard AC accordingly before any writer task starts
 
-#### Story 0.1.5: Spike - read an inactive graph's markdown read-only on iOS and Web (0.5 day per platform, 8 h for both; gates Epic 4.5)
+#### Story 0.1.5: Spike - read an inactive graph's markdown read-only on iOS and Web (cost class S per platform; gates Epic 4.5)
 **As a** developer, **I want** proof that a registered-but-inactive graph's `pages/` and `journals/` files can be listed and read without activating the graph, **so that** pull-copy (Story 4.5.3) is built only where it can work.
 **Acceptance Criteria**:
 - Readability per platform.
@@ -365,15 +404,15 @@ Check: 333 + 15 + 41 = 389. (Gate 1 was 317 and Gate 2 was 31 before Repair pass
   - *Given* `existing = null`, *When* merged, *Then* `New(incoming)` with remapped uuids per ADR-002.
 **Files**: `{C}/merge/MergeModel.kt`, `{C}/merge/MergePage.kt`, `{CT}/merge/MergePageExamplesTest.kt`
 
-##### Task 1.1.1a: Define `MergeBlock`, `MergePage`, `MergePolicy`, `MergeOutcome`, `BlockConflict`, `SourceBlockRef` (value classes/sealed) (~5 min)
+##### Task 1.1.1a: Define `MergeBlock`, `MergePage`, `MergePolicy`, `MergeOutcome`, `BlockConflict`, `SourceBlockRef` (value classes/sealed)
 - Files: `{C}/merge/MergeModel.kt`
-##### Task 1.1.1b: Implement block matching (uuid, src-id, normalized content with short-content parent guard), top-down (~5 min)
+##### Task 1.1.1b: Implement block matching (uuid, src-id, normalized content with short-content parent guard), top-down
 - Files: `{C}/merge/MergePage.kt`
-##### Task 1.1.1c: Implement placement (repair R3: DEFAULT is append after the last sibling under the matched parent, or end of page for top level; use "after nearest preceding matched sibling" ONLY when every sibling after that anchor, and all their descendants, carries an explicit `id::`, so no positional uuid can shift; never reorder target) and property union (set union for `alias`,`tags`; target wins scalar; never merge `id`,`collapsed`) (~5 min)
+##### Task 1.1.1c: Implement placement (repair R3: DEFAULT is append after the last sibling under the matched parent, or end of page for top level; use "after nearest preceding matched sibling" ONLY when every sibling after that anchor, and all their descendants, carries an explicit `id::`, so no positional uuid can shift; never reorder target) and property union (set union for `alias`,`tags`; target wins scalar; never merge `id`,`collapsed`)
 - Files: `{C}/merge/MergePage.kt`
-##### Task 1.1.1d: Implement conflict sibling creation + `New` path using `UuidRemap` stub interface (real remap in 1.2.1). Conflict sibling uuid is `UuidRemap.conflictUuid(sourceGraphId, sourceUuid, normalizedContent)` (SHA-256 of `"merge-conflict:" + g + ":" + S + ":" + contentHash`), NOT the plain `uuid'`, and the sibling carries `src-id` (R4); a block already present under the same parent with equal `src-id` and equal normalized content (original copy or earlier conflict sibling) means `Unchanged` (~4 min)
+##### Task 1.1.1d: Implement conflict sibling creation + `New` path using `UuidRemap` stub interface (real remap in 1.2.1). Conflict sibling uuid is `UuidRemap.conflictUuid(sourceGraphId, sourceUuid, normalizedContent)` (SHA-256 of `"merge-conflict:" + g + ":" + S + ":" + contentHash`), NOT the plain `uuid'`, and the sibling carries `src-id` (R4); a block already present under the same parent with equal `src-id` and equal normalized content (original copy or earlier conflict sibling) means `Unchanged`
 - Files: `{C}/merge/MergePage.kt`
-##### Task 1.1.1e: Example tests for each criterion above (~5 min)
+##### Task 1.1.1e: Example tests for each criterion above
 - Files: `{CT}/merge/MergePageExamplesTest.kt`
 
 #### Story 1.1.2: Property tests (acceptance gate) (GATED on Story 1.1.4 - idempotence is only meaningful once uuids survive the stage and disk hops)
@@ -385,9 +424,9 @@ Check: 333 + 15 + 41 = 389. (Gate 1 was 317 and Gate 2 was 31 before Repair pass
   - *Given* t and s with disjoint uuids and distinct contents, *When* merged both ways, *Then* the multiset of block contents is equal.
 **Files**: `{CT}/merge/MergePagePropertyTest.kt`, `{CT}/merge/MergeArbs.kt`
 
-##### Task 1.1.2a: Write `Arb<MergePage>` generators with collision-biased uuid/content pools. Required generator axes (R3/R4): (i) "post-copy edit": derive `t` from `merge(t0, s)` then randomly rewrite the content of a random subset of `src-id`-carrying blocks (edited-after-copy); (ii) "source drift": derive `s2` from `s` by editing a random subset of contents; (iii) "unlabeled": a fraction of target blocks have no explicit uuid (positional). Properties on these axes: `merge(merge(t,s),s) == merge(t,s)`; after edit-then-recopy exactly one conflict sibling per edited matched block and zero on the next repeat; `merge(merge(merge(t,s),s2),s2)` idempotent; no duplicate uuid (conflict `uuid'' != uuid'`); positional uuids of pre-existing unlabeled blocks are unchanged after render + re-parse (~5 min)
-##### Task 1.1.2b: Idempotence + no-loss + additive-only properties (~5 min)
-##### Task 1.1.2c: Identity/commutativity/uuid-uniqueness properties; parametrize on both key functions (~5 min)
+##### Task 1.1.2a: Write `Arb<MergePage>` generators with collision-biased uuid/content pools. Required generator axes (R3/R4): (i) "post-copy edit": derive `t` from `merge(t0, s)` then randomly rewrite the content of a random subset of `src-id`-carrying blocks (edited-after-copy); (ii) "source drift": derive `s2` from `s` by editing a random subset of contents; (iii) "unlabeled": a fraction of target blocks have no explicit uuid (positional). Properties on these axes: `merge(merge(t,s),s) == merge(t,s)`; after edit-then-recopy exactly one conflict sibling per edited matched block and zero on the next repeat; `merge(merge(merge(t,s),s2),s2)` idempotent; no duplicate uuid (conflict `uuid'' != uuid'`); positional uuids of pre-existing unlabeled blocks are unchanged after render + re-parse
+##### Task 1.1.2b: Idempotence + no-loss + additive-only properties
+##### Task 1.1.2c: Identity/commutativity/uuid-uniqueness properties; parametrize on both key functions
 
 #### Story 1.1.3: Model converters and rendering (GATED on Story 1.1.4)
 **As a** developer, **I want** conversion between `Block`/`ParsedBlock` trees and `MergeBlock`, **so that** the pure function serves both DB and disk sides.
@@ -398,9 +437,9 @@ Check: 333 + 15 + 41 = 389. (Gate 1 was 317 and Gate 2 was 31 before Repair pass
   - *Given* markdown `- a\n\t- b\n  id:: 33333333-3333-3333-3333-333333333333`, *When* parsed via the existing parser into `MergePage`, *Then* block `a` has child `b` and `b.uuid` = `3333...` (per Spike 0.1.3).
 **Files**: `{C}/merge/MergeConverters.kt`, `{CT}/merge/MergeConvertersTest.kt`
 
-##### Task 1.1.3a: `Block`/`Page` -> `MergePage` and back using `FractionalIndexing` for positions (~5 min)
-##### Task 1.1.3b: `ParsedBlock`/markdown -> `MergePage` via `OutlinerPipeline`/`MarkdownPageParser` (no new parser) (~5 min)
-##### Task 1.1.3c: Render ONLY the *new/inserted* `MergeBlock`s to markdown text (via `LogseqPageSerializer` block rendering + the `id::` emission from Task 1.1.4a) for the splicer to insert. A whole existing page is never re-rendered on the off-graph path; whole-page rendering is used only for brand-new pages (no existing file) (~5 min)
+##### Task 1.1.3a: `Block`/`Page` -> `MergePage` and back using `FractionalIndexing` for positions
+##### Task 1.1.3b: `ParsedBlock`/markdown -> `MergePage` via `OutlinerPipeline`/`MarkdownPageParser` (no new parser)
+##### Task 1.1.3c: Render ONLY the *new/inserted* `MergeBlock`s to markdown text (via `LogseqPageSerializer` block rendering + the `id::` emission from Task 1.1.4a) for the splicer to insert. A whole existing page is never re-rendered on the off-graph path; whole-page rendering is used only for brand-new pages (no existing file)
 
 #### Story 1.1.4: Lossless identity and splice (COMMITTED; owner of the uuid and no-loss invariants)
 **As a** user, **I want** block identity to survive staging and disk, and my existing target file bytes untouched, **so that** repeat copies are idempotent and nothing in the target is dropped.
@@ -416,10 +455,10 @@ Check: 333 + 15 + 41 = 389. (Gate 1 was 317 and Gate 2 was 31 before Repair pass
 - Round-trip guard.
   - *Given* a fixture where `serialize(parse(file)) != file`, *When* the off-graph writer is asked to write, *Then* it returns `Left(NotRoundTrippable)` and writes nothing (router: queued for share; for a copy, that page fails definitively, is kept in staging and listed with Retry). The guard's strictness (exact vs "structure-stable") is the one Spike 0.1.4 settled; this Story does not start the guard before that result is recorded.
 **Files**: `{C}/merge/MergeRenderer.kt` (new), `{C}/merge/StagedPage.kt` (new), `{C}/merge/MarkdownSplicer.kt` (new), `{C}/merge/RoundTripGuard.kt` (new), `{CT}/merge/MarkdownSplicerFixtureTest.kt`, `{CT}/merge/StagedPageTest.kt`, fixtures in `kmp/src/commonTest/resources/merge-fixtures/*.md` (real exported pages, not `Block` trees)
-##### Task 1.1.4a: Merge renderer emits `id::` for every inserted block (committed, not conditional) + `src-id::` property (~5 min)
-##### Task 1.1.4b: `StagedPage` `@Serializable` JSON codec (kotlinx.serialization already used by the manifest) (~4 min)
-##### Task 1.1.4c: `MarkdownSplicer`: locate insertion offset from the parsed block tree's source line spans (if `MarkdownPageParser` does not expose spans, add a line-based top-level/indent scanner here, with tests) and insert only the new lines, preserving the file's detected line ending and indent style; page-property union only inserts missing `key:: value` lines (an existing `alias`/`tags` line is never rewritten; the skipped extension is reported in the outcome) (~5 min)
-##### Task 1.1.4d: Production `RoundTripGuard` at the strictness Spike 0.1.4 settled + fixture tests (including the failing real files Spike 0.1.4 collected). Strictness is NOT decided here any more (~5 min)
+##### Task 1.1.4a: Merge renderer emits `id::` for every inserted block (committed, not conditional) + `src-id::` property
+##### Task 1.1.4b: `StagedPage` `@Serializable` JSON codec (kotlinx.serialization already used by the manifest)
+##### Task 1.1.4c: `MarkdownSplicer`: locate insertion offset from the parsed block tree's source line spans (if `MarkdownPageParser` does not expose spans, add a line-based top-level/indent scanner here, with tests) and insert only the new lines, preserving the file's detected line ending and indent style; page-property union only inserts missing `key:: value` lines (an existing `alias`/`tags` line is never rewritten; the skipped extension is reported in the outcome)
+##### Task 1.1.4d: Production `RoundTripGuard` at the strictness Spike 0.1.4 settled + fixture tests (including the failing real files Spike 0.1.4 collected). Strictness is NOT decided here any more
 
 ### Epic 1.2: Identity remap and path resolution
 
@@ -438,9 +477,9 @@ Check: 333 + 15 + 41 = 389. (Gate 1 was 317 and Gate 2 was 31 before Repair pass
   - *Given* incoming block `see ((S2)) and {{embed ((S2))}}` and `((OUT))` where OUT is not selected, *When* remapped, *Then* content = `see ((uuid'(S2))) and {{embed ((uuid'(S2)))}}` and `((OUT))` is unchanged.
 **Files**: `{C}/merge/UuidRemap.kt`, `{CT}/merge/UuidRemapTest.kt`
 
-##### Task 1.2.1a: `UuidRemap.compute(sourceGraphId, blocks)` using the SHA-256 derivation; always remap; plus `conflictUuid(sourceGraphId, sourceUuid, normalizedContent)` (ADR-002 rev. 3, distinct seed prefix `merge-conflict:`; property: never equals `uuid'` for the same `(g, S)`) (~4 min)
-##### Task 1.2.1b: Regex ref/embed rewriter + tests incl. property "rewrite is idempotent" (~5 min)
-##### Task 1.2.1c: Clobber guard in `ActiveTargetWriter` (DB lookup by `uuid'` before write) and in `MarkdownTargetWriter` (same-file check); size it from Spike 0.1.3's recorded collision outcome; regression tests (~5 min)
+##### Task 1.2.1a: `UuidRemap.compute(sourceGraphId, blocks)` using the SHA-256 derivation; always remap; plus `conflictUuid(sourceGraphId, sourceUuid, normalizedContent)` (ADR-002 rev. 3, distinct seed prefix `merge-conflict:`; property: never equals `uuid'` for the same `(g, S)`)
+##### Task 1.2.1b: Regex ref/embed rewriter + tests incl. property "rewrite is idempotent"
+##### Task 1.2.1c: Clobber guard in `ActiveTargetWriter` (DB lookup by `uuid'` before write) and in `MarkdownTargetWriter` (same-file check); size it from Spike 0.1.3's recorded collision outcome; regression tests
 
 #### Story 1.2.2: Extract `PageFileResolver`
 **As a** developer, **I want** one place that maps a page to its file path, **so that** merge and `GraphWriter` agree on filenames.
@@ -454,11 +493,11 @@ Check: 333 + 15 + 41 = 389. (Gate 1 was 317 and Gate 2 was 31 before Repair pass
 - **Path containment (traversal and symlink), Task 1.2.2e.** Every path `PageFileResolver` returns for a page name, namespace or journal date is checked to be inside `<graphRoot>/pages` or `<graphRoot>/journals`. *Given* page names `../../etc/passwd`, `a/../../b`, `..%2f..`, a name that is only dots, an absolute path, a name with NUL or backslash, and a namespace `x/../y`, *When* resolved, *Then* each either sanitises to a file name that lies inside the folder or returns `Left(InvalidPageName)`, never a path outside the graph root (property test with `Arb` strings, plus the named cases). *Given* a `pages/` directory entry or file that is a symlink pointing outside the graph root (JVM `Files.createSymbolicLink` in a real temp dir; Android/iOS/Web: skipped where symlinks do not exist, asserted by capability flag), *When* `MarkdownTargetWriter` reads or writes it, *Then* the write is refused with `WriteRefused(PathOutsideGraph)` (canonical path outside the root) and nothing outside the root is created or changed. The same containment check guards `MergeStagingDirectory` file names, `SourceGraphReader` (pull) listings, `AssetCopier` destinations and manifest `deletePageFile` targets.
 **Files**: `{C}/db/PageFileResolver.kt`, `{C}/db/GraphWriter.kt`, `{CT}/db/PageFileResolverTest.kt`, `kmp/src/jvmTest/kotlin/dev/stapler/stelekit/db/PathContainmentSymlinkTest.kt` (new, real temp dir)
 
-##### Task 1.2.2a: Read `GraphWriter.getPageFilePath` (line ~790) and journal naming; extract pure function (~5 min)
-##### Task 1.2.2b: Make `GraphWriter` delegate; run existing GraphWriter tests (`bazel test //kmp:business_tests` or `./gradlew jvmTest --tests '*GraphWriter*'`) (~4 min)
-##### Task 1.2.2c: Resolver tests incl. namespace and journal cases (~4 min)
-##### Task 1.2.2e: Path-containment tests and `Left(InvalidPageName)` / `PathOutsideGraph` handling per the AC above, incl. the JVM symlink test; wire the check into `MarkdownTargetWriter`, `MergeStagingDirectory`, `AssetCopier`, `MarkdownSourceGraphReader` (~1 h for the resolver, the other call sites are covered by Tasks 2.3.1e, 2.2.1c, 2.4.3b, 4.5.2e)
-##### Task 1.2.2d: Journal-filename resolver round-trip test: for a generated set of dates, `resolve(journal(date))` -> file stem -> `JournalUtils.parseJournalDate`/loader name handling -> same date; plus an integration check that an off-graph-created journal file reconciles to the same page as `ensureTodayJournal` on open. First step: read how `GraphLoader` and the capture path name journal files (`GraphWriter.getPageFilePath` ~line 790 has no journal-date logic) and record the mapping in the resolver KDoc (~5 min)
+##### Task 1.2.2a: Read `GraphWriter.getPageFilePath` (line ~790) and journal naming; extract pure function
+##### Task 1.2.2b: Make `GraphWriter` delegate; run existing GraphWriter tests (`bazel test //kmp:business_tests` or `./gradlew jvmTest --tests '*GraphWriter*'`)
+##### Task 1.2.2c: Resolver tests incl. namespace and journal cases
+##### Task 1.2.2e: Path-containment tests and `Left(InvalidPageName)` / `PathOutsideGraph` handling per the AC above, incl. the JVM symlink test; wire the check into `MarkdownTargetWriter`, `MergeStagingDirectory`, `AssetCopier`, `MarkdownSourceGraphReader`
+##### Task 1.2.2d: Journal-filename resolver round-trip test: for a generated set of dates, `resolve(journal(date))` -> file stem -> `JournalUtils.parseJournalDate`/loader name handling -> same date; plus an integration check that an off-graph-created journal file reconciles to the same page as `ensureTodayJournal` on open. First step: read how `GraphLoader` and the capture path name journal files (`GraphWriter.getPageFilePath` ~line 790 has no journal-date logic) and record the mapping in the resolver KDoc
 
 ---
 
@@ -486,9 +525,9 @@ Check: 333 + 15 + 41 = 389. (Gate 1 was 317 and Gate 2 was 31 before Repair pass
 **Verified code facts (GraphManager.kt)**: `switchGraph` (line 804) is a non-suspend `fun`; in order it (1) cancels the previous `activeGraphJobs` entry, (2) calls `tearDownActiveGraphResources()` (line 508) which sets `_activeRepositorySet.value = null` synchronously, (3) launches the init coroutine on `PlatformDispatcher.IO` (closes the previous factory, creates the factory + `createRepositorySet`, sets `_activeRepositorySet.value = repoSet` at ~line 904, runs UuidMigration/FilePathRootMigration, completes `_pendingMigration` in `finally`), and (4) only AFTER launching, synchronously sets `registry.activeGraphId = id` (line 964). So "registry says B active" and "B's `RepositorySet` exists" are different moments; a `Mutex` cannot be taken in the synchronous part. `RepositorySet` (`repository/RepositoryFactory.kt:47`) has no `graphId` field. The initial `loadDirectory` is driven by `GraphLoader` outside `switchGraph`, so the lock covers open + migrations, not the file scan; the loader's own reconcile handles files written before it runs.
 **Files**: `{C}/db/GraphLocator.kt`, `{C}/db/GraphWriteLock.kt`, `{C}/db/GraphManager.kt` (lock acquisition only), `{BT}/db/GraphLocatorTest.kt`, `{BT}/db/GraphWriteLockTest.kt`, `{BT}/db/GraphManagerSwitchLockStressTest.kt`
 
-##### Task 2.1.1b: `GraphWriteLock` (per-id `Mutex` map, `withLock(id){}`, plus `withTimeout` variant and the debug lock-order guard) (~4 min). Ships in the Task 2.1.1c PR.
-##### Task 2.1.1a: `GraphLocator` interface + impl as a SEPARATE class taking `graphRegistry: StateFlow<GraphRegistry>` (no activation, no code added to `GraphManager.kt`) (~5 min). Separate later PR.
-##### Task 2.1.1c (SEPARATE FIRST PR, see Epic 2.1 and the hardening block below): In `GraphManager.switchGraph`'s init coroutine, take `GraphWriteLock(id)` before the first read/creation for the incoming id and hold it through `createRepositorySet` + migrations (until just before `deferred.complete`); also take the lock around the previous-graph `factoryToClose?.close()` step, keyed by the graph that OWNS the factory being closed, not by a re-read of the registry: `switchGraph` captures `previousId` and `factoryToClose` together, synchronously, before launching the init coroutine (same moment as the `activeGraphJobs` cancel), and passes both into the coroutine as immutable values. Under rapid B-then-C switches the second call's captured pair is (B, B's factory) or, if B's init has not yet published a factory, (A, A's factory) still held by the in-flight state; the factory field must be handed off per switch so each factory is closed exactly once under its own owner's lock. Test: `switchGraph(B)` then `switchGraph(C)` immediately, with a merge batch holding `lock(A)`; A's factory close waits on `lock(A)` (not `lock(B)`), and no factory is closed twice or under the wrong id. `forceReinit` and relocation paths go through the same coroutine and therefore the same lock. Minimal edit, no new state beyond the lock map; tests for both ACs above (~5 min)
+##### Task 2.1.1b: `GraphWriteLock` (per-id `Mutex` map, `withLock(id){}`, plus `withTimeout` variant and the debug lock-order guard). Ships in the Task 2.1.1c PR.
+##### Task 2.1.1a: `GraphLocator` interface + impl as a SEPARATE class taking `graphRegistry: StateFlow<GraphRegistry>` (no activation, no code added to `GraphManager.kt`). Separate later PR.
+##### Task 2.1.1c (SEPARATE FIRST PR, see Epic 2.1 and the hardening block below): In `GraphManager.switchGraph`'s init coroutine, take `GraphWriteLock(id)` before the first read/creation for the incoming id and hold it through `createRepositorySet` + migrations (until just before `deferred.complete`); also take the lock around the previous-graph `factoryToClose?.close()` step, keyed by the graph that OWNS the factory being closed, not by a re-read of the registry: `switchGraph` captures `previousId` and `factoryToClose` together, synchronously, before launching the init coroutine (same moment as the `activeGraphJobs` cancel), and passes both into the coroutine as immutable values. Under rapid B-then-C switches the second call's captured pair is (B, B's factory) or, if B's init has not yet published a factory, (A, A's factory) still held by the in-flight state; the factory field must be handed off per switch so each factory is closed exactly once under its own owner's lock. Test: `switchGraph(B)` then `switchGraph(C)` immediately, with a merge batch holding `lock(A)`; A's factory close waits on `lock(A)` (not `lock(B)`), and no factory is closed twice or under the wrong id. `forceReinit` and relocation paths go through the same coroutine and therefore the same lock. Minimal edit, no new state beyond the lock map; tests for both ACs above
 - **Task 2.1.1c hardening (own first PR; pre-mortem P1-3)**:
   - *Bounded acquisition*: the init coroutine acquires `lock(id)` via `withTimeout(LOCK_ACQUIRE_TIMEOUT)` (default 10 s, injectable for tests). It releases in `finally` (use `withLock`, or `lock()`/`try`/`finally unlock()`), including when migration throws or the coroutine is cancelled.
   - *Degrade open*: on timeout, log `graph.switch.lock_timeout` (with graph id and the holder's label if known) and open the graph WITHOUT waiting for the merge: proceed with factory creation, repository set and migrations, and tell the holder to abort its batch (the router's retryable `Left` path, Story 2.1.2). The open path is never blocked by a merge; a timed-out merge page fails definitively and is retried via Retry.
@@ -512,9 +551,9 @@ Check: 333 + 15 + 41 = 389. (Gate 1 was 317 and Gate 2 was 31 before Repair pass
 - Switch in flight, active to inactive.
   - *Given* a merge writing through `ActiveTargetWriter` to A, *When* `switchGraph(B)` is called mid-run, *Then* teardown of A waits for the current page batch, later pages route to `MarkdownTargetWriter`, and no `ClosedSendChannelException`/closed-driver error surfaces; additionally, if `ActiveTargetWriter` still observes a closed channel it returns a retryable error and the router re-decides (test with an injected close).
 **Files**: `{C}/merge/TargetWriterRouter.kt`, `{C}/db/GraphManager.kt` (only the tiny `readyGraphId` accessor below), `{BT}/merge/TargetWriterRouterInFlightSwitchTest.kt`
-##### Task 2.1.2a: Add a single atomic pair accessor `readyGraph: StateFlow<ReadyGraph?>` where `data class ReadyGraph(val id: GraphId, val repoSet: RepositorySet)`, replacing the separate `readyGraphId` + `_activeRepositorySet` reads for routing (`readyGraphId` may remain as a derived `map { it?.id }`). It is assigned in the same statements that set `_activeRepositorySet` (~line 904 set, ~line 514 null). Teardown at ~line 514 is NOT under `GraphWriteLock`, so the router must read the pair once, and under `lock(target)` must use only that captured `repoSet` (never re-read `_activeRepositorySet`); if the captured pair is null or its id != target at the in-lock re-check, release and retry (bounded by `MAX_ROUTER_ATTEMPTS`). A write against a repo set torn down mid-batch surfaces as the retryable `Left` already specified. Test: teardown at ~514 racing a router write never yields a (id, set) mismatch (~4 min)
-##### Task 2.1.2b: Router algorithm (replaces "decide under lock"): loop up to `MAX_ROUTER_ATTEMPTS`: (1) outside any lock, if `readyGraphId != target` and the registry says `target` is active (or a switch is in flight), `awaitPendingMigration()`; (2) `lock(target).withLock { if (readyGraphId == target) activeWriter.write(...) else if (target not ready) markdownWriter.write(...) }`; a `readyGraphId` that flipped between (1) and (2) is detected by the re-check inside the lock and retried from (1). Never await inside the lock; follow the Task 2.1.1c lock order (~5 min)
-##### Task 2.1.2c: In-flight-switch tests (both directions, plus the router-before-init-finishes and switch-during-await tests above) using a fake slow `DriverFactory`; add a `merge.apply.lock_wait_ms` metric around lock acquisition (~5 min)
+##### Task 2.1.2a: Add a single atomic pair accessor `readyGraph: StateFlow<ReadyGraph?>` where `data class ReadyGraph(val id: GraphId, val repoSet: RepositorySet)`, replacing the separate `readyGraphId` + `_activeRepositorySet` reads for routing (`readyGraphId` may remain as a derived `map { it?.id }`). It is assigned in the same statements that set `_activeRepositorySet` (~line 904 set, ~line 514 null). Teardown at ~line 514 is NOT under `GraphWriteLock`, so the router must read the pair once, and under `lock(target)` must use only that captured `repoSet` (never re-read `_activeRepositorySet`); if the captured pair is null or its id != target at the in-lock re-check, release and retry (bounded by `MAX_ROUTER_ATTEMPTS`). A write against a repo set torn down mid-batch surfaces as the retryable `Left` already specified. Test: teardown at ~514 racing a router write never yields a (id, set) mismatch
+##### Task 2.1.2b: Router algorithm (replaces "decide under lock"): loop up to `MAX_ROUTER_ATTEMPTS`: (1) outside any lock, if `readyGraphId != target` and the registry says `target` is active (or a switch is in flight), `awaitPendingMigration()`; (2) `lock(target).withLock { if (readyGraphId == target) activeWriter.write(...) else if (target not ready) markdownWriter.write(...) }`; a `readyGraphId` that flipped between (1) and (2) is detected by the re-check inside the lock and retried from (1). Never await inside the lock; follow the Task 2.1.1c lock order
+##### Task 2.1.2c: In-flight-switch tests (both directions, plus the router-before-init-finishes and switch-during-await tests above) using a fake slow `DriverFactory`; add a `merge.apply.lock_wait_ms` metric around lock acquisition
 
 ### Epic 2.2: Staging transport and manifest
 
@@ -529,9 +568,9 @@ Check: 333 + 15 + 41 = 389. (Gate 1 was 317 and Gate 2 was 31 before Repair pass
   - *Given* 5 000 staged files, *When* iterating `readAll()`, *Then* at most 1 page is held (sequence/flow) — asserted by a counting fake.
 **Files**: `{C}/merge/MergeStagingDirectory.kt`, `{BT}/merge/MergeStagingDirectoryTest.kt`
 
-##### Task 2.2.1a: Implement over `FileSystem` (okio), reusing `RelocationStagingDirectory.kt` conventions (read it first) (~5 min)
-##### Task 2.2.1b: Sweep + startup hook wiring where the relocation sweep is invoked (grep `sweep(`) (~4 min)
-##### Task 2.2.1c: Tests with `FakeFileSystem` (~4 min)
+##### Task 2.2.1a: Implement over `FileSystem` (okio), reusing `RelocationStagingDirectory.kt` conventions (read it first)
+##### Task 2.2.1b: Sweep + startup hook wiring where the relocation sweep is invoked (grep `sweep(`)
+##### Task 2.2.1c: Tests with `FakeFileSystem`
 
 #### Story 2.2.2: `MergeManifest` store
 **As a** developer, **I want** a crash-safe per-run record, **so that** undo and "interrupted" detection work.
@@ -542,8 +581,8 @@ Check: 333 + 15 + 41 = 389. (Gate 1 was 317 and Gate 2 was 31 before Repair pass
   - *Given* a manifest with `status=InProgress` found at startup, *When* `MergeManifestStore.findInterrupted()`, *Then* returns that run for the "last copy was interrupted" notice.
 **Files**: `{C}/merge/MergeManifest.kt`, `{BT}/merge/MergeManifestTest.kt`
 
-##### Task 2.2.2a: `@Serializable` manifest + append-only flush per page (~5 min)
-##### Task 2.2.2b: Store (list/load/delete/expire 7 days) + tests (~5 min)
+##### Task 2.2.2a: `@Serializable` manifest + append-only flush per page
+##### Task 2.2.2b: Store (list/load/delete/expire 7 days) + tests
 
 ### Epic 2.3: Target writers (GATED: S0.1.1 REAL-FS green + device pass and S0.1.4 pass-rate decision for the markdown writer, S0.1.2 for the SAF branch, Story 1.1.4 for both writers; S0.1.3 sizes the clobber guard)
 
@@ -564,11 +603,11 @@ Check: 333 + 15 + 41 = 389. (Gate 1 was 317 and Gate 2 was 31 before Repair pass
   - *Given* a copy to SAF graph B that had a verified grant when the chooser enabled it, and the grant is revoked after page 3 of 10, *When* page 4 is written, *Then* page 4 and later pages fail with `WriteRefused(NoGrant)`, pages 1-3 stay committed, the result dialog lists the failed pages with the reason and "Retry failed", nothing is queued, and `Retry failed` after re-granting succeeds.
 **Files**: `{C}/merge/TargetWriter.kt`, `{C}/merge/MarkdownTargetWriter.kt`, `{BT}/merge/MarkdownTargetWriterTest.kt`
 
-##### Task 2.3.1a: `TargetWriter` port defined up front with `readExisting`, `write`, `deletePageFile(page, expectedHash)`, `fileHash(page)`, `removeBlocks(page, uuids, expectedContentHashes)`; all return `Either<DomainError, ...>` (~4 min)
-##### Task 2.3.1b: `readExisting` via `PageFileResolver` + parser -> `MergePage` (read-only model used for matching; also runs `RoundTripGuard`) (~5 min)
-##### Task 2.3.1c: `write` = `MarkdownSplicer.splice(originalText, newBlocks)` then temp+rename (or direct per Spike 0.1.2), byte-identical short-circuit, `FileRegistry` pre-mark per ADR-001 spike outcome. Brand-new page (no existing file) is the only case rendered whole (~5 min)
-##### Task 2.3.1e: Containment tests at the writer: page names with `..`, absolute paths, namespaces escaping the folder, and a symlinked page file pointing outside the graph root (real temp dir, JVM) all end in `Left(InvalidPageName)` / `WriteRefused(PathOutsideGraph)` with zero files created or changed outside the root; uses the resolver check of Task 1.2.2e (~3 h, counted in Story 2.3.1's 17 h)
-##### Task 2.3.1d: Capability checks consumed from `TargetWriterCapabilities` (Story 2.3.3), `deletePageFile`/`fileHash`/`removeBlocks` (splice-out of exactly the manifest's uuids, hash-checked) and tests (~5 min)
+##### Task 2.3.1a: `TargetWriter` port defined up front with `readExisting`, `write`, `deletePageFile(page, expectedHash)`, `fileHash(page)`, `removeBlocks(page, uuids, expectedContentHashes)`; all return `Either<DomainError, ...>`
+##### Task 2.3.1b: `readExisting` via `PageFileResolver` + parser -> `MergePage` (read-only model used for matching; also runs `RoundTripGuard`)
+##### Task 2.3.1c: `write` = `MarkdownSplicer.splice(originalText, newBlocks)` then temp+rename (or direct per Spike 0.1.2), byte-identical short-circuit, `FileRegistry` pre-mark per ADR-001 spike outcome. Brand-new page (no existing file) is the only case rendered whole
+##### Task 2.3.1e: Containment tests at the writer: page names with `..`, absolute paths, namespaces escaping the folder, and a symlinked page file pointing outside the graph root (real temp dir, JVM) all end in `Left(InvalidPageName)` / `WriteRefused(PathOutsideGraph)` with zero files created or changed outside the root; uses the resolver check of Task 1.2.2e
+##### Task 2.3.1d: Capability checks consumed from `TargetWriterCapabilities` (Story 2.3.3), `deletePageFile`/`fileHash`/`removeBlocks` (splice-out of exactly the manifest's uuids, hash-checked) and tests
 
 #### Story 2.3.2: `ActiveTargetWriter`, unified `TargetWriterRouter`, shared contract test (GATED on Story 1.1.4)
 **As a** user, **I want** the same merge to work when the target is the open graph, **so that** DB and editor stay consistent.
@@ -588,11 +627,11 @@ Check: 333 + 15 + 41 = 389. (Gate 1 was 317 and Gate 2 was 31 before Repair pass
   - *Given* a real in-memory `GraphManager` with the target active, the real `ActiveTargetWriter`, `GraphWriter.savePage` and `GraphLoader` (no fakes for the write/parse hop), *When* a generated page is copied, then a random subset of copied blocks is edited through the editor path (`BlockStateManager` -> `DatabaseWriteActor` -> `GraphWriter`), saved, the file re-parsed with the loader's `pagePath`, and the same source copied again, *Then* the second copy adds zero new blocks other than exactly one conflict sibling per edited matched block, a third copy adds nothing (all `Unchanged`), no `src-id`/`id::` line is dropped or reordered by the editor save, and `readExisting`'s uuids equal the DB's for the same page (DB-vs-file `pagePath` seed equality, tested against `GraphLoader`, not only the parser). Property test, `checkAll(50)` (heavier than the pure ones; real IO).
 **Files**: `{C}/merge/ActiveTargetWriter.kt`, `{C}/merge/TargetWriterRouter.kt`, `{BT}/merge/TargetWriterRouterTest.kt`, `{BT}/merge/CopyEditRecopyPropertyTest.kt` (new, register in `AllBusinessTests`)
 
-##### Task 2.3.2a: `ActiveTargetWriter` (`Either`, `withContext(DB)` inside actor, wraps exceptions as `WriteFailed`; implements `deletePageFile`/`fileHash`/`removeBlocks` through `GraphWriter`/`DatabaseWriteActor`; closed-channel or actor-scope `CancellationException` -> retryable error; sets `properties["id"] = uuid'` on every inserted block (R1)) (~5 min)
-##### Task 2.3.2b: `TargetWriterRouter` with `GraphWriteLock` and the Story 2.1.2 await-outside-lock/re-check algorithm (single router for merge and share) (~4 min)
-##### Task 2.3.2c: Edited-page guard (~5 min)
-##### Task 2.3.2d: `TargetWriterContractTest` abstract suite + the two concrete subclasses; the abstract suite's "read back" hook for the active subclass re-parses the written file (R1) and also compares against the DB; add the contract cases "target contains unlabeled blocks" (R3) and "src-id-matched block edited in target, then re-copied" (R4) (~5 min)
-##### Task 2.3.2e: `CopyEditRecopyPropertyTest` per the end-to-end AC above (real `ActiveTargetWriter`, editor save, loader re-parse, re-copy), including the `pagePath` seed equality check; fails CI if `src-id` handling regresses (~5 min). Decide in this task whether `src-id` is shown or hidden in the UI (record in ADR-002).
+##### Task 2.3.2a: `ActiveTargetWriter` (`Either`, `withContext(DB)` inside actor, wraps exceptions as `WriteFailed`; implements `deletePageFile`/`fileHash`/`removeBlocks` through `GraphWriter`/`DatabaseWriteActor`; closed-channel or actor-scope `CancellationException` -> retryable error; sets `properties["id"] = uuid'` on every inserted block (R1))
+##### Task 2.3.2b: `TargetWriterRouter` with `GraphWriteLock` and the Story 2.1.2 await-outside-lock/re-check algorithm (single router for merge and share)
+##### Task 2.3.2c: Edited-page guard
+##### Task 2.3.2d: `TargetWriterContractTest` abstract suite + the two concrete subclasses; the abstract suite's "read back" hook for the active subclass re-parses the written file (R1) and also compares against the DB; add the contract cases "target contains unlabeled blocks" (R3) and "src-id-matched block edited in target, then re-copied" (R4)
+##### Task 2.3.2e: `CopyEditRecopyPropertyTest` per the end-to-end AC above (real `ActiveTargetWriter`, editor save, loader re-parse, re-copy), including the `pagePath` seed equality check; fails CI if `src-id` handling regresses. Decide in this task whether `src-id` is shown or hidden in the UI (record in ADR-002).
 
 #### Story 2.3.3: `TargetWriterCapabilities` (write-capability policy)
 **As a** developer, **I want** one place that answers "can this target be written off-graph", **so that** the router and the picker agree and `PageFileResolver` stays a pure path function.
@@ -602,8 +641,8 @@ Check: 333 + 15 + 41 = 389. (Gate 1 was 317 and Gate 2 was 31 before Repair pass
 - Shares are different: a share to a non-writable inactive target is queued by `InboxFallbackAppender` (Story 4.1.3) and drained when that graph is ready.
 - Reasons carry user text and an optional action ("Re-grant access" where the platform supports it, otherwise "Open that graph to copy into it"), consumed by UX S3.
 **Files**: `{C}/merge/TargetWriterCapabilities.kt`, `{BT}/merge/TargetWriterCapabilitiesTest.kt`
-##### Task 2.3.3a: Sealed `WriteCapability`/reason types + implementation over `PlatformFileSystem` and `CryptoLayer` (~5 min)
-##### Task 2.3.3b: Tests per reason (~4 min)
+##### Task 2.3.3a: Sealed `WriteCapability`/reason types + implementation over `PlatformFileSystem` and `CryptoLayer`
+##### Task 2.3.3b: Tests per reason
 
 ### Epic 2.4: PageMergeService
 
@@ -616,18 +655,18 @@ Check: 333 + 15 + 41 = 389. (Gate 1 was 317 and Gate 2 was 31 before Repair pass
   - *Given* any new `.sq` query added, *When* `QueryPlanAuditTest` runs, *Then* it passes. This story DOES add `.sq` queries (the filtered and count queries of Tasks 2.4.1d1-d7) plus matching `PageRepository` methods, so it follows the CLAUDE.md SQLDelight rules: regenerate and commit `kmp/src/generated/sqldelight/`; no new table, so no `MigrationRunner` entry; read-only queries, so no `RestrictedDatabaseQueries` stub; each new query is added to `QueryPlanAuditTest`.
 **Files**: `{C}/merge/PageSource.kt`, `{C}/merge/ActiveDbPageSource.kt`, `{C}/merge/SelectionFilter.kt`, `{BT}/merge/ActiveDbPageSourceTest.kt`
 
-##### Task 2.4.1a: `SelectionFilter` value type (journal flag, date range, namespace prefix, tag) + a pure predicate used ONLY for the in-memory fake repository and as the test oracle for the SQL; tests in `{CT}/merge/SelectionFilterTest.kt` (~5 min)
-##### Task 2.4.1d (RE-SIZED, Repair pass 6: about 9.5 h, split into sub-tasks d1-d7; the original text below is the specification and every sub-task implements a slice of it)
-- d1: read the schema (`pages` columns, existing indexes, `journal_date`, lowercase name column) and decide namespace/name matching and the journal-date source; write the decision as a comment in the `.sq` (~1 h)
-- d2: add `selectPagesFilteredPaginated` and `countPagesFiltered` to `SteleDatabase.sq` (~2 h)
-- d3: `PageRepository.getPagesFiltered` / `countPagesFiltered` on the interface, SqlDelight implementation (`asDbFlowList`/suspend + `withContext(PlatformDispatcher.DB)`) and in-memory implementation (~2 h)
-- d4: tag filter as the bounded second pass over page ids (IN lists <=500) against page properties (~1.5 h)
-- d5: search text via `SearchRepository` (FTS) intersected by id chunk (~1.5 h)
-- d6: `./gradlew :kmp:generateCommonMainSteleDatabase`, `rsync` into `kmp/src/generated/sqldelight/`, commit regenerated sources (CI "SQLDelight generated sources" job) (~0.5 h)
-- d7: `QueryPlanAuditTest` entries (index used, no full-table scan) and the oracle test against `SelectionFilter` (~1 h)
-Original specification: add to `kmp/src/commonMain/sqldelight/.../SteleDatabase.sq` read-only queries `selectPagesFilteredPaginated(isJournal?, dateFrom?, dateTo?, namePrefix?, nameLike?, limit, offset)` and `countPagesFiltered(<same filters>)` (namespace = `name LIKE 'prefix/%'` on an indexed lowercase name column if one exists, else the existing `getPageNameEntries` projection narrowed in a bounded pass; journal date from `journal_date`/name per schema - read the schema first). Tag filter: second bounded pass over only the page ids returned by the first (IN lists <=500) against page properties; never a full scan. Surface as `PageRepository.getPagesFiltered(filter, limit, offset)` and `countPagesFiltered(filter)` on the interface + SqlDelight and in-memory implementations, using `asDbFlowList`/suspend + `withContext(PlatformDispatcher.DB)` per CLAUDE.md. Search text routes to the existing `SearchRepository` (FTS), intersected by id chunk. Steps: edit `.sq` -> `./gradlew :kmp:generateCommonMainSteleDatabase` -> `rsync -a kmp/build/generated/sqldelight/code/SteleDatabase/commonMain/ kmp/src/generated/sqldelight/` -> commit regenerated sources. No `RestrictedDatabaseQueries` stub (read-only); no `MigrationRunner.all` entry (no table). Add both queries to `QueryPlanAuditTest` (must use an index, no full-table scan) (~5 min x2)
-##### Task 2.4.1b: `PageSource` port + `ActiveDbPageSource` using `getPagesFiltered`/`countPagesFiltered` and `getBlocksForPage` per page (~5 min)
-##### Task 2.4.1c: Bounded-batch assertion test modeled on `LargeGraphWarmStartCrashTest`: filter/search change on 8 030 pages issues O(1) bounded queries (<=100 rows each, count via `countPagesFiltered`), not ~81 paged scans (~5 min)
+##### Task 2.4.1a: `SelectionFilter` value type (journal flag, date range, namespace prefix, tag) + a pure predicate used ONLY for the in-memory fake repository and as the test oracle for the SQL; tests in `{CT}/merge/SelectionFilterTest.kt`
+##### Task 2.4.1d (RE-SIZED, Repair pass 6: split into sub-tasks d1-d7; the original text below is the specification and every sub-task implements a slice of it)
+- d1: read the schema (`pages` columns, existing indexes, `journal_date`, lowercase name column) and decide namespace/name matching and the journal-date source; write the decision as a comment in the `.sq`
+- d2: add `selectPagesFilteredPaginated` and `countPagesFiltered` to `SteleDatabase.sq`
+- d3: `PageRepository.getPagesFiltered` / `countPagesFiltered` on the interface, SqlDelight implementation (`asDbFlowList`/suspend + `withContext(PlatformDispatcher.DB)`) and in-memory implementation
+- d4: tag filter as the bounded second pass over page ids (IN lists <=500) against page properties
+- d5: search text via `SearchRepository` (FTS) intersected by id chunk
+- d6: `./gradlew :kmp:generateCommonMainSteleDatabase`, `rsync` into `kmp/src/generated/sqldelight/`, commit regenerated sources (CI "SQLDelight generated sources" job)
+- d7: `QueryPlanAuditTest` entries (index used, no full-table scan) and the oracle test against `SelectionFilter`
+Original specification: add to `kmp/src/commonMain/sqldelight/.../SteleDatabase.sq` read-only queries `selectPagesFilteredPaginated(isJournal?, dateFrom?, dateTo?, namePrefix?, nameLike?, limit, offset)` and `countPagesFiltered(<same filters>)` (namespace = `name LIKE 'prefix/%'` on an indexed lowercase name column if one exists, else the existing `getPageNameEntries` projection narrowed in a bounded pass; journal date from `journal_date`/name per schema - read the schema first). Tag filter: second bounded pass over only the page ids returned by the first (IN lists <=500) against page properties; never a full scan. Surface as `PageRepository.getPagesFiltered(filter, limit, offset)` and `countPagesFiltered(filter)` on the interface + SqlDelight and in-memory implementations, using `asDbFlowList`/suspend + `withContext(PlatformDispatcher.DB)` per CLAUDE.md. Search text routes to the existing `SearchRepository` (FTS), intersected by id chunk. Steps: edit `.sq` -> `./gradlew :kmp:generateCommonMainSteleDatabase` -> `rsync -a kmp/build/generated/sqldelight/code/SteleDatabase/commonMain/ kmp/src/generated/sqldelight/` -> commit regenerated sources. No `RestrictedDatabaseQueries` stub (read-only); no `MigrationRunner.all` entry (no table). Add both queries to `QueryPlanAuditTest` (must use an index, no full-table scan)
+##### Task 2.4.1b: `PageSource` port + `ActiveDbPageSource` using `getPagesFiltered`/`countPagesFiltered` and `getBlocksForPage` per page
+##### Task 2.4.1c: Bounded-batch assertion test modeled on `LargeGraphWarmStartCrashTest`: filter/search change on 8 030 pages issues O(1) bounded queries (<=100 rows each, count via `countPagesFiltered`), not ~81 paged scans
 
 #### Story 2.4.2: Plan (dry run) and apply (GATED on Story 1.1.4 and Story 1.2.1)
 **As a** user, **I want** an accurate preview and then an idempotent commit, **so that** I trust the copy.
@@ -647,14 +686,14 @@ Original specification: add to `kmp/src/commonMain/sqldelight/.../SteleDatabase.
   - *Given* a cancel after 1 200 of 4 000 pages, *When* cancelled, *Then* committed pages stay, the result states "Stopped after 1,200 of 4,000", and a re-run converges.
 **Files**: `{C}/merge/PageMergeService.kt`, `{C}/merge/MergePlan.kt`, `{BT}/merge/PageMergeServiceTest.kt`
 
-##### Task 2.4.2a: `MergePlan`/`DryRunSummary`/`MergeResult` sealed result types (typed failures, not string lists) (~5 min)
-##### Task 2.4.2b: `plan()` streaming per chunk: source page -> `readExisting` -> `mergePage` -> counters (~5 min)
-##### Task 2.4.2c: `stage()` spill selected pages as `StagedPage` JSON (one `<n>.json` per page; carries every block uuid) to `MergeStagingDirectory`; markdown is never the staging format (~4 min)
-##### Task 2.4.2d: `apply()` writes per page through `TargetWriterRouter` (apply() itself takes no lock: `GraphWriteLock` is a non-reentrant `Mutex`, and only the router and the `switchGraph` init coroutine ever acquire it, so a second acquisition by apply() would self-deadlock), manifest flush, `Logger` counts, `PlanStale` fingerprint check (~5 min)
-##### Task 2.4.2e: Service owns `CoroutineScope(SupervisorJob()+Default)` + `CoroutineExceptionHandler`; exposes progress `StateFlow`; cancel/retryFailed (~5 min)
-##### Task 2.4.2f: Tests for each criterion; register in `AllBusinessTests` (~5 min)
+##### Task 2.4.2a: `MergePlan`/`DryRunSummary`/`MergeResult` sealed result types (typed failures, not string lists)
+##### Task 2.4.2b: `plan()` streaming per chunk: source page -> `readExisting` -> `mergePage` -> counters
+##### Task 2.4.2c: `stage()` spill selected pages as `StagedPage` JSON (one `<n>.json` per page; carries every block uuid) to `MergeStagingDirectory`; markdown is never the staging format
+##### Task 2.4.2d: `apply()` writes per page through `TargetWriterRouter` (apply() itself takes no lock: `GraphWriteLock` is a non-reentrant `Mutex`, and only the router and the `switchGraph` init coroutine ever acquire it, so a second acquisition by apply() would self-deadlock), manifest flush, `Logger` counts, `PlanStale` fingerprint check
+##### Task 2.4.2e: Service owns `CoroutineScope(SupervisorJob()+Default)` + `CoroutineExceptionHandler`; exposes progress `StateFlow`; cancel/retryFailed
+##### Task 2.4.2f: Tests for each criterion; register in `AllBusinessTests`
 ##### (Task 2.4.2g REMOVED, Repair pass 4: no apply-on-activate for copies. "Resume" of an interrupted copy re-opens the dry run and re-plans against a target that is writable now (UX S9); it needs no deferred-apply trigger. A copy whose target is not writable is not startable.)
-##### Task 2.4.2h: `apply()` maps `Left(WriteRefused(reason))` and retryable-exhausted `Left` from the router to a per-page `failed` entry (reason text, kept in staging, included in `retryFailed()`), never to a queue, so every `MergeResult` is definite: each selected page is exactly one of new / combined / unchanged / failed (~4 min)
+##### Task 2.4.2h: `apply()` maps `Left(WriteRefused(reason))` and retryable-exhausted `Left` from the router to a per-page `failed` entry (reason text, kept in staging, included in `retryFailed()`), never to a queue, so every `MergeResult` is definite: each selected page is exactly one of new / combined / unchanged / failed
 
 #### Story 2.4.3: Linked pages and assets
 **As a** user, **I want** optional inclusion of linked pages and assets, **so that** copied pages aren't dangling, without pulling in the whole graph.
@@ -667,9 +706,9 @@ Original specification: add to `kmp/src/commonMain/sqldelight/.../SteleDatabase.
   - *Given* block `![x](../assets/a.png)` and target already has `assets/a.png` with different bytes, *When* applied, *Then* the asset is copied as `a-<hash8>.png`, the link rewritten, `assetsRenamed=1`; identical bytes -> no copy; missing source asset -> warning, page still copied.
 **Files**: `{C}/merge/LinkClosure.kt`, `{C}/merge/AssetCopier.kt`, `{BT}/merge/LinkClosureTest.kt`, `{BT}/merge/AssetCopierTest.kt`
 
-##### Task 2.4.3a: `LinkClosurePolicy` + `LinkClosure.expand` using `getPagesByNames(chunk<=500)` and visited set (~5 min)
-##### Task 2.4.3b: `AssetCopier` (hash dedupe, rename, link rewrite; reuse `BulkCopyVerifier` patterns) (~5 min)
-##### Task 2.4.3c: Wire into `plan()`/`apply()` and tests (~5 min)
+##### Task 2.4.3a: `LinkClosurePolicy` + `LinkClosure.expand` using `getPagesByNames(chunk<=500)` and visited set
+##### Task 2.4.3b: `AssetCopier` (hash dedupe, rename, link rewrite; reuse `BulkCopyVerifier` patterns)
+##### Task 2.4.3c: Wire into `plan()`/`apply()` and tests
 
 ### Epic 2.5: Undo
 
@@ -684,8 +723,8 @@ Original specification: add to `kmp/src/commonMain/sqldelight/.../SteleDatabase.
   - *Given* a manifest older than 7 days, *When* swept, *Then* undo is unavailable.
 **Files**: `{C}/merge/MergeUndo.kt`, `{BT}/merge/MergeUndoTest.kt`
 
-##### Task 2.5.1a: `MergeUndo.undo` via the `TargetWriter` port's `removeBlocks(page, uuids, expectedContentHashes)`, `fileHash(page)`, `deletePageFile(page, expectedHash)` (defined in Task 2.3.1a; covered by the shared contract suite) - no overloading of `write` with deletion semantics (~5 min)
-##### Task 2.5.1b: Tests incl. through-router (target active at undo time) (~5 min)
+##### Task 2.5.1a: `MergeUndo.undo` via the `TargetWriter` port's `removeBlocks(page, uuids, expectedContentHashes)`, `fileHash(page)`, `deletePageFile(page, expectedHash)` (defined in Task 2.3.1a; covered by the shared contract suite) - no overloading of `write` with deletion semantics
+##### Task 2.5.1b: Tests incl. through-router (target active at undo time)
 
 ---
 
@@ -707,11 +746,11 @@ Original specification: add to `kmp/src/commonMain/sqldelight/.../SteleDatabase.
   - *Given* iOS/wasmJs, where inactive graphs cannot be written off-graph, *When* the push-direction chooser ("Copy pages to...") opens, *Then* every inactive graph is disabled with `PlatformUnsupported` text "Can't copy into <graph> from here on this device. Open <graph>, then use Copy pages from..." with a link action that switches to the pull direction; the pull-direction chooser ("Copy pages from...", Story 4.5.3) is the iOS/Web path and always targets the ACTIVE graph, so a destination always exists.
 **Files**: `{C}/ui/screens/copy/CopyPagesState.kt`, `{C}/ui/screens/copy/CopyPagesViewModel.kt`, `{BT}/ui/CopyPagesViewModelTest.kt`
 
-##### Task 3.1.1a: `PageSelection` value class + reducer functions (pure, commonTest `{CT}/ui/PageSelectionTest.kt`) (~5 min)
-##### Task 3.1.1b: ViewModel owning its scope (no `rememberCoroutineScope`), paging via `ActiveDbPageSource`, debounce search (~5 min)
-##### Task 3.1.1c: Destination list from `GraphLocator`, disabled-reason logic + tests (~4 min)
-##### Task 3.1.1d (Gate 2, Repair pass 6): last-used copy destination. Setting `copy_last_destination_graph_id` (string, in the same `Settings` wrapper style as `CaptureTargetSettings`) written on a successful dry-run confirm; read when the destination chooser opens and preselected ONLY if that graph is registered, not the current graph, and not disabled by `TargetWriterCapabilities`; otherwise nothing is preselected. Tests: preselect when valid, no preselect when removed/disabled/equal to source, never changes `capture_*` keys (~3 h)
-##### Task 3.1.1e (Repair pass 6): destination availability probing state. The chooser renders each graph row immediately in a "Checking..." state (spinner plus text, not colour only) while `TargetWriterCapabilities` / grant checks run per graph (async, each bounded by a 3 s timeout, results arrive independently); a timed-out probe becomes a disabled row "Couldn't check <graph>: <reason>" with Retry; Review stays disabled until the chosen row has a definitive answer; announced via polite live region. Robolectric test with a fake slow probe (~1 h)
+##### Task 3.1.1a: `PageSelection` value class + reducer functions (pure, commonTest `{CT}/ui/PageSelectionTest.kt`)
+##### Task 3.1.1b: ViewModel owning its scope (no `rememberCoroutineScope`), paging via `ActiveDbPageSource`, debounce search
+##### Task 3.1.1c: Destination list from `GraphLocator`, disabled-reason logic + tests
+##### Task 3.1.1d (Gate 2, Repair pass 6): last-used copy destination. Setting `copy_last_destination_graph_id` (string, in the same `Settings` wrapper style as `CaptureTargetSettings`) written on a successful dry-run confirm; read when the destination chooser opens and preselected ONLY if that graph is registered, not the current graph, and not disabled by `TargetWriterCapabilities`; otherwise nothing is preselected. Tests: preselect when valid, no preselect when removed/disabled/equal to source, never changes `capture_*` keys
+##### Task 3.1.1e (Repair pass 6): destination availability probing state. The chooser renders each graph row immediately in a "Checking..." state (spinner plus text, not colour only) while `TargetWriterCapabilities` / grant checks run per graph (async, each bounded by a 3 s timeout, results arrive independently); a timed-out probe becomes a disabled row "Couldn't check <graph>: <reason>" with Retry; Review stays disabled until the chosen row has a definitive answer; announced via polite live region. Robolectric test with a fake slow probe
 
 ### Epic 3.2: Picker UI
 
@@ -730,12 +769,12 @@ Original specification: add to `kmp/src/commonMain/sqldelight/.../SteleDatabase.
 - Reuse components: `FilterChip`, `Checkbox` per `AllPagesScreen.kt`; 48dp targets.
 **Files**: `{C}/ui/screens/copy/CopyPagesScreen.kt`, `{C}/ui/screens/copy/PageSelectionRow.kt`, `kmp/src/androidUnitTest/kotlin/dev/stapler/stelekit/ui/CopyPagesScreenTest.kt` (Robolectric, per CLAUDE.md), `{BT}/ui/` none
 
-##### Task 3.2.1a: Screen scaffold: search field, filter chips row, lazy list (virtualized), counter live region (~5 min)
-##### Task 3.2.1b: Row component with semantics and linked-pages/assets toggles showing live "adds N pages" delta (~5 min)
-##### Task 3.2.1c: Keyboard handling modeled on `SearchDialog.kt` (~4 min)
-##### Task 3.2.1d: Robolectric UI test for semantics and selection persistence (~5 min)
-##### Task 3.2.1e: Discard-selection confirmation on Esc/Back when selection > 0 (state in `CopyPagesViewModel`, dialog in `CopyPagesScreen`), with Robolectric test (~4 min)
-##### Task 3.2.1f (Repair pass 6): loading, skeleton and accessibility states (about 3 h). (1) Initial list on an 8 000-page graph: skeleton rows (5 placeholder rows, no layout jump) for the first page; header line "Loading pages..." (polite live region); the count line shows "Counting..." until `countPagesFiltered` returns; subsequent 100-row pages append with a footer spinner and never block scrolling; search/filter changes keep the previous rows dimmed with "Updating..." (selection untouched) until the new first page arrives. (2) Failure while loading: the existing inline banner with Retry/Close. (3) Large text: rows grow in height (no truncation of the page name at 200% font scale; name wraps to 2 lines then ellipsises with full text in the semantics node); the count/selected line wraps; 48dp minimum targets hold. Robolectric test at `fontScale = 2.0f`. (4) RTL: layout mirrors (`LayoutDirection.Rtl`), checkbox leading edge flips, keyboard Left/Right semantics follow layout direction; Robolectric test with RTL and an Arabic/Hebrew page name. (5) Web keyboard (Pull and push on wasmJs): Tab order search -> chips -> select-all -> list -> options -> destination -> Review; list uses roving focus (arrow keys move, Space toggles, Home/End jump); visible focus ring; no browser-shortcut collisions (Ctrl+A is intercepted only while the list has focus; Esc closes only if no dialog is open); documented in the screen KDoc and checked in the manual Web checklist (validation.md). Loading skeleton honours reduced-motion (no shimmer animation required)
+##### Task 3.2.1a: Screen scaffold: search field, filter chips row, lazy list (virtualized), counter live region
+##### Task 3.2.1b: Row component with semantics and linked-pages/assets toggles showing live "adds N pages" delta
+##### Task 3.2.1c: Keyboard handling modeled on `SearchDialog.kt`
+##### Task 3.2.1d: Robolectric UI test for semantics and selection persistence
+##### Task 3.2.1e: Discard-selection confirmation on Esc/Back when selection > 0 (state in `CopyPagesViewModel`, dialog in `CopyPagesScreen`), with Robolectric test
+##### Task 3.2.1f (Repair pass 6): loading, skeleton and accessibility states. (1) Initial list on an 8 000-page graph: skeleton rows (5 placeholder rows, no layout jump) for the first page; header line "Loading pages..." (polite live region); the count line shows "Counting..." until `countPagesFiltered` returns; subsequent 100-row pages append with a footer spinner and never block scrolling; search/filter changes keep the previous rows dimmed with "Updating..." (selection untouched) until the new first page arrives. (2) Failure while loading: the existing inline banner with Retry/Close. (3) Large text: rows grow in height (no truncation of the page name at 200% font scale; name wraps to 2 lines then ellipsises with full text in the semantics node); the count/selected line wraps; 48dp minimum targets hold. Robolectric test at `fontScale = 2.0f`. (4) RTL: layout mirrors (`LayoutDirection.Rtl`), checkbox leading edge flips, keyboard Left/Right semantics follow layout direction; Robolectric test with RTL and an Arabic/Hebrew page name. (5) Web keyboard (Pull and push on wasmJs): Tab order search -> chips -> select-all -> list -> options -> destination -> Review; list uses roving focus (arrow keys move, Space toggles, Home/End jump); visible focus ring; no browser-shortcut collisions (Ctrl+A is intercepted only while the list has focus; Esc closes only if no dialog is open); documented in the screen KDoc and checked in the manual Web checklist (validation.md). Loading skeleton honours reduced-motion (no shimmer animation required)
 
 ### Epic 3.3: Dry-run, progress, result, conflicts
 
@@ -760,11 +799,11 @@ Original specification: add to `kmp/src/commonMain/sqldelight/.../SteleDatabase.
   - *Given* an `InProgress` manifest at launch, *When* app starts, *Then* a notice offers "Resume" (idempotent re-run).
 **Files**: `{C}/ui/screens/copy/DryRunDialog.kt`, `{C}/ui/screens/copy/CopyProgressDialog.kt` (pattern: `StorageMoveProgressDialog.kt`), `{C}/ui/screens/copy/CopyResultDialog.kt`, `kmp/src/androidUnitTest/kotlin/dev/stapler/stelekit/ui/CopyDialogsTest.kt`
 
-##### Task 3.3.1a: `DryRunDialog` (counts, assets renamed, linked-page delta, confirm >200) (~5 min)
-##### Task 3.3.1b: `CopyProgressDialog` with the **Stop** button (label, helper text and partial-write result wording per the AC; never "Cancel") + semantics (~5 min)
-##### Task 3.3.1c: Android run host: launch apply in application scope (`{A}/SteleKitApplication.kt` owned scope with `CoroutineExceptionHandler`), persist interrupted marker (~5 min)
-##### Task 3.3.1d: `CopyResultDialog` with retry/undo/conflicts actions (~5 min)
-##### Task 3.3.1e: Robolectric tests for wording, disabled commit, result actions (~5 min)
+##### Task 3.3.1a: `DryRunDialog` (counts, assets renamed, linked-page delta, confirm >200)
+##### Task 3.3.1b: `CopyProgressDialog` with the **Stop** button (label, helper text and partial-write result wording per the AC; never "Cancel") + semantics
+##### Task 3.3.1c: Android run host: launch apply in application scope (`{A}/SteleKitApplication.kt` owned scope with `CoroutineExceptionHandler`), persist interrupted marker
+##### Task 3.3.1d: `CopyResultDialog` with retry/undo/conflicts actions
+##### Task 3.3.1e: Robolectric tests for wording, disabled commit, result actions
 
 #### Story 3.3.2: Review conflicts (Gate 1 since Repair pass 7, COMMITTED, not on the cut list: it backs the requirement "true conflicts flagged" and Gate 1 already flags conflicts)
 **As a** user, **I want** to find flagged conflict blocks after a copy, **so that** I can resolve them in my own time.
@@ -780,9 +819,9 @@ Original specification: add to `kmp/src/commonMain/sqldelight/.../SteleDatabase.
   - *Given* a row, *Then* it is one merged semantics node "Conflict on page Roadmap: original 'Draft v1', copied 'Draft v2' from Personal" with custom actions (`semantics.customActions`) "Mark resolved", "Remove this block", "Open page" whose labels include the page name for TalkBack/switch users; the remaining-count line is a polite live region; after an action focus moves to the next row (or the empty-state text); at 200% font scale rows wrap rather than truncate; RTL mirrors layout; Web: Tab reaches each row's three buttons in order, Enter/Space activates, visible focus ring.
 **Files**: `{C}/ui/screens/copy/ConflictReviewScreen.kt`, `{C}/repository/` use existing property-search APIs (verify first; no new unbounded query), `kmp/src/androidUnitTest/kotlin/dev/stapler/stelekit/ui/ConflictReviewTest.kt`
 
-##### Task 3.3.2a: Find existing property-search repository API with `sg`; add bounded query only if absent (follow `.sq` + RestrictedDatabaseQueries rules if needed) (~5 min)
-##### Task 3.3.2b: Screen modeled on `JournalMergeReviewScreen.kt` look and feel (~5 min)
-##### Task 3.3.2c: Keep/remove actions through `DatabaseWriteActor` + test (~5 min)
+##### Task 3.3.2a: Find existing property-search repository API with `sg`; add bounded query only if absent (follow `.sq` + RestrictedDatabaseQueries rules if needed)
+##### Task 3.3.2b: Screen modeled on `JournalMergeReviewScreen.kt` look and feel
+##### Task 3.3.2c: Keep/remove actions through `DatabaseWriteActor` + test
 
 ### Epic 3.4: Entry points and removal of the old flow
 
@@ -794,9 +833,9 @@ Original specification: add to `kmp/src/commonMain/sqldelight/.../SteleDatabase.
 - Same flow on all four platforms (shared Compose); wasmJs and iOS compile.
 **Files**: `{C}/ui/GraphContentLeftSidebar.kt`, `{C}/ui/components/Sidebar.kt`, `{C}/ui/App.kt`, `{C}/ui/StelekitAppDependencies.kt`
 
-##### Task 3.4.1a: Wire `PageMergeService` into `StelekitAppDependencies` (~4 min)
-##### Task 3.4.1b: Replace sidebar callbacks (lines ~87-88, 185, 195) and route in `App.kt` (~5 min)
-##### Task 3.4.1c: Page overflow "Copy this page to..." (~4 min)
+##### Task 3.4.1a: Wire `PageMergeService` into `StelekitAppDependencies`
+##### Task 3.4.1b: Replace sidebar callbacks (lines ~87-88, 185, 195) and route in `App.kt`
+##### Task 3.4.1c: Page overflow "Copy this page to..."
 
 #### Story 3.4.2: Delete `GraphMergeService`
 **As a** maintainer, **I want** the old snapshot flow gone, **so that** the O(graph) violation can't return.
@@ -804,8 +843,8 @@ Original specification: add to `kmp/src/commonMain/sqldelight/.../SteleDatabase.
 - *Given* all callers migrated, *When* building all targets, *Then* no reference to `GraphMergeService`/`pendingPageCount` remains and old behavior tests are ported: old test "skips existing name" becomes "combines blocks of same-named page".
 **Files**: `{C}/transfer/GraphMergeService.kt` (delete), `{BT}/transfer/GraphMergeServiceTest.kt` (port/delete), `{BT}/AllBusinessTests.kt`
 
-##### Task 3.4.2a: Port test cases to `PageMergeServiceTest` (~5 min)
-##### Task 3.4.2b: Delete class + references; compile all targets (`bazel build //kmp:desktop_app`, wasm compile) (~5 min)
+##### Task 3.4.2a: Port test cases to `PageMergeServiceTest`
+##### Task 3.4.2b: Delete class + references; compile all targets (`bazel build //kmp:desktop_app`, wasm compile)
 
 ---
 
@@ -823,9 +862,9 @@ Original specification: add to `kmp/src/commonMain/sqldelight/.../SteleDatabase.
 - Labeling: Settings copy distinguishes "Default capture graph" and "Remember last used".
 **Files**: `{C}/capture/CaptureTargetSettings.kt`, `{C}/capture/CaptureTargetResolver.kt`, `{CT}/capture/CaptureTargetResolverTest.kt`, `{C}/ui/components/settings/GeneralSettings.kt`
 
-##### Task 4.1.1a: Settings wrapper (strings; pattern `QrTransferSettings` + test like `QrTransferSettingsTest`) (~4 min)
-##### Task 4.1.1b: Pure resolver + property/example tests for fallback chain (~5 min)
-##### Task 4.1.1c: Settings UI section (default graph picker, remember toggle) (~5 min)
+##### Task 4.1.1a: Settings wrapper (strings; pattern `QrTransferSettings` + test like `QrTransferSettingsTest`)
+##### Task 4.1.1b: Pure resolver + property/example tests for fallback chain
+##### Task 4.1.1c: Settings UI section (default graph picker, remember toggle)
 
 #### Story 4.1.2: Extract `JournalAppender` (Refactor-first)
 **As a** developer, **I want** one append-to-journal service, **so that** Android and Desktop share logic and idempotence.
@@ -836,9 +875,9 @@ Original specification: add to `kmp/src/commonMain/sqldelight/.../SteleDatabase.
   - *Given* the same `captureId=c1` appended twice, *When* second call, *Then* `AlreadyPresent`, still one block.
 **Files**: `{C}/capture/JournalAppender.kt`, `{C}/capture/CaptureWriter.kt`, `{A}/CaptureViewModel.kt`, `{J}/capture/CaptureController.kt`, `{BT}/capture/JournalAppenderTest.kt`
 
-##### Task 4.1.2a: Read `CaptureViewModel.kt` (~313-354) and `CaptureWriter.kt`; define `JournalAppender` + `AppendOutcome` (~5 min)
-##### Task 4.1.2b: Active-graph implementation delegating to `CaptureWriter.writeCapture` (~4 min)
-##### Task 4.1.2c: Switch `CaptureViewModel` and `CaptureController` to it; run existing capture tests (~5 min)
+##### Task 4.1.2a: Read `CaptureViewModel.kt` (~313-354) and `CaptureWriter.kt`; define `JournalAppender` + `AppendOutcome`
+##### Task 4.1.2b: Active-graph implementation delegating to `CaptureWriter.writeCapture`
+##### Task 4.1.2c: Switch `CaptureViewModel` and `CaptureController` to it; run existing capture tests
 
 #### Story 4.1.3: Append to a chosen non-active graph (GATED: Story 1.1.4, Spike 0.1.1 real-filesystem run green + device pass, Spike 0.1.4 go decision)
 **As a** user, **I want** a share to land in the chosen graph without switching, **so that** capture is one step.
@@ -856,9 +895,9 @@ Original specification: add to `kmp/src/commonMain/sqldelight/.../SteleDatabase.
   - *Given* the pass percentage P that Spike 0.1.4 measured on a real graph, *When* this Story is declared done, *Then* the PR description reports P and the guard form used (exact or structure-stable), the metric "a share lands in the chosen graph in one step" is claimed only for P >= 95%, and the fraction `1 - P` of targets that will queue instead is stated. An integration test over the Spike 0.1.4 fixtures asserts that every fixture that passes the guard lands in one step (`Appended`) and every fixture that fails is `Queued("not-round-trippable")`, never silently written.
 **Files**: `{C}/capture/JournalAppender.kt` (single class; no `OffGraphJournalAppender` hierarchy), `{C}/capture/InboxFallbackAppender.kt`, `{BT}/capture/JournalAppenderOffGraphTest.kt`
 
-##### Task 4.1.3a: Extend `JournalAppender` to call the one `TargetWriterRouter` (Story 2.3.2) with a one-block `MergePage` (same idempotence path as merge) (~5 min)
-##### Task 4.1.3b: `InboxFallbackAppender` decorator: on `Left(capability/permission/NotRoundTrippable)` from the router, enqueue into `ShareInbox` and return `Queued(reason)`. No second router, no second lock/readiness logic (~4 min)
-##### Task 4.1.3c: Tests for the three criteria (~5 min)
+##### Task 4.1.3a: Extend `JournalAppender` to call the one `TargetWriterRouter` (Story 2.3.2) with a one-block `MergePage` (same idempotence path as merge)
+##### Task 4.1.3b: `InboxFallbackAppender` decorator: on `Left(capability/permission/NotRoundTrippable)` from the router, enqueue into `ShareInbox` and return `Queued(reason)`. No second router, no second lock/readiness logic
+##### Task 4.1.3c: Tests for the three criteria
 
 ### Epic 4.2: Android overlay
 
@@ -883,22 +922,22 @@ Original specification: add to `kmp/src/commonMain/sqldelight/.../SteleDatabase.
   - *Given* TalkBack, *Then* the toast text is announced including the graph name.
 **Files**: `{A}/CaptureActivity.kt`, `{A}/CaptureViewModel.kt`, `androidApp/src/test/` Robolectric test `CaptureActivityTargetTest.kt` (path: `androidApp/src/test/kotlin/dev/stapler/stelekit/CaptureActivityTargetTest.kt`; the directory EXISTS, VERIFIED by `ls` in Repair pass 6: it already holds `CaptureActivityTest.kt`, `CaptureViewModelTest.kt`, `CaptureShareTextTest.kt`; extend those rather than starting a new harness)
 
-##### Task 4.2.1a: ViewModel: resolved target state, `selectTarget`, availability check (persisted grants) (~5 min)
-##### Task 4.2.1b: Destination row composable + menu with a11y semantics (~5 min)
-##### Task 4.2.1c: Pause auto-finish timer when menu open (extend existing logic ~lines 321-357) (~3 min)
-##### Task 4.2.1d: Unavailable-target state preserving text (~5 min)
-##### Task 4.2.1e: Application-scope write + `onNewIntent`/handled-flag/payload persistence (~5 min)
-##### Task 4.2.1f: Robolectric tests for row, override, unavailable state (~5 min)
-##### Task 4.2.1h (Repair pass 6): Back-save confirmation toast with graph name, Undo and Change actions; resolver "checking" state; Robolectric tests for both (~3 h, inside the 19 h of Story 4.2.1)
-##### Task 4.2.1g: Back handler: auto-save to the shown destination, fall back to `ShareInbox` + "Queued for <graph>" message on failure; Robolectric tests for success, failure-queues, empty-text (~5 min)
+##### Task 4.2.1a: ViewModel: resolved target state, `selectTarget`, availability check (persisted grants)
+##### Task 4.2.1b: Destination row composable + menu with a11y semantics
+##### Task 4.2.1c: Pause auto-finish timer when menu open (extend existing logic ~lines 321-357)
+##### Task 4.2.1d: Unavailable-target state preserving text
+##### Task 4.2.1e: Application-scope write + `onNewIntent`/handled-flag/payload persistence
+##### Task 4.2.1f: Robolectric tests for row, override, unavailable state
+##### Task 4.2.1h (Repair pass 6): Back-save confirmation toast with graph name, Undo and Change actions; resolver "checking" state; Robolectric tests for both
+##### Task 4.2.1g: Back handler: auto-save to the shown destination, fall back to `ShareInbox` + "Queued for <graph>" message on failure; Robolectric tests for success, failure-queues, empty-text
 
-#### Story 4.2.2: Direct Share shortcuts (OPTIONAL / CUTTABLE, post-MVP; excluded from the appetite; nothing else depends on it)
+#### Story 4.2.2: Direct Share shortcuts (OPTIONAL / CUTTABLE, post-MVP; excluded from the budget; nothing else depends on it)
 **As a** user, **I want** each graph in the system share sheet, **so that** I can pick the graph before the overlay.
 **Acceptance Criteria**:
 - *Given* graphs work/personal, *When* sharing text from another app, *Then* the chooser lists "Work graph" and "Personal graph" shortcuts that open `CaptureActivity` with extra `target_graph_id`, which overrides the resolver for that share only.
 **Files**: `{A}/widget/` or new `{A}/ShareShortcutPublisher.kt`, `androidApp/src/main/AndroidManifest.xml` (share-target meta-data + `shortcuts.xml`)
-##### Task 4.2.2a: Publish `ShortcutInfoCompat` per registered graph on graph registry change (~5 min)
-##### Task 4.2.2b: Manifest `<meta-data android:name="android.service.chooser.chooser_target_service">`/share-target XML + intent extra handling (~5 min)
+##### Task 4.2.2a: Publish `ShortcutInfoCompat` per registered graph on graph registry change
+##### Task 4.2.2b: Manifest `<meta-data android:name="android.service.chooser.chooser_target_service">`/share-target XML + intent extra handling
 
 ### Epic 4.3: Desktop quick capture
 
@@ -915,11 +954,11 @@ Original specification: add to `kmp/src/commonMain/sqldelight/.../SteleDatabase.
   - *Given* the popup with empty or whitespace-only text, *When* Esc, *Then* it closes immediately. *Given* non-empty text, *When* Esc, *Then* a confirmation "Discard this note?" with "Discard" and "Keep editing" appears; Discard closes and saves nothing, Keep editing returns focus to the text field with text intact. Esc never auto-saves on desktop (differs from Android Back by design: a hotkey popup is dismissed reflexively, and a wrong auto-save into a graph is harder to notice than a prompt). The threshold is any non-whitespace text (the earlier "longer than one keystroke" assumption in the UX draft is dropped).
 **Files**: `{J}/capture/CaptureController.kt`, `{J}/capture/CapturePopupState.kt`, popup composable (find with Glob `{J}/capture/*Popup*`), `kmp/src/jvmTest/kotlin/dev/stapler/stelekit/capture/CaptureControllerTargetTest.kt` (state logic only; avoid display-dependent UI per `scripts/jvm-display-check.sh`)
 
-##### Task 4.3.1a: Add `targetGraphId` to `Shown`, resolve via `CaptureTargetResolver` (~4 min)
-##### Task 4.3.1b: `performSave` via `JournalAppender` with `CaptureTarget` (~4 min)
-##### Task 4.3.1c: Popup chooser UI + Alt+G (~5 min)
-##### Task 4.3.1d: Controller state tests (businessTest if no display needed) (~5 min)
-##### Task 4.3.1e: Esc handling: empty text closes; non-empty shows the "Discard this note?" state in `CapturePopupState` (new `ConfirmDiscard` state so it is testable without a renderer); tests for both branches and Keep editing (~4 min)
+##### Task 4.3.1a: Add `targetGraphId` to `Shown`, resolve via `CaptureTargetResolver`
+##### Task 4.3.1b: `performSave` via `JournalAppender` with `CaptureTarget`
+##### Task 4.3.1c: Popup chooser UI + Alt+G
+##### Task 4.3.1d: Controller state tests (businessTest if no display needed)
+##### Task 4.3.1e: Esc handling: empty text closes; non-empty shows the "Discard this note?" state in `CapturePopupState` (new `ConfirmDiscard` state so it is testable without a renderer); tests for both branches and Keep editing
 
 ### Epic 4.4: Share inbox
 
@@ -934,10 +973,10 @@ Original specification: add to `kmp/src/commonMain/sqldelight/.../SteleDatabase.
 - Shared images copied to app-private storage at enqueue time (temporary URI grant dies with the activity).
 **Files**: `{C}/capture/ShareInbox.kt`, `{C}/capture/ShareInboxDrain.kt`, `{C}/ui/StelekitAppDependencies.kt` (wiring only), `{BT}/capture/ShareInboxTest.kt`. `GraphManager.kt` is NOT in this list (no `GraphActivated` symbol exists; the drain is an external collector).
 
-##### Task 4.4.1a: JSON-file inbox per `GraphId` over `FileSystem`, plus the `UNASSIGNED` slot (ADR-004). **Crash-safety spec (Repair pass 6)**: one file per item `share-inbox/<graphKey>/<captureId>.json`; envelope `{ "v": 1, "captureId", "graphKey", "createdAtEpochMs", "payload": {...}, "sha256": "<hex of canonical payload bytes>" }`; write = serialize to `<name>.json.tmp` in the SAME directory, `fsync`/flush where the `FileSystem` supports it, then atomic rename over the final name (on a FileSystem without atomic rename, write `.json.tmp` and treat a leftover `.tmp` as incomplete); read verifies `v` (unknown future version -> item kept untouched and shown as "needs a newer app version", never deleted), parses, and verifies `sha256`; a failed checksum or unparseable file is MOVED to `share-inbox/_quarantine/` (never deleted) and surfaced in the S13 indicator as "1 share couldn't be read" with Copy text if the payload text is recoverable. Startup sweep removes only `.tmp` files older than 1 h and never touches `.json`. Image payloads are copied to `share-inbox/<graphKey>/<captureId>.img` with the same tmp+rename+hash before the `.json` that references them is renamed into place (so a crash leaves an orphan image, never a dangling reference). Re-keying (ADR-004) is a directory rename and is idempotent after a crash. Tests (businessTest, `FakeFileSystem` with injected failure after each step): crash after tmp write, after rename, mid-image; corrupted checksum; truncated JSON; future version; double drain; re-key crash; all end with the text recoverable and no duplicate append (~5 min label, ~4 h real, inside Story 4.4.1's 12 h base)
-##### Task 4.4.1b: `ShareInboxDrain` collector over `GraphManager.activeRepositorySet` / `readyGraphId` (Task 2.1.2a) wired in `StelekitAppDependencies`; waits on `awaitPendingMigration()` before draining (~4 min)
-##### Task 4.4.1c: Pending indicator state + tests (~5 min)
-##### Task 4.4.1d (Gate 1 since Repair pass 7, COMMITTED, not on the cut list; Repair pass 6): rescue actions on queued items, backing REQ-17 ("nothing lost silently"): per item **Copy text** (to clipboard; works even when the target graph no longer exists) and **Discard** (confirm showing the first 80 characters; only after the user has had the chance to Copy text), plus Retry now. Semantics: each item row is one merged node "Queued share for Work graph: 'meeting notes...', Today 09:14" with `customActions` Copy text / Discard / Retry now (labels include graph name); the panel count is a polite live region; focus moves to the next item after Discard; 200% font scale wraps; RTL mirrors; Web keyboard Tab/Enter. Chip host decision (revised Repair pass 7): Desktop near the graph switcher; Android shows a persistent queued badge (count plus text, not colour only) on the graph-switcher entry in the sidebar/drawer whenever the inbox has items, in addition to Settings > Capture and the overlay's own queued row, and an app-start notice (a snackbar once per cold start: "2 shares are queued for Work graph" with a View action) so a share to a graph that never drains cannot go unnoticed. Robolectric tests for actions, semantics, the badge and the app-start notice (~4 h for the rescue actions, counted in the Gate 1 inbox figure; the badge and notice reuse the Task 4.4.1c indicator state and sit inside Story 4.4.1's 12 h base)
+##### Task 4.4.1a: JSON-file inbox per `GraphId` over `FileSystem`, plus the `UNASSIGNED` slot (ADR-004). **Crash-safety spec (Repair pass 6)**: one file per item `share-inbox/<graphKey>/<captureId>.json`; envelope `{ "v": 1, "captureId", "graphKey", "createdAtEpochMs", "payload": {...}, "sha256": "<hex of canonical payload bytes>" }`; write = serialize to `<name>.json.tmp` in the SAME directory, `fsync`/flush where the `FileSystem` supports it, then atomic rename over the final name (on a FileSystem without atomic rename, write `.json.tmp` and treat a leftover `.tmp` as incomplete); read verifies `v` (unknown future version -> item kept untouched and shown as "needs a newer app version", never deleted), parses, and verifies `sha256`; a failed checksum or unparseable file is MOVED to `share-inbox/_quarantine/` (never deleted) and surfaced in the S13 indicator as "1 share couldn't be read" with Copy text if the payload text is recoverable. Startup sweep removes only `.tmp` files older than 1 h and never touches `.json`. Image payloads are copied to `share-inbox/<graphKey>/<captureId>.img` with the same tmp+rename+hash before the `.json` that references them is renamed into place (so a crash leaves an orphan image, never a dangling reference). Re-keying (ADR-004) is a directory rename and is idempotent after a crash. Tests (businessTest, `FakeFileSystem` with injected failure after each step): crash after tmp write, after rename, mid-image; corrupted checksum; truncated JSON; future version; double drain; re-key crash; all end with the text recoverable and no duplicate append
+##### Task 4.4.1b: `ShareInboxDrain` collector over `GraphManager.activeRepositorySet` / `readyGraphId` (Task 2.1.2a) wired in `StelekitAppDependencies`; waits on `awaitPendingMigration()` before draining
+##### Task 4.4.1c: Pending indicator state + tests
+##### Task 4.4.1d (Gate 1 since Repair pass 7, COMMITTED, not on the cut list; Repair pass 6): rescue actions on queued items, backing REQ-17 ("nothing lost silently"): per item **Copy text** (to clipboard; works even when the target graph no longer exists) and **Discard** (confirm showing the first 80 characters; only after the user has had the chance to Copy text), plus Retry now. Semantics: each item row is one merged node "Queued share for Work graph: 'meeting notes...', Today 09:14" with `customActions` Copy text / Discard / Retry now (labels include graph name); the panel count is a polite live region; focus moves to the next item after Discard; 200% font scale wraps; RTL mirrors; Web keyboard Tab/Enter. Chip host decision (revised Repair pass 7): Desktop near the graph switcher; Android shows a persistent queued badge (count plus text, not colour only) on the graph-switcher entry in the sidebar/drawer whenever the inbox has items, in addition to Settings > Capture and the overlay's own queued row, and an app-start notice (a snackbar once per cold start: "2 shares are queued for Work graph" with a View action) so a share to a graph that never drains cannot go unnoticed. Robolectric tests for actions, semantics, the badge and the app-start notice
 
 ### Epic 4.5: iOS and Web pull-style copy (v1, decision 4; scheduled after the core Android/Desktop slice)
 
@@ -958,13 +997,13 @@ Why pull: iOS/Web cannot address an inactive graph's files for WRITING, and the 
   - *Given* CI, *When* wasmJs and iOS targets compile, *Then* no `java.*` usage in new commonMain code and tests (`./gradlew :kmp:compileTestKotlinWasmJs -PenableJs=true`, `:kmp:compileTestKotlinIosSimulatorArm64`).
 **Files**: `{C}/merge/CopyDirection.kt`, `{C}/merge/SourceReadCapabilities.kt`, `{BT}/merge/SourceReadCapabilitiesTest.kt`, `{BT}/merge/IosWebCopyGatingTest.kt`, `kmp/src/wasmJsTest/kotlin/dev/stapler/stelekit/merge/MergePageWasmSmokeTest.kt`
 
-##### Task 4.5.1a: `CopyDirection` + `SourceReadCapabilities` over `PlatformFileSystem`/`CryptoLayer`, per-platform mapping from Spike 0.1.5 (~5 min)
-##### Task 4.5.1b: Source-chooser rendering of disabled reasons and the re-select action + wasm smoke test of `mergePage` (~5 min)
-##### Task 4.5.1c: Document the pull-copy decision, the Spike 0.1.5 outcome and the deferred external entry points (share extension, PWA `share_target`) in ADR-001 consequences (~3 min)
-##### Task 4.5.1d: (replaces the removed apply-on-activate test) `IosWebCopyGatingTest`: on iOS/wasm capability fakes only `Pull` is offered, push destinations are disabled with `PlatformUnsupported`, an unreadable source is disabled with its reason, and no staging directory or `ShareInbox` entry is created by a disabled attempt (~4 min)
-##### Task 4.5.1e: Determine (Glob/grep under `iosMain`, `wasmJsMain`, `commonMain/ui`) whether iOS or Web has a quick-add/capture entry point. If yes, wire it to `CaptureTargetResolver` + `JournalAppender` (~5 min); if no, change UX S12's note and drop this AC. Record the finding in this Story before Phase 4.5 is scheduled (~3 min)
+##### Task 4.5.1a: `CopyDirection` + `SourceReadCapabilities` over `PlatformFileSystem`/`CryptoLayer`, per-platform mapping from Spike 0.1.5
+##### Task 4.5.1b: Source-chooser rendering of disabled reasons and the re-select action + wasm smoke test of `mergePage`
+##### Task 4.5.1c: Document the pull-copy decision, the Spike 0.1.5 outcome and the deferred external entry points (share extension, PWA `share_target`) in ADR-001 consequences
+##### Task 4.5.1d: (replaces the removed apply-on-activate test) `IosWebCopyGatingTest`: on iOS/wasm capability fakes only `Pull` is offered, push destinations are disabled with `PlatformUnsupported`, an unreadable source is disabled with its reason, and no staging directory or `ShareInbox` entry is created by a disabled attempt
+##### Task 4.5.1e: Determine (Glob/grep under `iosMain`, `wasmJsMain`, `commonMain/ui`) whether iOS or Web has a quick-add/capture entry point. If yes, wire it to `CaptureTargetResolver` + `JournalAppender`; if no, change UX S12's note and drop this AC. Record the finding in this Story before Phase 4.5 is scheduled
 
-##### Task 4.5.1f (Repair pass 6): iOS/Web quick-add wiring, executed only if Task 4.5.1e finds an entry point: resolve the destination via `CaptureTargetResolver`, append via `JournalAppender`; an unaddressable non-active target is QUEUED in `ShareInbox` (a share-type write); S12's "Used by quick add" note is shown only then, else the Android/Desktop-only note. Tests: resolver + appender with iOS/wasm capability fakes (~3 h, inside Story 4.5.1's 11 h). If 4.5.1e finds none, this task is deleted and Story 4.5.1 drops to 8 h
+##### Task 4.5.1f (Repair pass 6): iOS/Web quick-add wiring, executed only if Task 4.5.1e finds an entry point: resolve the destination via `CaptureTargetResolver`, append via `JournalAppender`; an unaddressable non-active target is QUEUED in `ShareInbox` (a share-type write); S12's "Used by quick add" note is shown only then, else the Android/Desktop-only note. Tests: resolver + appender with iOS/wasm capability fakes. If 4.5.1e finds none, this task is deleted and Story 4.5.1 drops to 8 h
 
 #### Story 4.5.2: `SourceGraphReader` - read-only markdown scan of an inactive graph (GATED on Spike 0.1.5, Story 1.1.4)
 **As a** developer, **I want** a bounded, read-only reader that turns a source graph's markdown into `StagedPage`s, **so that** pull-copy needs no second database and reuses the merge core.
@@ -981,11 +1020,11 @@ Why pull: iOS/Web cannot address an inactive graph's files for WRITING, and the 
   - *Given* a folder grant that expired or a stale bookmark mid-listing, *Then* `ReadError.NoGrant` returns to the chooser with that source disabled and the "Re-select folder" action, the selection is kept; a missing folder => `FolderMissing`; a file that disappears or fails to parse between listing and read => that page `unreadable` with the reason, the rest continue; no failure yields a queued or partial silent result.
 **Files**: `{C}/merge/SourceGraphReader.kt`, `{C}/merge/MarkdownSourceGraphReader.kt`, `{CT}/merge/MarkdownSourceGraphReaderParseTest.kt`, `{BT}/merge/SourceReaderParityTest.kt`
 
-##### Task 4.5.2a: `SourceGraphReader` port, `SourceEntry`, sealed `ReadError` (~4 min)
-##### Task 4.5.2b: `MarkdownSourceGraphReader.listEntries` projection, paging cursor, name/kind/date decode (~5 min)
-##### Task 4.5.2c: `readPage` with size cap, parse -> `MergePage` -> `StagedPage` (~5 min)
-##### Task 4.5.2d: `SourceReaderParityTest` (businessTest): the same fixture files, loaded once through the real `GraphLoader` into an in-memory repo and read once through `MarkdownSourceGraphReader`, give equal `StagedPage`s (uuids, props, nesting, order) (~5 min)
-##### Task 4.5.2e: `MarkdownSourceGraphReaderParseTest` + property test (commonTest): CRLF, tabs, fenced code with `- ` lines, `collapsed::`, org-style blocks, explicit and absent `id::`, journal filename decoding, over-cap file, non-UTF8/garbage file => `unreadable` not crash; `Arb`-generated `MergePage`s survive render -> read -> equal (~5 min)
+##### Task 4.5.2a: `SourceGraphReader` port, `SourceEntry`, sealed `ReadError`
+##### Task 4.5.2b: `MarkdownSourceGraphReader.listEntries` projection, paging cursor, name/kind/date decode
+##### Task 4.5.2c: `readPage` with size cap, parse -> `MergePage` -> `StagedPage`
+##### Task 4.5.2d: `SourceReaderParityTest` (businessTest): the same fixture files, loaded once through the real `GraphLoader` into an in-memory repo and read once through `MarkdownSourceGraphReader`, give equal `StagedPage`s (uuids, props, nesting, order)
+##### Task 4.5.2e: `MarkdownSourceGraphReaderParseTest` + property test (commonTest): CRLF, tabs, fenced code with `- ` lines, `collapsed::`, org-style blocks, explicit and absent `id::`, journal filename decoding, over-cap file, non-UTF8/garbage file => `unreadable` not crash; `Arb`-generated `MergePage`s survive render -> read -> equal
 
 #### Story 4.5.3: Pull-copy flow, picker and entry points (GATED on Stories 4.5.1, 4.5.2, 2.3.2, 2.4.1-2.4.2, 3.1-3.3)
 **As an** iOS/Web user, **I want** "Copy pages from..." in the graph I have open, **so that** I can choose pages from another graph, preview the result and apply it with a definite outcome.
@@ -1002,13 +1041,13 @@ Why pull: iOS/Web cannot address an inactive graph's files for WRITING, and the 
   - *Given* pull in v1, *Then* linked-asset copying and the linked-page-closure (`Depth1`) toggle are disabled in the pull direction with "Not available when copying from a graph that isn't open", because both need a source-side reference index; selected pages are copied with their `[[links]]`/`((refs))` unchanged text-wise (same as push without closure).
 **Files**: `{C}/ui/screens/copy/CopyPagesState.kt` (+ `direction`), `{C}/ui/screens/copy/PullSourceChooser.kt`, `{C}/merge/PullPageSource.kt` (adapts `SourceGraphReader` to the `PageSource` port), `{BT}/merge/PullCopyFlowTest.kt`, `{BT}/ui/PullCopyViewModelTest.kt`
 
-##### Task 4.5.3a: `PullPageSource` adapter implementing the same `PageSource` port as `ActiveDbPageSource`, plus chunked staging driver (<= 50) (~5 min)
-##### Task 4.5.3b: `direction` in `CopyPagesState`/`CopyPagesViewModel`; name-index paging, search, kind and date filters over `SourceEntry` (~5 min)
-##### Task 4.5.3c: Source chooser (S3 pull variant) with disabled reasons, re-select action, "no source available" state (~5 min)
-##### Task 4.5.3d: Parameterize picker/dry-run/result titles and the disabled-filter notes by direction (~4 min)
-##### Task 4.5.3e: Entry points: sidebar, command palette, graph-switcher row overflow (cuttable) (~5 min)
-##### Task 4.5.3f: `PullCopyFlowTest` and `PullCopyViewModelTest` (businessTest), registered in `AllBusinessTests` (~5 min)
-##### Task 4.5.3g (Repair pass 6): pull name-index loading state: after a source is chosen, the picker shows skeleton rows and "Reading <graph>... N files found" (determinate once the listing total is known, indeterminate before), the listing streams in pages of <= 100 and the list is usable (search over what has loaded, with "Still reading..." note) before the index completes; a Stop/Back during listing cancels cleanly; failure -> per-source `ReadError` banner with Retry/"Re-select folder"/Close. Robolectric test with a slow fake reader (~2 h, inside Story 4.5.3's 16 h)
+##### Task 4.5.3a: `PullPageSource` adapter implementing the same `PageSource` port as `ActiveDbPageSource`, plus chunked staging driver (<= 50)
+##### Task 4.5.3b: `direction` in `CopyPagesState`/`CopyPagesViewModel`; name-index paging, search, kind and date filters over `SourceEntry`
+##### Task 4.5.3c: Source chooser (S3 pull variant) with disabled reasons, re-select action, "no source available" state
+##### Task 4.5.3d: Parameterize picker/dry-run/result titles and the disabled-filter notes by direction
+##### Task 4.5.3e: Entry points: sidebar, command palette, graph-switcher row overflow (cuttable)
+##### Task 4.5.3f: `PullCopyFlowTest` and `PullCopyViewModelTest` (businessTest), registered in `AllBusinessTests`
+##### Task 4.5.3g (Repair pass 6): pull name-index loading state: after a source is chosen, the picker shows skeleton rows and "Reading <graph>... N files found" (determinate once the listing total is known, indeterminate before), the listing streams in pages of <= 100 and the list is usable (search over what has loaded, with "Still reading..." note) before the index completes; a Stop/Back during listing cancels cleanly; failure -> per-source `ReadError` banner with Retry/"Re-select folder"/Close. Robolectric test with a slow fake reader
 
 ---
 
@@ -1029,9 +1068,9 @@ Why pull: iOS/Web cannot address an inactive graph's files for WRITING, and the 
 - Guard pass-rate regression: the Spike 0.1.4 fixture set (including the real failing files) is asserted in CI at the recorded guard strictness.
 **Files**: `{BT}/merge/LargeGraphMergeTest.kt`, `{BT}/merge/MergeResilienceTest.kt`, `kmp/src/jvmTest/kotlin/dev/stapler/stelekit/db/OffGraphReconcileRegressionTest.kt`, `{BT}/AllBusinessTests.kt`
 
-##### Task 5.1.1a: Large-graph merge test (~5 min)
-##### Task 5.1.1b: Resilience tests (closed DB, scope exception handler) (~5 min)
-##### Task 5.1.1c: Run `bazel test //kmp:business_tests` and `scripts/jvm-display-check.sh -- bazel test //kmp:jvm_tests ...` per CLAUDE.md; capture output (~5 min)
+##### Task 5.1.1a: Large-graph merge test
+##### Task 5.1.1b: Resilience tests (closed DB, scope exception handler)
+##### Task 5.1.1c: Run `bazel test //kmp:business_tests` and `scripts/jvm-display-check.sh -- bazel test //kmp:jvm_tests ...` per CLAUDE.md; capture output
 
 #### Story 5.1.2: Docs and CLAUDE.md
 **As a** maintainer, **I want** the new invariants written down, **so that** future changes keep them.
@@ -1041,8 +1080,8 @@ Why pull: iOS/Web cannot address an inactive graph's files for WRITING, and the 
 - `kmp/TESTING_README.md` mentions the property tests.
 **Files**: `CLAUDE.md`, `kmp/TESTING_README.md`
 
-##### Task 5.1.2a: Add CLAUDE.md section and testing note (~4 min)
-##### Task 5.1.2b: Final `make`/CI-equivalent run: `bazel test //... --config=ci` (wrapped in `timeout 30m`); `bazel shutdown` after (~5 min)
+##### Task 5.1.2a: Add CLAUDE.md section and testing note
+##### Task 5.1.2b: Final `make`/CI-equivalent run: `bazel test //... --config=ci` (wrapped in `timeout 30m`); `bazel shutdown` after
 
 #### Story 5.1.3: Bazel registration check and metrics log-line contract (Repair pass 6)
 **As a** maintainer, **I want** new sources and tests to be built by Bazel and the metric log lines pinned, **so that** CI builds what exists and the local-only metrics (requirements M1-M5) keep working.
@@ -1054,8 +1093,8 @@ Why pull: iOS/Web cannot address an inactive graph's files for WRITING, and the 
 - Metrics log contract.
   - *Given* the S15 lines, *When* a copy run, an undo, a share (active, markdown, inbox) complete, *Then* a test with the recording `Logger` asserts the exact key set: `PageMergeService mergeId, source, target, direction, new, combined, unchanged, conflicted, failed, assetsRenamed`; `MergeUndo mergeId, target, removedPages, removedBlocks, leftInPlace`; `JournalAppender target, writer, override, outcome`; and that no page body or shared text appears. A documented one-line grep over `~/.stelekit/logs/stelekit-<date>.log` reproduces M1-M3 (command recorded in the story; no script is shipped).
 **Files**: `{BT}/merge/MetricsLogContractTest.kt` (register in `AllBusinessTests`), the `BUILD.bazel` files above only if a gap is found
-##### Task 5.1.3a: Run each affected Bazel target, confirm new test classes appear in the output, fix gaps (~2 h)
-##### Task 5.1.3b: Log-line contract test and recorded grep command (~3 h)
+##### Task 5.1.3a: Run each affected Bazel target, confirm new test classes appear in the output, fix gaps
+##### Task 5.1.3b: Log-line contract test and recorded grep command
 
 ---
 
@@ -1077,7 +1116,7 @@ Repair pass on 2026-10-07 against `architecture-review.md` and `adversarial-revi
 | adv: iOS/Web has no copy flow | Apply-on-activate fallback AC in Story 4.5.1, Task 2.4.2g (trigger), Task 4.5.1d (test). |
 | adv: teardown not covered by lock | Folded into A1 (Task 2.1.1c, Story 2.1.2 active-to-inactive AC). |
 | adv: Android off-graph share payload | Explicit off-graph scope AC in Story 4.1.3 (text only; suggestions disabled; images copied to target `assets/` or inbox). |
-| adv: scope vs appetite | Story 4.2.2 (Direct Share) and `merge_force_inbox` marked OPTIONAL/CUTTABLE, off the critical path. |
+| adv: scope vs budget | Story 4.2.2 (Direct Share) and `merge_force_inbox` marked OPTIONAL/CUTTABLE, off the critical path. |
 | Minors | `QrImportService` path corrected (Task 0.1.3c); Story 1.1.4 reference fixed. |
 
 ### Repair pass 2 (2026-10-07, against the 'Re-review' sections)
@@ -1142,7 +1181,7 @@ Code facts re-verified by grep/read in `GraphManager.kt`: `_pendingMigration` re
 | New Story 4.5.3 | Pull flow reusing picker/dry-run/result/undo, `PullPageSource` into `PageMergeService`, `ActiveTargetWriter` target, entry points (sidebar, command palette, graph-switcher row), failure states and exits, explicit v1 limits (no assets, no `Depth1`, no tag/property filters). |
 | New Spike 0.1.5 | Gates 4.5.2/4.5.3 per platform and storage kind; negative result disables that source (or platform) with a reason. Added to Unresolved Questions and run order. |
 | Story 3.1.1 AC | iOS/Web push chooser now points to Pull instead of ending in "no destination available". |
-| Scope Cut Line | Placement after the core slice, ~16 tasks / ~1 week (~15% of Large appetite), ordered down-scoping (graph-switcher entry and date range, then second platform, then Retry polish); full reversal needs the user's call. |
+| Scope Cut Line | Placement after the core slice, 3 stories, about 520k raw tokens (about 9% of the full-scope raw total), ordered down-scoping (graph-switcher entry and date range, then second platform, then Retry polish); full reversal needs the user's call. |
 | Staged rollout, dependency graph, Not resolved here | Updated to match. UX (S1, S3, S4, S6, UX-41, UX-43..47, open questions) and validation (REQ-11 rows, UX rows, known gaps) updated in their own files. |
 
 ### Not resolved here (Repair pass 5)
@@ -1174,8 +1213,8 @@ Source: three fresh triad reviewers (product, UX, engineering), all "needs-work"
 | UX: S8 and rescue actions on cut list | Moved to Gate 2 (committed): Story 3.3.2, Task 4.4.1d; removed from cut list and derived table |
 | UX: last-used copy destination, iOS/Web quick-add tasks | Task 3.1.1d (Gate 2), Task 4.5.1f (conditional on 4.5.1e) |
 | UX: no end-to-end journey table | ux.md "End-to-end journeys and failure branches" |
-| ENG: re-size Task 2.4.1d | Split d1-d7 (about 9.5 h) |
-| ENG: hour estimates and fit | "Effort estimate" table: 389 h full, 317 h Gate 1, 29 h Phase 0; honest conclusion: does NOT fit 3-6 weeks (OWNER decision: re-baseline or cut deeper) |
+| ENG: re-size Task 2.4.1d | Split d1-d7 |
+| ENG: hour estimates and fit | "Effort estimate" table (hour figures since retired in Repair pass 8; now tokens) |
 | ENG: sequencing vs `fix/graph-switch-notes-path`, lock own PR | "Sequencing against branch" section (VERIFIED the branch edits `GraphManager.kt`, +80/-8): merge it first, then the lock PR; lock PR is its own PR with `withTimeout` + degrade-open |
 | ENG: journal filename mapping | Decided in Story 1.2.2 "Journal filename rules"; hard-coded `journals/2026_10_07.md` removed from Story 4.1.3 ACs; Unresolved Question closed |
 | ENG: path traversal/symlink tests | Task 1.2.2e, Task 2.3.1e, `PathContainmentSymlinkTest`, containment applied to staging, assets, pull reader, manifest deletes |
@@ -1186,7 +1225,7 @@ Source: three fresh triad reviewers (product, UX, engineering), all "needs-work"
 | BLOCKER: spikes unrun | Made explicit: Phase 0 (0.1.1-0.1.5) is the only authorised work; "Phase 0 checkpoint" section with pass conditions, re-plan triggers R1 (0.1.1 fails with no working own-write mark) and R2 (0.1.4 structure-stable < 95%), go decision, ADR flip table; ADR-001/002/003 carry their acceptance rules and stay Proposed |
 
 ### Not resolved here (Repair pass 6)
-- OWNER decisions: appetite re-baseline vs deeper cut; primary persona and frequency; A-DEMAND thresholds; whether Undo and the minimal inbox belong in Gate 1 (this plan says yes, because REQ-16/17 need them).
+- OWNER decisions: token budget confirmation (the earlier re-baseline answer was given against retired human-time numbers); primary persona and frequency; A-DEMAND thresholds; whether Undo and the minimal inbox belong in Gate 1 (this plan says yes, because REQ-16/17 need them).
 - All hour figures are author judgement (about +/-40%), unmeasured. The 95% guard threshold, 10 s lock timeout, 3 s probe timeout, 2 MB read cap are still initial values.
 - Mental-model wording ("Copy pages to...", "combined", "Mark resolved") remains untested with users; no usability session is planned or scheduled (not invented here).
 - ADR-003 has no spike of its own; ADR-004 is untested on a device.
@@ -1198,11 +1237,11 @@ Source: three fresh triad reviewers (product, UX, engineering), round 2, all nee
 
 | Triad finding | Change made |
 |---|---|
-| STALE: 3-6 weeks in requirements.md Appetite and plan "Scope Cut Line" | Both reworded as superseded history; current text is the 2026-10-08 re-baseline |
+| STALE: 3-6 weeks in requirements.md Appetite and plan "Scope Cut Line" | Both reworded as superseded history; current text is in tokens (Repair pass 8) |
 | STALE: Story 2.4.1 AC said no .sq change | AC rewritten: the story adds filtered/count queries (Tasks 2.4.1d1-d7), regenerates sources, no new table, read-only, QueryPlanAuditTest |
-| Phase 0 timeboxes vs hour table | Phase 0 header and spike titles now match the table (0.1.1 8 h, 0.1.2 3 h, 0.1.3 2 h, 0.1.4 8 h, 0.1.5 8 h) |
+| Phase 0 timeboxes vs hour table | Phase 0 header and spike titles carry cost classes (Repair pass 8 retired the timeboxes) |
 | UX-30 / gate boundaries | Story 3.3.2 (S8) and Task 4.4.1d (S13 rescue actions) moved INTO Gate 1; Gate 2 now = linked pages/assets, last-used destination, UNASSIGNED slot |
-| Effort re-total | Gate 1 317 -> 333 h (11.1 / 13.3 / 16.7 weeks at 6 / 5 / 4 h/day); band 200-466 h (23.3 weeks at +40% and 4 h/day); Gate 2 31 -> 15 h; full scope unchanged at 389 h (check line in the table) |
+| Effort re-total | Gate 1 grew when Story 3.3.2 and the inbox rescue actions moved into it; full scope unchanged (figures since re-expressed in tokens, Repair pass 8) |
 | Gate 1 variant of S2 | Defined in "Scope Cut Line": linked-pages/assets controls hidden and last-used destination absent until Gate 2 |
 | UX: Android queued indicator too hidden | Task 4.4.1d: sidebar/drawer badge plus Settings > Capture plus overlay row plus app-start notice |
 | UX: Back toast best-effort | Story 4.2.1: stated best-effort; fallback = recent-captures notice at next app start plus queued badge |
@@ -1216,4 +1255,20 @@ Source: three fresh triad reviewers (product, UX, engineering), round 2, all nee
 | ENG: Android long-run host | Moved to the Phase 0 checkpoint as a Phase 1 decision with a default (application scope plus interrupted marker) |
 | ENG: R1/R3 not re-reviewed | Fresh-reviewer re-check note at the start of Phase 2 |
 
-OWNER INPUT NEEDED after this pass: persona/frequency and A-DEMAND thresholds; opportunity-cost line; merge date for fix/graph-switch-notes-path; run the 2-week demand probe; confirm Gate 1 at 333 h now includes conflict review and rescue actions.
+OWNER INPUT NEEDED after this pass: persona/frequency and A-DEMAND thresholds; opportunity-cost line; merge date for fix/graph-switch-notes-path; run the 2-week demand probe; confirm Gate 1 (now including conflict review and rescue actions) against the token budget.
+
+## Repair pass 8 (estimation re-expressed in tokens)
+
+Trigger: the owner's 2026-10-08 instruction that human-time estimates (hours, days, weeks) are wrong for LLM-executed work and tokens are the cost that matters; method per `~/.claude/skills/sdd/skills/ESTIMATION.md`.
+
+| Finding | Change |
+|---|---|
+| "Effort estimate" was a per-story hour table with days/weeks conversions, a "does not fit 3-6 weeks" verdict and a staffing assumption of one implementer | Replaced with the ESTIMATION.md format: story table (tasks, cost class, est. tokens, wall-clock blocker), raw sums, x1.5-2 verification multiplier, budget, agent-wave critical path, overrun threshold, wall-clock blocker list with owners. Class bands INFERRED; recalibrate after the first implementer run |
+| Hour figures in gates, Scope Cut Line, Go decision, demand-probe text, Phase 0 header and spike titles, Task 2.4.1d sub-tasks, other task annotations, and every "~5 min" tag | Removed; Phase 0 and spikes now carry cost classes |
+| Numeric overrun threshold was in hours | Now tokens: end of Phase 2, stop and re-plan if actual spend exceeds the table value for the built stories (3,075k raw x 1.75 = about 5.4M) by more than 25% (about 6.7M) |
+| Appetite | Proposed budget: 10M tokens Gate 1, 12M Gates 1-3 (Large band 3-15M). OWNER CONFIRMATION NEEDED: budget in tokens; the earlier "11-16 weeks" answer does not carry over |
+| Kept as genuine runtime or observation values | 2-week owner demand probe, 7-day undo manifest retention, 10 s lock timeout, 3 s probe timeout, A-DEMAND 4-week usage window |
+
+Totals (recounted with awk over the story table): Gate 1 raw 5,025k (7.5M / 8.8M / 10.1M at x1.5 / x1.75 / x2); full scope raw 5,715k (8.6M / 10.0M / 11.4M). Planning overhead already spent (about 3.5M subagent tokens, VERIFIED from task notifications, plus about 50k coordinator) is outside the budget.
+
+OWNER INPUT NEEDED after this pass: token budget confirmation; persona/frequency; A-DEMAND thresholds; opportunity-cost line; Android long-run host default; Gate 1 confirmation; run the 2-week demand probe; merge of fix/graph-switch-notes-path before the lock PR.

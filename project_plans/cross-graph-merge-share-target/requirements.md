@@ -20,7 +20,7 @@ SteleKit users with multiple graphs (e.g. work/personal, or recovering from a sp
 **Persona and frequency: UNVERIFIED — needs owner input.** No primary persona, no ranking between the "merge curator" (copies pages between graphs) and the "quick-capture sharer" (shares text to a chosen graph), and no population estimate exist. Candidate primary persona to confirm or replace: the maintainer's own work/personal two-graph setup. The owner must state (a) which persona is primary, (b) roughly how often they copy between graphs or share to a non-active graph today. Until then the plan treats demand as an assumption (next section), not a fact.
 
 ## Demand assumption (named, with a kill/expand criterion)
-**A-DEMAND (UNVERIFIED)**: enough users hold 2+ graphs AND copy pages between them or share into a non-active graph often enough to justify a Large (multi-week) build touching the hot `GraphManager` class.
+**A-DEMAND (UNVERIFIED)**: enough users hold 2+ graphs AND copy pages between them or share into a non-active graph often enough to justify a Large (multi-million-token) build touching the hot `GraphManager` class.
 
 Falsification is local-only (no network), so only installs the owner controls are observable; external-user adoption is unobservable except via GitHub issues. Criterion (thresholds are PROPOSED placeholders for the owner to confirm or change before the core slice ships, not measurements):
 - **Expand** (build the Gate 2 and Gate 3 items below): within 4 weeks of Gate 1 shipping, the owner's own installs log at least 4 completed copy runs OR at least 10 shares routed to a non-active graph (metrics M1/M2 below).
@@ -50,9 +50,18 @@ Outcome metrics (local-only; source = existing `Logger` summary lines, see Obser
 These are aggregated by grepping the existing log files (Desktop writes `~/.stelekit/logs/stelekit-<date>.log`, VERIFIED present; Android via `adb logcat`/log export, UNVERIFIED path). No new telemetry pipeline, no network (REQ-18). Plan Story 5.1.3 pins the log-line format with a test because the logs ARE the measurement source.
 
 ## Appetite
-The original 3–6 week appetite is SUPERSEDED (kept only as history). **Re-baselined 2026-10-08 (owner decision; plan.md "Effort estimate")**: summing per-story hour estimates gives about 389 h for the full planned scope and about 333 h for the Gate 1 core slice (317 h before the conflict review screen and the queued-share rescue actions moved into Gate 1 on 2026-10-08, see Release gates). At 4–6 productive hours/day that is 13–19 weeks (full) and about 11–17 weeks (Gate 1) at the point estimate, and about 23 weeks for Gate 1 at the +40% edge and 4 h/day (estimates are author judgement, not measured, roughly ±40%). Neither fits 3–6 weeks. Phase 0 spikes alone are about 29 h (1–1.5 weeks). The appetite for Gate 1 (core slice including Undo, conflict review and the minimal share inbox with rescue actions) is therefore about 11–17 weeks; Gates 2 and 3 are follow-on appetites gated by the A-DEMAND criterion. Undo and the minimal inbox stay in Gate 1. Phase 0 spikes (about 29 h) still run first and end in a go/no-go checkpoint.
+Effort is expressed in tokens (Large band: 3-15M tokens across all agents, including review and verify), not in human time. The original 3-6 week appetite and the 2026-10-08 hour-based re-baseline are retired history: the owner's 2026-10-08 position is that human-time estimates are wrong for LLM-executed work.
 
-**Opportunity cost (OWNER INPUT NEEDED, not invented here)**: Gate 1 consumes roughly 3–4 months of the single implementer's time (333 h at 4–6 h/day). Which SteleKit work that displaces (open issues, roadmap items, the release-please backlog) and why this ranks above it is not recorded anywhere; the owner must write that one-line comparison before the Phase 0 go decision.
+**Proposed budget (derived from plan.md "Effort estimate", bands INFERRED, recalibrate after the first implementer run)**:
+
+| Scope | low (x1.5) | likely (x1.75) | high (x2) |
+|---|---|---|---|
+| Gate 1 core slice incl. Phase 0 (Undo, conflict review, minimal inbox with rescue actions) | 7.5M | 8.8M | 10.1M |
+| Full scope, Gates 1-3 | 8.6M | 10.0M | 11.4M |
+
+Proposed: **10M tokens for Gate 1** and **12M for Gates 1-3**; Gates 2 and 3 are follow-on spends gated by the A-DEMAND criterion. Planning already cost about 3.5M subagent tokens (VERIFIED from task notifications) and is outside this budget. **OWNER CONFIRMATION NEEDED: budget in tokens.** The owner's 2026-10-08 "re-baseline to 11-16 weeks" answer was given against human-time numbers that are now retired, so it does not carry over. The owner confirmed the Gate 1 scope (Undo, minimal inbox, ConflictReview, rescue actions stay in Gate 1). Phase 0 spikes (about 0.5M raw, 0.8M-1.1M verified) still run first and end in a go/no-go checkpoint. Overrun rule: at the end of Phase 2, stop and re-plan if tokens spent exceed the table value for the stories done by more than 25%.
+
+**Opportunity cost (OWNER INPUT NEEDED, not invented here)**: Gate 1 consumes roughly 8.8M tokens of agent spend (likely case) plus the owner's review attention. Which SteleKit work that displaces (open issues, roadmap items, the release-please backlog) and why this ranks above it is not recorded anywhere; the owner must write that one-line comparison before the Phase 0 go decision.
 
 ## Release gates and cut line (committed here, mirrors plan.md "Scope Cut Line")
 - **Phase 0 (authorised first and alone)**: spikes 0.1.1–0.1.5. Nothing else is started before the go/no-go checkpoint.
@@ -67,7 +76,7 @@ The original 3–6 week appetite is SUPERSEDED (kept only as history). **Re-base
 - Repository rules in CLAUDE.md apply: Arrow `Either`, writes via `DatabaseWriteActor`, `@DirectSqlWrite` gating, bounded graph-scale reads, `MigrationRunner` entry for any new table (none planned), regenerated SQLDelight sources (read-only queries planned).
 - Shared logic in `commonMain`/`commonTest` (property-based tests for the merge function).
 - Sequencing: the `GraphManager` lock edit lands as its own PR after branch `fix/graph-switch-notes-path` (which also edits `GraphManager.kt`) is merged to `main` (plan.md Epic 2.1). Owner of that merge: the user; no date set (OWNER INPUT NEEDED).
-- Staffing assumption: one implementer on a serial critical path; hour-to-week conversions assume that (plan.md "Effort estimate").
+- Execution assumption: parallel worker agents in waves with a verification multiplier; the critical path is the wave chain plus wall-clock blockers (plan.md "Effort estimate").
 
 ## Non-functional Requirements
 - **Performance SLO**: merge of an 8 000-page graph must not load the full graph in memory at once or cause GC thrash/OOM on Android (chunked, bounded reads).
@@ -122,6 +131,6 @@ Merge is additive-only (never deletes target content) and gated by the dry-run c
 
 ## Open Questions
 - Owner input needed: primary persona, today's frequency of cross-graph copy/share (the 2-week demand probe above produces this), the expand/freeze thresholds (A-DEMAND), and the opportunity-cost line (Appetite).
-- Appetite re-baseline vs deeper cut: DECIDED 2026-10-08 (re-baseline); the opportunity-cost comparison is still OWNER INPUT NEEDED.
+- Token budget: OWNER CONFIRMATION NEEDED (see Appetite); the opportunity-cost comparison is still OWNER INPUT NEEDED.
 - Resolved in planning (see ADRs): how to write to a non-active graph (ADR-001); what counts as the same block and how conflicts are kept (ADR-002); staging directory for large selections (plan Epic 2.2); inbox keying when no graph exists (ADR-004).
 - Still open: cheap paths to a share target on iOS and Web (deferred, Out of Scope); whether iOS/Web has a quick-add entry point (Task 4.5.1e).
