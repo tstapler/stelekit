@@ -101,12 +101,12 @@ No new TABLE: provenance is the `src-id::` block property, undo state is JSON fi
 - **Feature flag**: not gated (new UI entry points only), per requirements. Off-graph writer sits behind `TargetWriterRouter`. The `merge_force_inbox` developer toggle is CUT from v1 (user decision, Repair pass 4): no setting, no `ForcedInbox` reason, no UX S16. If Spike 0.1.1 or 0.1.4 fails, the response is a design change (see the spike fallbacks), not a runtime toggle.
 - **Lock risk**: the `GraphManager` lock edit (Task 2.1.1c) ships as its own first PR with bounded acquisition and degrade-open behavior, because a deadlock there freezes graph switching for every user, including those who never copy.
 - **Rollback**: standard revert via PR; per-run undo (ADR-003).
-- **Staged rollout**: Desktop + Android first (Phases 2-4), iOS/Web pull-copy (Epic 4.5) enabled after wasm/iOS compile, Spike 0.1.5 and FileSystem verification (Epic 5.1); it is scheduled after the core Android/Desktop slice (see Scope Cut Line).
+- **Staged rollout**: Desktop + Android first (Phases 2-4), iOS/Web pull-copy (Epic 4.5) enabled after wasm/iOS compile, Spike 0.1.5 and FileSystem verification (Epic 5.1); it is scheduled after the core Android/Desktop slice (see "Release gates, ordering and derived scope").
 
 ## Unresolved Questions
 - [ ] Does a markdown file written into a closed graph reconcile on `switchGraph` on a REAL directory with the real `GraphLoader`, watcher and `FileRegistry` (plus a manual Android device pass) without a spurious `DiskConflict`? — GATES Stories 2.3.1 and 4.1.3 — owner: Spike 0.1.1
 - [ ] Can iOS (security-scoped bookmark / document-picker URL) and Web (`FileSystemDirectoryHandle` from IndexedDB, or OPFS) read the markdown files of a REGISTERED but INACTIVE graph, read-only, without opening it in `GraphManager`? — GATES Stories 4.5.2 and 4.5.3 per platform and per graph; a negative result disables pull-copy for that platform/graph with a reason, it does not queue anything — owner: Spike 0.1.5, runs in Phase 0 with the other four spikes (Repair pass 6); its answer does not gate the Gate 1 core slice but is a checkpoint input
-- [ ] Does SAF `rename`/`moveDocument` give atomic replace? — blocks SAF-target branch of Story 2.3.1 (fallback: SAF targets become copy-disabled `SafInboxOnly`; shares to them are queued; see Scope Cut Line) — owner: Spike 0.1.2, RUN FIRST
+- [ ] Does SAF `rename`/`moveDocument` give atomic replace? — blocks SAF-target branch of Story 2.3.1 (fallback: SAF targets become copy-disabled `SafInboxOnly`; shares to them are queued; see "Release gates, ordering and derived scope") — owner: Spike 0.1.2, RUN FIRST
 - [x] DECIDED (no longer a spike outcome): `id::` emission is a committed task (Story 1.1.4, Task 1.1.4a) and staging is structured JSON (`StagedPage`), because `LogseqPageSerializer` emits only `block.properties` (no `id::`; `LogseqPageSerializer.kt:38-44`, per adversarial review) and `INSERT OR REPLACE` keyed on uuid is `SteleDatabase.sq:335`. Spike 0.1.3 now only *confirms* parser behavior (explicit `id` property used verbatim by `MarkdownPageParser.generateUuid`) and records the collision outcome (throws / replaces / ignores) that sizes the clobber guard in Task 1.2.1c. Gated stories (hard dependency on Story 1.1.4): 1.1.2, 1.1.3, 1.2.1, 2.3.1, 2.3.2, 2.4.2, 4.1.3, 5.1.1.
 - [x] DECIDED (Repair pass 6): journal filename mapping. Rules and home are in Story 1.2.2 ("Journal filename rules"): creation uses `JournalUtils.formatDateForJournal(date)` (`YYYY_MM_DD`, VERIFIED `outliner/JournalUtils.kt:32`), discovery reuses any existing stem matching `^(\d{4})[-_](\d{2})[-_](\d{2})$` (VERIFIED regex, `JournalUtils.kt:12`), and a graph whose `config.edn` declares a non-default journal file-name format is `PlatformUnsupported("journal format")` off-graph (no code in `kmp/src/commonMain` reads such a setting today, grep for `file-name-format` finds none, so the guard is a conservative stop, not a feature). Still to be PROVEN, not assumed: Task 1.2.2d (loader round trip) and Spike 0.1.1 (no duplicate journal).
 - [ ] `RoundTripGuard` strictness: what fraction of pages in a REAL exported graph satisfy `serialize(parse(file)) == file`? Go/no-go threshold ~95%. If it misses, the guard is relaxed to "structure-stable" BEFORE any writer is built; otherwise most copies fail per page and most shares queue. — GATES Stories 2.3.1, 2.3.2 (off-graph path) and 4.1.3 — owner: Spike 0.1.4 (Task 1.1.4d now only adds the permanent fixture tests)
@@ -129,7 +129,7 @@ Phase 2: 2.1.1 GraphLocator+Lock ─► 2.1.2 readiness predicate (in-flight swi
               │                                                            │
 Phase 3: 3.1 Selection VM ─► 3.2 Picker UI ─► 3.3 DryRun/Progress/Result ─► 3.4 Entry points + delete old
                                                     ▲ needs 2.4, 2.5
-Phase 4: 4.1 CaptureTargetSettings + JournalAppender (needs 1.1, 2.1, 2.3) ─► 4.2 Android overlay (4.2.2 Direct Share = OPTIONAL, post-MVP)
+Phase 4: 4.1 CaptureTargetSettings + JournalAppender (needs 1.1, 2.1, 2.3) ─► 4.2 Android overlay (4.2.2 Direct Share = Gate 2, ordered late)
                                                                          └─► 4.3 Desktop popup
          4.4 ShareInbox (needs 2.1.2) ─► 4.2, 4.3
          4.5 iOS/Web pull-copy (needs 2.3.2 ActiveTargetWriter, 2.4, 3.1-3.3, Spike 0.1.5; scheduled AFTER the Android/Desktop core slice; copies never queue)
@@ -138,32 +138,31 @@ Phase 5: 5.1 Large-graph/regression/wasm/iOS compile ─► docs
 
 ---
 
-## Scope Cut Line and derived scope
+## Release gates, ordering and derived scope
 
-The original 3-6 week appetite is SUPERSEDED. Effort is now expressed in tokens, cost classes and agent waves (ESTIMATION.md); human-time figures are retired. See "Effort estimate" below for the Gate 1 and full-scope token totals against the proposed budget (OWNER CONFIRMATION NEEDED). The task count is not an effort measure: there are about 150 `##### Task` headings, which are checklist granularity, while the schedulable unit is the story. The plan states the cut line now rather than discovering it late. Release gates are mirrored in requirements.md.
+The full scope is pursued; there is no cut line. Effort is expressed in price-weighted cost units (CU), cost classes and agent waves (ESTIMATION.md); human-time figures are retired. See "Effort estimate" below for the Gate 1 and full-scope CU totals (informational size band, not a budget gate). The task count is not an effort measure: there are about 150 `##### Task` headings, which are checklist granularity, while the schedulable unit is the story. Gates ORDER the work for risk and sequencing (spikes first, riskiest stories early); they do not shrink scope. Release gates are mirrored in requirements.md.
 
 **Release gates (Repair pass 6)**
 - **Gate 0**: Phase 0 spikes 0.1.1-0.1.5 and the go/no-go checkpoint. Only this is authorised now.
 - **Gate 1 (core slice, first release)**: the pure merge function (Stories 1.1.x, 1.2.x); Desktop + Android push copy (Epics 2.1-2.4 except 2.4.3 which may trail, Story 2.5.1 Undo, Stories 3.1.1, 3.2.1, 3.3.1, 3.4.1, 3.4.2); the default capture graph (Story 4.1.1, 4.1.2); the share-target graph override (4.1.3, 4.2.1, 4.3.1); a minimal share inbox that queues and counts failed shares (Story 4.4.1 base: enqueue, drain, indicator, atomic persistence) because REQ-17 forbids silent loss, WITH its rescue actions Copy text / Discard / Retry now (Task 4.4.1d) and the persistent Android indicator; `ConflictReviewScreen` (Story 3.3.2), because Gate 1 flags conflicts and must let the user resolve them; Phase 5 tests and docs. (Repair pass 7, 2026-10-08: Story 3.3.2 and Task 4.4.1d moved INTO Gate 1 from Gate 2 so that no Gate 1 surface dead-ends, UX-30.) Undo and the minimal inbox are in Gate 1 because requirements REQ-16/REQ-17 need them, not because the core definition names them (flagged for owner confirmation).
-- **Gate 2 (requirement-complete; committed, NOT on the cut list)**: linked pages and assets UI and engine (Story 2.4.3, REQ-5); last-used copy destination (Task 3.1.1d); the `UNASSIGNED` inbox slot (no-graphs-configured shares, ADR-004, a small slice of Story 4.4.1).
+- **Gate 2 (requirement-complete; committed)**: linked pages and assets UI and engine (Story 2.4.3, REQ-5); last-used copy destination (Task 3.1.1d); the `UNASSIGNED` inbox slot (no-graphs-configured shares, ADR-004, a small slice of Story 4.4.1); Android Direct Share shortcuts (Story 4.2.2, UX S14), a normal story ordered late because it depends on Android system-UI behavior that only a device pass can confirm.
 - **Gate 1 variant of S2 (picker)**: Gate 1 ships the picker WITHOUT the "Include linked pages" toggle and its assets sub-toggle (hidden, not disabled: there is no explanation a Gate 1 user could act on), and WITHOUT a preselected last-used destination (the Destination control starts empty; helper line "Choose a destination"). Everything else in S2 (search, filters, select-all, counters, Review) is Gate 1. Task 3.2.1 therefore renders the two controls behind a `gate2LinkedPages` flag that is off until Story 2.4.3 lands; no extra cost (the flag is part of Story 3.2.1). (The Android Back confirmation toast, Task 4.2.1h, is in Gate 1 with the Back auto-save it explains.)
-- **Gate 3 (iOS/Web pull-copy, user decision 4, conditional on the demand criterion in requirements.md and Spike 0.1.5)**: Epic 4.5.
-- **Optional / cut list**: below.
+- **Gate 3 (iOS/Web pull-copy, user decision 4, sequenced by Spike 0.1.5 results)**: Epic 4.5. A platform or graph kind that fails Spike 0.1.5 is shown with the S3 disabled-with-reason state; that is a spike outcome, not a scope decision.
 
-**iOS/Web pull-copy placement**: Epic 4.5 is scheduled AFTER the core slice (below) and after the Phase 2 mid-point checkpoint, in parallel with Phase 4 where agent waves allow. Cost: 3 stories, about 520k raw tokens (about 9% of the full-scope raw total; see the token table in "Effort estimate"); it reuses `mergePage`, `StagedPage`, `PageMergeService`, `ActiveTargetWriter`, the picker/dry-run/result/undo UI, so new code is the source reader, the capability type, the direction variant and its tests.
+**iOS/Web pull-copy placement**: Epic 4.5 is scheduled AFTER the core slice (below) and after the Phase 2 mid-point checkpoint, in parallel with Phase 4 where agent waves allow. Cost: 3 stories, about 520k raw tokens (about 9% of the full-scope raw total; see the table in "Effort estimate"); it reuses `mergePage`, `StagedPage`, `PageMergeService`, `ActiveTargetWriter`, the picker/dry-run/result/undo UI, so new code is the source reader, the capability type, the direction variant and its tests.
 
-**Core slice (Gate 1, must ship)**: see the Gate 1 definition above. Mid-point checkpoint: end of Phase 2 (go/no-go on whether Phases 3-4 fit the budget), in addition to the Phase 0 checkpoint. **Numeric overrun threshold (tokens)**: at the end of Phase 2, compare tokens actually spent on Phases 0-2 (all agents, including review and verify) with the token-table value for the stories built: 3,075k raw x 1.75 = about 5.4M verified (Story 2.4.3 deferred to Gate 2, so excluded). If actual spend exceeds that by more than 25% (above about 6.7M), STOP and re-plan: recompute Phases 3-4 with the measured ratio of actual to estimated tokens, report the new Gate 1 total to the owner, and take the cut-or-extend decision (cut deeper, or raise the token budget explicitly) before starting Phase 3. At 25% or less over, continue and record the ratio. Actual tokens come from the session/task-notification token counts (not invented here).
+**Core slice (Gate 1)**: see the Gate 1 definition above. Mid-point checkpoint: end of Phase 2, in addition to the Phase 0 checkpoint. **Overrun checkpoint (informational)**: at the end of Phase 2, compare CU actually spent on Phases 0-2 (all agents, including review and verify) with the table value for the stories built: 2,850k CU before the multiplier, x 1.75 = about 5.0M CU expected (Story 2.4.3 is in Gate 2, so excluded). If actual spend exceeds that by more than 25% (above about 6.2M CU), pause and report the delta and its cause (a wrong estimate or a real surprise), recompute Phases 3-4 with the measured ratio of actual to estimated CU, and continue; this is a recalibration, not a scope decision. At 25% or less over, continue and record the ratio. Actual spend comes from the session/task-notification token counts converted with the stated cache assumption (not invented here).
 
-**Cut first, in order (all optional, nothing else depends on them)**: Story 4.2.2 Direct Share shortcuts (UX S14); then, as a DOWN-SCOPING of iOS/Web pull-copy (Epic 4.5, see below), never as a silent drop. REMOVED from this list in Repair pass 6: `ConflictReviewScreen` (3.3.2) and the pending-shares rescue actions "Copy text"/"Discard" (S13), because they back stated requirements ("true conflicts flagged", "never silent loss"); MOVED INTO GATE 1 in Repair pass 7 (they are not cuttable and Gate 1 would dead-end without them). The linked-page closure UI (`Depth1` toggle) is NOT silently cuttable either: REQ-5 puts linked pages/assets in scope, so cutting it needs an amendment to requirements.md; Story 2.4.3 may ship engine-first within Gate 2. Pull-copy down-scoping order: (a) the graph-switcher row entry point (Task 4.5.3e) and the journal date-range filter, (b) the second of the two platforms (ship pull-copy on whichever platform passes Spike 0.1.5 and compiles first), (c) Story 4.5.3 mid-run Retry-failed polish beyond the S6 default. If after (a)-(c) the token budget is still exceeded, the iOS/Web destination chooser reverts to "no source available" with Close; that reversal contradicts the v1 decision and needs the user's explicit call.
+**Ordering for risk (no scope is dropped)**: spikes first (0.1.2, then 0.1.4, 0.1.1, 0.1.3, 0.1.5); then the pure core; then the `GraphManager` lock PR as its own PR; then the writers; then UI; then the share target; then the late, device-dependent items in this order: Story 4.2.2 Direct Share (Android system UI), Epic 4.5 iOS/Web pull-copy (gated by Spike 0.1.5 per platform), and within Epic 4.5 the graph-switcher row entry point (Task 4.5.3e) and mid-run Retry polish last. The linked-page closure UI (`Depth1` toggle) is REQ-5 scope in Gate 2; Story 2.4.3 may land engine-first. `ConflictReviewScreen` (3.3.2) and the pending-shares rescue actions (S13) are Gate 1 because they back stated requirements ("true conflicts flagged", "never silent loss").
 
-**Derived / optional scope (no explicit requirement line; each is justified by an NFR or a requirement it supports)**:
+**Derived scope (no explicit requirement line; each is justified by an NFR or a requirement it supports)**:
 
 | Item | Status | Derives from |
 |---|---|---|
 | Interrupted-copy Resume (UX S9), Task 3.3.1c Android application-scope host | Derived | 8 000-page NFR (copies outlive an activity) |
-| Conflict review screen (3.3.2), conflict badge | Committed, Gate 1 (moved from Gate 2 in Repair pass 7; NOT cuttable) | "true conflicts flagged"; UX-30 no dead ends |
+| Conflict review screen (3.3.2), conflict badge | Committed, Gate 1 (moved from Gate 2 in Repair pass 7) | "true conflicts flagged"; UX-30 no dead ends |
 | Pending-shares indicator and rescue actions Copy text/Discard/Retry now (S13), both Gate 1 (Repair pass 7); the `UNASSIGNED` slot is Gate 2 | Committed | REQ-17 / Observability: "visible failure state rather than silent loss"; UX-30 |
-| Story 4.2.2 Direct Share (S14) | Optional / cut line | None |
+| Story 4.2.2 Direct Share (S14) | Gate 2, late-ordered (device-dependent) | Share-target discoverability (UX S14) |
 | Last-used copy destination (UX S3) | Gate 2, Task 3.1.1d | UX S3; small setting `copy_last_destination_graph_id` |
 | Staging-dir marker sweep, `MergeManifest` | Derived | Risk Control (undo) + 8 000-page NFR |
 
@@ -183,14 +182,13 @@ The original 3-6 week appetite is SUPERSEDED. Effort is now expressed in tokens,
 | 0.1.4 `RoundTripGuard` pass rate | P >= 95% on a REAL graph under the exact guard, or under "structure-stable" after relaxing | **P < 95% exact, relax and re-measure.** **If structure-stable is also < 95%: RE-PLAN** (re-plan trigger R2): off-graph writes are not viable for this graph shape; copy/share require an active target, ADR-001 is Rejected, Epics 2.3.1/4.1.3/4.5 scope and the "choose a non-active graph" half of the feature are redone. Synthetic-only result = UNVERIFIED, checkpoint stays open until a real graph is measured |
 | 0.1.1 real-FS reconcile + Android device pass | JVM test green (0 `DiskConflict`, no duplicate journal, `FileRegistry` state correct) AND device pass recorded | **Re-plan trigger R1**: try the `FileRegistry` own-write mark (ADR-001 fallback); if that fails too, off-graph writes are cut, the feature becomes active-target-only, ADR-001 Rejected, Epic 4.5 and Gate 1's non-active destination are re-planned |
 | 0.1.3 uuid round trip / collision | Facts recorded | Replace-with-cascade outcome makes the clobber guard (Task 1.2.1c) mandatory and amends ADR-002 before Phase 1 continues; not a stop |
-| 0.1.5 iOS/Web read-only source | Per platform and storage kind recorded | Negative: Gate 3 is cut or narrowed for that platform with the S3 "no source available" state (not queued); a user decision that conflicts with the v1 commitment goes back to the owner; not a stop for Gate 1 |
+| 0.1.5 iOS/Web read-only source | Per platform and storage kind recorded | Negative: that platform or graph kind shows the S3 disabled-with-reason state (not queued) and its Epic 4.5 stories are re-planned around the spike result; a result that conflicts with the v1 commitment goes back to the owner as a finding; not a stop for Gate 1 |
 
-**Go decision** (owner records it as a dated note at the top of this file): GO to Phase 1 iff 0.1.1 and 0.1.4 pass (R1 and R2 not triggered), 0.1.2/0.1.3/0.1.5 are recorded, and the owner has answered the open items in requirements.md (primary persona/frequency, A-DEMAND thresholds; the token budget: the 2026-10-08 re-baseline answer was given against retired human-time numbers, so OWNER CONFIRMATION NEEDED: budget in tokens). NO-GO or RE-PLAN otherwise.
+**Go decision** (owner records it as a dated note at the top of this file): GO to Phase 1 iff 0.1.1 and 0.1.4 pass (R1 and R2 not triggered), 0.1.2/0.1.3/0.1.5 are recorded, and the owner has answered the open items in requirements.md (primary persona/frequency, A-DEMAND thresholds). NO-GO or RE-PLAN otherwise.
 
 **Product inputs to the Go decision (Repair pass 7; all OWNER, nothing here is measured)**:
-- **Pre-build demand probe** (cheap, runs in parallel with the spikes): the owner self-logs for 2 weeks, or does a one-off count over recent history, of (a) cross-graph page copies done by hand and (b) shares made while a non-target graph was active, with the graph switches and taps each took. Result recorded as a dated note next to the Go decision. A result near zero is the cheapest available evidence for the Freeze criterion and should prompt the owner to reconsider before spending Gate 1's roughly 8.8M tokens (likely case); thresholds are the owner's (OWNER INPUT NEEDED).
+- **Pre-build demand probe** (cheap, runs in parallel with the spikes): the owner self-logs for 2 weeks, or does a one-off count over recent history, of (a) cross-graph page copies done by hand and (b) shares made while a non-target graph was active, with the graph switches and taps each took. Result recorded as a dated note next to the Go decision. A result near zero is the cheapest available evidence for the Freeze criterion and feeds the Freeze criterion in requirements.md; thresholds are the owner's (OWNER INPUT NEEDED).
 - **Falsifiable user-value claim** (requirements.md): today a share to a non-active graph takes N graph switches (N UNMEASURED; the probe measures it); success = 0 switches and 1 tap (Save) with the default destination.
-- **Opportunity-cost line** (OWNER INPUT NEEDED): what roughly 8.8M tokens of agent spend (Gate 1 likely case) plus the owner's review attention displaces. Not invented here; the owner states it in the Go note.
 - **Android long-run host decision** (moved here from Unresolved Questions): application scope versus WorkManager for 8k-page copies is decided at Phase 1 start, not left to Story 3.3.1c. DEFAULT: application scope (SteleKitApplication-owned scope with a CoroutineExceptionHandler) plus a persisted interrupted marker and the S9 notice; switch to WorkManager only if the Epic 5.1 soak shows the process is killed mid-run in practice. Owner: implementer records the choice (or confirms the default) in this file before Task 3.3.1c starts.
 - **Wording validation** is scheduled before the Gate 1 release (see validation.md "Wording validation step"), not after Gate 2.
 
@@ -208,82 +206,108 @@ Branch `fix/graph-switch-notes-path` (11 commits ahead of `main`, VERIFIED by `g
 
 **Explicit dependency (Repair pass 7)**: the Lock PR (Task 2.1.1c) and therefore ALL of Phase 2 depend on `fix/graph-switch-notes-path` being merged to `main` first. Owner of that merge: the user. Date: none set (OWNER INPUT NEEDED: the user should either merge it, or say it will not merge soon so the lock PR can be based on the branch instead). This is a critical-path item: if it is still unmerged when Phase 1 completes, Phase 2 cannot start on the hot file and the schedule slips by the wait.
 
-## Effort estimate (Repair pass 8: re-expressed in tokens)
+## Effort estimate (Repair pass 9: price-weighted cost units, full scope)
 
-**Basis**: per `~/.claude/skills/sdd/skills/ESTIMATION.md`. Human-time figures (hours, days, weeks) are retired for this plan; the owner's 2026-10-08 instruction is that agent-executed work is costed in tokens. Cost-class bands (per worker-agent run: XS under 30k, S 30-80k, M 80-180k, L 180-300k) are **INFERRED**, not measured on implementers; recalibrate after the first real implementer run. Class midpoints used for the sums: XS 20k, S 55k, M 130k, L 240k. Each story's class was assigned from the files it touches and the exploration it needs (the old hour figures were used only as a relative-size hint, never converted by a constant). A "task" heading is a checklist item; a worker run batches adjacent tasks that touch the same files, so "2xM" means two M-sized runs. No story is L: the biggest (2.3.1, 2.3.2, 2.4.1, 2.4.2) are already split into two M runs along existing task boundaries.
+**Basis**: per `~/.claude/skills/sdd/skills/ESTIMATION.md` (updated 2026-10-09). Human-time figures are retired. Cost is expressed in price-weighted **cost units**, CU = in + 1.25*cache_write + 0.1*cache_read + 5*out (weights INFERRED from public price ratios; check current pricing before converting to dollars). The full scope is pursued; the figures below are tracking values and a size band, not a budget gate.
+
+Raw-token estimates and cost-class assignments are carried over unchanged from Repair pass 8. Cost-class bands (per worker-agent run: XS under 30k, S 30-80k, M 80-180k, L 180-300k; midpoints XS 20k, S 55k, M 130k, L 240k) are **INFERRED**, not measured on implementers. A "task" heading is a checklist item; a worker run batches adjacent tasks that touch the same files, so "2xM" means two M-sized runs. No story is L.
+
+**Conversion assumptions (INFERRED, recalibrate after the first implementer run)**:
+- Output share by story nature: implementation runs about 12%, review/test-only runs about 7% (Story 1.1.2 property tests, Story 5.1.1 large-graph resilience tests), doc/ADR-heavy runs about 25% (Story 5.1.2 docs). This mix is INFERRED from the ESTIMATION.md defaults (output 10-15% for implementation, 5-10% for review); no measured split exists, because the harness reports one undifferentiated `subagent_tokens` total.
+- Input split: 70% cache reads, 5% cache writes, 25% fresh input (INFERRED; repair and review loops mostly re-read the same plan and repo context).
+- Per raw token this gives CU in closed form, with output share o, CU = raw x (0.3825 x (1 - o) + 5 x o), which is 0.937 x raw at o = 12%, 0.706 x raw at o = 7%, and 1.537 x raw at o = 25%. Per-row CU below is computed with that formula and rounded to the nearest 1k; totals are summed from the unrounded values with awk over this table.
 
 ### Gate 1 core slice (includes all of Phase 0)
 
-| Story | tasks | cost class | est. tokens (raw) | wall-clock blocker |
-|---|---|---|---|---|
-| 0.1.1 real-FS reconcile + device | 3 | M+S | 185k | Android real-device pass |
-| 0.1.2 SAF atomic replace | 2 | S | 55k | Android SAF device check |
-| 0.1.3 uuid round trip / collision | 3 | S | 55k | - |
-| 0.1.4 RoundTripGuard pass rate on a real graph | 3 | M | 130k | owner supplies a real graph |
-| 0.1.5 iOS/Web read-only probe | 2 | 2xS | 110k | iOS/Web browser and device checks |
-| 1.1.1 merge function | 5 | M+S | 185k | - |
-| 1.1.2 property tests | 3 | M | 130k | - |
-| 1.1.3 converters/rendering | 3 | S | 55k | - |
-| 1.1.4 identity + splicer + guard | 4 | 2xM | 260k | - |
-| 1.2.1 uuid remap | 3 | M | 130k | - |
-| 1.2.2 `PageFileResolver` | 5 | M | 130k | - |
-| 2.1.1 locator + write lock (own PR) | 3 | M+S | 185k | merge of `fix/graph-switch-notes-path` first |
-| 2.1.2 router readiness | 3 | M | 130k | - |
-| 2.2.1 staging dir | 3 | S | 55k | - |
-| 2.2.2 manifest | 2 | S | 55k | - |
-| 2.3.1 `MarkdownTargetWriter` | 5 | 2xM | 260k | - |
-| 2.3.2 `ActiveTargetWriter` + router + contract | 5 | 2xM | 260k | - |
-| 2.3.3 capabilities | 2 | S | 55k | - |
-| 2.4.1 bounded queries + SQLDelight regen | 4 | 2xM | 260k | - |
-| 2.4.2 plan/apply | 7 | 2xM | 260k | - |
-| 2.5.1 undo | 2 | M | 130k | - |
-| 3.1.1 selection VM (incl. 3.1.1d, Gate 2) | 5 | M | 130k | - |
-| 3.2.1 picker | 6 | 2xM | 260k | - |
-| 3.3.1 dry-run/progress/result | 5 | 2xM | 260k | - |
-| 3.3.2 conflict review | 3 | M | 130k | - |
-| 3.4.1 entry points | 3 | S | 55k | - |
-| 3.4.2 delete `GraphMergeService` | 2 | XS | 20k | - |
-| 4.1.1 capture settings + resolver | 3 | S | 55k | - |
-| 4.1.2 `JournalAppender` extract | 3 | S | 55k | - |
-| 4.1.3 append to non-active graph | 3 | M | 130k | - |
-| 4.2.1 Android overlay | 8 | 2xM | 260k | Android device pass (Epic 5.1) |
-| 4.3.1 Desktop chooser | 5 | M | 130k | - |
-| 4.4.1 share inbox (base + rescue actions) | 4 | 2xM | 260k | - |
-| 5.1.1 large-graph/resilience | 3 | M | 130k | soak run |
-| 5.1.2 docs | 2 | XS | 20k | - |
-| 5.1.3 Bazel check + log-line contract | 2 | S | 55k | - |
+| Story | tasks | cost class | est. raw tokens | assumed output share | est. CU | wall-clock blocker |
+|---|---|---|---|---|---|---|
+| 0.1.1 real-FS reconcile + device | 3 | M+S | 185k | 12% | 173k | Android real-device pass |
+| 0.1.2 SAF atomic replace | 2 | S | 55k | 12% | 52k | Android SAF device check |
+| 0.1.3 uuid round trip / collision | 3 | S | 55k | 12% | 52k | - |
+| 0.1.4 RoundTripGuard pass rate on a real graph | 3 | M | 130k | 12% | 122k | owner supplies a real graph |
+| 0.1.5 iOS/Web read-only probe | 2 | 2xS | 110k | 12% | 103k | iOS/Web browser and device checks |
+| 1.1.1 merge function | 5 | M+S | 185k | 12% | 173k | - |
+| 1.1.2 property tests | 3 | M | 130k | 7% | 92k | - |
+| 1.1.3 converters/rendering | 3 | S | 55k | 12% | 52k | - |
+| 1.1.4 identity + splicer + guard | 4 | 2xM | 260k | 12% | 244k | - |
+| 1.2.1 uuid remap | 3 | M | 130k | 12% | 122k | - |
+| 1.2.2 PageFileResolver | 5 | M | 130k | 12% | 122k | - |
+| 2.1.1 locator + write lock (own PR) | 3 | M+S | 185k | 12% | 173k | merge of `fix/graph-switch-notes-path` first |
+| 2.1.2 router readiness | 3 | M | 130k | 12% | 122k | - |
+| 2.2.1 staging dir | 3 | S | 55k | 12% | 52k | - |
+| 2.2.2 manifest | 2 | S | 55k | 12% | 52k | - |
+| 2.3.1 MarkdownTargetWriter | 5 | 2xM | 260k | 12% | 244k | - |
+| 2.3.2 ActiveTargetWriter + router + contract | 5 | 2xM | 260k | 12% | 244k | - |
+| 2.3.3 capabilities | 2 | S | 55k | 12% | 52k | - |
+| 2.4.1 bounded queries + SQLDelight regen | 4 | 2xM | 260k | 12% | 244k | - |
+| 2.4.2 plan/apply | 7 | 2xM | 260k | 12% | 244k | - |
+| 2.5.1 undo | 2 | M | 130k | 12% | 122k | - |
+| 3.1.1 selection VM | 5 | M | 130k | 12% | 122k | - |
+| 3.2.1 picker | 6 | 2xM | 260k | 12% | 244k | - |
+| 3.3.1 dry-run/progress/result | 5 | 2xM | 260k | 12% | 244k | - |
+| 3.3.2 conflict review | 3 | M | 130k | 12% | 122k | - |
+| 3.4.1 entry points | 3 | S | 55k | 12% | 52k | - |
+| 3.4.2 delete GraphMergeService | 2 | XS | 20k | 12% | 19k | - |
+| 4.1.1 capture settings + resolver | 3 | S | 55k | 12% | 52k | - |
+| 4.1.2 JournalAppender extract | 3 | S | 55k | 12% | 52k | - |
+| 4.1.3 append to non-active graph | 3 | M | 130k | 12% | 122k | - |
+| 4.2.1 Android overlay | 8 | 2xM | 260k | 12% | 244k | Android device pass (Epic 5.1) |
+| 4.3.1 Desktop chooser | 5 | M | 130k | 12% | 122k | - |
+| 4.4.1 share inbox (base + rescue actions) | 4 | 2xM | 260k | 12% | 244k | - |
+| 5.1.1 large-graph/resilience | 3 | M | 130k | 7% | 92k | soak run |
+| 5.1.2 docs | 2 | XS | 20k | 25% | 31k | - |
+| 5.1.3 Bazel check + log-line contract | 2 | S | 55k | 12% | 52k | - |
 
-Gate 2 additions (raw): Story 2.4.3 linked pages/assets (3 tasks, M, 130k); Task 3.1.1d last-used destination (XS, 20k); inbox `UNASSIGNED` slot in Story 4.4.1 (XS, 20k). Gate 3 (Epic 4.5, raw): 4.5.1 (6 tasks, M, 130k), 4.5.2 (5 tasks, M, 130k; wall-clock blocker iOS/Web checks from Spike 0.1.5), 4.5.3 (7 tasks, 2xM, 260k). Optional, excluded: Story 4.2.2 Direct Share (2 tasks, S, 55k). Task 3.1.1d is counted in Story 3.1.1's row above, so the Gate 1 row total includes 20k that Gate 2 owns; this is within the INFERRED error and kept for simplicity.
+**Gate 2 additions** (Direct Share 4.2.2 is a normal Gate 2 story, ordered late because it needs an Android device pass)
 
-### Totals (tokens, all agents including review and verify)
+| Story | tasks | cost class | est. raw tokens | assumed output share | est. CU | wall-clock blocker |
+|---|---|---|---|---|---|---|
+| 2.4.3 linked pages/assets | 3 | M | 130k | 12% | 122k | - |
+| 3.1.1d last-used destination | 1 | XS | 20k | 12% | 19k | - |
+| 4.4.1 UNASSIGNED slot | 1 | XS | 20k | 12% | 19k | - |
+| 4.2.2 Direct Share shortcuts | 2 | S | 55k | 12% | 52k | Android device pass |
 
-| Scope | raw (sum of table) | low (x1.5) | likely (x1.75) | high (x2) |
-|---|---|---|---|---|
-| Phase 0 only (authorised now) | 535k | 0.80M | 0.94M | 1.07M |
-| Phases 0-2 as built for Gate 1 (checkpoint value) | 3,075k | 4.61M | 5.38M | 6.15M |
-| **Gate 1 core slice incl. Phase 0** | **5,025k** | **7.5M** | **8.8M** | **10.1M** |
-| Gate 2 additions | 170k | 0.26M | 0.30M | 0.34M |
-| Gate 3 (Epic 4.5) | 520k | 0.78M | 0.91M | 1.04M |
-| **Full scope (Gates 1-3; excludes optional 4.2.2)** | **5,715k** | **8.6M** | **10.0M** | **11.4M** |
+**Gate 3 (Epic 4.5)**
 
-Verification multiplier x1.5 (low) / x1.75 (likely) / x2 (high) is applied to the raw sums (spec-compliance and code-quality review per story, `6-verify` layers, CI reruns). Low and high therefore reflect the multiplier range only; the INFERRED class bands add further uncertainty not shown here.
+| Story | tasks | cost class | est. raw tokens | assumed output share | est. CU | wall-clock blocker |
+|---|---|---|---|---|---|---|
+| 4.5.1 pull-copy source reader/capability | 6 | M | 130k | 12% | 122k | - |
+| 4.5.2 pull-copy engine wiring | 5 | M | 130k | 12% | 122k | iOS/Web checks from Spike 0.1.5 |
+| 4.5.3 pull-copy UI | 7 | 2xM | 260k | 12% | 244k | - |
 
-**Planning overhead already spent (VERIFIED from task-notification `subagent_tokens`)**: about 3.5M subagent tokens across 29 agent runs, plus about 50k on the coordinator thread. This is sunk and NOT part of the budget below. Including it, Gate 1 likely is about 12.3M and full scope likely about 13.6M lifetime.
+Task 3.1.1d is counted in Story 3.1.1's Gate 1 row and again as its own Gate 2 row (20k raw, about 19k CU), so the full-scope total double-counts it; this is within the INFERRED error and kept for simplicity.
 
-**Appetite budget (Large band, 3-15M; OWNER CONFIRMATION NEEDED: budget in tokens)**: proposed **10M tokens for Gate 1** (just above the 8.8M likely, at the high end of the multiplier range 10.1M) and **12M tokens for Gates 1-3 combined** (full high 11.4M). Gates 2 and 3 remain follow-on spends gated by the A-DEMAND criterion. The 2026-10-08 re-baseline answer ("11-16 weeks") was given against human-time numbers that are now retired, so it does not carry over to this budget.
+### Totals (CU, all agents including review and verify)
+
+Raw sums and CU sums were recomputed with awk over the table rows above (not from memory). The verification multiplier x1.5 / x1.75 / x2 (spec-compliance and code-quality review per story, `6-verify` layers, CI reruns) is applied to the CU sum.
+
+| Scope | raw tokens | CU before multiplier | low (x1.5) | likely (x1.75) | high (x2) |
+|---|---|---|---|---|---|
+| Phase 0 only (authorised now) | 535k | 501k | 0.75M | 0.88M | 1.00M |
+| Phases 0-2 as built for Gate 1 (checkpoint value) | 3,075k | 2,850k | 4.28M | 4.99M | 5.70M |
+| **Gate 1 core slice incl. Phase 0** | **5,025k** | **4,658k** | **6.99M** | **8.15M** | **9.32M** |
+| Gate 2 additions (incl. Direct Share 4.2.2) | 225k | 211k | 0.32M | 0.37M | 0.42M |
+| Gate 3 (Epic 4.5) | 520k | 487k | 0.73M | 0.85M | 0.97M |
+| **Full scope (Gates 1-3)** | **5,770k** | **5,356k** | **8.03M** | **9.37M** | **10.71M** |
+
+Low and high reflect the multiplier range only; the INFERRED class bands, the output-share mix and the cache split add further uncertainty not shown here. For comparison, Repair pass 8 quoted the same raw tokens as 8.8M (Gate 1 likely) and 10.0M (full scope, excluding Direct Share) of undifferentiated tokens; weighting by price lowers the Gate 1 likely figure to 8.15M CU because most input is assumed cached, while adding Direct Share raises the full-scope raw sum by 55k.
+
+**Size band (informational)**: Large (3-15M CU). Gate 1 likely 8.15M CU, full scope likely 9.37M CU. No action follows from the band; scope is not conditional on it.
+
+**Planning overhead already spent (VERIFIED from task-notification `subagent_tokens`)**: about 3.5M subagent tokens across 29 agent runs, plus about 50k on the coordinator thread. The harness gives raw totals only, so it is not converted to CU here. It is sunk and not part of the table above.
 
 **Critical path in agent waves (INFERRED; Gate 1)**: 14 waves.
 1. Wave 1-2: Phase 0. Spikes 0.1.2, 0.1.3, 0.1.4, 0.1.5 run concurrently; 0.1.1 follows 0.1.4 (guard strictness first). Then the Go checkpoint (wall-clock blocker).
 2. Wave 3: Stories 1.1.1, 1.1.4, 1.2.2 concurrently. Wave 4: 1.1.2, 1.1.3, 1.2.1 concurrently (all gated on 1.1.4).
-3. Wave 5: 2.1.1 (lock PR, own PR after the notes-path merge), 2.2.1, 2.2.2, 2.3.3, 2.4.1 concurrently. Wave 6: 2.1.2. Wave 7: 2.3.1 and 2.3.2 concurrently (port defined first in 2.3.1a). Wave 8: 2.4.2. Wave 9: 2.5.1. Then the Phase 2 token checkpoint.
+3. Wave 5: 2.1.1 (lock PR, own PR after the notes-path merge), 2.2.1, 2.2.2, 2.3.3, 2.4.1 concurrently. Wave 6: 2.1.2. Wave 7: 2.3.1 and 2.3.2 concurrently (port defined first in 2.3.1a). Wave 8: 2.4.2. Wave 9: 2.5.1. Then the Phase 2 overrun checkpoint.
 4. Wave 10: 3.1.1, 4.1.1, 4.1.2. Wave 11: 3.2.1, 3.3.1, 4.1.3, 4.3.1, 4.4.1. Wave 12: 3.3.2, 3.4.1, 4.2.1. Wave 13: 3.4.2.
 5. Wave 14: Phase 5 (5.1.1, 5.1.2, 5.1.3 concurrently), then the `6-verify` pass.
-Serial chain that cannot be fanned out: 2.1.1, 2.1.2, 2.3.2, 2.4.2, 3.3.1, 5.1.1 (shared `GraphManager`/router files and the plan/apply interfaces). Parallel speed-up beyond the wave grouping above is to be measured at the Phase 2 checkpoint, not assumed.
+Serial chain that cannot be fanned out: 2.1.1, 2.1.2, 2.3.2, 2.4.2, 3.3.1, 5.1.1 (shared `GraphManager`/router files and the plan/apply interfaces). Gate 2 and Gate 3 stories fan out as further waves after Gate 1 (Epic 4.5 can overlap Wave 10 onward once 2.4 and 3.1-3.3 exist). Parallel speed-up beyond this grouping is to be measured at the Phase 2 checkpoint, not assumed.
 
-**Overrun threshold**: stop and re-plan when tokens spent exceed the table value for the stories done by more than 25% (see "Scope Cut Line", end-of-Phase-2 checkpoint: about 5.4M verified expected for Phases 0-2, threshold about 6.7M). The same +25% rule applies to the budget as a whole (Gate 1: 10M x 1.25 = 12.5M hard stop requires an explicit owner decision).
+**Overrun checkpoint (informational)**: if CU spent runs more than 25% over the table value for the completed stories, pause and report the delta and its cause (a wrong estimate or a real surprise). At the end of Phase 2 the expected value is about 4.99M CU (likely), so the report triggers above about 6.2M CU. The report recalibrates the remaining rows with the measured ratio; it does not reduce scope.
 
-**Wall-clock blockers (the only calendar time in this plan; owners in brackets)**
-- Owner decisions (OWNER): primary persona and frequency; A-DEMAND expand/freeze thresholds; opportunity-cost line; Android long-run host default (application scope, plan Phase 0 checkpoint); Gate 1 scope confirmation (Undo, minimal inbox, ConflictReview, rescue actions: confirmed 2026-10-08, restated for the token budget); token budget confirmation.
+**Wall-clock blockers (the only calendar time in this plan; owners in parentheses)**
+- Owner decisions and inputs (OWNER): primary persona and frequency; A-DEMAND expand/freeze thresholds; Android long-run host default (application scope, plan Phase 0 checkpoint). Gate 1 contents (Undo, minimal inbox, ConflictReview, rescue actions) were confirmed by the owner on 2026-10-08.
 - 2-week owner self-log demand probe (OWNER; observation window, runs in parallel with the spikes).
 - Android real-device pass for Spike 0.1.1 (OWNER, needs a device).
 - Spike 0.1.2 SAF device check (OWNER, needs a device with a SAF-backed graph).
@@ -294,9 +318,11 @@ Duration is the agent-wave critical path above plus the longest chain of these b
 
 **Staffing assumption**: waves assume parallel worker agents on independent stories, with review and CI iteration folded into the x1.5-2 multiplier.
 
+**Basis note**: bands and weights INFERRED; recalibrate after the first implementer run.
+
 ## Phase 0: Spikes (the first and ONLY authorised work before the go/no-go checkpoint; scoped by cost class in "Effort estimate", not by time; output = test + note appended to the ADR)
 
-**Run order**: Spike 0.1.2 first (its answer sizes the Android story and the Scope Cut Line), then 0.1.4 (determines guard strictness before any writer exists), 0.1.1, 0.1.3, 0.1.5 (iOS/Web read-only source access; parallelisable with 0.1.3). All five are authorised now; nothing in Phase 1 or later is started until the "Phase 0 checkpoint" decision is recorded. Throw-away spike code (Tasks 0.1.4a, 0.1.5a) is not production code and is replaced in Phase 1.
+**Run order**: Spike 0.1.2 first (its answer sizes the Android story and the gate ordering), then 0.1.4 (determines guard strictness before any writer exists), 0.1.1, 0.1.3, 0.1.5 (iOS/Web read-only source access; parallelisable with 0.1.3). All five are authorised now; nothing in Phase 1 or later is started until the "Phase 0 checkpoint" decision is recorded. Throw-away spike code (Tasks 0.1.4a, 0.1.5a) is not production code and is replaced in Phase 1.
 
 ### Epic 0.1: Verify unverified architecture assumptions
 **Goal**: Convert the two architecture-research INFERRED claims and the UUID round-trip gap into executable evidence before building on them.
@@ -805,7 +831,7 @@ Original specification: add to `kmp/src/commonMain/sqldelight/.../SteleDatabase.
 ##### Task 3.3.1d: `CopyResultDialog` with retry/undo/conflicts actions
 ##### Task 3.3.1e: Robolectric tests for wording, disabled commit, result actions
 
-#### Story 3.3.2: Review conflicts (Gate 1 since Repair pass 7, COMMITTED, not on the cut list: it backs the requirement "true conflicts flagged" and Gate 1 already flags conflicts)
+#### Story 3.3.2: Review conflicts (Gate 1 since Repair pass 7, COMMITTED: it backs the requirement "true conflicts flagged" and Gate 1 already flags conflicts)
 **As a** user, **I want** to find flagged conflict blocks after a copy, **so that** I can resolve them in my own time.
 **Acceptance Criteria**:
 - List and jump.
@@ -931,7 +957,7 @@ Original specification: add to `kmp/src/commonMain/sqldelight/.../SteleDatabase.
 ##### Task 4.2.1h (Repair pass 6): Back-save confirmation toast with graph name, Undo and Change actions; resolver "checking" state; Robolectric tests for both
 ##### Task 4.2.1g: Back handler: auto-save to the shown destination, fall back to `ShareInbox` + "Queued for <graph>" message on failure; Robolectric tests for success, failure-queues, empty-text
 
-#### Story 4.2.2: Direct Share shortcuts (OPTIONAL / CUTTABLE, post-MVP; excluded from the budget; nothing else depends on it)
+#### Story 4.2.2: Direct Share shortcuts (Gate 2, ordered late: depends on Android system-UI behavior confirmed only by a device pass; nothing else depends on it)
 **As a** user, **I want** each graph in the system share sheet, **so that** I can pick the graph before the overlay.
 **Acceptance Criteria**:
 - *Given* graphs work/personal, *When* sharing text from another app, *Then* the chooser lists "Work graph" and "Personal graph" shortcuts that open `CaptureActivity` with extra `target_graph_id`, which overrides the resolver for that share only.
@@ -976,7 +1002,7 @@ Original specification: add to `kmp/src/commonMain/sqldelight/.../SteleDatabase.
 ##### Task 4.4.1a: JSON-file inbox per `GraphId` over `FileSystem`, plus the `UNASSIGNED` slot (ADR-004). **Crash-safety spec (Repair pass 6)**: one file per item `share-inbox/<graphKey>/<captureId>.json`; envelope `{ "v": 1, "captureId", "graphKey", "createdAtEpochMs", "payload": {...}, "sha256": "<hex of canonical payload bytes>" }`; write = serialize to `<name>.json.tmp` in the SAME directory, `fsync`/flush where the `FileSystem` supports it, then atomic rename over the final name (on a FileSystem without atomic rename, write `.json.tmp` and treat a leftover `.tmp` as incomplete); read verifies `v` (unknown future version -> item kept untouched and shown as "needs a newer app version", never deleted), parses, and verifies `sha256`; a failed checksum or unparseable file is MOVED to `share-inbox/_quarantine/` (never deleted) and surfaced in the S13 indicator as "1 share couldn't be read" with Copy text if the payload text is recoverable. Startup sweep removes only `.tmp` files older than 1 h and never touches `.json`. Image payloads are copied to `share-inbox/<graphKey>/<captureId>.img` with the same tmp+rename+hash before the `.json` that references them is renamed into place (so a crash leaves an orphan image, never a dangling reference). Re-keying (ADR-004) is a directory rename and is idempotent after a crash. Tests (businessTest, `FakeFileSystem` with injected failure after each step): crash after tmp write, after rename, mid-image; corrupted checksum; truncated JSON; future version; double drain; re-key crash; all end with the text recoverable and no duplicate append
 ##### Task 4.4.1b: `ShareInboxDrain` collector over `GraphManager.activeRepositorySet` / `readyGraphId` (Task 2.1.2a) wired in `StelekitAppDependencies`; waits on `awaitPendingMigration()` before draining
 ##### Task 4.4.1c: Pending indicator state + tests
-##### Task 4.4.1d (Gate 1 since Repair pass 7, COMMITTED, not on the cut list; Repair pass 6): rescue actions on queued items, backing REQ-17 ("nothing lost silently"): per item **Copy text** (to clipboard; works even when the target graph no longer exists) and **Discard** (confirm showing the first 80 characters; only after the user has had the chance to Copy text), plus Retry now. Semantics: each item row is one merged node "Queued share for Work graph: 'meeting notes...', Today 09:14" with `customActions` Copy text / Discard / Retry now (labels include graph name); the panel count is a polite live region; focus moves to the next item after Discard; 200% font scale wraps; RTL mirrors; Web keyboard Tab/Enter. Chip host decision (revised Repair pass 7): Desktop near the graph switcher; Android shows a persistent queued badge (count plus text, not colour only) on the graph-switcher entry in the sidebar/drawer whenever the inbox has items, in addition to Settings > Capture and the overlay's own queued row, and an app-start notice (a snackbar once per cold start: "2 shares are queued for Work graph" with a View action) so a share to a graph that never drains cannot go unnoticed. Robolectric tests for actions, semantics, the badge and the app-start notice
+##### Task 4.4.1d (Gate 1 since Repair pass 7, COMMITTED; Repair pass 6): rescue actions on queued items, backing REQ-17 ("nothing lost silently"): per item **Copy text** (to clipboard; works even when the target graph no longer exists) and **Discard** (confirm showing the first 80 characters; only after the user has had the chance to Copy text), plus Retry now. Semantics: each item row is one merged node "Queued share for Work graph: 'meeting notes...', Today 09:14" with `customActions` Copy text / Discard / Retry now (labels include graph name); the panel count is a polite live region; focus moves to the next item after Discard; 200% font scale wraps; RTL mirrors; Web keyboard Tab/Enter. Chip host decision (revised Repair pass 7): Desktop near the graph switcher; Android shows a persistent queued badge (count plus text, not colour only) on the graph-switcher entry in the sidebar/drawer whenever the inbox has items, in addition to Settings > Capture and the overlay's own queued row, and an app-start notice (a snackbar once per cold start: "2 shares are queued for Work graph" with a View action) so a share to a graph that never drains cannot go unnoticed. Robolectric tests for actions, semantics, the badge and the app-start notice
 
 ### Epic 4.5: iOS and Web pull-style copy (v1, decision 4; scheduled after the core Android/Desktop slice)
 
@@ -1034,7 +1060,7 @@ Why pull: iOS/Web cannot address an inactive graph's files for WRITING, and the 
 - Definite results; no queue.
   - *Given* a source page that cannot be read or parsed, a grant lost mid-run, or the user switching away from D mid-run (later pages would no longer have an active target), *Then* the affected pages end `failed`/`unreadable` with a reason and "Retry failed" (re-opening D if it was switched away from), never queued, never deferred; completed pages stay and remain undoable.
 - Entry points (UX S1).
-  - *Given* the iOS/Web build, *Then* "Copy pages from..." appears (1) in the sidebar where Android/Desktop show "Copy pages to...", (2) in the command palette, and (3) in the graph switcher row overflow as "Copy pages from <graph> to <current graph>" (preselects the source; cuttable, first item in the cut list for this epic). It opens S2 with the source chooser (S3 pull variant) first.
+  - *Given* the iOS/Web build, *Then* "Copy pages from..." appears (1) in the sidebar where Android/Desktop show "Copy pages to...", (2) in the command palette, and (3) in the graph switcher row overflow as "Copy pages from <graph> to <current graph>" (preselects the source; ordered last within this epic). It opens S2 with the source chooser (S3 pull variant) first.
 - Preconditions and exits.
   - *Given* fewer than 2 registered graphs, *Then* the existing "You need a second graph to copy pages." state; *given* no readable source, the "no source available" state lists each source with its reason and offers "Re-select folder" (where re-grantable), "Add a graph", and Close.
 - Limits that are explicit, not silent.
@@ -1045,7 +1071,7 @@ Why pull: iOS/Web cannot address an inactive graph's files for WRITING, and the 
 ##### Task 4.5.3b: `direction` in `CopyPagesState`/`CopyPagesViewModel`; name-index paging, search, kind and date filters over `SourceEntry`
 ##### Task 4.5.3c: Source chooser (S3 pull variant) with disabled reasons, re-select action, "no source available" state
 ##### Task 4.5.3d: Parameterize picker/dry-run/result titles and the disabled-filter notes by direction
-##### Task 4.5.3e: Entry points: sidebar, command palette, graph-switcher row overflow (cuttable)
+##### Task 4.5.3e: Entry points: sidebar, command palette, graph-switcher row overflow (ordered last within Epic 4.5)
 ##### Task 4.5.3f: `PullCopyFlowTest` and `PullCopyViewModelTest` (businessTest), registered in `AllBusinessTests`
 ##### Task 4.5.3g (Repair pass 6): pull name-index loading state: after a source is chosen, the picker shows skeleton rows and "Reading <graph>... N files found" (determinate once the listing total is known, indeterminate before), the listing streams in pages of <= 100 and the list is usable (search over what has loaded, with "Still reading..." note) before the index completes; a Stop/Back during listing cancels cleanly; failure -> per-source `ReadError` banner with Retry/"Re-select folder"/Close. Robolectric test with a slow fake reader
 
@@ -1272,3 +1298,20 @@ Trigger: the owner's 2026-10-08 instruction that human-time estimates (hours, da
 Totals (recounted with awk over the story table): Gate 1 raw 5,025k (7.5M / 8.8M / 10.1M at x1.5 / x1.75 / x2); full scope raw 5,715k (8.6M / 10.0M / 11.4M). Planning overhead already spent (about 3.5M subagent tokens, VERIFIED from task notifications, plus about 50k coordinator) is outside the budget.
 
 OWNER INPUT NEEDED after this pass: token budget confirmation; persona/frequency; A-DEMAND thresholds; opportunity-cost line; Android long-run host default; Gate 1 confirmation; run the 2-week demand probe; merge of fix/graph-switch-notes-path before the lock PR.
+
+## Repair pass 9 (weighted cost, full scope)
+
+Trigger: the owner's standing rules, updated 2026-10-09 in `~/.claude/skills/sdd/skills/ESTIMATION.md`: (a) size in price-weighted cost units (CU = in + 1.25*cache_write + 0.1*cache_read + 5*out), never human time and never bare tokens; (b) pursue the FULL scope, with no cut lines, no "cut first" lists, no appetite or budget confirmation items and no "fits the budget" verdicts.
+
+| Change | Result |
+|---|---|
+| "Effort estimate" rebuilt | columns: Story, tasks, cost class, est. raw tokens, assumed output share, est. CU, wall-clock blocker. Raw tokens and classes reused unchanged from pass 8. Output share per story is INFERRED (implementation about 12%, review/test-only about 7%, doc-heavy about 25%); cache split is INFERRED (70% cache reads, 5% cache writes, 25% fresh input); multiplier x1.5 / x1.75 / x2 as before |
+| Totals recomputed with awk over the table | Gate 1: 6.99M / 8.15M / 9.32M CU (raw 5,025k). Full scope (Gates 1-3, now including Direct Share): 8.03M / 9.37M / 10.71M CU (raw 5,770k). Size band (informational): Large |
+| Removed | "Scope Cut Line" section (renamed "Release gates, ordering and derived scope"), the "Cut first" list and pull-copy down-scoping order, the 10M / 12M proposed budget and every budget-confirmation item, the opportunity-cost prompt, the "revert to no source available" option, Direct Share "optional / cuttable / excluded from the budget" framing |
+| Replaced with | Gate ORDERING for risk (spikes first, device-dependent items late); Story 4.2.2 Direct Share is a normal Gate 2 story ordered late; overrun checkpoint kept as informational (pause and report the delta and cause if spend runs more than 25% over the table value for completed stories; recalibrate, do not cut) |
+| Kept | Owner inputs not about downscaling (persona and frequency, A-DEMAND thresholds, Android long-run host default, merge of `fix/graph-switch-notes-path`), the wall-clock blockers list, Gate 1 contents as confirmed by the owner (Undo, minimal inbox, ConflictReview, rescue actions) |
+| Cross-file sync | requirements.md (Appetite replaced by a Size band and gate ordering), design/ux.md, validation.md, pre-mortem.md and the ADRs reworded to match |
+
+Older Repair log entries (passes 2 to 8) are kept as history and still use the retired names "Scope Cut Line", "cut list" and the token budget; this pass supersedes them.
+
+OWNER INPUT NEEDED after this pass: persona/frequency and A-DEMAND thresholds; Android long-run host default; merge of fix/graph-switch-notes-path before the lock PR; run the 2-week demand probe.
