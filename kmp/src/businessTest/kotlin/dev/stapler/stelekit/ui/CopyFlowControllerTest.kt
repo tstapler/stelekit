@@ -8,6 +8,8 @@ import dev.stapler.stelekit.db.RegistryGraphLocator
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.testsupport.StubFileSystem
 import dev.stapler.stelekit.merge.CopyRunHost
+import dev.stapler.stelekit.merge.CreatedFile
+import dev.stapler.stelekit.merge.ManifestPageEntry
 import dev.stapler.stelekit.merge.CopyRunOutcome
 import dev.stapler.stelekit.merge.DefaultCopyRunHost
 import dev.stapler.stelekit.merge.MergeId
@@ -332,6 +334,32 @@ class CopyFlowControllerTest {
         kotlinx.coroutines.delay(200)
         assertTrue(env.manifests.findInterrupted().isEmpty(), "dismissed manifest is completed, kept for undo")
         assertNotNull(env.manifests.load(id))
+    }
+
+    @Test
+    fun `finishing a resumed copy folds the interrupted manifest into the new one so undo covers both`() = realTime {
+        val env = Env()
+        val oldId = MergeId("run3")
+        MergeStagingDirectory.create(env.okio, "/app", oldId, src, dst, 1L).getOrNull()!!
+            .writePage(0, MergePage("page1"))
+        env.manifests.begin(oldId, src.value, dst.value, 1L).getOrNull()!!
+            .appendPage(ManifestPageEntry("firstRunPage", createdFiles = listOf(CreatedFile("pages/firstRunPage.md", "h0"))))
+
+        env.controller.attachGraph(CopyGraphBinding(src, FakeSource(env.entries), { listOf(env.entries[0].first).right() }, {}))
+        env.controller.checkInterrupted()
+        env.controller.await("interrupted") { it.stage == CopyStage.Interrupted }
+        env.controller.resume()
+        env.controller.await("resume dry run") { it.dryRun?.ui is DryRunUiState.Ready }
+        env.controller.dryRunConfirm()
+        val done = env.controller.await("finished") { it.stage == CopyStage.Finished }
+
+        val newId = MergeId(done.result!!.mergeId)
+        withTimeout(10.seconds) {
+            while (env.manifests.load(oldId) != null) kotlinx.coroutines.delay(20)
+        }
+        assertTrue(env.manifests.findInterrupted().isEmpty(), "no interrupted copy left to re-offer")
+        val names = env.manifests.load(newId)!!.pages.map { it.pageName }.toSet()
+        assertEquals(setOf("page1", "firstRunPage"), names)
     }
 
     @Test

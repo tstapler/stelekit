@@ -135,6 +135,10 @@ class CopyFlowController(
     private var pickerJob: Job? = null
     private var pendingResume: InterruptedCopy? = null
 
+    // The interrupted copy a dry run being shown (resumeOrigin) or a run in flight (runResumedFrom) continues.
+    @Volatile private var resumeOrigin: InterruptedCopy? = null
+    @Volatile private var runResumedFrom: InterruptedCopy? = null
+
     private val outcomeSink: (CopyRunOutcome) -> Unit = ::onOutcome
 
     init {
@@ -247,6 +251,8 @@ class CopyFlowController(
 
     /** Esc/Back on the picker with nothing to lose, or any "leave the flow" exit. */
     override fun closeFlow() {
+        resumeOrigin = null
+        runResumedFrom = null
         releasePicker()
         _state.update { it.copy(stage = CopyStage.Idle, dryRun = null) }
     }
@@ -254,6 +260,7 @@ class CopyFlowController(
     // ---- dry run -----------------------------------------------------------------------------
 
     override fun dryRunBack() {
+        resumeOrigin = null
         val picker = _state.value.picker
         if (picker != null) {
             picker.consumeReview()
@@ -298,6 +305,8 @@ class CopyFlowController(
     // ---- run ---------------------------------------------------------------------------------
 
     private fun startRun(request: PlanRequest, plan: MergePlan) {
+        runResumedFrom = resumeOrigin ?: runResumedFrom // a stale-plan re-confirm must keep the link
+        resumeOrigin = null
         _state.update { it.copy(stage = CopyStage.Running, dryRun = null, request = request, plan = plan, stopping = false) }
         if (!services.runHost.start(services.service, plan, ::onOutcome)) {
             notices.trySend("A copy is already running")
@@ -343,7 +352,24 @@ class CopyFlowController(
         }
     }
 
+    /**
+     * The resumed run is the copy's continuation: fold the interrupted manifest's entries into the new one
+     * (so one Undo covers both runs), then drop the old manifest so its notice stops reappearing. If any
+     * entry can't be carried over the old manifest is completed instead and stays undoable on its own.
+     */
+    private fun absorbInterrupted(old: InterruptedCopy, result: MergeResult) {
+        scope.launch(PlatformDispatcher.IO) {
+            val oldId = MergeId(old.mergeId)
+            val previous = services.manifests.load(oldId)
+            val into = services.manifests.writerFor(MergeId(result.mergeId))
+            val carried = previous != null && into != null && previous.pages.all { into.appendPage(it).isRight() }
+            if (carried) services.manifests.delete(oldId) else services.manifests.writerFor(oldId)?.complete()
+        }
+    }
+
     private fun finish(result: MergeResult) {
+        runResumedFrom?.let { absorbInterrupted(it, result) }
+        runResumedFrom = null
         val st = _state.value
         releasePicker()
         if (st.backgrounded) {
@@ -508,6 +534,7 @@ class CopyFlowController(
                 targetGraphId = GraphId(found.targetGraphId),
                 sourceGraphName = nameOf(GraphId(found.sourceGraphId)),
             )
+            resumeOrigin = found
             _state.update { it.copy(dryRun = DryRunView(DryRunUiState.Checking(0, 0))) }
             services.service.plan(request, b.source).fold(
                 { e -> _state.update { it.copy(dryRun = DryRunView(DryRunUiState.PlanFailed(e.message))) } },
