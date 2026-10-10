@@ -176,8 +176,8 @@ class JournalAppenderTest {
     fun activePathKeepsEveryBlockOfTodaysJournalWhenItsRowIsAnUnloadedStub() = realTime {
         val (appender, manager) = readyAppender()
         val graphPath = manager.getActiveGraphInfo()!!.path
-        val today = kotlinx.datetime.Clock.System.now().toLocalDateTime(kotlinx.datetime.TimeZone.currentSystemDefault()).date
-        val name = today.toString().replace('-', '_')
+        val name = OffGraphCapture.todayJournalPageName()
+        val today = dev.stapler.stelekit.outliner.JournalUtils.parseJournalDate(name)!!
         val file = "$graphPath/journals/$name.md"
         java.io.File(file).also { it.parentFile.mkdirs() }.writeText("- keep me 1\n- keep me 2\n- keep me 3\n")
         val now = kotlin.time.Clock.System.now()
