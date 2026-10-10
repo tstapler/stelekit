@@ -7,6 +7,7 @@ package dev.stapler.stelekit.capture
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.logging.Logger
+import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.platform.PlatformFileSystem
@@ -135,9 +136,10 @@ class JournalAppender(
         val graphPath = graphManager.getActiveGraphInfo()?.path ?: return noGraph
         val graphId = graphManager.getActiveGraphId() ?: return noGraph
 
-        if (captureId != null && blockExists(repoSet, captureId)) return AppendOutcome.AlreadyPresent
-
         val writer = writerFactory(repoSet)
+        if (captureId != null) {
+            findBlock(repoSet, captureId)?.let { return confirmFlushed(repoSet, it, graphPath, writer) }
+        }
         return when (val result = CaptureWriter.writeCapture(repoSet, fileSystem, graphPath, text, captureId, writer)) {
             is CaptureResult.Saved -> AppendOutcome.Appended(result, graphId, graphPath, repoSet, writer)
             is CaptureResult.Failed -> AppendOutcome.Failed(result.message, result)
@@ -145,8 +147,22 @@ class JournalAppender(
         }
     }
 
-    private suspend fun blockExists(repoSet: RepositorySet, captureId: String): Boolean =
-        repoSet.blockRepository.getBlockByUuid(BlockUuid(captureId)).first().getOrNull() != null
+    private suspend fun findBlock(repoSet: RepositorySet, captureId: String): Block? =
+        repoSet.blockRepository.getBlockByUuid(BlockUuid(captureId)).first().getOrNull()
+
+    /**
+     * The DB row can outlive a failed page flush, so [AppendOutcome.AlreadyPresent] is only reported once
+     * the page file has been re-flushed with the block; otherwise the caller (inbox drain) keeps the item.
+     */
+    private suspend fun confirmFlushed(repoSet: RepositorySet, block: Block, graphPath: String, writer: GraphWriter): AppendOutcome {
+        val page = repoSet.pageRepository.getPageByUuid(block.pageUuid).first().getOrNull()
+            ?: return AppendOutcome.Failed("Page for an existing capture is missing")
+        val blocks = repoSet.blockRepository.getBlocksForPage(page.uuid).first().getOrNull().orEmpty()
+        return writer.savePage(page, blocks, graphPath).fold(
+            { AppendOutcome.Failed("Save failed: $it") },
+            { AppendOutcome.AlreadyPresent },
+        )
+    }
 
     companion object {
         private val logger = Logger("JournalAppender")
