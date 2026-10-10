@@ -135,6 +135,36 @@ class ActiveDbPageSourceTest {
         }
     }
 
+    @Test
+    fun `multi-valued tags survive the stored encoding and match in SQL, Kotlin and in-memory`() = runBlocking {
+        val corpus = listOf(
+            page("csv", props = mapOf("tags" to "a, b", "alias" to "x, y")),
+            page("wiki", props = mapOf("tags" to "[[a]], [[b]]", "title" to "Hello, World")),
+            page("mixed", props = mapOf("tags" to "#Foo, Bar", "tag" to "solo")),
+            page("other", props = mapOf("tags" to "c", "title" to "b, a")),
+        )
+        val db = Db()
+        db.pages.seed(corpus)
+        val mem = InMemoryPageRepository().also { it.savePages(corpus) }
+        val expectations = mapOf(
+            "a" to setOf("csv", "wiki"),
+            "b" to setOf("csv", "wiki"),
+            "bar" to setOf("mixed"),
+            "FOO" to setOf("mixed"),
+            "solo" to setOf("mixed"),
+            "world" to emptySet(),
+            "y" to emptySet(),
+        )
+        for ((tag, names) in expectations) {
+            val filter = SelectionFilter(tag = tag)
+            assertEquals(names, db.pages.listAll(filter, 2).map { it.name }.toSet(), "sql list $tag")
+            assertEquals(names.size.toLong(), db.pages.countPagesFiltered(filter).getOrNullOrFail(), "sql count $tag")
+            assertEquals(names, mem.listAll(filter, 2).map { it.name }.toSet(), "mem list $tag")
+        }
+        val round = db.pages.getAllPagesSnapshot().getOrNullOrFail().associateBy { it.name }
+        assertEquals(corpus.associate { it.name to it.properties }, round.mapValues { it.value.properties })
+    }
+
     // ── ActiveDbPageSource behavior ─────────────────────────────────────────────────────
 
     @Test
