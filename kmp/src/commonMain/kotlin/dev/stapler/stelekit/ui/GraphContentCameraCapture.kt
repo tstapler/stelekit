@@ -52,30 +52,42 @@ internal fun GraphContentScreenAndCapture(deps: GraphContentDeps, viewModel: Ste
         )
     }
 
-    ScreenRouter(
-        screen = inputs.appState.currentScreen,
-        repos = deps.repos,
-        blockStateManager = inputs.viewModelStack.blockStateManager,
-        journalsViewModel = inputs.supportingViewModels.journalsViewModel,
-        allPagesViewModel = inputs.supportingViewModels.allPagesViewModel,
-        libraryStatsViewModel = inputs.supportingViewModels.libraryStatsViewModel,
-        viewModel = viewModel,
-        searchViewModel = inputs.supportingViewModels.searchViewModel,
-        notificationManager = deps.notificationManager,
-        appState = inputs.appState,
-        graphWriter = inputs.graphIoStack.graphWriter,
-        urlFetcher = deps.coreServices.urlFetcher,
-        qrTransferSettings = inputs.tagVoiceStack.qrTransferSettings,
-        graphLoader = inputs.graphIoStack.graphLoader,
-        graphDiagnostics = diagnosticsCollector::collect,
-        capabilities = buildEditorCapabilities(deps, viewModel, inputs, captureState),
-        onImportImage = buildOnImportImage(deps, viewModel, inputs, captureState),
-        platformSettings = deps.platformSettings,
-        perfSpans = inputs.perfTelemetry.perfSpans,
-        perfHistograms = inputs.perfTelemetry.perfHistograms,
-        perfQueryStats = inputs.perfTelemetry.perfQueryStats,
-        tagSuggestionViewModel = inputs.tagVoiceStack.tagSuggestionViewModel,
-    )
+    // Re-derived from deps.repos, so a graph switch rebinds every QueryBlock to the new graph.
+    val queryContext = remember(deps.repos) {
+        dev.stapler.stelekit.ui.components.QueryBlockContext(
+            executor = deps.repos.queryExecutor,
+            pageRepository = deps.repos.pageRepository,
+            enabled = deps.repos.debugFlagRepository?.getFlag("live_query_blocks", default = true) ?: true,
+        )
+    }
+    androidx.compose.runtime.CompositionLocalProvider(
+        dev.stapler.stelekit.ui.components.LocalQueryBlockContext provides queryContext,
+    ) {
+        ScreenRouter(
+            screen = inputs.appState.currentScreen,
+            repos = deps.repos,
+            blockStateManager = inputs.viewModelStack.blockStateManager,
+            journalsViewModel = inputs.supportingViewModels.journalsViewModel,
+            allPagesViewModel = inputs.supportingViewModels.allPagesViewModel,
+            libraryStatsViewModel = inputs.supportingViewModels.libraryStatsViewModel,
+            viewModel = viewModel,
+            searchViewModel = inputs.supportingViewModels.searchViewModel,
+            notificationManager = deps.notificationManager,
+            appState = inputs.appState,
+            graphWriter = inputs.graphIoStack.graphWriter,
+            urlFetcher = deps.coreServices.urlFetcher,
+            qrTransferSettings = inputs.tagVoiceStack.qrTransferSettings,
+            graphLoader = inputs.graphIoStack.graphLoader,
+            graphDiagnostics = diagnosticsCollector::collect,
+            capabilities = buildEditorCapabilities(deps, viewModel, inputs, captureState),
+            onImportImage = buildOnImportImage(deps, viewModel, inputs, captureState),
+            platformSettings = deps.platformSettings,
+            perfSpans = inputs.perfTelemetry.perfSpans,
+            perfHistograms = inputs.perfTelemetry.perfHistograms,
+            perfQueryStats = inputs.perfTelemetry.perfQueryStats,
+            tagSuggestionViewModel = inputs.tagVoiceStack.tagSuggestionViewModel,
+        )
+    }
 
     GraphContentCaptureDialogs(deps, viewModel, inputs, captureState)
 }
