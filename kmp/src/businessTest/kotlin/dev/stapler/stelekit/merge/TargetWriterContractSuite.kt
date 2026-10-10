@@ -19,6 +19,9 @@ interface TargetHarness {
     /** Puts [text] on disk as the page's file, visible to the target the way an existing file is. */
     suspend fun seed(key: PageKey, text: String)
 
+    /** Like [seed], but an index-only stub: the page is known and has a file, yet its blocks are not loaded. */
+    suspend fun seedUnloaded(key: PageKey, text: String) = seed(key, text)
+
     /** Replaces block text in the target as a user edit would. */
     suspend fun editContent(key: PageKey, from: String, to: String)
 
@@ -242,5 +245,30 @@ abstract class TargetWriterContractSuite {
         assertEquals(1, snap.blocks.count { it.properties[MergePropertyKeys.CONFLICT] == "true" })
         assertTrue(snap.blocks.any { it.content == "beta edited" })
         assertEquals(MergeOutcome.Unchanged, h.copy().outcome)
+    }
+
+    @Test
+    fun unloadedStubPageKeepsEveryExistingBlock() = runBlocking {
+        val h = harness()
+        h.seedUnloaded(key, (1..3).joinToString("\n") { "- keep me $it" })
+
+        val copy = h.copy()
+
+        assertIs<WriteOutcome.Updated>(copy.written)
+        val contents = assertNotNull(h.snapshot(key)).blocks.map { it.content }
+        assertEquals(listOf("keep me 1", "keep me 2", "keep me 3"), contents.take(3))
+        assertTrue("alpha see" in contents[3].substringBefore("(("))
+        assertEquals(6, contents.size)
+    }
+
+    @Test
+    fun unloadedLargeStubPageKeepsEveryExistingBlock() = runBlocking {
+        val h = harness()
+        h.seedUnloaded(key, (1..80).joinToString("\n") { "- keep me $it\n  - child $it" })
+
+        h.copy()
+
+        val contents = flat(assertNotNull(h.snapshot(key)).blocks).map { it.content }
+        assertEquals((1..80).flatMap { listOf("keep me $it", "child $it") }, contents.take(160))
     }
 }

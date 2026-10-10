@@ -503,6 +503,11 @@ class GraphWriter(
                 } else {
                     fileSystem.readFile(filePath)
                 }
+            // An unloaded (index-only) page has no blocks in memory, so saving it would erase the file's content.
+            if (!page.isContentLoaded && !oldContentForSafetyCheck.isNullOrBlank()) {
+                logger.error("Refusing to overwrite non-empty file for unloaded page '${page.name}'. Save aborted.")
+                return@withContext false
+            }
             if (oldContentForSafetyCheck != null) {
                 val oldBlockCount = oldContentForSafetyCheck.lines().count { it.trim().startsWith("- ") }
                 if (oldBlockCount > largeDeletionThreshold && blocks.size < oldBlockCount / 2) {
