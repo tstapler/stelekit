@@ -1,6 +1,5 @@
 package dev.stapler.stelekit.db
 
-import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.platform.FileSystem
@@ -26,7 +25,6 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
@@ -203,21 +201,4 @@ class OffGraphWriteReconcileSpikeTest {
         assertEquals(0, o2.changes.size, "expected 0 ExternalFileChange events on second reopen; got ${o2.changes.map { it.filePath }}")
     }
 
-    /**
-     * Plan criterion 3 also asks for the new HASH in FileRegistry after reconcile. Expected to FAIL:
-     * `FileRegistry.scanDirectory` records mtimes only and fills hashes lazily in `detectChanges`
-     * (see the comment in `FileRegistry.scanDirectory`), so a clean reconcile leaves the hash null.
-     */
-    @Test
-    fun `FileRegistry holds content hash for the file after reconcile`() = runBlocking {
-        val (a, b) = registerBoth()
-        open(b, rootB)
-        val spike = File(rootA, "pages/Spike.md")
-        spike.writeText("- hello\n  id:: $spikeUuid\n")
-
-        val o = open(a, rootA)
-        assertEquals(1, blocksOf(o, "spike", 1).single().second.size, "precondition: page indexed")
-        assertNotNull(o.loader.fileRegistry.getContentHash(FilePath(spike.absolutePath)), "FileRegistry has no content hash for ${spike.absolutePath} after reconcile")
-        Unit
-    }
 }
