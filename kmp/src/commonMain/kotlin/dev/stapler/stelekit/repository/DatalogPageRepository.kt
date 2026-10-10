@@ -82,6 +82,11 @@ class DatalogPageRepository : PageRepository {
         }
     }
 
+    override fun getPagesWithProperty(key: String, value: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
+        pages.map { map ->
+            map.values.filter { it.properties[key] == value }.sortedBy { it.name }.drop(offset).take(limit).right()
+        }
+
     override fun getJournalPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
         return pages.map { map ->
             val journals = map.values

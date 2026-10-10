@@ -141,6 +141,10 @@ class SqlDelightPageRepository(
             .map { list -> list.map { it.toModel() }.right() }
             .catchDbError()
 
+    override fun getPagesWithProperty(key: String, value: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
+        queries.selectPagesWithPropertyPair("$key:$value", limit.toLong(), offset.toLong())
+            .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
+
     override fun getJournalPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
         queries.selectJournalPages(limit.toLong(), offset.toLong())
             .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }

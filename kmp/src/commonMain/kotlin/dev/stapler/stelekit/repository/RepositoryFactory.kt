@@ -72,7 +72,12 @@ data class RepositorySet(
     val imageAnnotationRepository: ImageAnnotationRepository = InMemoryImageAnnotationRepository(),
     val measurementAnnotationRepository: MeasurementAnnotationRepository = InMemoryMeasurementAnnotationRepository(),
     val assetRepository: dev.stapler.stelekit.repository.AssetRepository = InMemoryAssetRepository(),
-)
+) {
+    /** Live-query executor bound to this graph's repositories; a new RepositorySet gets a fresh one. */
+    val queryExecutor: dev.stapler.stelekit.query.QueryExecutor by lazy {
+        dev.stapler.stelekit.query.QueryExecutor(blockRepository, pageRepository, blockRepository)
+    }
+}
 
 /**
  * Creates a [dev.stapler.stelekit.db.GraphLoader] wired with all standard production callbacks

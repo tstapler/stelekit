@@ -512,6 +512,96 @@ public class SteleDatabaseQueries(
     value__: Long,
   ): Query<Blocks> = selectBlocksWithContentLikePaginated(content, value_, value__, ::Blocks)
 
+  public fun <T : Any> selectBlocksWithMarkerPrefix(
+    marker: String,
+    limit: Long,
+    offset: Long,
+    mapper: (
+      id: Long,
+      uuid: String,
+      page_uuid: String,
+      parent_uuid: String?,
+      left_uuid: String?,
+      content: String,
+      level: Long,
+      position: String,
+      created_at: Long,
+      updated_at: Long,
+      properties: String?,
+      version: Long,
+      content_hash: String?,
+      block_type: String,
+    ) -> T,
+  ): Query<T> = SelectBlocksWithMarkerPrefixQuery(marker, limit, offset) { cursor ->
+    mapper(
+      cursor.getLong(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!,
+      cursor.getString(3),
+      cursor.getString(4),
+      cursor.getString(5)!!,
+      cursor.getLong(6)!!,
+      cursor.getString(7)!!,
+      cursor.getLong(8)!!,
+      cursor.getLong(9)!!,
+      cursor.getString(10),
+      cursor.getLong(11)!!,
+      cursor.getString(12),
+      cursor.getString(13)!!
+    )
+  }
+
+  public fun selectBlocksWithMarkerPrefix(
+    marker: String,
+    limit: Long,
+    offset: Long,
+  ): Query<Blocks> = selectBlocksWithMarkerPrefix(marker, limit, offset, ::Blocks)
+
+  public fun <T : Any> selectPagesWithPropertyPair(
+    keyValuePair: String,
+    limit: Long,
+    offset: Long,
+    mapper: (
+      uuid: String,
+      name: String,
+      namespace: String?,
+      file_path: String?,
+      created_at: Long,
+      updated_at: Long,
+      properties: String?,
+      version: Long,
+      is_favorite: Long?,
+      is_journal: Long?,
+      journal_date: String?,
+      is_content_loaded: Long,
+      backlink_count: Long,
+      section_id: String,
+    ) -> T,
+  ): Query<T> = SelectPagesWithPropertyPairQuery(keyValuePair, limit, offset) { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2),
+      cursor.getString(3),
+      cursor.getLong(4)!!,
+      cursor.getLong(5)!!,
+      cursor.getString(6),
+      cursor.getLong(7)!!,
+      cursor.getLong(8),
+      cursor.getLong(9),
+      cursor.getString(10),
+      cursor.getLong(11)!!,
+      cursor.getLong(12)!!,
+      cursor.getString(13)!!
+    )
+  }
+
+  public fun selectPagesWithPropertyPair(
+    keyValuePair: String,
+    limit: Long,
+    offset: Long,
+  ): Query<Pages> = selectPagesWithPropertyPair(keyValuePair, limit, offset, ::Pages)
+
   public fun countBlocksByPageUuid(page_uuid: String): Query<Long> = CountBlocksByPageUuidQuery(page_uuid) { cursor ->
     cursor.getLong(0)!!
   }
@@ -5791,6 +5881,64 @@ public class SteleDatabaseQueries(
     }
 
     override fun toString(): String = "SteleDatabase.sq:selectBlocksWithContentLikePaginated"
+  }
+
+  private inner class SelectBlocksWithMarkerPrefixQuery<out T : Any>(
+    public val marker: String,
+    public val limit: Long,
+    public val offset: Long,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("blocks", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("blocks", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(-1_001_643_371, """
+    |SELECT blocks.id, blocks.uuid, blocks.page_uuid, blocks.parent_uuid, blocks.left_uuid, blocks.content, blocks.level, blocks.position, blocks.created_at, blocks.updated_at, blocks.properties, blocks.version, blocks.content_hash, blocks.block_type FROM blocks
+    |WHERE content = ? OR substr(content, 1, length(?) + 1) = ? || ' '
+    |ORDER BY created_at DESC LIMIT ? OFFSET ?
+    """.trimMargin(), mapper, 5) {
+      var parameterIndex = 0
+      bindString(parameterIndex++, marker)
+      bindString(parameterIndex++, marker)
+      bindString(parameterIndex++, marker)
+      bindLong(parameterIndex++, limit)
+      bindLong(parameterIndex++, offset)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectBlocksWithMarkerPrefix"
+  }
+
+  private inner class SelectPagesWithPropertyPairQuery<out T : Any>(
+    public val keyValuePair: String,
+    public val limit: Long,
+    public val offset: Long,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("pages", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("pages", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(-1_542_086_436, """
+    |SELECT pages.uuid, pages.name, pages.namespace, pages.file_path, pages.created_at, pages.updated_at, pages.properties, pages.version, pages.is_favorite, pages.is_journal, pages.journal_date, pages.is_content_loaded, pages.backlink_count, pages.section_id FROM pages
+    |WHERE instr(',' || coalesce(properties, '') || ',', ',' || ? || ',') > 0
+    |ORDER BY name LIMIT ? OFFSET ?
+    """.trimMargin(), mapper, 3) {
+      var parameterIndex = 0
+      bindString(parameterIndex++, keyValuePair)
+      bindLong(parameterIndex++, limit)
+      bindLong(parameterIndex++, offset)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectPagesWithPropertyPair"
   }
 
   private inner class CountBlocksByPageUuidQuery<out T : Any>(

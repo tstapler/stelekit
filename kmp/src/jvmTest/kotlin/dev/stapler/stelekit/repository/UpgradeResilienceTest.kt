@@ -68,6 +68,9 @@ class UpgradeResilienceTest {
             assertFlowEmitsLeft("PageRepository.getJournalPages") {
                 repoSet.pageRepository.getJournalPages(10, 0).first()
             }
+            assertFlowEmitsLeft("PageRepository.getPagesWithProperty") {
+                repoSet.pageRepository.getPagesWithProperty("type", "book", 50, 0).first()
+            }
             assertFlowEmitsLeft("PageRepository.getRecentPages") {
                 repoSet.pageRepository.getRecentPages(10).first()
             }
@@ -99,6 +102,12 @@ class UpgradeResilienceTest {
             // ── BlockRepository ───────────────────────────────────────────────
             assertFlowEmitsLeft("BlockRepository.getBlocksForPage") {
                 repoSet.blockRepository.getBlocksForPage(PageUuid(FIXTURE_PAGE_UUID)).first()
+            }
+            assertFlowEmitsLeft("BlockRepository.findBlocksWithTaskMarker") {
+                repoSet.blockRepository.findBlocksWithTaskMarker(setOf("TODO"), 50, 0).first()
+            }
+            assertFlowEmitsLeft("BlockRepository.findReferencingBlocksReactive") {
+                repoSet.blockRepository.findReferencingBlocksReactive("ProjectX", 50, 0).first()
             }
             assertFlowEmitsLeft("BlockRepository.countBlocksForPages") {
                 repoSet.blockRepository.countBlocksForPages(listOf(PageUuid(FIXTURE_PAGE_UUID)))

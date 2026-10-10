@@ -232,6 +232,21 @@ SELECT * FROM blocks WHERE content LIKE ?;
 selectBlocksWithContentLikePaginated:
 SELECT * FROM blocks WHERE content LIKE ? ORDER BY created_at DESC LIMIT ? OFFSET ?;
 
+-- Live query blocks: blocks whose content starts with a task marker followed by a space (or is the
+-- bare marker). substr/= keeps the match case-sensitive and free of LIKE wildcards.
+selectBlocksWithMarkerPrefix:
+SELECT * FROM blocks
+WHERE content = :marker OR substr(content, 1, length(:marker) + 1) = :marker || ' '
+ORDER BY created_at DESC LIMIT :limit OFFSET :offset;
+
+-- Live query blocks: pages whose comma-delimited "k:v,k:v" properties string contains the exact
+-- pair as a whole token. instr over a comma-wrapped string anchors both delimiters, so
+-- `type:book` never matches inside `sub-type:bookmark`.
+selectPagesWithPropertyPair:
+SELECT * FROM pages
+WHERE instr(',' || coalesce(properties, '') || ',', ',' || :keyValuePair || ',') > 0
+ORDER BY name LIMIT :limit OFFSET :offset;
+
 countBlocksByPageUuid:
 SELECT COUNT(*) FROM blocks WHERE page_uuid = ?;
 
