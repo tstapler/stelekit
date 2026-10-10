@@ -1079,6 +1079,8 @@ class GraphManager(
             try {
                 initHooks?.beforeFactoryClose(id)
                 factory.close()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 logger.error("Failed to close abandoned factory for graph $id", e)
             }

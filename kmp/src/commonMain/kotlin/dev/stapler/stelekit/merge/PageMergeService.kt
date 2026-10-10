@@ -45,6 +45,7 @@ import kotlin.time.Clock
  * @param closureLookup `PageRepository::getPagesByNames` of the source graph (link closure only)
  * @param assetCopier with [graphRoot], copies `../assets/` files and rewrites renamed links
  */
+@Suppress("TooManyFunctions") // one orchestrator: plan/stage/apply/retry/cancel plus their private steps
 class PageMergeService(
     router: TargetWriterRouter,
     private val fileSystem: FileSystem,
