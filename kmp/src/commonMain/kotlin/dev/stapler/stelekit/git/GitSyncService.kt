@@ -69,6 +69,7 @@ class GitSyncService(
     private val gitSyncBusyCounter: GitSyncBusyCounter = GitSyncBusyCounter(),
 ) {
     private val logger = Logger("GitSyncService")
+    private val firstSyncConfirmation: FirstSyncConfirmation? = settings?.let { FirstSyncConfirmation(it) }
 
     /** Never [toString] a state directly: conflict/journal-merge states carry full note contents. */
     private fun SyncState.logSummary(): String = when (this) {
@@ -395,6 +396,7 @@ class GitSyncService(
                 lastSyncAt = Clock.System.now().toEpochMilliseconds(),
             )
             recordLastSyncAt(success.lastSyncAt)
+            firstSyncConfirmation?.confirm(graphId, config.remoteName, config.remoteBranch)
             _syncState.value = success
             success.right()
             } finally {
