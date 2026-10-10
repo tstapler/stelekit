@@ -49,15 +49,13 @@ data class MergePage(
 )
 
 /**
- * [blockKey] is injectable so tests run exact-trimmed and normalized matching.
- * [shortContentMinLength] is carried for ADR-002 parity: the parent guard for short
- * content is structural (matching is sibling-scoped under an already-matched parent).
+ * [blockKey] is injectable so tests run exact-trimmed and normalized matching. Short-content
+ * safety needs no threshold: matching is sibling-scoped under an already-matched parent.
  */
 data class MergePolicy(
     val sourceGraphId: GraphId,
     val sourceGraphName: String,
     val blockKey: (String) -> String = ::normalizeBlockContent,
-    val shortContentMinLength: Int = 4,
 )
 
 fun normalizeBlockContent(content: String): String = content.trim().replace(Regex("\\s+"), " ")

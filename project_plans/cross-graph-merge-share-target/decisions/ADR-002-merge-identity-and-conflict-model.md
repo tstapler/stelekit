@@ -18,7 +18,10 @@
    and property `src-id:: <sourceGraphId>:<sourceUuid>`. It is NOT `UuidGenerator.generateDeterministic` (two
    FNV-1a 64-bit hashes; non-cryptographic) and there is no "keep the source UUID when free" rule. Remap is
    computed top-down; `((uuid))` refs and `{{embed ((uuid))}}` in all incoming content are rewritten through the
-   same map (refs to blocks outside the selection are left as-is). A second run finds the existing `uuid'` and
+   same map (refs to blocks outside the selection are left as-is). A `((S))` ref resolves to the target block S is
+   aligned with (same uuid, else the `src-id` copy, else the block it deduped onto), otherwise to `uuid'(S)`;
+   inserted blocks never reuse a uuid already on the page. Known gap: a ref to a block deduped onto an unlabeled
+   target block (no uuid to point at) still resolves to `uuid'(S)` and dangles. A second run finds the existing `uuid'` and
    yields Unchanged, so merges are idempotent without a new table. Guard: before saving, the active writer
    checks `uuid'` is not already used by a different page (fail the page); the off-graph writer refuses a
    `uuid'` already present in the target file under a different `src-id`. Identity transport: block UUIDs

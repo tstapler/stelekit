@@ -21,7 +21,7 @@ Path aliases used below (all exact): `{C}` = `kmp/src/commonMain/kotlin/dev/stap
 | `GraphId` | Existing id of a registered graph | Reuse; never raw string for target/source |
 | `MergeBlock` | Pure, IO-free block node: `uuid?`, `content`, `properties`, `children` | Converted from `Block` / `ParsedBlock` |
 | `MergePage` | Pure page: `name`, `isJournal`, `journalDate?`, `properties`, `blocks: List<MergeBlock>` | Input/output of `mergePage` |
-| `MergePolicy` | Parameters for `mergePage`: `blockKey` function, `shortContentMinLength`, `sourceGraphId`, `sourceGraphName` | Key function injectable for tests |
+| `MergePolicy` | Parameters for `mergePage`: `blockKey` function, `sourceGraphId`, `sourceGraphName` | Key function injectable for tests |
 | `MergeOutcome` | Sealed: `New(page)`, `Unchanged`, `Merged(page, added, conflicts)` | Exhaustive `when` |
 | `BlockConflict` | Same UUID, different content; incoming kept as flagged sibling | `targetUuid`, `incomingUuid'`, `pageName` |
 | `SourceBlockRef` | `src-id::` property value `<sourceGraphId>:<sourceUuid>` | Provenance + idempotent match |
