@@ -65,6 +65,7 @@ kt_jvm_test(
         "//kmp/src/commonMain/resources:common_resources",
         "//kmp/src/commonTest/kotlin:git_testsupport",
         "//kmp/src/commonTest/kotlin:business_common_tests",
+        "//kmp/src/commonTest/kotlin:merge_fixtures",
         "@maven//:com_squareup_okio_okio_fakefilesystem_jvm",
         ":demo_filesystem_as_resource",
         ":sqldatabase_schema_as_resource",
