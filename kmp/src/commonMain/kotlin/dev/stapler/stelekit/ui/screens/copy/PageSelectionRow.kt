@@ -76,6 +76,7 @@ fun PageSelectionRow(
         val detail = listOfNotNull(
             if (row.isJournal) "journal" else null,
             row.blockCount?.let { "$it ${if (it == 1) "block" else "blocks"}" },
+            row.subtitle,
         ).joinToString(" - ")
         if (detail.isNotEmpty()) {
             Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

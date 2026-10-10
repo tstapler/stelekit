@@ -73,7 +73,7 @@ class PageMergeService(
     private val contexts = LinkedHashMap<String, RunContext>()
     private var lastRun: RunState? = null
 
-    private class RunContext(val request: PlanRequest, val source: PageSource) {
+    private class RunContext(val request: PlanRequest, val source: PageSource, var sourceUnreadable: List<UnreadablePage>) {
         var staging: MergeStagingDirectory? = null
     }
 
@@ -110,11 +110,14 @@ class PageMergeService(
         val acc = Accumulator()
         val policy = policyOf(request)
         _progress.value = MergeProgress(MergePhase.Planning)
+        source.takeUnreadable()
         val closure = forEachSourceChunk(request, source) { pages, _ ->
             classifyChunk(request, policy, pages, acc).also {
                 _progress.update { p -> p.copy(done = acc.summary().total) }
             }
         }.fold({ e -> _progress.value = MergeProgress(); return e.left() }, { it })
+        val sourceUnreadable = source.takeUnreadable()
+        acc.unreadable += sourceUnreadable.size
         val plan = MergePlan(
             mergeId = newMergeId().value,
             sourceGraphId = request.sourceGraphId.value,
@@ -127,7 +130,7 @@ class PageMergeService(
             createdAtEpochMs = nowEpochMs(),
         )
         stateLock.withLock {
-            contexts[plan.mergeId] = RunContext(request, source)
+            contexts[plan.mergeId] = RunContext(request, source, sourceUnreadable)
             while (contexts.size > MAX_PLANS_KEPT) contexts.remove(contexts.keys.first())
         }
         _progress.value = MergeProgress(MergePhase.Idle, total = plan.summary.total)
@@ -142,13 +145,14 @@ class PageMergeService(
 
     private suspend fun stageCtx(plan: MergePlan): Either<ApplyFailure, MergeStagingDirectory> {
         val ctx = stateLock.withLock { contexts[plan.mergeId] } ?: return ApplyFailure.UnknownPlan.left()
-        ctx.staging?.takeIf { it.pageCount() == plan.summary.total }?.let { return it.right() }
+        ctx.staging?.takeIf { it.pageCount() == plan.summary.total - ctx.sourceUnreadable.size }?.let { return it.right() }
         ctx.staging?.delete()
         val staging = MergeStagingDirectory.create(
             fileSystem, appDataDir, MergeId(plan.mergeId),
             GraphId(plan.sourceGraphId), GraphId(plan.targetGraphId), nowEpochMs(),
         ).getOrNull() ?: return ApplyFailure.StagingFailed("Could not create the staging directory").left()
         _progress.value = MergeProgress(MergePhase.Staging, total = plan.summary.total)
+        ctx.source.takeUnreadable()
         var index = 0
         val spilled = forEachSourceChunk(ctx.request, ctx.source) { pages, _ ->
             withContext(PlatformDispatcher.IO) {
@@ -165,6 +169,7 @@ class PageMergeService(
             staging.delete()
             return (if (e is DomainError.FileSystemError) ApplyFailure.StagingFailed(e.message) else ApplyFailure.Failed(e)).left()
         }
+        ctx.sourceUnreadable = ctx.source.takeUnreadable()
         ctx.staging = staging
         return staging.right()
     }
@@ -227,6 +232,8 @@ class PageMergeService(
             }
             Unit.right()
         }.onLeft { if (it !== STOP) return ApplyFailure.Failed(it).left() }
+        // Unreadable source pages were never staged: failed with their reason (index -1 is never retryable from staging).
+        ctx.sourceUnreadable.forEach { state.failed += PageFailure(-1, it.name, it.error) }
         manifest.complete()
         return finishRun(state).right()
     }

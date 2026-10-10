@@ -11,6 +11,10 @@ import dev.stapler.stelekit.merge.LinkClosurePolicy
 import dev.stapler.stelekit.merge.PageSelection
 import dev.stapler.stelekit.merge.PageSource
 import dev.stapler.stelekit.merge.PlanRequest
+import dev.stapler.stelekit.merge.PullIndexState
+import dev.stapler.stelekit.merge.PullPageSource
+import dev.stapler.stelekit.merge.ReadCapabilityReason
+import dev.stapler.stelekit.merge.ReadError
 import dev.stapler.stelekit.merge.SelectionFilter
 import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.GraphInfo
@@ -94,12 +98,18 @@ class CopyPagesViewModel(
     private val probeJobs = HashMap<GraphId, Job>()
     private var userChoseDestination = false
 
+    /** Pull: the file-backed source being browsed; null in Push. */
+    private val pull: PullPageSource? = if (direction == CopyDirection.Pull) source as? PullPageSource else null
+    private var lastSourceId: GraphId? = null
+
     init {
         refreshList()
         scope.launch { graphRegistry.collect { syncDestinations(it) } }
+        pull?.let { p -> scope.launch { p.indexState.collect { onIndexState(it) } } }
     }
 
     fun close() {
+        pull?.stop()
         eventChannel.close()
         scope.cancel()
     }
@@ -172,7 +182,7 @@ class CopyPagesViewModel(
                 listLoad = if (it.rows.isEmpty()) ListLoad.Initial else ListLoad.Updating,
                 totalMatching = null,
                 loadError = null,
-                searchCapped = search != null,
+                searchCapped = search != null && direction == CopyDirection.Push,
             )
         }
         val job = scope.launch {
@@ -198,7 +208,49 @@ class CopyPagesViewModel(
         listJob = job
     }
 
-    private fun toRow(p: Page) = PageRowState(p.uuid, p.name, p.isJournal)
+    private fun toRow(p: Page) = PageRowState(p.uuid, p.name, p.isJournal, subtitle = pull?.subtitleFor(p.uuid))
+
+    // ---- pull: source index ------------------------------------------------------------------
+
+    private suspend fun onIndexState(st: PullIndexState) {
+        _state.update { it.copy(indexState = st) }
+        when (st) {
+            is PullIndexState.Reading, is PullIndexState.Ready -> {
+                refreshList()
+                delay(INDEX_REFRESH_MS)
+            }
+            is PullIndexState.Failed -> if (st.error == ReadError.NoGrant) markSourceNoGrant()
+            PullIndexState.Idle -> Unit
+        }
+    }
+
+    /** Grant lost mid-listing: back to the chooser with that source disabled; the selection is kept. */
+    private fun markSourceNoGrant() {
+        val id = lastSourceId ?: return
+        val name = _state.value.destinations.firstOrNull { it.graphId == id }?.name ?: id.value
+        val reason = ReadCapabilityReason.NoGrant(canRegrant = true)
+        setStatus(
+            id,
+            DestinationStatus.Disabled(
+                DisabledKind.NoGrant,
+                "Can't read $name: ${reason.userText}",
+                DestinationAction(DestinationActionKind.RegrantAccess, CopyPagesState.RESELECT_FOLDER),
+            ),
+        )
+        pull?.select(null)
+        refreshList()
+    }
+
+    /** Stop / "Change source": cancels any listing and returns to the source chooser (selection kept). */
+    fun clearSource() {
+        pull?.select(null)
+        _state.update { it.copy(destinationId = null, indexState = PullIndexState.Idle, rows = emptyList(), totalMatching = null, hasMore = false) }
+        refreshList()
+    }
+
+    fun retryIndex() {
+        pull?.retry()
+    }
 
     // ---- selection ---------------------------------------------------------------------------
 
@@ -268,6 +320,7 @@ class CopyPagesViewModel(
     /** Esc / Back / Close: immediate with nothing selected, else asks first. */
     fun requestClose() {
         if (_state.value.picked.isEmpty()) {
+            pull?.stop()
             eventChannel.trySend(CopyPagesEvent.Closed)
         } else {
             _state.update { it.copy(discardPrompt = true) }
@@ -276,6 +329,7 @@ class CopyPagesViewModel(
 
     fun confirmDiscard() {
         selectAllJob?.cancel()
+        pull?.stop()
         _state.update { it.copy(picked = it.picked.clear(), discardPrompt = false, selecting = false) }
         eventChannel.trySend(CopyPagesEvent.Closed)
     }
@@ -343,7 +397,15 @@ class CopyPagesViewModel(
         if (row.status != DestinationStatus.Available) return
         userChoseDestination = true
         _state.update { it.copy(destinationId = graphId) }
+        if (pull != null) startPullSource(graphId)
         refreshLinkedDelta()
+    }
+
+    private fun startPullSource(graphId: GraphId) {
+        val info = graphRegistry.value.graphs.firstOrNull { it.id == graphId } ?: return
+        if (lastSourceId != graphId) _state.update { it.copy(picked = it.picked.clear()) }
+        lastSourceId = graphId
+        pull?.select(info)
     }
 
     private fun maybePreselect() {
@@ -376,13 +438,13 @@ class CopyPagesViewModel(
     // ---- linked pages (Gate 2) ---------------------------------------------------------------
 
     fun setIncludeLinked(on: Boolean) {
-        if (!gate2LinkedPages) return
+        if (!gate2LinkedPages || direction == CopyDirection.Pull) return
         _state.update { it.copy(includeLinked = on, includeAssets = it.includeAssets && on, linkedDelta = null) }
         refreshLinkedDelta()
     }
 
     fun setIncludeAssets(on: Boolean) {
-        if (!gate2LinkedPages) return
+        if (!gate2LinkedPages || direction == CopyDirection.Pull) return
         _state.update { it.copy(includeAssets = on && it.includeLinked) }
     }
 
@@ -439,5 +501,6 @@ class CopyPagesViewModel(
     companion object {
         const val SEARCH_DEBOUNCE_MS = 250L
         const val PROBE_TIMEOUT_MS = 3_000L
+        const val INDEX_REFRESH_MS = 100L
     }
 }

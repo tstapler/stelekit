@@ -14,6 +14,7 @@ import dev.stapler.stelekit.merge.MergeResult
 import dev.stapler.stelekit.merge.OffGraphTarget
 import dev.stapler.stelekit.merge.PageSource
 import dev.stapler.stelekit.merge.PlanRequest
+import dev.stapler.stelekit.merge.PullIndexState
 import dev.stapler.stelekit.merge.ReadCapabilityReason
 import dev.stapler.stelekit.merge.SelectionFilter
 import dev.stapler.stelekit.merge.SourceReadCapabilities
@@ -73,6 +74,8 @@ data class PageRowState(
     val isJournal: Boolean,
     /** Null when unknown: [PageSource] has no per-page block count, so the list omits it. */
     val blockCount: Int? = null,
+    /** Pull only: "size - modified date" (no block counts without a database). */
+    val subtitle: String? = null,
 ) {
     /** Full text exposed to accessibility services (never truncated). */
     val label: String
@@ -80,6 +83,7 @@ data class PageRowState(
             append(name)
             if (isJournal) append(", journal")
             if (blockCount != null) append(", ").append(blockCount).append(if (blockCount == 1) " block" else " blocks")
+            if (subtitle != null) append(", ").append(subtitle)
         }
 }
 
@@ -153,10 +157,21 @@ data class CopyPagesState(
     /** Live "adds N pages" delta; null while unknown. */
     val linkedDelta: Int? = null,
     val review: ReviewState = ReviewState.Idle,
+    /** Pull only: progress of the chosen source's name index. */
+    val indexState: PullIndexState = PullIndexState.Idle,
 ) {
+    val isPull: Boolean get() = direction == CopyDirection.Pull
     val selectedCount: Int get() = picked.size
     val chosenDestination: DestinationRow? get() = destinations.firstOrNull { it.graphId == destinationId }
     val noOtherGraph: Boolean get() = destinations.all { it.isCurrentGraph }
+
+    /** Pull: other graphs exist but every one is settled and unusable as a source. */
+    val noSourceAvailable: Boolean
+        get() = isPull && !noOtherGraph &&
+            destinations.filterNot { it.isCurrentGraph }.all { it.status is DestinationStatus.Disabled }
+
+    /** Pull: the name index is still streaming in. */
+    val stillReading: Boolean get() = indexState is PullIndexState.Reading
 
     val canReview: Boolean
         get() = !picked.isEmpty() && chosenDestination?.status == DestinationStatus.Available &&
@@ -186,6 +201,8 @@ data class CopyPagesState(
 
     companion object {
         const val CURRENT_GRAPH_TEXT = "current graph"
+        const val NOT_AVAILABLE_PULL = "Not available when copying from a graph that isn't open"
+        const val RESELECT_FOLDER = "Re-select folder"
     }
 }
 
@@ -210,6 +227,9 @@ interface CopyFlowGateway {
     suspend fun plan(request: PlanRequest): Either<DomainError, MergePlan>
     suspend fun apply(plan: MergePlan): Either<ApplyFailure, MergeResult>
     fun cancel()
+
+    /** Re-applies only the pages that failed in the last run; the Pull gateway first re-opens the destination if the user left it. */
+    suspend fun retryFailed(): Either<ApplyFailure, MergeResult> = Either.Left(ApplyFailure.Busy)
 
     /** Pages "Include linked pages" would add (depth 1); null if it cannot be computed. */
     suspend fun linkedPageDelta(request: PlanRequest): Int? = null
@@ -267,15 +287,15 @@ class CapabilityDestinationProbe(
                 is ReadCapabilityReason.UnreadableIo -> DisabledKind.Unreadable
             },
             text = "Can't read $name: ${reason.userText}",
-            action = reason.action?.toDestinationAction(),
+            action = reason.action?.toDestinationAction(pullLabels = true),
         )
 
-    private fun CapabilityAction.toDestinationAction() = DestinationAction(
+    private fun CapabilityAction.toDestinationAction(pullLabels: Boolean = false) = DestinationAction(
         when (this) {
             CapabilityAction.RegrantAccess -> DestinationActionKind.RegrantAccess
             CapabilityAction.OpenGraph -> DestinationActionKind.OpenGraph
         },
-        label,
+        if (pullLabels && this == CapabilityAction.RegrantAccess) CopyPagesState.RESELECT_FOLDER else label,
     )
 }
 
