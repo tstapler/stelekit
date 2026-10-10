@@ -224,6 +224,10 @@ class DatabaseWriteActor(
     // @Volatile gives the required single-writer/multi-reader visibility without atomics.
     @Volatile private var _isActorProcessing: Boolean = false
 
+    /** True once the loop has ended or [close] ran: every later write fails fast, and the DB behind it may be closing. */
+    @Volatile var isStopped: Boolean = false
+        private set
+
     /**
      * Counts callers that have successfully sent a request but whose [CompletableDeferred.await]
      * has not yet returned. Incremented just before [Channel.send] and decremented in the
@@ -306,6 +310,7 @@ class DatabaseWriteActor(
      * queued requests, otherwise their callers await a deferred nobody will complete.
      */
     private fun failPendingAfterStop() {
+        isStopped = true
         highPriority.close()
         lowPriority.close()
         for (channel in listOf(highPriority, lowPriority)) {
@@ -904,6 +909,7 @@ class DatabaseWriteActor(
         execute { pageRepository.deletePage(pageUuid) }
 
     fun close() {
+        isStopped = true
         highPriority.close()
         lowPriority.close()
         // Only cancel the scope if we created it; injected scopes (e.g. test schedulers)

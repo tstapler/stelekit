@@ -4,15 +4,18 @@ import arrow.core.Either
 import arrow.core.left
 import dev.stapler.stelekit.db.GraphLocator
 import dev.stapler.stelekit.db.GraphManager
+import dev.stapler.stelekit.db.MoveInProgressFlag
 import dev.stapler.stelekit.db.ReadyGraph
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.GraphInfo
 import dev.stapler.stelekit.model.StorageLocation
+import kotlinx.coroutines.delay
 import kotlin.time.TimeSource
 
 const val MAX_ROUTER_ATTEMPTS = 3
+private const val RETRY_BACKOFF_MS = 50L
 
 /**
  * The single router for merge and share: picks the [TargetWriter] for a target graph and runs one
@@ -42,6 +45,8 @@ class TargetWriterRouter(
     private val onLockWaitMs: (GraphId, Long) -> Unit = { id, ms ->
         Logger("TargetWriterRouter").info("merge.apply.lock_wait_ms graph=$id ms=$ms")
     },
+    /** Pause before re-deciding after a retryable result; [attempt] is the 0-based attempt that just failed. */
+    private val retryBackoff: suspend (attempt: Int) -> Unit = { attempt -> delay(RETRY_BACKOFF_MS * (attempt + 1)) },
 ) {
     /**
      * Runs [block] (one page batch) against the right writer for [target]. A
@@ -52,12 +57,14 @@ class TargetWriterRouter(
         target: GraphId,
         block: suspend (TargetWriter) -> Either<DomainError, T>,
     ): Either<DomainError, T> {
-        repeat(MAX_ROUTER_ATTEMPTS) {
+        repeat(MAX_ROUTER_ATTEMPTS) { attempt ->
             val awaited = awaitIfSwitchInFlight(target)
             val info = locator.locate(target).fold({ return it.left() }, { it })
             val storage = graphManager.getStorageLocation(target.value)
             val result = runUnderLock(target, info, storage, awaited, block)
             if (result != null && !result.isRetryable()) return result
+            // No lock held here; gives an "editor busy" or mid-switch state a moment to clear.
+            if (attempt < MAX_ROUTER_ATTEMPTS - 1) retryBackoff(attempt)
         }
         return DomainError.MergeError.Retryable(
             "Target graph ${target.value} kept changing state; gave up after $MAX_ROUTER_ATTEMPTS attempts",
@@ -87,6 +94,10 @@ class TargetWriterRouter(
             onLockWaitMs(target, waitStart.elapsedNow().inWholeMilliseconds)
             val ready = graphManager.readyGraph.value
             when {
+                // The graph's directory is being copied/moved and its driver is closed: the file writer
+                // would write into the tree being moved. Retryable, so the page waits for the move.
+                MoveInProgressFlag.isMoveInProgress(target.value) ->
+                    DomainError.MergeError.Retryable("Graph ${target.value} is being moved; try again when it finishes.").left()
                 ready?.id == target -> block(activeWriterFor(ready))
                 // Registry says active but the pair is not published: a switch started after our
                 // await. After an await it means init failed, so fall through to the file writer.

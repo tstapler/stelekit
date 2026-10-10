@@ -66,8 +66,8 @@ class ShareInboxDrain(
         },
     )
     private val drainMutex = Mutex()
-    private var currentReady: GraphId? = null
-    private var started = false
+    @kotlin.concurrent.Volatile private var currentReady: GraphId? = null
+    @kotlin.concurrent.Volatile private var started = false
     private var retryJob: Job? = null
     private var retryAttempt = 0
 

@@ -26,7 +26,13 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import okio.FileSystem
+import okio.ForwardingFileSystem
+import okio.IOException
+import okio.Path
+import okio.Sink
 import okio.fakefilesystem.FakeFileSystem
+import kotlin.concurrent.Volatile
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -114,6 +120,15 @@ class PageMergeServiceTest {
             RemoveReport(emptySet(), emptySet(), emptySet()).right()
     }
 
+    /** Fails manifest appends on demand; staging and the manifest header still write. */
+    private class FlakyAppendFileSystem(delegate: FileSystem) : ForwardingFileSystem(delegate) {
+        @Volatile var failAppends: (Path) -> Boolean = { false }
+        override fun appendingSink(file: Path, mustExist: Boolean): Sink {
+            if (failAppends(file)) throw IOException("injected append failure")
+            return super.appendingSink(file, mustExist)
+        }
+    }
+
     private val managers = mutableListOf<GraphManager>()
     private val services = mutableListOf<PageMergeService>()
 
@@ -143,7 +158,7 @@ class PageMergeServiceTest {
         activeWriter: TargetWriter? = null,
     ) {
         val manager = manager()
-        val okio = FakeFileSystem()
+        val okio = FlakyAppendFileSystem(FakeFileSystem())
         val router = TargetWriterRouter(
             graphManager = manager,
             locator = RegistryGraphLocator(manager.graphRegistry),
@@ -348,6 +363,99 @@ class PageMergeServiceTest {
         assertEquals(10, retried.newPages)
         assertEquals(10, env.fake.pages.size)
         assertNull(MergeStagingDirectory.open(env.okio, "/app", MergeId(first.mergeId)), "staging removed after a clean retry")
+    }
+
+    @Test
+    fun `a page whose manifest append failed is recorded on retry so it stays undoable`() = realTime {
+        val env = Env()
+        val source = FakeSource((0 until 4).map { entry(it) })
+        var flaky = true
+        env.okio.failAppends = { flaky && "p0001" in env.fake.pages.keys && "p0002" !in env.fake.pages.keys }
+
+        val first = env.service.apply(env.plan(source)).ok()
+        assertEquals("p0001", first.failed.single().pageName)
+        assertTrue("p0001" in env.fake.pages, "the page itself was written")
+
+        flaky = false
+        val retried = env.service.retryFailed().ok()
+
+        assertTrue(retried.failed.isEmpty(), "failed: ${retried.failed}")
+        assertEquals(4, retried.newPages)
+        val manifest = assertNotNull(MergeManifestStore(env.okio, "/app").load(MergeId(first.mergeId)))
+        assertEquals(setOf("p0000", "p0001", "p0002", "p0003"), manifest.pages.map { it.pageName }.toSet())
+        assertEquals(1, manifest.pages.count { it.pageName == "p0001" })
+    }
+
+    @Test
+    fun `cancel before the run takes its lock still stops it, and a stray cancel never stops a later plan`() = realTime {
+        val env = Env()
+        val source = FakeSource((0 until 5).map { entry(it) })
+
+        val plan = env.plan(source)
+        env.service.cancel() // the host's launch window: Stop arrives before apply holds runLock
+        val stopped = env.service.apply(plan).ok()
+        assertEquals(0, stopped.stoppedAfter)
+        assertEquals(0, env.fake.writes)
+
+        env.service.cancel() // stray
+        val done = env.service.apply(env.plan(source)).ok()
+        assertEquals(5, done.newPages)
+    }
+
+    @Test
+    fun `retryFailed honors cancel and keeps the pages failed`() = realTime {
+        val env = Env()
+        val source = FakeSource((0 until 4).map { entry(it) })
+        var faulty = true
+        env.fake.failWith = { n -> if (faulty && n == "p0001") DomainError.FileSystemError.WriteFailed(n, "disk full") else null }
+        env.service.apply(env.plan(source)).ok()
+        faulty = false
+
+        env.service.cancel()
+        val stopped = env.service.retryFailed().ok()
+        assertEquals("p0001", stopped.failed.single().pageName)
+        assertTrue("p0001" !in env.fake.pages)
+
+        assertTrue(env.service.retryFailed().ok().failed.isEmpty())
+        assertTrue("p0001" in env.fake.pages)
+    }
+
+    @Test
+    fun `retryFailed with nothing to retry is UnknownPlan, not Busy`() = realTime {
+        val env = Env()
+        assertEquals(ApplyFailure.UnknownPlan, (env.service.retryFailed() as Either.Left).value)
+    }
+
+    @Test
+    fun `a throwing source becomes a failed plan instead of escaping`() = realTime {
+        val env = Env()
+        val broken = object : PageSource {
+            override suspend fun listPages(filter: SelectionFilter, search: String?, limit: Int, offset: Int): Either<DomainError, List<Page>> =
+                throw kotlinx.coroutines.channels.ClosedSendChannelException("actor closed")
+            override suspend fun countPages(filter: SelectionFilter, search: String?) = 0L.right()
+            override suspend fun readPages(uuids: List<PageUuid>): Either<DomainError, List<SourcePage>> = emptyList<SourcePage>().right()
+        }
+        env.manager.awaitPendingMigration()
+
+        val res = env.service.plan(env.request(), broken)
+
+        assertTrue(res.isLeft(), "plan must return a Left, got $res")
+        assertEquals(MergePhase.Idle, env.service.progress.value.phase)
+    }
+
+    @Test
+    fun `a superseded failed run's staging directory is deleted`() = realTime {
+        val env = Env()
+        val source = FakeSource((0 until 4).map { entry(it) })
+        env.fake.failWith = { n -> if (n == "p0002") DomainError.FileSystemError.WriteFailed(n, "disk full") else null }
+
+        val first = env.service.apply(env.plan(source)).ok()
+        assertNotNull(MergeStagingDirectory.open(env.okio, "/app", MergeId(first.mergeId)))
+        val second = env.service.apply(env.plan(source)).ok()
+
+        assertEquals("p0002", second.failed.single().pageName)
+        assertNull(MergeStagingDirectory.open(env.okio, "/app", MergeId(first.mergeId)), "superseded run's staging must go")
+        assertNotNull(MergeStagingDirectory.open(env.okio, "/app", MergeId(second.mergeId)))
     }
 
     @Test

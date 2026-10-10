@@ -50,7 +50,9 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.CancellationException
@@ -145,8 +147,12 @@ class GraphManager(
     // Track current factory for lifecycle management.
     // Written from a background coroutine (switchGraph's IO launch) and read on the Compose
     // main thread in createGitConfigRepository(); @Volatile is required for JVM visibility.
-    @kotlin.concurrent.Volatile
-    private var currentFactory: dev.stapler.stelekit.repository.RepositoryFactory? = null
+    // A StateFlow so teardown can take-and-clear atomically (getAndUpdate) and an abandoned init can
+    // claim its own factory (compareAndSet): exactly one of the two closes it.
+    private val currentFactoryRef = MutableStateFlow<dev.stapler.stelekit.repository.RepositoryFactory?>(null)
+    private var currentFactory: dev.stapler.stelekit.repository.RepositoryFactory?
+        get() = currentFactoryRef.value
+        set(value) { currentFactoryRef.value = value }
 
     // Deferred that resolves when the one-shot UUID migration for the active graph completes.
     // Callers can await this before loading graph content to ensure UUIDs are stable.
@@ -542,9 +548,7 @@ class GraphManager(
         // stop querying before the database connection is torn down.
         _readyGraph.value = null
         _activeRepositorySet.value = null
-        val factoryToClose = currentFactory
-        currentFactory = null
-        return factoryToClose
+        return currentFactoryRef.getAndUpdate { null }
     }
 
     /**
@@ -864,6 +868,7 @@ class GraphManager(
         // previousId and factoryToClose are captured together, synchronously, so the factory is
         // closed under the lock of the graph that owns it, regardless of later switches.
         val previousId = currentGraphId
+        val actorToStop = _activeRepositorySet.value?.writeActor
         val factoryToClose = tearDownActiveGraphResources()
 
         // Create a new scope for this graph's operations first so the actor can use it.
@@ -903,19 +908,7 @@ class GraphManager(
                 // Complete, released critical section under the OWNER's lock; never nested with
                 // lock(id) below (see GraphWriteLock lock order).
                 try {
-                    if (factoryToClose != null) withContext(kotlinx.coroutines.NonCancellable) {
-                        val closeUnderLock: suspend () -> Unit = {
-                            initHooks?.beforeFactoryClose(previousId)
-                            factoryToClose.close()
-                        }
-                        if (previousId != null) {
-                            graphWriteLock.withLockOrDegrade(previousId, lockAcquireTimeout, onTimeout = { holder ->
-                                logger.warn("graph.switch.lock_timeout graph=$previousId phase=close holder=${holder ?: "unknown"}")
-                            }) { closeUnderLock() }
-                        } else {
-                            closeUnderLock()
-                        }
-                    }
+                    if (factoryToClose != null) closeUnderOwnerLock(previousId, actorToStop, factoryToClose)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -955,12 +948,27 @@ class GraphManager(
                         platform = deviceInfo?.platform ?: "unknown",
                     )
                     logger.info("init[${elapsed()}ms]: createRepositorySet done")
+                    // A later switch/remove/shutdown cancelled this scope while the driver was opening.
+                    // Nobody else owns this factory yet, so close it here instead of publishing it.
+                    if (!isActive) {
+                        closeAbandonedFactory(id, factory)
+                        throw CancellationException("graph $id init superseded")
+                    }
                     currentFactory = factory
                     // Readiness is published BEFORE migrations run. Safe only because lock(id) is
                     // still held through the migrations below: writers must take lock(id) AFTER
                     // observing readyGraph == id, so they block until migrations finish.
-                    _readyGraph.value = ReadyGraph(id, repoSet)
+                    val published = ReadyGraph(id, repoSet)
+                    _readyGraph.value = published
                     _activeRepositorySet.value = repoSet
+                    if (!isActive) {
+                        // Cancelled between the check and the publish: take the publication back. If a teardown
+                        // already took the factory it closes it; otherwise this init does.
+                        _readyGraph.compareAndSet(published, null)
+                        _activeRepositorySet.compareAndSet(repoSet, null)
+                        if (currentFactoryRef.compareAndSet(factory, null)) closeAbandonedFactory(id, factory)
+                        throw CancellationException("graph $id init superseded")
+                    }
                     initHooks?.duringMigration(id)
 
                     if (defaultBackend == GraphBackend.SQLDELIGHT && !graphInfo.isDemo) {
@@ -1026,6 +1034,57 @@ class GraphManager(
         mirrorActiveNotesPath()
         _graphsExplicitlyEmptied.value = false
         saveRegistry()
+    }
+
+    /**
+     * Stops [actor] then closes [factory] as one complete critical section under `lock(owner)` (when
+     * [owner] is known), so a merge/share batch holding the lock never sees a half-closed graph. Never
+     * nested with another graph lock. After the acquire timeout it degrades open: a stuck batch then
+     * hits the stopped actor's retryable path instead of blocking the close forever.
+     */
+    private suspend fun closeUnderOwnerLock(
+        owner: GraphId?,
+        actor: DatabaseWriteActor?,
+        factory: dev.stapler.stelekit.repository.RepositoryFactory,
+    ) {
+        withContext(kotlinx.coroutines.NonCancellable) {
+            val closeNow: suspend () -> Unit = {
+                actor?.close()
+                initHooks?.beforeFactoryClose(owner)
+                factory.close()
+            }
+            if (owner != null) {
+                graphWriteLock.withLockOrDegrade(owner, lockAcquireTimeout, onTimeout = { holder ->
+                    logger.warn("graph.switch.lock_timeout graph=$owner phase=close holder=${holder ?: "unknown"}")
+                }) { closeNow() }
+            } else {
+                closeNow()
+            }
+        }
+    }
+
+    /**
+     * Relocation's teardown: the caller awaits the close, which runs under `lock(id)` so in-flight
+     * merge batches finish first. Call with no graph lock held.
+     */
+    internal suspend fun tearDownAndCloseActiveGraph(id: GraphId) {
+        val actor = _activeRepositorySet.value?.writeActor
+        val factory = tearDownActiveGraphResources() ?: return
+        closeUnderOwnerLock(id, actor, factory)
+    }
+
+    /** Closes a factory this init coroutine created but never published; runs inside the owner's lock. */
+    private suspend fun closeAbandonedFactory(id: GraphId, factory: dev.stapler.stelekit.repository.RepositoryFactory) {
+        withContext(kotlinx.coroutines.NonCancellable) {
+            try {
+                initHooks?.beforeFactoryClose(id)
+                factory.close()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.error("Failed to close abandoned factory for graph $id", e)
+            }
+        }
     }
 
     /**
@@ -1445,7 +1504,7 @@ class GraphManager(
             }
         }
         try {
-            factoryToClose?.close()
+            if (factoryToClose != null) closeUnderOwnerLock(graphId, actorForDelete, factoryToClose)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -1490,10 +1549,11 @@ class GraphManager(
         _activeVaultCredentialStore.value = null
 
         // Null repo set before closing so in-flight Compose flow collectors stop querying first.
+        // Sync by contract (process/test teardown), so no lock: stop the actor first so late writes fail fast.
+        _activeRepositorySet.value?.writeActor?.close()
         _readyGraph.value = null
         _activeRepositorySet.value = null
-        currentFactory?.close()
-        currentFactory = null
+        currentFactoryRef.getAndUpdate { null }?.close()
     }
 }
 

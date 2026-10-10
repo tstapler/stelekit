@@ -112,10 +112,21 @@ class ActiveTargetWriterContractTest : TargetWriterContractSuite() {
         val before = h.fileText(key)
         h.actor.close()
 
-        val result = h.copy(MergePage("Target", blocks = listOf(MergeBlock("s9", "late"))))
+        val result = h.writer.write(key, MergePage("Target", blocks = listOf(MergeBlock("s9", "late"))))
 
         assertEquals(WriteRetryReason.GraphClosed.message, assertIs<DomainError.MergeError.Retryable>((result as Either.Left).value).message)
         assertEquals(before, h.fileText(key))
+    }
+
+    @Test
+    fun readsAfterTheActorStoppedAreRetryableNotAPermanentFailure() = runBlocking<Unit> {
+        val h = active()
+        h.copy()
+        h.actor.close()
+
+        val read = h.writer.readExisting(key)
+
+        assertIs<DomainError.MergeError.Retryable>((read as Either.Left).value)
     }
 
     @Test
@@ -124,7 +135,7 @@ class ActiveTargetWriterContractTest : TargetWriterContractSuite() {
         h.copy()
         h.actorScope.coroutineContext[Job]!!.cancelAndJoin()
 
-        val result = h.copy(MergePage("Target", blocks = listOf(MergeBlock("s9", "late"))))
+        val result = h.writer.write(key, MergePage("Target", blocks = listOf(MergeBlock("s9", "late"))))
 
         assertEquals(WriteRetryReason.GraphClosed.message, assertIs<DomainError.MergeError.Retryable>((result as Either.Left).value).message)
     }

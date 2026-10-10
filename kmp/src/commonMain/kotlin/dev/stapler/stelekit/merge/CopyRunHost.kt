@@ -13,6 +13,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.getAndUpdate
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 sealed interface CopyRunOutcome {
@@ -39,6 +41,22 @@ interface CopyRunHost {
 
     /** Asks the run to stop after the page in flight. */
     fun stop(service: PageMergeService)
+
+    /**
+     * Makes [onOutcome] the receiver of the current/next run's outcome (a rebuilt controller after Activity
+     * recreation). An outcome that arrived while nobody was attached is delivered immediately.
+     */
+    fun attach(onOutcome: (CopyRunOutcome) -> Unit) {}
+
+    /** Stops delivering to [onOutcome]; the run carries on and its outcome is held for the next [attach]. */
+    fun detach(onOutcome: (CopyRunOutcome) -> Unit) {}
+
+    /**
+     * Returns the value kept under [key] for the host's lifetime, creating it once with [create]. Lets the
+     * `PageMergeService` (in-flight apply, plan contexts, failed-page retry state) outlive a UI controller.
+     * The default retains nothing.
+     */
+    fun <T : Any> retain(key: Any, create: () -> T): T = create()
 }
 
 /** One unfinished copy found at launch; [pagesCopied] counts manifest entries written so far. */
@@ -59,6 +77,48 @@ open class ScopedCopyRunHost(
         if (e !is CancellationException) logger.error("copy run: ${e::class.simpleName}: ${e.message}", e)
     }
 
+    private val observer = MutableStateFlow<((CopyRunOutcome) -> Unit)?>(null)
+    private val undelivered = MutableStateFlow<CopyRunOutcome?>(null)
+    private val retained = MutableStateFlow<Map<Any, Any>>(emptyMap())
+
+    override fun attach(onOutcome: (CopyRunOutcome) -> Unit) {
+        observer.value = onOutcome
+        undelivered.getAndUpdate { null }?.let(onOutcome)
+    }
+
+    override fun detach(onOutcome: (CopyRunOutcome) -> Unit) {
+        observer.update { if (it == onOutcome) null else it }
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : Any> retain(key: Any, create: () -> T): T {
+        retained.value[key]?.let { return it as T }
+        val made = create()
+        var winner: Any = made
+        retained.update { m ->
+            val existing = m[key]
+            if (existing != null) {
+                winner = existing
+                m
+            } else {
+                winner = made
+                m + (key to made)
+            }
+        }
+        return winner as T
+    }
+
+    private fun deliver(outcome: CopyRunOutcome) {
+        val obs = observer.value
+        if (obs != null) {
+            obs(outcome)
+            return
+        }
+        undelivered.value = outcome
+        // An attach racing the store would otherwise miss it.
+        observer.value?.let { late -> undelivered.getAndUpdate { null }?.let(late) }
+    }
+
     override fun start(service: PageMergeService, plan: MergePlan, onOutcome: (CopyRunOutcome) -> Unit): Boolean =
         launchRun(onOutcome) { service.apply(plan) }
 
@@ -70,6 +130,7 @@ open class ScopedCopyRunHost(
         run: suspend () -> Either<ApplyFailure, MergeResult>,
     ): Boolean {
         if (!_running.compareAndSet(expect = false, update = true)) return false
+        observer.value = onOutcome
         scope.launch(handler) {
             val outcome = try {
                 CopyRunOutcome.Finished(run())
@@ -81,7 +142,7 @@ open class ScopedCopyRunHost(
             } finally {
                 _running.value = false
             }
-            onOutcome(outcome)
+            deliver(outcome)
         }
         return true
     }

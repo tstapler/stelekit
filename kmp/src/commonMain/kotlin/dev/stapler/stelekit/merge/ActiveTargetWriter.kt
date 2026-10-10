@@ -233,7 +233,9 @@ class ActiveTargetWriter(
 
     /** Maps a closed write channel or a cancelled actor scope (our own coroutine still active) to a retryable error. */
     private suspend fun <T> guarded(block: suspend () -> Either<DomainError, T>): Either<DomainError, T> = try {
-        block()
+        // A stopped actor means the graph is being switched away, so even reads may hit a closing driver:
+        // report that as retryable (the router re-decides) instead of a permanent read failure.
+        if (writeActor.isStopped) retryable(WriteRetryReason.GraphClosed) else block().retryIfStopped()
     } catch (e: ClosedSendChannelException) {
         retryable(WriteRetryReason.GraphClosed)
     } catch (e: CancellationException) {
@@ -241,6 +243,9 @@ class ActiveTargetWriter(
     } catch (e: Exception) {
         DomainError.DatabaseError.WriteFailed(e.message ?: e::class.simpleName ?: "unknown").left()
     }
+
+    private fun <T> Either<DomainError, T>.retryIfStopped(): Either<DomainError, T> =
+        if (isLeft() && leftOrNull() !is DomainError.MergeError && writeActor.isStopped) retryable(WriteRetryReason.GraphClosed) else this
 
     /** A request queued when the actor's scope was cancelled fails with this marker; surface it as retryable. */
     private fun DomainError.stopped(): DomainError =

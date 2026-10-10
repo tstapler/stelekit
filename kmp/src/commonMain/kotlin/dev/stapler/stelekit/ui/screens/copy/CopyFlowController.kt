@@ -42,6 +42,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlin.concurrent.Volatile
 import kotlinx.coroutines.withContext
 
 /** What the open graph's composition root offers the copy flow; swapped on every graph switch. */
@@ -137,7 +138,7 @@ class CopyFlowController(
 
     val progress = services.service.progress
 
-    private var binding: CopyGraphBinding? = null
+    @Volatile private var binding: CopyGraphBinding? = null
     private var pickerJob: Job? = null
     private var pendingResume: InterruptedCopy? = null
     private var pendingRetryTarget: GraphId? = null
@@ -147,12 +148,33 @@ class CopyFlowController(
 
     val direction: CopyDirection get() = services.direction
 
+    // The interrupted copy a dry run being shown (resumeOrigin) or a run in flight (runResumedFrom) continues.
+    @Volatile private var resumeOrigin: InterruptedCopy? = null
+    private class ResumeLink {
+        @Volatile var from: InterruptedCopy? = null
+    }
+
+    // Host-retained with the service, so a controller rebuilt mid-run still knows its run was a resume.
+    private val resumeLink = services.runHost.retain(services.service) { ResumeLink() }
+    private var runResumedFrom: InterruptedCopy?
+        get() = resumeLink.from
+        set(value) { resumeLink.from = value }
+
+    private val outcomeSink: (CopyRunOutcome) -> Unit = ::onOutcome
+
+    init {
+        // A run still going from before this controller existed (Activity recreation): show it, adopt its outcome.
+        if (services.runHost.running.value) _state.value = CopyFlowState(stage = CopyStage.Running, backgrounded = true)
+        services.runHost.attach(outcomeSink)
+    }
+
+    /** Unbinds the UI only: the run and the (host-retained) service keep going and are adopted by the next controller. */
     fun close() {
+        services.runHost.detach(outcomeSink)
         notices.close()
         scope.cancel()
         _state.value.picker?.close()
         disposePull()
-        services.service.close()
     }
 
     fun nameOf(id: GraphId): String = graphRegistry.value.graphs.firstOrNull { it.id == id }?.displayName ?: id.value
@@ -293,6 +315,8 @@ class CopyFlowController(
 
     /** Esc/Back on the picker with nothing to lose, or any "leave the flow" exit. */
     override fun closeFlow() {
+        resumeOrigin = null
+        runResumedFrom = null
         releasePicker()
         disposePull()
         _state.update { it.copy(stage = CopyStage.Idle, dryRun = null) }
@@ -301,6 +325,7 @@ class CopyFlowController(
     // ---- dry run -----------------------------------------------------------------------------
 
     override fun dryRunBack() {
+        resumeOrigin = null
         val picker = _state.value.picker
         if (picker != null) {
             picker.consumeReview()
@@ -345,6 +370,8 @@ class CopyFlowController(
     // ---- run ---------------------------------------------------------------------------------
 
     private fun startRun(request: PlanRequest, plan: MergePlan) {
+        runResumedFrom = resumeOrigin ?: runResumedFrom // a stale-plan re-confirm must keep the link
+        resumeOrigin = null
         _state.update { it.copy(stage = CopyStage.Running, dryRun = null, request = request, plan = plan, stopping = false) }
         if (!services.runHost.start(services.service, plan, ::onOutcome)) {
             notices.trySend("A copy is already running")
@@ -390,11 +417,28 @@ class CopyFlowController(
         }
     }
 
+    /**
+     * The resumed run is the copy's continuation: fold the interrupted manifest's entries into the new one
+     * (so one Undo covers both runs), then drop the old manifest so its notice stops reappearing. If any
+     * entry can't be carried over the old manifest is completed instead and stays undoable on its own.
+     */
+    private fun absorbInterrupted(old: InterruptedCopy, result: MergeResult) {
+        scope.launch(PlatformDispatcher.IO) {
+            val oldId = MergeId(old.mergeId)
+            val previous = services.manifests.load(oldId)
+            val into = services.manifests.writerFor(MergeId(result.mergeId))
+            val carried = previous != null && into != null && previous.pages.all { into.appendPage(it).isRight() }
+            if (carried) services.manifests.delete(oldId) else services.manifests.writerFor(oldId)?.complete()
+        }
+    }
+
     private fun finish(result: MergeResult) {
+        runResumedFrom?.let { absorbInterrupted(it, result) }
+        runResumedFrom = null
         val st = _state.value
         releasePicker()
         if (st.backgrounded) {
-            notices.trySend("Copy to ${nameOf(GraphId(st.plan?.targetGraphId ?: ""))} finished")
+            notices.trySend(st.plan?.let { "Copy to ${nameOf(GraphId(it.targetGraphId))} finished" } ?: "Copy finished")
         }
         _state.update { it.copy(stage = CopyStage.Finished, result = result, backgrounded = false, stopping = false, failure = null, switchConfirm = false) }
         runDeferredSwitch()
@@ -604,6 +648,7 @@ class CopyFlowController(
                 targetGraphId = GraphId(found.targetGraphId),
                 sourceGraphName = nameOf(GraphId(found.sourceGraphId)),
             )
+            resumeOrigin = found
             _state.update { it.copy(dryRun = DryRunView(DryRunUiState.Checking(0, 0))) }
             services.service.plan(request, b.source).fold(
                 { e -> _state.update { it.copy(dryRun = DryRunView(DryRunUiState.PlanFailed(e.message))) } },

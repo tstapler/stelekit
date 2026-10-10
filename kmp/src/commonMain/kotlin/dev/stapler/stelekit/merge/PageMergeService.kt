@@ -13,9 +13,11 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -42,8 +44,9 @@ import kotlin.time.Clock
  * @param closureLookup `PageRepository::getPagesByNames` of the source graph (link closure only)
  * @param assetCopier with [graphRoot], copies `../assets/` files and rewrites renamed links
  */
+@Suppress("TooManyFunctions") // one orchestrator: plan/stage/apply/retry/cancel plus their private steps
 class PageMergeService(
-    private val router: TargetWriterRouter,
+    router: TargetWriterRouter,
     private val storage: MergeStorage,
     private val closureLookup: suspend (List<String>) -> Either<DomainError, List<Page>> = { emptyList<Page>().right() },
     private val assetCopier: AssetCopier? = null,
@@ -66,6 +69,10 @@ class PageMergeService(
     )
 
     private val logger = Logger("PageMergeService")
+
+    // Swappable so a retained service picks up a rebuilt controller's router (fresh editor hooks).
+    @kotlin.concurrent.Volatile
+    private var router: TargetWriterRouter = router
     private val manifests = storage.manifests
 
     // Owned scope per CLAUDE.md: never a caller-supplied or composition scope.
@@ -83,6 +90,7 @@ class PageMergeService(
     private val cancelRequested = MutableStateFlow(false)
     private val stateLock = Mutex()
     private val contexts = LinkedHashMap<String, RunContext>()
+    @kotlin.concurrent.Volatile
     private var lastRun: RunState? = null
 
     private class RunContext(val request: PlanRequest, val source: PageSource, var sourceUnreadable: List<UnreadablePage>) {
@@ -103,10 +111,18 @@ class PageMergeService(
         var stoppedAfter: Int? = null
         val failed = ArrayList<PageFailure>()
 
+        /** Pages written to the target whose manifest append failed, by staged index. */
+        val unrecorded = HashMap<Int, PageApplied>()
+
         fun result() = MergeResult(
             plan.mergeId, plan.summary.total, newPages, combined, unchanged,
             failed.toList(), conflicts, assetsRenamed, stoppedAfter,
         )
+    }
+
+    /** Points later page batches at [next]; an in-flight apply switches at its next page. */
+    fun rebindRouter(next: TargetWriterRouter) {
+        router = next
     }
 
     /** Releases the owned scope. The service is unusable afterwards. */
@@ -118,7 +134,19 @@ class PageMergeService(
      * Dry run: classifies every selected page against the target without writing. Streams <= 100 pages
      * at a time; the plan keeps only counters, <= [MergePlan.MAX_CONFLICT_DETAILS] conflict details and a fingerprint.
      */
-    suspend fun plan(request: PlanRequest, source: PageSource): Either<DomainError, MergePlan> {
+    suspend fun plan(request: PlanRequest, source: PageSource): Either<DomainError, MergePlan> = try {
+        planUnguarded(request, source)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        // A closed-actor send or an OOM from a source read must become a failure, not an Android process kill.
+        logger.error("merge.plan crashed: ${e::class.simpleName}: ${e.message}", e)
+        _progress.value = MergeProgress()
+        DomainError.DatabaseError.ReadFailed(e.message ?: e::class.simpleName.orEmpty()).left()
+    }
+
+    private suspend fun planUnguarded(request: PlanRequest, source: PageSource): Either<DomainError, MergePlan> {
+        if (!runLock.isLocked) cancelRequested.value = false
         val acc = Accumulator()
         val policy = policyOf(request)
         _progress.value = MergeProgress(MergePhase.Planning)
@@ -141,10 +169,14 @@ class PageMergeService(
             planFingerprint = acc.fingerprint,
             createdAtEpochMs = nowEpochMs(),
         )
-        stateLock.withLock {
+        val evicted = stateLock.withLock {
             contexts[plan.mergeId] = RunContext(request, source, sourceUnreadable)
-            while (contexts.size > MAX_PLANS_KEPT) contexts.remove(contexts.keys.first())
+            val out = ArrayList<RunContext>()
+            while (contexts.size > MAX_PLANS_KEPT) contexts.remove(contexts.keys.first())?.let(out::add)
+            out
         }
+        // An evicted plan drops its PageSource reference and any staging it spilled (the retry run's stays).
+        evicted.forEach { ctx -> ctx.staging?.takeIf { it !== lastRun?.staging }?.delete() }
         _progress.value = MergeProgress(MergePhase.Idle, total = plan.summary.total)
         logger.info("merge.plan id=${plan.mergeId} ${plan.summary} closureAdded=${closure.added.size}")
         return plan.right()
@@ -153,7 +185,15 @@ class PageMergeService(
     // ---- stage ----
 
     /** Spills every planned source page as a [StagedPage] JSON file. [apply] calls this when needed. */
-    suspend fun stage(plan: MergePlan): Either<ApplyFailure, Unit> = stageCtx(plan).map { }
+    suspend fun stage(plan: MergePlan): Either<ApplyFailure, Unit> = try {
+        stageCtx(plan).map { }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        logger.error("merge.stage crashed: ${e::class.simpleName}: ${e.message}", e)
+        _progress.value = MergeProgress()
+        ApplyFailure.StagingFailed(e.message ?: e::class.simpleName.orEmpty()).left()
+    }
 
     private suspend fun stageCtx(plan: MergePlan): Either<ApplyFailure, MergeStaging> {
         val ctx = stateLock.withLock { contexts[plan.mergeId] } ?: return ApplyFailure.UnknownPlan.left()
@@ -197,12 +237,12 @@ class PageMergeService(
     suspend fun apply(plan: MergePlan): Either<ApplyFailure, MergeResult> {
         if (!runLock.tryLock()) return ApplyFailure.Busy.left()
         try {
-            cancelRequested.value = false
             val job = scope.async { doApply(plan) }
             return try {
                 job.await()
             } catch (e: CancellationException) {
-                job.cancel()
+                // Join before releasing runLock so a second apply can't overlap the dying job.
+                withContext(NonCancellable) { job.cancelAndJoin() }
                 throw e
             } catch (e: Throwable) {
                 // async only delivers via await: without this a fault (OOM, a throwing PageSource) escapes
@@ -212,6 +252,7 @@ class PageMergeService(
                 ApplyFailure.Failed(DomainError.FileSystemError.WriteFailed("merge", e.message ?: e::class.simpleName.orEmpty())).left()
             }
         } finally {
+            cancelRequested.value = false
             runLock.unlock()
         }
     }
@@ -262,6 +303,7 @@ class PageMergeService(
             state.staging.delete()
             lastRun = null
         } else {
+            lastRun?.takeIf { it !== state }?.staging?.delete()
             lastRun = state
         }
         _progress.value = MergeProgress(
@@ -281,24 +323,36 @@ class PageMergeService(
         return result
     }
 
-    /** Requests a stop after the page being written. Committed pages stay; re-planning converges. */
+    /**
+     * Requests a stop after the page being written. Committed pages stay; re-planning converges.
+     * Also valid in the gap between a host launching a run and the run taking its lock; the flag is
+     * cleared when a run ends and when a new [plan] starts, so a stray call never stops a later run.
+     */
     fun cancel() {
-        if (runLock.isLocked) cancelRequested.value = true
+        cancelRequested.value = true
     }
 
     /** Re-applies only the pages that failed in the last run, from staging. Returns the cumulative result. */
     suspend fun retryFailed(): Either<ApplyFailure, MergeResult> {
         if (!runLock.tryLock()) return ApplyFailure.Busy.left()
         try {
-            val state = lastRun ?: return ApplyFailure.Busy.left()
+            // Nothing to retry is not "busy": the controller would tell the user another copy is running.
+            val state = lastRun ?: return ApplyFailure.UnknownPlan.left()
             val manifest = manifests.writerFor(MergeId(state.plan.mergeId))
                 ?: return ApplyFailure.StagingFailed("Undo manifest is missing").left()
             val pending = state.failed.toList()
             state.failed.clear()
             _progress.value = MergeProgress(MergePhase.Applying, 0, pending.size)
             for ((i, failure) in pending.withIndex()) {
-                val page = readStaged(state.staging, failure.stagedIndex)
-                if (page == null) {
+                if (cancelRequested.value) {
+                    state.failed += pending.drop(i)
+                    break
+                }
+                val written = state.unrecorded[failure.stagedIndex]
+                val page = if (written == null) readStaged(state.staging, failure.stagedIndex) else null
+                if (written != null) {
+                    recordApplied(state, manifest, failure.stagedIndex, failure.pageName, written)
+                } else if (page == null) {
                     state.failed += failure
                 } else {
                     applyOne(state, manifest, failure.stagedIndex, page)
@@ -308,6 +362,7 @@ class PageMergeService(
             manifest.complete()
             return finishRun(state).right()
         } finally {
+            cancelRequested.value = false
             runLock.unlock()
         }
     }
@@ -320,25 +375,34 @@ class PageMergeService(
         when (applied) {
             is Either.Left -> state.failed += PageFailure(index, page.name, applied.value)
             is Either.Right -> {
-                val a = applied.value
-                a.entry?.let { entry ->
-                    manifest.appendPage(entry).onLeft {
-                        state.failed += PageFailure(
-                            index, page.name,
-                            DomainError.FileSystemError.WriteFailed("manifest", "Undo record could not be written: ${it.message}"),
-                        )
-                        return
-                    }
-                }
-                when (a.kind) {
-                    PageKind.New -> state.newPages++
-                    PageKind.Combined -> state.combined++
-                    PageKind.Unchanged -> state.unchanged++
-                }
-                if (a.conflicts > 0) state.conflicts++
-                state.assetsRenamed += a.assetsRenamed
+                recordApplied(state, manifest, index, page.name, applied.value)
             }
         }
+    }
+
+    /**
+     * The page is already on disk. A failed manifest append is parked in [RunState.unrecorded] so a retry
+     * re-appends the entry instead of re-merging (which would see Unchanged and never make the page undoable).
+     */
+    private fun recordApplied(state: RunState, manifest: MergeManifestLog, index: Int, name: String, a: PageApplied) {
+        a.entry?.let { entry ->
+            manifest.appendPage(entry).onLeft {
+                state.unrecorded[index] = a
+                state.failed += PageFailure(
+                    index, name,
+                    DomainError.FileSystemError.WriteFailed("manifest", "Undo record could not be written: ${it.message}"),
+                )
+                return
+            }
+        }
+        state.unrecorded.remove(index)
+        when (a.kind) {
+            PageKind.New -> state.newPages++
+            PageKind.Combined -> state.combined++
+            PageKind.Unchanged -> state.unchanged++
+        }
+        if (a.conflicts > 0) state.conflicts++
+        state.assetsRenamed += a.assetsRenamed
     }
 
     private class PageApplied(val kind: PageKind, val conflicts: Int, val assetsRenamed: Int, val entry: ManifestPageEntry?)
@@ -383,7 +447,9 @@ class PageMergeService(
                 ).right()
                 is WriteOutcome.Updated -> {
                     // Hash what is on disk now (as undo will see it), not the in-memory merge.
-                    val onDisk = w.readExisting(key).fold({ return it.left() }, { it })
+                    // The write is committed: a failed read-back must not fail the page (retry would see Unchanged
+                    // and never record it), so fall back to the in-memory merge, whose hashes undo treats as "edited".
+                    val onDisk = w.readExisting(key).getOrNull() ?: merged
                     val added = newTopLevelUuids(existing, merged)
                     val byUuid = onDisk?.let { indexByUuid(it.blocks) }.orEmpty()
                     val hashes = added.mapNotNull { u -> byUuid[u]?.let { u to BlockContentHash.of(it) } }.toMap()
