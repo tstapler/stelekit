@@ -49,6 +49,9 @@ import dev.stapler.stelekit.repository.BacklinkRepositoryTest
 import dev.stapler.stelekit.sections.CrossSectionBacklinkRenderTest
 import dev.stapler.stelekit.sections.NewPageAutoAssignmentTest
 import dev.stapler.stelekit.merge.MarkdownTargetWriterTest
+import dev.stapler.stelekit.merge.MarkdownTargetWriterContractTest
+import dev.stapler.stelekit.merge.ActiveTargetWriterContractTest
+import dev.stapler.stelekit.merge.CopyEditRecopyPropertyTest
 import dev.stapler.stelekit.merge.TargetWriterCapabilitiesTest
 import dev.stapler.stelekit.transfer.GraphMergeServiceTest
 import dev.stapler.stelekit.merge.ActiveDbPageSourceTest
@@ -199,6 +202,9 @@ import org.junit.runners.Suite
     SplitJournalTest::class,
     GraphMergeServiceTest::class,
     MarkdownTargetWriterTest::class,
+    MarkdownTargetWriterContractTest::class,
+    ActiveTargetWriterContractTest::class,
+    CopyEditRecopyPropertyTest::class,
     TargetWriterCapabilitiesTest::class,
     ActiveDbPageSourceTest::class,
     MergeUuidRoundTripSpikeTest::class,
