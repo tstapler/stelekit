@@ -72,6 +72,9 @@ interface GitRepository {
     suspend fun hasDetachedHead(config: GitConfig): Boolean
     suspend fun removeStaleLockFile(config: GitConfig): Either<DomainError.GitError, Unit>
 
+    /** Read-only ref report for the diagnostics export (see `describeGitRefs`); never throws. */
+    suspend fun describeRefs(config: GitConfig): String = "(not supported on this platform)"
+
     /**
      * Replaces the active credential store. Called from App.kt to swap in a
      * [VaultCredentialStore] on vault unlock, or back to [CredentialStore] on lock.

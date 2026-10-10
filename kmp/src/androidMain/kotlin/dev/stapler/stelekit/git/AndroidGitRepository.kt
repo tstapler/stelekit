@@ -479,6 +479,19 @@ class AndroidGitRepository(
         return Unit.right()
     }
 
+    override suspend fun describeRefs(config: GitConfig): String =
+        withContext(PlatformDispatcher.IO) {
+            try {
+                openGitWithoutFreshnessCheck(config).use { git ->
+                    describeGitRefs(git, config) { authConfigurer.configureTransport(it, config) }
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                "<failed to open repo: ${e::class.simpleName}: ${e.message}>"
+            }
+        }
+
     override suspend fun hasDetachedHead(config: GitConfig): Boolean =
         withContext(PlatformDispatcher.IO) {
             runGitOpOrFalse {

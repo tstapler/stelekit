@@ -2,11 +2,15 @@ package dev.stapler.stelekit.diagnostics
 
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.db.GraphManager
+import dev.stapler.stelekit.git.GitConfigRepository
+import dev.stapler.stelekit.git.GitRepository
+import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.logging.LogManager
 import dev.stapler.stelekit.model.GraphInfo
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.repository.RepositorySet
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.datetime.LocalDate
@@ -26,6 +30,8 @@ class GraphDiagnosticsCollector(
     private val fileSystem: FileSystem,
     private val repos: RepositorySet,
     private val settings: Settings,
+    private val gitConfigRepository: GitConfigRepository? = null,
+    private val gitRepository: GitRepository? = null,
 ) {
     suspend fun collect(): String = withContext(PlatformDispatcher.IO) {
         buildString {
@@ -40,6 +46,7 @@ class GraphDiagnosticsCollector(
                 appendLine("## Active graph\nnone")
             } else {
                 appendActiveGraph(active)
+                appendGit(active)
             }
             appendLogTail()
         }
@@ -79,6 +86,58 @@ class GraphDiagnosticsCollector(
         appendDiff(disk, db)
     }
 
+    private suspend fun StringBuilder.appendGit(active: GraphInfo) {
+        appendLine()
+        appendLine("## Git sync")
+        val git = gitRepository
+        val configRepo = gitConfigRepository
+        if (git == null || configRepo == null) {
+            appendLine("git not available on this platform")
+            return
+        }
+        val config = try {
+            configRepo.getConfig(active.id.value).getOrNull()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            appendLine("config read failed: ${e.message}")
+            return
+        }
+        if (config == null) {
+            appendLine("no git config stored for graph ${active.id.value}")
+            return
+        }
+        appendGitConfig(config)
+        appendGitCall("status") { git.status(config).fold({ "error: ${it.message}" }, { s ->
+            "hasLocalChanges=${s.hasLocalChanges} modified=${s.modifiedFiles.size} untracked=${s.untrackedFiles.size} " +
+                "untracked(first $MAX_LISTED)=${s.untrackedFiles.take(MAX_LISTED)}"
+        }) }
+        appendGitCall("detachedHead") { git.hasDetachedHead(config).toString() }
+        appendGitCall("refs") { "\n" + git.describeRefs(config) }
+        appendGitCall("log (last $GIT_LOG_ENTRIES)") {
+            git.log(config, GIT_LOG_ENTRIES).fold({ "error: ${it.message}" }, { commits ->
+                commits.joinToString(prefix = "\n", separator = "\n") { c -> "${c.sha.take(9)} ${c.timestamp} ${c.shortMessage}" }
+            })
+        }
+    }
+
+    private fun StringBuilder.appendGitConfig(c: GitConfig) {
+        appendLine("remoteName=${c.remoteName} remoteBranch=${c.remoteBranch} authType=${c.authType}")
+        appendLine("repoRoot=${c.repoRoot} wikiSubdir=${c.wikiSubdir ?: "<none>"}")
+        appendLine("pollIntervalMinutes=${c.pollIntervalMinutes} autoCommit=${c.autoCommit} cloneDepthState=${c.cloneDepthState}")
+    }
+
+    private suspend fun StringBuilder.appendGitCall(label: String, block: suspend () -> String) {
+        val text = try {
+            block()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            "<failed: ${e::class.simpleName}: ${e.message}>"
+        }
+        appendLine("$label: $text")
+    }
+
     private class DiskJournals(val dates: Set<LocalDate>)
 
     private fun StringBuilder.appendDisk(root: String): DiskJournals {
@@ -106,6 +165,7 @@ class GraphDiagnosticsCollector(
         val dates = parsed.values.filterNotNull().toSet()
         val unparsable = parsed.filterValues { it == null }.keys.toList()
         appendLine("journal files: ${names.size}, parsable dates: ${dates.size}, range: ${rangeOf(dates)}")
+        appendLine("newest journal files on disk: ${dates.sortedDescending().take(NEWEST_LISTED).joinToString()}")
         if (unparsable.isNotEmpty()) {
             appendLine("unparsable journal filenames (first $MAX_LISTED): ${unparsable.take(MAX_LISTED).joinToString()}")
         }
@@ -168,7 +228,12 @@ class GraphDiagnosticsCollector(
         if (dates.isEmpty()) "none" else "${dates.min()} .. ${dates.max()}"
 
     private fun sample(dates: List<LocalDate>): String =
-        if (dates.isEmpty()) "" else "e.g. ${dates.take(MAX_LISTED).joinToString()}"
+        if (dates.isEmpty()) {
+            ""
+        } else {
+            "oldest: ${dates.take(MAX_LISTED).joinToString()}" +
+                if (dates.size > MAX_LISTED) " | newest: ${dates.takeLast(NEWEST_LISTED).joinToString()}" else ""
+        }
 
     private inline fun safeList(block: () -> List<String>): List<String> =
         try { block() } catch (_: Exception) { emptyList() }
@@ -180,6 +245,8 @@ class GraphDiagnosticsCollector(
         const val MAX_DB_BATCHES = 40
         const val MAX_LISTED = 40
         const val MAX_NESTED_PROBES = 40
+        const val NEWEST_LISTED = 15
+        const val GIT_LOG_ENTRIES = 10
         const val LOG_TAIL = 150
     }
 }
