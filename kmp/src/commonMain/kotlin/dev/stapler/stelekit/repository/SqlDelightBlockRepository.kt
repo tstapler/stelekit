@@ -1184,7 +1184,7 @@ class SqlDelightBlockRepository(
                 .toList()
                 .right()
             merged
-        }.conflate().catchDbError()
+        }.conflate().distinctUntilChanged().catchDbError()
     }
 
     override fun findReferencingBlocksReactive(
@@ -1203,6 +1203,7 @@ class SqlDelightBlockRepository(
                     loadLinkedReferenceBatch(pageName, batchSize, sqlOffset)
                 }.right() as Either<DomainError, List<Block>>
             }
+            .distinctUntilChanged()
             .flowOn(PlatformDispatcher.DB)
             .catchDbError()
     }

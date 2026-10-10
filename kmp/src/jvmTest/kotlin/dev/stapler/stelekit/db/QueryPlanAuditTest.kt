@@ -35,7 +35,7 @@ class QueryPlanAuditTest {
         "selectAllMetadata",
         // content LIKE — no index on content; FTS handles production full-text search
         "selectBlocksWithContentLike", "selectBlocksWithContentLikePaginated",
-        // live query blocks: no index on content / pages.properties (delimited string); bounded by LIMIT
+        // live query blocks: no index on content / pages.properties (delimited string); full scan + sort, no content/created_at index — acceptable until measured
         "selectBlocksWithMarkerPrefix", "selectPagesWithPropertyPair",
         "countBlocksWithWikilink", "selectBlocksWithWikilink", "countLinkedReferencesForPage",
         // name LIKE — no index covers prefix-wildcard; FTS handles page-name search

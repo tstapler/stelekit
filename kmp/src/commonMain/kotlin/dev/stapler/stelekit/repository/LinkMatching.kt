@@ -46,7 +46,7 @@ internal suspend fun overfetchLinkedReferences(
     val seen = mutableSetOf<String>()
     val accumulated = mutableListOf<Block>()
     var sqlOffset = 0
-    var batchSize = maxOf(need * 4, 100)
+    var batchSize = minOf(maxOf(need * 4, 100), MAX_LINKED_REF_BATCH)
     var iterations = 0
 
     while (accumulated.size < need && iterations++ < MAX_LINKED_REF_ITERATIONS) {

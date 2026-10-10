@@ -9,7 +9,13 @@ import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.DatalogBlockRepository
 import dev.stapler.stelekit.repository.DatalogPageRepository
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withTimeout
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.plus
 import kotlinx.coroutines.runBlocking
 import kotlinx.datetime.LocalDate
 import kotlin.test.Test
@@ -163,9 +169,35 @@ class QueryExecutorTest {
     fun `executeQuery reflects later writes through the same Flow`() = runBlocking {
         page("p1", "P")
         block("b1", "p1", "NOW first")
-        val flow = executor.executeQuery(QueryFilter.Task(setOf("NOW")))
-        assertEquals(1, (flow.first() as Either.Right).value.size)
+        val emissions = async {
+            executor.executeQuery(QueryFilter.Task(setOf("NOW")))
+                .map { either -> (either as Either.Right).value.map { it.uuid.value }.toSet() }
+                .first { it.size == 2 }
+        }
+        delay(100)
         block("b2", "p1", "NOW second")
-        assertEquals(2, (flow.first() as Either.Right).value.size)
+        assertEquals(setOf("b1", "b2"), withTimeout(10_000) { emissions.await() })
+    }
+
+    @Test
+    fun `executeQuery returns empty for reversed Between bounds`() = runBlocking {
+        page("j1", "2026_01_01", journal = LocalDate(2026, 1, 1))
+        page("j2", "2026_01_05", journal = LocalDate(2026, 1, 5))
+        block("b1", "j1", "a")
+        block("b2", "j2", "b")
+        assertEquals(emptySet(), ids(QueryFilter.Between("2026_01_05", "2026_01_01")))
+    }
+
+    @Test
+    fun `executeQuery finds Between range older than 500 newest journals`() = runBlocking {
+        val old = LocalDate(2020, 1, 1)
+        page("old", "2020_01_01", journal = old)
+        block("bo", "old", "ancient")
+        var d = LocalDate(2022, 1, 1)
+        repeat(520) { i ->
+            page("n$i", "newer_$i", journal = d)
+            d = d.plus(1, DateTimeUnit.DAY)
+        }
+        assertEquals(setOf("bo"), ids(QueryFilter.Between("2020_01_01", "2020_01_01")))
     }
 }

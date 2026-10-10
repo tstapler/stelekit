@@ -127,11 +127,14 @@ object QueryParser {
         val atom = sexp as? Sexp.Atom ?: return null
         if (atom.quoted) return null
         val t = atom.text.removePrefix("#").takeIf { atom.text.startsWith("#[[") } ?: atom.text
-        return when {
+        val ref = when {
             t.startsWith("[[") && t.endsWith("]]") && t.length > 4 -> QueryFilter.PageRef(t.substring(2, t.length - 2))
             t.startsWith("#") && t.length > 1 && !t.startsWith("#[") -> QueryFilter.PageRef(t.substring(1))
             else -> null
         }
+        // The target is interpolated into SQL LIKE; a '%' would widen the scan into a wildcard match.
+        if (ref != null && '%' in ref.target) unsupported("'%' is not allowed in a page reference")
+        return ref
     }
 
     private fun parseOperand(sexp: Sexp): QueryOperand {

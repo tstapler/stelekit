@@ -17,11 +17,14 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.minus
 
 /**
  * Turns a parsed [SimpleQuery] into a live `Flow` of matching blocks by composing the narrow
@@ -70,6 +73,7 @@ class QueryExecutor(
         is QueryFilter.PageRef -> blockSearchRepository.findReferencingBlocksReactive(filter.target, limit, 0)
         is QueryFilter.PageProperty -> pageRepository
             .getPagesWithProperty(filter.key, filter.value, limit, 0)
+            .distinctUntilChanged()
             .flatMapLatest { it.fold({ e -> flowOf(e.left()) }, { pages -> blocksOfPages(pages, limit) }) }
         is QueryFilter.Between -> executeBetween(filter, limit)
     }
@@ -93,41 +97,62 @@ class QueryExecutor(
 
     private fun blocksOfPages(pages: List<Page>, limit: Int): Flow<Either<DomainError, List<Block>>> {
         if (pages.isEmpty()) return flowOf(emptyList<Block>().right())
-        return combine(pages.map { blockReadRepository.getBlocksForPage(it.uuid) }) { results ->
+        // Only the first PAGE_READ_CAP pages are read; each per-page flow is the sole invalidation source
+        // for block writes (no SQL-free "any block changed" signal exists), so the cap bounds that cost.
+        val read = pages.take(PAGE_READ_CAP)
+        return combine(read.map { blockReadRepository.getBlocksForPage(it.uuid) }) { results ->
             val merged = LinkedHashMap<String, Block>()
             for (r in results) {
-                r.fold(
-                    { return@combine it.left() },
-                    // getOrPut, not putIfAbsent: the latter isn't in common stdlib (wasmJs).
-                    { blocks -> blocks.forEach { b -> merged.getOrPut(b.uuid.value) { b } } },
-                )
+                val blocks = r.getOrNull() ?: return@combine r.map { emptyList<Block>() }
+                if (merged.size >= limit) continue // keep scanning only so a Left from a later page still surfaces
+                // getOrPut, not putIfAbsent: the latter isn't in common stdlib (wasmJs).
+                for (b in blocks) {
+                    merged.getOrPut(b.uuid.value) { b }
+                    if (merged.size >= limit) break
+                }
             }
-            merged.values.take(limit).toList().right()
-        }
+            merged.values.toList().right()
+        }.distinctUntilChanged()
     }
 
     private fun executeBetween(filter: QueryFilter.Between, limit: Int): Flow<Either<DomainError, List<Block>>> =
-        // Boundary pages are looked up once; the journal-page scan below is what re-evaluates the range.
+        // Boundary pages are looked up once; the cheap newest-journal trigger below re-evaluates the range.
         combine(
             pageRepository.getPageByName(filter.startPage),
             pageRepository.getPageByName(filter.endPage),
         ) { start, end -> dateOf(filter.startPage, start) to dateOf(filter.endPage, end) }
             .flatMapLatest { (start, end) ->
-                if (start == null || end == null) {
+                if (start == null || end == null || start > end) {
                     flowOf(emptyList<Block>().right())
                 } else {
-                    val from = if (start <= end) start else end
-                    val to = if (start <= end) end else start
-                    pageRepository.getJournalPages(JOURNAL_SCAN_LIMIT, 0).flatMapLatest { either ->
-                        either.fold(
+                    pageRepository.getJournalPages(1, 0).flatMapLatest { trigger ->
+                        trigger.fold(
                             { e -> flowOf(e.left()) },
-                            { pages ->
-                                blocksOfPages(pages.filter { p -> p.journalDate?.let { it in from..to } == true }, limit)
+                            {
+                                flow {
+                                    emit(
+                                        pageRepository.getJournalPagesByDates(datesNewestFirst(start, end))
+                                            .map { pages -> pages.sortedByDescending { it.journalDate } },
+                                    )
+                                }.flatMapLatest { either ->
+                                    either.fold({ e -> flowOf(e.left()) }, { pages -> blocksOfPages(pages, limit) })
+                                }
                             },
                         )
                     }
                 }
             }
+
+    /** At most [MAX_BETWEEN_DAYS] days, counted down from [to]; older days of a longer range are dropped. */
+    private fun datesNewestFirst(from: LocalDate, to: LocalDate): List<LocalDate> {
+        val dates = ArrayList<LocalDate>()
+        var d = to
+        while (d >= from && dates.size < MAX_BETWEEN_DAYS) {
+            dates.add(d)
+            d = d.minus(1, DateTimeUnit.DAY)
+        }
+        return dates
+    }
 
     /** Journal date of a resolved page, or of an ISO-ish name (`2026_01_05` / `2026-01-05`) with no page yet. */
     private fun dateOf(name: String, page: Either<DomainError, Page?>): LocalDate? =
@@ -171,7 +196,10 @@ class QueryExecutor(
         /** Per-operand fetch ceiling under and/or; the combined result is still capped at [DEFAULT_LIMIT]. */
         const val OPERAND_LIMIT = 1000
 
-        /** Most-recent journal pages scanned per `between` query before the date-range filter runs. */
-        const val JOURNAL_SCAN_LIMIT = 500
+        /** Pages whose blocks are read per page-set filter (property / between). */
+        const val PAGE_READ_CAP = 50
+
+        /** Longest `between` date span looked up; see [datesNewestFirst]. */
+        const val MAX_BETWEEN_DAYS = 366
     }
 }

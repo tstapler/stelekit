@@ -68,6 +68,11 @@ class QueryParserTest {
             ok("(and [[tag2]] (not [[tag1]]))"),
         )
 
+    @Test fun `percent wildcard in a page reference is rejected`() {
+        assertIs<DomainError.ParseError.UnsupportedForm>(err("[[a%b]]"))
+        assertIs<DomainError.ParseError.UnsupportedForm>(err("#a%"))
+    }
+
     @Test fun `unknown head symbol returns InvalidSyntax`() {
         assertIs<DomainError.ParseError.InvalidSyntax>(err("(frobnicate xyz)"))
     }
