@@ -908,22 +908,7 @@ class GraphManager(
                 // Complete, released critical section under the OWNER's lock; never nested with
                 // lock(id) below (see GraphWriteLock lock order).
                 try {
-                    if (factoryToClose != null) withContext(kotlinx.coroutines.NonCancellable) {
-                        val closeUnderLock: suspend () -> Unit = {
-                            // Stop the actor first: it owns its scope, and a late batch write must fail fast
-                            // (retryable) instead of reaching a closed driver.
-                            actorToStop?.close()
-                            initHooks?.beforeFactoryClose(previousId)
-                            factoryToClose.close()
-                        }
-                        if (previousId != null) {
-                            graphWriteLock.withLockOrDegrade(previousId, lockAcquireTimeout, onTimeout = { holder ->
-                                logger.warn("graph.switch.lock_timeout graph=$previousId phase=close holder=${holder ?: "unknown"}")
-                            }) { closeUnderLock() }
-                        } else {
-                            closeUnderLock()
-                        }
-                    }
+                    if (factoryToClose != null) closeUnderOwnerLock(previousId, actorToStop, factoryToClose)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -1049,6 +1034,43 @@ class GraphManager(
         mirrorActiveNotesPath()
         _graphsExplicitlyEmptied.value = false
         saveRegistry()
+    }
+
+    /**
+     * Stops [actor] then closes [factory] as one complete critical section under `lock(owner)` (when
+     * [owner] is known), so a merge/share batch holding the lock never sees a half-closed graph. Never
+     * nested with another graph lock. After the acquire timeout it degrades open: a stuck batch then
+     * hits the stopped actor's retryable path instead of blocking the close forever.
+     */
+    private suspend fun closeUnderOwnerLock(
+        owner: GraphId?,
+        actor: DatabaseWriteActor?,
+        factory: dev.stapler.stelekit.repository.RepositoryFactory,
+    ) {
+        withContext(kotlinx.coroutines.NonCancellable) {
+            val closeNow: suspend () -> Unit = {
+                actor?.close()
+                initHooks?.beforeFactoryClose(owner)
+                factory.close()
+            }
+            if (owner != null) {
+                graphWriteLock.withLockOrDegrade(owner, lockAcquireTimeout, onTimeout = { holder ->
+                    logger.warn("graph.switch.lock_timeout graph=$owner phase=close holder=${holder ?: "unknown"}")
+                }) { closeNow() }
+            } else {
+                closeNow()
+            }
+        }
+    }
+
+    /**
+     * Relocation's teardown: the caller awaits the close, which runs under `lock(id)` so in-flight
+     * merge batches finish first. Call with no graph lock held.
+     */
+    internal suspend fun tearDownAndCloseActiveGraph(id: GraphId) {
+        val actor = _activeRepositorySet.value?.writeActor
+        val factory = tearDownActiveGraphResources() ?: return
+        closeUnderOwnerLock(id, actor, factory)
     }
 
     /** Closes a factory this init coroutine created but never published; runs inside the owner's lock. */
@@ -1480,7 +1502,7 @@ class GraphManager(
             }
         }
         try {
-            factoryToClose?.close()
+            if (factoryToClose != null) closeUnderOwnerLock(graphId, actorForDelete, factoryToClose)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -1525,6 +1547,8 @@ class GraphManager(
         _activeVaultCredentialStore.value = null
 
         // Null repo set before closing so in-flight Compose flow collectors stop querying first.
+        // Sync by contract (process/test teardown), so no lock: stop the actor first so late writes fail fast.
+        _activeRepositorySet.value?.writeActor?.close()
         _readyGraph.value = null
         _activeRepositorySet.value = null
         currentFactoryRef.getAndUpdate { null }?.close()

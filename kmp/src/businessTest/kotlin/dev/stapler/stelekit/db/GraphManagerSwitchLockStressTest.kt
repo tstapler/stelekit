@@ -221,6 +221,27 @@ class GraphManagerSwitchLockStressTest {
     }
 
     @Test
+    fun `relocation teardown waits for a batch holding lock A and closes A's factory once under it`() = realTime {
+        val hooks = Hooks()
+        val m = newManager(hooks)
+        m.awaitPendingMigration()
+        val release = CompletableDeferred<Unit>()
+        val merge = async { m.graphWriteLock.withLock(a, label = "merge") { release.await() } }
+        while (!m.graphWriteLock.isLocked(a)) delay(5)
+
+        val teardown = async { m.tearDownAndCloseActiveGraph(a) }
+        delay(300)
+        assertTrue(hooks.closed.isEmpty(), "close must wait on lock(A), got ${hooks.closed}")
+        assertFalse(teardown.isCompleted)
+        release.complete(Unit)
+        merge.await()
+        teardown.await()
+
+        assertEquals(listOf<GraphId?>(a), hooks.closed)
+        assertAllUnlockedEventually(m)
+    }
+
+    @Test
     fun `readyGraph pair matches activeRepositorySet after racing switches`() = realTime {
         val m = newManager(Hooks())
         m.awaitPendingMigration()

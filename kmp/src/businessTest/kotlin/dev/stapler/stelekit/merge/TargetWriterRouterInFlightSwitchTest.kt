@@ -6,6 +6,7 @@ import arrow.core.right
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.GraphInitHooks
 import dev.stapler.stelekit.db.GraphManager
+import dev.stapler.stelekit.db.MoveInProgressFlag
 import dev.stapler.stelekit.db.ReadyGraph
 import dev.stapler.stelekit.db.RegistryGraphLocator
 import dev.stapler.stelekit.error.DomainError
@@ -233,6 +234,23 @@ class TargetWriterRouterInFlightSwitchTest {
         assertTrue(stoppedWhileHeld, "writes through A's actor must fail fast once its factory is closed")
         assertEquals("off", (res as Either.Right).value)
         assertEquals(2, calls)
+    }
+
+    @Test
+    fun `a target being relocated is refused as retryable instead of written through the file writer`() = realTime {
+        val m = newManager()
+        m.awaitPendingMigration()
+        val r = router(m)
+        var ran = false
+        MoveInProgressFlag.setMoveInProgress(b.value, true)
+        try {
+            val res = r.withWriter(b) { ran = true; "x".right() }
+            assertIs<DomainError.MergeError.Retryable>((res as Either.Left).value)
+            assertFalse(ran, "no writer may touch the directory being moved")
+        } finally {
+            MoveInProgressFlag.setMoveInProgress(b.value, false)
+        }
+        assertEquals("off", (r.withWriter(b, label) as Either.Right).value)
     }
 
     @Test

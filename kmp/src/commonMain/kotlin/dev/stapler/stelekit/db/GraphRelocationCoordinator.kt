@@ -282,7 +282,7 @@ class GraphRelocationCoordinator(
             var reopenedRepositorySet: RepositorySet? = null
             try {
                 withContext(PlatformDispatcher.IO) {
-                    graphManager.tearDownActiveGraphResources()?.close()
+                    graphManager.tearDownAndCloseActiveGraph(graphId)
                 }
                 copyOutcome = copyIntoStagingThenRepoint(operation)
             } finally {

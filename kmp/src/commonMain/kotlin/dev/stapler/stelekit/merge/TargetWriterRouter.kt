@@ -4,6 +4,7 @@ import arrow.core.Either
 import arrow.core.left
 import dev.stapler.stelekit.db.GraphLocator
 import dev.stapler.stelekit.db.GraphManager
+import dev.stapler.stelekit.db.MoveInProgressFlag
 import dev.stapler.stelekit.db.ReadyGraph
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
@@ -87,6 +88,10 @@ class TargetWriterRouter(
             onLockWaitMs(target, waitStart.elapsedNow().inWholeMilliseconds)
             val ready = graphManager.readyGraph.value
             when {
+                // The graph's directory is being copied/moved and its driver is closed: the file writer
+                // would write into the tree being moved. Retryable, so the page waits for the move.
+                MoveInProgressFlag.isMoveInProgress(target.value) ->
+                    DomainError.MergeError.Retryable("Graph ${target.value} is being moved; try again when it finishes.").left()
                 ready?.id == target -> block(activeWriterFor(ready))
                 // Registry says active but the pair is not published: a switch started after our
                 // await. After an await it means init failed, so fall through to the file writer.
