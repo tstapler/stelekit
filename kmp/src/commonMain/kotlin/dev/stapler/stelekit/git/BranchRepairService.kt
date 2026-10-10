@@ -77,5 +77,5 @@ class BranchRepairService(
         append("Nothing was pulled.")
     }
 
-    private fun stripUserInfo(url: String): String = url.replace(Regex("//[^/@]+@"), "//")
+    private fun stripUserInfo(url: String): String = redactSecrets(url)
 }

@@ -442,7 +442,7 @@ class JvmGitRepository(
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                "<failed to open repo: ${e::class.simpleName}: ${e.message}>"
+                "<failed to open repo: ${e::class.simpleName}: ${redactSecrets(e.message.orEmpty())}>"
             }
         }
 

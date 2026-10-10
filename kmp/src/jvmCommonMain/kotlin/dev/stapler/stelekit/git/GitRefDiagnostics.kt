@@ -10,6 +10,9 @@ import org.eclipse.jgit.api.LsRemoteCommand
 import org.eclipse.jgit.lib.BranchTrackingStatus
 import org.eclipse.jgit.lib.Constants
 
+/** Keeps the diagnostics export from hanging on an offline or black-holed remote. */
+internal const val DIAGNOSTICS_LS_REMOTE_TIMEOUT_SECONDS = 15
+
 /**
  * Plain-text description of the repo's refs, for the diagnostics export. Shows whether
  * `<remoteName>/<remoteBranch>` — the ref [GitRepository.fetch] compares HEAD against —
@@ -31,7 +34,7 @@ internal fun describeGitRefs(
     }
     section("remote url") {
         val raw = repo.config.getString("remote", config.remoteName, "url") ?: "<unset>"
-        appendLine("${config.remoteName}.url=${raw.replace(Regex("//[^/@]+@"), "//")}")
+        appendLine("${config.remoteName}.url=${redactSecrets(raw)}")
     }
     section("configured ref") {
         val resolved = repo.exactRef("${Constants.R_REMOTES}$configuredRef")?.objectId
@@ -50,6 +53,7 @@ internal fun describeGitRefs(
     }
     section("live remote heads (ls-remote)") {
         val heads = git.lsRemote().setRemote(config.remoteName).setHeads(true)
+            .setTimeout(DIAGNOSTICS_LS_REMOTE_TIMEOUT_SECONDS)
             .also(configureLsRemote).call()
         if (heads.isEmpty()) appendLine("<none>")
         heads.sortedBy { it.name }.forEach { appendLine(refLine(it.name, it.objectId.name)) }
@@ -67,6 +71,6 @@ private inline fun StringBuilder.section(title: String, body: StringBuilder.() -
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
-        appendLine("<failed: ${e::class.simpleName}: ${e.message}>")
+        appendLine("<failed: ${e::class.simpleName}: ${redactSecrets(e.message.orEmpty())}>")
     }
 }

@@ -4,6 +4,7 @@ import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.git.GitConfigRepository
 import dev.stapler.stelekit.git.GitRepository
+import dev.stapler.stelekit.git.redactSecrets
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.logging.LogManager
 import dev.stapler.stelekit.model.GraphInfo
@@ -108,14 +109,13 @@ class GraphDiagnosticsCollector(
             return
         }
         appendGitConfig(config)
-        appendGitCall("status") { git.status(config).fold({ "error: ${it.message}" }, { s ->
-            "hasLocalChanges=${s.hasLocalChanges} modified=${s.modifiedFiles.size} untracked=${s.untrackedFiles.size} " +
-                "untracked(first $MAX_LISTED)=${s.untrackedFiles.take(MAX_LISTED)}"
+        appendGitCall("status") { git.status(config).fold({ "error: ${redactSecrets(it.message)}" }, { s ->
+            "hasLocalChanges=${s.hasLocalChanges} modified=${s.modifiedFiles.size} untracked=${s.untrackedFiles.size}"
         }) }
         appendGitCall("detachedHead") { git.hasDetachedHead(config).toString() }
         appendGitCall("refs") { "\n" + git.describeRefs(config) }
         appendGitCall("log (last $GIT_LOG_ENTRIES)") {
-            git.log(config, GIT_LOG_ENTRIES).fold({ "error: ${it.message}" }, { commits ->
+            git.log(config, GIT_LOG_ENTRIES).fold({ "error: ${redactSecrets(it.message)}" }, { commits ->
                 commits.joinToString(prefix = "\n", separator = "\n") { c -> "${c.sha.take(9)} ${c.timestamp} ${c.shortMessage}" }
             })
         }
@@ -133,7 +133,7 @@ class GraphDiagnosticsCollector(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            "<failed: ${e::class.simpleName}: ${e.message}>"
+            "<failed: ${e::class.simpleName}: ${redactSecrets(e.message.orEmpty())}>"
         }
         appendLine("$label: $text")
     }
