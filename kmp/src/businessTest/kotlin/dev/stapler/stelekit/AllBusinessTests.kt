@@ -65,6 +65,7 @@ import dev.stapler.stelekit.asset.pipeline.AssetPipelineServiceTest
 import dev.stapler.stelekit.asset.pipeline.PluginRegistryTest
 import dev.stapler.stelekit.auto.AudiobookNoteFormatterTest
 import dev.stapler.stelekit.auto.AudiobookNoteWriterTest
+import dev.stapler.stelekit.capture.ShareInboxTest
 import dev.stapler.stelekit.db.AtomicFileRelocationStepTest
 import dev.stapler.stelekit.db.BlockHierarchyCteTest
 import dev.stapler.stelekit.db.BulkCopyVerifierTest
@@ -220,6 +221,7 @@ import org.junit.runners.Suite
     AudiobookNoteFormatterTest::class,
     AudiobookNoteWriterTest::class,
     AtomicFileRelocationStepTest::class,
+    ShareInboxTest::class,
     BlockHierarchyCteTest::class,
     BulkCopyVerifierTest::class,
     DiskConflictBlockMatcherTest::class,
