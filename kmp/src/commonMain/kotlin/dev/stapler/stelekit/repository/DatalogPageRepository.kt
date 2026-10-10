@@ -12,6 +12,7 @@ import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.CancellationException
 
@@ -85,7 +86,7 @@ class DatalogPageRepository : PageRepository {
     override fun getPagesWithProperty(key: String, value: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
         pages.map { map ->
             map.values.filter { it.properties[key] == value }.sortedBy { it.name }.drop(offset).take(limit).right()
-        }
+        }.distinctUntilChanged()
 
     override fun getJournalPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
         return pages.map { map ->

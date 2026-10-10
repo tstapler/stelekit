@@ -43,8 +43,7 @@ class QueryExecutor(
             .distinctUntilChanged()
             // Merge/sort work shouldn't run on the collector's (UI) dispatcher.
             .flowOn(PlatformDispatcher.Default)
-            // Repository flows already guard the closed DB, but a throwable in combine/flatMapLatest here
-            // would reach composition and kill the process on Android.
+            // Throwable on purpose: an uncaught one here kills the process on Android.
             .catch { e ->
                 if (e is CancellationException) throw e
                 emit(DomainError.DatabaseError.ReadFailed(e.message ?: "unknown").left())
@@ -99,7 +98,8 @@ class QueryExecutor(
             for (r in results) {
                 r.fold(
                     { return@combine it.left() },
-                    { blocks -> blocks.forEach { merged.getOrPut(it.uuid.value) { it } } },
+                    // getOrPut, not putIfAbsent: the latter isn't in common stdlib (wasmJs).
+                    { blocks -> blocks.forEach { b -> merged.getOrPut(b.uuid.value) { b } } },
                 )
             }
             merged.values.take(limit).toList().right()
@@ -107,8 +107,7 @@ class QueryExecutor(
     }
 
     private fun executeBetween(filter: QueryFilter.Between, limit: Int): Flow<Either<DomainError, List<Block>>> =
-        // getPageByName emits once, so a boundary page that doesn't exist yet only resolves via dateOf's
-        // ISO-name fallback; the journal-page scan below is the reactive part.
+        // Boundary pages are looked up once; the journal-page scan below is what re-evaluates the range.
         combine(
             pageRepository.getPageByName(filter.startPage),
             pageRepository.getPageByName(filter.endPage),

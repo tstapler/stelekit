@@ -63,12 +63,13 @@ internal fun GraphContentScreenAndCapture(deps: GraphContentDeps, viewModel: Ste
     // The flag read is a synchronous SQLite query, so it runs on the DB dispatcher, not during composition.
     val queryBlocksEnabled by produceState(initialValue = true, deps.repos) {
         value = withContext(PlatformDispatcher.DB) {
-            // A graph switch/close can invalidate the flag DB mid-read; fall back to the default.
+            // A graph switch/close can invalidate the flag DB mid-read; fall back to the default (Throwable:
+            // an uncaught Error here kills the process on Android).
             try {
                 deps.repos.debugFlagRepository?.getFlag("live_query_blocks", default = true) ?: true
             } catch (e: CancellationException) {
                 throw e
-            } catch (e: Exception) {
+            } catch (_: Throwable) {
                 true
             }
         }
