@@ -44,6 +44,9 @@ class ShareCaptureServices(
     val inbox: ShareInbox,
     val appender: JournalAppender,
     val drain: ShareInboxDrain,
+    /** The one router, exposed for undo and the destination picker's availability check. */
+    val router: TargetWriterRouter,
+    val capabilities: TargetWriterCapabilities,
 )
 
 /** The router's ready-graph slot: always `Retryable`, so the share is queued and delivered through the open-graph path. */
@@ -99,5 +102,5 @@ fun createShareCaptureServices(
         appender = JournalInboxAppender(drainAppender),
         registeredGraphs = graphManager.graphRegistry.map { registry -> registry.graphs.map { it.id } },
     )
-    return ShareCaptureServices(inbox, appender, drain)
+    return ShareCaptureServices(inbox, appender, drain, router, config.capabilities)
 }

@@ -26,6 +26,12 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import dev.stapler.stelekit.merge.sweepMergeArtifactsOnDisk
+import dev.stapler.stelekit.capture.CaptureTargetSettings
+import dev.stapler.stelekit.capture.ShareCaptureServices
+import dev.stapler.stelekit.capture.createShareCaptureServices
+import dev.stapler.stelekit.capture.shareInboxConfigFor
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 
 class SteleKitApplication : Application() {
 
@@ -58,6 +64,60 @@ class SteleKitApplication : Application() {
      */
     var graphManager: GraphManager? = null
         private set
+
+    /** Test seam: replaces the lazily built share pipeline. */
+    internal var shareServicesOverride: ShareCaptureServices? = null
+    internal var captureTargetSettingsOverride: CaptureTargetSettings? = null
+    internal var offGraphReasonOverride: (suspend (dev.stapler.stelekit.model.GraphInfo) -> String?)? = null
+
+    @Volatile
+    private var shareServicesMemo: Pair<GraphManager, ShareCaptureServices>? = null
+    private val captureSettingsLazy by lazy { CaptureTargetSettings(PlatformSettings()) }
+    val recentCaptures: RecentCaptureStore by lazy { RecentCaptureStore(this) }
+
+    fun captureTargetSettings(): CaptureTargetSettings = captureTargetSettingsOverride ?: captureSettingsLazy
+
+    /**
+     * Share pipeline (appender + inbox) for CaptureActivity, built on first use because a share can
+     * cold-start the process without MainActivity. The inbox drain is NOT started here: MainActivity's
+     * App composition owns it, so queued shares deliver once a graph is open and ready.
+     */
+    fun shareServices(): ShareCaptureServices? {
+        shareServicesOverride?.let { return it }
+        val gm = graphManager ?: return null
+        if (!::fileSystem.isInitialized) return null
+        shareServicesMemo?.takeIf { it.first === gm }?.let { return it.second }
+        return synchronized(this) {
+            shareServicesMemo?.takeIf { it.first === gm }?.second ?: try {
+                createShareCaptureServices(gm, fileSystem, shareInboxConfigFor(filesDir.absolutePath))
+                    .also { shareServicesMemo = gm to it }
+            } catch (e: Throwable) {
+                logger.warn("Share pipeline unavailable", e)
+                null
+            }
+        }
+    }
+
+    /** Why [info] can't take an off-graph write right now, or null when it can. */
+    suspend fun offGraphUnavailableReason(info: dev.stapler.stelekit.model.GraphInfo): String? {
+        offGraphReasonOverride?.let { return it(info) }
+        val services = shareServices() ?: return "this device can't save to a graph that isn't open."
+        return try {
+            kotlinx.coroutines.withContext(Dispatchers.IO) {
+                if (!fileSystem.directoryExists(info.path)) return@withContext "its folder is missing."
+                val storage = graphManager?.getStorageLocation(info.id.value)
+                val target = dev.stapler.stelekit.merge.OffGraphTarget(
+                    info.id, info.path, isActive = false, encrypted = info.isParanoidMode, storage = storage,
+                )
+                services.capabilities.canWriteOffGraph(target).fold({ it.userText }, { null })
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            logger.warn("Off-graph availability check failed for ${info.id.value}", e)
+            "it couldn't be checked."
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -103,6 +163,7 @@ class SteleKitApplication : Application() {
                 fileSystem = fileSystem,
                 preFlightJob = startupFlushJob,
             )
+            publishShareShortcutsOnRegistryChange(graphManager)
             appScope.launch(Dispatchers.IO) {
                 try {
                     sweepMergeArtifactsOnDisk(filesDir.absolutePath)
@@ -114,6 +175,28 @@ class SteleKitApplication : Application() {
             logger.error("Application init failed — widget/tile/share will show placeholder", e)
             if (!::fileSystem.isInitialized) {
                 fileSystem = PlatformFileSystem()
+            }
+        }
+    }
+
+    private fun publishShareShortcutsOnRegistryChange(gm: GraphManager?) {
+        gm ?: return
+        appScope.launch(Dispatchers.IO) {
+            try {
+                gm.graphRegistry
+                    .map { registry -> registry.graphs.map { it.id to it.displayName } to registry.graphs }
+                    .distinctUntilChanged { a, b -> a.first == b.first }
+                    .collect { (_, graphs) ->
+                        try {
+                            ShareShortcutPublisher.publish(this@SteleKitApplication, graphs)
+                        } catch (e: Exception) {
+                            logger.warn("Share shortcut publish failed", e)
+                        }
+                    }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                logger.warn("Share shortcut publisher stopped", e)
             }
         }
     }

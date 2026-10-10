@@ -39,6 +39,10 @@ object OffGraphCapture {
     const val REASON_WRITE_REFUSED = "write-refused"
     const val REASON_WRITE_FAILED = "write-failed"
 
+    /** Name of today's journal page, as [RouterOffGraphRoute] writes it (recorded so undo finds the same page). */
+    fun todayJournalPageName(): String =
+        JournalUtils.formatDateForJournal(Clock.System.todayIn(TimeZone.currentSystemDefault()))
+
     private val UUID_FORM = Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 
     /** Same uuid the active path gives the block (`BlockUuid(captureId)`) when [captureId] is a uuid, else a stable hash. */

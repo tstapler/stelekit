@@ -83,6 +83,12 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="image/*" />
             </intent-filter>
+
+            <!-- Story 4.2.2: Direct Share. API 29+ reads share-target XML directly; the pre-29
+                 chooser_target_service path needs androidx.sharetarget and is not wired. -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/share_targets" />
         </activity>
 
         <!-- Task 2.1: Quick Settings Tile (API 24+; PendingIntent overload used on API 34+) -->
