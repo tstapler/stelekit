@@ -13,6 +13,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
@@ -173,13 +174,13 @@ class CaptureActivityTargetTest {
         vm.setDestinationForTest(CaptureDestination.Ready(personal, isActive = false), listOf(work, personal))
         composeRule.setContent { MaterialTheme { CaptureScreen(vm, onSaved = {}, onDismiss = {}) } }
 
-        composeRule.onNodeWithTag(DESTINATION_ROW_TEST_TAG).performClick()
+        composeRule.onNodeWithTag(DESTINATION_ROW_TEST_TAG).performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick)
         composeRule.waitForIdle()
         composeRule.onNodeWithTag(graphChipTestTag(work.id)).assertExists()
         composeRule.onNodeWithTag(graphChipTestTag(personal.id)).assertExists()
         assertTrue(vm.menuOpen.value)
 
-        composeRule.onNodeWithTag(graphChipTestTag(work.id)).performClick()
+        composeRule.onNodeWithTag(graphChipTestTag(work.id)).performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick)
         composeRule.waitForIdle()
         assertFalse(vm.menuOpen.value)
         assertEquals("typed before opening the menu", vm.captureText.value)
@@ -193,10 +194,10 @@ class CaptureActivityTargetTest {
         vm.setDestinationForTest(CaptureDestination.Ready(five[0], isActive = false), five)
         composeRule.setContent { MaterialTheme { CaptureScreen(vm, onSaved = {}, onDismiss = {}) } }
 
-        composeRule.onNodeWithTag(DESTINATION_ROW_TEST_TAG).performClick()
+        composeRule.onNodeWithTag(DESTINATION_ROW_TEST_TAG).performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick)
         composeRule.waitForIdle()
         five.forEach { composeRule.onNodeWithTag(graphChipTestTag(it.id)).assertExists() }
-        composeRule.onNodeWithTag(graphChipTestTag(five[3].id)).performClick()
+        composeRule.onNodeWithTag(graphChipTestTag(five[3].id)).performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick)
         composeRule.waitForIdle()
         assertFalse(vm.menuOpen.value)
     }
@@ -571,14 +572,14 @@ class CaptureActivityTargetTest {
         val h = harness()
         val first = CaptureViewModel(h.app)
         first.beginShare(h.workId().value)
-        await { first.destination.value is CaptureDestination.Ready }
+        await { ((first.destination.value as? CaptureDestination.Ready)?.graph?.id == h.workId()) }
         first.updateText("delivered once")
         first.save()
         await { first.saveState.value != CaptureViewModel.SaveState.Saving }
 
         val restored = CaptureViewModel(h.app)
         restored.beginShare(h.workId().value, restoredCaptureId = first.captureId)
-        await { restored.destination.value is CaptureDestination.Ready }
+        await { ((restored.destination.value as? CaptureDestination.Ready)?.graph?.id == h.workId()) }
         restored.updateText("delivered once")
         restored.save()
         await { restored.saveState.value != CaptureViewModel.SaveState.Saving }
@@ -593,7 +594,7 @@ class CaptureActivityTargetTest {
         val h = harness()
         val vm = CaptureViewModel(h.app)
         vm.beginShare(h.workId().value)
-        await { vm.destination.value is CaptureDestination.Ready }
+        await { ((vm.destination.value as? CaptureDestination.Ready)?.graph?.id == h.workId()) }
         vm.updateText("saved on back")
 
         vm.backSave()
@@ -678,7 +679,7 @@ class CaptureActivityTargetTest {
         val h = harness()
         val vm = CaptureViewModel(h.app)
         vm.beginShare(h.workId().value)
-        await { vm.destination.value is CaptureDestination.Ready }
+        await { ((vm.destination.value as? CaptureDestination.Ready)?.graph?.id == h.workId()) }
         vm.updateText("host is gone")
         vm.hostAttached = false
 
