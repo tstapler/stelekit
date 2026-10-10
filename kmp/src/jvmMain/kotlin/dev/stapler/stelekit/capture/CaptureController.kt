@@ -6,6 +6,7 @@ package dev.stapler.stelekit.capture
 
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.logging.Logger
+import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.NotificationType
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.ui.NotificationManager
@@ -32,6 +33,7 @@ import java.awt.datatransfer.StringSelection
  * outlives all of them, so a `save()` triggered after the popup has been torn down and
  * rebuilt several times never hits `ForgottenCoroutineScopeException`.
  */
+@Suppress("TooManyFunctions") // one cohesive popup state machine; every function is a transition of _state
 class CaptureController(private val fileSystem: PlatformFileSystem) {
 
     @Volatile
@@ -39,6 +41,12 @@ class CaptureController(private val fileSystem: PlatformFileSystem) {
 
     @Volatile
     private var notificationManager: NotificationManager? = null
+
+    @Volatile
+    private var appender: JournalAppender? = null
+
+    @Volatile
+    private var targetSettings: CaptureTargetSettings? = null
 
     private val logger = Logger("CaptureController")
 
@@ -60,6 +68,17 @@ class CaptureController(private val fileSystem: PlatformFileSystem) {
 
     fun attachNotificationManager(nm: NotificationManager) {
         notificationManager = nm
+    }
+
+    /** The share pipeline's appender, which can also write to graphs that are not open. */
+    fun attachShareServices(services: ShareCaptureServices) = attachAppender(services.appender)
+
+    internal fun attachAppender(journalAppender: JournalAppender) {
+        appender = journalAppender
+    }
+
+    fun attachTargetSettings(settings: CaptureTargetSettings) {
+        targetSettings = settings
     }
 
     /** Registers [hotkeyListener] to call [show] when the bound combo fires. */
@@ -92,7 +111,38 @@ class CaptureController(private val fileSystem: PlatformFileSystem) {
         } else {
             CaptureWriter.resolveCaptureAvailability(gm)
         }
-        _state.value = CapturePopupState.Shown(text = "", saveState = SaveState.Idle, captureResult = captureResult)
+        val registry = gm?.graphRegistry?.value
+        val choices = registry?.graphs.orEmpty().map { GraphChoice(it.id, it.displayName) }
+        val target = targetSettings?.let { CaptureTargetResolver.resolve(it, choices.map { c -> c.id }.toSet()) }
+        val targetId = (target as? CaptureTarget.NamedGraph)?.graphId ?: registry?.activeGraphId
+        _state.value = CapturePopupState.Shown(
+            text = "",
+            saveState = SaveState.Idle,
+            captureResult = captureResult,
+            targetGraphId = targetId,
+            graphChoices = choices,
+        )
+    }
+
+    /** Alt+G / the chooser button. No-op unless there is more than one graph to choose from. */
+    fun setChooserOpen(open: Boolean) {
+        val current = _state.value as? CapturePopupState.Shown ?: return
+        if (current.graphChoices.size < 2) return
+        _state.value = current.copy(chooserOpen = open)
+    }
+
+    /** Changes the destination for this capture only; typed text is kept and the default is untouched. */
+    fun selectGraph(graphId: GraphId) {
+        val current = _state.value as? CapturePopupState.Shown ?: return
+        if (current.graphChoices.none { it.id == graphId }) return
+        val retryable = current.saveState == SaveState.Error || current.saveState == SaveState.Queued
+        _state.value = current.copy(
+            targetGraphId = graphId,
+            chooserOpen = false,
+            saveState = if (retryable) SaveState.Idle else current.saveState,
+            captureResult = if (retryable) null else current.captureResult,
+            statusMessage = null,
+        )
     }
 
     /** Updates the draft text in place. No-op when the popup isn't shown. */
@@ -121,35 +171,95 @@ class CaptureController(private val fileSystem: PlatformFileSystem) {
         // `when` checks captureResult before saveState, so a stale non-null value here would
         // render the wrong placeholder (e.g. "Vault is locked") during a Retry click instead of
         // the Saving state, even though CapturePopupState.Shown itself allows this combination.
-        _state.value = current.copy(saveState = SaveState.Saving, captureResult = null)
-        val result = CaptureWriter.resolveCaptureAvailability(gm)
-            ?: when (val outcome = JournalAppender(gm, fileSystem).append(CaptureTarget.ActiveGraph, current.text)) {
-                is AppendOutcome.Appended -> outcome.saved
-                is AppendOutcome.Failed -> outcome.cause ?: CaptureResult.Failed(outcome.error)
-                else -> CaptureResult.Failed("Unexpected append outcome: $outcome")
-            }
+        _state.value = current.copy(saveState = SaveState.Saving, captureResult = null, statusMessage = null)
+
+        val targetId = current.targetGraphId
+        val target = if (targetId == null) CaptureTarget.ActiveGraph else CaptureTarget.NamedGraph(targetId)
+        // The vault-lock gate only concerns the open graph; an off-graph write has its own checks.
+        val gate = if (targetId == null || targetId == gm.getActiveGraphId()) CaptureWriter.resolveCaptureAvailability(gm) else null
+        val outcome = if (gate != null) {
+            AppendOutcome.Failed("unavailable", gate)
+        } else {
+            (appender ?: JournalAppender(gm, fileSystem)).append(target, current.text)
+        }
 
         // Re-read state rather than reuse `current` — updateText()/dismiss() may have raced
         // with this suspend call while the write was in flight.
         val latest = _state.value as? CapturePopupState.Shown ?: return
-        when (result) {
-            is CaptureResult.Saved -> {
-                _state.value = latest.copy(saveState = SaveState.Saved, captureResult = result)
-                logger.info("Saved to today's journal")
-                notificationManager?.show("Saved to today's journal", NotificationType.SUCCESS)
+        when (outcome) {
+            is AppendOutcome.Appended -> markSaved(latest, outcome.saved)
+            is AppendOutcome.AppendedOffGraph, AppendOutcome.AlreadyPresent -> markSaved(latest, null)
+            is AppendOutcome.Queued -> {
+                val message = "Queued for ${latest.targetGraphName ?: "the graph"}"
+                _state.value = latest.copy(saveState = SaveState.Queued, statusMessage = message)
+                notificationManager?.show(message, NotificationType.INFO)
             }
-            else -> _state.value = latest.copy(saveState = SaveState.Error, captureResult = result)
+            is AppendOutcome.Deferred ->
+                _state.value = latest.copy(saveState = SaveState.Error, captureResult = CaptureResult.Failed(outcome.reason))
+            is AppendOutcome.Failed ->
+                _state.value = latest.copy(
+                    saveState = SaveState.Error,
+                    captureResult = outcome.cause ?: CaptureResult.Failed(outcome.error),
+                )
         }
     }
 
+    private fun markSaved(latest: CapturePopupState.Shown, saved: CaptureResult.Saved?) {
+        latest.targetGraphId?.let { targetSettings?.recordLastUsed(it) }
+        val name = latest.targetGraphName
+        // Naming the graph is noise when there is only one.
+        val message = if (latest.graphChoices.size > 1 && name != null) "Saved to $name's journal" else "Saved to today's journal"
+        logger.info(message)
+        notificationManager?.show(message, NotificationType.SUCCESS)
+        _state.value = latest.copy(saveState = SaveState.Saved, captureResult = saved)
+    }
+
     /**
-     * Closes the popup. Non-blank text auto-saves before the state transitions to `Hidden`, so
-     * dismissing (Escape, click-away) never silently discards a draft. A draft already in
-     * [SaveState.Error] is copied to the system clipboard instead of retried, since the write
-     * already failed once — closing without a retry avoids masking the failure.
+     * Esc. Blank text closes at once; any other text asks first ([CapturePopupState.ConfirmDiscard]).
+     * Never saves, unlike [dismiss].
+     */
+    fun requestDismiss() {
+        when (val current = _state.value) {
+            is CapturePopupState.Hidden -> Unit
+            is CapturePopupState.ConfirmDiscard -> keepEditing()
+            is CapturePopupState.Shown -> when {
+                current.saveState == SaveState.Saving -> Unit
+                current.saveState == SaveState.Saved || current.saveState == SaveState.Queued || current.text.isBlank() ->
+                    transitionToHidden()
+                else -> _state.value = CapturePopupState.ConfirmDiscard(current.copy(chooserOpen = false))
+            }
+        }
+    }
+
+    /** "Discard": closes without saving. */
+    fun confirmDiscard() {
+        if (_state.value is CapturePopupState.ConfirmDiscard) transitionToHidden()
+    }
+
+    /** "Keep editing": back to the draft, text intact. */
+    fun keepEditing() {
+        val current = _state.value as? CapturePopupState.ConfirmDiscard ?: return
+        _state.value = current.draft
+    }
+
+    /**
+     * Closes the popup on focus loss or window close (Esc uses [requestDismiss]). Non-blank text
+     * auto-saves before the state transitions to `Hidden`, so click-away never silently discards a
+     * draft. A draft already in [SaveState.Error] is copied to the system clipboard instead of
+     * retried, since the write already failed once — closing without a retry avoids masking it.
      */
     fun dismiss() {
-        val current = _state.value as? CapturePopupState.Shown ?: return
+        // Focus loss during the discard prompt falls back to the draft, so it is saved rather than lost.
+        val current = when (val s = _state.value) {
+            is CapturePopupState.ConfirmDiscard -> s.draft
+            is CapturePopupState.Shown -> s
+            else -> return
+        }
+
+        if (current.saveState == SaveState.Saved || current.saveState == SaveState.Queued) {
+            transitionToHidden()
+            return
+        }
 
         if (current.saveState == SaveState.Error) {
             copyToClipboard(current.text)
@@ -158,6 +268,7 @@ class CaptureController(private val fileSystem: PlatformFileSystem) {
         }
 
         if (current.text.isNotBlank()) {
+            _state.value = current
             scope.launch {
                 performSave()
                 transitionToHidden()

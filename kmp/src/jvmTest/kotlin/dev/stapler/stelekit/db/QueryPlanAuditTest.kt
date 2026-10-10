@@ -117,6 +117,8 @@ class QueryPlanAuditTest {
             "SELECT * FROM blocks WHERE content LIKE '%test%' ORDER BY created_at DESC LIMIT 10 OFFSET 0"),
         AuditQuery("countBlocksByPageUuid",
             "SELECT COUNT(*) FROM blocks WHERE page_uuid = 'x'"),
+        AuditQuery("countBlocksByPageUuids",
+            "SELECT page_uuid, COUNT(*) AS block_count FROM blocks WHERE page_uuid IN ('x','y') GROUP BY page_uuid"),
         AuditQuery("selectBlocksByParentUuidOrdered",
             "SELECT * FROM blocks WHERE parent_uuid = 'x' ORDER BY position"),
         AuditQuery("selectBlocksByParentUuids",
@@ -299,7 +301,7 @@ ORDER BY depth, parent_uuid, position"""),
             """SELECT p.uuid, p.name, p.namespace, p.file_path, p.created_at, p.updated_at, p.properties, p.version, p.is_favorite, p.is_journal, p.journal_date, p.is_content_loaded,
                highlight(pages_fts, 0, '<em>', '</em>') AS highlight
                FROM pages_fts pf JOIN pages p ON p.rowid = pf.rowid
-               WHERE pages_fts MATCH 'test*' ORDER BY bm25(pages_fts) LIMIT 10"""),
+               WHERE pages_fts MATCH 'test*' ORDER BY bm25(pages_fts) LIMIT 10 OFFSET 20"""),
         AuditQuery("searchPagesByNameFtsInDateRange",
             """SELECT p.uuid, p.name, p.namespace, p.file_path, p.created_at, p.updated_at,
                p.properties, p.version, p.is_favorite, p.is_journal, p.journal_date, p.is_content_loaded,

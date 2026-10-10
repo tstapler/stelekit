@@ -28,6 +28,10 @@ interface PageSource {
     /** Total number of pages [listPages] can return for the same [filter] and [search]. */
     suspend fun countPages(filter: SelectionFilter, search: String?): Either<DomainError, Long>
 
+    /** Block count per page for <= [MAX_PAGE_SIZE] [uuids] (one grouped query); empty when unknown. */
+    suspend fun blockCounts(uuids: List<PageUuid>): Either<DomainError, Map<PageUuid, Int>> =
+        Either.Right(emptyMap())
+
     /** Pages (in [uuids] order, missing ones omitted) with their blocks; <= [MAX_PAGE_SIZE] uuids. */
     suspend fun readPages(uuids: List<PageUuid>): Either<DomainError, List<SourcePage>>
 

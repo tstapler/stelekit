@@ -235,6 +235,10 @@ SELECT * FROM blocks WHERE content LIKE ? ORDER BY created_at DESC LIMIT ? OFFSE
 countBlocksByPageUuid:
 SELECT COUNT(*) FROM blocks WHERE page_uuid = ?;
 
+-- Grouped per-page block counts for a bounded page of ids; idx_blocks_page_position covers it.
+countBlocksByPageUuids:
+SELECT page_uuid, COUNT(*) AS block_count FROM blocks WHERE page_uuid IN :uuids GROUP BY page_uuid;
+
 updateBlockParent:
 UPDATE blocks SET parent_uuid = ? WHERE uuid = ?;
 
@@ -700,7 +704,7 @@ FROM pages_fts pf
 JOIN pages p ON p.rowid = pf.rowid
 WHERE pages_fts MATCH :query
 ORDER BY bm25(pages_fts)
-LIMIT :limit;
+LIMIT :limit OFFSET :offset;
 
 -- Date-ranged FTS queries for search with date filters
 searchPagesByNameFtsInDateRange:

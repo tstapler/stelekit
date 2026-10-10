@@ -100,6 +100,12 @@ class UpgradeResilienceTest {
             assertFlowEmitsLeft("BlockRepository.getBlocksForPage") {
                 repoSet.blockRepository.getBlocksForPage(PageUuid(FIXTURE_PAGE_UUID)).first()
             }
+            assertFlowEmitsLeft("BlockRepository.countBlocksForPages") {
+                repoSet.blockRepository.countBlocksForPages(listOf(PageUuid(FIXTURE_PAGE_UUID)))
+            }
+            assertFlowEmitsLeft("SearchRepository.searchPagesByTitle paged") {
+                repoSet.searchRepository.searchPagesByTitle("test", 10, 5).first()
+            }
             assertFlowEmitsLeft("BlockRepository.getBlockChildren") {
                 repoSet.blockRepository.getBlockChildren(BlockUuid(FIXTURE_BLOCK_UUID)).first()
             }

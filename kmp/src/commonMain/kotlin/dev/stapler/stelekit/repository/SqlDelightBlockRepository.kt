@@ -241,6 +241,22 @@ class SqlDelightBlockRepository(
             .catchDbError()
     }
 
+    override suspend fun countBlocksForPages(pageUuids: Collection<PageUuid>): Either<DomainError, Map<PageUuid, Int>> =
+        withContext(PlatformDispatcher.DB) {
+            try {
+                val counts = HashMap<PageUuid, Int>()
+                for (chunk in pageUuids.map { it.value }.chunked(BATCH_UUID_CHUNK_SIZE)) {
+                    queries.countBlocksByPageUuids(chunk).executeAsList()
+                        .forEach { counts[PageUuid(it.page_uuid)] = it.block_count.toInt() }
+                }
+                counts.right()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                DomainError.DatabaseError.ReadFailed(e.message ?: "unknown").left()
+            }
+        }
+
     override suspend fun getBlocksByUuids(uuids: List<BlockUuid>): Either<DomainError, List<Block>> =
         withContext(PlatformDispatcher.DB) {
             if (uuids.isEmpty()) return@withContext emptyList<Block>().right()

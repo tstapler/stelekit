@@ -11,9 +11,10 @@ import dev.stapler.stelekit.repository.SearchRepository
 import kotlinx.coroutines.flow.first
 
 /**
- * [PageSource] over the active graph's repositories. Search is title FTS: the top
- * [SEARCH_HIT_CAP] hits are intersected with the filter by id (one chunked query), so a
- * search surfaces at most that many pages — a deliberate bound, not an O(graph) scan.
+ * [PageSource] over the active graph's repositories. Search is title FTS, paged
+ * [SEARCH_HIT_PAGE] hits at a time and intersected with the filter by id (one chunked
+ * query per hit page), so every repository call stays bounded however many pages match.
+ * Deep offsets and counts cost O(matches / [SEARCH_HIT_PAGE]) calls, never O(graph) rows.
  */
 class ActiveDbPageSource(
     private val pages: PageRepository,
@@ -32,17 +33,19 @@ class ActiveDbPageSource(
         if (query.isEmpty()) {
             pages.getPagesFiltered(filter, size, offset).first().bind()
         } else {
-            // Bounded in memory: <= SEARCH_HIT_CAP FTS hits, not a SQL result set.
-            val matches = searchMatches(filter, query).bind()
-            val from = offset.coerceIn(0, matches.size)
-            matches.subList(from, (from + size).coerceAtMost(matches.size))
+            scanMatches(filter, query, skip = offset.coerceAtLeast(0), take = size).bind()
         }
     }
 
     override suspend fun countPages(filter: SelectionFilter, search: String?): Either<DomainError, Long> {
         val query = search?.trim().orEmpty()
         if (query.isEmpty()) return pages.countPagesFiltered(filter)
-        return searchMatches(filter, query).map { it.size.toLong() }
+        return scanMatches(filter, query, skip = 0, take = null).map { it.size.toLong() }
+    }
+
+    override suspend fun blockCounts(uuids: List<PageUuid>): Either<DomainError, Map<PageUuid, Int>> {
+        require(uuids.size <= PageSource.MAX_PAGE_SIZE) { "blockCounts is bounded to ${PageSource.MAX_PAGE_SIZE} uuids" }
+        return blocks.countBlocksForPages(uuids)
     }
 
     override suspend fun readPages(uuids: List<PageUuid>): Either<DomainError, List<SourcePage>> = either {
@@ -53,15 +56,36 @@ class ActiveDbPageSource(
         }
     }
 
-    /** Filter-passing search hits in FTS rank order (<= [SEARCH_HIT_CAP]). */
-    private suspend fun searchMatches(filter: SelectionFilter, query: String): Either<DomainError, List<Page>> = either {
-        val hits = searchRepo.searchPagesByTitle(query, SEARCH_HIT_CAP).first().bind()
-        if (hits.isEmpty()) return@either emptyList()
-        val passing = pages.getPagesAmong(filter, hits.map { it.uuid }).bind().associateBy { it.uuid }
-        hits.mapNotNull { passing[it.uuid] }
+    /**
+     * Filter-passing hits in FTS rank order after dropping [skip]; stops after [take]
+     * (null = all, used for counting). Each repository call returns <= [SEARCH_HIT_PAGE] rows.
+     */
+    private suspend fun scanMatches(
+        filter: SelectionFilter,
+        query: String,
+        skip: Int,
+        take: Int?,
+    ): Either<DomainError, List<Page>> = either {
+        val out = ArrayList<Page>()
+        var toSkip = skip
+        var hitOffset = 0
+        while (take == null || out.size < take) {
+            val hits = searchRepo.searchPagesByTitle(query, SEARCH_HIT_PAGE, hitOffset).first().bind()
+            if (hits.isEmpty()) break
+            val passing = pages.getPagesAmong(filter, hits.map { it.uuid }).bind().associateBy { it.uuid }
+            for (hit in hits) {
+                val page = passing[hit.uuid] ?: continue
+                if (toSkip > 0) { toSkip--; continue }
+                if (take != null && out.size >= take) break
+                out.add(page)
+            }
+            if (hits.size < SEARCH_HIT_PAGE) break
+            hitOffset += hits.size
+        }
+        out
     }
 
     companion object {
-        const val SEARCH_HIT_CAP = PageSource.MAX_PAGE_SIZE
+        const val SEARCH_HIT_PAGE = PageSource.MAX_PAGE_SIZE
     }
 }
