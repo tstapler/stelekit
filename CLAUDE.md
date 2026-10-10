@@ -465,6 +465,21 @@ Regression tests: `UpgradeResilienceTest` (TC-UPGRADE-001 exercises every `Flow`
 
 When a workflow is called via `workflow_call`, `github.event_name` inside the called workflow reflects the **caller's** triggering event (e.g. `push`), not `workflow_call`. A job `if:` condition checking `github.event_name == 'workflow_call'` will always be false when called from a push-triggered parent. Remove the job-level `if:` entirely and rely on the workflow-level `on:` triggers instead.
 
+### Cross-graph writes — one router, one lock, splice-only off-graph
+
+`GraphManager` stays single-open: only one graph has a `RepositorySet`. Copying pages between graphs and sharing into a non-active graph therefore never opens a second database.
+
+Rules:
+- **All cross-graph writes go through `TargetWriterRouter`** (`merge/TargetWriterRouter.kt`) — one router for both page copies (`PageMergeService`) and shares (`JournalAppender`). Do not add a second class that chooses between the active and off-graph writers.
+- **The router picks the writer at write time under `GraphWriteLock(target)`** (`db/GraphWriteLock.kt`): the active graph is written by `ActiveTargetWriter` (DB via `DatabaseWriteActor` + `GraphWriter`), an inactive one by `MarkdownTargetWriter` (markdown only; the next open reconciles it).
+- **Lock order:** never hold one `GraphWriteLock` while acquiring another, and never `await` `GraphManager.awaitPendingMigration()` while holding one (the `switchGraph` init coroutine needs the lock to complete it). Readiness comes from the `GraphManager.readyGraph` pair, never from the registry's `activeGraphId`.
+- **Never write markdown of the active graph behind `GraphWriter`.** Writing to the active graph's files bypasses its DB and the watcher's self-write suppression.
+- **Off-graph writes only splice**: `MarkdownSplicer` inserts new lines into the original bytes and `RoundTripGuard` refuses (queued for shares, failed-with-retry for copies) any file where the splice would change an existing block. Never re-render an existing file.
+- **Every merged block gets a remapped uuid and an explicit `id::`** (`UuidRemap`, SHA-256) plus `src-id::`. `LogseqPageSerializer` writes only keys already in `Block.properties`, so set `properties["id"]` before saving, and never insert a block whose uuid exists on another page (`INSERT OR REPLACE` would delete that page's block).
+- **Copies never queue**; only shares use `ShareInbox`. Unwritable destinations are shown disabled with a reason (`TargetWriterCapabilities`), not hidden.
+
+Regression tests: `TargetWriterContractSuite` (run against both writers), `CopyEditRecopyPropertyTest`, `MergePagePropertyTest`, `MergeRoundTripPropertyTest`, `GraphManagerSwitchLockStressTest`, `TargetWriterRouterInFlightSwitchTest`, `LargeGraphMergeTest`, `OffGraphReconcileRegressionTest`. Decisions: `project_plans/cross-graph-merge-share-target/decisions/ADR-001..004`.
+
 ## Testing Infrastructure
 
 See `kmp/TESTING_README.md` for the exploratory/performance testing guide (jank detection,
