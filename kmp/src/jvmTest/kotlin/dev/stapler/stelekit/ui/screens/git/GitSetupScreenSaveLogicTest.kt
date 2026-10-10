@@ -151,4 +151,47 @@ class GitSetupScreenSaveLogicTest {
         assertTrue(outcome is CloneAndSaveOutcome.CloneFailed, "expected a clone failure: $outcome")
         assertTrue(repoHistoryStore.recentEntries(GitRepoHistoryKind.CLONE_URL).isEmpty())
     }
+
+    private class RecordingConfigRepository : dev.stapler.stelekit.git.GitConfigRepository {
+        var saved: GitConfig? = null
+        override suspend fun getConfig(graphId: String) = Either.Right(saved)
+        override suspend fun saveConfig(config: GitConfig): Either<DomainError, Unit> {
+            saved = config
+            return Unit.right()
+        }
+        override suspend fun deleteConfig(graphId: String): Either<DomainError, Unit> = Unit.right()
+        override fun observeConfig(graphId: String) =
+            kotlinx.coroutines.flow.flowOf<Either<DomainError, GitConfig?>>(Either.Right(saved))
+    }
+
+    private suspend fun cloneWith(detection: dev.stapler.stelekit.git.DefaultBranchDetection): GitConfig? {
+        val configRepository = RecordingConfigRepository()
+        val stores = GitSetupStores(
+            credentialStore = CredentialStore(),
+            connectionStore = GitCredentialConnectionStore(InMemorySettings(), CredentialStore()),
+            gitConfigRepository = configRepository,
+            repoHistoryStore = GitRepoHistoryStore(InMemorySettings()),
+        )
+        performCloneAndSave(
+            form = baseForm(CloneMode.CloneNewRepository), // wizard default remoteBranch = "main"
+            stores = stores,
+            onCloneAndAdd = { _, _, _, _, _, _, _, _ -> "new-graph-id".right() },
+            onCloneProgress = {},
+            onCloneInProgressChange = {},
+            detectDefaultBranch = { _, _ -> detection },
+        )
+        return configRepository.saved
+    }
+
+    @Test
+    fun `performCloneAndSave saves the remote's real default branch instead of the wizard default`() = runTest {
+        val saved = cloneWith(dev.stapler.stelekit.git.DefaultBranchDetection.Detected("master"))
+        assertEquals("master", saved?.remoteBranch)
+    }
+
+    @Test
+    fun `performCloneAndSave keeps the form branch when detection is ambiguous or unreachable`() = runTest {
+        assertEquals("main", cloneWith(dev.stapler.stelekit.git.DefaultBranchDetection.Ambiguous(listOf("a", "b")))?.remoteBranch)
+        assertEquals("main", cloneWith(dev.stapler.stelekit.git.DefaultBranchDetection.Unreachable("offline"))?.remoteBranch)
+    }
 }

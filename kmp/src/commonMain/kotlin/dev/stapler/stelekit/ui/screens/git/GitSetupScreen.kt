@@ -424,6 +424,7 @@ fun GitSetupScreen(
                     },
                     onCloneInProgressChange = { cloneInProgress = it },
                     onRetryStateChange = { state -> retryState = state },
+                    detectDefaultBranch = { url, auth -> gitRepository.detectDefaultBranch(url, auth) },
                 )
                 saving = false
                 when (outcome) {
