@@ -93,7 +93,18 @@ class GraphManagerSwitchLockStressTest {
 
     /** Cancelled earlier init coroutines unwind asynchronously; a leak means it never converges. */
     private suspend fun assertAllUnlockedEventually(m: GraphManager) {
-        withTimeout(10.seconds) { while (listOf(a, b, c).any { m.graphWriteLock.isLocked(it) }) delay(5) }
+        // Abandoned inits (started ATOMIC so they always unwind) can take and release a lock a moment after the
+        // last switch, so a single unlocked sample is not quiescence: require the locks to stay free for a window.
+        val anyLocked = { listOf(a, b, c).any { m.graphWriteLock.isLocked(it) } }
+        withTimeout(10.seconds) {
+            while (true) {
+                if (!anyLocked()) {
+                    delay(200)
+                    if (!anyLocked()) break
+                }
+                delay(5)
+            }
+        }
         listOf(a, b, c).forEach { assertFalse(m.graphWriteLock.isLocked(it), "lock($it) leaked") }
     }
 
