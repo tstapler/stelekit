@@ -24,6 +24,8 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
+import dev.stapler.stelekit.merge.sweepMergeArtifactsOnDisk
 
 class SteleKitApplication : Application() {
 
@@ -98,6 +100,13 @@ class SteleKitApplication : Application() {
                 fileSystem = fileSystem,
                 preFlightJob = startupFlushJob,
             )
+            appScope.launch(Dispatchers.IO) {
+                try {
+                    sweepMergeArtifactsOnDisk(filesDir.absolutePath)
+                } catch (e: Throwable) {
+                    logger.warn("Merge artifact sweep failed", e)
+                }
+            }
         } catch (e: Throwable) {
             logger.error("Application init failed — widget/tile/share will show placeholder", e)
             if (!::fileSystem.isInitialized) {

@@ -9,3 +9,7 @@ fun MarkdownTargetWriter.Companion.forFilePaths(
     target: OffGraphTarget,
     capabilities: TargetWriterCapabilities,
 ): MarkdownTargetWriter = MarkdownTargetWriter(fs, target, capabilities) { File(it).canonicalPath }
+
+/** Startup sweep against the real disk (JVM and Android); blocking IO, call off the main thread. */
+fun sweepMergeArtifactsOnDisk(appDataDir: String, nowEpochMs: Long = System.currentTimeMillis()) =
+    sweepMergeArtifacts(okio.FileSystem.SYSTEM, appDataDir, nowEpochMs)

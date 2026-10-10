@@ -24,6 +24,7 @@ import dev.stapler.stelekit.capture.GlobalHotkeyListener
 import dev.stapler.stelekit.capture.JKeymasterHotkeyListener
 import dev.stapler.stelekit.capture.PendingCapturePoller
 import dev.stapler.stelekit.db.GraphManager
+import dev.stapler.stelekit.merge.sweepMergeArtifactsOnDisk
 import dev.stapler.stelekit.domain.UrlFetcherJvm
 import dev.stapler.stelekit.service.JvmMediaAttachmentService
 import dev.stapler.stelekit.git.JvmGitCloneWorkerLauncher
@@ -101,6 +102,15 @@ fun main(args: Array<String>) {
         .setDefaultFocusTraversalKeys(KeyboardFocusManager.FORWARD_TRAVERSAL_KEYS, emptySet())
     KeyboardFocusManager.getCurrentKeyboardFocusManager()
         .setDefaultFocusTraversalKeys(KeyboardFocusManager.BACKWARD_TRAVERSAL_KEYS, emptySet())
+
+    // Reap stale merge staging dirs and expired manifests; best effort, off the UI path.
+    Thread {
+        try {
+            sweepMergeArtifactsOnDisk(dev.stapler.stelekit.db.DriverFactory().getDatabaseDirectory())
+        } catch (e: Exception) {
+            logger.warn("Merge artifact sweep failed", e)
+        }
+    }.apply { isDaemon = true }.start()
 
     application {
         try {
