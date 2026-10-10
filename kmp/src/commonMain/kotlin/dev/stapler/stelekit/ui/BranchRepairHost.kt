@@ -16,6 +16,7 @@ import dev.stapler.stelekit.error.toSyncErrorMessage
 import dev.stapler.stelekit.git.BranchRepairProposal
 import dev.stapler.stelekit.git.BranchRepairResult
 import dev.stapler.stelekit.git.model.SyncState
+import dev.stapler.stelekit.git.redactSecrets
 import dev.stapler.stelekit.ui.screens.git.BranchRepairSheet
 import dev.stapler.stelekit.ui.screens.git.FirstSyncReviewDialog
 import kotlinx.coroutines.launch
@@ -72,6 +73,7 @@ internal fun BranchRepairHost(appState: AppState, viewModel: StelekitViewModel, 
         var started by remember { mutableStateOf(false) }
         // Ignore the pre-click state (still the old error) until this sync has actually started.
         var sawRunning by remember { mutableStateOf(false) }
+        var changeBackNote by remember { mutableStateOf<String?>(null) }
         LaunchedEffect(syncState, started) { if (started && syncState.isRunning()) sawRunning = true }
         val label = config?.let { "${it.remoteName}/${it.remoteBranch}" } ?: "the new branch"
         val resultLine = if (!sawRunning) null else when (val s = syncState) {
@@ -83,23 +85,22 @@ internal fun BranchRepairHost(appState: AppState, viewModel: StelekitViewModel, 
             remoteBranch = label,
             previousBranch = service.previousBranchBeforeRepair(),
             syncing = syncState.isRunning(),
-            resultLine = resultLine,
+            resultLine = changeBackNote ?: resultLine,
             onSyncNow = {
                 started = true
                 viewModel.triggerSync()
             },
             onChangeBack = {
-                val previous = service.previousBranchBeforeRepair()
-                val current = config?.remoteBranch
-                if (previous != null && current != null) {
-                    scope.launch {
-                        val result = service.repairBranch(
-                            BranchRepairProposal(graphId, from = current, to = previous, available = listOf(previous, current)),
-                        )
-                        if (result is BranchRepairResult.Repaired) {
+                scope.launch {
+                    when (val result = service.changeBackBranch()) {
+                        is BranchRepairResult.Repaired -> {
                             viewModel.setGitConfig(gitSync.gitConfigRepository?.getConfig(graphId)?.getOrNull())
                             viewModel.dismissFirstSyncReview()
                         }
+                        is BranchRepairResult.TargetNotOnRemote ->
+                            changeBackNote = "'${result.to}' is still not on the remote, so it can't be switched back to."
+                        is BranchRepairResult.SaveFailed -> changeBackNote = "Couldn't switch back: ${redactSecrets(result.message)}"
+                        else -> changeBackNote = "Couldn't switch back."
                     }
                 }
             },
