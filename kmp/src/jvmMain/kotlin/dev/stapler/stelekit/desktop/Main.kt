@@ -225,6 +225,8 @@ fun main(args: Array<String>) {
                         shareInbox = dev.stapler.stelekit.capture.shareInboxConfigFor(
                             dev.stapler.stelekit.db.DriverFactory().getDatabaseDirectory(),
                         ),
+                        onShareServicesReady = captureSurfaces.controller::attachShareServices,
+                        onCaptureSettingsReady = captureSurfaces.controller::attachTargetSettings,
                     ),
                 ),
             )

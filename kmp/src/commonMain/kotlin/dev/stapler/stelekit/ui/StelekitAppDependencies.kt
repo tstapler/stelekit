@@ -244,6 +244,8 @@ data class StelekitAppCaptureDeps(
     val shareInbox: dev.stapler.stelekit.capture.ShareInboxConfig? = null,
     /** Hands the share appender to the host (Android share target) once the pipeline is built. */
     val onShareServicesReady: ((dev.stapler.stelekit.capture.ShareCaptureServices) -> Unit)? = null,
+    /** Hands the app's capture-target settings to the host (Desktop quick capture) so it shares the app's Settings instance. */
+    val onCaptureSettingsReady: ((dev.stapler.stelekit.capture.CaptureTargetSettings) -> Unit)? = null,
 )
 
 /**
