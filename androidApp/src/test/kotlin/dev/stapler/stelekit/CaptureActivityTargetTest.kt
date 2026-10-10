@@ -167,6 +167,11 @@ class CaptureActivityTargetTest {
         composeRule.onAllNodesWithText("Today's Journal").assertCountEquals(0)
     }
 
+    // Chip and row taps use the node's OnClick action, not performClick(): the sheet is a Surface with
+    // a non-uniform RoundedCornerShape (rounded top, square bottom); Compose hit-tests such an outline
+    // through Path.op, which Robolectric's Path does not implement, so injected touches inside the sheet
+    // fall through to the scrim. A uniform shape or RectangleShape delivers them (verified); real
+    // devices use the native Path and are unaffected.
     @Test
     fun row_tapOpensInlineChipsAndSelectionKeepsTypedText() {
         val vm = plainVm()
