@@ -3,7 +3,10 @@ package dev.stapler.stelekit.platform
 import dev.stapler.stelekit.logging.Logger
 import kotlinx.coroutines.CancellationException
 import java.io.File
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
 import java.nio.file.Paths
+import java.nio.file.StandardCopyOption
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -255,6 +258,26 @@ abstract class JvmFileSystemBase {
             throw e
         } catch (e: Exception) {
             logger.error("writeFileBytes failed: $path", e)
+            false
+        }
+    }
+
+    open fun supportsAtomicReplace(path: String): Boolean = true
+
+    open fun replaceFileAtomically(from: String, to: String): Boolean {
+        return try {
+            val source = Paths.get(from)
+            val dest = Paths.get(to)
+            try {
+                Files.move(source, dest, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+            } catch (e: AtomicMoveNotSupportedException) {
+                Files.move(source, dest, StandardCopyOption.REPLACE_EXISTING)
+            }
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.error("replaceFileAtomically failed: $from -> $to", e)
             false
         }
     }

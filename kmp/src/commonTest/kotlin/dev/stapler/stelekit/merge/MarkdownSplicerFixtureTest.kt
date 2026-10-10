@@ -177,11 +177,10 @@ class MarkdownSplicerFixtureTest {
             paths += path
             val pad = if (spec.tabs) "\t".repeat(d) else "  ".repeat(d)
             out += "$pad- block $i"
-            if (!spec.crlf && spec.labeled[i % spec.labeled.size]) out += "$pad  id:: 00000000-0000-0000-0000-${i.toString().padStart(12, '0')}"
+            if (spec.labeled[i % spec.labeled.size]) out += "$pad  id:: 00000000-0000-0000-0000-${i.toString().padStart(12, '0')}"
             prev = d
         }
-        // CRLF needs a final eol: the parser keeps `\r` in content, so adding one after the last line would change it.
-        val text = out.joinToString(eol) + if (spec.finalNewline || spec.crlf) eol else ""
+        val text = out.joinToString(eol) + if (spec.finalNewline) eol else ""
         return Triple(text, paths, out.size)
     }
 

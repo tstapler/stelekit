@@ -34,7 +34,7 @@ class MarkdownTargetWriterSymlinkTest {
     private fun writer(): MarkdownTargetWriter {
         val fs = PlatformFileSystem().also { it.registerGraphRoot(graph.absolutePath); it.registerGraphRoot(outside.absolutePath) }
         val target = OffGraphTarget(GraphId("b"), graph.absolutePath, isActive = false)
-        return MarkdownTargetWriter(fs, target, TargetWriterCapabilities(platformSupportsOffGraphWrite = true)) { File(it).canonicalPath }
+        return MarkdownTargetWriter.forFilePaths(fs, target, TargetWriterCapabilities(platformSupportsOffGraphWrite = true))
     }
 
     private fun refusal(e: Either<DomainError, *>) =

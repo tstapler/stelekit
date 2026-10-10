@@ -98,6 +98,10 @@ object MergeConverters {
     /**
      * Parses [text] with the production parser. [pagePath] must be the string `GraphLoader` passes
      * for this file (see `PageFileResolver` KDoc) or positional uuids will not match the DB's.
+     *
+     * CRLF is normalized to LF first: the parser keeps `\r` in block content and `id::` values, which
+     * made every CRLF page look "changed" once the splicer added a line. Done here, not in the parser,
+     * so ordinary DB loads are unaffected; this parse never feeds the DB or is written back.
      */
     fun parseMarkdown(
         text: String,
@@ -106,7 +110,7 @@ object MergeConverters {
         isJournal: Boolean,
         journalDate: LocalDate? = null,
     ): ParsedMarkdown {
-        val parsed = MarkdownParser().parsePage(text, ParseMode.FULL)
+        val parsed = MarkdownParser().parsePage(text.replace("\r\n", "\n"), ParseMode.FULL)
         val built = MarkdownPageParser.buildPageModel(
             filePath = pagePath, name = name, isJournal = isJournal, journalDate = journalDate,
             existingPage = null, now = EPOCH, mode = ParseMode.FULL, parsedPage = parsed, fileModTime = null,

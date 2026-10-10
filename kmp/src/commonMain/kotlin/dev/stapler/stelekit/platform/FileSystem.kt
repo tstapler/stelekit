@@ -122,6 +122,15 @@ interface FileSystem {
     /** Rename/move [from] to [to]. Returns false if not supported on this platform. */
     fun renameFile(from: String, to: String): Boolean = false
 
+    /**
+     * True when [replaceFileAtomically] swaps a destination at [path] in one step, so a crash leaves either
+     * the old or the new file complete. False (default) on SAF, iOS and Web, which cannot promise that.
+     */
+    fun supportsAtomicReplace(path: String): Boolean = false
+
+    /** Moves [from] over [to], replacing it. Only call when [supportsAtomicReplace] for [to]; false on failure with [to] untouched. */
+    fun replaceFileAtomically(from: String, to: String): Boolean = false
+
     /** Platform-appropriate directory for user-facing exported files (e.g. ~/Downloads). */
     fun getDownloadsPath(): String = expandTilde("~/Downloads")
 

@@ -24,14 +24,36 @@ class MarkdownTargetWriterTest {
         var writes = 0
         var failWrite = false
         var failRename = false
+        var atomic = false
+        var crashBeforeReplace = false
+        var crashAfterTmpWrite = false
+        var legacyDeletes = 0
 
         override fun writeFileBytes(path: String, data: ByteArray): Boolean {
             if (failWrite) throw IllegalStateException("disk full")
             writes++
-            return super.writeFileBytes(path, data)
+            val ok = super.writeFileBytes(path, data)
+            if (crashAfterTmpWrite && path.endsWith(".tmp")) throw IllegalStateException("simulated crash after temp write")
+            return ok
         }
 
         override fun renameFile(from: String, to: String): Boolean = !failRename && super.renameFile(from, to)
+
+        override fun deleteFile(path: String): Boolean {
+            if (!path.endsWith(".tmp") && fileExists(path)) legacyDeletes++
+            return super.deleteFile(path)
+        }
+
+        override fun supportsAtomicReplace(path: String) = atomic
+
+        /** One indivisible step, like rename(2): the real name is the old bytes until it returns. */
+        override fun replaceFileAtomically(from: String, to: String): Boolean {
+            if (crashBeforeReplace) throw IllegalStateException("simulated crash before replace")
+            val bytes = readFileBytes(from) ?: return false
+            super.writeFileBytes(to, bytes)
+            super.deleteFile(from)
+            return true
+        }
 
         fun text(path: String) = readFileBytes(path)?.decodeToString()
         fun seed(path: String, text: String) { super.writeFileBytes(path, text.encodeToByteArray()) }
@@ -43,7 +65,7 @@ class MarkdownTargetWriterTest {
     private fun writer(
         t: OffGraphTarget = target,
         c: TargetWriterCapabilities = caps,
-        canon: (String) -> String = { it },
+        canon: (String) -> String = MarkdownTargetWriter.NoSymlinks,
     ) = MarkdownTargetWriter(fs, t, c, canon)
 
     private fun pagePath(name: String) = "$root/pages/$name.md"
@@ -120,15 +142,52 @@ class MarkdownTargetWriterTest {
     }
 
     @Test
-    fun crlfFileRefusesALabeledBlockAndStaysUntouched() = runTest {
+    fun crlfFileAcceptsALabeledBlockAndKeepsUntouchedBytes() = runTest {
         fs.seed(pagePath("Crlf"), MergeFixtures.REAL_CRLF_CLEAN)
         val w = writer()
         val existing = w.readExisting(PageKey("Crlf")).ok()!!
 
-        val result = w.write(PageKey("Crlf"), existing.copy(blocks = existing.blocks + block("x", "labeled")))
+        w.write(PageKey("Crlf"), existing.copy(blocks = existing.blocks + block("x", "labeled"))).ok()
 
-        assertIs<WriteRefusedReason.NotRoundTrippable>(refusal(result))
-        assertEquals(MergeFixtures.REAL_CRLF_CLEAN, fs.text(pagePath("Crlf")))
+        val after = fs.text(pagePath("Crlf"))!!
+        assertTrue(after.startsWith(MergeFixtures.REAL_CRLF_CLEAN), "untouched bytes preserved")
+        assertTrue(after.contains("labeled"))
+        assertEquals(null, Regex("(?<!\r)\n").find(after), "no bare LF")
+    }
+
+    @Test
+    fun atomicReplaceNeverDeletesTheOriginalAndSwapsInTheNewBytes() = runTest {
+        fs.atomic = true
+        fs.seed(pagePath("Atomic"), "- A\n")
+        val w = writer()
+        val existing = w.readExisting(PageKey("Atomic")).ok()!!
+
+        w.write(PageKey("Atomic"), existing.copy(blocks = existing.blocks + block("x", "new"))).ok()
+
+        assertEquals(0, fs.legacyDeletes, "original is never deleted before the swap")
+        assertTrue(fs.text(pagePath("Atomic"))!!.contains("new"))
+        assertFalse(fs.fileExists(pagePath("Atomic") + ".stele-merge.tmp"))
+    }
+
+    @Test
+    fun crashAtEveryStepLeavesTheOldOrTheNewFileCompleteAtTheRealName() = runTest {
+        val old = "- A\n"
+        for (point in listOf("afterTmpWrite", "beforeReplace")) {
+            val f = RecordingFs().also { it.atomic = true }
+            f.seed(pagePath("Crash"), old)
+            val w = MarkdownTargetWriter(f, target, caps, MarkdownTargetWriter.NoSymlinks)
+            val existing = w.readExisting(PageKey("Crash")).ok()!!
+            when (point) {
+                "afterTmpWrite" -> f.crashAfterTmpWrite = true
+                else -> f.crashBeforeReplace = true
+            }
+
+            w.write(PageKey("Crash"), existing.copy(blocks = existing.blocks + block("x", "new")))
+
+            val real = f.text(pagePath("Crash"))
+            assertTrue(real == old || real!!.contains("new") && real.startsWith(old), "$point: real name holds old or complete new, was: $real")
+            assertEquals(old, real, "$point: a crash before the swap leaves the original")
+        }
     }
 
     @Test
