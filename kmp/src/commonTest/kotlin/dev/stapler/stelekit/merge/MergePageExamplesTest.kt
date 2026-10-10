@@ -169,4 +169,49 @@ class MergePageExamplesTest {
         val once = merged(t, s).mergedPage()
         assertEquals(MergeOutcome.Unchanged, merged(once.page, s))
     }
+
+    @Test
+    fun refToDedupedBlockPointsAtTargetBlockNotDanglingRemap() {
+        val t = page(b("t1", "Buy milk"))
+        val s = page(b("s1", "Buy milk"), b("s2", "see ((s1)) and {{embed ((s1))}} and ((OUT))"))
+        val out = merged(t, s).mergedPage()
+        val added = out.page.blocks.last()
+        assertEquals("see ((t1)) and {{embed ((t1))}} and ((OUT))", added.content)
+        assertEquals(UuidRemap.uuidFor(g, "s2"), added.uuid)
+        assertEquals(MergeOutcome.Unchanged, merged(out.page, s))
+    }
+
+    @Test
+    fun refToInsertedBlockStillUsesRemappedUuid() {
+        val out = merged(page(b("a1", "A")), page(b("s1", "X"), b("s2", "see ((s1))"))).mergedPage()
+        assertEquals("see ((${UuidRemap.uuidFor(g, "s1")}))", out.page.blocks.last().content)
+        assertEquals(MergeOutcome.Unchanged, merged(out.page, page(b("s1", "X"), b("s2", "see ((s1))"))))
+    }
+
+    @Test
+    fun refChainThroughDedupedBlocksResolvesAndIsStable() {
+        // Target already holds both blocks with its own ids; the source copy must dedup entirely.
+        val t = page(b("t1", "x"), b("t2", "see ((t1))"))
+        val s = page(b("s1", "x"), b("s2", "see ((s1))"))
+        assertEquals(MergeOutcome.Unchanged, merged(t, s))
+    }
+
+    @Test
+    fun conflictSiblingCopyOfEditedSubtreeNeverDuplicatesUuids() {
+        val s = page(b("p", "P", b("c", "child")))
+        val first = assertIs<MergeOutcome.New>(merged(null, s)).page
+        val edited = first.copy(blocks = first.blocks.map { it.copy(content = "P edited") })
+        val out = merged(edited, s).mergedPage()
+        val ids = out.page.blocks.flatMap { listOf(it.uuid) + it.children.map { c -> c.uuid } }
+        assertEquals(ids.size, ids.toSet().size)
+    }
+
+    @Test
+    fun refToConflictedBlockPointsAtMatchedTargetBlock() {
+        val t = page(b("x1", "Draft v1"))
+        val s = page(b("x1", "Draft v2"), b("s2", "see ((x1))"))
+        val out = merged(t, s).mergedPage()
+        assertEquals(listOf("Draft v1", "Draft v2", "see ((x1))"), out.page.blocks.map { it.content })
+        assertEquals(MergeOutcome.Unchanged, merged(out.page, s))
+    }
 }

@@ -38,6 +38,9 @@ object UuidRemap {
         if (map.isEmpty() || !content.contains("((")) content
         else REF.replace(content) { m -> map[m.groupValues[1]]?.let { "(($it))" } ?: m.value }
 
+    /** Replaces every `((uuid))` with `(())` so contents can be compared before ref targets are known. */
+    fun maskRefs(content: String): String = if (content.contains("((")) REF.replace(content, "(())") else content
+
     private fun hashToUuid(seed: String): String {
         val h = seed.encodeUtf8().sha256().hex().substring(0, 32)
         return "${h.substring(0, 8)}-${h.substring(8, 12)}-${h.substring(12, 16)}-${h.substring(16, 20)}-${h.substring(20)}"
