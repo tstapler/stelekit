@@ -7,7 +7,10 @@ package dev.stapler.stelekit
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import arrow.core.getOrElse
+import dev.stapler.stelekit.capture.AppendOutcome
+import dev.stapler.stelekit.capture.CaptureResult
+import dev.stapler.stelekit.capture.CaptureTarget
+import dev.stapler.stelekit.capture.JournalAppender
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.db.GraphWriter
@@ -18,7 +21,6 @@ import dev.stapler.stelekit.domain.ScanResult
 import dev.stapler.stelekit.domain.TopicSuggestion
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Block
-import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
@@ -26,7 +28,6 @@ import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.PageRepository
-import dev.stapler.stelekit.util.FractionalIndexing
 import dev.stapler.stelekit.util.UuidGenerator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -310,59 +311,30 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
         fileSystem: PlatformFileSystem,
         text: String,
     ): Result<SavedCaptureContext> = runCatching {
-        val repoSet = graphManager.getActiveRepositorySet()
-            ?: error("No active graph — open SteleKit to set up your graph")
-
-        val page = repoSet.journalService.ensureTodayJournal()
-        val graphPath = graphManager.getActiveGraphInfo()?.path
-            ?: error("No active graph path")
-
-        val existingBlocks = repoSet.blockRepository
-            .getBlocksForPage(page.uuid)
-            .first()
-            .getOrElse { error("Failed to load blocks: $it") }
-
-        val now = Clock.System.now()
-        val newBlock = Block(
-            uuid = BlockUuid(UuidGenerator.generateV7()),
-            pageUuid = page.uuid,
-            content = text,
-            position = FractionalIndexing.generateKeyBetween(
-                existingBlocks.maxByOrNull { it.position }?.position, null
-            ),
-            createdAt = now,
-            updatedAt = now,
-        )
-
-        // Bug 1 mitigation: catch ClosedSendChannelException from a graph-switch race
-        val writeActor = repoSet.writeActor
-        if (writeActor != null) {
-            try {
-                writeActor.saveBlock(newBlock).getOrElse { error("Save failed: $it") }
-            } catch (e: ClosedSendChannelException) {
-                throw IllegalStateException("Graph switched during save — please retry", e)
-            }
-        } else {
-            @OptIn(DirectRepositoryWrite::class)
-            repoSet.blockRepository.saveBlock(newBlock).getOrElse { error("Save failed: $it") }
+        // Bug 1/8 mitigations (graph-switch race, markdown flush) live in CaptureWriter.
+        // Autosave is started on the writer, which is then kept for post-save chip writes.
+        val outcome = JournalAppender(graphManager, fileSystem).append(CaptureTarget.ActiveGraph, text) { repoSet ->
+            GraphWriter(fileSystem, writeActor = repoSet.writeActor).also { it.startAutoSave(viewModelScope) }
         }
-
-        // Bug 8 mitigation: flush the Markdown file after every actor write.
-        // Pass writeActor so GraphWriter can persist filePath for newly created journal pages.
-        val writer = GraphWriter(fileSystem, writeActor = repoSet.writeActor)
-        writer.startAutoSave(viewModelScope)
-        writer.savePage(page, existingBlocks + newBlock, graphPath).getOrElse { error("Save failed: $it") }
-
+        val appended = when (outcome) {
+            is AppendOutcome.Appended -> outcome
+            is AppendOutcome.Failed -> error(
+                if (outcome.cause == CaptureResult.NoActiveGraph) "No active graph — open SteleKit to set up your graph"
+                else outcome.error
+            )
+            else -> error("Unexpected append outcome: $outcome")
+        }
+        val saved = appended.saved
         SavedCaptureContext(
-            block = newBlock,
-            page = page,
-            blocks = existingBlocks + newBlock,
-            graphPath = graphPath,
-            graphId = graphManager.getActiveGraphId() ?: error("no active graph"),
-            writer = writer,
-            writeActor = repoSet.writeActor,
-            pageRepository = repoSet.pageRepository,
-            blockRepository = repoSet.blockRepository,
+            block = checkNotNull(saved.block),
+            page = saved.page,
+            blocks = saved.blocks,
+            graphPath = appended.graphPath,
+            graphId = appended.graphId,
+            writer = appended.writer,
+            writeActor = appended.repoSet.writeActor,
+            pageRepository = appended.repoSet.pageRepository,
+            blockRepository = appended.repoSet.blockRepository,
         )
     }
 

@@ -122,7 +122,12 @@ class CaptureController(private val fileSystem: PlatformFileSystem) {
         // render the wrong placeholder (e.g. "Vault is locked") during a Retry click instead of
         // the Saving state, even though CapturePopupState.Shown itself allows this combination.
         _state.value = current.copy(saveState = SaveState.Saving, captureResult = null)
-        val result = CaptureWriter.writeCaptureDirect(gm, fileSystem, current.text, captureId = null)
+        val result = CaptureWriter.resolveCaptureAvailability(gm)
+            ?: when (val outcome = JournalAppender(gm, fileSystem).append(CaptureTarget.ActiveGraph, current.text)) {
+                is AppendOutcome.Appended -> outcome.saved
+                is AppendOutcome.Failed -> outcome.cause ?: CaptureResult.Failed(outcome.error)
+                else -> CaptureResult.Failed("Unexpected append outcome: $outcome")
+            }
 
         // Re-read state rather than reuse `current` — updateText()/dismiss() may have raced
         // with this suspend call while the write was in flight.

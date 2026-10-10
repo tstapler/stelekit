@@ -187,6 +187,8 @@ private fun SettingsDialogHost(
         onBrowseClickForMove = settings.onBrowseClickForMove,
         onUnlinkHostDirectory = settings.onUnlinkHostDirectory,
         hotkeyComboLabel = settings.hotkeyComboLabel,
+        captureTargetSettings = settings.captureTargetSettings,
+        captureGraphs = settings.captureGraphs,
     )
 }
 

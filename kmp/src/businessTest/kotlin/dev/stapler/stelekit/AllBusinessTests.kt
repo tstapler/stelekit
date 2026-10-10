@@ -28,6 +28,8 @@ package dev.stapler.stelekit
 // runtime classpath for every dev.stapler.stelekit `*Test` class carrying a JUnit `@Test` method
 // and fails if it isn't registered here, so a missing entry is caught by this suite itself
 // instead of relying on someone noticing.
+import dev.stapler.stelekit.capture.CaptureTargetResolverTest
+import dev.stapler.stelekit.capture.JournalAppenderTest
 import dev.stapler.stelekit.clipboard.BlockClipboardTest
 import dev.stapler.stelekit.domain.ImportServiceTest
 import dev.stapler.stelekit.editor.LinkInsertionTest
@@ -65,6 +67,7 @@ import dev.stapler.stelekit.asset.pipeline.AssetPipelineServiceTest
 import dev.stapler.stelekit.asset.pipeline.PluginRegistryTest
 import dev.stapler.stelekit.auto.AudiobookNoteFormatterTest
 import dev.stapler.stelekit.auto.AudiobookNoteWriterTest
+import dev.stapler.stelekit.capture.ShareInboxTest
 import dev.stapler.stelekit.db.AtomicFileRelocationStepTest
 import dev.stapler.stelekit.db.BlockHierarchyCteTest
 import dev.stapler.stelekit.db.BulkCopyVerifierTest
@@ -103,6 +106,8 @@ import dev.stapler.stelekit.merge.LinkClosureTest
 import dev.stapler.stelekit.merge.MergeManifestTest
 import dev.stapler.stelekit.merge.MergeStagingDirectoryTest
 import dev.stapler.stelekit.merge.MergeUndoTest
+import dev.stapler.stelekit.merge.SourceReaderParityTest
+import dev.stapler.stelekit.merge.SourceReadCapabilitiesTest
 import dev.stapler.stelekit.db.SqliteStatementAnalyzerTest
 import dev.stapler.stelekit.db.StorageLocationPersistenceTest
 import dev.stapler.stelekit.db.WithoutRowidMigrationTest
@@ -181,6 +186,8 @@ import org.junit.runners.Suite
 @Suite.SuiteClasses(
     AllBusinessTestsCompletenessTest::class,
     BlockClipboardTest::class,
+    CaptureTargetResolverTest::class,
+    JournalAppenderTest::class,
     ImportServiceTest::class,
     LinkInsertionTest::class,
     FlashcardPropertiesTest::class,
@@ -220,6 +227,7 @@ import org.junit.runners.Suite
     AudiobookNoteFormatterTest::class,
     AudiobookNoteWriterTest::class,
     AtomicFileRelocationStepTest::class,
+    ShareInboxTest::class,
     BlockHierarchyCteTest::class,
     BulkCopyVerifierTest::class,
     DiskConflictBlockMatcherTest::class,
@@ -255,6 +263,8 @@ import org.junit.runners.Suite
     MergeStagingDirectoryTest::class,
     MergeManifestTest::class,
     MergeUndoTest::class,
+    SourceReaderParityTest::class,
+    SourceReadCapabilitiesTest::class,
     LinkClosureTest::class,
     AssetCopierTest::class,
     SqliteStatementAnalyzerTest::class,
