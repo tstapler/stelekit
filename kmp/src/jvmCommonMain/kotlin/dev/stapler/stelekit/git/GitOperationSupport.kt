@@ -439,6 +439,7 @@ fun hasRemoteDivergedSinceShallowClone(
     val advertisedRefs = git.lsRemote()
         .setRemote(config.remoteName)
         .setHeads(true)
+        .setTimeout(TEST_REMOTE_TIMEOUT_SECONDS)
         .also { configureAuth(it) }
         .call()
     val advertisedOid = advertisedRefs
