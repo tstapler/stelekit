@@ -3,7 +3,7 @@ package dev.stapler.stelekit.merge
 import dev.stapler.stelekit.db.FakeRelocationFileSystem
 import dev.stapler.stelekit.model.GraphId
 
-class MarkdownTargetWriterContractTest : TargetWriterContractTest() {
+class MarkdownTargetWriterContractTest : TargetWriterContractSuite() {
     override fun newHarness(): TargetHarness = Harness()
 
     private class Harness : TargetHarness {
@@ -13,6 +13,7 @@ class MarkdownTargetWriterContractTest : TargetWriterContractTest() {
             fs,
             OffGraphTarget(GraphId("b"), root, isActive = false),
             TargetWriterCapabilities(platformSupportsOffGraphWrite = true),
+            MarkdownTargetWriter.NoSymlinks,
         )
 
         private fun path(key: PageKey) = "$root/pages/${key.name}.md"

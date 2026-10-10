@@ -12,7 +12,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** What a [TargetWriterContractTest] needs from the target under test. */
+/** What a [TargetWriterContractSuite] needs from the target under test. */
 interface TargetHarness {
     val writer: TargetWriter
 
@@ -35,7 +35,7 @@ interface TargetHarness {
  * One suite, run against every [TargetWriter]. Cases compare BLOCK DATA (uuids, contents,
  * properties), not file bytes: the active path re-renders the whole page (ADR-001 rev. 3).
  */
-abstract class TargetWriterContractTest {
+abstract class TargetWriterContractSuite {
     protected abstract fun newHarness(): TargetHarness
 
     private val source = GraphId("src")

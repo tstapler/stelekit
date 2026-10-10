@@ -38,7 +38,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /** The real file/DB hop: in-memory repositories, the real actor, `GraphWriter` and `GraphLoader`. */
-class ActiveTargetWriterContractTest : TargetWriterContractTest() {
+class ActiveTargetWriterContractTest : TargetWriterContractSuite() {
     override fun newHarness(): TargetHarness = ActiveHarness()
 
     private val extra = mutableListOf<ActiveHarness>()
