@@ -37,7 +37,16 @@ sealed interface WriteOutcome {
     /** [contentHash] is [TargetWriter.fileHash] of the new file, for the undo manifest. */
     data class Created(val path: String, val contentHash: String) : WriteOutcome
 
-    data class Updated(val path: String, val contentHash: String, val insertedBlocks: Int) : WriteOutcome
+    /**
+     * [skippedPropertyKeys] are page properties whose merged value was NOT written (the file keeps its own);
+     * the off-graph writer only adds missing keys, so an alias/tags union lands here. The active writer applies the whole merged set.
+     */
+    data class Updated(
+        val path: String,
+        val contentHash: String,
+        val insertedBlocks: Int,
+        val skippedPropertyKeys: List<String> = emptyList(),
+    ) : WriteOutcome
 
     /** The result was byte-identical to disk; nothing was written. */
     data object Unchanged : WriteOutcome

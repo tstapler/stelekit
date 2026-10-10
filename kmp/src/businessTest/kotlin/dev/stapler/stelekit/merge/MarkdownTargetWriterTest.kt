@@ -545,4 +545,15 @@ class MarkdownTargetWriterTest {
         assertIs<NotRoundTrippable.SymlinkTarget>(reason.detail)
         assertEquals("- A\n", fs.text(link))
     }
+
+    @Test
+    fun skippedPagePropertyKeysAreReported() = runTest {
+        fs.seed(pagePath("Props"), "-\n  tags:: a\n- A\n")
+        val w = writer()
+        val existing = w.readExisting(PageKey("Props")).ok()!!
+
+        val result = w.write(PageKey("Props"), existing.copy(properties = mapOf("tags" to "a, b"), blocks = existing.blocks + block("x", "new"))).ok()
+
+        assertEquals(listOf("tags"), assertIs<WriteOutcome.Updated>(result).skippedPropertyKeys)
+    }
 }

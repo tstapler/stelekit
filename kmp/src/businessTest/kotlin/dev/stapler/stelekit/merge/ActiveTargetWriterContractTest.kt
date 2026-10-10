@@ -85,6 +85,19 @@ class ActiveTargetWriterContractTest : TargetWriterContractSuite() {
     }
 
     @Test
+    fun appliedPagePropertyUnionIsNotReportedAsSkipped() = runBlocking<Unit> {
+        val h = active()
+        val props = PageKey("Props")
+        h.seed(props, "-\n  tags:: a\n- A\n")
+        val existing = h.writer.readExisting(props).fold({ error("read: $it") }, { it })!!
+
+        val result = h.writer.write(props, existing.copy(properties = mapOf("tags" to "a, b"), blocks = existing.blocks + MergeBlock("s1", "new")))
+
+        assertEquals(emptyList(), assertIs<WriteOutcome.Updated>(result.fold({ error("write: $it") }, { it })).skippedPropertyKeys)
+        assertTrue("tags:: a, b" in checkNotNull(h.fileText(props)))
+    }
+
+    @Test
     fun noDiskConflictIsEmittedByTheWrites() = runBlocking<Unit> {
         val h = active()
         h.copy()

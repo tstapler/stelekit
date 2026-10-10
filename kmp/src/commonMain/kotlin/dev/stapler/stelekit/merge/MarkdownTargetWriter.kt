@@ -23,6 +23,10 @@ import kotlin.time.TimeSource
  * Off-graph writer (ADR-001): splices only the new blocks into the target page's original bytes,
  * then replaces the file via temp + rename. A brand-new page is the only whole render.
  *
+ * Placement differs from [ActiveTargetWriter] on purpose: every insertion is the LAST child of its parent
+ * (so unlabeled neighbours keep their positional uuids), while the active writer places a block next to
+ * its merged neighbour. Block data is the same; a conflict sibling just sits at the end here.
+ *
  * Where [FileSystem.supportsAtomicReplace] the temp file is moved over the page in one step, so a
  * crash leaves the old or the new file complete. Otherwise `renameFile` (which never overwrites;
  * JVM returns true and leaves the source behind) forces delete-then-rename with restore-on-failure;
@@ -68,7 +72,7 @@ class MarkdownTargetWriter(
         val bytes = spliced.text.encodeToByteArray()
         replaceFile(path, bytes, original.encodeToByteArray()).map {
             noteIds(path, insertions.flatMap { explicitUuids(listOf(it.block)) })
-            WriteOutcome.Updated(path, sha256(bytes), spliced.insertedBlocks)
+            WriteOutcome.Updated(path, sha256(bytes), spliced.insertedBlocks, spliced.skippedPropertyKeys)
         }
     }
 
