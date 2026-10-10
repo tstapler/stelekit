@@ -14,6 +14,7 @@ import dev.stapler.stelekit.merge.CopyRunOutcome
 import dev.stapler.stelekit.merge.DefaultCopyRunHost
 import dev.stapler.stelekit.merge.MergeId
 import dev.stapler.stelekit.merge.MergeManifestStore
+import dev.stapler.stelekit.merge.OkioMergeStagingStore
 import dev.stapler.stelekit.merge.MergePage
 import dev.stapler.stelekit.merge.MergePlan
 import dev.stapler.stelekit.merge.MergeStagingDirectory
@@ -161,8 +162,7 @@ class CopyFlowControllerTest {
             undo = MergeUndo(manifests, { RoutedTargetWriter(router, it) }, { 1_000L }),
             probe = CapabilityDestinationProbe(capabilities, SourceReadCapabilities(SourcePlatform.Desktop)),
             destinationSettings = CopyDestinationSettings(MapSettings()),
-            appDataDir = "/app",
-            fileSystem = okio,
+            staging = OkioMergeStagingStore(okio, "/app"),
         )
         val controller = CopyFlowController(services, manager.graphRegistry, { switched += it }).also { controllers += it }
         val entries = (1..3).map(::entry)
@@ -359,6 +359,37 @@ class CopyFlowControllerTest {
         }
         assertTrue(env.manifests.findInterrupted().isEmpty(), "no interrupted copy left to re-offer")
         val names = env.manifests.load(newId)!!.pages.map { it.pageName }.toSet()
+        assertEquals(setOf("page1", "firstRunPage"), names)
+    }
+
+    @Test
+    fun `a controller rebuilt mid-resume still folds the interrupted manifest in`() = realTime {
+        val env = Env()
+        val gate = CompletableDeferred<Unit>()
+        env.target.gate = gate
+        val oldId = MergeId("run4")
+        MergeStagingDirectory.create(env.okio, "/app", oldId, src, dst, 1L).getOrNull()!!
+            .writePage(0, MergePage("page1"))
+        env.manifests.begin(oldId, src.value, dst.value, 1L).getOrNull()!!
+            .appendPage(ManifestPageEntry("firstRunPage", createdFiles = listOf(CreatedFile("pages/firstRunPage.md", "h0"))))
+
+        env.controller.attachGraph(CopyGraphBinding(src, FakeSource(env.entries), { listOf(env.entries[0].first).right() }, {}))
+        env.controller.checkInterrupted()
+        env.controller.await("interrupted") { it.stage == CopyStage.Interrupted }
+        env.controller.resume()
+        env.controller.await("resume dry run") { it.dryRun?.ui is DryRunUiState.Ready }
+        env.controller.dryRunConfirm()
+        env.target.writeStarted.await()
+
+        env.controller.close()
+        val next = CopyFlowController(env.services, env.manager.graphRegistry, {}).also { controllers += it }
+        gate.complete(Unit)
+        val done = next.await("finished") { it.stage == CopyStage.Finished }
+
+        withTimeout(10.seconds) {
+            while (env.manifests.load(oldId) != null) kotlinx.coroutines.delay(20)
+        }
+        val names = env.manifests.load(MergeId(done.result!!.mergeId))!!.pages.map { it.pageName }.toSet()
         assertEquals(setOf("page1", "firstRunPage"), names)
     }
 

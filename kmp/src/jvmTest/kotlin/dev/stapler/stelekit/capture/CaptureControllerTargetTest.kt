@@ -248,4 +248,83 @@ class CaptureControllerTargetTest {
         s.controller.requestDismiss()
         assertEquals("x", s.shown().text)
     }
+
+    @Test
+    fun dismiss_should_KeepPopupOpenInError_When_AutosaveFails() = runBlocking {
+        val s = newSetup()
+        s.route.outcome = { AppendOutcome.Failed("disk full") }
+        s.controller.show()
+        s.controller.updateText("precious")
+        s.controller.dismiss()
+
+        val state = s.controller.awaitState { it is CapturePopupState.Hidden || (it is CapturePopupState.Shown && it.saveState == SaveState.Error) }
+        val shown = assertIs<CapturePopupState.Shown>(state, "failed autosave must not hide the draft")
+        assertEquals("precious", shown.text)
+    }
+
+    @Test
+    fun show_should_RestoreDraft_When_CalledDuringConfirmDiscard() {
+        val s = newSetup()
+        s.controller.show()
+        s.controller.updateText("do not wipe")
+        s.controller.requestDismiss()
+        assertIs<CapturePopupState.ConfirmDiscard>(s.controller.state.value)
+
+        s.controller.show()
+
+        assertEquals("do not wipe", s.shown().text)
+    }
+
+    @Test
+    fun dismiss_should_NotStartSecondSave_When_SaveIsInFlight() = runBlocking {
+        val s = newSetup()
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        s.route.outcome = { AppendOutcome.AppendedOffGraph(it, "j.md") }
+        val slow = object : OffGraphAppendRoute {
+            override suspend fun append(graphId: GraphId, text: String, captureId: String?): AppendOutcome {
+                s.route.calls += graphId to text
+                gate.await()
+                return AppendOutcome.AppendedOffGraph(graphId, "j.md")
+            }
+        }
+        val fs = PlatformFileSystem.withRoot(Files.createTempDirectory("capture-inflight").toString())
+        val gm = GraphManager(InMemorySettings(), DriverFactory(), NonVaultFakeFileSystem(), defaultBackend = GraphBackend.IN_MEMORY)
+        val a = gm.addGraph(Files.createTempDirectory("ga").toString())
+        val b = gm.addGraph(Files.createTempDirectory("gb").toString())
+        gm.switchGraph(a)
+        gm.awaitPendingMigration()
+        val controller = CaptureController(fs).apply {
+            attachGraphManager(gm)
+            attachAppender(JournalAppender(gm, fs, slow))
+        }
+        controller.show()
+        controller.selectGraph(b)
+        controller.updateText("once")
+        controller.save()
+        controller.awaitState { it is CapturePopupState.Shown && it.saveState == SaveState.Saving }
+
+        controller.dismiss()
+        gate.complete(Unit)
+        controller.awaitState { it is CapturePopupState.Hidden || (it is CapturePopupState.Shown && it.saveState == SaveState.Saved) }
+        kotlinx.coroutines.delay(200)
+
+        assertEquals(1, s.route.calls.size, "dismiss during Saving must not start a second save")
+    }
+
+    @Test
+    fun selectGraph_should_BeIgnored_When_CaptureWasQueued() = runBlocking {
+        val s = newSetup()
+        s.route.outcome = { AppendOutcome.Queued("graph offline") }
+        s.controller.show()
+        s.controller.updateText("later")
+        s.controller.save()
+        s.controller.awaitState { it is CapturePopupState.Shown && it.saveState == SaveState.Queued }
+
+        s.controller.selectGraph(s.activeId)
+        s.controller.save()
+        kotlinx.coroutines.delay(200)
+
+        assertEquals(SaveState.Queued, s.shown().saveState)
+        assertEquals(1, s.route.calls.size, "a queued capture must not be re-saved to another graph")
+    }
 }

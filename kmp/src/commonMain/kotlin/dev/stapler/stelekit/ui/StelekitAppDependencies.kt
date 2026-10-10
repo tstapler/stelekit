@@ -242,13 +242,18 @@ data class StelekitAppCaptureDeps(
     val hotkeyRegistrationFailure: StateFlow<HotkeyRegistrationFailure?>? = null,
     /** Enables sharing into non-active graphs and starts the inbox drain; null on iOS/Web (no app-private FS, no off-graph writes). */
     val shareInbox: dev.stapler.stelekit.capture.ShareInboxConfig? = null,
+    /**
+     * Host-owned share pipeline for [shareInbox] (Android: the process-wide one the share target already uses). When it
+     * returns non-null the app composition uses it instead of building a second inbox, and leaves its drain running.
+     */
+    val shareServicesProvider: ((dev.stapler.stelekit.db.GraphManager) -> dev.stapler.stelekit.capture.ShareCaptureServices?)? = null,
     /** Hands the share appender to the host (Android share target) once the pipeline is built. */
     val onShareServicesReady: ((dev.stapler.stelekit.capture.ShareCaptureServices) -> Unit)? = null,
     /** Hands the app's capture-target settings to the host (Desktop quick capture) so it shares the app's Settings instance. */
     val onCaptureSettingsReady: ((dev.stapler.stelekit.capture.CaptureTargetSettings) -> Unit)? = null,
     /** Lets a share to the open graph go through the editor's writer; filled by the open graph's composition root. */
     val activeWriteHooks: dev.stapler.stelekit.capture.ActiveWriteHooks = dev.stapler.stelekit.capture.ActiveWriteHooks(),
-    /** Turns on "Copy pages to..."; null on iOS/Web (no app-data directory or off-graph writes), which hides the entry points. */
+    /** Turns on the copy entry points: push ("Copy pages to...") on Android/Desktop, pull ("Copy pages from...") on iOS/Web; null hides them. */
     val copyHost: dev.stapler.stelekit.ui.screens.copy.CopyHostConfig? = null,
 )
 

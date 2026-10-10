@@ -43,7 +43,7 @@ sealed interface UndoResult {
  * Idempotent: the manifest is kept, so a second run finds nothing left to revert.
  */
 class MergeUndo(
-    private val manifests: MergeManifestStore,
+    private val manifests: MergeManifests,
     private val writerFor: (GraphId) -> TargetWriter,
     private val nowEpochMs: () -> Long,
 ) {

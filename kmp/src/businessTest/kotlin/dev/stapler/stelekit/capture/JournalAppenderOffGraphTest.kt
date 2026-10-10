@@ -25,6 +25,8 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.atStartOfDayIn
+import kotlinx.datetime.plus
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlin.test.AfterTest
@@ -101,6 +103,21 @@ class JournalAppenderOffGraphTest {
         return Fixture(JournalAppender(m, PlatformFileSystem(), InboxFallbackAppender(raw, inbox)), raw)
     }
 
+    private fun fixtureForDay(m: GraphManager, today: () -> LocalDate): Fixture {
+        val capabilities = TargetWriterCapabilities(platformSupportsOffGraphWrite = true)
+        val router = TargetWriterRouter(
+            graphManager = m,
+            locator = RegistryGraphLocator(m.graphRegistry),
+            capabilities = capabilities,
+            activeWriterFor = { error("target is not the ready graph in these tests") },
+            offGraphWriterFor = { info ->
+                MarkdownTargetWriter(targetFs, OffGraphTarget(info.id, info.path, isActive = false), capabilities, MarkdownTargetWriter.NoSymlinks)
+            },
+        )
+        val raw = RouterOffGraphRoute(router, RegistryGraphLocator(m.graphRegistry), AssetCopier(targetFs), today)
+        return Fixture(JournalAppender(m, PlatformFileSystem(), InboxFallbackAppender(raw, inbox)), raw)
+    }
+
     private fun realTime(block: suspend () -> Unit) = runTest {
         withContext(Dispatchers.Default) { withTimeout(60.seconds) { block() } }
     }
@@ -147,6 +164,25 @@ class JournalAppenderOffGraphTest {
 
         assertEquals(AppendOutcome.AlreadyPresent, second)
         assertEquals(afterFirst, targetFs.readFile(path))
+    }
+
+    @Test
+    fun append_should_KeepTheCaptureDayJournal_When_ReplayedAfterMidnight() = realTime {
+        val m = newManager()
+        m.awaitPendingMigration()
+        val f = fixtureForDay(m) { day }
+        val tz = kotlinx.datetime.TimeZone.currentSystemDefault()
+        val ms = day.atStartOfDayIn(tz).toEpochMilliseconds() + 12 * 3_600_000L
+        val hex = ms.toString(16).padStart(12, '0')
+        val id = "${hex.take(8)}-${hex.drop(8)}-7000-8000-000000000001"
+        val first = f.appender.append(target, "late note", id)
+        assertIs<AppendOutcome.AppendedOffGraph>(first)
+
+        val nextDay = fixtureForDay(m) { day.plus(1, kotlinx.datetime.DateTimeUnit.DAY) }
+        val replay = nextDay.appender.append(target, "late note", id)
+
+        assertEquals(AppendOutcome.AlreadyPresent, replay)
+        assertEquals(1, stems().size, "a replay after midnight must not start the next day's journal")
     }
 
     @Test
@@ -304,15 +340,20 @@ class JournalAppenderOffGraphTest {
     }
 
     @Test
-    fun appendContent_should_KeepImageShareToActiveGraphDeferredPermanently() = realTime {
+    fun appendContent_should_StoreImageUnderActiveGraphAssets_When_TargetIsTheReadyGraph() = realTime {
         val m = newManager()
         m.awaitPendingMigration()
         val appender = JournalAppender(m, PlatformFileSystem(), InboxFallbackAppender(activeFixture(m), inbox))
+        val image = byteArrayOf(9, 8, 7)
 
-        val outcome = appender.appendContent(CaptureTarget.NamedGraph(active), ShareContent("look", byteArrayOf(1), "image/png"), c1)
+        val outcome = appender.appendContent(CaptureTarget.NamedGraph(active), ShareContent("look", image, "image/png"), c1)
 
-        assertEquals(AppendOutcome.Deferred(JournalAppender.IMAGE_NEEDS_OPEN_GRAPH_UI, permanent = true), outcome)
-        assertTrue(targetFs.allFilePaths().isEmpty())
+        // A permanent Deferred would fail the inbox drain forever for a queued image share.
+        assertIs<AppendOutcome.AppendedOffGraph>(outcome)
+        val onDisk = assertNotNull(activeJournal())
+        assertTrue(onDisk.contains("![image](../assets/"), onDisk)
+        val asset = targetFs.allFilePaths().single { it.startsWith("$activeRoot/assets/") }
+        assertContentEquals(image, targetFs.readFileBytes(asset))
     }
 
     @Test

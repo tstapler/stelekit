@@ -79,6 +79,15 @@ object CopyDialogStrings {
 
     fun backgroundNotice(target: String) = "Copy to $target continues in the background"
 
+    /** Label of the sidebar / command-palette entry: push on Android/Desktop, pull on iOS/Web. */
+    fun entryLabel(direction: CopyDirection): String = when (direction) {
+        CopyDirection.Push -> "Copy pages to..."
+        CopyDirection.Pull -> "Copy pages from..."
+    }
+
+    /** Graph-switcher row overflow item (pull only): copy [source] into the open graph. */
+    fun rowOverflowLabel(source: String, current: String) = "Copy pages from $source to $current"
+
     fun pullSwitchConfirm(graph: String) = "A copy into $graph is running. Stop it and switch?"
 
     fun targetGone(target: String) = "$target is no longer available."

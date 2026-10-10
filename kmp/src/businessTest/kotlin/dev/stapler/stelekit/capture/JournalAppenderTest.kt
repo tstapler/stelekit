@@ -151,4 +151,23 @@ class JournalAppenderTest {
 
         assertIs<AppendOutcome.Appended>(appender.append(CaptureTarget.NamedGraph(active), "x", captureId))
     }
+
+    @Test
+    fun append_should_WriteTheFile_When_RetryFollowsAFailedPageFlush() = realTime {
+        val m = newManager()
+        m.awaitPendingMigration()
+        // A file system whose graph root is not registered refuses the page flush after the DB write landed.
+        val failed = JournalAppender(m, PlatformFileSystem()).append(CaptureTarget.ActiveGraph, "partial", captureId)
+        assertIs<AppendOutcome.Failed>(failed)
+
+        val retry = JournalAppender(m, fileSystem).append(CaptureTarget.ActiveGraph, "partial", captureId)
+
+        // AlreadyPresent here would let the inbox drop the item while the file never got the block.
+        val graphPath = m.getActiveGraphInfo()!!.path
+        val inFiles = Files.walk(java.nio.file.Path.of(graphPath)).use { paths ->
+            paths.filter { Files.isRegularFile(it) && it.toString().endsWith(".md") }
+                .anyMatch { Files.readString(it).contains("partial") }
+        }
+        assertTrue(inFiles, "retry reported $retry but no journal file contains the block")
+    }
 }

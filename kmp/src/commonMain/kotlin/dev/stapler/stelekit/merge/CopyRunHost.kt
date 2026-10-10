@@ -62,7 +62,7 @@ interface CopyRunHost {
 /** One unfinished copy found at launch; [pagesCopied] counts manifest entries written so far. */
 data class InterruptedCopy(val mergeId: String, val sourceGraphId: String, val targetGraphId: String, val pagesCopied: Int)
 
-fun interruptedCopies(store: MergeManifestStore): List<InterruptedCopy> =
+fun interruptedCopies(store: MergeManifests): List<InterruptedCopy> =
     store.findInterrupted().map { InterruptedCopy(it.mergeId, it.sourceGraphId, it.targetGraphId, it.pages.size) }
 
 /** Owns its scope unless [scope] is supplied (the Android host passes an application-scoped one). */

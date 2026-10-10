@@ -40,6 +40,12 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import dev.stapler.stelekit.ui.PlatformBackHandler
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -139,9 +145,13 @@ fun ConflictReviewContent(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    PlatformBackHandler(enabled = state.confirmRemove == null) { onClose() }
     val listState = rememberLazyListState()
     val emptyFocus = remember { FocusRequester() }
     val rowFocus = remember { mutableMapOf<String, FocusRequester>() }
+    val rootFocus = remember { FocusRequester() }
+    // Esc needs a focused descendant to reach onPreviewKeyEvent; the root holds focus until a row takes it.
+    LaunchedEffect(Unit) { runCatching { rootFocus.requestFocus() } }
 
     LaunchedEffect(state.focusToken) {
         if (state.focusToken == 0) return@LaunchedEffect
@@ -160,7 +170,22 @@ fun ConflictReviewContent(
         }
     }
 
-    Column(modifier = modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .onPreviewKeyEvent { e ->
+                if (e.type == KeyEventType.KeyDown && e.key == Key.Escape && state.confirmRemove == null) {
+                    onClose()
+                    true
+                } else {
+                    false
+                }
+            }
+            .focusRequester(rootFocus)
+            .focusable()
+            .padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
         Text(
             ConflictReviewText.TITLE,
             style = MaterialTheme.typography.titleLarge,

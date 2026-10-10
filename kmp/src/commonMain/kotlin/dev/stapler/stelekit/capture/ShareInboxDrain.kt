@@ -7,6 +7,8 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
@@ -55,16 +57,19 @@ class ShareInboxDrain(
     private val appender: InboxAppender,
     private val registeredGraphs: Flow<List<GraphId>>? = null,
     dispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val retryBackoffMs: List<Long> = DEFAULT_RETRY_BACKOFF_MS,
 ) {
     private val logger = Logger("ShareInboxDrain")
     private val scope = CoroutineScope(
         SupervisorJob() + dispatcher + CoroutineExceptionHandler { _, e ->
-            if (e !is CancellationException) logger.error("share inbox drain failed: ${e.message}", e)
+            if (e !is CancellationException) logger.error("share inbox drain failed: ${e::class.simpleName}")
         },
     )
     private val drainMutex = Mutex()
     @kotlin.concurrent.Volatile private var currentReady: GraphId? = null
     @kotlin.concurrent.Volatile private var started = false
+    private var retryJob: Job? = null
+    private var retryAttempt = 0
 
     fun start() {
         if (started) return
@@ -80,10 +85,12 @@ class ShareInboxDrain(
         val first = graphs.firstOrNull() ?: return
         val moved = inbox.rekeyUnassigned(first).getOrNull() ?: 0
         if (moved > 0 && currentReady == first) drain(first)
+        else currentReady?.let { if (retryJob != null) drain(it) } // a registry change may unblock a stalled pass
     }
 
     private suspend fun onReady(id: GraphId?) {
         currentReady = null
+        cancelRetry()
         if (id == null) return
         awaitPendingMigration()
         if (currentReadyId() != id) return
@@ -92,6 +99,23 @@ class ShareInboxDrain(
     }
 
     fun close() = scope.cancel()
+
+    private fun cancelRetry() {
+        retryJob?.cancel()
+        retryJob = null
+        retryAttempt = 0
+    }
+
+    /** A pass that stopped on Retry gets a bounded number of timed re-runs; a ready or registry change also re-runs it. */
+    private fun scheduleRetry(graph: GraphId) {
+        val delayMs = retryBackoffMs.getOrNull(retryAttempt) ?: return
+        retryAttempt++
+        retryJob?.cancel()
+        retryJob = scope.launch {
+            delay(delayMs)
+            if (currentReady == graph) drain(graph)
+        }
+    }
 
     /** Rescue: try one item now. Only meaningful when its graph is ready and migrated. */
     suspend fun retryNow(slot: InboxSlot, captureId: String): RetryResult {
@@ -103,11 +127,14 @@ class ShareInboxDrain(
     }
 
     private suspend fun drain(graph: GraphId) {
-        drainMutex.withLock {
+        val stopped = drainMutex.withLock {
             val items = inbox.state.value.items.filter { it.slot == InboxSlot.Graph(graph) }
-            for (item in items) {
-                if (attempt(graph, item) == Attempt.Stop) return
-            }
+            items.any { attempt(graph, it) == Attempt.Stop }
+        }
+        if (stopped) {
+            scheduleRetry(graph)
+        } else {
+            cancelRetry()
         }
     }
 
@@ -143,3 +170,5 @@ class ShareInboxDrain(
         }
     }
 }
+
+private val DEFAULT_RETRY_BACKOFF_MS = listOf(30_000L, 60_000L, 120_000L, 300_000L)

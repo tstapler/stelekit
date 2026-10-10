@@ -341,11 +341,16 @@ fun main() {
 
         ComposeViewport(document.body!!) {
             val wasmAttachmentService = remember { WasmMediaAttachmentService(fileSystem) }
+            // Pull-only copy ("Copy pages from..."): in-memory staging, nothing to resume across reloads.
+            val copyHost = remember {
+                dev.stapler.stelekit.ui.screens.copy.inMemoryCopyHostConfig(dev.stapler.stelekit.merge.SourcePlatform.Web)
+            }
             StelekitApp(
                 fileSystem = fileSystem,
                 graphPath = graphPath,
                 deps = dev.stapler.stelekit.ui.StelekitAppDeps(
                     graphManager = graphManager,
+                    captureDeps = dev.stapler.stelekit.ui.StelekitAppCaptureDeps(copyHost = copyHost),
                     lifecycleHooks = dev.stapler.stelekit.ui.StelekitAppLifecycleHooks(
                         // WasmMediaAttachmentService.attachBytes (drag-and-drop) needs a
                         // NotificationManager to surface a failure toast, but StelekitApp creates

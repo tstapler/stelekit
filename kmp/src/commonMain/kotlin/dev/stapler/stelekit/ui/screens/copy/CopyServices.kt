@@ -8,8 +8,16 @@ import arrow.core.right
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.merge.AssetCopier
+import dev.stapler.stelekit.merge.CopyDirection
 import dev.stapler.stelekit.merge.CopyRunHost
-import dev.stapler.stelekit.merge.MergeManifestStore
+import dev.stapler.stelekit.merge.DefaultCopyRunHost
+import dev.stapler.stelekit.merge.InMemoryMergeStorage
+import dev.stapler.stelekit.merge.MarkdownSourceGraphReader
+import dev.stapler.stelekit.merge.SourceGraphReader
+import dev.stapler.stelekit.merge.offeredDirections
+import dev.stapler.stelekit.merge.MergeManifests
+import dev.stapler.stelekit.merge.MergeStagingStore
+import dev.stapler.stelekit.merge.MergeStorage
 import dev.stapler.stelekit.merge.MergePlan
 import dev.stapler.stelekit.merge.MergeProgress
 import dev.stapler.stelekit.merge.MergeUndo
@@ -27,10 +35,9 @@ import dev.stapler.stelekit.platform.Settings
 import kotlinx.coroutines.flow.StateFlow
 import kotlin.time.Clock
 
-/** What a host supplies to turn the copy feature on. Absent (null) on platforms with no app-data directory (iOS/Web). */
+/** What a host supplies to turn the copy feature on; [storage] is disk-backed on Desktop/Android, in-memory on iOS/Web. */
 class CopyHostConfig(
-    val appDataDir: String,
-    val fileSystem: okio.FileSystem,
+    val storage: MergeStorage,
     val runHost: CopyRunHost,
     val sourcePlatform: SourcePlatform,
     val canonicalize: (String) -> String = { it },
@@ -41,12 +48,15 @@ class CopyServices(
     val service: PageMergeService,
     val runHost: CopyRunHost,
     val router: TargetWriterRouter,
-    val manifests: MergeManifestStore,
+    val manifests: MergeManifests,
+    val staging: MergeStagingStore,
     val undo: MergeUndo,
     val probe: DestinationProbe,
     val destinationSettings: CopyDestinationSettings,
-    val appDataDir: String,
-    val fileSystem: okio.FileSystem,
+    /** Which way this device copies; iOS/Web pull into the open graph, Android/Desktop push out of it. */
+    val direction: CopyDirection = CopyDirection.Push,
+    /** Reads inactive graphs for a pull; null when [direction] is Push. */
+    val sourceReader: SourceGraphReader? = null,
 )
 
 /**
@@ -61,7 +71,8 @@ fun createCopyServices(
     config: CopyHostConfig,
     settings: Settings,
 ): CopyServices {
-    val manifests = MergeManifestStore(config.fileSystem, config.appDataDir)
+    val manifests = config.storage.manifests
+    val direction = offeredDirections(config.sourcePlatform).first()
     // Retained by the host so a controller rebuilt on Activity recreation keeps the in-flight apply and retry state.
     val service = config.runHost.retain(graphManager) { newService(graphManager, graphFileSystem, router, config) }
     service.rebindRouter(router)
@@ -70,6 +81,7 @@ fun createCopyServices(
         runHost = config.runHost,
         router = router,
         manifests = manifests,
+        staging = config.storage.staging,
         undo = MergeUndo(
             manifests = manifests,
             writerFor = { target -> RoutedTargetWriter(router, target) },
@@ -77,8 +89,8 @@ fun createCopyServices(
         ),
         probe = CapabilityDestinationProbe(writerCapabilities, SourceReadCapabilities(config.sourcePlatform)),
         destinationSettings = CopyDestinationSettings(settings),
-        appDataDir = config.appDataDir,
-        fileSystem = config.fileSystem,
+        direction = direction,
+        sourceReader = if (direction == CopyDirection.Pull) MarkdownSourceGraphReader(graphFileSystem) else null,
     )
 }
 
@@ -90,8 +102,7 @@ private fun newService(
 ): PageMergeService =
     PageMergeService(
         router = router,
-        fileSystem = config.fileSystem,
-        appDataDir = config.appDataDir,
+        storage = config.storage,
         // Link closure is off in v1; if enabled it reads the open graph, which is the source in Push.
         closureLookup = { names ->
             graphManager.activeRepositorySet.value?.pageRepository?.getPagesByNames(names)
@@ -114,3 +125,7 @@ class PageMergeServiceGateway(
 
     override fun cancel() = service.cancel()
 }
+
+/** iOS/Web host config: in-memory staging (no app-data directory) and a run host with its own scope. */
+fun inMemoryCopyHostConfig(sourcePlatform: SourcePlatform, runHost: CopyRunHost = DefaultCopyRunHost()): CopyHostConfig =
+    CopyHostConfig(storage = InMemoryMergeStorage(), runHost = runHost, sourcePlatform = sourcePlatform)

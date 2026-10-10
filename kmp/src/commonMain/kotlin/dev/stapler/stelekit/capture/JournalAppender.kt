@@ -7,6 +7,7 @@ package dev.stapler.stelekit.capture
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.logging.Logger
+import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.platform.PlatformFileSystem
@@ -88,9 +89,8 @@ class JournalAppender(
     }
 
     /**
-     * Like [append] for a share: a non-active target gets the image too when the route is an
-     * [OffGraphContentRoute]. The active-graph path has no image support, so an image share to it is
-     * a permanent [AppendOutcome.Deferred] rather than silently dropping the image.
+     * Like [append] for a share: the image goes through an [OffGraphContentRoute], also for the open graph.
+     * Without such a route an image share is a permanent [AppendOutcome.Deferred], never a dropped image.
      */
     suspend fun appendContent(
         target: CaptureTarget,
@@ -101,7 +101,11 @@ class JournalAppender(
         val route = offGraphRoute as? OffGraphContentRoute
         val offGraph = target is CaptureTarget.NamedGraph && target.graphId != graphManager.getActiveGraphId()
         if (!offGraph && content.image != null) {
-            return AppendOutcome.Deferred(IMAGE_NEEDS_OPEN_GRAPH_UI, permanent = true).logged(target, WRITER_ACTIVE)
+            // The router hands out the real active writer, which stores the image under this graph's assets/.
+            val graphId = (target as? CaptureTarget.NamedGraph)?.graphId ?: graphManager.getActiveGraphId()
+                ?: return AppendOutcome.Failed("No active graph", CaptureResult.NoActiveGraph).logged(target, WRITER_ACTIVE)
+            if (route == null) return AppendOutcome.Deferred(IMAGE_NEEDS_OPEN_GRAPH_UI, permanent = true).logged(target, WRITER_ACTIVE)
+            return route.appendContent(graphId, content, captureId).logged(target, WRITER_ACTIVE)
         }
         if (!offGraph || route == null) return append(target, content.text, captureId, writerFactory)
         return route.appendContent((target as CaptureTarget.NamedGraph).graphId, content, captureId)
@@ -135,9 +139,10 @@ class JournalAppender(
         val graphPath = graphManager.getActiveGraphInfo()?.path ?: return noGraph
         val graphId = graphManager.getActiveGraphId() ?: return noGraph
 
-        if (captureId != null && blockExists(repoSet, captureId)) return AppendOutcome.AlreadyPresent
-
         val writer = writerFactory(repoSet)
+        if (captureId != null) {
+            findBlock(repoSet, captureId)?.let { return confirmFlushed(repoSet, it, graphPath, writer) }
+        }
         return when (val result = CaptureWriter.writeCapture(repoSet, fileSystem, graphPath, text, captureId, writer)) {
             is CaptureResult.Saved -> AppendOutcome.Appended(result, graphId, graphPath, repoSet, writer)
             is CaptureResult.Failed -> AppendOutcome.Failed(result.message, result)
@@ -145,8 +150,22 @@ class JournalAppender(
         }
     }
 
-    private suspend fun blockExists(repoSet: RepositorySet, captureId: String): Boolean =
-        repoSet.blockRepository.getBlockByUuid(BlockUuid(captureId)).first().getOrNull() != null
+    private suspend fun findBlock(repoSet: RepositorySet, captureId: String): Block? =
+        repoSet.blockRepository.getBlockByUuid(BlockUuid(captureId)).first().getOrNull()
+
+    /**
+     * The DB row can outlive a failed page flush, so [AppendOutcome.AlreadyPresent] is only reported once
+     * the page file has been re-flushed with the block; otherwise the caller (inbox drain) keeps the item.
+     */
+    private suspend fun confirmFlushed(repoSet: RepositorySet, block: Block, graphPath: String, writer: GraphWriter): AppendOutcome {
+        val page = repoSet.pageRepository.getPageByUuid(block.pageUuid).first().getOrNull()
+            ?: return AppendOutcome.Failed("Page for an existing capture is missing")
+        val blocks = repoSet.blockRepository.getBlocksForPage(page.uuid).first().getOrNull().orEmpty()
+        return writer.savePage(page, blocks, graphPath).fold(
+            { AppendOutcome.Failed("Save failed: $it") },
+            { AppendOutcome.AlreadyPresent },
+        )
+    }
 
     companion object {
         private val logger = Logger("JournalAppender")

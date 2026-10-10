@@ -537,10 +537,10 @@ LIMIT ?;
 
 -- Search queries
 selectPagesByNameLike:
-SELECT * FROM pages WHERE name LIKE ?;
+SELECT * FROM pages WHERE name LIKE ? ESCAPE '\';
 
 selectPagesByNameLikePaginated:
-SELECT * FROM pages WHERE name LIKE ? ORDER BY name LIMIT ? OFFSET ?;
+SELECT * FROM pages WHERE name LIKE ? ESCAPE '\' ORDER BY name, section_id LIMIT ? OFFSET ?;
 
 -- ── Selection filter (cross-graph copy picker; Story 2.4.1 d1 schema decision) ─────────────
 -- Schema read: pages.name is COLLATE NOCASE and UNIQUE(name, section_id) gives the autoindex
@@ -703,8 +703,20 @@ SELECT
 FROM pages_fts pf
 JOIN pages p ON p.rowid = pf.rowid
 WHERE pages_fts MATCH :query
-ORDER BY bm25(pages_fts)
+ORDER BY bm25(pages_fts), pf.rowid
 LIMIT :limit OFFSET :offset;
+
+-- Exact count of title hits that pass the selection filter's non-tag predicates (picker search count).
+-- One query instead of materializing every hit; the tag predicate is Kotlin-side, so tag searches scan.
+countPagesByNameFtsFiltered:
+SELECT COUNT(*)
+FROM pages_fts pf
+JOIN pages p ON p.rowid = pf.rowid
+WHERE pages_fts MATCH :query
+  AND p.name >= :nameLo AND p.name < :nameHi
+  AND (:includeJournals = 1 OR p.is_journal = 0)
+  AND (:dateFrom IS NULL OR (p.is_journal = 1 AND p.journal_date >= :dateFrom))
+  AND (:dateTo IS NULL OR (p.is_journal = 1 AND p.journal_date <= :dateTo));
 
 -- Date-ranged FTS queries for search with date filters
 searchPagesByNameFtsInDateRange:

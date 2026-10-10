@@ -27,7 +27,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okio.ByteString.Companion.encodeUtf8
 import okio.FileSystem
-import okio.IOException
 import kotlin.time.Clock
 
 /**
@@ -48,20 +47,33 @@ import kotlin.time.Clock
 @Suppress("TooManyFunctions") // one orchestrator: plan/stage/apply/retry/cancel plus their private steps
 class PageMergeService(
     router: TargetWriterRouter,
-    private val fileSystem: FileSystem,
-    private val appDataDir: String,
+    private val storage: MergeStorage,
     private val closureLookup: suspend (List<String>) -> Either<DomainError, List<Page>> = { emptyList<Page>().right() },
     private val assetCopier: AssetCopier? = null,
     private val graphRoot: (GraphId) -> String? = { null },
     private val nowEpochMs: () -> Long = { Clock.System.now().toEpochMilliseconds() },
     private val newMergeId: () -> MergeId = { MergeId(UuidGenerator.generateV7()) },
 ) {
+    /** Disk-backed staging and manifests under [appDataDir] (Desktop/Android). */
+    constructor(
+        router: TargetWriterRouter,
+        fileSystem: FileSystem,
+        appDataDir: String,
+        closureLookup: suspend (List<String>) -> Either<DomainError, List<Page>> = { emptyList<Page>().right() },
+        assetCopier: AssetCopier? = null,
+        graphRoot: (GraphId) -> String? = { null },
+        nowEpochMs: () -> Long = { Clock.System.now().toEpochMilliseconds() },
+        newMergeId: () -> MergeId = { MergeId(UuidGenerator.generateV7()) },
+    ) : this(
+        router, okioMergeStorage(fileSystem, appDataDir), closureLookup, assetCopier, graphRoot, nowEpochMs, newMergeId,
+    )
+
     private val logger = Logger("PageMergeService")
 
     // Swappable so a retained service picks up a rebuilt controller's router (fresh editor hooks).
     @kotlin.concurrent.Volatile
     private var router: TargetWriterRouter = router
-    private val manifests = MergeManifestStore(fileSystem, appDataDir)
+    private val manifests = storage.manifests
 
     // Owned scope per CLAUDE.md: never a caller-supplied or composition scope.
     private val scope = CoroutineScope(
@@ -82,13 +94,13 @@ class PageMergeService(
     private var lastRun: RunState? = null
 
     private class RunContext(val request: PlanRequest, val source: PageSource, var sourceUnreadable: List<UnreadablePage>) {
-        var staging: MergeStagingDirectory? = null
+        var staging: MergeStaging? = null
     }
 
     private class RunState(
         val plan: MergePlan,
         val ctx: RunContext,
-        val staging: MergeStagingDirectory,
+        val staging: MergeStaging,
         val policy: MergePolicy,
     ) {
         var newPages = 0
@@ -183,12 +195,12 @@ class PageMergeService(
         ApplyFailure.StagingFailed(e.message ?: e::class.simpleName.orEmpty()).left()
     }
 
-    private suspend fun stageCtx(plan: MergePlan): Either<ApplyFailure, MergeStagingDirectory> {
+    private suspend fun stageCtx(plan: MergePlan): Either<ApplyFailure, MergeStaging> {
         val ctx = stateLock.withLock { contexts[plan.mergeId] } ?: return ApplyFailure.UnknownPlan.left()
         ctx.staging?.takeIf { it.pageCount() == plan.summary.total - ctx.sourceUnreadable.size }?.let { return it.right() }
         ctx.staging?.delete()
-        val staging = MergeStagingDirectory.create(
-            fileSystem, appDataDir, MergeId(plan.mergeId),
+        val staging = storage.staging.create(
+            MergeId(plan.mergeId),
             GraphId(plan.sourceGraphId), GraphId(plan.targetGraphId), nowEpochMs(),
         ).getOrNull() ?: return ApplyFailure.StagingFailed("Could not create the staging directory").left()
         _progress.value = MergeProgress(MergePhase.Staging, total = plan.summary.total)
@@ -199,7 +211,7 @@ class PageMergeService(
                 for (page in pages) {
                     val w = staging.writePage(index++, page)
                     if (w.isLeft()) return@withContext DomainError.FileSystemError.WriteFailed(
-                        staging.dir.toString(), (w as Either.Left).value.message,
+                        staging.label, (w as Either.Left).value.message,
                     ).left()
                 }
                 Unit.right()
@@ -355,16 +367,10 @@ class PageMergeService(
         }
     }
 
-    private suspend fun readStaged(staging: MergeStagingDirectory, index: Int): MergePage? = withContext(PlatformDispatcher.IO) {
-        val path = staging.pagePath(index).getOrNull() ?: return@withContext null
-        try {
-            StagedPage.decode(fileSystem.read(path) { readUtf8() }).getOrNull()
-        } catch (e: IOException) {
-            null
-        }
-    }
+    private suspend fun readStaged(staging: MergeStaging, index: Int): MergePage? =
+        withContext(PlatformDispatcher.IO) { staging.readPage(index) }
 
-    private suspend fun applyOne(state: RunState, manifest: MergeManifestWriter, index: Int, page: MergePage) {
+    private suspend fun applyOne(state: RunState, manifest: MergeManifestLog, index: Int, page: MergePage) {
         val applied = applyPage(state.ctx.request, state.policy, page)
         when (applied) {
             is Either.Left -> state.failed += PageFailure(index, page.name, applied.value)
@@ -603,7 +609,7 @@ class PageMergeService(
 
     /** Visits staged pages in index order, <= 100 at a time, with the index of the first. */
     private suspend fun forEachStagedChunk(
-        staging: MergeStagingDirectory,
+        staging: MergeStaging,
         visit: suspend (Int, List<MergePage>) -> Either<DomainError, Unit>,
     ): Either<DomainError, Unit> {
         val it = staging.readAll().iterator()
@@ -616,7 +622,7 @@ class PageMergeService(
             }
             if (chunk.isEmpty()) return Unit.right()
             val pages = chunk.map { r ->
-                r.fold({ e -> return DomainError.FileSystemError.ReadFailed(staging.dir.toString(), e.message).left() }, { p -> p })
+                r.fold({ e -> return DomainError.FileSystemError.ReadFailed(staging.label, e.message).left() }, { p -> p })
             }
             visit(index, pages).onLeft { return it.left() }
             index += pages.size
