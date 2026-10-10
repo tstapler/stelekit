@@ -50,6 +50,7 @@ import dev.stapler.stelekit.ui.screens.copy.DryRunUiState
 import dev.stapler.stelekit.ui.screens.copy.InterruptedProblem
 import dev.stapler.stelekit.ui.screens.copy.ListLoad
 import dev.stapler.stelekit.ui.screens.copy.ReviewState
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -60,6 +61,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import okio.fakefilesystem.FakeFileSystem
+import kotlin.concurrent.Volatile
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -95,8 +97,13 @@ class CopyFlowControllerTest {
 
     private class FakeTarget : TargetWriter {
         val pages = HashMap<String, MergePage>()
+
+        /** When set, [write] signals [writeStarted] then waits for it before writing. */
+        @Volatile var gate: CompletableDeferred<Unit>? = null
+        val writeStarted = CompletableDeferred<Unit>()
         override suspend fun readExisting(page: PageKey): Either<DomainError, MergePage?> = pages[page.name].right()
         override suspend fun write(page: PageKey, merged: MergePage): Either<DomainError, WriteOutcome> {
+            gate?.let { writeStarted.complete(Unit); it.await() }
             val created = page.name !in pages
             pages[page.name] = merged
             return (if (created) WriteOutcome.Created("pages/${page.name}.md", "h-${page.name}")
@@ -187,6 +194,42 @@ class CopyFlowControllerTest {
     }
 
     @Test
+    fun `disposing the controller mid-apply does not kill the run and a new controller adopts it`() = realTime {
+        val env = Env()
+        val gate = CompletableDeferred<Unit>()
+        env.target.gate = gate
+        env.reviewPages(1)
+        env.controller.dryRunConfirm()
+        env.target.writeStarted.await()
+
+        env.controller.close()
+        val next = CopyFlowController(env.services, env.manager.graphRegistry, {}).also { controllers += it }
+        assertEquals(CopyStage.Running, next.state.value.stage)
+
+        gate.complete(Unit)
+        next.await("finished") { it.stage == CopyStage.Finished }
+        assertEquals(1, next.state.value.result!!.newPages)
+        assertEquals(1, env.target.pages.size)
+    }
+
+    @Test
+    fun `an outcome that lands while no controller is attached is delivered on the next attach`() = realTime {
+        val env = Env()
+        val gate = CompletableDeferred<Unit>()
+        env.target.gate = gate
+        env.reviewPages(1)
+        env.controller.dryRunConfirm()
+        env.target.writeStarted.await()
+
+        env.controller.close()
+        gate.complete(Unit)
+        env.services.runHost.running.first { !it }
+        val next = CopyFlowController(env.services, env.manager.graphRegistry, {}).also { controllers += it }
+        next.await("finished") { it.stage == CopyStage.Finished }
+        assertEquals(1, next.state.value.result!!.newPages)
+    }
+
+    @Test
     fun `entry from a page preselects exactly that page`() = realTime {
         val env = Env()
         env.controller.attachGraph(env.binding)
@@ -255,7 +298,8 @@ class CopyFlowControllerTest {
         env.controller.open()
 
         assertEquals("A copy is already running", withTimeout(20.seconds) { env.controller.noticeFlow.first() })
-        assertEquals(CopyStage.Idle, env.controller.state.value.stage)
+        // A controller built while the host is mid-run adopts it (Activity recreation) instead of showing Idle.
+        assertEquals(CopyStage.Running, env.controller.state.value.stage)
     }
 
     @Test

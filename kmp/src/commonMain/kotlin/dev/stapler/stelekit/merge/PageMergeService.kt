@@ -44,7 +44,7 @@ import kotlin.time.Clock
  * @param assetCopier with [graphRoot], copies `../assets/` files and rewrites renamed links
  */
 class PageMergeService(
-    private val router: TargetWriterRouter,
+    router: TargetWriterRouter,
     private val fileSystem: FileSystem,
     private val appDataDir: String,
     private val closureLookup: suspend (List<String>) -> Either<DomainError, List<Page>> = { emptyList<Page>().right() },
@@ -54,6 +54,10 @@ class PageMergeService(
     private val newMergeId: () -> MergeId = { MergeId(UuidGenerator.generateV7()) },
 ) {
     private val logger = Logger("PageMergeService")
+
+    // Swappable so a retained service picks up a rebuilt controller's router (fresh editor hooks).
+    @kotlin.concurrent.Volatile
+    private var router: TargetWriterRouter = router
     private val manifests = MergeManifestStore(fileSystem, appDataDir)
 
     // Owned scope per CLAUDE.md: never a caller-supplied or composition scope.
@@ -95,6 +99,11 @@ class PageMergeService(
             plan.mergeId, plan.summary.total, newPages, combined, unchanged,
             failed.toList(), conflicts, assetsRenamed, stoppedAfter,
         )
+    }
+
+    /** Points later page batches at [next]; an in-flight apply switches at its next page. */
+    fun rebindRouter(next: TargetWriterRouter) {
+        router = next
     }
 
     /** Releases the owned scope. The service is unusable afterwards. */

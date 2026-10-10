@@ -41,6 +41,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlin.concurrent.Volatile
 import kotlinx.coroutines.withContext
 
 /** What the open graph's composition root offers the copy flow; swapped on every graph switch. */
@@ -130,15 +131,24 @@ class CopyFlowController(
 
     val progress = services.service.progress
 
-    private var binding: CopyGraphBinding? = null
+    @Volatile private var binding: CopyGraphBinding? = null
     private var pickerJob: Job? = null
     private var pendingResume: InterruptedCopy? = null
 
+    private val outcomeSink: (CopyRunOutcome) -> Unit = ::onOutcome
+
+    init {
+        // A run still going from before this controller existed (Activity recreation): show it, adopt its outcome.
+        if (services.runHost.running.value) _state.value = CopyFlowState(stage = CopyStage.Running, backgrounded = true)
+        services.runHost.attach(outcomeSink)
+    }
+
+    /** Unbinds the UI only: the run and the (host-retained) service keep going and are adopted by the next controller. */
     fun close() {
+        services.runHost.detach(outcomeSink)
         notices.close()
         scope.cancel()
         _state.value.picker?.close()
-        services.service.close()
     }
 
     fun nameOf(id: GraphId): String = graphRegistry.value.graphs.firstOrNull { it.id == id }?.displayName ?: id.value
@@ -337,7 +347,7 @@ class CopyFlowController(
         val st = _state.value
         releasePicker()
         if (st.backgrounded) {
-            notices.trySend("Copy to ${nameOf(GraphId(st.plan?.targetGraphId ?: ""))} finished")
+            notices.trySend(st.plan?.let { "Copy to ${nameOf(GraphId(it.targetGraphId))} finished" } ?: "Copy finished")
         }
         _state.update { it.copy(stage = CopyStage.Finished, result = result, backgrounded = false, stopping = false, failure = null) }
     }

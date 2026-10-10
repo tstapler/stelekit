@@ -62,18 +62,9 @@ fun createCopyServices(
     settings: Settings,
 ): CopyServices {
     val manifests = MergeManifestStore(config.fileSystem, config.appDataDir)
-    val service = PageMergeService(
-        router = router,
-        fileSystem = config.fileSystem,
-        appDataDir = config.appDataDir,
-        // Link closure is off in v1; if enabled it reads the open graph, which is the source in Push.
-        closureLookup = { names ->
-            graphManager.activeRepositorySet.value?.pageRepository?.getPagesByNames(names)
-                ?: emptyList<Page>().right()
-        },
-        assetCopier = AssetCopier(graphFileSystem, config.canonicalize),
-        graphRoot = { id -> graphManager.graphRegistry.value.graphs.firstOrNull { it.id == id }?.path },
-    )
+    // Retained by the host so a controller rebuilt on Activity recreation keeps the in-flight apply and retry state.
+    val service = config.runHost.retain(graphManager) { newService(graphManager, graphFileSystem, router, config) }
+    service.rebindRouter(router)
     return CopyServices(
         service = service,
         runHost = config.runHost,
@@ -90,6 +81,25 @@ fun createCopyServices(
         fileSystem = config.fileSystem,
     )
 }
+
+private fun newService(
+    graphManager: GraphManager,
+    graphFileSystem: PlatformFileSystem,
+    router: TargetWriterRouter,
+    config: CopyHostConfig,
+): PageMergeService =
+    PageMergeService(
+        router = router,
+        fileSystem = config.fileSystem,
+        appDataDir = config.appDataDir,
+        // Link closure is off in v1; if enabled it reads the open graph, which is the source in Push.
+        closureLookup = { names ->
+            graphManager.activeRepositorySet.value?.pageRepository?.getPagesByNames(names)
+                ?: emptyList<Page>().right()
+        },
+        assetCopier = AssetCopier(graphFileSystem, config.canonicalize),
+        graphRoot = { id -> graphManager.graphRegistry.value.graphs.firstOrNull { it.id == id }?.path },
+    )
 
 /** [CopyFlowGateway] over [PageMergeService] and the [PageSource] being browsed (the open graph in Push). */
 class PageMergeServiceGateway(
