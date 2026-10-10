@@ -4,7 +4,10 @@
 package dev.stapler.stelekit.ui.screens.copy
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -58,6 +61,7 @@ import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -195,12 +199,18 @@ fun CopyPagesContent(state: CopyPagesState, actions: CopyPagesActions, modifier:
             },
         color = MaterialTheme.colorScheme.background,
     ) {
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+        // Short windows and large fonts cannot fit chrome + list + chooser; the body then scrolls
+        // (list at a fixed height) while the Cancel/Review bar stays pinned below it.
+        val scrollBody = maxHeight < SCROLL_BODY_BELOW_HEIGHT || LocalDensity.current.fontScale >= SCROLL_BODY_FONT_SCALE
         Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp)) {
-            Header(state, actions)
             if (state.isPull && state.destinationId == null) {
+                Header(state, actions)
                 PullSourceChooser(state, actions)
                 return@Column
             }
+            val body: @Composable ColumnScope.() -> Unit = {
+            Header(state, actions)
             if (state.isPull) PullIndexStatus(state, actions)
             OutlinedTextField(
                 value = state.searchText,
@@ -219,7 +229,7 @@ fun CopyPagesContent(state: CopyPagesState, actions: CopyPagesActions, modifier:
                 Text("Still reading... results so far", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             SelectionActions(state, actions)
-            Column(Modifier.weight(1f).fillMaxWidth()) {
+            Column(if (scrollBody) Modifier.fillMaxWidth().height(SCROLL_BODY_LIST_HEIGHT) else Modifier.weight(1f).fillMaxWidth()) {
                 PageList(
                     state = state,
                     actions = actions,
@@ -257,6 +267,12 @@ fun CopyPagesContent(state: CopyPagesState, actions: CopyPagesActions, modifier:
             } else {
                 DestinationChooser(state, actions)
             }
+            }
+            if (scrollBody) {
+                Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()), content = body)
+            } else {
+                Column(Modifier.weight(1f).fillMaxWidth(), content = body)
+            }
             Row(
                 Modifier.fillMaxWidth().padding(top = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
@@ -278,6 +294,7 @@ fun CopyPagesContent(state: CopyPagesState, actions: CopyPagesActions, modifier:
                     modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                 )
             }
+        }
         }
     }
 
@@ -506,6 +523,9 @@ private fun PageList(
 
 private const val SKELETON_ROWS = 5
 private val DESTINATION_MAX_HEIGHT = 220.dp
+private val SCROLL_BODY_BELOW_HEIGHT = 560.dp
+private const val SCROLL_BODY_FONT_SCALE = 1.5f
+private val SCROLL_BODY_LIST_HEIGHT = 280.dp
 private const val DIMMED = 0.5f
 
 @Composable
