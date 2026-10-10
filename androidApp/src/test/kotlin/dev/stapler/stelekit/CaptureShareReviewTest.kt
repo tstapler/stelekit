@@ -390,4 +390,21 @@ class CaptureShareReviewTest {
 
         assertTrue(vm.captureText.value.contains("second share"))
     }
+
+    // ---- (10) one ShareInbox for the share target and the app composition ----------------------
+
+    @Test
+    @Config(sdk = [29], application = SteleKitApplication::class)
+    fun appComposition_isHandedTheProcessWideShareServices() {
+        val h = harness()
+        h.app.shareServicesOverride = null
+
+        val deps = h.app.captureDeps(null)
+        val first = h.app.shareServices()
+
+        org.junit.Assert.assertNotNull(first)
+        org.junit.Assert.assertSame("share target and App must use one inbox", first, h.app.shareServices())
+        org.junit.Assert.assertSame(first, deps.shareServicesProvider!!.invoke(h.gm))
+        org.junit.Assert.assertSame(h.app.activeWriteHooks, deps.activeWriteHooks)
+    }
 }

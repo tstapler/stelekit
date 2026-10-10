@@ -115,7 +115,8 @@ private fun rememberCrossGraphUi(
     var ui by remember(graphManager, config, copyHost) { mutableStateOf(CrossGraphUi(null, null)) }
     DisposableEffect(graphManager, config, copyHost) {
         if (graphFileSystem == null) return@DisposableEffect onDispose {}
-        val services = config?.let { createShareCaptureServices(graphManager, graphFileSystem, it, captureDeps.activeWriteHooks) }
+        val provided = if (config != null) captureDeps.shareServicesProvider?.invoke(graphManager) else null
+        val services = provided ?: config?.let { createShareCaptureServices(graphManager, graphFileSystem, it, captureDeps.activeWriteHooks) }
         services?.drain?.start()
         services?.let { captureDeps.onShareServicesReady?.invoke(it) }
         val copy = copyHost?.let { host ->
@@ -131,7 +132,7 @@ private fun rememberCrossGraphUi(
         ui = CrossGraphUi(services?.let { ShareInboxUi(it) }, copy)
         onDispose {
             ui = CrossGraphUi(null, null)
-            services?.drain?.close()
+            if (provided == null) services?.drain?.close()
             copy?.close()
         }
     }
