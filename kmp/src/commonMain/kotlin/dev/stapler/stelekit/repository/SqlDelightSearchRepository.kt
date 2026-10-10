@@ -123,7 +123,7 @@ class SqlDelightSearchRepository(
         }
     }.flowOn(PlatformDispatcher.DB)
 
-    override fun searchPagesByTitle(query: String, limit: Int): Flow<Either<DomainError, List<Page>>> = flow {
+    override fun searchPagesByTitle(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> = flow {
         try {
             val ftsQuery = FtsQueryBuilder.build(query)
             if (ftsQuery.isEmpty()) { emit(emptyList<Page>().right()); return@flow }
@@ -133,12 +133,12 @@ class SqlDelightSearchRepository(
             CurrentSpanContext.set(ActiveSpanContext(traceId, spanId))
             val results = try {
                 try {
-                    queries.searchPagesByNameFts(query = ftsQuery, limit = limit.toLong())
+                    queries.searchPagesByNameFts(query = ftsQuery, limit = limit.toLong(), offset = offset.toLong())
                         .asFlow().mapToList(PlatformDispatcher.DB).first().map { it.toPageModel() }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (_: Exception) {
-                    queries.selectPagesByNameLike("%$query%").asFlow().mapToList(PlatformDispatcher.DB).first().take(limit).map { it.toPageModel() }
+                    queries.selectPagesByNameLikePaginated("%$query%", limit.toLong(), offset.toLong()).asFlow().mapToList(PlatformDispatcher.DB).first().map { it.toPageModel() }
                 }
             } finally {
                 CurrentSpanContext.set(null)
@@ -249,7 +249,8 @@ class SqlDelightSearchRepository(
                     } else {
                         val andPages = queries.searchPagesByNameFts(
                             query = ftsQuery,
-                            limit = searchRequest.limit.toLong()
+                            limit = searchRequest.limit.toLong(),
+                            offset = 0L
                         ).asFlow().mapToList(PlatformDispatcher.DB).first()
                         val pageRows = if (andPages.isNotEmpty()) {
                             andPages
@@ -258,7 +259,8 @@ class SqlDelightSearchRepository(
                             if (orQuery.isEmpty()) emptyList()
                             else queries.searchPagesByNameFts(
                                 query = orQuery,
-                                limit = searchRequest.limit.toLong()
+                                limit = searchRequest.limit.toLong(),
+                                offset = 0L
                             ).asFlow().mapToList(PlatformDispatcher.DB).first()
                         }
                         pageRows.map { row ->

@@ -191,6 +191,21 @@ class CopyPagesViewModelTest {
     }
 
     @Test
+    fun `select all matching replaces prior unrelated selections`() = runTest {
+        val pages = (1..213).map { page(it, name = "Match $it") } + (214..300).map { page(it, name = "Other $it") }
+        val vm = vm(pages = pages)
+        advanceUntilIdle()
+        vm.toggleRow(uuid(250)); vm.toggleRow(uuid(1))
+        vm.onSearchTextChanged("Match")
+        advanceUntilIdle()
+        vm.selectAllMatching(); advanceUntilIdle()
+        assertEquals(213, vm.state.value.selectedCount)
+        assertTrue(uuid(250) !in vm.state.value.picked)
+        assertTrue((1..213).all { uuid(it) in vm.state.value.picked })
+        vm.close()
+    }
+
+    @Test
     fun `all pages in graph needs confirmation`() = runTest {
         val vm = vm(pages = (1..250).map { page(it) })
         advanceUntilIdle()
@@ -241,16 +256,6 @@ class CopyPagesViewModelTest {
         vm.retryLoad(); advanceUntilIdle()
         assertEquals(ListLoad.Idle, vm.state.value.listLoad)
         assertEquals(5, vm.state.value.rows.size)
-        vm.close()
-    }
-
-    @Test
-    fun `search flags the 100 hit cap`() = runTest {
-        val vm = vm()
-        advanceUntilIdle()
-        assertFalse(vm.state.value.searchCapped)
-        vm.onSearchTextChanged("Page"); advanceUntilIdle()
-        assertTrue(vm.state.value.searchCapped)
         vm.close()
     }
 

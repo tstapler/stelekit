@@ -106,6 +106,11 @@ class InMemoryBlockRepository : BlockRepository {
         }
     }
 
+    override suspend fun countBlocksForPages(pageUuids: Collection<PageUuid>): Either<DomainError, Map<PageUuid, Int>> {
+        val wanted = pageUuids.toSet()
+        return blocks.value.values.filter { it.pageUuid in wanted }.groupingBy { it.pageUuid }.eachCount().right()
+    }
+
     override fun getBlocksForPage(pageUuid: PageUuid): Flow<Either<DomainError, List<Block>>> {
         return blocks.map { map ->
             val pageBlocks = map.values.filter { it.pageUuid == pageUuid }.sortedBy { it.position }
@@ -730,7 +735,7 @@ class InMemorySearchRepository(
         return blockRepository.searchBlocksByContent(query, limit, offset)
     }
 
-    override fun searchPagesByTitle(query: String, limit: Int): Flow<Either<DomainError, List<Page>>> {
+    override fun searchPagesByTitle(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
         if (pageRepository == null || query.isEmpty()) return flowOf(emptyList<Page>().right())
         // Test backend: one-shot bounded-batch snapshot (the alias-property filter has no
         // SQL equivalent here). Production search uses FTS-backed repositories.
@@ -740,7 +745,7 @@ class InMemorySearchRepository(
                     pages.filter {
                         it.name.contains(query, ignoreCase = true) ||
                             it.properties[BlockPropertyKeys.ALIAS]?.contains(query, ignoreCase = true) == true
-                    }.take(limit)
+                    }.drop(offset).take(limit)
                 }
             )
         }

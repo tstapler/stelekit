@@ -32,7 +32,7 @@ class SearchViewModelTest {
             return flowOf(emptyList<Block>().right())
         }
 
-        override fun searchPagesByTitle(query: String, limit: Int): Flow<Either<DomainError, List<Page>>> {
+        override fun searchPagesByTitle(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
             return flowOf(emptyList<Page>().right())
         }
 

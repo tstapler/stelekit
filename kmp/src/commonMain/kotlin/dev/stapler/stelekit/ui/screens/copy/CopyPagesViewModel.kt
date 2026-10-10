@@ -153,8 +153,9 @@ class CopyPagesViewModel(
             result.fold(
                 { e -> _state.update { it.copy(listLoad = ListLoad.Failed, loadError = e.message) } },
                 { pages ->
+                    val counts = blockCountsFor(pages)
                     _state.update { cur ->
-                        val rows = cur.rows + pages.map(::toRow)
+                        val rows = cur.rows + pages.map { toRow(it, counts) }
                         cur.copy(rows = rows, hasMore = pages.isNotEmpty() && rows.size < (cur.totalMatching ?: Long.MAX_VALUE), listLoad = ListLoad.Idle)
                     }
                 },
@@ -172,7 +173,6 @@ class CopyPagesViewModel(
                 listLoad = if (it.rows.isEmpty()) ListLoad.Initial else ListLoad.Updating,
                 totalMatching = null,
                 loadError = null,
-                searchCapped = search != null,
             )
         }
         val job = scope.launch {
@@ -185,10 +185,11 @@ class CopyPagesViewModel(
                 return@launch
             }
             val pages = first.getOrNull().orEmpty()
+            val counts = blockCountsFor(pages)
             val n = total.getOrNull() ?: pages.size.toLong()
             _state.update {
                 it.copy(
-                    rows = pages.map(::toRow),
+                    rows = pages.map { toRow(it, counts) },
                     totalMatching = n,
                     hasMore = pages.size < n,
                     listLoad = ListLoad.Idle,
@@ -198,7 +199,12 @@ class CopyPagesViewModel(
         listJob = job
     }
 
-    private fun toRow(p: Page) = PageRowState(p.uuid, p.name, p.isJournal)
+    /** Best effort: a failed count just leaves the row without a block count. */
+    private suspend fun blockCountsFor(pages: List<Page>): Map<PageUuid, Int> =
+        if (pages.isEmpty()) emptyMap() else source.blockCounts(pages.map { it.uuid }).getOrNull().orEmpty()
+
+    private fun toRow(p: Page, counts: Map<PageUuid, Int>) =
+        PageRowState(p.uuid, p.name, p.isJournal, if (counts.isEmpty()) null else counts[p.uuid] ?: 0)
 
     // ---- selection ---------------------------------------------------------------------------
 
@@ -213,7 +219,7 @@ class CopyPagesViewModel(
         refreshLinkedDelta()
     }
 
-    /** Adds exactly the pages matching the current search and filters (not the whole graph). */
+    /** Replaces the selection with exactly the pages matching the current search and filters. */
     fun selectAllMatching() {
         val s = _state.value
         selectAllInto(s.filters.toSelectionFilter(), s.searchText.trim().ifEmpty { null })
@@ -243,7 +249,7 @@ class CopyPagesViewModel(
             collectUuids(filter, search).fold(
                 { e -> _state.update { it.copy(selecting = false, listLoad = ListLoad.Failed, loadError = e.message) } },
                 { found ->
-                    _state.update { it.copy(picked = it.picked.addAll(found), selecting = false) }
+                    _state.update { it.copy(picked = it.picked.replaceWith(found), selecting = false) }
                     refreshLinkedDelta()
                 },
             )
