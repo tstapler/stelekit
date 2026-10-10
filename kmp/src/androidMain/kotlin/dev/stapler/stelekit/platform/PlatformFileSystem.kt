@@ -642,6 +642,22 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         return genericCopyThenDelete(from, to)
     }
 
+    // Only plain file paths: renameTo is rename(2) on one volume, which replaces atomically. SAF stays non-atomic.
+    override fun supportsAtomicReplace(path: String): Boolean = !path.startsWith("saf://") && !path.startsWith("content://")
+
+    override fun replaceFileAtomically(from: String, to: String): Boolean {
+        if (from.startsWith("saf://") || from.startsWith("content://") || to.startsWith("saf://") || to.startsWith("content://")) return false
+        return try {
+            val source = File(validateLegacyPath(expandTilde(from)))
+            val dest = File(validateLegacyPath(expandTilde(to)))
+            source.exists() && source.renameTo(dest)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     private fun legacyRenameFile(from: String, to: String): Boolean {
         return try {
             val validatedFrom = validateLegacyPath(expandTilde(from))

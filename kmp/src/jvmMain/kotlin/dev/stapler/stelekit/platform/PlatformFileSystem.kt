@@ -54,6 +54,11 @@ actual class PlatformFileSystem actual constructor() : JvmFileSystemBase(), File
 
     override fun renameFile(from: String, to: String): Boolean = super<JvmFileSystemBase>.renameFile(from, to)
 
+    override fun supportsAtomicReplace(path: String): Boolean = super<JvmFileSystemBase>.supportsAtomicReplace(path)
+
+    override fun replaceFileAtomically(from: String, to: String): Boolean =
+        super<JvmFileSystemBase>.replaceFileAtomically(from, to)
+
     override fun readFileBytes(path: String): ByteArray? = super<JvmFileSystemBase>.readFileBytes(path)
 
     override fun writeFileBytes(path: String, data: ByteArray): Boolean = super<JvmFileSystemBase>.writeFileBytes(path, data)

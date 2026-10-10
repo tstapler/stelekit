@@ -17,9 +17,10 @@ import okio.ByteString.Companion.toByteString
  * Off-graph writer (ADR-001): splices only the new blocks into the target page's original bytes,
  * then replaces the file via temp + rename. A brand-new page is the only whole render.
  *
- * `FileSystem.renameFile` never overwrites an existing destination (JVM returns true and leaves
- * the source behind), so replacing deletes the old file first and restores it if the rename fails.
- * That is not crash-atomic; a crash in the gap leaves the complete new text in the `.tmp` file.
+ * Where [FileSystem.supportsAtomicReplace] the temp file is moved over the page in one step, so a
+ * crash leaves the old or the new file complete. Otherwise `renameFile` (which never overwrites;
+ * JVM returns true and leaves the source behind) forces delete-then-rename with restore-on-failure;
+ * a crash in that gap leaves the complete new text in the `.tmp` file.
  *
  * @param canonicalize symlink-resolving path function; the identity default only checks lexically.
  *   Pass `File(p).canonicalPath` on JVM so a symlinked page file or folder cannot escape the root.
@@ -183,6 +184,10 @@ class MarkdownTargetWriter(
         var deletedOriginal = false
         try {
             if (!fs.writeFileBytes(tmp, bytes)) return failAndClean(tmp, path, "temp write failed")
+            if (fs.supportsAtomicReplace(path)) {
+                if (!fs.replaceFileAtomically(tmp, path)) return failAndClean(tmp, path, "atomic replace failed")
+                return Unit.right()
+            }
             if (original != null) {
                 deletedOriginal = fs.deleteFile(path)
                 if (!deletedOriginal) return failAndClean(tmp, path, "could not replace existing file")
