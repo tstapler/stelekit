@@ -103,6 +103,7 @@ import dev.stapler.stelekit.merge.LinkClosureTest
 import dev.stapler.stelekit.merge.MergeManifestTest
 import dev.stapler.stelekit.merge.MergeStagingDirectoryTest
 import dev.stapler.stelekit.merge.MergeUndoTest
+import dev.stapler.stelekit.merge.PageMergeServiceTest
 import dev.stapler.stelekit.db.SqliteStatementAnalyzerTest
 import dev.stapler.stelekit.db.StorageLocationPersistenceTest
 import dev.stapler.stelekit.db.WithoutRowidMigrationTest
@@ -255,6 +256,7 @@ import org.junit.runners.Suite
     MergeStagingDirectoryTest::class,
     MergeManifestTest::class,
     MergeUndoTest::class,
+    PageMergeServiceTest::class,
     LinkClosureTest::class,
     AssetCopierTest::class,
     SqliteStatementAnalyzerTest::class,
