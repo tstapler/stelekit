@@ -23,11 +23,20 @@ sealed interface AppendOutcome {
         val writer: GraphWriter,
     ) : AppendOutcome
 
+    /** Written straight to a graph that is not open; there is no repo set or writer to hand back. */
+    data class AppendedOffGraph(val graphId: GraphId, val pagePath: String) : AppendOutcome
+
     /** A block with this `captureId` already exists; nothing was written. */
     data object AlreadyPresent : AppendOutcome
 
     /** Durably queued for later delivery. */
     data class Queued(val reason: String) : AppendOutcome
+
+    /**
+     * Nothing was written and nothing was queued; the caller decides (the share path queues it, the
+     * inbox drain retries). [permanent] means retrying the same target cannot help (e.g. not round-trippable).
+     */
+    data class Deferred(val reason: String, val permanent: Boolean = false) : AppendOutcome
 
     /** [cause] keeps the specific [CaptureResult] (e.g. `NoActiveGraph`) for UI mapping. */
     data class Failed(val error: String, val cause: CaptureResult? = null) : AppendOutcome
@@ -36,6 +45,14 @@ sealed interface AppendOutcome {
 /** Seam for appending to a graph that is not active; implemented by Story 4.1.3 via `TargetWriterRouter`. */
 fun interface OffGraphAppendRoute {
     suspend fun append(graphId: GraphId, text: String, captureId: String?): AppendOutcome
+}
+
+/** An [OffGraphAppendRoute] that also carries a share's image. */
+interface OffGraphContentRoute : OffGraphAppendRoute {
+    suspend fun appendContent(graphId: GraphId, content: ShareContent, captureId: String?): AppendOutcome
+
+    override suspend fun append(graphId: GraphId, text: String, captureId: String?): AppendOutcome =
+        appendContent(graphId, ShareContent(text), captureId)
 }
 
 /**
@@ -69,6 +86,24 @@ class JournalAppender(
             }
     }
 
+    /**
+     * Like [append] for a share: a non-active target gets the image too when the route is an
+     * [OffGraphContentRoute]. The active-graph path has no image support, so an image share to it is
+     * a permanent [AppendOutcome.Deferred] rather than silently dropping the image.
+     */
+    suspend fun appendContent(
+        target: CaptureTarget,
+        content: ShareContent,
+        captureId: String? = null,
+        writerFactory: (RepositorySet) -> GraphWriter = { GraphWriter(fileSystem, writeActor = it.writeActor) },
+    ): AppendOutcome {
+        val route = offGraphRoute as? OffGraphContentRoute
+        val offGraph = target is CaptureTarget.NamedGraph && target.graphId != graphManager.getActiveGraphId()
+        if (!offGraph && content.image != null) return AppendOutcome.Deferred(IMAGE_NEEDS_OPEN_GRAPH_UI, permanent = true)
+        if (!offGraph || route == null) return append(target, content.text, captureId, writerFactory)
+        return route.appendContent((target as CaptureTarget.NamedGraph).graphId, content, captureId)
+    }
+
     private suspend fun appendToActive(
         text: String,
         captureId: String?,
@@ -93,6 +128,7 @@ class JournalAppender(
         repoSet.blockRepository.getBlockByUuid(BlockUuid(captureId)).first().getOrNull() != null
 
     companion object {
+        const val IMAGE_NEEDS_OPEN_GRAPH_UI = "image-needs-open-graph-ui"
         const val NOT_SUPPORTED_YET = "NotSupportedYet: appending to a non-active graph needs Story 4.1.3"
     }
 }

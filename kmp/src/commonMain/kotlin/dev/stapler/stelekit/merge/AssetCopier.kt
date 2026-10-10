@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.merge
 
 import arrow.core.Either
+import arrow.core.flatMap
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.db.PageFileResolver
@@ -95,8 +96,7 @@ class AssetCopier(
 
     private fun resolve(rel: String, srcAssets: String, dstAssets: String, dryRun: Boolean): Either<DomainError, Decision> {
         val srcPath = "$srcAssets/$rel"
-        val dstPath = "$dstAssets/$rel"
-        if (!contained(srcAssets, srcPath) || !contained(dstAssets, dstPath)) {
+        if (!contained(srcAssets, srcPath)) {
             return Decision.Missing("asset path escapes the assets folder: $rel").right()
         }
         val bytes = try {
@@ -104,6 +104,28 @@ class AssetCopier(
         } catch (_: UnsupportedOperationException) {
             null
         } ?: return Decision.Missing("source asset missing: $rel").right()
+        return placeBytes(rel, bytes, dstAssets, dryRun)
+    }
+
+    /**
+     * Stores in-memory [bytes] as `assets/<rel>` of [targetRoot] (a share's image), with the same
+     * containment and hash-dedupe as [copy]. Returns the final path relative to `assets/`.
+     */
+    fun store(rel: String, bytes: ByteArray, targetRoot: String): Either<DomainError, String> {
+        val dstAssets = "${targetRoot.trimEnd('/')}/assets"
+        return placeBytes(rel, bytes, dstAssets, dryRun = false).flatMap { d ->
+            when (d) {
+                is Decision.Place -> d.finalRel.right()
+                is Decision.Missing -> DomainError.FileSystemError.WriteFailed("$dstAssets/$rel", d.warning).left()
+            }
+        }
+    }
+
+    private fun placeBytes(rel: String, bytes: ByteArray, dstAssets: String, dryRun: Boolean): Either<DomainError, Decision> {
+        val dstPath = "$dstAssets/$rel"
+        if (!contained(dstAssets, dstPath)) {
+            return Decision.Missing("asset path escapes the assets folder: $rel").right()
+        }
         val hash = ContentHasher.sha256(bytes)
 
         val existing = if (fs.fileExists(dstPath)) fs.readFileBytes(dstPath) else null

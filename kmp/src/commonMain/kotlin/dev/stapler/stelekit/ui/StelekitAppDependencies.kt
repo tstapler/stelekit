@@ -240,6 +240,10 @@ data class StelekitAppWebSyncDeps(
 data class StelekitAppCaptureDeps(
     val hotkeyComboLabel: String = "Ctrl+Shift+Space",
     val hotkeyRegistrationFailure: StateFlow<HotkeyRegistrationFailure?>? = null,
+    /** Enables sharing into non-active graphs and starts the inbox drain; null on iOS/Web (no app-private FS, no off-graph writes). */
+    val shareInbox: dev.stapler.stelekit.capture.ShareInboxConfig? = null,
+    /** Hands the share appender to the host (Android share target) once the pipeline is built. */
+    val onShareServicesReady: ((dev.stapler.stelekit.capture.ShareCaptureServices) -> Unit)? = null,
 )
 
 /**

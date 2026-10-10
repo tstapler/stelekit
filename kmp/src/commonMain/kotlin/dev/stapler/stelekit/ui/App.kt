@@ -7,6 +7,7 @@ package dev.stapler.stelekit.ui
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.background
 import dev.stapler.stelekit.capture.HotkeyRegistrationFailure
+import dev.stapler.stelekit.capture.createShareCaptureServices
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Lock
@@ -71,6 +72,7 @@ fun StelekitApp(
         onGraphManagerReady = deps.lifecycleHooks.onGraphManagerReady,
     )
     val graphManager = graphManagerState.graphManager
+    ShareCaptureEffect(graphManager, fileSystem, deps.captureDeps)
 
     if (permissionGateAndGraphInit(fileSystem, graphPath, graphManager, scope)) return
 
@@ -80,6 +82,19 @@ fun StelekitApp(
     if (emptyGraphGate(graphManager, fileSystem, scope, graphManagerState.activeGraphId)) return
 
     MainGraphContentHost(fileSystem, deps, platformSettings, graphManagerState, notificationManager)
+}
+
+/** Builds the share pipeline once per graph manager and runs its inbox drain; a no-op when the host supplies no [ShareInboxConfig]. */
+@Composable
+private fun ShareCaptureEffect(graphManager: GraphManager, fileSystem: FileSystem, captureDeps: StelekitAppCaptureDeps) {
+    val config = captureDeps.shareInbox ?: return
+    val graphFileSystem = fileSystem as? PlatformFileSystem ?: return
+    DisposableEffect(graphManager, config) {
+        val services = createShareCaptureServices(graphManager, graphFileSystem, config)
+        services.drain.start()
+        captureDeps.onShareServicesReady?.invoke(services)
+        onDispose { services.drain.close() }
+    }
 }
 
 /**
