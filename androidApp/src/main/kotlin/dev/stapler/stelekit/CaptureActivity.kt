@@ -77,6 +77,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusEvent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
@@ -88,6 +89,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.app.R
 import dev.stapler.stelekit.capture.OffGraphCapture
@@ -449,11 +451,14 @@ internal fun CaptureScreen(
 
     // Back with text auto-saves to the shown destination (Task 4.2.1g). Back with empty text is
     // not intercepted, so the system just closes. The legacy label path keeps its original save.
+    // After a failed save (Error) Back retries and queues, so closing never drops the text.
     BackHandler(
-        enabled = captureText.isNotBlank() && saveState == CaptureViewModel.SaveState.Idle &&
+        enabled = captureText.isNotBlank() &&
+            (saveState == CaptureViewModel.SaveState.Idle || saveState is CaptureViewModel.SaveState.Error) &&
             backSave == CaptureViewModel.BackSaveState.None && !menuOpen,
     ) {
-        if (destination is CaptureDestination.Legacy) viewModel.save() else viewModel.backSave()
+        if (destination is CaptureDestination.Legacy && saveState == CaptureViewModel.SaveState.Idle) viewModel.save()
+        else viewModel.backSave()
     }
     BackHandler(enabled = menuOpen) { viewModel.setMenuOpen(false) }
 
@@ -882,14 +887,16 @@ private fun BackSaveToast(
 internal fun NoGraphsContent(viewModel: CaptureViewModel, onClose: () -> Unit) {
     val text by viewModel.captureText.collectAsState()
     val note by viewModel.resultNote.collectAsState()
+    val failed = note == CaptureViewModel.NO_GRAPH_SAVE_FAILED
+    val clipboard = LocalClipboardManager.current
     val close = { if (text.isBlank()) onClose() else viewModel.closeWithoutGraph() }
     LaunchedEffect(note) {
-        if (note != null) {
+        if (note != null && !failed) {
             delay(QUEUED_FINISH_MS)
             onClose()
         }
     }
-    BackHandler(enabled = note == null) { close() }
+    BackHandler(enabled = note == null || failed) { close() }
     Column(
         modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -901,9 +908,17 @@ internal fun NoGraphsContent(viewModel: CaptureViewModel, onClose: () -> Unit) {
             Spacer(Modifier.height(8.dp))
         }
         note?.let {
-            Text(it, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }, color = MaterialTheme.colorScheme.primary)
+            Text(
+                it,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                color = if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+            )
         }
-        TextButton(onClick = close, enabled = note == null) { Text("Close") }
+        if (failed) {
+            TextButton(onClick = { clipboard.setText(AnnotatedString(text)) }) { Text("Copy text") }
+            TextButton(onClick = onClose) { Text("Close anyway") }
+        }
+        TextButton(onClick = close, enabled = note == null || failed) { Text(if (failed) "Retry" else "Close") }
     }
 }
 

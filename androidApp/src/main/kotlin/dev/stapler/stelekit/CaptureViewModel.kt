@@ -184,6 +184,8 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
         _saveState.value = SaveState.Saved
     }
 
+    internal fun setSaveErrorForTest() { _saveState.value = SaveState.Error(IllegalStateException("test")) }
+
     internal fun setBackSaveForTest(state: BackSaveState) { _backSave.value = state }
 
     val overrideGraphIdValue: String? get() = overrideGraphId?.value
@@ -641,7 +643,7 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
         if (text.isEmpty() || app == null) return
         app.appScope.launch {
             _resultNote.value = enqueue(app, InboxSlot.Unassigned, text).fold(
-                { "Couldn't save this share. Copy the text before closing." },
+                { NO_GRAPH_SAVE_FAILED },
                 { if (it == EnqueueOutcome.AlreadyQueued) "Already added" else UNASSIGNED_SAVED },
             )
         }
@@ -666,7 +668,7 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
             }
             if (done == null) {
                 _backSave.value = BackSaveState.None
-                _saveState.value = SaveState.Error(IllegalStateException("Couldn't save or queue this note"))
+                _saveState.value = SaveState.Error(IllegalStateException("Couldn't save or queue this note. Copy the text before closing."))
                 if (!hostAttached) toastOnMain("Couldn't save this note. Reopen SteleKit capture to try again.")
             } else {
                 _backSave.value = done
@@ -676,7 +678,7 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private suspend fun runBackSave(app: SteleKitApplication): BackSaveState.Done? {
-        val graphManager = app.graphManager ?: return null
+        val graphManager = app.graphManager ?: return queueUnassigned(app)
         return when (val dest = settledDestination()) {
             is CaptureDestination.Ready -> {
                 val text = textFor(dest)
@@ -693,12 +695,17 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
             is CaptureDestination.Unavailable ->
-                dest.graphId?.let { queueAfterFailure(app, it, dest.graphName, _captureText.value.trim()) }
+                dest.graphId?.let { queueAfterFailure(app, it, dest.graphName, _captureText.value.trim()) } ?: queueUnassigned(app)
             CaptureDestination.NoGraphs -> enqueue(app, InboxSlot.Unassigned, _captureText.value.trim())
                 .fold({ null }, { BackSaveState.Done(UNASSIGNED_SAVED, null, queued = true) })
-            CaptureDestination.Legacy, CaptureDestination.Checking -> null
+            CaptureDestination.Legacy, CaptureDestination.Checking -> queueUnassigned(app)
         }
     }
+
+    /** No resolvable graph: park the text in the unassigned slot rather than lose it (ADR-004). */
+    private suspend fun queueUnassigned(app: SteleKitApplication): BackSaveState.Done? =
+        enqueue(app, InboxSlot.Unassigned, _captureText.value.trim())
+            .fold({ null }, { BackSaveState.Done(QUEUED_NO_GRAPH, null, queued = true) })
 
     private suspend fun queueAfterFailure(app: SteleKitApplication, id: GraphId, label: String, text: String): BackSaveState.Done? =
         enqueue(app, InboxSlot.Graph(id), text).fold({ null }, { queuedDone(label) })
@@ -951,6 +958,9 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
     companion object {
         private val IMAGE_PREFIX_REGEX = Regex("""^\[image: .*?](?:\n|$)""")
         private val IMAGE_PATH_REGEX = Regex("""^\[image: (.*?)]""")
+        /** Shown when the unassigned-slot enqueue fails; the placeholder then stays open with Copy text. */
+        internal const val NO_GRAPH_SAVE_FAILED = "Couldn't save this share. Copy the text before closing."
+        private const val QUEUED_NO_GRAPH = "Couldn't pick a graph. Queued to add later."
         private const val UNASSIGNED_SAVED = "Saved. It will be added to the first graph you create."
     }
 }
