@@ -89,9 +89,8 @@ class JournalAppender(
     }
 
     /**
-     * Like [append] for a share: a non-active target gets the image too when the route is an
-     * [OffGraphContentRoute]. The active-graph path has no image support, so an image share to it is
-     * a permanent [AppendOutcome.Deferred] rather than silently dropping the image.
+     * Like [append] for a share: the image goes through an [OffGraphContentRoute], also for the open graph.
+     * Without such a route an image share is a permanent [AppendOutcome.Deferred], never a dropped image.
      */
     suspend fun appendContent(
         target: CaptureTarget,
@@ -102,7 +101,11 @@ class JournalAppender(
         val route = offGraphRoute as? OffGraphContentRoute
         val offGraph = target is CaptureTarget.NamedGraph && target.graphId != graphManager.getActiveGraphId()
         if (!offGraph && content.image != null) {
-            return AppendOutcome.Deferred(IMAGE_NEEDS_OPEN_GRAPH_UI, permanent = true).logged(target, WRITER_ACTIVE)
+            // The router hands out the real active writer, which stores the image under this graph's assets/.
+            val graphId = (target as? CaptureTarget.NamedGraph)?.graphId ?: graphManager.getActiveGraphId()
+                ?: return AppendOutcome.Failed("No active graph", CaptureResult.NoActiveGraph).logged(target, WRITER_ACTIVE)
+            if (route == null) return AppendOutcome.Deferred(IMAGE_NEEDS_OPEN_GRAPH_UI, permanent = true).logged(target, WRITER_ACTIVE)
+            return route.appendContent(graphId, content, captureId).logged(target, WRITER_ACTIVE)
         }
         if (!offGraph || route == null) return append(target, content.text, captureId, writerFactory)
         return route.appendContent((target as CaptureTarget.NamedGraph).graphId, content, captureId)

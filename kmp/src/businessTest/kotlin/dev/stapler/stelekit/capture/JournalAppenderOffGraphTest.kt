@@ -304,15 +304,20 @@ class JournalAppenderOffGraphTest {
     }
 
     @Test
-    fun appendContent_should_KeepImageShareToActiveGraphDeferredPermanently() = realTime {
+    fun appendContent_should_StoreImageUnderActiveGraphAssets_When_TargetIsTheReadyGraph() = realTime {
         val m = newManager()
         m.awaitPendingMigration()
         val appender = JournalAppender(m, PlatformFileSystem(), InboxFallbackAppender(activeFixture(m), inbox))
+        val image = byteArrayOf(9, 8, 7)
 
-        val outcome = appender.appendContent(CaptureTarget.NamedGraph(active), ShareContent("look", byteArrayOf(1), "image/png"), c1)
+        val outcome = appender.appendContent(CaptureTarget.NamedGraph(active), ShareContent("look", image, "image/png"), c1)
 
-        assertEquals(AppendOutcome.Deferred(JournalAppender.IMAGE_NEEDS_OPEN_GRAPH_UI, permanent = true), outcome)
-        assertTrue(targetFs.allFilePaths().isEmpty())
+        // A permanent Deferred would fail the inbox drain forever for a queued image share.
+        assertIs<AppendOutcome.AppendedOffGraph>(outcome)
+        val onDisk = assertNotNull(activeJournal())
+        assertTrue(onDisk.contains("![image](../assets/"), onDisk)
+        val asset = targetFs.allFilePaths().single { it.startsWith("$activeRoot/assets/") }
+        assertContentEquals(image, targetFs.readFileBytes(asset))
     }
 
     @Test
