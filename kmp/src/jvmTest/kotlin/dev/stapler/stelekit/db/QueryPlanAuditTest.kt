@@ -83,6 +83,8 @@ class QueryPlanAuditTest {
         // ── blocks ───────────────────────────────────────────────────────────────────────────
         AuditQuery("selectBlockByUuid",
             "SELECT * FROM blocks WHERE uuid = 'x'"),
+        AuditQuery("selectMergeConflictBlocks",
+            "SELECT * FROM blocks WHERE properties LIKE '%merge-conflict:true%' AND uuid > 'x' ORDER BY uuid LIMIT 10"),
         AuditQuery("existsBlockByUuid",
             "SELECT COUNT(*) FROM blocks WHERE uuid = 'x'"),
         AuditQuery("selectAllBlocks",

@@ -841,6 +841,15 @@ object MigrationRunner {
                 SchemaOp.AddColumn("git_config", "shallow_depth", "INTEGER"),
             ),
         ),
+        Migration(
+            name = "idx_blocks_merge_conflict",
+            statements = listOf(
+                // Partial: only flagged copy-conflict blocks are indexed, so the conflict review list
+                // is O(conflicts) instead of a blocks scan. WHERE must equal selectMergeConflictBlocks.
+                "CREATE INDEX IF NOT EXISTS idx_blocks_merge_conflict ON blocks(uuid) WHERE properties LIKE '%merge-conflict:true%'",
+                "ANALYZE blocks",
+            )
+        ),
     )
 
     /**
