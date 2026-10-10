@@ -22,6 +22,10 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import dev.stapler.stelekit.merge.MergePropertyKeys
@@ -101,6 +105,23 @@ class ConflictReviewTest {
 
     private fun loaded(vararg rows: ConflictRow, hasMore: Boolean = false) =
         ConflictReviewState(loading = false, rows = rows.toList(), hasMore = hasMore)
+
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+    private fun assertEscapeCloses(state: ConflictReviewState) {
+        val calls = show(state)
+        composeTestRule.waitForIdle()
+        composeTestRule.onRoot().performKeyInput { pressKey(Key.Escape) }
+        assertEquals(1, calls.closed)
+    }
+
+    @Test
+    fun `Escape closes the review while rows are listed`() = assertEscapeCloses(loaded(row()))
+
+    @Test
+    fun `Escape closes the review while loading`() = assertEscapeCloses(ConflictReviewState(loading = true))
+
+    @Test
+    fun `Escape closes the review when empty`() = assertEscapeCloses(loaded())
 
     // ── states ───────────────────────────────────────────────────────────────────────────────
 
