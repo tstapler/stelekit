@@ -59,3 +59,6 @@ Verified by `MergeUuidRoundTripSpikeTest` (businessTest, commit 0a1304ef8d).
 - `SqlDelightBlockRepository.saveBlock` (INSERT OR REPLACE, `blocks.uuid` UNIQUE, `foreign_keys=1`) with an existing uuid on another page succeeds silently: the row moves to the new page and the old row's children and `block_references` are cascade-deleted. It does not throw or ignore.
 - Consequence: the clobber guard (Task 1.2.1c) is MANDATORY. Merge must remap or refuse colliding uuids before any save.
 - `QrImportService.import` delegates to `GraphLoader.importMarkdownString`. A payload `id::` is honored; blocks without it get uuids seeded by a fresh page uuid. It has no collision guard, so a colliding payload `id::` clobbers another page's block. (Only the `id::` case is tested; the rest is from reading the code.)
+
+## Decision: `src-id::` visibility (Task 2.3.2e, 2026-10-09)
+`src-id::` is internal identity metadata, like `id::`. It stays in the file but the editor does not render it as an editable property. A copied block shows only the `merge-conflict` flag when it conflicts. (Implementation of the hiding is tracked in the UI phase.)
