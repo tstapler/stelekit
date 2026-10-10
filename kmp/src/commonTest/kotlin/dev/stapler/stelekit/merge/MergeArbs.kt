@@ -77,6 +77,7 @@ object MergeArbs {
         is MergeOutcome.New -> o.page
         is MergeOutcome.Merged -> o.page
         MergeOutcome.Unchanged -> t ?: s
+        is MergeOutcome.RefsDidNotConverge -> error("refs did not converge: $o")
     }
 
     /** [code] adds multi-line code contents, which the single-line render round-trip tests must leave out. */

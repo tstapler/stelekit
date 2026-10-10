@@ -6,7 +6,7 @@ import dev.stapler.stelekit.model.BlockPropertyKeys
  * Pure block-level merge (ADR-002). Additive only: no target block is removed, edited or reordered.
  * Incoming uuids are SOURCE uuids; inserted blocks get uuid' and `src-id`.
  */
-fun mergePage(existing: MergePage?, incoming: MergePage, policy: MergePolicy): MergeOutcome {
+fun mergePage(existing: MergePage?, incoming: MergePage, policy: MergePolicy, maxRefPasses: Int = MAX_REF_PASSES): MergeOutcome {
     val remap = UuidRemap.compute(policy.sourceGraphId, incoming.blocks)
     if (existing == null) {
         val merger = SiblingMerger(policy, remap, remap, incoming.name, HashSet())
@@ -22,13 +22,19 @@ fun mergePage(existing: MergePage?, incoming: MergePage, policy: MergePolicy): M
     var merger = SiblingMerger(policy, remap, refs, incoming.name, HashSet(onPage))
     var blocks = merger.mergeSiblings(existing.blocks, incoming.blocks)
     var passes = 0
-    while (passes++ < MAX_REF_PASSES) {
+    var settled = false
+    while (passes++ < maxRefPasses) {
         val next = remap + merger.resolved + fixed
-        if (next == refs) break
+        if (next == refs) {
+            settled = true
+            break
+        }
         refs = next
         merger = SiblingMerger(policy, remap, refs, incoming.name, HashSet(onPage))
         blocks = merger.mergeSiblings(existing.blocks, incoming.blocks)
     }
+    // Unsettled refs would write a page whose ((refs)) point at the wrong blocks; fail the page instead.
+    if (!settled) return MergeOutcome.RefsDidNotConverge(maxRefPasses)
     val (props, clashes) = unionProperties(existing.properties, incoming.properties)
     if (merger.added == 0 && merger.conflicts.isEmpty() && props == existing.properties) return MergeOutcome.Unchanged
     return MergeOutcome.Merged(existing.copy(properties = props, blocks = blocks), merger.added, merger.conflicts.toList(), clashes)

@@ -32,6 +32,11 @@ sealed interface NotRoundTrippable {
         override val message get() = "Inserted content would not survive a re-read: $detail"
     }
 
+    /** Block references could not be resolved to a fixed point while merging. */
+    data class RefsDidNotConverge(val passes: Int) : NotRoundTrippable {
+        override val message get() = "Block references did not settle after $passes passes; the page was not copied"
+    }
+
     /** The new block landed somewhere other than the last child of the intended parent. */
     data class Misplaced(val detail: String) : NotRoundTrippable {
         override val message get() = "Inserted block misplaced: $detail"

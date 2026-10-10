@@ -356,6 +356,7 @@ class PageMergeService(
                     is MergeOutcome.New -> write(w, key, existing, outcome.page, PageKind.New, 0, renamed)
                     is MergeOutcome.Merged ->
                         write(w, key, existing, outcome.page, PageKind.Combined, outcome.conflicts.size, renamed)
+                    is MergeOutcome.RefsDidNotConverge -> outcome.asRefusal().left()
                 }
             }
         } catch (e: CancellationException) {
@@ -473,6 +474,7 @@ class PageMergeService(
             is MergeOutcome.New -> Classified.Ok(page.name, PageKind.New, digest, emptyList(), renamed)
             MergeOutcome.Unchanged -> Classified.Ok(page.name, PageKind.Unchanged, digest, emptyList(), renamed)
             is MergeOutcome.Merged -> Classified.Ok(page.name, PageKind.Combined, digest, outcome.conflicts, renamed)
+            is MergeOutcome.RefsDidNotConverge -> Classified.Unreadable(page.name, outcome.asRefusal())
         }
     }
 
@@ -599,3 +601,6 @@ private fun indexByUuid(blocks: List<MergeBlock>): Map<String, MergeBlock> {
     walk(blocks)
     return out
 }
+
+private fun MergeOutcome.RefsDidNotConverge.asRefusal(): DomainError =
+    DomainError.MergeError.WriteRefused(WriteRefusedReason.NotRoundTrippable(NotRoundTrippable.RefsDidNotConverge(passes)))

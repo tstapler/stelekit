@@ -76,6 +76,7 @@ abstract class TargetWriterContractSuite {
             is MergeOutcome.New -> outcome.page
             is MergeOutcome.Merged -> outcome.page
             MergeOutcome.Unchanged -> return Copy(outcome, null)
+            is MergeOutcome.RefsDidNotConverge -> error("refs did not converge: $outcome")
         }
         return Copy(outcome, writer.write(key, merged).ok())
     }
@@ -83,7 +84,7 @@ abstract class TargetWriterContractSuite {
     private fun MergeOutcome.page(): MergePage = when (this) {
         is MergeOutcome.New -> page
         is MergeOutcome.Merged -> page
-        MergeOutcome.Unchanged -> error("no page")
+        MergeOutcome.Unchanged, is MergeOutcome.RefsDidNotConverge -> error("no page")
     }
 
     private fun flat(blocks: List<MergeBlock>): List<MergeBlock> = blocks.flatMap { listOf(it) + flat(it.children) }

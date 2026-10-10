@@ -36,6 +36,7 @@ class MergeRoundTripPropertyTest {
                 is MergeOutcome.New -> o.page
                 is MergeOutcome.Merged -> o.page
                 MergeOutcome.Unchanged -> return@checkAll
+                is MergeOutcome.RefsDidNotConverge -> error("refs did not converge: $o")
             }
             assertEquals(out, reparse(out))
         }

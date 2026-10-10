@@ -100,6 +100,9 @@ sealed interface MergeOutcome {
 
     data object Unchanged : MergeOutcome
 
+    /** `((ref))` targets did not settle within [passes] re-merges; nothing may be written for this page. */
+    data class RefsDidNotConverge(val passes: Int) : MergeOutcome
+
     /** [added] counts inserted blocks including descendants, excluding conflict siblings. */
     data class Merged(
         val page: MergePage,

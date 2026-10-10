@@ -266,4 +266,12 @@ class MergePageExamplesTest {
         assertEquals(UuidRemap.uuidFor(g, "d1"), ids[0])
         assertEquals(listOf("one", "two", "three"), out.let { (it as MergeOutcome.New).page.blocks.map { b -> b.content } })
     }
+
+    @Test
+    fun refsThatDoNotSettleFailTheMergeInsteadOfStoppingSilently() {
+        val out = mergePage(page(b("t1", "see ((x1))")), page(b("x1", "x"), b("s2", "see ((x1))")), policy, maxRefPasses = 0)
+
+        assertEquals(MergeOutcome.RefsDidNotConverge(0), out)
+        assertTrue(mergePage(page(b("t1", "see ((x1))")), page(b("x1", "x"), b("s2", "see ((x1))")), policy) !is MergeOutcome.RefsDidNotConverge)
+    }
 }
