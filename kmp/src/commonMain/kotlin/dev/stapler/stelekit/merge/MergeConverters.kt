@@ -28,15 +28,20 @@ object MergeConverters {
     // Parsing needs a timestamp but nothing here reads it; a constant keeps results deterministic.
     private val EPOCH = Instant.fromEpochMilliseconds(0)
 
+    // The loader keeps `\r` from CRLF files in content/values; the merge model is LF-only so push and pull agree.
+    private fun lf(s: String) = s.replace("\r\n", "\n").removeSuffix("\r")
+
+    private fun lfProps(p: Map<String, String>) = p.entries.associate { (k, v) -> lf(k) to lf(v) }
+
     fun toMergePage(page: Page, blocks: List<Block>): MergePage {
         val byParent = blocks.groupBy { it.parentUuid }
         fun build(parent: BlockUuid?): List<MergeBlock> =
             byParent[parent].orEmpty().sortedBy { it.position }.map { b ->
-                val explicit = b.properties[BlockPropertyKeys.ID]?.takeIf { it.isNotBlank() }
+                val explicit = b.properties[BlockPropertyKeys.ID]?.let(::lf)?.trim()?.takeIf { it.isNotEmpty() }
                 MergeBlock(
                     uuid = explicit,
-                    content = b.content,
-                    properties = b.properties - BlockPropertyKeys.ID,
+                    content = lf(b.content),
+                    properties = lfProps(b.properties - BlockPropertyKeys.ID),
                     children = build(b.uuid),
                 )
             }
@@ -44,7 +49,7 @@ object MergeConverters {
             name = page.name,
             isJournal = page.isJournal,
             journalDate = page.journalDate,
-            properties = page.properties,
+            properties = lfProps(page.properties),
             blocks = build(null),
         )
     }

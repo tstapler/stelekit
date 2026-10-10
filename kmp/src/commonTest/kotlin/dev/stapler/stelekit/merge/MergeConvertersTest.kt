@@ -8,6 +8,12 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import dev.stapler.stelekit.db.MarkdownPageParser
+import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.parser.MarkdownParser
+import dev.stapler.stelekit.parsing.ParseMode
+import kotlin.time.Instant
 
 class MergeConvertersTest {
     private val path = MergeFixtures.PATH
@@ -89,10 +95,72 @@ class MergeConvertersTest {
 }
 
 class MergeConvertersPagePropertiesTest {
+    private val path = MergeFixtures.PATH
+    private val u1 = "11111111-1111-1111-1111-111111111111"
+    private val u2 = "22222222-2222-2222-2222-222222222222"
+
     @Test
     fun newPagePropertiesRenderAsAPropertyBlockThePageModelReadsBack() {
         val page = MergePage("P", properties = mapOf("alias" to "a", "type" to "t"), blocks = listOf(MergeBlock(null, "x")))
         val back = MergeConverters.parseMarkdown(MergeRenderer.renderNewPage(page), MergeFixtures.PATH, "P", false).mergePage
         assertEquals(page, back)
+    }
+
+    /** What GraphLoader stores for [text]: the raw parse, `\r` kept (no CRLF normalization). */
+    private fun dbSide(text: String): Pair<Page, List<Block>> {
+        val now = Instant.fromEpochMilliseconds(0)
+        val parsed = MarkdownParser().parsePage(text, ParseMode.FULL)
+        val built = MarkdownPageParser.buildPageModel(
+            filePath = path, name = "P", isJournal = false, journalDate = null,
+            existingPage = null, now = now, mode = ParseMode.FULL, parsedPage = parsed, fileModTime = null,
+        )
+        val roots = if (built.firstBlockSkipped) parsed.blocks.drop(1) else parsed.blocks
+        val blocks = mutableListOf<Block>()
+        MarkdownPageParser.processParsedBlocks(
+            parsedBlocks = roots, pagePath = path, pageUuid = built.page.uuid, parentUuid = null,
+            baseLevel = 0, now = now, destinationList = blocks, mode = ParseMode.FULL,
+        )
+        return built.page to blocks
+    }
+
+    private val crlfLabeled = "alias:: a, b\r\n- one   \r\n  collapsed:: true\r\n  id:: $u1\r\n\t- child\r\n\t  id:: $u2\r\n- plain\r\n  second line\r\n"
+
+    @Test
+    fun dbSideCrlfBlocksConvertToLfLikeDiskSide() {
+        val (page, blocks) = dbSide(crlfLabeled)
+        val db = MergeConverters.toMergePage(page, blocks)
+        val disk = MergeConverters.parseMarkdown(crlfLabeled, path, "P", false).mergePage
+        assertEquals(disk, db)
+        val one = db.blocks.single { it.content.startsWith("one") }
+        assertEquals(u1, one.uuid)
+        assertEquals(u2, one.children.single().uuid)
+        assertEquals("true", one.properties["collapsed"])
+        fun noCr(b: MergeBlock) {
+            assertTrue('\r' !in b.content && b.properties.all { '\r' !in it.key && '\r' !in it.value }, b.toString())
+            b.children.forEach(::noCr)
+        }
+        db.blocks.forEach(::noCr)
+        assertTrue(db.properties.all { '\r' !in it.value }, db.properties.toString())
+    }
+
+    @Test
+    fun crlfDoesNotChangePositionalUuidsOfUnlabeledBlocks() {
+        val lf = crlfLabeled.replace("\r\n", "\n")
+        val crlfBlocks = dbSide(crlfLabeled).second
+        val lfBlocks = dbSide(lf).second
+        val unlabeled = { bs: List<Block> -> bs.filter { "id" !in it.properties }.map { it.uuid } }
+        assertTrue(unlabeled(lfBlocks).isNotEmpty())
+        assertEquals(unlabeled(lfBlocks), unlabeled(crlfBlocks))
+        assertEquals(lfBlocks.map { it.uuid }, MergeConverters.parseMarkdown(crlfLabeled, path, "P", false).blocks.map { it.uuid })
+    }
+
+    @Test
+    fun mergeOfDbCrlfBlocksIntoCrlfDiskTargetIsUnchanged() {
+        val (page, blocks) = dbSide(crlfLabeled)
+        val incoming = MergeConverters.toMergePage(page, blocks)
+        val target = MergeConverters.parseMarkdown(crlfLabeled, path, "P", false).mergePage
+        val policy = MergePolicy(GraphId("src"), "Src")
+        assertEquals(MergeOutcome.Unchanged, mergePage(target, incoming, policy))
+        assertEquals(StagedPage.from(target), StagedPage.from(incoming))
     }
 }

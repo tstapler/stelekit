@@ -43,8 +43,9 @@ object MarkdownPageParser {
         parentUuid: String? = null,
         sidecarMap: Map<String, SidecarManager.SidecarEntry>? = null,
     ): String {
-        val existingId = parsedBlock.properties["id"]
-        if (existingId != null && existingId.isNotBlank()) {
+        // trim: on CRLF files the parser leaves a trailing `\r`, which overflows BlockUuid's 36-char limit.
+        val existingId = parsedBlock.properties["id"]?.trim()
+        if (!existingId.isNullOrEmpty()) {
             return existingId
         }
 
