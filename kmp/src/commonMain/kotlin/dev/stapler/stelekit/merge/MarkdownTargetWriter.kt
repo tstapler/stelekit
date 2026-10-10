@@ -22,14 +22,15 @@ import okio.ByteString.Companion.toByteString
  * JVM returns true and leaves the source behind) forces delete-then-rename with restore-on-failure;
  * a crash in that gap leaves the complete new text in the `.tmp` file.
  *
- * @param canonicalize symlink-resolving path function; the identity default only checks lexically.
- *   Pass `File(p).canonicalPath` on JVM so a symlinked page file or folder cannot escape the root.
+ * @param canonicalize symlink-resolving path function, deliberately without a default so protection
+ *   is never silently off. JVM/Android: `MarkdownTargetWriter.forFilePaths(...)` (`File(p).canonicalPath`).
+ *   Platforms without symlinks (iOS, Web) must opt out explicitly with [NoSymlinks].
  */
 class MarkdownTargetWriter(
     private val fs: FileSystem,
     private val target: OffGraphTarget,
     private val capabilities: TargetWriterCapabilities,
-    private val canonicalize: (String) -> String = { it },
+    private val canonicalize: (String) -> String,
 ) : TargetWriter {
 
     override suspend fun readExisting(page: PageKey): Either<DomainError, MergePage?> = io {
@@ -217,8 +218,11 @@ class MarkdownTargetWriter(
 
     private fun refuse(reason: WriteRefusedReason) = DomainError.MergeError.WriteRefused(reason)
 
-    private companion object {
-        const val TMP_SUFFIX = ".stele-merge.tmp"
+    companion object {
+        private const val TMP_SUFFIX = ".stele-merge.tmp"
+
+        /** Explicit opt-out: only the lexical containment check runs. For platforms with no symlinks. */
+        val NoSymlinks: (String) -> String = { it }
     }
 }
 

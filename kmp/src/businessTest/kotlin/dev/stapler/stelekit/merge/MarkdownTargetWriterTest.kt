@@ -65,7 +65,7 @@ class MarkdownTargetWriterTest {
     private fun writer(
         t: OffGraphTarget = target,
         c: TargetWriterCapabilities = caps,
-        canon: (String) -> String = { it },
+        canon: (String) -> String = MarkdownTargetWriter.NoSymlinks,
     ) = MarkdownTargetWriter(fs, t, c, canon)
 
     private fun pagePath(name: String) = "$root/pages/$name.md"
@@ -175,7 +175,7 @@ class MarkdownTargetWriterTest {
         for (point in listOf("afterTmpWrite", "beforeReplace")) {
             val f = RecordingFs().also { it.atomic = true }
             f.seed(pagePath("Crash"), old)
-            val w = MarkdownTargetWriter(f, target, caps, canonicalize = { it })
+            val w = MarkdownTargetWriter(f, target, caps, MarkdownTargetWriter.NoSymlinks)
             val existing = w.readExisting(PageKey("Crash")).ok()!!
             when (point) {
                 "afterTmpWrite" -> f.crashAfterTmpWrite = true
