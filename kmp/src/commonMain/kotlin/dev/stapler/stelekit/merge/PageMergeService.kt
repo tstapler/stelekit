@@ -187,6 +187,12 @@ class PageMergeService(
             } catch (e: CancellationException) {
                 job.cancel()
                 throw e
+            } catch (e: Throwable) {
+                // async only delivers via await: without this a fault (OOM, a throwing PageSource) escapes
+                // to the caller and leaves progress stuck in Staging/Applying.
+                logger.error("merge.apply id=${plan.mergeId} crashed: ${e::class.simpleName}: ${e.message}", e)
+                _progress.value = MergeProgress()
+                ApplyFailure.Failed(DomainError.FileSystemError.WriteFailed("merge", e.message ?: e::class.simpleName.orEmpty())).left()
             }
         } finally {
             runLock.unlock()
