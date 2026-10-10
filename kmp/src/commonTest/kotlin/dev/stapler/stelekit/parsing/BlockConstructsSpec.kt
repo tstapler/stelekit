@@ -33,14 +33,19 @@ class BlockConstructsSpec {
     }
 
     @Test
-    fun `bullet list - dash without trailing space is NOT a bullet (lexer requires dash-space)`() {
-        // The Lexer only emits BULLET when '-' is immediately followed by a space character.
-        // A bare '-' at EOF (no trailing space) is lexed as a TEXT token, so the parser
-        // produces a ParagraphBlockNode containing the literal text "-".
-        // This documents the current behaviour — "- " (with space) is the required form.
+    fun `bullet list - lone dash line is an empty bullet`() {
+        // Logseq writes an empty block as a bare "-". Lexing it as TEXT made it a mis-leveled
+        // paragraph "- -" on re-serialize (cross-graph round-trip spike, ADR-001 Story 0.1.4).
         val doc = parse("-")
         assertEquals(1, doc.children.size)
-        assertIs<ParagraphBlockNode>(doc.children[0], "Bare '-' without trailing space is a paragraph, not a bullet")
+        assertIs<BulletBlockNode>(doc.children[0], "Bare '-' is an empty bullet")
+    }
+
+    @Test
+    fun `bullet list - dash glued to text is NOT a bullet`() {
+        val doc = parse("-x")
+        assertEquals(1, doc.children.size)
+        assertIs<ParagraphBlockNode>(doc.children[0])
     }
 
     @Test

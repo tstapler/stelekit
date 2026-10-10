@@ -200,10 +200,9 @@ class MarkdownParser {
                     }
                     sb.append("}}")
                 }
-                is TaskMarkerNode -> {
-                    sb.append(node.marker)
-                    sb.append(" ")
-                }
+                // The source's own whitespace follows as a separate TextNode; adding one here
+                // re-spaced "DONE x" to "DONE  x" and "TODO: x" to "TODO : x".
+                is TaskMarkerNode -> sb.append(node.marker)
                 is LatexInlineNode -> {
                     sb.append("$")
                     sb.append(node.formula)

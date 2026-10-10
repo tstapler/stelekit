@@ -78,7 +78,7 @@ class BlockParser(private val source: CharSequence) {
 
         // 1b. Check for a fenced code block, blockquote, ordered list, thematic break,
         // GFM table, or raw HTML block at the top level.
-        tryConsumeNonHeadingConstruct(level)?.let { return it }
+        tryConsumeNonHeadingConstruct(level, bulleted = false)?.let { return it }
 
         // 2. Check for Bullet
         val isBullet = if (currentToken.type == TokenType.BULLET) {
@@ -101,7 +101,7 @@ class BlockParser(private val source: CharSequence) {
         // parsing and rendered as literal Markdown text — the same structural bug already
         // fixed for headings.
         if (isBullet && bulletHeadingLevel == null) {
-            tryConsumeNonHeadingConstruct(level)?.let { return it }
+            tryConsumeNonHeadingConstruct(level, bulleted = true)?.let { return it }
         }
 
         // 3. Parse Content & Properties
@@ -410,10 +410,10 @@ class BlockParser(private val source: CharSequence) {
      * this, a bullet decorated with one of these constructs would return immediately and
      * orphan its nested children/properties to the caller as mis-leveled siblings.
      */
-    private fun tryConsumeNonHeadingConstruct(level: Int): BlockNode? {
+    private fun tryConsumeNonHeadingConstruct(level: Int, bulleted: Boolean): BlockNode? {
         val indentLevel = level
 
-        tryParseFencedCodeConstruct(level, indentLevel)?.let { return it }
+        tryParseFencedCodeConstruct(level, indentLevel, bulleted)?.let { return it }
         tryParseThematicBreakConstruct(level, indentLevel)?.let { return it }
         tryParseBlockquoteConstruct(level, indentLevel)?.let { return it }
         tryParseOrderedListItemConstruct(level)?.let { return it }
@@ -424,13 +424,13 @@ class BlockParser(private val source: CharSequence) {
     }
 
     /** Fenced code block: ``` or ~~~ (both fence characters share identical dispatch logic). */
-    private fun tryParseFencedCodeConstruct(level: Int, indentLevel: Int): CodeFenceBlockNode? {
+    private fun tryParseFencedCodeConstruct(level: Int, indentLevel: Int, bulleted: Boolean): CodeFenceBlockNode? {
         val fenceType = currentToken.type
         if (fenceType != TokenType.BACKTICK && fenceType != TokenType.TILDE) return null
         val fenceLen = currentToken.end - currentToken.start
         if (fenceLen < 3) return null
 
-        val node = parseFencedCodeBlock(fenceType)
+        val node = parseFencedCodeBlock(fenceType, bodyIndentLevel = if (bulleted) level else null)
         val (properties, children) = parseTrailingPropertiesAndChildren(level)
         return node.copy(properties = properties, children = children, indentLevel = indentLevel)
     }
@@ -647,8 +647,14 @@ class BlockParser(private val source: CharSequence) {
      * Parses the body of a fenced code block whose opening fence token type is
      * [fenceType] (BACKTICK for ``` ``` ```, TILDE for `~~~`). [currentToken] must be
      * positioned on the opening fence token when this is called.
+     *
+     * For a fence decorating a bullet at [bodyIndentLevel], the body lines' outline indent
+     * (up to that many tabs, then one more tab or two spaces) is not code, so it is stripped
+     * from [CodeFenceBlockNode.rawContent]; otherwise the serializer, which re-indents
+     * continuation lines, would add it a second time on every save. A closing fence's own
+     * indent is likewise not body text. Null for an unbulleted fence: nothing is stripped.
      */
-    private fun parseFencedCodeBlock(fenceType: TokenType): CodeFenceBlockNode {
+    private fun parseFencedCodeBlock(fenceType: TokenType, bodyIndentLevel: Int?): CodeFenceBlockNode {
         advance() // consume opening fence
         val language = if (currentToken.type == TokenType.TEXT) {
             val lang = currentToken.text(source).toString().trim()
@@ -661,6 +667,16 @@ class BlockParser(private val source: CharSequence) {
         // Collect body until matching fence (same fence type, length >= 3) or EOF
         val body = StringBuilder()
         while (currentToken.type != TokenType.EOF) {
+            if (bodyIndentLevel != null && currentToken.type == TokenType.INDENT) {
+                val next = peekToken(1)
+                if (next.type == fenceType && next.end - next.start >= 3) {
+                    advance() // closing fence's own indent is not body text
+                } else {
+                    body.append(stripOutlineIndent(currentToken.text(source).toString(), bodyIndentLevel))
+                    advance()
+                }
+                continue
+            }
             if (currentToken.type == fenceType) {
                 val closeLen = currentToken.end - currentToken.start
                 if (closeLen >= 3) {
@@ -680,6 +696,14 @@ class BlockParser(private val source: CharSequence) {
         // Trim trailing newline from body
         val rawContent = body.toString().trimEnd('\n')
         return CodeFenceBlockNode(language = language, rawContent = rawContent)
+    }
+
+    private fun stripOutlineIndent(indent: String, level: Int): String {
+        var i = 0
+        while (i < level && i < indent.length && indent[i] == '\t') i++
+        if (i < indent.length && indent[i] == '\t') i++
+        else if (indent.startsWith("  ", i)) i += 2
+        return indent.substring(i)
     }
 
     private fun peekToken(offset: Int): Token {

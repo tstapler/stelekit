@@ -84,3 +84,21 @@ No new DB surface (`@DirectSqlWrite` untouched on the off-graph path). Dry-run f
 disk, not DB. If Spike 0.1.1 shows a spurious `DiskConflict` on switch, fix by writing a `FileRegistry`
 own-write mark record consumed at open; if that also fails, off-graph writes are cut and copy/share require the
 target to be the active graph. There is no "staged, applied on next switch" mode for copies.
+
+## Spike result (Story 0.1.1, JVM part, 2026-10-09)
+Test: `kmp/src/jvmTest/kotlin/dev/stapler/stelekit/db/OffGraphWriteReconcileSpikeTest.kt` (commit 004f9f8299). Real temp dirs, real `PlatformFileSystem`/`GraphManager`/`GraphLoader`/watcher.
+- New page file in an inactive graph reconciles after `switchGraph`: PASS (1 page, uuid `11111111-...`, 0 `ExternalFileChange`, no duplicate journal).
+- Appended block reconciles on reopen: PASS (2 blocks, 0 events). Second reopen: PASS, 0 re-reads (the skip is DB-based, `page.updatedAt >= mtime`).
+- `FileRegistry` holds a hash after reconcile: FAIL by design. `scanDirectory` records mtime only; hashes are lazy. The criterion wording is wrong, not a safety bug; the test is left red until the criterion is relaxed.
+- Fallback note: `FileRegistry` is in-memory per `GraphLoader`, so an "own-write mark consumed at open" would need persistence (DB or disk). Not needed while the primary mechanism passes.
+- Android device pass (Task 0.1.1b): NOT RUN. This ADR stays Proposed until it is recorded. Spikes 0.1.2 and 0.1.5 are also not run (no device).
+
+## Spike result (Story 0.1.4, 2026-10-09; R2 triggered, then resolved by owner decision)
+Test: `kmp/src/jvmTest/kotlin/dev/stapler/stelekit/merge/RoundTripGuardPassRateSpikeTest.kt` (commits 84c7975349, 2663f4cd75). Real graph: author's, 11013 files (`pages/` + `journals/`), read-only.
+- First measurement: exact `serialize(parse(f)) == f` 11.96%; structure-stable 83.27%. Both below 95%, so re-plan trigger R2 fired.
+- Owner decision: measure a splice-based guard and fix the serializer asymmetries. Fixes in commit 92c8472734 (task-marker re-spacing, lone `-` parsed as empty bullet, fenced-code indent inflation).
+- After fixes: exact 12.01%; structure-stable 96.00% (10572); **splice-based 99.68% (10978/11013)** (root-append alone 99.71%, child-append alone 99.96%).
+- Splice-based guard: parse the original with one new last root block and one new last child spliced in; untouched lines byte-identical; all pre-existing blocks unchanged in uuid/content/properties/nesting/order. A 0-byte file means "write just the new block".
+- The 35 remaining failures are non-outline pages where a fence or heading swallows an appended bullet (32 root, 3 child). Refusal to inbox/stay-staged on those is the guard working as intended.
+- Decision: the exact re-serialize guard is not viable (headings, prose, indent style and trailing whitespace are rewritten); the production `RoundTripGuard` is the splice-based predicate. Story 1.1.4 and Task 2.3.1 must adopt it. R2 is not triggered. Synthetic XLARGE (UNVERIFIED against real data): exact 27.46%, stable 100%, splice 100%.
+- Caveat: child-append is a last-child insert so positional uuids on pages without `id::` stay stable; first-child insert would shift sibling uuids.
