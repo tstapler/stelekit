@@ -26,7 +26,13 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import okio.FileSystem
+import okio.ForwardingFileSystem
+import okio.IOException
+import okio.Path
+import okio.Sink
 import okio.fakefilesystem.FakeFileSystem
+import kotlin.concurrent.Volatile
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -114,6 +120,15 @@ class PageMergeServiceTest {
             RemoveReport(emptySet(), emptySet(), emptySet()).right()
     }
 
+    /** Fails manifest appends on demand; staging and the manifest header still write. */
+    private class FlakyAppendFileSystem(delegate: FileSystem) : ForwardingFileSystem(delegate) {
+        @Volatile var failAppends: (Path) -> Boolean = { false }
+        override fun appendingSink(file: Path, mustExist: Boolean): Sink {
+            if (failAppends(file)) throw IOException("injected append failure")
+            return super.appendingSink(file, mustExist)
+        }
+    }
+
     private val managers = mutableListOf<GraphManager>()
     private val services = mutableListOf<PageMergeService>()
 
@@ -143,7 +158,7 @@ class PageMergeServiceTest {
         activeWriter: TargetWriter? = null,
     ) {
         val manager = manager()
-        val okio = FakeFileSystem()
+        val okio = FlakyAppendFileSystem(FakeFileSystem())
         val router = TargetWriterRouter(
             graphManager = manager,
             locator = RegistryGraphLocator(manager.graphRegistry),
@@ -348,6 +363,27 @@ class PageMergeServiceTest {
         assertEquals(10, retried.newPages)
         assertEquals(10, env.fake.pages.size)
         assertNull(MergeStagingDirectory.open(env.okio, "/app", MergeId(first.mergeId)), "staging removed after a clean retry")
+    }
+
+    @Test
+    fun `a page whose manifest append failed is recorded on retry so it stays undoable`() = realTime {
+        val env = Env()
+        val source = FakeSource((0 until 4).map { entry(it) })
+        var flaky = true
+        env.okio.failAppends = { flaky && "p0001" in env.fake.pages.keys && "p0002" !in env.fake.pages.keys }
+
+        val first = env.service.apply(env.plan(source)).ok()
+        assertEquals("p0001", first.failed.single().pageName)
+        assertTrue("p0001" in env.fake.pages, "the page itself was written")
+
+        flaky = false
+        val retried = env.service.retryFailed().ok()
+
+        assertTrue(retried.failed.isEmpty(), "failed: ${retried.failed}")
+        assertEquals(4, retried.newPages)
+        val manifest = assertNotNull(MergeManifestStore(env.okio, "/app").load(MergeId(first.mergeId)))
+        assertEquals(setOf("p0000", "p0001", "p0002", "p0003"), manifest.pages.map { it.pageName }.toSet())
+        assertEquals(1, manifest.pages.count { it.pageName == "p0001" })
     }
 
     @Test

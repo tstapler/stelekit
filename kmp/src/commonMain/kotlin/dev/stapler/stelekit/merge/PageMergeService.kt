@@ -95,6 +95,9 @@ class PageMergeService(
         var stoppedAfter: Int? = null
         val failed = ArrayList<PageFailure>()
 
+        /** Pages written to the target whose manifest append failed, by staged index. */
+        val unrecorded = HashMap<Int, PageApplied>()
+
         fun result() = MergeResult(
             plan.mergeId, plan.summary.total, newPages, combined, unchanged,
             failed.toList(), conflicts, assetsRenamed, stoppedAfter,
@@ -294,8 +297,11 @@ class PageMergeService(
             state.failed.clear()
             _progress.value = MergeProgress(MergePhase.Applying, 0, pending.size)
             for ((i, failure) in pending.withIndex()) {
-                val page = readStaged(state.staging, failure.stagedIndex)
-                if (page == null) {
+                val written = state.unrecorded[failure.stagedIndex]
+                val page = if (written == null) readStaged(state.staging, failure.stagedIndex) else null
+                if (written != null) {
+                    recordApplied(state, manifest, failure.stagedIndex, failure.pageName, written)
+                } else if (page == null) {
                     state.failed += failure
                 } else {
                     applyOne(state, manifest, failure.stagedIndex, page)
@@ -323,25 +329,34 @@ class PageMergeService(
         when (applied) {
             is Either.Left -> state.failed += PageFailure(index, page.name, applied.value)
             is Either.Right -> {
-                val a = applied.value
-                a.entry?.let { entry ->
-                    manifest.appendPage(entry).onLeft {
-                        state.failed += PageFailure(
-                            index, page.name,
-                            DomainError.FileSystemError.WriteFailed("manifest", "Undo record could not be written: ${it.message}"),
-                        )
-                        return
-                    }
-                }
-                when (a.kind) {
-                    PageKind.New -> state.newPages++
-                    PageKind.Combined -> state.combined++
-                    PageKind.Unchanged -> state.unchanged++
-                }
-                if (a.conflicts > 0) state.conflicts++
-                state.assetsRenamed += a.assetsRenamed
+                recordApplied(state, manifest, index, page.name, applied.value)
             }
         }
+    }
+
+    /**
+     * The page is already on disk. A failed manifest append is parked in [RunState.unrecorded] so a retry
+     * re-appends the entry instead of re-merging (which would see Unchanged and never make the page undoable).
+     */
+    private fun recordApplied(state: RunState, manifest: MergeManifestWriter, index: Int, name: String, a: PageApplied) {
+        a.entry?.let { entry ->
+            manifest.appendPage(entry).onLeft {
+                state.unrecorded[index] = a
+                state.failed += PageFailure(
+                    index, name,
+                    DomainError.FileSystemError.WriteFailed("manifest", "Undo record could not be written: ${it.message}"),
+                )
+                return
+            }
+        }
+        state.unrecorded.remove(index)
+        when (a.kind) {
+            PageKind.New -> state.newPages++
+            PageKind.Combined -> state.combined++
+            PageKind.Unchanged -> state.unchanged++
+        }
+        if (a.conflicts > 0) state.conflicts++
+        state.assetsRenamed += a.assetsRenamed
     }
 
     private class PageApplied(val kind: PageKind, val conflicts: Int, val assetsRenamed: Int, val entry: ManifestPageEntry?)
@@ -386,7 +401,9 @@ class PageMergeService(
                 ).right()
                 is WriteOutcome.Updated -> {
                     // Hash what is on disk now (as undo will see it), not the in-memory merge.
-                    val onDisk = w.readExisting(key).fold({ return it.left() }, { it })
+                    // The write is committed: a failed read-back must not fail the page (retry would see Unchanged
+                    // and never record it), so fall back to the in-memory merge, whose hashes undo treats as "edited".
+                    val onDisk = w.readExisting(key).getOrNull() ?: merged
                     val added = newTopLevelUuids(existing, merged)
                     val byUuid = onDisk?.let { indexByUuid(it.blocks) }.orEmpty()
                     val hashes = added.mapNotNull { u -> byUuid[u]?.let { u to BlockContentHash.of(it) } }.toMap()
