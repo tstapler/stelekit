@@ -102,7 +102,6 @@ kt_jvm_library(
     name = "business_common_tests",
     srcs = [
         "dev/stapler/stelekit/capture/CaptureTargetResolverTest.kt",
-        "dev/stapler/stelekit/merge/MergeFixtures.kt",
         "dev/stapler/stelekit/ui/PageSelectionTest.kt",
     ],
     testonly = True,
@@ -113,6 +112,19 @@ kt_jvm_library(
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
         "@maven//:org_jetbrains_kotlin_kotlin_test_junit",
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
+    ],
+    visibility = ["//kmp/src:__subpackages__"],
+)
+
+# merge_fixtures — MergeFixtures only (no @Test classes); shared by business_tests and jvm_tests.
+kt_jvm_library(
+    name = "merge_fixtures",
+    srcs = ["dev/stapler/stelekit/merge/MergeFixtures.kt"],
+    testonly = True,
+    kotlinc_opts = "//:kmp_jvm_kotlinc_opts",
+    deps = [
+        "//kmp/src/jvmMain/kotlin:jvm_main_lib",
+        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
     ],
     visibility = ["//kmp/src:__subpackages__"],
 )

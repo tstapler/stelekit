@@ -81,6 +81,7 @@ kt_jvm_test(
         "//kmp/src/commonMain/resources:common_resources",
         "//kmp/src/commonTest/kotlin:common_test_fixtures",
         "//kmp/src/commonTest/kotlin:git_testsupport",
+        "//kmp/src/commonTest/kotlin:merge_fixtures",
         ":graph_content_wiring_test_sources_as_resources",
         "@maven//:com_google_zxing_core",
         "@maven//:io_ktor_ktor_client_mock_jvm",

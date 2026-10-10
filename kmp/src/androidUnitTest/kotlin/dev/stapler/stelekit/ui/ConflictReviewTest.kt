@@ -6,7 +6,6 @@ package dev.stapler.stelekit.ui
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.SemanticsActions
@@ -22,7 +21,6 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import dev.stapler.stelekit.merge.MergePropertyKeys
 import dev.stapler.stelekit.model.Block
@@ -225,8 +223,7 @@ class ConflictReviewTest {
     @Test
     fun `at 200 percent font scale the row text and all three buttons stay displayed`() {
         show(loaded(row())) { inner ->
-            val d = LocalDensity.current
-            CompositionLocalProvider(LocalDensity provides Density(d.density, fontScale = 2f)) { inner() }
+            FontScaled(2f) { inner() }
         }
 
         composeTestRule.onNodeWithText("Mark resolved").assertIsDisplayed()

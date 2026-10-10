@@ -4,7 +4,6 @@
 package dev.stapler.stelekit.ui
 
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
@@ -15,7 +14,6 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
-import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.platform.LocalLayoutDirection
 import dev.stapler.stelekit.error.DomainError
@@ -248,12 +246,10 @@ class CopyDialogsTest {
     @Test
     fun large_font_and_rtl_keep_actions_reachable() {
         rule.setContent {
-            val d = LocalDensity.current
-            CompositionLocalProvider(
-                LocalDensity provides Density(d.density, fontScale = 2f),
-                LocalLayoutDirection provides LayoutDirection.Rtl,
-            ) {
-                CopyResultDialog(CopyDirection.Push, "Personal", "Work graph", result(), onDone = {})
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+                FontScaled(2f) {
+                    CopyResultDialog(CopyDirection.Push, "Personal", "Work graph", result(), onDone = {})
+                }
             }
         }
         rule.onNodeWithText("Done").assertExists().assertIsEnabled()
