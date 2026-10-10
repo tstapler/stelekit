@@ -76,6 +76,7 @@ import dev.stapler.stelekit.db.GraphManagerInitAutoRestoreTest
 import dev.stapler.stelekit.db.GraphManagerOnGraphLocationDeterminedTest
 import dev.stapler.stelekit.db.GraphManagerPendingStorageLocationRemovalTest
 import dev.stapler.stelekit.db.GraphManagerRemoveGraphTest
+import dev.stapler.stelekit.db.GraphManagerSwitchLockStressTest
 import dev.stapler.stelekit.db.GraphManagerSwitchNotesPathTest
 import dev.stapler.stelekit.db.GraphManagerUpdateGraphPathTest
 import dev.stapler.stelekit.db.GraphManagerUpdateHostDirNameTest
@@ -91,6 +92,7 @@ import dev.stapler.stelekit.db.GraphRelocationCoordinatorReopenFailureTest
 import dev.stapler.stelekit.db.GraphRelocationCoordinatorSameGraphSwitchTest
 import dev.stapler.stelekit.db.GraphRelocationCoordinatorTest
 import dev.stapler.stelekit.db.GraphSwitchInvalidationTest
+import dev.stapler.stelekit.db.GraphWriteLockTest
 import dev.stapler.stelekit.db.IndexDrainSectionFilterTest
 import dev.stapler.stelekit.db.MigrationRunnerCoverageTest
 import dev.stapler.stelekit.db.MigrationRunnerIndexTest
@@ -223,6 +225,7 @@ import org.junit.runners.Suite
     GraphManagerOnGraphLocationDeterminedTest::class,
     GraphManagerPendingStorageLocationRemovalTest::class,
     GraphManagerRemoveGraphTest::class,
+    GraphManagerSwitchLockStressTest::class,
     GraphManagerSwitchNotesPathTest::class,
     GraphManagerUpdateGraphPathTest::class,
     GraphManagerUpdateHostDirNameTest::class,
@@ -238,6 +241,7 @@ import org.junit.runners.Suite
     GraphRelocationCoordinatorSameGraphSwitchTest::class,
     GraphRelocationCoordinatorTest::class,
     GraphSwitchInvalidationTest::class,
+    GraphWriteLockTest::class,
     IndexDrainSectionFilterTest::class,
     MigrationRunnerCoverageTest::class,
     MigrationRunnerIndexTest::class,
