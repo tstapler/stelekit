@@ -43,6 +43,19 @@ class QueryParserTest {
         assertEquals(QueryFilter.PageRef("tag"), ok("#tag"))
     }
 
+    @Test fun `hash-bracket page ref parses including multi-word names`() {
+        assertEquals(QueryFilter.PageRef("foo"), ok("#[[foo]]"))
+        assertEquals(QueryFilter.PageRef("multi word"), ok("#[[multi word]]"))
+        assertEquals(
+            And(QueryFilter.PageRef("a b"), QueryFilter.PageRef("c")),
+            ok("(and #[[a b]] [[c]])"),
+        )
+    }
+
+    @Test fun `and with two negated operands returns UnsupportedForm`() {
+        assertIs<DomainError.ParseError.UnsupportedForm>(err("(and (not [[a]]) (not [[b]]))"))
+    }
+
     @Test fun `and combinator parses two PageRef operands one level deep`() =
         assertEquals(And(QueryFilter.PageRef("tag1"), QueryFilter.PageRef("tag2")), ok("(and [[tag1]] [[tag2]])"))
 

@@ -1196,6 +1196,7 @@ class SqlDelightBlockRepository(
         return queries.selectBlocksWithContentLikePaginated("%[[${pageName}%", 1L, 0L)
             .asFlow()
             .mapToList(PlatformDispatcher.DB)
+            .conflate() // a burst of writes (import, debounced saves) re-runs the overfetch loop once, not per write
             .map {
                 overfetchLinkedReferences(limit, offset, patterns) { batchSize, sqlOffset ->
                     loadLinkedReferenceBatch(pageName, batchSize, sqlOffset)

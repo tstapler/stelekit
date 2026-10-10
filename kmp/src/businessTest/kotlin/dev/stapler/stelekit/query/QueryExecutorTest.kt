@@ -136,6 +136,30 @@ class QueryExecutorTest {
     }
 
     @Test
+    fun `executeQuery never lists query blocks themselves`() = runBlocking {
+        page("p1", "P")
+        block("b1", "p1", "see [[ProjectX]]")
+        block("q1", "p1", "{{query [[ProjectX]]}}")
+        assertEquals(setOf("b1"), ids(QueryFilter.PageRef("ProjectX")))
+    }
+
+    @Test
+    fun `and operands are not starved by the display cap`() = runBlocking {
+        page("p1", "P")
+        // 250 NOW blocks, only the oldest one also references [[X]]: a 200-row operand window would miss it.
+        blocks.saveBlocks(
+            (1..250).map { i ->
+                Block(
+                    uuid = BlockUuid("n$i"), pageUuid = PageUuid("p1"),
+                    content = if (i == 1) "NOW old [[X]]" else "NOW item $i",
+                    position = "a$i", createdAt = now.plus(kotlin.time.Duration.parse("${i}s")), updatedAt = now,
+                )
+            }
+        )
+        assertEquals(setOf("n1"), ids(And(QueryFilter.Task(setOf("NOW")), QueryFilter.PageRef("X"))))
+    }
+
+    @Test
     fun `executeQuery reflects later writes through the same Flow`() = runBlocking {
         page("p1", "P")
         block("b1", "p1", "NOW first")

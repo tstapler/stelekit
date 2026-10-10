@@ -144,6 +144,9 @@ class SqlDelightPageRepository(
     override fun getPagesWithProperty(key: String, value: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
         queries.selectPagesWithPropertyPair("$key:$value", limit.toLong(), offset.toLong())
             .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
+            // The SQL token match can't tell a comma inside a value ("tags:a,b") from a pair boundary;
+            // confirm against the parsed properties so every backend agrees.
+            .map { either -> either.map { pages -> pages.filter { it.properties[key] == value } } }
 
     override fun getJournalPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
         queries.selectJournalPages(limit.toLong(), offset.toLong())

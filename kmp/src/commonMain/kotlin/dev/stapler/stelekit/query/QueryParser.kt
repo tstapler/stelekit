@@ -68,8 +68,9 @@ object QueryParser {
                         out += Sexp.Atom(s.substring(i + 1, end), quoted = true)
                         i = end + 1
                     }
-                    s.startsWith("[[", i) -> {
-                        val end = s.indexOf("]]", i + 2)
+                    s.startsWith("[[", i) || s.startsWith("#[[", i) -> {
+                        val open = if (s[i] == '#') i + 3 else i + 2
+                        val end = s.indexOf("]]", open)
                         if (end < 0) invalid("unterminated page reference")
                         out += Sexp.Atom(s.substring(i, end + 2))
                         i = end + 2
@@ -100,7 +101,10 @@ object QueryParser {
             "and" -> {
                 val args = group.items.drop(1)
                 if (args.size != 2) unsupported("and expects exactly two operands")
-                And(parseOperand(args[0]), parseOperand(args[1]))
+                val l = parseOperand(args[0])
+                val r = parseOperand(args[1])
+                if (l is Not && r is Not) unsupported("and needs at least one non-negated operand")
+                And(l, r)
             }
             "or" -> {
                 val args = group.items.drop(1)
@@ -122,10 +126,10 @@ object QueryParser {
     private fun pageRefOrNull(sexp: Sexp): QueryFilter.PageRef? {
         val atom = sexp as? Sexp.Atom ?: return null
         if (atom.quoted) return null
-        val t = atom.text
+        val t = atom.text.removePrefix("#").takeIf { atom.text.startsWith("#[[") } ?: atom.text
         return when {
             t.startsWith("[[") && t.endsWith("]]") && t.length > 4 -> QueryFilter.PageRef(t.substring(2, t.length - 2))
-            t.startsWith("#") && t.length > 1 -> QueryFilter.PageRef(t.substring(1))
+            t.startsWith("#") && t.length > 1 && !t.startsWith("#[") -> QueryFilter.PageRef(t.substring(1))
             else -> null
         }
     }
