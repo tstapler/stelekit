@@ -254,6 +254,25 @@ class TargetWriterRouterInFlightSwitchTest {
     }
 
     @Test
+    fun `retryable results back off between attempts but not after the last`() = realTime {
+        val m = newManager()
+        m.awaitPendingMigration()
+        val pauses = MutableStateFlow<List<Int>>(emptyList())
+        val r = TargetWriterRouter(
+            graphManager = m,
+            locator = RegistryGraphLocator(m.graphRegistry),
+            capabilities = TargetWriterCapabilities(platformSupportsOffGraphWrite = true),
+            activeWriterFor = { FakeWriter("active") },
+            offGraphWriterFor = { FakeWriter("off") },
+            retryBackoff = { attempt -> pauses.update { it + attempt } },
+        )
+
+        r.withWriter<String>(a) { DomainError.MergeError.Retryable("busy").left() }
+
+        assertEquals(listOf(0, 1), pauses.value)
+    }
+
+    @Test
     fun `retryable forever exhausts MAX_ROUTER_ATTEMPTS and returns a retryable Left`() = realTime {
         val m = newManager()
         m.awaitPendingMigration()
