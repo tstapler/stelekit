@@ -102,7 +102,15 @@ class CaptureController(private val fileSystem: PlatformFileSystem) {
         // is already Shown (a second hotkey press while it's open), it likely already has OS
         // focus itself -- recording it here would clobber the real priorFocusOwner captured on
         // the first press, and restoreFocus() would later try to focus the popup being hidden.
-        if (_state.value is CapturePopupState.Shown) return
+        when (val s = _state.value) {
+            is CapturePopupState.Shown -> return
+            // Hotkey after Esc: keep the draft rather than installing an empty popup over it.
+            is CapturePopupState.ConfirmDiscard -> {
+                _state.value = s.draft
+                return
+            }
+            CapturePopupState.Hidden -> Unit
+        }
         priorFocusOwner = currentActiveWindow()
 
         val gm = graphManager
@@ -135,7 +143,9 @@ class CaptureController(private val fileSystem: PlatformFileSystem) {
     fun selectGraph(graphId: GraphId) {
         val current = _state.value as? CapturePopupState.Shown ?: return
         if (current.graphChoices.none { it.id == graphId }) return
-        val retryable = current.saveState == SaveState.Error || current.saveState == SaveState.Queued
+        // A save in flight or already queued must not be re-pointed and re-saved (duplicate copy).
+        if (current.saveState == SaveState.Saving || current.saveState == SaveState.Queued) return
+        val retryable = current.saveState == SaveState.Error
         _state.value = current.copy(
             targetGraphId = graphId,
             chooserOpen = false,
@@ -160,6 +170,7 @@ class CaptureController(private val fileSystem: PlatformFileSystem) {
 
     private suspend fun performSave() {
         val current = _state.value as? CapturePopupState.Shown ?: return
+        if (current.saveState == SaveState.Saving || current.saveState == SaveState.Queued) return
         val gm = graphManager
         if (gm == null) {
             _state.value = current.copy(saveState = SaveState.Error, captureResult = CaptureResult.NoActiveGraph)
@@ -256,6 +267,8 @@ class CaptureController(private val fileSystem: PlatformFileSystem) {
             else -> return
         }
 
+        if (current.saveState == SaveState.Saving) return // the in-flight save decides the outcome
+
         if (current.saveState == SaveState.Saved || current.saveState == SaveState.Queued) {
             transitionToHidden()
             return
@@ -271,7 +284,13 @@ class CaptureController(private val fileSystem: PlatformFileSystem) {
             _state.value = current
             scope.launch {
                 performSave()
-                transitionToHidden()
+                val after = _state.value
+                if (after is CapturePopupState.Shown && after.saveState == SaveState.Error) {
+                    // Stay open: hiding now would drop the only copy of an unsaved draft.
+                    copyToClipboard(after.text)
+                } else {
+                    transitionToHidden()
+                }
             }
         } else {
             transitionToHidden()
