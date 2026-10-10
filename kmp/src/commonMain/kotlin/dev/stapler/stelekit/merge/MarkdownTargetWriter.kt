@@ -13,11 +13,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import dev.stapler.stelekit.util.UuidGenerator
 import okio.ByteString.Companion.toByteString
-import kotlin.time.Clock
-import kotlin.time.Duration.Companion.minutes
-import kotlin.time.Duration.Companion.seconds
-import kotlin.time.TimeMark
-import kotlin.time.TimeSource
 
 /**
  * Off-graph writer (ADR-001): splices only the new blocks into the target page's original bytes,
@@ -43,6 +38,9 @@ class MarkdownTargetWriter(
     private val canonicalize: (String) -> String,
 ) : TargetWriter {
 
+    private val ownership = PageUuidOwnership(fs, target.path) { readText(it) }
+    private val tempSweeper = StaleTempSweeper(fs, TMP_SUFFIX)
+
     override suspend fun readExisting(page: PageKey): Either<DomainError, MergePage?> = io {
         val path = resolveWritable(page).getOrReturn { return@io it.left() }
         val original = readText(path).getOrReturn { return@io it.left() } ?: return@io null.right()
@@ -54,7 +52,7 @@ class MarkdownTargetWriter(
         val path = resolveWritable(page).getOrReturn { return@io it.left() }
         val original = readText(path).getOrReturn { return@io it.left() }
         if (original == null) {
-            findCollision(explicitUuids(merged.blocks), path).getOrReturn { return@io it.left() }?.let { return@io it.left() }
+            ownership.findCollision(explicitUuids(merged.blocks), path).getOrReturn { return@io it.left() }?.let { return@io it.left() }
             return@io createPage(path, merged)
         }
         val existing = if (original.isEmpty()) MergePage(page.name) else {
@@ -64,14 +62,14 @@ class MarkdownTargetWriter(
         if (!BlockEditing.planInsertions(existing.blocks, merged.blocks, emptyList(), insertions)) {
             return@io refuse(NotRoundTrippable.ExistingContentChanged("merged page lost or altered an existing block")).left()
         }
-        findCollision(insertions.flatMap { explicitUuids(listOf(it.block)) }, path).getOrReturn { return@io it.left() }
+        ownership.findCollision(insertions.flatMap { explicitUuids(listOf(it.block)) }, path).getOrReturn { return@io it.left() }
             ?.let { return@io it.left() }
         val spliced = RoundTripGuard.splice(original, SpliceRequest(insertions, merged.properties), path, page.isJournal)
             .getOrReturn { return@io refuse(it).left() }
         if (spliced.text == original) return@io WriteOutcome.Unchanged.right()
         val bytes = spliced.text.encodeToByteArray()
         replaceFile(path, bytes, original.encodeToByteArray()).map {
-            noteIds(path, insertions.flatMap { explicitUuids(listOf(it.block)) })
+            ownership.note(path, insertions.flatMap { explicitUuids(listOf(it.block)) })
             WriteOutcome.Updated(path, sha256(bytes), spliced.insertedBlocks, spliced.skippedPropertyKeys)
         }
     }
@@ -194,74 +192,11 @@ class MarkdownTargetWriter(
         RoundTripGuard.verifyRendered(text, merged, path, merged.isJournal)?.let { return refuse(it).left() }
         val bytes = text.encodeToByteArray()
         return replaceFile(path, bytes, null).map {
-            noteIds(path, explicitUuids(merged.blocks))
+            ownership.note(path, explicitUuids(merged.blocks))
             WriteOutcome.Created(path, sha256(bytes))
         }
     }
 
-    // region uuid ownership
-
-    /** `id::` value -> page file, built by one scan of the target's page files and kept for [ID_INDEX_TTL]. */
-    private var idIndex: MutableMap<String, String>? = null
-    private var idIndexBuiltAt: TimeMark? = null
-
-    private fun explicitUuids(blocks: List<MergeBlock>): List<String> =
-        blocks.flatMap { b -> listOfNotNull(b.uuid) + explicitUuids(b.children) }
-
-    private fun noteIds(path: String, uuids: List<String>) {
-        idIndex?.let { index -> uuids.forEach { index[it.lowercase()] = path } }
-    }
-
-    /**
-     * A uuid already on another page file would be moved by the loader's INSERT OR REPLACE, taking its children
-     * with it. Reads every sibling page file once per TTL; a file that cannot be read fails the check closed.
-     */
-    private fun findCollision(uuids: List<String>, ownPath: String): Either<DomainError, DomainError?> {
-        if (uuids.isEmpty()) return null.right()
-        val index = ownershipIndex().getOrReturn { return it.left() }
-        val hit = uuids.firstOrNull { index[it.lowercase()]?.let { owner -> owner != ownPath } == true } ?: return null.right()
-        return DomainError.DatabaseError.WriteFailed("uuid collision: block $hit already exists on another page").right()
-    }
-
-    private fun ownershipIndex(): Either<DomainError, Map<String, String>> {
-        val fresh = idIndexBuiltAt?.let { it.elapsedNow() < ID_INDEX_TTL } == true
-        idIndex?.takeIf { fresh }?.let { return it.right() }
-        val built = HashMap<String, String>()
-        val root = target.path.trimEnd('/')
-        for (dir in listOf("$root/pages", "$root/journals")) {
-            for (name in fs.listFiles(dir)) {
-                if (!name.endsWith(".md")) continue
-                val file = "$dir/$name"
-                val text = readText(file).getOrReturn { return it.left() } ?: continue
-                ID_LINE.findAll(text).forEach { built.putIfAbsent(it.groupValues[1].lowercase(), file) }
-            }
-        }
-        idIndex = built
-        idIndexBuiltAt = TimeSource.Monotonic.markNow()
-        return built.right()
-    }
-
-    // endregion
-
-    /** A page file that is itself a link resolves elsewhere than its directory entry; the swap would sever it. */
-    private fun isSymlinkFile(path: String): Boolean {
-        val dir = path.substringBeforeLast('/')
-        return canonicalize(path) != canonicalize(dir).trimEnd('/') + "/" + path.substringAfterLast('/')
-    }
-
-    private val sweptDirs = HashSet<String>()
-
-    /** Crash leftovers only: a temp file younger than [STALE_TMP_AGE] may belong to a writer still running. */
-    private fun sweepStaleTemps(dir: String) {
-        if (!sweptDirs.add(dir)) return
-        val now = Clock.System.now().toEpochMilliseconds()
-        for (name in fs.listFiles(dir)) {
-            if (!name.endsWith(TMP_SUFFIX)) continue
-            val file = "$dir/$name"
-            val modified = fs.getLastModifiedTime(file) ?: continue
-            if (now - modified > STALE_TMP_AGE.inWholeMilliseconds) runCatching { fs.deleteFile(file) }
-        }
-    }
 
     /** True when the file no longer matches what this write was computed from ([original] null: it must still be absent). */
     private fun changedSinceRead(path: String, original: ByteArray?): Either<DomainError, Boolean> {
@@ -271,8 +206,8 @@ class MarkdownTargetWriter(
 
     /** [original] is null when [path] does not exist yet. */
     private fun replaceFile(path: String, bytes: ByteArray, original: ByteArray?): Either<DomainError, Unit> {
-        if (isSymlinkFile(path)) return refuse(NotRoundTrippable.SymlinkTarget(path)).left()
-        sweepStaleTemps(path.substringBeforeLast('/'))
+        if (isSymlinkFile(path, canonicalize)) return refuse(NotRoundTrippable.SymlinkTarget(path)).left()
+        tempSweeper.sweepOnce(path.substringBeforeLast('/'))
         val tmp = "$path.${UuidGenerator.generateV7()}$TMP_SUFFIX"
         var deletedOriginal = false
         try {
@@ -317,9 +252,6 @@ class MarkdownTargetWriter(
 
     companion object {
         private const val TMP_SUFFIX = ".stele-merge.tmp"
-        private val ID_INDEX_TTL = 30.seconds
-        private val STALE_TMP_AGE = 10.minutes
-        private val ID_LINE = Regex("^[ \\t]*id::[ \\t]*(\\S+)", RegexOption.MULTILINE)
 
         /** Explicit opt-out: only the lexical containment check runs. For platforms with no symlinks. */
         val NoSymlinks: (String) -> String = { it }
