@@ -46,6 +46,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -463,6 +464,28 @@ internal fun CaptureScreen(
         if (isDone) resetKey++
     }
 
+    // Dismiss with unsaved typed text asks first and offers Copy text, so it is never lost with one tap.
+    var confirmDiscard by remember { mutableStateOf(false) }
+    val clipboard = LocalClipboardManager.current
+    val requestDismiss = {
+        val handled = saveState == CaptureViewModel.SaveState.Saved || saveState is CaptureViewModel.SaveState.Queued
+        if (captureText.isBlank() || handled) onDismiss() else confirmDiscard = true
+    }
+    if (confirmDiscard) {
+        AlertDialog(
+            onDismissRequest = { confirmDiscard = false },
+            title = { Text("Discard this note?") },
+            text = { Text("It hasn't been saved. Copy the text first if you might still need it.") },
+            confirmButton = { TextButton(onClick = { confirmDiscard = false; onDismiss() }) { Text("Discard") } },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = { clipboard.setText(AnnotatedString(captureText)) }) { Text("Copy text") }
+                    TextButton(onClick = { confirmDiscard = false }) { Text("Keep editing") }
+                }
+            },
+        )
+    }
+
     val toast = backSave as? CaptureViewModel.BackSaveState.Done
     val busy = saveState == CaptureViewModel.SaveState.Saving || backSave == CaptureViewModel.BackSaveState.Saving
 
@@ -519,7 +542,7 @@ internal fun CaptureScreen(
                 focusRequester = focusRequester,
                 onFocusWithin = { hasFocusWithinSheet = it },
                 onChipInteraction = ::onChipInteraction,
-                onDismiss = onDismiss,
+                onDismiss = requestDismiss,
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }

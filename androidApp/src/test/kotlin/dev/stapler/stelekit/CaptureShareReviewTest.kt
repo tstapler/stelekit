@@ -11,6 +11,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
@@ -406,5 +408,37 @@ class CaptureShareReviewTest {
         org.junit.Assert.assertSame("share target and App must use one inbox", first, h.app.shareServices())
         org.junit.Assert.assertSame(first, deps.shareServicesProvider!!.invoke(h.gm))
         org.junit.Assert.assertSame(h.app.activeWriteHooks, deps.activeWriteHooks)
+    }
+
+    // ---- (14) Dismiss with typed text asks first and offers Copy text --------------------------
+
+    @Test
+    fun dismissWithTypedText_asksBeforeDiscarding_andOffersCopyText() {
+        val vm = CaptureViewModel(ApplicationProvider.getApplicationContext())
+        vm.updateText("words I typed")
+        var dismissed = 0
+        composeRule.setContent { MaterialTheme { CaptureScreen(vm, onSaved = {}, onDismiss = { dismissed++ }) } }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("Dismiss").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick)
+
+        assertEquals("typed text must not be discarded without a prompt", 0, dismissed)
+        composeRule.onNodeWithText("Discard this note?").assertExists()
+        composeRule.onNodeWithText("Copy text").assertExists()
+        composeRule.onNodeWithText("Discard").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick)
+        assertEquals(1, dismissed)
+    }
+
+    @Test
+    fun dismissWithBlankText_closesAtOnce() {
+        val vm = CaptureViewModel(ApplicationProvider.getApplicationContext())
+        var dismissed = 0
+        composeRule.setContent { MaterialTheme { CaptureScreen(vm, onSaved = {}, onDismiss = { dismissed++ }) } }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("Dismiss").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick)
+        composeRule.waitForIdle()
+
+        assertEquals(1, dismissed)
     }
 }
