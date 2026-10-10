@@ -201,6 +201,8 @@ import org.junit.runners.Suite
     MarkdownTargetWriterTest::class,
     TargetWriterCapabilitiesTest::class,
     ActiveDbPageSourceTest::class,
+    dev.stapler.stelekit.merge.TargetWriterRouterInFlightSwitchTest::class,
+    dev.stapler.stelekit.db.GraphLocatorTest::class,
     MergeUuidRoundTripSpikeTest::class,
     ToolbarActionTest::class,
     VoiceCaptureViewModelTest::class,

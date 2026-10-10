@@ -67,6 +67,7 @@ class DomainErrorTest {
             DomainError.QrTransferError.EnvelopeMalformed,
             DomainError.QrTransferError.OverwriteFailedPreviousContentAffected("page-uuid-123"),
             DomainError.MergeError.WriteRefused(WriteRefusedReason.InvalidPageName("x")),
+            DomainError.MergeError.Retryable("channel closed"),
             DomainError.StorageError.VerificationFailed("/path", "hash mismatch"),
             DomainError.StorageError.SourceInFlight("sync in progress"),
             DomainError.StorageError.DestinationNotWritable("/path"),
@@ -139,6 +140,7 @@ class DomainErrorTest {
                 DomainError.QrTransferError.EnvelopeMalformed -> err.message
                 is DomainError.QrTransferError.OverwriteFailedPreviousContentAffected -> err.message
                 is DomainError.MergeError.WriteRefused -> err.message
+                is DomainError.MergeError.Retryable -> err.message
                 is DomainError.StorageError.VerificationFailed -> err.message
                 is DomainError.StorageError.SourceInFlight -> err.message
                 is DomainError.StorageError.DestinationNotWritable -> err.message
