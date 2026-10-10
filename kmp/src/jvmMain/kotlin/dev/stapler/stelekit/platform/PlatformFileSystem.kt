@@ -21,6 +21,8 @@ internal fun JFileChooser.restoreDefaultTabTraversal() {
     setFocusTraversalKeys(KeyboardFocusManager.BACKWARD_TRAVERSAL_KEYS, setOf(AWTKeyStroke.getAWTKeyStroke(KeyEvent.VK_TAB, KeyEvent.SHIFT_DOWN_MASK)))
 }
 
+// Thin delegating shell over JvmFileSystemBase; each FileSystem member needs an explicit override here.
+@Suppress("TooManyFunctions")
 actual class PlatformFileSystem actual constructor() : JvmFileSystemBase(), FileSystem {
 
     companion object {

@@ -646,7 +646,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     override fun supportsAtomicReplace(path: String): Boolean = !path.startsWith("saf://") && !path.startsWith("content://")
 
     override fun replaceFileAtomically(from: String, to: String): Boolean {
-        if (from.startsWith("saf://") || from.startsWith("content://") || to.startsWith("saf://") || to.startsWith("content://")) return false
+        if (!supportsAtomicReplace(from) || !supportsAtomicReplace(to)) return false
         return try {
             val source = File(validateLegacyPath(expandTilde(from)))
             val dest = File(validateLegacyPath(expandTilde(to)))
