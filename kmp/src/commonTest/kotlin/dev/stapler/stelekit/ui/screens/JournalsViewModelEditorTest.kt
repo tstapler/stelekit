@@ -2,6 +2,8 @@
 
 package dev.stapler.stelekit.ui.screens
 
+import dev.stapler.stelekit.merge.SelectionFilter
+import dev.stapler.stelekit.merge.filteredAndSorted
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
@@ -313,6 +315,11 @@ class JournalsViewModelEditorTest {
         override fun getJournalPageByDate(date: LocalDate): Flow<Either<DomainError, Page?>> =
             flowOf(pages.find { it.journalDate == date }.right())
 
+        override fun getPagesFiltered(filter: SelectionFilter, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
+            flowOf(pages.filteredAndSorted(filter).drop(offset).take(limit).right())
+        override suspend fun countPagesFiltered(filter: SelectionFilter): Either<DomainError, Long> = pages.count(filter::matches).toLong().right()
+        override suspend fun getPagesAmong(filter: SelectionFilter, uuids: Collection<PageUuid>): Either<DomainError, List<Page>> =
+            pages.filter { p -> uuids.any { it == p.uuid } && filter.matches(p) }.right()
         override fun getUnloadedPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
             flowOf(pages.filter { !it.isContentLoaded }.sortedBy { it.uuid.value }.drop(offset).take(limit).right())
 

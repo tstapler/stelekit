@@ -1,5 +1,7 @@
 package dev.stapler.stelekit.error
 
+import dev.stapler.stelekit.merge.WriteRefusedReason
+
 sealed interface DomainError {
     val message: String
 
@@ -193,6 +195,14 @@ sealed interface DomainError {
         }
     }
 
+    /** Cross-graph merge/share failures (ADR-001). */
+    sealed interface MergeError : DomainError {
+        /** The target writer wrote nothing; copy fails the page definitively, share queues it. */
+        data class WriteRefused(val reason: WriteRefusedReason) : MergeError {
+            override val message: String = reason.message
+        }
+    }
+
     /** Failure modes for relocate/link storage-move operations (ADR-001). */
     sealed interface StorageError : DomainError {
         data class VerificationFailed(val path: String, val reason: String) : StorageError {
@@ -292,6 +302,7 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.QrTransferError.EnvelopeMalformed -> "This transfer didn't include valid page info — please try sending it again"
     is DomainError.QrTransferError.OverwriteFailedPreviousContentAffected ->
         "Overwrite failed — this page's previous content may have been affected. Please check it and try again"
+    is DomainError.MergeError.WriteRefused -> message
     is DomainError.StorageError.VerificationFailed -> "Verification failed — the copied files don't match the originals"
     is DomainError.StorageError.SourceInFlight -> "Can't move right now — a sync is still in progress"
     is DomainError.StorageError.DestinationNotWritable -> "Can't write to the selected location"

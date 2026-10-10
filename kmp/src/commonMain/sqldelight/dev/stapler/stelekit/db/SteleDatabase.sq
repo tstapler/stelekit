@@ -533,6 +533,48 @@ SELECT * FROM pages WHERE name LIKE ?;
 selectPagesByNameLikePaginated:
 SELECT * FROM pages WHERE name LIKE ? ORDER BY name LIMIT ? OFFSET ?;
 
+-- ── Selection filter (cross-graph copy picker; Story 2.4.1 d1 schema decision) ─────────────
+-- Schema read: pages.name is COLLATE NOCASE and UNIQUE(name, section_id) gives the autoindex
+-- sqlite_autoindex_pages_1; there is NO lowercase-name column and no index on journal_date
+-- alone (idx_pages_journal is (is_journal, journal_date)). pages.namespace holds only the
+-- parent, so "work/" prefix matching must use the name.
+-- Decisions:
+--   * Namespace/name prefix = half-open range name >= :nameLo AND name < :nameHi (caller passes
+--     lo = prefix, hi = prefix with its last char incremented; lo = '' / hi = a high sentinel when
+--     absent). A bare range is sargable on the NOCASE autoindex, unlike `:p IS NULL OR name LIKE`.
+--   * Journal date source = journal_date (ISO yyyy-MM-dd, so string compare == date compare),
+--     restricted to is_journal = 1; a date bound therefore excludes non-journal pages.
+--   * Tag = coarse substring prefilter on lower(properties) (stored as "k:v,k:v"); the exact
+--     token test runs in Kotlin (SelectionFilter.matchesTag) in a bounded second pass.
+--   * Order is name, section_id (the autoindex order) so paging is stable and index-ordered.
+selectPagesFilteredPaginated:
+SELECT * FROM pages
+WHERE name >= :nameLo AND name < :nameHi
+  AND (:includeJournals = 1 OR is_journal = 0)
+  AND (:dateFrom IS NULL OR (is_journal = 1 AND journal_date >= :dateFrom))
+  AND (:dateTo IS NULL OR (is_journal = 1 AND journal_date <= :dateTo))
+  AND (:tagLike IS NULL OR lower(properties) LIKE :tagLike ESCAPE '\')
+ORDER BY name, section_id
+LIMIT :limit OFFSET :offset;
+
+countPagesFiltered:
+SELECT COUNT(*) FROM pages
+WHERE name >= :nameLo AND name < :nameHi
+  AND (:includeJournals = 1 OR is_journal = 0)
+  AND (:dateFrom IS NULL OR (is_journal = 1 AND journal_date >= :dateFrom))
+  AND (:dateTo IS NULL OR (is_journal = 1 AND journal_date <= :dateTo))
+  AND (:tagLike IS NULL OR lower(properties) LIKE :tagLike ESCAPE '\');
+
+-- Same filters restricted to a caller-chunked uuid list (search hits; <=100 ids per call).
+selectPagesFilteredAmong:
+SELECT * FROM pages
+WHERE uuid IN :uuids
+  AND name >= :nameLo AND name < :nameHi
+  AND (:includeJournals = 1 OR is_journal = 0)
+  AND (:dateFrom IS NULL OR (is_journal = 1 AND journal_date >= :dateFrom))
+  AND (:dateTo IS NULL OR (is_journal = 1 AND journal_date <= :dateTo))
+  AND (:tagLike IS NULL OR lower(properties) LIKE :tagLike ESCAPE '\');
+
 selectBlocksReferencing:
 SELECT DISTINCT b.* FROM blocks b
 INNER JOIN block_references br ON b.uuid = br.from_block_uuid

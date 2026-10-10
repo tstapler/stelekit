@@ -48,7 +48,10 @@ import dev.stapler.stelekit.db.SplitJournalTest
 import dev.stapler.stelekit.repository.BacklinkRepositoryTest
 import dev.stapler.stelekit.sections.CrossSectionBacklinkRenderTest
 import dev.stapler.stelekit.sections.NewPageAutoAssignmentTest
+import dev.stapler.stelekit.merge.MarkdownTargetWriterTest
+import dev.stapler.stelekit.merge.TargetWriterCapabilitiesTest
 import dev.stapler.stelekit.transfer.GraphMergeServiceTest
+import dev.stapler.stelekit.merge.ActiveDbPageSourceTest
 import dev.stapler.stelekit.transfer.MergeUuidRoundTripSpikeTest
 import dev.stapler.stelekit.ui.ToolbarActionTest
 import dev.stapler.stelekit.voice.VoiceCaptureViewModelTest
@@ -93,6 +96,8 @@ import dev.stapler.stelekit.db.MigrationRunnerCoverageTest
 import dev.stapler.stelekit.db.MigrationRunnerIndexTest
 import dev.stapler.stelekit.db.MigrationRunnerSchemaSyncTest
 import dev.stapler.stelekit.db.RelocationStagingDirectoryTest
+import dev.stapler.stelekit.merge.MergeManifestTest
+import dev.stapler.stelekit.merge.MergeStagingDirectoryTest
 import dev.stapler.stelekit.db.SqliteStatementAnalyzerTest
 import dev.stapler.stelekit.db.StorageLocationPersistenceTest
 import dev.stapler.stelekit.db.WithoutRowidMigrationTest
@@ -191,6 +196,9 @@ import org.junit.runners.Suite
     GraphInfoSerializationTest::class,
     SplitJournalTest::class,
     GraphMergeServiceTest::class,
+    MarkdownTargetWriterTest::class,
+    TargetWriterCapabilitiesTest::class,
+    ActiveDbPageSourceTest::class,
     MergeUuidRoundTripSpikeTest::class,
     ToolbarActionTest::class,
     VoiceCaptureViewModelTest::class,
@@ -235,6 +243,8 @@ import org.junit.runners.Suite
     MigrationRunnerIndexTest::class,
     MigrationRunnerSchemaSyncTest::class,
     RelocationStagingDirectoryTest::class,
+    MergeStagingDirectoryTest::class,
+    MergeManifestTest::class,
     SqliteStatementAnalyzerTest::class,
     StorageLocationPersistenceTest::class,
     WithoutRowidMigrationTest::class,
