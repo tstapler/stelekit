@@ -32,6 +32,9 @@ class SteleKitApplication : Application() {
     /** Process-scoped scope for widget/tile background work (goAsync pattern). */
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+    /** Runs cross-graph copies in an application-owned scope so they survive Activity teardown. */
+    val copyRunHost: dev.stapler.stelekit.merge.CopyRunHost = dev.stapler.stelekit.merge.AndroidCopyRunHost()
+
     /**
      * Resolves when the startup write-behind flush completes (or immediately if SAF mode is
      * not active). Passed to [GraphManager] so the driver is never opened before dirty pages
