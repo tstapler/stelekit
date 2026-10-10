@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.Flow
 
 interface SearchRepository {
     fun searchBlocksByContent(query: String, limit: Int = 50, offset: Int = 0): Flow<Either<DomainError, List<Block>>>
-    fun searchPagesByTitle(query: String, limit: Int = 20): Flow<Either<DomainError, List<Page>>>
+    fun searchPagesByTitle(query: String, limit: Int = 20, offset: Int = 0): Flow<Either<DomainError, List<Page>>>
     fun findBlocksReferencing(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>>
     fun searchWithFilters(searchRequest: SearchRequest): Flow<Either<DomainError, SearchResult>>
 

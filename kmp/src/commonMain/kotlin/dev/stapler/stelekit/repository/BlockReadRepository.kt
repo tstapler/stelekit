@@ -16,6 +16,13 @@ import kotlinx.coroutines.flow.first
 interface BlockReadRepository {
 
     /**
+     * Block count per page for [pageUuids] (pages without blocks omitted); callers keep
+     * the list bounded (<= 500 ids per SQL statement). Default: unknown, so empty.
+     */
+    suspend fun countBlocksForPages(pageUuids: Collection<PageUuid>): Either<DomainError, Map<PageUuid, Int>> =
+        emptyMap<PageUuid, Int>().right()
+
+    /**
      * Retrieve a single block by its UUID
      */
     fun getBlockByUuid(uuid: BlockUuid): Flow<Either<DomainError, Block?>>

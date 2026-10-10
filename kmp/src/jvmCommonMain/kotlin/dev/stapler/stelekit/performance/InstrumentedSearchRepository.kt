@@ -29,8 +29,8 @@ class InstrumentedSearchRepository(
     override fun searchBlocksByContent(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Block>>> =
         delegate.searchBlocksByContent(query, limit, offset)
 
-    override fun searchPagesByTitle(query: String, limit: Int): Flow<Either<DomainError, List<Page>>> =
-        delegate.searchPagesByTitle(query, limit)
+    override fun searchPagesByTitle(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
+        delegate.searchPagesByTitle(query, limit, offset)
 
     override fun findBlocksReferencing(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> =
         delegate.findBlocksReferencing(blockUuid)

@@ -66,7 +66,6 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.merge.CopyDirection
-import dev.stapler.stelekit.merge.PageSource
 import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.ui.PlatformBackHandler
@@ -204,13 +203,6 @@ fun CopyPagesContent(state: CopyPagesState, actions: CopyPagesActions, modifier:
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(vertical = 4.dp).semantics { liveRegion = LiveRegionMode.Polite },
             )
-            if (state.searchCapped) {
-                Text(
-                    "Search shows at most the first ${PageSource.MAX_PAGE_SIZE} title matches.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
             SelectionActions(state, actions)
             Column(Modifier.weight(1f).fillMaxWidth()) {
                 PageList(

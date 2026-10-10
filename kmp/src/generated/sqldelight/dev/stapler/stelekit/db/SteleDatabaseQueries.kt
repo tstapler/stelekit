@@ -516,6 +516,15 @@ public class SteleDatabaseQueries(
     cursor.getLong(0)!!
   }
 
+  public fun <T : Any> countBlocksByPageUuids(uuids: Collection<String>, mapper: (page_uuid: String, block_count: Long) -> T): Query<T> = CountBlocksByPageUuidsQuery(uuids) { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getLong(1)!!
+    )
+  }
+
+  public fun countBlocksByPageUuids(uuids: Collection<String>): Query<CountBlocksByPageUuids> = countBlocksByPageUuids(uuids, ::CountBlocksByPageUuids)
+
   public fun <T : Any> selectBlocksByParentUuidOrdered(parent_uuid: String?, mapper: (
     id: Long,
     uuid: String,
@@ -2128,6 +2137,7 @@ public class SteleDatabaseQueries(
   public fun <T : Any> searchPagesByNameFts(
     query: String,
     limit: Long,
+    offset: Long,
     mapper: (
       uuid: String,
       name: String,
@@ -2144,7 +2154,7 @@ public class SteleDatabaseQueries(
       highlight: String?,
       bm25_score: Double,
     ) -> T,
-  ): Query<T> = SearchPagesByNameFtsQuery(query, limit) { cursor ->
+  ): Query<T> = SearchPagesByNameFtsQuery(query, limit, offset) { cursor ->
     mapper(
       cursor.getString(0)!!,
       cursor.getString(1)!!,
@@ -2163,7 +2173,11 @@ public class SteleDatabaseQueries(
     )
   }
 
-  public fun searchPagesByNameFts(query: String, limit: Long): Query<SearchPagesByNameFts> = searchPagesByNameFts(query, limit, ::SearchPagesByNameFts)
+  public fun searchPagesByNameFts(
+    query: String,
+    limit: Long,
+    offset: Long,
+  ): Query<SearchPagesByNameFts> = searchPagesByNameFts(query, limit, offset, ::SearchPagesByNameFts)
 
   public fun <T : Any> searchPagesByNameFtsInDateRange(
     query: String,
@@ -5788,6 +5802,31 @@ public class SteleDatabaseQueries(
     override fun toString(): String = "SteleDatabase.sq:countBlocksByPageUuid"
   }
 
+  private inner class CountBlocksByPageUuidsQuery<out T : Any>(
+    public val uuids: Collection<String>,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("blocks", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("blocks", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> {
+      val uuidsIndexes = createArguments(count = uuids.size)
+      return driver.executeQuery(null, """SELECT page_uuid, COUNT(*) AS block_count FROM blocks WHERE page_uuid IN $uuidsIndexes GROUP BY page_uuid""", mapper, uuids.size) {
+            var parameterIndex = 0
+            uuids.forEach { uuids_ ->
+              bindString(parameterIndex++, uuids_)
+            }
+          }
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:countBlocksByPageUuids"
+  }
+
   private inner class SelectBlocksByParentUuidOrderedQuery<out T : Any>(
     public val parent_uuid: String?,
     mapper: (SqlCursor) -> T,
@@ -7024,6 +7063,7 @@ public class SteleDatabaseQueries(
   private inner class SearchPagesByNameFtsQuery<out T : Any>(
     public val query: String,
     public val limit: Long,
+    public val offset: Long,
     mapper: (SqlCursor) -> T,
   ) : Query<T>(mapper) {
     override fun addListener(listener: Query.Listener) {
@@ -7054,11 +7094,12 @@ public class SteleDatabaseQueries(
     |JOIN pages p ON p.rowid = pf.rowid
     |WHERE pages_fts MATCH ?
     |ORDER BY bm25(pages_fts)
-    |LIMIT ?
-    """.trimMargin(), mapper, 2) {
+    |LIMIT ? OFFSET ?
+    """.trimMargin(), mapper, 3) {
       var parameterIndex = 0
       bindString(parameterIndex++, query)
       bindLong(parameterIndex++, limit)
+      bindLong(parameterIndex++, offset)
     }
 
     override fun toString(): String = "SteleDatabase.sq:searchPagesByNameFts"

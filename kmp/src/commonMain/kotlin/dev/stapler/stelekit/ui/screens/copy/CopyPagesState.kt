@@ -39,6 +39,8 @@ value class PickedPages(val uuids: Set<PageUuid> = emptySet()) {
 
     fun toggle(uuid: PageUuid): PickedPages = PickedPages(if (uuid in uuids) uuids - uuid else uuids + uuid)
     fun addAll(more: Collection<PageUuid>): PickedPages = PickedPages(uuids + more)
+    /** Replaces the selection with exactly [only]. */
+    fun replaceWith(only: Collection<PageUuid>): PickedPages = PickedPages(only.toSet())
     fun clear(): PickedPages = PickedPages()
 }
 
@@ -71,7 +73,7 @@ data class PageRowState(
     val uuid: PageUuid,
     val name: String,
     val isJournal: Boolean,
-    /** Null when unknown: [PageSource] has no per-page block count, so the list omits it. */
+    /** Null when the [PageSource] cannot supply counts; the row then omits it. */
     val blockCount: Int? = null,
 ) {
     /** Full text exposed to accessibility services (never truncated). */
@@ -140,8 +142,6 @@ data class CopyPagesState(
     val picked: PickedPages = PickedPages(),
     /** True while select-all pages through the source. */
     val selecting: Boolean = false,
-    /** Search is title-only and sees at most the first [PageSource.MAX_PAGE_SIZE] hits. */
-    val searchCapped: Boolean = false,
     /** Non-null while the "Select all N pages?" confirmation is open. */
     val confirmAllPages: Long? = null,
     val discardPrompt: Boolean = false,

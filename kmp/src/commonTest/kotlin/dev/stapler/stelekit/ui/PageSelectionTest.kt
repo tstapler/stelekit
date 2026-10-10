@@ -29,6 +29,15 @@ class PageSelectionTest {
     }
 
     @Test
+    fun `replaceWith drops prior picks and keeps exactly the given set`() {
+        val s = PickedPages().addAll(listOf(id(900), id(901))).replaceWith((1..213).map { id(it) })
+        assertEquals(213, s.size)
+        assertTrue(id(900) !in s)
+        assertTrue(id(213) in s)
+        assertEquals(s, s.replaceWith((1..213).map { id(it) }))
+    }
+
+    @Test
     fun `clear empties and leaves the original untouched`() {
         val s = PickedPages().addAll(listOf(id(1), id(2)))
         assertTrue(s.clear().isEmpty())

@@ -156,6 +156,21 @@ class ActiveDbPageSourceTest {
     }
 
     @Test
+    fun `search finds filter-passing hits beyond the first 100 title matches`() = runBlocking {
+        val db = Db()
+        db.pages.seed(
+            (1..130).map { page("misc/road $it") } + (1..30).map { page("work/road $it") }
+        )
+        val pages = ActiveDbPageSource(db.pages, db.blocks, db.search)
+        val filter = SelectionFilter(journals = false, namespace = "work/")
+        assertEquals(30L, pages.countPages(filter, "road").getOrNullOrFail())
+        val all = pages.listPages(filter, "road", 100, 0).getOrNullOrFail()
+        assertEquals(30, all.size)
+        assertTrue(all.all { it.name.startsWith("work/road") })
+        assertEquals(10, pages.listPages(filter, "road", 100, 20).getOrNullOrFail().size)
+    }
+
+    @Test
     fun `readPages returns each page with its blocks`() = runBlocking {
         val db = Db()
         val p = page("work/a")
@@ -216,10 +231,10 @@ class ActiveDbPageSourceTest {
         val maxLimit = java.util.concurrent.atomic.AtomicInteger(0)
         val maxRows = java.util.concurrent.atomic.AtomicInteger(0)
 
-        override fun searchPagesByTitle(query: String, limit: Int): Flow<Either<DomainError, List<Page>>> {
+        override fun searchPagesByTitle(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
             calls.incrementAndGet()
             maxLimit.updateAndGet { maxOf(it, limit) }
-            return d.searchPagesByTitle(query, limit).onEach { r ->
+            return d.searchPagesByTitle(query, limit, offset).onEach { r ->
                 maxRows.updateAndGet { maxOf(it, r.fold({ 0 }, { p -> p.size })) }
             }
         }
@@ -249,13 +264,17 @@ class ActiveDbPageSourceTest {
         assertEquals(4_150L, total)
         assertEquals(listOf("getPagesFiltered", "countPagesFiltered"), pages.calls.toList())
 
+        // "road" has 150 matches: more than one hit page, so counts/lists must page past 100.
         pages.calls.clear()
         val hits = source.listPages(filter, "road", 100, 0).getOrNullOrFail()
+        val tail = source.listPages(filter, "road", 100, 100).getOrNullOrFail()
         val hitCount = source.countPages(filter, "road").getOrNullOrFail()
-        assertTrue(hits.isNotEmpty() && hits.all { it.name.startsWith("work/road") })
-        assertEquals(hits.size.toLong(), hitCount.coerceAtMost(100))
-        assertEquals(listOf("getPagesAmong", "getPagesAmong"), pages.calls.toList(), "search = one intersect query per call")
-        assertEquals(2, search.calls.get())
+        assertTrue(hits.all { it.name.startsWith("work/road") } && tail.all { it.name.startsWith("work/road") })
+        assertEquals(100, hits.size)
+        assertEquals(50, tail.size)
+        assertEquals(150L, hitCount)
+        assertEquals(150, (hits + tail).map { it.uuid }.toSet().size)
+        assertTrue(pages.calls.all { it == "getPagesAmong" } && pages.calls.size <= 6, "bounded: ${pages.calls}")
 
         assertTrue(pages.maxRows.get() <= 100, "repository call returned ${pages.maxRows.get()} rows")
         assertTrue(pages.maxIds.get() <= 100, "intersect chunk was ${pages.maxIds.get()} ids")
