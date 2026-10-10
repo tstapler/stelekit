@@ -204,6 +204,81 @@ class ActiveDbPageSourceTest {
         assertEquals(expected, db.pages.listAll(SelectionFilter(), 2).map { it.uuid })
     }
 
+    private class OffsetLog(private val d: SearchRepository) : SearchRepository by d {
+        val offsets = CopyOnWriteArrayList<Int>()
+        override fun searchPagesByTitle(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
+            offsets += offset
+            return d.searchPagesByTitle(query, limit, offset)
+        }
+    }
+
+    @Test
+    fun `sequential search paging resumes instead of rescanning from the first hit`() = runBlocking {
+        val db = Db()
+        db.pages.seed((1..650).map { page("road %03d".format(it)) } + (1..50).map { page("other $it") })
+        val log = OffsetLog(db.search)
+        val source = ActiveDbPageSource(db.pages, db.blocks, log)
+        val filter = SelectionFilter()
+
+        val seen = mutableListOf<Page>()
+        while (true) {
+            val batch = source.listPages(filter, "road", 100, seen.size).getOrNullOrFail()
+            seen += batch
+            if (batch.size < 100) break
+        }
+        assertEquals(650, seen.map { it.uuid }.toSet().size)
+        val fresh = ActiveDbPageSource(db.pages, db.blocks, db.search).listPages(filter, "road", 100, 300).getOrNullOrFail()
+        assertEquals(fresh.map { it.uuid }, seen.subList(300, 400).map { it.uuid })
+        assertEquals(1, log.offsets.count { it == 0 }, "only the first page starts at hit 0: ${log.offsets}")
+        assertTrue(log.offsets.size <= 8, "7 pages need ~7 hit scans, got ${log.offsets}")
+    }
+
+    @Test
+    fun `sparse filter paging resumes mid hit page without dups or gaps`() = runBlocking {
+        val db = Db()
+        db.pages.seed((1..400).map { page(if (it % 7 == 0) "work/road $it" else "misc/road $it") })
+        val source = ActiveDbPageSource(db.pages, db.blocks, db.search)
+        val filter = SelectionFilter(namespace = "work/")
+        val all = ActiveDbPageSource(db.pages, db.blocks, db.search).listPages(filter, "road", 100, 0).getOrNullOrFail()
+        val seen = mutableListOf<Page>()
+        while (true) {
+            val batch = source.listPages(filter, "road", 7, seen.size).getOrNullOrFail()
+            seen += batch
+            if (batch.size < 7) break
+        }
+        assertEquals(all.map { it.uuid }, seen.map { it.uuid })
+        assertEquals(57, seen.size)
+    }
+
+    @Test
+    fun `search count is one query that matches the scan and skips hit materialization`() = runBlocking {
+        val db = Db()
+        db.pages.seed(
+            (1..300).map { page("work/road $it") } + (1..120).map { page("misc/road $it") } +
+                (1..5).map { page("2024-01-0$it road", LocalDate(2024, 1, it)) } +
+                listOf(page("work/road tagged", props = mapOf("tags" to "a, b")))
+        )
+        val pages = RecordingPages(db.pages)
+        val source = ActiveDbPageSource(pages, db.blocks, db.search)
+        for (filter in listOf(
+            SelectionFilter(), SelectionFilter(journals = false), SelectionFilter(namespace = "work/"),
+            SelectionFilter(dateFrom = LocalDate(2024, 1, 3)), SelectionFilter(namespace = "misc", journals = false),
+            SelectionFilter(tag = "b"),
+        )) {
+            pages.calls.clear()
+            val counted = source.countPages(filter, "road").getOrNullOrFail()
+            val viaCount = pages.calls.isEmpty()
+            var scanned = 0L
+            while (true) {
+                val b = source.listPages(filter, "road", 100, scanned.toInt()).getOrNullOrFail()
+                scanned += b.size
+                if (b.size < 100) break
+            }
+            assertEquals(scanned, counted, "count $filter")
+            if (filter.tag == null) assertTrue(viaCount, "no hit materialization for $filter: ${pages.calls}")
+        }
+    }
+
     // ── ActiveDbPageSource behavior ─────────────────────────────────────────────────────
 
     @Test

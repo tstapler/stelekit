@@ -2179,6 +2179,17 @@ public class SteleDatabaseQueries(
     offset: Long,
   ): Query<SearchPagesByNameFts> = searchPagesByNameFts(query, limit, offset, ::SearchPagesByNameFts)
 
+  public fun countPagesByNameFtsFiltered(
+    query: String,
+    nameLo: String,
+    nameHi: String,
+    includeJournals: Long,
+    dateFrom: String?,
+    dateTo: String?,
+  ): Query<Long> = CountPagesByNameFtsFilteredQuery(query, nameLo, nameHi, includeJournals, dateFrom, dateTo) { cursor ->
+    cursor.getLong(0)!!
+  }
+
   public fun <T : Any> searchPagesByNameFtsInDateRange(
     query: String,
     startMs: Long,
@@ -7103,6 +7114,47 @@ public class SteleDatabaseQueries(
     }
 
     override fun toString(): String = "SteleDatabase.sq:searchPagesByNameFts"
+  }
+
+  private inner class CountPagesByNameFtsFilteredQuery<out T : Any>(
+    public val query: String,
+    public val nameLo: String,
+    public val nameHi: String,
+    public val includeJournals: Long,
+    public val dateFrom: String?,
+    public val dateTo: String?,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("pages_fts", "pages", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("pages_fts", "pages", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(208_257_188, """
+    |SELECT COUNT(*)
+    |FROM pages_fts pf
+    |JOIN pages p ON p.rowid = pf.rowid
+    |WHERE pages_fts MATCH ?
+    |  AND p.name >= ? AND p.name < ?
+    |  AND (? = 1 OR p.is_journal = 0)
+    |  AND (? IS NULL OR (p.is_journal = 1 AND p.journal_date >= ?))
+    |  AND (? IS NULL OR (p.is_journal = 1 AND p.journal_date <= ?))
+    """.trimMargin(), mapper, 8) {
+      var parameterIndex = 0
+      bindString(parameterIndex++, query)
+      bindString(parameterIndex++, nameLo)
+      bindString(parameterIndex++, nameHi)
+      bindLong(parameterIndex++, includeJournals)
+      bindString(parameterIndex++, dateFrom)
+      bindString(parameterIndex++, dateFrom)
+      bindString(parameterIndex++, dateTo)
+      bindString(parameterIndex++, dateTo)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:countPagesByNameFtsFiltered"
   }
 
   private inner class SearchPagesByNameFtsInDateRangeQuery<out T : Any>(

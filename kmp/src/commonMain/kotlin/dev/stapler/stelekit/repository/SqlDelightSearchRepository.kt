@@ -3,6 +3,8 @@ package dev.stapler.stelekit.repository
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
+import dev.stapler.stelekit.merge.SelectionFilter
+import dev.stapler.stelekit.merge.toSqlArgs
 import dev.stapler.stelekit.error.DomainError
 
 import dev.stapler.stelekit.db.DatabaseWriteActor
@@ -162,6 +164,23 @@ class SqlDelightSearchRepository(
             emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
     }.flowOn(PlatformDispatcher.DB)
+
+    override suspend fun countPagesByTitle(query: String, filter: SelectionFilter): Either<DomainError, Long?> {
+        if (filter.tagToken != null) return Either.Right(null)
+        val ftsQuery = FtsQueryBuilder.build(query)
+        if (ftsQuery.isEmpty()) return 0L.right()
+        val a = filter.toSqlArgs()
+        return withContext(PlatformDispatcher.DB) {
+            try {
+                queries.countPagesByNameFtsFiltered(ftsQuery, a.nameLo, a.nameHi, a.includeJournals, a.dateFrom, a.dateTo)
+                    .executeAsOne().right()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                Either.Right(null) // pages_fts unavailable: the caller's scan falls back to LIKE
+            }
+        }
+    }
 
     override fun findBlocksReferencing(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> = flow {
         try {
