@@ -76,6 +76,8 @@ data class SettingsDialogDeps(
     val onUnlinkHostDirectory: (suspend () -> Unit)? = null,
     // Desktop-only quick-capture hotkey (Story 1.4.2) — null on platforms with no global hotkey.
     val hotkeyComboLabel: String? = null,
+    val captureTargetSettings: dev.stapler.stelekit.capture.CaptureTargetSettings? = null,
+    val captureGraphs: List<dev.stapler.stelekit.model.GraphInfo> = emptyList(),
 )
 
 /**

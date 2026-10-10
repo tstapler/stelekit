@@ -108,6 +108,8 @@ fun SettingsDialog(
     onUnlinkHostDirectory: (suspend () -> Unit)? = null,
     // Desktop-only quick-capture hotkey (Story 1.4.2) — null hides GeneralSettings' row.
     hotkeyComboLabel: String? = null,
+    captureTargetSettings: dev.stapler.stelekit.capture.CaptureTargetSettings? = null,
+    captureGraphs: List<dev.stapler.stelekit.model.GraphInfo> = emptyList(),
 ) {
     if (visible) {
         Dialog(
@@ -153,6 +155,8 @@ fun SettingsDialog(
                             isLeftHanded = isLeftHanded,
                             onLeftHandedChange = onLeftHandedChange,
                             hotkeyComboLabel = hotkeyComboLabel,
+                            captureTargetSettings = captureTargetSettings,
+                            captureGraphs = captureGraphs,
                         )
                         // web-local-folder-livesync Task 3.1.1c: no dedicated "Sync"
                         // category exists in this dialog, so the affordance lives here —

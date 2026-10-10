@@ -37,7 +37,8 @@ object CaptureWriter {
      * When [captureId] is non-null, the new block's UUID is derived from it rather than
      * freshly generated, so replaying the same capture (crash-then-resume, a lost-ack retry)
      * resolves through `insertBlock`'s `INSERT OR REPLACE` semantics to a single row instead
-     * of a duplicate. `captureId == null` (the live hotkey-popup path) keeps today's behavior
+     * of a duplicate. [writer] lets a caller that keeps using the writer afterwards (post-save
+     * edits) supply its own. `captureId == null` (the live hotkey-popup path) keeps today's behavior
      * of a fresh UUIDv7 per save.
      */
     suspend fun writeCapture(
@@ -46,6 +47,7 @@ object CaptureWriter {
         graphPath: String,
         text: String,
         captureId: String? = null,
+        writer: GraphWriter = GraphWriter(fileSystem, writeActor = repoSet.writeActor),
     ): CaptureResult = try {
         val page = repoSet.journalService.ensureTodayJournal()
 
@@ -69,11 +71,11 @@ object CaptureWriter {
         saveBlockWithFallback(repoSet, newBlock)?.let { return it }
 
         // Bug 8 mitigation: flush the Markdown file after every actor write.
-        val writer = GraphWriter(fileSystem, writeActor = repoSet.writeActor)
-        writer.savePage(page, existingBlocks + newBlock, graphPath)
+        val allBlocks = existingBlocks + newBlock
+        writer.savePage(page, allBlocks, graphPath)
             .getOrElse { return CaptureResult.Failed("Save failed: $it") }
 
-        CaptureResult.Saved(page)
+        CaptureResult.Saved(page, newBlock, allBlocks)
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {

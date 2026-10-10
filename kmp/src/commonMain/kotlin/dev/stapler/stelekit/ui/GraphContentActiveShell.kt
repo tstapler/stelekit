@@ -164,6 +164,9 @@ internal fun GraphContentActiveShell(
     val appState by viewModel.uiState.collectAsState()
     val voiceCaptureState by voiceCaptureViewModel.state.collectAsState()
     val graphRegistry by graphManager.graphRegistry.collectAsState()
+    val captureTargetSettings = remember(platformSettings) {
+        dev.stapler.stelekit.capture.CaptureTargetSettings(platformSettings)
+    }
     val activeGraphId = graphRegistry.activeGraphId
     val syncState by viewModel.syncState.collectAsState()
     val gitLastSyncAt by viewModel.gitLastSyncAt.collectAsState()
@@ -451,6 +454,8 @@ internal fun GraphContentActiveShell(
                     },
                     onUnlinkHostDirectory = onUnlinkHostDirectory,
                     hotkeyComboLabel = hotkeyComboLabel,
+                    captureTargetSettings = captureTargetSettings,
+                    captureGraphs = graphRegistry.graphs,
                 ),
                 gitSync = GitSyncDeps(
                     gitSyncService = gitSyncService,
