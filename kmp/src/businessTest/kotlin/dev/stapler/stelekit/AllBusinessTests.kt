@@ -49,6 +49,7 @@ import dev.stapler.stelekit.repository.BacklinkRepositoryTest
 import dev.stapler.stelekit.sections.CrossSectionBacklinkRenderTest
 import dev.stapler.stelekit.sections.NewPageAutoAssignmentTest
 import dev.stapler.stelekit.transfer.GraphMergeServiceTest
+import dev.stapler.stelekit.merge.ActiveDbPageSourceTest
 import dev.stapler.stelekit.transfer.MergeUuidRoundTripSpikeTest
 import dev.stapler.stelekit.ui.ToolbarActionTest
 import dev.stapler.stelekit.voice.VoiceCaptureViewModelTest
@@ -191,6 +192,7 @@ import org.junit.runners.Suite
     GraphInfoSerializationTest::class,
     SplitJournalTest::class,
     GraphMergeServiceTest::class,
+    ActiveDbPageSourceTest::class,
     MergeUuidRoundTripSpikeTest::class,
     ToolbarActionTest::class,
     VoiceCaptureViewModelTest::class,

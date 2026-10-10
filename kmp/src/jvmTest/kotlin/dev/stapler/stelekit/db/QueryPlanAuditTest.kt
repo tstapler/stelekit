@@ -207,6 +207,29 @@ ORDER BY depth, parent_uuid, position"""),
             "SELECT * FROM pages WHERE name LIKE '%test%'"),
         AuditQuery("selectPagesByNameLikePaginated",
             "SELECT * FROM pages WHERE name LIKE '%test%' ORDER BY name LIMIT 10 OFFSET 0"),
+        AuditQuery("selectPagesFilteredPaginated",
+            """SELECT * FROM pages
+               WHERE name >= 'work/' AND name < 'work0'
+                 AND (1 = 1 OR is_journal = 0)
+                 AND ('2024-01-01' IS NULL OR (is_journal = 1 AND journal_date >= '2024-01-01'))
+                 AND ('2024-12-31' IS NULL OR (is_journal = 1 AND journal_date <= '2024-12-31'))
+                 AND ('%x%' IS NULL OR lower(properties) LIKE '%x%' ESCAPE '\')
+               ORDER BY name, section_id LIMIT 10 OFFSET 0"""),
+        AuditQuery("countPagesFiltered",
+            """SELECT COUNT(*) FROM pages
+               WHERE name >= 'work/' AND name < 'work0'
+                 AND (1 = 1 OR is_journal = 0)
+                 AND ('2024-01-01' IS NULL OR (is_journal = 1 AND journal_date >= '2024-01-01'))
+                 AND ('2024-12-31' IS NULL OR (is_journal = 1 AND journal_date <= '2024-12-31'))
+                 AND ('%x%' IS NULL OR lower(properties) LIKE '%x%' ESCAPE '\')"""),
+        AuditQuery("selectPagesFilteredAmong",
+            """SELECT * FROM pages
+               WHERE uuid IN ('p1', 'p2')
+                 AND name >= 'work/' AND name < 'work0'
+                 AND (1 = 1 OR is_journal = 0)
+                 AND ('2024-01-01' IS NULL OR (is_journal = 1 AND journal_date >= '2024-01-01'))
+                 AND ('2024-12-31' IS NULL OR (is_journal = 1 AND journal_date <= '2024-12-31'))
+                 AND ('%x%' IS NULL OR lower(properties) LIKE '%x%' ESCAPE '\')"""),
         AuditQuery("selectPageBacklinkCount",
             "SELECT backlink_count FROM pages WHERE name = 'x'"),
         AuditQuery("selectBacklinkCountsForPages",

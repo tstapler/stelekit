@@ -1,6 +1,8 @@
 @file:Suppress("InMemoryPagination") // in-memory test fake — drop/take IS the right implementation
 package dev.stapler.stelekit.repository
 
+import dev.stapler.stelekit.merge.SelectionFilter
+import dev.stapler.stelekit.merge.filteredAndSorted
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.util.FractionalIndexing
@@ -572,6 +574,17 @@ class InMemoryPageRepository : PageRepository {
         return pages.map { map ->
             map.values.filter { it.isFavorite }.sortedBy { it.name }.right()
         }
+    }
+
+    override fun getPagesFiltered(filter: SelectionFilter, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
+        pages.map { it.values.filteredAndSorted(filter).drop(offset).take(limit).right() }
+
+    override suspend fun countPagesFiltered(filter: SelectionFilter): Either<DomainError, Long> =
+        pages.value.values.count(filter::matches).toLong().right()
+
+    override suspend fun getPagesAmong(filter: SelectionFilter, uuids: Collection<PageUuid>): Either<DomainError, List<Page>> {
+        val wanted = uuids.mapTo(HashSet()) { it.value }
+        return pages.value.values.filter { it.uuid.value in wanted && filter.matches(it) }.right()
     }
 
     override fun getUnloadedPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {

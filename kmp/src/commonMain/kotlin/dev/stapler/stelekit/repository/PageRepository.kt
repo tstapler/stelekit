@@ -2,6 +2,7 @@ package dev.stapler.stelekit.repository
 
 import arrow.core.Either
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.merge.SelectionFilter
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
 import kotlinx.coroutines.flow.Flow
@@ -24,6 +25,7 @@ data class PageNameEntry(val name: String, val isJournal: Boolean)
  * - UI lists: [getPages] / [getJournalPages] / [getFavoritePages] / point lookups
  * - reconcile existence checks: [getPagesByNames] / [getJournalPagesByDates] — chunked IN
  * - background indexing: [getUnloadedPages] (limit, offset) drain + [countUnloadedPages]
+ * - copy picker: [getPagesFiltered] / [countPagesFiltered] / [getPagesAmong] — one bounded query each
  */
 interface PageRepository {
     fun getPageByUuid(uuid: PageUuid): Flow<Either<DomainError, Page?>>
@@ -94,6 +96,22 @@ interface PageRepository {
             }
         }
     }
+
+    /**
+     * One page (<= [limit] rows, name order) of the pages matching [filter]. SQL-backed
+     * implementations push the filter into one query; a tag filter adds a bounded second
+     * pass over <= 100-row batches (see SqlDelightPageRepository).
+     */
+    fun getPagesFiltered(filter: SelectionFilter, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>>
+
+    /** Total matches for [filter] — the picker's count, never a materialized list. */
+    suspend fun countPagesFiltered(filter: SelectionFilter): Either<DomainError, Long>
+
+    /**
+     * The subset of [uuids] matching [filter] (order unspecified). Used to intersect search
+     * hits with the filter; implementations chunk the IN list to <= 100 ids.
+     */
+    suspend fun getPagesAmong(filter: SelectionFilter, uuids: Collection<PageUuid>): Either<DomainError, List<Page>>
 
     /**
      * Names-only projection of all pages for the suggestion index. Unlike a full-table
