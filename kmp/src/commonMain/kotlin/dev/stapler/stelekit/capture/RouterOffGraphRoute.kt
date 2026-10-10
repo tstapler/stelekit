@@ -24,8 +24,10 @@ import dev.stapler.stelekit.util.ContentHasher
 import dev.stapler.stelekit.util.UuidGenerator
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 import kotlinx.datetime.todayIn
 import kotlin.time.Clock
+import kotlin.time.Instant
 
 /** Off-graph capture constants shared with the share overlay. */
 object OffGraphCapture {
@@ -44,6 +46,22 @@ object OffGraphCapture {
         JournalUtils.formatDateForJournal(Clock.System.todayIn(TimeZone.currentSystemDefault()))
 
     private val UUID_FORM = Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+
+    private const val UUID_V7_CHAR = '7'
+    private const val UUID_VERSION_INDEX = 14
+    private const val MIN_PLAUSIBLE_CREATED_MS = 1_577_836_800_000L // 2020-01-01
+
+    /**
+     * The journal day a capture belongs to: the day embedded in a v7 [captureId], so a replay after midnight
+     * finds the block it already wrote. Other ids, and timestamps in the future or implausibly old, use [fallback].
+     */
+    fun journalDateFor(captureId: String, fallback: LocalDate): LocalDate {
+        if (!UUID_FORM.matches(captureId) || captureId[UUID_VERSION_INDEX] != UUID_V7_CHAR) return fallback
+        val ms = (captureId.substring(0, 8) + captureId.substring(9, 13)).toLongOrNull(16) ?: return fallback
+        if (ms < MIN_PLAUSIBLE_CREATED_MS) return fallback
+        val created = Instant.fromEpochMilliseconds(ms).toLocalDateTime(TimeZone.currentSystemDefault()).date
+        return if (created > fallback) fallback else created
+    }
 
     /** Same uuid the active path gives the block (`BlockUuid(captureId)`) when [captureId] is a uuid, else a stable hash. */
     fun blockUuid(captureId: String): String =
@@ -74,7 +92,7 @@ class RouterOffGraphRoute(
         val id = captureId ?: UuidGenerator.generateV7()
         if (content.text.isBlank() && content.image == null) return AppendOutcome.Failed("Nothing to save")
         val root = locator.locate(graphId).fold({ return AppendOutcome.Failed(it.message) }, { it.path })
-        val date = today()
+        val date = OffGraphCapture.journalDateFor(id, today())
         val page = PageKey(JournalUtils.formatDateForJournal(date), isJournal = true)
         val uuid = OffGraphCapture.blockUuid(id)
 

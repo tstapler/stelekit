@@ -379,4 +379,64 @@ class ShareInboxTest {
 
     private fun <A, B> arrow.core.Either<A, B>.getOrNullOrFail(): B =
         fold({ throw AssertionError("expected Right but was Left($it)") }, { it })
+
+    @Test
+    fun `quarantine logging never includes the user text from a damaged file`() {
+        enqueue(inbox(), "SECRET-LOG-TEXT", "c1")
+        val path = newItemPath("c1")
+        val full = fs.readFile(path)!!
+        fs.put(path, full.substring(0, full.indexOf("\"sha256\"") - 1))
+        val lines = mutableListOf<String>()
+        val sink = dev.stapler.stelekit.logging.LogManager.addSink(object : dev.stapler.stelekit.logging.LogSink {
+            override fun write(entry: dev.stapler.stelekit.logging.LogEntry, formatted: String) {
+                synchronized(lines) { lines += formatted }
+            }
+        })
+        try {
+            runBlocking { inbox().recover() }
+        } finally {
+            sink.close()
+        }
+        assertTrue(lines.any { it.contains("quarantining") }, "expected the quarantine log line")
+        assertTrue(lines.none { it.contains("SECRET-LOG-TEXT") }, "log leaked share text: $lines")
+    }
+
+    @Test
+    fun `a transient read failure keeps the item instead of quarantining it`() {
+        enqueue(inbox(), "keep me", "c1")
+        val flaky = object : FileSystem by fs {
+            var failing = true
+            override fun readFile(path: String): String? = if (failing && path.endsWith("c1.json")) null else fs.readFile(path)
+        }
+        val i = ShareInbox(flaky, root, { time }, Dispatchers.Unconfined)
+
+        runBlocking { i.recover() }
+
+        assertEquals(0, i.state.value.quarantinedCount)
+        assertTrue(fs.fileExists(newItemPath("c1")))
+        flaky.failing = false
+        runBlocking { i.refresh() }
+        assertEquals("keep me", i.state.value.items.single().text)
+    }
+
+    @Test
+    fun `a Retry result is retried on a timer without a ready change`() {
+        enqueue(inbox(), "later", "c1")
+        val i = inbox()
+        val ready = MutableStateFlow<GraphId?>(work)
+        var attempts = 0
+        val drain = ShareInboxDrain(
+            i, ready, {}, currentReadyId = { ready.value },
+            appender = InboxAppender { _, _, _ ->
+                if (++attempts < 3) DrainAppendResult.Retry("busy") else DrainAppendResult.Appended
+            },
+            dispatcher = Dispatchers.Default,
+            retryBackoffMs = listOf(20L, 20L, 20L),
+        )
+        drain.start()
+
+        i.awaitState { it.items.isEmpty() }
+        drain.close()
+        assertEquals(3, attempts)
+    }
 }

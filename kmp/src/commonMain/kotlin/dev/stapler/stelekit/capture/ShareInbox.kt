@@ -179,6 +179,7 @@ class ShareInbox(
             is Read.Future -> DomainError.ValidationError.ConstraintViolation("needs a newer app version").left()
             is Read.Corrupt -> DomainError.FileSystemError.ReadFailed(dirPath(slot), r.reason).left()
             Read.Missing -> DomainError.FileSystemError.NotFound("${dirPath(slot)}/$captureId$JSON").left()
+            Read.Unavailable -> DomainError.FileSystemError.ReadFailed(dirPath(slot), "unreadable right now").left()
         }
     }
 
@@ -264,17 +265,21 @@ class ShareInbox(
         data class Future(val item: InboxItem) : Read
         data class Corrupt(val reason: String) : Read
         data object Missing : Read
+
+        /** The file exists but could not be read just now; says nothing about its content, so it is never quarantined. */
+        data object Unavailable : Read
     }
 
     private fun readItem(slot: InboxSlot, captureId: String): Read {
         val path = "${dirPath(slot)}/$captureId$JSON"
-        val raw = fs.readFile(path) ?: return if (fs.fileExists(path)) Read.Corrupt("unreadable") else Read.Missing
+        val raw = fs.readFile(path) ?: fs.readFile(path)
+            ?: return if (fs.fileExists(path)) Read.Unavailable else Read.Missing
         val obj = try {
             jsonCodec.parseToJsonElement(raw).jsonObject
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            return Read.Corrupt("unparseable: ${e.message}")
+            return Read.Corrupt("unparseable (${e::class.simpleName})") // e.message embeds the input
         }
         val version = obj["v"]?.jsonPrimitive?.intOrNull ?: return Read.Corrupt("missing version")
         val createdAt = obj["createdAtEpochMs"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L
@@ -293,7 +298,7 @@ class ShareInbox(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            return Read.Corrupt("bad payload: ${e.message}")
+            return Read.Corrupt("bad payload (${e::class.simpleName})")
         }
         val item = InboxItem(
             slot, captureId, createdAt, dto.text, InboxItemStatus.Ready, hasImage = dto.image != null,
@@ -318,7 +323,7 @@ class ShareInbox(
                         logger.warn("quarantining $dir/$name: ${r.reason}")
                         quarantine(slot, name)
                     }
-                    Read.Missing -> Unit
+                    Read.Missing, Read.Unavailable -> Unit
                 }
             }
         }
@@ -394,7 +399,7 @@ class ShareInbox(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    logger.error("share inbox operation failed: ${e.message}", e)
+                    logger.error("share inbox operation failed: ${e::class.simpleName}")
                     writeFailed(root, e.message ?: "unknown").left()
                 }
             }
