@@ -34,8 +34,8 @@ internal fun describeGitRefs(
         appendLine("${config.remoteName}.url=${raw.replace(Regex("//[^/@]+@"), "//")}")
     }
     section("configured ref") {
-        val resolved = repo.resolve(configuredRef)
-        appendLine("resolve($configuredRef)=${resolved?.name ?: "NOT RESOLVED — fetch() will report no remote changes"}")
+        val resolved = repo.exactRef("${Constants.R_REMOTES}$configuredRef")?.objectId
+        appendLine("exactRef(refs/remotes/$configuredRef)=${resolved?.name ?: "NOT RESOLVED — fetch() fails with RemoteBranchNotFound"}")
         val local = repo.fullBranch?.takeIf { it.startsWith(Constants.R_HEADS) }
         if (resolved != null && local != null) {
             val tracking = BranchTrackingStatus.of(repo, repo.branch)

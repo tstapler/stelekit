@@ -361,7 +361,7 @@ class GitSyncService(
                     graphLoader.endGitMerge()
                 }
 
-                remoteCommitsMerged = fetchResult.remoteCommitCount
+                remoteCommitsMerged = mergeResult.mergedCommitCount ?: fetchResult.remoteCommitCount
             }
 
             // 9. Push

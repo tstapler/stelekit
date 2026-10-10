@@ -4,6 +4,7 @@
 package dev.stapler.stelekit.git
 
 import arrow.core.Either
+import arrow.core.getOrElse
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
@@ -21,7 +22,9 @@ import org.eclipse.jgit.api.MergeCommand
 import org.eclipse.jgit.merge.MergeStrategy
 import org.eclipse.jgit.revwalk.RevCommit
 import org.eclipse.jgit.storage.file.FileRepositoryBuilder
+import org.eclipse.jgit.lib.Constants
 import org.eclipse.jgit.lib.Repository
+import org.eclipse.jgit.transport.RefSpec
 import java.io.File
 
 /**
@@ -184,16 +187,19 @@ class JvmGitRepository(
         val repo = git.repository
         val headBefore = repo.resolve("HEAD")
 
-        git.fetch()
+        val fetched = git.fetch()
             .setRemote(config.remoteName)
+            .setRemoveDeletedRefs(true)
             .setTimeout(GIT_TRANSPORT_TIMEOUT_SECONDS)
             .also { authConfigurer.configureTransport(it, config) }
             .call()
 
-        val remoteRef = repo.resolve("${config.remoteName}/${config.remoteBranch}")
-        val hasChanges = remoteRef != null && remoteRef != headBefore
-        val remoteCommitCount = if (hasChanges && headBefore != null && remoteRef != null) {
-            countRemoteCommitsBestEffort(git, headBefore, remoteRef)
+        val remoteTip = resolveRemoteTrackingRef(
+            repo, config.remoteName, config.remoteBranch, branchShortNames(fetched.advertisedRefs),
+        ).getOrElse { return it.left() }
+        val hasChanges = isRemoteAhead(repo, headBefore, remoteTip)
+        val remoteCommitCount = if (hasChanges && headBefore != null) {
+            countRemoteCommitsBestEffort(git, headBefore, remoteTip)
         } else {
             0
         }
@@ -256,10 +262,9 @@ class JvmGitRepository(
 
     private fun doMerge(git: Git, config: GitConfig): Either<DomainError.GitError, MergeResult> {
         val repo = git.repository
-        val remoteRef = repo.resolve("${config.remoteName}/${config.remoteBranch}")
-            ?: return DomainError.GitError.FetchFailed(
-                "Remote ref ${config.remoteName}/${config.remoteBranch} not found"
-            ).left()
+        val remoteRef = resolveRemoteTrackingRef(repo, config.remoteName, config.remoteBranch)
+            .getOrElse { return it.left() }
+        val headBefore = repo.resolve("HEAD")
 
         // Story 2.1.5: fail closed rather than let JGit's shallow-history merge-base limitation
         // silently produce a degraded/wrong merge.
@@ -280,6 +285,7 @@ class JvmGitRepository(
             hasConflicts = hasConflicts,
             conflicts = conflictFiles,
             changedFiles = wikiSubdirFilteredChangedFiles(repo, config),
+            mergedCommitCount = countMergedCommits(repo, headBefore, repo.resolve("HEAD"), remoteRef),
         ).right()
     }
 
@@ -308,8 +314,12 @@ class JvmGitRepository(
         }
 
     private fun doPush(git: Git, config: GitConfig): Either<DomainError.GitError, Unit> {
+        val localBranch = git.repository.fullBranch
+            ?.takeIf { it.startsWith(Constants.R_HEADS) }
+            ?: return DomainError.GitError.DetachedHead(config.repoRoot).left()
         val pushResults = git.push()
             .setRemote(config.remoteName)
+            .setRefSpecs(RefSpec("$localBranch:${Constants.R_HEADS}${config.remoteBranch}"))
             .setTimeout(GIT_TRANSPORT_TIMEOUT_SECONDS)
             .also { authConfigurer.configureTransport(it, config) }
             .call()
