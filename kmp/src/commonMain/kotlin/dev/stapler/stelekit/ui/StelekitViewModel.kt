@@ -258,10 +258,10 @@ class StelekitViewModel(
 
     /** Triggers a full sync (commit → fetch → merge → push) on the active graph. */
     fun triggerSync() = gitSyncCoordinator.triggerSync()
-    fun openBranchRepair() = gitSyncCoordinator.openBranchRepair()
-    fun dismissBranchRepair() = gitSyncCoordinator.dismissBranchRepair()
-    fun openFirstSyncReview() = gitSyncCoordinator.openFirstSyncReview()
-    fun dismissFirstSyncReview() = gitSyncCoordinator.dismissFirstSyncReview()
+    fun openBranchRepair() = _uiState.update { it.copy(branchRepairVisible = true) }
+    fun dismissBranchRepair() = _uiState.update { it.copy(branchRepairVisible = false) }
+    fun openFirstSyncReview() = _uiState.update { it.copy(firstSyncReviewVisible = true, branchRepairVisible = false) }
+    fun dismissFirstSyncReview() = _uiState.update { it.copy(firstSyncReviewVisible = false) }
 
     /** Triggers a fetch-only check for remote changes on the active graph. */
     fun triggerFetchOnly() = gitSyncCoordinator.triggerFetchOnly()

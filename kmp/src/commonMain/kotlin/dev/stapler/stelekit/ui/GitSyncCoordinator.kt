@@ -104,22 +104,6 @@ class GitSyncCoordinator(
         .flatMapLatest { service -> service?.firstSyncReviewPending ?: flowOf(false) }
         .stateIn(scope, SharingStarted.Eagerly, false)
 
-    fun openBranchRepair() {
-        uiState.update { it.copy(branchRepairVisible = true) }
-    }
-
-    fun dismissBranchRepair() {
-        uiState.update { it.copy(branchRepairVisible = false) }
-    }
-
-    fun openFirstSyncReview() {
-        uiState.update { it.copy(firstSyncReviewVisible = true, branchRepairVisible = false) }
-    }
-
-    fun dismissFirstSyncReview() {
-        uiState.update { it.copy(firstSyncReviewVisible = false) }
-    }
-
     internal fun observeSyncState() {
         scope.launch {
             syncState.collect { state ->
