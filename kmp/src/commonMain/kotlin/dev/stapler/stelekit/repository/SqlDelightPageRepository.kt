@@ -92,7 +92,7 @@ class SqlDelightPageRepository(
                 pageByNameCache.put(page.name.lowercase(), page)
             }
             emit(page.right())
-        }.flowOn(PlatformDispatcher.DB)
+        }.flowOn(PlatformDispatcher.DB).catchDbError()
     }
 
     override fun getPageByName(name: String): Flow<Either<DomainError, Page?>> {
@@ -118,7 +118,7 @@ class SqlDelightPageRepository(
                 pageByUuidCache.put(page.uuid.value, page)
             }
             emit(page.right())
-        }.flowOn(PlatformDispatcher.DB)
+        }.flowOn(PlatformDispatcher.DB).catchDbError()
     }
 
     override fun getPagesInNamespace(namespace: String): Flow<Either<DomainError, List<Page>>> =
