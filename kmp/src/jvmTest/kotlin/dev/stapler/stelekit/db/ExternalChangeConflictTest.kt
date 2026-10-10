@@ -88,7 +88,7 @@ class ExternalChangeConflictTest {
         fs.writeFile(filePath, "- User typed content")
         loader.markFileWrittenByUs(filePath)
 
-        val pagesBefore = pageRepo.getAllPages().first().getOrNull()?.size ?: 0
+        val pagesBefore = pageRepo.getAllPagesSnapshot().getOrNull()?.size ?: 0
 
         // Manually invoke checkDirectoryForChanges via detectChanges
         val changeSet = loader.fileRegistry.detectChanges("/graph/journals")
@@ -179,7 +179,7 @@ class ExternalChangeConflictTest {
         loader.loadGraph("/graph") {}
 
         // Record how many pages exist before the change
-        val pagesBefore = pageRepo.getAllPages().first().getOrNull() ?: emptyList()
+        val pagesBefore = pageRepo.getAllPagesSnapshot().getOrNull() ?: emptyList()
 
         // Subscribe to externalFileChanges and always suppress
         val suppressJob = launch {
@@ -228,7 +228,7 @@ class ExternalChangeConflictTest {
 
         loader2.loadGraph("/graph") {}
 
-        val pagesAfterLoad = pageRepo2.getAllPages().first().getOrNull() ?: emptyList()
+        val pagesAfterLoad = pageRepo2.getAllPagesSnapshot().getOrNull() ?: emptyList()
         val journalPage = pagesAfterLoad.firstOrNull { it.name.contains("2026") }
 
         if (journalPage != null) {
@@ -274,8 +274,8 @@ class ExternalChangeConflictTest {
             isJournal = true
         )
         pageRepo.savePage(page)
-        blockRepo.saveBlock(Block(uuid = BlockUuid("b1"), pageUuid = PageUuid("journal-today"), content = "Important meeting notes", position = 0, createdAt = now, updatedAt = now))
-        blockRepo.saveBlock(Block(uuid = BlockUuid("b2"), pageUuid = PageUuid("journal-today"), content = "Action items", position = 1, createdAt = now, updatedAt = now))
+        blockRepo.saveBlock(Block(uuid = BlockUuid("b1"), pageUuid = PageUuid("journal-today"), content = "Important meeting notes", position = "a0", createdAt = now, updatedAt = now))
+        blockRepo.saveBlock(Block(uuid = BlockUuid("b2"), pageUuid = PageUuid("journal-today"), content = "Action items", position = "a1", createdAt = now, updatedAt = now))
 
         // Watcher calls parseAndSavePage with blank file content (no suppress happened)
         loader.parseAndSavePage(FilePath(filePath), "", dev.stapler.stelekit.parsing.ParseMode.FULL)

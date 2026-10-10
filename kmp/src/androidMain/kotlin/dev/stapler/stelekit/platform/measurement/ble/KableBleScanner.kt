@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
-import android.util.Log
 import androidx.core.content.ContextCompat
 import com.juul.kable.Scanner
 import dev.stapler.stelekit.platform.measurement.ExternalMeasurementDevice
@@ -45,9 +44,7 @@ class KableBleScanner(
                 Manifest.permission.BLUETOOTH_CONNECT,
             ) == PackageManager.PERMISSION_GRANTED
             if (!scanGranted || !connectGranted) {
-                Log.w(
-                    TAG,
-                    "BLE permissions not granted — scan() returning empty flow. " +
+                logger.warn("BLE permissions not granted — scan() returning empty flow. " +
                         "Request BLUETOOTH_SCAN and BLUETOOTH_CONNECT before calling scan().",
                 )
                 return emptyFlow()
@@ -69,6 +66,6 @@ class KableBleScanner(
     }
 
     companion object {
-        private const val TAG = "KableBleScanner"
+        private val logger = dev.stapler.stelekit.logging.Logger("KableBleScanner")
     }
 }

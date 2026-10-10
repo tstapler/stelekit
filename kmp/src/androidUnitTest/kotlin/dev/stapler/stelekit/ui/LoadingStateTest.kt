@@ -40,6 +40,7 @@ class LoadingStateTest {
         override fun putBoolean(key: String, value: Boolean) {}
         override fun getString(key: String, defaultValue: String) = defaultValue
         override fun putString(key: String, value: String) {}
+        override fun containsKey(key: String) = false
     }
 
     private class FakeFileSystem : FileSystem {

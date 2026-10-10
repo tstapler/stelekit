@@ -1,14 +1,10 @@
 package dev.stapler.stelekit.editor.persistence
 
 import arrow.core.Either
-import arrow.core.left
-import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 
 import dev.stapler.stelekit.model.Block
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
-import kotlin.Result
 
 /**
  * Interface for managing persistence of block changes with auto-save capabilities.

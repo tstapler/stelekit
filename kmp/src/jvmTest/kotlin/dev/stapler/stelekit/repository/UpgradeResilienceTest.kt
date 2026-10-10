@@ -2,6 +2,7 @@ package dev.stapler.stelekit.repository
 
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.SteleDatabase
+import dev.stapler.stelekit.merge.SelectionFilter
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.PageUuid
 import kotlinx.coroutines.Dispatchers
@@ -52,8 +53,14 @@ class UpgradeResilienceTest {
             factory.close()
 
             // ── PageRepository ────────────────────────────────────────────────
-            assertFlowEmitsLeft("PageRepository.getAllPages") {
-                repoSet.pageRepository.getAllPages().first()
+            assertFlowEmitsLeft("PageRepository.getAllPagesSnapshot") {
+                repoSet.pageRepository.getAllPagesSnapshot()
+            }
+            assertFlowEmitsLeft("PageRepository.getFavoritePages") {
+                repoSet.pageRepository.getFavoritePages().first()
+            }
+            assertFlowEmitsLeft("PageRepository.getPageNameEntries") {
+                repoSet.pageRepository.getPageNameEntries().first()
             }
             assertFlowEmitsLeft("PageRepository.getPages") {
                 repoSet.pageRepository.getPages(10, 0).first()
@@ -71,12 +78,33 @@ class UpgradeResilienceTest {
                 repoSet.pageRepository.searchPages("test", 10, 0).first()
             }
             assertFlowEmitsLeft("PageRepository.getUnloadedPages") {
-                repoSet.pageRepository.getUnloadedPages().first()
+                repoSet.pageRepository.getUnloadedPages(10, 0).first()
+            }
+            assertFlowEmitsLeft("PageRepository.countUnloadedPages") {
+                repoSet.pageRepository.countUnloadedPages()
+            }
+            val tagged = SelectionFilter(tag = "x")
+            for ((label, filter) in listOf("plain" to SelectionFilter(), "tag" to tagged)) {
+                assertFlowEmitsLeft("PageRepository.getPagesFiltered($label)") {
+                    repoSet.pageRepository.getPagesFiltered(filter, 10, 0).first()
+                }
+                assertFlowEmitsLeft("PageRepository.countPagesFiltered($label)") {
+                    repoSet.pageRepository.countPagesFiltered(filter)
+                }
+                assertFlowEmitsLeft("PageRepository.getPagesAmong($label)") {
+                    repoSet.pageRepository.getPagesAmong(filter, listOf(PageUuid("x")))
+                }
             }
 
             // ── BlockRepository ───────────────────────────────────────────────
             assertFlowEmitsLeft("BlockRepository.getBlocksForPage") {
                 repoSet.blockRepository.getBlocksForPage(PageUuid(FIXTURE_PAGE_UUID)).first()
+            }
+            assertFlowEmitsLeft("BlockRepository.countBlocksForPages") {
+                repoSet.blockRepository.countBlocksForPages(listOf(PageUuid(FIXTURE_PAGE_UUID)))
+            }
+            assertFlowEmitsLeft("SearchRepository.searchPagesByTitle paged") {
+                repoSet.searchRepository.searchPagesByTitle("test", 10, 5).first()
             }
             assertFlowEmitsLeft("BlockRepository.getBlockChildren") {
                 repoSet.blockRepository.getBlockChildren(BlockUuid(FIXTURE_BLOCK_UUID)).first()
@@ -152,7 +180,7 @@ class UpgradeResilienceTest {
             // Re-open the same in-memory database with a fresh factory instance.
             // On a file-backed DB this would be the upgrade scenario; on an in-memory
             // DB it confirms the schema is stable across re-attach.
-            val pages = repoSet.pageRepository.getAllPages().first().getOrNull()
+            val pages = repoSet.pageRepository.getAllPagesSnapshot().getOrNull()
             assertTrue(pages != null && pages.any { it.uuid.value == FIXTURE_PAGE_UUID },
                 "v0.36.0 page must survive upgrade")
 
@@ -179,7 +207,7 @@ class UpgradeResilienceTest {
             factory.close()
 
             assertFlowEmitsLeft("upgraded PageRepository.getAllPages") {
-                repoSet.pageRepository.getAllPages().first()
+                repoSet.pageRepository.getAllPagesSnapshot()
             }
             val imageRepo2 = repoSet.imageAnnotationRepository as? SqlDelightImageAnnotationRepository
             if (imageRepo2 != null) {
@@ -212,7 +240,7 @@ class UpgradeResilienceTest {
                 uuid = BlockUuid(FIXTURE_BLOCK_UUID),
                 pageUuid = PageUuid(FIXTURE_PAGE_UUID),
                 content = "Upgrade test block",
-                position = 0,
+                position = "a0",
                 createdAt = now,
                 updatedAt = now,
             )

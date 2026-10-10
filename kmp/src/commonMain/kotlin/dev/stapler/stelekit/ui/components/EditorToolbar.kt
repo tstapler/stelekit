@@ -6,6 +6,11 @@ import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.ui.screens.SearchViewModel
 import dev.stapler.stelekit.ui.state.BlockStateManager
 
+// liveSelectionStart must win: editingCursorIndex is stale once set by a structural op
+// (merge/split/indent) and never cleared, so preferring it stranded tag inserts at old positions.
+internal fun resolveLinkPickerCursorIndex(editingCursorIndex: Int?, liveSelectionStart: Int?): Int? =
+    liveSelectionStart ?: editingCursorIndex
+
 /**
  * Hosts [MobileBlockToolbar] and its link-picker dialog with full wiring to [BlockStateManager].
  *
@@ -20,12 +25,35 @@ fun EditorToolbar(
     searchViewModel: SearchViewModel?,
     isLeftHanded: Boolean,
     modifier: Modifier = Modifier,
+    /**
+     * ux.md (i)/criterion 14: true while a `DiskConflict` is pending resolution in `AppState`.
+     * Threaded straight through to [MobileBlockToolbar]'s `hasDiskConflictPending` — see that
+     * parameter's doc for the live-state contract callers must uphold.
+     */
+    hasDiskConflictPending: Boolean = false,
+    onSuggestTags: ((blockUuid: String, content: String) -> Unit)? = null,
+    onSelectAll: (() -> Unit)? = null,
+    // Test-only recomposition probe (pitfalls.md §1 / Task B.1.2a regression guard).
+    // Invoked via SideEffect once per recomposition of this composable's own scope.
+    // Always null in production call sites (PageView/JournalsView) — exists solely so
+    // EditorToolbarRecompositionTest can assert this composable does not recompose on
+    // every keystroke into the editing block.
+    onRecompose: (() -> Unit)? = null,
+    // Test-only hook exposing the freshly-built onSuggestTags click handler on every
+    // (re)composition. Always a no-op in production call sites — lets
+    // EditorToolbarRecompositionTest hold a reference to the handler independent of this
+    // composable's lifecycle, to prove it reads block content from a live source
+    // (blockStateManager.blocks.value) rather than a collectAsState() snapshot that goes
+    // stale once this composable leaves composition.
+    onSuggestTagsHandlerReady: (handler: (() -> Unit)?) -> Unit = {},
 ) {
+    SideEffect { onRecompose?.invoke() }
+
     val editingBlockUuid by blockStateManager.editingBlockUuid.collectAsState()
     val editingCursorIndex by blockStateManager.editingCursorIndex.collectAsState()
     val isInSelectionMode by blockStateManager.isInSelectionMode.collectAsState()
     val selectedBlockUuids by blockStateManager.selectedBlockUuids.collectAsState()
-    val allBlocks by blockStateManager.blocks.collectAsState()
+    val blockClipboard by blockStateManager.blockClipboard.collectAsState()
 
     var showLinkPicker by remember { mutableStateOf(false) }
     var linkPickerBlockUuid by remember { mutableStateOf<BlockUuid?>(null) }
@@ -69,19 +97,45 @@ fun EditorToolbar(
         onAddBlock = { blockUuid -> blockStateManager.addNewBlock(BlockUuid(blockUuid)) },
         onUndo = { blockStateManager.undo() },
         onRedo = { blockStateManager.redo() },
+        hasDiskConflictPending = hasDiskConflictPending,
         onFormat = { action -> blockStateManager.requestFormat(action) },
-        onAttachImage = if (capabilities.onAttachImage != null) {
-            { capabilities.onAttachImage.invoke(editingBlockUuid) }
-        } else null,
+        onTodoToggle = { blockStateManager.requestTodoToggle() },
+        onEnterSelectionMode = { blockUuid -> blockStateManager.enterSelectionMode(BlockUuid(blockUuid)) },
+        onAttachImage = run {
+            val attachFn = capabilities.onAttachImage
+            val targetUuid = editingBlockUuid
+            if (attachFn != null && targetUuid != null) {
+                { attachFn.invoke(targetUuid) }
+            } else null
+        },
+        onSuggestTags = run {
+            val suggestFn = onSuggestTags
+            val targetUuid = editingBlockUuid
+            val handler = if (suggestFn != null && targetUuid != null) {
+                {
+                    // Read blocks at click-time via .value, not a collectAsState()-derived
+                    // variable captured in this closure — the latter changes on every
+                    // keystroke and would force MobileBlockToolbar to recompose constantly.
+                    val block = blockStateManager.blocks.value.values.flatten().find { it.uuid == targetUuid }
+                    val content = block?.content ?: ""
+                    suggestFn(targetUuid.value, content)
+                }
+            } else null
+            onSuggestTagsHandlerReady(handler)
+            handler
+        },
+        onCaptureImage = capabilities.onCaptureImage,
         onLinkPicker = if (searchViewModel != null) {
             {
                 val curBlockUuid = editingBlockUuid
                 val sel = blockStateManager.editingSelectionRange.value
                 linkPickerBlockUuid = curBlockUuid
-                linkPickerCursorIndex = editingCursorIndex ?: sel?.first
+                linkPickerCursorIndex = resolveLinkPickerCursorIndex(editingCursorIndex, sel?.first)
                 linkPickerSelectionRange = sel
                 linkPickerInitialQuery = if (sel != null && sel.first < sel.last && curBlockUuid != null) {
-                    val block = allBlocks.values.flatten().find { it.uuid == curBlockUuid }
+                    // Same click-time-read fix as onSuggestTags above (Task B.1.1b) — read
+                    // blocks via .value here, not a collectAsState()-derived closure capture.
+                    val block = blockStateManager.blocks.value.values.flatten().find { it.uuid == curBlockUuid }
                     block?.content?.substring(
                         sel.first.coerceAtMost(block.content.length),
                         sel.last.coerceAtMost(block.content.length)
@@ -92,8 +146,14 @@ fun EditorToolbar(
         } else null,
         isInSelectionMode = isInSelectionMode,
         selectedCount = selectedBlockUuids.size,
+        onCopyBlocks = { blockStateManager.copySelectedBlocks() },
+        onCutBlocks = { blockStateManager.cutSelectedBlocks() },
         onDeleteSelected = { blockStateManager.deleteSelectedBlocks() },
         onClearSelection = { blockStateManager.clearSelection() },
+        clipboardEmpty = blockClipboard.isEmpty,
+        onPaste = { editingBlockUuid?.let { blockStateManager.pasteBlocks(it) } },
+        onClearClipboard = { blockStateManager.clearClipboard() },
+        onSelectAll = onSelectAll,
         isLeftHanded = isLeftHanded,
         modifier = modifier,
     )

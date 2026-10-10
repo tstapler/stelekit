@@ -24,8 +24,13 @@ sealed class BlockType {
     object ThematicBreak : BlockType()
     object Table : BlockType()
     object RawHtml : BlockType()
-    /** A block whose whole content is a single `{{query ...}}` macro; [rawQuery] is its argument string. */
-    data class Query(val rawQuery: String) : BlockType()
+    object ImageAnnotation : BlockType()
+    /**
+     * A block whose whole content is a single `{{query ...}}` macro. [rawQuery] is only populated at
+     * parse time; blocks rehydrated from the DB carry "" and re-derive the argument from content.
+     */
+    data class Query(val rawQuery: String = "") : BlockType()
+    data class Unknown(val raw: String) : BlockType()
 }
 
 /**

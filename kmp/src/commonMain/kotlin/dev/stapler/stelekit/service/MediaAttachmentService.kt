@@ -19,6 +19,18 @@ data class AttachmentResult(
 )
 
 /**
+ * Renders a Logseq-compatible markdown image link, escaping the characters that
+ * would break the link syntax: `]` in alt text and `)` in the path.
+ *
+ * This is the single source of truth for markdown image link generation — all
+ * call sites must go through here rather than hand-rolling escaping.
+ */
+fun markdownImageLink(alt: String, path: String): String =
+    "![${alt.replace("[", "\\[").replace("]", "\\]")}](${path.replace("(", "\\(").replace(")", "\\)")})"
+
+fun AttachmentResult.toMarkdown(): String = markdownImageLink(alt = displayName, path = relativePath)
+
+/**
  * Platform-agnostic service for picking a media file and copying it into the graph's
  * `assets/` directory.
  *
@@ -60,6 +72,24 @@ interface MediaAttachmentService {
      */
     suspend fun attachFilePath(
         filePath: String,
+        graphRoot: String
+    ): Either<DomainError, AttachmentResult>? = null
+
+    /**
+     * Copies already-in-memory file bytes (no filesystem path available) into the graph's
+     * `assets/` directory. Used for platforms where a dropped/pasted file exists only as bytes
+     * (e.g. a browser `File`/`Blob` on wasmJs).
+     *
+     * Returns [Either.Right] with [AttachmentResult] on success.
+     * Returns [Either.Left] with [DomainError.AttachmentError] on failure.
+     * Returns `null` if the platform does not support this operation.
+     *
+     * Default implementation returns `null` (no-op) so existing implementations need not
+     * override unless they support bytes-only attachment.
+     */
+    suspend fun attachBytes(
+        bytes: ByteArray,
+        suggestedName: String,
         graphRoot: String
     ): Either<DomainError, AttachmentResult>? = null
 

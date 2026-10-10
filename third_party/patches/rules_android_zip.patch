@@ -1,0 +1,34 @@
+Use Bazel-built @zip_src//:zip instead of bare zip in the toolchain wrapper.
+
+The toolchains/android:zip sh_binary wraps a shell script that calls bare `zip`
+which fails in hermetic sandboxes. Wire in the InfoZip zip 3.0 binary built
+from source via @zip_src so no system zip is required.
+
+diff --git a/toolchains/android/zip.sh b/toolchains/android/zip.sh
+--- a/toolchains/android/zip.sh
++++ b/toolchains/android/zip.sh
+@@ -16,10 +16,13 @@
+ set -e
+
++# Use the Bazel-built InfoZip binary from runfiles (no system zip required).
++ZIP="${RUNFILES_DIR:-"${BASH_SOURCE[0]}.runfiles"}/+http_archive+zip_src/zip"
++
+ args=()
+ for arg in "$@"; do
+   if [[ ! "$arg" == "-jt" ]]; then
+     args+=( "$arg" )
+   fi
+ done
+
+-zip ${args[@]}
++"$ZIP" ${args[@]}
+diff --git a/toolchains/android/BUILD b/toolchains/android/BUILD
+--- a/toolchains/android/BUILD
++++ b/toolchains/android/BUILD
+@@ -48,5 +48,6 @@
+ sh_binary(
+     name = "zip",
+     srcs = [":zip.sh"],
++    data = ["@@+http_archive+zip_src//:zip"],
+     visibility = ["//visibility:public"],
+ )

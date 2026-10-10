@@ -54,7 +54,7 @@ class GraphLoaderIntegrationTest {
         graphLoader.loadGraph("/graph") { _ -> }
         
         // Verify Page
-        val pages = pageRepository.getAllPages().first().getOrNull() ?: emptyList()
+        val pages = pageRepository.getAllPagesSnapshot().getOrNull() ?: emptyList()
         assertEquals(1, pages.size)
         val page = pages[0]
         assertEquals("testpage", page.name)
@@ -73,9 +73,9 @@ class GraphLoaderIntegrationTest {
         
         // Verify Hierarchy
         assertEquals(null, parent.parentUuid)
-        assertEquals(parent.uuid.value, child1.parentUuid)
-        assertEquals(child1.uuid.value, grandchild.parentUuid)
-        assertEquals(parent.uuid.value, child2.parentUuid)
+        assertEquals(parent.uuid, child1.parentUuid)
+        assertEquals(child1.uuid, grandchild.parentUuid)
+        assertEquals(parent.uuid, child2.parentUuid)
         assertEquals(null, root2.parentUuid)
         
         // Verify Levels
@@ -103,7 +103,7 @@ class GraphLoaderIntegrationTest {
         fileSystem.files[path] = initialContent
         graphLoader.parseAndSavePage(FilePath(path), initialContent)
 
-        val pages = pageRepository.getAllPages().first().getOrNull() ?: emptyList()
+        val pages = pageRepository.getAllPagesSnapshot().getOrNull() ?: emptyList()
         val page = pages.find { it.name == "warmreload" }
         assertTrue(page != null, "Page must be saved on cold load")
 
@@ -145,7 +145,7 @@ class GraphLoaderIntegrationTest {
 
         loader2.parseAndSavePage(FilePath(path), content, mode = ParseMode.METADATA_ONLY)
 
-        val pages = pageRepo2.getAllPages().first().getOrNull() ?: emptyList()
+        val pages = pageRepo2.getAllPagesSnapshot().getOrNull() ?: emptyList()
         val page = pages.find { it.name == "metadataonly" }
         assertTrue(page != null, "Page must be saved in METADATA_ONLY mode")
 

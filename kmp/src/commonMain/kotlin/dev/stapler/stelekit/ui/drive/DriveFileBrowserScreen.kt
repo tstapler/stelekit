@@ -15,7 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import dev.stapler.stelekit.ui.components.typedItems
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CloudDownload
@@ -113,7 +113,7 @@ fun DriveFileBrowserScreen(
 
             else -> {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(state.files, key = { it.id }) { file ->
+                    typedItems(state.files, key = { it.id }) { file ->
                         DriveFileRow(
                             file = file,
                             isDownloading = state.downloadingFileId == file.id,

@@ -2,8 +2,9 @@
 # scripts/benchmark-local.sh — Run the graph-load benchmark locally, matching CI output.
 #
 # Usage:
-#   ./scripts/benchmark-local.sh                        # synthetic graph only
-#   ./scripts/benchmark-local.sh /path/to/your/graph   # include real-graph test
+#   ./scripts/benchmark-local.sh /path/to/your/graph   # real graph (recommended — most representative)
+#   ./scripts/benchmark-local.sh                        # synthetic XLARGE only (7978 pages)
+#   BENCH_CONFIG=LARGE ./scripts/benchmark-local.sh     # override synthetic size (TINY/SMALL/MEDIUM/LARGE/XLARGE)
 #   SAF_LATENCY=true ./scripts/benchmark-local.sh /path  # simulate Android SAF (50ms write)
 #
 # Prerequisites (macOS):
@@ -38,7 +39,8 @@ if [[ -z "$AP_LIB" ]]; then
         "$REPO_ROOT/async-profiler-4.4-linux-x64/lib/libasyncProfiler.so" \
         "/opt/homebrew/lib/libasyncProfiler.dylib" \
         "/usr/local/lib/libasyncProfiler.dylib" \
-        "/usr/local/lib/libasyncProfiler.so"; do
+        "/usr/local/lib/libasyncProfiler.so" \
+        "/home/linuxbrew/.linuxbrew/lib/libasyncProfiler.so"; do
         if [[ -f "$candidate" ]]; then
             AP_LIB="$candidate"
             break
@@ -57,11 +59,15 @@ fi
 # ── run benchmark ────────────────────────────────────────────────────────────
 
 SAF_LATENCY="${SAF_LATENCY:-}"
+# Default to XLARGE (7978 pages) so local benchmarks match real graph scale.
+# CI uses SMALL (200 pages) for speed. Override with BENCH_CONFIG=SMALL for a quick smoke run.
+BENCH_CONFIG="${BENCH_CONFIG:-XLARGE}"
 
 GRADLE_ARGS=(":kmp:jvmTestProfile" "--rerun-tasks" "--no-daemon" "--no-configuration-cache")
 [[ -n "$GRAPH_PATH" ]]  && GRADLE_ARGS+=("-PgraphPath=$GRAPH_PATH")
 [[ -n "$AP_LIB" ]]      && GRADLE_ARGS+=("-PapLib=$AP_LIB")
 [[ "$SAF_LATENCY" == "true" ]] && GRADLE_ARGS+=("-PsafLatency=true")
+GRADLE_ARGS+=("-PbenchConfig=$BENCH_CONFIG")
 
 cd "$REPO_ROOT"
 ./gradlew "${GRADLE_ARGS[@]}"

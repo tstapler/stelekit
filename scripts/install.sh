@@ -26,12 +26,14 @@ ARCH=$(uname -m)
 APPIMAGE="SteleKit-${VERSION}-linux.AppImage"
 URL="https://github.com/${REPO}/releases/download/${VERSION}/${APPIMAGE}"
 BIN_DIR="${PREFIX}/bin"
+LIBEXEC_DIR="${PREFIX}/libexec/stelekit"
 SHARE_DIR="${PREFIX}/share"
+APPIMAGE_PATH="${LIBEXEC_DIR}/stelekit.AppImage"
 INSTALL_PATH="${BIN_DIR}/stelekit"
 
 echo "Installing SteleKit ${VERSION} to ${PREFIX} ..."
 
-mkdir -p "${BIN_DIR}" "${SHARE_DIR}/applications" "${SHARE_DIR}/icons/hicolor/256x256/apps"
+mkdir -p "${BIN_DIR}" "${LIBEXEC_DIR}" "${SHARE_DIR}/applications" "${SHARE_DIR}/icons/hicolor/256x256/apps"
 
 # Download AppImage
 TMP=$(mktemp -d)
@@ -46,8 +48,16 @@ pushd "$TMP" > /dev/null
 APPIMAGE_EXTRACT_AND_RUN=1 "./${APPIMAGE}" --appimage-extract stelekit.png 2>/dev/null || true
 popd > /dev/null
 
-# Install AppImage
-cp "${TMP}/${APPIMAGE}" "${INSTALL_PATH}"
+# Install AppImage to libexec
+cp "${TMP}/${APPIMAGE}" "${APPIMAGE_PATH}"
+chmod +x "${APPIMAGE_PATH}"
+echo "Installed AppImage: ${APPIMAGE_PATH}"
+
+# Install wrapper script — sets APPIMAGE_EXTRACT_AND_RUN=1 so AppImage works without FUSE
+cat > "${INSTALL_PATH}" <<WRAPPER
+#!/bin/sh
+exec env APPIMAGE_EXTRACT_AND_RUN=1 "${APPIMAGE_PATH}" "\$@"
+WRAPPER
 chmod +x "${INSTALL_PATH}"
 echo "Installed binary: ${INSTALL_PATH}"
 

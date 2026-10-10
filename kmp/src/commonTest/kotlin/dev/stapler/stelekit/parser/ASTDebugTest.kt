@@ -6,7 +6,8 @@ import kotlin.test.Ignore
 import kotlin.test.Test
 
 class ASTDebugTest {
-    @Ignore("Debug utility - intentionally fails to print AST structure")
+    // Debug utility - intentionally fails to print AST structure
+    @Ignore
     @Test
     fun `debug AST structure`() {
         val input = """

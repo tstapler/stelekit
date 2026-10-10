@@ -3,6 +3,7 @@ package dev.stapler.stelekit.db
 import arrow.core.Either
 import dev.stapler.stelekit.db.sidecar.FakeFileSystem
 import dev.stapler.stelekit.db.sidecar.ImageSidecarManager
+import dev.stapler.stelekit.model.BlockType
 import dev.stapler.stelekit.model.ImageAnnotation
 import dev.stapler.stelekit.model.ImageSource
 import dev.stapler.stelekit.platform.sensor.PlatformImageFile
@@ -69,7 +70,7 @@ class ImageImportServiceIntegrationTest {
         val (service, _, _, fs) = build()
         fs.writeFileBytes("/tmp/photo.jpg", fakePngBytes)
 
-        val annotation = service.import(PlatformImageFile("/tmp/photo.jpg"), graphPath, pageUuid)
+        val annotation = service.import(PlatformImageFile("/tmp/photo.jpg"), graphPath, PageUuid(pageUuid))
             .requireSuccess()
 
         assertTrue(annotation.filePath.contains("assets/images/"))
@@ -85,7 +86,7 @@ class ImageImportServiceIntegrationTest {
         fs.writeFileBytes("/tmp/photo.jpg", fakePngBytes)
 
         val annotation = service.import(
-            PlatformImageFile("/tmp/photo.jpg"), graphPath, pageUuid, ImageSource.FILE
+            PlatformImageFile("/tmp/photo.jpg"), graphPath, PageUuid(pageUuid), ImageSource.FILE
         ).requireSuccess()
 
         val fromRepo = imageRepo.getImageAnnotationByUuid(annotation.uuid).first().getOrNull()
@@ -101,7 +102,7 @@ class ImageImportServiceIntegrationTest {
         val (service, _, _, fs) = build()
         fs.writeFileBytes("/tmp/photo.jpg", fakePngBytes)
 
-        val annotation = service.import(PlatformImageFile("/tmp/photo.jpg"), graphPath, pageUuid)
+        val annotation = service.import(PlatformImageFile("/tmp/photo.jpg"), graphPath, PageUuid(pageUuid))
             .requireSuccess()
 
         val sidecarPath = "$graphPath/.stelekit/images/${annotation.uuid}.measure.json"
@@ -116,14 +117,14 @@ class ImageImportServiceIntegrationTest {
         val (service, _, blockRepo, fs) = build()
         fs.writeFileBytes("/tmp/photo.jpg", fakePngBytes)
 
-        val annotation = service.import(PlatformImageFile("/tmp/photo.jpg"), graphPath, pageUuid)
+        val annotation = service.import(PlatformImageFile("/tmp/photo.jpg"), graphPath, PageUuid(pageUuid))
             .requireSuccess()
 
         val blocks = blockRepo.getBlocksForPage(PageUuid(pageUuid)).first().getOrNull()
         assertNotNull(blocks)
         val imageBlock = blocks.find { it.uuid.value == annotation.blockUuid }
         assertNotNull(imageBlock, "image_annotation block not found for page $pageUuid")
-        assertEquals("image_annotation", imageBlock.blockType)
+        assertIs<BlockType.ImageAnnotation>(imageBlock.blockType)
         assertTrue(imageBlock.content.contains("assets/images/"))
         assertEquals(annotation.uuid, imageBlock.properties["image-id"])
     }
@@ -140,7 +141,7 @@ class ImageImportServiceIntegrationTest {
             cameraMake = "Google",
             cameraModel = "Pixel 8",
         )
-        val annotation = service.import(tempFile, graphPath, pageUuid, ImageSource.CAMERA)
+        val annotation = service.import(tempFile, graphPath, PageUuid(pageUuid), ImageSource.CAMERA)
             .requireSuccess()
 
         val fromRepo = imageRepo.getImageAnnotationByUuid(annotation.uuid).first().getOrNull()
@@ -155,7 +156,7 @@ class ImageImportServiceIntegrationTest {
     fun `import returns error when source file does not exist`() = runBlocking<Unit> {
         val (service) = build()
 
-        val result = service.import(PlatformImageFile("/tmp/nonexistent.jpg"), graphPath, pageUuid)
+        val result = service.import(PlatformImageFile("/tmp/nonexistent.jpg"), graphPath, PageUuid(pageUuid))
 
         assertTrue(result.isLeft(), "Expected Either.Left but got $result")
     }
@@ -178,7 +179,7 @@ class ImageImportServiceIntegrationTest {
             sidecarManager = ImageSidecarManager(failFs),
         )
 
-        val result = service.import(PlatformImageFile("/tmp/photo.jpg"), graphPath, pageUuid)
+        val result = service.import(PlatformImageFile("/tmp/photo.jpg"), graphPath, PageUuid(pageUuid))
 
         assertIs<Either.Left<*>>(result)
         val allAnnotations = imageRepo.getAllImageAnnotations().first().getOrNull()

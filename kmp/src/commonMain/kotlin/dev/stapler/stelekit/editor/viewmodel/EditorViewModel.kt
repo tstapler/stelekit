@@ -27,7 +27,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 import kotlin.time.Clock
 import kotlin.time.Instant
-import kotlin.random.Random
 
 /**
  * ViewModel for rich text editor that integrates with existing Logseq infrastructure.
@@ -509,11 +508,11 @@ class EditorViewModel(
                     uuid = BlockUuid(newUuid),
                     pageUuid = PageUuid(pageUuid),
                     content = content,
-                    position = 0,
+                    position = "a0",
                     createdAt = now,
                     updatedAt = now
                 )
-                
+
                 val result = blockRepository.saveBlock(newBlock)
                 
                 if (result.isRight()) {

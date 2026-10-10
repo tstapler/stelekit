@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; }
+  #d { display: flex; }
+</style>
+</head>
+<body>
+<div id="d" class="mermaid"></div>
+<script src="mermaid.min.js"></script>
+<script>
+  // Hardened at load time, unconditionally — never derived from diagram source content.
+  // A diagram embedding "%%{init: {"securityLevel":"loose"}}%%" must not be able to weaken this.
+  mermaid.initialize({ startOnLoad: false, securityLevel: "strict" });
+
+  // Suppress Mermaid's built-in red error box: the Kotlin-side raw-fallback (CodeFenceBlock)
+  // is the single source of truth for error display, never the WebView itself.
+  mermaid.parseError = function () {};
+
+  function postResult(payload) {
+    if (window.AndroidBridge && window.AndroidBridge.onRenderResult) {
+      window.AndroidBridge.onRenderResult(JSON.stringify(payload));
+    }
+  }
+
+  // Invoked from Kotlin via evaluateJavascript with a JSON-string-literal-escaped source.
+  window.stelekitRenderMermaid = function (source) {
+    var id = "mermaid-" + Date.now();
+    try {
+      mermaid.render(id, source, document.getElementById("d")).then(function (result) {
+        postResult({ svg: result.svg });
+      }).catch(function (err) {
+        postResult({ error: String(err && err.message ? err.message : err) });
+      });
+    } catch (err) {
+      postResult({ error: String(err && err.message ? err.message : err) });
+    }
+  };
+</script>
+</body>
+</html>

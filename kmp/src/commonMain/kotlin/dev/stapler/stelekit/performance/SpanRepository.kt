@@ -10,6 +10,8 @@ interface SpanRepository {
     @DirectRepositoryWrite
     suspend fun insertSpan(span: SerializedSpan)
     @DirectRepositoryWrite
+    suspend fun insertSpans(spans: List<SerializedSpan>)
+    @DirectRepositoryWrite
     suspend fun deleteSpansOlderThan(cutoffEpochMs: Long)
     @DirectRepositoryWrite
     suspend fun deleteExcessSpans(maxCount: Int = 10_000)

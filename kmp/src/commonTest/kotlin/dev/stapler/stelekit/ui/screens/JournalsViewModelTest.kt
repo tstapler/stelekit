@@ -2,6 +2,8 @@
 
 package dev.stapler.stelekit.ui.screens
 
+import dev.stapler.stelekit.merge.SelectionFilter
+import dev.stapler.stelekit.merge.filteredAndSorted
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
@@ -74,7 +76,7 @@ class JournalsViewModelTest {
         override suspend fun deleteBulk(blockUuids: List<BlockUuid>, deleteChildren: Boolean): Either<DomainError, Unit> = Unit.right()
         override suspend fun deleteBlocksForPage(pageUuid: PageUuid): Either<DomainError, Unit> = Unit.right()
         override suspend fun deleteBlocksForPages(pageUuids: List<PageUuid>): Either<DomainError, Unit> = Unit.right()
-        override suspend fun moveBlock(blockUuid: BlockUuid, newParentUuid: BlockUuid?, newPosition: Int): Either<DomainError, Unit> = Unit.right()
+        override suspend fun moveBlock(blockUuid: BlockUuid, newParentUuid: BlockUuid?, newPosition: String): Either<DomainError, Unit> = Unit.right()
         override suspend fun indentBlock(blockUuid: BlockUuid): Either<DomainError, Unit> = Unit.right()
         override suspend fun outdentBlock(blockUuid: BlockUuid): Either<DomainError, Unit> = Unit.right()
         override suspend fun moveBlockUp(blockUuid: BlockUuid): Either<DomainError, Unit> = Unit.right()
@@ -90,7 +92,11 @@ class JournalsViewModelTest {
     class FakePageRepository : PageRepository {
         val pages = mutableListOf<Page>()
 
-        override fun getAllPages(): Flow<Either<DomainError, List<Page>>> = flowOf(pages.right())
+        override fun getFavoritePages(): Flow<Either<DomainError, List<Page>>> =
+            flowOf(pages.filter { it.isFavorite }.right())
+
+        override fun getPageNameEntries(): Flow<Either<DomainError, List<dev.stapler.stelekit.repository.PageNameEntry>>> =
+            flowOf(pages.map { dev.stapler.stelekit.repository.PageNameEntry(it.name, it.isJournal) }.right())
 
         override fun getJournalPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
             val journals = pages
@@ -121,7 +127,13 @@ class JournalsViewModelTest {
         override fun getPageByName(name: String): Flow<Either<DomainError, Page?>> = flowOf(pages.find { it.name == name }.right())
         override fun getRecentPages(limit: Int): Flow<Either<DomainError, List<Page>>> = flowOf(pages.sortedByDescending { it.updatedAt }.take(limit).right())
         override fun getJournalPageByDate(date: LocalDate): Flow<Either<DomainError, Page?>> = flowOf(pages.find { it.journalDate == date }.right())
-        override fun getUnloadedPages(): Flow<Either<DomainError, List<Page>>> = flowOf(pages.filter { !it.isContentLoaded }.right())
+        override fun getPagesFiltered(filter: SelectionFilter, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
+            flowOf(pages.filteredAndSorted(filter).drop(offset).take(limit).right())
+        override suspend fun countPagesFiltered(filter: SelectionFilter): Either<DomainError, Long> = pages.count(filter::matches).toLong().right()
+        override suspend fun getPagesAmong(filter: SelectionFilter, uuids: Collection<PageUuid>): Either<DomainError, List<Page>> =
+            pages.filter { p -> uuids.any { it == p.uuid } && filter.matches(p) }.right()
+        override fun getUnloadedPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
+            flowOf(pages.filter { !it.isContentLoaded }.sortedBy { it.uuid.value }.drop(offset).take(limit).right())
         override suspend fun savePage(page: Page): Either<DomainError, Unit> {
             val existingIdx = pages.indexOfFirst { it.uuid == page.uuid }
             if (existingIdx >= 0) pages[existingIdx] = page else pages.add(page)

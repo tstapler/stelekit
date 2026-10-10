@@ -1,0 +1,19 @@
+Fix AddToZip action to include sh_binary runfiles in the sandbox.
+
+tools = zip_tool.files only includes the binary file itself, not its
+data-dep runfiles. Passing files_to_run instead makes Bazel include the
+runfiles tree in the sandbox so zip_wrapper scripts can locate sibling
+binaries via ${BASH_SOURCE[0]}.runfiles.
+
+diff --git a/rules/android_local_test/impl.bzl b/rules/android_local_test/impl.bzl
+--- a/rules/android_local_test/impl.bzl
++++ b/rules/android_local_test/impl.bzl
+@@ -538,7 +538,7 @@
+     ctx.actions.run_shell(
+         command = cmd,
+         inputs = [f],
+-        tools = get_android_toolchain(ctx).zip_tool.files,
++        tools = [get_android_toolchain(ctx).zip_tool.files_to_run],
+         outputs = [out_zip],
+         mnemonic = "AddToZip",
+         toolchain = ANDROID_TOOLCHAIN_TYPE,

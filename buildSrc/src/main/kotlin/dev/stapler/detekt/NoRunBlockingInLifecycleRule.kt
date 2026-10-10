@@ -7,10 +7,10 @@ import io.gitlab.arturbosch.detekt.api.Entity
 import io.gitlab.arturbosch.detekt.api.Issue
 import io.gitlab.arturbosch.detekt.api.Rule
 import io.gitlab.arturbosch.detekt.api.Severity
+import org.jetbrains.kotlin.com.intellij.psi.util.PsiTreeUtil
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtNamedFunction
-import org.jetbrains.kotlin.psi.KtVisitorVoid
 
 /**
  * Flags `runBlocking { }` calls inside Android lifecycle callbacks.
@@ -63,15 +63,8 @@ class NoRunBlockingInLifecycleRule(config: Config = Config.empty) : Rule(config)
 
         val body = function.bodyBlockExpression ?: return
 
-        var found = false
-        body.accept(object : KtVisitorVoid() {
-            override fun visitCallExpression(call: KtCallExpression) {
-                super.visitCallExpression(call)
-                if (call.calleeExpression?.text == "runBlocking") {
-                    found = true
-                }
-            }
-        })
+        val found = PsiTreeUtil.findChildrenOfType(body, KtCallExpression::class.java)
+            .any { it.calleeExpression?.text == "runBlocking" }
 
         if (found) {
             report(

@@ -26,6 +26,9 @@ internal fun BlockquoteBlock(
     onStartEditing: () -> Unit,
     onLinkClick: (String) -> Unit,
     modifier: Modifier = Modifier,
+    isInSelectionMode: Boolean = false,
+    onToggleSelect: () -> Unit = {},
+    onLongPressSelect: (() -> Unit)? = null,
 ) {
     val strippedContent = remember(content) {
         content.lines().joinToString("\n") { line ->
@@ -56,6 +59,9 @@ internal fun BlockquoteBlock(
             resolvedRefs = emptyMap(),
             onLinkClick = onLinkClick,
             onClick = onStartEditing,
+            isInSelectionMode = isInSelectionMode,
+            onToggleSelect = onToggleSelect,
+            onLongPressSelect = onLongPressSelect,
             modifier = Modifier.weight(1f),
         )
     }

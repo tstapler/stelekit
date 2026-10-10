@@ -5,4 +5,5 @@ expect class PlatformSettings() : Settings {
     override fun putBoolean(key: String, value: Boolean)
     override fun getString(key: String, defaultValue: String): String
     override fun putString(key: String, value: String)
+    override fun containsKey(key: String): Boolean
 }

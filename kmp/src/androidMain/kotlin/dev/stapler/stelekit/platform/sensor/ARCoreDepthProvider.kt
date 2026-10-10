@@ -103,15 +103,16 @@ class ARCoreDepthProvider(private val context: Context) : DepthSensorProvider {
             // Extract depth plane — single plane, pixel stride 2 bytes (uint16 LE).
             val depthBuffer = depthImage.planes[0].buffer.order(ByteOrder.LITTLE_ENDIAN)
             val depthMapMm = FloatArray(pixelCount) { i ->
-                // uint16 → unsigned int → metres
-                (depthBuffer.getShort(i * 2).toInt() and 0xFFFF).toFloat() / 1000f
+                // uint16 → unsigned int, stored as mm (DepthFrame contract)
+                (depthBuffer.getShort(i * 2).toInt() and 0xFFFF).toFloat()
             }
             depthImage.close()
 
             // Extract confidence plane — single plane, pixel stride 1 byte (uint8, range 0–255).
+            // Store raw 0–255 values (DepthFrame.confidenceMap contract); CalibrationService divides by 255.
             val confBuffer = confidenceImage.planes[0].buffer
             val confidenceMap = FloatArray(pixelCount) { i ->
-                (confBuffer.get(i).toInt() and 0xFF).toFloat() / 255f
+                (confBuffer.get(i).toInt() and 0xFF).toFloat()
             }
             confidenceImage.close()
 

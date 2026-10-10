@@ -1,11 +1,11 @@
 name: CI (iOS)
 
 # iOS jobs use macOS runners which cost 10× the minute multiplier.
-# Run only on non-draft PRs to main, and only when relevant sources change.
+# Runs on PRs to main (draft included) when relevant sources change.
 on:
   pull_request:
     branches: [main, master]
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened]  # no ready_for_review: `opened` already fires for drafts, so this avoids a pointless duplicate full CI run on every draft->ready flip
     paths:
       - 'kmp/src/commonMain/**'
       - 'kmp/src/iosMain/**'
@@ -21,7 +21,7 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   ios-framework:
@@ -39,7 +39,6 @@ jobs:
     # This job validates all commonMain sources via compileKotlinJvm, which exercises
     # the same shared code. Restore full compileKotlinIosSimulatorArm64 once KT-68400
     # is resolved and CMP is upgraded to a Kotlin 2.3.x-compatible release.
-    if: github.event.pull_request.draft == false
 
     steps:
       - uses: actions/checkout@v4

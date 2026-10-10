@@ -134,15 +134,61 @@ class UnifiedBenchmarkRunner {
     }
 
     private fun runWriteConcurrencyMetrics(preset: GraphPreset): Map<String, Double> {
-        // Placeholder: returns sentinel values indicating the scenario ran but
-        // detailed write-concurrency metrics require SQLite setup (covered by GraphLoadTimingTest).
-        // A future WriteConcurrencyScenario class in jvmTest/scenarios/ will populate these.
-        println("[UnifiedBenchmarkRunner] WriteConcurrency/${preset.name}: using sentinel metrics (see GraphLoadTimingTest)")
-        return mapOf(
-            "p50Ms" to -1.0,
-            "p95Ms" to -1.0,
-            "p99Ms" to -1.0,
-        )
+        if (!dev.stapler.stelekit.db.libsql.LibsqlTestHarness.isNativeAvailable()) {
+            println("[UnifiedBenchmarkRunner] WriteConcurrency/${preset.name}: libsql native not available — using sentinel metrics")
+            return mapOf(
+                "p50Ms" to -1.0,
+                "p95Ms" to -1.0,
+                "p99Ms" to -1.0,
+            )
+        }
+
+        val libsqlTmp = java.nio.file.Files.createTempFile("unified-bench-libsql-", ".db").toFile()
+            .also { it.deleteOnExit() }
+        val jdbcTmp = java.nio.file.Files.createTempFile("unified-bench-jdbc-", ".db").toFile()
+            .also { it.deleteOnExit() }
+
+        // Probe for MVCC support — concurrent benchmark requires BEGIN CONCURRENT.
+        val probeDriver = dev.stapler.stelekit.db.libsql.JvmLibsqlDriver(libsqlTmp.absolutePath, poolSize = 1)
+        val mvccAvailable = probeDriver.isMvccActive
+        probeDriver.close()
+        libsqlTmp.delete()
+        libsqlTmp.createNewFile()
+
+        if (!mvccAvailable) {
+            println("[UnifiedBenchmarkRunner] WriteConcurrency/${preset.name}: libsql MVCC not available — using sentinel metrics")
+            return mapOf("p50Ms" to -1.0, "p95Ms" to -1.0, "p99Ms" to -1.0)
+        }
+
+        println("[UnifiedBenchmarkRunner] WriteConcurrency/${preset.name}: running libsql vs jdbc concurrent benchmark")
+        val bench = LibsqlConcurrentWriteBenchmarkTest()
+
+        return try {
+            val libsqlDriver = dev.stapler.stelekit.db.libsql.JvmLibsqlDriver(libsqlTmp.absolutePath, poolSize = 8)
+            val libsqlResult = bench.runConcurrentBenchmark(libsqlDriver, "libsql")
+
+            val jdbcDriver = dev.stapler.stelekit.db.DriverFactory().createDriver("jdbc:sqlite:${jdbcTmp.absolutePath}")
+            val jdbcResult = bench.runConcurrentBenchmark(jdbcDriver, "jdbc")
+
+            val p99RatioLibsqlOverJdbc = if (jdbcResult.p99Ns > 0) libsqlResult.p99Ns.toDouble() / jdbcResult.p99Ns.toDouble() else -1.0
+            val throughputRatio = if (jdbcResult.throughputOpsPerSec > 0) libsqlResult.throughputOpsPerSec / jdbcResult.throughputOpsPerSec else -1.0
+
+            mapOf(
+                "libsqlP50Ms"          to libsqlResult.p50Ns / 1_000_000.0,
+                "libsqlP95Ms"          to libsqlResult.p95Ns / 1_000_000.0,
+                "libsqlP99Ms"          to libsqlResult.p99Ns / 1_000_000.0,
+                "libsqlThroughput"     to libsqlResult.throughputOpsPerSec,
+                "jdbcP50Ms"            to jdbcResult.p50Ns / 1_000_000.0,
+                "jdbcP95Ms"            to jdbcResult.p95Ns / 1_000_000.0,
+                "jdbcP99Ms"            to jdbcResult.p99Ns / 1_000_000.0,
+                "jdbcThroughput"       to jdbcResult.throughputOpsPerSec,
+                "p99RatioLibsqlJdbc"   to p99RatioLibsqlOverJdbc,
+                "throughputRatio"      to throughputRatio,
+            )
+        } finally {
+            libsqlTmp.delete()
+            jdbcTmp.delete()
+        }
     }
 
     private fun runNavigationLatencyMetrics(preset: GraphPreset): Map<String, Double> {

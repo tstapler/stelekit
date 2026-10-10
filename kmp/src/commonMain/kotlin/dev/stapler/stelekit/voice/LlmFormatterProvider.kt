@@ -7,6 +7,27 @@ sealed interface LlmResult {
     sealed interface Failure : LlmResult {
         data class ApiError(val code: Int, val message: String) : Failure
         data object NetworkError : Failure
+
+        /**
+         * An on-device provider (ML Kit/Gemini Nano, iOS Foundation Models) is not usable right
+         * now — still downloading, foreground-only constraint violated, per-app quota hit, etc.
+         * Kept distinct from [ApiError] so [reason] can be surfaced to the user verbatim instead
+         * of a generic error string, and so callers can decide whether to retry based on
+         * [retryable].
+         */
+        data class OnDeviceUnavailable(val reason: String, val retryable: Boolean) : Failure
+
+        /**
+         * The provider's content-safety guardrails rejected the input/prompt itself — distinct
+         * from [ApiError]/[NetworkError] because this is not "try again later" or "fix your
+         * credentials," it's "this specific input was refused." Introduced by Epic 5 (iOS
+         * on-device / Apple Foundation Models): Apple's on-device guardrails can reject a
+         * programmatically-constructed system prompt, not just user content (see
+         * `project_plans/llm-service/decisions/ADR-013-ios-on-device-llm-swift-shim.md`). Other
+         * providers may adopt this case later instead of folding guardrail rejections into
+         * [ApiError].
+         */
+        data class ContentRejected(val reason: String) : Failure
     }
 }
 

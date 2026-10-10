@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -24,7 +25,9 @@ import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.domain.FetchResult
 import dev.stapler.stelekit.domain.TopicSuggestion
 import dev.stapler.stelekit.performance.NavigationTracingEffect
+import dev.stapler.stelekit.transfer.qrcode.QrTransferSettings
 import dev.stapler.stelekit.ui.components.parseMarkdownWithStyling
+import dev.stapler.stelekit.ui.transfer.ImportViaCameraMenuItem
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -41,6 +44,9 @@ fun ImportScreen(
      * [ImportViewModel.onHtmlPasted]. Provide null to hide the button.
      */
     onHtmlPaste: (() -> Unit)? = null,
+    /** Flag-gated "Import via camera" entry point (Story 3.2.4, S7) — omitted entirely when null or disabled. */
+    qrTransferSettings: QrTransferSettings? = null,
+    onImportViaCamera: (() -> Unit)? = null,
 ) {
     NavigationTracingEffect("Import")
     val state by viewModel.state.collectAsState()
@@ -62,6 +68,8 @@ fun ImportScreen(
             onNext = { stage = Stage.REVIEW },
             onDismiss = onDismiss,
             onHtmlPaste = onHtmlPaste,
+            qrTransferSettings = qrTransferSettings,
+            onImportViaCamera = onImportViaCamera,
         )
 
         Stage.REVIEW -> ReviewStage(
@@ -86,12 +94,32 @@ private fun InputStage(
     onNext: () -> Unit,
     onDismiss: () -> Unit,
     onHtmlPaste: (() -> Unit)? = null,
+    qrTransferSettings: QrTransferSettings? = null,
+    onImportViaCamera: (() -> Unit)? = null,
 ) {
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Import text") },
                 actions = {
+                    if (qrTransferSettings != null && onImportViaCamera != null) {
+                        var menuExpanded by remember { mutableStateOf(false) }
+                        IconButton(onClick = { menuExpanded = true }) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "More import options",
+                            )
+                        }
+                        DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                            ImportViaCameraMenuItem(
+                                settings = qrTransferSettings,
+                                onClick = {
+                                    menuExpanded = false
+                                    onImportViaCamera()
+                                },
+                            )
+                        }
+                    }
                     IconButton(onClick = onDismiss) {
                         Icon(
                             imageVector = Icons.Default.Close,

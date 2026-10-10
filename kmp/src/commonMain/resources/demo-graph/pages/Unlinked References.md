@@ -1,0 +1,8 @@
+- Unlinked References shows every mention of a page name that is not yet a `[[wikilink]]`.
+- Open it from the sidebar to see suggested links across your entire graph.
+  - Each entry shows the block text and which page it could link to.
+  - Tap **Link** to convert the mention to a `[[wikilink]]` automatically.
+  - Tap **Ignore** to dismiss the suggestion without linking.
+- Linking unlinked references improves your graph's connectivity.
+  - More wikilinks means more backlinks, which makes the graph view richer.
+  - Use this view periodically to catch pages you reference by name but never formally linked.

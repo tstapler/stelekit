@@ -4,6 +4,9 @@ import androidx.compose.runtime.Composable
 import dev.stapler.stelekit.performance.DebugMenuState
 
 @Composable
+actual fun SearchDialogWindowEffect() { /* Web has no system IME to manage */ }
+
+@Composable
 actual fun DebugMenuOverlay(
     state: DebugMenuState,
     onStateChange: (DebugMenuState) -> Unit,

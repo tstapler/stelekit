@@ -1,7 +1,5 @@
 package dev.stapler.stelekit.performance
 
-import io.opentelemetry.api.metrics.Meter
-import io.opentelemetry.api.trace.Tracer
 import io.opentelemetry.exporter.logging.LoggingSpanExporter
 import io.opentelemetry.sdk.OpenTelemetrySdk
 import io.opentelemetry.sdk.metrics.SdkMeterProvider

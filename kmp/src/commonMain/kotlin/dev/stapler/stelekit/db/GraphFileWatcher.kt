@@ -2,18 +2,13 @@ package dev.stapler.stelekit.db
 
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.platform.FileSystem
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
@@ -24,10 +19,16 @@ import kotlinx.coroutines.withTimeoutOrNull
  * Owns a private [CoroutineScope] (SupervisorJob + Default dispatcher) as required
  * by the project's long-lived-class rule — callers must never supply a scope.
  *
- * Two detection mechanisms run concurrently:
- * - A 5-second polling fallback that compares mod-times via [FileRegistry].
- * - A platform-native fast path (e.g. Android ContentObserver) triggered via
- *   [FileSystem.startExternalChangeDetection].
+ * Rescan triggering/backoff is delegated to a [ChangeDetectionScheduler] (shared with the
+ * wasmJs platform's host-directory sync, see that class's doc comment): a 5-second polling
+ * safety net, plus a platform-native fast path (e.g. Android ContentObserver) triggered via
+ * [FileSystem.startExternalChangeDetection]. Critically, a native-signal-triggered rescan
+ * that finds nothing is not trusted as proof of absence — the underlying OS-level index
+ * (e.g. Android SAF's ContentResolver query) can still be catching up to a write that
+ * already landed on disk — so the scheduler runs a short bounded burst of fast follow-up
+ * rescans before falling back to the steady-state interval. This closes the "externally
+ * added journal/page file doesn't load for a long time" failure mode: previously a single
+ * negative query was trusted until the next unrelated signal or full poll interval.
  *
  * Callers supply two callbacks:
  * - [readFile]: reads (and optionally decrypts) a file from disk.
@@ -54,13 +55,17 @@ class GraphFileWatcher(
     private val pollIntervalMs: Long = 5_000L,
     private val onDirtyFile: (suspend (filePath: String) -> Unit)? = null,
     private val activePageFilePaths: (() -> Set<String>)? = null,
+    /** When non-null, the poll loop early-exits (skips the whole rescan) for a graph currently
+     * mid-relocate/link — see [MoveInProgressFlag]. Null (the default) preserves prior behavior
+     * for callers that don't yet thread a graphId through. */
+    private val graphId: String? = null,
 ) {
     private val logger = Logger("GraphFileWatcher")
 
     // Owns its scope — never accepts a caller-supplied scope (project coroutine rule).
     private val scope = CoroutineScope(SupervisorJob() + kotlinx.coroutines.Dispatchers.Default)
 
-    private var watcherJob: Job? = null
+    private var scheduler: ChangeDetectionScheduler? = null
 
     /**
      * Returns true when the watcher job is active (started and not yet stopped/closed).
@@ -70,7 +75,7 @@ class GraphFileWatcher(
      * During this window, [isRunning] is false even on JVM/Android. [GraphLoader.loadFullPage]
      * will fall back to the content-hash path during this window — correct but ~10-30ms slower.
      */
-    val isRunning: Boolean get() = watcherJob?.isActive == true
+    val isRunning: Boolean get() = scheduler?.isRunning == true
 
     /**
      * Emitted when the file watcher detects an external modification to a file.
@@ -80,6 +85,16 @@ class GraphFileWatcher(
      */
     private val _externalFileChanges = MutableSharedFlow<ExternalFileChange>(extraBufferCapacity = 8)
     val externalFileChanges: SharedFlow<ExternalFileChange> = _externalFileChanges.asSharedFlow()
+
+    /**
+     * Emits a synthetic external-change event for [filePath] with [content] as the on-disk
+     * version. Used by the pre-write conflict check to surface a conflict immediately rather
+     * than waiting for the next 5-second watcher poll cycle.
+     */
+    fun emitSyntheticChange(filePath: String, content: String) {
+        val emitted = _externalFileChanges.tryEmit(ExternalFileChange(filePath, content) {})
+        if (!emitted) logger.warn("Synthetic change event dropped (buffer full): $filePath")
+    }
 
     // Mutex protecting gitMergeSuppressedFiles. The set is accessed concurrently by the
     // 5-second polling loop and native-change callbacks — on JVM, unsynchronized HashSet
@@ -100,53 +115,43 @@ class GraphFileWatcher(
      */
     fun startWatching(graphPath: String) {
         fileSystem.stopExternalChangeDetection()
-        watcherJob?.cancel()
-        val externalChangeTrigger = Channel<Unit>(Channel.CONFLATED)
-        watcherJob = scope.launch {
-            // 5-second polling fallback
-            launch {
-                logger.info("Started watching graph for changes: $graphPath")
-                while (isActive) {
-                    try {
-                        delay(pollIntervalMs)
-                        val pagesDir = "$graphPath/pages"
-                        val journalsDir = "$graphPath/journals"
+        scheduler?.stop()
+        logger.info("Started watching graph for changes: $graphPath")
 
-                        checkDirectoryForChanges(pagesDir)
-                        checkDirectoryForChanges(journalsDir)
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        logger.warn("Error in graph watcher", e)
-                    }
-                }
+        val newScheduler = ChangeDetectionScheduler(baseIntervalMs = pollIntervalMs) {
+            // Early-exit for a graph currently mid-relocate/link: its files are being moved out
+            // from under us, so a scan here would race the move rather than detect a real edit.
+            if (graphId != null && MoveInProgressFlag.isMoveInProgress(graphId)) {
+                return@ChangeDetectionScheduler RescanOutcome(foundChange = false)
             }
-            // Platform-native fast-path (e.g. Android ContentObserver).
-            // Channel.CONFLATED coalesces rapid callback storms into at most one
-            // pending scan so we never queue up redundant directory scans.
-            launch {
-                for (ignored in externalChangeTrigger) {
-                    try {
-                        checkDirectoryForChanges("$graphPath/pages")
-                        checkDirectoryForChanges("$graphPath/journals")
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        logger.warn("Error in external change handler", e)
-                    }
-                }
-            }
+
+            // Both dirs are scanned on every trigger (poll tick, native signal, or bounded
+            // follow-up retry) — a native signal doesn't identify which dir changed, and a
+            // redundant scan of an unchanged dir is cheap (FileRegistry's mod-time diff is
+            // a no-op when nothing moved). foundChange drives the scheduler's decision to
+            // treat "signal fired but nothing found" as inconclusive rather than final —
+            // see ChangeDetectionScheduler's class doc comment for why that matters on
+            // Android, where a SAF/DocumentsProvider query can lag behind a write that
+            // already landed on disk.
+            val pagesChanged = checkDirectoryForChanges("$graphPath/pages")
+            val journalsChanged = checkDirectoryForChanges("$graphPath/journals")
+            RescanOutcome(foundChange = pagesChanged || journalsChanged)
         }
+        scheduler = newScheduler
+        newScheduler.start(scope)
+
+        // Platform-native fast path (e.g. Android ContentObserver/FileObserver) — a hint,
+        // not proof; the scheduler's own bounded follow-up burst handles a stale first look.
         fileSystem.startExternalChangeDetection(scope) {
-            externalChangeTrigger.trySend(Unit)
+            newScheduler.hint()
         }
     }
 
     /** Stops the watcher job without cancelling the owned scope. */
     fun stopWatching() {
         fileSystem.stopExternalChangeDetection()
-        watcherJob?.cancel()
-        watcherJob = null
+        scheduler?.stop()
+        scheduler = null
     }
 
     /**
@@ -180,8 +185,19 @@ class GraphFileWatcher(
         suppressMutex.withLock { gitMergeSuppressedFiles.clear() }
     }
 
-    private suspend fun checkDirectoryForChanges(dirPath: String) {
+    /**
+     * Returns `true` iff [dirPath]'s scan found any new, changed, or deleted path — computed
+     * from the raw [ChangeSet], independent of whether individual entries below are then
+     * suppressed/skipped by git-merge or active-edit guards. This is a signal about whether
+     * the underlying disk query itself found anything, which is what
+     * [ChangeDetectionScheduler] needs to decide whether a signal-triggered rescan should be
+     * retried — not a signal about whether the app acted on it.
+     */
+    private suspend fun checkDirectoryForChanges(dirPath: String): Boolean {
         val changeSet = fileRegistry.detectChanges(dirPath)
+        val foundChange = changeSet.newFiles.isNotEmpty() ||
+            changeSet.changedFiles.isNotEmpty() ||
+            changeSet.deletedPaths.isNotEmpty()
 
         for (changed in changeSet.newFiles) {
             logger.info("New file detected: ${changed.entry.filePath}")
@@ -258,5 +274,7 @@ class GraphFileWatcher(
         for (filePath in changeSet.deletedPaths) {
             logger.info("File deletion detected: $filePath")
         }
+
+        return foundChange
     }
 }

@@ -2,6 +2,7 @@ package dev.stapler.stelekit.platform.sensor
 
 import dev.stapler.stelekit.platform.ml.MonocularDepthEstimator
 import dev.stapler.stelekit.platform.ml.NoOpMonocularDepthEstimator
+import kotlin.concurrent.Volatile
 
 /**
  * Holds the platform-appropriate sensor providers for the current target.
@@ -13,6 +14,7 @@ import dev.stapler.stelekit.platform.ml.NoOpMonocularDepthEstimator
  * ```kotlin
  * // In androidMain entry point:
  * SensorModule.cameraProvider = AndroidCameraProvider(context, activity)
+ * SensorModule.cameraFrameSource = AndroidCameraFrameSource(context, activity)
  * SensorModule.motionSensorProvider = AndroidMotionSensorProvider(context)
  * SensorModule.depthSensorProvider = ARCoreDepthProvider()
  * SensorModule.monocularDepthEstimator = OnnxMonocularDepthEstimator()
@@ -36,7 +38,18 @@ object SensorModule {
      * Thread-safe for simple read after startup (Kotlin `@Volatile`).
      */
 
-    var cameraProvider: CameraProvider = NoOpCameraProvider()
+    @Volatile var cameraProvider: CameraProvider = NoOpCameraProvider()
+
+    /**
+     * The active [CameraFrameSource] for this process.
+     *
+     * Provides a continuous camera luminance-frame stream, e.g. for QR code decode. Kept
+     * separate from [cameraProvider] (ISP, see ADR-002 in camera-qr-export).
+     * Set once at application startup by the platform entry point.
+     * Thread-safe for simple read after startup (Kotlin `@Volatile`).
+     */
+
+    @Volatile var cameraFrameSource: CameraFrameSource = NoOpCameraFrameSource()
 
     /**
      * The active [MotionSensorProvider] for this process.
@@ -46,7 +59,7 @@ object SensorModule {
      * Thread-safe for simple read after startup (Kotlin `@Volatile`).
      */
 
-    var motionSensorProvider: MotionSensorProvider = NoOpMotionSensorProvider()
+    @Volatile var motionSensorProvider: MotionSensorProvider = NoOpMotionSensorProvider()
 
     /**
      * The active [DepthSensorProvider] for this process.
@@ -56,7 +69,7 @@ object SensorModule {
      * Thread-safe for simple read after startup (Kotlin `@Volatile`).
      */
 
-    var depthSensorProvider: DepthSensorProvider = NoOpDepthProvider()
+    @Volatile var depthSensorProvider: DepthSensorProvider = NoOpDepthProvider()
 
     /**
      * The active [MonocularDepthEstimator] for this process.
@@ -67,5 +80,5 @@ object SensorModule {
      * Thread-safe for simple read after startup (Kotlin `@Volatile`).
      */
 
-    var monocularDepthEstimator: MonocularDepthEstimator = NoOpMonocularDepthEstimator()
+    @Volatile var monocularDepthEstimator: MonocularDepthEstimator = NoOpMonocularDepthEstimator()
 }

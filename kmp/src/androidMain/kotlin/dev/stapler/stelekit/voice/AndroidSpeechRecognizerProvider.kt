@@ -10,7 +10,6 @@ import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
-import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -20,7 +19,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 
-private const val TAG = "AndroidSpeechRecognizer"
+private val logger = dev.stapler.stelekit.logging.Logger("AndroidSpeechRecognizer")
 
 class AndroidSpeechRecognizerProvider(
     private val context: Context,
@@ -83,7 +82,7 @@ class AndroidSpeechRecognizerProvider(
                 try {
                     recognizer = SpeechRecognizer.createSpeechRecognizer(context)
                 } catch (t: Throwable) {
-                    Log.w(TAG, "Failed to create SpeechRecognizer", t)
+                    logger.warn("Failed to create SpeechRecognizer", t)
                     if (cont.isActive) cont.resume(mapError(SpeechRecognizer.ERROR_CLIENT))
                     return@post
                 }
@@ -110,7 +109,7 @@ class AndroidSpeechRecognizerProvider(
                         val text = results
                             ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                             ?.firstOrNull()
-                        Log.d(TAG, "onResults: text=${text?.take(80)}, stopRequested=$stopRequested")
+                        logger.debug("onResults: text=${text?.take(80)}, stopRequested=$stopRequested")
                         if (!text.isNullOrBlank()) {
                             if (accumulated.isNotEmpty()) accumulated.append(" ")
                             accumulated.append(text.trim())
@@ -129,7 +128,7 @@ class AndroidSpeechRecognizerProvider(
                         activeRecognizer = null
                         recognizer.destroy()
                         if (!cont.isActive) return
-                        Log.w(TAG, "onError: code=$error, stopRequested=$stopRequested")
+                        logger.warn("onError: code=$error, stopRequested=$stopRequested")
 
                         when (error) {
                             SpeechRecognizer.ERROR_NO_MATCH,
@@ -163,7 +162,7 @@ class AndroidSpeechRecognizerProvider(
                     _amplitudeFlow.value = 0f
                     activeRecognizer = null
                     recognizer.destroy()
-                    Log.w(TAG, "Failed to start speech recognition", t)
+                    logger.warn("Failed to start speech recognition", t)
                     if (cont.isActive) cont.resume(mapError(SpeechRecognizer.ERROR_CLIENT))
                 }
             }

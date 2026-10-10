@@ -4,6 +4,7 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.platform.restoreDefaultTabTraversal
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -60,6 +61,7 @@ object DesktopFilePicker {
                             "Image files (JPEG, PNG)",
                             "jpg", "jpeg", "png"
                         )
+                        restoreDefaultTabTraversal()
                     }
                     val result = chooser.showOpenDialog(null)
                     if (result == JFileChooser.APPROVE_OPTION) {

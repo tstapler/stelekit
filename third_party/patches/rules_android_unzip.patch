@@ -1,0 +1,22 @@
+Use Bazel-built @unzip_src//:unzip instead of bare unzip in proto genrules.
+
+The Configuration/Resources/ResourcesInternal proto genrules call bare `unzip`
+which fails in hermetic sandboxes where system tools are not available.
+Wire in the InfoZip binary built from source via @unzip_src so no system unzip
+is required.
+
+diff --git a/src/tools/java/com/google/devtools/build/android/proto/BUILD b/src/tools/java/com/google/devtools/build/android/proto/BUILD
+--- a/src/tools/java/com/google/devtools/build/android/proto/BUILD
++++ b/src/tools/java/com/google/devtools/build/android/proto/BUILD
+@@ -24,9 +24,10 @@
+ [
+     genrule(
+         name = proto + "_proto_file",
+         srcs = ["@rules_android_maven//:com_android_tools_build_aapt2_proto"],
+         outs = [proto + ".proto"],
+-        cmd = "unzip -q $< " + proto + ".proto && " +
++        tools = ["@@+http_archive+unzip_src//:unzip"],
++        cmd = "$(location @@+http_archive+unzip_src//:unzip) -q $< " + proto + ".proto && " +
+               "sed 's/import \\\"/import \\\"src\\/tools\\/java\\/com\\/google\\/devtools\\/build\\/android\\/proto\\//' " + proto + ".proto > $@",
+     )
+     for proto in [

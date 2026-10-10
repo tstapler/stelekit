@@ -3,7 +3,6 @@ package dev.stapler.stelekit.platform
 import android.content.Context
 import kotlinx.coroutines.CancellationException
 import android.content.SharedPreferences
-import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 
@@ -34,7 +33,7 @@ actual class PlatformSettings actual constructor() : Settings {
             throw e
         } catch (e: Exception) {
             // Fallback to plain prefs if keystore fails (e.g., corrupted keystore after device wipe)
-            Log.w("PlatformSettings", "EncryptedSharedPreferences unavailable, falling back to plain prefs", e)
+            dev.stapler.stelekit.logging.Logger("PlatformSettings").warn("EncryptedSharedPreferences unavailable, falling back to plain prefs", e)
             SteleKitContext.context.getSharedPreferences("stelekit_prefs", Context.MODE_PRIVATE)
         }
     }
@@ -69,5 +68,13 @@ actual class PlatformSettings actual constructor() : Settings {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) { }
+    }
+
+    actual override fun containsKey(key: String): Boolean {
+        return try {
+            prefs.contains(key)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) { false }
     }
 }

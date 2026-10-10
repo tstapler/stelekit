@@ -4,18 +4,43 @@ import dev.stapler.stelekit.editor.commands.*
 import kotlinx.coroutines.CancellationException
 
 /**
- * Collection of essential editor commands
+ * Collection of essential editor commands.
+ *
+ * Phase H reachability audit (rich-editing-experience, ADR-001/Epic H.2): `StelekitViewModel`'s
+ * `updateCommands()` bridges every command this object's [getAll] returns (that survives
+ * [CommandTypes.CommandConfig.isAvailable]'s filter — see `CommandTypes.kt`) into a real,
+ * clickable `Command` row in the command palette. Its `action` lambda calls
+ * `executeCommand(cmd.id)`, which discards the returned `CommandResult` — so any command here
+ * that both (a) passes the availability filter and (b) has no special-cased real mutation route
+ * is a "wired-looking but silently non-functional" trap the moment a user clicks it (features.md
+ * §2 — the exact anti-pattern this project exists partly to eliminate). Confirmed only two
+ * commands avoid this trap: `media.image` (special-cased in `updateCommands()` to call the real
+ * `attachImageCallback`) and `block.toggle-todo` (special-cased in
+ * `StelekitViewModel.executeCommand()` to call the real `requestTodoToggle()`, but also hidden
+ * from the palette below since Phase F already ships a working, canonically-named
+ * `format.toggle-todo` entry — see that command's own comment for the full reasoning). Every
+ * other command below was audited against `CommandConfig.isAvailable(context)` using the actual
+ * `CommandContext` `updateCommands()` constructs (no selection ever set: `selectionStart = 0,
+ * selectionEnd = 0`; `currentBlockId` set to the *page* uuid, so `requiresBlock` does not
+ * meaningfully gate anything while any page is open); each is marked `hidden = true` unless it
+ * is one of the two exceptions above.
  */
 object EssentialCommands {
-    
+
     /**
      * Text formatting commands
      */
     object TextFormatting {
+        // Phase H audit: excluded from the palette by design — requiresSelection = true and the
+        // palette's CommandContext never carries a real selection (selectionStart/selectionEnd
+        // are always 0), so CommandConfig.isAvailable() structurally excludes this from
+        // getAvailableCommands() today. This was ADR-001's original (correct, for this one)
+        // assumption. See StelekitViewModel.updateCommands()'s real, working "format.bold"
+        // palette entry (Phase F.2) for the working equivalent.
         val bold = EditorCommand(
             id = "text.bold",
             type = CommandType.TEXT,
-            label = "Bold", 
+            label = "Bold",
             description = "Format selected text as bold",
             shortcut = "Ctrl+B",
             icon = "bold",
@@ -43,6 +68,8 @@ object EssentialCommands {
             }
         )
         
+        // Phase H audit: excluded from the palette by design — same requiresSelection = true
+        // structural exclusion as `bold` above. See real "format.italic" palette entry (Phase F.2).
         val italic = EditorCommand(
             id = "text.italic",
             type = CommandType.TEXT,
@@ -74,6 +101,8 @@ object EssentialCommands {
             }
         )
         
+        // Phase H audit: excluded from the palette by design — same requiresSelection = true
+        // structural exclusion as `bold` above. See real "format.code" palette entry (Phase F.2).
         val code = EditorCommand(
             id = "text.code",
             type = CommandType.TEXT,
@@ -105,6 +134,8 @@ object EssentialCommands {
             }
         )
         
+        // Phase H audit: excluded from the palette by design — same requiresSelection = true
+        // structural exclusion as `bold` above. See real "format.strikethrough" palette entry (Phase F.2).
         val strikethrough = EditorCommand(
             id = "text.strikethrough",
             type = CommandType.TEXT,
@@ -136,6 +167,8 @@ object EssentialCommands {
             }
         )
         
+        // Phase H audit: excluded from the palette by design — same requiresSelection = true
+        // structural exclusion as `bold` above. See real "format.highlight" palette entry (Phase F.2).
         val highlight = EditorCommand(
             id = "text.highlight",
             type = CommandType.TEXT,
@@ -167,6 +200,13 @@ object EssentialCommands {
             }
         )
         
+        // Phase H audit FINDING (corrects ADR-001's assumption): unlike bold/italic/code/
+        // strikethrough/highlight above, this command's CommandConfig never set
+        // requiresSelection = true — so it was NOT structurally excluded from
+        // getAvailableCommands() and was live+silently-broken in the real command palette today
+        // (clicking "Link" computed a CommandResult that StelekitViewModel.executeCommand()
+        // discarded). Hidden explicitly as part of Phase H's fix. See the real, working
+        // "format.link" palette entry (Phase F.2, StelekitViewModel.updateCommands()) instead.
         val link = EditorCommand(
             id = "text.link",
             type = CommandType.TEXT,
@@ -175,6 +215,7 @@ object EssentialCommands {
             shortcut = "Ctrl+K",
             icon = "link",
             config = CommandConfig(
+                hidden = true,
                 priority = CommandPriority.HIGH
             ),
             execute = { context ->
@@ -206,6 +247,10 @@ object EssentialCommands {
             }
         )
         
+        // Phase H audit FINDING (corrects ADR-001's assumption): same issue as `link` above —
+        // no requiresSelection = true, so this was NOT structurally excluded and was
+        // live+silently-broken in the real command palette. Hidden explicitly. See the real,
+        // working "format.heading" palette entry (Phase F.2) instead.
         val heading = EditorCommand(
             id = "text.heading",
             type = CommandType.TEXT,
@@ -214,6 +259,7 @@ object EssentialCommands {
             shortcut = "Ctrl+Shift+1",
             icon = "heading",
             config = CommandConfig(
+                hidden = true,
                 priority = CommandPriority.NORMAL
             ),
             execute = { context ->
@@ -257,6 +303,16 @@ object EssentialCommands {
      * Block manipulation commands
      */
     object BlockCommands {
+        // Phase H audit FINDING (beyond ADR-001's named list — these block.* commands were not
+        // called out by name in the ADR at all): requiresBlock = true does NOT exclude this from
+        // the palette, because updateCommands()'s CommandContext always sets currentBlockId to
+        // the *current page's* uuid (a pre-existing "// This would be updated by actual editor"
+        // placeholder, StelekitViewModel.kt), which is non-null whenever any page is open. So
+        // this was live+silently-broken in the real command palette (result computed and
+        // discarded). There is no working palette-driven equivalent for "new block" today — real
+        // block creation is driven by Enter-key handling directly in BlockEditor.kt, not through
+        // this framework. Hidden explicitly as part of Phase H's fix; kept as a registry entry
+        // only (unreachable via the palette).
         val newBlock = EditorCommand(
             id = "block.new",
             type = CommandType.BLOCK,
@@ -265,6 +321,7 @@ object EssentialCommands {
             shortcut = "Enter",
             icon = "plus",
             config = CommandConfig(
+                hidden = true,
                 requiresBlock = true,
                 priority = CommandPriority.HIGHEST
             ),
@@ -285,6 +342,9 @@ object EssentialCommands {
             }
         )
         
+        // Phase H audit FINDING: same requiresBlock non-exclusion issue as `newBlock` above —
+        // live+silently-broken today. Real block deletion is driven by BlockGutter.kt/keyboard
+        // handling directly, not through this framework. Hidden explicitly.
         val delete = EditorCommand(
             id = "block.delete",
             type = CommandType.BLOCK,
@@ -293,6 +353,7 @@ object EssentialCommands {
             shortcut = "Ctrl+Shift+Backspace",
             icon = "trash",
             config = CommandConfig(
+                hidden = true,
                 requiresBlock = true,
                 priority = CommandPriority.HIGH
             ),
@@ -312,6 +373,9 @@ object EssentialCommands {
             }
         )
         
+        // Phase H audit FINDING: same requiresBlock non-exclusion issue as `newBlock` above —
+        // live+silently-broken today. Real block reordering is driven by BlockGutter.kt's
+        // Move-Up/Move-Down buttons directly, not through this framework. Hidden explicitly.
         val moveUp = EditorCommand(
             id = "block.move-up",
             type = CommandType.BLOCK,
@@ -320,6 +384,7 @@ object EssentialCommands {
             shortcut = "Ctrl+Shift+Up",
             icon = "arrow-up",
             config = CommandConfig(
+                hidden = true,
                 requiresBlock = true,
                 priority = CommandPriority.HIGH
             ),
@@ -340,6 +405,8 @@ object EssentialCommands {
             }
         )
         
+        // Phase H audit FINDING: same requiresBlock non-exclusion issue as `newBlock` above —
+        // live+silently-broken today. Hidden explicitly; see `moveUp`'s comment.
         val moveDown = EditorCommand(
             id = "block.move-down",
             type = CommandType.BLOCK,
@@ -348,6 +415,7 @@ object EssentialCommands {
             shortcut = "Ctrl+Shift+Down",
             icon = "arrow-down",
             config = CommandConfig(
+                hidden = true,
                 requiresBlock = true,
                 priority = CommandPriority.HIGH
             ),
@@ -368,6 +436,9 @@ object EssentialCommands {
             }
         )
         
+        // Phase H audit FINDING: same requiresBlock non-exclusion issue as `newBlock` above —
+        // live+silently-broken today. Real indent/outdent is driven by Tab/Shift+Tab handling
+        // directly in BlockEditor.kt, not through this framework. Hidden explicitly.
         val indent = EditorCommand(
             id = "block.indent",
             type = CommandType.BLOCK,
@@ -376,6 +447,7 @@ object EssentialCommands {
             shortcut = "Tab",
             icon = "indent",
             config = CommandConfig(
+                hidden = true,
                 requiresBlock = true,
                 priority = CommandPriority.HIGH
             ),
@@ -396,6 +468,8 @@ object EssentialCommands {
             }
         )
         
+        // Phase H audit FINDING: same requiresBlock non-exclusion issue as `newBlock` above —
+        // live+silently-broken today. Hidden explicitly; see `indent`'s comment.
         val outdent = EditorCommand(
             id = "block.outdent",
             type = CommandType.BLOCK,
@@ -404,6 +478,7 @@ object EssentialCommands {
             shortcut = "Shift+Tab",
             icon = "outdent",
             config = CommandConfig(
+                hidden = true,
                 requiresBlock = true,
                 priority = CommandPriority.HIGH
             ),
@@ -424,6 +499,26 @@ object EssentialCommands {
             }
         )
         
+        // Phase H resolution (Epic H.2, ADR-001): this was THE worst offender ADR-001 set out to
+        // fix — its `execute` used to compute a `newContent` string and return it inside
+        // `CommandResult.data`, which `StelekitViewModel.executeCommand()` simply discarded, so
+        // selecting "Toggle Todo" from the palette silently did nothing (features.md §2).
+        //
+        // Resolution chosen (see StelekitViewModel.executeCommand()'s dedicated comment for the
+        // full reasoning): `StelekitViewModel.executeCommand()` now special-cases the
+        // "block.toggle-todo" id BEFORE it ever reaches this registry entry, calling the real
+        // `blockStateManager.requestTodoToggle()` -> `applyTodoToggle` mutation (Phase C.1) —
+        // so if anything ever invokes `commandManager.executeCommand("block.toggle-todo", ...)`
+        // directly (bypassing the ViewModel), it is still correct-but-inert here rather than
+        // silently wrong. This command is ALSO hidden from the palette (`hidden = true`) because
+        // Phase F.2 already ships a working, canonically-named "format.toggle-todo" entry
+        // (`StelekitViewModel.updateCommands()`) — shipping both would put two identical
+        // "Toggle Todo" rows (same Ctrl+Enter shortcut) in the palette simultaneously, itself a
+        // confusing UX smell. `format.toggle-todo` is the one surviving, user-visible entry.
+        //
+        // The `execute` lambda below is simplified to metadata-only per Task H.2.1b — the real
+        // mutation lives in `BlockEditor.applyTodoToggle`/`BlockStateManager.requestTodoToggle`,
+        // not here.
         val toggleTodo = EditorCommand(
             id = "block.toggle-todo",
             type = CommandType.BLOCK,
@@ -432,38 +527,32 @@ object EssentialCommands {
             shortcut = "Ctrl+Enter",
             icon = "check",
             config = CommandConfig(
+                hidden = true,
                 requiresBlock = true,
                 priority = CommandPriority.HIGH
             ),
-            execute = { context ->
-                try {
-                    val content = context.currentBlockContent ?: ""
-                    val newContent = when {
-                        content.startsWith("TODO ") -> content.replaceFirst("TODO ", "DONE ")
-                        content.startsWith("DOING ") -> content.replaceFirst("DOING ", "DONE ")
-                        content.startsWith("DONE ") -> content.replaceFirst("DONE ", "TODO ")
-                        else -> "TODO $content"
-                    }
-                    
-                    CommandResult.Success(
-                        message = "Todo status toggled",
-                        data = mapOf<String, Any>(
-                            "blockId" to (context.currentBlockId ?: ""),
-                            "oldContent" to content,
-                            "newContent" to newContent
-                        )
-                    )
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    CommandResult.Error("Failed to toggle todo: ${e.message}", e)
-                }
+            execute = {
+                // Unreachable via the (hidden) palette. StelekitViewModel.executeCommand()
+                // intercepts this id and calls the real requestTodoToggle() mutation before ever
+                // delegating to CommandManager/CommandSystem, so this lambda only runs if some
+                // future caller invokes commandManager.executeCommand("block.toggle-todo", ...)
+                // directly. Kept as CommandResult.Nothing (not Success with fabricated data) so
+                // such a caller cannot mistake this for a real mutation.
+                CommandResult.Nothing
             }
         )
     }
     
     /**
-     * Navigation commands
+     * Navigation commands.
+     *
+     * Phase H audit FINDING (beyond ADR-001's named list): none of these four commands set
+     * requiresSelection/requiresBlock/requiresPage, so `CommandConfig.isAvailable()` never
+     * excluded them — all four were live+silently-broken in the real command palette (each
+     * `execute` computes a `CommandResult.Success` describing an action like "openSearch" that
+     * `StelekitViewModel.executeCommand()` discards; nothing ever actually opens search/page
+     * selector or navigates back/forward). There is no working palette-driven equivalent for any
+     * of these today. All four hidden explicitly as part of Phase H's fix.
      */
     object NavigationCommands {
         val search = EditorCommand(
@@ -474,6 +563,7 @@ object EssentialCommands {
             shortcut = "Ctrl+Shift+F",
             icon = "search",
             config = CommandConfig(
+                hidden = true,
                 priority = CommandPriority.HIGH
             ),
             execute = { context ->
@@ -501,6 +591,7 @@ object EssentialCommands {
             shortcut = "Ctrl+P",
             icon = "file",
             config = CommandConfig(
+                hidden = true,
                 priority = CommandPriority.HIGH
             ),
             execute = { context ->
@@ -527,6 +618,7 @@ object EssentialCommands {
             shortcut = "Alt+Left",
             icon = "arrow-left",
             config = CommandConfig(
+                hidden = true,
                 priority = CommandPriority.NORMAL
             ),
             execute = { context ->
@@ -553,6 +645,7 @@ object EssentialCommands {
             shortcut = "Alt+Right",
             icon = "arrow-right",
             config = CommandConfig(
+                hidden = true,
                 priority = CommandPriority.NORMAL
             ),
             execute = { context ->
@@ -573,7 +666,13 @@ object EssentialCommands {
     }
     
     /**
-     * Media commands
+     * Media commands.
+     *
+     * Phase H audit: `media.image` is the ONE command in this object confirmed to route to a
+     * real mutation when clicked from the palette — `StelekitViewModel.updateCommands()`
+     * special-cases `cmd.id == "media.image"` and calls the real, platform-specific
+     * `attachImageCallback` instead of the generic (discarding) `executeCommand(cmd.id)` path.
+     * Left visible (not hidden) and unchanged.
      */
     object MediaCommands {
         val image = EditorCommand(
@@ -586,8 +685,13 @@ object EssentialCommands {
                 priority = CommandPriority.HIGH
             ),
             execute = { _ ->
-                // Execution is handled by the UI layer (file picker is platform-specific).
-                // The slash command triggers onAttachImage callback in BlockItem/PageView.
+                // Note (superseded by Phase H audit): the comment below pre-dates this project —
+                // there is no slash-command handler in the codebase anymore (deleted, Epic H.1;
+                // zero call sites). This execute lambda is effectively unreachable in practice
+                // because StelekitViewModel.updateCommands() intercepts "media.image" before
+                // calling executeCommand(), routing to the real attachImageCallback instead. It
+                // is kept as a documented fallback for the (currently theoretical) case where
+                // attachImageCallback is null.
                 CommandResult.Success(
                     message = "Image attachment requested",
                     data = mapOf<String, Any>("action" to "attachImage")
@@ -597,7 +701,15 @@ object EssentialCommands {
     }
 
     /**
-     * System commands
+     * System commands.
+     *
+     * Phase H audit FINDING (beyond ADR-001's named list): none of these five commands set
+     * requiresSelection/requiresBlock/requiresPage either — all five were live+silently-broken
+     * in the real command palette (save/undo/redo/settings/help all compute a discarded
+     * `CommandResult.Success`; none actually saves, undoes, redoes, or opens anything). SteleKit
+     * has no explicit "Save" action (writes are debounced automatically), and Undo/Redo has its
+     * own separate, real mechanism (`BlockStateManager`'s undo/redo stack, not this framework).
+     * All five hidden explicitly as part of Phase H's fix.
      */
     object SystemCommands {
         val save = EditorCommand(
@@ -608,6 +720,7 @@ object EssentialCommands {
             shortcut = "Ctrl+S",
             icon = "save",
             config = CommandConfig(
+                hidden = true,
                 priority = CommandPriority.HIGHEST,
                 async = true
             ),
@@ -636,6 +749,7 @@ object EssentialCommands {
             shortcut = "Ctrl+Z",
             icon = "undo",
             config = CommandConfig(
+                hidden = true,
                 priority = CommandPriority.HIGHEST
             ),
             execute = { context ->
@@ -662,6 +776,7 @@ object EssentialCommands {
             shortcut = "Ctrl+Y",
             icon = "redo",
             config = CommandConfig(
+                hidden = true,
                 priority = CommandPriority.HIGHEST
             ),
             execute = { context ->
@@ -688,6 +803,7 @@ object EssentialCommands {
             shortcut = "Ctrl+,",
             icon = "settings",
             config = CommandConfig(
+                hidden = true,
                 priority = CommandPriority.NORMAL
             ),
             execute = { context ->
@@ -714,6 +830,7 @@ object EssentialCommands {
             shortcut = "F1",
             icon = "help",
             config = CommandConfig(
+                hidden = true,
                 priority = CommandPriority.NORMAL
             ),
             execute = { context ->

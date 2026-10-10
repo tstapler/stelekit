@@ -12,6 +12,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -20,22 +22,27 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.ui.components.asLazyKey
+import dev.stapler.stelekit.ui.components.typedItems
 import dev.stapler.stelekit.performance.NavigationTracingEffect
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 
 private val BACKLINKS_COL_WIDTH: Dp = 90.dp
-private val MODIFIED_COL_WIDTH: Dp = 90.dp
-private val CREATED_COL_WIDTH: Dp = 80.dp
+private val MODIFIED_COL_WIDTH: Dp = 160.dp
+private val CREATED_COL_WIDTH: Dp = 160.dp
 
 @Composable
 fun AllPagesScreen(
     viewModel: AllPagesViewModel,
     onPageClick: (Page) -> Unit,
     onBulkDelete: (List<String>) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    conflictFilePaths: Set<String> = emptySet(),
+    conflictsOnly: Boolean = false,
 ) {
     NavigationTracingEffect("AllPages")
+    var showConflictsOnly by remember(conflictsOnly) { mutableStateOf(conflictsOnly) }
     val pages by viewModel.pages.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val selectedUuids by viewModel.selectedUuids.collectAsState()
@@ -44,6 +51,11 @@ fun AllPagesScreen(
     val sortAscending by viewModel.sortAscending.collectAsState()
     val filterQuery by viewModel.filterQuery.collectAsState()
     val pageTypeFilter by viewModel.pageTypeFilter.collectAsState()
+    val displayedPages = if (showConflictsOnly) {
+        pages.filter { it.page.filePath in conflictFilePaths }
+    } else {
+        pages
+    }
 
     var showDeleteDialog by remember { mutableStateOf(false) }
 
@@ -108,6 +120,13 @@ fun AllPagesScreen(
                     }
                 )
             }
+            if (conflictFilePaths.isNotEmpty()) {
+                FilterChip(
+                    selected = showConflictsOnly,
+                    onClick = { showConflictsOnly = !showConflictsOnly },
+                    label = { Text("⚠ ${conflictFilePaths.size} conflicts") }
+                )
+            }
         }
 
         // Column header row
@@ -119,7 +138,7 @@ fun AllPagesScreen(
         ) {
             if (isInSelectionMode) {
                 Checkbox(
-                    checked = selectedUuids.size == pages.size && pages.isNotEmpty(),
+                    checked = selectedUuids.size == displayedPages.size && displayedPages.isNotEmpty(),
                     onCheckedChange = { checked ->
                         if (checked) viewModel.selectAll() else viewModel.clearSelection()
                     },
@@ -173,13 +192,13 @@ fun AllPagesScreen(
                     CircularProgressIndicator()
                 }
             }
-            pages.isEmpty() -> {
+            displayedPages.isEmpty() -> {
                 Box(
                     modifier = Modifier.fillMaxWidth().weight(1f),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "No pages found.",
+                        text = if (showConflictsOnly) "No conflicted pages found." else "No pages found.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -187,11 +206,12 @@ fun AllPagesScreen(
             }
             else -> {
                 LazyColumn(modifier = Modifier.weight(1f)) {
-                    items(items = pages, key = { it.page.uuid }) { row ->
+                    typedItems(items = displayedPages, key = { it.page.uuid.asLazyKey() }) { row ->
                         PageRowItem(
                             row = row,
                             isSelected = row.page.uuid.value in selectedUuids,
                             isInSelectionMode = isInSelectionMode,
+                            hasConflict = row.page.filePath in conflictFilePaths,
                             onToggleSelection = { viewModel.toggleSelection(row.page.uuid.value) },
                             onClick = {
                                 if (isInSelectionMode) {
@@ -282,7 +302,8 @@ private fun PageRowItem(
     onToggleSelection: () -> Unit,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    hasConflict: Boolean = false,
 ) {
     Row(
         modifier = modifier
@@ -298,6 +319,15 @@ private fun PageRowItem(
                 modifier = Modifier.size(24.dp)
             )
             Spacer(Modifier.width(8.dp))
+        }
+        if (hasConflict) {
+            Icon(
+                imageVector = Icons.Default.Warning,
+                contentDescription = "Page modified on disk",
+                tint = Color(0xFFF59E0B),
+                modifier = Modifier.size(14.dp)
+            )
+            Spacer(Modifier.width(4.dp))
         }
         Text(
             text = row.page.name,
@@ -329,6 +359,9 @@ private fun PageRowItem(
 }
 
 private fun formatInstantShort(instant: kotlin.time.Instant): String {
-    val date = instant.toLocalDateTime(TimeZone.currentSystemDefault()).date
-    return "${date.year}-${date.monthNumber.toString().padStart(2, '0')}-${date.dayOfMonth.toString().padStart(2, '0')}"
+    val dt = instant.toLocalDateTime(TimeZone.currentSystemDefault())
+    val date = dt.date
+    val time = dt.time
+    return "${date.year}-${date.monthNumber.toString().padStart(2, '0')}-${date.dayOfMonth.toString().padStart(2, '0')} " +
+        "${time.hour.toString().padStart(2, '0')}:${time.minute.toString().padStart(2, '0')}:${time.second.toString().padStart(2, '0')}"
 }

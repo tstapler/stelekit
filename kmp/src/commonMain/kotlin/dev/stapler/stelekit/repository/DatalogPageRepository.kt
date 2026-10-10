@@ -1,6 +1,8 @@
 @file:Suppress("InMemoryPagination") // in-memory test fake — drop/take IS the right implementation
 package dev.stapler.stelekit.repository
 
+import dev.stapler.stelekit.merge.SelectionFilter
+import dev.stapler.stelekit.merge.filteredAndSorted
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
@@ -12,7 +14,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.CancellationException
-import dev.stapler.stelekit.coroutines.PlatformDispatcher
 
 /**
  * Datalog-style in-memory repository for pages that mirrors Datascript behavior.
@@ -69,9 +70,15 @@ class DatalogPageRepository : PageRepository {
         }
     }
 
-    override fun getAllPages(): Flow<Either<DomainError, List<Page>>> {
+    override fun getFavoritePages(): Flow<Either<DomainError, List<Page>>> {
         return pages.map { map ->
-            map.values.toList().right()
+            map.values.filter { it.isFavorite }.sortedBy { it.name }.right()
+        }
+    }
+
+    override fun getPageNameEntries(): Flow<Either<DomainError, List<PageNameEntry>>> {
+        return pages.map { map ->
+            map.values.map { PageNameEntry(it.name, it.isJournal) }.right()
         }
     }
 
@@ -98,10 +105,34 @@ class DatalogPageRepository : PageRepository {
         }
     }
 
-    override fun getUnloadedPages(): Flow<Either<DomainError, List<Page>>> {
+    override fun getPagesFiltered(filter: SelectionFilter, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
+        pages.map { it.values.filteredAndSorted(filter).drop(offset).take(limit).right() }
+
+    override suspend fun countPagesFiltered(filter: SelectionFilter): Either<DomainError, Long> =
+        pages.value.values.count(filter::matches).toLong().right()
+
+    override suspend fun getPagesAmong(filter: SelectionFilter, uuids: Collection<PageUuid>): Either<DomainError, List<Page>> {
+        val wanted = uuids.mapTo(HashSet()) { it.value }
+        return pages.value.values.filter { it.uuid.value in wanted && filter.matches(it) }.right()
+    }
+
+    override fun getUnloadedPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
         return pages.map { map ->
-            map.values.filter { !it.isContentLoaded }.right()
+            map.values.filter { !it.isContentLoaded }
+                .sortedBy { it.uuid.value }.drop(offset).take(limit).right()
         }
+    }
+
+    override suspend fun getPagesByNames(names: Collection<String>): Either<DomainError, List<Page>> {
+        val lower = names.mapTo(HashSet()) { it.lowercase() }
+        return pages.value.values.filter { it.name.lowercase() in lower }.right()
+    }
+
+    override suspend fun getJournalPagesByDates(
+        dates: Collection<kotlinx.datetime.LocalDate>,
+    ): Either<DomainError, List<Page>> {
+        val dateSet = dates.toHashSet()
+        return pages.value.values.filter { it.journalDate != null && it.journalDate in dateSet }.right()
     }
 
     override suspend fun savePage(page: Page): Either<DomainError, Unit> {

@@ -12,6 +12,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 /**
@@ -66,3 +67,44 @@ internal fun <SqlRow : Any, Domain> Query<SqlRow>.asDbFlowOrNull(
         .mapToOneOrNull(dispatcher)
         .map { row -> row?.let(mapper).right() }
         .catchDbError()
+
+/**
+ * One-shot suspend read returning a list — works on both sync and async drivers (including WASM).
+ *
+ * `executeAsList()` calls `QueryResult.AsyncValue.value` synchronously, which throws on the
+ * WASM OPFS driver. This helper routes through `asFlow().mapToList(dispatcher).first()`, which
+ * properly awaits async query results on every platform.
+ *
+ * Throws [DomainError.DatabaseError.ReadFailed] wrapped in [Either.Left] on failure.
+ */
+internal suspend fun <SqlRow : Any, Domain> Query<SqlRow>.asDbQueryList(
+    dispatcher: CoroutineDispatcher,
+    mapper: (SqlRow) -> Domain,
+): Either<DomainError, List<Domain>> =
+    try {
+        asFlow().mapToList(dispatcher).first().map(mapper).right()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        DomainError.DatabaseError.ReadFailed(e.message ?: "database closed").left()
+    }
+
+/**
+ * One-shot suspend read returning one-or-null — works on both sync and async drivers (including WASM).
+ *
+ * `executeAsOneOrNull()` calls `QueryResult.AsyncValue.value` synchronously, which throws on the
+ * WASM OPFS driver. This helper routes through `asFlow().mapToOneOrNull(dispatcher).first()`.
+ *
+ * Throws [DomainError.DatabaseError.ReadFailed] wrapped in [Either.Left] on failure.
+ */
+internal suspend fun <SqlRow : Any, Domain> Query<SqlRow>.asDbQueryOrNull(
+    dispatcher: CoroutineDispatcher,
+    mapper: (SqlRow) -> Domain,
+): Either<DomainError, Domain?> =
+    try {
+        asFlow().mapToOneOrNull(dispatcher).first()?.let(mapper).right()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        DomainError.DatabaseError.ReadFailed(e.message ?: "database closed").left()
+    }

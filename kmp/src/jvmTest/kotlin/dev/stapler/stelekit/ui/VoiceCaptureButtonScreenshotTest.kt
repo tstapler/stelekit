@@ -2,8 +2,12 @@
 // SPDX-License-Identifier: Elastic-2.0
 package dev.stapler.stelekit.ui
 
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performClick
+import dev.stapler.stelekit.ui.components.VOICE_CAPTURE_UNSUPPORTED_DESCRIPTION
 import dev.stapler.stelekit.ui.components.VoiceCaptureButton
 import dev.stapler.stelekit.ui.theme.StelekitTheme
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
@@ -98,5 +102,55 @@ class VoiceCaptureButtonScreenshotTest {
         render(VoiceCaptureState.Error(PipelineStage.TRANSCRIBING, "Network error — check your connection"), StelekitThemeMode.DARK)
         composeTestRule.waitForIdle()
         composeTestRule.onRoot().captureRoboImage("build/outputs/roborazzi/voice_button_error_dark.png")
+    }
+
+    // GAP-002 (project_plans/rich-editing-experience/implementation/gap-backlog.md): on platforms
+    // with no real AudioRecorder, the Idle button must render as disabled with a clear
+    // "not available" affordance instead of a fully-interactive-looking control that silently
+    // records nothing. Semantics-only assertions (no golden image) — this is a behavior/state
+    // check, not a visual regression check.
+    @Test
+    fun voiceCaptureButton_idle_unsupported_isDisabled() {
+        var tapCount = 0
+        composeTestRule.setContent {
+            StelekitTheme(themeMode = StelekitThemeMode.LIGHT) {
+                VoiceCaptureButton(
+                    state = VoiceCaptureState.Idle,
+                    onTap = { tapCount++ },
+                    onDismissError = {},
+                    onAutoReset = {},
+                    isSupported = false,
+                )
+            }
+        }
+        composeTestRule.waitForIdle()
+
+        val node = composeTestRule.onNodeWithContentDescription(VOICE_CAPTURE_UNSUPPORTED_DESCRIPTION)
+        node.assertIsNotEnabled()
+        node.performClick()
+        composeTestRule.waitForIdle()
+
+        assert(tapCount == 0) { "onTap must not fire when voice capture is unsupported" }
+    }
+
+    @Test
+    fun voiceCaptureButton_idle_supported_isEnabledByDefault() {
+        var tapCount = 0
+        composeTestRule.setContent {
+            StelekitTheme(themeMode = StelekitThemeMode.LIGHT) {
+                VoiceCaptureButton(
+                    state = VoiceCaptureState.Idle,
+                    onTap = { tapCount++ },
+                    onDismissError = {},
+                    onAutoReset = {},
+                )
+            }
+        }
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithContentDescription("Start recording").performClick()
+        composeTestRule.waitForIdle()
+
+        assert(tapCount == 1) { "onTap must fire normally when isSupported defaults to true" }
     }
 }

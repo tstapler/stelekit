@@ -12,6 +12,10 @@ import androidx.compose.ui.Modifier
  * then invokes [onFilesDropped] with the dropped [java.io.File] instances (typed as [Any]
  * to keep the common API platform-agnostic).
  *
- * On Android, iOS, and WASM, this is a no-op and returns the receiver unchanged.
+ * On WASM, this captures OS file drops via a `document.body`-level JS listener (bubbling covers
+ * the Compose canvas), filters to the same image extensions as JVM, and invokes [onFilesDropped]
+ * with [dev.stapler.stelekit.service.DroppedFileBytes] instances (typed as [Any]).
+ *
+ * On Android and iOS, this is a no-op and returns the receiver unchanged.
  */
 expect fun Modifier.pageDropTarget(onFilesDropped: (List<Any>) -> Unit): Modifier

@@ -7,7 +7,6 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
-import platform.Network.NWPathMonitor
 import platform.Network.NWPathStatus
 import platform.Network.nw_path_monitor_cancel
 import platform.Network.nw_path_monitor_create

@@ -4,10 +4,8 @@
 package dev.stapler.stelekit.domain
 
 import dev.stapler.stelekit.model.AnnotationType
-import dev.stapler.stelekit.model.CalibrationMethod
 import dev.stapler.stelekit.model.ImageAnnotation
 import dev.stapler.stelekit.model.MeasurementAnnotation
-import dev.stapler.stelekit.model.MeasurementUnit
 
 // Regex compiled once at file level — prevents RegexInLambda detekt warning.
 private val LABEL_SANITIZE_REGEX = Regex("[^a-zA-Z0-9-_]")

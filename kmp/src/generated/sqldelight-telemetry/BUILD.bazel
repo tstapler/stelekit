@@ -1,0 +1,23 @@
+"""
+Checked-in SQLDelight generated sources for TelemetryDatabase.
+
+Regeneration: run `./gradlew :kmp:generateCommonMainTelemetryDatabase` (or the
+  generateSqlDelightInterface task) then
+  rsync -a kmp/build/generated/sqldelight/code/TelemetryDatabase/commonMain/ kmp/src/generated/sqldelight-telemetry/
+after any change to kmp/src/commonMain/sqldelight/TelemetryDatabase.sq files.
+"""
+
+load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library")
+
+# JVM target for desktop/tests
+kt_jvm_library(
+    name = "sqldelight_generated_telemetry_jvm",
+    srcs = glob(["**/*.kt"]),
+    deps = [
+        "@maven//:app_cash_sqldelight_runtime_jvm",
+        "@maven//:app_cash_sqldelight_coroutines_extensions_jvm",
+        "@maven//:app_cash_sqldelight_async_extensions_jvm",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm",
+    ],
+    visibility = ["//kmp:__subpackages__"],
+)

@@ -29,7 +29,7 @@ class SpanEmitter(private val ringBuffer: RingBufferSpanExporter?) {
                 startEpochMs = startMs,
                 endEpochMs = endMs,
                 durationMs = endMs - startMs,
-                attributes = attrs + ("session.id" to AppSession.id),
+                attributes = attrs + AppSession.autoAttributes(),
                 statusCode = statusCode,
                 traceId = traceId,
                 spanId = UuidGenerator.generateV7(),

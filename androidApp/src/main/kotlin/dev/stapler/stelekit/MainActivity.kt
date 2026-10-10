@@ -2,29 +2,53 @@ package dev.stapler.stelekit
 
 import android.Manifest
 import android.content.ComponentCallbacks2
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.lifecycleScope
+import dev.stapler.stelekit.db.AndroidInsufficientSpaceCheck
 import dev.stapler.stelekit.db.GraphManager
+import dev.stapler.stelekit.db.RelocationStagingDirectory
+import dev.stapler.stelekit.db.createAndroidGraphMoveQuiesceStrategy
+import dev.stapler.stelekit.db.createAndroidHostLinkStep
+import dev.stapler.stelekit.db.createAndroidStorageLocationResolver
 import dev.stapler.stelekit.domain.UrlFetcherAndroid
+import dev.stapler.stelekit.llm.LlmCredentialStore
+import dev.stapler.stelekit.llm.LlmProviderAvailability
+import dev.stapler.stelekit.llm.LlmProviderKind
+import dev.stapler.stelekit.llm.LlmSettings
+import dev.stapler.stelekit.llm.buildLlmProviderRegistry
+import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.PlatformSettings
+import dev.stapler.stelekit.platform.security.CredentialStore
 import dev.stapler.stelekit.git.AndroidGitRepository
+import dev.stapler.stelekit.git.GitCloneWorker
+import dev.stapler.stelekit.git.GitShadowWorktree
+import dev.stapler.stelekit.git.GitSyncBusyCounter
 import dev.stapler.stelekit.git.GitSyncServiceRegistry
+import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.service.rememberAndroidMediaAttachmentService
 import dev.stapler.stelekit.ui.StelekitApp
+import dev.stapler.stelekit.ui.StelekitAppCoreServices
+import dev.stapler.stelekit.ui.StelekitAppDeps
+import dev.stapler.stelekit.ui.StelekitAppLifecycleHooks
+import dev.stapler.stelekit.ui.StelekitAppPlatformIntegrations
+import dev.stapler.stelekit.ui.StelekitAppVoiceConfig
+import dev.stapler.stelekit.ui.StelekitViewModel
 import android.speech.SpeechRecognizer
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -33,20 +57,36 @@ import dev.stapler.stelekit.performance.OtelProvider
 import dev.stapler.stelekit.performance.createAndroidSpanRecorder
 import dev.stapler.stelekit.voice.AndroidAudioRecorder
 import dev.stapler.stelekit.voice.AndroidSpeechRecognizerProvider
-import dev.stapler.stelekit.voice.MlKitLlmFormatterProvider
+import dev.stapler.stelekit.voice.VoicePipelineConfig
 import dev.stapler.stelekit.voice.VoiceSettings
 import dev.stapler.stelekit.voice.buildVoicePipeline
 import dev.stapler.stelekit.platform.google.AndroidGoogleAuthManager
+import dev.stapler.stelekit.platform.sensor.AndroidCameraFrameSource
+import dev.stapler.stelekit.platform.sensor.AndroidCameraProvider
+import dev.stapler.stelekit.platform.sensor.SensorModule
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 
 class MainActivity : ComponentActivity() {
 
     private var graphManager: GraphManager? = null
     private var onMemoryPressureHandler: (() -> Unit)? = null
+    /**
+     * Story 4.1.5: graph id read from [GitCloneWorker.EXTRA_OPEN_GIT_SETUP_GRAPH_ID] on a
+     * notification tap — either a cold start ([onCreate]) or a warm one ([onNewIntent], since
+     * the notification's `PendingIntent` targets this activity with
+     * `FLAG_ACTIVITY_SINGLE_TOP`/`FLAG_ACTIVITY_CLEAR_TOP`). Consumed (reset to null) once the
+     * deep-link effect below has switched to the graph and opened Git Setup at Step 5 for it.
+     */
+    private var pendingGitSetupGraphId by mutableStateOf<String?>(null)
     private var pendingFolderPick: CompletableDeferred<String?>? = null
     private var pendingMicPermission: CompletableDeferred<Boolean>? = null
+    private var pendingCameraPermission: CompletableDeferred<Boolean>? = null
     private var pendingSaveFile: CompletableDeferred<String?>? = null
+    private var pendingFilePick: CompletableDeferred<String?>? = null
 
     private val micPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -55,19 +95,59 @@ class MainActivity : ComponentActivity() {
         pendingMicPermission = null
     }
 
+    private val cameraPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        pendingCameraPermission?.complete(granted)
+        pendingCameraPermission = null
+    }
+
     private val saveFileLauncher = registerForActivityResult(
-        ActivityResultContracts.CreateDocument("application/json")
+        // "*/*" lets the provider infer MIME type from the file extension. A fixed
+        // "application/json" prevents some Download providers from opening an output
+        // stream for .json.gz (binary) files, causing silent 0-byte exports.
+        ActivityResultContracts.CreateDocument("*/*")
     ) { uri: Uri? ->
         pendingSaveFile?.complete(uri?.toString())
         pendingSaveFile = null
     }
 
+    private val filePickerLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri == null) {
+            pendingFilePick?.complete(null)
+            pendingFilePick = null
+            return@registerForActivityResult
+        }
+        try {
+            val sshKeysDir = getDir("ssh_keys", Context.MODE_PRIVATE)
+            sshKeysDir.mkdirs()
+            val displayName = contentResolver.query(
+                uri,
+                arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),
+                null, null, null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) else null
+            } ?: uri.lastPathSegment ?: "ssh_key"
+            val destFile = File(sshKeysDir, displayName)
+            contentResolver.openInputStream(uri)?.use { input ->
+                destFile.outputStream().use { output -> input.copyTo(output) }
+            }
+            pendingFilePick?.complete(destFile.absolutePath)
+        } catch (e: Exception) {
+            logger.error("filePickerLauncher: failed to copy SSH key file", e)
+            pendingFilePick?.complete(null)
+        }
+        pendingFilePick = null
+    }
+
     private val folderPickerLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocumentTree()
     ) { treeUri: Uri? ->
-        Log.d(TAG, "folderPicker: result treeUri=$treeUri")
+        logger.debug("folderPicker: result treeUri=$treeUri")
         if (treeUri == null) {
-            Log.d(TAG, "folderPicker: user cancelled or no URI returned")
+            logger.debug("folderPicker: user cancelled or no URI returned")
             pendingFolderPick?.complete(null)
             pendingFolderPick = null
             return@registerForActivityResult
@@ -75,9 +155,9 @@ class MainActivity : ComponentActivity() {
 
         // Reject cloud provider URIs — only local ExternalStorageProvider is supported in v1
         val authority = treeUri.authority ?: ""
-        Log.d(TAG, "folderPicker: authority=$authority")
+        logger.debug("folderPicker: authority=$authority")
         if (authority != EXTERNAL_STORAGE_AUTHORITY) {
-            Log.w(TAG, "folderPicker: rejected non-local authority '$authority' (expected $EXTERNAL_STORAGE_AUTHORITY)")
+            logger.warn("folderPicker: rejected non-local authority '$authority' (expected $EXTERNAL_STORAGE_AUTHORITY)")
             pendingFolderPick?.complete(null)
             pendingFolderPick = null
             return@registerForActivityResult
@@ -89,9 +169,9 @@ class MainActivity : ComponentActivity() {
                 treeUri,
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             )
-            Log.d(TAG, "folderPicker: persistable permission taken for $treeUri")
+            logger.debug("folderPicker: persistable permission taken for $treeUri")
         } catch (e: SecurityException) {
-            Log.e(TAG, "folderPicker: failed to take persistable permission", e)
+            logger.error("folderPicker: failed to take persistable permission", e)
             pendingFolderPick?.complete(null)
             pendingFolderPick = null
             return@registerForActivityResult
@@ -106,17 +186,17 @@ class MainActivity : ComponentActivity() {
                     Uri.parse(oldUriStr),
                     Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                 )
-                Log.d(TAG, "folderPicker: released old grant for $oldUriStr")
+                logger.debug("folderPicker: released old grant for $oldUriStr")
             } catch (_: Exception) { /* best effort */ }
         }
 
         // 3. Persist the new URI
         prefs.edit().putString(PlatformFileSystem.KEY_SAF_TREE_URI, treeUri.toString()).apply()
-        Log.d(TAG, "folderPicker: URI persisted to SharedPreferences")
+        logger.debug("folderPicker: URI persisted to SharedPreferences")
 
         // 4. Complete the deferred with the saf:// path
         val safPath = PlatformFileSystem.toSafRoot(treeUri)
-        Log.d(TAG, "folderPicker: completing with safPath=$safPath")
+        logger.debug("folderPicker: completing with safPath=$safPath")
         pendingFolderPick?.complete(safPath)
         pendingFolderPick = null
     }
@@ -124,6 +204,24 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // Story 4.1.5: cold-start deep link from a GitCloneWorker notification tap — see
+        // pendingGitSetupGraphId's kdoc. onNewIntent handles the warm-start case below.
+        pendingGitSetupGraphId = intent.getStringExtra(GitCloneWorker.EXTRA_OPEN_GIT_SETUP_GRAPH_ID)
+
+        // Re-wire camera provider with this Activity's runtime permission launcher.
+        // SteleKitApplication sets a no-callback provider at process start; the callback
+        // requires a registered launcher which is only available after Activity.onCreate().
+        SensorModule.cameraProvider = AndroidCameraProvider(
+            context = applicationContext,
+            requestPermission = ::requestCameraPermission,
+        )
+        // Same re-wire as cameraProvider above — SteleKitApplication sets a no-callback source
+        // at process start; the callback requires a registered launcher only available here.
+        SensorModule.cameraFrameSource = AndroidCameraFrameSource(
+            context = applicationContext,
+            requestPermission = ::requestCameraPermission,
+        )
 
         // Upgrade the Application's shared fileSystem with the folder-picker callback.
         // SteleKitApplication already called init(applicationContext, null) — we add the
@@ -137,10 +235,16 @@ class MainActivity : ComponentActivity() {
             runOnUiThread { folderPickerLauncher.launch(hintUri) }
             deferred.await()
         }
-        fileSystem.initSaveFilePicker { suggestedName, _ -> // mimeType fixed at "application/json" via CreateDocument constructor
+        fileSystem.initSaveFilePicker { suggestedName, _ -> // MIME type inferred from extension via CreateDocument("*/*")
             val deferred = CompletableDeferred<String?>()
             pendingSaveFile = deferred
             runOnUiThread { saveFileLauncher.launch(suggestedName) }
+            deferred.await()
+        }
+        fileSystem.initFilePicker {
+            val deferred = CompletableDeferred<String?>()
+            pendingFilePick = deferred
+            runOnUiThread { filePickerLauncher.launch(arrayOf("*/*")) }
             deferred.await()
         }
 
@@ -165,6 +269,12 @@ class MainActivity : ComponentActivity() {
                         runOnUiThread { saveFileLauncher.launch(suggestedName) }
                         deferred.await()
                     }
+                    initFilePicker {
+                        val deferred = CompletableDeferred<String?>()
+                        pendingFilePick = deferred
+                        runOnUiThread { filePickerLauncher.launch(arrayOf("*/*")) }
+                        deferred.await()
+                    }
                 }
             }
             val audioRecorder = remember { AndroidAudioRecorder(this@MainActivity.applicationContext, this@MainActivity::requestMicrophonePermission) }
@@ -176,24 +286,120 @@ class MainActivity : ComponentActivity() {
                     this@MainActivity::requestMicrophonePermission,
                 ) else null
             }
-            val mlKitProvider = remember { MlKitLlmFormatterProvider.create() }
-            var deviceLlmAvailable by remember { mutableStateOf(false) }
-            LaunchedEffect(Unit) {
-                deviceLlmAvailable = mlKitProvider?.checkEligible() ?: false
+            // LLM provider registry + settings (Epic 8) — built the same way ui/App.kt builds
+            // them: a plain (non-vault) CredentialStore-backed LlmCredentialStore, plus
+            // LlmSettings for per-feature provider selection. Constructed once and remembered,
+            // not rebuilt on every recomposition.
+            val llmCredentialStore = remember {
+                LlmCredentialStore(CredentialStore())
             }
-            fun buildPipeline() = buildVoicePipeline(
-                audioRecorder,
-                voiceSettings,
-                if (deviceSttAvailable && voiceSettings.getUseDeviceStt()) deviceSttProvider else null,
-                if (deviceLlmAvailable && voiceSettings.getUseDeviceLlm()) mlKitProvider else null,
-            )
-            var voicePipeline by remember { mutableStateOf(buildPipeline()) }
-            LaunchedEffect(deviceLlmAvailable) {
-                voicePipeline = buildPipeline()
+            val llmSettings = remember { LlmSettings(PlatformSettings()) }
+            val llmProviderRegistry = remember(llmCredentialStore, llmSettings) {
+                buildLlmProviderRegistry(llmCredentialStore, llmSettings)
+            }
+            var deviceLlmAvailable by remember { mutableStateOf(false) }
+            var voicePipeline by remember { mutableStateOf(VoicePipelineConfig()) }
+
+            // buildVoicePipeline is suspend (it live-checks provider availability), so this can
+            // only run from a coroutine. deviceLlmAvailable mirrors the old checkEligible() flag
+            // for VoiceCaptureSettings' informational UI — now derived from the on-device
+            // provider's live LlmProviderAvailability instead of MlKitLlmFormatterProvider
+            // directly, since the registry now owns provider construction.
+            suspend fun rebuildVoicePipeline() {
+                val onDeviceProvider = llmProviderRegistry.all()
+                    .firstOrNull { it.kind == LlmProviderKind.ON_DEVICE }
+                deviceLlmAvailable = onDeviceProvider?.checkAvailability() is LlmProviderAvailability.Available
+                voicePipeline = buildVoicePipeline(
+                    audioRecorder = audioRecorder,
+                    settings = voiceSettings,
+                    directSpeechProvider = if (deviceSttAvailable && voiceSettings.getUseDeviceStt()) deviceSttProvider else null,
+                    registry = llmProviderRegistry,
+                    llmSettings = llmSettings,
+                )
+            }
+            val composeScope = rememberCoroutineScope()
+            LaunchedEffect(llmProviderRegistry) {
+                rebuildVoicePipeline()
             }
             val spanRecorder = remember { createAndroidSpanRecorder() }
-            val gitRepository = remember { AndroidGitRepository() }
-            val attachmentService = rememberAndroidMediaAttachmentService(this@MainActivity)
+            val gitRepository = remember { buildGitRepository(applicationContext, app.fileSystem) }
+            // git-sync-resilience Story 3.1.3: routes performCloneAndSave's Android call site
+            // through GitCloneWorker's dataSync foreground service instead of this composable's
+            // own rememberCoroutineScope() — see StelekitAppPlatformIntegrations.gitCloneWorkerLauncher.
+            val gitCloneWorkerLauncher = remember {
+                dev.stapler.stelekit.git.AndroidGitCloneWorkerLauncher(applicationContext)
+            }
+            val attachmentService = rememberAndroidMediaAttachmentService(this@MainActivity, fileSystem)
+
+            // Story 4.1.5: mirrors graphManager's onGraphManagerReady pattern above — kept current
+            // by onViewModelReady so the deep-link LaunchedEffect further below always acts on the
+            // active graph's live ViewModel, including after a switchGraph-triggered recreation.
+            var activeViewModel by remember { mutableStateOf<StelekitViewModel?>(null) }
+
+            // CRITICAL finding (PR #327 review): shared with GitSyncService (via
+            // StelekitAppPlatformIntegrations.gitSyncBusyCounter, passed below) so
+            // AndroidGraphMoveQuiesceStrategy.quiesce()'s awaitIdle() actually observes real
+            // sync() activity — a single instance constructed once at this composition root and
+            // threaded into both construction sites, never one fresh instance per site.
+            val sharedGitSyncBusyCounter = remember { GitSyncBusyCounter() }
+
+            // Phase 3 (Epic 3.2): real quiesce port for GraphRelocationCoordinator, constructed
+            // here (not inside StelekitApp) since it needs this Activity's Context for
+            // WorkManagerSyncScheduler pause/resume. shadowWorktreeTarget still always resolves to
+            // null: AndroidGitRepository.shadowWorktreeFor() and the GitShadowFlushActor a real
+            // flush lambda needs are both `internal` to the :kmp module and unreachable from this
+            // :androidApp module, so wiring a real resolver needs a public seam added to
+            // AndroidGitRepository itself — out of scope for this focused fix (see its TODO below).
+            // So relocate correctly pauses WorkManager, awaits real git-sync idleness, and copies
+            // files, but doesn't yet drain/lock a shadow worktree's write-back queue before
+            // copying it.
+            // TODO(shadowWorktreeTarget): resolve op's graph to its real ShadowWorktreeQuiesceTarget
+            // (shadowKey/queue/flush) once AndroidGitRepository exposes a public accessor for its
+            // internal shadowWorktreeFor()/GitShadowFlushActor — currently always null, not wired.
+            val androidGraphMoveQuiesceStrategy = remember(app.graphManager, sharedGitSyncBusyCounter) {
+                app.graphManager?.let {
+                    createAndroidGraphMoveQuiesceStrategy(
+                        context = applicationContext,
+                        gitSyncBusyCounter = sharedGitSyncBusyCounter,
+                        shadowWorktreeTarget = { null },
+                    )
+                }
+            }
+            val androidStorageLocationResolver = remember(app.graphManager) {
+                app.graphManager?.let { gm -> createAndroidStorageLocationResolver(gm, applicationContext) }
+            }
+
+            // Epic 4.2 (Story 4.2.1): fixes "Link" always failing with DestinationNotWritable —
+            // no androidMain construction site wired a HostLinkStep before this. Stateless (no
+            // Context/graph dependency), so a single remembered instance suffices; see
+            // createAndroidHostLinkStep's doc for why it's a genuine no-op that never repoints
+            // storage_locations.
+            val androidHostLinkStep = remember { createAndroidHostLinkStep() }
+
+            // MAJOR finding (PR #327 review): real pre-flight free-space check — previously never
+            // wired, so GraphRelocationCoordinator's default BulkCopyVerifier always used
+            // InsufficientSpaceCheck.NONE and never actually checked available space before a
+            // relocate's copy. Stateless (StatFs is checked per-call, not cached), so a single
+            // remembered instance suffices.
+            val androidInsufficientSpaceCheck = remember { AndroidInsufficientSpaceCheck() }
+
+            // One-shot startup orphan sweep (plan.md Phase 6, Epic 6.1) — deletes long-unused
+            // shadow git worktrees. Self-contained: no GraphManager/GitConfigRepository lookup
+            // needed (see GitShadowWorktree.sweepOrphans doc), so it can run unconditionally here
+            // regardless of which graph (if any) is active. sweepOrphans() does blocking file I/O
+            // and is intentionally not suspend, so the Dispatchers.IO switch happens here.
+            LaunchedEffect(Unit) {
+                withContext(Dispatchers.IO) {
+                    GitShadowWorktree.sweepOrphans(this@MainActivity.applicationContext)
+                    // Same startup pass sweeps interrupted-relocate staging directories (Story 3.1.2)
+                    // — AppOwned's destination parent is context.filesDir/graphs, the same root
+                    // GitShadowWorktree.sweepOrphans() scans, so both sweeps run over one directory.
+                    RelocationStagingDirectory.sweep(
+                        fileSystem = fileSystem,
+                        destinationParent = File(this@MainActivity.applicationContext.filesDir, "graphs").path,
+                    )
+                }
+            }
 
             // Keep GitSyncServiceRegistry in sync so GitSyncWorker can reach the active service
             // even when the process was revived by WorkManager without the UI being foregrounded.
@@ -204,10 +410,42 @@ class MainActivity : ComponentActivity() {
                 if (appGm == null) return@LaunchedEffect
                 val graphId = appGm.getActiveGraphId() ?: return@LaunchedEffect
                 val svc = activeGitSyncService
-                if (svc != null) GitSyncServiceRegistry.register(graphId, svc)
-                else GitSyncServiceRegistry.unregister(graphId)
+                if (svc != null) GitSyncServiceRegistry.register(graphId.value, svc)
+                else GitSyncServiceRegistry.unregister(graphId.value)
             }
 
+            // Story 4.1.5: drives the notification deep link once both a target graph id
+            // (pendingGitSetupGraphId) and the active graph's ViewModel (activeViewModel, kept
+            // current via onViewModelReady below) are available. Switching graphs recreates
+            // GraphContent — and this ViewModel — via key(activeGraphId) in StelekitApp, so this
+            // effect re-runs once onViewModelReady delivers the new instance for the target graph.
+            // The branching itself lives in resolveGitSetupDeepLinkAction (a pure function) so it
+            // can be unit-tested without a live Activity/Compose tree.
+            LaunchedEffect(pendingGitSetupGraphId, activeViewModel, appGm) {
+                when (
+                    val action = resolveGitSetupDeepLinkAction(
+                        pendingGraphId = pendingGitSetupGraphId,
+                        activeGraphId = appGm?.getActiveGraphId()?.value,
+                        viewModelAvailable = activeViewModel != null && appGm != null,
+                    )
+                ) {
+                    is GitSetupDeepLinkAction.SwitchGraph -> appGm?.switchGraph(action.graphId)
+                    GitSetupDeepLinkAction.OpenStep5 -> {
+                        activeViewModel?.openGitSetupForRetry()
+                        pendingGitSetupGraphId = null
+                    }
+                    GitSetupDeepLinkAction.None -> Unit
+                }
+            }
+
+            androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize()) {
+            val copyHost = androidx.compose.runtime.remember {
+                dev.stapler.stelekit.ui.screens.copy.copyHostConfigFor(
+                    applicationContext.filesDir.absolutePath,
+                    app.copyRunHost,
+                    dev.stapler.stelekit.merge.SourcePlatform.Android,
+                )
+            }
             StelekitApp(
                 fileSystem = fileSystem,
                 // When the benchmark extra is absent and SAF permission is not yet
@@ -216,24 +454,50 @@ class MainActivity : ComponentActivity() {
                 // path so the app opens the user's existing graph directly.
                 graphPath = intent.getStringExtra(EXTRA_BENCHMARK_GRAPH_PATH)
                     ?: if (fileSystem.hasStoragePermission()) fileSystem.getDefaultGraphPath() else "",
-                graphManager = app.graphManager,
-                urlFetcher = UrlFetcherAndroid(),
-                voicePipeline = voicePipeline,
-                voiceSettings = voiceSettings,
-                onRebuildVoicePipeline = { voicePipeline = buildPipeline() },
-                deviceSttAvailable = deviceSttAvailable,
-                deviceLlmAvailable = deviceLlmAvailable,
-                spanRecorder = spanRecorder,
-                gitRepository = gitRepository,
-                onGraphManagerReady = { gm -> graphManager = gm },
-                onMemoryPressure = { handler -> onMemoryPressureHandler = handler },
-                attachmentService = attachmentService,
+                deps = StelekitAppDeps(
+                    graphManager = app.graphManager,
+                    coreServices = StelekitAppCoreServices(
+                        urlFetcher = UrlFetcherAndroid(),
+                        voicePipeline = voicePipeline,
+                        spanRecorder = spanRecorder,
+                    ),
+                    voiceConfig = StelekitAppVoiceConfig(
+                        voiceSettings = voiceSettings,
+                        onRebuildVoicePipeline = { composeScope.launch { rebuildVoicePipeline() } },
+                        deviceSttAvailable = deviceSttAvailable,
+                        deviceLlmAvailable = deviceLlmAvailable,
+                    ),
+                    lifecycleHooks = StelekitAppLifecycleHooks(
+                        onGraphManagerReady = { gm -> graphManager = gm },
+                        onMemoryPressure = { handler -> onMemoryPressureHandler = handler },
+                        onViewModelReady = { vm -> activeViewModel = vm },
+                    ),
+                    platformIntegrations = StelekitAppPlatformIntegrations(
+                        gitRepository = gitRepository,
+                        gitCloneWorkerLauncher = gitCloneWorkerLauncher,
+                        attachmentService = attachmentService,
+                        requestCameraPermission = ::requestCameraPermission,
+                        graphMoveQuiesceStrategy = androidGraphMoveQuiesceStrategy,
+                        hostLinkStep = androidHostLinkStep,
+                        storageLocationResolver = androidStorageLocationResolver,
+                        insufficientSpaceCheck = androidInsufficientSpaceCheck,
+                        gitSyncBusyCounter = sharedGitSyncBusyCounter,
+                    ),
+                    captureDeps = app.captureDeps(copyHost),
+                ),
             )
+            RecentCaptureNotice(app, androidx.compose.ui.Modifier.align(androidx.compose.ui.Alignment.BottomCenter))
+            }
         }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        // Story 4.1.5: warm-start deep link from a GitCloneWorker notification tap — see
+        // pendingGitSetupGraphId's kdoc. onCreate handles the cold-start case.
+        intent.getStringExtra(GitCloneWorker.EXTRA_OPEN_GIT_SETUP_GRAPH_ID)?.let {
+            pendingGitSetupGraphId = it
+        }
         // Handle OAuth 2.0 deep-link callback: com.stelekit.app:/oauth2redirect?code=...
         val data = intent.data
         if (data?.scheme == "com.stelekit.app" && data.path == "/oauth2redirect") {
@@ -255,7 +519,7 @@ class MainActivity : ComponentActivity() {
         val app = application as? SteleKitApplication ?: return
         lifecycleScope.launch {
             try { app.fileSystem.flushPendingWrites() }
-            catch (e: Exception) { Log.w(TAG, "onStop write-behind flush failed", e) }
+            catch (e: Exception) { logger.warn("onStop write-behind flush failed", e) }
         }
     }
 
@@ -288,8 +552,19 @@ class MainActivity : ComponentActivity() {
         return deferred.await()
     }
 
+    private suspend fun requestCameraPermission(): Boolean {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+            == PackageManager.PERMISSION_GRANTED
+        ) return true
+        pendingCameraPermission?.let { return it.await() }
+        val deferred = CompletableDeferred<Boolean>()
+        pendingCameraPermission = deferred
+        runOnUiThread { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) }
+        return deferred.await()
+    }
+
     companion object {
-        private const val TAG = "MainActivity"
+        private val logger = dev.stapler.stelekit.logging.Logger("MainActivity")
         /** Authority for AOSP ExternalStorageProvider — the only provider supported in v1. */
         const val EXTERNAL_STORAGE_AUTHORITY = "com.android.externalstorage.documents"
         /**
@@ -298,5 +573,58 @@ class MainActivity : ComponentActivity() {
          * in /data/local/tmp/ without requiring SAF folder picker interaction.
          */
         const val EXTRA_BENCHMARK_GRAPH_PATH = "benchmark_graph_path"
+    }
+}
+
+/**
+ * Builds the real [AndroidGitRepository] used by the foreground UI path.
+ *
+ * Extracted to a top-level `internal fun` (mirroring `CaptureActivity.kt`'s
+ * `internal fun`/composable precedent for `CaptureActivityTest.kt`) so
+ * [MainActivityGitRepositoryWiringTest] can exercise the exact construction call site
+ * `MainActivity`'s `remember { }` block calls, rather than a parallel/tautological one.
+ *
+ * [fileSystem] must be the caller's real, `.init()`-ed [SteleKitApplication.fileSystem] instance
+ * (the one with `setWriteBehindQueue` wired) — this function does not choose which instance,
+ * only wires whatever it is given. `pathResolver`'s `MANAGE_EXTERNAL_STORAGE` fast-path logic is
+ * unchanged from what previously lived inline at this call site.
+ */
+internal fun buildGitRepository(context: Context, fileSystem: FileSystem): AndroidGitRepository =
+    AndroidGitRepository(
+        context = context,
+        pathResolver = { path -> PlatformFileSystem.resolveSafToRealPath(path, context) },
+        fileSystem = fileSystem,
+    )
+
+/**
+ * Story 4.1.5: what MainActivity's git-setup deep-link [LaunchedEffect] should do next, given a
+ * pending `EXTRA_OPEN_GIT_SETUP_GRAPH_ID` graph id, the currently active graph id, and whether the
+ * active graph's [StelekitViewModel] is available yet. Extracted to a pure top-level `internal
+ * fun` (mirroring [buildGitRepository]'s precedent) so [MainActivityGitSetupDeepLinkTest] can
+ * exercise the branching directly instead of driving a live Activity/Compose tree.
+ */
+internal sealed interface GitSetupDeepLinkAction {
+    /** The pending graph isn't active yet — switch to it first. `GraphManager.switchGraph`
+     * recreates `GraphContent`'s `StelekitViewModel` via `key(activeGraphId)`, so the caller's
+     * effect naturally re-evaluates once the new instance arrives via `onViewModelReady`. */
+    data class SwitchGraph(val graphId: GraphId) : GitSetupDeepLinkAction
+
+    /** The pending graph is already active and its ViewModel is available — open Step 5. */
+    data object OpenStep5 : GitSetupDeepLinkAction
+
+    /** Nothing to do: no pending deep link, or the ViewModel isn't ready yet. */
+    data object None : GitSetupDeepLinkAction
+}
+
+internal fun resolveGitSetupDeepLinkAction(
+    pendingGraphId: String?,
+    activeGraphId: String?,
+    viewModelAvailable: Boolean,
+): GitSetupDeepLinkAction {
+    if (pendingGraphId == null || !viewModelAvailable) return GitSetupDeepLinkAction.None
+    return if (activeGraphId != pendingGraphId) {
+        GitSetupDeepLinkAction.SwitchGraph(GraphId(pendingGraphId))
+    } else {
+        GitSetupDeepLinkAction.OpenStep5
     }
 }

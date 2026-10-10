@@ -20,19 +20,17 @@ class DebounceManager(
     private val pendingActions = mutableMapOf<String, suspend () -> Unit>()
     private val mutex = Mutex()
 
-    fun debounce(key: String, action: suspend () -> Unit) {
-        scope.launch {
-            mutex.withLock {
-                jobs[key]?.cancel()
-                pendingActions[key] = action
-                jobs[key] = scope.launch {
-                    delay(delayMs)
-                    mutex.withLock {
-                        pendingActions.remove(key)
-                        jobs.remove(key)
-                    }
-                    action()
+    suspend fun debounce(key: String, action: suspend () -> Unit) {
+        mutex.withLock {
+            jobs[key]?.cancel()
+            pendingActions[key] = action
+            jobs[key] = scope.launch {
+                delay(delayMs)
+                mutex.withLock {
+                    pendingActions.remove(key)
+                    jobs.remove(key)
                 }
+                action()
             }
         }
     }
