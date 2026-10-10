@@ -33,9 +33,26 @@ class RoundTripGuardTest {
     }
 
     @Test
-    fun crlfFileWithIdPropertyIsRefusedBecauseTheParserKeepsTheCarriageReturnInTheValue() {
-        val text = "- a\r\n  id:: 11111111-1111-1111-1111-111111111111"
-        assertIs<NotRoundTrippable.ExistingContentChanged>(RoundTripGuard.splice(text, root, path, false).leftOrNull())
+    fun crlfFilesWithIdPropertyRoundTripWithLineEndingsPreserved() {
+        val id = "11111111-1111-1111-1111-111111111111"
+        val bodies = listOf(
+            "- a\r\n  id:: $id",
+            "- a\r\n  id:: $id\r\n",
+            "- a\r\n  id:: $id\r\n- b\r\n  id:: 22222222-2222-2222-2222-222222222222\r\n  - c\r\n    id:: 33333333-3333-3333-3333-333333333333",
+        )
+        for (text in bodies) {
+            val ok = assertIs<Either.Right<SpliceResult>>(RoundTripGuard.splice(text, root, path, false), text.replace("\r", "\\r")).value
+            assertTrue(ok.text.startsWith(text), "untouched prefix byte-identical")
+            assertEquals(null, Regex("(?<!\r)\n").find(ok.text), "no bare LF")
+            assertEquals(null, probe(text).leftOrNull()?.message)
+        }
+    }
+
+    @Test
+    fun crlfParseDoesNotLeakCarriageReturnIntoIdsOrContent() {
+        val parsed = MergeConverters.parseMarkdown("- a\r\n  id:: 11111111-1111-1111-1111-111111111111\r\n", path, "guard", false)
+        assertEquals("11111111-1111-1111-1111-111111111111", parsed.mergePage.blocks.single().uuid)
+        assertTrue(parsed.blocks.none { '\r' in it.content })
     }
 
     @Test

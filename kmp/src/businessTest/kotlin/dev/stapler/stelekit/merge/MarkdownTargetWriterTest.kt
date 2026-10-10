@@ -120,15 +120,17 @@ class MarkdownTargetWriterTest {
     }
 
     @Test
-    fun crlfFileRefusesALabeledBlockAndStaysUntouched() = runTest {
+    fun crlfFileAcceptsALabeledBlockAndKeepsUntouchedBytes() = runTest {
         fs.seed(pagePath("Crlf"), MergeFixtures.REAL_CRLF_CLEAN)
         val w = writer()
         val existing = w.readExisting(PageKey("Crlf")).ok()!!
 
-        val result = w.write(PageKey("Crlf"), existing.copy(blocks = existing.blocks + block("x", "labeled")))
+        w.write(PageKey("Crlf"), existing.copy(blocks = existing.blocks + block("x", "labeled"))).ok()
 
-        assertIs<WriteRefusedReason.NotRoundTrippable>(refusal(result))
-        assertEquals(MergeFixtures.REAL_CRLF_CLEAN, fs.text(pagePath("Crlf")))
+        val after = fs.text(pagePath("Crlf"))!!
+        assertTrue(after.startsWith(MergeFixtures.REAL_CRLF_CLEAN), "untouched bytes preserved")
+        assertTrue(after.contains("labeled"))
+        assertEquals(null, Regex("(?<!\r)\n").find(after), "no bare LF")
     }
 
     @Test
