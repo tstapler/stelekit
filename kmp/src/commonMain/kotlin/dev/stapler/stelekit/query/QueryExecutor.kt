@@ -11,8 +11,10 @@ import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.repository.BlockReadRepository
 import dev.stapler.stelekit.repository.BlockSearchRepository
 import dev.stapler.stelekit.repository.PageRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
@@ -41,6 +43,12 @@ class QueryExecutor(
             .distinctUntilChanged()
             // Merge/sort work shouldn't run on the collector's (UI) dispatcher.
             .flowOn(PlatformDispatcher.Default)
+            // Repository flows already guard the closed DB, but a throwable in combine/flatMapLatest here
+            // would reach composition and kill the process on Android.
+            .catch { e ->
+                if (e is CancellationException) throw e
+                emit(DomainError.DatabaseError.ReadFailed(e.message ?: "unknown").left())
+            }
 
     private fun isQueryBlock(block: Block): Boolean = queryMacroPrefix.containsMatchIn(block.content)
 
@@ -99,7 +107,8 @@ class QueryExecutor(
     }
 
     private fun executeBetween(filter: QueryFilter.Between, limit: Int): Flow<Either<DomainError, List<Block>>> =
-        // Both boundary pages are subscribed, so a journal page created/loaded later re-evaluates the range.
+        // getPageByName emits once, so a boundary page that doesn't exist yet only resolves via dateOf's
+        // ISO-name fallback; the journal-page scan below is the reactive part.
         combine(
             pageRepository.getPageByName(filter.startPage),
             pageRepository.getPageByName(filter.endPage),

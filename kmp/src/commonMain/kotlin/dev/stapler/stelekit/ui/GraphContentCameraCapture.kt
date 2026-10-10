@@ -5,6 +5,7 @@
 package dev.stapler.stelekit.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -13,6 +14,8 @@ import androidx.compose.runtime.remember
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import kotlinx.coroutines.withContext
 import dev.stapler.stelekit.error.toUiMessage
+import dev.stapler.stelekit.ui.components.LocalQueryBlockContext
+import dev.stapler.stelekit.ui.components.QueryBlockContext
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.ImageAnnotation
 import dev.stapler.stelekit.model.ImageSource
@@ -60,18 +63,25 @@ internal fun GraphContentScreenAndCapture(deps: GraphContentDeps, viewModel: Ste
     // The flag read is a synchronous SQLite query, so it runs on the DB dispatcher, not during composition.
     val queryBlocksEnabled by produceState(initialValue = true, deps.repos) {
         value = withContext(PlatformDispatcher.DB) {
-            deps.repos.debugFlagRepository?.getFlag("live_query_blocks", default = true) ?: true
+            // A graph switch/close can invalidate the flag DB mid-read; fall back to the default.
+            try {
+                deps.repos.debugFlagRepository?.getFlag("live_query_blocks", default = true) ?: true
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                true
+            }
         }
     }
     val queryContext = remember(deps.repos, queryBlocksEnabled) {
-        dev.stapler.stelekit.ui.components.QueryBlockContext(
+        QueryBlockContext(
             executor = deps.repos.queryExecutor,
             pageRepository = deps.repos.pageRepository,
             enabled = queryBlocksEnabled,
         )
     }
-    androidx.compose.runtime.CompositionLocalProvider(
-        dev.stapler.stelekit.ui.components.LocalQueryBlockContext provides queryContext,
+    CompositionLocalProvider(
+        LocalQueryBlockContext provides queryContext,
     ) {
         ScreenRouter(
             screen = inputs.appState.currentScreen,

@@ -117,4 +117,18 @@ class QueryRepositoryReactivityTest {
         job.cancel()
         assertEquals(2, seen.last().size)
     }
+
+    @Test
+    fun `getPagesWithProperty fills the window past comma-in-value false positives`() = runBlocking {
+        val r = repos()
+        // "a1".."a5" store tags:a,b — the SQL token match for tags:a hits them, the exact parse does not.
+        (1..5).forEach { i -> r.pages.savePage(page("f$i", "a$i", mapOf("tags" to "a,b"))) }
+        r.pages.savePage(page("t1", "z1", mapOf("tags" to "a")))
+        r.pages.savePage(page("t2", "z2", mapOf("tags" to "a")))
+
+        val seen = CopyOnWriteArrayList<List<Page>>()
+        val job = collectRights(r.pages.getPagesWithProperty("tags", "a", 2, 0), seen)
+        awaitLatest(seen, "true matches fill the window") { l -> l.map { it.name } == listOf("z1", "z2") }
+        job.cancel()
+    }
 }

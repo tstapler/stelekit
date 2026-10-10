@@ -141,12 +141,41 @@ class SqlDelightPageRepository(
             .map { list -> list.map { it.toModel() }.right() }
             .catchDbError()
 
-    override fun getPagesWithProperty(key: String, value: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
-        queries.selectPagesWithPropertyPair("$key:$value", limit.toLong(), offset.toLong())
-            .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
-            // The SQL token match can't tell a comma inside a value ("tags:a,b") from a pair boundary;
-            // confirm against the parsed properties so every backend agrees.
-            .map { either -> either.map { pages -> pages.filter { it.properties[key] == value } } }
+    override fun getPagesWithProperty(key: String, value: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
+        val pair = "$key:$value"
+        // The one-row probe exists only to re-emit on any `pages` table invalidation.
+        return queries.selectPagesWithPropertyPair(pair, 1L, 0L)
+            .asFlow()
+            .mapToList(PlatformDispatcher.DB)
+            .conflate()
+            .map {
+                val matches: Either<DomainError, List<Page>> =
+                    exactPropertyMatches(pair, key, value, limit, offset).right()
+                matches
+            }
+            .flowOn(PlatformDispatcher.DB)
+            .catchDbError()
+    }
+
+    /**
+     * The SQL token match can't tell a comma inside a value ("tags:a,b") from a pair boundary, so a
+     * single `LIMIT` window can under-return. Widens the window until `offset + limit` exact matches
+     * are found or the table is exhausted, so every backend agrees on paging.
+     */
+    private fun exactPropertyMatches(pair: String, key: String, value: String, limit: Int, offset: Int): List<Page> {
+        val need = offset + limit
+        val batchSize = maxOf(need * 4, 100).toLong()
+        val accumulated = mutableListOf<Page>()
+        var sqlOffset = 0L
+        while (accumulated.size < need) {
+            val rows = queries.selectPagesWithPropertyPair(pair, batchSize, sqlOffset).executeAsList()
+            rows.mapNotNullTo(accumulated) { row -> row.toModel().takeIf { it.properties[key] == value } }
+            if (rows.size < batchSize) break
+            sqlOffset += batchSize
+        }
+        @Suppress("InMemoryPagination") // accumulated is bounded to roughly offset+limit by the loop above
+        return accumulated.drop(offset).take(limit)
+    }
 
     override fun getJournalPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
         queries.selectJournalPages(limit.toLong(), offset.toLong())
