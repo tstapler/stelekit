@@ -13,7 +13,6 @@ import dev.stapler.stelekit.model.GraphRegistry
 import dev.stapler.stelekit.model.StorageLocation
 import dev.stapler.stelekit.model.StorageMoveOperation
 import dev.stapler.stelekit.platform.HostAccessState
-import dev.stapler.stelekit.transfer.GraphMergeService
 import dev.stapler.stelekit.ui.components.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -32,8 +31,10 @@ internal class GraphContentLeftSidebarInputs(
     val hostWritePendingCount: Int,
     val hostWriteStuck: Boolean,
     val onReconnectHostDirectory: (() -> Unit)?,
-    val mergePendingPageCount: Int,
-    val graphMergeService: GraphMergeService,
+    val onCopyPages: (() -> Unit)?,
+    val copyDirection: dev.stapler.stelekit.merge.CopyDirection = dev.stapler.stelekit.merge.CopyDirection.Push,
+    val onCopyPagesFromGraph: ((dev.stapler.stelekit.model.GraphInfo) -> Unit)? = null,
+    val interceptGraphSwitch: (GraphId, () -> Unit) -> Unit = { _, proceed -> proceed() },
     val activeGraphInfo: dev.stapler.stelekit.model.GraphInfo?,
     val graphRegistry: GraphRegistry,
     val activeGraphId: GraphId?,
@@ -83,9 +84,9 @@ internal fun GraphContentLeftSidebar(
         hostPendingWriteCount = inputs.hostWritePendingCount,
         hostWriteStuck = inputs.hostWriteStuck,
         onReconnectHostDirectory = inputs.onReconnectHostDirectory ?: {},
-        mergePendingPageCount = inputs.mergePendingPageCount,
-        onExportPagesForMerge = { exportPagesForMerge(inputs, deps, viewModel) },
-        onImportMergedPages = { importMergedPages(inputs, deps, viewModel) },
+        onCopyPages = inputs.onCopyPages?.let { open -> { open(); inputs.closeSidebarIfMobile() } },
+        copyDirection = inputs.copyDirection,
+        onCopyPagesFromGraph = inputs.onCopyPagesFromGraph?.let { open -> { graph -> open(graph); inputs.closeSidebarIfMobile() } },
         onPageClick = { page ->
             viewModel.navigateTo(Screen.PageView(page))
             inputs.closeSidebarIfMobile()
@@ -96,7 +97,7 @@ internal fun GraphContentLeftSidebar(
         },
         onToggleFavorite = { viewModel.toggleFavorite(it) },
         onGraphSelected = { id ->
-            inputs.scope.launch { graphManager.switchGraph(GraphId(id)) }
+            inputs.interceptGraphSwitch(GraphId(id)) { inputs.scope.launch { graphManager.switchGraph(GraphId(id)) } }
             inputs.closeSidebarIfMobile()
         },
         onAddGraph = {
@@ -180,28 +181,6 @@ internal fun GraphContentLeftSidebar(
         defaultSection = appState.defaultSection.toDbString(),
         onSectionIndicatorClick = { viewModel.setSectionQuickToggleVisible(true) },
     )
-}
-
-private fun exportPagesForMerge(inputs: GraphContentLeftSidebarInputs, deps: GraphContentDeps, viewModel: StelekitViewModel) {
-    inputs.scope.launch {
-        inputs.graphMergeService.snapshot(deps.repos)
-        viewModel.sendSnackbar(
-            "Captured ${inputs.graphMergeService.pendingPageCount.value} pages — " +
-                "switch to the target graph, then tap \"Merge captured pages\""
-        )
-    }
-}
-
-private fun importMergedPages(inputs: GraphContentLeftSidebarInputs, deps: GraphContentDeps, viewModel: StelekitViewModel) {
-    inputs.scope.launch {
-        val result = inputs.graphMergeService.merge(deps.repos, deps.fileSystem)
-        val summary = buildString {
-            append("Merged ${result.imported.size} pages")
-            if (result.skippedExisting.isNotEmpty()) append(", skipped ${result.skippedExisting.size} already here")
-            if (result.failed.isNotEmpty()) append(", ${result.failed.size} failed")
-        }
-        viewModel.sendSnackbar(summary)
-    }
 }
 
 /**

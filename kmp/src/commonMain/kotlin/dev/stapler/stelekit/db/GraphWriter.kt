@@ -503,6 +503,11 @@ class GraphWriter(
                 } else {
                     fileSystem.readFile(filePath)
                 }
+            // An unloaded (index-only) page has no blocks in memory, so saving it would erase the file's content.
+            if (!page.isContentLoaded && !oldContentForSafetyCheck.isNullOrBlank()) {
+                logger.error("Refusing to overwrite non-empty file for unloaded page '${page.name}'. Save aborted.")
+                return@withContext false
+            }
             if (oldContentForSafetyCheck != null) {
                 val oldBlockCount = oldContentForSafetyCheck.lines().count { it.trim().startsWith("- ") }
                 if (oldBlockCount > largeDeletionThreshold && blocks.size < oldBlockCount / 2) {
@@ -788,11 +793,7 @@ class GraphWriter(
     }
 
     private fun getPageFilePath(page: Page, graphPath: String, layer: CryptoLayer? = cryptoLayer): String {
-        val safeName = FileUtils.sanitizeFileName(page.name)
-        val basePath = if (graphPath.endsWith("/")) graphPath else "$graphPath/"
-        val folder = if (page.isJournal) "journals" else "pages"
-        val extension = if (layer != null) ".md.stek" else ".md"
-        return "${basePath}$folder/$safeName$extension"
+        return PageFileResolver.pagePath(page.name, page.isJournal, graphPath, encrypted = layer != null)
     }
 
     /** Compute the graph-root-relative path used as AAD for file encryption. */

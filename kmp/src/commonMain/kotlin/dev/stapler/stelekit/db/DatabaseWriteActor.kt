@@ -224,6 +224,10 @@ class DatabaseWriteActor(
     // @Volatile gives the required single-writer/multi-reader visibility without atomics.
     @Volatile private var _isActorProcessing: Boolean = false
 
+    /** True once the loop has ended or [close] ran: every later write fails fast, and the DB behind it may be closing. */
+    @Volatile var isStopped: Boolean = false
+        private set
+
     /**
      * Counts callers that have successfully sent a request but whose [CompletableDeferred.await]
      * has not yet returned. Incremented just before [Channel.send] and decremented in the
@@ -295,6 +299,24 @@ class DatabaseWriteActor(
                 throw e
             } catch (_: Exception) {
                 // Channel closed or coroutine cancelled — exit cleanly.
+            } finally {
+                failPendingAfterStop()
+            }
+        }
+    }
+
+    /**
+     * The loop is gone (scope cancelled): close the channels so later sends fail fast, and fail
+     * queued requests, otherwise their callers await a deferred nobody will complete.
+     */
+    private fun failPendingAfterStop() {
+        isStopped = true
+        highPriority.close()
+        lowPriority.close()
+        for (channel in listOf(highPriority, lowPriority)) {
+            while (true) {
+                val pending = channel.tryReceive().getOrNull() ?: break
+                pending.deferred.complete(DomainError.DatabaseError.WriteFailed(STOPPED_MESSAGE).left())
             }
         }
     }
@@ -887,6 +909,7 @@ class DatabaseWriteActor(
         execute { pageRepository.deletePage(pageUuid) }
 
     fun close() {
+        isStopped = true
         highPriority.close()
         lowPriority.close()
         // Only cancel the scope if we created it; injected scopes (e.g. test schedulers)
@@ -901,6 +924,9 @@ class DatabaseWriteActor(
          * materializing all blocks across every page before the first delete runs.
          */
         private const val PAGE_DELETE_CHUNK = 25
+
+        /** Message of the failure given to requests queued when the actor's scope was cancelled. */
+        const val STOPPED_MESSAGE = "write actor stopped"
 
         /**
          * Sentinel page UUID emitted by [blockInvalidations] when the write came from a generic

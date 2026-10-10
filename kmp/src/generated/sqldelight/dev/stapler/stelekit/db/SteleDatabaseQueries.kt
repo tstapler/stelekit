@@ -516,6 +516,15 @@ public class SteleDatabaseQueries(
     cursor.getLong(0)!!
   }
 
+  public fun <T : Any> countBlocksByPageUuids(uuids: Collection<String>, mapper: (page_uuid: String, block_count: Long) -> T): Query<T> = CountBlocksByPageUuidsQuery(uuids) { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getLong(1)!!
+    )
+  }
+
+  public fun countBlocksByPageUuids(uuids: Collection<String>): Query<CountBlocksByPageUuids> = countBlocksByPageUuids(uuids, ::CountBlocksByPageUuids)
+
   public fun <T : Any> selectBlocksByParentUuidOrdered(parent_uuid: String?, mapper: (
     id: Long,
     uuid: String,
@@ -587,6 +596,46 @@ public class SteleDatabaseQueries(
   }
 
   public fun selectBlocksByParentUuids(parent_uuid: Collection<String?>): Query<Blocks> = selectBlocksByParentUuids(parent_uuid, ::Blocks)
+
+  public fun <T : Any> selectMergeConflictBlocks(
+    uuid: String,
+    `value`: Long,
+    mapper: (
+      id: Long,
+      uuid: String,
+      page_uuid: String,
+      parent_uuid: String?,
+      left_uuid: String?,
+      content: String,
+      level: Long,
+      position: String,
+      created_at: Long,
+      updated_at: Long,
+      properties: String?,
+      version: Long,
+      content_hash: String?,
+      block_type: String,
+    ) -> T,
+  ): Query<T> = SelectMergeConflictBlocksQuery(uuid, value) { cursor ->
+    mapper(
+      cursor.getLong(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!,
+      cursor.getString(3),
+      cursor.getString(4),
+      cursor.getString(5)!!,
+      cursor.getLong(6)!!,
+      cursor.getString(7)!!,
+      cursor.getLong(8)!!,
+      cursor.getLong(9)!!,
+      cursor.getString(10),
+      cursor.getLong(11)!!,
+      cursor.getString(12),
+      cursor.getString(13)!!
+    )
+  }
+
+  public fun selectMergeConflictBlocks(uuid: String, value_: Long): Query<Blocks> = selectMergeConflictBlocks(uuid, value_, ::Blocks)
 
   public fun <T : Any> selectBlockHierarchyRecursive(uuid: String, mapper: (
     id: Long,
@@ -1603,7 +1652,7 @@ public class SteleDatabaseQueries(
 
   public fun selectMostConnectedBlocks(value_: Long): Query<SelectMostConnectedBlocks> = selectMostConnectedBlocks(value_, ::SelectMostConnectedBlocks)
 
-  public fun <T : Any> selectPagesByNameLike(name: String, mapper: (
+  public fun <T : Any> selectPagesByNameLike(`value`: String, mapper: (
     uuid: String,
     name: String,
     namespace: String?,
@@ -1618,7 +1667,7 @@ public class SteleDatabaseQueries(
     is_content_loaded: Long,
     backlink_count: Long,
     section_id: String,
-  ) -> T): Query<T> = SelectPagesByNameLikeQuery(name) { cursor ->
+  ) -> T): Query<T> = SelectPagesByNameLikeQuery(value) { cursor ->
     mapper(
       cursor.getString(0)!!,
       cursor.getString(1)!!,
@@ -1637,12 +1686,12 @@ public class SteleDatabaseQueries(
     )
   }
 
-  public fun selectPagesByNameLike(name: String): Query<Pages> = selectPagesByNameLike(name, ::Pages)
+  public fun selectPagesByNameLike(value_: String): Query<Pages> = selectPagesByNameLike(value_, ::Pages)
 
   public fun <T : Any> selectPagesByNameLikePaginated(
-    name: String,
-    `value`: Long,
+    `value`: String,
     value_: Long,
+    value__: Long,
     mapper: (
       uuid: String,
       name: String,
@@ -1659,7 +1708,7 @@ public class SteleDatabaseQueries(
       backlink_count: Long,
       section_id: String,
     ) -> T,
-  ): Query<T> = SelectPagesByNameLikePaginatedQuery(name, value, value_) { cursor ->
+  ): Query<T> = SelectPagesByNameLikePaginatedQuery(value, value_, value__) { cursor ->
     mapper(
       cursor.getString(0)!!,
       cursor.getString(1)!!,
@@ -1679,10 +1728,129 @@ public class SteleDatabaseQueries(
   }
 
   public fun selectPagesByNameLikePaginated(
-    name: String,
-    value_: Long,
+    value_: String,
     value__: Long,
-  ): Query<Pages> = selectPagesByNameLikePaginated(name, value_, value__, ::Pages)
+    value___: Long,
+  ): Query<Pages> = selectPagesByNameLikePaginated(value_, value__, value___, ::Pages)
+
+  public fun <T : Any> selectPagesFilteredPaginated(
+    nameLo: String,
+    nameHi: String,
+    includeJournals: Long,
+    dateFrom: String?,
+    dateTo: String?,
+    tagLike: String?,
+    limit: Long,
+    offset: Long,
+    mapper: (
+      uuid: String,
+      name: String,
+      namespace: String?,
+      file_path: String?,
+      created_at: Long,
+      updated_at: Long,
+      properties: String?,
+      version: Long,
+      is_favorite: Long?,
+      is_journal: Long?,
+      journal_date: String?,
+      is_content_loaded: Long,
+      backlink_count: Long,
+      section_id: String,
+    ) -> T,
+  ): Query<T> = SelectPagesFilteredPaginatedQuery(nameLo, nameHi, includeJournals, dateFrom, dateTo, tagLike, limit, offset) { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2),
+      cursor.getString(3),
+      cursor.getLong(4)!!,
+      cursor.getLong(5)!!,
+      cursor.getString(6),
+      cursor.getLong(7)!!,
+      cursor.getLong(8),
+      cursor.getLong(9),
+      cursor.getString(10),
+      cursor.getLong(11)!!,
+      cursor.getLong(12)!!,
+      cursor.getString(13)!!
+    )
+  }
+
+  public fun selectPagesFilteredPaginated(
+    nameLo: String,
+    nameHi: String,
+    includeJournals: Long,
+    dateFrom: String?,
+    dateTo: String?,
+    tagLike: String?,
+    limit: Long,
+    offset: Long,
+  ): Query<Pages> = selectPagesFilteredPaginated(nameLo, nameHi, includeJournals, dateFrom, dateTo, tagLike, limit, offset, ::Pages)
+
+  public fun countPagesFiltered(
+    nameLo: String,
+    nameHi: String,
+    includeJournals: Long,
+    dateFrom: String?,
+    dateTo: String?,
+    tagLike: String?,
+  ): Query<Long> = CountPagesFilteredQuery(nameLo, nameHi, includeJournals, dateFrom, dateTo, tagLike) { cursor ->
+    cursor.getLong(0)!!
+  }
+
+  public fun <T : Any> selectPagesFilteredAmong(
+    uuids: Collection<String>,
+    nameLo: String,
+    nameHi: String,
+    includeJournals: Long,
+    dateFrom: String?,
+    dateTo: String?,
+    tagLike: String?,
+    mapper: (
+      uuid: String,
+      name: String,
+      namespace: String?,
+      file_path: String?,
+      created_at: Long,
+      updated_at: Long,
+      properties: String?,
+      version: Long,
+      is_favorite: Long?,
+      is_journal: Long?,
+      journal_date: String?,
+      is_content_loaded: Long,
+      backlink_count: Long,
+      section_id: String,
+    ) -> T,
+  ): Query<T> = SelectPagesFilteredAmongQuery(uuids, nameLo, nameHi, includeJournals, dateFrom, dateTo, tagLike) { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2),
+      cursor.getString(3),
+      cursor.getLong(4)!!,
+      cursor.getLong(5)!!,
+      cursor.getString(6),
+      cursor.getLong(7)!!,
+      cursor.getLong(8),
+      cursor.getLong(9),
+      cursor.getString(10),
+      cursor.getLong(11)!!,
+      cursor.getLong(12)!!,
+      cursor.getString(13)!!
+    )
+  }
+
+  public fun selectPagesFilteredAmong(
+    uuids: Collection<String>,
+    nameLo: String,
+    nameHi: String,
+    includeJournals: Long,
+    dateFrom: String?,
+    dateTo: String?,
+    tagLike: String?,
+  ): Query<Pages> = selectPagesFilteredAmong(uuids, nameLo, nameHi, includeJournals, dateFrom, dateTo, tagLike, ::Pages)
 
   public fun <T : Any> selectBlocksReferencing(to_block_uuid: String, mapper: (
     id: Long,
@@ -1969,6 +2137,7 @@ public class SteleDatabaseQueries(
   public fun <T : Any> searchPagesByNameFts(
     query: String,
     limit: Long,
+    offset: Long,
     mapper: (
       uuid: String,
       name: String,
@@ -1985,7 +2154,7 @@ public class SteleDatabaseQueries(
       highlight: String?,
       bm25_score: Double,
     ) -> T,
-  ): Query<T> = SearchPagesByNameFtsQuery(query, limit) { cursor ->
+  ): Query<T> = SearchPagesByNameFtsQuery(query, limit, offset) { cursor ->
     mapper(
       cursor.getString(0)!!,
       cursor.getString(1)!!,
@@ -2004,7 +2173,22 @@ public class SteleDatabaseQueries(
     )
   }
 
-  public fun searchPagesByNameFts(query: String, limit: Long): Query<SearchPagesByNameFts> = searchPagesByNameFts(query, limit, ::SearchPagesByNameFts)
+  public fun searchPagesByNameFts(
+    query: String,
+    limit: Long,
+    offset: Long,
+  ): Query<SearchPagesByNameFts> = searchPagesByNameFts(query, limit, offset, ::SearchPagesByNameFts)
+
+  public fun countPagesByNameFtsFiltered(
+    query: String,
+    nameLo: String,
+    nameHi: String,
+    includeJournals: Long,
+    dateFrom: String?,
+    dateTo: String?,
+  ): Query<Long> = CountPagesByNameFtsFilteredQuery(query, nameLo, nameHi, includeJournals, dateFrom, dateTo) { cursor ->
+    cursor.getLong(0)!!
+  }
 
   public fun <T : Any> searchPagesByNameFtsInDateRange(
     query: String,
@@ -5629,6 +5813,31 @@ public class SteleDatabaseQueries(
     override fun toString(): String = "SteleDatabase.sq:countBlocksByPageUuid"
   }
 
+  private inner class CountBlocksByPageUuidsQuery<out T : Any>(
+    public val uuids: Collection<String>,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("blocks", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("blocks", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> {
+      val uuidsIndexes = createArguments(count = uuids.size)
+      return driver.executeQuery(null, """SELECT page_uuid, COUNT(*) AS block_count FROM blocks WHERE page_uuid IN $uuidsIndexes GROUP BY page_uuid""", mapper, uuids.size) {
+            var parameterIndex = 0
+            uuids.forEach { uuids_ ->
+              bindString(parameterIndex++, uuids_)
+            }
+          }
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:countBlocksByPageUuids"
+  }
+
   private inner class SelectBlocksByParentUuidOrderedQuery<out T : Any>(
     public val parent_uuid: String?,
     mapper: (SqlCursor) -> T,
@@ -5672,6 +5881,28 @@ public class SteleDatabaseQueries(
     }
 
     override fun toString(): String = "SteleDatabase.sq:selectBlocksByParentUuids"
+  }
+
+  private inner class SelectMergeConflictBlocksQuery<out T : Any>(
+    public val uuid: String,
+    public val `value`: Long,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("blocks", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("blocks", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(1_843_096_019, """SELECT blocks.id, blocks.uuid, blocks.page_uuid, blocks.parent_uuid, blocks.left_uuid, blocks.content, blocks.level, blocks.position, blocks.created_at, blocks.updated_at, blocks.properties, blocks.version, blocks.content_hash, blocks.block_type FROM blocks WHERE properties LIKE '%merge-conflict:true%' AND uuid > ? ORDER BY uuid LIMIT ?""", mapper, 2) {
+      var parameterIndex = 0
+      bindString(parameterIndex++, uuid)
+      bindLong(parameterIndex++, value)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectMergeConflictBlocks"
   }
 
   private inner class SelectBlockHierarchyRecursiveQuery<out T : Any>(
@@ -6348,7 +6579,7 @@ public class SteleDatabaseQueries(
   }
 
   private inner class SelectPagesByNameLikeQuery<out T : Any>(
-    public val name: String,
+    public val `value`: String,
     mapper: (SqlCursor) -> T,
   ) : Query<T>(mapper) {
     override fun addListener(listener: Query.Listener) {
@@ -6359,18 +6590,18 @@ public class SteleDatabaseQueries(
       driver.removeListener("pages", listener = listener)
     }
 
-    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(141_501_984, """SELECT pages.uuid, pages.name, pages.namespace, pages.file_path, pages.created_at, pages.updated_at, pages.properties, pages.version, pages.is_favorite, pages.is_journal, pages.journal_date, pages.is_content_loaded, pages.backlink_count, pages.section_id FROM pages WHERE name LIKE ?""", mapper, 1) {
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(141_501_984, """SELECT pages.uuid, pages.name, pages.namespace, pages.file_path, pages.created_at, pages.updated_at, pages.properties, pages.version, pages.is_favorite, pages.is_journal, pages.journal_date, pages.is_content_loaded, pages.backlink_count, pages.section_id FROM pages WHERE name LIKE ? ESCAPE '\'""", mapper, 1) {
       var parameterIndex = 0
-      bindString(parameterIndex++, name)
+      bindString(parameterIndex++, value)
     }
 
     override fun toString(): String = "SteleDatabase.sq:selectPagesByNameLike"
   }
 
   private inner class SelectPagesByNameLikePaginatedQuery<out T : Any>(
-    public val name: String,
-    public val `value`: Long,
+    public val `value`: String,
     public val value_: Long,
+    public val value__: Long,
     mapper: (SqlCursor) -> T,
   ) : Query<T>(mapper) {
     override fun addListener(listener: Query.Listener) {
@@ -6381,14 +6612,148 @@ public class SteleDatabaseQueries(
       driver.removeListener("pages", listener = listener)
     }
 
-    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(673_779_853, """SELECT pages.uuid, pages.name, pages.namespace, pages.file_path, pages.created_at, pages.updated_at, pages.properties, pages.version, pages.is_favorite, pages.is_journal, pages.journal_date, pages.is_content_loaded, pages.backlink_count, pages.section_id FROM pages WHERE name LIKE ? ORDER BY name LIMIT ? OFFSET ?""", mapper, 3) {
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(673_779_853, """SELECT pages.uuid, pages.name, pages.namespace, pages.file_path, pages.created_at, pages.updated_at, pages.properties, pages.version, pages.is_favorite, pages.is_journal, pages.journal_date, pages.is_content_loaded, pages.backlink_count, pages.section_id FROM pages WHERE name LIKE ? ESCAPE '\' ORDER BY name, section_id LIMIT ? OFFSET ?""", mapper, 3) {
       var parameterIndex = 0
-      bindString(parameterIndex++, name)
-      bindLong(parameterIndex++, value)
+      bindString(parameterIndex++, value)
       bindLong(parameterIndex++, value_)
+      bindLong(parameterIndex++, value__)
     }
 
     override fun toString(): String = "SteleDatabase.sq:selectPagesByNameLikePaginated"
+  }
+
+  private inner class SelectPagesFilteredPaginatedQuery<out T : Any>(
+    public val nameLo: String,
+    public val nameHi: String,
+    public val includeJournals: Long,
+    public val dateFrom: String?,
+    public val dateTo: String?,
+    public val tagLike: String?,
+    public val limit: Long,
+    public val offset: Long,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("pages", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("pages", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(-1_101_568_849, """
+    |SELECT pages.uuid, pages.name, pages.namespace, pages.file_path, pages.created_at, pages.updated_at, pages.properties, pages.version, pages.is_favorite, pages.is_journal, pages.journal_date, pages.is_content_loaded, pages.backlink_count, pages.section_id FROM pages
+    |WHERE name >= ? AND name < ?
+    |  AND (? = 1 OR is_journal = 0)
+    |  AND (? IS NULL OR (is_journal = 1 AND journal_date >= ?))
+    |  AND (? IS NULL OR (is_journal = 1 AND journal_date <= ?))
+    |  AND (? IS NULL OR lower(properties) LIKE ? ESCAPE '\')
+    |ORDER BY name, section_id
+    |LIMIT ? OFFSET ?
+    """.trimMargin(), mapper, 11) {
+      var parameterIndex = 0
+      bindString(parameterIndex++, nameLo)
+      bindString(parameterIndex++, nameHi)
+      bindLong(parameterIndex++, includeJournals)
+      bindString(parameterIndex++, dateFrom)
+      bindString(parameterIndex++, dateFrom)
+      bindString(parameterIndex++, dateTo)
+      bindString(parameterIndex++, dateTo)
+      bindString(parameterIndex++, tagLike)
+      bindString(parameterIndex++, tagLike)
+      bindLong(parameterIndex++, limit)
+      bindLong(parameterIndex++, offset)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectPagesFilteredPaginated"
+  }
+
+  private inner class CountPagesFilteredQuery<out T : Any>(
+    public val nameLo: String,
+    public val nameHi: String,
+    public val includeJournals: Long,
+    public val dateFrom: String?,
+    public val dateTo: String?,
+    public val tagLike: String?,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("pages", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("pages", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(-1_606_243_347, """
+    |SELECT COUNT(*) FROM pages
+    |WHERE name >= ? AND name < ?
+    |  AND (? = 1 OR is_journal = 0)
+    |  AND (? IS NULL OR (is_journal = 1 AND journal_date >= ?))
+    |  AND (? IS NULL OR (is_journal = 1 AND journal_date <= ?))
+    |  AND (? IS NULL OR lower(properties) LIKE ? ESCAPE '\')
+    """.trimMargin(), mapper, 9) {
+      var parameterIndex = 0
+      bindString(parameterIndex++, nameLo)
+      bindString(parameterIndex++, nameHi)
+      bindLong(parameterIndex++, includeJournals)
+      bindString(parameterIndex++, dateFrom)
+      bindString(parameterIndex++, dateFrom)
+      bindString(parameterIndex++, dateTo)
+      bindString(parameterIndex++, dateTo)
+      bindString(parameterIndex++, tagLike)
+      bindString(parameterIndex++, tagLike)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:countPagesFiltered"
+  }
+
+  private inner class SelectPagesFilteredAmongQuery<out T : Any>(
+    public val uuids: Collection<String>,
+    public val nameLo: String,
+    public val nameHi: String,
+    public val includeJournals: Long,
+    public val dateFrom: String?,
+    public val dateTo: String?,
+    public val tagLike: String?,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("pages", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("pages", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> {
+      val uuidsIndexes = createArguments(count = uuids.size)
+      return driver.executeQuery(null, """
+          |SELECT pages.uuid, pages.name, pages.namespace, pages.file_path, pages.created_at, pages.updated_at, pages.properties, pages.version, pages.is_favorite, pages.is_journal, pages.journal_date, pages.is_content_loaded, pages.backlink_count, pages.section_id FROM pages
+          |WHERE uuid IN $uuidsIndexes
+          |  AND name >= ? AND name < ?
+          |  AND (? = 1 OR is_journal = 0)
+          |  AND (? IS NULL OR (is_journal = 1 AND journal_date >= ?))
+          |  AND (? IS NULL OR (is_journal = 1 AND journal_date <= ?))
+          |  AND (? IS NULL OR lower(properties) LIKE ? ESCAPE '\')
+          """.trimMargin(), mapper, 9 + uuids.size) {
+            var parameterIndex = 0
+            uuids.forEach { uuids_ ->
+              bindString(parameterIndex++, uuids_)
+            }
+            bindString(parameterIndex++, nameLo)
+            bindString(parameterIndex++, nameHi)
+            bindLong(parameterIndex++, includeJournals)
+            bindString(parameterIndex++, dateFrom)
+            bindString(parameterIndex++, dateFrom)
+            bindString(parameterIndex++, dateTo)
+            bindString(parameterIndex++, dateTo)
+            bindString(parameterIndex++, tagLike)
+            bindString(parameterIndex++, tagLike)
+          }
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectPagesFilteredAmong"
   }
 
   private inner class SelectBlocksReferencingQuery<out T : Any>(
@@ -6709,6 +7074,7 @@ public class SteleDatabaseQueries(
   private inner class SearchPagesByNameFtsQuery<out T : Any>(
     public val query: String,
     public val limit: Long,
+    public val offset: Long,
     mapper: (SqlCursor) -> T,
   ) : Query<T>(mapper) {
     override fun addListener(listener: Query.Listener) {
@@ -6738,15 +7104,57 @@ public class SteleDatabaseQueries(
     |FROM pages_fts pf
     |JOIN pages p ON p.rowid = pf.rowid
     |WHERE pages_fts MATCH ?
-    |ORDER BY bm25(pages_fts)
-    |LIMIT ?
-    """.trimMargin(), mapper, 2) {
+    |ORDER BY bm25(pages_fts), pf.rowid
+    |LIMIT ? OFFSET ?
+    """.trimMargin(), mapper, 3) {
       var parameterIndex = 0
       bindString(parameterIndex++, query)
       bindLong(parameterIndex++, limit)
+      bindLong(parameterIndex++, offset)
     }
 
     override fun toString(): String = "SteleDatabase.sq:searchPagesByNameFts"
+  }
+
+  private inner class CountPagesByNameFtsFilteredQuery<out T : Any>(
+    public val query: String,
+    public val nameLo: String,
+    public val nameHi: String,
+    public val includeJournals: Long,
+    public val dateFrom: String?,
+    public val dateTo: String?,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("pages_fts", "pages", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("pages_fts", "pages", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(208_257_188, """
+    |SELECT COUNT(*)
+    |FROM pages_fts pf
+    |JOIN pages p ON p.rowid = pf.rowid
+    |WHERE pages_fts MATCH ?
+    |  AND p.name >= ? AND p.name < ?
+    |  AND (? = 1 OR p.is_journal = 0)
+    |  AND (? IS NULL OR (p.is_journal = 1 AND p.journal_date >= ?))
+    |  AND (? IS NULL OR (p.is_journal = 1 AND p.journal_date <= ?))
+    """.trimMargin(), mapper, 8) {
+      var parameterIndex = 0
+      bindString(parameterIndex++, query)
+      bindString(parameterIndex++, nameLo)
+      bindString(parameterIndex++, nameHi)
+      bindLong(parameterIndex++, includeJournals)
+      bindString(parameterIndex++, dateFrom)
+      bindString(parameterIndex++, dateFrom)
+      bindString(parameterIndex++, dateTo)
+      bindString(parameterIndex++, dateTo)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:countPagesByNameFtsFiltered"
   }
 
   private inner class SearchPagesByNameFtsInDateRangeQuery<out T : Any>(

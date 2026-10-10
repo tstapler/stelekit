@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.error
 
+import dev.stapler.stelekit.merge.WriteRefusedReason
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -65,6 +66,8 @@ class DomainErrorTest {
             DomainError.QrTransferError.MarkdownParseFailed,
             DomainError.QrTransferError.EnvelopeMalformed,
             DomainError.QrTransferError.OverwriteFailedPreviousContentAffected("page-uuid-123"),
+            DomainError.MergeError.WriteRefused(WriteRefusedReason.InvalidPageName("x")),
+            DomainError.MergeError.Retryable("channel closed"),
             DomainError.StorageError.VerificationFailed("/path", "hash mismatch"),
             DomainError.StorageError.SourceInFlight("sync in progress"),
             DomainError.StorageError.DestinationNotWritable("/path"),
@@ -136,6 +139,8 @@ class DomainErrorTest {
                 DomainError.QrTransferError.MarkdownParseFailed -> err.message
                 DomainError.QrTransferError.EnvelopeMalformed -> err.message
                 is DomainError.QrTransferError.OverwriteFailedPreviousContentAffected -> err.message
+                is DomainError.MergeError.WriteRefused -> err.message
+                is DomainError.MergeError.Retryable -> err.message
                 is DomainError.StorageError.VerificationFailed -> err.message
                 is DomainError.StorageError.SourceInFlight -> err.message
                 is DomainError.StorageError.DestinationNotWritable -> err.message

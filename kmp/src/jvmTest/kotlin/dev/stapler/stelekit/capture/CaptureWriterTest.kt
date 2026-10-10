@@ -79,6 +79,32 @@ class CaptureWriterTest {
     }
 
     @Test
+    fun writeCapture_should_KeepEveryExistingBlock_When_TodaysJournalIsAnUnloadedStubWithAFile() = runBlocking {
+        val (repoSet, scope) = newInMemoryRepositorySetWithActor()
+        val graphPath = Files.createTempDirectory("capture-stub-test").toString()
+        val fileSystem = PlatformFileSystem().apply { registerGraphRoot(graphPath) }
+        try {
+            val today = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
+            val file = "$graphPath/journals/${today.toString().replace('-', '_')}.md"
+            java.io.File(file).also { it.parentFile.mkdirs() }.writeText("- keep me 1\n- keep me 2\n- keep me 3\n")
+            val now = Clock.System.now()
+            val stub = Page(
+                uuid = PageUuid(dev.stapler.stelekit.util.UuidGenerator.generateV7()), name = today.toString().replace('-', '_'),
+                filePath = file, createdAt = now, updatedAt = now, isJournal = true, journalDate = today, isContentLoaded = false,
+            )
+            requireNotNull(repoSet.writeActor).savePage(stub)
+
+            val result = CaptureWriter.writeCapture(repoSet, fileSystem, graphPath, "hello")
+
+            assertIs<CaptureResult.Saved>(result)
+            val text = java.io.File(file).readText()
+            assertEquals(listOf("keep me 1", "keep me 2", "keep me 3", "hello"), text.lines().filter { it.startsWith("- ") }.map { it.removePrefix("- ") }, text)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
     fun writeCapture_should_ReturnFailed_When_SaveBlockThrows() = runBlocking {
         // Pre-populate today's journal so ensureTodayJournal() finds it and never itself
         // calls blockRepository.saveBlock() — isolating the throw to CaptureWriter's own write.

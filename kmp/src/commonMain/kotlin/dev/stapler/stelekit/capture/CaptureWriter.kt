@@ -5,12 +5,15 @@
 package dev.stapler.stelekit.capture
 
 import arrow.core.Either
+import arrow.core.flatMap
 import arrow.core.getOrElse
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.merge.UnloadedPageReader
 import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.RepositorySet
@@ -37,7 +40,8 @@ object CaptureWriter {
      * When [captureId] is non-null, the new block's UUID is derived from it rather than
      * freshly generated, so replaying the same capture (crash-then-resume, a lost-ack retry)
      * resolves through `insertBlock`'s `INSERT OR REPLACE` semantics to a single row instead
-     * of a duplicate. `captureId == null` (the live hotkey-popup path) keeps today's behavior
+     * of a duplicate. [writer] lets a caller that keeps using the writer afterwards (post-save
+     * edits) supply its own. `captureId == null` (the live hotkey-popup path) keeps today's behavior
      * of a fresh UUIDv7 per save.
      */
     suspend fun writeCapture(
@@ -46,13 +50,24 @@ object CaptureWriter {
         graphPath: String,
         text: String,
         captureId: String? = null,
+        writer: GraphWriter = GraphWriter(fileSystem, writeActor = repoSet.writeActor),
     ): CaptureResult = try {
-        val page = repoSet.journalService.ensureTodayJournal()
+        var page = repoSet.journalService.ensureTodayJournal()
 
-        val existingBlocks = repoSet.blockRepository
+        var existingBlocks = repoSet.blockRepository
             .getBlocksForPage(page.uuid)
             .first()
             .getOrElse { return CaptureResult.Failed("Failed to load blocks: $it") }
+
+        // An index-only stub has a file but no blocks here; saving from the DB alone would erase the file's content.
+        if (!page.isContentLoaded) {
+            val loaded = UnloadedPageReader.read(fileSystem, page).getOrElse { return CaptureResult.Failed("Failed to read the journal: ${it.message}") }
+            if (loaded != null) {
+                page = page.copy(isContentLoaded = true, properties = loaded.properties.ifEmpty { page.properties })
+                persistLoadedStub(repoSet, page, loaded.blocks)?.let { return it }
+                existingBlocks = loaded.blocks
+            }
+        }
 
         val now = Clock.System.now()
         val newBlock = Block(
@@ -69,15 +84,31 @@ object CaptureWriter {
         saveBlockWithFallback(repoSet, newBlock)?.let { return it }
 
         // Bug 8 mitigation: flush the Markdown file after every actor write.
-        val writer = GraphWriter(fileSystem, writeActor = repoSet.writeActor)
-        writer.savePage(page, existingBlocks + newBlock, graphPath)
+        val allBlocks = existingBlocks + newBlock
+        writer.savePage(page, allBlocks, graphPath)
             .getOrElse { return CaptureResult.Failed("Save failed: $it") }
 
-        CaptureResult.Saved(page)
+        CaptureResult.Saved(page, newBlock, allBlocks)
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
         CaptureResult.Failed(e.message ?: "Unknown error during capture")
+    }
+
+    private suspend fun persistLoadedStub(repoSet: RepositorySet, page: Page, blocks: List<Block>): CaptureResult.Failed? {
+        val actor = repoSet.writeActor
+        val result: Either<DomainError, Unit> = try {
+            if (actor != null) {
+                val blocksSaved = actor.saveBlocks(blocks)
+                if (blocksSaved.isRight()) actor.savePage(page) else blocksSaved
+            } else {
+                @OptIn(DirectRepositoryWrite::class)
+                repoSet.blockRepository.saveBlocks(blocks).flatMap { repoSet.pageRepository.savePage(page) }
+            }
+        } catch (e: ClosedSendChannelException) {
+            return CaptureResult.Failed("Graph switched during save — please retry")
+        }
+        return result.leftOrNull()?.let { CaptureResult.Failed("Save failed: $it") }
     }
 
     /**

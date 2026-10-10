@@ -18,7 +18,10 @@
    and property `src-id:: <sourceGraphId>:<sourceUuid>`. It is NOT `UuidGenerator.generateDeterministic` (two
    FNV-1a 64-bit hashes; non-cryptographic) and there is no "keep the source UUID when free" rule. Remap is
    computed top-down; `((uuid))` refs and `{{embed ((uuid))}}` in all incoming content are rewritten through the
-   same map (refs to blocks outside the selection are left as-is). A second run finds the existing `uuid'` and
+   same map (refs to blocks outside the selection are left as-is). A `((S))` ref resolves to the target block S is
+   aligned with (same uuid, else the `src-id` copy, else the block it deduped onto), otherwise to `uuid'(S)`;
+   inserted blocks never reuse a uuid already on the page. Known gap: a ref to a block deduped onto an unlabeled
+   target block (no uuid to point at) still resolves to `uuid'(S)` and dangles. A second run finds the existing `uuid'` and
    yields Unchanged, so merges are idempotent without a new table. Guard: before saving, the active writer
    checks `uuid'` is not already used by a different page (fail the page); the off-graph writer refuses a
    `uuid'` already present in the target file under a different `src-id`. Identity transport: block UUIDs
@@ -56,3 +59,6 @@ Verified by `MergeUuidRoundTripSpikeTest` (businessTest, commit 0a1304ef8d).
 - `SqlDelightBlockRepository.saveBlock` (INSERT OR REPLACE, `blocks.uuid` UNIQUE, `foreign_keys=1`) with an existing uuid on another page succeeds silently: the row moves to the new page and the old row's children and `block_references` are cascade-deleted. It does not throw or ignore.
 - Consequence: the clobber guard (Task 1.2.1c) is MANDATORY. Merge must remap or refuse colliding uuids before any save.
 - `QrImportService.import` delegates to `GraphLoader.importMarkdownString`. A payload `id::` is honored; blocks without it get uuids seeded by a fresh page uuid. It has no collision guard, so a colliding payload `id::` clobbers another page's block. (Only the `id::` case is tested; the rest is from reading the code.)
+
+## Decision: `src-id::` visibility (Task 2.3.2e, 2026-10-09)
+`src-id::` is internal identity metadata, like `id::`. It stays in the file but the editor does not render it as an editable property. A copied block shows only the `merge-conflict` flag when it conflicts. (Implementation of the hiding is tracked in the UI phase.)

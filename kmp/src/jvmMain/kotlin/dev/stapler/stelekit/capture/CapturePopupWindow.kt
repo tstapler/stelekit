@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -34,6 +36,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isAltPressed
 import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.isShiftPressed
@@ -84,8 +87,13 @@ private fun handlePopupKeyEvent(
             true
         }
         Key.Escape -> {
-            if (isKeyDown) controller.dismiss()
+            if (isKeyDown) controller.requestDismiss()
             true
+        }
+        Key.G -> {
+            val altG = keyEvent.isAltPressed
+            if (altG && isKeyDown) controller.setChooserOpen(true)
+            altG
         }
         Key.Enter, Key.NumPadEnter -> {
             val comboPressed = isKeyDown && isSaveComboPressed(keyEvent)
@@ -113,7 +121,7 @@ fun CapturePopupWindow(controller: CaptureController) {
 
     val windowState = rememberWindowState(
         width = 480.dp,
-        height = 220.dp,
+        height = 280.dp,
         position = WindowPosition(Alignment.Center),
     )
 
@@ -153,7 +161,12 @@ fun CapturePopupWindow(controller: CaptureController) {
 @Composable
 fun CapturePopupContent(controller: CaptureController, modifier: Modifier = Modifier) {
     val state by controller.state.collectAsState()
-    val shown = state as? CapturePopupState.Shown ?: return
+    val current = state
+    val shown = when (current) {
+        is CapturePopupState.Shown -> current
+        is CapturePopupState.ConfirmDiscard -> current.draft
+        CapturePopupState.Hidden -> return
+    }
     val focusManager = LocalFocusManager.current
     val isSaveComboPressed = remember {
         if (isMacOs()) {
@@ -177,6 +190,7 @@ fun CapturePopupContent(controller: CaptureController, modifier: Modifier = Modi
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             when {
+                current is CapturePopupState.ConfirmDiscard -> ConfirmDiscardContent(controller)
                 shown.captureResult is CaptureResult.NoActiveGraph -> UnavailablePlaceholder(
                     message = "No graph configured",
                     onOpenStelekit = controller::dismiss,
@@ -187,6 +201,23 @@ fun CapturePopupContent(controller: CaptureController, modifier: Modifier = Modi
                 )
                 shown.saveState == SaveState.Saved -> SavedContent(controller)
                 else -> EditableCaptureContent(controller, shown)
+            }
+        }
+    }
+}
+
+/** Esc with a draft: Esc again or Keep editing returns to the text field. */
+@Composable
+private fun ConfirmDiscardContent(controller: CaptureController) {
+    Column {
+        Text("Discard this note?", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.testTag("discardPrompt"))
+        Spacer(Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = controller::keepEditing, modifier = Modifier.testTag("keepEditingButton")) {
+                Text("Keep editing")
+            }
+            OutlinedButton(onClick = controller::confirmDiscard, modifier = Modifier.testTag("discardButton")) {
+                Text("Discard")
             }
         }
     }
@@ -228,6 +259,7 @@ private fun EditableCaptureContent(controller: CaptureController, shown: Capture
     val focusRequester = remember { FocusRequester() }
 
     Column {
+        GraphChooserRow(controller, shown)
         OutlinedTextField(
             value = shown.text,
             onValueChange = controller::updateText,
@@ -250,8 +282,49 @@ private fun EditableCaptureContent(controller: CaptureController, shown: Capture
     // Hidden->Shown transition, since CapturePopupContent early-returns and composes nothing
     // while Hidden, and the Error->Retry->Saving path stays within this same composable
     // (no unmount) so focus isn't stolen from the user mid-retry.
-    LaunchedEffect(Unit) {
+    // Re-keyed on the target so picking a graph hands focus back to the text field.
+    LaunchedEffect(shown.targetGraphId) {
         focusRequester.requestFocus()
+    }
+}
+
+/** "Graph: [Work graph v]" -- shown only when there is a choice to make. Alt+G opens it. */
+@Composable
+private fun GraphChooserRow(controller: CaptureController, shown: CapturePopupState.Shown) {
+    if (shown.graphChoices.size < 2) return
+    Column {
+        GraphChooserControls(controller, shown)
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun GraphChooserControls(controller: CaptureController, shown: CapturePopupState.Shown) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("Graph:", style = MaterialTheme.typography.labelMedium)
+        Spacer(Modifier.width(8.dp))
+        Column {
+            OutlinedButton(
+                onClick = { controller.setChooserOpen(true) },
+                enabled = shown.saveState != SaveState.Saving,
+                modifier = Modifier
+                    .testTag("graphChooserButton")
+                    .semantics { contentDescription = "Capture graph: ${shown.targetGraphName ?: "none"} (Alt+G)" },
+            ) {
+                Text("${shown.targetGraphName ?: "Choose graph"} ▾")
+            }
+            DropdownMenu(expanded = shown.chooserOpen, onDismissRequest = { controller.setChooserOpen(false) }) {
+                shown.graphChoices.forEach { choice ->
+                    DropdownMenuItem(
+                        text = { Text(choice.name) },
+                        onClick = { controller.selectGraph(choice.id) },
+                        modifier = Modifier.testTag("graphChoice_${choice.id.value}"),
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.width(8.dp))
+        Text("(Alt+G)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -265,8 +338,17 @@ private fun CaptureFooter(controller: CaptureController, shown: CapturePopupStat
             Text("Saving…", style = MaterialTheme.typography.labelSmall)
         }
         SaveState.Error -> CaptureErrorBanner(controller, shown)
+        SaveState.Queued -> Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                shown.statusMessage ?: "Queued",
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.testTag("queuedMessage"),
+            )
+            Spacer(Modifier.width(8.dp))
+            OutlinedButton(onClick = controller::hide, modifier = Modifier.testTag("queuedCloseButton")) { Text("Close") }
+        }
         else -> Text(
-            "Esc save & close · Ctrl+Enter save now",
+            "Esc close · Ctrl+Enter save · Alt+G graph",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -275,8 +357,12 @@ private fun CaptureFooter(controller: CaptureController, shown: CapturePopupStat
 
 @Composable
 private fun CaptureErrorBanner(controller: CaptureController, shown: CapturePopupState.Shown) {
-    val message = (shown.captureResult as? CaptureResult.Failed)?.message
-        ?: "Couldn't save — please try again."
+    val reason = (shown.captureResult as? CaptureResult.Failed)?.message
+    val message = when {
+        reason == null -> "Couldn't save — please try again."
+        shown.graphChoices.size > 1 && shown.targetGraphName != null -> "Couldn't save to ${shown.targetGraphName}: $reason"
+        else -> reason
+    }
     Column {
         Text(
             message,

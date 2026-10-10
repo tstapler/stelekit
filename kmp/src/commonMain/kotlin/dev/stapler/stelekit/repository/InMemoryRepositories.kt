@@ -1,6 +1,8 @@
 @file:Suppress("InMemoryPagination") // in-memory test fake — drop/take IS the right implementation
 package dev.stapler.stelekit.repository
 
+import dev.stapler.stelekit.merge.SelectionFilter
+import dev.stapler.stelekit.merge.filteredAndSorted
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.util.FractionalIndexing
@@ -102,6 +104,11 @@ class InMemoryBlockRepository : BlockRepository {
             }
             siblings.sortedBy { it.position }.right()
         }
+    }
+
+    override suspend fun countBlocksForPages(pageUuids: Collection<PageUuid>): Either<DomainError, Map<PageUuid, Int>> {
+        val wanted = pageUuids.toSet()
+        return blocks.value.values.filter { it.pageUuid in wanted }.groupingBy { it.pageUuid }.eachCount().right()
     }
 
     override fun getBlocksForPage(pageUuid: PageUuid): Flow<Either<DomainError, List<Block>>> {
@@ -574,6 +581,17 @@ class InMemoryPageRepository : PageRepository {
         }
     }
 
+    override fun getPagesFiltered(filter: SelectionFilter, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
+        pages.map { it.values.filteredAndSorted(filter).drop(offset).take(limit).right() }
+
+    override suspend fun countPagesFiltered(filter: SelectionFilter): Either<DomainError, Long> =
+        pages.value.values.count(filter::matches).toLong().right()
+
+    override suspend fun getPagesAmong(filter: SelectionFilter, uuids: Collection<PageUuid>): Either<DomainError, List<Page>> {
+        val wanted = uuids.mapTo(HashSet()) { it.value }
+        return pages.value.values.filter { it.uuid.value in wanted && filter.matches(it) }.right()
+    }
+
     override fun getUnloadedPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
         return pages.map { map ->
             map.values.filter { !it.isContentLoaded }
@@ -717,7 +735,7 @@ class InMemorySearchRepository(
         return blockRepository.searchBlocksByContent(query, limit, offset)
     }
 
-    override fun searchPagesByTitle(query: String, limit: Int): Flow<Either<DomainError, List<Page>>> {
+    override fun searchPagesByTitle(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
         if (pageRepository == null || query.isEmpty()) return flowOf(emptyList<Page>().right())
         // Test backend: one-shot bounded-batch snapshot (the alias-property filter has no
         // SQL equivalent here). Production search uses FTS-backed repositories.
@@ -727,7 +745,7 @@ class InMemorySearchRepository(
                     pages.filter {
                         it.name.contains(query, ignoreCase = true) ||
                             it.properties[BlockPropertyKeys.ALIAS]?.contains(query, ignoreCase = true) == true
-                    }.take(limit)
+                    }.drop(offset).take(limit)
                 }
             )
         }

@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.ui.components
 
+import dev.stapler.stelekit.ui.LocalShareInboxUi
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -29,9 +30,12 @@ import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.foundation.layout.Box
+import dev.stapler.stelekit.merge.CopyDirection
+import dev.stapler.stelekit.ui.screens.copy.CopyDialogStrings
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Sync
 import dev.stapler.stelekit.ui.screens.git.looksLikeUri
@@ -145,11 +149,10 @@ fun LeftSidebar(
      * 3.3 already left for [storageLocationResolver] and [onBrowseRequestForMove]. */
     onStorageLocationChoose: (operation: StorageMoveOperation) -> Unit = {},
     gitSyncedGraphId: String? = null,
-    /** Pages captured from another graph by [onExportPagesForMerge], not yet merged in here.
-     * Cross-graph page/journal recovery — see GraphMergeService's class doc. */
-    mergePendingPageCount: Int = 0,
-    onExportPagesForMerge: () -> Unit = {},
-    onImportMergedPages: () -> Unit = {},
+    /** Cross-graph copy entry ("Copy pages to..." / "Copy pages from..."); null hides the action (no copy pipeline). */
+    onCopyPages: (() -> Unit)? = null,
+    copyDirection: CopyDirection = CopyDirection.Push,
+    onCopyPagesFromGraph: ((GraphInfo) -> Unit)? = null,
     onNewSectionJournalEntry: (() -> Unit)? = null,
     sectionManifest: SectionManifest? = null,
     defaultSection: String = "",
@@ -214,10 +217,18 @@ fun LeftSidebar(
                 gitSyncedGraphId = gitSyncedGraphId,
                 isDemoActive = isDemoActive,
                 hostAccessState = hostAccessState,
-                mergePendingPageCount = mergePendingPageCount,
-                onExportPagesForMerge = onExportPagesForMerge,
-                onImportMergedPages = onImportMergedPages,
+                onCopyPages = onCopyPages,
+                copyDirection = copyDirection,
+                onCopyPagesFromGraph = onCopyPagesFromGraph,
             )
+
+            LocalShareInboxUi.current?.let { shareUi ->
+                QueuedSharesBadge(
+                    shareUi,
+                    remember(availableGraphs) { shareGraphNameOf(availableGraphs) },
+                    Modifier.padding(horizontal = 12.dp),
+                )
+            }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
@@ -469,9 +480,11 @@ fun GraphSwitcher(
     /** Epic 2.3: host-directory connection state for [activeGraphId] only — used to show a
      * "linked to local folder" indicator distinct from the graph's internal OPFS path. */
     hostAccessState: HostAccessState = HostAccessState.NotApplicable,
-    mergePendingPageCount: Int = 0,
-    onExportPagesForMerge: () -> Unit = {},
-    onImportMergedPages: () -> Unit = {},
+    onCopyPages: (() -> Unit)? = null,
+    /** Which way the copy entry points copy; iOS/Web pull ("Copy pages from..."), Android/Desktop push. */
+    copyDirection: CopyDirection = CopyDirection.Push,
+    /** Pull only: per-row overflow "Copy pages from <graph> to <current graph>"; null hides it. */
+    onCopyPagesFromGraph: ((GraphInfo) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -581,7 +594,10 @@ fun GraphSwitcher(
                             // one graph, so gating on the session (not per-graph) is sufficient.
                             onEditPath = if (!graph.isDemo && !isCurrentSessionEphemeral()) {
                                 { graphToEdit = graph }
-                            } else null
+                            } else null,
+                            copyToCurrentLabel = CopyDialogStrings.rowOverflowLabel(graph.displayName, currentGraphName)
+                                .takeIf { copyDirection == CopyDirection.Pull && onCopyPagesFromGraph != null && graph.id.value != activeGraphId },
+                            onCopyToCurrent = { onCopyPagesFromGraph?.invoke(graph); expanded = false },
                         )
                     },
                     onClick = {
@@ -606,15 +622,26 @@ fun GraphSwitcher(
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
-            // Cross-graph page/journal recovery: capture this graph's pages, switch to another
-            // graph via the list above, then paste them in. See GraphMergeService's class doc.
-            GraphMenuActionItem(Icons.Default.ContentCopy, "Copy pages from this graph...") {
-                onExportPagesForMerge(); expanded = false
-            }
-            if (mergePendingPageCount > 0) {
-                GraphMenuActionItem(Icons.Default.ContentPaste, "Merge $mergePendingPageCount captured page(s) here") {
-                    onImportMergedPages(); expanded = false
-                }
+            if (onCopyPages != null) {
+                DropdownMenuItem(
+                    text = {
+                        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text(CopyDialogStrings.entryLabel(copyDirection), style = MaterialTheme.typography.bodyMedium)
+                            }
+                            Text(
+                                "Adds pages; combines with existing ones",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(start = 26.dp),
+                            )
+                        }
+                    },
+                    onClick = { onCopyPages(); expanded = false },
+                    contentPadding = PaddingValues(0.dp),
+                )
             }
 
             if (isEphemeralWebModeAvailable() && !isCurrentSessionEphemeral()) {
@@ -891,6 +918,9 @@ fun GraphItem(
     onSelect: () -> Unit,
     onRemove: (() -> Unit)? = null,
     onEditPath: (() -> Unit)? = null,
+    /** Pull entry point: label of the row-overflow action, null hides the overflow (it is ordered last in the row). */
+    copyToCurrentLabel: String? = null,
+    onCopyToCurrent: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -971,6 +1001,20 @@ fun GraphItem(
                         modifier = Modifier.size(18.dp),
                         tint = MaterialTheme.colorScheme.error
                     )
+                }
+            }
+            if (copyToCurrentLabel != null) {
+                var overflow by remember { mutableStateOf(false) }
+                Box {
+                    IconButton(onClick = { overflow = true }, modifier = Modifier.size(48.dp)) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "More actions for ${graph.displayName}", modifier = Modifier.size(18.dp))
+                    }
+                    DropdownMenu(expanded = overflow, onDismissRequest = { overflow = false }) {
+                        DropdownMenuItem(
+                            text = { Text(copyToCurrentLabel) },
+                            onClick = { overflow = false; onCopyToCurrent() },
+                        )
+                    }
                 }
             }
         }

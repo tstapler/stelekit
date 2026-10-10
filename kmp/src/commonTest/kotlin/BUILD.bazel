@@ -94,3 +94,40 @@ kt_android_library(
     ],
     visibility = ["//kmp/src:__subpackages__"],
 )
+
+# business_common_tests — commonTest sources that businessTest compiles against (MergeFixtures)
+# or registers in AllBusinessTests (CaptureTargetResolverTest, PageSelectionTest). Only business_tests
+# should depend on this: jvm_tests has no completeness guard but would also pick up these classes.
+kt_jvm_library(
+    name = "business_common_tests",
+    srcs = [
+        "dev/stapler/stelekit/capture/CaptureTargetResolverTest.kt",
+        # PullIndexingTest's fake. Not the whole common_test_fixtures target: it bundles unregistered @Test
+        # classes that AllBusinessTestsCompletenessTest would then find on the classpath.
+        "dev/stapler/stelekit/db/sidecar/FakeFileSystem.kt",
+        "dev/stapler/stelekit/ui/PageSelectionTest.kt",
+    ],
+    testonly = True,
+    kotlinc_opts = "//:kmp_jvm_kotlinc_opts",
+    deps = [
+        "//kmp/src/jvmMain/kotlin:jvm_main_lib",
+        "@maven//:io_kotest_kotest_property_jvm",
+        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+        "@maven//:org_jetbrains_kotlin_kotlin_test_junit",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
+    ],
+    visibility = ["//kmp/src:__subpackages__"],
+)
+
+# merge_fixtures — MergeFixtures only (no @Test classes); shared by business_tests and jvm_tests.
+kt_jvm_library(
+    name = "merge_fixtures",
+    srcs = ["dev/stapler/stelekit/merge/MergeFixtures.kt"],
+    testonly = True,
+    kotlinc_opts = "//:kmp_jvm_kotlinc_opts",
+    deps = [
+        "//kmp/src/jvmMain/kotlin:jvm_main_lib",
+        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+    ],
+    visibility = ["//kmp/src:__subpackages__"],
+)

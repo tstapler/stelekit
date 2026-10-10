@@ -5,9 +5,33 @@
 package dev.stapler.stelekit
 
 import android.app.Application
+import android.os.Handler
+import android.os.Looper
+import android.widget.Toast
+import arrow.core.Either
+import arrow.core.getOrElse
+import arrow.core.left
+import arrow.core.right
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import arrow.core.getOrElse
+import dev.stapler.stelekit.capture.AppendOutcome
+import dev.stapler.stelekit.capture.CaptureResult
+import dev.stapler.stelekit.capture.CaptureTarget
+import dev.stapler.stelekit.capture.EnqueueOutcome
+import dev.stapler.stelekit.capture.InboxSlot
+import dev.stapler.stelekit.capture.JournalAppender
+import dev.stapler.stelekit.capture.ShareContent
+import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.model.GraphRegistry
+import dev.stapler.stelekit.capture.OffGraphCapture
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import java.io.File
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.db.GraphWriter
@@ -18,7 +42,6 @@ import dev.stapler.stelekit.domain.ScanResult
 import dev.stapler.stelekit.domain.TopicSuggestion
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Block
-import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
@@ -26,7 +49,6 @@ import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.PageRepository
-import dev.stapler.stelekit.util.FractionalIndexing
 import dev.stapler.stelekit.util.UuidGenerator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -78,8 +100,212 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
         data object Idle : SaveState()
         data object Saving : SaveState()
         data object Saved : SaveState()
+
+        /** Durably queued in the share inbox for [graphName]; delivered when that graph is ready. */
+        data class Queued(val graphName: String) : SaveState()
         data class Error(val throwable: Throwable?) : SaveState()
     }
+
+    /** Outcome of a Back auto-save (Task 4.2.1g/h): drives the in-sheet toast with Undo and Change. */
+    sealed interface BackSaveState {
+        data object None : BackSaveState
+        data object Saving : BackSaveState
+        data class Done(val message: String, val record: RecentCapture?, val queued: Boolean) : BackSaveState
+    }
+
+    private val steleApp: SteleKitApplication? get() = getApplication<Application>() as? SteleKitApplication
+
+    // ---- Destination (Story 4.2.1) ----------------------------------------------------------
+
+    private var currentCaptureId = UuidGenerator.generateV7()
+
+    /** Idempotency key for this share: the journal block uuid, so a replayed save is `AlreadyPresent`. */
+    val captureId: String get() = currentCaptureId
+
+    @Volatile
+    private var trustedImagePath: String? = null
+    private var overrideGraphId: GraphId? = null
+    private var explicitChoice: GraphId? = null
+    private val destinationTrigger = MutableStateFlow(0)
+
+    private val _destination = MutableStateFlow<CaptureDestination>(CaptureDestination.Legacy)
+    val destination: StateFlow<CaptureDestination> = _destination.asStateFlow()
+
+    private val _graphChoices = MutableStateFlow<List<GraphChoice>>(emptyList())
+    val graphChoices: StateFlow<List<GraphChoice>> = _graphChoices.asStateFlow()
+
+    private val _menuOpen = MutableStateFlow(false)
+    val menuOpen: StateFlow<Boolean> = _menuOpen.asStateFlow()
+
+    private val _resultNote = MutableStateFlow<String?>(null)
+
+    /** "Added to Work graph", "Already added", "Saved. It will be added to the first graph you create." */
+    val resultNote: StateFlow<String?> = _resultNote.asStateFlow()
+
+    private val _backSave = MutableStateFlow<BackSaveState>(BackSaveState.None)
+    val backSave: StateFlow<BackSaveState> = _backSave.asStateFlow()
+
+    /** False once the activity is gone, so a late Back-save result falls back to a system Toast. */
+    @Volatile
+    var hostAttached: Boolean = true
+
+    fun setMenuOpen(open: Boolean) { _menuOpen.value = open }
+
+    /** Applies a Direct Share override and/or a restored capture id (process death), then re-resolves. */
+    fun beginShare(overrideGraphId: String?, restoredCaptureId: String? = null) {
+        this.overrideGraphId = overrideGraphId?.let(::GraphId)
+        restoredCaptureId?.let { currentCaptureId = it }
+        destinationTrigger.value++
+    }
+
+    /** A new share while the overlay is already open: after a finished save the overlay starts fresh. */
+    fun onNewShare(text: String, overrideGraphId: String?, imagePath: String? = null) {
+        val earlier = _captureText.value.trim()
+        val untouched = _saveState.value == SaveState.Idle && _backSave.value == BackSaveState.None
+        if (untouched && earlier.isNotEmpty() && earlier == text.trim()) {
+            beginShare(overrideGraphId)
+            return
+        }
+        if (untouched && earlier.isNotEmpty()) queueEarlierShare(earlier)
+        if (!untouched || earlier.isNotEmpty()) resetForNewCapture()
+        attachImage(imagePath)
+        initializeText(text)
+        beginShare(overrideGraphId)
+    }
+
+    /** Queues the text of a share that a newer one is replacing; on failure it is put back so nothing is dropped. */
+    private fun queueEarlierShare(earlier: String) {
+        val app = steleApp ?: return
+        val slot = when (val dest = _destination.value) {
+            is CaptureDestination.Ready -> InboxSlot.Graph(dest.graph.id)
+            is CaptureDestination.Unavailable -> dest.graphId?.let { InboxSlot.Graph(it) } ?: InboxSlot.Unassigned
+            else -> InboxSlot.Unassigned
+        }
+        val earlierId = currentCaptureId
+        val image = trustedImagePath
+        app.appScope.launch {
+            val queued = enqueue(app, slot, earlier, earlierId, image).isRight()
+            if (queued) {
+                toastOnMain("Your earlier note was queued.")
+            } else {
+                _captureText.update { now -> if (now.isBlank()) earlier else "$earlier\n\n$now" }
+                toastOnMain("Couldn't queue your earlier note; it is kept below.")
+            }
+        }
+    }
+
+    /** Trusts [path] as this share's image only if it lies inside the app-private share-image directory. */
+    fun attachImage(path: String?) {
+        trustedImagePath = path?.takeIf { ShareIntake.isPrivateImage(getApplication(), it) }
+    }
+
+    val attachedImagePath: String? get() = trustedImagePath
+
+    private fun resetForNewCapture() {
+        currentCaptureId = UuidGenerator.generateV7()
+        explicitChoice = null
+        savedContext = null
+        _saveState.value = SaveState.Idle
+        _resultNote.value = null
+        _backSave.value = BackSaveState.None
+        _captureText.value = ""
+    }
+
+    fun retryDestination() { destinationTrigger.value++ }
+
+    // Test seams (same-module tests drive the UI without a real GraphManager).
+    internal fun setDestinationForTest(destination: CaptureDestination, choices: List<GraphChoice> = emptyList()) {
+        _destination.value = destination
+        _graphChoices.value = choices
+    }
+
+    internal fun setSavedForTest(note: String) {
+        _resultNote.value = note
+        _saveState.value = SaveState.Saved
+    }
+
+    internal fun setSaveErrorForTest() { _saveState.value = SaveState.Error(IllegalStateException("test")) }
+
+    internal fun setBackSaveForTest(state: BackSaveState) { _backSave.value = state }
+
+    val overrideGraphIdValue: String? get() = overrideGraphId?.value
+
+    /** True once this share has been saved or queued (the `handled` flag kept in savedInstanceState). */
+    val isHandled: Boolean get() = _saveState.value != SaveState.Idle || _backSave.value is BackSaveState.Done
+
+    /** Process-death restore of an already-handled share: a second Save must not add it again. */
+    fun restoreHandled() {
+        _resultNote.value = "Already added"
+        _saveState.value = SaveState.Saved
+    }
+
+    /** Toast Change: after the undo, back to the editable sheet with the destination menu open. */
+    fun reopenAfterUndo(text: String) {
+        resetForNewCapture()
+        _captureText.value = text
+        _menuOpen.value = true
+        destinationTrigger.value++
+    }
+
+    /** Menu pick: changes where this share goes and records `capture_last_graph_id` (nothing else). */
+    fun selectGraph(id: GraphId) {
+        explicitChoice = id
+        steleApp?.captureTargetSettings()?.recordLastUsed(id)
+        _menuOpen.value = false
+        destinationTrigger.value++
+    }
+
+    /** "Save to <fallback>" from the unavailable state. */
+    fun saveToFallback() {
+        val fallback = (_destination.value as? CaptureDestination.Unavailable)?.fallback ?: return
+        explicitChoice = fallback.id
+        steleApp?.captureTargetSettings()?.recordLastUsed(fallback.id)
+        destinationTrigger.value++
+        scope.launch {
+            _destination.first { it is CaptureDestination.Ready }
+            save()
+        }
+    }
+
+    private suspend fun observeDestination() {
+        val app = steleApp ?: return
+        val gm = app.graphManager ?: run { _destination.value = CaptureDestination.NoGraphs; return }
+        combine(
+            gm.graphRegistry,
+            gm.activeRepositorySet.map { it != null }.distinctUntilChanged(),
+            destinationTrigger,
+        ) { registry, open, _ -> registry to open }.collectLatest { (registry, open) ->
+            _graphChoices.value = registry.graphs.map { GraphChoice(it.id, it.displayName) }
+            resolveDestination(app, registry, open)
+        }
+    }
+
+    private suspend fun resolveDestination(app: SteleKitApplication, registry: GraphRegistry, open: Boolean) {
+        val reasons = probeReasons(app, registry)
+        val inputs = DestinationInputs(
+            registry, app.captureTargetSettings(), explicitChoice, overrideGraphId, activeOpen = open,
+        )
+        val first = CaptureDestinations.resolve(inputs) { reasons[it.id] }
+        _destination.value = first
+        if (first == CaptureDestination.Checking) {
+            delay(CaptureDestinations.CHECKING_CAP_MS)
+            _destination.value = CaptureDestinations.resolve(inputs.copy(checkingExpired = true)) { reasons[it.id] }
+        }
+    }
+
+    /** Probes every non-active graph; if that takes over the cap, they all read as "took too long". */
+    private suspend fun probeReasons(app: SteleKitApplication, registry: GraphRegistry): Map<GraphId, String?> {
+        val others = registry.graphs.filter { it.id != registry.activeGraphId }
+        return withTimeoutOrNull(CaptureDestinations.CHECKING_CAP_MS) {
+            others.associate { it.id to app.offGraphUnavailableReason(it) }
+        } ?: others.associate { it.id to "it took too long to check." }
+    }
+
+    /** Settles Checking/Unavailable once more for a Back press: waits at most the cap, returns the result. */
+    private suspend fun settledDestination(): CaptureDestination =
+        withTimeoutOrNull(CaptureDestinations.CHECKING_CAP_MS + 500) {
+            _destination.first { it != CaptureDestination.Checking }
+        } ?: _destination.value
 
     /**
      * Ties a scan result to the exact [captureText] it was computed for, so save-time
@@ -117,6 +343,7 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
         val pageRepository: PageRepository,
         val blockRepository: BlockRepository,
     )
+    @Volatile
     private var savedContext: SavedCaptureContext? = null
 
     /**
@@ -158,6 +385,7 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
     val chipFailure: SharedFlow<String> = _chipFailure.asSharedFlow()
 
     init {
+        scope.launch { observeDestination() }
         scope.launch {
             captureText
                 .debounce(300)
@@ -277,17 +505,25 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun save() {
-        // Read _scanState.value as a plain, atomic StateFlow read — no lock needed. save() and
-        // any prior synchronous chip-accept fold run on the same single dispatcher, so there is
-        // no suspension window in which this read can race a concurrent fold (Story 2.3.1b).
+    /** Text to persist: the linked preview when its scan is current, else the raw trimmed text. */
+    private fun textToSave(): String {
         val current = _scanState.value
-        val text = if (current is ScanState.Ready && current.text == _captureText.value) {
+        // Plain atomic StateFlow read, no lock (Story 2.3.1b): save() must stay lock-free.
+        return if (current is ScanState.Ready && current.text == _captureText.value) {
             val (imagePrefix, _) = splitImagePrefix(current.text)
             ((imagePrefix ?: "") + current.result.linkedText).trim()
         } else {
             _captureText.value.trim()
         }
+    }
+
+    /** A target that isn't the open graph never gets link suggestions, so it saves the raw text. */
+    private fun textFor(dest: CaptureDestination): String =
+        if (dest is CaptureDestination.Ready && !dest.isActive) _captureText.value.trim() else textToSave()
+
+    fun save() {
+        val dest = _destination.value
+        val text = textFor(dest)
         if (text.isEmpty()) return
 
         val steleApp = getApplication<SteleKitApplication>()
@@ -296,74 +532,297 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
 
-        viewModelScope.launch {
-            _saveState.value = SaveState.Saving
-            val result = performSave(graphManager, steleApp.fileSystem, text)
-            result.getOrNull()?.let { savedContext = it }
-            _saveState.value = if (result.isSuccess) SaveState.Saved
-                                else SaveState.Error(result.exceptionOrNull())
+        // Set before the launch so a caller polling for "not Saving" never sees a stale Idle.
+        _saveState.value = SaveState.Saving
+        // Application scope: the write must outlive this ViewModel if the overlay is closed mid-save.
+        steleApp.appScope.launch {
+            try {
+                applyResult(persist(steleApp, graphManager, dest, text))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                _saveState.value = SaveState.Error(e)
+            }
         }
     }
 
-    private suspend fun performSave(
-        graphManager: GraphManager,
-        fileSystem: PlatformFileSystem,
-        text: String,
-    ): Result<SavedCaptureContext> = runCatching {
-        val repoSet = graphManager.getActiveRepositorySet()
-            ?: error("No active graph — open SteleKit to set up your graph")
+    private sealed interface ShareResult {
+        data class Added(val graph: GraphChoice?, val context: SavedCaptureContext?, val text: String) : ShareResult
+        data class Already(val graph: GraphChoice?) : ShareResult
+        data class Queued(val graph: GraphChoice, val reason: String) : ShareResult
+        data class Failed(val cause: Throwable) : ShareResult
+    }
 
-        val page = repoSet.journalService.ensureTodayJournal()
-        val graphPath = graphManager.getActiveGraphInfo()?.path
-            ?: error("No active graph path")
-
-        val existingBlocks = repoSet.blockRepository
-            .getBlocksForPage(page.uuid)
-            .first()
-            .getOrElse { error("Failed to load blocks: $it") }
-
-        val now = Clock.System.now()
-        val newBlock = Block(
-            uuid = BlockUuid(UuidGenerator.generateV7()),
-            pageUuid = page.uuid,
-            content = text,
-            position = FractionalIndexing.generateKeyBetween(
-                existingBlocks.maxByOrNull { it.position }?.position, null
-            ),
-            createdAt = now,
-            updatedAt = now,
-        )
-
-        // Bug 1 mitigation: catch ClosedSendChannelException from a graph-switch race
-        val writeActor = repoSet.writeActor
-        if (writeActor != null) {
-            try {
-                writeActor.saveBlock(newBlock).getOrElse { error("Save failed: $it") }
-            } catch (e: ClosedSendChannelException) {
-                throw IllegalStateException("Graph switched during save — please retry", e)
+    private fun applyResult(result: ShareResult) {
+        when (result) {
+            is ShareResult.Added -> {
+                recordLastUsedUnlessOverride(result.graph)
+                result.context?.let { savedContext = it }
+                _resultNote.value = result.graph?.let { "Added to ${it.label}" }
+                _saveState.value = SaveState.Saved
             }
-        } else {
-            @OptIn(DirectRepositoryWrite::class)
-            repoSet.blockRepository.saveBlock(newBlock).getOrElse { error("Save failed: $it") }
+            is ShareResult.Already -> {
+                _resultNote.value = "Already added"
+                _saveState.value = SaveState.Saved
+            }
+            is ShareResult.Queued -> {
+                _resultNote.value = "Queued for ${result.graph.label}"
+                _saveState.value = SaveState.Queued(result.graph.label)
+            }
+            is ShareResult.Failed -> _saveState.value = SaveState.Error(result.cause)
+        }
+    }
+
+    /** `capture_last_graph_id` follows successful saves; a Direct Share override alone leaves it alone (S14). */
+    private fun recordLastUsedUnlessOverride(graph: GraphChoice?) {
+        if (graph == null || (overrideGraphId != null && explicitChoice == null)) return
+        steleApp?.captureTargetSettings()?.recordLastUsed(graph.id)
+    }
+
+    private suspend fun persist(
+        app: SteleKitApplication,
+        graphManager: GraphManager,
+        dest: CaptureDestination,
+        text: String,
+    ): ShareResult {
+        val ready = dest as? CaptureDestination.Ready
+        if (dest is CaptureDestination.Unavailable) return ShareResult.Failed(IllegalStateException(dest.reason))
+        if (ready != null && !ready.isActive) return persistOffGraph(app, ready, text)
+        return persistToOpenGraph(app, graphManager, ready?.graph, text)
+    }
+
+    private suspend fun persistToOpenGraph(
+        app: SteleKitApplication,
+        graphManager: GraphManager,
+        graph: GraphChoice?,
+        text: String,
+    ): ShareResult {
+        val content = loadContent(text, trustedImagePath).getOrElse { return ShareResult.Failed(IllegalStateException(it)) }
+        if (content.image != null) {
+            val id = graph?.id ?: graphManager.getActiveGraphId()
+                ?: return ShareResult.Failed(IllegalStateException("No active graph"))
+            return persistContent(app, id, graph, content, text)
+        }
+        // Bug 1/8 mitigations (graph-switch race, markdown flush) live in CaptureWriter.
+        // Autosave is started on the writer, which is then kept for post-save chip writes.
+        val outcome = JournalAppender(graphManager, app.fileSystem)
+            .append(CaptureTarget.ActiveGraph, text, currentCaptureId) { repoSet ->
+                GraphWriter(app.fileSystem, writeActor = repoSet.writeActor).also { it.startAutoSave(viewModelScope) }
+            }
+        return when (outcome) {
+            is AppendOutcome.Appended -> ShareResult.Added(graph, outcome.toContext(), text)
+            AppendOutcome.AlreadyPresent -> ShareResult.Already(graph)
+            is AppendOutcome.Failed -> ShareResult.Failed(
+                IllegalStateException(
+                    if (outcome.cause == CaptureResult.NoActiveGraph) "No active graph — open SteleKit to set up your graph"
+                    else outcome.error,
+                ),
+            )
+            else -> ShareResult.Failed(IllegalStateException("Unexpected append outcome: $outcome"))
+        }
+    }
+
+    private suspend fun persistOffGraph(app: SteleKitApplication, ready: CaptureDestination.Ready, text: String): ShareResult {
+        val content = loadContent(text, trustedImagePath).getOrElse { return ShareResult.Failed(IllegalStateException(it)) }
+        return persistContent(app, ready.graph.id, ready.graph, content, text)
+    }
+
+    /** Appends [content] (image included) through the share pipeline's router, for any target graph. */
+    private suspend fun persistContent(
+        app: SteleKitApplication,
+        graphId: GraphId,
+        graph: GraphChoice?,
+        content: ShareContent,
+        text: String,
+    ): ShareResult {
+        val services = app.shareServices()
+            ?: return ShareResult.Failed(IllegalStateException("Saving to a graph that isn't open isn't available here"))
+        val label = graph ?: GraphChoice(graphId, "Active")
+        return when (val outcome = services.appender.appendContent(CaptureTarget.NamedGraph(graphId), content, currentCaptureId)) {
+            is AppendOutcome.AppendedOffGraph -> ShareResult.Added(graph, null, text)
+            is AppendOutcome.Appended -> ShareResult.Added(graph, outcome.toContext(), text)
+            AppendOutcome.AlreadyPresent -> ShareResult.Already(graph)
+            is AppendOutcome.Queued -> ShareResult.Queued(label, outcome.reason)
+            is AppendOutcome.Deferred -> ShareResult.Failed(IllegalStateException("Couldn't save: ${outcome.reason}"))
+            is AppendOutcome.Failed -> ShareResult.Failed(IllegalStateException(outcome.error))
+        }
+    }
+
+    private fun AppendOutcome.Appended.toContext() = SavedCaptureContext(
+        block = checkNotNull(saved.block),
+        page = saved.page,
+        blocks = saved.blocks,
+        graphPath = graphPath,
+        graphId = graphId,
+        writer = writer,
+        writeActor = repoSet.writeActor,
+        pageRepository = repoSet.pageRepository,
+        blockRepository = repoSet.blockRepository,
+    )
+
+    /**
+     * Splits the `[image: path]` prefix into a real image payload so the inbox/off-graph route keeps it. Only the
+     * path this share's intake copied ([trusted], see [attachImage]) is ever read: the marker in plain text is
+     * just text. A trusted image that has since vanished throws rather than saving the literal marker.
+     */
+    private fun shareContentFor(text: String, trusted: String?): ShareContent {
+        val prefix = IMAGE_PREFIX_REGEX.find(text) ?: return ShareContent(text)
+        val path = IMAGE_PATH_REGEX.find(prefix.value)?.groupValues?.get(1) ?: return ShareContent(text)
+        if (trusted == null || path != trusted) return ShareContent(text)
+        val bytes = try { File(path).readBytes() } catch (_: java.io.IOException) { throw ImageUnavailableException() }
+        return ShareContent(text.removePrefix(prefix.value), bytes, "image/jpeg")
+    }
+
+    private class ImageUnavailableException : Exception()
+
+    /** Left is a user-facing message. */
+    private suspend fun loadContent(text: String, trusted: String?): Either<String, ShareContent> =
+        withContext(Dispatchers.IO) {
+            try {
+                shareContentFor(text, trusted).right()
+            } catch (_: ImageUnavailableException) {
+                IMAGE_UNAVAILABLE.left()
+            }
         }
 
-        // Bug 8 mitigation: flush the Markdown file after every actor write.
-        // Pass writeActor so GraphWriter can persist filePath for newly created journal pages.
-        val writer = GraphWriter(fileSystem, writeActor = repoSet.writeActor)
-        writer.startAutoSave(viewModelScope)
-        writer.savePage(page, existingBlocks + newBlock, graphPath).getOrElse { error("Save failed: $it") }
+    // ---- Unavailable / no-graph / Back paths (Tasks 4.2.1d, 4.2.1g, 4.2.1h) ------------------
 
-        SavedCaptureContext(
-            block = newBlock,
-            page = page,
-            blocks = existingBlocks + newBlock,
-            graphPath = graphPath,
-            graphId = graphManager.getActiveGraphId() ?: error("no active graph"),
-            writer = writer,
-            writeActor = repoSet.writeActor,
-            pageRepository = repoSet.pageRepository,
-            blockRepository = repoSet.blockRepository,
+    /** "Queue for later" from the unavailable state: the text goes to that graph's inbox slot. */
+    fun queueForLater() {
+        val dest = _destination.value as? CaptureDestination.Unavailable ?: return
+        val graphId = dest.graphId ?: return
+        val app = steleApp ?: return
+        val text = _captureText.value.trim()
+        if (text.isEmpty()) return
+        _saveState.value = SaveState.Saving
+        app.appScope.launch {
+            val choice = GraphChoice(graphId, dest.graphName.removeSuffix(" graph"))
+            applyResult(
+                enqueue(app, InboxSlot.Graph(graphId), text)
+                    .fold({ ShareResult.Failed(IllegalStateException(it.message)) }, { ShareResult.Queued(choice, "queued by user") }),
+            )
+        }
+    }
+
+    private suspend fun enqueue(
+        app: SteleKitApplication,
+        slot: InboxSlot,
+        text: String,
+        captureId: String = currentCaptureId,
+        trustedImage: String? = trustedImagePath,
+    ): Either<DomainError, EnqueueOutcome> {
+        val inbox = app.shareServices()?.inbox
+            ?: return DomainError.FileSystemError.WriteFailed("share-inbox", "share inbox unavailable").left()
+        val content = loadContent(text, trustedImage).getOrElse {
+            return DomainError.FileSystemError.ReadFailed("share-image", it).left()
+        }
+        return inbox.enqueue(slot, content, captureId)
+    }
+
+    /** Close on the "no graphs configured" placeholder: keeps the text in the unassigned slot (ADR-004). */
+    fun closeWithoutGraph() {
+        val text = _captureText.value.trim()
+        val app = steleApp
+        if (text.isEmpty() || app == null) return
+        app.appScope.launch {
+            _resultNote.value = enqueue(app, InboxSlot.Unassigned, text).fold(
+                { NO_GRAPH_SAVE_FAILED },
+                { if (it == EnqueueOutcome.AlreadyQueued) "Already added" else UNASSIGNED_SAVED },
+            )
+        }
+    }
+
+    /**
+     * Back with text: append to the shown destination (same [captureId], idempotent) and report through
+     * [backSave]. A failed or unwritable destination queues the text instead; it is never dropped.
+     */
+    fun backSave() {
+        val app = steleApp ?: return
+        if (_captureText.value.isBlank() || _backSave.value != BackSaveState.None) return
+        _backSave.value = BackSaveState.Saving
+        app.appScope.launch {
+            val done = try {
+                runBackSave(app)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                logger.warn("Back auto-save failed: ${e::class.simpleName}")
+                null
+            }
+            if (done == null) {
+                _backSave.value = BackSaveState.None
+                _saveState.value = SaveState.Error(IllegalStateException("Couldn't save or queue this note. Copy the text before closing."))
+                if (!hostAttached) toastOnMain("Couldn't save this note. Reopen SteleKit capture to try again.")
+            } else {
+                _backSave.value = done
+                if (!hostAttached) toastOnMain(done.message)
+            }
+        }
+    }
+
+    private suspend fun runBackSave(app: SteleKitApplication): BackSaveState.Done? {
+        val graphManager = app.graphManager ?: return queueUnassigned(app)
+        return when (val dest = settledDestination()) {
+            is CaptureDestination.Ready -> {
+                val text = textFor(dest)
+                when (val result = persist(app, graphManager, dest, text)) {
+                    is ShareResult.Added -> {
+                        recordLastUsedUnlessOverride(dest.graph)
+                        result.context?.let { savedContext = it }
+                        val record = recordRecent(app, dest.graph, text)
+                        BackSaveState.Done("Saved to ${dest.graph.label}", record, queued = false)
+                    }
+                    is ShareResult.Already -> BackSaveState.Done("Already added to ${dest.graph.label}", null, queued = false)
+                    is ShareResult.Queued -> queuedDone(dest.graph.label)
+                    is ShareResult.Failed -> queueAfterFailure(app, dest.graph.id, dest.graph.label, text)
+                }
+            }
+            is CaptureDestination.Unavailable ->
+                dest.graphId?.let { queueAfterFailure(app, it, dest.graphName, _captureText.value.trim()) } ?: queueUnassigned(app)
+            CaptureDestination.NoGraphs -> enqueue(app, InboxSlot.Unassigned, _captureText.value.trim())
+                .fold({ null }, { BackSaveState.Done(UNASSIGNED_SAVED, null, queued = true) })
+            CaptureDestination.Legacy, CaptureDestination.Checking -> queueUnassigned(app)
+        }
+    }
+
+    /** No resolvable graph: park the text in the unassigned slot rather than lose it (ADR-004). */
+    private suspend fun queueUnassigned(app: SteleKitApplication): BackSaveState.Done? =
+        enqueue(app, InboxSlot.Unassigned, _captureText.value.trim())
+            .fold({ null }, { BackSaveState.Done(QUEUED_NO_GRAPH, null, queued = true) })
+
+    private suspend fun queueAfterFailure(app: SteleKitApplication, id: GraphId, label: String, text: String): BackSaveState.Done? =
+        enqueue(app, InboxSlot.Graph(id), text).fold({ null }, { queuedDone(label) })
+
+    private fun queuedDone(label: String) =
+        BackSaveState.Done("Couldn't save to $label. Queued for $label.", null, queued = true)
+
+    private fun recordRecent(app: SteleKitApplication, graph: GraphChoice, text: String): RecentCapture {
+        val record = RecentCapture(
+            captureId = currentCaptureId,
+            graphId = graph.id.value,
+            graphName = graph.label,
+            atMs = Clock.System.now().toEpochMilliseconds(),
+            text = text,
+            journalPage = OffGraphCapture.todayJournalPageName(),
         )
+        app.recentCaptures.add(record)
+        return record
+    }
+
+    /** Toast Undo: removes the just-added block, then reports success on the main thread. */
+    fun undoBackSave(onResult: (Boolean) -> Unit) {
+        val app = steleApp ?: return
+        val record = (_backSave.value as? BackSaveState.Done)?.record ?: return
+        app.appScope.launch {
+            val ok = app.undoCapture(record)
+            withContext(Dispatchers.Main) { onResult(ok) }
+        }
+    }
+
+    private fun toastOnMain(message: String) {
+        Handler(Looper.getMainLooper()).post {
+            Toast.makeText(getApplication<Application>(), message, Toast.LENGTH_LONG).show()
+        }
     }
 
     // ---- Epic 4.1: pre-save chip accept/dismiss --------------------------------------------
@@ -581,5 +1040,11 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
 
     companion object {
         private val IMAGE_PREFIX_REGEX = Regex("""^\[image: .*?](?:\n|$)""")
+        private val IMAGE_PATH_REGEX = Regex("""^\[image: (.*?)]""")
+        /** Shown when the unassigned-slot enqueue fails; the placeholder then stays open with Copy text. */
+        internal const val NO_GRAPH_SAVE_FAILED = "Couldn't save this share. Copy the text before closing."
+        private const val IMAGE_UNAVAILABLE = "The shared image is no longer available. Remove it from the note or share it again."
+        private const val QUEUED_NO_GRAPH = "Couldn't pick a graph. Queued to add later."
+        private const val UNASSIGNED_SAVED = "Saved. It will be added to the first graph you create."
     }
 }

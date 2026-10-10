@@ -67,7 +67,7 @@ Compose:
   CompositionLocalAllowlist:
     active: true
     # List any project-specific CompositionLocals that are intentionally global here
-    allowedCompositionLocals: 'LocalOpenSearchWithText'
+    allowedCompositionLocals: 'LocalOpenSearchWithText,LocalShareInboxUi,LocalCopyFlow'
   LambdaParameterInRestartableEffect:
     active: true
   ContentEmitterReturningValues:

@@ -129,4 +129,36 @@ class SerializerParserSymmetryTest {
         val b = content.lines().first { it.trim() == "b" }
         assertEquals(2, (b.length - b.trimStart().length) - (a.length - a.trimStart().length), "relative indent lost: $content")
     }
+
+    // The outline indent is whatever the bullet line used (tabs, 2 spaces or 4 spaces); only code indentation may remain.
+
+    private val fenceContent = "```kotlin\nfun a() {\n  x()\n}\n```"
+
+    private val indentedFences = mapOf(
+        "tab" to "- Parent\n\t- ```kotlin\n\t  fun a() {\n\t    x()\n\t  }\n\t  ```\n",
+        "2-space" to "- Parent\n  - ```kotlin\n    fun a() {\n      x()\n    }\n    ```\n",
+        "4-space" to "- Parent\n    - ```kotlin\n      fun a() {\n        x()\n      }\n      ```\n",
+        "2-space nested twice" to "- A\n  - B\n    - ```kotlin\n      fun a() {\n        x()\n      }\n      ```\n",
+        "tab nested twice" to "- A\n\t- B\n\t\t- ```kotlin\n\t\t  fun a() {\n\t\t    x()\n\t\t  }\n\t\t  ```\n",
+        "4-space nested twice" to "- A\n    - B\n        - ```kotlin\n          fun a() {\n            x()\n          }\n          ```\n",
+    )
+
+    @Test
+    fun fenceInBullet_loadsWithOnlyCodeIndentForTabsTwoAndFourSpaces() {
+        indentedFences.forEach { (name, file) ->
+            assertEquals(fenceContent, parse(file).last().content, "load of $name outline:\n$file")
+        }
+    }
+
+    @Test
+    fun fenceInBullet_saveLoadSaveIsAFixedPointForTabsTwoAndFourSpaces() {
+        indentedFences.forEach { (name, file) ->
+            val once = roundTrip(file)
+            val twice = roundTrip(once)
+            val thrice = roundTrip(twice)
+            assertEquals(once, twice, "$name outline drifted on the second save")
+            assertEquals(twice, thrice, "$name outline drifted on the third save")
+            assertEquals(fenceContent, parse(once).last().content, "$name outline content changed after a save")
+        }
+    }
 }

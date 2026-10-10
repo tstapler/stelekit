@@ -28,6 +28,10 @@ package dev.stapler.stelekit
 // runtime classpath for every dev.stapler.stelekit `*Test` class carrying a JUnit `@Test` method
 // and fails if it isn't registered here, so a missing entry is caught by this suite itself
 // instead of relying on someone noticing.
+import dev.stapler.stelekit.capture.CaptureTargetResolverTest
+import dev.stapler.stelekit.capture.InboxFallbackAppenderTest
+import dev.stapler.stelekit.capture.JournalAppenderOffGraphTest
+import dev.stapler.stelekit.capture.JournalAppenderTest
 import dev.stapler.stelekit.clipboard.BlockClipboardTest
 import dev.stapler.stelekit.domain.ImportServiceTest
 import dev.stapler.stelekit.editor.LinkInsertionTest
@@ -48,9 +52,23 @@ import dev.stapler.stelekit.db.SplitJournalTest
 import dev.stapler.stelekit.repository.BacklinkRepositoryTest
 import dev.stapler.stelekit.sections.CrossSectionBacklinkRenderTest
 import dev.stapler.stelekit.sections.NewPageAutoAssignmentTest
-import dev.stapler.stelekit.transfer.GraphMergeServiceTest
+import dev.stapler.stelekit.merge.MarkdownTargetWriterTest
+import dev.stapler.stelekit.merge.MarkdownTargetWriterContractTest
+import dev.stapler.stelekit.merge.ActiveTargetWriterContractTest
+import dev.stapler.stelekit.merge.CopyEditRecopyPropertyTest
+import dev.stapler.stelekit.merge.TargetWriterCapabilitiesTest
+import dev.stapler.stelekit.merge.ActiveDbPageSourceTest
+import dev.stapler.stelekit.merge.IosWebCopyGatingTest
+import dev.stapler.stelekit.merge.PullCopyFlowTest
+import dev.stapler.stelekit.merge.PullIndexingTest
+import dev.stapler.stelekit.ui.PullCopyViewModelTest
 import dev.stapler.stelekit.transfer.MergeUuidRoundTripSpikeTest
 import dev.stapler.stelekit.ui.ToolbarActionTest
+import dev.stapler.stelekit.ui.CopyFlowControllerTest
+import dev.stapler.stelekit.ui.PullCopyFlowControllerTest
+import dev.stapler.stelekit.merge.InMemoryMergeStorageTest
+import dev.stapler.stelekit.ui.CopyPagesViewModelTest
+import dev.stapler.stelekit.ui.PageSelectionTest
 import dev.stapler.stelekit.voice.VoiceCaptureViewModelTest
 import dev.stapler.stelekit.voice.VoiceNoteBlockFormatTest
 import dev.stapler.stelekit.voice.VoicePipelineFactoryTest
@@ -62,6 +80,7 @@ import dev.stapler.stelekit.asset.pipeline.AssetPipelineServiceTest
 import dev.stapler.stelekit.asset.pipeline.PluginRegistryTest
 import dev.stapler.stelekit.auto.AudiobookNoteFormatterTest
 import dev.stapler.stelekit.auto.AudiobookNoteWriterTest
+import dev.stapler.stelekit.capture.ShareInboxTest
 import dev.stapler.stelekit.db.AtomicFileRelocationStepTest
 import dev.stapler.stelekit.db.BlockHierarchyCteTest
 import dev.stapler.stelekit.db.BulkCopyVerifierTest
@@ -95,6 +114,18 @@ import dev.stapler.stelekit.db.MigrationRunnerCoverageTest
 import dev.stapler.stelekit.db.MigrationRunnerIndexTest
 import dev.stapler.stelekit.db.MigrationRunnerSchemaSyncTest
 import dev.stapler.stelekit.db.RelocationStagingDirectoryTest
+import dev.stapler.stelekit.merge.AssetCopierTest
+import dev.stapler.stelekit.merge.LinkClosureTest
+import dev.stapler.stelekit.merge.MergeManifestTest
+import dev.stapler.stelekit.merge.MergeStagingDirectoryTest
+import dev.stapler.stelekit.merge.MergeUndoTest
+import dev.stapler.stelekit.merge.MetricsLogContractTest
+import dev.stapler.stelekit.merge.SourceReaderParityTest
+import dev.stapler.stelekit.merge.SourceReadCapabilitiesTest
+import dev.stapler.stelekit.merge.PageMergeServiceTest
+import dev.stapler.stelekit.ui.screens.copy.ConflictReviewViewModelTest
+import dev.stapler.stelekit.merge.LargeGraphMergeTest
+import dev.stapler.stelekit.merge.MergeResilienceTest
 import dev.stapler.stelekit.db.SqliteStatementAnalyzerTest
 import dev.stapler.stelekit.db.StorageLocationPersistenceTest
 import dev.stapler.stelekit.db.WithoutRowidMigrationTest
@@ -173,6 +204,10 @@ import org.junit.runners.Suite
 @Suite.SuiteClasses(
     AllBusinessTestsCompletenessTest::class,
     BlockClipboardTest::class,
+    CaptureTargetResolverTest::class,
+    JournalAppenderTest::class,
+    JournalAppenderOffGraphTest::class,
+    InboxFallbackAppenderTest::class,
     ImportServiceTest::class,
     LinkInsertionTest::class,
     FlashcardPropertiesTest::class,
@@ -192,7 +227,23 @@ import org.junit.runners.Suite
     DemoGraphPersistenceTest::class,
     GraphInfoSerializationTest::class,
     SplitJournalTest::class,
-    GraphMergeServiceTest::class,
+    MarkdownTargetWriterTest::class,
+    MarkdownTargetWriterContractTest::class,
+    ActiveTargetWriterContractTest::class,
+    CopyEditRecopyPropertyTest::class,
+    TargetWriterCapabilitiesTest::class,
+    ActiveDbPageSourceTest::class,
+    CopyFlowControllerTest::class,
+    PullCopyFlowControllerTest::class,
+    InMemoryMergeStorageTest::class,
+    CopyPagesViewModelTest::class,
+    IosWebCopyGatingTest::class,
+    PullCopyFlowTest::class,
+    PullIndexingTest::class,
+    PullCopyViewModelTest::class,
+    PageSelectionTest::class,
+    dev.stapler.stelekit.merge.TargetWriterRouterInFlightSwitchTest::class,
+    dev.stapler.stelekit.db.GraphLocatorTest::class,
     MergeUuidRoundTripSpikeTest::class,
     ToolbarActionTest::class,
     VoiceCaptureViewModelTest::class,
@@ -207,6 +258,7 @@ import org.junit.runners.Suite
     AudiobookNoteFormatterTest::class,
     AudiobookNoteWriterTest::class,
     AtomicFileRelocationStepTest::class,
+    ShareInboxTest::class,
     BlockHierarchyCteTest::class,
     BulkCopyVerifierTest::class,
     DiskConflictBlockMatcherTest::class,
@@ -239,6 +291,18 @@ import org.junit.runners.Suite
     MigrationRunnerIndexTest::class,
     MigrationRunnerSchemaSyncTest::class,
     RelocationStagingDirectoryTest::class,
+    MergeStagingDirectoryTest::class,
+    MergeManifestTest::class,
+    MergeUndoTest::class,
+    MetricsLogContractTest::class,
+    SourceReaderParityTest::class,
+    SourceReadCapabilitiesTest::class,
+    PageMergeServiceTest::class,
+    ConflictReviewViewModelTest::class,
+    LargeGraphMergeTest::class,
+    MergeResilienceTest::class,
+    LinkClosureTest::class,
+    AssetCopierTest::class,
     SqliteStatementAnalyzerTest::class,
     StorageLocationPersistenceTest::class,
     WithoutRowidMigrationTest::class,

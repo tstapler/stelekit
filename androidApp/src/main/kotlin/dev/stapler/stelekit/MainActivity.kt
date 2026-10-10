@@ -12,6 +12,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -437,6 +438,14 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize()) {
+            val copyHost = androidx.compose.runtime.remember {
+                dev.stapler.stelekit.ui.screens.copy.copyHostConfigFor(
+                    applicationContext.filesDir.absolutePath,
+                    app.copyRunHost,
+                    dev.stapler.stelekit.merge.SourcePlatform.Android,
+                )
+            }
             StelekitApp(
                 fileSystem = fileSystem,
                 // When the benchmark extra is absent and SAF permission is not yet
@@ -474,8 +483,11 @@ class MainActivity : ComponentActivity() {
                         insufficientSpaceCheck = androidInsufficientSpaceCheck,
                         gitSyncBusyCounter = sharedGitSyncBusyCounter,
                     ),
+                    captureDeps = app.captureDeps(copyHost),
                 ),
             )
+            RecentCaptureNotice(app, androidx.compose.ui.Modifier.align(androidx.compose.ui.Alignment.BottomCenter))
+            }
         }
     }
 

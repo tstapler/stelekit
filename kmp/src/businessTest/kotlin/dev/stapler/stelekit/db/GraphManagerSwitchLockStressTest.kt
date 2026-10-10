@@ -12,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -46,9 +47,15 @@ class GraphManagerSwitchLockStressTest {
     private class Hooks : GraphInitHooks {
         var createDelay: Duration = Duration.ZERO
         var migration: suspend (GraphId) -> Unit = {}
+
+        /** Simulates a driver open that ignores cancellation (blocking IO) for this one graph. */
+        var uncancellableCreate: Pair<GraphId, Duration>? = null
         private val closedLog = kotlinx.coroutines.flow.MutableStateFlow<List<GraphId?>>(emptyList())
         val closed: List<GraphId?> get() = closedLog.value
-        override suspend fun beforeCreateRepositorySet(id: GraphId) { if (createDelay > Duration.ZERO) delay(createDelay) }
+        override suspend fun beforeCreateRepositorySet(id: GraphId) {
+            if (createDelay > Duration.ZERO) delay(createDelay)
+            uncancellableCreate?.takeIf { it.first == id }?.let { withContext(kotlinx.coroutines.NonCancellable) { delay(it.second) } }
+        }
         override suspend fun duringMigration(id: GraphId) = migration(id)
         override suspend fun beforeFactoryClose(owner: GraphId?) { closedLog.update { it + owner } }
     }
@@ -86,7 +93,18 @@ class GraphManagerSwitchLockStressTest {
 
     /** Cancelled earlier init coroutines unwind asynchronously; a leak means it never converges. */
     private suspend fun assertAllUnlockedEventually(m: GraphManager) {
-        withTimeout(10.seconds) { while (listOf(a, b, c).any { m.graphWriteLock.isLocked(it) }) delay(5) }
+        // Abandoned inits (started ATOMIC so they always unwind) can take and release a lock a moment after the
+        // last switch, so a single unlocked sample is not quiescence: require the locks to stay free for a window.
+        val anyLocked = { listOf(a, b, c).any { m.graphWriteLock.isLocked(it) } }
+        withTimeout(10.seconds) {
+            while (true) {
+                if (!anyLocked()) {
+                    delay(200)
+                    if (!anyLocked()) break
+                }
+                delay(5)
+            }
+        }
         listOf(a, b, c).forEach { assertFalse(m.graphWriteLock.isLocked(it), "lock($it) leaked") }
     }
 
@@ -188,6 +206,50 @@ class GraphManagerSwitchLockStressTest {
         delay(200)
         assertEquals(listOf<GraphId?>(a), hooks.closed, "exactly one close, owned by A")
         assertEquals(c, m.readyGraphId)
+    }
+
+    @Test
+    fun `B init cancelled by a B-to-C switch never publishes B and its factory is closed once`() = realTime {
+        val hooks = Hooks().apply { uncancellableCreate = b to 400.milliseconds }
+        val m = newManager(hooks)
+        m.awaitPendingMigration()
+        val published = kotlinx.coroutines.flow.MutableStateFlow<List<GraphId>>(emptyList())
+        val watcher = launch { m.readyGraph.collect { r -> if (r != null) published.update { it + r.id } } }
+
+        m.switchGraph(b)
+        delay(100) // B is parked inside its uncancellable driver open
+        m.switchGraph(c)
+        assertNotNull(m.awaitPendingMigration())
+        assertEquals(c, m.readyGraphId)
+        delay(800) // B's open finishes and reaches its publish point
+        watcher.cancel()
+
+        assertEquals(c, m.readyGraphId, "stale B publish must not overwrite C")
+        assertEquals(c, m.readyGraph.value?.id)
+        assertFalse(b in published.value, "ReadyGraph(B) was published: ${published.value}")
+        assertEquals(1, hooks.closed.count { it == b }, "B's abandoned factory closed exactly once: ${hooks.closed}")
+        assertAllUnlockedEventually(m)
+    }
+
+    @Test
+    fun `relocation teardown waits for a batch holding lock A and closes A's factory once under it`() = realTime {
+        val hooks = Hooks()
+        val m = newManager(hooks)
+        m.awaitPendingMigration()
+        val release = CompletableDeferred<Unit>()
+        val merge = async { m.graphWriteLock.withLock(a, label = "merge") { release.await() } }
+        while (!m.graphWriteLock.isLocked(a)) delay(5)
+
+        val teardown = async { m.tearDownAndCloseActiveGraph(a) }
+        delay(300)
+        assertTrue(hooks.closed.isEmpty(), "close must wait on lock(A), got ${hooks.closed}")
+        assertFalse(teardown.isCompleted)
+        release.complete(Unit)
+        merge.await()
+        teardown.await()
+
+        assertEquals(listOf<GraphId?>(a), hooks.closed)
+        assertAllUnlockedEventually(m)
     }
 
     @Test

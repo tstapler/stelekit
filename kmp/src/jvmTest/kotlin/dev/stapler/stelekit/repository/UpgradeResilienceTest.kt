@@ -2,6 +2,7 @@ package dev.stapler.stelekit.repository
 
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.SteleDatabase
+import dev.stapler.stelekit.merge.SelectionFilter
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.PageUuid
 import kotlinx.coroutines.Dispatchers
@@ -82,10 +83,28 @@ class UpgradeResilienceTest {
             assertFlowEmitsLeft("PageRepository.countUnloadedPages") {
                 repoSet.pageRepository.countUnloadedPages()
             }
+            val tagged = SelectionFilter(tag = "x")
+            for ((label, filter) in listOf("plain" to SelectionFilter(), "tag" to tagged)) {
+                assertFlowEmitsLeft("PageRepository.getPagesFiltered($label)") {
+                    repoSet.pageRepository.getPagesFiltered(filter, 10, 0).first()
+                }
+                assertFlowEmitsLeft("PageRepository.countPagesFiltered($label)") {
+                    repoSet.pageRepository.countPagesFiltered(filter)
+                }
+                assertFlowEmitsLeft("PageRepository.getPagesAmong($label)") {
+                    repoSet.pageRepository.getPagesAmong(filter, listOf(PageUuid("x")))
+                }
+            }
 
             // ── BlockRepository ───────────────────────────────────────────────
             assertFlowEmitsLeft("BlockRepository.getBlocksForPage") {
                 repoSet.blockRepository.getBlocksForPage(PageUuid(FIXTURE_PAGE_UUID)).first()
+            }
+            assertFlowEmitsLeft("BlockRepository.countBlocksForPages") {
+                repoSet.blockRepository.countBlocksForPages(listOf(PageUuid(FIXTURE_PAGE_UUID)))
+            }
+            assertFlowEmitsLeft("SearchRepository.searchPagesByTitle paged") {
+                repoSet.searchRepository.searchPagesByTitle("test", 10, 5).first()
             }
             assertFlowEmitsLeft("BlockRepository.getBlockChildren") {
                 repoSet.blockRepository.getBlockChildren(BlockUuid(FIXTURE_BLOCK_UUID)).first()

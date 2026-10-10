@@ -21,6 +21,8 @@ internal fun JFileChooser.restoreDefaultTabTraversal() {
     setFocusTraversalKeys(KeyboardFocusManager.BACKWARD_TRAVERSAL_KEYS, setOf(AWTKeyStroke.getAWTKeyStroke(KeyEvent.VK_TAB, KeyEvent.SHIFT_DOWN_MASK)))
 }
 
+// Thin delegating shell over JvmFileSystemBase; each FileSystem member needs an explicit override here.
+@Suppress("TooManyFunctions")
 actual class PlatformFileSystem actual constructor() : JvmFileSystemBase(), FileSystem {
 
     companion object {
@@ -53,6 +55,11 @@ actual class PlatformFileSystem actual constructor() : JvmFileSystemBase(), File
     actual override fun getLastModifiedTime(path: String): Long? = super.getLastModifiedTime(path)
 
     override fun renameFile(from: String, to: String): Boolean = super<JvmFileSystemBase>.renameFile(from, to)
+
+    override fun supportsAtomicReplace(path: String): Boolean = super<JvmFileSystemBase>.supportsAtomicReplace(path)
+
+    override fun replaceFileAtomically(from: String, to: String): Boolean =
+        super<JvmFileSystemBase>.replaceFileAtomically(from, to)
 
     override fun readFileBytes(path: String): ByteArray? = super<JvmFileSystemBase>.readFileBytes(path)
 

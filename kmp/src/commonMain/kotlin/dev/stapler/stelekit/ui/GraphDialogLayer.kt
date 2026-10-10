@@ -65,7 +65,7 @@ internal fun GraphDialogLayer(
 ) {
     val scope = rememberCoroutineScope()
 
-    CommandPaletteHost(appState, viewModel)
+    CommandPaletteHost(appState, viewModel, deps.extraCommands)
     SearchDialogHost(appState, searchViewModel, viewModel, deps.loadPageBlocks)
     SettingsDialogHost(appState, viewModel, fileSystem, deps.settings)
     GitSetupDialogHost(appState, viewModel, fileSystem, deps.gitSync)
@@ -91,10 +91,10 @@ internal fun GraphDialogLayer(
 }
 
 @Composable
-private fun CommandPaletteHost(appState: AppState, viewModel: StelekitViewModel) {
+private fun CommandPaletteHost(appState: AppState, viewModel: StelekitViewModel, extraCommands: List<Command>) {
     CommandPalette(
         visible = appState.commandPaletteVisible,
-        commands = appState.commands,
+        commands = appState.commands + extraCommands,
         onDismiss = { viewModel.setCommandPaletteVisible(false) }
     )
 }
@@ -187,6 +187,8 @@ private fun SettingsDialogHost(
         onBrowseClickForMove = settings.onBrowseClickForMove,
         onUnlinkHostDirectory = settings.onUnlinkHostDirectory,
         hotkeyComboLabel = settings.hotkeyComboLabel,
+        captureTargetSettings = settings.captureTargetSettings,
+        captureGraphs = settings.captureGraphs,
     )
 }
 

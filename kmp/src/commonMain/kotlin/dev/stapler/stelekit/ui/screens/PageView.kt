@@ -68,6 +68,7 @@ import androidx.compose.ui.window.DialogProperties
 import kotlin.time.Clock
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.map
+import dev.stapler.stelekit.ui.screens.copy.LocalCopyFlow
 import kotlinx.coroutines.launch
 import dev.stapler.stelekit.ui.components.tags.SuggestionBottomSheet
 
@@ -365,6 +366,16 @@ fun PageView(
                                     onClick = {
                                         exportMenuExpanded = false
                                         viewModel.exportPage(formatId)
+                                    }
+                                )
+                            }
+                            LocalCopyFlow.current?.takeIf { it.direction == dev.stapler.stelekit.merge.CopyDirection.Push }?.let { copyFlow ->
+                                HorizontalDivider()
+                                DropdownMenuItem(
+                                    text = { Text("Copy this page to...") },
+                                    onClick = {
+                                        exportMenuExpanded = false
+                                        copyFlow.open(page.uuid)
                                     }
                                 )
                             }
