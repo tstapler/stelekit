@@ -588,6 +588,46 @@ public class SteleDatabaseQueries(
 
   public fun selectBlocksByParentUuids(parent_uuid: Collection<String?>): Query<Blocks> = selectBlocksByParentUuids(parent_uuid, ::Blocks)
 
+  public fun <T : Any> selectMergeConflictBlocks(
+    uuid: String,
+    `value`: Long,
+    mapper: (
+      id: Long,
+      uuid: String,
+      page_uuid: String,
+      parent_uuid: String?,
+      left_uuid: String?,
+      content: String,
+      level: Long,
+      position: String,
+      created_at: Long,
+      updated_at: Long,
+      properties: String?,
+      version: Long,
+      content_hash: String?,
+      block_type: String,
+    ) -> T,
+  ): Query<T> = SelectMergeConflictBlocksQuery(uuid, value) { cursor ->
+    mapper(
+      cursor.getLong(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!,
+      cursor.getString(3),
+      cursor.getString(4),
+      cursor.getString(5)!!,
+      cursor.getLong(6)!!,
+      cursor.getString(7)!!,
+      cursor.getLong(8)!!,
+      cursor.getLong(9)!!,
+      cursor.getString(10),
+      cursor.getLong(11)!!,
+      cursor.getString(12),
+      cursor.getString(13)!!
+    )
+  }
+
+  public fun selectMergeConflictBlocks(uuid: String, value_: Long): Query<Blocks> = selectMergeConflictBlocks(uuid, value_, ::Blocks)
+
   public fun <T : Any> selectBlockHierarchyRecursive(uuid: String, mapper: (
     id: Long,
     uuid: String,
@@ -5791,6 +5831,28 @@ public class SteleDatabaseQueries(
     }
 
     override fun toString(): String = "SteleDatabase.sq:selectBlocksByParentUuids"
+  }
+
+  private inner class SelectMergeConflictBlocksQuery<out T : Any>(
+    public val uuid: String,
+    public val `value`: Long,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("blocks", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("blocks", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(1_843_096_019, """SELECT blocks.id, blocks.uuid, blocks.page_uuid, blocks.parent_uuid, blocks.left_uuid, blocks.content, blocks.level, blocks.position, blocks.created_at, blocks.updated_at, blocks.properties, blocks.version, blocks.content_hash, blocks.block_type FROM blocks WHERE properties LIKE '%merge-conflict:true%' AND uuid > ? ORDER BY uuid LIMIT ?""", mapper, 2) {
+      var parameterIndex = 0
+      bindString(parameterIndex++, uuid)
+      bindLong(parameterIndex++, value)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectMergeConflictBlocks"
   }
 
   private inner class SelectBlockHierarchyRecursiveQuery<out T : Any>(

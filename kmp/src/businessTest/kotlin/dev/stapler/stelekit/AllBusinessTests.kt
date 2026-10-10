@@ -109,6 +109,7 @@ import dev.stapler.stelekit.merge.MergeUndoTest
 import dev.stapler.stelekit.merge.SourceReaderParityTest
 import dev.stapler.stelekit.merge.SourceReadCapabilitiesTest
 import dev.stapler.stelekit.merge.PageMergeServiceTest
+import dev.stapler.stelekit.ui.screens.copy.ConflictReviewViewModelTest
 import dev.stapler.stelekit.db.SqliteStatementAnalyzerTest
 import dev.stapler.stelekit.db.StorageLocationPersistenceTest
 import dev.stapler.stelekit.db.WithoutRowidMigrationTest
@@ -267,6 +268,7 @@ import org.junit.runners.Suite
     SourceReaderParityTest::class,
     SourceReadCapabilitiesTest::class,
     PageMergeServiceTest::class,
+    ConflictReviewViewModelTest::class,
     LinkClosureTest::class,
     AssetCopierTest::class,
     SqliteStatementAnalyzerTest::class,

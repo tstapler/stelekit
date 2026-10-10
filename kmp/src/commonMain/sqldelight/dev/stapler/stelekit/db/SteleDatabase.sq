@@ -244,6 +244,11 @@ SELECT * FROM blocks WHERE parent_uuid = ? ORDER BY position;
 selectBlocksByParentUuids:
 SELECT * FROM blocks WHERE parent_uuid IN ? ORDER BY parent_uuid, position;
 
+-- Keyset page of copy-conflict blocks (property merge-conflict:true). Served by the partial index
+-- idx_blocks_merge_conflict (MigrationRunner); the LIKE text must match the index WHERE exactly.
+selectMergeConflictBlocks:
+SELECT * FROM blocks WHERE properties LIKE '%merge-conflict:true%' AND uuid > ? ORDER BY uuid LIMIT ?;
+
 selectBlockHierarchyRecursive:
 WITH RECURSIVE subtree(
     id, uuid, page_uuid, parent_uuid, left_uuid, content, level, position,

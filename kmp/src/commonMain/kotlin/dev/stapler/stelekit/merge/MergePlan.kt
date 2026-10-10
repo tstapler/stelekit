@@ -5,9 +5,6 @@ import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.PageUuid
 import kotlinx.serialization.Serializable
 
-/** Push: this app writes into [PlanRequest.targetGraphId]. Pull: the [PageSource] is remote; the write path is identical. */
-enum class CopyDirection { Push, Pull }
-
 /**
  * Which source pages to copy: [filter]/[search] list them, [include] (if set) restricts to those
  * uuids, [exclude] drops uuids. Independent of list position, so it survives filter changes.
