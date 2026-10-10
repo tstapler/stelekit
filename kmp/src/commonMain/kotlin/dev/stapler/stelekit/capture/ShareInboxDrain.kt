@@ -63,8 +63,8 @@ class ShareInboxDrain(
         },
     )
     private val drainMutex = Mutex()
-    private var currentReady: GraphId? = null
-    private var started = false
+    @kotlin.concurrent.Volatile private var currentReady: GraphId? = null
+    @kotlin.concurrent.Volatile private var started = false
 
     fun start() {
         if (started) return
