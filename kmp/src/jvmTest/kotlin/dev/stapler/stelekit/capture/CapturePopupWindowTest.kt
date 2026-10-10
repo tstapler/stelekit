@@ -93,7 +93,22 @@ class CapturePopupWindowTest {
     }
 
     @Test
-    fun capturePopupWindow_should_CallControllerDismiss_When_EscapePressed() {
+    fun capturePopupWindow_should_CloseImmediately_When_EscapePressedWithBlankText() {
+        val controller = newActiveController()
+        controller.show()
+        setPopupContent(controller)
+
+        composeTestRule.onNodeWithTag("captureTextField").performKeyInput {
+            keyDown(Key.Escape)
+            keyUp(Key.Escape)
+        }
+
+        composeTestRule.waitUntil(5_000) { controller.state.value is CapturePopupState.Hidden }
+        assertTrue(controller.state.value is CapturePopupState.Hidden, "Escape should dismiss the popup")
+    }
+
+    @Test
+    fun capturePopupWindow_should_AskToDiscard_When_EscapePressedWithText() {
         val controller = newActiveController()
         controller.show()
         controller.updateText("some draft")
@@ -104,8 +119,8 @@ class CapturePopupWindowTest {
             keyUp(Key.Escape)
         }
 
-        composeTestRule.waitUntil(5_000) { controller.state.value is CapturePopupState.Hidden }
-        assertTrue(controller.state.value is CapturePopupState.Hidden, "Escape should dismiss the popup")
+        composeTestRule.waitUntil(5_000) { controller.state.value is CapturePopupState.ConfirmDiscard }
+        composeTestRule.onNodeWithText("Discard this note?").assertExists()
     }
 
     @Test

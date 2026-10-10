@@ -72,7 +72,7 @@ fun StelekitApp(
         onGraphManagerReady = deps.lifecycleHooks.onGraphManagerReady,
     )
     val graphManager = graphManagerState.graphManager
-    ShareCaptureEffect(graphManager, fileSystem, deps.captureDeps)
+    ShareCaptureEffect(graphManager, fileSystem, platformSettings, deps.captureDeps)
 
     if (permissionGateAndGraphInit(fileSystem, graphPath, graphManager, scope)) return
 
@@ -86,7 +86,15 @@ fun StelekitApp(
 
 /** Builds the share pipeline once per graph manager and runs its inbox drain; a no-op when the host supplies no [ShareInboxConfig]. */
 @Composable
-private fun ShareCaptureEffect(graphManager: GraphManager, fileSystem: FileSystem, captureDeps: StelekitAppCaptureDeps) {
+private fun ShareCaptureEffect(
+    graphManager: GraphManager,
+    fileSystem: FileSystem,
+    platformSettings: Settings,
+    captureDeps: StelekitAppCaptureDeps,
+) {
+    LaunchedEffect(platformSettings) {
+        captureDeps.onCaptureSettingsReady?.invoke(dev.stapler.stelekit.capture.CaptureTargetSettings(platformSettings))
+    }
     val config = captureDeps.shareInbox ?: return
     val graphFileSystem = fileSystem as? PlatformFileSystem ?: return
     DisposableEffect(graphManager, config) {
