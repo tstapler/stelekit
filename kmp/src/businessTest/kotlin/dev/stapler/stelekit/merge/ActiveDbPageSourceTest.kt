@@ -190,6 +190,20 @@ class ActiveDbPageSourceTest {
         assertEquals(listOf("a_b"), db.search.searchPagesByTitle("a_b", 50, 0).first().getOrNullOrFail().map { it.name })
     }
 
+    @Test
+    fun `oracle order breaks name ties by section id like SQL, not by uuid`() = runBlocking {
+        val corpus = listOf(
+            page("Same").copy(sectionId = dev.stapler.stelekit.model.SectionId.Named("b")),
+            page("same").copy(sectionId = dev.stapler.stelekit.model.SectionId.Named("a")),
+            page("Same2"),
+        )
+        val db = Db()
+        db.pages.seed(corpus)
+        val stored = db.pages.getAllPagesSnapshot().getOrNullOrFail()
+        val expected = stored.filteredAndSorted(SelectionFilter()).map { it.uuid }
+        assertEquals(expected, db.pages.listAll(SelectionFilter(), 2).map { it.uuid })
+    }
+
     // ── ActiveDbPageSource behavior ─────────────────────────────────────────────────────
 
     @Test

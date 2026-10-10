@@ -240,7 +240,12 @@ class SqlDelightPageRepository(
             }
         }
 
-    /** Walks the SQL-prefiltered rows in <= [FILTER_BATCH_SIZE] batches; [visit] returns false to stop. */
+    /**
+     * Walks the SQL-prefiltered rows in <= [FILTER_BATCH_SIZE] batches; [visit] returns false to stop.
+     * Known limit: each list page re-walks the prefiltered rows from offset 0 (O(P^2/100) for P prefiltered
+     * rows), bounded per read and cheap while the substring prefilter is selective; a (name, section_id)
+     * keyset cursor would remove it.
+     */
     private fun forEachTagMatch(filter: SelectionFilter, a: SelectionSqlArgs, visit: (Page) -> Boolean) {
         var rowOffset = 0L
         while (true) {
