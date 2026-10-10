@@ -106,8 +106,9 @@ class ActiveTargetWriter(
         }
 
         val allBlocks = tree.flatMap(ActiveWritePlanner::flatten) + inserts
-        val rendered = LogseqPageSerializer.serialize(pageRow.copy(properties = merged.properties), allBlocks)
-        RoundTripGuard.verifyRendered(rendered, merged, path, merged.isJournal)?.let { return@guarded refuse(it).left() }
+        // Blocks only: the serializer writes page properties as bare lines that the loader reads back as a block, not as properties.
+        val rendered = LogseqPageSerializer.serialize(pageRow.copy(properties = emptyMap()), allBlocks)
+        RoundTripGuard.verifyRendered(rendered, merged.copy(properties = emptyMap()), path, merged.isJournal)?.let { return@guarded refuse(it).left() }
 
         // An unloaded stub gets the blocks parsed from its file persisted with this write (and is marked loaded).
         val saved = if (row == null || propsChanged || unloaded.isNotEmpty()) {
