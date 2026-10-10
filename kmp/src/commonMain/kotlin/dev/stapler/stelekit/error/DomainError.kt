@@ -26,6 +26,8 @@ sealed interface DomainError {
             override val message: String = "Empty file: $path"
         }
         data class InvalidSyntax(override val message: String) : ParseError
+        /** Recognized head symbol, but an argument shape outside the supported grammar. */
+        data class UnsupportedForm(override val message: String) : ParseError
         data class MalformedMarkdown(override val message: String) : ParseError
     }
 
@@ -122,6 +124,7 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.FileSystemError.DeleteFailed -> "File delete failed: $message"
     is DomainError.ParseError.EmptyFile -> message
     is DomainError.ParseError.InvalidSyntax -> "Parse error: $message"
+    is DomainError.ParseError.UnsupportedForm -> "Unsupported form: $message"
     is DomainError.ParseError.MalformedMarkdown -> "Malformed markdown: $message"
     is DomainError.ConflictError.DiskConflict -> "Disk conflict: $message"
     is DomainError.ConflictError.ConcurrentWrite -> "Concurrent write conflict: $message"

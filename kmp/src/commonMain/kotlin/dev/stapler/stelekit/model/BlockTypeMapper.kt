@@ -10,4 +10,5 @@ fun BlockType.toDiscriminatorString(): String = when (this) {
     is BlockType.ThematicBreak -> BlockTypes.THEMATIC_BREAK
     is BlockType.Table -> BlockTypes.TABLE
     is BlockType.RawHtml -> BlockTypes.RAW_HTML
+    is BlockType.Query -> BlockTypes.QUERY
 }

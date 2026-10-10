@@ -11,5 +11,6 @@ object BlockTypes {
     const val THEMATIC_BREAK = "thematic_break"
     const val TABLE = "table"
     const val RAW_HTML = "raw_html"
+    const val QUERY = "query"
     const val IMAGE_ANNOTATION = "image_annotation"
 }

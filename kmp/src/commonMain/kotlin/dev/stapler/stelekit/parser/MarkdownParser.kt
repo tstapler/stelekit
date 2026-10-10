@@ -36,6 +36,14 @@ class MarkdownParser {
         }
     }
 
+    /** Returns the argument string when the block's entire inline content is one `{{query ...}}` macro. */
+    private fun singleQueryMacroArg(content: List<InlineNode>): String? {
+        val nodes = content.filterNot { it is TextNode && it.content.isBlank() }
+        val macro = nodes.singleOrNull() as? MacroNode ?: return null
+        if (!macro.name.equals("query", ignoreCase = true)) return null
+        return macro.arguments.firstOrNull().orEmpty().trim()
+    }
+
     private fun convertBlock(block: BlockNode): ParsedBlock {
         val level = when(block) {
             is BulletBlockNode -> block.level
@@ -49,7 +57,7 @@ class MarkdownParser {
             is RawHtmlBlockNode -> 0
         }
 
-        val blockType = when (block) {
+        val structuralType = when (block) {
             is BulletBlockNode -> BlockType.Bullet
             is ParagraphBlockNode -> BlockType.Paragraph
             is HeadingBlockNode -> BlockType.Heading(level = block.level)
@@ -59,6 +67,11 @@ class MarkdownParser {
             is ThematicBreakBlockNode -> BlockType.ThematicBreak
             is TableBlockNode -> BlockType.Table
             is RawHtmlBlockNode -> BlockType.RawHtml
+        }
+        val blockType = if (block is BulletBlockNode || block is ParagraphBlockNode) {
+            singleQueryMacroArg(block.content)?.let { BlockType.Query(it) } ?: structuralType
+        } else {
+            structuralType
         }
         
         // Serialize AST back to a raw string for storage; the UI re-parses on render.

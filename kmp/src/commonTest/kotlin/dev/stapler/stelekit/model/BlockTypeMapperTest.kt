@@ -51,6 +51,12 @@ class BlockTypeMapperTest {
     }
 
     @Test
+    fun queryMapsToCorrectDiscriminator() {
+        assertEquals(BlockTypes.QUERY, BlockType.Query("(task now)").toDiscriminatorString())
+        assertEquals("query", BlockTypes.QUERY)
+    }
+
+    @Test
     fun allBlockTypesConstantsMatchDiscriminatorStrings() {
         val allTypes = listOf(
             BlockType.Bullet,
@@ -62,11 +68,12 @@ class BlockTypeMapperTest {
             BlockType.ThematicBreak,
             BlockType.Table,
             BlockType.RawHtml,
+            BlockType.Query("(task now)"),
         )
         val allConstants = setOf(
             BlockTypes.BULLET, BlockTypes.PARAGRAPH, BlockTypes.HEADING,
             BlockTypes.CODE_FENCE, BlockTypes.BLOCKQUOTE, BlockTypes.ORDERED_LIST_ITEM,
-            BlockTypes.THEMATIC_BREAK, BlockTypes.TABLE, BlockTypes.RAW_HTML,
+            BlockTypes.THEMATIC_BREAK, BlockTypes.TABLE, BlockTypes.RAW_HTML, BlockTypes.QUERY,
         )
         val mappedDiscriminators = allTypes.map { it.toDiscriminatorString() }.toSet()
         assertEquals(allConstants, mappedDiscriminators, "BlockTypes constants must match all discriminator strings")

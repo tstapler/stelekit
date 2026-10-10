@@ -63,6 +63,7 @@ class DomainErrorTest {
                 is DomainError.ParseError.EmptyFile -> err.message
                 is DomainError.ParseError.InvalidSyntax -> err.message
                 is DomainError.ParseError.MalformedMarkdown -> err.message
+                is DomainError.ParseError.UnsupportedForm -> err.message
                 is DomainError.ConflictError.DiskConflict -> err.message
                 is DomainError.ConflictError.ConcurrentWrite -> err.message
                 is DomainError.ValidationError.InvalidUuid -> err.message

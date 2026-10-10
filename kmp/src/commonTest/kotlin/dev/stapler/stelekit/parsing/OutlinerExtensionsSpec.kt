@@ -309,7 +309,7 @@ class OutlinerExtensionsSpec {
     // SECTION 5 — Task Markers  (TODO / DONE / etc.)
     // ─────────────────────────────────────────────────────────────────────────
     //
-    // TaskMarkerNode is not yet in the AST — all tests below are @Ignored.
+    // TaskMarkerNode tests below run against the real AST.
     // Un-ignore and adjust assertions once TaskMarkerNode is implemented.
 
     @Test
@@ -367,7 +367,7 @@ class OutlinerExtensionsSpec {
     // SECTION 6 — Macros  ({{name args}})
     // ─────────────────────────────────────────────────────────────────────────
     //
-    // MacroNode is not yet in the AST. All tests are @Ignored.
+    // MacroNode is in the AST; these tests run (none are @Ignored).
     // CRITICAL NOTE: when MacroNode is added, ensure that references inside macros
     // (e.g. the [[Page]] inside {{embed [[Page]]}}) are still extractable for
     // back-link indexing — see the reference extraction test below.
