@@ -34,6 +34,8 @@ import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 class TargetWriterRouterInFlightSwitchTest {
@@ -52,7 +54,9 @@ class TargetWriterRouterInFlightSwitchTest {
 
     private class Hooks : GraphInitHooks {
         var beforeCreate: suspend (GraphId) -> Unit = {}
+        var onClose: suspend (GraphId?) -> Unit = {}
         override suspend fun beforeCreateRepositorySet(id: GraphId) = beforeCreate(id)
+        override suspend fun beforeFactoryClose(owner: GraphId?) = onClose(owner)
     }
 
     private class FakeWriter(val label: String) : TargetWriter {
@@ -77,7 +81,7 @@ class TargetWriterRouterInFlightSwitchTest {
         managers.clear()
     }
 
-    private fun newManager(hooks: Hooks = Hooks()): GraphManager {
+    private fun newManager(hooks: Hooks = Hooks(), lockTimeout: Duration = 10.seconds): GraphManager {
         val graphs = listOf(a, b, c).map { GraphInfo(id = it, path = "/data/${it.value}", displayName = it.value, addedAt = 0L) }
         val settings = MapSettings()
         settings.putString("graph_registry", Json.encodeToString(GraphRegistry(activeGraphId = a, graphs = graphs)))
@@ -86,6 +90,7 @@ class TargetWriterRouterInFlightSwitchTest {
             driverFactory = DriverFactory(),
             fileSystem = StubFileSystem(),
             defaultBackend = GraphBackend.IN_MEMORY,
+            lockAcquireTimeout = lockTimeout,
             initHooks = hooks,
         ).also { managers += it }
     }
@@ -202,6 +207,30 @@ class TargetWriterRouterInFlightSwitchTest {
                 (w as FakeWriter).label.right()
             }
         }
+        assertEquals("off", (res as Either.Right).value)
+        assertEquals(2, calls)
+    }
+
+    @Test
+    fun `holder keeps writing after the close timeout - the actor is stopped, the batch gets retryable and the router re-decides`() = realTime {
+        val closed = CompletableDeferred<Unit>()
+        val m = newManager(Hooks().apply { onClose = { if (it == a) closed.complete(Unit) } }, lockTimeout = 300.milliseconds)
+        m.awaitPendingMigration()
+        val pair = assertNotNull(m.readyGraph.value)
+        var calls = 0
+        var stoppedWhileHeld = false
+        val res = router(m).withWriter(a) { w ->
+            calls++
+            if (calls == 1) {
+                m.switchGraph(b)
+                closed.await() // the 300 ms acquire timeout elapsed: A's factory closes while this batch holds lock(A)
+                stoppedWhileHeld = assertNotNull(pair.repoSet.writeActor).isStopped
+                DomainError.MergeError.Retryable("graph closed").left()
+            } else {
+                (w as FakeWriter).label.right()
+            }
+        }
+        assertTrue(stoppedWhileHeld, "writes through A's actor must fail fast once its factory is closed")
         assertEquals("off", (res as Either.Right).value)
         assertEquals(2, calls)
     }

@@ -868,6 +868,7 @@ class GraphManager(
         // previousId and factoryToClose are captured together, synchronously, so the factory is
         // closed under the lock of the graph that owns it, regardless of later switches.
         val previousId = currentGraphId
+        val actorToStop = _activeRepositorySet.value?.writeActor
         val factoryToClose = tearDownActiveGraphResources()
 
         // Create a new scope for this graph's operations first so the actor can use it.
@@ -909,6 +910,9 @@ class GraphManager(
                 try {
                     if (factoryToClose != null) withContext(kotlinx.coroutines.NonCancellable) {
                         val closeUnderLock: suspend () -> Unit = {
+                            // Stop the actor first: it owns its scope, and a late batch write must fail fast
+                            // (retryable) instead of reaching a closed driver.
+                            actorToStop?.close()
                             initHooks?.beforeFactoryClose(previousId)
                             factoryToClose.close()
                         }
