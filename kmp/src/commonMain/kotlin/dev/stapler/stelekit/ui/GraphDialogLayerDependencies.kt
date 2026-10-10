@@ -129,4 +129,6 @@ data class GraphDialogLayerDeps(
     val debugState: DebugMenuState = DebugMenuState(),
     val loadPageBlocks: (String) -> Flow<Either<DomainError, List<Block>>> = { flowOf(Either.Right(emptyList())) },
     val onDebugStateChange: (DebugMenuState) -> Unit = {},
+    /** Entries appended to the command palette by hosts that own a feature (e.g. "Copy pages to..."). */
+    val extraCommands: List<Command> = emptyList(),
 )

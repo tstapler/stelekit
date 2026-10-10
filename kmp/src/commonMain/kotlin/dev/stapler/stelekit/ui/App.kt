@@ -8,6 +8,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.background
 import dev.stapler.stelekit.capture.HotkeyRegistrationFailure
 import dev.stapler.stelekit.capture.createShareCaptureServices
+import dev.stapler.stelekit.capture.createTargetWriterRouter
+import dev.stapler.stelekit.ui.screens.copy.CopyFlowController
+import dev.stapler.stelekit.ui.screens.copy.createCopyServices
 import dev.stapler.stelekit.ui.components.ShareInboxPanelHost
 import dev.stapler.stelekit.ui.components.ShareInboxStartNotice
 import dev.stapler.stelekit.ui.components.shareGraphNameOf
@@ -75,7 +78,7 @@ fun StelekitApp(
         onGraphManagerReady = deps.lifecycleHooks.onGraphManagerReady,
     )
     val graphManager = graphManagerState.graphManager
-    val shareUi = rememberShareCaptureUi(graphManager, fileSystem, platformSettings, deps.captureDeps)
+    val crossGraph = rememberCrossGraphUi(graphManager, fileSystem, platformSettings, deps.captureDeps)
 
     if (permissionGateAndGraphInit(fileSystem, graphPath, graphManager, scope)) return
 
@@ -84,37 +87,55 @@ fun StelekitApp(
 
     if (emptyGraphGate(graphManager, fileSystem, scope, graphManagerState.activeGraphId)) return
 
-    MainGraphContentHost(fileSystem, deps, platformSettings, graphManagerState, notificationManager, shareUi)
+    MainGraphContentHost(fileSystem, deps, platformSettings, graphManagerState, notificationManager, crossGraph)
 }
 
+/** The share inbox UI and the copy flow, both built over the one [dev.stapler.stelekit.merge.TargetWriterRouter]. */
+private class CrossGraphUi(val share: ShareInboxUi?, val copy: CopyFlowController?)
+
 /**
- * Builds the share pipeline once per graph manager and runs its inbox drain; a no-op (null) when the host
- * supplies no [ShareInboxConfig]. Returns the UI view of the inbox for the indicator and panel.
+ * Builds the share pipeline and the copy flow once per graph manager and runs the share inbox drain.
+ * Share is absent (null) when the host supplies no [ShareInboxConfig]; copy when it supplies no
+ * [StelekitAppCaptureDeps.copyHost]. When both are on they share ONE router (the one share builds); copy alone
+ * builds the same router with off-graph writes refused.
  */
 @Composable
-private fun rememberShareCaptureUi(
+private fun rememberCrossGraphUi(
     graphManager: GraphManager,
     fileSystem: FileSystem,
     platformSettings: Settings,
     captureDeps: StelekitAppCaptureDeps,
-): ShareInboxUi? {
+): CrossGraphUi {
     LaunchedEffect(platformSettings) {
         captureDeps.onCaptureSettingsReady?.invoke(dev.stapler.stelekit.capture.CaptureTargetSettings(platformSettings))
     }
-    val config = captureDeps.shareInbox ?: return null
-    val graphFileSystem = fileSystem as? PlatformFileSystem ?: return null
-    var shareUi by remember(graphManager, config) { mutableStateOf<ShareInboxUi?>(null) }
-    DisposableEffect(graphManager, config) {
-        val services = createShareCaptureServices(graphManager, graphFileSystem, config, captureDeps.activeWriteHooks)
-        services.drain.start()
-        captureDeps.onShareServicesReady?.invoke(services)
-        shareUi = ShareInboxUi(services)
+    val config = captureDeps.shareInbox
+    val copyHost = captureDeps.copyHost
+    val graphFileSystem = fileSystem as? PlatformFileSystem
+    var ui by remember(graphManager, config, copyHost) { mutableStateOf(CrossGraphUi(null, null)) }
+    DisposableEffect(graphManager, config, copyHost) {
+        if (graphFileSystem == null) return@DisposableEffect onDispose {}
+        val services = config?.let { createShareCaptureServices(graphManager, graphFileSystem, it, captureDeps.activeWriteHooks) }
+        services?.drain?.start()
+        services?.let { captureDeps.onShareServicesReady?.invoke(it) }
+        val copy = copyHost?.let { host ->
+            val capabilities = config?.capabilities ?: dev.stapler.stelekit.merge.TargetWriterCapabilities()
+            val router = services?.router
+                ?: createTargetWriterRouter(graphManager, graphFileSystem, capabilities, host.canonicalize, captureDeps.activeWriteHooks)
+            CopyFlowController(
+                services = createCopyServices(graphManager, graphFileSystem, router, capabilities, host, platformSettings),
+                graphRegistry = graphManager.graphRegistry,
+                switchTo = { graphManager.switchGraph(it) },
+            )
+        }
+        ui = CrossGraphUi(services?.let { ShareInboxUi(it) }, copy)
         onDispose {
-            shareUi = null
-            services.drain.close()
+            ui = CrossGraphUi(null, null)
+            services?.drain?.close()
+            copy?.close()
         }
     }
-    return shareUi
+    return ui
 }
 
 /**
@@ -129,15 +150,12 @@ private fun MainGraphContentHost(
     platformSettings: Settings,
     graphManagerState: GraphManagerState,
     notificationManager: NotificationManager,
-    shareUi: ShareInboxUi?,
+    crossGraph: CrossGraphUi,
 ) {
+    val shareUi = crossGraph.share
     val graphManager = graphManagerState.graphManager
     val activeGraphId = graphManagerState.activeGraphId
     val repos = graphManagerState.activeRepoSet
-
-    // Created here, above key(activeGraphId), so a page snapshot survives the graph switch
-    // it's meant to be pasted into — see GraphMergeService's class doc.
-    val graphMergeService = remember { dev.stapler.stelekit.transfer.GraphMergeService() }
 
     if (repos == null || !graphManagerState.migrationReady) {
         // Show loading state while repositories are being initialized or migration is running.
@@ -164,7 +182,7 @@ private fun MainGraphContentHost(
                 voiceConfig = deps.voiceConfig,
                 platformIntegrations = deps.platformIntegrations,
                 webSyncDeps = deps.webSyncDeps,
-                graphMergeService = graphMergeService,
+                copyFlow = crossGraph.copy,
                 hotkeyComboLabel = deps.captureDeps.hotkeyComboLabel,
                 activeWriteHooks = deps.captureDeps.activeWriteHooks,
             ))

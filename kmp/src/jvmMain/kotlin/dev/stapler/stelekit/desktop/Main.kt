@@ -199,6 +199,13 @@ fun main(args: Array<String>) {
             // null and App.kt's onCancelClone silently no-ops. Owns its own CoroutineScope
             // internally (see JvmGitCloneWorkerLauncher's kdoc), so remember-ing it here is safe.
             val gitCloneWorkerLauncher = remember(gitRepository) { JvmGitCloneWorkerLauncher(gitRepository) }
+            val copyHost = remember {
+                dev.stapler.stelekit.ui.screens.copy.copyHostConfigFor(
+                    dev.stapler.stelekit.db.DriverFactory().getDatabaseDirectory(),
+                    dev.stapler.stelekit.merge.DefaultCopyRunHost(),
+                    dev.stapler.stelekit.merge.SourcePlatform.Desktop,
+                )
+            }
             StelekitApp(
                 fileSystem = fileSystem,
                 graphPath = graphPath,
@@ -227,6 +234,7 @@ fun main(args: Array<String>) {
                         ),
                         onShareServicesReady = captureSurfaces.controller::attachShareServices,
                         onCaptureSettingsReady = captureSurfaces.controller::attachTargetSettings,
+                        copyHost = copyHost,
                     ),
                 ),
             )

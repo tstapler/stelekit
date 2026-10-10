@@ -44,6 +44,26 @@ class ShareCaptureServices(
 )
 
 /**
+ * The one [TargetWriterRouter] recipe, shared by share and copy: the real `ActiveTargetWriter` for the open
+ * graph and a [MarkdownTargetWriter] (symlink-resolving via [canonicalize]) for any other.
+ */
+fun createTargetWriterRouter(
+    graphManager: GraphManager,
+    graphFileSystem: PlatformFileSystem,
+    capabilities: TargetWriterCapabilities,
+    canonicalize: (String) -> String,
+    activeHooks: ActiveWriteHooks,
+): TargetWriterRouter = TargetWriterRouter(
+    graphManager = graphManager,
+    locator = RegistryGraphLocator(graphManager.graphRegistry),
+    capabilities = capabilities,
+    activeWriterFor = { ready -> activeTargetWriterFor(ready, activeHooks, graphFileSystem, graphManager) },
+    offGraphWriterFor = { info ->
+        MarkdownTargetWriter(graphFileSystem, OffGraphTarget(info.id, info.path, isActive = false), capabilities, canonicalize)
+    },
+)
+
+/**
  * Wiring only: builds the one router, the queuing share appender, and the drain (whose appender
  * does NOT queue, so a failed delivery cannot re-enqueue itself).
  *
@@ -57,20 +77,7 @@ fun createShareCaptureServices(
     activeHooks: ActiveWriteHooks = ActiveWriteHooks(),
 ): ShareCaptureServices {
     val locator = RegistryGraphLocator(graphManager.graphRegistry)
-    val router = TargetWriterRouter(
-        graphManager = graphManager,
-        locator = locator,
-        capabilities = config.capabilities,
-        activeWriterFor = { ready -> activeTargetWriterFor(ready, activeHooks, graphFileSystem, graphManager) },
-        offGraphWriterFor = { info ->
-            MarkdownTargetWriter(
-                graphFileSystem,
-                OffGraphTarget(info.id, info.path, isActive = false),
-                config.capabilities,
-                config.canonicalize,
-            )
-        },
-    )
+    val router = createTargetWriterRouter(graphManager, graphFileSystem, config.capabilities, config.canonicalize, activeHooks)
     val inbox = ShareInbox(config.inboxFileSystem, config.inboxRoot)
     val raw = RouterOffGraphRoute(router, locator, AssetCopier(graphFileSystem, config.canonicalize))
     val appender = JournalAppender(graphManager, graphFileSystem, InboxFallbackAppender(raw, inbox))

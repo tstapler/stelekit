@@ -34,6 +34,9 @@ interface CopyRunHost {
     /** False (and [onOutcome] never called) when a run is already active. */
     fun start(service: PageMergeService, plan: MergePlan, onOutcome: (CopyRunOutcome) -> Unit): Boolean
 
+    /** Re-applies the pages that failed in the last run, with the same lifetime guarantees as [start]. */
+    fun retryFailed(service: PageMergeService, onOutcome: (CopyRunOutcome) -> Unit): Boolean
+
     /** Asks the run to stop after the page in flight. */
     fun stop(service: PageMergeService)
 }
@@ -56,11 +59,20 @@ open class ScopedCopyRunHost(
         if (e !is CancellationException) logger.error("copy run: ${e::class.simpleName}: ${e.message}", e)
     }
 
-    override fun start(service: PageMergeService, plan: MergePlan, onOutcome: (CopyRunOutcome) -> Unit): Boolean {
+    override fun start(service: PageMergeService, plan: MergePlan, onOutcome: (CopyRunOutcome) -> Unit): Boolean =
+        launchRun(onOutcome) { service.apply(plan) }
+
+    override fun retryFailed(service: PageMergeService, onOutcome: (CopyRunOutcome) -> Unit): Boolean =
+        launchRun(onOutcome) { service.retryFailed() }
+
+    private fun launchRun(
+        onOutcome: (CopyRunOutcome) -> Unit,
+        run: suspend () -> Either<ApplyFailure, MergeResult>,
+    ): Boolean {
         if (!_running.compareAndSet(expect = false, update = true)) return false
         scope.launch(handler) {
             val outcome = try {
-                CopyRunOutcome.Finished(service.apply(plan))
+                CopyRunOutcome.Finished(run())
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {

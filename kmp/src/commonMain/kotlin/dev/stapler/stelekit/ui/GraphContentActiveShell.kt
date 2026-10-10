@@ -37,6 +37,12 @@ import dev.stapler.stelekit.ui.components.*
 import dev.stapler.stelekit.vault.VaultManager
 import dev.stapler.stelekit.voice.VoiceCaptureState
 import kotlinx.coroutines.CoroutineScope
+import dev.stapler.stelekit.merge.ActiveDbPageSource
+import dev.stapler.stelekit.ui.screens.copy.ConflictReviewViewModel
+import dev.stapler.stelekit.ui.screens.copy.CopyFlowHost
+import dev.stapler.stelekit.ui.screens.copy.CopyGraphBinding
+import dev.stapler.stelekit.ui.screens.copy.LocalCopyFlow
+import dev.stapler.stelekit.ui.screens.copy.conflictPagePersister
 import kotlinx.coroutines.launch
 
 /**
@@ -103,8 +109,7 @@ internal fun GraphContentActiveShell(
     val onReconnectHostDirectory = deps.webSyncDeps.onReconnectHostDirectory
     val onConnectHostDirectory = deps.webSyncDeps.onConnectHostDirectory
     val onUnlinkHostDirectory = deps.webSyncDeps.onUnlinkHostDirectory
-    val graphMergeService = deps.graphMergeService
-    val mergePendingPageCount by graphMergeService.pendingPageCount.collectAsState()
+    val copyFlow = deps.copyFlow
 
     val hostAccessStateFlow = deps.webSyncDeps.hostAccessStateFlow
     val hostWritePendingCountFlow = deps.webSyncDeps.hostWritePendingCountFlow
@@ -237,6 +242,7 @@ internal fun GraphContentActiveShell(
             LocalWindowSizeClass provides windowSizeClass,
             LocalOpenSearchWithText provides { text -> viewModel.setSearchDialogVisible(true, text) },
             LocalFileSystem provides effectiveFileSystem,
+            LocalCopyFlow provides copyFlow,
         ) {
 
         // Auto-manage sidebar based on layout: open on desktop, closed on mobile.
@@ -314,8 +320,7 @@ internal fun GraphContentActiveShell(
                         hostWritePendingCount = hostWritePendingCount,
                         hostWriteStuck = hostWriteStuck,
                         onReconnectHostDirectory = onReconnectHostDirectory,
-                        mergePendingPageCount = mergePendingPageCount,
-                        graphMergeService = graphMergeService,
+                        onCopyPages = copyFlow?.let { flow -> { flow.open() } },
                         activeGraphInfo = activeGraphInfo,
                         graphRegistry = graphRegistry,
                         activeGraphId = activeGraphId,
@@ -503,6 +508,9 @@ internal fun GraphContentActiveShell(
                     selectedBlockUuids = blockStateManager.selectedBlockUuids.collectAsState().value,
                 ),
                 debugState = debugMenuState,
+                extraCommands = remember(copyFlow) {
+                    listOfNotNull(copyFlow?.let { flow -> Command("copy-pages", "Copy pages to...") { flow.open() } })
+                },
                 loadPageBlocks = { pageUuidStr -> repos.blockRepository.getBlocksForPage(dev.stapler.stelekit.model.PageUuid(pageUuidStr)) },
                 onDebugStateChange = { newState ->
                     debugMenuStateState.value = newState
@@ -510,6 +518,33 @@ internal fun GraphContentActiveShell(
                 },
             ),
         )
+
+        if (copyFlow != null && activeGraphId != null) {
+            val copyBinding = remember(activeGraphId, repos) {
+                CopyGraphBinding(
+                    graphId = activeGraphId,
+                    source = ActiveDbPageSource(repos.pageRepository, repos.blockRepository, repos.searchRepository),
+                    pagesByNames = { names -> repos.pageRepository.getPagesByNames(names) },
+                    onAddGraph = newGraphFlowController.onStartNewGraphFlow,
+                )
+            }
+            CopyFlowHost(
+                controller = copyFlow,
+                binding = copyBinding,
+                conflictReviewFactory = {
+                    repos.writeActor?.let { actor ->
+                        ConflictReviewViewModel(
+                            repos.propertyRepository,
+                            repos.blockRepository,
+                            actor,
+                            conflictPagePersister(repos.pageRepository, repos.blockRepository, graphIoStack.graphWriter) { activeGraphPath },
+                        )
+                    }
+                },
+                onOpenPage = { uuid -> viewModel.navigateToPageByUuid(uuid.value) },
+                onNotice = { viewModel.sendSnackbar(it) },
+            )
+        }
 
         // See GraphContentNewGraphFlow.kt for NewGraphDialog/UnifiedLocationPicker/
         // PlainGraphAppOwnedWarningDialog — the three dialogs that step through
