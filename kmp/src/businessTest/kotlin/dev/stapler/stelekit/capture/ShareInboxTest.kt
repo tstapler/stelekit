@@ -435,7 +435,8 @@ class ShareInboxTest {
         )
         drain.start()
 
-        i.awaitState { it.items.isEmpty() }
+        // A fresh inbox starts empty, so empty alone can be observed before the first attempt.
+        i.awaitState { it.items.isEmpty() && attempts >= 3 }
         drain.close()
         assertEquals(3, attempts)
     }
