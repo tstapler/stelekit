@@ -6,6 +6,7 @@ package dev.stapler.stelekit.merge
 import arrow.core.Either
 import arrow.core.flatMap
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.GraphId
 
 enum class UndoUnavailableReason { NotFound, Expired }
@@ -46,6 +47,8 @@ class MergeUndo(
     private val writerFor: (GraphId) -> TargetWriter,
     private val nowEpochMs: () -> Long,
 ) {
+    private val logger = Logger("MergeUndo")
+
     suspend fun undo(mergeId: MergeId): UndoResult {
         val manifest = manifests.load(mergeId) ?: return UndoResult.Unavailable(UndoUnavailableReason.NotFound)
         if (nowEpochMs() - manifest.startedAtEpochMs > MERGE_UNDO_WINDOW_MILLIS) {
@@ -82,6 +85,10 @@ class MergeUndo(
                 }
             }
         }
+        logger.info(
+            "merge.undo mergeId=${mergeId.value} target=${manifest.targetGraphId} removedPages=$filesDeleted " +
+                "removedBlocks=$blocksRemoved leftInPlace=${issues.size}",
+        )
         return UndoResult.Done(filesDeleted, blocksRemoved, issues)
     }
 

@@ -6,6 +6,7 @@ package dev.stapler.stelekit.capture
 
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.db.GraphWriter
+import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.platform.PlatformFileSystem
@@ -76,13 +77,13 @@ class JournalAppender(
         captureId: String? = null,
         writerFactory: (RepositorySet) -> GraphWriter = { GraphWriter(fileSystem, writeActor = it.writeActor) },
     ): AppendOutcome = when (target) {
-        CaptureTarget.ActiveGraph -> appendToActive(text, captureId, writerFactory)
+        CaptureTarget.ActiveGraph -> appendToActive(text, captureId, writerFactory).logged(target, WRITER_ACTIVE)
         is CaptureTarget.NamedGraph ->
             if (target.graphId == graphManager.getActiveGraphId()) {
-                appendToActive(text, captureId, writerFactory)
+                appendToActive(text, captureId, writerFactory).logged(target, WRITER_ACTIVE)
             } else {
-                offGraphRoute?.append(target.graphId, text, captureId)
-                    ?: AppendOutcome.Failed(NOT_SUPPORTED_YET)
+                (offGraphRoute?.append(target.graphId, text, captureId) ?: AppendOutcome.Failed(NOT_SUPPORTED_YET))
+                    .logged(target, WRITER_MARKDOWN)
             }
     }
 
@@ -99,9 +100,29 @@ class JournalAppender(
     ): AppendOutcome {
         val route = offGraphRoute as? OffGraphContentRoute
         val offGraph = target is CaptureTarget.NamedGraph && target.graphId != graphManager.getActiveGraphId()
-        if (!offGraph && content.image != null) return AppendOutcome.Deferred(IMAGE_NEEDS_OPEN_GRAPH_UI, permanent = true)
+        if (!offGraph && content.image != null) {
+            return AppendOutcome.Deferred(IMAGE_NEEDS_OPEN_GRAPH_UI, permanent = true).logged(target, WRITER_ACTIVE)
+        }
         if (!offGraph || route == null) return append(target, content.text, captureId, writerFactory)
         return route.appendContent((target as CaptureTarget.NamedGraph).graphId, content, captureId)
+            .logged(target, WRITER_MARKDOWN)
+    }
+
+    /** Metrics line (M2/M3): ids and enum names only, never share text. */
+    private fun AppendOutcome.logged(target: CaptureTarget, writer: String): AppendOutcome {
+        val id = when (target) {
+            is CaptureTarget.NamedGraph -> target.graphId.value
+            CaptureTarget.ActiveGraph -> graphManager.getActiveGraphId()?.value ?: "none"
+        }
+        val name = when (this) {
+            is AppendOutcome.Appended, is AppendOutcome.AppendedOffGraph -> "Appended"
+            AppendOutcome.AlreadyPresent -> "AlreadyPresent"
+            is AppendOutcome.Queued -> "Queued"
+            is AppendOutcome.Deferred -> "Deferred"
+            is AppendOutcome.Failed -> "Failed"
+        }
+        logger.info("share.append target=$id writer=$writer override=${target is CaptureTarget.NamedGraph} outcome=$name")
+        return this
     }
 
     private suspend fun appendToActive(
@@ -128,6 +149,9 @@ class JournalAppender(
         repoSet.blockRepository.getBlockByUuid(BlockUuid(captureId)).first().getOrNull() != null
 
     companion object {
+        private val logger = Logger("JournalAppender")
+        private const val WRITER_ACTIVE = "active"
+        private const val WRITER_MARKDOWN = "markdown"
         const val IMAGE_NEEDS_OPEN_GRAPH_UI = "image-needs-open-graph-ui"
         const val NOT_SUPPORTED_YET = "NotSupportedYet: appending to a non-active graph needs Story 4.1.3"
     }

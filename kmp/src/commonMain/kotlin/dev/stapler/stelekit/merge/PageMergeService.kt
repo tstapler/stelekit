@@ -260,6 +260,12 @@ class PageMergeService(
             "merge.apply id=${result.mergeId} new=${result.newPages} combined=${result.combinedPages} " +
                 "unchanged=${result.unchangedPages} failed=${result.failed.size} notAttempted=${result.notAttempted}",
         )
+        logger.info(
+            "merge.summary mergeId=${result.mergeId} source=${state.plan.sourceGraphId} target=${state.plan.targetGraphId} " +
+                "direction=${state.plan.direction} new=${result.newPages} combined=${result.combinedPages} " +
+                "unchanged=${result.unchangedPages} conflicted=${result.conflicts} failed=${result.failed.size} " +
+                "assetsRenamed=${result.assetsRenamed}",
+        )
         return result
     }
 

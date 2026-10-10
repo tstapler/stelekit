@@ -64,6 +64,8 @@ kt_jvm_test(
         "@maven//:io_kotest_kotest_property_jvm",
         "//kmp/src/commonMain/resources:common_resources",
         "//kmp/src/commonTest/kotlin:git_testsupport",
+        "//kmp/src/commonTest/kotlin:business_common_tests",
+        "@maven//:com_squareup_okio_okio_fakefilesystem_jvm",
         ":demo_filesystem_as_resource",
         ":sqldatabase_schema_as_resource",
         ":git_shadow_worktree_as_resource",

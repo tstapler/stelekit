@@ -116,6 +116,7 @@ import dev.stapler.stelekit.merge.LinkClosureTest
 import dev.stapler.stelekit.merge.MergeManifestTest
 import dev.stapler.stelekit.merge.MergeStagingDirectoryTest
 import dev.stapler.stelekit.merge.MergeUndoTest
+import dev.stapler.stelekit.merge.MetricsLogContractTest
 import dev.stapler.stelekit.merge.SourceReaderParityTest
 import dev.stapler.stelekit.merge.SourceReadCapabilitiesTest
 import dev.stapler.stelekit.merge.PageMergeServiceTest
@@ -287,6 +288,7 @@ import org.junit.runners.Suite
     MergeStagingDirectoryTest::class,
     MergeManifestTest::class,
     MergeUndoTest::class,
+    MetricsLogContractTest::class,
     SourceReaderParityTest::class,
     SourceReadCapabilitiesTest::class,
     PageMergeServiceTest::class,
