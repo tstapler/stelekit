@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.nio.file.Files
@@ -169,5 +170,30 @@ class JournalAppenderTest {
                 .anyMatch { Files.readString(it).contains("partial") }
         }
         assertTrue(inFiles, "retry reported $retry but no journal file contains the block")
+    }
+
+    @Test
+    fun activePathKeepsEveryBlockOfTodaysJournalWhenItsRowIsAnUnloadedStub() = realTime {
+        val (appender, manager) = readyAppender()
+        val graphPath = manager.getActiveGraphInfo()!!.path
+        val today = kotlinx.datetime.Clock.System.now().toLocalDateTime(kotlinx.datetime.TimeZone.currentSystemDefault()).date
+        val name = today.toString().replace('-', '_')
+        val file = "$graphPath/journals/$name.md"
+        java.io.File(file).also { it.parentFile.mkdirs() }.writeText("- keep me 1\n- keep me 2\n- keep me 3\n")
+        val now = kotlin.time.Clock.System.now()
+        manager.getActiveRepositorySet()!!.writeActor!!.savePage(
+            dev.stapler.stelekit.model.Page(
+                uuid = PageUuid(dev.stapler.stelekit.util.UuidGenerator.generateV7()), name = name, filePath = file,
+                createdAt = now, updatedAt = now, isJournal = true, journalDate = today, isContentLoaded = false,
+            ),
+        )
+
+        val outcome = appender.append(CaptureTarget.ActiveGraph, "hello", captureId)
+
+        assertIs<AppendOutcome.Appended>(outcome)
+        assertEquals(
+            listOf("keep me 1", "keep me 2", "keep me 3", "hello"),
+            java.io.File(file).readLines().filter { it.startsWith("- ") }.map { it.removePrefix("- ") },
+        )
     }
 }

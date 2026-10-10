@@ -202,20 +202,9 @@ class ActiveTargetWriter(
         val path = row.filePath?.takeIf { it.isNotBlank() }
         if (path == null || !fileExists(path)) return Existing(emptyList(), row.properties, emptyList()).right()
         if (encrypted) return retryable(WriteRetryReason.PageNotLoaded)
-        val text = withContext(PlatformDispatcher.IO) { fs.readFile(path) }
-            ?: return DomainError.FileSystemError.ReadFailed(path, "unreadable").left()
-        if (text.isBlank()) return Existing(emptyList(), row.properties, emptyList()).right()
-        RoundTripGuard.probe(text, path, row.isJournal).onLeft { return refuse(it).left() }
-        val parsed = try {
-            MergeConverters.parseMarkdown(text, path, row.name, row.isJournal, row.journalDate)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            return refuse(NotRoundTrippable.ParseFailed("${e::class.simpleName}: ${e.message?.take(120)}")).left()
-        }
-        val now = Clock.System.now()
-        val blocks = parsed.blocks.map { it.copy(pageUuid = row.uuid, createdAt = now, updatedAt = now) }
-        return Existing(ActiveWritePlanner.buildTree(blocks), parsed.page.properties, blocks).right()
+        val loaded = UnloadedPageReader.read(fs, row).getOrReturn { return it.left() }
+            ?: return Existing(emptyList(), row.properties, emptyList()).right()
+        return Existing(ActiveWritePlanner.buildTree(loaded.blocks), loaded.properties, loaded.blocks).right()
     }
 
     /** A failed lookup is an error, never "no collision": an unchecked insert could move a block off another page. */
