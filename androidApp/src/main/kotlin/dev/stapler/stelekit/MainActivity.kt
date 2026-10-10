@@ -474,6 +474,9 @@ class MainActivity : ComponentActivity() {
                         insufficientSpaceCheck = androidInsufficientSpaceCheck,
                         gitSyncBusyCounter = sharedGitSyncBusyCounter,
                     ),
+                    captureDeps = dev.stapler.stelekit.ui.StelekitAppCaptureDeps(
+                        shareInbox = dev.stapler.stelekit.capture.shareInboxConfigFor(applicationContext.filesDir.absolutePath),
+                    ),
                 ),
             )
         }

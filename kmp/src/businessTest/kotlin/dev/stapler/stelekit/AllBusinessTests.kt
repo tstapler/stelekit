@@ -29,6 +29,8 @@ package dev.stapler.stelekit
 // and fails if it isn't registered here, so a missing entry is caught by this suite itself
 // instead of relying on someone noticing.
 import dev.stapler.stelekit.capture.CaptureTargetResolverTest
+import dev.stapler.stelekit.capture.InboxFallbackAppenderTest
+import dev.stapler.stelekit.capture.JournalAppenderOffGraphTest
 import dev.stapler.stelekit.capture.JournalAppenderTest
 import dev.stapler.stelekit.clipboard.BlockClipboardTest
 import dev.stapler.stelekit.domain.ImportServiceTest
@@ -189,6 +191,8 @@ import org.junit.runners.Suite
     BlockClipboardTest::class,
     CaptureTargetResolverTest::class,
     JournalAppenderTest::class,
+    JournalAppenderOffGraphTest::class,
+    InboxFallbackAppenderTest::class,
     ImportServiceTest::class,
     LinkInsertionTest::class,
     FlashcardPropertiesTest::class,

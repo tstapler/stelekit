@@ -222,6 +222,9 @@ fun main(args: Array<String>) {
                     captureDeps = StelekitAppCaptureDeps(
                         hotkeyComboLabel = GlobalHotkeyListener.DEFAULT_COMBO_LABEL,
                         hotkeyRegistrationFailure = captureSurfaces.hotkeyListener.registrationFailure,
+                        shareInbox = dev.stapler.stelekit.capture.shareInboxConfigFor(
+                            dev.stapler.stelekit.db.DriverFactory().getDatabaseDirectory(),
+                        ),
                     ),
                 ),
             )
