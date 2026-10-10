@@ -256,4 +256,14 @@ class MergePageExamplesTest {
         assertEquals("done", out.page.blocks[1].properties["status"])
         assertEquals(MergeOutcome.Unchanged, merged(out.page, page(b("s1", "Buy milk", props = mapOf("status" to "done")))))
     }
+
+    @Test
+    fun duplicateSourceUuidsOnANewPageGetDistinctUuids() {
+        val out = merged(null, page(b("d1", "one"), b("d1", "two"), b("d1", "three")))
+
+        val ids = assertIs<MergeOutcome.New>(out).page.blocks.map { it.uuid }
+        assertEquals(3, ids.toSet().size, "duplicate uuid' in $ids")
+        assertEquals(UuidRemap.uuidFor(g, "d1"), ids[0])
+        assertEquals(listOf("one", "two", "three"), out.let { (it as MergeOutcome.New).page.blocks.map { b -> b.content } })
+    }
 }

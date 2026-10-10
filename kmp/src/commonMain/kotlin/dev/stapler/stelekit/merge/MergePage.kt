@@ -10,7 +10,7 @@ fun mergePage(existing: MergePage?, incoming: MergePage, policy: MergePolicy): M
     val remap = UuidRemap.compute(policy.sourceGraphId, incoming.blocks)
     if (existing == null) {
         val merger = SiblingMerger(policy, remap, remap, incoming.name, HashSet())
-        return MergeOutcome.New(incoming.copy(blocks = incoming.blocks.map { merger.remapSubtree(it, it.uuid?.let(remap::get)) }))
+        return MergeOutcome.New(incoming.copy(blocks = incoming.blocks.map { merger.remapSubtree(it, merger.claim(it.uuid)) }))
     }
     // Ref targets depend on matching and matching compares ref-rewritten content, so iterate to a fixpoint.
     val onPage = pageUuids(existing.blocks)
@@ -245,12 +245,15 @@ private class SiblingMerger(
      * uuid' for a source uuid, unless the page already has it. That happens when a conflict sibling re-copies a
      * subtree whose first copy is still there, and a duplicate uuid would be INSERT OR REPLACEd over it.
      */
-    private fun claim(sourceUuid: String?): String? {
+    fun claim(sourceUuid: String?): String? {
         val plain = sourceUuid?.let(remap::get) ?: return null
         if (usedUuids.add(plain)) return plain
-        val alt = UuidRemap.conflictUuid(policy.sourceGraphId, sourceUuid, "collision:$plain")
-        usedUuids += alt
-        return alt
+        var n = 0
+        while (true) {
+            val alt = UuidRemap.conflictUuid(policy.sourceGraphId, sourceUuid, "collision:$plain" + if (n == 0) "" else "#$n")
+            if (usedUuids.add(alt)) return alt
+            n++
+        }
     }
 
     /** [newUuid] is the uuid for [b] (uuid', or the conflict uuid); descendants get a [claim]ed uuid'. */
