@@ -141,7 +141,7 @@ private class SiblingMerger(
         inc.properties.all { (k, v) -> k in IDENTITY_KEYS || target.properties[k] == v }
 
     private fun propsSeed(inc: MergeBlock): String =
-        inc.properties.filterKeys { it !in IDENTITY_KEYS }.toSortedMap().entries.joinToString("") { "|${it.key}=${it.value}" }
+        inc.properties.filterKeys { it !in IDENTITY_KEYS }.entries.sortedBy { it.key }.joinToString("") { "|${it.key}=${it.value}" }
 
     private fun srcRef(uuid: String) = SourceBlockRef.of(policy.sourceGraphId, uuid).value
 

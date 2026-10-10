@@ -55,7 +55,7 @@ internal class PageUuidOwnership(
                 if (!name.endsWith(".md")) continue
                 val file = "$dir/$name"
                 val text = readText(file).fold({ return it.left() }, { it }) ?: continue
-                ID_LINE.findAll(text).forEach { built.putIfAbsent(it.groupValues[1].lowercase(), file) }
+                ID_LINE.findAll(text).forEach { m -> built.getOrPut(m.groupValues[1].lowercase()) { file } }
             }
         }
         index = built
