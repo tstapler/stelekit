@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.ui.components
 
+import dev.stapler.stelekit.ui.LocalShareInboxUi
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -218,6 +219,14 @@ fun LeftSidebar(
                 onExportPagesForMerge = onExportPagesForMerge,
                 onImportMergedPages = onImportMergedPages,
             )
+
+            LocalShareInboxUi.current?.let { shareUi ->
+                QueuedSharesBadge(
+                    shareUi,
+                    remember(availableGraphs) { shareGraphNameOf(availableGraphs) },
+                    Modifier.padding(horizontal = 12.dp),
+                )
+            }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 

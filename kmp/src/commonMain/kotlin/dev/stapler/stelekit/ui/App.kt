@@ -8,6 +8,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.background
 import dev.stapler.stelekit.capture.HotkeyRegistrationFailure
 import dev.stapler.stelekit.capture.createShareCaptureServices
+import dev.stapler.stelekit.ui.components.ShareInboxPanelHost
+import dev.stapler.stelekit.ui.components.ShareInboxStartNotice
+import dev.stapler.stelekit.ui.components.shareGraphNameOf
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Lock
@@ -72,7 +75,7 @@ fun StelekitApp(
         onGraphManagerReady = deps.lifecycleHooks.onGraphManagerReady,
     )
     val graphManager = graphManagerState.graphManager
-    ShareCaptureEffect(graphManager, fileSystem, deps.captureDeps)
+    val shareUi = rememberShareCaptureUi(graphManager, fileSystem, deps.captureDeps)
 
     if (permissionGateAndGraphInit(fileSystem, graphPath, graphManager, scope)) return
 
@@ -81,20 +84,29 @@ fun StelekitApp(
 
     if (emptyGraphGate(graphManager, fileSystem, scope, graphManagerState.activeGraphId)) return
 
-    MainGraphContentHost(fileSystem, deps, platformSettings, graphManagerState, notificationManager)
+    MainGraphContentHost(fileSystem, deps, platformSettings, graphManagerState, notificationManager, shareUi)
 }
 
-/** Builds the share pipeline once per graph manager and runs its inbox drain; a no-op when the host supplies no [ShareInboxConfig]. */
+/**
+ * Builds the share pipeline once per graph manager and runs its inbox drain; a no-op (null) when the host
+ * supplies no [ShareInboxConfig]. Returns the UI view of the inbox for the indicator and panel.
+ */
 @Composable
-private fun ShareCaptureEffect(graphManager: GraphManager, fileSystem: FileSystem, captureDeps: StelekitAppCaptureDeps) {
-    val config = captureDeps.shareInbox ?: return
-    val graphFileSystem = fileSystem as? PlatformFileSystem ?: return
+private fun rememberShareCaptureUi(graphManager: GraphManager, fileSystem: FileSystem, captureDeps: StelekitAppCaptureDeps): ShareInboxUi? {
+    val config = captureDeps.shareInbox ?: return null
+    val graphFileSystem = fileSystem as? PlatformFileSystem ?: return null
+    var shareUi by remember(graphManager, config) { mutableStateOf<ShareInboxUi?>(null) }
     DisposableEffect(graphManager, config) {
-        val services = createShareCaptureServices(graphManager, graphFileSystem, config)
+        val services = createShareCaptureServices(graphManager, graphFileSystem, config, captureDeps.activeWriteHooks)
         services.drain.start()
         captureDeps.onShareServicesReady?.invoke(services)
-        onDispose { services.drain.close() }
+        shareUi = ShareInboxUi(services)
+        onDispose {
+            shareUi = null
+            services.drain.close()
+        }
     }
+    return shareUi
 }
 
 /**
@@ -109,6 +121,7 @@ private fun MainGraphContentHost(
     platformSettings: Settings,
     graphManagerState: GraphManagerState,
     notificationManager: NotificationManager,
+    shareUi: ShareInboxUi?,
 ) {
     val graphManager = graphManagerState.graphManager
     val activeGraphId = graphManagerState.activeGraphId
@@ -129,6 +142,7 @@ private fun MainGraphContentHost(
 
     // Use key(graphId) to recreate ViewModels when graph changes
     Box(modifier = Modifier.fillMaxSize()) {
+        CompositionLocalProvider(LocalShareInboxUi provides shareUi) {
         key(activeGraphId) {
             GraphContent(GraphContentDeps(
                 repos = repos,
@@ -144,10 +158,45 @@ private fun MainGraphContentHost(
                 webSyncDeps = deps.webSyncDeps,
                 graphMergeService = graphMergeService,
                 hotkeyComboLabel = deps.captureDeps.hotkeyComboLabel,
+                activeWriteHooks = deps.captureDeps.activeWriteHooks,
             ))
+        }
+        ShareInboxHost(shareUi, graphManager)
         }
         CaptureNoticesOverlay(platformSettings, deps.captureDeps)
     }
+}
+
+/** Publishes this graph's writer and editor dirty check for the share router while the graph is open. */
+@Composable
+private fun RegisterActiveWriteHooks(
+    hooks: dev.stapler.stelekit.capture.ActiveWriteHooks?,
+    graphId: GraphId?,
+    graphWriter: dev.stapler.stelekit.db.GraphWriter,
+    fileSystem: FileSystem,
+    graphPath: String?,
+    blockStateManager: dev.stapler.stelekit.ui.state.BlockStateManager,
+) {
+    if (hooks == null || graphId == null || graphPath == null) return
+    DisposableEffect(hooks, graphId, graphWriter, fileSystem, graphPath, blockStateManager) {
+        val binding = dev.stapler.stelekit.capture.ActiveWriteBinding(
+            graphId, graphWriter, fileSystem, graphPath,
+        ) { page -> page.value in blockStateManager.dirtyPageUuids.value || blockStateManager.hasPendingDiskWrite(page.value) }
+        hooks.register(binding)
+        onDispose { hooks.unregister(binding) }
+    }
+}
+
+/** Panel dialog plus the once-per-cold-start "N shares are queued" snackbar; absent without a share pipeline. */
+@Composable
+private fun BoxScope.ShareInboxHost(shareUi: ShareInboxUi?, graphManager: GraphManager) {
+    if (shareUi == null) return
+    val registry by graphManager.graphRegistry.collectAsState()
+    val graphNameOf = remember(registry) { shareGraphNameOf(registry.graphs) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    ShareInboxPanelHost(shareUi, graphNameOf)
+    ShareInboxStartNotice(shareUi, graphNameOf, snackbarHostState)
+    SnackbarHost(snackbarHostState, Modifier.align(Alignment.BottomCenter))
 }
 
 /** Bundles [GraphManager] plus the derived state [StelekitApp] needs from it (Parameter Object pattern). */
@@ -433,6 +482,9 @@ private fun GraphContent(deps: GraphContentDeps) {
     val exportService = viewModelStack.exportService
     val shareProvider = viewModelStack.shareProvider
     val viewModel = viewModelStack.viewModel
+    RegisterActiveWriteHooks(
+        deps.activeWriteHooks, activeGraphInfo?.id, graphWriter, effectiveFileSystem, activeGraphPath, blockStateManager,
+    )
     LaunchedEffect(viewModel) { deps.onViewModelReady?.invoke(viewModel) }
 
     // See GraphContentStorageMove.kt: GraphRelocationCoordinator, StorageMoveUiState, and the
