@@ -60,12 +60,26 @@ class PullPageSource(
             },
     )
 
-    private class Index(val entries: List<SourceEntry>, val byUuid: Map<String, SourceEntry>)
+    /** One immutable listing batch. */
+    private class Chunk(val entries: List<SourceEntry>, val byUuid: Map<String, SourceEntry>)
+
+    /**
+     * Append-only index published as an immutable list of [Chunk]s, so adding a batch copies
+     * only the chunk references (N/100), never the entries.
+     */
+    private class Index(val chunks: List<Chunk>, val size: Int) {
+        val entries: Sequence<SourceEntry> get() = chunks.asSequence().flatMap { it.entries }
+        fun find(uuid: String): SourceEntry? {
+            for (c in chunks) c.byUuid[uuid]?.let { return it }
+            return null
+        }
+        fun plus(chunk: Chunk) = Index(chunks + chunk, size + chunk.entries.size)
+    }
 
     private val _indexState = MutableStateFlow<PullIndexState>(PullIndexState.Idle)
     val indexState: StateFlow<PullIndexState> = _indexState.asStateFlow()
 
-    private val index = MutableStateFlow(Index(emptyList(), emptyMap()))
+    private val index = MutableStateFlow(Index(emptyList(), 0))
     private var graph: GraphInfo? = null
     private var indexJob: Job? = null
     private val unreadable = MutableStateFlow<List<UnreadablePage>>(emptyList())
@@ -74,7 +88,7 @@ class PullPageSource(
     fun select(source: GraphInfo?) {
         stop()
         graph = source
-        index.value = Index(emptyList(), emptyMap())
+        index.value = Index(emptyList(), 0)
         unreadable.value = emptyList()
         if (source == null) _indexState.value = PullIndexState.Idle else startIndexing(source)
     }
@@ -88,7 +102,7 @@ class PullPageSource(
     fun stop() {
         indexJob?.cancel()
         indexJob = null
-        if (_indexState.value is PullIndexState.Reading) _indexState.value = PullIndexState.Ready(index.value.entries.size)
+        if (_indexState.value is PullIndexState.Reading) _indexState.value = PullIndexState.Ready(index.value.size)
     }
 
     fun close() = scope.cancel()
@@ -96,8 +110,8 @@ class PullPageSource(
     private fun startIndexing(source: GraphInfo) {
         _indexState.value = PullIndexState.Reading(0)
         indexJob = scope.launch {
-            val loaded = ArrayList<SourceEntry>()
-            val byUuid = HashMap<String, SourceEntry>()
+            val seen = HashSet<String>()
+            var total = 0
             var after: String? = null
             while (true) {
                 val batch = when (val r = reader.listEntries(source, after, SourceGraphReader.MAX_PAGE_SIZE)) {
@@ -108,17 +122,26 @@ class PullPageSource(
                     is Either.Right -> r.value
                 }
                 if (batch.isEmpty()) break
-                for (e in batch) {
-                    loaded += e
-                    byUuid[uuidOf(source, e).value] = e
-                }
-                after = batch.last().name
-                index.value = Index(loaded.toList(), byUuid.toMap())
-                _indexState.value = PullIndexState.Reading(loaded.size)
+                val fresh = batch.filter { seen.add(it.fileName) }
+                if (fresh.isEmpty()) break
+                total += fresh.size
+                index.value = index.value.plus(Chunk(fresh, fresh.associateBy { uuidOf(source, it).value }))
+                _indexState.value = PullIndexState.Reading(total)
                 if (batch.size < SourceGraphReader.MAX_PAGE_SIZE) break
+                after = nextCursor(batch, after)
             }
-            _indexState.value = PullIndexState.Ready(loaded.size)
+            _indexState.value = PullIndexState.Ready(total)
         }
+    }
+
+    /**
+     * Name cursors skip a Page and Journal that share a name when a batch ends between them, so
+     * resume from the last name strictly below the batch's last one; the re-listed tail is
+     * dropped by file name.
+     */
+    private fun nextCursor(batch: List<SourceEntry>, current: String?): String? {
+        val last = batch.last().name
+        return batch.lastOrNull { it.name != last }?.name ?: current
     }
 
     @Suppress("InMemoryPagination") // windows the bounded in-memory name index (entry projection), not a DB result set
@@ -137,7 +160,7 @@ class PullPageSource(
         val snapshot = index.value
         val out = ArrayList<SourcePage>(uuids.size)
         for (uuid in uuids) {
-            val entry = snapshot.byUuid[uuid.value] ?: continue
+            val entry = snapshot.find(uuid.value) ?: continue
             readOne(source, uuid, entry).fold({ return it.left() }, { page -> if (page != null) out += page })
         }
         return out.right()
@@ -163,11 +186,11 @@ class PullPageSource(
     override fun takeUnreadable(): List<UnreadablePage> = unreadable.getAndUpdate { emptyList() }
 
     /** "12 KB - 2026-10-08" for a listed page, or null when [uuid] is not in the loaded index. */
-    fun subtitleFor(uuid: PageUuid): String? = index.value.byUuid[uuid.value]?.let(::subtitleOf)
+    fun subtitleFor(uuid: PageUuid): String? = index.value.find(uuid.value)?.let(::subtitleOf)
 
     private fun matching(filter: SelectionFilter, search: String?): Sequence<SourceEntry> {
         val query = search?.trim().orEmpty()
-        return index.value.entries.asSequence().filter { matches(it, filter, query) }
+        return index.value.entries.filter { matches(it, filter, query) }
     }
 
     private fun matches(e: SourceEntry, filter: SelectionFilter, query: String): Boolean {
