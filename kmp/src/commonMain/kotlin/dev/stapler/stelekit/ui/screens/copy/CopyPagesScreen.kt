@@ -66,6 +66,7 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.merge.CopyDirection
+import dev.stapler.stelekit.merge.PullIndexState
 import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.ui.PlatformBackHandler
@@ -100,6 +101,9 @@ data class CopyPagesActions(
     val onIncludeLinked: (Boolean) -> Unit = {},
     val onIncludeAssets: (Boolean) -> Unit = {},
     val onReview: () -> Unit = {},
+    val onStopReading: () -> Unit = {},
+    val onRetryIndex: () -> Unit = {},
+    val onChangeSource: () -> Unit = {},
 )
 
 fun CopyPagesViewModel.actions() = CopyPagesActions(
@@ -128,6 +132,9 @@ fun CopyPagesViewModel.actions() = CopyPagesActions(
     onIncludeLinked = ::setIncludeLinked,
     onIncludeAssets = ::setIncludeAssets,
     onReview = ::review,
+    onStopReading = ::clearSource,
+    onRetryIndex = ::retryIndex,
+    onChangeSource = ::clearSource,
 )
 
 /**
@@ -190,6 +197,11 @@ fun CopyPagesContent(state: CopyPagesState, actions: CopyPagesActions, modifier:
     ) {
         Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp)) {
             Header(state, actions)
+            if (state.isPull && state.destinationId == null) {
+                PullSourceChooser(state, actions)
+                return@Column
+            }
+            if (state.isPull) PullIndexStatus(state, actions)
             OutlinedTextField(
                 value = state.searchText,
                 onValueChange = actions.onSearchChanged,
@@ -203,6 +215,9 @@ fun CopyPagesContent(state: CopyPagesState, actions: CopyPagesActions, modifier:
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(vertical = 4.dp).semantics { liveRegion = LiveRegionMode.Polite },
             )
+            if (state.stillReading) {
+                Text("Still reading... results so far", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             SelectionActions(state, actions)
             Column(Modifier.weight(1f).fillMaxWidth()) {
                 PageList(
@@ -236,8 +251,12 @@ fun CopyPagesContent(state: CopyPagesState, actions: CopyPagesActions, modifier:
                         },
                 )
             }
-            if (state.gate2LinkedPages) LinkedOptions(state, actions)
-            DestinationChooser(state, actions)
+            if (state.gate2LinkedPages || state.isPull) LinkedOptions(state, actions)
+            if (state.isPull) {
+                TextButton(onClick = actions.onChangeSource, modifier = Modifier.heightIn(min = 48.dp)) { Text("Change source") }
+            } else {
+                DestinationChooser(state, actions)
+            }
             Row(
                 Modifier.fillMaxWidth().padding(top = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
@@ -306,16 +325,16 @@ private fun Header(state: CopyPagesState, actions: CopyPagesActions) = Column {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close")
         }
         Text(
-            text = if (state.direction == CopyDirection.Push) {
-                "Copy pages from \"${state.activeGraphName}\""
-            } else {
-                "Copying into \"${state.activeGraphName}\""
+            text = when {
+                state.direction == CopyDirection.Push -> "Copy pages from \"${state.activeGraphName}\""
+                state.chosenDestination != null -> "Copy pages from \"${state.chosenDestination?.name}\""
+                else -> "Copy pages from..."
             },
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.weight(1f).semantics { heading() },
         )
     }
-    if (state.listLoad == ListLoad.Initial && state.loadError == null) {
+    if (state.listLoad == ListLoad.Initial && state.loadError == null && !state.isPull) {
         Text(
             "Loading pages...",
             style = MaterialTheme.typography.bodySmall,
@@ -326,13 +345,20 @@ private fun Header(state: CopyPagesState, actions: CopyPagesActions) = Column {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun FilterRow(state: CopyPagesState, actions: CopyPagesActions) {
+private fun FilterRow(state: CopyPagesState, actions: CopyPagesActions) = Column {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         FilterChip(selected = state.filters.showPages, onClick = actions.onTogglePages, label = { Text("Pages") })
         FilterChip(selected = state.filters.showJournals, onClick = actions.onToggleJournals, label = { Text("Journals") })
         DateRangeChip(state.filters.dateFrom, state.filters.dateTo, actions.onDateRange)
         TextFilterChip("Namespace", state.filters.namespace, actions.onNamespace)
-        TextFilterChip("Tag", state.filters.tag, actions.onTag)
+        TextFilterChip("Tag", state.filters.tag, actions.onTag, enabled = !state.isPull)
+    }
+    if (state.isPull) {
+        Text(
+            "Tag, property and backlink filters: ${CopyPagesState.NOT_AVAILABLE_PULL}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -373,11 +399,11 @@ private fun DateRangeChip(from: LocalDate?, to: LocalDate?, onChange: (LocalDate
 }
 
 @Composable
-private fun TextFilterChip(label: String, value: String, onChange: (String) -> Unit) {
+private fun TextFilterChip(label: String, value: String, onChange: (String) -> Unit, enabled: Boolean = true) {
     var open by remember { mutableStateOf(false) }
     var draft by remember(value) { mutableStateOf(value) }
     Column {
-        FilterChip(selected = value.isNotBlank(), onClick = { open = true }, label = { Text(if (value.isBlank()) label else "$label: $value") })
+        FilterChip(selected = value.isNotBlank(), enabled = enabled, onClick = { open = true }, label = { Text(if (value.isBlank()) label else "$label: $value") })
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(draft, { draft = it }, label = { Text(label) }, singleLine = true)
@@ -443,7 +469,9 @@ private fun PageList(
                 }
             }
         }
-        state.listLoad == ListLoad.Initial -> Column(modifier) { repeat(SKELETON_ROWS) { PageSelectionSkeletonRow() } }
+        state.listLoad == ListLoad.Initial || state.stillReading && state.rows.isEmpty() ->
+            Column(modifier) { repeat(SKELETON_ROWS) { PageSelectionSkeletonRow() } }
+        state.indexState is PullIndexState.Failed && state.rows.isEmpty() -> Unit
         state.rows.isEmpty() -> Column(modifier.padding(8.dp)) {
             val filtered = !state.filters.isDefault || state.searchText.isNotBlank()
             Text(if (filtered) "No pages match." else "This graph has no pages to copy.")
@@ -485,10 +513,15 @@ private fun LinkedOptions(state: CopyPagesState, actions: CopyPagesActions) {
     Column(Modifier.padding(vertical = 4.dp)) {
         Row(
             Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                .selectable(selected = state.includeLinked, role = Role.Checkbox, onClick = { actions.onIncludeLinked(!state.includeLinked) }),
+                .selectable(
+                    selected = state.includeLinked,
+                    enabled = !state.isPull,
+                    role = Role.Checkbox,
+                    onClick = { actions.onIncludeLinked(!state.includeLinked) },
+                ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Checkbox(checked = state.includeLinked, onCheckedChange = null)
+            Checkbox(checked = state.includeLinked, onCheckedChange = null, enabled = !state.isPull)
             Spacer(Modifier.size(8.dp))
             Text("Include linked pages  (adds ${state.linkedDelta ?: 0} pages)")
         }
@@ -496,15 +529,22 @@ private fun LinkedOptions(state: CopyPagesState, actions: CopyPagesActions) {
             Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(start = 24.dp)
                 .selectable(
                     selected = state.includeAssets,
-                    enabled = state.includeLinked,
+                    enabled = state.includeLinked && !state.isPull,
                     role = Role.Checkbox,
                     onClick = { actions.onIncludeAssets(!state.includeAssets) },
                 ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Checkbox(checked = state.includeAssets, onCheckedChange = null, enabled = state.includeLinked)
+            Checkbox(checked = state.includeAssets, onCheckedChange = null, enabled = state.includeLinked && !state.isPull)
             Spacer(Modifier.size(8.dp))
             Text("Include their assets")
+        }
+        if (state.isPull) {
+            Text(
+                CopyPagesState.NOT_AVAILABLE_PULL,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -527,7 +567,7 @@ private fun DestinationChooser(state: CopyPagesState, actions: CopyPagesActions)
 }
 
 @Composable
-private fun DestinationRowView(row: DestinationRow, chosen: Boolean, actions: CopyPagesActions) {
+internal fun DestinationRowView(row: DestinationRow, chosen: Boolean, actions: CopyPagesActions) {
     val status = row.status
     val selectable = status == DestinationStatus.Available
     val detail = when (status) {
