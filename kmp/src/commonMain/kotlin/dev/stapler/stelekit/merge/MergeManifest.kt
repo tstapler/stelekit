@@ -16,6 +16,9 @@ import okio.Path
 import okio.Path.Companion.toPath
 import okio.buffer
 
+/** How long a manifest (and so undo) stays available. */
+const val MERGE_UNDO_WINDOW_MILLIS: Long = 7L * 24 * 60 * 60 * 1000
+
 enum class MergeStatus { InProgress, Complete }
 
 @Serializable
@@ -27,6 +30,9 @@ data class ManifestPageEntry(
     val pageName: String,
     val createdFiles: List<CreatedFile> = emptyList(),
     val addedBlockUuids: List<String> = emptyList(),
+    /** [BlockContentHash] per added uuid at copy time; undo leaves blocks whose hash changed. */
+    val addedBlockHashes: Map<String, String> = emptyMap(),
+    val isJournal: Boolean = false,
 )
 
 /** Per-run record that drives undo (ADR-003) and "interrupted" detection. */
@@ -123,7 +129,7 @@ class MergeManifestStore(private val fileSystem: FileSystem, appDataDir: String)
     fun findInterrupted(): List<MergeManifest> = list().filter { it.status == MergeStatus.InProgress }
 
     /** Deletes manifests started more than [maxAgeMillis] ago; unreadable files are kept. */
-    fun expire(nowEpochMs: Long, maxAgeMillis: Long = MAX_AGE_MILLIS) {
+    fun expire(nowEpochMs: Long, maxAgeMillis: Long = MERGE_UNDO_WINDOW_MILLIS) {
         for (m in list()) {
             if (nowEpochMs - m.startedAtEpochMs > maxAgeMillis) delete(MergeId(m.mergeId))
         }
@@ -165,6 +171,5 @@ class MergeManifestStore(private val fileSystem: FileSystem, appDataDir: String)
     private companion object {
         const val DIR_NAME = ".stele-merge-manifests"
         const val EXT = ".jsonl"
-        const val MAX_AGE_MILLIS = 7L * 24 * 60 * 60 * 1000
     }
 }

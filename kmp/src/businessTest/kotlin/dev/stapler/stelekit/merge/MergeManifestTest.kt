@@ -29,6 +29,20 @@ class MergeManifestTest {
     }
 
     @Test
+    fun blockHashesAndJournalFlagRoundTripAndOldEntriesDefault() {
+        val w = store.begin(MergeId("m3"), "s", "t", 1L).getOrNull()!!
+        val rich = ManifestPageEntry("2026_01_01", addedBlockUuids = listOf("a"), addedBlockHashes = mapOf("a" to "h"), isJournal = true)
+        w.appendPage(rich)
+        val path = "/app/.stele-merge-manifests/m3.jsonl".toPath()
+        val old = "{\"type\":\"page\",\"entry\":{\"pageName\":\"Old\",\"addedBlockUuids\":[\"x\"]}}\n"
+        val before = fs.read(path) { readUtf8() }
+        fs.write(path) { writeUtf8(before + old) }
+
+        val pages = store.load(MergeId("m3"))!!.pages
+        assertEquals(listOf(rich, ManifestPageEntry("Old", addedBlockUuids = listOf("x"))), pages)
+    }
+
+    @Test
     fun flushIsPerPageSoCrashKeepsEarlierPages() {
         val w = store.begin(MergeId("m2"), "s", "t", 1L).getOrNull()!!
         w.appendPage(created)
