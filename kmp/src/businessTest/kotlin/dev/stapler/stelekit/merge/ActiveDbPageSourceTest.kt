@@ -50,7 +50,8 @@ class ActiveDbPageSourceTest {
     )
 
     private class Db {
-        val database = SteleDatabase(DriverFactory().createDriver("jdbc:sqlite::memory:"))
+        val driver = DriverFactory().createDriver("jdbc:sqlite::memory:")
+        val database = SteleDatabase(driver)
         val pages = SqlDelightPageRepository(database)
         val blocks = SqlDelightBlockRepository(database)
         val search = SqlDelightSearchRepository(database)
@@ -163,6 +164,30 @@ class ActiveDbPageSourceTest {
         }
         val round = db.pages.getAllPagesSnapshot().getOrNullOrFail().associateBy { it.name }
         assertEquals(corpus.associate { it.name to it.properties }, round.mapValues { it.value.properties })
+    }
+
+    @Test
+    fun `title search pages through tied bm25 ranks without duplicates or gaps`() = runBlocking {
+        val db = Db()
+        val names = (1..25).map { "road %02d".format(it) }
+        db.pages.seed(names.map { page(it) })
+        val seen = mutableListOf<String>()
+        while (true) {
+            val batch = db.search.searchPagesByTitle("road", 4, seen.size).first().getOrNullOrFail()
+            seen += batch.map { it.name }
+            if (batch.size < 4) break
+        }
+        assertEquals(names.sorted(), seen.sorted())
+        assertEquals(names.size, seen.toSet().size)
+    }
+
+    @Test
+    fun `title search LIKE fallback treats percent and underscore literally`() = runBlocking {
+        val db = Db()
+        db.pages.seed(listOf(page("100%_done"), page("1005 done"), page("100x_done"), page("a_b"), page("axb")))
+        db.driver.execute(null, "DROP TABLE pages_fts", 0)
+        assertEquals(listOf("100%_done"), db.search.searchPagesByTitle("100%", 50, 0).first().getOrNullOrFail().map { it.name })
+        assertEquals(listOf("a_b"), db.search.searchPagesByTitle("a_b", 50, 0).first().getOrNullOrFail().map { it.name })
     }
 
     // ── ActiveDbPageSource behavior ─────────────────────────────────────────────────────

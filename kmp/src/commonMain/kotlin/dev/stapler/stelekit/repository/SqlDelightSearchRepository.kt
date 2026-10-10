@@ -138,7 +138,7 @@ class SqlDelightSearchRepository(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (_: Exception) {
-                    queries.selectPagesByNameLikePaginated("%$query%", limit.toLong(), offset.toLong()).asFlow().mapToList(PlatformDispatcher.DB).first().map { it.toPageModel() }
+                    queries.selectPagesByNameLikePaginated(likeContains(query), limit.toLong(), offset.toLong()).asFlow().mapToList(PlatformDispatcher.DB).first().map { it.toPageModel() }
                 }
             } finally {
                 CurrentSpanContext.set(null)
@@ -275,7 +275,7 @@ class SqlDelightSearchRepository(
                     throw e
                 } catch (_: Exception) {
                     // pages_fts not yet available — fall back to LIKE
-                    queries.selectPagesByNameLike("%$rawQuery%")
+                    queries.selectPagesByNameLike(likeContains(rawQuery))
                         .asFlow().mapToList(PlatformDispatcher.DB).first()
                         .take(searchRequest.limit)
                         .map { SearchedPage(page = it.toPageModel()) }
@@ -762,3 +762,7 @@ class SqlDelightSearchRepository(
             if (parts.size == 2) parts[0] to parts[1] else null
         }?.toMap() ?: emptyMap()
 }
+
+/** `%text%` LIKE pattern with `\`, `%` and `_` in [text] matched literally (queries use ESCAPE '\'). */
+internal fun likeContains(text: String): String =
+    "%" + text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"

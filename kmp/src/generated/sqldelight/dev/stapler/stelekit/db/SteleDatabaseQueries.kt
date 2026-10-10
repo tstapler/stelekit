@@ -1652,7 +1652,7 @@ public class SteleDatabaseQueries(
 
   public fun selectMostConnectedBlocks(value_: Long): Query<SelectMostConnectedBlocks> = selectMostConnectedBlocks(value_, ::SelectMostConnectedBlocks)
 
-  public fun <T : Any> selectPagesByNameLike(name: String, mapper: (
+  public fun <T : Any> selectPagesByNameLike(`value`: String, mapper: (
     uuid: String,
     name: String,
     namespace: String?,
@@ -1667,7 +1667,7 @@ public class SteleDatabaseQueries(
     is_content_loaded: Long,
     backlink_count: Long,
     section_id: String,
-  ) -> T): Query<T> = SelectPagesByNameLikeQuery(name) { cursor ->
+  ) -> T): Query<T> = SelectPagesByNameLikeQuery(value) { cursor ->
     mapper(
       cursor.getString(0)!!,
       cursor.getString(1)!!,
@@ -1686,12 +1686,12 @@ public class SteleDatabaseQueries(
     )
   }
 
-  public fun selectPagesByNameLike(name: String): Query<Pages> = selectPagesByNameLike(name, ::Pages)
+  public fun selectPagesByNameLike(value_: String): Query<Pages> = selectPagesByNameLike(value_, ::Pages)
 
   public fun <T : Any> selectPagesByNameLikePaginated(
-    name: String,
-    `value`: Long,
+    `value`: String,
     value_: Long,
+    value__: Long,
     mapper: (
       uuid: String,
       name: String,
@@ -1708,7 +1708,7 @@ public class SteleDatabaseQueries(
       backlink_count: Long,
       section_id: String,
     ) -> T,
-  ): Query<T> = SelectPagesByNameLikePaginatedQuery(name, value, value_) { cursor ->
+  ): Query<T> = SelectPagesByNameLikePaginatedQuery(value, value_, value__) { cursor ->
     mapper(
       cursor.getString(0)!!,
       cursor.getString(1)!!,
@@ -1728,10 +1728,10 @@ public class SteleDatabaseQueries(
   }
 
   public fun selectPagesByNameLikePaginated(
-    name: String,
-    value_: Long,
+    value_: String,
     value__: Long,
-  ): Query<Pages> = selectPagesByNameLikePaginated(name, value_, value__, ::Pages)
+    value___: Long,
+  ): Query<Pages> = selectPagesByNameLikePaginated(value_, value__, value___, ::Pages)
 
   public fun <T : Any> selectPagesFilteredPaginated(
     nameLo: String,
@@ -6568,7 +6568,7 @@ public class SteleDatabaseQueries(
   }
 
   private inner class SelectPagesByNameLikeQuery<out T : Any>(
-    public val name: String,
+    public val `value`: String,
     mapper: (SqlCursor) -> T,
   ) : Query<T>(mapper) {
     override fun addListener(listener: Query.Listener) {
@@ -6579,18 +6579,18 @@ public class SteleDatabaseQueries(
       driver.removeListener("pages", listener = listener)
     }
 
-    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(141_501_984, """SELECT pages.uuid, pages.name, pages.namespace, pages.file_path, pages.created_at, pages.updated_at, pages.properties, pages.version, pages.is_favorite, pages.is_journal, pages.journal_date, pages.is_content_loaded, pages.backlink_count, pages.section_id FROM pages WHERE name LIKE ?""", mapper, 1) {
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(141_501_984, """SELECT pages.uuid, pages.name, pages.namespace, pages.file_path, pages.created_at, pages.updated_at, pages.properties, pages.version, pages.is_favorite, pages.is_journal, pages.journal_date, pages.is_content_loaded, pages.backlink_count, pages.section_id FROM pages WHERE name LIKE ? ESCAPE '\'""", mapper, 1) {
       var parameterIndex = 0
-      bindString(parameterIndex++, name)
+      bindString(parameterIndex++, value)
     }
 
     override fun toString(): String = "SteleDatabase.sq:selectPagesByNameLike"
   }
 
   private inner class SelectPagesByNameLikePaginatedQuery<out T : Any>(
-    public val name: String,
-    public val `value`: Long,
+    public val `value`: String,
     public val value_: Long,
+    public val value__: Long,
     mapper: (SqlCursor) -> T,
   ) : Query<T>(mapper) {
     override fun addListener(listener: Query.Listener) {
@@ -6601,11 +6601,11 @@ public class SteleDatabaseQueries(
       driver.removeListener("pages", listener = listener)
     }
 
-    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(673_779_853, """SELECT pages.uuid, pages.name, pages.namespace, pages.file_path, pages.created_at, pages.updated_at, pages.properties, pages.version, pages.is_favorite, pages.is_journal, pages.journal_date, pages.is_content_loaded, pages.backlink_count, pages.section_id FROM pages WHERE name LIKE ? ORDER BY name LIMIT ? OFFSET ?""", mapper, 3) {
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(673_779_853, """SELECT pages.uuid, pages.name, pages.namespace, pages.file_path, pages.created_at, pages.updated_at, pages.properties, pages.version, pages.is_favorite, pages.is_journal, pages.journal_date, pages.is_content_loaded, pages.backlink_count, pages.section_id FROM pages WHERE name LIKE ? ESCAPE '\' ORDER BY name, section_id LIMIT ? OFFSET ?""", mapper, 3) {
       var parameterIndex = 0
-      bindString(parameterIndex++, name)
-      bindLong(parameterIndex++, value)
+      bindString(parameterIndex++, value)
       bindLong(parameterIndex++, value_)
+      bindLong(parameterIndex++, value__)
     }
 
     override fun toString(): String = "SteleDatabase.sq:selectPagesByNameLikePaginated"
@@ -7093,7 +7093,7 @@ public class SteleDatabaseQueries(
     |FROM pages_fts pf
     |JOIN pages p ON p.rowid = pf.rowid
     |WHERE pages_fts MATCH ?
-    |ORDER BY bm25(pages_fts)
+    |ORDER BY bm25(pages_fts), pf.rowid
     |LIMIT ? OFFSET ?
     """.trimMargin(), mapper, 3) {
       var parameterIndex = 0

@@ -130,7 +130,7 @@ class SqlDelightPageRepository(
             .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
 
     override fun searchPages(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
-        queries.selectPagesByNameLikePaginated("%$query%", limit.toLong(), offset.toLong())
+        queries.selectPagesByNameLikePaginated(likeContains(query), limit.toLong(), offset.toLong())
             .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
 
     override fun getFavoritePages(): Flow<Either<DomainError, List<Page>>> =
