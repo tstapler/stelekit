@@ -70,6 +70,7 @@ internal fun GraphDialogLayer(
     SettingsDialogHost(appState, viewModel, fileSystem, deps.settings)
     GitSetupDialogHost(appState, viewModel, fileSystem, deps.gitSync)
     ConflictResolutionDialogHost(appState, viewModel, deps.gitSync)
+    BranchRepairHost(appState, viewModel, deps.gitSync)
     JournalMergeReviewHost(appState, viewModel)
     LlmSuggestionReviewHost(appState, viewModel)
     DiskConflictHost(appState, viewModel)

@@ -55,6 +55,8 @@ import kotlin.time.Clock
 data class GitSyncStatus(
     val state: SyncState,
     val lastSyncAt: Long? = null,
+    /** A branch repair is waiting for its first reviewed sync; shown in place of idle/success text. */
+    val firstSyncReviewPending: Boolean = false,
 )
 
 /**
@@ -81,6 +83,8 @@ fun SyncStatusBadge(
     modifier: Modifier = Modifier,
     isGitConfigured: Boolean = true,
     onAuthError: (() -> Unit)? = null,
+    onBranchRepair: (() -> Unit)? = null,
+    onReviewFirstSync: (() -> Unit)? = null,
 ) {
     if (!isGitConfigured) {
         Box(modifier = modifier.padding(horizontal = 4.dp)) {
@@ -105,6 +109,8 @@ fun SyncStatusBadge(
             status = status,
             onSyncClick = onSyncClick,
             onAuthError = onAuthError,
+            onBranchRepair = onBranchRepair,
+            onReviewFirstSync = onReviewFirstSync,
         )
 
         Spacer(modifier = Modifier.width(4.dp))
@@ -132,8 +138,34 @@ private fun SyncStateBadge(
     onSyncClick: () -> Unit,
     modifier: Modifier = Modifier,
     onAuthError: (() -> Unit)? = null,
+    onBranchRepair: (() -> Unit)? = null,
+    onReviewFirstSync: (() -> Unit)? = null,
 ) {
     val syncState = status.state
+    val reviewPending = status.firstSyncReviewPending && onReviewFirstSync != null &&
+        (syncState is SyncState.Idle || syncState is SyncState.Success || syncState is SyncState.LocalChangesPending)
+    if (reviewPending) {
+        Row(
+            modifier = modifier
+                .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                .clickable { onReviewFirstSync?.invoke() },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Default.Warning,
+                contentDescription = "Review first sync",
+                tint = Color(0xFFF59E0B), // amber-400
+                modifier = Modifier.size(16.dp),
+            )
+            Spacer(modifier = Modifier.width(2.dp))
+            Text(
+                text = "Review first sync",
+                style = MaterialTheme.typography.labelSmall,
+                color = Color(0xFFF59E0B),
+            )
+        }
+        return
+    }
     when (syncState) {
         is SyncState.Idle -> LastSyncedText(lastSyncAt = status.lastSyncAt, modifier = modifier)
 
@@ -208,15 +240,24 @@ private fun SyncStateBadge(
 
         is SyncState.Error -> {
             val isAuthError = syncState.error is DomainError.GitError.AuthFailed
+            val isBranchMissing = syncState.error is DomainError.GitError.RemoteBranchNotFound
             Row(
                 modifier = modifier.clickable {
-                    if (isAuthError && onAuthError != null) onAuthError() else onSyncClick()
+                    when {
+                        isAuthError && onAuthError != null -> onAuthError()
+                        isBranchMissing && onBranchRepair != null -> onBranchRepair()
+                        else -> onSyncClick()
+                    }
                 },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
                     imageVector = Icons.Default.Error,
-                    contentDescription = if (isAuthError) "Authentication failed — tap to update credentials" else "Sync error — tap to retry",
+                    contentDescription = when {
+                        isAuthError -> "Authentication failed — tap to update credentials"
+                        isBranchMissing -> "Sync error — tap to fix"
+                        else -> "Sync error — tap to retry"
+                    },
                     tint = MaterialTheme.colorScheme.error,
                     modifier = Modifier.size(16.dp),
                 )

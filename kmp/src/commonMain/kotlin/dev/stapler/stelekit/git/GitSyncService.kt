@@ -71,6 +71,30 @@ class GitSyncService(
     private val logger = Logger("GitSyncService")
     private val firstSyncConfirmation: FirstSyncConfirmation? = settings?.let { FirstSyncConfirmation(it) }
 
+    /** Applies user-confirmed branch repairs; see [repairBranch]. */
+    val branchRepair: BranchRepairService = BranchRepairService(configRepository, firstSyncConfirmation)
+
+    private val _firstSyncReviewPending = MutableStateFlow(firstSyncConfirmation?.isReviewPending(graphId) ?: false)
+
+    /** True after a branch repair until a manual sync succeeds for the new branch (drives the "Review first sync" badge). */
+    val firstSyncReviewPending: StateFlow<Boolean> = _firstSyncReviewPending.asStateFlow()
+
+    /** Applies [proposal] (no sync is run) and refreshes [firstSyncReviewPending]. */
+    suspend fun repairBranch(proposal: BranchRepairProposal): BranchRepairResult =
+        branchRepair.apply(proposal).also {
+            _firstSyncReviewPending.value = firstSyncConfirmation?.isReviewPending(graphId) ?: false
+            // The missing-branch error described the old setting; a stale red badge would reopen a dead repair.
+            val current = _syncState.value
+            if (it is BranchRepairResult.Repaired && current is SyncState.Error &&
+                current.error is DomainError.GitError.RemoteBranchNotFound
+            ) {
+                _syncState.value = SyncState.Idle
+            }
+        }
+
+    /** Branch the last repair replaced, for "Change back"; null when none is recorded. */
+    fun previousBranchBeforeRepair(): String? = firstSyncConfirmation?.previousBranch(graphId)
+
     /** Never [toString] a state directly: conflict/journal-merge states carry full note contents. */
     private fun SyncState.logSummary(): String = when (this) {
         is SyncState.ConflictPending -> "ConflictPending(files=${conflicts.size})"
@@ -397,6 +421,7 @@ class GitSyncService(
             )
             recordLastSyncAt(success.lastSyncAt)
             firstSyncConfirmation?.confirm(graphId, config.remoteName, config.remoteBranch)
+            _firstSyncReviewPending.value = false
             _syncState.value = success
             success.right()
             } finally {

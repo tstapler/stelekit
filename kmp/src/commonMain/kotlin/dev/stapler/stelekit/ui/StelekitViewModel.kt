@@ -258,6 +258,10 @@ class StelekitViewModel(
 
     /** Triggers a full sync (commit → fetch → merge → push) on the active graph. */
     fun triggerSync() = gitSyncCoordinator.triggerSync()
+    fun openBranchRepair() = gitSyncCoordinator.openBranchRepair()
+    fun dismissBranchRepair() = gitSyncCoordinator.dismissBranchRepair()
+    fun openFirstSyncReview() = gitSyncCoordinator.openFirstSyncReview()
+    fun dismissFirstSyncReview() = gitSyncCoordinator.dismissFirstSyncReview()
 
     /** Triggers a fetch-only check for remote changes on the active graph. */
     fun triggerFetchOnly() = gitSyncCoordinator.triggerFetchOnly()
@@ -392,6 +396,9 @@ class StelekitViewModel(
 
     /** Forwards to [GitSyncCoordinator.syncState] — read directly by Compose call sites and dedicated tests. */
     val syncState: StateFlow<SyncState> = gitSyncCoordinator.syncState
+
+    /** Forwards to [GitSyncCoordinator.firstSyncReviewPending]. */
+    val firstSyncReviewPending: StateFlow<Boolean> = gitSyncCoordinator.firstSyncReviewPending
 
     /** Forwards to [GitSyncCoordinator.gitLastSyncAt] — read directly by Compose call sites. */
     val gitLastSyncAt: StateFlow<Long?> = gitSyncCoordinator.gitLastSyncAt
