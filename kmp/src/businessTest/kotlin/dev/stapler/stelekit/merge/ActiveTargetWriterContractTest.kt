@@ -110,6 +110,19 @@ class ActiveTargetWriterContractTest : TargetWriterContractSuite() {
     }
 
     @Test
+    fun uuidLookupErrorFailsClosedAndWritesNothing() = runBlocking<Unit> {
+        val h = active()
+        h.copy()
+        val before = h.fileText(key)
+        h.failUuidLookup = true
+
+        val result = h.copy(MergePage("Target", blocks = listOf(MergeBlock("s9", "late"))))
+
+        assertTrue(result.isLeft())
+        assertEquals(before, h.fileText(key))
+    }
+
+    @Test
     fun pageWithPendingEditsIsDeferredNotClobbered() = runBlocking<Unit> {
         val h = active()
         h.copy()
@@ -197,8 +210,14 @@ class ActiveTargetWriterContractTest : TargetWriterContractSuite() {
             )
         }
 
+        @Volatile var failUuidLookup = false
+        private val lookupBlocks = object : BlockRepository by blocks {
+            override suspend fun getBlocksByUuids(uuids: List<BlockUuid>): Either<DomainError, List<Block>> =
+                if (failUuidLookup) Either.Left(DomainError.DatabaseError.ReadFailed("boom")) else blocks.getBlocksByUuids(uuids)
+        }
+
         override val writer = ActiveTargetWriter(
-            pageRepository = pages, blockRepository = blocks, writeActor = actor, graphWriter = graphWriter, fs = fs, graphPath = root,
+            pageRepository = pages, blockRepository = lookupBlocks, writeActor = actor, graphWriter = graphWriter, fs = fs, graphPath = root,
             isPageDirty = { id -> isEditing(id.value) },
         )
 

@@ -95,7 +95,7 @@ class ActiveTargetWriter(
         if (isNew && MergeRenderer.renderNewPage(merged).isEmpty()) return@guarded WriteOutcome.Unchanged.right()
         if (!isNew && inserts.isEmpty() && !propsChanged) return@guarded WriteOutcome.Unchanged.right()
 
-        findCollision(inserts, pageRow.uuid)?.let {
+        findCollision(inserts, pageRow.uuid).getOrReturn { return@guarded it.left() }?.let {
             return@guarded DomainError.DatabaseError.WriteFailed("uuid collision: block $it already exists on another page").left()
         }
 
@@ -207,10 +207,14 @@ class ActiveTargetWriter(
         return Existing(ActiveWritePlanner.buildTree(blocks), parsed.page.properties, blocks).right()
     }
 
-    private suspend fun findCollision(inserts: List<Block>, pageUuid: PageUuid): String? {
-        if (inserts.isEmpty()) return null
-        val found = inserts.map { it.uuid }.chunked(COLLISION_CHUNK).flatMap { blockRepository.getBlocksByUuids(it).getOrNull().orEmpty() }
-        return found.firstOrNull { it.pageUuid != pageUuid }?.uuid?.value
+    /** A failed lookup is an error, never "no collision": an unchecked insert could move a block off another page. */
+    private suspend fun findCollision(inserts: List<Block>, pageUuid: PageUuid): Either<DomainError, String?> {
+        if (inserts.isEmpty()) return null.right()
+        val found = mutableListOf<Block>()
+        for (chunk in inserts.map { it.uuid }.chunked(COLLISION_CHUNK)) {
+            found += blockRepository.getBlocksByUuids(chunk).getOrReturn { return it.left() }
+        }
+        return found.firstOrNull { it.pageUuid != pageUuid }?.uuid?.value.right()
     }
 
     /** One actor round-trip; [blocks] are pre-order so deleting in reverse removes children before parents. */

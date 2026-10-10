@@ -28,6 +28,9 @@ class MarkdownTargetWriterTest {
         var crashBeforeReplace = false
         var crashAfterTmpWrite = false
         var legacyDeletes = 0
+        val unreadable = mutableSetOf<String>()
+
+        override fun readFileBytes(path: String): ByteArray? = if (path in unreadable) null else super.readFileBytes(path)
 
         override fun writeFileBytes(path: String, data: ByteArray): Boolean {
             if (failWrite) throw IllegalStateException("disk full")
@@ -430,5 +433,39 @@ class MarkdownTargetWriterTest {
         val report = writer().removeBlocks(PageKey("Nope"), setOf("a"), emptyMap()).ok()
         assertEquals(setOf("a"), report.missing)
         assertNotNull(report)
+    }
+
+    @Test
+    fun uuidOwnedByAnotherPageFileIsNeverReused() = runTest {
+        fs.seed("$root/pages/P.md", "- kept\n  id:: 11111111-1111-1111-1111-111111111111\n")
+        val w = writer()
+
+        val result = w.write(PageKey("Q"), MergePage("Q", blocks = listOf(MergeBlock("11111111-1111-1111-1111-111111111111", "moved"))))
+
+        val err = assertIs<DomainError.DatabaseError.WriteFailed>((result as Either.Left).value)
+        assertTrue("uuid collision" in err.message)
+        assertNull(fs.text("$root/pages/Q.md"))
+    }
+
+    @Test
+    fun uuidOwnedByAnotherPageIsRefusedWhenSplicingIntoAnExistingFile() = runTest {
+        fs.seed("$root/pages/P.md", "- kept\n  id:: 11111111-1111-1111-1111-111111111111\n")
+        fs.seed("$root/pages/Q.md", "- mine\n")
+        val w = writer()
+
+        val result = w.write(PageKey("Q"), MergePage("Q", blocks = listOf(MergeBlock(null, "mine"), MergeBlock("11111111-1111-1111-1111-111111111111", "moved"))))
+
+        assertIs<DomainError.DatabaseError.WriteFailed>((result as Either.Left).value)
+        assertEquals("- mine\n", fs.text("$root/pages/Q.md"))
+    }
+
+    @Test
+    fun unreadableSiblingFileFailsClosed() = runTest {
+        fs.seed("$root/pages/P.md", "- kept\n")
+        fs.unreadable += "$root/pages/P.md"
+        val result = writer().write(PageKey("Q"), MergePage("Q", blocks = listOf(MergeBlock("s1", "x"))))
+
+        assertTrue(result.isLeft())
+        assertNull(fs.text("$root/pages/Q.md"))
     }
 }
