@@ -75,4 +75,17 @@ class MarkdownTargetWriterSymlinkTest {
         assertTrue(File(graph, "pages/Plain.md").readText().contains("new"))
         assertTrue(graph.walkTopDown().none { it.name.endsWith(".tmp") })
     }
+
+    @Test
+    fun replacedPageFileKeepsItsPermissions() = runBlocking {
+        val file = File(graph, "pages/Perm.md").also { it.writeText("- A\n") }
+        Files.setPosixFilePermissions(file.toPath(), java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"))
+        val w = writer()
+        val existing = (w.readExisting(PageKey("Perm")) as Either.Right).value!!
+
+        w.write(PageKey("Perm"), existing.copy(blocks = existing.blocks + MergeBlock("11111111-1111-1111-1111-111111111111", "new")))
+
+        assertTrue(file.readText().contains("new"))
+        assertEquals("rw-------", java.nio.file.attribute.PosixFilePermissions.toString(Files.getPosixFilePermissions(file.toPath())))
+    }
 }

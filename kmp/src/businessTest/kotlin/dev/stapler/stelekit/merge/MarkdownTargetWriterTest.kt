@@ -29,6 +29,11 @@ class MarkdownTargetWriterTest {
         var crashAfterTmpWrite = false
         var legacyDeletes = 0
         val unreadable = mutableSetOf<String>()
+        val tmpWrites = mutableListOf<String>()
+        var onTmpWritten: (() -> Unit)? = null
+        val mtimes = mutableMapOf<String, Long>()
+
+        override fun getLastModifiedTime(path: String): Long? = mtimes[path] ?: super.getLastModifiedTime(path)
 
         override fun readFileBytes(path: String): ByteArray? = if (path in unreadable) null else super.readFileBytes(path)
 
@@ -36,6 +41,10 @@ class MarkdownTargetWriterTest {
             if (failWrite) throw IllegalStateException("disk full")
             writes++
             val ok = super.writeFileBytes(path, data)
+            if (path.endsWith(".tmp")) {
+                tmpWrites += path
+                onTmpWritten?.invoke()
+            }
             if (crashAfterTmpWrite && path.endsWith(".tmp")) throw IllegalStateException("simulated crash after temp write")
             return ok
         }
@@ -467,5 +476,73 @@ class MarkdownTargetWriterTest {
 
         assertTrue(result.isLeft())
         assertNull(fs.text("$root/pages/Q.md"))
+    }
+
+    @Test
+    fun everyWriteUsesItsOwnTempFileName() = runTest {
+        fs.seed(pagePath("T"), "- A\n")
+        val w = writer()
+        w.write(PageKey("T"), w.readExisting(PageKey("T")).ok()!!.let { it.copy(blocks = it.blocks + block("x1", "one")) }).ok()
+        w.write(PageKey("T"), w.readExisting(PageKey("T")).ok()!!.let { it.copy(blocks = it.blocks + block("x2", "two")) }).ok()
+
+        assertEquals(2, fs.tmpWrites.size)
+        assertEquals(2, fs.tmpWrites.toSet().size, "temp names must not repeat: ${fs.tmpWrites}")
+    }
+
+    @Test
+    fun staleTempFilesAreSweptButAFreshOneIsLeftAlone() = runTest {
+        val stale = "$root/pages/Old.md.1.stele-merge.tmp"
+        val fresh = "$root/pages/New.md.2.stele-merge.tmp"
+        fs.seed(stale, "partial")
+        fs.seed(fresh, "in flight")
+        fs.mtimes[fresh] = kotlin.time.Clock.System.now().toEpochMilliseconds()
+        fs.seed(pagePath("T"), "- A\n")
+        val w = writer()
+
+        w.write(PageKey("T"), w.readExisting(PageKey("T")).ok()!!.let { it.copy(blocks = it.blocks + block("x1", "one")) }).ok()
+
+        assertFalse(fs.fileExists(stale))
+        assertTrue(fs.fileExists(fresh))
+    }
+
+    @Test
+    fun fileChangedBetweenReadAndReplaceIsRetryableAndNotOverwritten() = runTest {
+        fs.atomic = true
+        fs.seed(pagePath("Race"), "- A\n")
+        val w = writer()
+        val existing = w.readExisting(PageKey("Race")).ok()!!
+        fs.onTmpWritten = { fs.seed(pagePath("Race"), "- A\n- typed meanwhile\n") }
+
+        val result = w.write(PageKey("Race"), existing.copy(blocks = existing.blocks + block("x", "new")))
+
+        assertIs<DomainError.MergeError.Retryable>((result as Either.Left).value)
+        assertEquals("- A\n- typed meanwhile\n", fs.text(pagePath("Race")))
+        assertFalse(fs.allFilePaths().any { it.endsWith(".tmp") })
+    }
+
+    @Test
+    fun pageCreatedBetweenReadAndReplaceIsRetryableAndNotOverwritten() = runTest {
+        fs.onTmpWritten = { fs.seed(pagePath("Fresh"), "- someone else\n") }
+
+        val result = writer().write(PageKey("Fresh"), MergePage("Fresh", blocks = listOf(block("x", "new"))))
+
+        assertIs<DomainError.MergeError.Retryable>((result as Either.Left).value)
+        assertEquals("- someone else\n", fs.text(pagePath("Fresh")))
+    }
+
+    @Test
+    fun symlinkedPageFileInsideTheGraphIsRefusedNotReplaced() = runTest {
+        fs.seed(pagePath("Linked"), "- A\n")
+        val link = pagePath("Linked")
+        val w = writer(canon = { p -> if (p == link) "$root/pages/real/Linked.md" else p })
+
+        val existing = w.readExisting(PageKey("Linked")).ok()!!
+
+        val result = w.write(PageKey("Linked"), existing.copy(blocks = existing.blocks + block("x", "new")))
+
+        val reason = assertIs<DomainError.MergeError.WriteRefused>((result as Either.Left).value).reason
+        assertIs<WriteRefusedReason.NotRoundTrippable>(reason)
+        assertIs<NotRoundTrippable.SymlinkTarget>(reason.detail)
+        assertEquals("- A\n", fs.text(link))
     }
 }

@@ -32,6 +32,11 @@ sealed interface NotRoundTrippable {
         override val message get() = "Inserted content would not survive a re-read: $detail"
     }
 
+    /** The page file is a symlink; replacing it would swap the link for a regular file and leave its target stale. */
+    data class SymlinkTarget(val path: String) : NotRoundTrippable {
+        override val message get() = "Page file is a symlink; not replacing it: $path"
+    }
+
     /** Block references could not be resolved to a fixed point while merging. */
     data class RefsDidNotConverge(val passes: Int) : NotRoundTrippable {
         override val message get() = "Block references did not settle after $passes passes; the page was not copied"

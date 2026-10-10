@@ -11,7 +11,10 @@ import dev.stapler.stelekit.outliner.JournalUtils
 import dev.stapler.stelekit.platform.FileSystem
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
+import dev.stapler.stelekit.util.UuidGenerator
 import okio.ByteString.Companion.toByteString
+import kotlin.time.Clock
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeMark
 import kotlin.time.TimeSource
@@ -236,12 +239,45 @@ class MarkdownTargetWriter(
 
     // endregion
 
+    /** A page file that is itself a link resolves elsewhere than its directory entry; the swap would sever it. */
+    private fun isSymlinkFile(path: String): Boolean {
+        val dir = path.substringBeforeLast('/')
+        return canonicalize(path) != canonicalize(dir).trimEnd('/') + "/" + path.substringAfterLast('/')
+    }
+
+    private val sweptDirs = HashSet<String>()
+
+    /** Crash leftovers only: a temp file younger than [STALE_TMP_AGE] may belong to a writer still running. */
+    private fun sweepStaleTemps(dir: String) {
+        if (!sweptDirs.add(dir)) return
+        val now = Clock.System.now().toEpochMilliseconds()
+        for (name in fs.listFiles(dir)) {
+            if (!name.endsWith(TMP_SUFFIX)) continue
+            val file = "$dir/$name"
+            val modified = fs.getLastModifiedTime(file) ?: continue
+            if (now - modified > STALE_TMP_AGE.inWholeMilliseconds) runCatching { fs.deleteFile(file) }
+        }
+    }
+
+    /** True when the file no longer matches what this write was computed from ([original] null: it must still be absent). */
+    private fun changedSinceRead(path: String, original: ByteArray?): Either<DomainError, Boolean> {
+        val current = readBytes(path).getOrReturn { return it.left() }
+        return (if (original == null) current != null else current == null || !current.contentEquals(original)).right()
+    }
+
     /** [original] is null when [path] does not exist yet. */
     private fun replaceFile(path: String, bytes: ByteArray, original: ByteArray?): Either<DomainError, Unit> {
-        val tmp = path + TMP_SUFFIX
+        if (isSymlinkFile(path)) return refuse(NotRoundTrippable.SymlinkTarget(path)).left()
+        sweepStaleTemps(path.substringBeforeLast('/'))
+        val tmp = "$path.${UuidGenerator.generateV7()}$TMP_SUFFIX"
         var deletedOriginal = false
         try {
             if (!fs.writeFileBytes(tmp, bytes)) return failAndClean(tmp, path, "temp write failed")
+            // Narrows the lost-update window against another app; a rename still cannot make it zero.
+            if (changedSinceRead(path, original).getOrReturn { e -> runCatching { fs.deleteFile(tmp) }; return e.left() }) {
+                runCatching { fs.deleteFile(tmp) }
+                return DomainError.MergeError.Retryable("The page changed while copying; try again.").left()
+            }
             if (fs.supportsAtomicReplace(path)) {
                 if (!fs.replaceFileAtomically(tmp, path)) return failAndClean(tmp, path, "atomic replace failed")
                 return Unit.right()
@@ -278,6 +314,7 @@ class MarkdownTargetWriter(
     companion object {
         private const val TMP_SUFFIX = ".stele-merge.tmp"
         private val ID_INDEX_TTL = 30.seconds
+        private val STALE_TMP_AGE = 10.minutes
         private val ID_LINE = Regex("^[ \\t]*id::[ \\t]*(\\S+)", RegexOption.MULTILINE)
 
         /** Explicit opt-out: only the lexical containment check runs. For platforms with no symlinks. */
