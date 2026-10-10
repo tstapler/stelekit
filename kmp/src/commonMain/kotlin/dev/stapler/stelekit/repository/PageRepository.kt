@@ -36,6 +36,13 @@ interface PageRepository {
     fun getJournalPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>>
 
     /**
+     * Reactive: pages carrying the exact `key:value` pair in their properties. Matching is on a
+     * whole comma-delimited token, never a substring (`type:book` does not match `sub-type:bookmark`).
+     */
+    fun getPagesWithProperty(key: String, value: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
+        unsupportedRead("getPagesWithProperty")
+
+    /**
      * Find a journal page by its date. Format-agnostic — always use this instead of
      * getPageByName for journal pages to avoid duplicate creation from name format differences
      * (e.g. "2026_04_11" on disk vs "2026-04-11" created in-app).

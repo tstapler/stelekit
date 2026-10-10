@@ -35,6 +35,8 @@ class QueryPlanAuditTest {
         "selectAllMetadata",
         // content LIKE — no index on content; FTS handles production full-text search
         "selectBlocksWithContentLike", "selectBlocksWithContentLikePaginated",
+        // live query blocks: no index on content / pages.properties (delimited string); full scan + sort, no content/created_at index — acceptable until measured
+        "selectBlocksWithMarkerPrefix", "selectPagesWithPropertyPair",
         "countBlocksWithWikilink", "selectBlocksWithWikilink", "countLinkedReferencesForPage",
         // name LIKE — no index covers prefix-wildcard; FTS handles page-name search
         "selectPagesByNameLike", "selectPagesByNameLikePaginated",
@@ -115,6 +117,10 @@ class QueryPlanAuditTest {
             "SELECT * FROM blocks WHERE content LIKE '%test%'"),
         AuditQuery("selectBlocksWithContentLikePaginated",
             "SELECT * FROM blocks WHERE content LIKE '%test%' ORDER BY created_at DESC LIMIT 10 OFFSET 0"),
+        AuditQuery("selectBlocksWithMarkerPrefix",
+            "SELECT * FROM blocks WHERE content = 'TODO' OR substr(content, 1, length('TODO') + 1) = 'TODO' || ' ' ORDER BY created_at DESC LIMIT 10 OFFSET 0"),
+        AuditQuery("selectPagesWithPropertyPair",
+            "SELECT * FROM pages WHERE instr(',' || coalesce(properties, '') || ',', ',' || 'type:book' || ',') > 0 ORDER BY name LIMIT 10 OFFSET 0"),
         AuditQuery("countBlocksByPageUuid",
             "SELECT COUNT(*) FROM blocks WHERE page_uuid = 'x'"),
         AuditQuery("countBlocksByPageUuids",

@@ -29,6 +29,7 @@ package dev.stapler.stelekit
 // and fails if it isn't registered here, so a missing entry is caught by this suite itself
 // instead of relying on someone noticing.
 import dev.stapler.stelekit.capture.CaptureTargetResolverTest
+import dev.stapler.stelekit.query.QueryExecutorTest
 import dev.stapler.stelekit.capture.InboxFallbackAppenderTest
 import dev.stapler.stelekit.capture.JournalAppenderOffGraphTest
 import dev.stapler.stelekit.capture.JournalAppenderTest
@@ -374,5 +375,6 @@ import org.junit.runners.Suite
     LlmProviderSupportTest::class,
     MlKitAvailabilityMappingTest::class,
     VoicePipelineConfigTest::class,
+    QueryExecutorTest::class,
 )
 class AllBusinessTests

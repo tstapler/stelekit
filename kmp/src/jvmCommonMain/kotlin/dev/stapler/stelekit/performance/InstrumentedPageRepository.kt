@@ -37,6 +37,9 @@ class InstrumentedPageRepository(
     override fun getJournalPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
         delegate.getJournalPages(limit, offset)
 
+    override fun getPagesWithProperty(key: String, value: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
+        delegate.getPagesWithProperty(key, value, limit, offset)
+
     override fun getJournalPageByDate(date: LocalDate): Flow<Either<DomainError, Page?>> =
         delegate.getJournalPageByDate(date)
 

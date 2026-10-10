@@ -11,6 +11,7 @@ fun BlockType.toDiscriminatorString(): String = when (this) {
     is BlockType.Table -> BlockTypes.TABLE
     is BlockType.RawHtml -> BlockTypes.RAW_HTML
     is BlockType.ImageAnnotation -> BlockTypes.IMAGE_ANNOTATION
+    is BlockType.Query -> BlockTypes.QUERY
     is BlockType.Unknown -> this.raw
 }
 
@@ -30,5 +31,6 @@ fun blockTypeFromString(s: String): BlockType = when (s) {
     BlockTypes.TABLE -> BlockType.Table
     BlockTypes.RAW_HTML -> BlockType.RawHtml
     BlockTypes.IMAGE_ANNOTATION -> BlockType.ImageAnnotation
+    BlockTypes.QUERY -> BlockType.Query()
     else -> BlockType.Unknown(s)
 }

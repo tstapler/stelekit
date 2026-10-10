@@ -1087,42 +1087,12 @@ class SqlDelightBlockRepository(
 
     override fun getLinkedReferences(pageName: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Block>>> = flow {
         try {
-            // Iterative overfetch: load SQL pages until we have enough filtered results.
-            // Avoids scanning and loading the entire block table into memory for UI pagination.
-            // Batch size starts at 4x the needed window; grows by 2x each round if yield is poor.
-            val need = offset + limit
             val patterns = compileLinkPatterns(pageName)
-            val seen = mutableSetOf<String>()
-            val accumulated = mutableListOf<Block>()
-            var sqlOffset = 0
-            var batchSize = maxOf(need * 4, 100)
-            var iterations = 0
-
-            while (accumulated.size < need && iterations++ < MAX_LINKED_REF_ITERATIONS) {
-                val wikiPage = queries.selectBlocksWithContentLikePaginated(
-                    "%[[${pageName}%", batchSize.toLong(), sqlOffset.toLong()
-                ).asFlow().mapToList(PlatformDispatcher.DB).first().map { it.toBlockModel() }
-                val hashPage = queries.selectBlocksWithContentLikePaginated(
-                    "%#${pageName}%", batchSize.toLong(), sqlOffset.toLong()
-                ).asFlow().mapToList(PlatformDispatcher.DB).first().map { it.toBlockModel() }
-
-                val batch = (wikiPage + hashPage)
-                    .filter { seen.add(it.uuid.value) }
-                    .filter { isLinkedReference(it.content, patterns) }
-                accumulated.addAll(batch)
-
-                val exhausted = wikiPage.size < batchSize && hashPage.size < batchSize
-                if (exhausted) break
-
-                sqlOffset += batchSize
-                // If yield was low (<25%), double the batch to reduce round-trips next iteration.
-                if (batch.size < batchSize / 4) batchSize = minOf(batchSize * 2, MAX_LINKED_REF_BATCH)
-            }
-
-            // accumulated is already bounded to ≤ offset+limit items by the loop above —
-            // this drop/take is on a small pre-limited list, not an unbounded SQL result.
-            @Suppress("InMemoryPagination")
-            emit(accumulated.drop(offset).take(limit).right())
+            emit(
+                overfetchLinkedReferences(limit, offset, patterns) { batchSize, sqlOffset ->
+                    loadLinkedReferenceBatch(pageName, batchSize, sqlOffset)
+                }.right()
+            )
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -1190,25 +1160,63 @@ class SqlDelightBlockRepository(
         }
     }.flowOn(PlatformDispatcher.DB)
 
-    private data class LinkPatterns(val wikiLink: Regex, val simpleHashtag: Regex)
-
-    private fun compileLinkPatterns(pageName: String): LinkPatterns {
-        val escaped = Regex.escape(pageName)
-        return LinkPatterns(
-            wikiLink = "\\[\\[$escaped(\\|[^\\]]*)?\\]\\]".toRegex(RegexOption.IGNORE_CASE),
-            simpleHashtag = "#$escaped(?=[\\s,\\.!?;\"\\[\\]]|\$)".toRegex(),
-        )
+    // Merge of per-marker SQL pages, each already bounded by LIMIT offset+limit.
+    @Suppress("InMemoryPagination")
+    override fun findBlocksWithTaskMarker(
+        markers: Set<String>,
+        limit: Int,
+        offset: Int,
+    ): Flow<Either<DomainError, List<Block>>> {
+        if (markers.isEmpty()) return flowOf(emptyList<Block>().right())
+        // Each page is bounded per marker; merged window is re-bounded below.
+        val perMarker = markers.sorted().map { marker ->
+            queries.selectBlocksWithMarkerPrefix(marker, (offset + limit).toLong(), 0L)
+                .asFlow()
+                .mapToList(PlatformDispatcher.DB)
+        }
+        return combine(perMarker) { lists ->
+            val merged: Either<DomainError, List<Block>> = lists.asSequence().flatten()
+                .map { it.toBlockModel() }
+                .distinctBy { it.uuid }
+                .sortedByDescending { it.createdAt }
+                .drop(offset)
+                .take(limit)
+                .toList()
+                .right()
+            merged
+        }.conflate().distinctUntilChanged().catchDbError()
     }
 
-    /**
-     * Returns true if [content] contains a linked reference to [pageName].
-     * Matches:
-     * - `[[pageName]]` and `[[pageName|alias]]` (wikilink forms)
-     * - `#[[pageName]]` (bracket hashtag form — contained in wikilink match above)
-     * - `#pageName` followed by whitespace, punctuation, or end-of-string (simple hashtag)
-     */
-    private fun isLinkedReference(content: String, patterns: LinkPatterns): Boolean =
-        patterns.wikiLink.containsMatchIn(content) || patterns.simpleHashtag.containsMatchIn(content)
+    override fun findReferencingBlocksReactive(
+        pageName: String,
+        limit: Int,
+        offset: Int,
+    ): Flow<Either<DomainError, List<Block>>> {
+        val patterns = compileLinkPatterns(pageName)
+        // The one-row probe exists only to re-emit on any `blocks` table invalidation.
+        return queries.selectBlocksWithContentLikePaginated("%[[${pageName}%", 1L, 0L)
+            .asFlow()
+            .mapToList(PlatformDispatcher.DB)
+            .conflate() // a burst of writes (import, debounced saves) re-runs the overfetch loop once, not per write
+            .map {
+                overfetchLinkedReferences(limit, offset, patterns) { batchSize, sqlOffset ->
+                    loadLinkedReferenceBatch(pageName, batchSize, sqlOffset)
+                }.right() as Either<DomainError, List<Block>>
+            }
+            .distinctUntilChanged()
+            .flowOn(PlatformDispatcher.DB)
+            .catchDbError()
+    }
+
+    private suspend fun loadLinkedReferenceBatch(pageName: String, batchSize: Int, sqlOffset: Int): LinkBatch {
+        val wikiPage = queries.selectBlocksWithContentLikePaginated(
+            "%[[${pageName}%", batchSize.toLong(), sqlOffset.toLong()
+        ).asFlow().mapToList(PlatformDispatcher.DB).first().map { it.toBlockModel() }
+        val hashPage = queries.selectBlocksWithContentLikePaginated(
+            "%#${pageName}%", batchSize.toLong(), sqlOffset.toLong()
+        ).asFlow().mapToList(PlatformDispatcher.DB).first().map { it.toBlockModel() }
+        return LinkBatch(wikiPage + hashPage, exhausted = wikiPage.size < batchSize && hashPage.size < batchSize)
+    }
 
     // Results are ordered by created_at DESC (most recent first) — a change from the
     // previous unbounded scan which had no guaranteed order. Recency-first matches typical
@@ -1393,14 +1401,6 @@ class SqlDelightBlockRepository(
          * 500 stays well below that limit while keeping round-trips to ≤ 2 for most pages.
          */
         private const val BATCH_UUID_CHUNK_SIZE = 500
-
-        /**
-         * Maximum batch size for linked reference queries in [getLinkedReferences].
-         * Prevents unbounded growth when pageName is a common word on large graphs.
-         */
-        private const val MAX_LINKED_REF_BATCH = 2_000
-        // Hard upper bound on overfetch loop iterations: 50 × 2000 = 100k candidates max.
-        private const val MAX_LINKED_REF_ITERATIONS = 50
     }
 }
 

@@ -13,6 +13,7 @@ import dev.stapler.stelekit.model.Property
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.flowOf
 import arrow.core.Either
@@ -470,10 +471,10 @@ class InMemoryBlockRepository : BlockRepository {
 
     override fun getLinkedReferences(pageName: String): Flow<Either<DomainError, List<Block>>> {
         // Matches [[name]] and [[name|alias]] forms
-        val wikiLinkPattern = "\\[\\[${Regex.escape(pageName)}(\\|[^\\]]*)?\\]\\]".toRegex(RegexOption.IGNORE_CASE)
+        val patterns = compileLinkPatterns(pageName)
         return blocks.map { map ->
             val linkedBlocks = map.values.filter { block ->
-                wikiLinkPattern.containsMatchIn(block.content)
+                isLinkedReference(block.content, patterns)
             }
             linkedBlocks.sortedBy { it.pageUuid.value }.right()
         }
@@ -481,10 +482,10 @@ class InMemoryBlockRepository : BlockRepository {
 
     override fun getLinkedReferences(pageName: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Block>>> {
         // Matches [[name]] and [[name|alias]] forms
-        val wikiLinkPattern = "\\[\\[${Regex.escape(pageName)}(\\|[^\\]]*)?\\]\\]".toRegex(RegexOption.IGNORE_CASE)
+        val patterns = compileLinkPatterns(pageName)
         return blocks.map { map ->
             val linkedBlocks = map.values.filter { block ->
-                wikiLinkPattern.containsMatchIn(block.content)
+                isLinkedReference(block.content, patterns)
             }
             linkedBlocks.sortedBy { it.pageUuid.value }.drop(offset).take(limit).right()
         }
@@ -522,6 +523,35 @@ class InMemoryBlockRepository : BlockRepository {
                 block.content.contains(query, ignoreCase = true)
             }
             matchingBlocks.sortedBy { it.pageUuid.value }.drop(offset).take(limit).right()
+        }
+    }
+
+    override fun findBlocksWithTaskMarker(
+        markers: Set<String>,
+        limit: Int,
+        offset: Int,
+    ): Flow<Either<DomainError, List<Block>>> = blocks.map { map ->
+        map.values
+            .filter { b -> markers.any { m -> b.content == m || b.content.startsWith("$m ") } }
+            .sortedByDescending { it.createdAt }
+            .drop(offset)
+            .take(limit)
+            .right()
+    }
+
+    override fun findReferencingBlocksReactive(
+        pageName: String,
+        limit: Int,
+        offset: Int,
+    ): Flow<Either<DomainError, List<Block>>> {
+        val patterns = compileLinkPatterns(pageName)
+        return blocks.map { map ->
+            map.values
+                .filter { isLinkedReference(it.content, patterns) }
+                .sortedBy { it.pageUuid.value }
+                .drop(offset)
+                .take(limit)
+                .right()
         }
     }
 
@@ -619,6 +649,11 @@ class InMemoryPageRepository : PageRepository {
         val dateSet = dates.toHashSet()
         return pages.value.values.filter { it.journalDate != null && it.journalDate in dateSet }.right()
     }
+
+    override fun getPagesWithProperty(key: String, value: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
+        pages.map { map ->
+            map.values.filter { it.properties[key] == value }.sortedBy { it.name }.drop(offset).take(limit).right()
+        }.distinctUntilChanged()
 
     override fun getJournalPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
         return pages.map { map ->

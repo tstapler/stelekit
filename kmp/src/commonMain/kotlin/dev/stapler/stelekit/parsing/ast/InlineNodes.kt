@@ -75,7 +75,7 @@ data class SuperscriptNode(val children: List<InlineNode>) : InlineNode()
 
 /**
  * Task status marker at the start of a block's inline content.
- * Valid markers: TODO, DONE, NOW, LATER, WAITING, CANCELLED, DOING, WAIT, STARTED, IN-PROGRESS.
+ * Valid markers: TODO, DONE, NOW, LATER, WAITING, CANCELLED, DOING, WAIT, STARTED.
  */
 data class TaskMarkerNode(val marker: String) : InlineNode()
 

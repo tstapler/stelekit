@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.query.QueryParser
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -391,7 +393,24 @@ internal fun BlockItem(
                 )
             } else {
                 // View mode — dispatch on block type
-                when (block.blockType) {
+                val queryContext = LocalQueryBlockContext.current
+                // Content-based (not blockType-based) so a freshly typed query block goes live
+                // without a reload; whole-block-only, so inline mixes keep the literal rendering.
+                val liveQueryArg = remember(block.content, queryContext.enabled, queryContext.executor) {
+                    if (!queryContext.enabled || queryContext.executor == null) null
+                    else queryArgFromContent(block.content)?.takeIf {
+                        val err = QueryParser.parse(it).leftOrNull()
+                        err == null || err is DomainError.ParseError.UnsupportedForm
+                    }
+                }
+                if (liveQueryArg != null) QueryBlock(
+                    rawQuery = liveQueryArg,
+                    queryExecutor = queryContext.executor,
+                    pageRepository = queryContext.pageRepository,
+                    onStartEditing = onStartEditing,
+                    onLinkClick = onLinkClick,
+                    modifier = Modifier.weight(1f),
+                ) else when (block.blockType) {
                     is BlockType.ImageAnnotation -> ImageAnnotationBlockItem(
                         block = block,
                         onOpenAnnotationEditor = onOpenAnnotationEditor,

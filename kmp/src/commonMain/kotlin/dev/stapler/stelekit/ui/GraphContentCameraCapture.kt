@@ -5,10 +5,17 @@
 package dev.stapler.stelekit.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import dev.stapler.stelekit.coroutines.PlatformDispatcher
+import kotlinx.coroutines.withContext
 import dev.stapler.stelekit.error.toUiMessage
+import dev.stapler.stelekit.ui.components.LocalQueryBlockContext
+import dev.stapler.stelekit.ui.components.QueryBlockContext
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.ImageAnnotation
 import dev.stapler.stelekit.model.ImageSource
@@ -52,30 +59,56 @@ internal fun GraphContentScreenAndCapture(deps: GraphContentDeps, viewModel: Ste
         )
     }
 
-    ScreenRouter(
-        screen = inputs.appState.currentScreen,
-        repos = deps.repos,
-        blockStateManager = inputs.viewModelStack.blockStateManager,
-        journalsViewModel = inputs.supportingViewModels.journalsViewModel,
-        allPagesViewModel = inputs.supportingViewModels.allPagesViewModel,
-        libraryStatsViewModel = inputs.supportingViewModels.libraryStatsViewModel,
-        viewModel = viewModel,
-        searchViewModel = inputs.supportingViewModels.searchViewModel,
-        notificationManager = deps.notificationManager,
-        appState = inputs.appState,
-        graphWriter = inputs.graphIoStack.graphWriter,
-        urlFetcher = deps.coreServices.urlFetcher,
-        qrTransferSettings = inputs.tagVoiceStack.qrTransferSettings,
-        graphLoader = inputs.graphIoStack.graphLoader,
-        graphDiagnostics = diagnosticsCollector::collect,
-        capabilities = buildEditorCapabilities(deps, viewModel, inputs, captureState),
-        onImportImage = buildOnImportImage(deps, viewModel, inputs, captureState),
-        platformSettings = deps.platformSettings,
-        perfSpans = inputs.perfTelemetry.perfSpans,
-        perfHistograms = inputs.perfTelemetry.perfHistograms,
-        perfQueryStats = inputs.perfTelemetry.perfQueryStats,
-        tagSuggestionViewModel = inputs.tagVoiceStack.tagSuggestionViewModel,
-    )
+    // Re-derived from deps.repos, so a graph switch rebinds every QueryBlock to the new graph.
+    // The flag read is a synchronous SQLite query, so it runs on the DB dispatcher, not during composition.
+    val queryBlocksEnabled by produceState(initialValue = true, deps.repos) {
+        value = withContext(PlatformDispatcher.DB) {
+            // A graph switch/close can invalidate the flag DB mid-read; fall back to the default (Throwable:
+            // an uncaught Error here kills the process on Android).
+            try {
+                deps.repos.debugFlagRepository?.getFlag("live_query_blocks", default = true) ?: true
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Throwable) {
+                true
+            }
+        }
+    }
+    val queryContext = remember(deps.repos, queryBlocksEnabled) {
+        QueryBlockContext(
+            executor = deps.repos.queryExecutor,
+            pageRepository = deps.repos.pageRepository,
+            enabled = queryBlocksEnabled,
+        )
+    }
+    CompositionLocalProvider(
+        LocalQueryBlockContext provides queryContext,
+    ) {
+        ScreenRouter(
+            screen = inputs.appState.currentScreen,
+            repos = deps.repos,
+            blockStateManager = inputs.viewModelStack.blockStateManager,
+            journalsViewModel = inputs.supportingViewModels.journalsViewModel,
+            allPagesViewModel = inputs.supportingViewModels.allPagesViewModel,
+            libraryStatsViewModel = inputs.supportingViewModels.libraryStatsViewModel,
+            viewModel = viewModel,
+            searchViewModel = inputs.supportingViewModels.searchViewModel,
+            notificationManager = deps.notificationManager,
+            appState = inputs.appState,
+            graphWriter = inputs.graphIoStack.graphWriter,
+            urlFetcher = deps.coreServices.urlFetcher,
+            qrTransferSettings = inputs.tagVoiceStack.qrTransferSettings,
+            graphLoader = inputs.graphIoStack.graphLoader,
+            graphDiagnostics = diagnosticsCollector::collect,
+            capabilities = buildEditorCapabilities(deps, viewModel, inputs, captureState),
+            onImportImage = buildOnImportImage(deps, viewModel, inputs, captureState),
+            platformSettings = deps.platformSettings,
+            perfSpans = inputs.perfTelemetry.perfSpans,
+            perfHistograms = inputs.perfTelemetry.perfHistograms,
+            perfQueryStats = inputs.perfTelemetry.perfQueryStats,
+            tagSuggestionViewModel = inputs.tagVoiceStack.tagSuggestionViewModel,
+        )
+    }
 
     GraphContentCaptureDialogs(deps, viewModel, inputs, captureState)
 }
