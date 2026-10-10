@@ -33,6 +33,13 @@ class Lexer(private val input: CharSequence) {
                     isStartOfLine = false
                     return Token(TokenType.BULLET, start, cursor)
                 }
+                // A lone "-" line is Logseq's empty bullet; without this it lexes as TEXT and
+                // the block parser turns it into a mis-leveled paragraph.
+                if (char == '-' && (cursor + 1 == length || input[cursor + 1] == '\n')) {
+                    cursor += 1
+                    isStartOfLine = false
+                    return Token(TokenType.BULLET, start, cursor)
+                }
             }
             // If we are here, we are at start of line but it's not indent or bullet.
             // Just normal tokens.
