@@ -48,6 +48,10 @@ interface GitRepository {
     suspend fun testRemote(url: String, auth: GitAuth): Either<DomainError.GitError, Unit>
     suspend fun fetch(config: GitConfig): Either<DomainError.GitError, FetchResult>
 
+    /** Asks the remote at [url] for its default branch (`ls-remote`); never throws. */
+    suspend fun detectDefaultBranch(url: String, auth: GitAuth): DefaultBranchDetection =
+        DefaultBranchDetection.Unreachable("not supported on this platform")
+
     /**
      * Widens a shallow clone to full history (`FetchCommand.setUnshallow(true)`) — the deepen
      * capability backing [dev.stapler.stelekit.git.model.CloneDepthState.Shallow] →

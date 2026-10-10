@@ -149,6 +149,11 @@ class AndroidGitRepository(
             testRemoteViaLsRemote(url, auth, authConfigurer::configureAuth)
         }
 
+    override suspend fun detectDefaultBranch(url: String, auth: GitAuth): DefaultBranchDetection =
+        withContext(PlatformDispatcher.IO) {
+            detectDefaultBranchViaLsRemote(url, auth, authConfigurer::configureAuth)
+        }
+
     override suspend fun unshallow(config: GitConfig): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
             val diverged = openGitWithoutFreshnessCheck(config).use { git ->
