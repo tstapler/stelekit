@@ -93,6 +93,8 @@ import dev.stapler.stelekit.db.MigrationRunnerCoverageTest
 import dev.stapler.stelekit.db.MigrationRunnerIndexTest
 import dev.stapler.stelekit.db.MigrationRunnerSchemaSyncTest
 import dev.stapler.stelekit.db.RelocationStagingDirectoryTest
+import dev.stapler.stelekit.merge.MergeManifestTest
+import dev.stapler.stelekit.merge.MergeStagingDirectoryTest
 import dev.stapler.stelekit.db.SqliteStatementAnalyzerTest
 import dev.stapler.stelekit.db.StorageLocationPersistenceTest
 import dev.stapler.stelekit.db.WithoutRowidMigrationTest
@@ -235,6 +237,8 @@ import org.junit.runners.Suite
     MigrationRunnerIndexTest::class,
     MigrationRunnerSchemaSyncTest::class,
     RelocationStagingDirectoryTest::class,
+    MergeStagingDirectoryTest::class,
+    MergeManifestTest::class,
     SqliteStatementAnalyzerTest::class,
     StorageLocationPersistenceTest::class,
     WithoutRowidMigrationTest::class,
