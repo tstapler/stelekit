@@ -133,6 +133,29 @@ sealed interface DomainError {
                 "This graph's local history doesn't go back far enough to merge safely — " +
                     "contact support or re-clone with full history"
         }
+
+        /**
+         * The configured `<remote>/<branch>` has no remote-tracking ref after a fetch — the remote
+         * simply has no such branch. Deterministic, so never retried. [available] lists the
+         * branches the remote does have (short names), so the UI can offer a repair.
+         */
+        data class RemoteBranchNotFound(
+            val remote: String,
+            val branch: String,
+            val available: List<String>,
+        ) : GitError {
+            override val message: String = "Branch '$branch' not found on remote — tap to fix"
+        }
+
+        /** The remote has no branches at all (nothing to fetch yet). */
+        data object RemoteEmpty : GitError {
+            override val message: String = "Remote is empty — push a commit first or check the URL"
+        }
+
+        /** The configured remote or branch name is not a valid git ref name (config corruption). */
+        data class InvalidRefName(val name: String) : GitError {
+            override val message: String = "Branch name '$name' is not valid — tap for details"
+        }
     }
 
     sealed interface AttachmentError : DomainError {
@@ -294,6 +317,9 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.GitError.WorkingTreeConcurrentEditDetected -> message
     is DomainError.GitError.RetryExhausted -> message
     is DomainError.GitError.ShallowHistoryInsufficient -> message
+    is DomainError.GitError.RemoteBranchNotFound -> message
+    is DomainError.GitError.RemoteEmpty -> message
+    is DomainError.GitError.InvalidRefName -> message
     is DomainError.AttachmentError.CopyFailed -> "Attachment failed"
     is DomainError.AttachmentError.PickerFailed -> "Could not open file picker"
     is DomainError.AttachmentError.AssetsDirectoryFailed -> "Cannot create assets directory"
@@ -342,4 +368,7 @@ fun DomainError.GitError.toSyncErrorMessage(): String = when (this) {
     is DomainError.GitError.WorkingTreeConcurrentEditDetected -> "Local file changed during sync — resolve to continue"
     is DomainError.GitError.RetryExhausted -> "${lastError.toSyncErrorMessage()} (retried $attempts times)"
     is DomainError.GitError.ShallowHistoryInsufficient -> "This graph's local history doesn't go back far enough to merge safely — re-clone with full history"
+    is DomainError.GitError.RemoteBranchNotFound -> message
+    is DomainError.GitError.RemoteEmpty -> message
+    is DomainError.GitError.InvalidRefName -> message
 }
