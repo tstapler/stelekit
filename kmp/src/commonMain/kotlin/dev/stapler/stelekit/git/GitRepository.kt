@@ -128,6 +128,8 @@ data class MergeResult(
     val hasConflicts: Boolean,
     val conflicts: List<ConflictFile>,
     val changedFiles: List<String>,
+    /** Remote commits brought in, from HEAD before/after the merge; null when the backend can't say. */
+    val mergedCommitCount: Int? = null,
 )
 
 data class GitCommit(
