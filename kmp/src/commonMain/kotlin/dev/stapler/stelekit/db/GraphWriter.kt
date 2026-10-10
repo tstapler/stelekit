@@ -788,11 +788,7 @@ class GraphWriter(
     }
 
     private fun getPageFilePath(page: Page, graphPath: String, layer: CryptoLayer? = cryptoLayer): String {
-        val safeName = FileUtils.sanitizeFileName(page.name)
-        val basePath = if (graphPath.endsWith("/")) graphPath else "$graphPath/"
-        val folder = if (page.isJournal) "journals" else "pages"
-        val extension = if (layer != null) ".md.stek" else ".md"
-        return "${basePath}$folder/$safeName$extension"
+        return PageFileResolver.pagePath(page.name, page.isJournal, graphPath, encrypted = layer != null)
     }
 
     /** Compute the graph-root-relative path used as AAD for file encryption. */
