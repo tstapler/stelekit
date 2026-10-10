@@ -11,11 +11,16 @@ import dev.stapler.stelekit.outliner.JournalUtils
 import dev.stapler.stelekit.platform.FileSystem
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
+import dev.stapler.stelekit.util.UuidGenerator
 import okio.ByteString.Companion.toByteString
 
 /**
  * Off-graph writer (ADR-001): splices only the new blocks into the target page's original bytes,
  * then replaces the file via temp + rename. A brand-new page is the only whole render.
+ *
+ * Placement differs from [ActiveTargetWriter] on purpose: every insertion is the LAST child of its parent
+ * (so unlabeled neighbours keep their positional uuids), while the active writer places a block next to
+ * its merged neighbour. Block data is the same; a conflict sibling just sits at the end here.
  *
  * Where [FileSystem.supportsAtomicReplace] the temp file is moved over the page in one step, so a
  * crash leaves the old or the new file complete. Otherwise `renameFile` (which never overwrites;
@@ -33,6 +38,9 @@ class MarkdownTargetWriter(
     private val canonicalize: (String) -> String,
 ) : TargetWriter {
 
+    private val ownership = PageUuidOwnership(fs, target.path) { readText(it) }
+    private val tempSweeper = StaleTempSweeper(fs, TMP_SUFFIX)
+
     override suspend fun readExisting(page: PageKey): Either<DomainError, MergePage?> = io {
         val path = resolveWritable(page).getOrReturn { return@io it.left() }
         val original = readText(path).getOrReturn { return@io it.left() } ?: return@io null.right()
@@ -43,7 +51,10 @@ class MarkdownTargetWriter(
     override suspend fun write(page: PageKey, merged: MergePage): Either<DomainError, WriteOutcome> = io {
         val path = resolveWritable(page).getOrReturn { return@io it.left() }
         val original = readText(path).getOrReturn { return@io it.left() }
-        if (original == null) return@io createPage(path, merged)
+        if (original == null) {
+            ownership.findCollision(explicitUuids(merged.blocks), path).getOrReturn { return@io it.left() }?.let { return@io it.left() }
+            return@io createPage(path, merged)
+        }
         val existing = if (original.isEmpty()) MergePage(page.name) else {
             parse(original, path, page, merged.journalDate).getOrReturn { return@io it.left() }.mergePage
         }
@@ -51,12 +62,15 @@ class MarkdownTargetWriter(
         if (!BlockEditing.planInsertions(existing.blocks, merged.blocks, emptyList(), insertions)) {
             return@io refuse(NotRoundTrippable.ExistingContentChanged("merged page lost or altered an existing block")).left()
         }
+        ownership.findCollision(insertions.flatMap { explicitUuids(listOf(it.block)) }, path).getOrReturn { return@io it.left() }
+            ?.let { return@io it.left() }
         val spliced = RoundTripGuard.splice(original, SpliceRequest(insertions, merged.properties), path, page.isJournal)
             .getOrReturn { return@io refuse(it).left() }
         if (spliced.text == original) return@io WriteOutcome.Unchanged.right()
         val bytes = spliced.text.encodeToByteArray()
         replaceFile(path, bytes, original.encodeToByteArray()).map {
-            WriteOutcome.Updated(path, sha256(bytes), spliced.insertedBlocks)
+            ownership.note(path, insertions.flatMap { explicitUuids(listOf(it.block)) })
+            WriteOutcome.Updated(path, sha256(bytes), spliced.insertedBlocks, spliced.skippedPropertyKeys)
         }
     }
 
@@ -175,16 +189,34 @@ class MarkdownTargetWriter(
         if (!fs.directoryExists(dir) && !fs.createDirectory(dir)) {
             return DomainError.FileSystemError.WriteFailed(dir, "cannot create directory").left()
         }
+        RoundTripGuard.verifyRendered(text, merged, path, merged.isJournal)?.let { return refuse(it).left() }
         val bytes = text.encodeToByteArray()
-        return replaceFile(path, bytes, null).map { WriteOutcome.Created(path, sha256(bytes)) }
+        return replaceFile(path, bytes, null).map {
+            ownership.note(path, explicitUuids(merged.blocks))
+            WriteOutcome.Created(path, sha256(bytes))
+        }
+    }
+
+
+    /** True when the file no longer matches what this write was computed from ([original] null: it must still be absent). */
+    private fun changedSinceRead(path: String, original: ByteArray?): Either<DomainError, Boolean> {
+        val current = readBytes(path).getOrReturn { return it.left() }
+        return (if (original == null) current != null else current == null || !current.contentEquals(original)).right()
     }
 
     /** [original] is null when [path] does not exist yet. */
     private fun replaceFile(path: String, bytes: ByteArray, original: ByteArray?): Either<DomainError, Unit> {
-        val tmp = path + TMP_SUFFIX
+        if (isSymlinkFile(path, canonicalize)) return refuse(NotRoundTrippable.SymlinkTarget(path)).left()
+        tempSweeper.sweepOnce(path.substringBeforeLast('/'))
+        val tmp = "$path.${UuidGenerator.generateV7()}$TMP_SUFFIX"
         var deletedOriginal = false
         try {
             if (!fs.writeFileBytes(tmp, bytes)) return failAndClean(tmp, path, "temp write failed")
+            // Narrows the lost-update window against another app; a rename still cannot make it zero.
+            if (changedSinceRead(path, original).getOrReturn { e -> runCatching { fs.deleteFile(tmp) }; return e.left() }) {
+                runCatching { fs.deleteFile(tmp) }
+                return DomainError.MergeError.Retryable("The page changed while copying; try again.").left()
+            }
             if (fs.supportsAtomicReplace(path)) {
                 if (!fs.replaceFileAtomically(tmp, path)) return failAndClean(tmp, path, "atomic replace failed")
                 return Unit.right()

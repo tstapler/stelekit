@@ -81,6 +81,7 @@ class CopyEditRecopyPropertyTest {
                         is MergeOutcome.New -> harness.writer.write(key, outcome.page)
                         is MergeOutcome.Merged -> harness.writer.write(key, outcome.page)
                         MergeOutcome.Unchanged -> null
+                        is MergeOutcome.RefsDidNotConverge -> error("refs did not converge: $outcome")
                     }?.fold({ error("write failed: $it") }, { })
                     return outcome
                 }

@@ -55,8 +55,10 @@ class BlockParser(private val source: CharSequence) {
     }
 
     private fun parseBlock(level: Int): BlockNode {
-        // 1. Consume INDENT if present
+        // 1. Consume INDENT if present; a fenced body is stripped of exactly the indent this line used.
+        var lineIndent = ""
         if (currentToken.type == TokenType.INDENT) {
+            lineIndent = currentToken.text(source).toString()
             advance()
         }
 
@@ -78,7 +80,7 @@ class BlockParser(private val source: CharSequence) {
 
         // 1b. Check for a fenced code block, blockquote, ordered list, thematic break,
         // GFM table, or raw HTML block at the top level.
-        tryConsumeNonHeadingConstruct(level, bulleted = false)?.let { return it }
+        tryConsumeNonHeadingConstruct(level, bulleted = false, lineIndent)?.let { return it }
 
         // 2. Check for Bullet
         val isBullet = if (currentToken.type == TokenType.BULLET) {
@@ -101,7 +103,7 @@ class BlockParser(private val source: CharSequence) {
         // parsing and rendered as literal Markdown text — the same structural bug already
         // fixed for headings.
         if (isBullet && bulletHeadingLevel == null) {
-            tryConsumeNonHeadingConstruct(level, bulleted = true)?.let { return it }
+            tryConsumeNonHeadingConstruct(level, bulleted = true, lineIndent)?.let { return it }
         }
 
         // 3. Parse Content & Properties
@@ -410,10 +412,10 @@ class BlockParser(private val source: CharSequence) {
      * this, a bullet decorated with one of these constructs would return immediately and
      * orphan its nested children/properties to the caller as mis-leveled siblings.
      */
-    private fun tryConsumeNonHeadingConstruct(level: Int, bulleted: Boolean): BlockNode? {
+    private fun tryConsumeNonHeadingConstruct(level: Int, bulleted: Boolean, lineIndent: String): BlockNode? {
         val indentLevel = level
 
-        tryParseFencedCodeConstruct(level, indentLevel, bulleted)?.let { return it }
+        tryParseFencedCodeConstruct(level, indentLevel, bulleted, lineIndent)?.let { return it }
         tryParseThematicBreakConstruct(level, indentLevel)?.let { return it }
         tryParseBlockquoteConstruct(level, indentLevel)?.let { return it }
         tryParseOrderedListItemConstruct(level)?.let { return it }
@@ -424,13 +426,13 @@ class BlockParser(private val source: CharSequence) {
     }
 
     /** Fenced code block: ``` or ~~~ (both fence characters share identical dispatch logic). */
-    private fun tryParseFencedCodeConstruct(level: Int, indentLevel: Int, bulleted: Boolean): CodeFenceBlockNode? {
+    private fun tryParseFencedCodeConstruct(level: Int, indentLevel: Int, bulleted: Boolean, lineIndent: String): CodeFenceBlockNode? {
         val fenceType = currentToken.type
         if (fenceType != TokenType.BACKTICK && fenceType != TokenType.TILDE) return null
         val fenceLen = currentToken.end - currentToken.start
         if (fenceLen < 3) return null
 
-        val node = parseFencedCodeBlock(fenceType, bodyIndentLevel = if (bulleted) level else null)
+        val node = parseFencedCodeBlock(fenceType, bulletIndent = if (bulleted) lineIndent else null)
         val (properties, children) = parseTrailingPropertiesAndChildren(level)
         return node.copy(properties = properties, children = children, indentLevel = indentLevel)
     }
@@ -648,13 +650,15 @@ class BlockParser(private val source: CharSequence) {
      * [fenceType] (BACKTICK for ``` ``` ```, TILDE for `~~~`). [currentToken] must be
      * positioned on the opening fence token when this is called.
      *
-     * For a fence decorating a bullet at [bodyIndentLevel], the body lines' outline indent
-     * (up to that many tabs, then one more tab or two spaces) is not code, so it is stripped
-     * from [CodeFenceBlockNode.rawContent]; otherwise the serializer, which re-indents
-     * continuation lines, would add it a second time on every save. A closing fence's own
-     * indent is likewise not body text. Null for an unbulleted fence: nothing is stripped.
+     * For a fence decorating a bullet whose own line is indented by [bulletIndent], the body
+     * lines' outline indent (that same indent, then one more tab or two spaces) is not code, so
+     * it is stripped from [CodeFenceBlockNode.rawContent]; otherwise the serializer, which
+     * re-indents continuation lines, would add it a second time on every save. Taken from the
+     * bullet line rather than a level count so tab, 2-space and 4-space outlines all work.
+     * A closing fence's own indent is likewise not body text. Null for an unbulleted fence:
+     * nothing is stripped.
      */
-    private fun parseFencedCodeBlock(fenceType: TokenType, bodyIndentLevel: Int?): CodeFenceBlockNode {
+    private fun parseFencedCodeBlock(fenceType: TokenType, bulletIndent: String?): CodeFenceBlockNode {
         advance() // consume opening fence
         val language = if (currentToken.type == TokenType.TEXT) {
             val lang = currentToken.text(source).toString().trim()
@@ -667,12 +671,12 @@ class BlockParser(private val source: CharSequence) {
         // Collect body until matching fence (same fence type, length >= 3) or EOF
         val body = StringBuilder()
         while (currentToken.type != TokenType.EOF) {
-            if (bodyIndentLevel != null && currentToken.type == TokenType.INDENT) {
+            if (bulletIndent != null && currentToken.type == TokenType.INDENT) {
                 val next = peekToken(1)
                 if (next.type == fenceType && next.end - next.start >= 3) {
                     advance() // closing fence's own indent is not body text
                 } else {
-                    body.append(stripOutlineIndent(currentToken.text(source).toString(), bodyIndentLevel))
+                    body.append(stripOutlineIndent(currentToken.text(source).toString(), bulletIndent))
                     advance()
                 }
                 continue
@@ -698,9 +702,9 @@ class BlockParser(private val source: CharSequence) {
         return CodeFenceBlockNode(language = language, rawContent = rawContent)
     }
 
-    private fun stripOutlineIndent(indent: String, level: Int): String {
+    private fun stripOutlineIndent(indent: String, bulletIndent: String): String {
         var i = 0
-        while (i < level && i < indent.length && indent[i] == '\t') i++
+        while (i < bulletIndent.length && i < indent.length && indent[i] == bulletIndent[i]) i++
         if (i < indent.length && indent[i] == '\t') i++
         else if (indent.startsWith("  ", i)) i += 2
         return indent.substring(i)

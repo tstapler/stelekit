@@ -58,7 +58,33 @@ data class MergePolicy(
     val blockKey: (String) -> String = ::normalizeBlockContent,
 )
 
-fun normalizeBlockContent(content: String): String = content.trim().replace(Regex("\\s+"), " ")
+/**
+ * Content identity for dedup (ADR-002). Whitespace is significant where it carries meaning: the leading
+ * indentation of every line, and the whole line inside a fenced block or an indented code line (4+ columns
+ * or a tab). Elsewhere a run of whitespace is one space and trailing whitespace is dropped.
+ */
+fun normalizeBlockContent(content: String): String {
+    var fence: String? = null
+    return content.trim().lines().map { raw ->
+        val line = raw.trimEnd('\r')
+        val body = line.trimStart()
+        val marker = FENCE.find(body)?.groupValues?.get(1)
+        val verbatim = when {
+            fence != null -> {
+                if (marker != null && marker.startsWith(fence!!) && body.drop(marker.length).isBlank()) fence = null
+                true
+            }
+            marker != null -> { fence = marker.take(3); true }
+            else -> false
+        }
+        val indent = line.length - body.length
+        val indentCols = line.take(indent).sumOf { if (it == '\t') 4 else 1 }
+        if (verbatim || indentCols >= 4) line else line.take(indent) + body.trimEnd().replace(WHITESPACE, " ")
+    }.joinToString("\n")
+}
+
+private val FENCE = Regex("^(`{3,}|~{3,})")
+private val WHITESPACE = Regex("[ \\t]+")
 
 fun exactTrimmedBlockContent(content: String): String = content.trim()
 
@@ -73,6 +99,9 @@ sealed interface MergeOutcome {
     data class New(val page: MergePage) : MergeOutcome
 
     data object Unchanged : MergeOutcome
+
+    /** `((ref))` targets did not settle within [passes] re-merges; nothing may be written for this page. */
+    data class RefsDidNotConverge(val passes: Int) : MergeOutcome
 
     /** [added] counts inserted blocks including descendants, excluding conflict siblings. */
     data class Merged(

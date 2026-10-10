@@ -268,6 +268,13 @@ abstract class JvmFileSystemBase {
         return try {
             val source = Paths.get(from)
             val dest = Paths.get(to)
+            // The temp file is created with default permissions; keep the replaced file's mode (best effort, POSIX only).
+            if (Files.exists(dest)) {
+                try {
+                    Files.setPosixFilePermissions(source, Files.getPosixFilePermissions(dest))
+                } catch (_: UnsupportedOperationException) {
+                }
+            }
             try {
                 Files.move(source, dest, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
             } catch (e: AtomicMoveNotSupportedException) {

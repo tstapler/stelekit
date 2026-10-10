@@ -61,6 +61,43 @@ class ActiveTargetWriterContractTest : TargetWriterContractSuite() {
     }
 
     @Test
+    fun unloadedJournalStubKeepsExistingBlocks() = runBlocking<Unit> {
+        val h = active()
+        val journal = PageKey("2026-10-07", isJournal = true)
+        h.seedStub("/graphs/active/journals/2026_10_07.md", journal, "- morning\n- evening")
+
+        val result = h.copy(MergePage("2026-10-07", isJournal = true, blocks = listOf(MergeBlock("s1", "alpha"))), journal)
+
+        assertTrue(result.isRight(), "$result")
+        val text = checkNotNull(h.fs.readFile("/graphs/active/journals/2026_10_07.md"))
+        assertTrue("- morning" in text && "- evening" in text && "alpha" in text, text)
+    }
+
+    @Test
+    fun graphWriterRefusesToReplaceANonEmptyFileFromAnUnloadedPage() = runBlocking<Unit> {
+        val h = active()
+        h.seedStub("/graphs/active/pages/Stub.md", PageKey("Stub"), "- keep me")
+
+        val result = h.rawSave(PageKey("Stub"), emptyList())
+
+        assertTrue(result.isLeft())
+        assertEquals("- keep me", h.fs.readFile("/graphs/active/pages/Stub.md"))
+    }
+
+    @Test
+    fun appliedPagePropertyUnionIsNotReportedAsSkipped() = runBlocking<Unit> {
+        val h = active()
+        val props = PageKey("Props")
+        h.seed(props, "-\n  tags:: a\n- A\n")
+        val existing = h.writer.readExisting(props).fold({ error("read: $it") }, { it })!!
+
+        val result = h.writer.write(props, existing.copy(properties = mapOf("tags" to "a, b"), blocks = existing.blocks + MergeBlock("s1", "new")))
+
+        assertEquals(emptyList(), assertIs<WriteOutcome.Updated>(result.fold({ error("write: $it") }, { it })).skippedPropertyKeys)
+        assertTrue("tags:: a, b" in checkNotNull(h.fileText(props)))
+    }
+
+    @Test
     fun noDiskConflictIsEmittedByTheWrites() = runBlocking<Unit> {
         val h = active()
         h.copy()
@@ -83,6 +120,19 @@ class ActiveTargetWriterContractTest : TargetWriterContractSuite() {
         assertTrue("uuid collision" in err.message)
         assertEquals(victim, h.snapshot(key))
         assertNull(h.fileText(other))
+    }
+
+    @Test
+    fun uuidLookupErrorFailsClosedAndWritesNothing() = runBlocking<Unit> {
+        val h = active()
+        h.copy()
+        val before = h.fileText(key)
+        h.failUuidLookup = true
+
+        val result = h.copy(MergePage("Target", blocks = listOf(MergeBlock("s9", "late"))))
+
+        assertTrue(result.isLeft())
+        assertEquals(before, h.fileText(key))
     }
 
     @Test
@@ -184,8 +234,14 @@ class ActiveTargetWriterContractTest : TargetWriterContractSuite() {
             )
         }
 
+        @Volatile var failUuidLookup = false
+        private val lookupBlocks = object : BlockRepository by blocks {
+            override suspend fun getBlocksByUuids(uuids: List<BlockUuid>): Either<DomainError, List<Block>> =
+                if (failUuidLookup) Either.Left(DomainError.DatabaseError.ReadFailed("boom")) else blocks.getBlocksByUuids(uuids)
+        }
+
         override val writer = ActiveTargetWriter(
-            pageRepository = pages, blockRepository = blocks, writeActor = actor, graphWriter = graphWriter, fs = fs, graphPath = root,
+            pageRepository = pages, blockRepository = lookupBlocks, writeActor = actor, graphWriter = graphWriter, fs = fs, graphPath = root,
             isPageDirty = { id -> isEditing(id.value) },
         )
 
@@ -203,6 +259,21 @@ class ActiveTargetWriterContractTest : TargetWriterContractSuite() {
         override suspend fun seed(key: PageKey, text: String) {
             fs.writeFile(path(key), text)
             loader.applyExternalFileChange(FilePath(path(key)), text, ParseMode.FULL, DatabaseWriteActor.Priority.HIGH)
+        }
+
+        override suspend fun seedUnloaded(key: PageKey, text: String) = seedStub(path(key), key, text)
+
+        suspend fun seedStub(filePath: String, key: PageKey, text: String) {
+            fs.writeFile(filePath, text)
+            val now = kotlin.time.Clock.System.now()
+            val date = if (key.isJournal) dev.stapler.stelekit.outliner.JournalUtils.parseJournalDate(key.name) else null
+            actor.savePage(
+                Page(
+                    uuid = dev.stapler.stelekit.model.PageUuid(dev.stapler.stelekit.util.UuidGenerator.generateV7()),
+                    name = key.name, filePath = filePath, createdAt = now, updatedAt = now,
+                    isJournal = key.isJournal, journalDate = date, isContentLoaded = false,
+                ),
+            )
         }
 
         /** Edit through the actor and `GraphWriter`, file written at once. */
@@ -254,6 +325,9 @@ class ActiveTargetWriterContractTest : TargetWriterContractSuite() {
                 scope.cancel()
             }
         }
+
+        suspend fun rawSave(key: PageKey, blocksToSave: List<Block>): Either<DomainError, Unit> =
+            graphWriter.savePage(checkNotNull(pageRow(key)), blocksToSave, root)
 
         suspend fun flushEditor(key: PageKey) {
             val id = checkNotNull(pageRow(key)).uuid.value

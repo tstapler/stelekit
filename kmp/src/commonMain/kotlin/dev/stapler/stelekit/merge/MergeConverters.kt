@@ -1,8 +1,10 @@
 package dev.stapler.stelekit.merge
 
+import dev.stapler.stelekit.db.BlockMarkup
 import dev.stapler.stelekit.db.MarkdownPageParser
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockPropertyKeys
+import dev.stapler.stelekit.model.BlockType
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
@@ -36,15 +38,7 @@ object MergeConverters {
     fun toMergePage(page: Page, blocks: List<Block>): MergePage {
         val byParent = blocks.groupBy { it.parentUuid }
         fun build(parent: BlockUuid?): List<MergeBlock> =
-            byParent[parent].orEmpty().sortedBy { it.position }.map { b ->
-                val explicit = b.properties[BlockPropertyKeys.ID]?.let(::lf)?.trim()?.takeIf { it.isNotEmpty() }
-                MergeBlock(
-                    uuid = explicit,
-                    content = lf(b.content),
-                    properties = lfProps(b.properties - BlockPropertyKeys.ID),
-                    children = build(b.uuid),
-                )
-            }
+            byParent[parent].orEmpty().sortedBy { it.position }.map { b -> mergeBlockOf(b, build(b.uuid)) }
         return MergePage(
             name = page.name,
             isJournal = page.isJournal,
@@ -52,6 +46,35 @@ object MergeConverters {
             properties = lfProps(page.properties),
             blocks = build(null),
         )
+    }
+
+    /** A block as its file text reads: heading marker and `SCHEDULED`/`DEADLINE` lines restored ([BlockMarkup]). */
+    fun mergeBlockOf(b: Block, children: List<MergeBlock>): MergeBlock {
+        val explicit = b.properties[BlockPropertyKeys.ID]?.let(::lf)?.trim()?.takeIf { it.isNotEmpty() }
+        val restored = BlockMarkup.restore(lf(b.content), b.blockType, lfProps(b.properties - BlockPropertyKeys.ID))
+        return MergeBlock(explicit, restored.content, restored.properties, children)
+    }
+
+    /** [content], [blockType] and [properties] exactly as the loader stores the block when it reads its rendered text. */
+    class StoredShape(val content: String, val blockType: BlockType, val properties: Map<String, String>)
+
+    /**
+     * Null when [m] does not survive render -> parse unchanged (the DB copy would differ from the file),
+     * so callers refuse rather than write something other than what was merged.
+     */
+    fun storedShape(m: MergeBlock, pagePath: String): StoredShape? {
+        val text = MergeRenderer.renderBlocks(listOf(m.copy(uuid = null, children = emptyList()))).joinToString("\n")
+        val parsed = try {
+            parseMarkdown(text, pagePath, "shape", false)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return null
+        }
+        val block = parsed.blocks.singleOrNull() ?: return null
+        val back = mergeBlockOf(block, emptyList())
+        if (back.content != m.content || back.properties != m.properties - BlockPropertyKeys.ID) return null
+        return StoredShape(block.content, block.blockType, block.properties)
     }
 
     fun toPage(page: MergePage, pagePath: String): Page = Page(

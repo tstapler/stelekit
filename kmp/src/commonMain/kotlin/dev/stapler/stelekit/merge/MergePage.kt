@@ -6,11 +6,11 @@ import dev.stapler.stelekit.model.BlockPropertyKeys
  * Pure block-level merge (ADR-002). Additive only: no target block is removed, edited or reordered.
  * Incoming uuids are SOURCE uuids; inserted blocks get uuid' and `src-id`.
  */
-fun mergePage(existing: MergePage?, incoming: MergePage, policy: MergePolicy): MergeOutcome {
+fun mergePage(existing: MergePage?, incoming: MergePage, policy: MergePolicy, maxRefPasses: Int = MAX_REF_PASSES): MergeOutcome {
     val remap = UuidRemap.compute(policy.sourceGraphId, incoming.blocks)
     if (existing == null) {
         val merger = SiblingMerger(policy, remap, remap, incoming.name, HashSet())
-        return MergeOutcome.New(incoming.copy(blocks = incoming.blocks.map { merger.remapSubtree(it, it.uuid?.let(remap::get)) }))
+        return MergeOutcome.New(incoming.copy(blocks = incoming.blocks.map { merger.remapSubtree(it, merger.claim(it.uuid)) }))
     }
     // Ref targets depend on matching and matching compares ref-rewritten content, so iterate to a fixpoint.
     val onPage = pageUuids(existing.blocks)
@@ -22,13 +22,19 @@ fun mergePage(existing: MergePage?, incoming: MergePage, policy: MergePolicy): M
     var merger = SiblingMerger(policy, remap, refs, incoming.name, HashSet(onPage))
     var blocks = merger.mergeSiblings(existing.blocks, incoming.blocks)
     var passes = 0
-    while (passes++ < MAX_REF_PASSES) {
+    var settled = false
+    while (passes++ < maxRefPasses) {
         val next = remap + merger.resolved + fixed
-        if (next == refs) break
+        if (next == refs) {
+            settled = true
+            break
+        }
         refs = next
         merger = SiblingMerger(policy, remap, refs, incoming.name, HashSet(onPage))
         blocks = merger.mergeSiblings(existing.blocks, incoming.blocks)
     }
+    // Unsettled refs would write a page whose ((refs)) point at the wrong blocks; fail the page instead.
+    if (!settled) return MergeOutcome.RefsDidNotConverge(maxRefPasses)
     val (props, clashes) = unionProperties(existing.properties, incoming.properties)
     if (merger.added == 0 && merger.conflicts.isEmpty() && props == existing.properties) return MergeOutcome.Unchanged
     return MergeOutcome.Merged(existing.copy(properties = props, blocks = blocks), merger.added, merger.conflicts.toList(), clashes)
@@ -78,6 +84,11 @@ private fun alignedRefs(
 }
 
 private val UNION_KEYS = setOf(BlockPropertyKeys.ALIAS, BlockPropertyKeys.TAGS)
+/** Keys that name a block or record how it got here; every other property is data a copy must not drop. */
+private val IDENTITY_KEYS = setOf(
+    BlockPropertyKeys.ID, BlockPropertyKeys.COLLAPSED,
+    MergePropertyKeys.SRC_ID, MergePropertyKeys.CONFLICT, MergePropertyKeys.CONFLICT_SOURCE,
+)
 private val NEVER_MERGED = setOf(BlockPropertyKeys.ID, BlockPropertyKeys.COLLAPSED)
 
 private fun unionProperties(target: Map<String, String>, incoming: Map<String, String>): Pair<Map<String, String>, List<String>> {
@@ -119,6 +130,19 @@ private class SiblingMerger(
 
     private fun key(content: String) = policy.blockKey(content)
 
+    /**
+     * Same block data: equal content key and every identity-free source property already present on [target].
+     * Extra target properties are fine (nothing from the source is lost); a missing or different one is not.
+     */
+    private fun sameData(target: MergeBlock, inc: MergeBlock): Boolean =
+        key(target.content) == key(UuidRemap.rewriteRefs(inc.content, refs)) && propsCovered(target, inc)
+
+    private fun propsCovered(target: MergeBlock, inc: MergeBlock): Boolean =
+        inc.properties.all { (k, v) -> k in IDENTITY_KEYS || target.properties[k] == v }
+
+    private fun propsSeed(inc: MergeBlock): String =
+        inc.properties.filterKeys { it !in IDENTITY_KEYS }.entries.sortedBy { it.key }.joinToString("") { "|${it.key}=${it.value}" }
+
     private fun srcRef(uuid: String) = SourceBlockRef.of(policy.sourceGraphId, uuid).value
 
     /**
@@ -139,8 +163,7 @@ private class SiblingMerger(
             val s = inc.uuid ?: return@forEachIndexed
             val cands = ((byUuid[s] ?: emptyList()) + (bySrc[srcRef(s)] ?: emptyList())).distinct().filter { it !in taken }
             // Equal content wins so a prior conflict sibling absorbs the repeat copy (R4).
-            val incKey = key(UuidRemap.rewriteRefs(inc.content, refs))
-            val pick = cands.firstOrNull { key(it.block.content) == incKey }
+            val pick = cands.firstOrNull { sameData(it.block, inc) }
                 ?: cands.firstOrNull { it.block.properties[MergePropertyKeys.CONFLICT] != "true" }
                 ?: cands.firstOrNull()
             if (pick != null) {
@@ -155,7 +178,8 @@ private class SiblingMerger(
         val byKey = out.groupBy { key(it.block.content) }
         incoming.forEachIndexed { i, inc ->
             if (matched[i] != null) return@forEachIndexed
-            val pick = byKey[key(UuidRemap.rewriteRefs(inc.content, refs))]?.firstOrNull { it !in taken } ?: return@forEachIndexed
+            val pick = byKey[key(UuidRemap.rewriteRefs(inc.content, refs))]?.firstOrNull { it !in taken && propsCovered(it.block, inc) }
+                ?: return@forEachIndexed
             matched[i] = pick
             stand[i] = pick
             taken += pick
@@ -174,7 +198,7 @@ private class SiblingMerger(
                 return@forEachIndexed
             }
             val idx = out.indexOf(m)
-            if (key(m.block.content) == key(UuidRemap.rewriteRefs(inc.content, refs))) {
+            if (sameData(m.block, inc)) {
                 m.block = m.block.copy(
                     children = mergeSiblings(m.block.children, inc.children, record && m.block.properties[MergePropertyKeys.CONFLICT] != "true"),
                 )
@@ -191,8 +215,8 @@ private class SiblingMerger(
     private fun addConflict(out: MutableList<Entry>, matchedEntry: Entry, inc: MergeBlock): Int? {
         val s = inc.uuid ?: return null
         val ref = srcRef(s)
-        val incKey = key(UuidRemap.rewriteRefs(inc.content, refs))
-        if (out.any { it.block.properties[MergePropertyKeys.SRC_ID] == ref && key(it.block.content) == incKey }) return null
+        if (out.any { it.block.properties[MergePropertyKeys.SRC_ID] == ref && sameData(it.block, inc) }) return null
+        val incKey = key(UuidRemap.rewriteRefs(inc.content, refs)) + propsSeed(inc)
         val uuid = UuidRemap.conflictUuid(policy.sourceGraphId, s, incKey)
         usedUuids += uuid
         val sub = remapSubtree(inc, uuid).let {
@@ -227,12 +251,15 @@ private class SiblingMerger(
      * uuid' for a source uuid, unless the page already has it. That happens when a conflict sibling re-copies a
      * subtree whose first copy is still there, and a duplicate uuid would be INSERT OR REPLACEd over it.
      */
-    private fun claim(sourceUuid: String?): String? {
+    fun claim(sourceUuid: String?): String? {
         val plain = sourceUuid?.let(remap::get) ?: return null
         if (usedUuids.add(plain)) return plain
-        val alt = UuidRemap.conflictUuid(policy.sourceGraphId, sourceUuid, "collision:$plain")
-        usedUuids += alt
-        return alt
+        var n = 0
+        while (true) {
+            val alt = UuidRemap.conflictUuid(policy.sourceGraphId, sourceUuid, "collision:$plain" + if (n == 0) "" else "#$n")
+            if (usedUuids.add(alt)) return alt
+            n++
+        }
     }
 
     /** [newUuid] is the uuid for [b] (uuid', or the conflict uuid); descendants get a [claim]ed uuid'. */

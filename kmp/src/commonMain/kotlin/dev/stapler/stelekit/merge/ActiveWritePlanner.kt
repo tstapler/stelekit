@@ -15,14 +15,16 @@ import dev.stapler.stelekit.util.UuidGenerator
 internal object ActiveWritePlanner {
     class Node(val block: Block, val merge: MergeBlock, val children: List<Node>)
 
-    class Ctx(val pageUuid: PageUuid, val pagePath: String, val now: kotlin.time.Instant)
+    class Ctx(val pageUuid: PageUuid, val pagePath: String, val now: kotlin.time.Instant) {
+        /** Set when an inserted block cannot be stored as merged (see [MergeConverters.storedShape]); the plan then fails. */
+        var unrenderable: String? = null
+    }
 
     fun buildTree(blocks: List<Block>): List<Node> {
         val byParent = blocks.groupBy { it.parentUuid }
         fun build(parent: BlockUuid?): List<Node> = byParent[parent].orEmpty().sortedBy { it.position }.map { b ->
             val kids = build(b.uuid)
-            val explicit = b.properties[BlockPropertyKeys.ID]?.takeIf { it.isNotBlank() }
-            Node(b, MergeBlock(explicit, b.content, b.properties - BlockPropertyKeys.ID, kids.map { it.merge }), kids)
+            Node(b, MergeConverters.mergeBlockOf(b, kids.map { it.merge }), kids)
         }
         return build(null)
     }
@@ -52,35 +54,41 @@ internal object ActiveWritePlanner {
                 return@forEachIndexed
             }
             val next = (i + 1 until merged.size).firstNotNullOfOrNull { matches[it]?.block?.position }
-            prev = insert(m, parent, i, prev, FractionalIndexing.generateKeyBetween(prev?.position, next), ctx, out)
+            prev = insert(m, parent, i, prev, FractionalIndexing.generateKeyBetween(prev?.position, next), ctx, out) ?: return false
         }
         return true
     }
 
-    private fun insert(m: MergeBlock, parent: Block?, index: Int, left: Block?, position: String, ctx: Ctx, out: MutableList<Block>): Block {
+    private fun insert(m: MergeBlock, parent: Block?, index: Int, left: Block?, position: String, ctx: Ctx, out: MutableList<Block>): Block? {
+        val shape = MergeConverters.storedShape(m, ctx.pagePath)
+        if (shape == null) {
+            ctx.unrenderable = m.content.take(40).replace("\n", "\\n")
+            return null
+        }
         val level = (parent?.level ?: -1) + 1
         val uuid = m.uuid ?: MarkdownPageParser.generateUuid(
             ParsedBlock(m.content, m.properties, level), ctx.pagePath, index, parent?.uuid?.value,
         )
         val props = LinkedHashMap<String, String>()
         if (m.uuid != null) props[BlockPropertyKeys.ID] = uuid
-        props.putAll(m.properties.filterKeys { it != BlockPropertyKeys.ID })
+        props.putAll(shape.properties.filterKeys { it != BlockPropertyKeys.ID })
         val block = Block(
             uuid = BlockUuid(uuid),
             pageUuid = ctx.pageUuid,
             parentUuid = parent?.uuid,
             leftUuid = left?.uuid,
-            content = m.content,
+            content = shape.content,
             level = level,
             position = position,
             createdAt = ctx.now,
             updatedAt = ctx.now,
             properties = props,
+            blockType = shape.blockType,
         )
         out += block
         var prev: Block? = null
         m.children.forEachIndexed { i, c ->
-            prev = insert(c, block, i, prev, FractionalIndexing.generateKeyBetween(prev?.position, null), ctx, out)
+            prev = insert(c, block, i, prev, FractionalIndexing.generateKeyBetween(prev?.position, null), ctx, out) ?: return null
         }
         return block
     }

@@ -6,6 +6,7 @@ import arrow.core.right
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.GraphWriter
+import dev.stapler.stelekit.db.LogseqPageSerializer
 import dev.stapler.stelekit.db.PageFileError
 import dev.stapler.stelekit.db.PageFileResolver
 import dev.stapler.stelekit.error.DomainError
@@ -34,6 +35,9 @@ enum class WriteRetryReason(val message: String) {
 
     /** The page has edits that are not saved yet; copying now would clobber them. */
     PageBeingEdited("This page has unsaved edits; try again once they are saved."),
+
+    /** The page row is an index-only stub and its blocks cannot be read from the file here (encrypted graph). */
+    PageNotLoaded("This page is not loaded yet; open it once and try again."),
 }
 
 /**
@@ -68,9 +72,9 @@ class ActiveTargetWriter(
 
     override suspend fun readExisting(page: PageKey): Either<DomainError, MergePage?> = guarded {
         val row = findPage(page).getOrReturn { return@guarded it.left() } ?: return@guarded null.right()
-        val tree = loadTree(row).getOrReturn { return@guarded it.left() }
-        if (tree.isEmpty() && !fileExists(row.filePath)) return@guarded null.right()
-        MergePage(row.name, row.isJournal, row.journalDate, row.properties, tree.map { it.merge }).right()
+        val existing = loadExisting(row).getOrReturn { return@guarded it.left() }
+        if (existing.tree.isEmpty() && !fileExists(row.filePath)) return@guarded null.right()
+        MergePage(row.name, row.isJournal, row.journalDate, existing.properties, existing.tree.map { it.merge }).right()
     }
 
     override suspend fun write(page: PageKey, merged: MergePage): Either<DomainError, WriteOutcome> = guarded {
@@ -78,33 +82,46 @@ class ActiveTargetWriter(
         val path = pathFor(page, row).getOrReturn { return@guarded it.left() }
         if (row != null && isPageDirty(row.uuid)) return@guarded retryable(WriteRetryReason.PageBeingEdited)
 
-        val tree = row?.let { loadTree(it).getOrReturn { e -> return@guarded e.left() } }.orEmpty()
+        val existing = row?.let { loadExisting(it).getOrReturn { e -> return@guarded e.left() } }
+        val tree = existing?.tree.orEmpty()
+        val unloaded = existing?.fromFile.orEmpty()
         val isNew = tree.isEmpty() && !fileExists(path)
         val now = Clock.System.now()
         val pageRow = row ?: ActiveWritePlanner.newPageRow(page, merged, path, now)
         val inserts = mutableListOf<Block>()
-        if (!ActiveWritePlanner.plan(tree, merged.blocks, null, ActiveWritePlanner.Ctx(pageRow.uuid, row?.filePath ?: path, now), inserts)) {
-            return@guarded refuse(NotRoundTrippable.ExistingContentChanged("merged page lost or altered an existing block")).left()
+        val ctx = ActiveWritePlanner.Ctx(pageRow.uuid, row?.filePath ?: path, now)
+        if (!ActiveWritePlanner.plan(tree, merged.blocks, null, ctx, inserts)) {
+            val lossy = ctx.unrenderable
+            return@guarded refuse(
+                if (lossy != null) NotRoundTrippable.InsertedContentChanged("block '$lossy' does not survive being written and re-read")
+                else NotRoundTrippable.ExistingContentChanged("merged page lost or altered an existing block"),
+            ).left()
         }
-        val propsChanged = row != null && merged.properties != row.properties
+        val propsChanged = row != null && merged.properties != existing?.properties
         if (isNew && MergeRenderer.renderNewPage(merged).isEmpty()) return@guarded WriteOutcome.Unchanged.right()
         if (!isNew && inserts.isEmpty() && !propsChanged) return@guarded WriteOutcome.Unchanged.right()
 
-        findCollision(inserts, pageRow.uuid)?.let {
+        findCollision(inserts, pageRow.uuid).getOrReturn { return@guarded it.left() }?.let {
             return@guarded DomainError.DatabaseError.WriteFailed("uuid collision: block $it already exists on another page").left()
         }
 
-        val saved = if (row == null || propsChanged) {
-            writeActor.savePage(pageRow.copy(properties = merged.properties, updatedAt = now))
+        val allBlocks = tree.flatMap(ActiveWritePlanner::flatten) + inserts
+        // Blocks only: the serializer writes page properties as bare lines that the loader reads back as a block, not as properties.
+        val rendered = LogseqPageSerializer.serialize(pageRow.copy(properties = emptyMap()), allBlocks)
+        RoundTripGuard.verifyRendered(rendered, merged.copy(properties = emptyMap()), path, merged.isJournal)?.let { return@guarded refuse(it).left() }
+
+        // An unloaded stub gets the blocks parsed from its file persisted with this write (and is marked loaded).
+        val saved = if (row == null || propsChanged || unloaded.isNotEmpty()) {
+            writeActor.savePage(pageRow.copy(properties = merged.properties, updatedAt = now, isContentLoaded = true))
         } else Unit.right()
         saved.onLeft { return@guarded it.stopped().left() }
-        writeActor.saveBlocksDiff(inserts, emptyList()).onLeft { e ->
-            rollbackPage(row, pageRow, inserts)
+        val added = unloaded + inserts
+        writeActor.saveBlocksDiff(added, emptyList()).onLeft { e ->
+            rollbackPage(row, pageRow, added)
             return@guarded e.stopped().left()
         }
-        val allBlocks = tree.flatMap(ActiveWritePlanner::flatten) + inserts
-        graphWriter.savePage(pageRow.copy(properties = merged.properties), allBlocks, graphPath).onLeft { e ->
-            rollbackPage(row, pageRow, inserts)
+        graphWriter.savePage(pageRow.copy(properties = merged.properties, isContentLoaded = true), allBlocks, graphPath).onLeft { e ->
+            rollbackPage(row, pageRow, added)
             return@guarded e.left()
         }
         val hash = hashOf(path).getOrReturn { return@guarded it.left() } ?: ""
@@ -141,7 +158,11 @@ class ActiveTargetWriter(
             ?: return@guarded RemoveReport(emptySet(), emptySet(), uuids).right()
         val path = pathFor(page, row).getOrReturn { return@guarded it.left() }
         if (isPageDirty(row.uuid)) return@guarded retryable(WriteRetryReason.PageBeingEdited)
-        val tree = loadTree(row).getOrReturn { return@guarded it.left() }
+        val tree = loadExisting(row).getOrReturn { return@guarded it.left() }.let {
+            // Removal rewrites the file from the DB tree; an unloaded stub has none, so it must load first.
+            if (it.fromFile.isNotEmpty()) return@guarded retryable(WriteRetryReason.PageNotLoaded)
+            it.tree
+        }
 
         val acc = ActiveWritePlanner.Removal()
         ActiveWritePlanner.prune(tree, uuids, expectedContentHashes, acc)
@@ -169,10 +190,41 @@ class ActiveTargetWriter(
     private suspend fun loadTree(row: Page): Either<DomainError, List<ActiveWritePlanner.Node>> =
         blockRepository.getBlocksForPage(row.uuid).first().map(ActiveWritePlanner::buildTree)
 
-    private suspend fun findCollision(inserts: List<Block>, pageUuid: PageUuid): String? {
-        if (inserts.isEmpty()) return null
-        val found = inserts.map { it.uuid }.chunked(COLLISION_CHUNK).flatMap { blockRepository.getBlocksByUuids(it).getOrNull().orEmpty() }
-        return found.firstOrNull { it.pageUuid != pageUuid }?.uuid?.value
+    /** [fromFile] holds the blocks parsed from disk for an unloaded stub (not yet in the DB); empty otherwise. */
+    private class Existing(val tree: List<ActiveWritePlanner.Node>, val properties: Map<String, String>, val fromFile: List<Block>)
+
+    /** The page's real content: the DB tree, or for an index-only stub (no blocks in the DB) the file's blocks. */
+    private suspend fun loadExisting(row: Page): Either<DomainError, Existing> {
+        if (row.isContentLoaded) {
+            return loadTree(row).map { Existing(it, row.properties, emptyList()) }
+        }
+        val path = row.filePath?.takeIf { it.isNotBlank() }
+        if (path == null || !fileExists(path)) return Existing(emptyList(), row.properties, emptyList()).right()
+        if (encrypted) return retryable(WriteRetryReason.PageNotLoaded)
+        val text = withContext(PlatformDispatcher.IO) { fs.readFile(path) }
+            ?: return DomainError.FileSystemError.ReadFailed(path, "unreadable").left()
+        if (text.isBlank()) return Existing(emptyList(), row.properties, emptyList()).right()
+        RoundTripGuard.probe(text, path, row.isJournal).onLeft { return refuse(it).left() }
+        val parsed = try {
+            MergeConverters.parseMarkdown(text, path, row.name, row.isJournal, row.journalDate)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return refuse(NotRoundTrippable.ParseFailed("${e::class.simpleName}: ${e.message?.take(120)}")).left()
+        }
+        val now = Clock.System.now()
+        val blocks = parsed.blocks.map { it.copy(pageUuid = row.uuid, createdAt = now, updatedAt = now) }
+        return Existing(ActiveWritePlanner.buildTree(blocks), parsed.page.properties, blocks).right()
+    }
+
+    /** A failed lookup is an error, never "no collision": an unchecked insert could move a block off another page. */
+    private suspend fun findCollision(inserts: List<Block>, pageUuid: PageUuid): Either<DomainError, String?> {
+        if (inserts.isEmpty()) return null.right()
+        val found = mutableListOf<Block>()
+        for (chunk in inserts.map { it.uuid }.chunked(COLLISION_CHUNK)) {
+            found += blockRepository.getBlocksByUuids(chunk).getOrReturn { return it.left() }
+        }
+        return found.firstOrNull { it.pageUuid != pageUuid }?.uuid?.value.right()
     }
 
     /** One actor round-trip; [blocks] are pre-order so deleting in reverse removes children before parents. */

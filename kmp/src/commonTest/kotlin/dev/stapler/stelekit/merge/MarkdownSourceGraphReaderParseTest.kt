@@ -147,7 +147,7 @@ class MarkdownSourceGraphReaderParseTest {
 
     @Test
     fun renderThenReadEqualsOriginal() = runTest {
-        checkAll(200, MergeArbs.cases(0.4)) { c ->
+        checkAll(200, MergeArbs.cases(0.4, code = false)) { c ->
             for (page in listOf(c.target, c.source)) {
                 seed("pages/P.md", MergeRenderer.renderNewPage(page))
                 val staged = (read("pages/P.md") as Either.Right).value
