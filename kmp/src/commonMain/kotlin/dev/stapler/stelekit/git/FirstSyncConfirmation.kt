@@ -37,3 +37,6 @@ class FirstSyncConfirmation(private val settings: Settings) {
     private fun pendingKey(graphId: String) = "git_first_sync_review_pending_$graphId"
     private fun previousBranchKey(graphId: String) = "git_first_sync_previous_branch_$graphId"
 }
+
+/** Who started a sync: only [Manual] (and the review dialog's Sync now) counts as consent. */
+enum class SyncTrigger { Manual, Automatic }

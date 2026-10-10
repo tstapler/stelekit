@@ -94,6 +94,10 @@ sealed interface DomainError {
         data object Offline : GitError {
             override val message: String = "No network connection available"
         }
+        /** An automatic sync was skipped: a branch repair awaits the user's first-sync review. */
+        data object FirstSyncReviewPending : GitError {
+            override val message: String = "Waiting for you to review the first sync"
+        }
         data object EditingInProgress : GitError {
             override val message: String = "Cannot sync while editing is in progress"
         }
@@ -308,6 +312,7 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.GitError.NotSupported -> message
     is DomainError.GitError.Offline -> message
     is DomainError.GitError.EditingInProgress -> message
+    is DomainError.GitError.FirstSyncReviewPending -> message
     is DomainError.GitError.CredentialExpired -> "GitHub authentication expired — tap to re-connect"
     is DomainError.GitError.RateLimited -> "Rate limited — retrying automatically"
     is DomainError.GitError.FileTooLarge -> "File too large to sync: ${path}"
@@ -359,6 +364,7 @@ fun DomainError.GitError.toSyncErrorMessage(): String = when (this) {
     is DomainError.GitError.NotAGitRepo -> "Not a git repository"
     is DomainError.GitError.NotSupported -> "Git not supported on this platform"
     is DomainError.GitError.EditingInProgress -> "Editing in progress — sync will resume when idle"
+    is DomainError.GitError.FirstSyncReviewPending -> "Review the first sync to resume automatic sync"
     is DomainError.GitError.CredentialExpired -> "GitHub authentication expired — tap to re-connect"
     is DomainError.GitError.RateLimited -> "Rate limited by GitHub/GitLab — retrying automatically"
     is DomainError.GitError.FileTooLarge -> "File too large to sync: $path"

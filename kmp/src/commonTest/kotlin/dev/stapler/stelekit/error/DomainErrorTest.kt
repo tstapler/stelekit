@@ -42,6 +42,7 @@ class DomainErrorTest {
             DomainError.GitError.NotSupported("iOS"),
             DomainError.GitError.Offline,
             DomainError.GitError.EditingInProgress,
+            DomainError.GitError.FirstSyncReviewPending,
             DomainError.GitError.CredentialExpired("expired"),
             DomainError.GitError.RateLimited(42),
             DomainError.GitError.FileTooLarge("assets/large.md.stek", 90_000_000, 75_000_000),
@@ -116,6 +117,7 @@ class DomainErrorTest {
                 is DomainError.GitError.NotSupported -> err.message
                 DomainError.GitError.Offline -> err.message
                 DomainError.GitError.EditingInProgress -> err.message
+                DomainError.GitError.FirstSyncReviewPending -> err.message
                 is DomainError.GitError.CredentialExpired -> err.message
                 is DomainError.GitError.RateLimited -> err.message
                 is DomainError.GitError.FileTooLarge -> err.message
