@@ -76,7 +76,7 @@ object QueryParser {
                     }
                     else -> {
                         val start = i
-                        while (i < s.length && !s[i].isWhitespace() && s[i] != '(' && s[i] != ')' && s[i] != '"') i++
+                        while (i < s.length && !isAtomBoundary(s[i])) i++
                         out += Sexp.Atom(s.substring(start, i))
                     }
                 }
@@ -87,6 +87,8 @@ object QueryParser {
         if (i < s.length) invalid("unbalanced parentheses")
         return items
     }
+
+    private fun isAtomBoundary(c: Char): Boolean = c.isWhitespace() || c == '(' || c == ')' || c == '"'
 
     // ── grammar ──────────────────────────────────────────────────────────
 

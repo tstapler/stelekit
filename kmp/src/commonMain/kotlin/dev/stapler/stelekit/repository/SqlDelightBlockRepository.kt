@@ -1160,6 +1160,8 @@ class SqlDelightBlockRepository(
         }
     }.flowOn(PlatformDispatcher.DB)
 
+    // Merge of per-marker SQL pages, each already bounded by LIMIT offset+limit.
+    @Suppress("InMemoryPagination")
     override fun findBlocksWithTaskMarker(
         markers: Set<String>,
         limit: Int,

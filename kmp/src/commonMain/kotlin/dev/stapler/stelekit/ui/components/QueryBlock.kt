@@ -58,6 +58,7 @@ internal data class QueryBlockContext(
     val enabled: Boolean,
 )
 
+@Suppress("CompositionLocalAllowlist") // graph-scoped service context, set once above the page tree
 internal val LocalQueryBlockContext = staticCompositionLocalOf {
     QueryBlockContext(executor = null, pageRepository = null, enabled = false)
 }

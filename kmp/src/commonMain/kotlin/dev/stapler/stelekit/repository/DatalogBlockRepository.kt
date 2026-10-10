@@ -26,6 +26,7 @@ import kotlinx.coroutines.CancellationException
  * Updated to use UUID-native storage.
  */
 @OptIn(DirectRepositoryWrite::class)
+@Suppress("LargeClass")
 class DatalogBlockRepository : BlockRepository {
     private val logger = Logger("BlockRepo")
     private val writeMutex = Mutex()

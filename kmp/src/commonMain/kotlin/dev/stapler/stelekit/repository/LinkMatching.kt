@@ -62,6 +62,7 @@ internal suspend fun overfetchLinkedReferences(
         if (batch.size < batchSize / 4) batchSize = minOf(batchSize * 2, MAX_LINKED_REF_BATCH)
     }
     // accumulated is bounded to roughly offset+limit by the loop above.
+    @Suppress("InMemoryPagination")
     return accumulated.drop(offset).take(limit)
 }
 
