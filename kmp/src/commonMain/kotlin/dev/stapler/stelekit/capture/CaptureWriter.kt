@@ -99,7 +99,8 @@ object CaptureWriter {
         val actor = repoSet.writeActor
         val result: Either<DomainError, Unit> = try {
             if (actor != null) {
-                actor.saveBlocks(blocks).flatMap { actor.savePage(page) }
+                val blocksSaved = actor.saveBlocks(blocks)
+                if (blocksSaved.isRight()) actor.savePage(page) else blocksSaved
             } else {
                 @OptIn(DirectRepositoryWrite::class)
                 repoSet.blockRepository.saveBlocks(blocks).flatMap { repoSet.pageRepository.savePage(page) }
