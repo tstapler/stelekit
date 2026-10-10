@@ -355,7 +355,7 @@ class CopyFlowControllerTest {
 
         val newId = MergeId(done.result!!.mergeId)
         withTimeout(10.seconds) {
-            while (env.manifests.load(oldId) != null) kotlinx.coroutines.delay(20)
+            while (runCatching { env.manifests.load(oldId) }.let { r -> r.isFailure || r.getOrNull() != null }) kotlinx.coroutines.delay(20) // FakeFileSystem is not thread-safe: tolerate a racing read
         }
         assertTrue(env.manifests.findInterrupted().isEmpty(), "no interrupted copy left to re-offer")
         val names = env.manifests.load(newId)!!.pages.map { it.pageName }.toSet()
@@ -387,7 +387,7 @@ class CopyFlowControllerTest {
         val done = next.await("finished") { it.stage == CopyStage.Finished }
 
         withTimeout(10.seconds) {
-            while (env.manifests.load(oldId) != null) kotlinx.coroutines.delay(20)
+            while (runCatching { env.manifests.load(oldId) }.let { r -> r.isFailure || r.getOrNull() != null }) kotlinx.coroutines.delay(20) // FakeFileSystem is not thread-safe: tolerate a racing read
         }
         val names = env.manifests.load(MergeId(done.result!!.mergeId))!!.pages.map { it.pageName }.toSet()
         assertEquals(setOf("page1", "firstRunPage"), names)

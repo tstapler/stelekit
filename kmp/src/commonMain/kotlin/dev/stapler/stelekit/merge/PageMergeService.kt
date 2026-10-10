@@ -384,7 +384,7 @@ class PageMergeService(
      * The page is already on disk. A failed manifest append is parked in [RunState.unrecorded] so a retry
      * re-appends the entry instead of re-merging (which would see Unchanged and never make the page undoable).
      */
-    private fun recordApplied(state: RunState, manifest: MergeManifestWriter, index: Int, name: String, a: PageApplied) {
+    private fun recordApplied(state: RunState, manifest: MergeManifestLog, index: Int, name: String, a: PageApplied) {
         a.entry?.let { entry ->
             manifest.appendPage(entry).onLeft {
                 state.unrecorded[index] = a
