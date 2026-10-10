@@ -6,8 +6,12 @@ package dev.stapler.stelekit.ui
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import dev.stapler.stelekit.coroutines.PlatformDispatcher
+import kotlinx.coroutines.withContext
 import dev.stapler.stelekit.error.toUiMessage
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.ImageAnnotation
@@ -53,11 +57,17 @@ internal fun GraphContentScreenAndCapture(deps: GraphContentDeps, viewModel: Ste
     }
 
     // Re-derived from deps.repos, so a graph switch rebinds every QueryBlock to the new graph.
-    val queryContext = remember(deps.repos) {
+    // The flag read is a synchronous SQLite query, so it runs on the DB dispatcher, not during composition.
+    val queryBlocksEnabled by produceState(initialValue = true, deps.repos) {
+        value = withContext(PlatformDispatcher.DB) {
+            deps.repos.debugFlagRepository?.getFlag("live_query_blocks", default = true) ?: true
+        }
+    }
+    val queryContext = remember(deps.repos, queryBlocksEnabled) {
         dev.stapler.stelekit.ui.components.QueryBlockContext(
             executor = deps.repos.queryExecutor,
             pageRepository = deps.repos.pageRepository,
-            enabled = deps.repos.debugFlagRepository?.getFlag("live_query_blocks", default = true) ?: true,
+            enabled = queryBlocksEnabled,
         )
     }
     androidx.compose.runtime.CompositionLocalProvider(

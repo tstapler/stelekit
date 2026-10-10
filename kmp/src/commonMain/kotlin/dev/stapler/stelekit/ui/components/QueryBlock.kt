@@ -28,7 +28,6 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
-import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -95,13 +94,17 @@ internal fun QueryBlock(
     var collapsed by remember { mutableStateOf(false) }
 
     // Keyed on the executor so a graph switch rebuilds the Flow against the new graph's repositories.
-    val state: Either<DomainError, List<Block>>? by remember(rawQuery, queryExecutor) {
+    // produceState (not collectAsState) so the previous graph's/query's rows are dropped on key change.
+    val state: Either<DomainError, List<Block>>? by produceState<Either<DomainError, List<Block>>?>(
+        initialValue = null, rawQuery, queryExecutor,
+    ) {
+        value = null
         val flow: Flow<Either<DomainError, List<Block>>?> = parsed.fold(
             { flowOf(null) },
             { q -> queryExecutor?.executeQuery(q) ?: flowOf(null) },
         )
-        flow
-    }.collectAsState(initial = null)
+        flow.collect { value = it }
+    }
 
     val colors = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(6.dp)
@@ -192,9 +195,11 @@ private fun QueryResultRows(
     onLinkClick: (String) -> Unit,
 ) {
     val visible = remember(results) { results.take(MAX_QUERY_RESULTS_DISPLAY) }
-    val pageNames by produceState(emptyMap<String, String>(), visible, pageRepository) {
+    // Keyed on the distinct page set so a live re-emission with the same pages doesn't redo the lookups.
+    val pageUuids = remember(visible) { visible.map { it.pageUuid.value }.distinct() }
+    val pageNames by produceState(emptyMap<String, String>(), pageUuids, pageRepository) {
         val repo = pageRepository ?: return@produceState
-        value = visible.map { it.pageUuid.value }.distinct().mapNotNull { uuid ->
+        value = pageUuids.mapNotNull { uuid ->
             repo.getPageByUuid(PageUuid(uuid)).first().getOrNull()?.name?.let { uuid to it }
         }.toMap()
     }

@@ -1175,15 +1175,16 @@ class SqlDelightBlockRepository(
                 .mapToList(PlatformDispatcher.DB)
         }
         return combine(perMarker) { lists ->
-            lists.asSequence().flatten()
+            val merged: Either<DomainError, List<Block>> = lists.asSequence().flatten()
                 .map { it.toBlockModel() }
                 .distinctBy { it.uuid }
                 .sortedByDescending { it.createdAt }
                 .drop(offset)
                 .take(limit)
                 .toList()
-                .right() as Either<DomainError, List<Block>>
-        }.catchDbError()
+                .right()
+            merged
+        }.conflate().catchDbError()
     }
 
     override fun findReferencingBlocksReactive(

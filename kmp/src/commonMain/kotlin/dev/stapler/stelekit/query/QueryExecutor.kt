@@ -14,6 +14,7 @@ import dev.stapler.stelekit.repository.PageRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -35,14 +36,16 @@ class QueryExecutor(
     fun executeQuery(query: SimpleQuery): Flow<Either<DomainError, List<Block>>> =
         executeUnfiltered(query)
             // A query block would otherwise list itself (its own `[[Page]]`/`#tag` argument matches).
-            .map { either -> either.map { blocks -> blocks.filterNot(::isQueryBlock) } }
+            .map { either -> either.map { blocks -> blocks.filterNot(::isQueryBlock).take(DEFAULT_LIMIT) } }
+            // Re-emitting an equal list on every unrelated write would churn the UI.
+            .distinctUntilChanged()
             // Merge/sort work shouldn't run on the collector's (UI) dispatcher.
             .flowOn(PlatformDispatcher.Default)
 
     private fun isQueryBlock(block: Block): Boolean = queryMacroPrefix.containsMatchIn(block.content)
 
     private fun executeUnfiltered(query: SimpleQuery): Flow<Either<DomainError, List<Block>>> = when (query) {
-        is QueryFilter -> executeFilter(query, DEFAULT_LIMIT)
+        is QueryFilter -> executeFilter(query, FETCH_LIMIT)
         is Or -> combineBlocks(
             executeFilter(query.left, OPERAND_LIMIT),
             executeFilter(query.right, OPERAND_LIMIT),
@@ -50,8 +53,9 @@ class QueryExecutor(
         is And -> executeAnd(query).capped()
     }
 
+    // Cap is applied after the self-listing filter in executeQuery, so no early take here.
     private fun Flow<Either<DomainError, List<Block>>>.capped(): Flow<Either<DomainError, List<Block>>> =
-        map { either -> either.map { it.take(DEFAULT_LIMIT) } }
+        map { either -> either.map { it.take(FETCH_LIMIT) } }
 
     /** Combinator operands are fetched wider than the final cap so an intersection isn't starved. */
     private fun executeFilter(filter: QueryFilter, limit: Int): Flow<Either<DomainError, List<Block>>> = when (filter) {
@@ -152,6 +156,9 @@ class QueryExecutor(
 
         /** Repository-level fetch ceiling per filter. */
         const val DEFAULT_LIMIT = 200
+
+        /** Fetched slightly above [DEFAULT_LIMIT] so dropping self-listing query blocks doesn't shorten a full page. */
+        const val FETCH_LIMIT = DEFAULT_LIMIT + 16
 
         /** Per-operand fetch ceiling under and/or; the combined result is still capped at [DEFAULT_LIMIT]. */
         const val OPERAND_LIMIT = 1000
