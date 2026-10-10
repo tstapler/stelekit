@@ -340,9 +340,10 @@ class CopyPagesScreenTest {
             DestinationRow(GraphId("a"), "Personal", DestinationStatus.Disabled(DisabledKind.CurrentGraph, "current graph")),
         )
         val s = state(rows = rows, picked = setOf(uuid(1)), destinations = dests, gate2 = true).copy(destinationId = GraphId("ok"))
+        val qualifierDensity = androidx.test.core.app.ApplicationProvider
+            .getApplicationContext<android.content.Context>().resources.displayMetrics.density
         rule.setContent {
-            val d = LocalDensity.current
-            CompositionLocalProvider(LocalDensity provides Density(d.density, fontScale = 2f)) {
+            FontScaled(2f, density = qualifierDensity) {
                 MaterialTheme { CopyPagesContent(s, CopyPagesActions(), Modifier) }
             }
         }
