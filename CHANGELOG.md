@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.93.0](https://github.com/tstapler/stelekit/compare/v0.92.1...v0.93.0) (2026-10-10)
+
+
+### Features
+
+* cross-graph page copy (block-level merge) and share-target graph selection ([#397](https://github.com/tstapler/stelekit/issues/397)) ([548c6d5](https://github.com/tstapler/stelekit/commit/548c6d54ea446af47edcaa19095bafb7e1598078))
+* **db:** GraphWriteLock seam in switchGraph (cross-graph copy, part 1) ([#395](https://github.com/tstapler/stelekit/issues/395)) ([a5dffe7](https://github.com/tstapler/stelekit/commit/a5dffe751632dc882a1fa1dd551e1b7b42c617d9))
+* **merge:** Phase 0 spikes + parser round-trip fixes (cross-graph copy/share) ([#393](https://github.com/tstapler/stelekit/issues/393)) ([114cbf8](https://github.com/tstapler/stelekit/commit/114cbf8c94b78078276d4a02c111f55e433b4c1d))
+
 ## [0.92.1](https://github.com/tstapler/stelekit/compare/v0.92.0...v0.92.1) (2026-10-08)
 
 
