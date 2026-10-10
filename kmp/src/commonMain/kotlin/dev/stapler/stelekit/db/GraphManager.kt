@@ -58,9 +58,27 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.time.Clock
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
+
+/** Default bound on waiting for [GraphWriteLock] in switchGraph before degrading open. */
+val LOCK_ACQUIRE_TIMEOUT: Duration = 10.seconds
+
+/** The active graph's id and repository set, published together. */
+data class ReadyGraph(val id: GraphId, val repoSet: RepositorySet)
+
+/** Test seam for switchGraph's init coroutine. */
+interface GraphInitHooks {
+    /** Inside lock(id), before the factory/driver is created (simulates a slow driver). */
+    suspend fun beforeCreateRepositorySet(id: GraphId) {}
+    /** Inside lock(id), after readiness is published, before migrations (may suspend or throw). */
+    suspend fun duringMigration(id: GraphId) {}
+    /** Inside lock(owner) (when non-null), just before the owner's factory is closed. */
+    suspend fun beforeFactoryClose(owner: GraphId?) {}
+}
 
 /** Outcome of [GraphManager.updateGraphPath]. */
 sealed interface UpdateGraphPathResult {
@@ -85,6 +103,12 @@ class GraphManager(
     /** Awaited before any driver is created — lets the Application flush write-behind pages
      *  on a background thread while GraphManager initialization proceeds. */
     private val preFlightJob: Deferred<Unit>? = null,
+    /** Serializes off-graph writers against switchGraph's open/migration/close sections. */
+    val graphWriteLock: GraphWriteLock = GraphWriteLock(),
+    /** Max wait for [graphWriteLock] in switchGraph's init coroutine before degrading open. */
+    private val lockAcquireTimeout: Duration = LOCK_ACQUIRE_TIMEOUT,
+    /** Test seam; null in production. */
+    private val initHooks: GraphInitHooks? = null,
 ) : StorageLocationStore {
     private val coroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val logger = Logger("GraphManager")
@@ -98,6 +122,11 @@ class GraphManager(
     
     private val _activeRepositorySet = MutableStateFlow<RepositorySet?>(null)
     val activeRepositorySet: StateFlow<RepositorySet?> = _activeRepositorySet.asStateFlow()
+
+    // Assigned in the same statements as _activeRepositorySet so (id, repoSet) is read atomically.
+    private val _readyGraph = MutableStateFlow<ReadyGraph?>(null)
+    val readyGraph: StateFlow<ReadyGraph?> = _readyGraph.asStateFlow()
+    val readyGraphId: GraphId? get() = _readyGraph.value?.id
 
     /**
      * `true` iff [removeGraph] just removed the last real (non-demo) graph while it was active,
@@ -511,6 +540,7 @@ class GraphManager(
         _activeVaultCredentialStore.value = null
         // Null the repo set before closing the driver so Compose flow collectors see null and
         // stop querying before the database connection is torn down.
+        _readyGraph.value = null
         _activeRepositorySet.value = null
         val factoryToClose = currentFactory
         currentFactory = null
@@ -831,6 +861,9 @@ class GraphManager(
         // seconds on a large WAL, and switchGraph() is called synchronously from the Compose UI
         // dispatcher (rememberCoroutineScope in App.kt), so running it here would freeze the UI
         // on every graph switch.
+        // previousId and factoryToClose are captured together, synchronously, so the factory is
+        // closed under the lock of the graph that owns it, regardless of later switches.
+        val previousId = currentGraphId
         val factoryToClose = tearDownActiveGraphResources()
 
         // Create a new scope for this graph's operations first so the actor can use it.
@@ -852,7 +885,9 @@ class GraphManager(
         // The outer try/finally guarantees deferred.complete(Unit) is called in ALL cases —
         // including unhandled exceptions from factory/repoSet creation — so awaitPendingMigration()
         // never hangs permanently.
-        graphScope.launch(PlatformDispatcher.IO) {
+        // ATOMIC + NonCancellable close: a rapid B-then-C switch cancels this scope, but the
+        // factory captured above is owned by THIS coroutine and must still be closed exactly once.
+        graphScope.launch(PlatformDispatcher.IO, start = CoroutineStart.ATOMIC) {
             try {
                 val t0 = kotlin.time.Clock.System.now().toEpochMilliseconds()
                 fun elapsed() = kotlin.time.Clock.System.now().toEpochMilliseconds() - t0
@@ -865,8 +900,22 @@ class GraphManager(
                 // _activeRepositorySet null while activeGraphJobs[id] is already set — the
                 // idempotency guard at the top of switchGraph() would then treat this graph
                 // as "already initializing" forever and silently no-op every retry.
+                // Complete, released critical section under the OWNER's lock; never nested with
+                // lock(id) below (see GraphWriteLock lock order).
                 try {
-                    factoryToClose?.close()
+                    if (factoryToClose != null) withContext(kotlinx.coroutines.NonCancellable) {
+                        val closeUnderLock: suspend () -> Unit = {
+                            initHooks?.beforeFactoryClose(previousId)
+                            factoryToClose.close()
+                        }
+                        if (previousId != null) {
+                            graphWriteLock.withLockOrDegrade(previousId, lockAcquireTimeout, onTimeout = { holder ->
+                                logger.warn("graph.switch.lock_timeout graph=$previousId phase=close holder=${holder ?: "unknown"}")
+                            }) { closeUnderLock() }
+                        } else {
+                            closeUnderLock()
+                        }
+                    }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -874,82 +923,94 @@ class GraphManager(
                 }
                 logger.info("init[${elapsed()}ms]: previous factory closed")
 
-                preFlightJob?.await()
-                logger.info("init[${elapsed()}ms]: preFlightJob done")
+                // Held through createRepositorySet + migrations; released just before deferred.complete.
+                // Never await _pendingMigration while holding a graph lock (deadlocks this section).
+                graphWriteLock.withLockOrDegrade(id, lockAcquireTimeout, label = "switchGraph($id)", onTimeout = { holder ->
+                    logger.warn("graph.switch.lock_timeout graph=$id phase=open holder=${holder ?: "unknown"}")
+                }) {
+                    preFlightJob?.await()
+                    logger.info("init[${elapsed()}ms]: preFlightJob done")
 
-                val dbUrl = driverFactory.getDatabaseUrl(id.value)
-                val factory = dev.stapler.stelekit.repository.RepositoryFactoryImpl(driverFactory, dbUrl, graphId = id.value)
-                val deviceInfo = try {
-                    dev.stapler.stelekit.performance.getDeviceInfo()
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: Exception) {
-                    null
-                }
-                val backend = if (graphInfo.isDemo) {
-                    logger.info("switchGraph: demo mode — forcing IN_MEMORY backend")
-                    GraphBackend.IN_MEMORY
-                } else {
-                    defaultBackend
-                }
-                val repoSet = factory.createRepositorySet(
-                    backend = backend,
-                    scope = graphScope,
-                    fileSystem = fileSystem,
-                    appVersion = deviceInfo?.appVersion ?: "unknown",
-                    platform = deviceInfo?.platform ?: "unknown",
-                )
-                logger.info("init[${elapsed()}ms]: createRepositorySet done")
-                currentFactory = factory
-                _activeRepositorySet.value = repoSet
-
-                if (defaultBackend == GraphBackend.SQLDELIGHT && !graphInfo.isDemo) {
-                    val writeActor = repoSet.writeActor
-                    if (writeActor != null) {
-                        val db = factory.steleDatabase()
-                        UuidMigration(writeActor).runIfNeeded(db)
-                        logger.info("init[${elapsed()}ms]: UuidMigration done")
-                        FilePathRootMigration(writeActor).runIfNeeded(db, graphInfo.path)
-                        logger.info("init[${elapsed()}ms]: FilePathRootMigration done")
-                        try {
-                            MigrationRunner(
-                                registry = MigrationRegistry,
-                                changelogRepo = ChangelogRepository(db),
-                                evaluator = DslEvaluator(repoSet),
-                                applier = ChangeApplier(writeActor, opLogger = null),
-                                flusher = null,
-                            ).runPending(id.value, repoSet, graphInfo.path)
-                        } catch (e: InterruptedMigrationException) {
-                            logger.error("MigrationRunner: interrupted migration detected for graph $id", e)
-                        } catch (e: MigrationTamperedError) {
-                            logger.error("MigrationRunner: tampered migration detected for graph $id", e)
-                        } catch (e: ConcurrentMigrationRunException) {
-                            // Another switchGraph() call is already migrating this graph — expected
-                            // under racing startup/UI triggers, not a failure. The winning call
-                            // completes the migration; this one just backs off.
-                            logger.warn("MigrationRunner: concurrent run detected for graph $id — backing off", e)
-                        }
-                        logger.info("init[${elapsed()}ms]: content migrations done")
+                    initHooks?.beforeCreateRepositorySet(id)
+                    val dbUrl = driverFactory.getDatabaseUrl(id.value)
+                    val factory = dev.stapler.stelekit.repository.RepositoryFactoryImpl(driverFactory, dbUrl, graphId = id.value)
+                    val deviceInfo = try {
+                        dev.stapler.stelekit.performance.getDeviceInfo()
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        null
                     }
-                }
-                // Flush any StorageLocation queued by addGraph() before this graph's driver was
-                // open (see onGraphLocationDetermined's KDoc). Only pop the queued entry once the
-                // write actually runs — popping unconditionally when writeActor is still null
-                // (e.g. a non-SQLDELIGHT backend) would silently drop the location forever. The
-                // whole check-write-remove sequence runs under one lock acquisition so a
-                // concurrent onGraphLocationDetermined() call can't queue a fresher location
-                // between this read and the remove() below, which would otherwise drop it.
-                pendingStorageLocationsMutex.withLock {
-                    pendingStorageLocations[id]?.let { location ->
-                        repoSet.writeActor?.let { actor ->
-                            writeStorageLocation(factory, actor, id.value, location).onLeft {
-                                logger.warn("switchGraph: failed to flush pending storage location for graph $id: ${it::class.simpleName}")
+                    val backend = if (graphInfo.isDemo) {
+                        logger.info("switchGraph: demo mode — forcing IN_MEMORY backend")
+                        GraphBackend.IN_MEMORY
+                    } else {
+                        defaultBackend
+                    }
+                    val repoSet = factory.createRepositorySet(
+                        backend = backend,
+                        scope = graphScope,
+                        fileSystem = fileSystem,
+                        appVersion = deviceInfo?.appVersion ?: "unknown",
+                        platform = deviceInfo?.platform ?: "unknown",
+                    )
+                    logger.info("init[${elapsed()}ms]: createRepositorySet done")
+                    currentFactory = factory
+                    // Readiness is published BEFORE migrations run. Safe only because lock(id) is
+                    // still held through the migrations below: writers must take lock(id) AFTER
+                    // observing readyGraph == id, so they block until migrations finish.
+                    _readyGraph.value = ReadyGraph(id, repoSet)
+                    _activeRepositorySet.value = repoSet
+                    initHooks?.duringMigration(id)
+
+                    if (defaultBackend == GraphBackend.SQLDELIGHT && !graphInfo.isDemo) {
+                        val writeActor = repoSet.writeActor
+                        if (writeActor != null) {
+                            val db = factory.steleDatabase()
+                            UuidMigration(writeActor).runIfNeeded(db)
+                            logger.info("init[${elapsed()}ms]: UuidMigration done")
+                            FilePathRootMigration(writeActor).runIfNeeded(db, graphInfo.path)
+                            logger.info("init[${elapsed()}ms]: FilePathRootMigration done")
+                            try {
+                                MigrationRunner(
+                                    registry = MigrationRegistry,
+                                    changelogRepo = ChangelogRepository(db),
+                                    evaluator = DslEvaluator(repoSet),
+                                    applier = ChangeApplier(writeActor, opLogger = null),
+                                    flusher = null,
+                                ).runPending(id.value, repoSet, graphInfo.path)
+                            } catch (e: InterruptedMigrationException) {
+                                logger.error("MigrationRunner: interrupted migration detected for graph $id", e)
+                            } catch (e: MigrationTamperedError) {
+                                logger.error("MigrationRunner: tampered migration detected for graph $id", e)
+                            } catch (e: ConcurrentMigrationRunException) {
+                                // Another switchGraph() call is already migrating this graph — expected
+                                // under racing startup/UI triggers, not a failure. The winning call
+                                // completes the migration; this one just backs off.
+                                logger.warn("MigrationRunner: concurrent run detected for graph $id — backing off", e)
                             }
-                            pendingStorageLocations.remove(id)
+                            logger.info("init[${elapsed()}ms]: content migrations done")
                         }
                     }
+                    // Flush any StorageLocation queued by addGraph() before this graph's driver was
+                    // open (see onGraphLocationDetermined's KDoc). Only pop the queued entry once the
+                    // write actually runs — popping unconditionally when writeActor is still null
+                    // (e.g. a non-SQLDELIGHT backend) would silently drop the location forever. The
+                    // whole check-write-remove sequence runs under one lock acquisition so a
+                    // concurrent onGraphLocationDetermined() call can't queue a fresher location
+                    // between this read and the remove() below, which would otherwise drop it.
+                    pendingStorageLocationsMutex.withLock {
+                        pendingStorageLocations[id]?.let { location ->
+                            repoSet.writeActor?.let { actor ->
+                                writeStorageLocation(factory, actor, id.value, location).onLeft {
+                                    logger.warn("switchGraph: failed to flush pending storage location for graph $id: ${it::class.simpleName}")
+                                }
+                                pendingStorageLocations.remove(id)
+                            }
+                        }
+                    }
+                    repoSet.spanEmitter?.emit("db.init", t0)
                 }
-                repoSet.spanEmitter?.emit("db.init", t0)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -972,6 +1033,7 @@ class GraphManager(
      * Returns the [RepositorySet] that is ready to use, or null if initialization failed.
      */
     suspend fun awaitPendingMigration(): RepositorySet? {
+        GraphWriteLockOrderGuard.checkAwaitPendingMigration(kotlin.coroutines.coroutineContext)
         _pendingMigration.await()
         return _activeRepositorySet.value
     }
@@ -1428,6 +1490,7 @@ class GraphManager(
         _activeVaultCredentialStore.value = null
 
         // Null repo set before closing so in-flight Compose flow collectors stop querying first.
+        _readyGraph.value = null
         _activeRepositorySet.value = null
         currentFactory?.close()
         currentFactory = null
