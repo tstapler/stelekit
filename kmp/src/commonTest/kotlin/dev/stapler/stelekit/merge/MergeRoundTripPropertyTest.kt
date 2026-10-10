@@ -24,14 +24,14 @@ class MergeRoundTripPropertyTest {
 
     @Test
     fun renderThenParseEqualsOriginal() = runTest {
-        checkAll(iterations, MergeArbs.cases(0.4)) { c ->
+        checkAll(iterations, MergeArbs.cases(0.4, code = false)) { c ->
             for (page in listOf(c.target, c.source, c.editedTarget)) assertEquals(page, reparse(page))
         }
     }
 
     @Test
     fun parseOfRenderedMergeResultIsTheMergeResult() = runTest {
-        checkAll(iterations, MergeArbs.cases(0.4)) { c ->
+        checkAll(iterations, MergeArbs.cases(0.4, code = false)) { c ->
             val out = when (val o = mergePage(c.target, c.source, c.policy)) {
                 is MergeOutcome.New -> o.page
                 is MergeOutcome.Merged -> o.page
@@ -43,7 +43,7 @@ class MergeRoundTripPropertyTest {
 
     @Test
     fun spliceInsertKeepsPositionalUuidsOfExistingBlocks() = runTest {
-        checkAll(iterations, MergeArbs.cases(0.6)) { c ->
+        checkAll(iterations, MergeArbs.cases(0.6, code = false)) { c ->
             val text = MergeRenderer.renderNewPage(c.target)
             val before = MergeConverters.parseMarkdown(text, path, "P", false).blocks.map { it.uuid }
             val incoming = MergeBlock("ins-1", "inserted", children = listOf(MergeBlock(null, "child")))

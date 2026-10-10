@@ -214,4 +214,46 @@ class MergePageExamplesTest {
         assertEquals(listOf("Draft v1", "Draft v2", "see ((x1))"), out.page.blocks.map { it.content })
         assertEquals(MergeOutcome.Unchanged, merged(out.page, s))
     }
+
+    @Test
+    fun sameUuidAndContentButDifferentPropertiesIsAFlaggedSiblingNotUnchanged() {
+        val target = page(b("x1", "def f():\n    return 1", props = mapOf("status" to "todo")))
+        val source = page(b("x1", "def f():\n  return 1", props = mapOf("status" to "done")))
+
+        val out = merged(target, source).mergedPage()
+
+        assertEquals(1, out.conflicts.size)
+        val sibling = out.page.blocks[1]
+        assertEquals("def f():\n  return 1", sibling.content)
+        assertEquals("done", sibling.properties["status"])
+        assertEquals(MergeOutcome.Unchanged, merged(out.page, source))
+    }
+
+    @Test
+    fun codeIndentationIsSignificantInDedup() {
+        val out = merged(page(b("t1", "def f():\n    return 1")), page(b("s1", "def f():\n  return 1"))).mergedPage()
+        assertEquals(2, out.page.blocks.size)
+    }
+
+    @Test
+    fun fencedCodeWhitespaceIsSignificantButProseWhitespaceIsNot() {
+        val fenced = "```\na  b\n```"
+        val out = merged(page(b("t1", fenced)), page(b("s1", "```\na b\n```"))).mergedPage()
+        assertEquals(2, out.page.blocks.size)
+        assertEquals(MergeOutcome.Unchanged, merged(page(b("t1", "see   the  docs ")), page(b("s1", " see the docs"))))
+    }
+
+    @Test
+    fun targetOnlyExtraPropertiesStillDedup() {
+        val target = page(b("t1", "Buy milk", props = mapOf("status" to "todo", "extra" to "1")))
+        assertEquals(MergeOutcome.Unchanged, merged(target, page(b("s1", "Buy milk", props = mapOf("status" to "todo")))))
+    }
+
+    @Test
+    fun sourcePropertyMissingOnTargetIsNotSilentlyDropped() {
+        val out = merged(page(b("t1", "Buy milk")), page(b("s1", "Buy milk", props = mapOf("status" to "done")))).mergedPage()
+        assertEquals(2, out.page.blocks.size)
+        assertEquals("done", out.page.blocks[1].properties["status"])
+        assertEquals(MergeOutcome.Unchanged, merged(out.page, page(b("s1", "Buy milk", props = mapOf("status" to "done")))))
+    }
 }

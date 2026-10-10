@@ -26,7 +26,10 @@ object MergeArbs {
     private val contentPool = listOf(
         "A", "B", "TODO", "a", "A ", " A", "x  y", "x y", "dup", "dup",
         "see ((u1))", "see ((u2))", "((u3))", "{{embed ((u1))}}", "((OUT))",
-    )
+        )
+    /** Multi-line code whose whitespace is significant; merge-only (the render round-trip generators are single-line). */
+    private val codePool = listOf("def f():\n    return 1", "def f():\n  return 1", "```\na  b\n```", "```\na b\n```")
+    private val blockPropPool = listOf(emptyMap(), emptyMap(), mapOf("status" to "todo"), mapOf("status" to "done"))
     private val propPool = listOf(
         mapOf("tags" to "a"), mapOf("tags" to "b"), mapOf("tags" to "a, b"),
         mapOf("status" to "open"), mapOf("status" to "done"), emptyMap(),
@@ -40,22 +43,23 @@ object MergeArbs {
     private const val EDIT_SUFFIX = " ~edit"
     private const val DRIFT_SUFFIX = " ~drift"
 
-    private fun genBlocks(r: Random, depth: Int, budget: IntArray, uuids: ArrayDeque<String>, unlabeled: Double): List<MergeBlock> {
+    private fun genBlocks(r: Random, depth: Int, budget: IntArray, uuids: ArrayDeque<String>, unlabeled: Double, code: Boolean): List<MergeBlock> {
         val count = if (depth >= 4) 0 else r.nextInt(0, if (depth == 0) 4 else 3)
         val out = ArrayList<MergeBlock>()
         repeat(count) {
             if (budget[0] <= 0) return@repeat
             budget[0]--
             val uuid = if (r.nextDouble() < unlabeled || uuids.isEmpty()) null else uuids.removeFirst()
-            val content = contentPool[r.nextInt(contentPool.size)]
-            out += MergeBlock(uuid, content, emptyMap(), genBlocks(r, depth + 1, budget, uuids, unlabeled))
+            val pool = if (code && r.nextDouble() < 0.2) codePool else contentPool
+            val content = pool[r.nextInt(pool.size)]
+            out += MergeBlock(uuid, content, blockPropPool[r.nextInt(blockPropPool.size)], genBlocks(r, depth + 1, budget, uuids, unlabeled, code))
         }
         return out
     }
 
-    private fun genPage(r: Random, unlabeled: Double): MergePage {
+    private fun genPage(r: Random, unlabeled: Double, code: Boolean): MergePage {
         val uuids = ArrayDeque(uuidPool.shuffled(r))
-        return MergePage("P", properties = propPool[r.nextInt(propPool.size)], blocks = genBlocks(r, 0, intArrayOf(10), uuids, unlabeled))
+        return MergePage("P", properties = propPool[r.nextInt(propPool.size)], blocks = genBlocks(r, 0, intArrayOf(10), uuids, unlabeled, code))
     }
 
     /** Appends [suffix] to blocks chosen by [pick]; returns the page and how many edited blocks have no edited ancestor. */
@@ -75,11 +79,12 @@ object MergeArbs {
         MergeOutcome.Unchanged -> t ?: s
     }
 
-    fun cases(unlabeledTargetFraction: Double): Arb<MergeCase> = arbitrary { rs ->
+    /** [code] adds multi-line code contents, which the single-line render round-trip tests must leave out. */
+    fun cases(unlabeledTargetFraction: Double, code: Boolean = true): Arb<MergeCase> = arbitrary { rs ->
         val r = rs.random
         val policy = policies[r.nextInt(policies.size)]
-        val t0 = genPage(r, unlabeledTargetFraction)
-        val s = genPage(r, 0.0)
+        val t0 = genPage(r, unlabeledTargetFraction, code)
+        val s = genPage(r, 0.0, code)
         val t = merge(t0, s, policy)
         val (edited, roots) = edit(t, r, EDIT_SUFFIX) {
             MergePropertyKeys.SRC_ID in it.properties && it.properties[MergePropertyKeys.CONFLICT] != "true"

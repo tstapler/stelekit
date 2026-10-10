@@ -78,6 +78,11 @@ private fun alignedRefs(
 }
 
 private val UNION_KEYS = setOf(BlockPropertyKeys.ALIAS, BlockPropertyKeys.TAGS)
+/** Keys that name a block or record how it got here; every other property is data a copy must not drop. */
+private val IDENTITY_KEYS = setOf(
+    BlockPropertyKeys.ID, BlockPropertyKeys.COLLAPSED,
+    MergePropertyKeys.SRC_ID, MergePropertyKeys.CONFLICT, MergePropertyKeys.CONFLICT_SOURCE,
+)
 private val NEVER_MERGED = setOf(BlockPropertyKeys.ID, BlockPropertyKeys.COLLAPSED)
 
 private fun unionProperties(target: Map<String, String>, incoming: Map<String, String>): Pair<Map<String, String>, List<String>> {
@@ -119,6 +124,19 @@ private class SiblingMerger(
 
     private fun key(content: String) = policy.blockKey(content)
 
+    /**
+     * Same block data: equal content key and every identity-free source property already present on [target].
+     * Extra target properties are fine (nothing from the source is lost); a missing or different one is not.
+     */
+    private fun sameData(target: MergeBlock, inc: MergeBlock): Boolean =
+        key(target.content) == key(UuidRemap.rewriteRefs(inc.content, refs)) && propsCovered(target, inc)
+
+    private fun propsCovered(target: MergeBlock, inc: MergeBlock): Boolean =
+        inc.properties.all { (k, v) -> k in IDENTITY_KEYS || target.properties[k] == v }
+
+    private fun propsSeed(inc: MergeBlock): String =
+        inc.properties.filterKeys { it !in IDENTITY_KEYS }.toSortedMap().entries.joinToString("") { "|${it.key}=${it.value}" }
+
     private fun srcRef(uuid: String) = SourceBlockRef.of(policy.sourceGraphId, uuid).value
 
     /**
@@ -139,8 +157,7 @@ private class SiblingMerger(
             val s = inc.uuid ?: return@forEachIndexed
             val cands = ((byUuid[s] ?: emptyList()) + (bySrc[srcRef(s)] ?: emptyList())).distinct().filter { it !in taken }
             // Equal content wins so a prior conflict sibling absorbs the repeat copy (R4).
-            val incKey = key(UuidRemap.rewriteRefs(inc.content, refs))
-            val pick = cands.firstOrNull { key(it.block.content) == incKey }
+            val pick = cands.firstOrNull { sameData(it.block, inc) }
                 ?: cands.firstOrNull { it.block.properties[MergePropertyKeys.CONFLICT] != "true" }
                 ?: cands.firstOrNull()
             if (pick != null) {
@@ -155,7 +172,8 @@ private class SiblingMerger(
         val byKey = out.groupBy { key(it.block.content) }
         incoming.forEachIndexed { i, inc ->
             if (matched[i] != null) return@forEachIndexed
-            val pick = byKey[key(UuidRemap.rewriteRefs(inc.content, refs))]?.firstOrNull { it !in taken } ?: return@forEachIndexed
+            val pick = byKey[key(UuidRemap.rewriteRefs(inc.content, refs))]?.firstOrNull { it !in taken && propsCovered(it.block, inc) }
+                ?: return@forEachIndexed
             matched[i] = pick
             stand[i] = pick
             taken += pick
@@ -174,7 +192,7 @@ private class SiblingMerger(
                 return@forEachIndexed
             }
             val idx = out.indexOf(m)
-            if (key(m.block.content) == key(UuidRemap.rewriteRefs(inc.content, refs))) {
+            if (sameData(m.block, inc)) {
                 m.block = m.block.copy(
                     children = mergeSiblings(m.block.children, inc.children, record && m.block.properties[MergePropertyKeys.CONFLICT] != "true"),
                 )
@@ -191,8 +209,8 @@ private class SiblingMerger(
     private fun addConflict(out: MutableList<Entry>, matchedEntry: Entry, inc: MergeBlock): Int? {
         val s = inc.uuid ?: return null
         val ref = srcRef(s)
-        val incKey = key(UuidRemap.rewriteRefs(inc.content, refs))
-        if (out.any { it.block.properties[MergePropertyKeys.SRC_ID] == ref && key(it.block.content) == incKey }) return null
+        if (out.any { it.block.properties[MergePropertyKeys.SRC_ID] == ref && sameData(it.block, inc) }) return null
+        val incKey = key(UuidRemap.rewriteRefs(inc.content, refs)) + propsSeed(inc)
         val uuid = UuidRemap.conflictUuid(policy.sourceGraphId, s, incKey)
         usedUuids += uuid
         val sub = remapSubtree(inc, uuid).let {
