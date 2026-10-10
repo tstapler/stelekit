@@ -46,6 +46,10 @@ class GitSyncServiceFirstSyncGateTest {
         if (reviewPending) firstSync.markReviewPending(graphId, previousBranch = "main")
         val fetchCalls = IntArray(1)
         val repo = object : StubGitRepository() {
+            // The service refreshes status asynchronously on construction; a throwing stub would race the assertions with an Error state.
+            override suspend fun status(config: GitConfig): Either<DomainError.GitError, GitStatus> =
+                GitStatus(hasLocalChanges = false, untrackedFiles = emptyList(), modifiedFiles = emptyList()).right()
+
             override suspend fun fetch(config: GitConfig): Either<DomainError.GitError, FetchResult> {
                 fetchCalls[0]++
                 return super.fetch(config)
