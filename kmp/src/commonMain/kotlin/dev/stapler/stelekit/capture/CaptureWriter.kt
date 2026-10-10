@@ -5,12 +5,15 @@
 package dev.stapler.stelekit.capture
 
 import arrow.core.Either
+import arrow.core.flatMap
 import arrow.core.getOrElse
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.merge.UnloadedPageReader
 import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.RepositorySet
@@ -49,12 +52,22 @@ object CaptureWriter {
         captureId: String? = null,
         writer: GraphWriter = GraphWriter(fileSystem, writeActor = repoSet.writeActor),
     ): CaptureResult = try {
-        val page = repoSet.journalService.ensureTodayJournal()
+        var page = repoSet.journalService.ensureTodayJournal()
 
-        val existingBlocks = repoSet.blockRepository
+        var existingBlocks = repoSet.blockRepository
             .getBlocksForPage(page.uuid)
             .first()
             .getOrElse { return CaptureResult.Failed("Failed to load blocks: $it") }
+
+        // An index-only stub has a file but no blocks here; saving from the DB alone would erase the file's content.
+        if (!page.isContentLoaded) {
+            val loaded = UnloadedPageReader.read(fileSystem, page).getOrElse { return CaptureResult.Failed("Failed to read the journal: ${it.message}") }
+            if (loaded != null) {
+                page = page.copy(isContentLoaded = true, properties = loaded.properties.ifEmpty { page.properties })
+                persistLoadedStub(repoSet, page, loaded.blocks)?.let { return it }
+                existingBlocks = loaded.blocks
+            }
+        }
 
         val now = Clock.System.now()
         val newBlock = Block(
@@ -80,6 +93,21 @@ object CaptureWriter {
         throw e
     } catch (e: Exception) {
         CaptureResult.Failed(e.message ?: "Unknown error during capture")
+    }
+
+    private suspend fun persistLoadedStub(repoSet: RepositorySet, page: Page, blocks: List<Block>): CaptureResult.Failed? {
+        val actor = repoSet.writeActor
+        val result: Either<DomainError, Unit> = try {
+            if (actor != null) {
+                actor.saveBlocks(blocks).flatMap { actor.savePage(page) }
+            } else {
+                @OptIn(DirectRepositoryWrite::class)
+                repoSet.blockRepository.saveBlocks(blocks).flatMap { repoSet.pageRepository.savePage(page) }
+            }
+        } catch (e: ClosedSendChannelException) {
+            return CaptureResult.Failed("Graph switched during save — please retry")
+        }
+        return result.leftOrNull()?.let { CaptureResult.Failed("Save failed: $it") }
     }
 
     /**
