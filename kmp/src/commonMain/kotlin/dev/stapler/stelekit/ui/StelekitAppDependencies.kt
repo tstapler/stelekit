@@ -248,6 +248,8 @@ data class StelekitAppCaptureDeps(
     val onCaptureSettingsReady: ((dev.stapler.stelekit.capture.CaptureTargetSettings) -> Unit)? = null,
     /** Lets a share to the open graph go through the editor's writer; filled by the open graph's composition root. */
     val activeWriteHooks: dev.stapler.stelekit.capture.ActiveWriteHooks = dev.stapler.stelekit.capture.ActiveWriteHooks(),
+    /** Turns on "Copy pages to..."; null on iOS/Web (no app-data directory or off-graph writes), which hides the entry points. */
+    val copyHost: dev.stapler.stelekit.ui.screens.copy.CopyHostConfig? = null,
 )
 
 /**
@@ -284,10 +286,8 @@ data class GraphContentDeps(
     val voiceConfig: StelekitAppVoiceConfig = StelekitAppVoiceConfig(),
     val platformIntegrations: StelekitAppPlatformIntegrations = StelekitAppPlatformIntegrations(),
     val webSyncDeps: StelekitAppWebSyncDeps = StelekitAppWebSyncDeps(),
-    /** Survives graph switches (created once in [StelekitApp], above the `key(activeGraphId)`
-     * that tears [GraphContent] down and recreates it) so a page snapshot taken on one graph
-     * is still there after switching to the merge target. */
-    val graphMergeService: dev.stapler.stelekit.transfer.GraphMergeService = dev.stapler.stelekit.transfer.GraphMergeService(),
+    /** App-scoped copy flow; survives graph switches (it sits above the `key(activeGraphId)` that recreates [GraphContent]). Null hides copy. */
+    val copyFlow: dev.stapler.stelekit.ui.screens.copy.CopyFlowController? = null,
     /** Threaded to `SettingsDialog`'s "Keyboard Shortcuts" row — see [StelekitAppCaptureDeps]. */
     val hotkeyComboLabel: String? = null,
     /** Where this graph registers its editor-side writer for the share router. */

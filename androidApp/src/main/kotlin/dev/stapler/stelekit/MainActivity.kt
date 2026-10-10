@@ -439,6 +439,13 @@ class MainActivity : ComponentActivity() {
             }
 
             androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize()) {
+            val copyHost = androidx.compose.runtime.remember {
+                dev.stapler.stelekit.ui.screens.copy.copyHostConfigFor(
+                    applicationContext.filesDir.absolutePath,
+                    app.copyRunHost,
+                    dev.stapler.stelekit.merge.SourcePlatform.Android,
+                )
+            }
             StelekitApp(
                 fileSystem = fileSystem,
                 // When the benchmark extra is absent and SAF permission is not yet
@@ -478,6 +485,7 @@ class MainActivity : ComponentActivity() {
                     ),
                     captureDeps = dev.stapler.stelekit.ui.StelekitAppCaptureDeps(
                         shareInbox = dev.stapler.stelekit.capture.shareInboxConfigFor(applicationContext.filesDir.absolutePath),
+                        copyHost = copyHost,
                     ),
                 ),
             )

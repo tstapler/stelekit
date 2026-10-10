@@ -253,6 +253,39 @@ class PageMergeServiceTest {
         assertEquals(writesBefore, env.fake.writes)
     }
 
+    // Ported from the removed snapshot-based merge test.
+
+    @Test
+    fun `copies every page when the target is empty`() = realTime {
+        val env = Env()
+        val source = FakeSource(listOf(entry(1, name = "Page A", bodies = listOf("content a")), entry(2, name = "Page B", bodies = listOf("content b"))))
+        val result = env.service.apply(env.plan(source)).ok()
+
+        assertEquals(2, result.newPages)
+        assertTrue(result.failed.isEmpty())
+        assertEquals(setOf("Page A", "Page B"), env.fake.pages.keys)
+    }
+
+    @Test
+    fun `combines blocks of same-named page without overwriting the target`() = realTime {
+        val env = Env()
+        env.fake.pages["Shared Page"] = MergePage("Shared Page", blocks = listOf(MergeBlock(uuid = hex(9, 1), content = "original target content")))
+        val source = FakeSource(
+            listOf(
+                entry(1, name = "Shared Page", bodies = listOf("from source")),
+                entry(2, name = "New Page", bodies = listOf("only in source")),
+            ),
+        )
+        val result = env.service.apply(env.plan(source)).ok()
+
+        assertEquals(1, result.newPages)
+        assertEquals(1, result.combinedPages)
+        assertTrue(result.failed.isEmpty())
+        val texts = env.fake.pages.getValue("Shared Page").blocks.map { it.content }
+        assertTrue("original target content" in texts, "target block must survive: $texts")
+        assertTrue("from source" in texts, "source block must be added: $texts")
+    }
+
     @Test
     fun `manifest records one entry per written page`() = realTime {
         val env = Env()

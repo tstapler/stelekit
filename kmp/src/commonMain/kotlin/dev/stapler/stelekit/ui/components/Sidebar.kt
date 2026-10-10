@@ -30,7 +30,6 @@ import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PhotoLibrary
@@ -146,11 +145,8 @@ fun LeftSidebar(
      * 3.3 already left for [storageLocationResolver] and [onBrowseRequestForMove]. */
     onStorageLocationChoose: (operation: StorageMoveOperation) -> Unit = {},
     gitSyncedGraphId: String? = null,
-    /** Pages captured from another graph by [onExportPagesForMerge], not yet merged in here.
-     * Cross-graph page/journal recovery — see GraphMergeService's class doc. */
-    mergePendingPageCount: Int = 0,
-    onExportPagesForMerge: () -> Unit = {},
-    onImportMergedPages: () -> Unit = {},
+    /** "Copy pages to..." (cross-graph copy); null hides the action (iOS/Web, or no copy pipeline). */
+    onCopyPages: (() -> Unit)? = null,
     onNewSectionJournalEntry: (() -> Unit)? = null,
     sectionManifest: SectionManifest? = null,
     defaultSection: String = "",
@@ -215,9 +211,7 @@ fun LeftSidebar(
                 gitSyncedGraphId = gitSyncedGraphId,
                 isDemoActive = isDemoActive,
                 hostAccessState = hostAccessState,
-                mergePendingPageCount = mergePendingPageCount,
-                onExportPagesForMerge = onExportPagesForMerge,
-                onImportMergedPages = onImportMergedPages,
+                onCopyPages = onCopyPages,
             )
 
             LocalShareInboxUi.current?.let { shareUi ->
@@ -478,9 +472,7 @@ fun GraphSwitcher(
     /** Epic 2.3: host-directory connection state for [activeGraphId] only — used to show a
      * "linked to local folder" indicator distinct from the graph's internal OPFS path. */
     hostAccessState: HostAccessState = HostAccessState.NotApplicable,
-    mergePendingPageCount: Int = 0,
-    onExportPagesForMerge: () -> Unit = {},
-    onImportMergedPages: () -> Unit = {},
+    onCopyPages: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -615,15 +607,26 @@ fun GraphSwitcher(
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
-            // Cross-graph page/journal recovery: capture this graph's pages, switch to another
-            // graph via the list above, then paste them in. See GraphMergeService's class doc.
-            GraphMenuActionItem(Icons.Default.ContentCopy, "Copy pages from this graph...") {
-                onExportPagesForMerge(); expanded = false
-            }
-            if (mergePendingPageCount > 0) {
-                GraphMenuActionItem(Icons.Default.ContentPaste, "Merge $mergePendingPageCount captured page(s) here") {
-                    onImportMergedPages(); expanded = false
-                }
+            if (onCopyPages != null) {
+                DropdownMenuItem(
+                    text = {
+                        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Copy pages to...", style = MaterialTheme.typography.bodyMedium)
+                            }
+                            Text(
+                                "Adds pages; combines with existing ones",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(start = 26.dp),
+                            )
+                        }
+                    },
+                    onClick = { onCopyPages(); expanded = false },
+                    contentPadding = PaddingValues(0.dp),
+                )
             }
 
             if (isEphemeralWebModeAvailable() && !isCurrentSessionEphemeral()) {

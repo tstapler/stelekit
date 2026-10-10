@@ -424,7 +424,10 @@ class CopyPagesViewModel(
     }
 
     /** Dry-run dialog took over (or was dismissed): back to the picker with selection intact. */
-    fun consumeReview() = _state.update { it.copy(review = ReviewState.Idle) }
+    fun consumeReview() {
+        reviewJob?.cancel()
+        _state.update { it.copy(review = ReviewState.Idle) }
+    }
 
     /** [other] is the chosen graph: the target in Push, the source in Pull. */
     private fun buildRequest(s: CopyPagesState, other: GraphId): PlanRequest {
