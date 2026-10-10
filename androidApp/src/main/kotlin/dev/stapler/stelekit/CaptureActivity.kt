@@ -46,6 +46,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -77,6 +78,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusEvent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
@@ -88,6 +90,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.app.R
 import dev.stapler.stelekit.capture.OffGraphCapture
@@ -150,6 +153,7 @@ class CaptureActivity : ComponentActivity() {
     }
 
     private fun initializeFrom(shareContent: ShareContent) {
+        viewModel.attachImage(shareContent.imageLocalPath)
         if (shareContent.imageLocalPath != null) {
             viewModel.initializeText("[image: ${shareContent.imageLocalPath}]\n${shareContent.text}".trim())
         } else {
@@ -158,6 +162,7 @@ class CaptureActivity : ComponentActivity() {
     }
 
     private fun restoreFrom(state: Bundle) {
+        viewModel.attachImage(state.getString(STATE_IMAGE_PATH))
         viewModel.initializeText(state.getString(STATE_TEXT).orEmpty())
         viewModel.beginShare(state.getString(STATE_OVERRIDE_GRAPH), state.getString(STATE_CAPTURE_ID))
         if (state.getBoolean(STATE_HANDLED)) viewModel.restoreHandled()
@@ -167,6 +172,7 @@ class CaptureActivity : ComponentActivity() {
         super.onSaveInstanceState(outState)
         outState.putString(STATE_CAPTURE_ID, viewModel.captureId)
         outState.putString(STATE_TEXT, viewModel.captureText.value)
+        outState.putString(STATE_IMAGE_PATH, viewModel.attachedImagePath)
         outState.putString(STATE_OVERRIDE_GRAPH, viewModel.overrideGraphIdValue)
         outState.putBoolean(STATE_HANDLED, viewModel.isHandled)
     }
@@ -186,7 +192,7 @@ class CaptureActivity : ComponentActivity() {
         } else {
             shareContent.text
         }
-        viewModel.onNewShare(text, ShareShortcutPublisher.targetGraphIdFrom(intent))
+        viewModel.onNewShare(text, ShareShortcutPublisher.targetGraphIdFrom(intent), shareContent.imageLocalPath)
     }
 
     // Task 1.3: Bug 3 mitigation
@@ -199,24 +205,16 @@ class CaptureActivity : ComponentActivity() {
         val subject   = intent.getStringExtra(Intent.EXTRA_SUBJECT)
         val text = buildShareText(clipText, extraText, subject)
 
-        // Bug 2 mitigation: copy EXTRA_STREAM synchronously before any coroutine launch
+        // Bug 2 mitigation: copy EXTRA_STREAM synchronously before any coroutine launch. Only content://
+        // streams are read (exported activity: a file:// URI or a path in text must never be opened).
         val imagePath = if (intent.type?.startsWith("image/") == true) {
             @Suppress("DEPRECATION")
             val streamUri = intent.getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM)
-            streamUri?.let { copyStreamToPrivateStorage(it) }
+            streamUri?.let { ShareIntake.copyImage(this, it) }
         } else null
 
         return ShareContent(text, imagePath)
     }
-
-    private fun copyStreamToPrivateStorage(uri: android.net.Uri): String? = try {
-        val outFile = java.io.File(cacheDir, "share_${System.currentTimeMillis()}.jpg")
-        val copied = contentResolver.openInputStream(uri)?.use { input ->
-            outFile.outputStream().use { output -> input.copyTo(output) }
-        }
-        if (copied != null) outFile.absolutePath else null
-    } catch (_: SecurityException) { null }
-      catch (_: Exception) { null }
 
     // Task 2.2: prompt at most once after first successful save (API 33+)
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
@@ -242,6 +240,7 @@ class CaptureActivity : ComponentActivity() {
         private const val KEY_TILE_PROMPTED = "pref_tile_prompt_shown"
         private const val STATE_CAPTURE_ID = "capture_id"
         private const val STATE_TEXT = "capture_text"
+        private const val STATE_IMAGE_PATH = "capture_image_path"
         private const val STATE_OVERRIDE_GRAPH = "capture_override_graph"
         private const val STATE_HANDLED = "capture_handled"
 
@@ -449,17 +448,42 @@ internal fun CaptureScreen(
 
     // Back with text auto-saves to the shown destination (Task 4.2.1g). Back with empty text is
     // not intercepted, so the system just closes. The legacy label path keeps its original save.
+    // After a failed save (Error) Back retries and queues, so closing never drops the text.
     BackHandler(
-        enabled = captureText.isNotBlank() && saveState == CaptureViewModel.SaveState.Idle &&
+        enabled = captureText.isNotBlank() &&
+            (saveState == CaptureViewModel.SaveState.Idle || saveState is CaptureViewModel.SaveState.Error) &&
             backSave == CaptureViewModel.BackSaveState.None && !menuOpen,
     ) {
-        if (destination is CaptureDestination.Legacy) viewModel.save() else viewModel.backSave()
+        if (destination is CaptureDestination.Legacy && saveState == CaptureViewModel.SaveState.Idle) viewModel.save()
+        else viewModel.backSave()
     }
     BackHandler(enabled = menuOpen) { viewModel.setMenuOpen(false) }
 
     fun onChipInteraction() {
         // Task 4.3.1b: any chip tap resets the Done-window auto-finish timer to its full duration.
         if (isDone) resetKey++
+    }
+
+    // Dismiss with unsaved typed text asks first and offers Copy text, so it is never lost with one tap.
+    var confirmDiscard by remember { mutableStateOf(false) }
+    val clipboard = LocalClipboardManager.current
+    val requestDismiss = {
+        val handled = saveState == CaptureViewModel.SaveState.Saved || saveState is CaptureViewModel.SaveState.Queued
+        if (captureText.isBlank() || handled) onDismiss() else confirmDiscard = true
+    }
+    if (confirmDiscard) {
+        AlertDialog(
+            onDismissRequest = { confirmDiscard = false },
+            title = { Text("Discard this note?") },
+            text = { Text("It hasn't been saved. Copy the text first if you might still need it.") },
+            confirmButton = { TextButton(onClick = { confirmDiscard = false; onDismiss() }) { Text("Discard") } },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = { clipboard.setText(AnnotatedString(captureText)) }) { Text("Copy text") }
+                    TextButton(onClick = { confirmDiscard = false }) { Text("Keep editing") }
+                }
+            },
+        )
     }
 
     val toast = backSave as? CaptureViewModel.BackSaveState.Done
@@ -518,7 +542,7 @@ internal fun CaptureScreen(
                 focusRequester = focusRequester,
                 onFocusWithin = { hasFocusWithinSheet = it },
                 onChipInteraction = ::onChipInteraction,
-                onDismiss = onDismiss,
+                onDismiss = requestDismiss,
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
@@ -882,14 +906,16 @@ private fun BackSaveToast(
 internal fun NoGraphsContent(viewModel: CaptureViewModel, onClose: () -> Unit) {
     val text by viewModel.captureText.collectAsState()
     val note by viewModel.resultNote.collectAsState()
+    val failed = note == CaptureViewModel.NO_GRAPH_SAVE_FAILED
+    val clipboard = LocalClipboardManager.current
     val close = { if (text.isBlank()) onClose() else viewModel.closeWithoutGraph() }
     LaunchedEffect(note) {
-        if (note != null) {
+        if (note != null && !failed) {
             delay(QUEUED_FINISH_MS)
             onClose()
         }
     }
-    BackHandler(enabled = note == null) { close() }
+    BackHandler(enabled = note == null || failed) { close() }
     Column(
         modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -901,9 +927,17 @@ internal fun NoGraphsContent(viewModel: CaptureViewModel, onClose: () -> Unit) {
             Spacer(Modifier.height(8.dp))
         }
         note?.let {
-            Text(it, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }, color = MaterialTheme.colorScheme.primary)
+            Text(
+                it,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                color = if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+            )
         }
-        TextButton(onClick = close, enabled = note == null) { Text("Close") }
+        if (failed) {
+            TextButton(onClick = { clipboard.setText(AnnotatedString(text)) }) { Text("Copy text") }
+            TextButton(onClick = onClose) { Text("Close anyway") }
+        }
+        TextButton(onClick = close, enabled = note == null || failed) { Text(if (failed) "Retry" else "Close") }
     }
 }
 

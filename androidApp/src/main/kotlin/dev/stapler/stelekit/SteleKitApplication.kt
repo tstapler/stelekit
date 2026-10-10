@@ -70,6 +70,9 @@ class SteleKitApplication : Application() {
     internal var captureTargetSettingsOverride: CaptureTargetSettings? = null
     internal var offGraphReasonOverride: (suspend (dev.stapler.stelekit.model.GraphInfo) -> String?)? = null
 
+    /** The one editor-write binding, shared by the share pipeline here and the app composition. */
+    internal val activeWriteHooks = dev.stapler.stelekit.capture.ActiveWriteHooks()
+
     @Volatile
     private var shareServicesMemo: Pair<GraphManager, ShareCaptureServices>? = null
     private val captureSettingsLazy by lazy { CaptureTargetSettings(PlatformSettings()) }
@@ -78,9 +81,9 @@ class SteleKitApplication : Application() {
     fun captureTargetSettings(): CaptureTargetSettings = captureTargetSettingsOverride ?: captureSettingsLazy
 
     /**
-     * Share pipeline (appender + inbox) for CaptureActivity, built on first use because a share can
-     * cold-start the process without MainActivity. The inbox drain is NOT started here: MainActivity's
-     * App composition owns it, so queued shares deliver once a graph is open and ready.
+     * Share pipeline (appender + inbox + drain) for the whole process, built on first use because a share
+     * can cold-start it without MainActivity. MainActivity's App composition is handed this same instance
+     * ([captureDeps]), so the inbox the share target writes to is the one the drain and the panel read.
      */
     fun shareServices(): ShareCaptureServices? {
         shareServicesOverride?.let { return it }
@@ -89,14 +92,27 @@ class SteleKitApplication : Application() {
         shareServicesMemo?.takeIf { it.first === gm }?.let { return it.second }
         return synchronized(this) {
             shareServicesMemo?.takeIf { it.first === gm }?.second ?: try {
-                createShareCaptureServices(gm, fileSystem, shareInboxConfigFor(filesDir.absolutePath))
-                    .also { shareServicesMemo = gm to it }
+                createShareCaptureServices(gm, fileSystem, shareInboxConfigFor(filesDir.absolutePath), activeWriteHooks)
+                    .also {
+                        shareServicesMemo = gm to it
+                        it.drain.start() // idempotent; MainActivity's composition reuses this same instance
+                    }
             } catch (e: Throwable) {
                 logger.warn("Share pipeline unavailable", e)
                 null
             }
         }
     }
+
+    /** Capture wiring for the App composition: reuses [shareServices] and [activeWriteHooks] rather than building its own. */
+    internal fun captureDeps(
+        copyHost: dev.stapler.stelekit.ui.screens.copy.CopyHostConfig?,
+    ): dev.stapler.stelekit.ui.StelekitAppCaptureDeps = dev.stapler.stelekit.ui.StelekitAppCaptureDeps(
+        shareInbox = shareInboxConfigFor(filesDir.absolutePath),
+        shareServicesProvider = { shareServices() },
+        activeWriteHooks = activeWriteHooks,
+        copyHost = copyHost,
+    )
 
     /** Why [info] can't take an off-graph write right now, or null when it can. */
     suspend fun offGraphUnavailableReason(info: dev.stapler.stelekit.model.GraphInfo): String? {
