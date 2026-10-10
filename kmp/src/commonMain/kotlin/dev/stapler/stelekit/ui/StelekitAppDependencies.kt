@@ -246,6 +246,8 @@ data class StelekitAppCaptureDeps(
     val onShareServicesReady: ((dev.stapler.stelekit.capture.ShareCaptureServices) -> Unit)? = null,
     /** Hands the app's capture-target settings to the host (Desktop quick capture) so it shares the app's Settings instance. */
     val onCaptureSettingsReady: ((dev.stapler.stelekit.capture.CaptureTargetSettings) -> Unit)? = null,
+    /** Lets a share to the open graph go through the editor's writer; filled by the open graph's composition root. */
+    val activeWriteHooks: dev.stapler.stelekit.capture.ActiveWriteHooks = dev.stapler.stelekit.capture.ActiveWriteHooks(),
 )
 
 /**
@@ -288,4 +290,6 @@ data class GraphContentDeps(
     val graphMergeService: dev.stapler.stelekit.transfer.GraphMergeService = dev.stapler.stelekit.transfer.GraphMergeService(),
     /** Threaded to `SettingsDialog`'s "Keyboard Shortcuts" row — see [StelekitAppCaptureDeps]. */
     val hotkeyComboLabel: String? = null,
+    /** Where this graph registers its editor-side writer for the share router. */
+    val activeWriteHooks: dev.stapler.stelekit.capture.ActiveWriteHooks? = null,
 )

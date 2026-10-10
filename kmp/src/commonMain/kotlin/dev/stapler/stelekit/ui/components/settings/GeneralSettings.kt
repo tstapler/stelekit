@@ -1,5 +1,9 @@
 package dev.stapler.stelekit.ui.components.settings
 
+import dev.stapler.stelekit.ui.LocalShareInboxUi
+import dev.stapler.stelekit.ui.ShareInboxUi
+import dev.stapler.stelekit.ui.components.queuedSharesSummary
+import dev.stapler.stelekit.ui.components.shareGraphNameOf
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -144,5 +148,18 @@ private fun CaptureTargetSection(settings: CaptureTargetSettings, graphs: List<G
             checked = rememberLast,
             onCheckedChange = { rememberLast = it; settings.rememberLast = it },
         )
+        LocalShareInboxUi.current?.let { QueuedSharesRow(it, graphs) }
+    }
+}
+
+@Composable
+private fun QueuedSharesRow(ui: ShareInboxUi, graphs: List<GraphInfo>) {
+    val state by ui.state.collectAsState()
+    val summary = queuedSharesSummary(state, remember(graphs) { shareGraphNameOf(graphs) }) ?: "None queued"
+    SettingsRow("Queued shares") {
+        OutlinedButton(
+            onClick = ui::openPanel,
+            modifier = Modifier.semantics { contentDescription = "Queued shares: $summary. Opens the list" },
+        ) { Text(summary) }
     }
 }

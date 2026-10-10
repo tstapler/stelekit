@@ -3,6 +3,7 @@ package dev.stapler.stelekit.capture
 import dev.stapler.stelekit.db.FakeRelocationFileSystem
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.GraphManager
+import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.db.PageFileResolver
 import dev.stapler.stelekit.db.RegistryGraphLocator
 import dev.stapler.stelekit.git.testsupport.StubFileSystem
@@ -246,6 +247,72 @@ class JournalAppenderOffGraphTest {
         assertEquals(true, verdicts.getValue("UNLABELED_FLAT"))
         assertNotNull(verdicts.entries.firstOrNull { it.value })
         assertFalse(verdicts.isEmpty())
+    }
+
+    private val activeRoot = "/graphs/active"
+
+    /** Router wired like production: the ready graph gets the real ActiveTargetWriter. */
+    private fun activeFixture(m: GraphManager, hooks: ActiveWriteHooks = ActiveWriteHooks()): RouterOffGraphRoute {
+        val capabilities = TargetWriterCapabilities(platformSupportsOffGraphWrite = true)
+        val router = TargetWriterRouter(
+            graphManager = m,
+            locator = RegistryGraphLocator(m.graphRegistry),
+            capabilities = capabilities,
+            activeWriterFor = { ready -> activeTargetWriterFor(ready, hooks, targetFs, m) },
+            offGraphWriterFor = { error("active graph must not use the file writer") },
+        )
+        return RouterOffGraphRoute(router, RegistryGraphLocator(m.graphRegistry), AssetCopier(targetFs)) { day }
+    }
+
+    private fun activeJournal(): String? =
+        targetFs.listFiles("$activeRoot/journals").singleOrNull()?.let { targetFs.readFile("$activeRoot/journals/${it.substringAfterLast('/')}") }
+
+    @Test
+    fun router_should_WriteBlockThroughActiveTargetWriter_ForTheReadyGraph() = realTime {
+        val m = newManager()
+        m.awaitPendingMigration()
+        val route = activeFixture(m)
+
+        val first = route.appendContent(active, ShareContent("hello active"), c1)
+        val second = route.appendContent(active, ShareContent("hello active"), c1)
+
+        assertIs<AppendOutcome.AppendedOffGraph>(first)
+        assertEquals(AppendOutcome.AlreadyPresent, second)
+        val onDisk = assertNotNull(activeJournal())
+        assertTrue(onDisk.contains("hello active"), onDisk)
+        assertTrue(onDisk.contains("id:: $c1"), onDisk)
+        assertEquals(1, Regex("hello active").findAll(onDisk).count())
+    }
+
+    @Test
+    fun router_should_Defer_When_EditorHasUnsavedEditsOnTheJournal() = realTime {
+        val m = newManager()
+        m.awaitPendingMigration()
+        val hooks = ActiveWriteHooks()
+        val route = activeFixture(m, hooks)
+        assertIs<AppendOutcome.AppendedOffGraph>(route.appendContent(active, ShareContent("seed"), c1))
+        val before = activeJournal()
+        val ready = assertNotNull(m.readyGraph.value)
+        hooks.register(
+            ActiveWriteBinding(active, GraphWriter(targetFs, ready.repoSet.writeActor), targetFs, activeRoot) { true },
+        )
+
+        val outcome = route.appendContent(active, ShareContent("while editing"), "00000000-0000-4000-8000-000000000002")
+
+        assertEquals(AppendOutcome.Deferred(OffGraphCapture.REASON_TARGET_BUSY), outcome)
+        assertEquals(before, activeJournal())
+    }
+
+    @Test
+    fun appendContent_should_KeepImageShareToActiveGraphDeferredPermanently() = realTime {
+        val m = newManager()
+        m.awaitPendingMigration()
+        val appender = JournalAppender(m, PlatformFileSystem(), InboxFallbackAppender(activeFixture(m), inbox))
+
+        val outcome = appender.appendContent(CaptureTarget.NamedGraph(active), ShareContent("look", byteArrayOf(1), "image/png"), c1)
+
+        assertEquals(AppendOutcome.Deferred(JournalAppender.IMAGE_NEEDS_OPEN_GRAPH_UI, permanent = true), outcome)
+        assertTrue(targetFs.allFilePaths().isEmpty())
     }
 
     @Test
