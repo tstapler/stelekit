@@ -27,6 +27,11 @@ sealed interface NotRoundTrippable {
         override val message get() = "Splice would change existing content: $detail"
     }
 
+    /** An inserted block re-parses differently from what the merge intended (lossy markup). */
+    data class InsertedContentChanged(val detail: String) : NotRoundTrippable {
+        override val message get() = "Inserted content would not survive a re-read: $detail"
+    }
+
     /** The new block landed somewhere other than the last child of the intended parent. */
     data class Misplaced(val detail: String) : NotRoundTrippable {
         override val message get() = "Inserted block misplaced: $detail"
@@ -83,7 +88,10 @@ object RoundTripGuard {
             is Either.Left -> return NotRoundTrippable.UnresolvableParent(r.value.pathOrEmpty()).left()
             is Either.Right -> r.value
         }
-        if (original.isEmpty()) return result.right()
+        if (original.isEmpty()) {
+            val page = MergePage("", properties = request.pageProperties, blocks = request.insertions.map { it.block })
+            return verifyRendered(result.text, page, pagePath, isJournal)?.left() ?: result.right()
+        }
         verifyBytes(original, result.text)?.let { return it.left() }
         val before = parse(original, pagePath, isJournal) { NotRoundTrippable.ParseFailed(it) }
         val after = parse(result.text, pagePath, isJournal) { NotRoundTrippable.ExistingContentChanged("spliced text no longer parses: $it") }
@@ -91,8 +99,46 @@ object RoundTripGuard {
         if (after is Either.Left) return after
         check(before is Either.Right && after is Either.Right)
         verifyStructure(before.value, after.value, request.takeIf { checkParents }, result)?.let { return it.left() }
+        if (checkParents) verifyInserted(before.value, after.value, request)?.let { return it.left() }
         return result.right()
     }
+
+    /** Re-parses freshly rendered [text]; it must give back [expected] (blocks and page properties) exactly. */
+    fun verifyRendered(text: String, expected: MergePage, pagePath: String, isJournal: Boolean): NotRoundTrippable? {
+        val parsed = when (val p = parse(text, pagePath, isJournal) { NotRoundTrippable.InsertedContentChanged("rendered text no longer parses: $it") }) {
+            is Either.Left -> return p.value
+            is Either.Right -> p.value.mergePage
+        }
+        if (parsed.properties != expected.properties) return NotRoundTrippable.InsertedContentChanged("page properties differ after re-read")
+        return firstDifference(expected.blocks, parsed.blocks)?.let { NotRoundTrippable.InsertedContentChanged(it) }
+    }
+
+    /** After the splice, the parsed page must be the original tree plus exactly the requested blocks as last children. */
+    private fun verifyInserted(before: ParsedMarkdown, after: ParsedMarkdown, request: SpliceRequest): NotRoundTrippable? {
+        val expected = withInsertions(before.mergePage.blocks, request.insertions)
+        return firstDifference(expected, after.mergePage.blocks)?.let { NotRoundTrippable.InsertedContentChanged(it) }
+    }
+
+    private fun withInsertions(blocks: List<MergeBlock>, insertions: List<BlockInsertion>): List<MergeBlock> {
+        val appended = insertions.groupBy({ it.parentPath }, { it.block })
+        fun rebuild(bs: List<MergeBlock>, path: List<Int>): List<MergeBlock> =
+            bs.mapIndexed { i, b -> b.copy(children = rebuild(b.children, path + i)) } + appended[path].orEmpty()
+        return rebuild(blocks, emptyList())
+    }
+
+    private fun firstDifference(expected: List<MergeBlock>, actual: List<MergeBlock>): String? {
+        if (expected == actual) return null
+        val e = flatten(expected)
+        val a = flatten(actual)
+        for (i in 0 until minOf(e.size, a.size)) {
+            if (e[i] != a[i]) return "block #$i intended '${show(e[i])}' but re-read '${show(a[i])}'"
+        }
+        return "block count intended ${e.size} but re-read ${a.size}"
+    }
+
+    private fun flatten(bs: List<MergeBlock>): List<MergeBlock> = bs.flatMap { listOf(it.copy(children = emptyList())) + flatten(it.children) }
+
+    private fun show(b: MergeBlock) = (b.content + b.properties.entries.joinToString("") { "|${it.key}=${it.value}" }).take(60).replace("\n", "\\n")
 
     private fun SpliceError.pathOrEmpty(): List<Int> = (this as SpliceError.ParentNotFound).path
 

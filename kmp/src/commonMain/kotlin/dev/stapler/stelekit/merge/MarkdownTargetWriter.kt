@@ -184,6 +184,7 @@ class MarkdownTargetWriter(
         if (!fs.directoryExists(dir) && !fs.createDirectory(dir)) {
             return DomainError.FileSystemError.WriteFailed(dir, "cannot create directory").left()
         }
+        RoundTripGuard.verifyRendered(text, merged, path, merged.isJournal)?.let { return refuse(it).left() }
         val bytes = text.encodeToByteArray()
         return replaceFile(path, bytes, null).map {
             noteIds(path, explicitUuids(merged.blocks))

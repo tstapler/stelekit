@@ -31,13 +31,14 @@ object LogseqPageSerializer {
 
             sortedSiblings.forEach { block ->
                 val indent = "\t".repeat(block.level)
+                val restored = BlockMarkup.restore(block.content, block.blockType, block.properties)
                 append(indent)
                 append("- ")
-                appendLine(block.content.indentContinuationLines(indent + "\t"))
+                appendLine(restored.content.indentContinuationLines(indent + "\t"))
 
-                if (block.properties.isNotEmpty()) {
+                if (restored.properties.isNotEmpty()) {
                     val propIndent = indent + "\t"
-                    block.properties.forEach { (key, value) ->
+                    restored.properties.forEach { (key, value) ->
                         append(propIndent)
                         appendLine("$key:: $value")
                     }

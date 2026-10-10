@@ -6,6 +6,7 @@ import arrow.core.right
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.GraphWriter
+import dev.stapler.stelekit.db.LogseqPageSerializer
 import dev.stapler.stelekit.db.PageFileError
 import dev.stapler.stelekit.db.PageFileResolver
 import dev.stapler.stelekit.error.DomainError
@@ -88,8 +89,13 @@ class ActiveTargetWriter(
         val now = Clock.System.now()
         val pageRow = row ?: ActiveWritePlanner.newPageRow(page, merged, path, now)
         val inserts = mutableListOf<Block>()
-        if (!ActiveWritePlanner.plan(tree, merged.blocks, null, ActiveWritePlanner.Ctx(pageRow.uuid, row?.filePath ?: path, now), inserts)) {
-            return@guarded refuse(NotRoundTrippable.ExistingContentChanged("merged page lost or altered an existing block")).left()
+        val ctx = ActiveWritePlanner.Ctx(pageRow.uuid, row?.filePath ?: path, now)
+        if (!ActiveWritePlanner.plan(tree, merged.blocks, null, ctx, inserts)) {
+            val lossy = ctx.unrenderable
+            return@guarded refuse(
+                if (lossy != null) NotRoundTrippable.InsertedContentChanged("block '$lossy' does not survive being written and re-read")
+                else NotRoundTrippable.ExistingContentChanged("merged page lost or altered an existing block"),
+            ).left()
         }
         val propsChanged = row != null && merged.properties != existing?.properties
         if (isNew && MergeRenderer.renderNewPage(merged).isEmpty()) return@guarded WriteOutcome.Unchanged.right()
@@ -98,6 +104,10 @@ class ActiveTargetWriter(
         findCollision(inserts, pageRow.uuid).getOrReturn { return@guarded it.left() }?.let {
             return@guarded DomainError.DatabaseError.WriteFailed("uuid collision: block $it already exists on another page").left()
         }
+
+        val allBlocks = tree.flatMap(ActiveWritePlanner::flatten) + inserts
+        val rendered = LogseqPageSerializer.serialize(pageRow.copy(properties = merged.properties), allBlocks)
+        RoundTripGuard.verifyRendered(rendered, merged, path, merged.isJournal)?.let { return@guarded refuse(it).left() }
 
         // An unloaded stub gets the blocks parsed from its file persisted with this write (and is marked loaded).
         val saved = if (row == null || propsChanged || unloaded.isNotEmpty()) {
@@ -109,7 +119,6 @@ class ActiveTargetWriter(
             rollbackPage(row, pageRow, added)
             return@guarded e.stopped().left()
         }
-        val allBlocks = tree.flatMap(ActiveWritePlanner::flatten) + inserts
         graphWriter.savePage(pageRow.copy(properties = merged.properties, isContentLoaded = true), allBlocks, graphPath).onLeft { e ->
             rollbackPage(row, pageRow, added)
             return@guarded e.left()

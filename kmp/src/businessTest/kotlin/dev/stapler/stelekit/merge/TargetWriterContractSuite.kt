@@ -271,4 +271,41 @@ abstract class TargetWriterContractSuite {
         val contents = flat(assertNotNull(h.snapshot(key)).blocks).map { it.content }
         assertEquals((1..80).flatMap { listOf("keep me $it", "child $it") }, contents.take(160))
     }
+
+    @Test
+    fun blockMarkupSurvivesTheWriteAndTheDbMatchesTheFile() = runBlocking {
+        val h = harness()
+        h.seed(key, "- local")
+        val from = MergePage(
+            "Target",
+            blocks = listOf(
+                MergeBlock("s1", "## Heading"),
+                MergeBlock("s2", "TODO t\nSCHEDULED: <2026-01-01 Thu>"),
+                MergeBlock("s3", "DOING x\n:LOGBOOK:\nCLOCK: [2026-01-01 Thu 10:00]--[2026-01-01 Thu 11:00] =>  01:00:00\n:END:"),
+                MergeBlock("s4", "| a | b |\n|---|---|\n| 1 | 2 |"),
+                MergeBlock("s5", "```kotlin\nfun a() {\n  x()\n}\n```"),
+            ),
+        )
+
+        val copy = h.copy(from)
+
+        val merged = assertIs<MergeOutcome.Merged>(copy.outcome)
+        assertEquals(5, merged.added)
+        assertEquals(merged.page.blocks, assertNotNull(h.snapshot(key)).blocks)
+        assertEquals(MergeOutcome.Unchanged, h.copy(from).outcome)
+    }
+
+    @Test
+    fun lossyBlockIsRefusedAndNothingIsWritten() = runBlocking {
+        val h = harness()
+        h.seed(key, "- local")
+        val before = h.writer.fileHash(key).ok()
+        val from = MergePage("Target", blocks = listOf(MergeBlock("s1", "intro\nkey:: value-looking text")))
+        val outcome = mergePage(h.writer.readExisting(key).ok(), from, policy)
+
+        val result = h.writer.write(key, (outcome as MergeOutcome.Merged).page)
+
+        assertIs<DomainError.MergeError.WriteRefused>((result as Either.Left).value)
+        assertEquals(before, h.writer.fileHash(key).ok())
+    }
 }
