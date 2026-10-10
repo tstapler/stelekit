@@ -446,6 +446,8 @@ maven.install(
 
         # ── Okio (KMP — used by commonMain for cross-platform file I/O) ───────
         "com.squareup.okio:okio-jvm:3.17.0",
+        # Test-only (businessTest merge/capture suites use okio.fakefilesystem.FakeFileSystem).
+        "com.squareup.okio:okio-fakefilesystem-jvm:3.17.0",
 
         # ── Compose material icons extended (Android) ─────────────────────────
         # JVM (desktop) uses material-icons-extended-desktop:1.7.3 (already pinned above).
