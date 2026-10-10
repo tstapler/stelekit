@@ -68,6 +68,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.merge.CopyDirection
 import dev.stapler.stelekit.merge.PullIndexState
@@ -368,7 +369,7 @@ private fun FilterRow(state: CopyPagesState, actions: CopyPagesActions) = Column
         FilterChip(selected = state.filters.showJournals, onClick = actions.onToggleJournals, label = { Text("Journals") })
         DateRangeChip(state.filters.dateFrom, state.filters.dateTo, actions.onDateRange)
         TextFilterChip("Namespace", state.filters.namespace, actions.onNamespace)
-        TextFilterChip("Tag", state.filters.tag, actions.onTag, enabled = !state.isPull)
+        TextFilterChip("Tag", state.filters.tag, actions.onTag, enabled = !state.isPull, disabledReason = CopyPagesState.NOT_AVAILABLE_PULL)
     }
     if (state.isPull) {
         Text(
@@ -416,11 +417,17 @@ private fun DateRangeChip(from: LocalDate?, to: LocalDate?, onChange: (LocalDate
 }
 
 @Composable
-private fun TextFilterChip(label: String, value: String, onChange: (String) -> Unit, enabled: Boolean = true) {
+private fun TextFilterChip(label: String, value: String, onChange: (String) -> Unit, enabled: Boolean = true, disabledReason: String? = null) {
     var open by remember { mutableStateOf(false) }
     var draft by remember(value) { mutableStateOf(value) }
     Column {
-        FilterChip(selected = value.isNotBlank(), enabled = enabled, onClick = { open = true }, label = { Text(if (value.isBlank()) label else "$label: $value") })
+        FilterChip(
+            selected = value.isNotBlank(),
+            enabled = enabled,
+            onClick = { open = true },
+            label = { Text(if (value.isBlank()) label else "$label: $value") },
+            modifier = if (!enabled && disabledReason != null) Modifier.semantics { stateDescription = disabledReason } else Modifier,
+        )
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(draft, { draft = it }, label = { Text(label) }, singleLine = true)
