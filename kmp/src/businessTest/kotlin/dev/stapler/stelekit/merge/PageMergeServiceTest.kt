@@ -387,6 +387,72 @@ class PageMergeServiceTest {
     }
 
     @Test
+    fun `cancel before the run takes its lock still stops it, and a stray cancel never stops a later plan`() = realTime {
+        val env = Env()
+        val source = FakeSource((0 until 5).map { entry(it) })
+
+        val plan = env.plan(source)
+        env.service.cancel() // the host's launch window: Stop arrives before apply holds runLock
+        val stopped = env.service.apply(plan).ok()
+        assertEquals(0, stopped.stoppedAfter)
+        assertEquals(0, env.fake.writes)
+
+        env.service.cancel() // stray
+        val done = env.service.apply(env.plan(source)).ok()
+        assertEquals(5, done.newPages)
+    }
+
+    @Test
+    fun `retryFailed honors cancel and keeps the pages failed`() = realTime {
+        val env = Env()
+        val source = FakeSource((0 until 4).map { entry(it) })
+        var faulty = true
+        env.fake.failWith = { n -> if (faulty && n == "p0001") DomainError.FileSystemError.WriteFailed(n, "disk full") else null }
+        env.service.apply(env.plan(source)).ok()
+        faulty = false
+
+        env.service.cancel()
+        val stopped = env.service.retryFailed().ok()
+        assertEquals("p0001", stopped.failed.single().pageName)
+        assertTrue("p0001" !in env.fake.pages)
+
+        assertTrue(env.service.retryFailed().ok().failed.isEmpty())
+        assertTrue("p0001" in env.fake.pages)
+    }
+
+    @Test
+    fun `a throwing source becomes a failed plan instead of escaping`() = realTime {
+        val env = Env()
+        val broken = object : PageSource {
+            override suspend fun listPages(filter: SelectionFilter, search: String?, limit: Int, offset: Int): Either<DomainError, List<Page>> =
+                throw kotlinx.coroutines.channels.ClosedSendChannelException("actor closed")
+            override suspend fun countPages(filter: SelectionFilter, search: String?) = 0L.right()
+            override suspend fun readPages(uuids: List<PageUuid>): Either<DomainError, List<SourcePage>> = emptyList<SourcePage>().right()
+        }
+        env.manager.awaitPendingMigration()
+
+        val res = env.service.plan(env.request(), broken)
+
+        assertTrue(res.isLeft(), "plan must return a Left, got $res")
+        assertEquals(MergePhase.Idle, env.service.progress.value.phase)
+    }
+
+    @Test
+    fun `a superseded failed run's staging directory is deleted`() = realTime {
+        val env = Env()
+        val source = FakeSource((0 until 4).map { entry(it) })
+        env.fake.failWith = { n -> if (n == "p0002") DomainError.FileSystemError.WriteFailed(n, "disk full") else null }
+
+        val first = env.service.apply(env.plan(source)).ok()
+        assertNotNull(MergeStagingDirectory.open(env.okio, "/app", MergeId(first.mergeId)))
+        val second = env.service.apply(env.plan(source)).ok()
+
+        assertEquals("p0002", second.failed.single().pageName)
+        assertNull(MergeStagingDirectory.open(env.okio, "/app", MergeId(first.mergeId)), "superseded run's staging must go")
+        assertNotNull(MergeStagingDirectory.open(env.okio, "/app", MergeId(second.mergeId)))
+    }
+
+    @Test
     fun `WriteRefused and retry-exhausted become failed entries and are never queued`() = realTime {
         val env = Env()
         val source = FakeSource((0 until 5).map { entry(it) })

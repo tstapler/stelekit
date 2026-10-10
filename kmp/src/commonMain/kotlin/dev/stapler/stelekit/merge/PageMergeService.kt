@@ -13,9 +13,11 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -75,6 +77,7 @@ class PageMergeService(
     private val cancelRequested = MutableStateFlow(false)
     private val stateLock = Mutex()
     private val contexts = LinkedHashMap<String, RunContext>()
+    @kotlin.concurrent.Volatile
     private var lastRun: RunState? = null
 
     private class RunContext(val request: PlanRequest, val source: PageSource, var sourceUnreadable: List<UnreadablePage>) {
@@ -118,7 +121,19 @@ class PageMergeService(
      * Dry run: classifies every selected page against the target without writing. Streams <= 100 pages
      * at a time; the plan keeps only counters, <= [MergePlan.MAX_CONFLICT_DETAILS] conflict details and a fingerprint.
      */
-    suspend fun plan(request: PlanRequest, source: PageSource): Either<DomainError, MergePlan> {
+    suspend fun plan(request: PlanRequest, source: PageSource): Either<DomainError, MergePlan> = try {
+        planUnguarded(request, source)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        // A closed-actor send or an OOM from a source read must become a failure, not an Android process kill.
+        logger.error("merge.plan crashed: ${e::class.simpleName}: ${e.message}", e)
+        _progress.value = MergeProgress()
+        DomainError.DatabaseError.ReadFailed(e.message ?: e::class.simpleName.orEmpty()).left()
+    }
+
+    private suspend fun planUnguarded(request: PlanRequest, source: PageSource): Either<DomainError, MergePlan> {
+        if (!runLock.isLocked) cancelRequested.value = false
         val acc = Accumulator()
         val policy = policyOf(request)
         _progress.value = MergeProgress(MergePhase.Planning)
@@ -141,10 +156,14 @@ class PageMergeService(
             planFingerprint = acc.fingerprint,
             createdAtEpochMs = nowEpochMs(),
         )
-        stateLock.withLock {
+        val evicted = stateLock.withLock {
             contexts[plan.mergeId] = RunContext(request, source, sourceUnreadable)
-            while (contexts.size > MAX_PLANS_KEPT) contexts.remove(contexts.keys.first())
+            val out = ArrayList<RunContext>()
+            while (contexts.size > MAX_PLANS_KEPT) contexts.remove(contexts.keys.first())?.let(out::add)
+            out
         }
+        // An evicted plan drops its PageSource reference and any staging it spilled (the retry run's stays).
+        evicted.forEach { ctx -> ctx.staging?.takeIf { it !== lastRun?.staging }?.delete() }
         _progress.value = MergeProgress(MergePhase.Idle, total = plan.summary.total)
         logger.info("merge.plan id=${plan.mergeId} ${plan.summary} closureAdded=${closure.added.size}")
         return plan.right()
@@ -153,7 +172,15 @@ class PageMergeService(
     // ---- stage ----
 
     /** Spills every planned source page as a [StagedPage] JSON file. [apply] calls this when needed. */
-    suspend fun stage(plan: MergePlan): Either<ApplyFailure, Unit> = stageCtx(plan).map { }
+    suspend fun stage(plan: MergePlan): Either<ApplyFailure, Unit> = try {
+        stageCtx(plan).map { }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        logger.error("merge.stage crashed: ${e::class.simpleName}: ${e.message}", e)
+        _progress.value = MergeProgress()
+        ApplyFailure.StagingFailed(e.message ?: e::class.simpleName.orEmpty()).left()
+    }
 
     private suspend fun stageCtx(plan: MergePlan): Either<ApplyFailure, MergeStagingDirectory> {
         val ctx = stateLock.withLock { contexts[plan.mergeId] } ?: return ApplyFailure.UnknownPlan.left()
@@ -197,12 +224,12 @@ class PageMergeService(
     suspend fun apply(plan: MergePlan): Either<ApplyFailure, MergeResult> {
         if (!runLock.tryLock()) return ApplyFailure.Busy.left()
         try {
-            cancelRequested.value = false
             val job = scope.async { doApply(plan) }
             return try {
                 job.await()
             } catch (e: CancellationException) {
-                job.cancel()
+                // Join before releasing runLock so a second apply can't overlap the dying job.
+                withContext(NonCancellable) { job.cancelAndJoin() }
                 throw e
             } catch (e: Throwable) {
                 // async only delivers via await: without this a fault (OOM, a throwing PageSource) escapes
@@ -212,6 +239,7 @@ class PageMergeService(
                 ApplyFailure.Failed(DomainError.FileSystemError.WriteFailed("merge", e.message ?: e::class.simpleName.orEmpty())).left()
             }
         } finally {
+            cancelRequested.value = false
             runLock.unlock()
         }
     }
@@ -262,6 +290,7 @@ class PageMergeService(
             state.staging.delete()
             lastRun = null
         } else {
+            lastRun?.takeIf { it !== state }?.staging?.delete()
             lastRun = state
         }
         _progress.value = MergeProgress(
@@ -281,9 +310,13 @@ class PageMergeService(
         return result
     }
 
-    /** Requests a stop after the page being written. Committed pages stay; re-planning converges. */
+    /**
+     * Requests a stop after the page being written. Committed pages stay; re-planning converges.
+     * Also valid in the gap between a host launching a run and the run taking its lock; the flag is
+     * cleared when a run ends and when a new [plan] starts, so a stray call never stops a later run.
+     */
     fun cancel() {
-        if (runLock.isLocked) cancelRequested.value = true
+        cancelRequested.value = true
     }
 
     /** Re-applies only the pages that failed in the last run, from staging. Returns the cumulative result. */
@@ -297,6 +330,10 @@ class PageMergeService(
             state.failed.clear()
             _progress.value = MergeProgress(MergePhase.Applying, 0, pending.size)
             for ((i, failure) in pending.withIndex()) {
+                if (cancelRequested.value) {
+                    state.failed += pending.drop(i)
+                    break
+                }
                 val written = state.unrecorded[failure.stagedIndex]
                 val page = if (written == null) readStaged(state.staging, failure.stagedIndex) else null
                 if (written != null) {
@@ -311,6 +348,7 @@ class PageMergeService(
             manifest.complete()
             return finishRun(state).right()
         } finally {
+            cancelRequested.value = false
             runLock.unlock()
         }
     }
