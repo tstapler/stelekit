@@ -323,7 +323,8 @@ class PageMergeService(
     suspend fun retryFailed(): Either<ApplyFailure, MergeResult> {
         if (!runLock.tryLock()) return ApplyFailure.Busy.left()
         try {
-            val state = lastRun ?: return ApplyFailure.Busy.left()
+            // Nothing to retry is not "busy": the controller would tell the user another copy is running.
+            val state = lastRun ?: return ApplyFailure.UnknownPlan.left()
             val manifest = manifests.writerFor(MergeId(state.plan.mergeId))
                 ?: return ApplyFailure.StagingFailed("Undo manifest is missing").left()
             val pending = state.failed.toList()

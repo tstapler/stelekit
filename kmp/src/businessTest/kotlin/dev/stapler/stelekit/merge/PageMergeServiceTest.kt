@@ -421,6 +421,12 @@ class PageMergeServiceTest {
     }
 
     @Test
+    fun `retryFailed with nothing to retry is UnknownPlan, not Busy`() = realTime {
+        val env = Env()
+        assertEquals(ApplyFailure.UnknownPlan, (env.service.retryFailed() as Either.Left).value)
+    }
+
+    @Test
     fun `a throwing source becomes a failed plan instead of escaping`() = realTime {
         val env = Env()
         val broken = object : PageSource {
