@@ -83,8 +83,12 @@ fun CopyFlowContent(
 ) {
     val request = state.request
     val pickerState = state.picker?.state?.collectAsState()?.value
-    val sourceName = request?.sourceGraphName ?: pickerState?.activeGraphName.orEmpty()
-    val targetName = request?.let { nameOf(it.targetGraphId) } ?: pickerState?.chosenDestination?.name.orEmpty()
+    val direction = state.direction
+    // Push: active graph is the source, chosen graph the target. Pull: the reverse.
+    val activeName = pickerState?.activeGraphName.orEmpty()
+    val chosenName = pickerState?.chosenDestination?.name.orEmpty()
+    val sourceName = request?.sourceGraphName ?: if (direction == CopyDirection.Pull) chosenName else activeName
+    val targetName = request?.let { nameOf(it.targetGraphId) } ?: if (direction == CopyDirection.Pull) activeName else chosenName
 
     Box(modifier) {
         if (state.stage == CopyStage.Picking && state.picker != null) {
@@ -94,7 +98,7 @@ fun CopyFlowContent(
         }
         state.dryRun?.let { view ->
             DryRunDialog(
-                direction = CopyDirection.Push,
+                direction = direction,
                 sourceName = sourceName,
                 targetName = targetName,
                 state = (view.ui as? DryRunUiState.Checking)?.copy(checked = progress.done, total = progress.total) ?: view.ui,
@@ -105,6 +109,13 @@ fun CopyFlowContent(
             )
         }
         StageOverlay(state, progress, sourceName, targetName, nameOf, actions, conflicts)
+        if (state.switchConfirm) {
+            CopyPullSwitchConfirmDialog(
+                graphName = targetName,
+                onStopAndSwitch = actions::confirmPullSwitch,
+                onKeepCopying = actions::cancelPullSwitch,
+            )
+        }
     }
 }
 
@@ -118,15 +129,16 @@ private fun StageOverlay(
     actions: CopyFlowActions,
     conflicts: @Composable (GraphId) -> Unit,
 ) {
+    val direction = state.direction
     when (state.stage) {
         CopyStage.Running -> if (state.backgrounded) {
             BackgroundBanner(targetName, actions::stop)
         } else {
-            CopyProgressDialog(CopyDirection.Push, sourceName, targetName, progress, currentPage = null, onStop = actions::stop, stopping = state.stopping)
+            CopyProgressDialog(direction, sourceName, targetName, progress, currentPage = null, onStop = actions::stop, stopping = state.stopping)
         }
         CopyStage.Finished -> state.result?.let { result ->
             CopyResultDialog(
-                direction = CopyDirection.Push,
+                direction = direction,
                 sourceName = sourceName,
                 targetName = targetName,
                 result = result,

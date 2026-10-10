@@ -369,7 +369,7 @@ fun PageView(
                                     }
                                 )
                             }
-                            LocalCopyFlow.current?.let { copyFlow ->
+                            LocalCopyFlow.current?.takeIf { it.direction == dev.stapler.stelekit.merge.CopyDirection.Push }?.let { copyFlow ->
                                 HorizontalDivider()
                                 DropdownMenuItem(
                                     text = { Text("Copy this page to...") },

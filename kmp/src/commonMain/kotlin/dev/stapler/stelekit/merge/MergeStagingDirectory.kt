@@ -32,7 +32,9 @@ class MergeStagingDirectory private constructor(
     private val fileSystem: FileSystem,
     val dir: Path,
     val marker: Marker,
-) {
+) : MergeStaging {
+    override val label: String get() = dir.toString()
+
     @Serializable
     data class Marker(
         val mergeId: String,
@@ -41,13 +43,13 @@ class MergeStagingDirectory private constructor(
         val startedAtEpochMs: Long,
     )
 
-    fun writePage(index: Int, page: MergePage): Either<MergeStorageError, Unit> {
+    override fun writePage(index: Int, page: MergePage): Either<MergeStorageError, Unit> {
         val path = pagePath(index).getOrNull() ?: return MergeStorageError("invalid page index $index").left()
         return io { fileSystem.write(path) { writeUtf8(StagedPage.encode(page)) } }
     }
 
     /** Lazy, ascending by page index; only the page being visited is held in memory. */
-    fun readAll(): Sequence<Either<StagedPageError, MergePage>> {
+    override fun readAll(): Sequence<Either<StagedPageError, MergePage>> {
         val indices = try {
             fileSystem.list(dir).mapNotNull { pageIndexOf(it.name) }.sorted()
         } catch (e: IOException) {
@@ -63,13 +65,22 @@ class MergeStagingDirectory private constructor(
         }
     }
 
-    fun pageCount(): Int = try {
+    override fun readPage(index: Int): MergePage? {
+        val path = pagePath(index).getOrNull() ?: return null
+        return try {
+            StagedPage.decode(fileSystem.read(path) { readUtf8() }).getOrNull()
+        } catch (e: IOException) {
+            null
+        }
+    }
+
+    override fun pageCount(): Int = try {
         fileSystem.list(dir).count { pageIndexOf(it.name) != null }
     } catch (e: IOException) {
         0
     }
 
-    fun delete(): Either<MergeStorageError, Unit> = io { fileSystem.deleteRecursively(dir) }
+    override fun delete(): Either<MergeStorageError, Unit> = io { fileSystem.deleteRecursively(dir) }
 
     /** `<dir>/<index>.json`, accepted only if it lies inside [dir] per [PageFileResolver.isWithin]. */
     fun pagePath(index: Int): Either<MergeStorageError, Path> {

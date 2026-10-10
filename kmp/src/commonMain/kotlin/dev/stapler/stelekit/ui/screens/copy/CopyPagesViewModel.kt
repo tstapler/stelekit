@@ -97,6 +97,7 @@ class CopyPagesViewModel(
     private var linkedJob: Job? = null
     private val probeJobs = HashMap<GraphId, Job>()
     private var userChoseDestination = false
+    private var requestedSource: GraphId? = null
 
     /** Pull: the file-backed source being browsed; null in Push. */
     private val pull: PullPageSource? = if (direction == CopyDirection.Pull) source as? PullPageSource else null
@@ -416,7 +417,22 @@ class CopyPagesViewModel(
         pull?.select(info)
     }
 
+    /** Pull: choose [graphId] as the source once its probe settles as available (graph-switcher row entry). */
+    fun preselectSource(graphId: GraphId) {
+        requestedSource = graphId
+        applyRequestedSource()
+    }
+
+    private fun applyRequestedSource() {
+        val id = requestedSource ?: return
+        val status = _state.value.destinations.firstOrNull { it.graphId == id }?.status ?: return
+        if (status is DestinationStatus.Checking) return
+        requestedSource = null
+        if (status == DestinationStatus.Available) chooseDestination(id)
+    }
+
     private fun maybePreselect() {
+        applyRequestedSource()
         if (!preselectLastDestination || userChoseDestination || _state.value.destinationId != null) return
         val last = destinationSettings?.lastDestinationGraphId ?: return
         if (last == activeGraphId) return

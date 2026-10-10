@@ -7,15 +7,16 @@ import arrow.core.Either
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.merge.ApplyFailure
+import dev.stapler.stelekit.merge.CopyDirection
 import dev.stapler.stelekit.merge.CopyRunOutcome
 import dev.stapler.stelekit.merge.InterruptedCopy
 import dev.stapler.stelekit.merge.MergeId
 import dev.stapler.stelekit.merge.MergePlan
 import dev.stapler.stelekit.merge.MergeResult
-import dev.stapler.stelekit.merge.MergeStagingDirectory
 import dev.stapler.stelekit.merge.PageSelection
 import dev.stapler.stelekit.merge.PageSource
 import dev.stapler.stelekit.merge.PlanRequest
+import dev.stapler.stelekit.merge.PullPageSource
 import dev.stapler.stelekit.merge.UndoResult
 import dev.stapler.stelekit.merge.UndoUnavailableReason
 import dev.stapler.stelekit.merge.interruptedCopies
@@ -73,6 +74,8 @@ interface CopyFlowActions {
     fun dismissInterrupted()
     fun openPickerFromInterrupted()
     fun resume()
+    fun confirmPullSwitch()
+    fun cancelPullSwitch()
 }
 
 enum class CopyStage { Idle, Picking, Running, Finished, RunFailed, ConfirmUndo, Conflicts, Interrupted }
@@ -95,6 +98,10 @@ data class CopyFlowState(
     val conflictsTarget: GraphId? = null,
     val interrupted: InterruptedCopyNotice? = null,
     val interruptedCopy: InterruptedCopy? = null,
+    /** Which way the open flow copies; dialogs title themselves by it. */
+    val direction: CopyDirection = CopyDirection.Push,
+    /** Pull: the user tried to leave the destination mid-run; shows the "Stop it and switch?" confirm. */
+    val switchConfirm: Boolean = false,
 )
 
 /**
@@ -133,11 +140,18 @@ class CopyFlowController(
     private var binding: CopyGraphBinding? = null
     private var pickerJob: Job? = null
     private var pendingResume: InterruptedCopy? = null
+    private var pendingRetryTarget: GraphId? = null
+    private var pull: PullPageSource? = null
+    private var deferredSwitch: (() -> Unit)? = null
+    private var switchConfirmed = false
+
+    val direction: CopyDirection get() = services.direction
 
     fun close() {
         notices.close()
         scope.cancel()
         _state.value.picker?.close()
+        disposePull()
         services.service.close()
     }
 
@@ -151,6 +165,10 @@ class CopyFlowController(
         binding = next
         val st = _state.value
         if (st.stage == CopyStage.Conflicts && st.conflictsTarget == next.graphId) return
+        pendingRetryTarget?.takeIf { it == next.graphId }?.let {
+            pendingRetryTarget = null
+            startRetry()
+        }
         pendingResume?.takeIf { it.sourceGraphId == next.graphId.value }?.let {
             pendingResume = null
             resumeInterrupted(it)
@@ -175,7 +193,7 @@ class CopyFlowController(
     // ---- picker ------------------------------------------------------------------------------
 
     /** Opens the picker; [preselect] (the page overflow entry) starts with that page ticked. */
-    fun open(preselect: PageUuid? = null) {
+    fun open(preselect: PageUuid? = null, preselectSource: GraphId? = null) {
         val b = binding ?: return
         val st = _state.value
         if (st.stage == CopyStage.Running || services.runHost.running.value) {
@@ -183,20 +201,58 @@ class CopyFlowController(
             return
         }
         if (st.stage != CopyStage.Idle) return
-        val picker = CopyPagesViewModel(
-            source = b.source,
-            activeGraphId = b.graphId,
-            graphRegistry = graphRegistry,
-            gateway = PageMergeServiceGateway(services.service, b.source),
-            probe = services.probe,
-            destinationSettings = services.destinationSettings,
-        )
+        val picker = newPicker(b) ?: return
         preselect?.let(picker::toggleRow)
-        _state.value = CopyFlowState(stage = CopyStage.Picking, picker = picker)
+        preselectSource?.let(picker::preselectSource)
+        _state.value = CopyFlowState(stage = CopyStage.Picking, picker = picker, direction = direction)
         pickerJob = scope.launch {
             picker.state.map { it.review }.distinctUntilChanged().collect { onReviewState(it) }
         }
     }
+
+    private fun newPicker(b: CopyGraphBinding): CopyPagesViewModel? {
+        disposePull()
+        if (direction == CopyDirection.Push) {
+            return CopyPagesViewModel(
+                source = b.source,
+                activeGraphId = b.graphId,
+                graphRegistry = graphRegistry,
+                gateway = PageMergeServiceGateway(services.service, b.source),
+                probe = services.probe,
+                destinationSettings = services.destinationSettings,
+            )
+        }
+        val reader = services.sourceReader ?: run {
+            notices.trySend("Copying from another graph is not available on this device")
+            return null
+        }
+        val source = PullPageSource(reader).also { pull = it }
+        return CopyPagesViewModel(
+            source = source,
+            activeGraphId = b.graphId,
+            graphRegistry = graphRegistry,
+            gateway = PullCopyGateway(services.service, source, reopenDestination = { binding != null }),
+            probe = services.probe,
+            destinationSettings = services.destinationSettings,
+            direction = CopyDirection.Pull,
+        )
+    }
+
+    /** The pull source outlives the picker (the run reads from it) and dies with the flow. */
+    private fun disposePull() {
+        pull?.close()
+        pull = null
+    }
+
+    private fun resetFlow() {
+        disposePull()
+        deferredSwitch = null
+        switchConfirmed = false
+        _state.value = CopyFlowState()
+    }
+
+    /** Source the next plan reads: the pull source, or the open graph in Push. */
+    private fun planSource(): PageSource? = pull ?: binding?.source
 
     override fun onPickerEvent(event: CopyPagesEvent) {
         when (event) {
@@ -238,6 +294,7 @@ class CopyFlowController(
     /** Esc/Back on the picker with nothing to lose, or any "leave the flow" exit. */
     override fun closeFlow() {
         releasePicker()
+        disposePull()
         _state.update { it.copy(stage = CopyStage.Idle, dryRun = null) }
     }
 
@@ -276,7 +333,7 @@ class CopyFlowController(
             return
         }
         // The user has now seen the recomputed counts; plan again so the fingerprint is fresh.
-        val source = binding?.source ?: return
+        val source = planSource() ?: return
         scope.launch {
             services.service.plan(request, source).fold(
                 { e -> _state.update { it.copy(dryRun = DryRunView(DryRunUiState.PlanFailed(e.message))) } },
@@ -339,12 +396,49 @@ class CopyFlowController(
         if (st.backgrounded) {
             notices.trySend("Copy to ${nameOf(GraphId(st.plan?.targetGraphId ?: ""))} finished")
         }
-        _state.update { it.copy(stage = CopyStage.Finished, result = result, backgrounded = false, stopping = false, failure = null) }
+        _state.update { it.copy(stage = CopyStage.Finished, result = result, backgrounded = false, stopping = false, failure = null, switchConfirm = false) }
+        runDeferredSwitch()
+    }
+
+    private fun runDeferredSwitch() {
+        val go = deferredSwitch.takeIf { switchConfirmed }
+        deferredSwitch = null
+        switchConfirmed = false
+        go?.invoke()
     }
 
     private fun fail(reason: String) {
         releasePicker()
-        _state.update { it.copy(stage = CopyStage.RunFailed, failure = reason, backgrounded = false, stopping = false) }
+        _state.update { it.copy(stage = CopyStage.RunFailed, failure = reason, backgrounded = false, stopping = false, switchConfirm = false) }
+        runDeferredSwitch()
+    }
+
+    // ---- pull: leaving the destination mid-run -----------------------------------------------
+
+    /** Graph-switch gate: in Pull a running copy needs the destination open, so asks first; otherwise just [proceed]. */
+    fun requestGraphSwitch(to: GraphId, proceed: () -> Unit) {
+        val st = _state.value
+        val leavesDestination = direction == CopyDirection.Pull && st.stage == CopyStage.Running &&
+            st.request?.targetGraphId != to && services.runHost.running.value
+        if (!leavesDestination) {
+            proceed()
+            return
+        }
+        deferredSwitch = proceed
+        switchConfirmed = false
+        _state.update { it.copy(switchConfirm = true) }
+    }
+
+    override fun confirmPullSwitch() {
+        switchConfirmed = true
+        _state.update { it.copy(switchConfirm = false) }
+        stop()
+    }
+
+    override fun cancelPullSwitch() {
+        deferredSwitch = null
+        switchConfirmed = false
+        _state.update { it.copy(switchConfirm = false) }
     }
 
     // ---- result ------------------------------------------------------------------------------
@@ -356,10 +450,20 @@ class CopyFlowController(
         if (result != null && target != null && result.newPages + result.combinedPages > 0) {
             notices.trySend("Copied ${CopyDialogStrings.pages(result.newPages + result.combinedPages)} to ${nameOf(target)}")
         }
-        _state.value = CopyFlowState()
+        resetFlow()
     }
 
     override fun retryFailedPages() {
+        val target = _state.value.request?.targetGraphId
+        if (direction == CopyDirection.Pull && target != null && binding?.graphId != target) {
+            pendingRetryTarget = target
+            switchTo(target)
+            return
+        }
+        startRetry()
+    }
+
+    private fun startRetry() {
         _state.update { it.copy(stage = CopyStage.Running, stopping = false) }
         if (!services.runHost.retryFailed(services.service, ::onOutcome)) {
             notices.trySend("A copy is already running")
@@ -372,12 +476,14 @@ class CopyFlowController(
         val st = _state.value
         val request = st.request ?: return
         val b = binding
-        if (b == null || b.graphId != request.sourceGraphId) {
-            notices.trySend("Open ${nameOf(request.sourceGraphId)} to continue this copy")
+        val needed = if (direction == CopyDirection.Pull) request.targetGraphId else request.sourceGraphId
+        val source = planSource()
+        if (b == null || b.graphId != needed || source == null) {
+            notices.trySend("Open ${nameOf(needed)} to continue this copy")
             return
         }
         scope.launch {
-            services.service.plan(request, b.source).fold(
+            services.service.plan(request, source).fold(
                 { e -> fail(e.message) },
                 { plan -> startRun(request, plan) },
             )
@@ -388,7 +494,7 @@ class CopyFlowController(
     override fun runFailedRetry() = continueStopped()
 
     override fun runFailedChooseAnother() {
-        _state.value = CopyFlowState()
+        resetFlow()
         open()
     }
 
@@ -411,7 +517,7 @@ class CopyFlowController(
                 is UndoResult.Done -> undoMessage(r, target)
             }
             notices.trySend(message)
-            _state.value = CopyFlowState()
+            resetFlow()
         }
     }
 
@@ -431,7 +537,7 @@ class CopyFlowController(
     }
 
     override fun closeConflicts() {
-        _state.value = CopyFlowState()
+        resetFlow()
     }
 
     // ---- interrupted copies ------------------------------------------------------------------
@@ -442,7 +548,7 @@ class CopyFlowController(
         scope.launch {
             val found = withContext(PlatformDispatcher.IO) { interruptedCopies(services.manifests).firstOrNull() } ?: return@launch
             val staging = withContext(PlatformDispatcher.IO) {
-                MergeStagingDirectory.open(services.fileSystem, services.appDataDir, MergeId(found.mergeId))
+                services.staging.open(MergeId(found.mergeId))
             }
             val total = staging?.pageCount()
             val problem = when {
@@ -457,7 +563,7 @@ class CopyFlowController(
 
     override fun dismissInterrupted() {
         val found = _state.value.interruptedCopy
-        _state.value = CopyFlowState()
+        resetFlow()
         if (found != null) {
             scope.launch(PlatformDispatcher.IO) { services.manifests.writerFor(MergeId(found.mergeId))?.complete() }
             notices.trySend(CopyDialogStrings.DISMISS_SNACKBAR)
@@ -471,7 +577,7 @@ class CopyFlowController(
 
     override fun resume() {
         val found = _state.value.interruptedCopy ?: return
-        _state.value = CopyFlowState()
+        resetFlow()
         if (binding?.graphId?.value == found.sourceGraphId) {
             resumeInterrupted(found)
         } else {
@@ -507,7 +613,7 @@ class CopyFlowController(
     }
 
     private fun stagedNames(mergeId: String): List<String> =
-        MergeStagingDirectory.open(services.fileSystem, services.appDataDir, MergeId(mergeId))
+        services.staging.open(MergeId(mergeId))
             ?.readAll()?.mapNotNull { it.getOrNull()?.name }?.toList().orEmpty()
 
     private companion object {

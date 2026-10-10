@@ -321,6 +321,11 @@ internal fun GraphContentActiveShell(
                         hostWriteStuck = hostWriteStuck,
                         onReconnectHostDirectory = onReconnectHostDirectory,
                         onCopyPages = copyFlow?.let { flow -> { flow.open() } },
+                        copyDirection = copyFlow?.direction ?: dev.stapler.stelekit.merge.CopyDirection.Push,
+                        onCopyPagesFromGraph = copyFlow
+                            ?.takeIf { it.direction == dev.stapler.stelekit.merge.CopyDirection.Pull }
+                            ?.let { flow -> { graph -> flow.open(preselectSource = graph.id) } },
+                        interceptGraphSwitch = copyFlow?.let { flow -> flow::requestGraphSwitch } ?: { _, proceed -> proceed() },
                         activeGraphInfo = activeGraphInfo,
                         graphRegistry = graphRegistry,
                         activeGraphId = activeGraphId,
@@ -509,7 +514,7 @@ internal fun GraphContentActiveShell(
                 ),
                 debugState = debugMenuState,
                 extraCommands = remember(copyFlow) {
-                    listOfNotNull(copyFlow?.let { flow -> Command("copy-pages", "Copy pages to...") { flow.open() } })
+                    listOfNotNull(copyFlow?.let { flow -> Command("copy-pages", dev.stapler.stelekit.ui.screens.copy.CopyDialogStrings.entryLabel(flow.direction)) { flow.open() } })
                 },
                 loadPageBlocks = { pageUuidStr -> repos.blockRepository.getBlocksForPage(dev.stapler.stelekit.model.PageUuid(pageUuidStr)) },
                 onDebugStateChange = { newState ->

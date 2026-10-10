@@ -7,6 +7,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.onNodeWithContentDescription
+import dev.stapler.stelekit.merge.SourcePlatform
+import dev.stapler.stelekit.merge.offeredDirections
 import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.GraphInfo
 import dev.stapler.stelekit.ui.components.GraphSwitcher
@@ -23,17 +26,25 @@ class CopyEntryPointsTest {
     val rule = createComposeRule()
 
     private val graphs = listOf(GraphInfo(id = GraphId("g1"), path = "/g1", displayName = "Personal", addedAt = 0L))
+    private val twoGraphs = graphs + GraphInfo(id = GraphId("g2"), path = "/g2", displayName = "Work", addedAt = 0L)
 
-    private fun switcher(onCopyPages: (() -> Unit)?) = rule.setContent {
+    private fun switcher(
+        platform: SourcePlatform = SourcePlatform.Desktop,
+        available: List<GraphInfo> = graphs,
+        onFromGraph: ((GraphInfo) -> Unit)? = null,
+        onCopyPages: (() -> Unit)?,
+    ) = rule.setContent {
         MaterialTheme {
             GraphSwitcher(
                 currentGraphName = "Personal",
-                availableGraphs = graphs,
+                availableGraphs = available,
                 activeGraphId = "g1",
                 onGraphSelected = {},
                 onAddGraph = {},
                 onRemoveGraph = {},
                 onCopyPages = onCopyPages,
+                copyDirection = offeredDirections(platform).first(),
+                onCopyPagesFromGraph = onFromGraph,
             )
         }
     }
@@ -58,8 +69,44 @@ class CopyEntryPointsTest {
 
     @Test
     fun action_is_hidden_when_copy_is_unavailable() {
-        switcher(null)
+        switcher(onCopyPages = null)
         rule.onNodeWithText("Personal").performClick()
         rule.onNodeWithText("Copy pages to...").assertDoesNotExist()
     }
+
+    private fun assertPushOnly(platform: SourcePlatform) {
+        switcher(onCopyPages = {}, platform = platform, available = twoGraphs, onFromGraph = {})
+        rule.onNodeWithText("Personal").performClick()
+        rule.onNodeWithText("Copy pages to...").assertExists()
+        rule.onNodeWithText("Copy pages from...").assertDoesNotExist()
+        rule.onNodeWithContentDescription("More actions for Work").assertDoesNotExist()
+    }
+
+    private fun assertPullOnly(platform: SourcePlatform) {
+        var opened = 0
+        var from: GraphInfo? = null
+        switcher(onCopyPages = { opened++ }, platform = platform, available = twoGraphs, onFromGraph = { from = it })
+        rule.onNodeWithText("Personal").performClick()
+        rule.onNodeWithText("Copy pages to...").assertDoesNotExist()
+        rule.onNodeWithText("Copy pages from...").performClick()
+        assertEquals(1, opened)
+        rule.onNodeWithText("Personal").performClick()
+        // The active graph's own row has no overflow; the other graph's does.
+        rule.onNodeWithContentDescription("More actions for Personal").assertDoesNotExist()
+        rule.onNodeWithContentDescription("More actions for Work").performClick()
+        rule.onNodeWithText("Copy pages from Work to Personal").performClick()
+        assertEquals("Work", from?.displayName)
+    }
+
+    @Test
+    fun android_shows_push_only() = assertPushOnly(SourcePlatform.Android)
+
+    @Test
+    fun desktop_shows_push_only() = assertPushOnly(SourcePlatform.Desktop)
+
+    @Test
+    fun ios_shows_pull_only_with_row_overflow() = assertPullOnly(SourcePlatform.Ios)
+
+    @Test
+    fun web_shows_pull_only_with_row_overflow() = assertPullOnly(SourcePlatform.Web)
 }

@@ -13,6 +13,7 @@ import dev.stapler.stelekit.merge.MergeProgress
 import dev.stapler.stelekit.merge.MergeResult
 import dev.stapler.stelekit.merge.PageSelection
 import dev.stapler.stelekit.merge.PlanRequest
+import dev.stapler.stelekit.merge.CopyDirection
 import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.ui.screens.copy.CopyFlowActions
 import dev.stapler.stelekit.ui.screens.copy.CopyFlowContent
@@ -57,6 +58,8 @@ class CopyFlowHostTest {
         override fun dismissInterrupted() { calls += "dismissInterrupted" }
         override fun openPickerFromInterrupted() { calls += "openPickerFromInterrupted" }
         override fun resume() { calls += "resume" }
+        override fun confirmPullSwitch() { calls += "confirmPullSwitch" }
+        override fun cancelPullSwitch() { calls += "cancelPullSwitch" }
     }
 
     private val request = PlanRequest(PageSelection(), GraphId("src"), GraphId("dst"), "Personal")
@@ -129,5 +132,25 @@ class CopyFlowHostTest {
         rule.onNodeWithText("disk full").assertExists()
         rule.onNodeWithText("Choose another destination").performClick()
         assertEquals(listOf("runFailedChooseAnother"), calls)
+    }
+
+    @Test
+    fun pull_titles_name_the_source_and_the_destination() {
+        val pull = PlanRequest(PageSelection(), GraphId("src"), GraphId("dst"), "Personal", direction = CopyDirection.Pull)
+        val result = MergeResult("m1", 3, 3, 0, 0, emptyList(), 0, 0)
+        show(CopyFlowState(stage = CopyStage.Finished, request = pull, result = result, direction = CopyDirection.Pull))
+
+        rule.onNodeWithText("Copied pages from \"Personal\"").assertExists()
+    }
+
+    @Test
+    fun pull_switch_confirm_stops_or_keeps_copying() {
+        val pull = PlanRequest(PageSelection(), GraphId("src"), GraphId("dst"), "Personal", direction = CopyDirection.Pull)
+        show(CopyFlowState(stage = CopyStage.Running, request = pull, direction = CopyDirection.Pull, switchConfirm = true))
+
+        rule.onNodeWithText("A copy into Work graph is running. Stop it and switch?").assertExists()
+        rule.onNodeWithText("Stop and switch").performClick()
+        rule.onNodeWithText("Keep copying").performClick()
+        assertEquals(listOf("confirmPullSwitch", "cancelPullSwitch"), calls)
     }
 }
