@@ -57,9 +57,9 @@ data class SelectionFilter(
 internal fun String.asciiLower(): String =
     buildString(length) { for (c in this@asciiLower) append(if (c in 'A'..'Z') c + 32 else c) }
 
-/** Oracle ordering used by in-memory repositories: name (ASCII-folded), then uuid. */
+/** Oracle ordering used by in-memory repositories; matches SQL `ORDER BY name, section_id` (uuid only as a last tiebreak). */
 fun Collection<Page>.filteredAndSorted(filter: SelectionFilter): List<Page> =
-    filter(filter::matches).sortedWith(compareBy({ it.name.asciiLower() }, { it.uuid.value }))
+    filter(filter::matches).sortedWith(compareBy({ it.name.asciiLower() }, { it.sectionId.toDbString() }, { it.uuid.value }))
 
 /** Bind values for the `*PagesFiltered*` queries in SteleDatabase.sq. */
 internal data class SelectionSqlArgs(

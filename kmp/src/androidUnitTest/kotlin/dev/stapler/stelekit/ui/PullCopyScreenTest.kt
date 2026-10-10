@@ -25,6 +25,8 @@ import dev.stapler.stelekit.ui.screens.copy.DestinationStatus
 import dev.stapler.stelekit.ui.screens.copy.DisabledKind
 import dev.stapler.stelekit.ui.screens.copy.ListLoad
 import dev.stapler.stelekit.ui.screens.copy.PageRowState
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -143,6 +145,10 @@ class PullCopyScreenTest {
     fun `tag filter, linked pages and assets are disabled with the pull note`() {
         show(pull(listOf(current, readable), chosen = GraphId("w"), index = PullIndexState.Ready(0)))
         rule.onNodeWithText("Tag").assertIsNotEnabled()
+        assertEquals(
+            CopyPagesState.NOT_AVAILABLE_PULL,
+            rule.onNodeWithText("Tag").fetchSemanticsNode().config.getOrNull(SemanticsProperties.StateDescription),
+        )
         rule.onNodeWithText("Tag, property and backlink filters: ${CopyPagesState.NOT_AVAILABLE_PULL}").assertExists()
         rule.onNodeWithText(CopyPagesState.NOT_AVAILABLE_PULL).assertExists()
         rule.onNodeWithText("Include their assets").assertExists()

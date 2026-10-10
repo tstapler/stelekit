@@ -3,6 +3,8 @@ package dev.stapler.stelekit.repository
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
+import dev.stapler.stelekit.merge.SelectionFilter
+import dev.stapler.stelekit.merge.toSqlArgs
 import dev.stapler.stelekit.error.DomainError
 
 import dev.stapler.stelekit.db.DatabaseWriteActor
@@ -138,7 +140,7 @@ class SqlDelightSearchRepository(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (_: Exception) {
-                    queries.selectPagesByNameLikePaginated("%$query%", limit.toLong(), offset.toLong()).asFlow().mapToList(PlatformDispatcher.DB).first().map { it.toPageModel() }
+                    queries.selectPagesByNameLikePaginated(likeContains(query), limit.toLong(), offset.toLong()).asFlow().mapToList(PlatformDispatcher.DB).first().map { it.toPageModel() }
                 }
             } finally {
                 CurrentSpanContext.set(null)
@@ -162,6 +164,23 @@ class SqlDelightSearchRepository(
             emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
     }.flowOn(PlatformDispatcher.DB)
+
+    override suspend fun countPagesByTitle(query: String, filter: SelectionFilter): Either<DomainError, Long?> {
+        if (filter.tagToken != null) return Either.Right(null)
+        val ftsQuery = FtsQueryBuilder.build(query)
+        if (ftsQuery.isEmpty()) return 0L.right()
+        val a = filter.toSqlArgs()
+        return withContext(PlatformDispatcher.DB) {
+            try {
+                queries.countPagesByNameFtsFiltered(ftsQuery, a.nameLo, a.nameHi, a.includeJournals, a.dateFrom, a.dateTo)
+                    .executeAsOne().right()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                Either.Right(null) // pages_fts unavailable: the caller's scan falls back to LIKE
+            }
+        }
+    }
 
     override fun findBlocksReferencing(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> = flow {
         try {
@@ -275,7 +294,7 @@ class SqlDelightSearchRepository(
                     throw e
                 } catch (_: Exception) {
                     // pages_fts not yet available — fall back to LIKE
-                    queries.selectPagesByNameLike("%$rawQuery%")
+                    queries.selectPagesByNameLike(likeContains(rawQuery))
                         .asFlow().mapToList(PlatformDispatcher.DB).first()
                         .take(searchRequest.limit)
                         .map { SearchedPage(page = it.toPageModel()) }
@@ -762,3 +781,7 @@ class SqlDelightSearchRepository(
             if (parts.size == 2) parts[0] to parts[1] else null
         }?.toMap() ?: emptyMap()
 }
+
+/** `%text%` LIKE pattern with `\`, `%` and `_` in [text] matched literally (queries use ESCAPE '\'). */
+internal fun likeContains(text: String): String =
+    "%" + text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"

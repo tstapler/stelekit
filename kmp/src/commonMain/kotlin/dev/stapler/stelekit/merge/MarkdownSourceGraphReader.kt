@@ -18,9 +18,11 @@ import kotlin.coroutines.cancellation.CancellationException
  * path string `GraphLoader` would pass (`<graphPath>/<folder>/<file>`), so explicit `id::` is
  * verbatim and unlabeled blocks stay null, exactly as [MergeConverters.toMergePage] yields for a DB page.
  *
- * Each [listEntries] call re-lists the folder names (strings only, no stat/content) and sorts them.
- * The cursor is the name, so a page and a journal sharing one name (not producible by the app)
- * could skip one entry.
+ * A listing that starts from the beginning (`afterName == null`) lists the folder names (strings
+ * only, no stat/content) and sorts them once; continuation calls binary-search that cached
+ * projection, so paging N entries costs one directory listing. The cursor is the name only, so
+ * callers must resume from a name strictly below the last one they loaded to see a page and a
+ * journal sharing a name ([PullPageSource] does).
  *
  * @param maxFileBytes files larger than this return [ReadError.TooLarge]
  */
@@ -37,20 +39,23 @@ class MarkdownSourceGraphReader(
         gate(graph)?.let { return it.left() }
         val root = graph.path.trimEnd('/')
         if (!fileSystem.directoryExists(root)) return ReadError.FolderMissing.left()
-        val candidates = try {
-            FOLDERS.flatMap { (folder, kind) ->
-                if (!fileSystem.directoryExists("$root/$folder")) emptyList()
-                else fileSystem.listFiles("$root/$folder").mapNotNull { candidate(folder, kind, it) }
+        val sorted = if (afterName == null || session?.root != root) {
+            val listed = try {
+                FOLDERS.flatMap { (folder, kind) ->
+                    if (!fileSystem.directoryExists("$root/$folder")) emptyList()
+                    else fileSystem.listFiles("$root/$folder").mapNotNull { candidate(folder, kind, it) }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                return ReadError.Unreadable(e.message ?: "listing failed").left()
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            return ReadError.Unreadable(e.message ?: "listing failed").left()
+            listed.sortedWith(compareBy({ it.name }, { it.kind })).also { session = Session(root, it) }
+        } else {
+            session!!.sorted
         }
-        val window = candidates
-            .sortedWith(compareBy({ it.name }, { it.kind }))
-            .filter { afterName == null || it.name > afterName }
-            .take(limit.coerceIn(1, SourceGraphReader.MAX_PAGE_SIZE))
+        val start = if (afterName == null) 0 else firstIndexAfter(sorted, afterName)
+        val window = sorted.subList(start, minOf(sorted.size, start + limit.coerceIn(1, SourceGraphReader.MAX_PAGE_SIZE)))
         return window.map { c ->
             val path = "$root/${c.fileName}"
             SourceEntry(c.name, c.kind, c.fileName, fileSystem.getFileSize(path) ?: 0L, fileSystem.getLastModifiedTime(path))
@@ -85,6 +90,22 @@ class MarkdownSourceGraphReader(
         graph.isParanoidMode -> ReadError.Encrypted
         !fileSystem.hasStoragePermission() -> ReadError.NoGrant
         else -> null
+    }
+
+    private class Session(val root: String, val sorted: List<Candidate>)
+
+    // Single slot: one pull source is indexed at a time; a new traversal always re-lists.
+    @kotlin.concurrent.Volatile
+    private var session: Session? = null
+
+    private fun firstIndexAfter(sorted: List<Candidate>, name: String): Int {
+        var lo = 0
+        var hi = sorted.size
+        while (lo < hi) {
+            val mid = (lo + hi) ushr 1
+            if (sorted[mid].name > name) hi = mid else lo = mid + 1
+        }
+        return lo
     }
 
     private class Candidate(val name: String, val kind: SourceKind, val fileName: String)

@@ -50,7 +50,8 @@ class ActiveDbPageSourceTest {
     )
 
     private class Db {
-        val database = SteleDatabase(DriverFactory().createDriver("jdbc:sqlite::memory:"))
+        val driver = DriverFactory().createDriver("jdbc:sqlite::memory:")
+        val database = SteleDatabase(driver)
         val pages = SqlDelightPageRepository(database)
         val blocks = SqlDelightBlockRepository(database)
         val search = SqlDelightSearchRepository(database)
@@ -132,6 +133,149 @@ class ActiveDbPageSourceTest {
             val expected = oracleCorpus.filteredAndSorted(filter).map { it.name }
             assertEquals(expected, repo.listAll(filter, pageSize = 3).map { it.name }, "list $filter")
             assertEquals(expected.size.toLong(), repo.countPagesFiltered(filter).getOrNullOrFail(), "count $filter")
+        }
+    }
+
+    @Test
+    fun `multi-valued tags survive the stored encoding and match in SQL, Kotlin and in-memory`() = runBlocking {
+        val corpus = listOf(
+            page("csv", props = mapOf("tags" to "a, b", "alias" to "x, y")),
+            page("wiki", props = mapOf("tags" to "[[a]], [[b]]", "title" to "Hello, World")),
+            page("mixed", props = mapOf("tags" to "#Foo, Bar", "tag" to "solo")),
+            page("other", props = mapOf("tags" to "c", "title" to "b, a")),
+        )
+        val db = Db()
+        db.pages.seed(corpus)
+        val mem = InMemoryPageRepository().also { it.savePages(corpus) }
+        val expectations = mapOf(
+            "a" to setOf("csv", "wiki"),
+            "b" to setOf("csv", "wiki"),
+            "bar" to setOf("mixed"),
+            "FOO" to setOf("mixed"),
+            "solo" to setOf("mixed"),
+            "world" to emptySet(),
+            "y" to emptySet(),
+        )
+        for ((tag, names) in expectations) {
+            val filter = SelectionFilter(tag = tag)
+            assertEquals(names, db.pages.listAll(filter, 2).map { it.name }.toSet(), "sql list $tag")
+            assertEquals(names.size.toLong(), db.pages.countPagesFiltered(filter).getOrNullOrFail(), "sql count $tag")
+            assertEquals(names, mem.listAll(filter, 2).map { it.name }.toSet(), "mem list $tag")
+        }
+        val round = db.pages.getAllPagesSnapshot().getOrNullOrFail().associateBy { it.name }
+        assertEquals(corpus.associate { it.name to it.properties }, round.mapValues { it.value.properties })
+    }
+
+    @Test
+    fun `title search pages through tied bm25 ranks without duplicates or gaps`() = runBlocking {
+        val db = Db()
+        val names = (1..25).map { "road %02d".format(it) }
+        db.pages.seed(names.map { page(it) })
+        val seen = mutableListOf<String>()
+        while (true) {
+            val batch = db.search.searchPagesByTitle("road", 4, seen.size).first().getOrNullOrFail()
+            seen += batch.map { it.name }
+            if (batch.size < 4) break
+        }
+        assertEquals(names.sorted(), seen.sorted())
+        assertEquals(names.size, seen.toSet().size)
+    }
+
+    @Test
+    fun `title search LIKE fallback treats percent and underscore literally`() = runBlocking {
+        val db = Db()
+        db.pages.seed(listOf(page("100%_done"), page("1005 done"), page("100x_done"), page("a_b"), page("axb")))
+        db.driver.execute(null, "DROP TABLE pages_fts", 0)
+        assertEquals(listOf("100%_done"), db.search.searchPagesByTitle("100%", 50, 0).first().getOrNullOrFail().map { it.name })
+        assertEquals(listOf("a_b"), db.search.searchPagesByTitle("a_b", 50, 0).first().getOrNullOrFail().map { it.name })
+    }
+
+    @Test
+    fun `oracle order breaks name ties by section id like SQL, not by uuid`() = runBlocking {
+        val corpus = listOf(
+            page("Same").copy(sectionId = dev.stapler.stelekit.model.SectionId.Named("b")),
+            page("same").copy(sectionId = dev.stapler.stelekit.model.SectionId.Named("a")),
+            page("Same2"),
+        )
+        val db = Db()
+        db.pages.seed(corpus)
+        val stored = db.pages.getAllPagesSnapshot().getOrNullOrFail()
+        val expected = stored.filteredAndSorted(SelectionFilter()).map { it.uuid }
+        assertEquals(expected, db.pages.listAll(SelectionFilter(), 2).map { it.uuid })
+    }
+
+    private class OffsetLog(private val d: SearchRepository) : SearchRepository by d {
+        val offsets = CopyOnWriteArrayList<Int>()
+        override fun searchPagesByTitle(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
+            offsets += offset
+            return d.searchPagesByTitle(query, limit, offset)
+        }
+    }
+
+    @Test
+    fun `sequential search paging resumes instead of rescanning from the first hit`() = runBlocking {
+        val db = Db()
+        db.pages.seed((1..650).map { page("road %03d".format(it)) } + (1..50).map { page("other $it") })
+        val log = OffsetLog(db.search)
+        val source = ActiveDbPageSource(db.pages, db.blocks, log)
+        val filter = SelectionFilter()
+
+        val seen = mutableListOf<Page>()
+        while (true) {
+            val batch = source.listPages(filter, "road", 100, seen.size).getOrNullOrFail()
+            seen += batch
+            if (batch.size < 100) break
+        }
+        assertEquals(650, seen.map { it.uuid }.toSet().size)
+        val fresh = ActiveDbPageSource(db.pages, db.blocks, db.search).listPages(filter, "road", 100, 300).getOrNullOrFail()
+        assertEquals(fresh.map { it.uuid }, seen.subList(300, 400).map { it.uuid })
+        assertEquals(1, log.offsets.count { it == 0 }, "only the first page starts at hit 0: ${log.offsets}")
+        assertTrue(log.offsets.size <= 8, "7 pages need ~7 hit scans, got ${log.offsets}")
+    }
+
+    @Test
+    fun `sparse filter paging resumes mid hit page without dups or gaps`() = runBlocking {
+        val db = Db()
+        db.pages.seed((1..400).map { page(if (it % 7 == 0) "work/road $it" else "misc/road $it") })
+        val source = ActiveDbPageSource(db.pages, db.blocks, db.search)
+        val filter = SelectionFilter(namespace = "work/")
+        val all = ActiveDbPageSource(db.pages, db.blocks, db.search).listPages(filter, "road", 100, 0).getOrNullOrFail()
+        val seen = mutableListOf<Page>()
+        while (true) {
+            val batch = source.listPages(filter, "road", 7, seen.size).getOrNullOrFail()
+            seen += batch
+            if (batch.size < 7) break
+        }
+        assertEquals(all.map { it.uuid }, seen.map { it.uuid })
+        assertEquals(57, seen.size)
+    }
+
+    @Test
+    fun `search count is one query that matches the scan and skips hit materialization`() = runBlocking {
+        val db = Db()
+        db.pages.seed(
+            (1..300).map { page("work/road $it") } + (1..120).map { page("misc/road $it") } +
+                (1..5).map { page("2024-01-0$it road", LocalDate(2024, 1, it)) } +
+                listOf(page("work/road tagged", props = mapOf("tags" to "a, b")))
+        )
+        val pages = RecordingPages(db.pages)
+        val source = ActiveDbPageSource(pages, db.blocks, db.search)
+        for (filter in listOf(
+            SelectionFilter(), SelectionFilter(journals = false), SelectionFilter(namespace = "work/"),
+            SelectionFilter(dateFrom = LocalDate(2024, 1, 3)), SelectionFilter(namespace = "misc", journals = false),
+            SelectionFilter(tag = "b"),
+        )) {
+            pages.calls.clear()
+            val counted = source.countPages(filter, "road").getOrNullOrFail()
+            val viaCount = pages.calls.isEmpty()
+            var scanned = 0L
+            while (true) {
+                val b = source.listPages(filter, "road", 100, scanned.toInt()).getOrNullOrFail()
+                scanned += b.size
+                if (b.size < 100) break
+            }
+            assertEquals(scanned, counted, "count $filter")
+            if (filter.tag == null) assertTrue(viaCount, "no hit materialization for $filter: ${pages.calls}")
         }
     }
 

@@ -130,7 +130,7 @@ class SqlDelightPageRepository(
             .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
 
     override fun searchPages(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
-        queries.selectPagesByNameLikePaginated("%$query%", limit.toLong(), offset.toLong())
+        queries.selectPagesByNameLikePaginated(likeContains(query), limit.toLong(), offset.toLong())
             .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
 
     override fun getFavoritePages(): Flow<Either<DomainError, List<Page>>> =
@@ -240,7 +240,12 @@ class SqlDelightPageRepository(
             }
         }
 
-    /** Walks the SQL-prefiltered rows in <= [FILTER_BATCH_SIZE] batches; [visit] returns false to stop. */
+    /**
+     * Walks the SQL-prefiltered rows in <= [FILTER_BATCH_SIZE] batches; [visit] returns false to stop.
+     * Known limit: each list page re-walks the prefiltered rows from offset 0 (O(P^2/100) for P prefiltered
+     * rows), bounded per read and cheap while the substring prefilter is selective; a (name, section_id)
+     * keyset cursor would remove it.
+     */
     private fun forEachTagMatch(filter: SelectionFilter, a: SelectionSqlArgs, visit: (Page) -> Boolean) {
         var rowOffset = 0L
         while (true) {
@@ -438,10 +443,7 @@ class SqlDelightPageRepository(
             createdAt = Instant.fromEpochMilliseconds(this.created_at),
             updatedAt = Instant.fromEpochMilliseconds(this.updated_at),
             version = this.version,
-            properties = this.properties?.split(",")?.filter { it.isNotBlank() }?.associate {
-                val parts = it.split(":", limit = 2)
-                if (parts.size == 2) parts[0] to parts[1] else "" to ""
-            }?.filter { it.key.isNotBlank() } ?: emptyMap(),
+            properties = parseStoredProperties(this.properties),
             isJournal = this.is_journal == 1L,
             journalDate = this.journal_date?.let { kotlinx.datetime.LocalDate.parse(it) },
             isContentLoaded = this.is_content_loaded == 1L,
@@ -460,10 +462,7 @@ class SqlDelightPageRepository(
             createdAt = Instant.fromEpochMilliseconds(this.created_at),
             updatedAt = Instant.fromEpochMilliseconds(this.updated_at),
             version = this.version,
-            properties = this.properties?.split(",")?.filter { it.isNotBlank() }?.associate {
-                val parts = it.split(":", limit = 2)
-                if (parts.size == 2) parts[0] to parts[1] else "" to ""
-            }?.filter { it.key.isNotBlank() } ?: emptyMap(),
+            properties = parseStoredProperties(this.properties),
             isJournal = this.is_journal == 1L,
             journalDate = kotlinx.datetime.LocalDate.parse(this.journal_date),
             isContentLoaded = this.is_content_loaded == 1L,
@@ -472,3 +471,31 @@ class SqlDelightPageRepository(
     }
 }
 
+
+private val STORED_KEY = Regex("^[A-Za-z0-9_.-]+:")
+
+/**
+ * Inverse of the `k:v,k:v` encoding written by savePage. Values may themselves contain commas
+ * (`tags:: a, b`), so a segment only starts a new entry when it begins with `key:`; any other
+ * segment continues the previous value. Limit: a value whose later segment looks like `x:y`
+ * (e.g. `a, b:c`) is read back as a new key.
+ */
+internal fun parseStoredProperties(stored: String?): Map<String, String> {
+    if (stored.isNullOrEmpty()) return emptyMap()
+    val out = LinkedHashMap<String, String>()
+    var key: String? = null
+    val value = StringBuilder()
+    fun flush() { key?.let { out[it] = value.toString() }; value.clear() }
+    for (segment in stored.split(',')) {
+        val m = STORED_KEY.find(segment)
+        if (m != null) {
+            flush()
+            key = segment.substring(0, m.value.length - 1)
+            value.append(segment, m.value.length, segment.length)
+        } else if (key != null) {
+            value.append(',').append(segment)
+        }
+    }
+    flush()
+    return out
+}

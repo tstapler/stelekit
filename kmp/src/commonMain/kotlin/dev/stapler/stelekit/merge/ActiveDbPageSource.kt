@@ -1,6 +1,8 @@
 package dev.stapler.stelekit.merge
 
 import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
 import arrow.core.raise.either
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.Page
@@ -40,6 +42,7 @@ class ActiveDbPageSource(
     override suspend fun countPages(filter: SelectionFilter, search: String?): Either<DomainError, Long> {
         val query = search?.trim().orEmpty()
         if (query.isEmpty()) return pages.countPagesFiltered(filter)
+        searchRepo.countPagesByTitle(query, filter).fold({ return it.left() }, { n -> if (n != null) return n.right() })
         return scanMatches(filter, query, skip = 0, take = null).map { it.size.toLong() }
     }
 
@@ -56,9 +59,18 @@ class ActiveDbPageSource(
         }
     }
 
+    /** Where the last paged scan stopped, so the next page resumes there instead of rescanning from hit 0. */
+    private class Resume(val key: Pair<SelectionFilter, String>, val emitted: Int, val hitOffset: Int, val consumedInHitPage: Int)
+
+    @kotlin.concurrent.Volatile
+    private var resume: Resume? = null
+
     /**
      * Filter-passing hits in FTS rank order after dropping [skip]; stops after [take]
-     * (null = all, used for counting). Each repository call returns <= [SEARCH_HIT_PAGE] rows.
+     * (null = all, used for the tag-search count fallback). Each repository call returns <= [SEARCH_HIT_PAGE] rows.
+     * Sequential pages (offset == rows returned so far for the same filter and query, as loadMore and
+     * select-all do) resume from the recorded hit page; any other offset rescans from hit 0. The FTS
+     * order is deterministic (rank, then rowid), so resuming sees what a rescan would.
      */
     private suspend fun scanMatches(
         filter: SelectionFilter,
@@ -66,18 +78,27 @@ class ActiveDbPageSource(
         skip: Int,
         take: Int?,
     ): Either<DomainError, List<Page>> = either {
+        val key = filter to query
         val out = ArrayList<Page>()
-        var toSkip = skip
-        var hitOffset = 0
+        val from = resume?.takeIf { take != null && it.key == key && it.emitted == skip }
+        var toSkip = from?.consumedInHitPage ?: skip
+        var hitOffset = from?.hitOffset ?: 0
         while (take == null || out.size < take) {
             val hits = searchRepo.searchPagesByTitle(query, SEARCH_HIT_PAGE, hitOffset).first().bind()
             if (hits.isEmpty()) break
             val passing = pages.getPagesAmong(filter, hits.map { it.uuid }).bind().associateBy { it.uuid }
-            for (hit in hits) {
+            var consumed = 0
+            for ((i, hit) in hits.withIndex()) {
                 val page = passing[hit.uuid] ?: continue
+                consumed++
                 if (toSkip > 0) { toSkip--; continue }
-                if (take != null && out.size >= take) break
                 out.add(page)
+                if (take != null && out.size >= take) {
+                    val pageDone = i == hits.lastIndex && hits.size == SEARCH_HIT_PAGE
+                    resume = if (pageDone) Resume(key, skip + out.size, hitOffset + hits.size, 0)
+                    else Resume(key, skip + out.size, hitOffset, consumed)
+                    return@either out
+                }
             }
             if (hits.size < SEARCH_HIT_PAGE) break
             hitOffset += hits.size

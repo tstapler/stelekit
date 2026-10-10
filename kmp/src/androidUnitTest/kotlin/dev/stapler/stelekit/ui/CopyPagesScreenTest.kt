@@ -14,6 +14,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.state.ToggleableState
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasText
@@ -330,6 +331,31 @@ class CopyPagesScreenTest {
         val node = rule.onNodeWithContentDescription(row.label)
         node.assertExists()
         assertTrue(node.getUnclippedBoundsInRoot().let { it.bottom - it.top } >= 48.dp)
+    }
+
+    @Test
+    @Config(qualifiers = "w800dp-h360dp-xxhdpi")
+    fun `at 200 percent font in landscape Review stays reachable and the list keeps its rows`() {
+        val rows = (1..30).map { PageRowState(uuid(it), "Page %02d".format(it), isJournal = false, blockCount = 3) }
+        val dests = listOf(
+            DestinationRow(GraphId("ok"), "Work", DestinationStatus.Available),
+            DestinationRow(GraphId("b"), "Archive", DestinationStatus.Available),
+            DestinationRow(GraphId("a"), "Personal", DestinationStatus.Disabled(DisabledKind.CurrentGraph, "current graph")),
+        )
+        val s = state(rows = rows, picked = setOf(uuid(1)), destinations = dests, gate2 = true).copy(destinationId = GraphId("ok"))
+        rule.setContent {
+            val d = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(d.density, fontScale = 2f)) {
+                MaterialTheme { CopyPagesContent(s, CopyPagesActions(), Modifier) }
+            }
+        }
+        rule.onNodeWithText("Review copy").assertIsDisplayed()
+        rule.onNodeWithText("Cancel").assertIsDisplayed()
+        // The body scrolls; the list keeps a real viewport (rows composed with height) instead of collapsing to 0.
+        for (n in 1..3) {
+            val bounds = rule.onNodeWithContentDescription("Page %02d, 3 blocks".format(n)).assertExists().getUnclippedBoundsInRoot()
+            assertTrue(bounds.bottom - bounds.top >= 48.dp, "row $n collapsed")
+        }
     }
 
     @Test
