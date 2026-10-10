@@ -91,7 +91,7 @@ class QueryExecutor(
             for (r in results) {
                 r.fold(
                     { return@combine it.left() },
-                    { blocks -> blocks.forEach { merged.putIfAbsent(it.uuid.value, it) } },
+                    { blocks -> blocks.forEach { merged.getOrPut(it.uuid.value) { it } } },
                 )
             }
             merged.values.take(limit).toList().right()
