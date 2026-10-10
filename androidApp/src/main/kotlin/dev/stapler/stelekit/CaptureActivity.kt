@@ -152,6 +152,7 @@ class CaptureActivity : ComponentActivity() {
     }
 
     private fun initializeFrom(shareContent: ShareContent) {
+        viewModel.attachImage(shareContent.imageLocalPath)
         if (shareContent.imageLocalPath != null) {
             viewModel.initializeText("[image: ${shareContent.imageLocalPath}]\n${shareContent.text}".trim())
         } else {
@@ -160,6 +161,7 @@ class CaptureActivity : ComponentActivity() {
     }
 
     private fun restoreFrom(state: Bundle) {
+        viewModel.attachImage(state.getString(STATE_IMAGE_PATH))
         viewModel.initializeText(state.getString(STATE_TEXT).orEmpty())
         viewModel.beginShare(state.getString(STATE_OVERRIDE_GRAPH), state.getString(STATE_CAPTURE_ID))
         if (state.getBoolean(STATE_HANDLED)) viewModel.restoreHandled()
@@ -169,6 +171,7 @@ class CaptureActivity : ComponentActivity() {
         super.onSaveInstanceState(outState)
         outState.putString(STATE_CAPTURE_ID, viewModel.captureId)
         outState.putString(STATE_TEXT, viewModel.captureText.value)
+        outState.putString(STATE_IMAGE_PATH, viewModel.attachedImagePath)
         outState.putString(STATE_OVERRIDE_GRAPH, viewModel.overrideGraphIdValue)
         outState.putBoolean(STATE_HANDLED, viewModel.isHandled)
     }
@@ -188,7 +191,7 @@ class CaptureActivity : ComponentActivity() {
         } else {
             shareContent.text
         }
-        viewModel.onNewShare(text, ShareShortcutPublisher.targetGraphIdFrom(intent))
+        viewModel.onNewShare(text, ShareShortcutPublisher.targetGraphIdFrom(intent), shareContent.imageLocalPath)
     }
 
     // Task 1.3: Bug 3 mitigation
@@ -201,24 +204,16 @@ class CaptureActivity : ComponentActivity() {
         val subject   = intent.getStringExtra(Intent.EXTRA_SUBJECT)
         val text = buildShareText(clipText, extraText, subject)
 
-        // Bug 2 mitigation: copy EXTRA_STREAM synchronously before any coroutine launch
+        // Bug 2 mitigation: copy EXTRA_STREAM synchronously before any coroutine launch. Only content://
+        // streams are read (exported activity: a file:// URI or a path in text must never be opened).
         val imagePath = if (intent.type?.startsWith("image/") == true) {
             @Suppress("DEPRECATION")
             val streamUri = intent.getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM)
-            streamUri?.let { copyStreamToPrivateStorage(it) }
+            streamUri?.let { ShareIntake.copyImage(this, it) }
         } else null
 
         return ShareContent(text, imagePath)
     }
-
-    private fun copyStreamToPrivateStorage(uri: android.net.Uri): String? = try {
-        val outFile = java.io.File(cacheDir, "share_${System.currentTimeMillis()}.jpg")
-        val copied = contentResolver.openInputStream(uri)?.use { input ->
-            outFile.outputStream().use { output -> input.copyTo(output) }
-        }
-        if (copied != null) outFile.absolutePath else null
-    } catch (_: SecurityException) { null }
-      catch (_: Exception) { null }
 
     // Task 2.2: prompt at most once after first successful save (API 33+)
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
@@ -244,6 +239,7 @@ class CaptureActivity : ComponentActivity() {
         private const val KEY_TILE_PROMPTED = "pref_tile_prompt_shown"
         private const val STATE_CAPTURE_ID = "capture_id"
         private const val STATE_TEXT = "capture_text"
+        private const val STATE_IMAGE_PATH = "capture_image_path"
         private const val STATE_OVERRIDE_GRAPH = "capture_override_graph"
         private const val STATE_HANDLED = "capture_handled"
 

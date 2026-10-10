@@ -108,6 +108,8 @@ class CaptureShareReviewTest {
         val route: FakeRoute,
     )
 
+    private fun Harness.workId(): GraphId = gm.graphRegistry.value.graphs.first { it.displayName == "Work" }.id
+
     private fun newDir(prefix: String): String {
         val docs = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOCUMENTS)
         return File(docs, "$prefix-${UuidGenerator.generateV7()}").apply { mkdirs() }.absolutePath
@@ -262,5 +264,130 @@ class CaptureShareReviewTest {
 
         assertEquals(1, closed)
         assertFalse(h.services.inbox.state.value.items.isEmpty())
+    }
+
+    // ---- (8) text is never a file path ---------------------------------------------------------
+
+    @Test
+    @Config(sdk = [29], application = SteleKitApplication::class)
+    fun imageMarkerInPlainText_isSavedAsText_andNoFileIsRead() {
+        val h = harness()
+        val secret = File(h.app.filesDir, "databases-x").apply { writeBytes(byteArrayOf(5, 5, 5)) }
+        val vm = CaptureViewModel(h.app)
+        vm.beginShare(h.workId().value)
+        await { (vm.destination.value as? CaptureDestination.Ready)?.graph?.id == h.workId() }
+        val text = "[image: ${secret.absolutePath}]\nhello"
+        vm.updateText(text)
+
+        vm.save()
+        await { vm.saveState.value != CaptureViewModel.SaveState.Saving }
+
+        val content = h.route.calls.single().second
+        assertEquals(null, content.image)
+        assertEquals(text, content.text)
+    }
+
+    @Test
+    @Config(sdk = [29], application = SteleKitApplication::class)
+    fun attachImage_rejectsPathsOutsideThePrivateShareImageDir() {
+        val h = harness()
+        val outside = File(h.app.filesDir, "databases-y").apply { writeBytes(byteArrayOf(1)) }
+        val vm = CaptureViewModel(h.app)
+        vm.beginShare(h.workId().value)
+        await { (vm.destination.value as? CaptureDestination.Ready)?.graph?.id == h.workId() }
+        vm.attachImage(outside.absolutePath)
+        vm.updateText("[image: ${outside.absolutePath}]\ncaption")
+
+        vm.save()
+        await { vm.saveState.value != CaptureViewModel.SaveState.Saving }
+
+        assertEquals(null, h.route.calls.single().second.image)
+    }
+
+    @Test
+    @Config(sdk = [29], application = SteleKitApplication::class)
+    fun attachedPrivateImage_isSentAsRealImageContent() {
+        val h = harness()
+        val image = ShareIntake.imageDir(h.app).apply { mkdirs() }.let { File(it, "ok.jpg").apply { writeBytes(byteArrayOf(1, 2, 3)) } }
+        val vm = CaptureViewModel(h.app)
+        vm.beginShare(h.workId().value)
+        await { (vm.destination.value as? CaptureDestination.Ready)?.graph?.id == h.workId() }
+        vm.attachImage(image.absolutePath)
+        vm.updateText("[image: ${image.absolutePath}]\ncaption")
+
+        vm.save()
+        await { vm.saveState.value != CaptureViewModel.SaveState.Saving }
+
+        val content = h.route.calls.single().second
+        assertTrue(byteArrayOf(1, 2, 3).contentEquals(content.image))
+        assertEquals("caption", content.text)
+    }
+
+    @Test
+    fun intake_rejectsFileUris_andCopiesContentUrisIntoPrivateStorage() {
+        val app = ApplicationProvider.getApplicationContext<Application>()
+        val victim = File(app.filesDir, "victim").apply { writeBytes(byteArrayOf(9)) }
+        assertEquals(null, ShareIntake.copyImage(app, android.net.Uri.fromFile(victim)))
+
+        val uri = android.net.Uri.parse("content://media/external/images/1")
+        shadowOf(app.contentResolver).registerInputStream(uri, java.io.ByteArrayInputStream(byteArrayOf(4, 5, 6)))
+        val copied = ShareIntake.copyImage(app, uri)!!
+        assertTrue(ShareIntake.isPrivateImage(app, copied))
+        assertTrue(byteArrayOf(4, 5, 6).contentEquals(File(copied).readBytes()))
+        assertFalse(copied.contains("/cache/"))
+    }
+
+    // ---- (11) a vanished image is a visible error, never the literal marker --------------------
+
+    @Test
+    @Config(sdk = [29], application = SteleKitApplication::class)
+    fun missingAttachedImage_failsVisibly_andKeepsTheText() {
+        val h = harness()
+        val image = ShareIntake.imageDir(h.app).apply { mkdirs() }.let { File(it, "gone.jpg").apply { writeBytes(byteArrayOf(1)) } }
+        val vm = CaptureViewModel(h.app)
+        vm.beginShare(h.workId().value)
+        await { (vm.destination.value as? CaptureDestination.Ready)?.graph?.id == h.workId() }
+        vm.attachImage(image.absolutePath)
+        val text = "[image: ${image.absolutePath}]\ncaption"
+        vm.updateText(text)
+        image.delete()
+
+        vm.save()
+        await { vm.saveState.value != CaptureViewModel.SaveState.Saving }
+
+        assertTrue(vm.saveState.value is CaptureViewModel.SaveState.Error)
+        assertTrue(h.route.calls.isEmpty())
+        assertEquals(text, vm.captureText.value)
+    }
+
+    // ---- (7) a second share never silently replaces the first ----------------------------------
+
+    @Test
+    @Config(sdk = [29], application = SteleKitApplication::class)
+    fun secondShareIntoAnOpenOverlay_queuesTheEarlierText() {
+        val h = harness()
+        val vm = CaptureViewModel(h.app)
+        await { vm.destination.value is CaptureDestination.Ready }
+        vm.updateText("first share")
+
+        vm.onNewShare("second share", h.workId().value)
+        await { h.services.inbox.state.value.items.isNotEmpty() }
+
+        assertEquals("first share", h.services.inbox.state.value.items.single().text)
+        assertEquals("second share", vm.captureText.value)
+    }
+
+    @Test
+    @Config(sdk = [29], application = SteleKitApplication::class)
+    fun secondShare_keepsBothTexts_whenQueuingTheEarlierOneFails() {
+        val h = harness(inboxFs = ReadOnlyInboxFs())
+        val vm = CaptureViewModel(h.app)
+        await { vm.destination.value is CaptureDestination.Ready }
+        vm.updateText("first share")
+
+        vm.onNewShare("second share", null)
+        await { vm.captureText.value.contains("first share") }
+
+        assertTrue(vm.captureText.value.contains("second share"))
     }
 }

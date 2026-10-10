@@ -9,7 +9,9 @@ import android.os.Handler
 import android.os.Looper
 import android.widget.Toast
 import arrow.core.Either
+import arrow.core.getOrElse
 import arrow.core.left
+import arrow.core.right
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dev.stapler.stelekit.capture.AppendOutcome
@@ -120,6 +122,8 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
     /** Idempotency key for this share: the journal block uuid, so a replayed save is `AlreadyPresent`. */
     val captureId: String get() = currentCaptureId
 
+    @Volatile
+    private var trustedImagePath: String? = null
     private var overrideGraphId: GraphId? = null
     private var explicitChoice: GraphId? = null
     private val destinationTrigger = MutableStateFlow(0)
@@ -155,11 +159,47 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** A new share while the overlay is already open: after a finished save the overlay starts fresh. */
-    fun onNewShare(text: String, overrideGraphId: String?) {
-        if (_saveState.value != SaveState.Idle || _backSave.value != BackSaveState.None) resetForNewCapture()
+    fun onNewShare(text: String, overrideGraphId: String?, imagePath: String? = null) {
+        val earlier = _captureText.value.trim()
+        val untouched = _saveState.value == SaveState.Idle && _backSave.value == BackSaveState.None
+        if (untouched && earlier.isNotEmpty() && earlier == text.trim()) {
+            beginShare(overrideGraphId)
+            return
+        }
+        if (untouched && earlier.isNotEmpty()) queueEarlierShare(earlier)
+        if (!untouched || earlier.isNotEmpty()) resetForNewCapture()
+        attachImage(imagePath)
         initializeText(text)
         beginShare(overrideGraphId)
     }
+
+    /** Queues the text of a share that a newer one is replacing; on failure it is put back so nothing is dropped. */
+    private fun queueEarlierShare(earlier: String) {
+        val app = steleApp ?: return
+        val slot = when (val dest = _destination.value) {
+            is CaptureDestination.Ready -> InboxSlot.Graph(dest.graph.id)
+            is CaptureDestination.Unavailable -> dest.graphId?.let { InboxSlot.Graph(it) } ?: InboxSlot.Unassigned
+            else -> InboxSlot.Unassigned
+        }
+        val earlierId = currentCaptureId
+        val image = trustedImagePath
+        app.appScope.launch {
+            val queued = enqueue(app, slot, earlier, earlierId, image).isRight()
+            if (queued) {
+                toastOnMain("Your earlier note was queued.")
+            } else {
+                _captureText.update { now -> if (now.isBlank()) earlier else "$earlier\n\n$now" }
+                toastOnMain("Couldn't queue your earlier note; it is kept below.")
+            }
+        }
+    }
+
+    /** Trusts [path] as this share's image only if it lies inside the app-private share-image directory. */
+    fun attachImage(path: String?) {
+        trustedImagePath = path?.takeIf { ShareIntake.isPrivateImage(getApplication(), it) }
+    }
+
+    val attachedImagePath: String? get() = trustedImagePath
 
     private fun resetForNewCapture() {
         currentCaptureId = UuidGenerator.generateV7()
@@ -557,6 +597,12 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
         graph: GraphChoice?,
         text: String,
     ): ShareResult {
+        val content = loadContent(text, trustedImagePath).getOrElse { return ShareResult.Failed(IllegalStateException(it)) }
+        if (content.image != null) {
+            val id = graph?.id ?: graphManager.getActiveGraphId()
+                ?: return ShareResult.Failed(IllegalStateException("No active graph"))
+            return persistContent(app, id, graph, content, text)
+        }
         // Bug 1/8 mitigations (graph-switch race, markdown flush) live in CaptureWriter.
         // Autosave is started on the writer, which is then kept for post-save chip writes.
         val outcome = JournalAppender(graphManager, app.fileSystem)
@@ -577,15 +623,26 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private suspend fun persistOffGraph(app: SteleKitApplication, ready: CaptureDestination.Ready, text: String): ShareResult {
+        val content = loadContent(text, trustedImagePath).getOrElse { return ShareResult.Failed(IllegalStateException(it)) }
+        return persistContent(app, ready.graph.id, ready.graph, content, text)
+    }
+
+    /** Appends [content] (image included) through the share pipeline's router, for any target graph. */
+    private suspend fun persistContent(
+        app: SteleKitApplication,
+        graphId: GraphId,
+        graph: GraphChoice?,
+        content: ShareContent,
+        text: String,
+    ): ShareResult {
         val services = app.shareServices()
             ?: return ShareResult.Failed(IllegalStateException("Saving to a graph that isn't open isn't available here"))
-        val content = withContext(Dispatchers.IO) { shareContentFor(text) }
-        val outcome = services.appender.appendContent(CaptureTarget.NamedGraph(ready.graph.id), content, currentCaptureId)
-        return when (outcome) {
-            is AppendOutcome.AppendedOffGraph -> ShareResult.Added(ready.graph, null, text)
-            is AppendOutcome.Appended -> ShareResult.Added(ready.graph, outcome.toContext(), text)
-            AppendOutcome.AlreadyPresent -> ShareResult.Already(ready.graph)
-            is AppendOutcome.Queued -> ShareResult.Queued(ready.graph, outcome.reason)
+        val label = graph ?: GraphChoice(graphId, "Active")
+        return when (val outcome = services.appender.appendContent(CaptureTarget.NamedGraph(graphId), content, currentCaptureId)) {
+            is AppendOutcome.AppendedOffGraph -> ShareResult.Added(graph, null, text)
+            is AppendOutcome.Appended -> ShareResult.Added(graph, outcome.toContext(), text)
+            AppendOutcome.AlreadyPresent -> ShareResult.Already(graph)
+            is AppendOutcome.Queued -> ShareResult.Queued(label, outcome.reason)
             is AppendOutcome.Deferred -> ShareResult.Failed(IllegalStateException("Couldn't save: ${outcome.reason}"))
             is AppendOutcome.Failed -> ShareResult.Failed(IllegalStateException(outcome.error))
         }
@@ -603,13 +660,30 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
         blockRepository = repoSet.blockRepository,
     )
 
-    /** Splits the `[image: path]` prefix into a real image payload so the inbox/off-graph route keeps it. */
-    private fun shareContentFor(text: String): ShareContent {
+    /**
+     * Splits the `[image: path]` prefix into a real image payload so the inbox/off-graph route keeps it. Only the
+     * path this share's intake copied ([trusted], see [attachImage]) is ever read: the marker in plain text is
+     * just text. A trusted image that has since vanished throws rather than saving the literal marker.
+     */
+    private fun shareContentFor(text: String, trusted: String?): ShareContent {
         val prefix = IMAGE_PREFIX_REGEX.find(text) ?: return ShareContent(text)
         val path = IMAGE_PATH_REGEX.find(prefix.value)?.groupValues?.get(1) ?: return ShareContent(text)
-        val bytes = try { File(path).readBytes() } catch (_: java.io.IOException) { return ShareContent(text) }
+        if (trusted == null || path != trusted) return ShareContent(text)
+        val bytes = try { File(path).readBytes() } catch (_: java.io.IOException) { throw ImageUnavailableException() }
         return ShareContent(text.removePrefix(prefix.value), bytes, "image/jpeg")
     }
+
+    private class ImageUnavailableException : Exception()
+
+    /** Left is a user-facing message. */
+    private suspend fun loadContent(text: String, trusted: String?): Either<String, ShareContent> =
+        withContext(Dispatchers.IO) {
+            try {
+                shareContentFor(text, trusted).right()
+            } catch (_: ImageUnavailableException) {
+                IMAGE_UNAVAILABLE.left()
+            }
+        }
 
     // ---- Unavailable / no-graph / Back paths (Tasks 4.2.1d, 4.2.1g, 4.2.1h) ------------------
 
@@ -630,10 +704,19 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private suspend fun enqueue(app: SteleKitApplication, slot: InboxSlot, text: String): Either<DomainError, EnqueueOutcome> {
+    private suspend fun enqueue(
+        app: SteleKitApplication,
+        slot: InboxSlot,
+        text: String,
+        captureId: String = currentCaptureId,
+        trustedImage: String? = trustedImagePath,
+    ): Either<DomainError, EnqueueOutcome> {
         val inbox = app.shareServices()?.inbox
             ?: return DomainError.FileSystemError.WriteFailed("share-inbox", "share inbox unavailable").left()
-        return inbox.enqueue(slot, withContext(Dispatchers.IO) { shareContentFor(text) }, currentCaptureId)
+        val content = loadContent(text, trustedImage).getOrElse {
+            return DomainError.FileSystemError.ReadFailed("share-image", it).left()
+        }
+        return inbox.enqueue(slot, content, captureId)
     }
 
     /** Close on the "no graphs configured" placeholder: keeps the text in the unassigned slot (ADR-004). */
@@ -663,7 +746,7 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
-                logger.warn("Back auto-save failed: ${e.message}")
+                logger.warn("Back auto-save failed: ${e::class.simpleName}")
                 null
             }
             if (done == null) {
@@ -960,6 +1043,7 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
         private val IMAGE_PATH_REGEX = Regex("""^\[image: (.*?)]""")
         /** Shown when the unassigned-slot enqueue fails; the placeholder then stays open with Copy text. */
         internal const val NO_GRAPH_SAVE_FAILED = "Couldn't save this share. Copy the text before closing."
+        private const val IMAGE_UNAVAILABLE = "The shared image is no longer available. Remove it from the note or share it again."
         private const val QUEUED_NO_GRAPH = "Couldn't pick a graph. Queued to add later."
         private const val UNASSIGNED_SAVED = "Saved. It will be added to the first graph you create."
     }
