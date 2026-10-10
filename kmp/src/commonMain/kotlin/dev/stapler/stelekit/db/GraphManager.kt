@@ -453,7 +453,7 @@ class GraphManager(
                 createGitConfigRepository()?.getConfig(graphId.value)?.getOrNull()
             } catch (e: CancellationException) {
                 throw e
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 logger.warn("addGraph: git config lookup failed for graph $graphId: ${e.message}")
                 null
             }
