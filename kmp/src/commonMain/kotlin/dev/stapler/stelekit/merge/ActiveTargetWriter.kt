@@ -59,6 +59,7 @@ enum class WriteRetryReason(val message: String) {
  *   `{ id -> id.value in bsm.dirtyPageUuids.value || bsm.hasPendingDiskWrite(id.value) }`; the
  *   default only sees [GraphWriter]'s own debounce window.
  */
+@Suppress("TooManyFunctions")
 class ActiveTargetWriter(
     private val pageRepository: PageRepository,
     private val blockRepository: BlockRepository,
