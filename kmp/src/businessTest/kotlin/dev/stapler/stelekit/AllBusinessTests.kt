@@ -64,6 +64,8 @@ import dev.stapler.stelekit.ui.PullCopyViewModelTest
 import dev.stapler.stelekit.transfer.MergeUuidRoundTripSpikeTest
 import dev.stapler.stelekit.ui.ToolbarActionTest
 import dev.stapler.stelekit.ui.CopyFlowControllerTest
+import dev.stapler.stelekit.ui.PullCopyFlowControllerTest
+import dev.stapler.stelekit.merge.InMemoryMergeStorageTest
 import dev.stapler.stelekit.ui.CopyPagesViewModelTest
 import dev.stapler.stelekit.ui.PageSelectionTest
 import dev.stapler.stelekit.voice.VoiceCaptureViewModelTest
@@ -230,6 +232,8 @@ import org.junit.runners.Suite
     TargetWriterCapabilitiesTest::class,
     ActiveDbPageSourceTest::class,
     CopyFlowControllerTest::class,
+    PullCopyFlowControllerTest::class,
+    InMemoryMergeStorageTest::class,
     CopyPagesViewModelTest::class,
     IosWebCopyGatingTest::class,
     PullCopyFlowTest::class,

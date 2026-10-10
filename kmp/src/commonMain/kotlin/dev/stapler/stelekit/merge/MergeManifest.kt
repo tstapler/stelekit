@@ -71,10 +71,10 @@ private fun ManifestRecord.toLine(): String =
 class MergeManifestWriter internal constructor(
     private val fileSystem: FileSystem,
     private val path: Path,
-) {
-    fun appendPage(entry: ManifestPageEntry): Either<MergeStorageError, Unit> = append(ManifestRecord.Page(entry))
+) : MergeManifestLog {
+    override fun appendPage(entry: ManifestPageEntry): Either<MergeStorageError, Unit> = append(ManifestRecord.Page(entry))
 
-    fun complete(): Either<MergeStorageError, Unit> = append(ManifestRecord.Complete)
+    override fun complete(): Either<MergeStorageError, Unit> = append(ManifestRecord.Complete)
 
     private fun append(record: ManifestRecord): Either<MergeStorageError, Unit> = io {
         val sink = fileSystem.appendingSink(path).buffer()
@@ -87,10 +87,10 @@ class MergeManifestWriter internal constructor(
 }
 
 /** `<appDataDir>/.stele-merge-manifests/<MergeId>.jsonl`; names come from MergeId only. */
-class MergeManifestStore(private val fileSystem: FileSystem, appDataDir: String) {
+class MergeManifestStore(private val fileSystem: FileSystem, appDataDir: String) : MergeManifests {
     private val root: Path = appDataDir.toPath() / DIR_NAME
 
-    fun begin(
+    override fun begin(
         mergeId: MergeId,
         sourceGraphId: String,
         targetGraphId: String,
@@ -106,10 +106,10 @@ class MergeManifestStore(private val fileSystem: FileSystem, appDataDir: String)
     }
 
     /** Re-attach to an existing manifest to keep appending (resume). */
-    fun writerFor(mergeId: MergeId): MergeManifestWriter? =
+    override fun writerFor(mergeId: MergeId): MergeManifestWriter? =
         manifestPath(mergeId).getOrNull()?.takeIf { fileSystem.exists(it) }?.let { MergeManifestWriter(fileSystem, it) }
 
-    fun load(mergeId: MergeId): MergeManifest? = manifestPath(mergeId).getOrNull()?.let(::parse)
+    override fun load(mergeId: MergeId): MergeManifest? = manifestPath(mergeId).getOrNull()?.let(::parse)
 
     fun list(): List<MergeManifest> {
         val files = try {
@@ -120,13 +120,13 @@ class MergeManifestStore(private val fileSystem: FileSystem, appDataDir: String)
         return files.filter { it.name.endsWith(EXT) }.mapNotNull(::parse).sortedBy { it.startedAtEpochMs }
     }
 
-    fun delete(mergeId: MergeId): Either<MergeStorageError, Unit> {
+    override fun delete(mergeId: MergeId): Either<MergeStorageError, Unit> {
         val path = manifestPath(mergeId).getOrNull() ?: return MergeStorageError("invalid merge id").left()
         return io { fileSystem.delete(path, mustExist = false) }
     }
 
     /** Runs whose manifest never reached Complete (process death mid-copy). */
-    fun findInterrupted(): List<MergeManifest> = list().filter { it.status == MergeStatus.InProgress }
+    override fun findInterrupted(): List<MergeManifest> = list().filter { it.status == MergeStatus.InProgress }
 
     /** Deletes manifests started more than [maxAgeMillis] ago; unreadable files are kept. */
     fun expire(nowEpochMs: Long, maxAgeMillis: Long = MERGE_UNDO_WINDOW_MILLIS) {

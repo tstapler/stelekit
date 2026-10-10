@@ -32,6 +32,9 @@ internal class GraphContentLeftSidebarInputs(
     val hostWriteStuck: Boolean,
     val onReconnectHostDirectory: (() -> Unit)?,
     val onCopyPages: (() -> Unit)?,
+    val copyDirection: dev.stapler.stelekit.merge.CopyDirection = dev.stapler.stelekit.merge.CopyDirection.Push,
+    val onCopyPagesFromGraph: ((dev.stapler.stelekit.model.GraphInfo) -> Unit)? = null,
+    val interceptGraphSwitch: (GraphId, () -> Unit) -> Unit = { _, proceed -> proceed() },
     val activeGraphInfo: dev.stapler.stelekit.model.GraphInfo?,
     val graphRegistry: GraphRegistry,
     val activeGraphId: GraphId?,
@@ -82,6 +85,8 @@ internal fun GraphContentLeftSidebar(
         hostWriteStuck = inputs.hostWriteStuck,
         onReconnectHostDirectory = inputs.onReconnectHostDirectory ?: {},
         onCopyPages = inputs.onCopyPages?.let { open -> { open(); inputs.closeSidebarIfMobile() } },
+        copyDirection = inputs.copyDirection,
+        onCopyPagesFromGraph = inputs.onCopyPagesFromGraph?.let { open -> { graph -> open(graph); inputs.closeSidebarIfMobile() } },
         onPageClick = { page ->
             viewModel.navigateTo(Screen.PageView(page))
             inputs.closeSidebarIfMobile()
@@ -92,7 +97,7 @@ internal fun GraphContentLeftSidebar(
         },
         onToggleFavorite = { viewModel.toggleFavorite(it) },
         onGraphSelected = { id ->
-            inputs.scope.launch { graphManager.switchGraph(GraphId(id)) }
+            inputs.interceptGraphSwitch(GraphId(id)) { inputs.scope.launch { graphManager.switchGraph(GraphId(id)) } }
             inputs.closeSidebarIfMobile()
         },
         onAddGraph = {

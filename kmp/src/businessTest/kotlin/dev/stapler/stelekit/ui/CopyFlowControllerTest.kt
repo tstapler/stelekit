@@ -12,6 +12,7 @@ import dev.stapler.stelekit.merge.CopyRunOutcome
 import dev.stapler.stelekit.merge.DefaultCopyRunHost
 import dev.stapler.stelekit.merge.MergeId
 import dev.stapler.stelekit.merge.MergeManifestStore
+import dev.stapler.stelekit.merge.OkioMergeStagingStore
 import dev.stapler.stelekit.merge.MergePage
 import dev.stapler.stelekit.merge.MergePlan
 import dev.stapler.stelekit.merge.MergeStagingDirectory
@@ -152,8 +153,7 @@ class CopyFlowControllerTest {
             undo = MergeUndo(manifests, { RoutedTargetWriter(router, it) }, { 1_000L }),
             probe = CapabilityDestinationProbe(capabilities, SourceReadCapabilities(SourcePlatform.Desktop)),
             destinationSettings = CopyDestinationSettings(MapSettings()),
-            appDataDir = "/app",
-            fileSystem = okio,
+            staging = OkioMergeStagingStore(okio, "/app"),
         )
         val controller = CopyFlowController(services, manager.graphRegistry, { switched += it }).also { controllers += it }
         val entries = (1..3).map(::entry)

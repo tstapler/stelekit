@@ -248,7 +248,7 @@ data class StelekitAppCaptureDeps(
     val onCaptureSettingsReady: ((dev.stapler.stelekit.capture.CaptureTargetSettings) -> Unit)? = null,
     /** Lets a share to the open graph go through the editor's writer; filled by the open graph's composition root. */
     val activeWriteHooks: dev.stapler.stelekit.capture.ActiveWriteHooks = dev.stapler.stelekit.capture.ActiveWriteHooks(),
-    /** Turns on "Copy pages to..."; null on iOS/Web (no app-data directory or off-graph writes), which hides the entry points. */
+    /** Turns on the copy entry points: push ("Copy pages to...") on Android/Desktop, pull ("Copy pages from...") on iOS/Web; null hides them. */
     val copyHost: dev.stapler.stelekit.ui.screens.copy.CopyHostConfig? = null,
 )
 
