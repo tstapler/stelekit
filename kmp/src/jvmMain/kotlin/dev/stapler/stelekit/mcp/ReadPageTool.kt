@@ -28,7 +28,7 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 
 /** Default/ceiling for [registerReadPageTool]'s `blockLimit` — a page's blocks are bounded reads, never a full-tree dump. */
-private const val DEFAULT_BLOCK_LIMIT = 50
+internal const val DEFAULT_BLOCK_LIMIT = 50
 private const val MAX_BLOCK_LIMIT = 50
 
 private const val KEY_UUID = "uuid"
@@ -113,9 +113,10 @@ fun Server.registerReadPageTool(graphManager: GraphManager) {
 }
 
 /** The caller-supplied, exactly-one-of-three page identifier for [registerReadPageTool]. */
-private data class PageLookup(val uuid: String?, val name: String?, val date: String?)
+internal data class PageLookup(val uuid: String?, val name: String?, val date: String?)
 
-private suspend fun buildReadPageResult(
+/** Internal (not private) so [registerPageResource]'s `note://{uuid}` resource reuses this exact rendering. */
+internal suspend fun buildReadPageResult(
     graphManager: GraphManager,
     lookup: PageLookup,
     blockLimit: Int,

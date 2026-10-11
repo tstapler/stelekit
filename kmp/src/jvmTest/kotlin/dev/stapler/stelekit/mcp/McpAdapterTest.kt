@@ -9,12 +9,11 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
 
 class McpAdapterTest {
 
     @Test
-    fun `McpAdapter buildServer responds to initialize with an empty tools capability over ChannelTransport`() = runBlocking {
+    fun `McpAdapter buildServer registers all six tools and responds to initialize over ChannelTransport`() = runBlocking {
         val server = McpAdapter(unopenedGraphManager(), RecordingSuggestionSink(), { "test-client" }).buildServer()
         val client = McpTestClient.connect(server)
         try {
@@ -22,7 +21,19 @@ class McpAdapterTest {
 
             assertEquals("stelekit", init.serverInfo.name)
             assertNotNull(init.capabilities.tools, "tools capability must be advertised")
-            assertTrue(client.listTools().tools.isEmpty(), "skeleton registers no tools")
+            val toolNames = client.listTools().tools.map { it.name }.toSet()
+            assertEquals(
+                setOf(
+                    "search_graph",
+                    "list_graphs",
+                    "read_page",
+                    "list_backlinks",
+                    "propose_block_edit",
+                    "propose_new_page",
+                ),
+                toolNames,
+                "tools/list must list exactly the six registered tools (requirements.md's Success Metric)",
+            )
         } finally {
             client.close()
             server.close()

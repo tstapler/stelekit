@@ -24,7 +24,6 @@ class ListGraphsToolTest {
         graphManager.switchGraph(g1)
 
         val server = McpAdapter(graphManager, RecordingSuggestionSink(), { "test-client" }).buildServer()
-        server.registerListGraphsTool(graphManager)
         val client = McpTestClient.connect(server)
         try {
             client.initialize()
@@ -45,7 +44,6 @@ class ListGraphsToolTest {
     fun `list_graphs returns an empty array without throwing when no graphs are registered`() = runBlocking {
         val graphManager = unopenedGraphManager()
         val server = McpAdapter(graphManager, RecordingSuggestionSink(), { "test-client" }).buildServer()
-        server.registerListGraphsTool(graphManager)
         val client = McpTestClient.connect(server)
         try {
             client.initialize()

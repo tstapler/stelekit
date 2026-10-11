@@ -77,7 +77,6 @@ class McpEndToEndReadTest {
             )
 
             val server = McpAdapter(graphManager, RecordingSuggestionSink(), { "test-client" }).buildServer()
-            server.registerSearchGraphTool(graphManager)
             val client = McpTestClient.connect(server)
             try {
                 client.initialize()

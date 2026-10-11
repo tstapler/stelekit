@@ -101,7 +101,6 @@ class SearchGraphToolTest {
     fun `search_graph returns GraphNotOpen without hanging when no repository set is active`() = runBlocking {
         val graphManager = unopenedGraphManager()
         val server = McpAdapter(graphManager, RecordingSuggestionSink(), { "test-client" }).buildServer()
-        server.registerSearchGraphTool(graphManager)
         val client = McpTestClient.connect(server)
         try {
             client.initialize()

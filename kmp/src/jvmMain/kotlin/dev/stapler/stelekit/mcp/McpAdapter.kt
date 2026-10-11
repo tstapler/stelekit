@@ -10,22 +10,32 @@ import io.modelcontextprotocol.kotlin.sdk.types.Implementation
 import io.modelcontextprotocol.kotlin.sdk.types.ServerCapabilities
 
 /**
- * Wires [GraphManager] and [McpSuggestionSink] into an MCP SDK [Server]. Tools and resources are
- * registered into [buildServer] by later stories; [mcpClientName] is read-only here and is
- * resolved per connection by `McpClientIdentity` (see its doc for why it can't come from a handler).
+ * Wires [GraphManager] and [McpSuggestionSink] into an MCP SDK [Server] and registers every
+ * tool/resource this server exposes. [mcpClientName] is read-only here and is resolved per
+ * connection by `McpClientIdentity` (see its doc for why it can't come from a handler).
  */
 class McpAdapter(
     private val graphManager: GraphManager,
     private val suggestionSink: McpSuggestionSink,
     private val mcpClientName: () -> String,
 ) {
-    fun buildServer(): Server = Server(
-        serverInfo = Implementation(name = "stelekit", version = BuildInfo.appVersion),
-        options = ServerOptions(
-            capabilities = ServerCapabilities(
-                tools = ServerCapabilities.Tools(listChanged = false),
-                resources = ServerCapabilities.Resources(subscribe = false, listChanged = false),
+    fun buildServer(): Server {
+        val server = Server(
+            serverInfo = Implementation(name = "stelekit", version = BuildInfo.appVersion),
+            options = ServerOptions(
+                capabilities = ServerCapabilities(
+                    tools = ServerCapabilities.Tools(listChanged = false),
+                    resources = ServerCapabilities.Resources(subscribe = false, listChanged = false),
+                ),
             ),
-        ),
-    )
+        )
+        server.registerSearchGraphTool(graphManager)
+        server.registerListGraphsTool(graphManager)
+        server.registerReadPageTool(graphManager)
+        server.registerListBacklinksTool(graphManager)
+        server.registerProposeBlockEditTool(graphManager, suggestionSink, mcpClientName)
+        server.registerProposeNewPageTool(graphManager, suggestionSink, mcpClientName)
+        server.registerPageResource(graphManager)
+        return server
+    }
 }

@@ -26,7 +26,12 @@ import io.modelcontextprotocol.kotlin.sdk.types.JSONRPCNotification
 import io.modelcontextprotocol.kotlin.sdk.types.JSONRPCRequest
 import io.modelcontextprotocol.kotlin.sdk.types.JSONRPCResponse
 import io.modelcontextprotocol.kotlin.sdk.types.LATEST_PROTOCOL_VERSION
+import io.modelcontextprotocol.kotlin.sdk.types.ListResourceTemplatesResult
+import io.modelcontextprotocol.kotlin.sdk.types.ListResourcesResult
 import io.modelcontextprotocol.kotlin.sdk.types.ListToolsResult
+import io.modelcontextprotocol.kotlin.sdk.types.ReadResourceRequest
+import io.modelcontextprotocol.kotlin.sdk.types.ReadResourceRequestParams
+import io.modelcontextprotocol.kotlin.sdk.types.ReadResourceResult
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import io.modelcontextprotocol.kotlin.sdk.types.toJSON
 import kotlinx.coroutines.CoroutineScope
@@ -114,6 +119,15 @@ internal class McpTestClient private constructor(
 
     suspend fun callTool(name: String, arguments: JsonObject): CallToolResult =
         call(CallToolRequest(CallToolRequestParams(name = name, arguments = arguments)).toJSON()) as CallToolResult
+
+    suspend fun readResource(uri: String): ReadResourceResult =
+        call(ReadResourceRequest(ReadResourceRequestParams(uri = uri)).toJSON()) as ReadResourceResult
+
+    suspend fun listResources(): ListResourcesResult =
+        call(JSONRPCRequest(method = "resources/list")) as ListResourcesResult
+
+    suspend fun listResourceTemplates(): ListResourceTemplatesResult =
+        call(JSONRPCRequest(method = "resources/templates/list")) as ListResourceTemplatesResult
 
     private suspend fun call(request: JSONRPCRequest): Any = withTimeout(RESPONSE_TIMEOUT_MS) {
         transport.send(request)
