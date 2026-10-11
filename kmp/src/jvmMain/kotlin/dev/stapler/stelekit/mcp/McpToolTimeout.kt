@@ -6,6 +6,7 @@ import dev.stapler.stelekit.logging.Logger
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequest
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
+import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import io.modelcontextprotocol.kotlin.sdk.types.ToolAnnotations
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import kotlinx.coroutines.CancellationException
@@ -34,6 +35,8 @@ fun Server.addTimedTool(
             withTimeout(timeoutMs) { handler(request) }
         } catch (e: TimeoutCancellationException) {
             McpToolError.Timeout(name, timeoutMs).toCallToolResult()
+        } catch (e: McpInvalidArgumentException) {
+            CallToolResult(content = listOf(TextContent(e.message ?: "Invalid argument")), isError = true)
         } catch (e: CancellationException) {
             throw e // client disconnect / normal cancellation — not a tool bug
         } catch (e: Throwable) {
@@ -42,3 +45,6 @@ fun Server.addTimedTool(
         }
     }
 }
+
+/** A caller mistake (missing/invalid tool argument) — reported to the client as a plain tool error, not a SteleKit bug. */
+internal class McpInvalidArgumentException(message: String) : IllegalArgumentException(message)

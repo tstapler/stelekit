@@ -19,7 +19,7 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun DeveloperSettings(
     isLibsqlDriverEnabled: Boolean,
-    onLibsqlDriverToggle: (Boolean) -> Unit,
+    onLibsqlDriverToggle: ((Boolean) -> Unit)?,
     modifier: Modifier = Modifier,
     // graph-mcp-server (Story 4.1.2): null hides this section entirely — same
     // optional-row convention every other settings param in this file already uses.
@@ -30,7 +30,7 @@ fun DeveloperSettings(
     onOpenMcpSuggestions: () -> Unit = {},
 ) {
     Column(modifier = modifier) {
-        SettingsSection("Database Driver") {
+        if (onLibsqlDriverToggle != null) SettingsSection("Database Driver") {
             SettingsToggleRow(
                 label = "Use libsql JNI driver",
                 checked = isLibsqlDriverEnabled,

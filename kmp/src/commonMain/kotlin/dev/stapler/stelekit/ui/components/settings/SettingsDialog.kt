@@ -139,7 +139,7 @@ fun SettingsDialog(
                         SettingsCategory.GOOGLE_ACCOUNT -> onConnectGoogle != null
                         SettingsCategory.AUDIOBOOK_NOTES -> audiobookNotesSettingsContent != null
                         SettingsCategory.TAG_SUGGESTIONS -> tagSettings != null
-                        SettingsCategory.DEVELOPER -> onLibsqlDriverToggle != null
+                        SettingsCategory.DEVELOPER -> onLibsqlDriverToggle != null || onMcpServerToggle != null
                         SettingsCategory.SECTIONS -> sectionManifest != null
                         SettingsCategory.DEVICE_SUBSCRIPTIONS -> sectionManifest != null
                         SettingsCategory.LLM_PROVIDERS ->
@@ -226,7 +226,7 @@ fun SettingsDialog(
                             hasLlmKey = hasLlmKey,
                         )
                     }
-                    SettingsCategory.DEVELOPER -> if (onLibsqlDriverToggle != null) {
+                    SettingsCategory.DEVELOPER -> if (onLibsqlDriverToggle != null || onMcpServerToggle != null) {
                         DeveloperSettings(
                             isLibsqlDriverEnabled = isLibsqlDriverEnabled,
                             onLibsqlDriverToggle = onLibsqlDriverToggle,

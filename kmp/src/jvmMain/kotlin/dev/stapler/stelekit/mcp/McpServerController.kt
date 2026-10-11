@@ -8,6 +8,7 @@ import dev.stapler.stelekit.ui.StelekitViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -29,7 +30,7 @@ class McpServerController(
     private val scope: CoroutineScope,
 ) {
     private val mcpClientIdentity = McpClientIdentity()
-    private var socketServer: McpSocketServer? = null
+    private val socketServer = java.util.concurrent.atomic.AtomicReference<McpSocketServer?>(null)
 
     private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
         logger.error("Uncaught error in McpServerController", throwable)
@@ -52,19 +53,21 @@ class McpServerController(
 
 
     private suspend fun attemptStart() {
-        if (socketServer != null) return // already running — distinctUntilChanged already guards re-entry, this is belt-and-suspenders
         val graphId = graphManager.getActiveGraphId() ?: return // Story 4.1.3's AC: no graph open, never starts
 
         val suggestionSink = ViewModelSuggestionSink(viewModel)
         val adapter = McpAdapter(graphManager, suggestionSink, mcpClientIdentity::resolve)
         val server = McpSocketServer(graphId, adapter.buildServer(), mcpClientIdentity)
+        // Claim the slot before the suspending bind so a concurrent Retry/toggle can't double-start.
+        if (!socketServer.compareAndSet(null, server)) return
         try {
             server.start()
-            socketServer = server
             viewModel.setMcpBindFailureMessage(null)
         } catch (e: CancellationException) {
+            releaseFailedStart(server)
             throw e
         } catch (e: Exception) {
+            releaseFailedStart(server)
             logger.error("MCP socket bind failed for graph ${graphId.value}", e)
             viewModel.setMcpBindFailureMessage(e.message ?: "MCP server failed to start")
         }
@@ -73,12 +76,16 @@ class McpServerController(
     /** Stops the server and the toggle collector; the controller can't be restarted afterwards. */
     fun shutdown() {
         stopServer()
-        scope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
+        scope.coroutineContext[Job]?.cancel()
+    }
+
+    private fun releaseFailedStart(server: McpSocketServer) {
+        socketServer.compareAndSet(server, null)
+        runCatching { server.stop() }
     }
 
     private fun stopServer() {
-        socketServer?.stop()
-        socketServer = null
+        socketServer.getAndSet(null)?.stop()
         viewModel.setMcpBindFailureMessage(null)
     }
 }

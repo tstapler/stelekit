@@ -3,6 +3,7 @@
 package dev.stapler.stelekit.mcp
 
 import dev.stapler.stelekit.model.GraphId
+import java.nio.file.FileSystems
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -24,7 +25,10 @@ object McpSocketPath {
     fun forGraph(graphId: GraphId): Path {
         val dir = mcpDir()
         Files.createDirectories(dir)
-        Files.setPosixFilePermissions(dir, PosixFilePermissions.fromString(DIR_PERMISSIONS))
+        // Non-POSIX filesystems (Windows/NTFS) have no mode bits; the per-user home dir is the boundary there.
+        if ("posix" in FileSystems.getDefault().supportedFileAttributeViews()) {
+            Files.setPosixFilePermissions(dir, PosixFilePermissions.fromString(DIR_PERMISSIONS))
+        }
         return dir.resolve("${graphId.value}.sock")
     }
 

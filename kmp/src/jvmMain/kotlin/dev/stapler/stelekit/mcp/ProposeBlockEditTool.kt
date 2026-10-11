@@ -80,6 +80,13 @@ fun Server.registerProposeBlockEditTool(
             },
         )
 
+        if (liveBlock.pageUuid.value != pageUuid) {
+            return@addTimedTool CallToolResult(
+                content = listOf(TextContent("Block $blockUuid does not belong to page $pageUuid.")),
+                isError = true,
+            )
+        }
+
         val outcome = pendingCapGuard.proposeIfUnderCap {
             PendingLlmSuggestion.BlockEdit(
                 id = UuidGenerator.generateV7(),
@@ -103,7 +110,7 @@ fun Server.registerProposeBlockEditTool(
 /** Shared by both propose tools — same package, so no third file is needed for two call sites. */
 internal fun JsonObject.requireString(key: String): String =
     this[key]?.jsonPrimitive?.contentOrNull
-        ?: throw IllegalArgumentException("Missing required argument '$key'")
+        ?: throw McpInvalidArgumentException("Missing required argument '$key'")
 
 /** Non-error counterpart to [McpToolError.toCallToolResult] — one text block, `isError = false`. */
 internal fun successResult(message: String): CallToolResult =

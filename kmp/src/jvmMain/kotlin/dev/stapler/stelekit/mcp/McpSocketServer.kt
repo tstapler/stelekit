@@ -7,6 +7,7 @@ import dev.stapler.stelekit.model.GraphId
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.server.StdioServerTransport
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -52,7 +53,10 @@ class McpSocketServer(
     private val server: Server,
     private val mcpClientIdentity: McpClientIdentity,
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(
+        SupervisorJob() + Dispatchers.IO +
+            CoroutineExceptionHandler { _, t -> logger.error("Uncaught error in MCP socket server", t) },
+    )
     private val sessionActive = AtomicBoolean(false)
 
     @Volatile
@@ -62,6 +66,9 @@ class McpSocketServer(
     private var activeConnection: SocketChannel? = null
     private var acceptJob: Job? = null
 
+    @Volatile
+    private var stopped = false
+
     /**
      * Binds the socket. Safe to call after a stale socket file was left by an unclean shutdown —
      * if nothing is actually listening at the existing path, it's unlinked before binding.
@@ -70,8 +77,17 @@ class McpSocketServer(
         val path = McpSocketPath.forGraph(graphId)
         unlinkIfStale(path)
 
-        val bound = ServerSocketChannel.open(StandardProtocolFamily.UNIX).apply {
-            bind(UnixDomainSocketAddress.of(path))
+        val bound = ServerSocketChannel.open(StandardProtocolFamily.UNIX)
+        try {
+            bound.bind(UnixDomainSocketAddress.of(path))
+            // stop() may have landed while binding; don't leave a listener nobody owns.
+            if (stopped) throw CancellationException("MCP socket server stopped during start")
+        } catch (t: Throwable) {
+            runCatching { bound.close() }
+            if (t is CancellationException || t is IOException && stopped) {
+                runCatching { Files.deleteIfExists(path) }
+            }
+            throw t
         }
         listenChannel = bound
         acceptJob = scope.launch { acceptLoop(bound) }
@@ -79,6 +95,7 @@ class McpSocketServer(
 
     /** Closes the listener and removes the socket file. Idempotent — safe to call repeatedly. */
     fun stop() {
+        stopped = true
         runCatching { listenChannel?.close() }
         listenChannel = null
         acceptJob?.cancel()

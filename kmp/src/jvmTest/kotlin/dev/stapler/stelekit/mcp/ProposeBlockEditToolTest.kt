@@ -89,6 +89,32 @@ class ProposeBlockEditToolTest {
     }
 
     @Test
+    fun `propose_block_edit rejects a pageUuid that does not own the block and queues nothing`() = runBlocking {
+        val (graphManager, repositorySet) = openTestGraph()
+        repositorySet.blockRepository.saveBlock(block("b1", "p1", "Original text"))
+        val sink = RecordingSuggestionSink()
+        val server = buildTestServer(graphManager, sink)
+        val client = McpTestClient.connect(server)
+        try {
+            client.initialize()
+            val result = client.callTool(
+                "propose_block_edit",
+                buildJsonObject {
+                    put("pageUuid", "some-other-page")
+                    put("blockUuid", "b1")
+                    put("newContent", "Edited text")
+                },
+            )
+
+            assertEquals(true, result.isError)
+            assertTrue(sink.proposed.isEmpty())
+        } finally {
+            client.close()
+            server.close()
+        }
+    }
+
+    @Test
     fun `propose_block_edit stores a sourceProviderId matching the mcp-client-name-uuid convention`() = runBlocking {
         val (graphManager, repositorySet) = openTestGraph()
         repositorySet.blockRepository.saveBlock(block("b1", "p1", "content"))

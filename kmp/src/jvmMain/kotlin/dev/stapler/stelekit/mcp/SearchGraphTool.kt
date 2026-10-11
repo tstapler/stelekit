@@ -13,7 +13,6 @@ import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import io.modelcontextprotocol.kotlin.sdk.types.ToolAnnotations
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
-import kotlin.math.min
 import kotlinx.coroutines.flow.last
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
@@ -27,7 +26,7 @@ internal const val SEARCH_GRAPH_MAX_LIMIT = 50
 private const val SEARCH_GRAPH_DEFAULT_LIMIT = 20
 
 /** Clamps a client-requested limit to [SEARCH_GRAPH_MAX_LIMIT]; an unclamped limit must never reach the repository. */
-internal fun clampSearchGraphLimit(requested: Int?): Int = min(requested ?: SEARCH_GRAPH_DEFAULT_LIMIT, SEARCH_GRAPH_MAX_LIMIT)
+internal fun clampSearchGraphLimit(requested: Int?): Int = (requested ?: SEARCH_GRAPH_DEFAULT_LIMIT).coerceIn(1, SEARCH_GRAPH_MAX_LIMIT)
 
 /**
  * Core `search_graph` logic, independent of how the [SearchRepository] was obtained — lets unit
@@ -44,7 +43,7 @@ internal suspend fun executeSearchGraph(
         query = query,
         scope = runCatching { SearchScope.valueOf(scope ?: SearchScope.ALL.name) }.getOrDefault(SearchScope.ALL),
         limit = clampSearchGraphLimit(limit),
-        offset = offset ?: 0,
+        offset = (offset ?: 0).coerceAtLeast(0),
     )
     // .last(): searchWithFilters may emit an interim page-only result before the final ranked
     // one (see SqlDelightSearchRepository) — the final emission is always the complete answer.
