@@ -34,6 +34,10 @@ class GitSyncServiceConflictMarkerGuardTest {
             override suspend fun status(config: GitConfig): Either<DomainError.GitError, GitStatus> =
                 GitStatus(true, emptyList(), listOf("journals/2026_10_08.md")).right()
 
+            override suspend fun checkoutFile(config: GitConfig, filePath: String, side: MergeSide) = Unit.right()
+
+            override suspend fun markResolved(config: GitConfig, filePath: String) = Unit.right()
+
             override suspend fun stageSubdir(config: GitConfig): Either<DomainError.GitError, Unit> {
                 calls += "stage"
                 return Unit.right()
@@ -107,5 +111,31 @@ class GitSyncServiceConflictMarkerGuardTest {
         val svc = service("- clean\n=======\n- divider alone is not a conflict\n", mutableListOf())
 
         assertEquals(emptyList(), svc.findFilesWithConflictMarkers(sampleConfig, status))
+    }
+
+    @Test
+    fun `applyJournalMerge refuses merged content that still has conflict markers`() = runBlocking {
+        val calls = mutableListOf<String>()
+        val svc = service("", calls)
+
+        val result = svc.applyJournalMerge("test-graph", "/repo/journals/2026_10_08.md", markered)
+
+        assertIs<DomainError.GitError.CommitFailed>((result as Either.Left).value)
+        assertEquals(emptyList(), calls, "nothing may be committed or pushed")
+        svc.shutdown()
+    }
+
+    @Test
+    fun `resolveConflicts refuses to commit when a resolved file still has conflict markers`() = runBlocking {
+        val calls = mutableListOf<String>()
+        val svc = service(markered, calls)
+
+        val result = svc.resolveConflicts(
+            "test-graph", emptyList(), sideResolutions = mapOf("/repo/journals/2026_10_08.md" to MergeSide.LOCAL),
+        )
+
+        assertIs<DomainError.GitError.CommitFailed>((result as Either.Left).value)
+        assertEquals(emptyList(), calls, "nothing may be committed")
+        svc.shutdown()
     }
 }

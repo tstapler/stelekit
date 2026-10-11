@@ -496,6 +496,9 @@ class GitSyncService(
             }
         }
 
+    private fun unresolvedMarkersError(path: String) =
+        DomainError.GitError.CommitFailed("Refusing to commit $path: it still contains conflict markers")
+
     internal fun findFilesWithConflictMarkers(config: GitConfig, status: GitStatus): List<ConflictFile> =
         (status.modifiedFiles + status.untrackedFiles)
             .filter { it.endsWith(".md") }
@@ -668,10 +671,13 @@ class GitSyncService(
             gitRepository.markResolved(config, filePath).onLeft { return@withContext it.left() }
         }
 
+        val resolvedPaths = (sideResolutions.keys + hunkResolutions.keys).toList()
+        resolvedPaths.firstOrNull { path -> fileSystem.readFile(path)?.let(ConflictMarkerDetector::hasConflictMarkers) == true }
+            ?.let { return@withContext unresolvedMarkersError(it).left() }
+
         val message = buildCommitMessage(config, isMerge = true)
         gitRepository.commit(config, message).onLeft { return@withContext it.left() }
 
-        val resolvedPaths = (sideResolutions.keys + hunkResolutions.keys).toList()
         graphLoader.beginGitMerge(resolvedPaths)
         try {
             graphLoader.reloadFiles(resolvedPaths.map { FilePath(it) })
@@ -699,6 +705,10 @@ class GitSyncService(
             ).left()
             is Either.Right -> result.value
         } ?: return@withContext DomainError.GitError.CommitFailed("No git config for $graphId").left()
+
+        if (ConflictMarkerDetector.hasConflictMarkers(mergedContent)) {
+            return@withContext unresolvedMarkersError(filePath).left()
+        }
 
         if (!fileSystem.writeFile(filePath, mergedContent)) {
             return@withContext DomainError.GitError.CommitFailed(
