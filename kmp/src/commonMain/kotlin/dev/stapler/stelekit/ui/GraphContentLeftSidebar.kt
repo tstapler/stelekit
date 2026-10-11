@@ -184,6 +184,8 @@ internal fun GraphContentLeftSidebar(
         sectionManifest = appState.currentManifest,
         defaultSection = appState.defaultSection.toDbString(),
         onSectionIndicatorClick = { viewModel.setSectionQuickToggleVisible(true) },
+        pendingMcpSuggestionCount = appState.pendingMcpSuggestionCount,
+        onOpenMcpSuggestions = { viewModel.openLlmSuggestionReviewScreen() },
     )
 }
 

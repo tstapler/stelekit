@@ -170,6 +170,10 @@ data class AppState(
     // LlmSuggestionInbox.pendingForGraph(currentGraphId) becomes non-empty; NOT auto-dismissed
     // when it becomes empty via accept/reject (same "do NOT auto-dismiss" rule as journal merge).
     val llmSuggestionReviewVisible: Boolean = false,
+    // Count of pending suggestions in the LLM inbox whose sourceProviderId starts with "mcp:" —
+    // surfaced as a sidebar badge and a Settings-panel counter so an MCP-sourced proposal doesn't
+    // silently disappear if the review screen isn't open (graph-mcp-server Story 3.2.2).
+    val pendingMcpSuggestionCount: Int = 0,
     // Export in-flight: true while an exportPage/exportSelectedBlocks coroutine is running
     val isExporting: Boolean = false,
     // Share dialog state

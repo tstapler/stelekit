@@ -188,6 +188,47 @@ class StelekitViewModelLlmSuggestionTest {
         scope.cancel()
     }
 
+    // ─── Story 3.2.2: pendingMcpSuggestionCount, Story 3.2.2d: openLlmSuggestionReviewScreen ──
+
+    @Test
+    fun pendingMcpSuggestionCount_should_CountOnlyMcpSourcedEntries_When_InboxHasBothKinds() = runTest {
+        val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
+        val inbox = LlmSuggestionInbox()
+        val vm = makeViewModel(activeGraphId = "graph-1", scope = scope, inbox = inbox)
+
+        inbox.propose(suggestion(id = "mcp-1", graphId = "graph-1").copy(sourceProviderId = "mcp:claude-desktop:a"))
+        inbox.propose(suggestion(id = "mcp-2", graphId = "graph-1").copy(sourceProviderId = "mcp:claude-desktop:b"))
+        inbox.propose(suggestion(id = "mcp-3", graphId = "graph-1").copy(sourceProviderId = "mcp:claude-code:c"))
+        inbox.propose(suggestion(id = "matcher-1", graphId = "graph-1").copy(sourceProviderId = "aho-corasick-matcher"))
+        inbox.propose(suggestion(id = "matcher-2", graphId = "graph-1").copy(sourceProviderId = "aho-corasick-matcher"))
+        advanceUntilIdle()
+
+        assertEquals(5, inbox.pending.value.size)
+        assertEquals(3, vm.uiState.value.pendingMcpSuggestionCount, "only the mcp:-prefixed 3 count, not the matcher's 2")
+        scope.cancel()
+    }
+
+    @Test
+    fun pendingMcpSuggestionCount_should_BeZero_When_InboxIsEmpty() = runTest {
+        val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
+        val vm = makeViewModel(activeGraphId = "graph-1", scope = scope)
+
+        assertEquals(0, vm.uiState.value.pendingMcpSuggestionCount)
+        scope.cancel()
+    }
+
+    @Test
+    fun openLlmSuggestionReviewScreen_should_SetReviewVisibleTrue() = runTest {
+        val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
+        val vm = makeViewModel(activeGraphId = "graph-1", scope = scope)
+        assertFalse(vm.uiState.value.llmSuggestionReviewVisible)
+
+        vm.openLlmSuggestionReviewScreen()
+
+        assertTrue(vm.uiState.value.llmSuggestionReviewVisible)
+        scope.cancel()
+    }
+
     @Test
     fun rejectLlmSuggestion_should_RemoveFromInbox_NoConfirmation() = runTest {
         val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())

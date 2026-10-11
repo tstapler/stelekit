@@ -447,6 +447,9 @@ class StelekitViewModel(
     /** Dismisses the LLM suggestion review screen without accepting or rejecting anything. */
     fun dismissLlmSuggestionReview() = llmSuggestionCoordinator.dismissLlmSuggestionReview()
 
+    /** Opens the LLM suggestion review screen (sidebar badge / Settings-panel counter tap). */
+    fun openLlmSuggestionReviewScreen() = llmSuggestionCoordinator.openLlmSuggestionReviewScreen()
+
     /** Rejects a pending LLM suggestion. */
     fun rejectLlmSuggestion(id: String) = llmSuggestionCoordinator.rejectLlmSuggestion(id)
 

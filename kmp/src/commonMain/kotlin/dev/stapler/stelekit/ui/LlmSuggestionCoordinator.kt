@@ -68,11 +68,20 @@ class LlmSuggestionCoordinator(
                 val currentGraphId = activeGraphIdProvider() ?: uiState.value.currentGraphId
                 val hasPendingForCurrentGraph = currentGraphId != null &&
                     pending.values.any { it.graphId == currentGraphId }
-                if (hasPendingForCurrentGraph) {
-                    uiState.update { it.copy(llmSuggestionReviewVisible = true) }
+                val mcpCount = pending.values.count { it.sourceProviderId.startsWith("mcp:") }
+                uiState.update {
+                    it.copy(
+                        llmSuggestionReviewVisible = if (hasPendingForCurrentGraph) true else it.llmSuggestionReviewVisible,
+                        pendingMcpSuggestionCount = mcpCount,
+                    )
                 }
             }
         }
+    }
+
+    /** Opens the LLM suggestion review screen on demand (sidebar badge / Settings-panel counter tap). */
+    fun openLlmSuggestionReviewScreen() {
+        uiState.update { it.copy(llmSuggestionReviewVisible = true) }
     }
 
     /** Routes a suggestion from TagSuggestionViewModel's scan into the inbox. */
