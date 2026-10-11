@@ -33,8 +33,9 @@ class McpAdapter(
         server.registerListGraphsTool(graphManager)
         server.registerReadPageTool(graphManager)
         server.registerListBacklinksTool(graphManager)
-        server.registerProposeBlockEditTool(graphManager, suggestionSink, mcpClientName)
-        server.registerProposeNewPageTool(graphManager, suggestionSink, mcpClientName)
+        val pendingCapGuard = McpPendingCapGuard(suggestionSink)
+        server.registerProposeBlockEditTool(graphManager, pendingCapGuard, mcpClientName)
+        server.registerProposeNewPageTool(graphManager, pendingCapGuard, mcpClientName)
         server.registerPageResource(graphManager)
         return server
     }

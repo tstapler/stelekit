@@ -23,13 +23,13 @@ import kotlinx.serialization.json.putJsonObject
 
 /**
  * Registers the `propose_block_edit` MCP tool. Reads the block's live content via the normal
- * repository read path and hands a [PendingLlmSuggestion.BlockEdit] to [suggestionSink] —
- * never writes to the DB/disk directly. [McpPendingCapGuard] (Epic 3.2) is layered on in a
- * later pass; this story calls [McpSuggestionSink.propose] directly.
+ * repository read path and hands a [PendingLlmSuggestion.BlockEdit] to [pendingCapGuard] —
+ * never writes to the DB/disk directly, and never calls [McpSuggestionSink.propose] directly
+ * (the guard's `Mutex` is what keeps the per-source cap race-free, Epic 3.2).
  */
 fun Server.registerProposeBlockEditTool(
     graphManager: GraphManager,
-    suggestionSink: McpSuggestionSink,
+    pendingCapGuard: McpPendingCapGuard,
     mcpClientName: () -> String,
 ) {
     addTimedTool(
@@ -80,7 +80,7 @@ fun Server.registerProposeBlockEditTool(
             },
         )
 
-        suggestionSink.propose(
+        val outcome = pendingCapGuard.proposeIfUnderCap {
             PendingLlmSuggestion.BlockEdit(
                 id = UuidGenerator.generateV7(),
                 graphId = activeGraphId.value,
@@ -91,10 +91,12 @@ fun Server.registerProposeBlockEditTool(
                 blockUuid = blockUuid,
                 currentContentSnapshot = liveBlock.content,
                 proposedContent = newContent,
-            ),
+            )
+        }
+        outcome.fold(
+            { cap -> return@addTimedTool cap.toCallToolResult() },
+            { successResult("Queued a proposed edit for block $blockUuid. The user will review it in SteleKit.") },
         )
-
-        successResult("Queued a proposed edit for block $blockUuid. The user will review it in SteleKit.")
     }
 }
 

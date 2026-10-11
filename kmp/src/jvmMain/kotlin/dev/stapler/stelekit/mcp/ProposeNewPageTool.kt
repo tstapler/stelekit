@@ -24,12 +24,12 @@ import kotlinx.serialization.json.putJsonObject
 
 /**
  * Registers the `propose_new_page` MCP tool. Mirrors [registerProposeBlockEditTool]'s shape:
- * builds a [PendingLlmSuggestion.NewPage] from the request and hands it to [suggestionSink] —
- * never touches the DB/disk directly. [McpPendingCapGuard] (Epic 3.2) lands in a later pass.
+ * builds a [PendingLlmSuggestion.NewPage] from the request and hands it to [pendingCapGuard] —
+ * never touches the DB/disk directly, never calls [McpSuggestionSink.propose] directly.
  */
 fun Server.registerProposeNewPageTool(
     graphManager: GraphManager,
-    suggestionSink: McpSuggestionSink,
+    pendingCapGuard: McpPendingCapGuard,
     mcpClientName: () -> String,
 ) {
     addTimedTool(
@@ -88,7 +88,7 @@ fun Server.registerProposeNewPageTool(
             )
         }
 
-        suggestionSink.propose(
+        val outcome = pendingCapGuard.proposeIfUnderCap {
             PendingLlmSuggestion.NewPage(
                 id = UuidGenerator.generateV7(),
                 graphId = activeGraphId.value,
@@ -97,9 +97,11 @@ fun Server.registerProposeNewPageTool(
                 rationale = rationale,
                 proposedTitle = title,
                 proposedBlocks = proposedBlocks,
-            ),
+            )
+        }
+        outcome.fold(
+            { cap -> return@addTimedTool cap.toCallToolResult() },
+            { successResult("Queued a proposed new page '$title'. The user will review it in SteleKit.") },
         )
-
-        successResult("Queued a proposed new page '$title'. The user will review it in SteleKit.")
     }
 }

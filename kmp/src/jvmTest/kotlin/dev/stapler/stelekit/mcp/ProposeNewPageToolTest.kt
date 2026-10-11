@@ -28,7 +28,7 @@ class ProposeNewPageToolTest {
             serverInfo = Implementation(name = "test", version = "0.0.1"),
             options = ServerOptions(capabilities = ServerCapabilities(tools = ServerCapabilities.Tools(listChanged = false))),
         )
-        server.registerProposeNewPageTool(graphManager, suggestionSink, mcpClientName)
+        server.registerProposeNewPageTool(graphManager, McpPendingCapGuard(suggestionSink), mcpClientName)
         return server
     }
 

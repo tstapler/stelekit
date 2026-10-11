@@ -41,7 +41,7 @@ class ProposeBlockEditToolTest {
             serverInfo = Implementation(name = "test", version = "0.0.1"),
             options = ServerOptions(capabilities = ServerCapabilities(tools = ServerCapabilities.Tools(listChanged = false))),
         )
-        server.registerProposeBlockEditTool(graphManager, suggestionSink, mcpClientName)
+        server.registerProposeBlockEditTool(graphManager, McpPendingCapGuard(suggestionSink), mcpClientName)
         return server
     }
 
