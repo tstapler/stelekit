@@ -159,6 +159,10 @@ kotlin {
                 // sqlite-jdbc 3.51.3+ bundled here (verified: 3.51.3.0) — fixes WAL data-race in 3.7.0–3.51.2
                 implementation("app.cash.sqldelight:sqlite-driver:2.3.2")
 
+                // MCP server SDK (graph-mcp-server) — transitively pulls Ktor server-core/SSE 3.5.1
+                // and kotlinx-io-core 0.9.1, both new to this repo.
+                implementation("io.modelcontextprotocol:kotlin-sdk-server:0.15.0")
+
                 // JGit 7.x — Desktop git operations
                 implementation("org.eclipse.jgit:org.eclipse.jgit:7.3.0.202506031305-r")
                 implementation("org.eclipse.jgit:org.eclipse.jgit.ssh.apache:7.3.0.202506031305-r")
@@ -197,6 +201,8 @@ kotlin {
                 implementation("io.github.takahirom.roborazzi:roborazzi-compose-desktop:1.59.0")
                 // Ktor MockEngine for unit-testing UrlFetcherJvm without real network calls
                 implementation("io.ktor:ktor-client-mock:3.1.3")
+                // MCP SDK in-memory ChannelTransport for adapter tests (no socket/subprocess)
+                implementation("io.modelcontextprotocol:kotlin-sdk-testing:0.15.0")
                 // BlockHound — detects blocking calls on coroutine scheduler threads
                 implementation("io.projectreactor.tools:blockhound:1.0.9.RELEASE")
                 // kotlin-reflect — required at runtime for KFunction.isSuspend/.parameters/.returnType
