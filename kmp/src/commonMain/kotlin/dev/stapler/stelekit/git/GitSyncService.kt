@@ -69,6 +69,54 @@ class GitSyncService(
     private val gitSyncBusyCounter: GitSyncBusyCounter = GitSyncBusyCounter(),
 ) {
     private val logger = Logger("GitSyncService")
+    private val firstSyncConfirmation: FirstSyncConfirmation? = settings?.let { FirstSyncConfirmation(it) }
+
+    /** Applies user-confirmed branch repairs; see [repairBranch]. */
+    val branchRepair: BranchRepairService = BranchRepairService(configRepository, firstSyncConfirmation)
+
+    private val _firstSyncReviewPending = MutableStateFlow(firstSyncConfirmation?.isReviewPending(graphId) ?: false)
+
+    /** True after a branch repair until a manual sync succeeds for the new branch (drives the "Review first sync" badge). */
+    val firstSyncReviewPending: StateFlow<Boolean> = _firstSyncReviewPending.asStateFlow()
+
+    /** Applies [proposal] (no sync is run) and refreshes [firstSyncReviewPending]. */
+    suspend fun repairBranch(proposal: BranchRepairProposal): BranchRepairResult =
+        branchRepair.apply(proposal).also {
+            _firstSyncReviewPending.value = firstSyncConfirmation?.isReviewPending(graphId) ?: false
+            // The missing-branch error described the old setting; a stale red badge would reopen a dead repair.
+            val current = _syncState.value
+            if (it is BranchRepairResult.Repaired && current is SyncState.Error &&
+                current.error is DomainError.GitError.RemoteBranchNotFound
+            ) {
+                _syncState.value = SyncState.Idle
+            }
+        }
+
+    /**
+     * Undoes the last repair, but only if the previous branch exists on the remote right now: it was
+     * missing when the repair happened, so it is probed (a fetch of that branch) instead of trusted.
+     * Returns null when no repair is recorded.
+     */
+    suspend fun changeBackBranch(): BranchRepairResult? {
+        val previous = previousBranchBeforeRepair() ?: return null
+        val config = when (val r = configRepository.getConfig(graphId)) {
+            is Either.Left -> return BranchRepairResult.SaveFailed(r.value.message)
+            is Either.Right -> r.value ?: return BranchRepairResult.Stale(null)
+        }
+        when (val probe = gitRepository.fetch(config.copy(remoteBranch = previous))) {
+            is Either.Left -> return when (probe.value) {
+                is DomainError.GitError.RemoteBranchNotFound -> BranchRepairResult.TargetNotOnRemote(previous)
+                else -> BranchRepairResult.SaveFailed(probe.value.message)
+            }
+            is Either.Right -> Unit
+        }
+        return repairBranch(
+            BranchRepairProposal(graphId, from = config.remoteBranch, to = previous, available = listOf(previous)),
+        )
+    }
+
+    /** Branch the last repair replaced, for "Change back"; null when none is recorded. */
+    fun previousBranchBeforeRepair(): String? = firstSyncConfirmation?.previousBranch(graphId)
 
     /** Never [toString] a state directly: conflict/journal-merge states carry full note contents. */
     private fun SyncState.logSummary(): String = when (this) {
@@ -188,7 +236,7 @@ class GitSyncService(
     }
 
     /**
-     * Full sync sequence:
+     * Full sync sequence ([SyncTrigger.Automatic] callers wait while a first-sync review is pending):
      * 1. Network check
      * 2. Load config
      * 3. Safety checks (detached HEAD, stale lock)
@@ -199,8 +247,16 @@ class GitSyncService(
      * 8. Reload merged files
      * 9. Push
      */
-    suspend fun sync(graphId: String): Either<DomainError.GitError, SyncState.Success> =
+    suspend fun sync(
+        graphId: String,
+        trigger: SyncTrigger = SyncTrigger.Manual,
+    ): Either<DomainError.GitError, SyncState.Success> =
         withContext(PlatformDispatcher.IO) {
+            // Read the persisted flag, not the cached StateFlow: the review is confirmed in settings.
+            if (trigger == SyncTrigger.Automatic && firstSyncConfirmation?.isReviewPending(graphId) == true) {
+                logger.info("skipping automatic sync graphId=$graphId: first-sync review is pending")
+                return@withContext DomainError.GitError.FirstSyncReviewPending.left()
+            }
             // Bracket the whole pipeline so gitSyncBusyCounter is decremented on every
             // return@withContext exit path below, not just the success path.
             gitSyncBusyCounter.begin()
@@ -268,7 +324,7 @@ class GitSyncService(
                 gitRepository.commit(config, message).onLeft { err ->
                     if (err is DomainError.GitError.RateLimited) {
                         _syncState.value = SyncState.RateLimited(err.retryAfterSeconds)
-                        scheduleRateLimitRetry(graphId, err.retryAfterSeconds) { g -> sync(g) }
+                        scheduleRateLimitRetry(graphId, err.retryAfterSeconds) { g -> sync(g, SyncTrigger.Automatic) }
                     } else if (err is DomainError.GitError.CredentialExpired) {
                         _syncState.value = SyncState.CredentialExpired(graphId)
                     } else {
@@ -290,7 +346,7 @@ class GitSyncService(
                         _syncState.value = SyncState.CredentialExpired(graphId)
                     } else if (err is DomainError.GitError.RateLimited) {
                         _syncState.value = SyncState.RateLimited(err.retryAfterSeconds)
-                        scheduleRateLimitRetry(graphId, err.retryAfterSeconds) { g -> sync(g) }
+                        scheduleRateLimitRetry(graphId, err.retryAfterSeconds) { g -> sync(g, SyncTrigger.Automatic) }
                     } else {
                         _syncState.value = SyncState.Error(err)
                     }
@@ -308,7 +364,7 @@ class GitSyncService(
                         val err = r.value
                         if (err is DomainError.GitError.RateLimited) {
                             _syncState.value = SyncState.RateLimited(err.retryAfterSeconds)
-                            scheduleRateLimitRetry(graphId, err.retryAfterSeconds) { g -> sync(g) }
+                            scheduleRateLimitRetry(graphId, err.retryAfterSeconds) { g -> sync(g, SyncTrigger.Automatic) }
                         } else if (err is DomainError.GitError.CredentialExpired) {
                             _syncState.value = SyncState.CredentialExpired(graphId)
                         } else {
@@ -361,7 +417,7 @@ class GitSyncService(
                     graphLoader.endGitMerge()
                 }
 
-                remoteCommitsMerged = fetchResult.remoteCommitCount
+                remoteCommitsMerged = mergeResult.mergedCommitCount ?: fetchResult.remoteCommitCount
             }
 
             // 9. Push
@@ -369,7 +425,7 @@ class GitSyncService(
             gitRepository.push(config).onLeft { err ->
                 if (err is DomainError.GitError.RateLimited) {
                     _syncState.value = SyncState.RateLimited(err.retryAfterSeconds)
-                    scheduleRateLimitRetry(graphId, err.retryAfterSeconds) { g -> sync(g) }
+                    scheduleRateLimitRetry(graphId, err.retryAfterSeconds) { g -> sync(g, SyncTrigger.Automatic) }
                 } else if (err is DomainError.GitError.CredentialExpired) {
                     _syncState.value = SyncState.CredentialExpired(graphId)
                 } else if (err is DomainError.GitError.MergeConflict) {
@@ -395,6 +451,8 @@ class GitSyncService(
                 lastSyncAt = Clock.System.now().toEpochMilliseconds(),
             )
             recordLastSyncAt(success.lastSyncAt)
+            firstSyncConfirmation?.confirm(graphId, config.remoteName, config.remoteBranch)
+            _firstSyncReviewPending.value = false
             _syncState.value = success
             success.right()
             } finally {

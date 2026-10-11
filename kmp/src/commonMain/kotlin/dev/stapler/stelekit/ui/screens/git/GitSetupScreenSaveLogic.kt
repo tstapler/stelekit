@@ -7,6 +7,7 @@ import arrow.core.Either
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.error.toSyncErrorMessage
 import dev.stapler.stelekit.git.CloneProgress
+import dev.stapler.stelekit.git.DefaultBranchDetection
 import dev.stapler.stelekit.git.GitAuth
 import dev.stapler.stelekit.git.GitConfigRepository
 import dev.stapler.stelekit.git.GitCredentialConnectionStore
@@ -230,6 +231,9 @@ internal suspend fun performCloneAndSave(
     onCloneProgress: (CloneProgress) -> Unit,
     onCloneInProgressChange: (Boolean) -> Unit,
     onRetryStateChange: (GitTransportRetryState) -> Unit = {},
+    detectDefaultBranch: suspend (url: String, auth: GitAuth) -> DefaultBranchDetection = { _, _ ->
+        DefaultBranchDetection.Unreachable("not requested")
+    },
 ): CloneAndSaveOutcome {
     onCloneInProgressChange(true)
     val cloneAuth = buildCloneAuth(
@@ -264,10 +268,20 @@ internal suspend fun performCloneAndSave(
     }
     val newGraphId = (cloneResult as Either.Right).value
 
+    // A clone checks out the remote's default branch, so that — not the wizard's "main" default —
+    // is the branch fetch/merge/push must follow. Ambiguous/unreachable keeps the form value.
+    val detected = (detectDefaultBranch(form.cloneUrl, cloneAuth) as? DefaultBranchDetection.Detected)?.name
+    val savedForm = if (detected != null && detected != form.remoteBranch) {
+        gitSetupLogger.info("clone default branch is '$detected', overriding form branch '${form.remoteBranch}'")
+        form.copy(remoteBranch = detected)
+    } else {
+        form
+    }
+
     // Task 2.1.2f: a clone that just ran defaults to shallow (Story 2.1.1) — stamp that checkpoint
     // now, since this is the first moment a GitConfig row exists for this graph at all.
     val saveResult = resolveAndSaveConfig(
-        newGraphId, form, null, stores,
+        newGraphId, savedForm, null, stores,
         cloneDepthState = CloneDepthState.Shallow(DEFAULT_CLONE_DEPTH),
     )
     return if (saveResult.isRight()) {

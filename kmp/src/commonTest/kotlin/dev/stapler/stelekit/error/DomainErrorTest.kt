@@ -42,6 +42,7 @@ class DomainErrorTest {
             DomainError.GitError.NotSupported("iOS"),
             DomainError.GitError.Offline,
             DomainError.GitError.EditingInProgress,
+            DomainError.GitError.FirstSyncReviewPending,
             DomainError.GitError.CredentialExpired("expired"),
             DomainError.GitError.RateLimited(42),
             DomainError.GitError.FileTooLarge("assets/large.md.stek", 90_000_000, 75_000_000),
@@ -60,6 +61,9 @@ class DomainErrorTest {
             DomainError.ExportError.ClipboardFailed("clipboard failed"),
             DomainError.ExportError.ShareFailed("share failed"),
             DomainError.ExportError.EncodingFailed("encoding failed"),
+            DomainError.GitError.RemoteBranchNotFound("origin", "main", listOf("master")),
+            DomainError.GitError.RemoteEmpty,
+            DomainError.GitError.InvalidRefName("a..b"),
             DomainError.QrTransferError.ChunkDecodeFailed,
             DomainError.QrTransferError.IntegrityCheckFailed,
             DomainError.QrTransferError.PayloadTooLarge(90000, 65536),
@@ -113,6 +117,7 @@ class DomainErrorTest {
                 is DomainError.GitError.NotSupported -> err.message
                 DomainError.GitError.Offline -> err.message
                 DomainError.GitError.EditingInProgress -> err.message
+                DomainError.GitError.FirstSyncReviewPending -> err.message
                 is DomainError.GitError.CredentialExpired -> err.message
                 is DomainError.GitError.RateLimited -> err.message
                 is DomainError.GitError.FileTooLarge -> err.message
@@ -122,6 +127,9 @@ class DomainErrorTest {
                 is DomainError.GitError.WorkingTreeConcurrentEditDetected -> err.message
                 is DomainError.GitError.RetryExhausted -> err.message
                 is DomainError.GitError.ShallowHistoryInsufficient -> err.message
+                is DomainError.GitError.RemoteBranchNotFound -> err.message
+                DomainError.GitError.RemoteEmpty -> err.message
+                is DomainError.GitError.InvalidRefName -> err.message
                 is DomainError.AttachmentError.CopyFailed -> err.message
                 is DomainError.AttachmentError.PickerFailed -> err.message
                 is DomainError.AttachmentError.AssetsDirectoryFailed -> err.message

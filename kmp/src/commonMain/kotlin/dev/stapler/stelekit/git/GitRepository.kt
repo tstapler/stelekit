@@ -48,6 +48,10 @@ interface GitRepository {
     suspend fun testRemote(url: String, auth: GitAuth): Either<DomainError.GitError, Unit>
     suspend fun fetch(config: GitConfig): Either<DomainError.GitError, FetchResult>
 
+    /** Asks the remote at [url] for its default branch (`ls-remote`); never throws. */
+    suspend fun detectDefaultBranch(url: String, auth: GitAuth): DefaultBranchDetection =
+        DefaultBranchDetection.Unreachable("not supported on this platform")
+
     /**
      * Widens a shallow clone to full history (`FetchCommand.setUnshallow(true)`) — the deepen
      * capability backing [dev.stapler.stelekit.git.model.CloneDepthState.Shallow] →
@@ -71,6 +75,9 @@ interface GitRepository {
     suspend fun markResolved(config: GitConfig, filePath: String): Either<DomainError.GitError, Unit>
     suspend fun hasDetachedHead(config: GitConfig): Boolean
     suspend fun removeStaleLockFile(config: GitConfig): Either<DomainError.GitError, Unit>
+
+    /** Read-only ref report for the diagnostics export (see `describeGitRefs`); never throws. */
+    suspend fun describeRefs(config: GitConfig): String = "(not supported on this platform)"
 
     /**
      * Replaces the active credential store. Called from App.kt to swap in a
@@ -125,6 +132,8 @@ data class MergeResult(
     val hasConflicts: Boolean,
     val conflicts: List<ConflictFile>,
     val changedFiles: List<String>,
+    /** Remote commits brought in, from HEAD before/after the merge; null when the backend can't say. */
+    val mergedCommitCount: Int? = null,
 )
 
 data class GitCommit(

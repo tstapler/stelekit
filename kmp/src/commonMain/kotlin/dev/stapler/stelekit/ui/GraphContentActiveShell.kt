@@ -175,6 +175,7 @@ internal fun GraphContentActiveShell(
     val activeGraphId = graphRegistry.activeGraphId
     val syncState by viewModel.syncState.collectAsState()
     val gitLastSyncAt by viewModel.gitLastSyncAt.collectAsState()
+    val firstSyncReviewPending by viewModel.firstSyncReviewPending.collectAsState()
 
     val focusManager = LocalFocusManager.current
     BoxWithConstraints(
@@ -334,6 +335,7 @@ internal fun GraphContentActiveShell(
                         vaultManager = vaultManager,
                         syncState = syncState,
                         gitLastSyncAt = gitLastSyncAt,
+                        firstSyncReviewPending = firstSyncReviewPending,
                         storageLocationResolver = storageLocationResolver,
                         gitRepository = gitRepository,
                         onStorageLocationChoose = onStorageLocationChoose,

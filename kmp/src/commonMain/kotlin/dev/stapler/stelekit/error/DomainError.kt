@@ -94,6 +94,10 @@ sealed interface DomainError {
         data object Offline : GitError {
             override val message: String = "No network connection available"
         }
+        /** An automatic sync was skipped: a branch repair awaits the user's first-sync review. */
+        data object FirstSyncReviewPending : GitError {
+            override val message: String = "Waiting for you to review the first sync"
+        }
         data object EditingInProgress : GitError {
             override val message: String = "Cannot sync while editing is in progress"
         }
@@ -132,6 +136,29 @@ sealed interface DomainError {
             override val message: String =
                 "This graph's local history doesn't go back far enough to merge safely — " +
                     "contact support or re-clone with full history"
+        }
+
+        /**
+         * The configured `<remote>/<branch>` has no remote-tracking ref after a fetch — the remote
+         * simply has no such branch. Deterministic, so never retried. [available] lists the
+         * branches the remote does have (short names), so the UI can offer a repair.
+         */
+        data class RemoteBranchNotFound(
+            val remote: String,
+            val branch: String,
+            val available: List<String>,
+        ) : GitError {
+            override val message: String = "Branch '$branch' not found on remote — tap to fix"
+        }
+
+        /** The remote has no branches at all (nothing to fetch yet). */
+        data object RemoteEmpty : GitError {
+            override val message: String = "Remote is empty — push a commit first or check the URL"
+        }
+
+        /** The configured remote or branch name is not a valid git ref name (config corruption). */
+        data class InvalidRefName(val name: String) : GitError {
+            override val message: String = "Branch name '$name' is not valid — tap for details"
         }
     }
 
@@ -285,6 +312,7 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.GitError.NotSupported -> message
     is DomainError.GitError.Offline -> message
     is DomainError.GitError.EditingInProgress -> message
+    is DomainError.GitError.FirstSyncReviewPending -> message
     is DomainError.GitError.CredentialExpired -> "GitHub authentication expired — tap to re-connect"
     is DomainError.GitError.RateLimited -> "Rate limited — retrying automatically"
     is DomainError.GitError.FileTooLarge -> "File too large to sync: ${path}"
@@ -294,6 +322,9 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.GitError.WorkingTreeConcurrentEditDetected -> message
     is DomainError.GitError.RetryExhausted -> message
     is DomainError.GitError.ShallowHistoryInsufficient -> message
+    is DomainError.GitError.RemoteBranchNotFound -> message
+    is DomainError.GitError.RemoteEmpty -> message
+    is DomainError.GitError.InvalidRefName -> message
     is DomainError.AttachmentError.CopyFailed -> "Attachment failed"
     is DomainError.AttachmentError.PickerFailed -> "Could not open file picker"
     is DomainError.AttachmentError.AssetsDirectoryFailed -> "Cannot create assets directory"
@@ -333,6 +364,7 @@ fun DomainError.GitError.toSyncErrorMessage(): String = when (this) {
     is DomainError.GitError.NotAGitRepo -> "Not a git repository"
     is DomainError.GitError.NotSupported -> "Git not supported on this platform"
     is DomainError.GitError.EditingInProgress -> "Editing in progress — sync will resume when idle"
+    is DomainError.GitError.FirstSyncReviewPending -> "Review the first sync to resume automatic sync"
     is DomainError.GitError.CredentialExpired -> "GitHub authentication expired — tap to re-connect"
     is DomainError.GitError.RateLimited -> "Rate limited by GitHub/GitLab — retrying automatically"
     is DomainError.GitError.FileTooLarge -> "File too large to sync: $path"
@@ -342,4 +374,7 @@ fun DomainError.GitError.toSyncErrorMessage(): String = when (this) {
     is DomainError.GitError.WorkingTreeConcurrentEditDetected -> "Local file changed during sync — resolve to continue"
     is DomainError.GitError.RetryExhausted -> "${lastError.toSyncErrorMessage()} (retried $attempts times)"
     is DomainError.GitError.ShallowHistoryInsufficient -> "This graph's local history doesn't go back far enough to merge safely — re-clone with full history"
+    is DomainError.GitError.RemoteBranchNotFound -> message
+    is DomainError.GitError.RemoteEmpty -> message
+    is DomainError.GitError.InvalidRefName -> message
 }

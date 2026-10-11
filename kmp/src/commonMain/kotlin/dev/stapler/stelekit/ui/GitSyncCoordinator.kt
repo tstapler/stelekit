@@ -99,6 +99,11 @@ class GitSyncCoordinator(
         .flatMapLatest { service -> service?.lastSyncAt ?: flowOf(null) }
         .stateIn(scope, SharingStarted.Eagerly, null)
 
+    /** True while a branch repair is waiting for its first reviewed sync (badge reads "Review first sync"). */
+    val firstSyncReviewPending: StateFlow<Boolean> = activeGitSyncService
+        .flatMapLatest { service -> service?.firstSyncReviewPending ?: flowOf(false) }
+        .stateIn(scope, SharingStarted.Eagerly, false)
+
     internal fun observeSyncState() {
         scope.launch {
             syncState.collect { state ->

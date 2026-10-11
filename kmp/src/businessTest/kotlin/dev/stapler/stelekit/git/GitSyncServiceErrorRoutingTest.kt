@@ -240,4 +240,64 @@ class GitSyncServiceErrorRoutingTest {
         assertIs<DomainError.GitError.CredentialExpired>(result.value)
         assertEquals(SyncState.CredentialExpired("test-graph"), service.syncState.value)
     }
+
+    /**
+     * A configured branch missing on the remote must surface as a typed [SyncState.Error] (the UI
+     * needs `available` to offer a repair), not a generic failure or a green no-op.
+     */
+    @Test
+    fun `sync when fetch returns RemoteBranchNotFound carries the typed error in SyncState Error`() = runTest {
+        assumeTrue(
+            "Skipped: requires network access for the initial NetworkMonitor.isOnline check",
+            NetworkMonitor().isOnline,
+        )
+        val notFound = DomainError.GitError.RemoteBranchNotFound("origin", "main", listOf("master"))
+        val gitRepository = object : StubGitRepository() {
+            override suspend fun status(config: GitConfig): Either<DomainError.GitError, GitStatus> =
+                GitStatus(hasLocalChanges = false, untrackedFiles = emptyList(), modifiedFiles = emptyList()).right()
+
+            override suspend fun fetch(config: GitConfig): Either<DomainError.GitError, FetchResult> = notFound.left()
+        }
+        val service = buildGitSyncTestService(
+            gitRepository = gitRepository,
+            configRepository = StubConfigRepository(Either.Right(sampleConfig)),
+        )
+
+        val result = service.sync("test-graph")
+
+        assertEquals(notFound, (result as Either.Left).value)
+        assertEquals(SyncState.Error(notFound), service.syncState.value)
+    }
+
+    /** `remoteCommitsMerged` comes from the merge's HEAD before/after count, not the fetch estimate. */
+    @Test
+    fun `sync reports the merge result's commit count as remoteCommitsMerged`() = runTest {
+        assumeTrue(
+            "Skipped: requires network access for the initial NetworkMonitor.isOnline check",
+            NetworkMonitor().isOnline,
+        )
+        val gitRepository = object : StubGitRepository() {
+            override suspend fun status(config: GitConfig): Either<DomainError.GitError, GitStatus> =
+                GitStatus(hasLocalChanges = false, untrackedFiles = emptyList(), modifiedFiles = emptyList()).right()
+
+            override suspend fun fetch(config: GitConfig): Either<DomainError.GitError, FetchResult> =
+                FetchResult(hasRemoteChanges = true, remoteCommitCount = 0).right()
+
+            override suspend fun merge(config: GitConfig): Either<DomainError.GitError, MergeResult> =
+                MergeResult(hasConflicts = false, conflicts = emptyList(), changedFiles = emptyList(), mergedCommitCount = 3).right()
+
+            override suspend fun push(config: GitConfig): Either<DomainError.GitError, Unit> = Unit.right()
+
+            override suspend fun log(config: GitConfig, maxCount: Int): Either<DomainError.GitError, List<GitCommit>> =
+                emptyList<GitCommit>().right()
+        }
+        val service = buildGitSyncTestService(
+            gitRepository = gitRepository,
+            configRepository = StubConfigRepository(Either.Right(sampleConfig)),
+        )
+
+        val result = service.sync("test-graph")
+
+        assertEquals(3, (result as Either.Right).value.remoteCommitsMerged)
+    }
 }

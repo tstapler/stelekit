@@ -435,10 +435,11 @@ fun hasRemoteDivergedSinceShallowClone(
     config: GitConfig,
     configureAuth: (TransportCommand<*, *>) -> Unit,
 ): Boolean = try {
-    val locallyKnownOid = git.repository.resolve("${config.remoteName}/${config.remoteBranch}")
+    val locallyKnownOid = git.repository.exactRef("refs/remotes/${config.remoteName}/${config.remoteBranch}")?.objectId
     val advertisedRefs = git.lsRemote()
         .setRemote(config.remoteName)
         .setHeads(true)
+        .setTimeout(TEST_REMOTE_TIMEOUT_SECONDS)
         .also { configureAuth(it) }
         .call()
     val advertisedOid = advertisedRefs

@@ -109,6 +109,10 @@ fun LeftSidebar(
     /** Epoch-millis of the last successful git sync, persisted across restarts. Null when never
      * synced or no git sync service is active — see [GitSyncService.lastSyncAt]. */
     gitLastSyncAt: Long? = null,
+    /** A branch repair is waiting for its first reviewed sync. */
+    firstSyncReviewPending: Boolean = false,
+    onBranchRepair: (() -> Unit)? = null,
+    onReviewFirstSync: (() -> Unit)? = null,
     onSyncClick: () -> Unit = {},
     onGitSetup: () -> Unit = {},
     isGitConfigured: Boolean = false,
@@ -254,10 +258,16 @@ fun LeftSidebar(
             }
 
             SyncStatusBadge(
-                status = GitSyncStatus(state = syncState, lastSyncAt = gitLastSyncAt),
+                status = GitSyncStatus(
+                    state = syncState,
+                    lastSyncAt = gitLastSyncAt,
+                    firstSyncReviewPending = firstSyncReviewPending,
+                ),
                 onSyncClick = onSyncClick,
                 isGitConfigured = isGitConfigured,
                 onAuthError = onAuthError,
+                onBranchRepair = onBranchRepair,
+                onReviewFirstSync = onReviewFirstSync,
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
             )
 

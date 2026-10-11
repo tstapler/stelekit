@@ -53,9 +53,11 @@ private fun cameraImportEnabled(inputs: GraphContentMainAreaInputs): Boolean =
 @Composable
 internal fun GraphContentScreenAndCapture(deps: GraphContentDeps, viewModel: StelekitViewModel, inputs: GraphContentMainAreaInputs) {
     val captureState = remember { CaptureState() }
-    val diagnosticsCollector = remember(deps.graphManager, deps.fileSystem, deps.repos, deps.platformSettings) {
+    val diagnosticsCollector = remember(deps.graphManager, deps.fileSystem, deps.repos, deps.platformSettings, inputs.gitConfigRepository, deps.platformIntegrations.gitRepository) {
         dev.stapler.stelekit.diagnostics.GraphDiagnosticsCollector(
             deps.graphManager, deps.fileSystem, deps.repos, deps.platformSettings,
+            gitConfigRepository = inputs.gitConfigRepository,
+            gitRepository = deps.platformIntegrations.gitRepository,
         )
     }
 

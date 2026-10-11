@@ -162,6 +162,10 @@ data class AppState(
     // AlertDialog's rendering while true (see GraphDialogLayer).
     val diskConflictViewFullVisible: Boolean = false,
     val journalMergeReviewVisible: Boolean = false,
+    // Configured git branch missing on the remote: repair sheet, and the review shown before the
+    // first sync of a repaired branch. Opened from the sync badge; neither auto-opens.
+    val branchRepairVisible: Boolean = false,
+    val firstSyncReviewVisible: Boolean = false,
     // LLM suggestion inbox — mirrors journalMergeReviewVisible's shape. Set true when
     // LlmSuggestionInbox.pendingForGraph(currentGraphId) becomes non-empty; NOT auto-dismissed
     // when it becomes empty via accept/reject (same "do NOT auto-dismiss" rule as journal merge).
