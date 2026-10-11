@@ -33,7 +33,14 @@ data class ConflictFile(
     val hunks: List<ConflictHunk>,
     val rawContent: String? = null,
     val duplicateBlockIds: List<DuplicateBlockId> = emptyList(),
-)
+) {
+    /**
+     * The block-aware merge (honoring `.gitattributes`) already produced a clean result: [rawContent]
+     * has no conflict markers, so it only needs writing + staging, never a user decision.
+     */
+    val isAutoResolved: Boolean
+        get() = hunks.isEmpty() && rawContent != null && !rawContent.lineSequence().any { it.startsWith("<<<<<<<") }
+}
 
 data class ConflictHunk(
     val id: String,

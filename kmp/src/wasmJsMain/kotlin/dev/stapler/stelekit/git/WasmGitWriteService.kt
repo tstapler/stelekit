@@ -28,6 +28,7 @@ import dev.stapler.stelekit.git.model.GitLabTreeEntry
 import dev.stapler.stelekit.git.merge.Diff3
 import dev.stapler.stelekit.git.merge.findDuplicateBlockIds
 import dev.stapler.stelekit.git.merge.hasConflicts
+import dev.stapler.stelekit.git.merge.MergePolicy
 import dev.stapler.stelekit.git.merge.mergeMarkdownBlocks
 import dev.stapler.stelekit.git.merge.toTwoWayConflictMarkerText
 import dev.stapler.stelekit.git.model.GitRefResponse
@@ -919,7 +920,7 @@ class WasmGitWriteService(
         // falls back to the line-level Diff3 already in use.
         val blockResult = if (path.endsWith(".md")) {
             runCatching {
-                mergeMarkdownBlocks(baseContent, localContent, remoteContent)
+                mergeMarkdownBlocks(baseContent, localContent, remoteContent, MergePolicy.Insertions)
             }.getOrNull()
         } else {
             null

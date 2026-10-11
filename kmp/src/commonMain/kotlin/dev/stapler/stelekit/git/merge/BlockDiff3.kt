@@ -43,7 +43,12 @@ sealed class BlockDiff3Chunk {
  * content hash instead of raw `level`.
  */
 object BlockDiff3 {
-    fun merge(base: List<ParsedBlock>, local: List<ParsedBlock>, remote: List<ParsedBlock>): List<BlockDiff3Chunk> {
+    fun merge(
+        base: List<ParsedBlock>,
+        local: List<ParsedBlock>,
+        remote: List<ParsedBlock>,
+        policy: MergePolicy = MergePolicy.Strict,
+    ): List<BlockDiff3Chunk> {
         val baseFlat = flatten(base)
         val localFlat = flatten(local)
         val remoteFlat = flatten(remote)
@@ -62,6 +67,8 @@ object BlockDiff3 {
                 localGap == remoteGap -> chunks.add(BlockDiff3Chunk.Stable(localGap))
                 localGap == baseGap -> chunks.add(BlockDiff3Chunk.Stable(remoteGap))
                 remoteGap == baseGap -> chunks.add(BlockDiff3Chunk.Stable(localGap))
+                policy == MergePolicy.Union || (policy == MergePolicy.Insertions && baseGap.isEmpty()) ->
+                    chunks.add(BlockDiff3Chunk.Stable(localGap + remoteGap.filter { it !in localGap }))
                 else -> chunks.add(BlockDiff3Chunk.Conflict(baseGap, localGap, remoteGap))
             }
         }
@@ -131,12 +138,18 @@ object BlockDiff3 {
 }
 
 /** Parses [baseText]/[localText]/[remoteText] and runs [BlockDiff3.merge] over the resulting block trees. */
-fun mergeMarkdownBlocks(baseText: String, localText: String, remoteText: String): List<BlockDiff3Chunk> {
+fun mergeMarkdownBlocks(
+    baseText: String,
+    localText: String,
+    remoteText: String,
+    policy: MergePolicy = MergePolicy.Strict,
+): List<BlockDiff3Chunk> {
     val parser = MarkdownParser()
     return BlockDiff3.merge(
         parser.parsePage(baseText).blocks,
         parser.parsePage(localText).blocks,
         parser.parsePage(remoteText).blocks,
+        policy,
     )
 }
 

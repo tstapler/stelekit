@@ -1,6 +1,8 @@
 package dev.stapler.stelekit.git
 
 import dev.stapler.stelekit.git.merge.DuplicateBlockId
+import dev.stapler.stelekit.git.merge.GitAttributes
+import dev.stapler.stelekit.git.merge.MergePolicy
 import dev.stapler.stelekit.git.merge.findDuplicateBlockIds
 import dev.stapler.stelekit.git.merge.hasConflicts
 import dev.stapler.stelekit.git.merge.mergeMarkdownBlocks
@@ -8,6 +10,7 @@ import dev.stapler.stelekit.git.merge.toTwoWayConflictMarkerText
 import dev.stapler.stelekit.git.model.ConflictHunk
 import org.eclipse.jgit.dircache.DirCacheEntry
 import org.eclipse.jgit.lib.Repository
+import java.io.File
 
 /**
  * [markerText] is ready to write back to the working tree; [hunks] is ready for
@@ -52,7 +55,8 @@ fun tryBlockAwareConflict(
     if (!gitRelativePath.endsWith(".md")) return null
     val (baseText, localText, remoteText) = readConflictStages(repo, gitRelativePath) ?: return null
 
-    val chunks = runCatching { mergeMarkdownBlocks(baseText, localText, remoteText) }.getOrNull() ?: return null
+    val policy = loadGitAttributes(repo, gitRelativePath).policyFor(gitRelativePath, default = MergePolicy.Insertions)
+    val chunks = runCatching { mergeMarkdownBlocks(baseText, localText, remoteText, policy) }.getOrNull() ?: return null
     val markerText = chunks.toTwoWayConflictMarkerText(localLabel = "HEAD", remoteLabel = "origin")
     val hunks = if (chunks.hasConflicts()) {
         ConflictResolver().parseConflictFile(displayPath, markerText, wikiRoot).getOrNull()?.hunks ?: emptyList()
@@ -60,6 +64,22 @@ fun tryBlockAwareConflict(
         emptyList()
     }
     return BlockAwareConflictResolution(markerText, hunks, chunks.findDuplicateBlockIds())
+}
+
+/**
+ * `.gitattributes` from the work-tree root down to [gitRelativePath]'s directory, deeper files
+ * overriding shallower ones. JGit never runs custom merge drivers (e.g. the wiki's
+ * `*.md merge=logseq-union`), so [GitAttributes] lets us honor the attribute's intent natively.
+ */
+private fun loadGitAttributes(repo: Repository, gitRelativePath: String): GitAttributes {
+    val workTree = repo.workTree ?: return GitAttributes.EMPTY
+    val dirs = gitRelativePath.substringBeforeLast('/', "").split('/').filter { it.isNotEmpty() }
+    val levels = listOf("") + dirs.indices.map { dirs.take(it + 1).joinToString("/") }
+    val parsed = levels.mapNotNull { dir ->
+        val file = if (dir.isEmpty()) File(workTree, ".gitattributes") else File(File(workTree, dir), ".gitattributes")
+        runCatching { if (file.isFile) GitAttributes.parse(file.readText(), dir) else null }.getOrNull()
+    }
+    return GitAttributes.combine(*parsed.toTypedArray())
 }
 
 /** The base/local/remote blob content for [path]'s three unmerged stages, or null if any stage is missing/unreadable. */

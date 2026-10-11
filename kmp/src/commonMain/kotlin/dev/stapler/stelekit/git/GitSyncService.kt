@@ -67,6 +67,8 @@ class GitSyncService(
      * callers that need to observe busy-ness externally (e.g. a quiesce strategy) should inject
      * a shared instance instead. */
     private val gitSyncBusyCounter: GitSyncBusyCounter = GitSyncBusyCounter(),
+    /** Connectivity probe; defaults to [networkMonitor]. Tests inject one because the JVM monitor pings 8.8.8.8. */
+    private val isOnline: () -> Boolean = { networkMonitor.isOnline },
 ) {
     private val logger = Logger("GitSyncService")
     private val firstSyncConfirmation: FirstSyncConfirmation? = settings?.let { FirstSyncConfirmation(it) }
@@ -267,7 +269,7 @@ class GitSyncService(
 
             // 1. Network check
             logger.info("sync/fetch start graphId=$graphId")
-            if (!networkMonitor.isOnline) {
+            if (!isOnline()) {
                 logger.warn("aborting: NetworkMonitor reports offline")
                 val err = DomainError.GitError.Offline
                 _syncState.value = SyncState.Error(err)
@@ -375,9 +377,29 @@ class GitSyncService(
                     is Either.Right -> r.value
                 }
 
+                // Files the block-aware merge (honoring .gitattributes) already merged cleanly need
+                // no user decision — write + stage them here so only genuine conflicts surface.
+                val autoResolvedPaths = mutableListOf<String>()
                 if (mergeResult.hasConflicts) {
+                    for (file in mergeResult.conflicts.filter { it.isAutoResolved }) {
+                        val content = file.rawContent ?: continue
+                        if (!fileSystem.writeFile(file.filePath, content)) continue
+                        val staged = gitRepository.markResolved(config, file.filePath)
+                        if (staged is Either.Right) autoResolvedPaths += file.filePath
+                    }
+                }
+                val unresolvedConflicts = mergeResult.conflicts.filter { it.filePath !in autoResolvedPaths }
+
+                if (mergeResult.hasConflicts && unresolvedConflicts.isEmpty()) {
+                    gitRepository.commit(config, buildCommitMessage(config, isMerge = true)).onLeft { err ->
+                        _syncState.value = SyncState.Error(err)
+                        return@withContext err.left()
+                    }
+                }
+
+                if (unresolvedConflicts.isNotEmpty()) {
                     // Try algorithmic journal merge for journal files
-                    val journalConflicts = mergeResult.conflicts.filter {
+                    val journalConflicts = unresolvedConflicts.filter {
                         JournalMergeService.isJournalFile(
                             it.filePath.substringAfterLast('/').substringAfterLast('\\')
                         )
@@ -395,24 +417,24 @@ class GitSyncService(
                         if (proposal != null) {
                             _syncState.value = SyncState.JournalMergeReady(graphId, proposal)
                             val conflictErr = DomainError.GitError.MergeConflict(
-                                conflictCount = mergeResult.conflicts.size,
-                                conflictPaths = mergeResult.conflicts.map { it.filePath },
+                                conflictCount = unresolvedConflicts.size,
+                                conflictPaths = unresolvedConflicts.map { it.filePath },
                             )
                             return@withContext conflictErr.left()
                         }
                     }
                     val conflictErr = DomainError.GitError.MergeConflict(
-                        conflictCount = mergeResult.conflicts.size,
-                        conflictPaths = mergeResult.conflicts.map { it.filePath },
+                        conflictCount = unresolvedConflicts.size,
+                        conflictPaths = unresolvedConflicts.map { it.filePath },
                     )
-                    _syncState.value = SyncState.ConflictPending(mergeResult.conflicts)
+                    _syncState.value = SyncState.ConflictPending(unresolvedConflicts)
                     return@withContext conflictErr.left()
                 }
 
                 // 8. Reload merged files with watcher suppression
-                graphLoader.beginGitMerge(mergeResult.changedFiles)
+                graphLoader.beginGitMerge(mergeResult.changedFiles + autoResolvedPaths)
                 try {
-                    graphLoader.reloadFiles(mergeResult.changedFiles.map { FilePath(it) })
+                    graphLoader.reloadFiles((mergeResult.changedFiles + autoResolvedPaths).distinct().map { FilePath(it) })
                 } finally {
                     graphLoader.endGitMerge()
                 }
@@ -477,7 +499,7 @@ class GitSyncService(
             rateLimitRetryJob?.cancel()
 
             logger.info("sync/fetch start graphId=$graphId")
-            if (!networkMonitor.isOnline) {
+            if (!isOnline()) {
                 logger.warn("aborting: NetworkMonitor reports offline")
                 val err = DomainError.GitError.Offline
                 _syncState.value = SyncState.Error(err)
