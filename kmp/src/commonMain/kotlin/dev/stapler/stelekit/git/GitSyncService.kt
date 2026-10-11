@@ -7,6 +7,7 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
+import dev.stapler.stelekit.db.ConflictMarkerDetector
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.error.DomainError
@@ -14,6 +15,7 @@ import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.git.merge.JournalMergeService
 import dev.stapler.stelekit.git.model.CloneDepthState
 import dev.stapler.stelekit.git.model.ConflictFile
+import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.git.model.wikiRoot
@@ -316,6 +318,16 @@ class GitSyncService(
             _syncState.value = SyncState.Committing
             val statusResult = gitRepository.status(config)
             if (statusResult is Either.Right && statusResult.value.hasLocalChanges) {
+                // A conflicted merge leaves markers in the tree; committing them would push them to the remote.
+                val unresolved = findFilesWithConflictMarkers(config, statusResult.value)
+                if (unresolved.isNotEmpty()) {
+                    logger.warn("refusing to commit: ${unresolved.size} file(s) still contain conflict markers")
+                    _syncState.value = SyncState.ConflictPending(unresolved)
+                    return@withContext DomainError.GitError.MergeConflict(
+                        conflictCount = unresolved.size,
+                        conflictPaths = unresolved.map { it.filePath },
+                    ).left()
+                }
                 gitRepository.stageSubdir(config).onLeft { err ->
                     _syncState.value = SyncState.Error(err)
                     return@withContext err.left()
@@ -459,6 +471,17 @@ class GitSyncService(
                 gitSyncBusyCounter.end()
             }
         }
+
+    internal fun findFilesWithConflictMarkers(config: GitConfig, status: GitStatus): List<ConflictFile> =
+        (status.modifiedFiles + status.untrackedFiles)
+            .filter { it.endsWith(".md") }
+            .mapNotNull { relPath ->
+                val absPath = "${config.repoRoot}/$relPath"
+                val content = fileSystem.readFile(absPath) ?: return@mapNotNull null
+                if (!ConflictMarkerDetector.hasConflictMarkers(content)) return@mapNotNull null
+                ConflictResolver().parseConflictFile(absPath, content, config.wikiRoot).getOrNull()
+                    ?: ConflictFile(absPath, relPath, emptyList(), rawContent = content)
+            }
 
     /**
      * Fetches from remote only — does not merge or push.
