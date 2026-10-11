@@ -34,7 +34,7 @@ private class FakeSearchRepository(private val result: SearchResult) : SearchRep
     override fun searchBlocksByContent(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Block>>> =
         flowOf(emptyList<Block>().right())
 
-    override fun searchPagesByTitle(query: String, limit: Int): Flow<Either<DomainError, List<Page>>> =
+    override fun searchPagesByTitle(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
         flowOf(emptyList<Page>().right())
 
     override fun findBlocksReferencing(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> =
