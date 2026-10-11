@@ -1,6 +1,8 @@
 @file:Suppress("InMemoryPagination") // in-memory test fake — drop/take IS the right implementation
 package dev.stapler.stelekit.repository
 
+import dev.stapler.stelekit.merge.SelectionFilter
+import dev.stapler.stelekit.merge.filteredAndSorted
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.util.FractionalIndexing
@@ -11,6 +13,7 @@ import dev.stapler.stelekit.model.Property
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.flowOf
 import arrow.core.Either
@@ -102,6 +105,11 @@ class InMemoryBlockRepository : BlockRepository {
             }
             siblings.sortedBy { it.position }.right()
         }
+    }
+
+    override suspend fun countBlocksForPages(pageUuids: Collection<PageUuid>): Either<DomainError, Map<PageUuid, Int>> {
+        val wanted = pageUuids.toSet()
+        return blocks.value.values.filter { it.pageUuid in wanted }.groupingBy { it.pageUuid }.eachCount().right()
     }
 
     override fun getBlocksForPage(pageUuid: PageUuid): Flow<Either<DomainError, List<Block>>> {
@@ -463,10 +471,10 @@ class InMemoryBlockRepository : BlockRepository {
 
     override fun getLinkedReferences(pageName: String): Flow<Either<DomainError, List<Block>>> {
         // Matches [[name]] and [[name|alias]] forms
-        val wikiLinkPattern = "\\[\\[${Regex.escape(pageName)}(\\|[^\\]]*)?\\]\\]".toRegex(RegexOption.IGNORE_CASE)
+        val patterns = compileLinkPatterns(pageName)
         return blocks.map { map ->
             val linkedBlocks = map.values.filter { block ->
-                wikiLinkPattern.containsMatchIn(block.content)
+                isLinkedReference(block.content, patterns)
             }
             linkedBlocks.sortedBy { it.pageUuid.value }.right()
         }
@@ -474,10 +482,10 @@ class InMemoryBlockRepository : BlockRepository {
 
     override fun getLinkedReferences(pageName: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Block>>> {
         // Matches [[name]] and [[name|alias]] forms
-        val wikiLinkPattern = "\\[\\[${Regex.escape(pageName)}(\\|[^\\]]*)?\\]\\]".toRegex(RegexOption.IGNORE_CASE)
+        val patterns = compileLinkPatterns(pageName)
         return blocks.map { map ->
             val linkedBlocks = map.values.filter { block ->
-                wikiLinkPattern.containsMatchIn(block.content)
+                isLinkedReference(block.content, patterns)
             }
             linkedBlocks.sortedBy { it.pageUuid.value }.drop(offset).take(limit).right()
         }
@@ -515,6 +523,35 @@ class InMemoryBlockRepository : BlockRepository {
                 block.content.contains(query, ignoreCase = true)
             }
             matchingBlocks.sortedBy { it.pageUuid.value }.drop(offset).take(limit).right()
+        }
+    }
+
+    override fun findBlocksWithTaskMarker(
+        markers: Set<String>,
+        limit: Int,
+        offset: Int,
+    ): Flow<Either<DomainError, List<Block>>> = blocks.map { map ->
+        map.values
+            .filter { b -> markers.any { m -> b.content == m || b.content.startsWith("$m ") } }
+            .sortedByDescending { it.createdAt }
+            .drop(offset)
+            .take(limit)
+            .right()
+    }
+
+    override fun findReferencingBlocksReactive(
+        pageName: String,
+        limit: Int,
+        offset: Int,
+    ): Flow<Either<DomainError, List<Block>>> {
+        val patterns = compileLinkPatterns(pageName)
+        return blocks.map { map ->
+            map.values
+                .filter { isLinkedReference(it.content, patterns) }
+                .sortedBy { it.pageUuid.value }
+                .drop(offset)
+                .take(limit)
+                .right()
         }
     }
 
@@ -574,6 +611,17 @@ class InMemoryPageRepository : PageRepository {
         }
     }
 
+    override fun getPagesFiltered(filter: SelectionFilter, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
+        pages.map { it.values.filteredAndSorted(filter).drop(offset).take(limit).right() }
+
+    override suspend fun countPagesFiltered(filter: SelectionFilter): Either<DomainError, Long> =
+        pages.value.values.count(filter::matches).toLong().right()
+
+    override suspend fun getPagesAmong(filter: SelectionFilter, uuids: Collection<PageUuid>): Either<DomainError, List<Page>> {
+        val wanted = uuids.mapTo(HashSet()) { it.value }
+        return pages.value.values.filter { it.uuid.value in wanted && filter.matches(it) }.right()
+    }
+
     override fun getUnloadedPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
         return pages.map { map ->
             map.values.filter { !it.isContentLoaded }
@@ -601,6 +649,11 @@ class InMemoryPageRepository : PageRepository {
         val dateSet = dates.toHashSet()
         return pages.value.values.filter { it.journalDate != null && it.journalDate in dateSet }.right()
     }
+
+    override fun getPagesWithProperty(key: String, value: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
+        pages.map { map ->
+            map.values.filter { it.properties[key] == value }.sortedBy { it.name }.drop(offset).take(limit).right()
+        }.distinctUntilChanged()
 
     override fun getJournalPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
         return pages.map { map ->
@@ -717,7 +770,7 @@ class InMemorySearchRepository(
         return blockRepository.searchBlocksByContent(query, limit, offset)
     }
 
-    override fun searchPagesByTitle(query: String, limit: Int): Flow<Either<DomainError, List<Page>>> {
+    override fun searchPagesByTitle(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
         if (pageRepository == null || query.isEmpty()) return flowOf(emptyList<Page>().right())
         // Test backend: one-shot bounded-batch snapshot (the alias-property filter has no
         // SQL equivalent here). Production search uses FTS-backed repositories.
@@ -727,7 +780,7 @@ class InMemorySearchRepository(
                     pages.filter {
                         it.name.contains(query, ignoreCase = true) ||
                             it.properties[BlockPropertyKeys.ALIAS]?.contains(query, ignoreCase = true) == true
-                    }.take(limit)
+                    }.drop(offset).take(limit)
                 }
             )
         }

@@ -37,6 +37,9 @@ class InstrumentedPageRepository(
     override fun getJournalPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
         delegate.getJournalPages(limit, offset)
 
+    override fun getPagesWithProperty(key: String, value: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
+        delegate.getPagesWithProperty(key, value, limit, offset)
+
     override fun getJournalPageByDate(date: LocalDate): Flow<Either<DomainError, Page?>> =
         delegate.getJournalPageByDate(date)
 
@@ -52,6 +55,20 @@ class InstrumentedPageRepository(
         delegate.getUnloadedPages(limit, offset)
 
     override suspend fun countUnloadedPages(): Either<DomainError, Long> = delegate.countUnloadedPages()
+
+    override fun getPagesFiltered(
+        filter: dev.stapler.stelekit.merge.SelectionFilter,
+        limit: Int,
+        offset: Int,
+    ): Flow<Either<DomainError, List<Page>>> = delegate.getPagesFiltered(filter, limit, offset)
+
+    override suspend fun countPagesFiltered(filter: dev.stapler.stelekit.merge.SelectionFilter): Either<DomainError, Long> =
+        delegate.countPagesFiltered(filter)
+
+    override suspend fun getPagesAmong(
+        filter: dev.stapler.stelekit.merge.SelectionFilter,
+        uuids: Collection<PageUuid>,
+    ): Either<DomainError, List<Page>> = delegate.getPagesAmong(filter, uuids)
 
     // Explicit delegation (not the interface defaults) so the SQL-optimized chunked IN
     // queries and bounded-batch snapshot of the wrapped repository are preserved.

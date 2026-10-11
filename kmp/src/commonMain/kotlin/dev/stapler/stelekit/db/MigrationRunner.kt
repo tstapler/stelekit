@@ -810,6 +810,46 @@ object MigrationRunner {
                 "ANALYZE pages",
             )
         ),
+        Migration(
+            name = "storage_locations_table",
+            statements = listOf(
+                """
+                CREATE TABLE IF NOT EXISTS storage_locations (
+                    graph_id            TEXT NOT NULL PRIMARY KEY,
+                    kind                TEXT NOT NULL,
+                    tree_uri            TEXT,
+                    real_path           TEXT,
+                    display_name        TEXT,
+                    updated_at_epoch_ms INTEGER NOT NULL,
+                    CHECK (
+                        (kind = 'AppOwned'           AND tree_uri IS NULL     AND real_path IS NULL     AND display_name IS NULL) OR
+                        (kind = 'SafFolder'          AND tree_uri IS NOT NULL AND real_path IS NULL     AND display_name IS NULL) OR
+                        (kind = 'DirectAccessFolder' AND real_path IS NOT NULL AND tree_uri IS NULL     AND display_name IS NULL) OR
+                        (kind = 'HostFolder'         AND display_name IS NOT NULL AND tree_uri IS NULL  AND real_path IS NULL)
+                    )
+                )
+                """
+            )
+        ),
+        // git-sync-resilience Story 2.1.2: checkpoint-by-depth state for a graph's clone, so a
+        // resumed app session knows whether a deepen (unshallow) is pending. See GitConfig.kt's
+        // CloneDepthState for the sealed in-memory representation these two raw columns parse into.
+        Migration(
+            name = "git_config_clone_depth_state",
+            schemaOps = listOf(
+                SchemaOp.AddColumn("git_config", "clone_depth_state", "TEXT NOT NULL DEFAULT 'NONE'"),
+                SchemaOp.AddColumn("git_config", "shallow_depth", "INTEGER"),
+            ),
+        ),
+        Migration(
+            name = "idx_blocks_merge_conflict",
+            statements = listOf(
+                // Partial: only flagged copy-conflict blocks are indexed, so the conflict review list
+                // is O(conflicts) instead of a blocks scan. WHERE must equal selectMergeConflictBlocks.
+                "CREATE INDEX IF NOT EXISTS idx_blocks_merge_conflict ON blocks(uuid) WHERE properties LIKE '%merge-conflict:true%'",
+                "ANALYZE blocks",
+            )
+        ),
     )
 
     /**

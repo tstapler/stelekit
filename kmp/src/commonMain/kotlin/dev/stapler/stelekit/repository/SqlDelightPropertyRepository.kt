@@ -125,6 +125,54 @@ class SqlDelightPropertyRepository(
         }
     }.flowOn(PlatformDispatcher.DB)
 
+    override suspend fun getMergeConflicts(afterUuid: String?, limit: Int): Either<DomainError, List<MergeConflictEntry>> =
+        withContext(PlatformDispatcher.DB) {
+            try {
+                val rows = queries
+                    .selectMergeConflictBlocks(afterUuid ?: "", limit.coerceIn(1, PropertyRepository.MAX_CONFLICT_PAGE).toLong())
+                    .executeAsList()
+                    // LIKE is a substring prefilter; confirm the exact key and value.
+                    .map { it.toConflictModel() }
+                    .filter { it.properties["merge-conflict"] == "true" }
+                val pageNames = HashMap<String, String>()
+                rows.map { block ->
+                    val pageName = pageNames.getOrPut(block.pageUuid.value) {
+                        queries.selectPageByUuid(block.pageUuid.value).executeAsOneOrNull()?.name ?: ""
+                    }
+                    MergeConflictEntry(block, pageName, findOriginalNeighbor(block))
+                }.right()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                DomainError.DatabaseError.ReadFailed(e.message ?: "unknown").left()
+            }
+        }
+
+    // Walks left past other flagged siblings (a few hops at most) to the unflagged block the conflict sits beside.
+    private fun findOriginalNeighbor(conflict: Block): Block? {
+        var leftUuid = conflict.leftUuid?.value
+        repeat(CONFLICT_NEIGHBOR_HOPS) {
+            val left = leftUuid?.let { queries.selectBlockByUuid(it).executeAsOneOrNull() }?.toConflictModel() ?: return null
+            if (left.properties["merge-conflict"] != "true") return left
+            leftUuid = left.leftUuid?.value
+        }
+        return null
+    }
+
+    private fun dev.stapler.stelekit.db.Blocks.toConflictModel(): Block = Block(
+        uuid = BlockUuid(uuid),
+        pageUuid = PageUuid(page_uuid),
+        parentUuid = parent_uuid?.let { BlockUuid(it) },
+        leftUuid = left_uuid?.let { BlockUuid(it) },
+        content = content,
+        level = level.toInt(),
+        position = position,
+        createdAt = Instant.fromEpochMilliseconds(created_at),
+        updatedAt = Instant.fromEpochMilliseconds(updated_at),
+        version = version,
+        properties = parseProperties(uuid, properties).associate { it.key to it.value },
+    )
+
     private fun parseProperties(blockUuid: String, propertiesString: String?): List<Property> {
         return propertiesString?.split(",")?.mapNotNull {
             val parts = it.split(":", limit = 2)
@@ -156,3 +204,5 @@ class SqlDelightPropertyRepository(
         )
     }
 }
+
+private const val CONFLICT_NEIGHBOR_HOPS = 5

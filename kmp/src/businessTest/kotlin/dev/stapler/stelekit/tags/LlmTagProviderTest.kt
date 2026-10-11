@@ -76,4 +76,69 @@ class LlmTagProviderTest {
             result.leftOrNull(),
         )
     }
+
+    @Test
+    fun `suggestTags tolerates bullets, numbering, wiki links and comma lists`() = runTest {
+        val formatter = LlmFormatterProvider { _, _ ->
+            LlmResult.Success("1. Galvanic Corrosion\n* [[Aluminum]]\n\"steel\", `Fastener`.\nUnknown", false)
+        }
+        val provider = LlmTagProvider(formatter, timeoutSeconds = 5)
+
+        val result = provider.suggestTags(
+            TagSuggestionRequest(
+                blockUuid = "b",
+                blockContent = "galvanic corrosion aluminum steel fastener",
+                pageVocabulary = listOf("Galvanic Corrosion", "Aluminum", "Steel", "Fastener"),
+            ),
+        )
+
+        assertEquals(
+            listOf("Galvanic Corrosion", "Aluminum", "Steel", "Fastener"),
+            result.getOrNull()?.map { it.term },
+        )
+    }
+
+    private val parser = LlmTagProvider(LlmFormatterProvider { _, _ -> LlmResult.Success("", false) })
+
+    @Test
+    fun `parseResponse matches a comma-containing vocabulary name as a whole line`() {
+        val result = parser.parseResponse("Smith, John", listOf("Smith, John", "Smith", "John"))
+
+        assertEquals(listOf("Smith, John"), result.map { it.term })
+    }
+
+    @Test
+    fun `parseResponse falls back to comma splitting when the whole line is not a name`() {
+        val result = parser.parseResponse("Kotlin, Compose", listOf("Kotlin", "Compose"))
+
+        assertEquals(listOf("Kotlin", "Compose"), result.map { it.term })
+    }
+
+    @Test
+    fun `parseResponse keeps names with leading or trailing dots`() {
+        val result = parser.parseResponse(".NET\nSt.", listOf(".NET", "St."))
+
+        assertEquals(listOf(".NET", "St."), result.map { it.term })
+    }
+
+    @Test
+    fun `parseResponse dedupes repeated names`() {
+        val result = parser.parseResponse("Kotlin\n[[kotlin]]\n- KOTLIN", listOf("Kotlin"))
+
+        assertEquals(listOf("Kotlin"), result.map { it.term })
+    }
+
+    @Test
+    fun `parseResponse confidence decays only for matched lines`() {
+        val result = parser.parseResponse("Kotlin\nNot a tag\nCompose", listOf("Kotlin", "Compose"))
+
+        assertEquals(2, result.size)
+        assertEquals(0.85f, result[0].confidence, 1e-4f)
+        assertEquals(0.83f, result[1].confidence, 1e-4f)
+    }
+
+    @Test
+    fun `parseResponse returns empty for a blank response`() {
+        assertTrue(parser.parseResponse("  \n\n ", listOf("Kotlin")).isEmpty())
+    }
 }

@@ -123,7 +123,7 @@ class JourneyStepCountRubricTest {
         // row) as FIXED — cross-check that a doc claiming that fix landed still records
         // post_fix_step_count; a doc that omits it despite the backlog saying the fix shipped
         // must fail the doc-completeness check, not pass silently.
-        val backlogText = DocRepoLocator.gapBacklogFile.readText()
+        val backlogText = DocRepoLocator.gapBacklogText()
         val gap003Fixed = Regex("""GAP-003[^\n]*FIXED""").containsMatchIn(backlogText)
         assertTrue(gap003Fixed, "expected gap-backlog.md to record GAP-003 as FIXED")
 

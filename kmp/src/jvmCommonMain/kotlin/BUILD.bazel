@@ -17,7 +17,24 @@ This mirrors the JVM pattern so expect/actual resolution works under Bazel.
 #   - //kmp/src/androidMain/kotlin:android_main (Android)
 filegroup(
     name = "kt_srcs",
-    srcs = glob(["**/*.kt"]),
+    # PlatformLock.jvm.kt is excluded: its expect moved to the mermaid module
+    # (//kmp/src/commonMain/kotlin:mermaid_common_srcs) and the actual compiles
+    # in //kmp/src/jvmMain/kotlin:mermaid_lib (JVM) via :platform_lock_actual_srcs
+    # below — leaving it here would compile the actual in jvm_main_lib with no
+    # expect in that unit ("actual has no corresponding expected declaration").
+    srcs = glob(
+        ["**/*.kt"],
+        exclude = ["dev/stapler/stelekit/cache/PlatformLock.jvm.kt"],
+    ),
+    visibility = ["//kmp:__subpackages__"],
+)
+
+# JVM actual for cache/PlatformLock (commonMain expect) — the mermaid module
+# compiles LruCache.kt, which instantiates PlatformLock, so mermaid_lib needs
+# this actual alongside the expect in //kmp/src/commonMain/kotlin:mermaid_common_srcs.
+filegroup(
+    name = "platform_lock_actual_srcs",
+    srcs = ["dev/stapler/stelekit/cache/PlatformLock.jvm.kt"],
     visibility = ["//kmp:__subpackages__"],
 )
 

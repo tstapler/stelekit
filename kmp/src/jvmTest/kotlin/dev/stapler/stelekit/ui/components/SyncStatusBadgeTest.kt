@@ -18,6 +18,7 @@ import org.junit.Rule
 import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.time.Clock
 
 /**
  * Compose-layer unit tests for [SyncStateBadge]'s `LocalChangesPending` and `RateLimited`
@@ -33,7 +34,7 @@ class SyncStatusBadgeTest {
         composeTestRule.setContent {
             MaterialTheme {
                 SyncStatusBadge(
-                    syncState = SyncState.LocalChangesPending(fileCount = 2),
+                    status = GitSyncStatus(SyncState.LocalChangesPending(fileCount = 2)),
                     onSyncClick = {},
                 )
             }
@@ -49,7 +50,7 @@ class SyncStatusBadgeTest {
         composeTestRule.setContent {
             MaterialTheme {
                 SyncStatusBadge(
-                    syncState = SyncState.LocalChangesPending(fileCount = 2),
+                    status = GitSyncStatus(SyncState.LocalChangesPending(fileCount = 2)),
                     onSyncClick = { clickCount++ },
                 )
             }
@@ -65,7 +66,7 @@ class SyncStatusBadgeTest {
         composeTestRule.setContent {
             MaterialTheme {
                 SyncStatusBadge(
-                    syncState = SyncState.RateLimited(retryAfterSeconds = 5),
+                    status = GitSyncStatus(SyncState.RateLimited(retryAfterSeconds = 5)),
                     onSyncClick = {},
                 )
             }
@@ -94,13 +95,13 @@ class SyncStatusBadgeTest {
     @Test
     fun syncStateBadge_tapIsNoOpAndDoesNotInvokeOnSyncClick_forRateLimitedState() {
         var clickCount = 0
-        val stateHolder = mutableStateOf<SyncState>(SyncState.RateLimited(retryAfterSeconds = 5))
-        var currentState by stateHolder
+        val statusHolder = mutableStateOf(GitSyncStatus(SyncState.RateLimited(retryAfterSeconds = 5)))
+        var currentStatus by statusHolder
 
         composeTestRule.setContent {
             MaterialTheme {
                 SyncStatusBadge(
-                    syncState = currentState,
+                    status = currentStatus,
                     onSyncClick = { clickCount++ },
                 )
             }
@@ -112,8 +113,37 @@ class SyncStatusBadgeTest {
 
         // A later transition to another actionable state restores normal tap behavior —
         // the no-op is scoped strictly to RateLimited.
-        currentState = SyncState.LocalChangesPending(fileCount = 1)
+        currentStatus = GitSyncStatus(SyncState.LocalChangesPending(fileCount = 1))
         composeTestRule.onNodeWithContentDescription("1 unsynced changes").performClick()
         assertEquals(1, clickCount)
+    }
+
+    @Test
+    fun syncStateBadge_showsNeverSynced_whenIdleWithNullLastSyncAt() {
+        composeTestRule.setContent {
+            MaterialTheme {
+                SyncStatusBadge(
+                    status = GitSyncStatus(state = SyncState.Idle, lastSyncAt = null),
+                    onSyncClick = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Never synced").assertIsDisplayed()
+    }
+
+    @Test
+    fun syncStateBadge_showsSyncedNMinutesAgo_whenIdleWithPastLastSyncAt() {
+        val fiveMinutesAgo = Clock.System.now().toEpochMilliseconds() - 5 * 60_000L
+        composeTestRule.setContent {
+            MaterialTheme {
+                SyncStatusBadge(
+                    status = GitSyncStatus(state = SyncState.Idle, lastSyncAt = fiveMinutesAgo),
+                    onSyncClick = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Synced 5m ago").assertIsDisplayed()
     }
 }

@@ -1,6 +1,8 @@
 @file:Suppress("InMemoryPagination") // in-memory test fake — drop/take IS the right implementation
 package dev.stapler.stelekit.repository
 
+import dev.stapler.stelekit.merge.SelectionFilter
+import dev.stapler.stelekit.merge.filteredAndSorted
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
@@ -10,6 +12,7 @@ import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.CancellationException
 
@@ -80,6 +83,11 @@ class DatalogPageRepository : PageRepository {
         }
     }
 
+    override fun getPagesWithProperty(key: String, value: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
+        pages.map { map ->
+            map.values.filter { it.properties[key] == value }.sortedBy { it.name }.drop(offset).take(limit).right()
+        }.distinctUntilChanged()
+
     override fun getJournalPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
         return pages.map { map ->
             val journals = map.values
@@ -101,6 +109,17 @@ class DatalogPageRepository : PageRepository {
         return pages.map { map ->
             map.values.sortedByDescending { it.updatedAt }.take(limit).right()
         }
+    }
+
+    override fun getPagesFiltered(filter: SelectionFilter, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
+        pages.map { it.values.filteredAndSorted(filter).drop(offset).take(limit).right() }
+
+    override suspend fun countPagesFiltered(filter: SelectionFilter): Either<DomainError, Long> =
+        pages.value.values.count(filter::matches).toLong().right()
+
+    override suspend fun getPagesAmong(filter: SelectionFilter, uuids: Collection<PageUuid>): Either<DomainError, List<Page>> {
+        val wanted = uuids.mapTo(HashSet()) { it.value }
+        return pages.value.values.filter { it.uuid.value in wanted && filter.matches(it) }.right()
     }
 
     override fun getUnloadedPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {

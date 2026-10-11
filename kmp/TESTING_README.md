@@ -262,3 +262,12 @@ This would give p50/p90/p99 rendered frame times for scripted user flows, catch
 regressions in CI, and complement the existing `gfxinfo-session.sh` manual workflow.
 See [Macrobenchmark docs](https://developer.android.com/topic/performance/benchmarking/macrobenchmark-overview)
 for setup details.
+
+## Property-based tests for cross-graph merge
+
+The merge core is pure and runs on every target from `commonTest`. Properties use `kotest-property` (`Arb`/`checkAll`) inside ordinary `kotlin.test` `@Test` functions:
+
+- `MergePagePropertyTest` (with generators in `MergeArbs`): idempotence (`merge(merge(t,s),s) == merge(t,s)`), no loss, additive-only, self-merge and empty-source identity, uuid uniqueness, and the edit-then-recopy conflict-sibling counts.
+- `MergeRoundTripPropertyTest`: render, re-parse and splice keep uuids, content, properties, nesting and positional uuids of unlabeled blocks.
+- `CopyEditRecopyPropertyTest` (businessTest, `checkAll(50)`): the same invariants through the real `ActiveTargetWriter`, `GraphWriter`, `GraphLoader` and editor save.
+- `RoundTripGuardPassRateRegressionTest` (jvmTest) and the env-gated `RoundTripGuardRealGraphTest` (`SPIKE_GRAPH_PATH=/path/to/graph`) measure the splice guard pass rate.

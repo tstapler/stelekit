@@ -1,0 +1,9 @@
+# Vendored Bazel module registry files and repo sources must be checked out
+# byte-for-byte identical to what was committed — `bazel vendor` records a
+# sha256 over their exact content and verifies it at build time. Without this,
+# GitHub Actions' windows-latest runners (core.autocrlf=true by default)
+# rewrite LF to CRLF on checkout for any file git auto-detects as text,
+# breaking the checksum. Root cause of the "JVM Windows (x86_64)" failure in
+# build-native-libs.yml: "Checksum was ce67... but wanted 5b14..." for
+# vendor/_registries/bcr.bazel.build/modules/rules_rust/0.70.0/MODULE.bazel.
+vendor/** -text

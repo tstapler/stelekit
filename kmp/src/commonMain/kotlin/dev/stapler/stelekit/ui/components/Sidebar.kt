@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.ui.components
 
+import dev.stapler.stelekit.ui.LocalShareInboxUi
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -10,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.ExpandLess
@@ -25,11 +27,19 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.foundation.layout.Box
+import dev.stapler.stelekit.merge.CopyDirection
+import dev.stapler.stelekit.ui.screens.copy.CopyDialogStrings
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Sync
+import dev.stapler.stelekit.ui.screens.git.looksLikeUri
+import dev.stapler.stelekit.ui.screens.git.wikiSubdirError
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -45,16 +55,23 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import dev.stapler.stelekit.db.StorageLocationResolver
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.GraphInfo
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.StorageLocation
+import dev.stapler.stelekit.model.StorageMoveOperation
 import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.platform.HostAccessState
+import dev.stapler.stelekit.platform.isCurrentSessionEphemeral
+import dev.stapler.stelekit.platform.isEphemeralWebModeAvailable
+import dev.stapler.stelekit.platform.startEphemeralSession
 import dev.stapler.stelekit.sections.SectionManifest
 import dev.stapler.stelekit.ui.LocalWindowSizeClass
 import dev.stapler.stelekit.ui.Screen
 import dev.stapler.stelekit.ui.isMobile
 import dev.stapler.stelekit.ui.theme.StelekitTheme
+import kotlinx.coroutines.launch
 
 /** Amber warning treatment for an unresolved disk conflict — matches [SyncStatusBadge]'s
  * `ConflictPending` color exactly (deliberately, for visual consistency between the two
@@ -85,9 +102,17 @@ fun LeftSidebar(
     onToggleFavorite: (Page) -> Unit,
     onGraphSelected: (String) -> Unit = {},
     onAddGraph: () -> Unit = {},
+    onNewGraph: () -> Unit = {},
     onRemoveGraph: (String) -> Unit = {},
     onCollapse: () -> Unit = {},
     syncState: SyncState = SyncState.Idle,
+    /** Epoch-millis of the last successful git sync, persisted across restarts. Null when never
+     * synced or no git sync service is active — see [GitSyncService.lastSyncAt]. */
+    gitLastSyncAt: Long? = null,
+    /** A branch repair is waiting for its first reviewed sync. */
+    firstSyncReviewPending: Boolean = false,
+    onBranchRepair: (() -> Unit)? = null,
+    onReviewFirstSync: (() -> Unit)? = null,
     onSyncClick: () -> Unit = {},
     onGitSetup: () -> Unit = {},
     isGitConfigured: Boolean = false,
@@ -102,7 +127,36 @@ fun LeftSidebar(
     onReconnectHostDirectory: () -> Unit = {},
     onCloneGraph: () -> Unit = {},
     onUpdateGraphPath: (String, String) -> Unit = { _, _ -> },
+    onRenameGraph: (String, String) -> Unit = { _, _ -> },
+    onUpdateGraphDescription: (String, String) -> Unit = { _, _ -> },
+    onUpdateWikiSubdir: (String, String) -> Unit = { _, _ -> },
+    onRelinkHostDirectory: (String) -> Unit = {},
+    supportsHostDirectoryLink: Boolean = false,
+    /** Story 3.2.2 — see [GraphSwitcher]'s parameter doc. */
+    storageLocationResolver: StorageLocationResolver? = null,
+    onBrowseRequestForMove: suspend (String) -> StorageLocation? = { null },
+    /** See [GraphSwitcher]'s parameter doc. */
+    onBrowseClickForMove: () -> Unit = {},
+    moveStorageLocationPlatformCapabilities: Boolean = false,
+    /** Epic 4.2 (Story 4.2.1): resolves whether [StorageMoveChoiceDialog]'s "Link" option should
+     * be offered for a graph's move flow — real signal is `GitRepository.isGitRepo(graph.path)`
+     * (already resolves through Android's shadow-worktree for `saf://` paths, see
+     * `AndroidGitRepository.isGitRepo`), wired in by the composition root. Defaults to `true` so
+     * platforms/tests that don't wire a real check keep prior (Epic 3.4) behavior — Link is only
+     * ever gated OFF, never gated on, by a caller opting in to a real check. */
+    isGraphGitCloned: suspend (path: String) -> Boolean = { true },
+    /** Epic 3.4: fires once the user has chosen Relocate/Link in [StorageMoveChoiceDialog] and
+     * confirmed in [StorageMoveConfirmDialog] — the composition root's hand-off point to drive
+     * `GraphRelocationCoordinator.relocate()` (Relocate) or `connectHostDirectory` (Link, Epic
+     * 4.1). Null (the default) means nothing happens once the user confirms — this file has no
+     * coordinator instance to invoke itself, matching the composition-root wiring gap Epics 3.2/
+     * 3.3 already left for [storageLocationResolver] and [onBrowseRequestForMove]. */
+    onStorageLocationChoose: (operation: StorageMoveOperation) -> Unit = {},
     gitSyncedGraphId: String? = null,
+    /** Cross-graph copy entry ("Copy pages to..." / "Copy pages from..."); null hides the action (no copy pipeline). */
+    onCopyPages: (() -> Unit)? = null,
+    copyDirection: CopyDirection = CopyDirection.Push,
+    onCopyPagesFromGraph: ((GraphInfo) -> Unit)? = null,
     onNewSectionJournalEntry: (() -> Unit)? = null,
     sectionManifest: SectionManifest? = null,
     defaultSection: String = "",
@@ -149,12 +203,36 @@ fun LeftSidebar(
                 activeGraphId = activeGraphId,
                 onGraphSelected = onGraphSelected,
                 onAddGraph = onAddGraph,
+                onNewGraph = onNewGraph,
                 onRemoveGraph = onRemoveGraph,
                 onCloneGraph = onCloneGraph,
                 onUpdateGraphPath = onUpdateGraphPath,
+                onRenameGraph = onRenameGraph,
+                onUpdateGraphDescription = onUpdateGraphDescription,
+                onUpdateWikiSubdir = onUpdateWikiSubdir,
+                onRelinkHostDirectory = onRelinkHostDirectory,
+                supportsHostDirectoryLink = supportsHostDirectoryLink,
+                storageLocationResolver = storageLocationResolver,
+                onBrowseRequestForMove = onBrowseRequestForMove,
+                onBrowseClickForMove = onBrowseClickForMove,
+                moveStorageLocationPlatformCapabilities = moveStorageLocationPlatformCapabilities,
+                isGraphGitCloned = isGraphGitCloned,
+                onStorageLocationChoose = onStorageLocationChoose,
                 gitSyncedGraphId = gitSyncedGraphId,
                 isDemoActive = isDemoActive,
+                hostAccessState = hostAccessState,
+                onCopyPages = onCopyPages,
+                copyDirection = copyDirection,
+                onCopyPagesFromGraph = onCopyPagesFromGraph,
             )
+
+            LocalShareInboxUi.current?.let { shareUi ->
+                QueuedSharesBadge(
+                    shareUi,
+                    remember(availableGraphs) { shareGraphNameOf(availableGraphs) },
+                    Modifier.padding(horizontal = 12.dp),
+                )
+            }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
@@ -180,10 +258,16 @@ fun LeftSidebar(
             }
 
             SyncStatusBadge(
-                syncState = syncState,
+                status = GitSyncStatus(
+                    state = syncState,
+                    lastSyncAt = gitLastSyncAt,
+                    firstSyncReviewPending = firstSyncReviewPending,
+                ),
                 onSyncClick = onSyncClick,
                 isGitConfigured = isGitConfigured,
                 onAuthError = onAuthError,
+                onBranchRepair = onBranchRepair,
+                onReviewFirstSync = onReviewFirstSync,
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
             )
 
@@ -335,6 +419,25 @@ fun PendingConflictsBanner(count: Int, onClick: () -> Unit, modifier: Modifier =
     }
 }
 
+/** Single-line icon+label row for a [DropdownMenuItem] in [GraphSwitcher]'s menu. */
+@Composable
+private fun GraphMenuActionItem(icon: ImageVector, label: String, onClick: () -> Unit) {
+    DropdownMenuItem(
+        text = {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(8.dp))
+                Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+            }
+        },
+        onClick = onClick,
+        contentPadding = PaddingValues(0.dp),
+    )
+}
+
 /**
  * Graph switcher component for selecting and managing graphs.
  */
@@ -345,16 +448,75 @@ fun GraphSwitcher(
     activeGraphId: String? = null,
     onGraphSelected: (String) -> Unit,
     onAddGraph: () -> Unit,
+    onNewGraph: () -> Unit = {},
     onRemoveGraph: (String) -> Unit,
     onCloneGraph: () -> Unit = {},
     onUpdateGraphPath: (String, String) -> Unit = { _, _ -> },
+    onRenameGraph: (String, String) -> Unit = { _, _ -> },
+    onUpdateGraphDescription: (String, String) -> Unit = { _, _ -> },
+    onUpdateWikiSubdir: (String, String) -> Unit = { _, _ -> },
+    /** Re-points a graph's host-folder link at a newly-picked folder (web-local-folder-livesync
+     * only). Must call the platform's directory-picker synchronously from this click before
+     * launching a coroutine — same transient-user-activation constraint as [onAddGraph]. No-op
+     * (button hidden) on platforms without a native directory picker. */
+    onRelinkHostDirectory: (String) -> Unit = {},
+    supportsHostDirectoryLink: Boolean = false,
+    /**
+     * Story 3.2.2: resolves/backfills a graph's real source [StorageLocation] before "Move
+     * storage location…" opens [UnifiedLocationPicker] (Story 1.1.4's `resolveOrBackfill`, so a
+     * graph that predates `storage_locations` still has a real source to relocate from). Null
+     * (the default) hides the button entirely — set by the platform-specific composition root
+     * once it has a real resolver to inject.
+     */
+    storageLocationResolver: StorageLocationResolver? = null,
+    /** Threaded into [UnifiedLocationPicker]'s `onBrowseRequest` for the relocate flow. */
+    onBrowseRequestForMove: suspend (String) -> StorageLocation? = { null },
+    /** Must run synchronously in the "Browse…" row's own click handler — same transient-user-
+     * activation constraint as [UnifiedLocationPicker]'s `onBrowseClick`. */
+    onBrowseClickForMove: () -> Unit = {},
+    /** Whether the relocate flow's [UnifiedLocationPicker] shows a "Browse…" row. */
+    moveStorageLocationPlatformCapabilities: Boolean = false,
+    /** See [LeftSidebar]'s parameter doc — gates [StorageMoveChoiceDialog]'s "Link" option. */
+    isGraphGitCloned: suspend (path: String) -> Boolean = { true },
+    /**
+     * Epic 3.4: fires once the user has picked a destination in [UnifiedLocationPicker], chosen
+     * Relocate/Link in [StorageMoveChoiceDialog], and confirmed in [StorageMoveConfirmDialog] —
+     * see [Sidebar]'s parameter doc for why this is still a hand-off point rather than a direct
+     * coordinator call.
+     */
+    onStorageLocationChoose: (operation: StorageMoveOperation) -> Unit = {},
     gitSyncedGraphId: String? = null,
     isDemoActive: Boolean = false,
+    /** Epic 2.3: host-directory connection state for [activeGraphId] only — used to show a
+     * "linked to local folder" indicator distinct from the graph's internal OPFS path. */
+    hostAccessState: HostAccessState = HostAccessState.NotApplicable,
+    onCopyPages: (() -> Unit)? = null,
+    /** Which way the copy entry points copy; iOS/Web pull ("Copy pages from..."), Android/Desktop push. */
+    copyDirection: CopyDirection = CopyDirection.Push,
+    /** Pull only: per-row overflow "Copy pages from <graph> to <current graph>"; null hides it. */
+    onCopyPagesFromGraph: ((GraphInfo) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
     var graphToRemove by remember { mutableStateOf<GraphInfo?>(null) }
     var graphToEdit by remember { mutableStateOf<GraphInfo?>(null) }
+    // Story 3.2.2: "Move storage location…" flow — resolveOrBackfill runs first (so a graph that
+    // predates storage_locations still has a real source location), then UnifiedLocationPicker
+    // opens once it resolves. Separate from graphToEdit so the picker survives the Edit dialog
+    // closing (the button closes it immediately on tap, matching onRelinkHostDirectory's pattern).
+    var movingStorageForGraph by remember { mutableStateOf<GraphInfo?>(null) }
+    // Epic 3.4: the real source resolveOrBackfill(graphId) returned for movingStorageForGraph —
+    // carried forward into StorageMoveChoiceDialog/StorageMoveConfirmDialog once the picker
+    // resolves a destination, so both name the exact "from"/"to" locations (never a placeholder).
+    var movingStorageSource by remember { mutableStateOf<StorageLocation?>(null) }
+    // Epic 4.2 (Story 4.2.1): resolved alongside movingStorageSource so choosingMoveFor can gate
+    // StorageMoveChoiceDialog's "Link" option — true (Link offered) until proven otherwise, since
+    // isGraphGitCloned defaults to { true } and a plain graph is the only case that flips it off.
+    var movingStorageIsLinkAvailable by remember { mutableStateOf(true) }
+    var choosingMoveFor by remember { mutableStateOf<PendingStorageMove?>(null) }
+    var confirmingMove by remember { mutableStateOf<PendingStorageMove?>(null) }
+    val moveStorageScope = rememberCoroutineScope()
+    val activeDescription = availableGraphs.firstOrNull { it.id.value == activeGraphId }?.description.orEmpty()
 
     Column(modifier = modifier) {
         // Current graph button
@@ -379,18 +541,36 @@ fun GraphSwitcher(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    imageVector = Icons.Default.Folder,
+                    imageVector = if (hostAccessState == HostAccessState.Granted) Icons.Default.FolderOpen else Icons.Default.Folder,
                     contentDescription = null,
                     modifier = Modifier.size(20.dp),
                     tint = MaterialTheme.colorScheme.primary
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = currentGraphName.ifEmpty { "Select Graph" },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier.weight(1f)
-                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = currentGraphName.ifEmpty { "Select Graph" },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                    if (activeDescription.isNotBlank()) {
+                        Text(
+                            text = activeDescription,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                if (hostAccessState == HostAccessState.Granted) {
+                    Icon(
+                        imageVector = Icons.Default.Link,
+                        contentDescription = "Connected to local folder",
+                        modifier = Modifier.size(14.dp).padding(end = 4.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
                 Icon(
                     imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                     contentDescription = if (expanded) "Collapse" else "Expand"
@@ -410,16 +590,24 @@ fun GraphSwitcher(
                             graph = graph,
                             isActive = graph.id.value == activeGraphId,
                             isSynced = graph.id.value == gitSyncedGraphId,
+                            isHostConnected = graph.id.value == activeGraphId && hostAccessState == HostAccessState.Granted,
                             onSelect = {
                                 onGraphSelected(graph.id.value)
                                 expanded = false
                             },
-                            onRemove = if (availableGraphs.size > 1) {
-                                { graphToRemove = graph }
-                            } else null,
-                            onEditPath = if (!graph.isDemo) {
+                            // GraphManager.removeGraph now allows removing the last real graph
+                            // (falls back to activeGraphId = null, surfacing the empty-state
+                            // prompt) — no longer gated on availableGraphs.size > 1.
+                            onRemove = { graphToRemove = graph },
+                            // Re-pointing an ephemeral graph at a real folder would defeat the
+                            // whole point of the mode — an ephemeral session only ever has this
+                            // one graph, so gating on the session (not per-graph) is sufficient.
+                            onEditPath = if (!graph.isDemo && !isCurrentSessionEphemeral()) {
                                 { graphToEdit = graph }
-                            } else null
+                            } else null,
+                            copyToCurrentLabel = CopyDialogStrings.rowOverflowLabel(graph.displayName, currentGraphName)
+                                .takeIf { copyDirection == CopyDirection.Pull && onCopyPagesFromGraph != null && graph.id.value != activeGraphId },
+                            onCopyToCurrent = { onCopyPagesFromGraph?.invoke(graph); expanded = false },
                         )
                     },
                     onClick = {
@@ -432,35 +620,61 @@ fun GraphSwitcher(
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
-            DropdownMenuItem(
-                text = {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Open local folder...", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-                    }
-                },
-                onClick = { onAddGraph(); expanded = false },
-                contentPadding = PaddingValues(0.dp),
-            )
+            // Not offered inside an already-ephemeral session — connecting a local OPFS folder
+            // would introduce the exact persistent storage side channel that mode exists to avoid.
+            if (!isCurrentSessionEphemeral()) {
+                GraphMenuActionItem(Icons.Default.Add, "Open local folder...") { onAddGraph(); expanded = false }
+            }
 
-            DropdownMenuItem(
-                text = {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Clone from URL...", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-                    }
-                },
-                onClick = { onCloneGraph(); expanded = false },
-                contentPadding = PaddingValues(0.dp),
-            )
+            GraphMenuActionItem(Icons.Default.CreateNewFolder, "New graph...") { onNewGraph(); expanded = false }
+
+            GraphMenuActionItem(Icons.Default.CloudDownload, "Clone from URL...") { onCloneGraph(); expanded = false }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+            if (onCopyPages != null) {
+                DropdownMenuItem(
+                    text = {
+                        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text(CopyDialogStrings.entryLabel(copyDirection), style = MaterialTheme.typography.bodyMedium)
+                            }
+                            Text(
+                                "Adds pages; combines with existing ones",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(start = 26.dp),
+                            )
+                        }
+                    },
+                    onClick = { onCopyPages(); expanded = false },
+                    contentPadding = PaddingValues(0.dp),
+                )
+            }
+
+            if (isEphemeralWebModeAvailable() && !isCurrentSessionEphemeral()) {
+                DropdownMenuItem(
+                    text = {
+                        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Bolt, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Open temporarily...", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                            }
+                            Text(
+                                "Checked-out files live in memory only — nothing is saved on this computer",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(start = 26.dp),
+                            )
+                        }
+                    },
+                    onClick = { startEphemeralSession(); expanded = false },
+                    contentPadding = PaddingValues(0.dp),
+                )
+            }
         }
     }
     
@@ -488,38 +702,104 @@ fun GraphSwitcher(
         )
     }
 
-    // Edit-path dialog: lets the user re-point a tracked graph at a new folder.
+    // Edit dialog: rename, move the graph's storage location (guided flow, Story 3.2.2), and/or
+    // re-link the real host folder (web-local-folder-livesync only) — independent actions, each
+    // with its own trigger so an action that requires migration/re-linking only runs that work.
     val editingGraph = graphToEdit
     if (editingGraph != null) {
-        var newPath by remember(editingGraph.id.value) { mutableStateOf(editingGraph.path) }
+        var newName by remember(editingGraph.id.value) { mutableStateOf(editingGraph.displayName) }
+        var newDescription by remember(editingGraph.id.value) { mutableStateOf(editingGraph.description) }
+        var newWikiSubdir by remember(editingGraph.id.value) { mutableStateOf(editingGraph.detectedWikiSubdir ?: "") }
+        val subdirErr = wikiSubdirError(newWikiSubdir) ?: if (looksLikeUri(newWikiSubdir)) "URI schemes are not allowed" else null
+        val edited = newName.isNotBlank() && subdirErr == null &&
+            (newName != editingGraph.displayName || newDescription != editingGraph.description || newWikiSubdir != (editingGraph.detectedWikiSubdir ?: ""))
         AlertDialog(
             onDismissRequest = { graphToEdit = null },
-            title = { Text("Edit Graph Path") },
+            title = { Text("Edit Graph") },
             text = {
                 Column {
-                    Text(
-                        "Move \"${editingGraph.displayName}\" to a different folder. " +
-                            "The graph's database will be migrated to the new location.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.height(12.dp))
                     OutlinedTextField(
-                        value = newPath,
-                        onValueChange = { newPath = it },
-                        label = { Text("Graph path") },
+                        value = newName,
+                        onValueChange = { newName = it },
+                        label = { Text("Name") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = newDescription,
+                        onValueChange = { newDescription = it },
+                        label = { Text("Description (optional)") },
+                        maxLines = 3,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = newWikiSubdir,
+                        onValueChange = { newWikiSubdir = it },
+                        label = { Text("Notes Subdirectory (optional)") },
+                        isError = subdirErr != null,
+                        supportingText = subdirErr?.let { err -> { Text(err) } },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "Move \"${editingGraph.displayName}\"'s files to a different storage location on this device.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    TextButton(
+                        onClick = {
+                            val graphId = editingGraph.id.value
+                            graphToEdit = null
+                            moveStorageScope.launch {
+                                // Story 1.1.4: backfills a real source location for a graph that
+                                // predates storage_locations, so the picker/choice dialog never
+                                // names a blank source. A null resolver means this platform's
+                                // composition root hasn't wired one in yet (see GraphSwitcher's
+                                // storageLocationResolver doc) — still open the picker so the
+                                // "Browse…" row keeps working, just without the backfill side effect.
+                                movingStorageSource = storageLocationResolver?.resolveOrBackfill(graphId)
+                                movingStorageIsLinkAvailable = isGraphGitCloned(editingGraph.path)
+                                movingStorageForGraph = editingGraph
+                            }
+                        },
+                        contentPadding = PaddingValues(horizontal = 0.dp),
+                    ) {
+                        Text("Move storage location…")
+                    }
+                    if (supportsHostDirectoryLink) {
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            editingGraph.hostDirName?.let { "Linked local folder: $it" }
+                                ?: "No local folder linked yet.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        TextButton(
+                            onClick = {
+                                onRelinkHostDirectory(editingGraph.id.value)
+                                graphToEdit = null
+                            },
+                            contentPadding = PaddingValues(horizontal = 0.dp),
+                        ) {
+                            Text(if (editingGraph.hostDirName != null) "Change linked folder…" else "Link a local folder…")
+                        }
+                    }
                 }
             },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        onUpdateGraphPath(editingGraph.id.value, newPath)
+                        if (newName != editingGraph.displayName) onRenameGraph(editingGraph.id.value, newName)
+                        if (newDescription != editingGraph.description) onUpdateGraphDescription(editingGraph.id.value, newDescription)
+                        if (newWikiSubdir != (editingGraph.detectedWikiSubdir ?: "")) onUpdateWikiSubdir(editingGraph.id.value, newWikiSubdir)
                         graphToEdit = null
                     },
-                    enabled = newPath.isNotBlank() && newPath != editingGraph.path,
+                    enabled = edited,
                 ) {
                     Text("Save")
                 }
@@ -531,7 +811,107 @@ fun GraphSwitcher(
             }
         )
     }
+
+    // Story 3.2.2: UnifiedLocationPicker for the "Move storage location…" flow, opened once
+    // resolveOrBackfill (above) completes. Epic 3.4: once a destination is picked, control passes
+    // to StorageMoveChoiceDialog (Relocate vs Link) below, not straight to onStorageLocationChoose.
+    val movingGraph = movingStorageForGraph
+    if (movingGraph != null) {
+        UnifiedLocationPicker(
+            title = "Move \"${movingGraph.displayName}\" to…",
+            graphId = movingGraph.id.value,
+            appStorageSubtitle = "Kept inside SteleKit only — not visible in your device's file manager.",
+            platformCapabilities = moveStorageLocationPlatformCapabilities,
+            onBrowseClick = onBrowseClickForMove,
+            onBrowseRequest = { onBrowseRequestForMove(movingGraph.id.value) },
+            onConfirm = { destination ->
+                choosingMoveFor = PendingStorageMove(
+                    graph = movingGraph,
+                    // A null resolver (composition root hasn't wired one in yet, per
+                    // storageLocationResolver's doc) leaves the real source unknown — AppOwned is
+                    // the least-wrong placeholder available here, not a claim about where the
+                    // graph actually lives.
+                    source = movingStorageSource ?: StorageLocation.AppOwned(movingGraph.id.value),
+                    destination = destination,
+                    isLinkAvailable = movingStorageIsLinkAvailable,
+                )
+                movingStorageForGraph = null
+                movingStorageSource = null
+            },
+            onDismiss = { movingStorageForGraph = null; movingStorageSource = null },
+        )
+    }
+
+    // Epic 3.4 (Story 3.4.1): Relocate-vs-Link choice, opened once UnifiedLocationPicker resolves
+    // a destination above.
+    val choosing = choosingMoveFor
+    if (choosing != null) {
+        StorageMoveChoiceDialog(
+            graphName = choosing.graph.displayName,
+            source = choosing.source,
+            destination = choosing.destination,
+            // Epic 4.2 (Story 4.2.1): gated by isGraphGitCloned(graph.path), resolved when the
+            // move flow started (see movingStorageIsLinkAvailable above) — per ADR-003, Link is
+            // only a real continuous mirror for git-cloned Android graphs (the existing
+            // shadow-worktree write-back mechanism); plain graphs get the disabled note instead.
+            isLinkAvailable = choosing.isLinkAvailable,
+            onRelocateChoose = {
+                confirmingMove = choosing.copy(isRelocate = true)
+                choosingMoveFor = null
+            },
+            onLinkChoose = {
+                confirmingMove = choosing.copy(isRelocate = false)
+                choosingMoveFor = null
+            },
+            onDismissRequest = { choosingMoveFor = null },
+        )
+    }
+
+    // Epic 3.4 (Story 3.4.2): names the exact source/destination before handing off to
+    // onStorageLocationChoose — the composition root's job (not this file's) is to actually drive
+    // GraphRelocationCoordinator.relocate()/connectHostDirectory from there and show
+    // StorageMoveProgressDialog for the result; see onStorageLocationChoose's doc above.
+    val confirming = confirmingMove
+    if (confirming != null) {
+        StorageMoveConfirmDialog(
+            graphName = confirming.graph.displayName,
+            source = confirming.source,
+            destination = confirming.destination,
+            confirmLabel = if (confirming.isRelocate) "Move" else "Link",
+            onConfirm = {
+                val operation = if (confirming.isRelocate) {
+                    StorageMoveOperation.Relocate(
+                        graphId = confirming.graph.id.value,
+                        source = confirming.source,
+                        destination = confirming.destination,
+                        // AC34: never auto-delete the source — that choice belongs to the
+                        // post-move cleanup prompt (Surface 9), not this confirmation step.
+                        deleteSourceAfterVerify = false,
+                    )
+                } else {
+                    StorageMoveOperation.Link(
+                        graphId = confirming.graph.id.value,
+                        source = confirming.source,
+                        destination = confirming.destination,
+                    )
+                }
+                onStorageLocationChoose(operation)
+                confirmingMove = null
+            },
+            onDismissRequest = { confirmingMove = null },
+        )
+    }
 }
+
+/** Epic 3.4: carries a graph + resolved source/destination through the
+ * `StorageMoveChoiceDialog` → `StorageMoveConfirmDialog` hand-off inside [GraphSwitcher]. */
+private data class PendingStorageMove(
+    val graph: GraphInfo,
+    val source: StorageLocation,
+    val destination: StorageLocation,
+    val isRelocate: Boolean = true,
+    val isLinkAvailable: Boolean = true,
+)
 
 /**
  * Individual graph item in the dropdown.
@@ -541,9 +921,16 @@ fun GraphItem(
     graph: GraphInfo,
     isActive: Boolean,
     isSynced: Boolean = false,
+    /** Epic 2.3: true when this graph is the active graph and it currently has a granted
+     * host-directory connection — shown as a distinct badge from [graph.path]'s OPFS path,
+     * which alone gives no indication the graph is backed by a live local folder. */
+    isHostConnected: Boolean = false,
     onSelect: () -> Unit,
     onRemove: (() -> Unit)? = null,
     onEditPath: (() -> Unit)? = null,
+    /** Pull entry point: label of the row-overflow action, null hides the overflow (it is ordered last in the row). */
+    copyToCurrentLabel: String? = null,
+    onCopyToCurrent: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -573,7 +960,10 @@ fun GraphItem(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = graph.path,
+                    // Prefer the real linked host folder's name over the internal OPFS path —
+                    // the path (e.g. "/stelekit/notes") tells the user nothing about which real
+                    // folder on disk the graph is backed by once host-directory-livesync is wired up.
+                    text = graph.description.ifBlank { null } ?: graph.hostDirName?.let { "linked to: $it" } ?: graph.path,
                     style = MaterialTheme.typography.bodySmall,
                     color = (if (isActive) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
                         .copy(alpha = 0.6f),
@@ -594,6 +984,14 @@ fun GraphItem(
                     )
                 }
             }
+            if (isHostConnected) {
+                Icon(
+                    imageVector = Icons.Default.Link,
+                    contentDescription = "Connected to local folder",
+                    modifier = Modifier.size(14.dp).padding(end = 2.dp),
+                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                )
+            }
             if (isSynced) {
                 Icon(
                     imageVector = Icons.Default.Sync,
@@ -613,6 +1011,20 @@ fun GraphItem(
                         modifier = Modifier.size(18.dp),
                         tint = MaterialTheme.colorScheme.error
                     )
+                }
+            }
+            if (copyToCurrentLabel != null) {
+                var overflow by remember { mutableStateOf(false) }
+                Box {
+                    IconButton(onClick = { overflow = true }, modifier = Modifier.size(48.dp)) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "More actions for ${graph.displayName}", modifier = Modifier.size(18.dp))
+                    }
+                    DropdownMenu(expanded = overflow, onDismissRequest = { overflow = false }) {
+                        DropdownMenuItem(
+                            text = { Text(copyToCurrentLabel) },
+                            onClick = { overflow = false; onCopyToCurrent() },
+                        )
+                    }
                 }
             }
         }

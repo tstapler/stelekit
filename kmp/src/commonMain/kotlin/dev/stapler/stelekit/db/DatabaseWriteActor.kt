@@ -224,6 +224,10 @@ class DatabaseWriteActor(
     // @Volatile gives the required single-writer/multi-reader visibility without atomics.
     @Volatile private var _isActorProcessing: Boolean = false
 
+    /** True once the loop has ended or [close] ran: every later write fails fast, and the DB behind it may be closing. */
+    @Volatile var isStopped: Boolean = false
+        private set
+
     /**
      * Counts callers that have successfully sent a request but whose [CompletableDeferred.await]
      * has not yet returned. Incremented just before [Channel.send] and decremented in the
@@ -295,6 +299,24 @@ class DatabaseWriteActor(
                 throw e
             } catch (_: Exception) {
                 // Channel closed or coroutine cancelled — exit cleanly.
+            } finally {
+                failPendingAfterStop()
+            }
+        }
+    }
+
+    /**
+     * The loop is gone (scope cancelled): close the channels so later sends fail fast, and fail
+     * queued requests, otherwise their callers await a deferred nobody will complete.
+     */
+    private fun failPendingAfterStop() {
+        isStopped = true
+        highPriority.close()
+        lowPriority.close()
+        for (channel in listOf(highPriority, lowPriority)) {
+            while (true) {
+                val pending = channel.tryReceive().getOrNull() ?: break
+                pending.deferred.complete(DomainError.DatabaseError.WriteFailed(STOPPED_MESSAGE).left())
             }
         }
     }
@@ -350,11 +372,24 @@ class DatabaseWriteActor(
         if (waitMs > 10L) {
             recordQueueWaitSpan(request, waitMs)
         }
-        // Wildcard emitted BEFORE deferred.complete so subscribers receive the signal before
-        // the caller's await() returns. processExecute has no onWriteSuccess call (unlike typed
-        // arms) — the emit must be unconditional here.
+        // Bug fix: this used to emit the wildcard BEFORE calling request.op(), i.e. before the
+        // write it announces had even happened. Every other arm in this file (processWriteBlock,
+        // processDeleteBlocksForPage, processSaveBlocksDiff, etc.) emits its invalidation/push
+        // signal only after its write's result is known — processExecute was the sole exception.
+        // A subscriber reacting to the wildcard (BlockStateManager.pullBlocksForPage, driven by
+        // observePage()'s invalidationSource collector) could re-query the DB before op() had
+        // written anything, read stale pre-write content, and then never re-pull — nothing else
+        // signals completion for this request — leaving the UI showing stale data indefinitely.
+        // GraphLoader.parseAndSavePage's external-file-reload path routes through exactly this
+        // arm, making it the mechanism behind "journal edited on disk elsewhere doesn't show up
+        // in the app even though the page is actively being observed."
+        val result = request.op()
+        // Emitted unconditionally (unlike typed arms, which gate on result.isRight()) because
+        // processExecute has no onWriteSuccess call and the caller's op is opaque to the actor —
+        // "invalidate regardless" is the safe default here. Still emitted before deferred.complete()
+        // so subscribers observe the signal before the caller's await() returns.
         _blockInvalidations.tryEmit(setOf(WILDCARD_PAGE_UUID))
-        request.deferred.complete(request.op())
+        request.deferred.complete(result)
     }
 
     /**
@@ -874,6 +909,7 @@ class DatabaseWriteActor(
         execute { pageRepository.deletePage(pageUuid) }
 
     fun close() {
+        isStopped = true
         highPriority.close()
         lowPriority.close()
         // Only cancel the scope if we created it; injected scopes (e.g. test schedulers)
@@ -888,6 +924,9 @@ class DatabaseWriteActor(
          * materializing all blocks across every page before the first delete runs.
          */
         private const val PAGE_DELETE_CHUNK = 25
+
+        /** Message of the failure given to requests queued when the actor's scope was cancelled. */
+        const val STOPPED_MESSAGE = "write actor stopped"
 
         /**
          * Sentinel page UUID emitted by [blockInvalidations] when the write came from a generic

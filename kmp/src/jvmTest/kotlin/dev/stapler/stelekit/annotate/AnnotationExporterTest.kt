@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.annotate
 
 import androidx.compose.ui.graphics.ImageBitmap
+import arrow.core.Either
 import dev.stapler.stelekit.model.AnnotationType
 import dev.stapler.stelekit.model.Calibration
 import dev.stapler.stelekit.model.CalibrationMethod
@@ -15,6 +16,7 @@ import dev.stapler.stelekit.ui.annotate.AnnotationEditorViewModel
 import dev.stapler.stelekit.ui.annotate.ImageEncoder
 import org.junit.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
@@ -68,30 +70,39 @@ class AnnotationExporterTest {
         val source = ImageBitmap(400, 300)
         val measurements = makeTestAnnotations()
 
-        val bytes = AnnotationExporter.bakeAndEncode(source, measurements, quality = 85)
+        val result = AnnotationExporter.bakeAndEncode(source, measurements, quality = 85)
 
-        assertTrue(bytes.isNotEmpty(), "Exported JPEG must be non-empty")
+        assertIs<Either.Right<ByteArray>>(result)
+        assertTrue(result.value.isNotEmpty(), "Exported JPEG must be non-empty")
     }
 
     @Test
     fun bakeAndEncode_emptyMeasurements_stillProducesJpeg() {
         val source = ImageBitmap(200, 150)
 
-        val bytes = AnnotationExporter.bakeAndEncode(source, emptyList(), quality = 90)
+        val result = AnnotationExporter.bakeAndEncode(source, emptyList(), quality = 90)
 
-        assertTrue(bytes.isNotEmpty(), "Even without annotations, JPEG export must succeed")
+        assertIs<Either.Right<ByteArray>>(result)
+        assertTrue(result.value.isNotEmpty(), "Even without annotations, JPEG export must succeed")
     }
 
     @Test
     fun bakeAndEncode_jpegStartsWithExpectedMagicBytes() {
         val source = ImageBitmap(100, 100)
-        val bytes = AnnotationExporter.bakeAndEncode(source, emptyList())
+        val result = AnnotationExporter.bakeAndEncode(source, emptyList())
 
+        assertIs<Either.Right<ByteArray>>(result)
+        val bytes = result.value
         // JPEG files start with FF D8
         assertTrue(bytes.size >= 2, "JPEG output must have at least 2 bytes")
         assertEquals(0xFF.toByte(), bytes[0], "First byte must be 0xFF (JPEG SOI marker)")
         assertEquals(0xD8.toByte(), bytes[1], "Second byte must be 0xD8 (JPEG SOI marker)")
     }
+
+    // The Left(EncodingFailed) branch is tested directly against `mapEncodeResult` in
+    // AnnotationExporterMappingTest (commonTest) — ImageBitmap(0, 0) throws on construction on
+    // every platform rather than reaching the encoder, so it can't be used to force a real
+    // 0-byte encoder failure through this public API.
 
     @Test
     fun viewModelThenExport_endToEnd() {
@@ -128,7 +139,9 @@ class AnnotationExporterTest {
 
         // Export
         val source = ImageBitmap(400, 300)
-        val bytes = AnnotationExporter.bakeAndEncode(source, annotations)
+        val result = AnnotationExporter.bakeAndEncode(source, annotations)
+        assertIs<Either.Right<ByteArray>>(result)
+        val bytes = result.value
         assertTrue(bytes.isNotEmpty())
         assertEquals(0xFF.toByte(), bytes[0])
         assertEquals(0xD8.toByte(), bytes[1])

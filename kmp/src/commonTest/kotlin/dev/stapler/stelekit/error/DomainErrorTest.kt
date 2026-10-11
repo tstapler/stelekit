@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.error
 
+import dev.stapler.stelekit.merge.WriteRefusedReason
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -41,10 +42,16 @@ class DomainErrorTest {
             DomainError.GitError.NotSupported("iOS"),
             DomainError.GitError.Offline,
             DomainError.GitError.EditingInProgress,
+            DomainError.GitError.FirstSyncReviewPending,
             DomainError.GitError.CredentialExpired("expired"),
             DomainError.GitError.RateLimited(42),
             DomainError.GitError.FileTooLarge("assets/large.md.stek", 90_000_000, 75_000_000),
             DomainError.GitError.NetworkFailure("Failed to fetch"),
+            DomainError.GitError.WorkingTreeSyncFailed("saf-to-shadow", "/path", "sync failed"),
+            DomainError.GitError.WorkingTreeWriteBackFailed("/path", "write-back failed"),
+            DomainError.GitError.WorkingTreeConcurrentEditDetected("/path"),
+            DomainError.GitError.RetryExhausted(5, DomainError.GitError.FetchFailed("Fetch failed")),
+            DomainError.GitError.ShallowHistoryInsufficient,
             DomainError.BleError.ConnectionFailed("ble connect"),
             DomainError.BleError.Gatt133(3, "gatt error"),
             DomainError.SensorError.PermissionDenied("camera"),
@@ -53,12 +60,26 @@ class DomainErrorTest {
             DomainError.ExportError.SerializationFailed("serialization failed"),
             DomainError.ExportError.ClipboardFailed("clipboard failed"),
             DomainError.ExportError.ShareFailed("share failed"),
+            DomainError.ExportError.EncodingFailed("encoding failed"),
+            DomainError.GitError.RemoteBranchNotFound("origin", "main", listOf("master")),
+            DomainError.GitError.RemoteEmpty,
+            DomainError.GitError.InvalidRefName("a..b"),
             DomainError.QrTransferError.ChunkDecodeFailed,
             DomainError.QrTransferError.IntegrityCheckFailed,
             DomainError.QrTransferError.PayloadTooLarge(90000, 65536),
             DomainError.QrTransferError.MarkdownParseFailed,
             DomainError.QrTransferError.EnvelopeMalformed,
             DomainError.QrTransferError.OverwriteFailedPreviousContentAffected("page-uuid-123"),
+            DomainError.MergeError.WriteRefused(WriteRefusedReason.InvalidPageName("x")),
+            DomainError.MergeError.Retryable("channel closed"),
+            DomainError.StorageError.VerificationFailed("/path", "hash mismatch"),
+            DomainError.StorageError.SourceInFlight("sync in progress"),
+            DomainError.StorageError.DestinationNotWritable("/path"),
+            DomainError.StorageError.PartialCopyDetected("/path"),
+            DomainError.StorageError.InsufficientSpace(1000, 10),
+            DomainError.StorageError.QuiesceTimedOut(30_000),
+            DomainError.StorageError.ReopenFailed("g1"),
+            DomainError.StorageError.RelocationFailed("/path"),
         )
         for (err in errors) {
             // exhaustive when — compile error if any branch is missing
@@ -74,6 +95,7 @@ class DomainErrorTest {
                 is DomainError.ParseError.EmptyFile -> err.message
                 is DomainError.ParseError.InvalidSyntax -> err.message
                 is DomainError.ParseError.MalformedMarkdown -> err.message
+                is DomainError.ParseError.UnsupportedForm -> err.message
                 is DomainError.ConflictError.DiskConflict -> err.message
                 is DomainError.ConflictError.ConcurrentWrite -> err.message
                 is DomainError.ValidationError.InvalidUuid -> err.message
@@ -95,10 +117,19 @@ class DomainErrorTest {
                 is DomainError.GitError.NotSupported -> err.message
                 DomainError.GitError.Offline -> err.message
                 DomainError.GitError.EditingInProgress -> err.message
+                DomainError.GitError.FirstSyncReviewPending -> err.message
                 is DomainError.GitError.CredentialExpired -> err.message
                 is DomainError.GitError.RateLimited -> err.message
                 is DomainError.GitError.FileTooLarge -> err.message
                 is DomainError.GitError.NetworkFailure -> err.message
+                is DomainError.GitError.WorkingTreeSyncFailed -> err.message
+                is DomainError.GitError.WorkingTreeWriteBackFailed -> err.message
+                is DomainError.GitError.WorkingTreeConcurrentEditDetected -> err.message
+                is DomainError.GitError.RetryExhausted -> err.message
+                is DomainError.GitError.ShallowHistoryInsufficient -> err.message
+                is DomainError.GitError.RemoteBranchNotFound -> err.message
+                DomainError.GitError.RemoteEmpty -> err.message
+                is DomainError.GitError.InvalidRefName -> err.message
                 is DomainError.AttachmentError.CopyFailed -> err.message
                 is DomainError.AttachmentError.PickerFailed -> err.message
                 is DomainError.AttachmentError.AssetsDirectoryFailed -> err.message
@@ -110,12 +141,23 @@ class DomainErrorTest {
                 is DomainError.ExportError.ClipboardFailed -> err.message
                 is DomainError.ExportError.SerializationFailed -> err.message
                 is DomainError.ExportError.ShareFailed -> err.message
+                is DomainError.ExportError.EncodingFailed -> err.message
                 DomainError.QrTransferError.ChunkDecodeFailed -> err.message
                 DomainError.QrTransferError.IntegrityCheckFailed -> err.message
                 is DomainError.QrTransferError.PayloadTooLarge -> err.message
                 DomainError.QrTransferError.MarkdownParseFailed -> err.message
                 DomainError.QrTransferError.EnvelopeMalformed -> err.message
                 is DomainError.QrTransferError.OverwriteFailedPreviousContentAffected -> err.message
+                is DomainError.MergeError.WriteRefused -> err.message
+                is DomainError.MergeError.Retryable -> err.message
+                is DomainError.StorageError.VerificationFailed -> err.message
+                is DomainError.StorageError.SourceInFlight -> err.message
+                is DomainError.StorageError.DestinationNotWritable -> err.message
+                is DomainError.StorageError.PartialCopyDetected -> err.message
+                is DomainError.StorageError.InsufficientSpace -> err.message
+                is DomainError.StorageError.QuiesceTimedOut -> err.message
+                is DomainError.StorageError.ReopenFailed -> err.message
+                is DomainError.StorageError.RelocationFailed -> err.message
             }
             assertTrue(msg.isNotEmpty(), "Expected non-empty message for $err")
         }
@@ -172,6 +214,10 @@ class DomainErrorTest {
             DomainError.GitError.RateLimited(42),
             DomainError.GitError.FileTooLarge("assets/large.md.stek", 90_000_000, 75_000_000),
             DomainError.GitError.NetworkFailure("Failed to fetch"),
+            DomainError.GitError.WorkingTreeSyncFailed("saf-to-shadow", "/path", "sync failed"),
+            DomainError.GitError.WorkingTreeWriteBackFailed("/path", "write-back failed"),
+            DomainError.GitError.WorkingTreeConcurrentEditDetected("/path"),
+            DomainError.GitError.ShallowHistoryInsufficient,
             DomainError.NetworkError.RequestFailed("req failed"),
             DomainError.AttachmentError.CopyFailed("copy"),
             DomainError.AttachmentError.PickerFailed("picker"),
@@ -184,11 +230,20 @@ class DomainErrorTest {
             DomainError.ExportError.ClipboardFailed("clipboard failed"),
             DomainError.ExportError.SerializationFailed("serialization failed"),
             DomainError.ExportError.ShareFailed("share failed"),
+            DomainError.ExportError.EncodingFailed("encoding failed"),
             DomainError.QrTransferError.ChunkDecodeFailed,
             DomainError.QrTransferError.IntegrityCheckFailed,
             DomainError.QrTransferError.PayloadTooLarge(90000, 65536),
             DomainError.QrTransferError.MarkdownParseFailed,
             DomainError.QrTransferError.EnvelopeMalformed,
+            DomainError.StorageError.VerificationFailed("/path", "hash mismatch"),
+            DomainError.StorageError.SourceInFlight("sync in progress"),
+            DomainError.StorageError.DestinationNotWritable("/path"),
+            DomainError.StorageError.PartialCopyDetected("/path"),
+            DomainError.StorageError.InsufficientSpace(1000, 10),
+            DomainError.StorageError.QuiesceTimedOut(30_000),
+            DomainError.StorageError.ReopenFailed("g1"),
+            DomainError.StorageError.RelocationFailed("/path"),
         )
         for (err in errors) {
             assertTrue(err.toUiMessage().isNotEmpty(), "Expected non-empty UI message for $err")

@@ -197,6 +197,7 @@ class LibsqlFts5IntegrationTest {
         val results = queries.searchPagesByNameFts(
             query = "Kotlin",
             limit = 10L,
+            offset = 0L,
         ).executeAsList()
 
         assertEquals(1, results.size, "Only the Kotlin page should match")

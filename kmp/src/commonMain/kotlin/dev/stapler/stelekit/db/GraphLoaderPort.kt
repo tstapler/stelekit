@@ -3,6 +3,7 @@ package dev.stapler.stelekit.db
 import arrow.core.Either
 import arrow.core.left
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageName
@@ -69,6 +70,17 @@ interface GraphLoaderPort {
     )
 
     /**
+     * Loads the graph progressively using a strongly-typed [dev.stapler.stelekit.model.EffectiveNotesPath].
+     */
+    suspend fun loadGraphProgressive(
+        notesPath: dev.stapler.stelekit.model.EffectiveNotesPath,
+        immediateJournalCount: Int = 10,
+        onProgress: (String) -> Unit,
+        onPhase1Complete: () -> Unit,
+        onFullyLoaded: () -> Unit,
+    ) = loadGraphProgressive(notesPath.value, immediateJournalCount, onProgress, onPhase1Complete, onFullyLoaded)
+
+    /**
      * Finds and fully indexes all pages that were only partially loaded (METADATA_ONLY).
      */
     suspend fun indexRemainingPages(onProgress: (String) -> Unit)
@@ -101,6 +113,21 @@ interface GraphLoaderPort {
     )
 
     /**
+     * Force-parses [content] into the database, bypassing the mtime freshness guard that
+     * [parseAndSavePage] applies. Used to auto-apply a host-directory change for a page that
+     * isn't currently open — the OPFS mirror's mtime is not updated when a conflicting host
+     * change is detected, so the normal guard would otherwise silently skip the reload. The
+     * default implementation falls back to plain [parseAndSavePage]; [GraphLoader] overrides
+     * this to bypass the guard.
+     */
+    suspend fun applyExternalFileChange(
+        filePath: FilePath,
+        content: String,
+        mode: ParseMode = ParseMode.FULL,
+        priority: DatabaseWriteActor.Priority = DatabaseWriteActor.Priority.HIGH,
+    ) = parseAndSavePage(filePath, content, mode, priority)
+
+    /**
      * Creates (or re-parses) the journal file for [sectionId] on [date] and returns the Page.
      * Creates the directory and empty file if absent. sectionId = "" for the global journal.
      */
@@ -114,4 +141,32 @@ interface GraphLoaderPort {
      * Called after the section manifest and states are loaded. Pass null to disable filtering.
      */
     fun updateSectionFilter(filter: SectionFilter?) {}
+
+    /**
+     * Adds [pathsBeingMerged] to the sticky git-merge suppression set.
+     */
+    suspend fun beginGitMerge(pathsBeingMerged: List<String>) {}
+
+    /**
+     * Clears the git-merge suppression set.
+     */
+    suspend fun endGitMerge() {}
+
+    /**
+     * Explicitly reloads [filePaths] from disk and saves them to the database.
+     */
+    suspend fun reloadFiles(filePaths: List<FilePath>) {}
+
+    /**
+     * Pure memory-to-model parser: converts raw markdown text into an unpersisted Page + List<Block>.
+     */
+    suspend fun importMarkdownString(
+        markdown: String,
+        pageName: PageName,
+    ): Either<DomainError, Pair<Page, List<Block>>> = DomainError.DatabaseError.WriteFailed("not implemented").left()
+
+    /** Callback invoked when candidate subdirectories are discovered during warm reconcile. */
+    var onCandidatesDiscovered: (suspend (List<dev.stapler.stelekit.diagnostics.DirectoryScanResult>) -> Unit)?
+        get() = null
+        set(value) {}
 }

@@ -156,6 +156,31 @@ class TagSuggestionViewModelTest {
         }
     }
 
+    @Test
+    fun `alreadyLinkedTerms removes a local match case-insensitively`() = runTest(UnconfinedTestDispatcher()) {
+        val repo = InMemoryPageRepository()
+        repo.savePage(makePage("1", "Kotlin"))
+        val indexScope = CoroutineScope(UnconfinedTestDispatcher())
+        try {
+            val index = PageNameIndex(repo, indexScope, rebuildDebounceMs = 0L)
+            index.awaitMatcher()
+            val vm = TagSuggestionViewModel(TagSuggestionEngine(index, llmTagProvider = null))
+
+            vm.requestSuggestions("block-control", "I love Kotlin")
+            val control = vm.awaitState { it is TagSuggestionState.Ready && it.blockUuid == "block-control" }
+            assertIs<TagSuggestionState.Ready>(control)
+            assertEquals(listOf("Kotlin"), control.localSuggestions.map { it.term })
+
+            vm.requestSuggestions("block-linked", "I love Kotlin", alreadyLinkedTerms = setOf("kOTLIN"))
+            val linked = vm.awaitState { it is TagSuggestionState.Ready && it.blockUuid == "block-linked" }
+            assertIs<TagSuggestionState.Ready>(linked)
+            assertTrue(linked.localSuggestions.isEmpty(), "already-linked page must not be re-suggested")
+            vm.close()
+        } finally {
+            indexScope.cancel()
+        }
+    }
+
     // ─── dismiss ─────────────────────────────────────────────────────────────
 
     @Test

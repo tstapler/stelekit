@@ -58,7 +58,7 @@ class BacklogTriageRuleTest {
 
     @Test
     fun `baselinesInCode should matchDocumentedBaselines When gapBacklogReconciliationIsParsed`() {
-        val text = DocRepoLocator.gapBacklogFile.readText()
+        val text = DocRepoLocator.gapBacklogText()
         val documented = Regex("""\*\*([A-Z0-9]+)=(\d+)\*\*""").findAll(text)
             .associate { it.groupValues[1] to it.groupValues[2].toInt() }
 
@@ -74,7 +74,7 @@ class BacklogTriageRuleTest {
 
     @Test
     fun `reconciliationSection should recordCutReasoning When triageRuleReturnsCutVerdict`() {
-        val rows = GapBacklogParser.parseRows(DocRepoLocator.gapBacklogFile.readText())
+        val rows = GapBacklogParser.parseRows(DocRepoLocator.gapBacklogText())
         val baselines = mapOf("C" to 2, "D" to 4, "E" to 1, "F" to 1, "G" to 1, "G2" to 1)
 
         var sawAtLeastOneCut = false

@@ -68,6 +68,7 @@ import androidx.compose.ui.window.DialogProperties
 import kotlin.time.Clock
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.map
+import dev.stapler.stelekit.ui.screens.copy.LocalCopyFlow
 import kotlinx.coroutines.launch
 import dev.stapler.stelekit.ui.components.tags.SuggestionBottomSheet
 
@@ -289,6 +290,10 @@ fun PageView(
                 .pointerInput(Unit) {
                     detectTapGestures(onTap = {
                         focusManager.clearFocus()
+                        // Tapping empty page background is the expected/discoverable way to
+                        // back out of an accidental selection — Escape works too but isn't
+                        // obvious, and there was previously no way to exit via a plain tap.
+                        blockStateManager.clearSelection()
                     })
                 },
             contentPadding = PaddingValues(top = 16.dp, bottom = toolbarHeightDp + 8.dp)
@@ -361,6 +366,16 @@ fun PageView(
                                     onClick = {
                                         exportMenuExpanded = false
                                         viewModel.exportPage(formatId)
+                                    }
+                                )
+                            }
+                            LocalCopyFlow.current?.takeIf { it.direction == dev.stapler.stelekit.merge.CopyDirection.Push }?.let { copyFlow ->
+                                HorizontalDivider()
+                                DropdownMenuItem(
+                                    text = { Text("Copy this page to...") },
+                                    onClick = {
+                                        exportMenuExpanded = false
+                                        copyFlow.open(page.uuid)
                                     }
                                 )
                             }
@@ -610,6 +625,13 @@ fun PageView(
                         ?: blocks.firstOrNull()?.uuid
                     targetBlockUuid?.let {
                         blockStateManager.appendToBlock(it, " [[$term]]")
+                    }
+                },
+                onAcceptAll = { uuid, terms ->
+                    val targetBlockUuid = blocks.firstOrNull { it.uuid.value == uuid }?.uuid
+                        ?: blocks.firstOrNull()?.uuid
+                    targetBlockUuid?.let {
+                        blockStateManager.appendToBlock(it, terms.joinToString("") { term -> " [[$term]]" })
                     }
                 },
                 onDismiss = { tagSuggestionViewModel.dismiss() },

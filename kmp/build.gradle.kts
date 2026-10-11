@@ -17,6 +17,7 @@ plugins {
     id("io.github.takahirom.roborazzi") version "1.59.0"
     id("org.jetbrains.kotlinx.benchmark")
     id("io.gitlab.arturbosch.detekt")
+    id("jacoco")
 }
 
 kotlin {
@@ -138,6 +139,11 @@ kotlin {
                 // ktoml — TOML parsing for .stele-sections manifest (excluded from wasmJs:
                 // ktoml generates WASM bytecode that fails wasm-opt validation)
                 implementation("com.akuleshov7:ktoml-core:0.7.1")
+                // JGit core — both jvmMain and androidMain already depend on this exact artifact
+                // independently (for the ssh transport variants, which do differ per-platform);
+                // hoisted here too so the shared block-aware-conflict helper
+                // (BlockAwareConflict.kt) can live once instead of duplicated per platform.
+                implementation("org.eclipse.jgit:org.eclipse.jgit:7.3.0.202506031305-r")
             }
         }
 
@@ -148,6 +154,12 @@ kotlin {
                 implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.10.0")
                 // Okio FakeFileSystem — in-memory file system for asset tests
                 implementation("com.squareup.okio:okio-fakefilesystem:3.17.0")
+                // kotest assertions + property testing — pure KMP libraries usable from plain
+                // kotlin.test @Test functions (no Kotest Spec runner/KSP plugin needed), so they
+                // work unchanged on every target including wasmJs. See CLAUDE.md's "Testing
+                // Infrastructure" section for usage guidance.
+                implementation("io.kotest:kotest-assertions-core:6.2.4")
+                implementation("io.kotest:kotest-property:6.2.4")
             }
         }
 
@@ -187,10 +199,23 @@ kotlin {
                 // ZXing — QR encode/decode for camera-qr-export (ADR-001/Story 2.1.2)
                 implementation("com.google.zxing:core:3.5.4")
 
+                implementation("com.github.tulskiy:jkeymaster:1.3") // research/build-vs-buy.md: fresher than JNativeHook (June-2025 push)
+
                 // Graph databases for performance evaluation
                 // implementation("com.kuzudb:kuzu-jdbc:0.7.0")
                 // implementation("org.neo4j.driver:neo4j-java-driver:5.21.0")
                 // implementation("org.neo4j:neo4j:5.21.0")
+
+                // GraalJS (community edition — pure-JVM, no separate GraalVM install required)
+                // hosts the bundled mermaid.js for headless Desktop diagram rendering. See
+                // project_plans/mermaid-diagrams/decisions/ADR-001-mermaid-rendering-strategy.md.
+                implementation("org.graalvm.polyglot:polyglot:24.1.1")
+                implementation("org.graalvm.polyglot:js-community:24.1.1")
+
+                // Apache Batik — supplies the SVGTextElement.getBBox() text-measurement shim
+                // mermaid.js's layout pass needs (headless GraalJS has no native DOM/font API).
+                implementation("org.apache.xmlgraphics:batik-bridge:1.18")
+                implementation("org.apache.xmlgraphics:batik-anim:1.18")
             }
         }
 
@@ -214,8 +239,10 @@ kotlin {
 
         if (project.findProperty("enableJs") == "true") {
             val wasmJsMain by getting {
+                kotlin.srcDir(layout.buildDirectory.dir("generated/version/wasmJsMain/kotlin"))
                 dependencies {
                     implementation(npm("@sqlite.org/sqlite-wasm", "3.46.1-build1"))
+                    implementation(npm("mermaid", "12.0.0"))
                     // Ktor HTTP engine for wasmJs — required for commonMain HttpClient() construction
                     // (remote LlmFormatterProviders: Claude/OpenAI today, Gemini/generic-OpenAI-compatible
                     // in Epic 3) to link on the web target. Every other source set already declares an
@@ -320,8 +347,9 @@ kotlin {
                 // JGit 7.x — Android git operations (matches Bazel-resolved version; desugaring handles Java 11 APIs)
                 implementation("org.eclipse.jgit:org.eclipse.jgit:7.3.0.202506031305-r")
                 // JGit SSH/JSch integration module (provides JschConfigSessionFactory)
+                // Version now matches core (7.3.0.202506031305-r) — no more version skew.
                 // Excludes com.jcraft:jsch so the mwiede fork below is the sole jsch on classpath
-                implementation("org.eclipse.jgit:org.eclipse.jgit.ssh.jsch:5.13.3.202401111512-r") {
+                implementation("org.eclipse.jgit:org.eclipse.jgit.ssh.jsch:7.3.0.202506031305-r") {
                     exclude(group = "com.jcraft", module = "jsch")
                 }
                 // mwiede/jsch fork — ED25519/ECDSA/OpenSSH key support for Android SSH
@@ -339,6 +367,10 @@ kotlin {
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
                 implementation("androidx.arch.core:core-testing:2.2.0")
                 implementation("androidx.glance:glance-appwidget-testing:1.1.1")
+                // TestListenableWorkerBuilder — drives GitSyncWorker.doWork() through a real
+                // WorkManager test harness (git-sync-resilience Story 1.2.3). Same 2.9.1 as
+                // work-runtime-ktx above, since work-testing must match the runtime version.
+                implementation("androidx.work:work-testing:2.9.1")
                 // Roborazzi screenshot testing
                 implementation("io.github.takahirom.roborazzi:roborazzi:1.59.0")
                 implementation("io.github.takahirom.roborazzi:roborazzi-compose:1.59.0")
@@ -448,6 +480,88 @@ if (project.findProperty("enableJs") == "true") {
 // Reads: kmp/src/commonMain/resources/demo-graph/{pages,journals}/
 // Writes: kmp/src/commonMain/kotlin/dev/stapler/stelekit/platform/DemoFileSystem.kt
 // Up-to-date: Gradle skips if no .md file in demo-graph changed since last run.
+
+// Single source of truth for the app version: an explicit -PappVersion (CI release builds),
+// falling back to the committed version.txt (local/dev builds), falling back to "dev".
+fun resolveAppVersion(): String = (findProperty("appVersion") as? String)?.removePrefix("v")
+    ?: rootProject.file("version.txt").takeIf { it.exists() }?.readText()?.trim()
+    ?: "dev"
+
+// Short commit SHA of the checkout being built, for display alongside the version tag in
+// Settings — lets us tell which exact commit a running build (especially the web deploy) is
+// actually serving. Falls back to "unknown" outside a git checkout (e.g. a source tarball).
+// Purely cosmetic (Settings display only, nothing reads it for correctness), so — unlike
+// resolveAppVersion() — it does not need to be a tracked task input at all. Called eagerly at
+// configuration time by the two sites below (desktop packaging's jvmArgs, the profiling test
+// task's systemProperty) — both DSL properties AGP/Compose Desktop require to be known during
+// configuration, so unlike generateWasmVersionInfo's doLast (below) there's no way to defer these
+// to execution time.
+//
+// Bug fix: this used to shell out via providers.exec() unconditionally. providers.exec's stdout
+// is a ValueSource, and Gradle's configuration cache must re-invoke any ValueSource used as a
+// task input on every build to check whether it changed — so every local commit forced a full
+// reconfigure ("output of the external process 'git' has changed"), paid by every local dev
+// iteration for a value nothing but a rarely-run packaging/profiling task's display needs. Gated
+// on CI the same way resolveAppVersion() gates on -PappVersion: CI gets the exact SHA; ordinary
+// local/dev builds use a stable "dev" placeholder and never start the git process at all.
+fun resolveGitCommitNow(): String = if (System.getenv("CI") != null) {
+    try {
+        val proc = ProcessBuilder("git", "rev-parse", "--short=8", "HEAD")
+            .directory(rootDir)
+            .redirectErrorStream(true)
+            .start()
+        val output = proc.inputStream.bufferedReader().readText().trim()
+        if (proc.waitFor() == 0 && output.isNotEmpty()) output else "unknown"
+    } catch (e: Exception) {
+        "unknown"
+    }
+} else {
+    "dev"
+}
+
+// wasmJs has no JVM system-property equivalent to pass the resolved version at runtime (unlike
+// the JVM target — see the "run" task's -Dapp.version below), so it is baked in at compile time
+// via a generated Kotlin constant instead. Consumed by DeviceInfo.js.kt.
+val generateWasmVersionInfo by tasks.registering {
+    group = "build"
+    description = "Generates a Kotlin constant with the resolved app version for the wasmJs target."
+    val outputDir = layout.buildDirectory.dir("generated/version/wasmJsMain/kotlin")
+    val version = resolveAppVersion()
+    // Bug fix: calling the script-level resolveGitCommitNow() from inside doLast crashes under
+    // the configuration cache ("Cannot invoke Build_gradle.resolveGitCommitNow() because
+    // this.this$0 is null") — invoking any build-script member function from a task-action
+    // closure requires capturing the enclosing script instance, which the configuration cache
+    // deliberately can't serialize/replay. Capturing a plain File as a local here instead is
+    // config-cache-safe (simple serializable value, not a script reference), so the git logic
+    // below is inlined rather than calling out to the shared helper.
+    val projectRootDir = rootDir
+    inputs.property("appVersion", version)
+    outputs.dir(outputDir)
+    doLast {
+        val gitCommit = try {
+            val proc = ProcessBuilder("git", "rev-parse", "--short=8", "HEAD")
+                .directory(projectRootDir)
+                .redirectErrorStream(true)
+                .start()
+            val output = proc.inputStream.bufferedReader().readText().trim()
+            if (proc.waitFor() == 0 && output.isNotEmpty()) output else "unknown"
+        } catch (e: Exception) {
+            "unknown"
+        }
+        val outFile = outputDir.get().asFile.resolve("dev/stapler/stelekit/performance/WasmVersionInfo.kt")
+        outFile.parentFile.mkdirs()
+        outFile.writeText(
+            """
+            // GENERATED — do not edit. Written by :kmp:generateWasmVersionInfo at build time.
+            package dev.stapler.stelekit.performance
+
+            internal const val WASM_APP_VERSION: String = "$version"
+            internal const val WASM_GIT_COMMIT: String = "$gitCommit"
+
+            """.trimIndent()
+        )
+    }
+}
 
 val generateDemoFileSystem by tasks.registering {
     val demoGraphDir = layout.projectDirectory.dir(
@@ -615,6 +729,7 @@ afterEvaluate {
     tasks.matching { it.name.startsWith("compile") && it.name.endsWith("KotlinAndroid") }
         .configureEach { dependsOn(generateDemoFileSystem) }
     tasks.findByName("compileKotlinWasmJs")?.dependsOn(generateDemoFileSystem)
+    tasks.findByName("compileKotlinWasmJs")?.dependsOn(generateWasmVersionInfo)
 }
 
 // Wire generateDemoFileSystem before jvmTest so DemoFileSystemSyncTest can find the file.
@@ -700,6 +815,22 @@ tasks.named<Test>("jvmTest") {
         "stelekit.sq.file",
         file("src/commonMain/sqldelight/dev/stapler/stelekit/db/SteleDatabase.sq").absolutePath
     )
+    // Lets GraphContentDemoFileSystemWiringTest statically verify the effectiveFileSystem
+    // wiring in App.kt without mounting the composable (mounting StelekitApp/GraphContent end
+    // to end crashes SkikoComposeUiTest with "Unsupported concurrent change during composition"
+    // even with no demo graph involved — a pre-existing test-harness limitation, not a bug in
+    // App.kt itself).
+    systemProperty(
+        "stelekit.appkt.file",
+        file("src/commonMain/kotlin/dev/stapler/stelekit/ui/App.kt").absolutePath
+    )
+    // Same rationale as stelekit.appkt.file, widened to the whole ui/ package: GraphContent's
+    // call sites have moved across GraphContent*.kt files as the composable has been split up,
+    // so GraphContentDemoFileSystemWiringTest scans every file here rather than just App.kt.
+    systemProperty(
+        "stelekit.ui.dir",
+        file("src/commonMain/kotlin/dev/stapler/stelekit/ui").absolutePath
+    )
 
     // BlockHound is installed programmatically via BlockHoundTestBase.installBlockHound().
     // The -javaagent approach (reactor.blockhound:blockhound) crashes on Java 21+ due to
@@ -748,6 +879,14 @@ tasks.register<Test>("jvmTestFast") {
     systemProperty(
         "stelekit.sq.file",
         file("src/commonMain/sqldelight/dev/stapler/stelekit/db/SteleDatabase.sq").absolutePath
+    )
+    systemProperty(
+        "stelekit.appkt.file",
+        file("src/commonMain/kotlin/dev/stapler/stelekit/ui/App.kt").absolutePath
+    )
+    systemProperty(
+        "stelekit.ui.dir",
+        file("src/commonMain/kotlin/dev/stapler/stelekit/ui").absolutePath
     )
 
     jvmArgs(
@@ -1029,6 +1168,7 @@ compose.desktop {
             packageVersion = if ((parts.firstOrNull()?.toIntOrNull() ?: 1) == 0)
                 "1.${parts.drop(1).joinToString(".")}" else rawVersion
             jvmArgs("-Dapp.version=$rawVersion")
+            jvmArgs("-Dapp.gitCommit=${resolveGitCommitNow()}")
             modules("java.sql")
             macOS {
                 iconFile.set(project.file("src/jvmMain/resources/icons/icon.icns"))
@@ -1086,6 +1226,12 @@ detekt {
 }
 
 tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
+    // Detekt analyzes src/commonMain/kotlin directly (not through a compile task), so it needs
+    // its own explicit dependency on generateDemoFileSystem — Gradle's task-graph validation
+    // flags this as an undeclared implicit dependency otherwise (the generator writes
+    // DemoFileSystem.kt into that same source directory; see generateDemoFileSystem's other
+    // wiring above for compile tasks and jvmTest).
+    dependsOn(generateDemoFileSystem)
     jvmTarget = "21"
     reports {
         html.required.set(true)
@@ -1227,9 +1373,7 @@ afterEvaluate {
         }
     }
 
-    val resolvedAppVersion: String = (findProperty("appVersion") as? String)?.removePrefix("v")
-        ?: rootProject.file("version.txt").takeIf { it.exists() }?.readText()?.trim()
-        ?: "dev"
+    val resolvedAppVersion: String = resolveAppVersion()
 
     tasks.named<JavaExec>("run") {
         notCompatibleWithConfigurationCache("uses project.findProperty at execution time")
@@ -1242,6 +1386,7 @@ afterEvaluate {
         // with the resolved JDK 21 binary instead.
         setExecutable(jdk21Launcher.get().executablePath.asFile.absolutePath)
         systemProperty("app.version", resolvedAppVersion)
+        systemProperty("app.gitCommit", resolveGitCommitNow())
 
         // Dev/test launches must never point at the real default graph path — running
         // alongside an already-open real install (or repeated dev sessions) lets independent
@@ -1361,4 +1506,24 @@ android {
         // this is a known lint tooling bug triggered by certain Kotlin when-expressions.
         disable += setOf("LogConditional", "LongLogTag", "LogTagMismatch")
     }
+}
+
+// ── Jacoco Code Coverage Configuration ──────────────────────────────────────────
+jacoco {
+    toolVersion = "0.8.12"
+}
+
+tasks.register<JacocoReport>("jacocoTestReport") {
+    dependsOn("jvmTest")
+    reports {
+        xml.required.set(true)
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir("reports/jacoco/html"))
+        xml.outputLocation.set(layout.buildDirectory.file("reports/jacoco/jacoco.xml"))
+    }
+    val classesTree = fileTree("${layout.buildDirectory.get()}/classes/kotlin/jvm/main")
+    val mainSrc = "${projectDir}/src/commonMain/kotlin"
+    sourceDirectories.setFrom(files(mainSrc))
+    classDirectories.setFrom(files(classesTree))
+    executionData.setFrom(fileTree(layout.buildDirectory.get()).include("jacoco/jvmTest.exec", "outputs/unit_test_code_coverage/**/*.exec"))
 }

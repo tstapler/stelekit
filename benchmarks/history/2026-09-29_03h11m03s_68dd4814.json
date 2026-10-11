@@ -1,0 +1,122 @@
+{
+  "timestamp": "2026-09-29 03:11:03 UTC",
+  "gitSha": "68dd4814",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 1,
+  "phase2Ms": 0,
+  "phase3Ms": 1,
+  "totalMs": 2,
+  "jankBaselineP50Ms": 1,
+  "jankBaselineP95Ms": 21,
+  "jankLoadP50Ms": 0,
+  "jankLoadP95Ms": 0,
+  "jankFactor": 0.0,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 641,
+      "pct": 37.9
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 131,
+      "pct": 7.7
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 115,
+      "pct": 6.8
+    },
+    {
+      "frame": "java.util.LinkedHashMap$Entry_[k]",
+      "samples": 109,
+      "pct": 6.4
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 87,
+      "pct": 5.1
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 44,
+      "pct": 2.6
+    },
+    {
+      "frame": "dev.stapler.stelekit.parsing.lexer.Token_[k]",
+      "samples": 43,
+      "pct": 2.5
+    },
+    {
+      "frame": "java.nio.DirectByteBuffer_[k]",
+      "samples": 34,
+      "pct": 2.0
+    },
+    {
+      "frame": "java.util.regex.Matcher_[k]",
+      "samples": 32,
+      "pct": 1.9
+    },
+    {
+      "frame": "java.util.LinkedHashMap_[k]",
+      "samples": 31,
+      "pct": 1.8
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 24504,
+      "pct": 96.0
+    },
+    {
+      "frame": "/tmp/sqlite-3.51.3.0-385ffa28-5dc8-4463-adbd-1fe23aa9e609-libsqlitejdbc.so",
+      "samples": 398,
+      "pct": 1.6
+    },
+    {
+      "frame": "__libc_pwrite",
+      "samples": 124,
+      "pct": 0.5
+    },
+    {
+      "frame": "fsync",
+      "samples": 72,
+      "pct": 0.3
+    },
+    {
+      "frame": "pthread_cond_signal",
+      "samples": 43,
+      "pct": 0.2
+    },
+    {
+      "frame": "SR_handler",
+      "samples": 39,
+      "pct": 0.2
+    },
+    {
+      "frame": "malloc",
+      "samples": 10,
+      "pct": 0.0
+    },
+    {
+      "frame": "pread",
+      "samples": 8,
+      "pct": 0.0
+    },
+    {
+      "frame": "clock_nanosleep",
+      "samples": 8,
+      "pct": 0.0
+    },
+    {
+      "frame": "syscall",
+      "samples": 7,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": []
+}

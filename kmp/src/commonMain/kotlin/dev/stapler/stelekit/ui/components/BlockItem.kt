@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.query.QueryParser
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -18,7 +20,7 @@ import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockType
 import dev.stapler.stelekit.ui.theme.StelekitTheme
 import dev.stapler.stelekit.ui.screens.FormatAction
-import dev.stapler.stelekit.ui.useLongPressForDrag
+import dev.stapler.stelekit.ui.useLongPressToSelectBlock
 import dev.stapler.stelekit.ui.screens.SearchResultItem
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharedFlow
@@ -80,6 +82,9 @@ internal fun BlockItem(
     onDragStart: (uuid: String, startY: Float) -> Unit = { _, _ -> },
     onDrag: (deltaY: Float) -> Unit = {},
     onDragEnd: () -> Unit = {},
+    onLassoDragStart: (uuid: String) -> Unit = {},
+    onLassoDrag: (rootY: Float) -> Unit = {},
+    onLassoDragEnd: () -> Unit = {},
     dropAbove: Boolean = false,
     dropBelow: Boolean = false,
     dropAsChild: Boolean = false,
@@ -254,22 +259,22 @@ internal fun BlockItem(
     }
 
     val haptic = LocalHapticFeedback.current
-    val useLongPressForDrag = useLongPressForDrag()
 
     // Single source of truth for "genuine long-press on this row enters selection mode".
     // Passed down into whichever block-type composable renders the content so tap and
     // long-press are resolved by ONE gesture recognizer per row, instead of racing an
     // outer row-level detector against an inner content-level one (the root cause of
     // fast taps sometimes landing in selection mode instead of edit mode).
-    // On platforms where long-press initiates drag (Android), this suppresses row-level
-    // long-press-to-select so it doesn't conflict with the gutter's
-    // detectDragGesturesAfterLongPress, which fires at the same time.
-    val onLongPressSelect: (() -> Unit)? = if (useLongPressForDrag) null else ({
+    // Gated per-platform by useLongPressToSelectBlock() — off on Android (the gutter's
+    // detectGesturesAfterLongPress already claims long-press there) and on JVM/desktop (a
+    // stationary mouse-down while positioning a text cursor is ordinary behavior, and desktop
+    // has shift-click/Ctrl+A/drag-lasso as precise alternatives already).
+    val onLongPressSelect: (() -> Unit)? = if (useLongPressToSelectBlock()) ({
         if (!isInSelectionMode) {
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
             onEnterSelectionMode()
         }
-    })
+    }) else null
 
     Box(
         modifier = Modifier
@@ -338,6 +343,9 @@ internal fun BlockItem(
                 onDragStart = onDragStart,
                 onDrag = onDrag,
                 onDragEnd = onDragEnd,
+                onLassoDragStart = onLassoDragStart,
+                onLassoDrag = onLassoDrag,
+                onLassoDragEnd = onLassoDragEnd,
             )
 
             if (!block.isLoaded) {
@@ -385,7 +393,24 @@ internal fun BlockItem(
                 )
             } else {
                 // View mode — dispatch on block type
-                when (block.blockType) {
+                val queryContext = LocalQueryBlockContext.current
+                // Content-based (not blockType-based) so a freshly typed query block goes live
+                // without a reload; whole-block-only, so inline mixes keep the literal rendering.
+                val liveQueryArg = remember(block.content, queryContext.enabled, queryContext.executor) {
+                    if (!queryContext.enabled || queryContext.executor == null) null
+                    else queryArgFromContent(block.content)?.takeIf {
+                        val err = QueryParser.parse(it).leftOrNull()
+                        err == null || err is DomainError.ParseError.UnsupportedForm
+                    }
+                }
+                if (liveQueryArg != null) QueryBlock(
+                    rawQuery = liveQueryArg,
+                    queryExecutor = queryContext.executor,
+                    pageRepository = queryContext.pageRepository,
+                    onStartEditing = onStartEditing,
+                    onLinkClick = onLinkClick,
+                    modifier = Modifier.weight(1f),
+                ) else when (block.blockType) {
                     is BlockType.ImageAnnotation -> ImageAnnotationBlockItem(
                         block = block,
                         onOpenAnnotationEditor = onOpenAnnotationEditor,
@@ -413,15 +438,40 @@ internal fun BlockItem(
                         onLongPressSelect = onLongPressSelect,
                         modifier = Modifier.weight(1f),
                     )
-                    is BlockType.CodeFence -> CodeFenceBlock(
-                        content = block.content,
-                        language = codeFenceLanguage(block.content),
-                        onStartEditing = onStartEditing,
-                        isInSelectionMode = isInSelectionMode,
-                        onToggleSelect = onToggleSelect,
-                        onLongPressSelect = onLongPressSelect,
-                        modifier = Modifier.weight(1f),
-                    )
+                    is BlockType.CodeFence -> {
+                        val language = codeFenceLanguage(block.content)
+                        if (language.equals("mermaid", ignoreCase = true)) {
+                            MermaidBlock(
+                                content = block.content,
+                                onStartEditing = onStartEditing,
+                                isInSelectionMode = isInSelectionMode,
+                                onToggleSelect = onToggleSelect,
+                                onLongPressSelect = onLongPressSelect,
+                                modifier = Modifier.weight(1f),
+                                fallback = { fallbackContent, fallbackModifier ->
+                                    CodeFenceBlock(
+                                        content = fallbackContent,
+                                        language = "mermaid",
+                                        onStartEditing = onStartEditing,
+                                        modifier = fallbackModifier,
+                                        isInSelectionMode = isInSelectionMode,
+                                        onToggleSelect = onToggleSelect,
+                                        onLongPressSelect = onLongPressSelect,
+                                    )
+                                },
+                            )
+                        } else {
+                            CodeFenceBlock(
+                                content = block.content,
+                                language = language,
+                                onStartEditing = onStartEditing,
+                                isInSelectionMode = isInSelectionMode,
+                                onToggleSelect = onToggleSelect,
+                                onLongPressSelect = onLongPressSelect,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
                     is BlockType.Blockquote -> BlockquoteBlock(
                         content = block.content,
                         linkColor = linkColor,

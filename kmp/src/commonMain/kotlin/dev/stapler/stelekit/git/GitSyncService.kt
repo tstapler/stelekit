@@ -12,12 +12,14 @@ import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.git.merge.JournalMergeService
+import dev.stapler.stelekit.git.model.CloneDepthState
 import dev.stapler.stelekit.git.model.ConflictFile
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.git.model.wikiRoot
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.NetworkMonitor
+import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.platform.security.CredentialAccess
 import dev.stapler.stelekit.logging.Logger
 import kotlinx.coroutines.CancellationException
@@ -53,11 +55,130 @@ class GitSyncService(
     /** Returns the active [CredentialAccess] for checking vault availability before sync. Null means always available. */
     private val credentialAccessProvider: (() -> CredentialAccess)? = null,
     private val journalMergeService: JournalMergeService? = null,
+    /** Graph this instance serves — one instance per active graph (see class doc). Used only to
+     * key [lastSyncAt]'s persisted value in [settings]; every method still takes its own
+     * `graphId` parameter for the actual git operation. */
+    private val graphId: String = "",
+    /** Backs [lastSyncAt] across app restarts. Null (tests, and any caller that doesn't need
+     * persistence) makes [lastSyncAt] start at null and never persist. */
+    private val settings: Settings? = null,
+    /** Tracks whether [sync] is currently in flight, so the relocate quiesce sequence (Phase 3)
+     * can await idle before moving a graph's `.git` directory. Defaults to a private instance;
+     * callers that need to observe busy-ness externally (e.g. a quiesce strategy) should inject
+     * a shared instance instead. */
+    private val gitSyncBusyCounter: GitSyncBusyCounter = GitSyncBusyCounter(),
 ) {
     private val logger = Logger("GitSyncService")
+    private val firstSyncConfirmation: FirstSyncConfirmation? = settings?.let { FirstSyncConfirmation(it) }
+
+    /** Applies user-confirmed branch repairs; see [repairBranch]. */
+    val branchRepair: BranchRepairService = BranchRepairService(configRepository, firstSyncConfirmation)
+
+    private val _firstSyncReviewPending = MutableStateFlow(firstSyncConfirmation?.isReviewPending(graphId) ?: false)
+
+    /** True after a branch repair until a manual sync succeeds for the new branch (drives the "Review first sync" badge). */
+    val firstSyncReviewPending: StateFlow<Boolean> = _firstSyncReviewPending.asStateFlow()
+
+    /** Applies [proposal] (no sync is run) and refreshes [firstSyncReviewPending]. */
+    suspend fun repairBranch(proposal: BranchRepairProposal): BranchRepairResult =
+        branchRepair.apply(proposal).also {
+            _firstSyncReviewPending.value = firstSyncConfirmation?.isReviewPending(graphId) ?: false
+            // The missing-branch error described the old setting; a stale red badge would reopen a dead repair.
+            val current = _syncState.value
+            if (it is BranchRepairResult.Repaired && current is SyncState.Error &&
+                current.error is DomainError.GitError.RemoteBranchNotFound
+            ) {
+                _syncState.value = SyncState.Idle
+            }
+        }
+
+    /**
+     * Undoes the last repair, but only if the previous branch exists on the remote right now: it was
+     * missing when the repair happened, so it is probed (a fetch of that branch) instead of trusted.
+     * Returns null when no repair is recorded.
+     */
+    suspend fun changeBackBranch(): BranchRepairResult? {
+        val previous = previousBranchBeforeRepair() ?: return null
+        val config = when (val r = configRepository.getConfig(graphId)) {
+            is Either.Left -> return BranchRepairResult.SaveFailed(r.value.message)
+            is Either.Right -> r.value ?: return BranchRepairResult.Stale(null)
+        }
+        when (val probe = gitRepository.fetch(config.copy(remoteBranch = previous))) {
+            is Either.Left -> return when (probe.value) {
+                is DomainError.GitError.RemoteBranchNotFound -> BranchRepairResult.TargetNotOnRemote(previous)
+                else -> BranchRepairResult.SaveFailed(probe.value.message)
+            }
+            is Either.Right -> Unit
+        }
+        return repairBranch(
+            BranchRepairProposal(graphId, from = config.remoteBranch, to = previous, available = listOf(previous)),
+        )
+    }
+
+    /** Branch the last repair replaced, for "Change back"; null when none is recorded. */
+    fun previousBranchBeforeRepair(): String? = firstSyncConfirmation?.previousBranch(graphId)
+
+    /** Never [toString] a state directly: conflict/journal-merge states carry full note contents. */
+    private fun SyncState.logSummary(): String = when (this) {
+        is SyncState.ConflictPending -> "ConflictPending(files=${conflicts.size})"
+        is SyncState.JournalMergeReady -> "JournalMergeReady"
+        is SyncState.Error -> "Error(${error.message})"
+        else -> toString()
+    }
 
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
     val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
+
+    /**
+     * Working-tree status (dirty file count), refreshed by [refreshLocalStatus] independently of
+     * the full [sync] pipeline — never mutated by [_syncState] transitions. Null until the first
+     * refresh completes (graph open, each periodic poll tick, or after [sync]/[commitLocalChanges]).
+     */
+    private val _localStatus = MutableStateFlow<GitStatus?>(null)
+    val localStatus: StateFlow<GitStatus?> = _localStatus.asStateFlow()
+
+    /** Epoch-millis timestamp of the last successful [sync]/[applyJournalMerge], persisted in
+     * [settings] so it survives app restarts and graph switches — unlike [SyncState.Success],
+     * which only lives for the 3-second badge fade. */
+    private val _lastSyncAt = MutableStateFlow(settings?.getString(lastSyncSettingsKey(), "")?.toLongOrNull())
+    val lastSyncAt: StateFlow<Long?> = _lastSyncAt.asStateFlow()
+
+    private fun lastSyncSettingsKey() = "git_last_synced_at_$graphId"
+
+    private fun recordLastSyncAt(epochMillis: Long) {
+        _lastSyncAt.value = epochMillis
+        settings?.putString(lastSyncSettingsKey(), epochMillis.toString())
+    }
+
+    /**
+     * Lightweight working-tree status check — reads git status without running the full
+     * commit/fetch/merge/push [sync] pipeline. Never touches the network and never mutates
+     * [_syncState], so it's safe to call frequently (graph open, each periodic poll tick, after
+     * [sync]/[commitLocalChanges] completes) without disturbing an in-progress sync's state.
+     */
+    suspend fun refreshLocalStatus(graphId: String) {
+        val config = configRepository.getConfig(graphId).getOrNull() ?: return
+        _localStatus.value = gitRepository.status(config).getOrNull()
+    }
+
+    /**
+     * Widens [graphId]'s shallow clone to full history (git-sync-resilience Story 2.1.4) and, on
+     * success, persists the resulting [CloneDepthState.FullHistory] checkpoint. [GitRepository]
+     * implementations don't hold a [GitConfigRepository] reference themselves (see
+     * [GitRepository.unshallow]'s doc), so this is the call site responsible for that — this class
+     * is the one collaborator that already holds both. No settings-screen UI calls this yet
+     * (backend capability only, per plan.md).
+     */
+    suspend fun deepen(graphId: String): Either<DomainError, Unit> {
+        val config = when (val result = configRepository.getConfig(graphId)) {
+            is Either.Left -> return result
+            is Either.Right -> result.value ?: return DomainError.DatabaseError.NotFound("GitConfig", graphId).left()
+        }
+        return gitRepository.unshallow(config).fold(
+            { it.left() },
+            { configRepository.saveConfig(config.copy(cloneDepthState = CloneDepthState.FullHistory)) },
+        )
+    }
 
     // Owns its own scope — never accept rememberCoroutineScope()
     // CoroutineExceptionHandler guards against uncaught Throwable crashing the Android process.
@@ -68,6 +189,16 @@ class GitSyncService(
         )
     }
     private val scope = CoroutineScope(SupervisorJob() + PlatformDispatcher.IO + exceptionHandler)
+
+    init {
+        // Log every state transition so sync progress/failures are visible in the global log.
+        scope.launch { _syncState.collect { logger.info("syncState[$graphId] -> ${it.logSummary()}") } }
+        // Populate localStatus immediately on construction (graph open) rather than waiting for
+        // the first periodic poll tick or manual sync — see refreshLocalStatus's doc.
+        if (graphId.isNotEmpty()) {
+            scope.launch { refreshLocalStatus(graphId) }
+        }
+    }
 
     @kotlin.concurrent.Volatile private var periodicSyncJob: Job? = null
 
@@ -105,7 +236,7 @@ class GitSyncService(
     }
 
     /**
-     * Full sync sequence:
+     * Full sync sequence ([SyncTrigger.Automatic] callers wait while a first-sync review is pending):
      * 1. Network check
      * 2. Load config
      * 3. Safety checks (detached HEAD, stale lock)
@@ -116,13 +247,28 @@ class GitSyncService(
      * 8. Reload merged files
      * 9. Push
      */
-    suspend fun sync(graphId: String): Either<DomainError.GitError, SyncState.Success> =
+    suspend fun sync(
+        graphId: String,
+        trigger: SyncTrigger = SyncTrigger.Manual,
+    ): Either<DomainError.GitError, SyncState.Success> =
         withContext(PlatformDispatcher.IO) {
+            // Read the persisted flag, not the cached StateFlow: the review is confirmed in settings.
+            if (trigger == SyncTrigger.Automatic && firstSyncConfirmation?.isReviewPending(graphId) == true) {
+                logger.info("skipping automatic sync graphId=$graphId: first-sync review is pending")
+                return@withContext DomainError.GitError.FirstSyncReviewPending.left()
+            }
+            // Bracket the whole pipeline so gitSyncBusyCounter is decremented on every
+            // return@withContext exit path below, not just the success path.
+            gitSyncBusyCounter.begin()
+            try {
+
             // Task 3.4.2c: a manual sync trigger always supersedes any pending scheduled retry.
             rateLimitRetryJob?.cancel()
 
             // 1. Network check
+            logger.info("sync/fetch start graphId=$graphId")
             if (!networkMonitor.isOnline) {
+                logger.warn("aborting: NetworkMonitor reports offline")
                 val err = DomainError.GitError.Offline
                 _syncState.value = SyncState.Error(err)
                 return@withContext err.left()
@@ -178,7 +324,7 @@ class GitSyncService(
                 gitRepository.commit(config, message).onLeft { err ->
                     if (err is DomainError.GitError.RateLimited) {
                         _syncState.value = SyncState.RateLimited(err.retryAfterSeconds)
-                        scheduleRateLimitRetry(graphId, err.retryAfterSeconds) { g -> sync(g) }
+                        scheduleRateLimitRetry(graphId, err.retryAfterSeconds) { g -> sync(g, SyncTrigger.Automatic) }
                     } else if (err is DomainError.GitError.CredentialExpired) {
                         _syncState.value = SyncState.CredentialExpired(graphId)
                     } else {
@@ -200,7 +346,7 @@ class GitSyncService(
                         _syncState.value = SyncState.CredentialExpired(graphId)
                     } else if (err is DomainError.GitError.RateLimited) {
                         _syncState.value = SyncState.RateLimited(err.retryAfterSeconds)
-                        scheduleRateLimitRetry(graphId, err.retryAfterSeconds) { g -> sync(g) }
+                        scheduleRateLimitRetry(graphId, err.retryAfterSeconds) { g -> sync(g, SyncTrigger.Automatic) }
                     } else {
                         _syncState.value = SyncState.Error(err)
                     }
@@ -218,7 +364,7 @@ class GitSyncService(
                         val err = r.value
                         if (err is DomainError.GitError.RateLimited) {
                             _syncState.value = SyncState.RateLimited(err.retryAfterSeconds)
-                            scheduleRateLimitRetry(graphId, err.retryAfterSeconds) { g -> sync(g) }
+                            scheduleRateLimitRetry(graphId, err.retryAfterSeconds) { g -> sync(g, SyncTrigger.Automatic) }
                         } else if (err is DomainError.GitError.CredentialExpired) {
                             _syncState.value = SyncState.CredentialExpired(graphId)
                         } else {
@@ -271,7 +417,7 @@ class GitSyncService(
                     graphLoader.endGitMerge()
                 }
 
-                remoteCommitsMerged = fetchResult.remoteCommitCount
+                remoteCommitsMerged = mergeResult.mergedCommitCount ?: fetchResult.remoteCommitCount
             }
 
             // 9. Push
@@ -279,7 +425,7 @@ class GitSyncService(
             gitRepository.push(config).onLeft { err ->
                 if (err is DomainError.GitError.RateLimited) {
                     _syncState.value = SyncState.RateLimited(err.retryAfterSeconds)
-                    scheduleRateLimitRetry(graphId, err.retryAfterSeconds) { g -> sync(g) }
+                    scheduleRateLimitRetry(graphId, err.retryAfterSeconds) { g -> sync(g, SyncTrigger.Automatic) }
                 } else if (err is DomainError.GitError.CredentialExpired) {
                     _syncState.value = SyncState.CredentialExpired(graphId)
                 } else if (err is DomainError.GitError.MergeConflict) {
@@ -298,13 +444,20 @@ class GitSyncService(
                 return@withContext err.left()
             }
 
+            refreshLocalStatus(graphId)
             val success = SyncState.Success(
                 localCommitsMade = localCommitsMade,
                 remoteCommitsMerged = remoteCommitsMerged,
                 lastSyncAt = Clock.System.now().toEpochMilliseconds(),
             )
+            recordLastSyncAt(success.lastSyncAt)
+            firstSyncConfirmation?.confirm(graphId, config.remoteName, config.remoteBranch)
+            _firstSyncReviewPending.value = false
             _syncState.value = success
             success.right()
+            } finally {
+                gitSyncBusyCounter.end()
+            }
         }
 
     /**
@@ -314,10 +467,18 @@ class GitSyncService(
      */
     suspend fun fetchOnly(graphId: String): Either<DomainError.GitError, FetchResult> =
         withContext(PlatformDispatcher.IO) {
+            // Bracket the whole pipeline so gitSyncBusyCounter is decremented on every
+            // return@withContext exit path below, not just the success path — mirrors sync()'s
+            // bracketing (git-sync-resilience Story 5.1.1).
+            gitSyncBusyCounter.begin()
+            try {
+
             // Task 3.4.2c: a manual fetchOnly trigger always supersedes any pending scheduled retry.
             rateLimitRetryJob?.cancel()
 
+            logger.info("sync/fetch start graphId=$graphId")
             if (!networkMonitor.isOnline) {
+                logger.warn("aborting: NetworkMonitor reports offline")
                 val err = DomainError.GitError.Offline
                 _syncState.value = SyncState.Error(err)
                 return@withContext err.left()
@@ -364,6 +525,9 @@ class GitSyncService(
                     fetchResult.right()
                 }
             }
+            } finally {
+                gitSyncBusyCounter.end()
+            }
         }
 
     /**
@@ -392,17 +556,29 @@ class GitSyncService(
                 is Either.Left -> return@withContext r.value.left()
                 is Either.Right -> r.value
             }
+            refreshLocalStatus(graphId)
             _syncState.value = SyncState.Idle
             sha.right()
         }
 
     /**
-     * Applies conflict resolutions to disk, marks files as resolved, and completes
-     * the merge commit. Used by the ConflictResolutionScreen "Finish Merge" flow.
+     * Resolves a merge's conflicted files — some whole-file (accept local or remote entirely via
+     * [sideResolutions]), some at the hunk level ([hunkResolutions], each file's line-by-line
+     * choices) — then completes the merge with a single commit covering every resolved file.
+     * A file must appear in exactly one of the two maps. Used by the ConflictResolutionScreen
+     * "Finish Merge" flow.
+     *
+     * [conflicts] is the same list the caller received from [SyncState.ConflictPending] — for
+     * files in [hunkResolutions], its [ConflictFile.rawContent] is used to reconstruct the
+     * resolved file rather than re-reading the working tree, since a hunk-resolution's source
+     * content was already captured at merge time (see [ConflictFile.rawContent]'s doc for why a
+     * fresh read here would be unreliable in Android's shadow-mirror mode).
      */
-    suspend fun resolveConflict(
+    suspend fun resolveConflicts(
         graphId: String,
-        resolution: ConflictResolution,
+        conflicts: List<ConflictFile>,
+        sideResolutions: Map<String, MergeSide> = emptyMap(),
+        hunkResolutions: Map<String, List<dev.stapler.stelekit.git.model.ConflictHunk>> = emptyMap(),
     ): Either<DomainError.GitError, Unit> = withContext(PlatformDispatcher.IO) {
         val config = when (val result = configRepository.getConfig(graphId)) {
             is Either.Left -> return@withContext DomainError.GitError.CommitFailed(
@@ -411,14 +587,20 @@ class GitSyncService(
             is Either.Right -> result.value
         } ?: return@withContext DomainError.GitError.CommitFailed("No git config for $graphId").left()
 
+        for ((filePath, side) in sideResolutions) {
+            gitRepository.checkoutFile(config, filePath, side).onLeft { return@withContext it.left() }
+            gitRepository.markResolved(config, filePath).onLeft { return@withContext it.left() }
+        }
+
         val resolver = ConflictResolver()
-        for ((filePath, hunks) in resolution.fileResolutions) {
-            val content = fileSystem.readFile(filePath)
+        val conflictsByPath = conflicts.associateBy { it.filePath }
+        for ((filePath, hunks) in hunkResolutions) {
+            val originalContent = conflictsByPath[filePath]?.rawContent ?: fileSystem.readFile(filePath)
                 ?: return@withContext DomainError.GitError.CommitFailed(
                     "Cannot read conflicted file: $filePath"
                 ).left()
 
-            val resolvedContent = when (val r = resolver.applyResolutions(content, hunks)) {
+            val resolvedContent = when (val r = resolver.applyResolutions(originalContent, hunks)) {
                 is Either.Left -> return@withContext r.value.left()
                 is Either.Right -> r.value
             }
@@ -433,47 +615,10 @@ class GitSyncService(
             gitRepository.markResolved(config, filePath).onLeft { return@withContext it.left() }
         }
 
-        // Commit the merge
         val message = buildCommitMessage(config, isMerge = true)
         gitRepository.commit(config, message).onLeft { return@withContext it.left() }
 
-        // Reload resolved files
-        val resolvedPaths = resolution.fileResolutions.keys.toList()
-        graphLoader.beginGitMerge(resolvedPaths)
-        try {
-            graphLoader.reloadFiles(resolvedPaths.map { FilePath(it) })
-        } finally {
-            graphLoader.endGitMerge()
-        }
-
-        _syncState.value = SyncState.Idle
-        Unit.right()
-    }
-
-    /**
-     * Resolves each conflicting file by accepting either the local or remote side,
-     * then commits the merge. Simpler than [resolveConflict] — no hunk-level parsing needed.
-     */
-    suspend fun resolveConflictBySide(
-        graphId: String,
-        fileResolutions: Map<String, MergeSide>,
-    ): Either<DomainError.GitError, Unit> = withContext(PlatformDispatcher.IO) {
-        val config = when (val result = configRepository.getConfig(graphId)) {
-            is Either.Left -> return@withContext DomainError.GitError.CommitFailed(
-                result.value.message
-            ).left()
-            is Either.Right -> result.value
-        } ?: return@withContext DomainError.GitError.CommitFailed("No git config for $graphId").left()
-
-        for ((filePath, side) in fileResolutions) {
-            gitRepository.checkoutFile(config, filePath, side).onLeft { return@withContext it.left() }
-            gitRepository.markResolved(config, filePath).onLeft { return@withContext it.left() }
-        }
-
-        val message = buildCommitMessage(config, isMerge = true)
-        gitRepository.commit(config, message).onLeft { return@withContext it.left() }
-
-        val resolvedPaths = fileResolutions.keys.toList()
+        val resolvedPaths = (sideResolutions.keys + hunkResolutions.keys).toList()
         graphLoader.beginGitMerge(resolvedPaths)
         try {
             graphLoader.reloadFiles(resolvedPaths.map { FilePath(it) })
@@ -508,6 +653,9 @@ class GitSyncService(
             ).left()
         }
 
+        // filePath here is written to SAF just above via fileSystem.writeFile — markResolved()
+        // (AndroidGitRepository, shadow-mirror mode) pulls that SAF content into the shadow tree
+        // before staging; same ordering as resolveConflict().
         gitRepository.markResolved(config, filePath).onLeft { return@withContext it.left() }
 
         val message = buildCommitMessage(config, isMerge = true)
@@ -526,10 +674,13 @@ class GitSyncService(
             return@withContext err.left()
         }
 
+        refreshLocalStatus(graphId)
+        val successAt = Clock.System.now().toEpochMilliseconds()
+        recordLastSyncAt(successAt)
         _syncState.value = SyncState.Success(
             localCommitsMade = 0,
             remoteCommitsMerged = 1,
-            lastSyncAt = Clock.System.now().toEpochMilliseconds(),
+            lastSyncAt = successAt,
         )
         Unit.right()
     }
@@ -562,6 +713,7 @@ class GitSyncService(
         periodicSyncJob = scope.launch {
             while (true) {
                 delay(intervalMinutes * 60_000L)
+                refreshLocalStatus(graphId)
                 fetchOnly(graphId)
             }
         }
@@ -591,11 +743,3 @@ class GitSyncService(
         const val DEFAULT_RATE_LIMIT_RETRY_SECONDS = 60
     }
 }
-
-/**
- * Resolution data passed to [GitSyncService.resolveConflict].
- * Maps file path → list of resolved hunks.
- */
-data class ConflictResolution(
-    val fileResolutions: Map<String, List<dev.stapler.stelekit.git.model.ConflictHunk>>,
-)

@@ -30,9 +30,15 @@ class WasmOpfsSqlDriver(private val workerScriptPath: String) : SqlDriver {
     var actualBackend: String = "unknown"
         private set
 
-    suspend fun init(dbPath: String) {
+    /**
+     * [mode] "persistent" (default) installs the OPFS SyncAccessHandle Pool VFS at [dbPath] so
+     * the database survives reloads. "ephemeral" (the "open temporarily" web flow) skips OPFS
+     * entirely and opens a plain in-memory sqlite3 database instead — [dbPath] is still passed
+     * through but unused by the worker in that mode.
+     */
+    suspend fun init(dbPath: String, mode: String = "persistent") {
         val readyPromise = createWorkerReadyPromise(worker)
-        workerPostMessage(worker, buildInitMessage(dbPath))
+        workerPostMessage(worker, buildInitMessage(dbPath, mode))
         val readyMsg: JsAny = readyPromise.await()
         actualBackend = getMessageBackend(readyMsg)
         val warning = getMessageWarning(readyMsg)

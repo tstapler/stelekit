@@ -1,9 +1,13 @@
 """
 androidApp — Android application binary (debug APK).
 
-Produces a debug APK with native multidex and Java 8 core library desugaring.
-The `plugin.properties` exclusion from Gradle packaging is handled by the
-android_binary rule's default resource exclusion behavior.
+Produces a debug APK with Java 8 core library desugaring. Multidex is handled
+natively and automatically by android_binary for minSdkVersion >= 21 (this
+app's minSdk is 26 — see BazelAndroidManifest.xml) — rules_android 0.7.2+
+removed the `multidex` attribute entirely since it's no longer a meaningful
+choice at this API level. The `plugin.properties` exclusion from Gradle
+packaging is handled by the android_binary rule's default resource exclusion
+behavior.
 
 Developer command: bazel build //androidApp:android_app
 """
@@ -20,6 +24,5 @@ android_binary(
     manifest = "BazelAndroidManifest.xml",
     custom_package = "dev.stapler.stelekit.android",
     deps = ["//kmp/src/androidMain/kotlin:android_main"],
-    multidex = "native",
     visibility = ["//visibility:public"],
 )

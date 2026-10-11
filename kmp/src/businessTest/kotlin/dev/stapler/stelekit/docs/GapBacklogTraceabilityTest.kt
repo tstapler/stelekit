@@ -23,11 +23,11 @@ class GapBacklogTraceabilityTest {
 
     @Test
     fun `everyGapIdReferencedInPlan should existAsABacklogRow When realDocsAreCrossChecked`() {
-        val planText = DocRepoLocator.planFile.readText()
+        val planText = DocRepoLocator.planText()
         val referenced = GapReferenceExtractor.extractReferencedIds(planText)
         assertTrue(referenced.isNotEmpty(), "expected plan.md to reference at least one real GAP-### id")
 
-        val knownIds = GapBacklogParser.parseRows(DocRepoLocator.gapBacklogFile.readText())
+        val knownIds = GapBacklogParser.parseRows(DocRepoLocator.gapBacklogText())
             .map { it.gapId }
             .toSet()
 

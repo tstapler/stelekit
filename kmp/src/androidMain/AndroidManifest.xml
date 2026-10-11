@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <!-- GPS tagging for image annotations (Story 8.2.4).
          Required by AndroidMotionSensorProvider to request location updates.
          Requested at runtime before MotionSensorProvider.startSensing() is called;
@@ -40,6 +41,12 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
 
+    <!-- git-sync-resilience Epic 3.1 (Story 3.1.1): GitCloneWorker promotes itself to a
+         dataSync foreground service so a clone/fetch/push survives backgrounding/Doze.
+         POST_NOTIFICATIONS is required on API 33+ to show its progress notification. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- USB host feature for USB serial (OTG) fallback (Story 5.6).
          Declared as not required so the app installs on non-OTG devices. -->
     <uses-feature android:name="android.hardware.usb.host" android:required="false" />
@@ -70,6 +77,14 @@
             android:name="dev.stapler.stelekit.platform.measurement.ble.AndroidMeasurementForegroundService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
+
+        <!-- GitCloneWorker's ForegroundInfo uses FOREGROUND_SERVICE_TYPE_DATA_SYNC; on API 34+
+             WorkManager's SystemForegroundService must declare the matching type or
+             startForeground throws InvalidForegroundServiceTypeException. -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
     </application>
 
 

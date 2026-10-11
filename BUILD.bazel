@@ -41,7 +41,7 @@ define_kt_toolchain(
 # ── Compose compiler plugin ────────────────────────────────────────────────────
 # Uses the embeddable compiler plugin jar from Maven.
 # suppressKotlinVersionCompatibilityCheck is required because the Compose
-# compiler plugin may not yet list Kotlin 2.3.21 as a known-compatible version
+# compiler plugin may not yet list Kotlin 2.4.10 as a known-compatible version
 # (see ADR-004 and rules_kotlin issue #1388).
 kt_compiler_plugin(
     name = "compose_compiler_plugin",
@@ -49,7 +49,7 @@ kt_compiler_plugin(
     target_embedded_compiler = True,
     visibility = ["//visibility:public"],
     options = {
-        "suppressKotlinVersionCompatibilityCheck": "2.3.21",
+        "suppressKotlinVersionCompatibilityCheck": "2.4.10",
         "sourceInformation": "true",
     },
     deps = ["@maven//:org_jetbrains_kotlin_kotlin_compose_compiler_plugin_embeddable"],
@@ -83,4 +83,25 @@ toolchain(
     toolchain = ":stelekit_android_toolchain_impl",
     toolchain_type = "@rules_android//toolchains/android:toolchain_type",
     visibility = ["//visibility:public"],
+)
+
+# ── Doc-schema test fixtures ──────────────────────────────────────────────────
+# Real repo docs, exposed so businessTest's doc-schema tests (BacklogTriageRuleTest,
+# GapBacklogSchemaTest, GapBacklogTraceabilityTest, JourneyStepCountRubricTest,
+# JourneyDocsFrontmatterTest) can bundle them as classpath resources — see
+# kmp/src/businessTest/kotlin/BUILD.bazel and DocRepoLocator's class doc for why
+# (Bazel's jarred runfiles classpath vs. Gradle's unpacked one).
+filegroup(
+    name = "rich_editing_backlog_docs",
+    srcs = [
+        "project_plans/rich-editing-experience/implementation/gap-backlog.md",
+        "project_plans/rich-editing-experience/implementation/plan.md",
+    ],
+    visibility = ["//kmp:__subpackages__"],
+)
+
+filegroup(
+    name = "journey_docs_source",
+    srcs = glob(["docs/journeys/*.md"]),
+    visibility = ["//kmp:__subpackages__"],
 )

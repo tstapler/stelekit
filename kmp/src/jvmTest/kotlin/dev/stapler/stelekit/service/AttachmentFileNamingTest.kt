@@ -48,6 +48,16 @@ class AttachmentFileNamingTest {
         assertEquals("file", uniqueFileName(assetsDir, "file", "", FileSystem.SYSTEM))
     }
 
+    @Test fun `sanitizeFileNameComponent falls back to the default for a dot-dot stem, rejecting directory traversal`() {
+        assertEquals("attachment", sanitizeFileNameComponent(".."))
+        assertEquals("attachment", sanitizeFileNameComponent("."))
+    }
+
+    @Test fun `uniqueFileName never returns a dot-dot filename for an all-dots source name`() {
+        val assetsDir = tempDir.toOkioPath()
+        assertEquals("attachment", uniqueFileName(assetsDir, "..", "", FileSystem.SYSTEM))
+    }
+
     // Minimal FileSystem stub for uniqueFileName tests. Only fileExists is meaningful.
     private class FakeFileSystem(private val existingPaths: Set<String>) : dev.stapler.stelekit.platform.FileSystem {
         override fun getDefaultGraphPath() = ""

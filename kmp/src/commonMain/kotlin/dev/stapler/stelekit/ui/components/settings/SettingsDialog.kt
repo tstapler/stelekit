@@ -94,6 +94,22 @@ fun SettingsDialog(
     hostAccessState: HostAccessState = HostAccessState.NotApplicable,
     supportsNativeDirectoryPicker: Boolean = false,
     onConnectHostDirectory: (suspend () -> ReconciliationUiState)? = null,
+    // Story 3.3.3/Epic 3.4: "Move storage location…" entry point inside FolderSyncSettings — see
+    // that composable's own parameter docs. Null onMoveStorageLocation hides the entry entirely.
+    onMoveStorageLocation: (suspend () -> dev.stapler.stelekit.model.StorageLocation)? = null,
+    storageMoveGraphName: String = "this graph",
+    onStorageLocationChoose: (dev.stapler.stelekit.model.StorageMoveOperation) -> Unit = {},
+    // Story 3.3.3 (AppOwned→HostFolder direction): see FolderSyncSettings's own parameter docs.
+    // Null keeps that direction a logged no-op.
+    onBrowseRequestForMove: (suspend () -> dev.stapler.stelekit.model.StorageLocation?)? = null,
+    onBrowseClickForMove: () -> Unit = {},
+    // Epic 4.1 (Task 4.1.2c): "Unlink folder" affordance — see FolderSyncSettings's own parameter
+    // docs. Null onUnlinkHostDirectory hides the entry entirely.
+    onUnlinkHostDirectory: (suspend () -> Unit)? = null,
+    // Desktop-only quick-capture hotkey (Story 1.4.2) — null hides GeneralSettings' row.
+    hotkeyComboLabel: String? = null,
+    captureTargetSettings: dev.stapler.stelekit.capture.CaptureTargetSettings? = null,
+    captureGraphs: List<dev.stapler.stelekit.model.GraphInfo> = emptyList(),
 ) {
     if (visible) {
         Dialog(
@@ -137,7 +153,10 @@ fun SettingsDialog(
                             currentLanguage = currentLanguage,
                             onLanguageChange = onLanguageChange,
                             isLeftHanded = isLeftHanded,
-                            onLeftHandedChange = onLeftHandedChange
+                            onLeftHandedChange = onLeftHandedChange,
+                            hotkeyComboLabel = hotkeyComboLabel,
+                            captureTargetSettings = captureTargetSettings,
+                            captureGraphs = captureGraphs,
                         )
                         // web-local-folder-livesync Task 3.1.1c: no dedicated "Sync"
                         // category exists in this dialog, so the affordance lives here —
@@ -153,6 +172,12 @@ fun SettingsDialog(
                                 hostAccessState = hostAccessState,
                                 supportsNativeDirectoryPicker = supportsNativeDirectoryPicker,
                                 onConnect = onConnectHostDirectory,
+                                onMoveStorageLocation = onMoveStorageLocation,
+                                graphName = storageMoveGraphName,
+                                onStorageLocationChoose = onStorageLocationChoose,
+                                onBrowseRequestForMove = onBrowseRequestForMove,
+                                onBrowseClickForMove = onBrowseClickForMove,
+                                onUnlink = onUnlinkHostDirectory,
                             )
                         }
                     }
@@ -271,9 +296,9 @@ fun SettingsDialog(
                                     )
                                 }
                             }
-                            val appVersion = remember { getDeviceInfo().appVersion }
+                            val deviceInfo = remember { getDeviceInfo() }
                             Text(
-                                "v$appVersion",
+                                versionLabel(deviceInfo.appVersion, deviceInfo.gitCommit),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                                 modifier = Modifier.padding(16.dp)
@@ -346,9 +371,9 @@ fun SettingsDialog(
 
                             Spacer(modifier = Modifier.weight(1f))
 
-                            val appVersion = remember { getDeviceInfo().appVersion }
+                            val deviceInfo = remember { getDeviceInfo() }
                             Text(
-                                "v$appVersion",
+                                versionLabel(deviceInfo.appVersion, deviceInfo.gitCommit),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
@@ -441,25 +466,5 @@ enum class SettingsCategory(val label: String, val icon: ImageVector) {
     DEVELOPER("Developer", Icons.Default.BugReport),
 }
 
-@Composable
-private fun DeveloperSettings(
-    isLibsqlDriverEnabled: Boolean,
-    onLibsqlDriverToggle: (Boolean) -> Unit,
-) {
-    SettingsSection("Database Driver") {
-        SettingsToggleRow(
-            label = "Use libsql JNI driver",
-            checked = isLibsqlDriverEnabled,
-            onCheckedChange = onLibsqlDriverToggle,
-        )
-        Text(
-            text = if (isLibsqlDriverEnabled)
-                "Active: libsql JNI driver (WAL mode). Reload the graph to apply."
-            else
-                "Active: system SQLite. Reload the graph to apply.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = androidx.compose.ui.Modifier.padding(top = 4.dp, bottom = 8.dp),
-        )
-    }
-}
+private fun versionLabel(appVersion: String, gitCommit: String): String =
+    if (gitCommit == "unknown") "v$appVersion" else "v$appVersion ($gitCommit)"

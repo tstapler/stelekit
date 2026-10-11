@@ -17,11 +17,18 @@ import kotlin.test.assertTrue
 // makeWritableHostRoot/writableRoot* fixtures (Epic 4.5) live in HostDirectoryTestFixtures.kt,
 // same package, no import needed.
 
+// reconnectHostDirectory's granted branch fires runHostReconciliation via scope.launch (fire-
+// and-forget, per its own doc comment) — which walks this handle via listOpfsEntries, i.e.
+// `handle.values()`. A bare {queryPermission, requestPermission} object without `values()`
+// makes that background walk throw "handle.values is not a function" from inside the launched
+// coroutine. This fixture only cares about permission-delegation, so `values()` reports an
+// empty directory (an empty JS iterator) — enough for the real reconciliation walk to no-op.
 private fun fakeHandleWithGrantedPermission(): JsAny = js(
     """
     ({
         queryPermission: function(opts) { return Promise.resolve('granted'); },
-        requestPermission: function(opts) { return Promise.resolve('granted'); }
+        requestPermission: function(opts) { return Promise.resolve('granted'); },
+        values: function() { return { next: function() { return Promise.resolve({ done: true, value: undefined }); } }; }
     })
     """,
 )
@@ -46,6 +53,10 @@ class PlatformFileSystemHostSyncDelegationTest {
     @Test
     fun hostDirectoryAccessState_should_DelegateToHostDirectorySyncFlowValue_When_Called() = runTest {
         val fs = PlatformFileSystem()
+        // PlatformFileSystem.hostDirectorySync reads through GraphScopedSession.current, which
+        // requires preload()/switchActiveGraph() to have run at least once — see
+        // HostDirectorySyncReconciliationTest.kt's identical fix for the full explanation.
+        fs.preload("/stelekit/placeholder-${Random.nextInt(0, Int.MAX_VALUE)}")
         val handle = fakeHandleWithGrantedPermission()
         fs.hostDirectorySync.lookupPersistedHandle = { handle to "/stelekit/g" }
 
@@ -90,9 +101,13 @@ class PlatformFileSystemHostSyncDelegationTest {
         assertTrue(fs.getDirtySnapshot().containsKey("Foo.md"))
         // Effect 3: OPFS mirror write scheduled (Task 1.7.1a's tracked Deferred).
         assertNotNull(fs.opfsWriteDeferredFor(path))
-        // Effect 4: HostDirectorySync.hostWritePending — enqueued asynchronously (after Epic 1.7's
-        // await), so poll for it, then poll for the flush to finish.
-        awaitCondition { "Foo.md" !in fs.hostDirectorySync.hostWritePending }
+        // Effect 4: HostDirectorySync.hostWritePending — scheduleHostWriteThrough enqueues it
+        // asynchronously inside its own scope.launch, so hostWritePending is empty both *before*
+        // that launch has run and *after* the flush succeeds — checking "not in map" first is
+        // racy and can spuriously pass at t=0 (see HostDirectorySyncWriteThroughTest's identical
+        // fix). Anchor on the write-side-effect counter instead, which starts at 0 and cannot be
+        // trivially satisfied before the real host write happens.
+        awaitCondition { writableRootCreateWritableCallCount(root) >= 1 }
         assertTrue(writableRootCreateWritableCallCount(root) >= 1, "the host write must actually have been attempted")
         assertEquals("new content", writableRootGetContent(root, "Foo.md"))
     }
@@ -151,5 +166,69 @@ class PlatformFileSystemHostSyncDelegationTest {
         withContext(Dispatchers.Default) { delay(50) }
         assertEquals(0, fs.hostDirectorySync.hostWritePending.size, "applyRemoteContent must never write-through")
         assertEquals(0, writableRootCreateWritableCallCount(root))
+    }
+
+    // ── Epic 2.2 (Story 2.2.1/2.2.2): stable flow identity + callback re-supply across a switch ──
+
+    @Test
+    fun hostAccessStateFlow_should_KeepTheSameFlowIdentityAcrossASwitch_When_ActiveGraphChanges() = runTest {
+        val fs = PlatformFileSystem()
+        val flowBeforeSwitch = fs.hostAccessStateFlow
+        fs.preload("/stelekit/${freshGraphId()}")
+        val flowAfterFirstPreload = fs.hostAccessStateFlow
+
+        fs.switchActiveGraph("/stelekit/${freshGraphId()}")
+
+        assertTrue(
+            flowBeforeSwitch === flowAfterFirstPreload && flowAfterFirstPreload === fs.hostAccessStateFlow,
+            "hostAccessStateFlow must be one PlatformFileSystem-owned StateFlow, stable across every graph switch",
+        )
+    }
+
+    @Test
+    fun setOnHostConflict_should_SurviveAGraphSwitch_When_TheCallbackWasWiredBeforeSwitching() = runTest {
+        val fs = PlatformFileSystem()
+        fs.preload("/stelekit/${freshGraphId()}")
+        val observed = mutableListOf<String>()
+        fs.setOnHostConflict { path, _ -> observed += path }
+
+        fs.switchActiveGraph("/stelekit/${freshGraphId()}")
+
+        // The freshly constructed HostDirectorySync for the new graph must have received the same
+        // callback via buildGraphSyncSession's Callbacks bundle — never silently reset to the
+        // buffering/no-op default just because a graph switch replaced the instance.
+        fs.hostDirectorySync.onHostConflict(GraphRootedPath.of("/stelekit/probe/Foo.md", null), "conflicting content")
+        assertEquals(listOf("/stelekit/probe/Foo.md"), observed)
+    }
+
+    @Test
+    fun setOnHostBytesConflict_should_SurviveAGraphSwitch_When_TheCallbackWasWiredBeforeSwitching() = runTest {
+        val fs = PlatformFileSystem()
+        fs.preload("/stelekit/${freshGraphId()}")
+        val observed = mutableListOf<String>()
+        fs.setOnHostBytesConflict { path, _ -> observed += path }
+
+        fs.switchActiveGraph("/stelekit/${freshGraphId()}")
+
+        fs.hostDirectorySync.onHostBytesConflict(
+            GraphRootedPath.of("/stelekit/probe/Foo.md.stek", null),
+            byteArrayOf(1, 2, 3),
+        )
+        assertEquals(listOf("/stelekit/probe/Foo.md.stek"), observed)
+    }
+
+    @Test
+    fun setOnHostWriteFailed_should_SurviveAGraphSwitch_When_TheCallbackWasWiredBeforeSwitching() = runTest {
+        val fs = PlatformFileSystem()
+        fs.preload("/stelekit/${freshGraphId()}")
+        val observed = mutableListOf<String>()
+        fs.setOnHostWriteFailed { error -> observed += error.path }
+
+        fs.switchActiveGraph("/stelekit/${freshGraphId()}")
+
+        fs.hostDirectorySync.onHostWriteFailed(
+            dev.stapler.stelekit.error.DomainError.FileSystemError.WriteFailed("/stelekit/probe/Foo.md", "boom"),
+        )
+        assertEquals(listOf("/stelekit/probe/Foo.md"), observed)
     }
 }

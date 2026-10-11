@@ -211,6 +211,10 @@ class RestrictedDatabaseQueries(
         queries.updatePageProperties(properties, uuid)
 
     @DirectSqlWrite
+    suspend fun updatePageFilePathByUuid(file_path: String, uuid: String): Long =
+        queries.updatePageFilePathByUuid(file_path, uuid)
+
+    @DirectSqlWrite
     suspend fun updatePageFavorite(is_favorite: Long?, uuid: String): Long =
         queries.updatePageFavorite(is_favorite, uuid)
 
@@ -473,10 +477,13 @@ class RestrictedDatabaseQueries(
         poll_interval_minutes: Long,
         auto_commit: Long,
         commit_message_template: String,
+        clone_depth_state: String,
+        shallow_depth: Long?,
     ) = queries.insertOrReplaceGitConfig(
         graph_id, repo_root, wiki_subdir, remote_name, remote_branch,
         auth_type, ssh_key_path, ssh_key_passphrase_key, https_token_key, oauth_token_key,
         poll_interval_minutes, auto_commit, commit_message_template,
+        clone_depth_state, shallow_depth,
     )
 
     @DirectSqlWrite
@@ -684,4 +691,19 @@ class RestrictedDatabaseQueries(
         uuid, file_path, relative_path, media_type, subfolder, tags, auto_labels,
         ocr_text, cloud_description, page_uuids, size_bytes, imported_at_ms, content_hash,
     )
+
+    // ── Storage location writes ───────────────────────────────────────────────
+
+    @DirectSqlWrite
+    suspend fun upsertStorageLocation(
+        graph_id: String,
+        kind: String,
+        tree_uri: String?,
+        real_path: String?,
+        display_name: String?,
+        updated_at_epoch_ms: Long,
+    ) = queries.upsertStorageLocation(graph_id, kind, tree_uri, real_path, display_name, updated_at_epoch_ms)
+
+    @DirectSqlWrite
+    suspend fun deleteStorageLocation(graph_id: String) = queries.deleteStorageLocation(graph_id)
 }

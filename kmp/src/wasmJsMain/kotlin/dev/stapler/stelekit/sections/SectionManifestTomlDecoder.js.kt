@@ -6,3 +6,5 @@ internal actual fun decodeSectionManifestToml(content: String): SectionManifest?
 
 internal actual fun encodeSectionManifestToml(manifest: SectionManifest): String =
     throw UnsupportedOperationException("TOML encoding not supported on WASM")
+
+internal actual val TOML_PARSING_SUPPORTED: Boolean = false

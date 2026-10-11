@@ -86,6 +86,10 @@ fun folderSyncBadgeContent(
 ): FolderSyncBadgeContent? = when (state) {
     is HostAccessState.NotApplicable -> null
 
+    // Task 4.1.3a: renders nothing, same as NotApplicable — an explicit unlink is not a broken
+    // state needing "Reconnect"/"Grant access" copy, it's the graph back to OPFS-only on purpose.
+    is HostAccessState.Unlinked -> null
+
     is HostAccessState.Disconnected -> FolderSyncBadgeContent(
         text = "Folder not found — Reconnect",
         clickable = true,
@@ -126,6 +130,7 @@ fun folderSyncBadgeContent(
 // variant would compile-error in [folderSyncBadgeContent] but silently fall through here.
 private fun folderSyncBadgeIcon(state: HostAccessState): ImageVector = when (state) {
     is HostAccessState.NotApplicable -> Icons.Default.Folder
+    is HostAccessState.Unlinked -> Icons.Default.Folder
     is HostAccessState.PromptNeeded -> Icons.Default.Folder
     is HostAccessState.Denied -> Icons.Default.Folder
     is HostAccessState.Disconnected -> Icons.Default.FolderOff

@@ -1,5 +1,7 @@
 package dev.stapler.stelekit.error
 
+import dev.stapler.stelekit.merge.WriteRefusedReason
+
 sealed interface DomainError {
     val message: String
 
@@ -26,6 +28,8 @@ sealed interface DomainError {
             override val message: String = "Empty file: $path"
         }
         data class InvalidSyntax(override val message: String) : ParseError
+        /** Recognized head symbol, but an argument shape outside the supported grammar. */
+        data class UnsupportedForm(override val message: String) : ParseError
         data class MalformedMarkdown(override val message: String) : ParseError
     }
 
@@ -90,6 +94,10 @@ sealed interface DomainError {
         data object Offline : GitError {
             override val message: String = "No network connection available"
         }
+        /** An automatic sync was skipped: a branch repair awaits the user's first-sync review. */
+        data object FirstSyncReviewPending : GitError {
+            override val message: String = "Waiting for you to review the first sync"
+        }
         data object EditingInProgress : GitError {
             override val message: String = "Cannot sync while editing is in progress"
         }
@@ -102,6 +110,56 @@ sealed interface DomainError {
                 "File too large to sync: $path ($sizeBytes bytes exceeds max of $maxBytes bytes)"
         }
         data class NetworkFailure(override val message: String) : GitError
+        data class WorkingTreeSyncFailed(val direction: String, val path: String, override val message: String) : GitError
+        data class WorkingTreeWriteBackFailed(val path: String, override val message: String) : GitError
+        data class WorkingTreeConcurrentEditDetected(val path: String) : GitError {
+            override val message: String = "Local file changed during sync: $path"
+        }
+
+        /**
+         * `runGitTransportOpWithRetry` (git-sync-resilience Story 1.2.2) gave up after [attempts]
+         * transient-classified retries — distinguishes "retried and still failed" from a
+         * first-try failure so the UI/logs can tell the two apart. [lastError] is the
+         * [GitError] the final attempt would have produced on its own.
+         */
+        data class RetryExhausted(val attempts: Int, val lastError: GitError) : GitError {
+            override val message: String = "Retry exhausted after $attempts attempts: ${lastError.message}"
+        }
+
+        /**
+         * git-sync-resilience Story 2.1.5: returned by `merge()` instead of calling JGit's
+         * `MergeCommand` when a shallow clone's local history doesn't reliably cover the true
+         * merge base with the remote ref — see `isShallowHistoryInsufficientForMerge` in
+         * `GitOperationSupport.kt` for the absent/wrong-but-present detection this guards against.
+         */
+        data object ShallowHistoryInsufficient : GitError {
+            override val message: String =
+                "This graph's local history doesn't go back far enough to merge safely — " +
+                    "contact support or re-clone with full history"
+        }
+
+        /**
+         * The configured `<remote>/<branch>` has no remote-tracking ref after a fetch — the remote
+         * simply has no such branch. Deterministic, so never retried. [available] lists the
+         * branches the remote does have (short names), so the UI can offer a repair.
+         */
+        data class RemoteBranchNotFound(
+            val remote: String,
+            val branch: String,
+            val available: List<String>,
+        ) : GitError {
+            override val message: String = "Branch '$branch' not found on remote — tap to fix"
+        }
+
+        /** The remote has no branches at all (nothing to fetch yet). */
+        data object RemoteEmpty : GitError {
+            override val message: String = "Remote is empty — push a commit first or check the URL"
+        }
+
+        /** The configured remote or branch name is not a valid git ref name (config corruption). */
+        data class InvalidRefName(val name: String) : GitError {
+            override val message: String = "Branch name '$name' is not valid — tap for details"
+        }
     }
 
     sealed interface AttachmentError : DomainError {
@@ -114,6 +172,16 @@ sealed interface DomainError {
         data class SerializationFailed(override val message: String) : ExportError
         data class ClipboardFailed(override val message: String) : ExportError
         data class ShareFailed(override val message: String) : ExportError
+
+        /**
+         * JPEG encode failure at [dev.stapler.stelekit.ui.annotate.AnnotationExporter.bakeAndEncode]'s
+         * boundary — the underlying [dev.stapler.stelekit.ui.annotate.ImageEncoder.encodeToJpeg]
+         * actual returned an empty [ByteArray] (its own contract for "failed", matched on all four
+         * platforms). [message] is a fixed, non-diagnostic literal; the specific cause (JS
+         * exception, missing canvas context, oversized image) is logged via `println` at the
+         * wasmJs call site only, matching the existing `OpfsInterop.kt` convention.
+         */
+        data class EncodingFailed(override val message: String) : ExportError
     }
 
     /**
@@ -155,6 +223,51 @@ sealed interface DomainError {
                 "Overwrite failed after clearing previous content for page $pageUuid — previous content may be lost"
         }
     }
+
+    /** Cross-graph merge/share failures (ADR-001). */
+    sealed interface MergeError : DomainError {
+        /** The target writer wrote nothing; copy fails the page definitively, share queues it. */
+        data class WriteRefused(val reason: WriteRefusedReason) : MergeError {
+            override val message: String = reason.message
+        }
+
+        /** Nothing was written; the target was mid-switch or closed under the writer. Merge keeps the page staged, share queues it. */
+        data class Retryable(override val message: String) : MergeError
+    }
+
+    /** Failure modes for relocate/link storage-move operations (ADR-001). */
+    sealed interface StorageError : DomainError {
+        data class VerificationFailed(val path: String, val reason: String) : StorageError {
+            override val message: String = "Verification failed for $path: $reason"
+        }
+        data class SourceInFlight(val reason: String) : StorageError {
+            override val message: String = "Source is still in flight: $reason"
+        }
+        data class DestinationNotWritable(val path: String) : StorageError {
+            override val message: String = "Destination not writable: $path"
+        }
+        data class PartialCopyDetected(val path: String) : StorageError {
+            override val message: String = "Partial copy detected at $path"
+        }
+        data class InsufficientSpace(val requiredBytes: Long, val availableBytes: Long) : StorageError {
+            override val message: String =
+                "Insufficient space: required $requiredBytes bytes, available $availableBytes bytes"
+        }
+        data class QuiesceTimedOut(val waitedMs: Long) : StorageError {
+            override val message: String = "Timed out after ${waitedMs}ms waiting for in-flight sync to quiesce"
+        }
+        data class RelocationFailed(val path: String) : StorageError {
+            override val message: String = "Failed to rename $path"
+        }
+
+        /**
+         * Worse than every other leaf here: the driver may now be stuck closed rather than back
+         * at its pre-move state (see `GraphRelocationCoordinator`, Story 3.1.5).
+         */
+        data class ReopenFailed(val graphId: String) : StorageError {
+            override val message: String = "Failed to reopen graph after relocate: $graphId"
+        }
+    }
 }
 
 fun Throwable.toDatabaseError(): DomainError.DatabaseError.WriteFailed =
@@ -171,6 +284,7 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.FileSystemError.DeleteFailed -> "File delete failed"
     is DomainError.ParseError.EmptyFile -> "File is empty"
     is DomainError.ParseError.InvalidSyntax -> "Parse error"
+    is DomainError.ParseError.UnsupportedForm -> "Unsupported form"
     is DomainError.ParseError.MalformedMarkdown -> "Malformed markdown"
     is DomainError.ConflictError.DiskConflict -> "Disk conflict detected"
     is DomainError.ConflictError.ConcurrentWrite -> "Concurrent write conflict"
@@ -198,16 +312,26 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.GitError.NotSupported -> message
     is DomainError.GitError.Offline -> message
     is DomainError.GitError.EditingInProgress -> message
+    is DomainError.GitError.FirstSyncReviewPending -> message
     is DomainError.GitError.CredentialExpired -> "GitHub authentication expired — tap to re-connect"
     is DomainError.GitError.RateLimited -> "Rate limited — retrying automatically"
     is DomainError.GitError.FileTooLarge -> "File too large to sync: ${path}"
     is DomainError.GitError.NetworkFailure -> "Network error — sync will retry"
+    is DomainError.GitError.WorkingTreeSyncFailed -> "Sync failed: $path"
+    is DomainError.GitError.WorkingTreeWriteBackFailed -> "Write-back failed: $path"
+    is DomainError.GitError.WorkingTreeConcurrentEditDetected -> message
+    is DomainError.GitError.RetryExhausted -> message
+    is DomainError.GitError.ShallowHistoryInsufficient -> message
+    is DomainError.GitError.RemoteBranchNotFound -> message
+    is DomainError.GitError.RemoteEmpty -> message
+    is DomainError.GitError.InvalidRefName -> message
     is DomainError.AttachmentError.CopyFailed -> "Attachment failed"
     is DomainError.AttachmentError.PickerFailed -> "Could not open file picker"
     is DomainError.AttachmentError.AssetsDirectoryFailed -> "Cannot create assets directory"
     is DomainError.ExportError.SerializationFailed -> "Export failed"
     is DomainError.ExportError.ClipboardFailed -> "Clipboard write failed"
     is DomainError.ExportError.ShareFailed -> "Share failed"
+    is DomainError.ExportError.EncodingFailed -> "Export failed"
     is DomainError.QrTransferError.ChunkDecodeFailed -> "Couldn't read that QR code — try again"
     is DomainError.QrTransferError.IntegrityCheckFailed -> "This transfer looks corrupted — please try scanning again"
     is DomainError.QrTransferError.PayloadTooLarge -> "This page is too large to send via QR"
@@ -215,6 +339,16 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.QrTransferError.EnvelopeMalformed -> "This transfer didn't include valid page info — please try sending it again"
     is DomainError.QrTransferError.OverwriteFailedPreviousContentAffected ->
         "Overwrite failed — this page's previous content may have been affected. Please check it and try again"
+    is DomainError.MergeError.WriteRefused -> message
+    is DomainError.MergeError.Retryable -> message
+    is DomainError.StorageError.VerificationFailed -> "Verification failed — the copied files don't match the originals"
+    is DomainError.StorageError.SourceInFlight -> "Can't move right now — a sync is still in progress"
+    is DomainError.StorageError.DestinationNotWritable -> "Can't write to the selected location"
+    is DomainError.StorageError.PartialCopyDetected -> "Copy is incomplete — nothing was changed"
+    is DomainError.StorageError.InsufficientSpace -> "Not enough free space at the destination"
+    is DomainError.StorageError.QuiesceTimedOut -> "Timed out waiting for sync to finish — please try again"
+    is DomainError.StorageError.ReopenFailed -> "Move may have partially completed — please restart the app"
+    is DomainError.StorageError.RelocationFailed -> "Couldn't move file — nothing was changed"
 }
 
 fun DomainError.GitError.toSyncErrorMessage(): String = when (this) {
@@ -230,8 +364,17 @@ fun DomainError.GitError.toSyncErrorMessage(): String = when (this) {
     is DomainError.GitError.NotAGitRepo -> "Not a git repository"
     is DomainError.GitError.NotSupported -> "Git not supported on this platform"
     is DomainError.GitError.EditingInProgress -> "Editing in progress — sync will resume when idle"
+    is DomainError.GitError.FirstSyncReviewPending -> "Review the first sync to resume automatic sync"
     is DomainError.GitError.CredentialExpired -> "GitHub authentication expired — tap to re-connect"
     is DomainError.GitError.RateLimited -> "Rate limited by GitHub/GitLab — retrying automatically"
     is DomainError.GitError.FileTooLarge -> "File too large to sync: $path"
     is DomainError.GitError.NetworkFailure -> "Network error — sync will retry"
+    is DomainError.GitError.WorkingTreeSyncFailed -> "Sync failed — tap to retry"
+    is DomainError.GitError.WorkingTreeWriteBackFailed -> "Write-back failed — tap to retry"
+    is DomainError.GitError.WorkingTreeConcurrentEditDetected -> "Local file changed during sync — resolve to continue"
+    is DomainError.GitError.RetryExhausted -> "${lastError.toSyncErrorMessage()} (retried $attempts times)"
+    is DomainError.GitError.ShallowHistoryInsufficient -> "This graph's local history doesn't go back far enough to merge safely — re-clone with full history"
+    is DomainError.GitError.RemoteBranchNotFound -> message
+    is DomainError.GitError.RemoteEmpty -> message
+    is DomainError.GitError.InvalidRefName -> message
 }

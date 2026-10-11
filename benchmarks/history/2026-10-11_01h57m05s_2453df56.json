@@ -1,0 +1,122 @@
+{
+  "timestamp": "2026-10-11 01:57:05 UTC",
+  "gitSha": "2453df56",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 0,
+  "phase2Ms": 0,
+  "phase3Ms": 1,
+  "totalMs": 2,
+  "jankBaselineP50Ms": 1,
+  "jankBaselineP95Ms": 38,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.03,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 1359,
+      "pct": 33.2
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 286,
+      "pct": 7.0
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 268,
+      "pct": 6.5
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 220,
+      "pct": 5.4
+    },
+    {
+      "frame": "java.util.LinkedHashMap$Entry_[k]",
+      "samples": 191,
+      "pct": 4.7
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 89,
+      "pct": 2.2
+    },
+    {
+      "frame": "java.nio.DirectByteBuffer_[k]",
+      "samples": 82,
+      "pct": 2.0
+    },
+    {
+      "frame": "dev.stapler.stelekit.parsing.lexer.Token_[k]",
+      "samples": 74,
+      "pct": 1.8
+    },
+    {
+      "frame": "java.util.Arrays$ArrayItr_[k]",
+      "samples": 66,
+      "pct": 1.6
+    },
+    {
+      "frame": "java.lang.String[]_[k]",
+      "samples": 63,
+      "pct": 1.5
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 32193,
+      "pct": 96.7
+    },
+    {
+      "frame": "/tmp/sqlite-3.51.3.0-645ff6e3-3c62-49be-9bb9-e0a6320273b7-libsqlitejdbc.so",
+      "samples": 291,
+      "pct": 0.9
+    },
+    {
+      "frame": "fsync",
+      "samples": 160,
+      "pct": 0.5
+    },
+    {
+      "frame": "__libc_pwrite",
+      "samples": 85,
+      "pct": 0.3
+    },
+    {
+      "frame": "SR_handler",
+      "samples": 69,
+      "pct": 0.2
+    },
+    {
+      "frame": "pthread_cond_signal",
+      "samples": 57,
+      "pct": 0.2
+    },
+    {
+      "frame": "malloc",
+      "samples": 16,
+      "pct": 0.0
+    },
+    {
+      "frame": "pread",
+      "samples": 13,
+      "pct": 0.0
+    },
+    {
+      "frame": "dev/stapler/stelekit/util/ContentHasher.sha256_[1]",
+      "samples": 8,
+      "pct": 0.0
+    },
+    {
+      "frame": "clock_nanosleep",
+      "samples": 6,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": []
+}

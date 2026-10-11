@@ -43,6 +43,20 @@ interface BlockSearchRepository {
     fun countLinkedReferences(pageName: String): Flow<Either<DomainError, Long>>
 
     /**
+     * Reactive: blocks whose content begins with one of [markers] (canonical uppercase task markers)
+     * followed by a space or end-of-content. Re-emits when matching data changes.
+     */
+    fun findBlocksWithTaskMarker(markers: Set<String>, limit: Int, offset: Int): Flow<Either<DomainError, List<Block>>> =
+        unsupportedRead("findBlocksWithTaskMarker")
+
+    /**
+     * Reactive counterpart to the one-shot [getLinkedReferences] (limit/offset): re-emits whenever
+     * the block table changes. Shares its overfetch correctness guarantee (see LinkMatching.kt).
+     */
+    fun findReferencingBlocksReactive(pageName: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Block>>> =
+        unsupportedRead("findReferencingBlocksReactive")
+
+    /**
      * Find groups of blocks whose content is identical (potential duplicates).
      *
      * The implementation first queries by content_hash (fast index scan) and then

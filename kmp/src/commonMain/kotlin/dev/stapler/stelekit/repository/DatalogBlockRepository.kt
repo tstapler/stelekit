@@ -26,6 +26,7 @@ import kotlinx.coroutines.CancellationException
  * Updated to use UUID-native storage.
  */
 @OptIn(DirectRepositoryWrite::class)
+@Suppress("LargeClass")
 class DatalogBlockRepository : BlockRepository {
     private val logger = Logger("BlockRepo")
     private val writeMutex = Mutex()
@@ -128,20 +129,20 @@ class DatalogBlockRepository : BlockRepository {
     }
 
     override fun getLinkedReferences(pageName: String): Flow<Either<DomainError, List<Block>>> {
-        val wikiLinkPattern = "\\[\\[${Regex.escape(pageName)}\\]\\]".toRegex(RegexOption.IGNORE_CASE)
+        val patterns = compileLinkPatterns(pageName)
         return blocks.map { map ->
             val linkedBlocks = map.values.filter { block ->
-                wikiLinkPattern.containsMatchIn(block.content)
+                isLinkedReference(block.content, patterns)
             }
             linkedBlocks.sortedBy { it.pageUuid.value }.right()
         }
     }
 
     override fun getLinkedReferences(pageName: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Block>>> {
-        val wikiLinkPattern = "\\[\\[${Regex.escape(pageName)}\\]\\]".toRegex(RegexOption.IGNORE_CASE)
+        val patterns = compileLinkPatterns(pageName)
         return blocks.map { map ->
             val linkedBlocks = map.values.filter { block ->
-                wikiLinkPattern.containsMatchIn(block.content)
+                isLinkedReference(block.content, patterns)
             }
             linkedBlocks.sortedBy { it.pageUuid.value }.drop(offset).take(limit).right()
         }
@@ -581,6 +582,35 @@ class DatalogBlockRepository : BlockRepository {
         updatedBlocks.forEach { (uuid, block) -> current[uuid] = block }
         blocks.value = current
         refreshIndexes(current)
+    }
+
+    override fun findBlocksWithTaskMarker(
+        markers: Set<String>,
+        limit: Int,
+        offset: Int,
+    ): Flow<Either<DomainError, List<Block>>> = blocks.map { map ->
+        map.values
+            .filter { b -> markers.any { m -> b.content == m || b.content.startsWith("$m ") } }
+            .sortedByDescending { it.createdAt }
+            .drop(offset)
+            .take(limit)
+            .right()
+    }
+
+    override fun findReferencingBlocksReactive(
+        pageName: String,
+        limit: Int,
+        offset: Int,
+    ): Flow<Either<DomainError, List<Block>>> {
+        val patterns = compileLinkPatterns(pageName)
+        return blocks.map { map ->
+            map.values
+                .filter { isLinkedReference(it.content, patterns) }
+                .sortedBy { it.pageUuid.value }
+                .drop(offset)
+                .take(limit)
+                .right()
+        }
     }
 
     override fun countLinkedReferences(pageName: String): Flow<Either<DomainError, Long>> =

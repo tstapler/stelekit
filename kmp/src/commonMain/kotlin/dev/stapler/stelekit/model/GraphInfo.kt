@@ -1,7 +1,8 @@
 package dev.stapler.stelekit.model
 
-import kotlin.jvm.JvmInline
+import dev.stapler.stelekit.diagnostics.DirectoryScanResult
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmInline
 
 /** Type-safe wrapper for graph identifiers (sha256(canonicalPath).take(16)). */
 @Serializable
@@ -23,10 +24,34 @@ data class GraphInfo(
     val isParanoidMode: Boolean = false,  // True when .stele-vault is present
     val detectedRepoRoot: String? = null,
     val detectedWikiSubdir: String? = null,
+    val effectivePath: String? = null,
+    val contentMismatchDetected: Boolean = false,
+    val contentMismatchBannerDismissed: Boolean = false,
     val gitDetectionDismissed: Boolean = false,
     val browserOnlySyncBannerDismissed: Boolean = false,
     val isDemo: Boolean = false,
-)
+    /** Real host-folder name last linked via the File System Access API (web-local-folder-livesync
+     * only) — e.g. "notes" for `~/Documents/notes`. Distinct from [path], which is this graph's own
+     * internal identity path and does not change when the graph is relinked to a differently-named
+     * host folder. Null on every platform without a host-directory concept, and until first linked. */
+    val hostDirName: String? = null,
+    /** Optional user-facing note to tell graphs apart in the switcher and header. */
+    val description: String = "",
+    /** Directory scanning candidates discovered during wiki-subdir-UX detection. */
+    val directoryScanCandidates: List<DirectoryScanResult> = emptyList(),
+) {
+    val effectiveNotesPath: EffectiveNotesPath
+        get() = EffectiveNotesPath(effectivePath ?: path)
+
+    val wikiSubdirObj: WikiSubdir
+        get() = WikiSubdir(detectedWikiSubdir ?: "")
+
+    val repoRootObj: RepoRoot
+        get() = RepoRoot(detectedRepoRoot ?: path)
+
+    val location: GraphLocation
+        get() = GraphLocation.from(path, detectedRepoRoot, detectedWikiSubdir, effectivePath)
+}
 
 /**
  * Registry of all known graphs and which one is active.

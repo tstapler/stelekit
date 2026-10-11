@@ -159,12 +159,22 @@ class JournalMergeServiceTest {
 
     @Test
     fun propose_mergeProducesFewerLinesThanSides_confidenceWarningTrue() = runTest {
-        // If local and remote both have many identical repeated lines, FallbackMergeStrategy
-        // deduplicates them to a single line — far fewer than the input sides.
-        // confidenceWarning fires when proposedLines.size < maxOf(localLines, remoteLines) * 0.9.
-        val repeatedLine = "- same line"
-        val manyRepeats = (1..20).joinToString("\n") { repeatedLine }
-        val conflictContent = "<<<<<<< LOCAL\n$manyRepeats\n=======\n$manyRepeats\n>>>>>>> REMOTE"
+        // local deleted almost everything from a 20-line base (kept only the first 2 lines);
+        // remote left that region untouched. Diff3MergeStrategy correctly honors local's
+        // deletion (remote made no change there, so local's change wins cleanly, no conflict) —
+        // the resulting merge is legitimately much smaller than remote's 20 lines, which is
+        // exactly the case confidenceWarning exists to flag for user review.
+        //
+        // (This test previously relied on FallbackMergeStrategy's dedup bug — 20 *identical*
+        // lines on both sides collapsed to 1 — as a stand-in for "merge much smaller than
+        // inputs." Diff3MergeStrategy fixed that bug (identical content on both sides now
+        // correctly stays as all 20 lines, not 1), so that scenario no longer produces a small
+        // merge at all; this test now exercises a real content-loss scenario instead.)
+        val base = (1..20).joinToString("\n") { "line $it" }
+        val local = "line 1\nline 2"
+        val baseLines = base.lines()
+        val remote = baseLines.joinToString("\n") // unchanged
+        val conflictContent = "<<<<<<< LOCAL\n$local\n||||||| BASE\n$base\n=======\n$remote\n>>>>>>> REMOTE"
         val fs = StubFileSystem(readResult = conflictContent)
         val service = JournalMergeService(fileSystem = fs)
         val conflictFile = ConflictFile(
@@ -173,7 +183,7 @@ class JournalMergeServiceTest {
             hunks = emptyList(),
         )
         val proposal = service.propose(conflictFile, "/graph", writeBackupToDisk = false)
-        // Both sides have 20 lines; merge deduplicates to 1 — 1 < 20*0.9=18 → confidenceWarning=true
+        // proposedMerge = "line 1\nline 2" (2 lines); remote has 20 lines. 2 < 20*0.9=18 → true
         assertTrue(proposal.confidenceWarning, "Expected confidenceWarning=true when merge is much smaller than inputs")
     }
 

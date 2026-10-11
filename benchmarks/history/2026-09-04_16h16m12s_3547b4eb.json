@@ -1,0 +1,122 @@
+{
+  "timestamp": "2026-09-04 16:16:12 UTC",
+  "gitSha": "3547b4eb",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 1,
+  "phase2Ms": 0,
+  "phase3Ms": 1,
+  "totalMs": 2,
+  "jankBaselineP50Ms": 1,
+  "jankBaselineP95Ms": 16,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.06,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 576,
+      "pct": 38.3
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 110,
+      "pct": 7.3
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 109,
+      "pct": 7.2
+    },
+    {
+      "frame": "java.util.LinkedHashMap$Entry_[k]",
+      "samples": 94,
+      "pct": 6.2
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 55,
+      "pct": 3.7
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 44,
+      "pct": 2.9
+    },
+    {
+      "frame": "dev.stapler.stelekit.parsing.lexer.Token_[k]",
+      "samples": 35,
+      "pct": 2.3
+    },
+    {
+      "frame": "java.nio.DirectByteBuffer_[k]",
+      "samples": 34,
+      "pct": 2.3
+    },
+    {
+      "frame": "java.util.LinkedHashMap_[k]",
+      "samples": 27,
+      "pct": 1.8
+    },
+    {
+      "frame": "java.util.regex.Matcher_[k]",
+      "samples": 24,
+      "pct": 1.6
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 30379,
+      "pct": 97.3
+    },
+    {
+      "frame": "/tmp/sqlite-3.51.3.0-eeeed9f5-169f-4eab-bb70-e97d22c8b7fe-libsqlitejdbc.so",
+      "samples": 308,
+      "pct": 1.0
+    },
+    {
+      "frame": "__libc_pwrite",
+      "samples": 78,
+      "pct": 0.2
+    },
+    {
+      "frame": "fsync",
+      "samples": 54,
+      "pct": 0.2
+    },
+    {
+      "frame": "SR_handler",
+      "samples": 43,
+      "pct": 0.1
+    },
+    {
+      "frame": "pthread_cond_signal",
+      "samples": 31,
+      "pct": 0.1
+    },
+    {
+      "frame": "prctl",
+      "samples": 10,
+      "pct": 0.0
+    },
+    {
+      "frame": "pread",
+      "samples": 10,
+      "pct": 0.0
+    },
+    {
+      "frame": "malloc",
+      "samples": 7,
+      "pct": 0.0
+    },
+    {
+      "frame": "kotlin/jvm/internal/Intrinsics.checkNotNullParameter_[i]",
+      "samples": 4,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": []
+}

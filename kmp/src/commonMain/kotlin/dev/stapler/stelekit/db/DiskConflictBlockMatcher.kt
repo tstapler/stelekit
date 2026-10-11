@@ -69,8 +69,11 @@ object DiskConflictBlockMatcher {
      * Known false-positive case (fail-safe, not a safety regression): duplicate-content
      * siblings under the same parent with no actual reorder will trigger a hash collision
      * against each other and needlessly fall back to `null`, even though the positional match
-     * was correct. This never shows wrong content — it only over-triggers the existing
-     * "no match" fallback.
+     * was correct. Since [hasRealConflict] treats a `null` result as "assume a conflict," this
+     * over-trigger now surfaces as a real (if unnecessary) conflict dialog rather than a purely
+     * internal fallback — still not a safety regression (nothing is silently discarded, and
+     * every caller already showed a conflict dialog for any multi-block page before either of
+     * them adopted this matcher), but no longer literally invisible to the user either.
      */
     fun matchDiskBlockContent(
         localBlocks: List<Block>,
@@ -97,4 +100,13 @@ object DiskConflictBlockMatcher {
         }
         return matchedContent
     }
+
+    /**
+     * Single source of truth for "does this block conflict with disk" — every conflict
+     * decision must route through this rather than re-deriving the comparison at each call
+     * site (a prior one didn't, and compared this block against the whole file instead).
+     * `null` (no structural match) fails safe as a conflict rather than silently discarding.
+     */
+    fun hasRealConflict(localContent: String, diskBlockContent: String?): Boolean =
+        diskBlockContent == null || diskBlockContent != localContent
 }

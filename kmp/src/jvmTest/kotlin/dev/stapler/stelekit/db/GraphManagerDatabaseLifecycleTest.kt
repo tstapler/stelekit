@@ -10,6 +10,9 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
+import kotlin.io.path.createTempDirectory
+import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
@@ -32,6 +35,38 @@ import kotlin.test.assertSame
  * They must NOT mock the seam itself — both components are real.
  */
 class GraphManagerDatabaseLifecycleTest {
+
+    // Isolation gap found during a UX/credential-storage review session: every test here uses
+    // the literal path "/test" (and "/test/graph1"/"/test/graph2"), which DriverFactory.jvm.kt
+    // hashes into a deterministic graphId — so without this override, `DriverFactory()` writes
+    // real SQLite files to the actual dev-machine data directory (~/.local/share/stelekit,
+    // XDG_DATA_HOME, or %APPDATA%\SteleKit — see `jvmDatabaseDirectory()`), keyed by the SAME
+    // hash on every single run, forever. A run killed mid-test (e.g. a CI timeout) can leave a
+    // locked/inconsistent WAL file there that then fails every subsequent run with "database did
+    // not initialise" until someone manually finds and deletes it outside the repo — which is
+    // exactly what happened investigating this. `stelekit.devDataDir` is the same escape hatch
+    // `PlatformSettings`'s JVM actual already documents for the identical reason (dev/test
+    // launches must not share `./gradlew run`'s real app-data directory); this test class was
+    // simply never wired to set it.
+    private var originalDevDataDir: String? = null
+    private lateinit var tempDataDir: java.io.File
+
+    @BeforeTest
+    fun setUpIsolatedDataDir() {
+        originalDevDataDir = System.getProperty("stelekit.devDataDir")
+        tempDataDir = createTempDirectory("stelekit_graph_lifecycle_test_").toFile()
+        System.setProperty("stelekit.devDataDir", tempDataDir.absolutePath)
+    }
+
+    @AfterTest
+    fun tearDownIsolatedDataDir() {
+        if (originalDevDataDir != null) {
+            System.setProperty("stelekit.devDataDir", originalDevDataDir!!)
+        } else {
+            System.clearProperty("stelekit.devDataDir")
+        }
+        tempDataDir.deleteRecursively()
+    }
 
     private class StubSettings : Settings {
         private val store = mutableMapOf<String, String>()

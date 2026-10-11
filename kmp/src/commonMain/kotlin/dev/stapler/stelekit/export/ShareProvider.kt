@@ -41,4 +41,19 @@ interface ShareProvider {
         suggestedName: String,
         extension: String
     ): Either<DomainError, Boolean>
+
+    /**
+     * Save content straight into the user's Downloads folder with no dialog or share sheet.
+     * Returns a human-readable location (e.g. "Downloads/stelekit-logs.txt") on success.
+     *
+     * The default falls back to [saveToFile] for platforms without a silent-save path.
+     */
+    suspend fun saveToDownloads(
+        content: String,
+        suggestedName: String,
+        extension: String,
+    ): Either<DomainError, String> =
+        saveToFile(content, suggestedName, extension).map { saved ->
+            if (saved) "$suggestedName.$extension" else "cancelled"
+        }
 }

@@ -1,0 +1,122 @@
+{
+  "timestamp": "2026-10-05 09:03:21 UTC",
+  "gitSha": "b3051f03",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 0,
+  "phase2Ms": 0,
+  "phase3Ms": 1,
+  "totalMs": 1,
+  "jankBaselineP50Ms": 1,
+  "jankBaselineP95Ms": 29,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.03,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 1386,
+      "pct": 33.3
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 317,
+      "pct": 7.6
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 295,
+      "pct": 7.1
+    },
+    {
+      "frame": "java.util.LinkedHashMap$Entry_[k]",
+      "samples": 213,
+      "pct": 5.1
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 193,
+      "pct": 4.6
+    },
+    {
+      "frame": "dev.stapler.stelekit.parsing.lexer.Token_[k]",
+      "samples": 94,
+      "pct": 2.3
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 85,
+      "pct": 2.0
+    },
+    {
+      "frame": "java.nio.DirectByteBuffer_[k]",
+      "samples": 71,
+      "pct": 1.7
+    },
+    {
+      "frame": "java.util.LinkedHashMap_[k]",
+      "samples": 64,
+      "pct": 1.5
+    },
+    {
+      "frame": "java.util.regex.Matcher_[k]",
+      "samples": 64,
+      "pct": 1.5
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 41316,
+      "pct": 97.5
+    },
+    {
+      "frame": "/tmp/sqlite-3.51.3.0-85009719-c2ce-4e12-a040-deb7a23a37e3-libsqlitejdbc.so",
+      "samples": 264,
+      "pct": 0.6
+    },
+    {
+      "frame": "fsync",
+      "samples": 208,
+      "pct": 0.5
+    },
+    {
+      "frame": "__libc_pwrite",
+      "samples": 109,
+      "pct": 0.3
+    },
+    {
+      "frame": "SR_handler",
+      "samples": 57,
+      "pct": 0.1
+    },
+    {
+      "frame": "pthread_cond_signal",
+      "samples": 51,
+      "pct": 0.1
+    },
+    {
+      "frame": "clock_nanosleep",
+      "samples": 15,
+      "pct": 0.0
+    },
+    {
+      "frame": "pread",
+      "samples": 10,
+      "pct": 0.0
+    },
+    {
+      "frame": "dev/stapler/stelekit/parsing/lexer/Lexer.isSpecial_[1]",
+      "samples": 7,
+      "pct": 0.0
+    },
+    {
+      "frame": "prctl",
+      "samples": 6,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": []
+}

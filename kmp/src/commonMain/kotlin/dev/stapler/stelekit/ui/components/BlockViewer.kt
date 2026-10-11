@@ -3,6 +3,7 @@ package dev.stapler.stelekit.ui.components
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.input.pointer.isShiftPressed
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.material3.MaterialTheme
@@ -57,6 +58,7 @@ internal fun BlockViewer(
     onUnavailableLinkTap: () -> Unit = {},
 ) {
     val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+    val windowInfo = androidx.compose.ui.platform.LocalWindowInfo.current
     WikiLinkText(
         text = content,
         textColor = if (textColor != Color.Unspecified) textColor else MaterialTheme.colorScheme.onBackground,
@@ -72,7 +74,9 @@ internal fun BlockViewer(
                 // Ignore if can't open URL
             }
         },
-        onClick = if (isShiftDown) onShiftClick else onStartEditing,
+        // Shift is read live at click time; the tracked isShiftDown can stick true when a Shift
+        // key-up is lost (e.g. browser focus change), turning every click into a range-select.
+        onClick = { if (isShiftDown && windowInfo.keyboardModifiers.isShiftPressed) onShiftClick() else onStartEditing() },
         modifier = modifier.fillMaxWidth(),
         isInSelectionMode = isInSelectionMode,
         onToggleSelect = onToggleSelect,

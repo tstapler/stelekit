@@ -7,8 +7,10 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
  * Tests for the legacy (non-SAF) path validation logic in [PlatformFileSystem].
@@ -112,5 +114,160 @@ class LegacyPathValidationTest {
         // homeDir is a directory, not a file — readFile must return null gracefully
         assertNull(fs().readFile(homeDir),
             "homeDir is a directory, not a file — readFile must return null without crashing")
+    }
+
+    // -------------------------------------------------------------------------
+    // context.filesDir as a second allowed root (Story 2.2.1/2.2.2 "App storage"): before this
+    // fix, validateLegacyPath only ever allowed homeDir (the public Documents dir), so a graph
+    // rooted at PlatformFileSystem.newAppOwnedGraphPath() — under context.filesDir — could not
+    // read or write a single page. See validateLegacyPath's own comment for the root cause.
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `writeFile and readFile round-trip for a path under context filesDir`() {
+        val fs = fs()
+        val path = context.filesDir.resolve("graphs/g1/pages/test.md").absolutePath
+
+        assertTrue(fs.writeFile(path, "hello"), "writeFile must succeed for a filesDir-rooted AppOwned path")
+        assertEquals("hello", fs.readFile(path))
+    }
+
+    @Test
+    fun `newAppOwnedGraphPath produces a path that is both filesDir-rooted and writable`() {
+        val fs = fs()
+        val path = fs.newAppOwnedGraphPath()
+
+        assertTrue(
+            path.startsWith(context.filesDir.canonicalPath),
+            "newAppOwnedGraphPath() must be rooted under context.filesDir, was: $path",
+        )
+        assertTrue(fs.writeFile("$path/pages/test.md", "hello"))
+    }
+
+    // -------------------------------------------------------------------------
+    // Containment boundary regression: a prefix-collision string match must not substitute for
+    // an actual directory-boundary check, and the filesDir root must be scoped to graphs/, not
+    // all of filesDir (databases, prefs, cache). See validateLegacyPath's own comment.
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `writeFile rejects a sibling directory whose name merely prefix-collides with filesDir`() {
+        val fs = fs()
+        // "filesDir" + "Evil" starts with the same characters as filesDir's canonical path but is
+        // a completely different, sibling directory — startsWith(root) alone would wrongly accept it.
+        val collidingPath = "${context.filesDir.canonicalPath}Evil/graphs/g1/pages/test.md"
+
+        assertFalse(
+            fs.writeFile(collidingPath, "malicious"),
+            "A sibling directory that merely string-prefixes filesDir must be rejected, not treated as contained",
+        )
+    }
+
+    @Test
+    fun `readFile rejects a sibling directory whose name merely prefix-collides with homeDir`() {
+        val fs = fs()
+        val collidingPath = "${homeDir}Evil/notes.md"
+
+        assertNull(
+            fs.readFile(collidingPath),
+            "A sibling directory that merely string-prefixes homeDir must be rejected, not treated as contained",
+        )
+    }
+
+    @Test
+    fun `writeFile and readFile round-trip for a genuine path under filesDir graphs`() {
+        val fs = fs()
+        val path = context.filesDir.resolve("graphs/g2/pages/real.md").absolutePath
+
+        assertTrue(fs.writeFile(path, "genuine"), "A real path under filesDir/graphs must be accepted")
+        assertEquals("genuine", fs.readFile(path))
+    }
+
+    @Test
+    fun `writeFile rejects a path under filesDir but outside the graphs subdirectory`() {
+        val fs = fs()
+        // e.g. an app database file living directly under filesDir, outside graphs/ — the
+        // pre-fix code allowed the whole of filesDir, which is a far wider blast radius than
+        // AppOwned graph content actually needs.
+        val dbPath = context.filesDir.resolve("databases/stelekit.db").absolutePath
+
+        assertFalse(
+            fs.writeFile(dbPath, "corrupt"),
+            "Paths under filesDir but outside filesDir/graphs must be rejected now that scope is narrowed",
+        )
+    }
+
+    @Test
+    fun `readFile rejects a path under filesDir but outside the graphs subdirectory`() {
+        val fs = fs()
+        val prefsPath = context.filesDir.resolve("shared_prefs/settings.xml").absolutePath
+
+        assertNull(
+            fs.readFile(prefsPath),
+            "Paths under filesDir but outside filesDir/graphs must be rejected now that scope is narrowed",
+        )
+    }
+
+    // -------------------------------------------------------------------------
+    // legacyReadFileBytes (readFileBytes for non-saf:// paths) has its own, separate containment
+    // check — not routed through validateLegacyPath — so it needs the same boundary-bug regression
+    // coverage independently. See legacyReadFileBytes's own comment for the allowed-root rationale.
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `readFileBytes rejects a sibling directory whose name merely prefix-collides with filesDir`() {
+        val fs = fs()
+        val collidingPath = "${context.filesDir.canonicalPath}Evil/graphs/g1/pages/test.md"
+
+        assertNull(
+            fs.readFileBytes(collidingPath),
+            "A sibling directory that merely string-prefixes filesDir must be rejected, not treated as contained",
+        )
+    }
+
+    @Test
+    fun `readFileBytes rejects a sibling directory whose name merely prefix-collides with cacheDir`() {
+        val fs = fs()
+        val collidingPath = "${context.cacheDir.canonicalPath}Evil/photo.jpg"
+
+        assertNull(
+            fs.readFileBytes(collidingPath),
+            "A sibling directory that merely string-prefixes cacheDir must be rejected, not treated as contained",
+        )
+    }
+
+    @Test
+    fun `readFileBytes rejects a path under filesDir but outside the graphs subdirectory`() {
+        val fs = fs()
+        val dbPath = context.filesDir.resolve("databases/stelekit.db").absolutePath
+
+        assertNull(
+            fs.readFileBytes(dbPath),
+            "Paths under filesDir but outside filesDir/graphs must be rejected — legacyReadFileBytes" +
+                " must not be usable to read the app's own databases",
+        )
+    }
+
+    @Test
+    fun `readFileBytes round-trips for a genuine path under filesDir graphs`() {
+        val fs = fs()
+        val path = context.filesDir.resolve("graphs/g3/assets/real.png").absolutePath
+
+        assertTrue(fs.writeFileBytes(path, byteArrayOf(1, 2, 3)), "writeFileBytes must succeed under filesDir/graphs")
+        assertTrue(fs.readFileBytes(path)?.contentEquals(byteArrayOf(1, 2, 3)) == true)
+    }
+
+    @Test
+    fun `readFileBytes round-trips for a genuine path under cacheDir`() {
+        // Mirrors legitimate legacy attachment sources (camera captures, photo picker, voice
+        // recorder), which write bytes under cacheDir via raw java.io.File APIs (not
+        // FileSystem.writeFileBytes — cacheDir is not a validateLegacyPath-allowed write root)
+        // before ImageImportService copies them into a graph via readFileBytes.
+        val fs = fs()
+        val file = context.cacheDir.resolve("captures/photo.jpg")
+        file.parentFile?.mkdirs()
+        file.writeBytes(byteArrayOf(4, 5, 6))
+
+        assertTrue(fs.readFileBytes(file.absolutePath)?.contentEquals(byteArrayOf(4, 5, 6)) == true)
     }
 }

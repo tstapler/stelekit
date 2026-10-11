@@ -2,6 +2,7 @@ package dev.stapler.stelekit.repository
 
 import arrow.core.Either
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.merge.SelectionFilter
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
@@ -10,7 +11,13 @@ import kotlinx.coroutines.flow.Flow
 
 interface SearchRepository {
     fun searchBlocksByContent(query: String, limit: Int = 50, offset: Int = 0): Flow<Either<DomainError, List<Block>>>
-    fun searchPagesByTitle(query: String, limit: Int = 20): Flow<Either<DomainError, List<Page>>>
+    fun searchPagesByTitle(query: String, limit: Int = 20, offset: Int = 0): Flow<Either<DomainError, List<Page>>>
+    /**
+     * Exact number of [searchPagesByTitle] hits for [query] passing [filter] in one query, or null when this
+     * backend can't count that way (tag filters, no FTS); callers then scan hits in bounded pages.
+     */
+    suspend fun countPagesByTitle(query: String, filter: SelectionFilter): Either<DomainError, Long?> = Either.Right(null)
+
     fun findBlocksReferencing(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>>
     fun searchWithFilters(searchRequest: SearchRequest): Flow<Either<DomainError, SearchResult>>
 

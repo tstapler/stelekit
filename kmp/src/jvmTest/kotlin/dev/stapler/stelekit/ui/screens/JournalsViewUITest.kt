@@ -282,4 +282,58 @@ class JournalsViewUITest {
             finalOrder,
         )
     }
+
+    // Click-and-drag block multi-select: dragging from a block's bullet ("Select blocks")
+    // down across two further rows should select the contiguous run it crossed, mirroring
+    // shift-click's range semantics (BlockList resolves the drag internally via
+    // onEnterSelectionMode + onShiftClick — see BlockList.kt's onLassoDragStart/onLassoDrag).
+    @Test
+    fun `dragging a block's bullet lasso-selects the rows it crosses`() {
+        val pageRepo = PopulatedFakePageRepository()
+        val now = Clock.System.now()
+        val blocks = listOf(
+            Block(uuid = BlockUuid("lasso-first"), pageUuid = PageUuid("journal-1"), content = "First", position = "a0", createdAt = now, updatedAt = now),
+            Block(uuid = BlockUuid("lasso-second"), pageUuid = PageUuid("journal-1"), content = "Second", position = "a1", createdAt = now, updatedAt = now),
+            Block(uuid = BlockUuid("lasso-third"), pageUuid = PageUuid("journal-1"), content = "Third", position = "a2", createdAt = now, updatedAt = now),
+        )
+        val blockRepo = FakeBlockRepository(mapOf("journal-1" to blocks))
+        val fileSystem = FakeFileSystem()
+        val journalService = JournalService(pageRepo, blockRepo)
+        val graphLoader = GraphLoader(fileSystem, pageRepo, blockRepo)
+        val scope = CoroutineScope(Dispatchers.Unconfined)
+        val blockStateManager = BlockStateManager(blockRepo, graphLoader, scope)
+        val viewModel = JournalsViewModel(journalService, blockStateManager, scope)
+
+        composeTestRule.setContent {
+            MaterialTheme {
+                JournalsView(
+                    viewModel = viewModel,
+                    isDebugMode = false,
+                    onLinkClick = {},
+                )
+            }
+        }
+
+        composeTestRule.waitUntil(timeoutMillis = 3000) {
+            composeTestRule.onAllNodesWithContentDescription("Select blocks")
+                .fetchSemanticsNodes().size >= 3
+        }
+
+        // Drag from the first block's bullet down past the third block's row — the lasso
+        // should extend the selection to every row it crosses along the way, same as the
+        // reorder-drag test above overshoots past its target row.
+        composeTestRule.onAllNodesWithContentDescription("Select blocks")[0].performTouchInput {
+            down(center)
+            moveBy(Offset(0f, 500f))
+            up()
+        }
+
+        composeTestRule.waitForIdle()
+
+        org.junit.Assert.assertEquals(
+            setOf("lasso-first", "lasso-second", "lasso-third"),
+            viewModel.selectedBlockUuids.value,
+        )
+        org.junit.Assert.assertTrue(viewModel.isInSelectionMode.value)
+    }
 }

@@ -1,6 +1,5 @@
 package dev.stapler.stelekit.platform
 
-import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -27,9 +26,17 @@ internal class ShadowFlushActor(
     private val onPreFlush: (suspend (safPath: String) -> Unit)? = null,
     private val onFlushed: (suspend (safPath: String) -> Unit)? = null,
     private val onFlushFailed: (suspend (safPath: String) -> Unit)? = null,
+    private val spanEmitter: dev.stapler.stelekit.performance.SpanEmitter? = null,
 ) {
     companion object {
-        private const val TAG = "ShadowFlushActor"
+        private val logger = dev.stapler.stelekit.logging.Logger("ShadowFlushActor")
+    }
+
+    /** Redacts [this] to an opaque hash-derived token — SAF paths can contain user directory names. */
+    private fun String.redactPath(): String {
+        if (isEmpty()) return this
+        val hash = dev.stapler.stelekit.util.ContentHasher.sha256ForContent(this).take(8)
+        return "<redacted:$hash>"
     }
 
     /** Drain all pending dirty pages to SAF. Suspends until the queue is empty or all retries exhausted. */
@@ -51,13 +58,13 @@ internal class ShadowFlushActor(
                 .takeIf { it.isNotEmpty() } ?: return
 
             val shadowFile = shadowCache.resolve(relativePath) ?: run {
-                Log.w(TAG, "flushPage: shadow missing for $relativePath — dequeuing without flush")
+                logger.warn("flushPage: shadow missing for $relativePath — dequeuing without flush")
                 queue.dequeue(safPath)
                 return
             }
             val content = try { shadowFile.readText() } catch (e: Exception) {
                 if (e is CancellationException) throw e
-                Log.w(TAG, "flushPage: failed to read shadow for $relativePath", e); return
+                logger.warn("flushPage: failed to read shadow for $relativePath", e); return
             }
 
             // Pre-mark before the SAF write so any concurrent detectChanges poll skips this
@@ -66,7 +73,13 @@ internal class ShadowFlushActor(
             onPreFlush?.invoke(safPath)
             writeStarted = true
 
+            val writeSpanStart = dev.stapler.stelekit.performance.HistogramWriter.epochMs()
             val ok = fileSystem.writeFile(safPath, content)
+            spanEmitter?.emit(
+                name = "file.write.deferred",
+                startMs = writeSpanStart,
+                attrs = mapOf("path" to safPath.redactPath()),
+            )
             if (ok) {
                 writeSucceeded = true
                 queue.dequeue(safPath)
@@ -81,11 +94,10 @@ internal class ShadowFlushActor(
                 // does not emit a spurious own-write event (critical for .md.stek files
                 // where the content-hash guard is disabled). Also replaces the MAX_VALUE sentinel.
                 onFlushed?.invoke(safPath)
-                Log.d(TAG, "flushPage: flushed $relativePath to SAF")
             } else {
                 // Remove the sentinel so the file is not permanently suppressed.
                 onFlushFailed?.invoke(safPath)
-                Log.w(TAG, "flushPage: SAF write failed for $relativePath — will retry")
+                logger.warn("flushPage: SAF write failed for $relativePath — will retry")
             }
         } catch (e: CancellationException) {
             if (writeStarted && !writeSucceeded) {
@@ -100,7 +112,7 @@ internal class ShadowFlushActor(
                     if (inner is CancellationException) throw inner
                 }
             }
-            Log.e(TAG, "flushPage: unexpected error for $safPath", e)
+            logger.error("flushPage: unexpected error for $safPath", e)
         }
     }
 }

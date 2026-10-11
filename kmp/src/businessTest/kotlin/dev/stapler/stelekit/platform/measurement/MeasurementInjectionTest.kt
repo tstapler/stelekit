@@ -11,12 +11,15 @@ import dev.stapler.stelekit.model.Calibration
 import dev.stapler.stelekit.platform.measurement.keyboard.KeyboardEmulationDevice
 import dev.stapler.stelekit.repository.InMemoryMeasurementAnnotationRepository
 import dev.stapler.stelekit.ui.annotate.AnnotationEditorViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -101,8 +104,12 @@ class MeasurementInjectionTest {
         assertEquals(DeviceConnectionState.DISCONNECTED, vm.deviceConnectionState.value)
     }
 
+    // Test functions below wrap their bodies in withContext(Dispatchers.Default) — a real,
+    // wall-clock dispatcher — because delay() here must actually wait for the ViewModel's own
+    // (non-test-injectable) Dispatchers.Default scope, not be virtual-time-skipped by runTest.
+
     @Test
-    fun `injectMeasurementFromDevice updates annotation valueMeters from BLE reading`() {
+    fun `injectMeasurementFromDevice updates annotation valueMeters from BLE reading`() = runTest {
         // injectMeasurementFromDevice() is non-suspending — it launches a coroutine on the
         // ViewModel's internal Dispatchers.Default scope. We call it directly (no extra launch
         // wrapper), emit the reading a tick later, then give Dispatchers.Default time to finish.
@@ -110,12 +117,12 @@ class MeasurementInjectionTest {
         val device = FakeMeasurementDevice(deviceId = "leica-test")
         vm.setActiveDevice(device)
 
-        kotlinx.coroutines.runBlocking {
+        withContext(Dispatchers.Default) {
             // Add a distance annotation (two points 0.1 apart on 1000px image = 100px).
             // A 2.0m reading → pixelsPerMeter = 100/2.0 = 50 px/m
             vm.addPoint(NormalizedPoint(0.1, 0.5))
             vm.addPoint(NormalizedPoint(0.2, 0.5))
-            kotlinx.coroutines.delay(300) // allow commit coroutine to save to repo
+            delay(300) // allow commit coroutine to save to repo
 
             // Verify an annotation was committed.
             assertEquals(1, vm.state.value.committedAnnotations.size, "Expected 1 committed annotation")
@@ -124,10 +131,10 @@ class MeasurementInjectionTest {
             // that is now blocking on device.measurementFlow().first().
             vm.injectMeasurementFromDevice()
             // Give the VM coroutine time to reach .first() before we emit.
-            kotlinx.coroutines.delay(100)
+            delay(100)
             device.emitReading(2.0)
             // Allow the injection + updateCalibration coroutines to complete on Dispatchers.Default.
-            kotlinx.coroutines.delay(500)
+            delay(500)
         }
 
         // Verify calibration updated to BLE_LASER
@@ -142,21 +149,21 @@ class MeasurementInjectionTest {
     }
 
     @Test
-    fun `injectMeasurementFromDevice updates calibration pixelsPerMeter correctly`() {
+    fun `injectMeasurementFromDevice updates calibration pixelsPerMeter correctly`() = runTest {
         val vm = makeViewModel()
         val device = FakeMeasurementDevice()
         vm.setActiveDevice(device)
 
-        kotlinx.coroutines.runBlocking {
+        withContext(Dispatchers.Default) {
             // 100px line (0.1 of 1000px image width)
             vm.addPoint(NormalizedPoint(0.0, 0.5))
             vm.addPoint(NormalizedPoint(0.1, 0.5))
-            kotlinx.coroutines.delay(300)
+            delay(300)
 
             vm.injectMeasurementFromDevice()
-            kotlinx.coroutines.delay(100)
+            delay(100)
             device.emitReading(1.0) // 100px = 1.0m → 100 px/m
-            kotlinx.coroutines.delay(500)
+            delay(500)
         }
 
         val calibration = vm.state.value.calibration
@@ -165,27 +172,27 @@ class MeasurementInjectionTest {
     }
 
     @Test
-    fun `KeyboardEmulationDevice emits reading on submitText`() {
+    fun `KeyboardEmulationDevice emits reading on submitText`() = runTest {
         val device = KeyboardEmulationDevice()
         val vm = makeViewModel()
         vm.setActiveDevice(device)
 
-        kotlinx.coroutines.runBlocking {
+        withContext(Dispatchers.Default) {
             device.connect()
 
             // Add a distance annotation (100px line on 1000px-wide image)
             vm.addPoint(NormalizedPoint(0.0, 0.5))
             vm.addPoint(NormalizedPoint(0.1, 0.5))
-            kotlinx.coroutines.delay(300) // allow commit to complete
+            delay(300) // allow commit to complete
 
             assertEquals(1, vm.state.value.committedAnnotations.size)
 
             // Start injection — synchronously launches a coroutine on Dispatchers.Default
             // that blocks on measurementFlow().first().
             vm.injectMeasurementFromDevice()
-            kotlinx.coroutines.delay(100) // give VM coroutine time to reach .first()
+            delay(100) // give VM coroutine time to reach .first()
             device.submitText("1.5 m")
-            kotlinx.coroutines.delay(500) // allow updateCalibration coroutine to complete
+            delay(500) // allow updateCalibration coroutine to complete
         }
 
         val calibration = vm.state.value.calibration
@@ -194,19 +201,19 @@ class MeasurementInjectionTest {
     }
 
     @Test
-    fun `injectMeasurementFromDevice is no-op when no device set`() {
+    fun `injectMeasurementFromDevice is no-op when no device set`() = runTest {
         val vm = makeViewModel()
 
-        kotlinx.coroutines.runBlocking {
+        withContext(Dispatchers.Default) {
             // Add an annotation
             vm.addPoint(NormalizedPoint(0.0, 0.5))
             vm.addPoint(NormalizedPoint(0.1, 0.5))
-            kotlinx.coroutines.delay(200)
-        }
+            delay(200)
 
-        // No device set — injectMeasurementFromDevice should return immediately (no-op)
-        vm.injectMeasurementFromDevice()
-        kotlinx.coroutines.runBlocking { kotlinx.coroutines.delay(100) }
+            // No device set — injectMeasurementFromDevice should return immediately (no-op)
+            vm.injectMeasurementFromDevice()
+            delay(100)
+        }
 
         // Calibration should remain unchanged (NONE)
         val calibration = vm.state.value.calibration
@@ -214,15 +221,17 @@ class MeasurementInjectionTest {
     }
 
     @Test
-    fun `injectMeasurementFromDevice is no-op when no distance annotation committed`() {
+    fun `injectMeasurementFromDevice is no-op when no distance annotation committed`() = runTest {
         val vm = makeViewModel()
         val device = FakeMeasurementDevice()
         vm.setActiveDevice(device)
 
-        // No annotations added — injection should be a no-op (returns immediately since
-        // lastOrNull returns null and the function returns early)
-        vm.injectMeasurementFromDevice()
-        kotlinx.coroutines.runBlocking { kotlinx.coroutines.delay(100) }
+        withContext(Dispatchers.Default) {
+            // No annotations added — injection should be a no-op (returns immediately since
+            // lastOrNull returns null and the function returns early)
+            vm.injectMeasurementFromDevice()
+            delay(100)
+        }
 
         // State should be unchanged
         assertEquals(emptyList(), vm.state.value.committedAnnotations)

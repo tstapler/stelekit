@@ -9,6 +9,7 @@ import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.export.ShareProvider
+import dev.stapler.stelekit.platform.toJsArrayBuffer
 import kotlinx.coroutines.await
 
 @Composable
@@ -37,6 +38,15 @@ class WasmJsShareProvider : ShareProvider {
             DomainError.ExportError.ShareFailed(e.message ?: "download failed").left()
         }
     }
+
+    /**
+     * Binary sibling of [saveToFile] (Story 2.3.3, Task 2.3.3d) — [saveToFile]/[triggerBlobDownload]
+     * only accept a `String`, which can't round-trip arbitrary bytes like a ZIP archive. Reuses the
+     * same `Blob`/`<a download>` object-URL mechanism, just with a `Uint8Array`-backed `Blob`.
+     */
+    fun saveBytesToFile(data: ByteArray, filename: String) {
+        triggerBinaryBlobDownload(data.toJsArrayBuffer(), filename)
+    }
 }
 
 private fun hasNavigatorShare(): Boolean = js("typeof navigator.share === 'function'")
@@ -44,6 +54,16 @@ private fun navigatorShareText(text: String): kotlin.js.Promise<JsAny> = js("nav
 private fun triggerBlobDownload(content: String, filename: String): Unit =
     js("""(function() {
         var blob = new Blob([content], { type: 'text/plain' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
+    })()""")
+
+private fun triggerBinaryBlobDownload(buffer: JsAny, filename: String): Unit =
+    js("""(function() {
+        var blob = new Blob([buffer], { type: 'application/zip' });
         var url = URL.createObjectURL(blob);
         var a = document.createElement('a');
         a.href = url; a.download = filename;

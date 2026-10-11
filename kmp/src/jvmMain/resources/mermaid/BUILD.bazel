@@ -1,0 +1,13 @@
+load("@rules_java//java:defs.bzl", "java_library")
+
+# Bundled mermaid.js (11.4.1) + headless-DOM shim as classpath resources, so
+# MermaidJvmEngine's javaClass.getResourceAsStream("/mermaid/...") resolves at runtime.
+java_library(
+    name = "mermaid_resources",
+    resources = [
+        "browser-shim.js",
+        "mermaid.min.js",
+    ],
+    resource_strip_prefix = "kmp/src/jvmMain/resources",
+    visibility = ["//kmp:__subpackages__"],
+)

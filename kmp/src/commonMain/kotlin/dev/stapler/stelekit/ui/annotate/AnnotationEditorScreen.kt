@@ -141,9 +141,16 @@ fun AnnotationEditorScreen(
      */
     onDownloadDepthModel: (() -> Unit)? = null,
     /**
-     * When non-null, the "Estimate depth (AI)" button is shown and tapping it calls this
+     * When non-null, shown as a Cancel action while [AnnotationEditorState.depthModelUiState] is
+     * [DepthModelUiState.Downloading].
+     */
+    onCancelDownloadDepthModel: (() -> Unit)? = null,
+    /**
+     * When non-null, the "Estimate depth (AI)" button is enabled and tapping it calls this
      * lambda. The caller (Android activity/fragment) should trigger inference and update the
      * ViewModel's [AnnotationEditorState.depthMap] via [AnnotationEditorViewModel.runDepthEstimation].
+     * When null (estimation not wired on this platform/build), the button is shown disabled with
+     * "Estimation coming soon" rather than silently doing nothing when tapped.
      */
     onEstimateDepth: (() -> Unit)? = null,
     peerCalibration: Pair<String, Calibration>? = null,
@@ -584,7 +591,8 @@ fun AnnotationEditorScreen(
                     isInferenceRunning = state.isDepthInferenceRunning,
                     depthEstimationError = state.depthEstimationError,
                     onDownload = onDownloadDepthModel ?: {},
-                    onEstimate = onEstimateDepth ?: {},
+                    onCancel = onCancelDownloadDepthModel,
+                    onEstimate = onEstimateDepth,
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .padding(start = 8.dp, top = 8.dp),
@@ -1321,8 +1329,9 @@ internal fun DepthEstimationPanel(
     isInferenceRunning: Boolean,
     depthEstimationError: String?,
     onDownload: () -> Unit,
-    onEstimate: () -> Unit,
     modifier: Modifier = Modifier,
+    onCancel: (() -> Unit)? = null,
+    onEstimate: (() -> Unit)? = null,
 ) {
     Surface(
         color = Color(0xDD1A1A1A),
@@ -1351,34 +1360,39 @@ internal fun DepthEstimationPanel(
                     }
                 }
 
-                // Model ready — show estimate button.
+                // Model ready — show estimate button. Disabled with "coming soon" copy when the
+                // caller hasn't wired real estimation (onEstimate == null) — an enabled button
+                // that silently no-ops on tap would just relocate this ticket's bug one screen
+                // deeper (see adversarial-review.md Blocker 3).
                 modelState is DepthModelUiState.Ready -> {
-                    OutlinedButton(onClick = onEstimate) {
+                    OutlinedButton(onClick = onEstimate ?: {}, enabled = onEstimate != null) {
                         Text(
-                            text = "Estimate depth (AI)",
+                            text = if (onEstimate != null) "Estimate depth (AI)" else "Estimation coming soon",
                             style = MaterialTheme.typography.labelSmall,
-                            color = Color.White,
+                            color = if (onEstimate != null) Color.White else Color.White.copy(alpha = 0.5f),
                         )
                     }
                     // ADR-005 low-confidence warning.
-                    Spacer(Modifier.height(2.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Warning,
-                            contentDescription = null,
-                            tint = Color(0xFFFFA000),
-                            modifier = Modifier.size(12.dp),
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text(
-                            text = "Low confidence — verify with reference object",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFFFFA000),
-                        )
+                    if (onEstimate != null) {
+                        Spacer(Modifier.height(2.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = null,
+                                tint = Color(0xFFFFA000),
+                                modifier = Modifier.size(12.dp),
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                text = "Low confidence — verify with reference object",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color(0xFFFFA000),
+                            )
+                        }
                     }
                 }
 
-                // Download in progress — show indeterminate progress.
+                // Download in progress — show progress plus a Cancel action.
                 modelState is DepthModelUiState.Downloading -> {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(
@@ -1393,10 +1407,22 @@ internal fun DepthEstimationPanel(
                             style = MaterialTheme.typography.labelSmall,
                             color = Color.White,
                         )
+                        if (onCancel != null) {
+                            Spacer(Modifier.width(8.dp))
+                            TextButton(
+                                onClick = onCancel,
+                                modifier = Modifier.semantics {
+                                    contentDescription = "Cancel model download"
+                                },
+                            ) {
+                                Text("Cancel", style = MaterialTheme.typography.labelSmall, color = Color.White)
+                            }
+                        }
                     }
                 }
 
-                // Download failed — show retry button.
+                // Download failed — show retry button. A stall-timeout failure carries a plain-
+                // language reason; a generic DownloadManager failure does not.
                 modelState is DepthModelUiState.Failed -> {
                     TextButton(onClick = onDownload) {
                         Icon(
@@ -1407,7 +1433,8 @@ internal fun DepthEstimationPanel(
                         )
                         Spacer(Modifier.width(4.dp))
                         Text(
-                            text = "Download failed — tap to retry",
+                            text = modelState.reason?.let { "$it Tap to retry." }
+                                ?: "Download failed — tap to retry",
                             style = MaterialTheme.typography.labelSmall,
                             color = Color(0xFFEF5350),
                         )

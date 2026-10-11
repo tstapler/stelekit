@@ -32,6 +32,7 @@ import dev.stapler.stelekit.domain.ClaudeTopicEnricherTest
 import dev.stapler.stelekit.domain.UrlFetcherJvmTest
 import dev.stapler.stelekit.export.ExportIntegrationTest
 import dev.stapler.stelekit.export.HtmlExporterTest
+import dev.stapler.stelekit.git.GitRepoHistoryStoreTest
 import dev.stapler.stelekit.integration.JournalParseReproTest
 import dev.stapler.stelekit.integration.PipelineReproductionTest
 import dev.stapler.stelekit.llm.RemoteLlmProviderTest
@@ -60,8 +61,10 @@ import dev.stapler.stelekit.transfer.qrcode.QrCodecJvmRoundTripTest
 import dev.stapler.stelekit.transfer.qrcode.QrCodecJvmTest
 import dev.stapler.stelekit.ui.DemoBannerTest
 import dev.stapler.stelekit.ui.DiskConflictResolutionTest
+import dev.stapler.stelekit.ui.GraphContentDemoFileSystemWiringTest
 import dev.stapler.stelekit.ui.GraphSwitcherDemoFilterTest
 import dev.stapler.stelekit.ui.DragDropReorderTest
+import dev.stapler.stelekit.ui.InitializingScreenThemedTest
 import dev.stapler.stelekit.ui.KeyboardShortcutTest
 import dev.stapler.stelekit.ui.MigrationReadyLoadingTest
 import dev.stapler.stelekit.ui.OutlinerRegressionTest
@@ -69,11 +72,16 @@ import dev.stapler.stelekit.ui.RecentPagesTest
 import dev.stapler.stelekit.ui.StelekitViewModelLlmSettingsTest
 import dev.stapler.stelekit.ui.StelekitViewModelLoadingTest
 import dev.stapler.stelekit.ui.components.ApplyAutocompleteSelectionTest
+import dev.stapler.stelekit.ui.components.BlockItemCodeFenceDispatchTest
+import dev.stapler.stelekit.ui.components.MermaidBlockFocusTest
+import dev.stapler.stelekit.ui.components.MermaidBlockInteractionTest
+import dev.stapler.stelekit.ui.components.MermaidBlockTest
 import dev.stapler.stelekit.ui.components.ParseMarkdownWithStylingTest
 import dev.stapler.stelekit.ui.components.SearchDialogTest
 import dev.stapler.stelekit.ui.components.SuggestionContextMenuTest
 import dev.stapler.stelekit.ui.components.SuggestionNavigatorPanelTest
 import dev.stapler.stelekit.ui.components.SuggestionRenderBenchmarkTest
+import dev.stapler.stelekit.ui.components.SyncStatusBadgeTest
 import dev.stapler.stelekit.ui.components.TopBarTest
 import dev.stapler.stelekit.ui.components.settings.AddEditLlmProviderDialogTest
 import dev.stapler.stelekit.ui.components.settings.LlmProviderListScreenTest
@@ -87,6 +95,9 @@ import dev.stapler.stelekit.ui.screens.AllPagesViewModelTest
 import dev.stapler.stelekit.ui.screens.JournalsViewSqlDelightTest
 import dev.stapler.stelekit.ui.screens.JournalsViewUITest
 import dev.stapler.stelekit.ui.screens.PageViewUITest
+import dev.stapler.stelekit.ui.screens.git.GitSetupScreenHelpersTest
+import dev.stapler.stelekit.ui.screens.git.GitSetupScreenSaveLogicTest
+import dev.stapler.stelekit.ui.screens.git.WikiSubdirUriGuardTest
 import dev.stapler.stelekit.vault.crypto.CryptoEngineTest
 import dev.stapler.stelekit.vault.integration.GraphLayerCryptoTest
 import dev.stapler.stelekit.vault.integration.VaultRoundTripTest
@@ -139,6 +150,7 @@ import org.junit.runners.Suite
     UrlFetcherJvmTest::class,
     ExportIntegrationTest::class,
     HtmlExporterTest::class,
+    GitRepoHistoryStoreTest::class,
     JournalParseReproTest::class,
     PipelineReproductionTest::class,
     ChangeApplierTest::class,
@@ -164,13 +176,20 @@ import org.junit.runners.Suite
     QrCodecJvmTest::class,
     QrCodecJvmRoundTripTest::class,
     ApplyAutocompleteSelectionTest::class,
+    BlockItemCodeFenceDispatchTest::class,
+    MermaidBlockFocusTest::class,
+    MermaidBlockInteractionTest::class,
+    MermaidBlockTest::class,
     ParseMarkdownWithStylingTest::class,
     SearchDialogTest::class,
     SuggestionContextMenuTest::class,
     SuggestionNavigatorPanelTest::class,
     SuggestionRenderBenchmarkTest::class,
+    SyncStatusBadgeTest::class,
     TopBarTest::class,
     DemoBannerTest::class,
+    GraphContentDemoFileSystemWiringTest::class,
+    InitializingScreenThemedTest::class,
     GraphSwitcherDemoFilterTest::class,
     DiskConflictResolutionTest::class,
     DragDropReorderTest::class,
@@ -185,6 +204,9 @@ import org.junit.runners.Suite
     JournalsViewSqlDelightTest::class,
     JournalsViewUITest::class,
     PageViewUITest::class,
+    GitSetupScreenHelpersTest::class,
+    GitSetupScreenSaveLogicTest::class,
+    WikiSubdirUriGuardTest::class,
     StelekitViewModelLoadingTest::class,
     StelekitViewModelLlmSettingsTest::class,
     LlmProviderListScreenTest::class,

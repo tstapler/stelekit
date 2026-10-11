@@ -5,11 +5,11 @@ on:
     branches: [main, master]
   pull_request:
     branches: [main, master]
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened]  # no ready_for_review: `opened` already fires for drafts, so this avoids a pointless duplicate full CI run on every draft->ready flip
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -19,7 +19,6 @@ jobs:
   android-benchmark:
     name: Android Instrumented Benchmark
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event.pull_request.draft == false
 
     steps:
       - uses: actions/checkout@v4

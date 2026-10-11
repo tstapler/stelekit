@@ -8,6 +8,10 @@ import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.PaintingStyle
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.unit.IntSize
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.AnnotationType
 import dev.stapler.stelekit.model.MeasurementAnnotation
 
@@ -53,15 +57,17 @@ object AnnotationExporter {
      * Bake annotations into [sourceImage] and encode as JPEG bytes using [ImageEncoder].
      *
      * @param quality JPEG quality (0–100)
-     * @return encoded bytes, or empty array on failure.
+     * @return [Either.Right] with the encoded bytes, or [Either.Left] with
+     *   [DomainError.ExportError.EncodingFailed] if [ImageEncoder.encodeToJpeg] returned no bytes
+     *   (its empty-[ByteArray] failure contract, unchanged on every platform).
      */
     fun bakeAndEncode(
         sourceImage: ImageBitmap,
         measurements: List<MeasurementAnnotation>,
         quality: Int = 90,
-    ): ByteArray {
+    ): Either<DomainError.ExportError, ByteArray> {
         val baked = bakeAnnotations(sourceImage, measurements)
-        return ImageEncoder.encodeToJpeg(baked, quality)
+        return mapEncodeResult(ImageEncoder.encodeToJpeg(baked, quality))
     }
 
     @Suppress("LongMethod")
@@ -182,3 +188,17 @@ object AnnotationExporter {
         }
     }
 }
+
+/**
+ * Maps [ImageEncoder.encodeToJpeg]'s empty-[ByteArray] failure contract to
+ * [DomainError.ExportError.EncodingFailed]. Pulled out of [AnnotationExporter.bakeAndEncode] so
+ * the failure branch is testable directly (a real 0-byte encoder failure is hard to force through
+ * the public `ImageBitmap`/`ImageEncoder` API on every platform — e.g. `ImageBitmap(0, 0)` itself
+ * throws on construction rather than reaching the encoder).
+ */
+internal fun mapEncodeResult(bytes: ByteArray): Either<DomainError.ExportError, ByteArray> =
+    if (bytes.isEmpty()) {
+        DomainError.ExportError.EncodingFailed("JPEG encode returned no bytes").left()
+    } else {
+        bytes.right()
+    }

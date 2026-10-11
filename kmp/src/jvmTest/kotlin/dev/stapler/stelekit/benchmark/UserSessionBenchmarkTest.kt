@@ -197,8 +197,13 @@ class UserSessionBenchmarkTest {
             val writer = GraphWriter(
                 fileSystem,
                 writeActor = repoSet.writeActor,
-                graphPath = tempDir.absolutePath,
-            )
+            ).also {
+                it.currentEpoch = dev.stapler.stelekit.db.GraphEpoch(
+                    graphId = dev.stapler.stelekit.model.GraphId("user-session-benchmark-test"),
+                    graphPath = tempDir.absolutePath,
+                    sequence = 1L,
+                )
+            }
 
             val deps = StelekitViewModelDependencies(
                 pageRepository   = repoSet.pageRepository,

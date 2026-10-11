@@ -41,8 +41,9 @@ import kotlinx.coroutines.flow.StateFlow
  * - The correct [defaultSection] and [SectionState] map are persisted to [Settings].
  * - [deviceSetupComplete] is stored as `true` after any wizard completion.
  * - A subsequent ViewModel instance reads `deviceSetupComplete = true` and therefore
- *   will not show the wizard again (the gating condition in [StelekitViewModel.loadSectionManifest]
- *   is `!setupComplete && manifest.sections.isNotEmpty()`).
+ *   will not show the wizard again (the gating condition in
+ *   [SectionManagementCoordinator.loadSectionManifest] is
+ *   `!setupComplete && manifest.sections.isNotEmpty()`).
  */
 class DeviceProfileTest {
 
@@ -183,7 +184,7 @@ class DeviceProfileTest {
 
         vm.completeDeviceSetup("acme-work", states)
 
-        assertEquals("acme-work", vm.uiState.value.defaultSection)
+        assertEquals(SectionId.Named("acme-work"), vm.uiState.value.defaultSection)
         assertEquals(SectionState.ACTIVE, vm.uiState.value.currentSectionStates["acme-work"])
         assertEquals(SectionState.REMOVED, vm.uiState.value.currentSectionStates["personal"])
         assertEquals(SectionState.REMOVED, vm.uiState.value.currentSectionStates["health"])
@@ -222,7 +223,7 @@ class DeviceProfileTest {
 
         vm.completeDeviceSetup("", sections.associate { it.id to SectionState.ACTIVE })
 
-        assertEquals("", vm.uiState.value.defaultSection)
+        assertEquals(SectionId.Global, vm.uiState.value.defaultSection)
         sections.forEach { s ->
             assertEquals(SectionState.ACTIVE, vm.uiState.value.currentSectionStates[s.id],
                 "${s.id} must be ACTIVE")

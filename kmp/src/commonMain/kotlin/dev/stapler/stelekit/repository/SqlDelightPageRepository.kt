@@ -3,6 +3,7 @@ package dev.stapler.stelekit.repository
 import arrow.atomic.AtomicInt
 import arrow.atomic.value
 import arrow.core.Either
+import arrow.core.getOrElse
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
@@ -12,6 +13,9 @@ import dev.stapler.stelekit.cache.LruCache
 import dev.stapler.stelekit.cache.RepoCacheConfig
 import dev.stapler.stelekit.cache.RequestCoalescer
 import dev.stapler.stelekit.db.SteleDatabase
+import dev.stapler.stelekit.merge.SelectionFilter
+import dev.stapler.stelekit.merge.SelectionSqlArgs
+import dev.stapler.stelekit.merge.toSqlArgs
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.model.SectionId
@@ -38,6 +42,8 @@ class SqlDelightPageRepository(
     private companion object {
         // Safe IN-clause size: SQLITE_MAX_VARIABLE_NUMBER is 999 on Android API < 30.
         const val IN_CLAUSE_CHUNK_SIZE = 500
+        // Row cap per filtered read and per tag second-pass batch.
+        const val FILTER_BATCH_SIZE = 100
     }
 
     private val queries = database.steleDatabaseQueries
@@ -87,7 +93,7 @@ class SqlDelightPageRepository(
                 pageByNameCache.put(page.name.lowercase(), page)
             }
             emit(page.right())
-        }.flowOn(PlatformDispatcher.DB)
+        }.flowOn(PlatformDispatcher.DB).catchDbError()
     }
 
     override fun getPageByName(name: String): Flow<Either<DomainError, Page?>> {
@@ -113,7 +119,7 @@ class SqlDelightPageRepository(
                 pageByUuidCache.put(page.uuid.value, page)
             }
             emit(page.right())
-        }.flowOn(PlatformDispatcher.DB)
+        }.flowOn(PlatformDispatcher.DB).catchDbError()
     }
 
     override fun getPagesInNamespace(namespace: String): Flow<Either<DomainError, List<Page>>> =
@@ -125,7 +131,7 @@ class SqlDelightPageRepository(
             .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
 
     override fun searchPages(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
-        queries.selectPagesByNameLikePaginated("%$query%", limit.toLong(), offset.toLong())
+        queries.selectPagesByNameLikePaginated(likeContains(query), limit.toLong(), offset.toLong())
             .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
 
     override fun getFavoritePages(): Flow<Either<DomainError, List<Page>>> =
@@ -135,6 +141,45 @@ class SqlDelightPageRepository(
             .mapToList(PlatformDispatcher.DB)
             .map { list -> list.map { it.toModel() }.right() }
             .catchDbError()
+
+    override fun getPagesWithProperty(key: String, value: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
+        val pair = "$key:$value"
+        // asFlow() re-emits the (unexecuted) query on every `pages` invalidation; the read is the paged scan below.
+        return queries.selectPagesWithPropertyPair(pair, 1L, 0L)
+            .asFlow()
+            .conflate()
+            .map { exactPropertyMatches(pair, key, value, limit, offset) }
+            .distinctUntilChanged()
+            .catchDbError()
+    }
+
+    /**
+     * Widens the SQL window until offset+limit exact matches are found: token match can't tell `tags:a,b`
+     * from `tags:a`. Capped at [MAX_LINKED_REF_ITERATIONS] windows, so a pathological graph under-returns.
+     */
+    private suspend fun exactPropertyMatches(
+        pair: String,
+        key: String,
+        value: String,
+        limit: Int,
+        offset: Int,
+    ): Either<DomainError, List<Page>> {
+        val need = (offset.toLong() + limit).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        val batchSize = maxOf(need.toLong() * 4, 100L).coerceAtMost(MAX_LINKED_REF_BATCH.toLong())
+        val accumulated = mutableListOf<Page>()
+        var sqlOffset = 0L
+        var iterations = 0
+        while (accumulated.size < need && iterations++ < MAX_LINKED_REF_ITERATIONS) {
+            val rows = queries.selectPagesWithPropertyPair(pair, batchSize, sqlOffset)
+                .asDbQueryList(PlatformDispatcher.DB) { it.toModel() }
+                .getOrElse { return it.left() }
+            rows.filterTo(accumulated) { it.properties[key] == value }
+            if (rows.size < batchSize) break
+            sqlOffset += batchSize
+        }
+        @Suppress("InMemoryPagination") // accumulated is bounded to roughly offset+limit by the loop above
+        return accumulated.drop(offset).take(limit).right()
+    }
 
     override fun getJournalPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
         queries.selectJournalPages(limit.toLong(), offset.toLong())
@@ -170,6 +215,90 @@ class SqlDelightPageRepository(
             throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.ReadFailed(e.message ?: "unknown").left()
+        }
+    }
+
+    override fun getPagesFiltered(filter: SelectionFilter, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
+        val a = filter.toSqlArgs()
+        if (filter.tagToken == null) {
+            return queries.selectPagesFilteredPaginated(
+                a.nameLo, a.nameHi, a.includeJournals, a.dateFrom, a.dateTo, a.tagLike,
+                limit.toLong().coerceAtMost(FILTER_BATCH_SIZE.toLong()), offset.toLong(),
+            ).asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
+        }
+        // Tag: SQL substring prefilter, exact token test here; skip `offset` exact matches, keep `limit`.
+        return flow {
+            try {
+                val out = ArrayList<Page>()
+                var skipped = 0
+                forEachTagMatch(filter, a) { page ->
+                    if (skipped < offset) { skipped++; true } else { out += page; out.size < limit }
+                }
+                emit(out.right())
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emit(DomainError.DatabaseError.ReadFailed(e.message ?: "unknown").left())
+            }
+        }.flowOn(PlatformDispatcher.DB)
+    }
+
+    override suspend fun countPagesFiltered(filter: SelectionFilter): Either<DomainError, Long> =
+        withContext(PlatformDispatcher.DB) {
+            try {
+                val a = filter.toSqlArgs()
+                if (filter.tagToken == null) {
+                    queries.countPagesFiltered(a.nameLo, a.nameHi, a.includeJournals, a.dateFrom, a.dateTo, a.tagLike)
+                        .executeAsOne().right()
+                } else {
+                    var n = 0L
+                    forEachTagMatch(filter, a) { n++; true }
+                    n.right()
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                DomainError.DatabaseError.ReadFailed(e.message ?: "unknown").left()
+            }
+        }
+
+    override suspend fun getPagesAmong(filter: SelectionFilter, uuids: Collection<PageUuid>): Either<DomainError, List<Page>> =
+        withContext(PlatformDispatcher.DB) {
+            try {
+                val a = filter.toSqlArgs()
+                val out = ArrayList<Page>()
+                for (chunk in uuids.map { it.value }.chunked(FILTER_BATCH_SIZE)) {
+                    queries.selectPagesFilteredAmong(chunk, a.nameLo, a.nameHi, a.includeJournals, a.dateFrom, a.dateTo, a.tagLike)
+                        .executeAsList()
+                        .mapNotNullTo(out) { row -> row.toModel().takeIf { filter.matchesTag(it.properties) } }
+                }
+                out.right()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                DomainError.DatabaseError.ReadFailed(e.message ?: "unknown").left()
+            }
+        }
+
+    /**
+     * Walks the SQL-prefiltered rows in <= [FILTER_BATCH_SIZE] batches; [visit] returns false to stop.
+     * Known limit: each list page re-walks the prefiltered rows from offset 0 (O(P^2/100) for P prefiltered
+     * rows), bounded per read and cheap while the substring prefilter is selective; a (name, section_id)
+     * keyset cursor would remove it.
+     */
+    private fun forEachTagMatch(filter: SelectionFilter, a: SelectionSqlArgs, visit: (Page) -> Boolean) {
+        var rowOffset = 0L
+        while (true) {
+            val batch = queries.selectPagesFilteredPaginated(
+                a.nameLo, a.nameHi, a.includeJournals, a.dateFrom, a.dateTo, a.tagLike,
+                FILTER_BATCH_SIZE.toLong(), rowOffset,
+            ).executeAsList()
+            for (row in batch) {
+                val page = row.toModel()
+                if (filter.matchesTag(page.properties) && !visit(page)) return
+            }
+            if (batch.size < FILTER_BATCH_SIZE) return
+            rowOffset += batch.size
         }
     }
 
@@ -354,10 +483,7 @@ class SqlDelightPageRepository(
             createdAt = Instant.fromEpochMilliseconds(this.created_at),
             updatedAt = Instant.fromEpochMilliseconds(this.updated_at),
             version = this.version,
-            properties = this.properties?.split(",")?.filter { it.isNotBlank() }?.associate {
-                val parts = it.split(":", limit = 2)
-                if (parts.size == 2) parts[0] to parts[1] else "" to ""
-            }?.filter { it.key.isNotBlank() } ?: emptyMap(),
+            properties = parseStoredProperties(this.properties),
             isJournal = this.is_journal == 1L,
             journalDate = this.journal_date?.let { kotlinx.datetime.LocalDate.parse(it) },
             isContentLoaded = this.is_content_loaded == 1L,
@@ -376,10 +502,7 @@ class SqlDelightPageRepository(
             createdAt = Instant.fromEpochMilliseconds(this.created_at),
             updatedAt = Instant.fromEpochMilliseconds(this.updated_at),
             version = this.version,
-            properties = this.properties?.split(",")?.filter { it.isNotBlank() }?.associate {
-                val parts = it.split(":", limit = 2)
-                if (parts.size == 2) parts[0] to parts[1] else "" to ""
-            }?.filter { it.key.isNotBlank() } ?: emptyMap(),
+            properties = parseStoredProperties(this.properties),
             isJournal = this.is_journal == 1L,
             journalDate = kotlinx.datetime.LocalDate.parse(this.journal_date),
             isContentLoaded = this.is_content_loaded == 1L,
@@ -388,3 +511,31 @@ class SqlDelightPageRepository(
     }
 }
 
+
+private val STORED_KEY = Regex("^[A-Za-z0-9_.-]+:")
+
+/**
+ * Inverse of the `k:v,k:v` encoding written by savePage. Values may themselves contain commas
+ * (`tags:: a, b`), so a segment only starts a new entry when it begins with `key:`; any other
+ * segment continues the previous value. Limit: a value whose later segment looks like `x:y`
+ * (e.g. `a, b:c`) is read back as a new key.
+ */
+internal fun parseStoredProperties(stored: String?): Map<String, String> {
+    if (stored.isNullOrEmpty()) return emptyMap()
+    val out = LinkedHashMap<String, String>()
+    var key: String? = null
+    val value = StringBuilder()
+    fun flush() { key?.let { out[it] = value.toString() }; value.clear() }
+    for (segment in stored.split(',')) {
+        val m = STORED_KEY.find(segment)
+        if (m != null) {
+            flush()
+            key = segment.substring(0, m.value.length - 1)
+            value.append(segment, m.value.length, segment.length)
+        } else if (key != null) {
+            value.append(',').append(segment)
+        }
+    }
+    flush()
+    return out
+}

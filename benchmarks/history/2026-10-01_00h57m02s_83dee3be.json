@@ -1,0 +1,122 @@
+{
+  "timestamp": "2026-10-01 00:57:02 UTC",
+  "gitSha": "83dee3be",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 1,
+  "phase2Ms": 0,
+  "phase3Ms": 1,
+  "totalMs": 2,
+  "jankBaselineP50Ms": 1,
+  "jankBaselineP95Ms": 19,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.05,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 665,
+      "pct": 37.8
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 125,
+      "pct": 7.1
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 123,
+      "pct": 7.0
+    },
+    {
+      "frame": "java.util.LinkedHashMap$Entry_[k]",
+      "samples": 98,
+      "pct": 5.6
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 82,
+      "pct": 4.7
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 54,
+      "pct": 3.1
+    },
+    {
+      "frame": "java.nio.DirectByteBuffer_[k]",
+      "samples": 46,
+      "pct": 2.6
+    },
+    {
+      "frame": "dev.stapler.stelekit.parsing.lexer.Token_[k]",
+      "samples": 35,
+      "pct": 2.0
+    },
+    {
+      "frame": "java.util.Arrays$ArrayItr_[k]",
+      "samples": 34,
+      "pct": 1.9
+    },
+    {
+      "frame": "java.lang.String[]_[k]",
+      "samples": 29,
+      "pct": 1.7
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 32528,
+      "pct": 97.1
+    },
+    {
+      "frame": "/tmp/sqlite-3.51.3.0-e7556645-3f05-4b0b-b83a-d627e9c48257-libsqlitejdbc.so",
+      "samples": 309,
+      "pct": 0.9
+    },
+    {
+      "frame": "__libc_pwrite",
+      "samples": 155,
+      "pct": 0.5
+    },
+    {
+      "frame": "clock_nanosleep",
+      "samples": 73,
+      "pct": 0.2
+    },
+    {
+      "frame": "fsync",
+      "samples": 70,
+      "pct": 0.2
+    },
+    {
+      "frame": "SR_handler",
+      "samples": 39,
+      "pct": 0.1
+    },
+    {
+      "frame": "pthread_cond_signal",
+      "samples": 35,
+      "pct": 0.1
+    },
+    {
+      "frame": "pread",
+      "samples": 20,
+      "pct": 0.1
+    },
+    {
+      "frame": "syscall",
+      "samples": 11,
+      "pct": 0.0
+    },
+    {
+      "frame": "malloc",
+      "samples": 10,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": []
+}

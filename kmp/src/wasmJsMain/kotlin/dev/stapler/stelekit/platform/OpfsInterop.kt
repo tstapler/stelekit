@@ -4,7 +4,16 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.await
 
 internal fun showDirectoryPickerSupported(): Boolean = js("typeof window.showDirectoryPicker === 'function'")
-private fun showDirectoryPickerPromise(): kotlin.js.Promise<JsAny> = js("window.showDirectoryPicker()")
+
+/**
+ * Invokes `window.showDirectoryPicker()` synchronously. This raw JS call must happen within (or
+ * as close as possible to) the synchronous call stack of a browser click/pointerup event, since
+ * the picker requires "transient user activation" and throws `SecurityError` if the browser no
+ * longer considers the call gesture-initiated. Callers that need the picker triggered from a
+ * Compose `onClick` should call this directly in the click handler — not from inside a
+ * `scope.launch { ... }` coroutine, which may dispatch the call after activation has expired.
+ */
+internal fun showDirectoryPickerPromise(): kotlin.js.Promise<JsAny> = js("window.showDirectoryPicker()")
 internal suspend fun showDirectoryPicker(): JsAny = showDirectoryPickerPromise().await()
 
 private fun opfsRootPromise(): kotlin.js.Promise<JsAny> = js("navigator.storage.getDirectory()")
@@ -41,6 +50,15 @@ internal fun getEntryName(entry: JsAny): String = js("entry.name")
 internal fun isFileEntry(entry: JsAny): Boolean = js("entry.kind === 'file'")
 internal fun isDirectoryEntry(entry: JsAny): Boolean = js("entry.kind === 'directory'")
 
+/**
+ * Host/OPFS directory walks (`importUserDirToCache`, `runHostReconciliation`,
+ * `pollHostDirectoryOnce`) must not treat dotfiles/dot-directories as graph content — a connected
+ * host directory is frequently a git repo, and without this guard `.git/logs/HEAD`,
+ * `.git/MERGE_RR`, `.DS_Store`, and tool scratch dirs like `.playwright-mcp/` get walked, read,
+ * and classified by stale-rename-duplicate detection right alongside real markdown pages.
+ */
+internal fun isIgnoredHostEntryName(name: String): Boolean = name.startsWith(".")
+
 private fun fileHandleGetFile(handle: JsAny): kotlin.js.Promise<JsAny> = js("handle.getFile()")
 private fun fileText(file: JsAny): kotlin.js.Promise<JsAny> = js("file.text()")
 private fun jsStringValue(v: JsAny): String = js("String(v)")
@@ -50,6 +68,13 @@ internal suspend fun readOpfsFile(fileHandle: JsAny): String? = try {
     jsStringValue(fileText(file).await())
 } catch (e: Throwable) {
     null
+}
+
+/** Reads a file's raw bytes back out of OPFS, for tests and callers that need binary content. */
+internal suspend fun readOpfsFileBytes(fileHandle: JsAny): ByteArray {
+    val file: JsAny = fileHandleGetFile(fileHandle).await()
+    val buffer: JsAny = fileArrayBuffer(file).await()
+    return jsArrayBufferToByteArray(buffer)
 }
 
 /**
@@ -69,7 +94,33 @@ internal fun fileHandleCreateWritable(handle: JsAny): kotlin.js.Promise<JsAny> =
 internal fun writableWrite(writable: JsAny, content: String): kotlin.js.Promise<JsAny> = js("writable.write(content)")
 internal fun writableWriteBuffer(writable: JsAny, buffer: JsAny): kotlin.js.Promise<JsAny> = js("writable.write(buffer)")
 internal fun writableClose(writable: JsAny): kotlin.js.Promise<JsAny> = js("writable.close()")
+internal fun writableAbort(writable: JsAny): kotlin.js.Promise<JsAny> = js("writable.abort()")
 internal fun dirRemoveEntry(dir: JsAny, name: String): kotlin.js.Promise<JsAny> = js("dir.removeEntry(name)")
+private fun dirRemoveEntryRecursivePromise(dir: JsAny, name: String): kotlin.js.Promise<JsAny> =
+    js("dir.removeEntry(name, { recursive: true })")
+
+/**
+ * Deletes the directory at absolute OPFS path [path] and everything under it (`{recursive: true}`)
+ * — [dirRemoveEntry]/[opfsDeleteFile] only remove a single, already-empty entry, which fails on a
+ * non-empty directory. Used by the relocate staging-directory sweep (Story 3.1.2's Web wiring,
+ * `RelocationStagingDirectory.wasmJs.kt`) to remove a stale `.stele-relocate-staging-<graphId>/`
+ * directory in one call instead of walking and deleting its contents first.
+ */
+internal suspend fun opfsDeleteDirectoryRecursive(path: String) {
+    try {
+        val root = getOpfsRoot()
+        val parts = path.removePrefix("/").split("/")
+        var dir: JsAny = root
+        for (part in parts.dropLast(1)) {
+            dir = getDirectoryHandle(dir, part, false)
+        }
+        @Suppress("UNUSED_VARIABLE") val _remove: JsAny = dirRemoveEntryRecursivePromise(dir, parts.last()).await()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        println("[SteleKit] OPFS recursive delete failed for $path: ${e.message}")
+    }
+}
 
 internal suspend fun opfsWriteFile(path: String, content: String) {
     try {
@@ -128,6 +179,7 @@ internal suspend fun readOpfsFileAsBytes(fileHandle: JsAny): ByteArray? = try {
 }
 
 internal suspend fun opfsWriteFileBytes(path: String, data: JsAny) {
+    var writable: JsAny? = null
     try {
         val root = getOpfsRoot()
         val parts = path.removePrefix("/").split("/")
@@ -136,11 +188,24 @@ internal suspend fun opfsWriteFileBytes(path: String, data: JsAny) {
             dir = getDirectoryHandle(dir, part, true)
         }
         val fileHandle = getFileHandle(dir, parts.last(), true)
-        val writable: JsAny = fileHandleCreateWritable(fileHandle).await()
-        @Suppress("UNUSED_VARIABLE") val _write: JsAny = writableWriteBuffer(writable, data).await()
-        @Suppress("UNUSED_VARIABLE") val _close: JsAny = writableClose(writable).await()
+        val openWritable: JsAny = fileHandleCreateWritable(fileHandle).await()
+        writable = openWritable
+        @Suppress("UNUSED_VARIABLE") val _write: JsAny = writableWriteBuffer(openWritable, data).await()
+        @Suppress("UNUSED_VARIABLE") val _close: JsAny = writableClose(openWritable).await()
     } catch (e: Throwable) {
         println("[SteleKit] OPFS binary write failed for $path: ${e.message}")
+        // An unclosed FileSystemWritableFileStream holds an exclusive lock on the target file
+        // until closed/aborted/GC'd (File System Access spec) — without this, a retried attach
+        // at the same path fails with NoModificationAllowedError until reload (PR #361 Gate-2
+        // review, MAJOR 4). Best-effort: if abort() itself fails there's nothing more we can do.
+        val handle = writable
+        if (handle != null) {
+            try {
+                writableAbort(handle).await()
+            } catch (abortError: Throwable) {
+                println("[SteleKit] OPFS abort after failed write also failed for $path: ${abortError.message}")
+            }
+        }
         throw e
     }
 }

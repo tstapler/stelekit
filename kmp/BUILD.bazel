@@ -18,9 +18,9 @@ load("@rules_android//rules:rules.bzl", "android_library")
 # android_library that exposes R must be defined here.
 android_library(
     name = "kmp_android_resources",
+    custom_package = "dev.stapler.stelekit",
     manifest = "src/androidMain/AndroidManifest.xml",
     resource_files = glob(["src/androidMain/res/**"]),
-    custom_package = "dev.stapler.stelekit",
     visibility = ["//kmp/src/androidMain/kotlin:__pkg__"],
 )
 
@@ -44,7 +44,10 @@ alias(
 
 test_suite(
     name = "jvm_tests",
-    tests = ["//kmp/src/jvmTest/kotlin:jvm_tests"],
+    tests = [
+        "//kmp/src/jvmTest/kotlin:jvm_tests",
+        "//kmp/src/jvmTest/kotlin:mermaid_jvm_tests",
+    ],
     visibility = ["//visibility:public"],
 )
 
@@ -52,6 +55,15 @@ test_suite(
     name = "business_tests",
     tests = ["//kmp/src/businessTest/kotlin:business_tests"],
     visibility = ["//visibility:public"],
+)
+
+# Exposes the SQLDelight schema source so MigrationRunnerSchemaSyncTest can bundle it as a
+# classpath resource (Bazel path — see kmp/src/businessTest/kotlin/BUILD.bazel) instead of
+# relying on the Gradle-only -Dstelekit.sq.file system property.
+filegroup(
+    name = "sqldelight_schema_source",
+    srcs = ["src/commonMain/sqldelight/dev/stapler/stelekit/db/SteleDatabase.sq"],
+    visibility = ["//kmp:__subpackages__"],
 )
 
 # ── Web / WASM-JS ─────────────────────────────────────────────────────────────

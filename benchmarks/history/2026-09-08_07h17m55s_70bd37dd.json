@@ -1,0 +1,122 @@
+{
+  "timestamp": "2026-09-08 07:17:55 UTC",
+  "gitSha": "70bd37dd",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 0,
+  "phase2Ms": 1,
+  "phase3Ms": 1,
+  "totalMs": 2,
+  "jankBaselineP50Ms": 1,
+  "jankBaselineP95Ms": 14,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.07,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 583,
+      "pct": 37.0
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 123,
+      "pct": 7.8
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 117,
+      "pct": 7.4
+    },
+    {
+      "frame": "java.util.LinkedHashMap$Entry_[k]",
+      "samples": 91,
+      "pct": 5.8
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 69,
+      "pct": 4.4
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 56,
+      "pct": 3.6
+    },
+    {
+      "frame": "dev.stapler.stelekit.parsing.lexer.Token_[k]",
+      "samples": 32,
+      "pct": 2.0
+    },
+    {
+      "frame": "java.nio.DirectByteBuffer_[k]",
+      "samples": 30,
+      "pct": 1.9
+    },
+    {
+      "frame": "java.util.LinkedHashMap_[k]",
+      "samples": 30,
+      "pct": 1.9
+    },
+    {
+      "frame": "java.util.HashMap$Node[]_[k]",
+      "samples": 28,
+      "pct": 1.8
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 39264,
+      "pct": 97.9
+    },
+    {
+      "frame": "/tmp/sqlite-3.51.3.0-e369497d-afae-4331-bb44-989586e6402b-libsqlitejdbc.so",
+      "samples": 245,
+      "pct": 0.6
+    },
+    {
+      "frame": "fsync",
+      "samples": 162,
+      "pct": 0.4
+    },
+    {
+      "frame": "__libc_pwrite",
+      "samples": 67,
+      "pct": 0.2
+    },
+    {
+      "frame": "SR_handler",
+      "samples": 39,
+      "pct": 0.1
+    },
+    {
+      "frame": "pthread_cond_signal",
+      "samples": 30,
+      "pct": 0.1
+    },
+    {
+      "frame": "pread",
+      "samples": 17,
+      "pct": 0.0
+    },
+    {
+      "frame": "malloc",
+      "samples": 7,
+      "pct": 0.0
+    },
+    {
+      "frame": "prctl",
+      "samples": 7,
+      "pct": 0.0
+    },
+    {
+      "frame": "itable stub",
+      "samples": 6,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": []
+}

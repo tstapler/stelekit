@@ -170,7 +170,9 @@ private class SteleDatabaseImpl(
           |    oauth_token_key         TEXT,
           |    poll_interval_minutes   INTEGER NOT NULL DEFAULT 5,
           |    auto_commit             INTEGER NOT NULL DEFAULT 1,
-          |    commit_message_template TEXT NOT NULL DEFAULT 'SteleKit: {date}'
+          |    commit_message_template TEXT NOT NULL DEFAULT 'SteleKit: {date}',
+          |    clone_depth_state       TEXT NOT NULL DEFAULT 'NONE',
+          |    shallow_depth           INTEGER
           |)
           """.trimMargin(), 0).await()
       driver.execute(null, """
@@ -246,6 +248,22 @@ private class SteleDatabaseImpl(
           |    old_relative_path TEXT NOT NULL,
           |    new_relative_path TEXT NOT NULL,
           |    created_at_ms INTEGER NOT NULL
+          |)
+          """.trimMargin(), 0).await()
+      driver.execute(null, """
+          |CREATE TABLE IF NOT EXISTS storage_locations (
+          |    graph_id            TEXT NOT NULL PRIMARY KEY,
+          |    kind                TEXT NOT NULL,
+          |    tree_uri            TEXT,
+          |    real_path           TEXT,
+          |    display_name        TEXT,
+          |    updated_at_epoch_ms INTEGER NOT NULL,
+          |    CHECK (
+          |        (kind = 'AppOwned'           AND tree_uri IS NULL     AND real_path IS NULL     AND display_name IS NULL) OR
+          |        (kind = 'SafFolder'          AND tree_uri IS NOT NULL AND real_path IS NULL     AND display_name IS NULL) OR
+          |        (kind = 'DirectAccessFolder' AND real_path IS NOT NULL AND tree_uri IS NULL     AND display_name IS NULL) OR
+          |        (kind = 'HostFolder'         AND display_name IS NOT NULL AND tree_uri IS NULL  AND real_path IS NULL)
+          |    )
           |)
           """.trimMargin(), 0).await()
       driver.execute(null, "CREATE INDEX idx_pages_namespace ON pages(namespace)", 0).await()

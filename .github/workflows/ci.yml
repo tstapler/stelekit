@@ -5,11 +5,11 @@ on:
     branches: [main, master]
   pull_request:
     branches: [main, master]
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened]  # no ready_for_review: `opened` already fires for drafts, so this avoids a pointless duplicate full CI run on every draft->ready flip
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   checks: write
@@ -19,51 +19,10 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  # ── JVM tests (shared + desktop logic) ────────────────────────────────────
-  jvm-test:
-    name: JVM Tests
-    runs-on: ubuntu-latest
-    if: github.event.pull_request.draft == false
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-java@v4
-        with:
-          java-version: '21'
-          distribution: 'temurin'
-
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
-
-      - name: Install Xvfb
-        run: sudo apt-get install -y xvfb
-
-      - name: Run JVM tests
-        run: xvfb-run --auto-servernum ./gradlew :kmp:jvmTest --no-daemon --build-cache
-
-      - name: Publish test report
-        uses: mikepenz/action-junit-report@v4
-        if: always()
-        with:
-          report_paths: '**/build/test-results/jvmTest/**/TEST-*.xml'
-          fail_on_failure: true
-          require_tests: true
-          check_name: JVM Test Results
-
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: jvm-test-results
-          path: '**/build/test-results/jvmTest/**/*.xml'
-          retention-days: 7
-
   # ── Android unit tests + debug APK ────────────────────────────────────────
   android:
     name: Android
     runs-on: ubuntu-latest
-    if: github.event.pull_request.draft == false
 
     steps:
       - uses: actions/checkout@v4
@@ -72,6 +31,8 @@ jobs:
         with:
           java-version: '21'
           distribution: 'temurin'
+
+      - uses: ./.github/actions/gradle-ci-memory
 
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -86,7 +47,7 @@ jobs:
       # To enable regression detection: download artifacts from a baseline CI run,
       # commit to kmp/src/androidUnitTest/snapshots/images/, then switch to verifyRoborazziDebug.
       - name: Run Android tests and build APK
-        run: ./gradlew :kmp:testDebugUnitTest :kmp:recordRoborazziDebug :androidApp:assembleDebug --no-daemon --build-cache
+        run: ./gradlew :kmp:testDebugUnitTest :androidApp:testDebugUnitTest :kmp:recordRoborazziDebug :androidApp:assembleDebug --no-daemon --build-cache
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -121,7 +82,6 @@ jobs:
   sqldelight-sync:
     name: SQLDelight generated sources
     runs-on: ubuntu-latest
-    if: github.event.pull_request.draft == false
 
     steps:
       - uses: actions/checkout@v4
@@ -130,6 +90,8 @@ jobs:
         with:
           java-version: '21'
           distribution: 'temurin'
+
+      - uses: ./.github/actions/gradle-ci-memory
 
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -155,7 +117,6 @@ jobs:
   readme-sync:
     name: README sync
     runs-on: ubuntu-latest
-    if: github.event.pull_request.draft == false
     steps:
       - uses: actions/checkout@v4
 
@@ -173,15 +134,18 @@ jobs:
   lint:
     name: Lint (Detekt)
     runs-on: ubuntu-latest
-    if: github.event.pull_request.draft == false
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history needed for the baseline-ratchet merge-base diff below
 
       - uses: actions/setup-java@v4
         with:
           java-version: '21'
           distribution: 'temurin'
+
+      - uses: ./.github/actions/gradle-ci-memory
 
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -189,6 +153,19 @@ jobs:
 
       - name: Run Detekt
         run: ./gradlew :kmp:detekt --no-daemon --build-cache
+
+      - name: Detekt baseline ratchet (no new grandfathered findings)
+        # Only meaningful against a PR's target branch; a push to main has no base to diff.
+        if: github.event_name == 'pull_request'
+        run: |
+          MERGE_BASE=$(git merge-base HEAD "${{ github.event.pull_request.base.sha }}")
+          BASE_COUNT=$(git show "$MERGE_BASE:kmp/config/detekt/baseline.xml" 2>/dev/null | grep -c '<ID>' || true)
+          HEAD_COUNT=$(grep -c '<ID>' kmp/config/detekt/baseline.xml || true)
+          echo "baseline.xml findings — merge-base: $BASE_COUNT, HEAD: $HEAD_COUNT"
+          if [ "$HEAD_COUNT" -gt "$BASE_COUNT" ]; then
+            echo "::error::kmp/config/detekt/baseline.xml grew from $BASE_COUNT to $HEAD_COUNT findings. Re-running detektBaseline to silence a new violation instead of fixing it is not allowed — fix the violation, or if it's a deliberate exception, adjust kmp/config/detekt/detekt.yml instead."
+            exit 1
+          fi
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -202,7 +179,6 @@ jobs:
     name: Android Smoke Tests (Emulator)
     runs-on: ubuntu-latest
     needs: [android]
-    if: github.event.pull_request.draft == false
 
     steps:
       - uses: actions/checkout@v4
@@ -217,6 +193,8 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+
+      - uses: ./.github/actions/gradle-ci-memory
 
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -253,7 +231,6 @@ jobs:
   workflow-lint:
     name: Workflow Lint
     runs-on: ubuntu-latest
-    if: github.event.pull_request.draft == false
     steps:
       - uses: actions/checkout@v4
 
@@ -279,9 +256,8 @@ jobs:
 
   # ── Wasm/JS compile check ─────────────────────────────────────────────────
   wasmjs-compile:
-    name: Wasm/JS Compile
+    name: Wasm/JS Compile & Tests
     runs-on: ubuntu-latest
-    if: github.event.pull_request.draft == false
 
     steps:
       - uses: actions/checkout@v4
@@ -290,6 +266,8 @@ jobs:
         with:
           java-version: '21'
           distribution: 'temurin'
+
+      - uses: ./.github/actions/gradle-ci-memory
 
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -301,24 +279,47 @@ jobs:
       - name: Compile wasmJs test sources
         # Compiles (does not run) wasmJsTest — including WasmGitWriteServiceMockedIntegrationTest.kt
         # and WasmGitRepositoryTest.kt, which carry the regression proof for two previously-fixed
-        # BLOCKER bugs in the web git write-back feature. Actually running the tests
+        # BLOCKER bugs in the web git write-back feature. Actually running the full suite
         # (wasmJsBrowserTest) needs a headless-Chrome/Karma setup not yet wired into CI — a separate,
         # bigger infra task; compiling is the low-risk, high-value slice of that work.
         #
-        # continue-on-error: true until 2 pre-existing, unrelated compile errors are fixed —
-        # commonTest's FrameTransportSignatureTest.kt (kotlin-reflect KParameter/isSuspend
-        # unavailable on Kotlin/Wasm) and QrRoundTripFidelityTest.kt (kotlinx.coroutines'
-        # runBlocking unavailable on Kotlin/Wasm) predate this PR and were never caught because this
-        # step didn't exist. Track: give those two tests a JVM-only/expect-actual home, then remove
-        # this flag so wasmJsTest compile failures actually block CI.
-        continue-on-error: true
+        # This step's old `continue-on-error: true` (added for two commonTest files since moved
+        # to jvmTest) was never removed after they were fixed, which let a third unrelated
+        # commonTest file break this the same way, undetected for months. Removed now that this
+        # command passes clean — do not re-add the flag; fix the failing file instead (move its
+        # JVM-only-API usage out of commonTest).
         run: ./gradlew :kmp:compileTestKotlinWasmJs --no-daemon --build-cache -PenableJs=true
+
+      - name: Run wasmJs browser tests
+        # Runs (not just compiles) real-browser wasmJsTest classes in headless Chrome via Karma:
+        # ImageEncoderWasmJsTest (pre-existing Canvas-2D JPEG encoder coverage) plus the
+        # wasm-image-drop suite (OPFS byte writes, the ArrayBuffer<->ByteArray bridge, and the
+        # document.body drop-listener lifecycle). Scoped via --tests, not the whole wasmJsTest
+        # suite: the full suite has 2 pre-existing unrelated failures (MermaidRendererWasmJsTest /
+        # MermaidSecurityDirectiveWasmJsTest, predating this change) that block whole-suite CI
+        # adoption — a separate cleanup, not part of this fix. GitHub's ubuntu-latest runner image
+        # ships Chrome preinstalled, so no extra browser install step is needed here.
+        run: |
+          ./gradlew :kmp:wasmJsBrowserTest --no-daemon --build-cache -PenableJs=true \
+            --tests "dev.stapler.stelekit.annotate.ImageEncoderWasmJsTest" \
+            --tests "dev.stapler.stelekit.service.WasmMediaAttachmentServiceTest" \
+            --tests "dev.stapler.stelekit.platform.ByteBufferInteropTest" \
+            --tests "dev.stapler.stelekit.platform.OpfsInteropTest" \
+            --tests "dev.stapler.stelekit.ui.components.DropZoneInteropTest" \
+            --tests "dev.stapler.stelekit.ui.components.PageDropTargetListenerLifecycleTest"
+
+      - name: Publish wasmJs test report
+        uses: mikepenz/action-junit-report@v4
+        if: always()
+        with:
+          report_paths: '**/build/test-results/wasmJsBrowserTest/**/TEST-*.xml'
+          fail_on_failure: true
+          require_tests: true
 
   # ── Wasm/JS e2e (Playwright) ───────────────────────────────────────────────
   wasmjs-e2e:
     name: Wasm/JS E2E
     runs-on: ubuntu-latest
-    if: github.event.pull_request.draft == false
 
     steps:
       - uses: actions/checkout@v4
@@ -327,6 +328,8 @@ jobs:
         with:
           java-version: '21'
           distribution: 'temurin'
+
+      - uses: ./.github/actions/gradle-ci-memory
 
       - uses: gradle/actions/setup-gradle@v4
         with:

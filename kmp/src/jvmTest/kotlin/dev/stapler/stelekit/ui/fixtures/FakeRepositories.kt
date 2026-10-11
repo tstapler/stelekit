@@ -1,5 +1,7 @@
 package dev.stapler.stelekit.ui.fixtures
 
+import dev.stapler.stelekit.merge.SelectionFilter
+import dev.stapler.stelekit.merge.filteredAndSorted
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
@@ -99,6 +101,17 @@ open class FakePageRepository(initialPages: List<Page> = emptyList()) : PageRepo
 
     override fun getFavoritePages(): Flow<Either<DomainError, List<Page>>> =
         _pages.map { pages -> pages.values.filter { it.isFavorite }.sortedBy { it.name }.right() }
+
+    override fun getPagesFiltered(filter: SelectionFilter, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
+        _pages.map { it.values.filteredAndSorted(filter).drop(offset).take(limit).right() }
+
+    override suspend fun countPagesFiltered(filter: SelectionFilter): Either<DomainError, Long> =
+        _pages.value.values.count(filter::matches).toLong().right()
+
+    override suspend fun getPagesAmong(filter: SelectionFilter, uuids: Collection<PageUuid>): Either<DomainError, List<Page>> {
+        val wanted = uuids.mapTo(HashSet()) { it.value }
+        return _pages.value.values.filter { it.uuid.value in wanted && filter.matches(it) }.right()
+    }
 
     override fun getUnloadedPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
         _pages.map { pages ->

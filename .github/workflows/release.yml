@@ -116,10 +116,92 @@ jobs:
   # Runs JVM + Android unit tests only when ci.yml has NOT passed for this
   # commit or its parent (e.g. a direct push to main bypassed PR checks).
   # Skipped on the normal PR → merge path — adds zero release latency then.
-  test-kmp:
-    name: Test KMP (safety gate)
+  #
+  # Split into two jobs (own runner each) rather than one `jvmTest
+  # testDebugUnitTest` invocation: the combined job intermittently failed
+  # focus/timing-sensitive Compose UI tests (CapturePopupWindowUxTest et al.)
+  # under Xvfb from CPU contention with the concurrently-running Robolectric
+  # suite on a single 2-core runner.
+  #
+  # test-kmp-jvm runs via Bazel (`bazel test //kmp:jvm_tests`), not Gradle's
+  # `jvmTest` — mirroring bazel-ci.yml's `bazel-jvm` job exactly, down to the
+  # xvfb-run flags. Two live releases in a row broke when this ran through
+  # Gradle instead: first an OutOfMemoryError (release 0.85.0 — the combined
+  # job's default heap wasn't enough once split off the Android suite it used
+  # to share a runner with), then — after capping the Gradle daemon heap with
+  # `gradle-ci-memory` to fix that — a silent ~6-hour hang with zero test
+  # output until GitHub's job timeout killed it (release 0.85.1). That
+  # composite action's heap values are validated for ci.yml's `android` job
+  # (Robolectric's JetifyTransform, per its own doc) — a materially lighter
+  # workload than `jvmTest`, which also runs a GraalVM/Truffle polyglot
+  # engine (Mermaid rendering) and Compose Desktop UI tests, and applying the
+  # same cap to it was unfounded. bazel-jvm runs the identical jvm_tests
+  # target on every commit without either failure mode, so route through it
+  # instead of re-tuning Gradle-daemon memory a third time.
+  test-kmp-jvm:
+    name: Test KMP (safety gate) / JVM
     runs-on: ubuntu-latest
     needs: [resolve-version, check-ci-status]
+    # Bumped from 30: the JVM test step now retries up to 3x (see below) to
+    # absorb transient external-fetch failures (e.g. rules_android's
+    # com_android_dex 503 from android.googlesource.com, run 36392773809).
+    # Bazel's repository/disk cache (set up below, persists for this job)
+    # makes a retry resume from cache rather than re-fetching/re-building
+    # everything, so the worst case is bounded well under 3x a cold run.
+    timeout-minutes: 90
+    if: |
+      always() &&
+      needs.resolve-version.result == 'success' &&
+      (needs.check-ci-status.result == 'success' || needs.check-ci-status.result == 'failure') &&
+      needs.check-ci-status.outputs.ci_passed != 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-bcp
+      - uses: bazel-contrib/setup-bazel@0.19.0
+        with:
+          bazelisk-version: "1.x"
+          disk-cache: shared
+          repository-cache: true
+          external-cache: true
+          cache-save: ${{ github.event_name != 'pull_request' }}
+      - name: Install Xvfb
+        run: |
+          sudo apt-get install -y --no-install-recommends xvfb
+          mkdir -p /tmp/.X11-unix
+      - name: Run JVM unit tests
+        # --flaky_test_attempts=3: MermaidEngineActorTest's real-GraalJS test
+        # (render_should_returnDistinctResults_...) times out intermittently
+        # under CI CPU contention (release 0.85.3) even with the adaptive
+        # timeout from #338 — a slow render is contention, not a product bug.
+        # Bazel retries only the failed test, not the whole 762-test suite.
+        #
+        # nick-fields/retry wraps the whole invocation to also absorb transient
+        # Bazel external-repository fetch failures (e.g. a 503 from
+        # android.googlesource.com fetching rules_android's com_android_dex —
+        # see run 36392773809, which aborted at the analysis phase before any
+        # test ran and left v0.88.2 published with zero assets). That class of
+        # failure has no retry at the http_archive level, so the retry has to
+        # live here. A retry resumes from the repository/disk cache set up
+        # above rather than re-fetching or rebuilding everything from scratch.
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 25
+          max_attempts: 3
+          retry_wait_seconds: 30
+          command: |
+            xvfb-run --auto-servernum bazel test //kmp:jvm_tests \
+              --config=remote-cache \
+              --test_output=errors \
+              --flaky_test_attempts=3 \
+              --sandbox_add_mount_pair=/tmp/.X11-unix \
+              --test_env=DISPLAY \
+              --test_env=XAUTHORITY
+
+  test-kmp-android:
+    name: Test KMP (safety gate) / Android
+    runs-on: ubuntu-latest
+    needs: [resolve-version, check-ci-status]
+    timeout-minutes: 30
     if: |
       always() &&
       needs.resolve-version.result == 'success' &&
@@ -131,20 +213,22 @@ jobs:
         with:
           java-version: '21'
           distribution: 'temurin'
+      - uses: ./.github/actions/gradle-ci-memory
       - uses: gradle/actions/setup-gradle@v4
         with:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
-      - name: Install Xvfb
-        run: sudo apt-get install -y xvfb
-      - name: Run JVM and Android unit tests
-        run: xvfb-run --auto-servernum ./gradlew jvmTest testDebugUnitTest --no-daemon --build-cache
+      - name: Run Android unit tests
+        run: ./gradlew testDebugUnitTest --no-daemon --build-cache
 
   # ── Android release APK ────────────────────────────────────────────────────
   android-release:
     name: Android Release APK
     runs-on: ubuntu-latest
-    needs: [resolve-version, test-kmp]
-    if: ${{ always() && needs.resolve-version.result == 'success' && (needs.test-kmp.result == 'success' || needs.test-kmp.result == 'skipped') }}
+    needs: [resolve-version, test-kmp-jvm, test-kmp-android]
+    if: |
+      always() && needs.resolve-version.result == 'success' &&
+      (needs.test-kmp-jvm.result == 'success' || needs.test-kmp-jvm.result == 'skipped') &&
+      (needs.test-kmp-android.result == 'success' || needs.test-kmp-android.result == 'skipped')
     permissions:
       contents: read
 
@@ -202,8 +286,11 @@ jobs:
   desktop-linux:
     name: Desktop (Linux)
     runs-on: ubuntu-latest
-    needs: [resolve-version, test-kmp]
-    if: ${{ always() && needs.resolve-version.result == 'success' && (needs.test-kmp.result == 'success' || needs.test-kmp.result == 'skipped') }}
+    needs: [resolve-version, test-kmp-jvm, test-kmp-android]
+    if: |
+      always() && needs.resolve-version.result == 'success' &&
+      (needs.test-kmp-jvm.result == 'success' || needs.test-kmp-jvm.result == 'skipped') &&
+      (needs.test-kmp-android.result == 'success' || needs.test-kmp-android.result == 'skipped')
     permissions:
       contents: read
 
@@ -372,8 +459,11 @@ jobs:
   desktop-macos:
     name: Desktop (macOS)
     runs-on: macos-latest
-    needs: [resolve-version, test-kmp]
-    if: ${{ always() && needs.resolve-version.result == 'success' && (needs.test-kmp.result == 'success' || needs.test-kmp.result == 'skipped') }}
+    needs: [resolve-version, test-kmp-jvm, test-kmp-android]
+    if: |
+      always() && needs.resolve-version.result == 'success' &&
+      (needs.test-kmp-jvm.result == 'success' || needs.test-kmp-jvm.result == 'skipped') &&
+      (needs.test-kmp-android.result == 'success' || needs.test-kmp-android.result == 'skipped')
     permissions:
       contents: read
 
@@ -464,8 +554,11 @@ jobs:
   desktop-windows:
     name: Desktop (Windows)
     runs-on: windows-latest
-    needs: [resolve-version, test-kmp]
-    if: ${{ always() && needs.resolve-version.result == 'success' && (needs.test-kmp.result == 'success' || needs.test-kmp.result == 'skipped') }}
+    needs: [resolve-version, test-kmp-jvm, test-kmp-android]
+    if: |
+      always() && needs.resolve-version.result == 'success' &&
+      (needs.test-kmp-jvm.result == 'success' || needs.test-kmp-jvm.result == 'skipped') &&
+      (needs.test-kmp-android.result == 'success' || needs.test-kmp-android.result == 'skipped')
     permissions:
       contents: read
 
@@ -645,6 +738,60 @@ jobs:
 
             ---
             _Full changelog is auto-generated below._
+
+  # ── Release asset tripwire ─────────────────────────────────────────────────
+  # Safety net for the scenario that happened to v0.88.2: release-please
+  # publishes the GitHub Release itself (outside this workflow), but if
+  # test-kmp-jvm/android fail, the android-release/desktop-* jobs are skipped
+  # (their `if:` requires test-kmp-* to be success-or-skipped) and github-release
+  # is skipped too (it requires all four build jobs == 'success') — leaving a
+  # live release with zero attached assets and no obvious signal that happened.
+  # This does NOT auto-retry the pipeline (too risky to do unattended); it just
+  # flags the gap loudly in the job summary with the manual backfill command.
+  check-release-assets:
+    name: Check release assets
+    runs-on: ubuntu-latest
+    needs: [resolve-version, android-release, desktop-linux, desktop-macos, desktop-windows, github-release]
+    if: always() && needs.resolve-version.result == 'success'
+    permissions:
+      contents: read
+    steps:
+      - name: Verify expected assets are attached
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VER: ${{ needs.resolve-version.outputs.version }}
+        run: |
+          EXPECTED=6  # android apk, linux appimage/deb/rpm, macos dmg, windows msi
+          ASSET_COUNT=$(gh release view "$VER" --repo "${{ github.repository }}" --json assets --jq '.assets | length' 2>/dev/null || echo "")
+
+          if [ -z "$ASSET_COUNT" ]; then
+            {
+              echo "## :warning: Release $VER not found"
+              echo ""
+              echo "No GitHub Release named \`$VER\` exists yet, or it could not be queried."
+              echo "If a release is expected, check whether \`release-please\` ran and investigate directly:"
+              echo ""
+              echo '```'
+              echo "gh release view $VER"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$ASSET_COUNT" -lt "$EXPECTED" ]; then
+            {
+              echo "## :rotating_light: Release $VER is missing assets"
+              echo ""
+              echo "Expected $EXPECTED build assets, found **$ASSET_COUNT** attached to \`$VER\`."
+              echo "This usually means the safety-gate tests (\`test-kmp-jvm\`/\`test-kmp-android\`) or a"
+              echo "build job failed or was skipped, so \`github-release\` never ran to attach artifacts —"
+              echo "see run ${{ github.run_id }} for which job(s) failed."
+              echo ""
+              echo "**To backfill manually once the underlying failure is fixed:**"
+              echo '```'
+              echo "gh workflow run release.yml -f version=$VER"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Release $VER has all $ASSET_COUNT expected assets." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   # ── Homebrew formula update ────────────────────────────────────────────────
   # Runs after artifact upload. Its own concurrency group (homebrew-formula)

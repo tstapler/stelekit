@@ -10,6 +10,11 @@ import dev.stapler.stelekit.git.model.DirtyEntry
 import dev.stapler.stelekit.git.model.DirtyOp
 import dev.stapler.stelekit.git.model.GitLabCommitAction
 import dev.stapler.stelekit.git.model.GitTreeEntry
+import dev.stapler.stelekit.git.merge.Diff3
+import dev.stapler.stelekit.git.merge.findDuplicateBlockIds
+import dev.stapler.stelekit.git.merge.hasConflicts
+import dev.stapler.stelekit.git.merge.mergeMarkdownBlocks
+import dev.stapler.stelekit.git.merge.toTwoWayConflictMarkerText
 import dev.stapler.stelekit.git.model.PendingCommit
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
@@ -578,14 +583,20 @@ class WasmGitWriteServiceAlgorithmsTest {
         assertEquals(emptySet(), bothEmpty.nonOverlapping)
     }
 
-    // ── TC-3.3.2-A: buildConflictFiles (pulled forward) ──────────────────────────────────────
+    // ── TC-3.3.2-A: buildConflictFiles fallback shape (no local/base/remote content available) ──
 
-    private fun modelledBuildConflictFiles(conflictingPaths: Set<String>): List<ConflictFile> =
+    /**
+     * Models `buildConflictFile`'s fallback branch — reached when [WasmGitWriteService] can't
+     * fetch all three sides (local read fails, base/remote HTTP fetch fails, or the path is
+     * GitLab's [WasmGitWriteService.UNKNOWN_CONFLICT_PATH] sentinel). The real function still
+     * always surfaces the path as a conflict; it just can't offer line-level resolution for it.
+     */
+    private fun modelledBuildConflictFilesFallback(conflictingPaths: Set<String>): List<ConflictFile> =
         conflictingPaths.map { path -> ConflictFile(filePath = path, wikiRelativePath = path, hunks = emptyList()) }
 
     @Test
-    fun `TC-3_3_2-A buildConflictFiles maps each conflicting path to a ConflictFile with empty hunks`() {
-        val result = modelledBuildConflictFiles(setOf("pages/Foo.md", "journals/2026_07_15.md"))
+    fun `TC-3_3_2-A buildConflictFiles fallback maps each conflicting path to a ConflictFile with empty hunks`() {
+        val result = modelledBuildConflictFilesFallback(setOf("pages/Foo.md", "journals/2026_07_15.md"))
 
         assertEquals(2, result.size)
         val foo = result.single { it.filePath == "pages/Foo.md" }
@@ -595,6 +606,150 @@ class WasmGitWriteServiceAlgorithmsTest {
         val journal = result.single { it.filePath == "journals/2026_07_15.md" }
         assertEquals("journals/2026_07_15.md", journal.wikiRelativePath)
         assertTrue(journal.hunks.isEmpty())
+    }
+
+    // ── buildConflictFile: real diff3-integrated decision tree ──────────────────────────────
+
+    /**
+     * Models `WasmGitWriteService.buildConflictFile`'s decision tree exactly — using the real
+     * (commonMain, importable-from-commonTest) [dev.stapler.stelekit.git.merge.Diff3],
+     * [dev.stapler.stelekit.git.merge.mergeMarkdownBlocks], and [ConflictResolver], with fake
+     * stand-ins only for the three HTTP/filesystem reads the real function makes
+     * (`localContent`/`baseContent`/`remoteContent`), which is the only part
+     * `WasmGitWriteService`'s wasmJsMain-only dependencies (`PlatformFileSystem`, Ktor) prevent
+     * testing directly from commonTest — see this file's class doc.
+     *
+     * Mirrors the real function's `.md`-path preference for the block-aware
+     * [dev.stapler.stelekit.git.merge.BlockDiff3] merge over line-level [Diff3], falling back to
+     * [Diff3] on a non-`.md` path or a block-parse failure.
+     */
+    private fun modelledBuildConflictFile(
+        path: String,
+        localContent: String?,
+        baseContent: String?,
+        remoteContent: String?,
+    ): ConflictFile {
+        val fallback = ConflictFile(filePath = path, wikiRelativePath = path, hunks = emptyList())
+        if (localContent == null || baseContent == null || remoteContent == null) return fallback
+
+        val blockResult = if (path.endsWith(".md")) {
+            runCatching { mergeMarkdownBlocks(baseContent, localContent, remoteContent) }.getOrNull()
+        } else {
+            null
+        }
+
+        val markerText: String
+        val hasConflicts: Boolean
+        if (blockResult != null) {
+            markerText = blockResult.toTwoWayConflictMarkerText()
+            hasConflicts = blockResult.hasConflicts()
+        } else {
+            val chunks = Diff3.merge(baseContent.lines(), localContent.lines(), remoteContent.lines())
+            markerText = chunks.toTwoWayConflictMarkerText()
+            hasConflicts = chunks.hasConflicts()
+        }
+        val hunks = if (hasConflicts) {
+            ConflictResolver().parseConflictFile(path, markerText, wikiRoot = "").let {
+                (it as? Either.Right)?.value?.hunks
+            } ?: emptyList()
+        } else {
+            emptyList()
+        }
+        return ConflictFile(
+            filePath = path,
+            wikiRelativePath = path,
+            hunks = hunks,
+            rawContent = markerText,
+            duplicateBlockIds = blockResult?.findDuplicateBlockIds() ?: emptyList(),
+        )
+    }
+
+    @Test
+    fun `buildConflictFile returns fallback when any of local base remote content is unavailable`() {
+        assertTrue(modelledBuildConflictFile("f.md", null, "base", "remote").hunks.isEmpty())
+        assertTrue(modelledBuildConflictFile("f.md", "local", null, "remote").hunks.isEmpty())
+        assertTrue(modelledBuildConflictFile("f.md", "local", "base", null).hunks.isEmpty())
+        assertNull(modelledBuildConflictFile("f.md", null, "base", "remote").rawContent)
+    }
+
+    @Test
+    fun `buildConflictFile produces real hunks when local and remote diverge on the same region`() {
+        // f.md content is single-line "blocks", not bulleted markdown — buildConflictFile prefers
+        // the block-aware merge for `.md` paths (see modelledBuildConflictFile's doc), whose
+        // serializer always canonicalizes a block back out with a `- ` prefix, mirroring
+        // LogseqPageSerializer's on-save format; hence the prefix in the expected hunk lines below.
+        val base = "A\nB\nC"
+        val local = "A\nX\nC" // substituted B -> X
+        val remote = "A\nB\nY\nC" // kept B, inserted Y after it — overlaps local's edit region
+
+        val result = modelledBuildConflictFile("f.md", local, base, remote)
+
+        assertEquals(1, result.hunks.size)
+        assertEquals(listOf("- X"), result.hunks.single().localLines)
+        assertEquals(listOf("- B", "- Y"), result.hunks.single().remoteLines)
+        assertTrue(result.rawContent?.contains("<<<<<<<") == true)
+    }
+
+    @Test
+    fun `buildConflictFile has no hunks when the path-level conflict does not actually overlap at the line level`() {
+        // Both sides touched the same file, so the path-level partition still flags it as
+        // conflicting — but the edits are on different, non-overlapping regions, so a real
+        // three-way merge finds nothing to ask the user about.
+        val base = "A\nB\nC"
+        val local = "A\nX\nC" // changed B -> X
+        val remote = "A\nX\nC\nD" // same B -> X change, plus appended D
+
+        val result = modelledBuildConflictFile("f.md", local, base, remote)
+
+        assertTrue(result.hunks.isEmpty(), "expected no hunks for a non-overlapping same-file touch: ${result.hunks}")
+        // Canonicalized through the block-aware merge (see the prior test's comment) — bulleted,
+        // not the raw "A\nX\nC\nD" a plain line-level merge would have preserved verbatim.
+        assertEquals("- A\n- X\n- C\n- D", result.rawContent)
+    }
+
+    @Test
+    fun `buildConflictFile falls back to line-level Diff3 for a non-markdown path`() {
+        val base = "A\nB\nC"
+        val local = "A\nX\nC"
+        val remote = "A\nB\nY\nC"
+
+        val result = modelledBuildConflictFile("f.txt", local, base, remote)
+
+        assertEquals(1, result.hunks.size)
+        // No `.md` extension — never routed through the block-aware merge, so no `- ` bullet
+        // canonicalization; content is preserved verbatim, unlike the `.md` case above.
+        assertEquals(listOf("X"), result.hunks.single().localLines)
+        assertEquals(listOf("B", "Y"), result.hunks.single().remoteLines)
+    }
+
+    @Test
+    fun `buildConflictFile surfaces duplicateBlockIds even when the merge itself is conflict-free`() {
+        // local leaves the page untouched; remote appends a new block that happens to reuse an
+        // existing id:: — a clean, no-conflict merge (nothing for the whole-file/hunk UI to flag)
+        // that would otherwise silently ship two blocks sharing one id — invisible to a plain
+        // line-level merge, and invisible to the conflict list itself without duplicateBlockIds.
+        val base = "- first\n  id:: dup\n- second\n  id:: other\n"
+        val local = base
+        val remote = "- first\n  id:: dup\n- second\n  id:: other\n- third\n  id:: dup\n"
+
+        val result = modelledBuildConflictFile("f.md", local, base, remote)
+
+        assertTrue(result.hunks.isEmpty(), "expected a clean auto-merge with nothing to review: ${result.hunks}")
+        assertTrue(
+            result.duplicateBlockIds.any { it.id == "dup" && it.occurrences >= 2 },
+            "expected a duplicate 'dup' id to be surfaced despite the clean merge, got: ${result.duplicateBlockIds}",
+        )
+    }
+
+    @Test
+    fun `buildConflictFile never populates duplicateBlockIds for a non-markdown path`() {
+        val base = "- first\n  id:: dup\n- second\n  id:: other\n"
+        val local = base
+        val remote = "- first\n  id:: dup\n- second\n  id:: other\n- third\n  id:: dup\n"
+
+        val result = modelledBuildConflictFile("f.txt", local, base, remote)
+
+        assertTrue(result.duplicateBlockIds.isEmpty())
     }
 
     // ── TC-3.3.2-B: deleted-locally-but-edited-remotely edge case ───────────────────────────

@@ -206,7 +206,9 @@ class TagSuggestionViewModel(
 
         suggestionJob = scope.launch {
             // GAP-003 fix: emit local matches immediately so chips appear without waiting for LLM.
+            val linkedLower = alreadyLinkedTerms.map(String::lowercase).toSet()
             val localSuggestions = engine.directMatch(blockContent)
+                .filter { it.term.lowercase() !in linkedLower }
             val initial = TagSuggestionState.Ready(
                 blockUuid = blockUuid,
                 localSuggestions = localSuggestions,

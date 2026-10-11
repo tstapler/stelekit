@@ -8,11 +8,13 @@ import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.GraphId
+import dev.stapler.stelekit.git.CloneProgress
 import dev.stapler.stelekit.git.FetchResult
 import dev.stapler.stelekit.git.GitAuth
 import dev.stapler.stelekit.git.GitCommit
 import dev.stapler.stelekit.git.GitRepository
 import dev.stapler.stelekit.git.GitStatus
+import dev.stapler.stelekit.git.GitTransportRetryState
 import dev.stapler.stelekit.git.MergeResult
 import dev.stapler.stelekit.git.MergeSide
 import dev.stapler.stelekit.git.model.ConflictFile
@@ -69,12 +71,15 @@ class GraphManagerCloneTest {
             url: String,
             localPath: String,
             auth: GitAuth,
-            onProgress: (String) -> Unit,
+            onProgress: (CloneProgress) -> Unit,
+            onStateChange: (GitTransportRetryState) -> Unit,
         ): Either<DomainError.GitError, Unit> = cloneResult
 
         override suspend fun isGitRepo(path: String): Boolean = throw UnsupportedOperationException()
         override suspend fun init(repoRoot: String): Either<DomainError.GitError, Unit> = throw UnsupportedOperationException()
+        override suspend fun testRemote(url: String, auth: GitAuth): Either<DomainError.GitError, Unit> = throw UnsupportedOperationException()
         override suspend fun fetch(config: GitConfig): Either<DomainError.GitError, FetchResult> = throw UnsupportedOperationException()
+        override suspend fun unshallow(config: GitConfig): Either<DomainError.GitError, Unit> = throw UnsupportedOperationException()
         override suspend fun status(config: GitConfig): Either<DomainError.GitError, GitStatus> = throw UnsupportedOperationException()
         override suspend fun stageSubdir(config: GitConfig): Either<DomainError.GitError, Unit> = throw UnsupportedOperationException()
         override suspend fun commit(config: GitConfig, message: String): Either<DomainError.GitError, String> = throw UnsupportedOperationException()
@@ -144,5 +149,17 @@ class GraphManagerCloneTest {
             "Failed clone must not register a new graph"
         )
         assertEquals(graphCountBefore, graphCountAfter, "Graph count should not change after a failed clone")
+    }
+
+    @Test
+    fun `updateWikiSubdir updates graph info effectivePath`() = runTest {
+        val gm = graphManager()
+        val graphId = gm.addGraph("/tmp/my-repo")
+        
+        gm.updateWikiSubdir(graphId, "logseq")
+
+        val info = gm.graphRegistry.value.graphs.first { it.id == graphId }
+        assertEquals("logseq", info.detectedWikiSubdir)
+        assertEquals("/tmp/my-repo/logseq", info.effectivePath)
     }
 }

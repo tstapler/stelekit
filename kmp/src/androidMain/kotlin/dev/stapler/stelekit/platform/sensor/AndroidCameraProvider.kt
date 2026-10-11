@@ -127,9 +127,10 @@ class AndroidCameraProvider(
                 // provider whose sensorDataFlow never emits cannot hang the capture
                 // indefinitely. This class does not call startSensing()/stopSensing() itself:
                 // SensorModule.motionSensorProvider is a shared, non-reference-counted
-                // singleton, and this method currently has no reachable production caller
-                // (see App.kt's unused executeCaptureAndImport) — calling stop/start here
-                // would race an already-open CameraViewfinderDialog's own sensing session.
+                // singleton, and this method has no reachable production caller today (the
+                // real capture flow goes through CameraViewfinderDialog/showCameraViewfinder
+                // instead) — calling stop/start here would race an already-open
+                // CameraViewfinderDialog's own sensing session.
                 // ponytail: best-effort snapshot only; wire start/stop here (with reference
                 // counting) if/when this path gets a real UI caller.
                 val sensorSnapshot = SensorModule.motionSensorProvider.snapshotSensorData()

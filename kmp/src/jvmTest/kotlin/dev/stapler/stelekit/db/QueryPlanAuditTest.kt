@@ -35,6 +35,8 @@ class QueryPlanAuditTest {
         "selectAllMetadata",
         // content LIKE — no index on content; FTS handles production full-text search
         "selectBlocksWithContentLike", "selectBlocksWithContentLikePaginated",
+        // live query blocks: no index on content / pages.properties (delimited string); full scan + sort, no content/created_at index — acceptable until measured
+        "selectBlocksWithMarkerPrefix", "selectPagesWithPropertyPair",
         "countBlocksWithWikilink", "selectBlocksWithWikilink", "countLinkedReferencesForPage",
         // name LIKE — no index covers prefix-wildcard; FTS handles page-name search
         "selectPagesByNameLike", "selectPagesByNameLikePaginated",
@@ -71,6 +73,9 @@ class QueryPlanAuditTest {
         // size_bytes has no index — size-sorted browsing is an uncommon path; add
         // idx_asset_size if it becomes a hot read pattern
         "selectAssetsBySizeKeyset", "selectAssetsByMediaTypeBySizeKeyset",
+        // file_path has no index; only read by FilePathRootMigration, a one-shot migration
+        // guarded to run once per graph after a path change — not a hot/reactive read path
+        "selectPageUuidAndFilePath",
     )
 
     // ── All SELECT queries from SteleDatabase.sq, parameters replaced with literals ──────────
@@ -80,6 +85,8 @@ class QueryPlanAuditTest {
         // ── blocks ───────────────────────────────────────────────────────────────────────────
         AuditQuery("selectBlockByUuid",
             "SELECT * FROM blocks WHERE uuid = 'x'"),
+        AuditQuery("selectMergeConflictBlocks",
+            "SELECT * FROM blocks WHERE properties LIKE '%merge-conflict:true%' AND uuid > 'x' ORDER BY uuid LIMIT 10"),
         AuditQuery("existsBlockByUuid",
             "SELECT COUNT(*) FROM blocks WHERE uuid = 'x'"),
         AuditQuery("selectAllBlocks",
@@ -110,8 +117,14 @@ class QueryPlanAuditTest {
             "SELECT * FROM blocks WHERE content LIKE '%test%'"),
         AuditQuery("selectBlocksWithContentLikePaginated",
             "SELECT * FROM blocks WHERE content LIKE '%test%' ORDER BY created_at DESC LIMIT 10 OFFSET 0"),
+        AuditQuery("selectBlocksWithMarkerPrefix",
+            "SELECT * FROM blocks WHERE content = 'TODO' OR substr(content, 1, length('TODO') + 1) = 'TODO' || ' ' ORDER BY created_at DESC LIMIT 10 OFFSET 0"),
+        AuditQuery("selectPagesWithPropertyPair",
+            "SELECT * FROM pages WHERE instr(',' || coalesce(properties, '') || ',', ',' || 'type:book' || ',') > 0 ORDER BY name LIMIT 10 OFFSET 0"),
         AuditQuery("countBlocksByPageUuid",
             "SELECT COUNT(*) FROM blocks WHERE page_uuid = 'x'"),
+        AuditQuery("countBlocksByPageUuids",
+            "SELECT page_uuid, COUNT(*) AS block_count FROM blocks WHERE page_uuid IN ('x','y') GROUP BY page_uuid"),
         AuditQuery("selectBlocksByParentUuidOrdered",
             "SELECT * FROM blocks WHERE parent_uuid = 'x' ORDER BY position"),
         AuditQuery("selectBlocksByParentUuids",
@@ -190,6 +203,8 @@ ORDER BY depth, parent_uuid, position"""),
             "SELECT * FROM pages ORDER BY created_at DESC LIMIT 10"),
         AuditQuery("countPages",
             "SELECT COUNT(*) FROM pages"),
+        AuditQuery("selectPageUuidAndFilePath",
+            "SELECT uuid, file_path FROM pages WHERE file_path IS NOT NULL"),
         AuditQuery("selectJournalPages",
             "SELECT * FROM pages WHERE is_journal = 1 AND journal_date IS NOT NULL ORDER BY journal_date DESC LIMIT 10 OFFSET 0"),
         AuditQuery("selectJournalPageByDate",
@@ -199,9 +214,32 @@ ORDER BY depth, parent_uuid, position"""),
         AuditQuery("selectPagesBySectionId",
             "SELECT * FROM pages WHERE section_id = '' ORDER BY name ASC LIMIT 10 OFFSET 0"),
         AuditQuery("selectPagesByNameLike",
-            "SELECT * FROM pages WHERE name LIKE '%test%'"),
+            "SELECT * FROM pages WHERE name LIKE '%test%' ESCAPE '\\'"),
         AuditQuery("selectPagesByNameLikePaginated",
-            "SELECT * FROM pages WHERE name LIKE '%test%' ORDER BY name LIMIT 10 OFFSET 0"),
+            "SELECT * FROM pages WHERE name LIKE '%test%' ESCAPE '\\' ORDER BY name, section_id LIMIT 10 OFFSET 0"),
+        AuditQuery("selectPagesFilteredPaginated",
+            """SELECT * FROM pages
+               WHERE name >= 'work/' AND name < 'work0'
+                 AND (1 = 1 OR is_journal = 0)
+                 AND ('2024-01-01' IS NULL OR (is_journal = 1 AND journal_date >= '2024-01-01'))
+                 AND ('2024-12-31' IS NULL OR (is_journal = 1 AND journal_date <= '2024-12-31'))
+                 AND ('%x%' IS NULL OR lower(properties) LIKE '%x%' ESCAPE '\')
+               ORDER BY name, section_id LIMIT 10 OFFSET 0"""),
+        AuditQuery("countPagesFiltered",
+            """SELECT COUNT(*) FROM pages
+               WHERE name >= 'work/' AND name < 'work0'
+                 AND (1 = 1 OR is_journal = 0)
+                 AND ('2024-01-01' IS NULL OR (is_journal = 1 AND journal_date >= '2024-01-01'))
+                 AND ('2024-12-31' IS NULL OR (is_journal = 1 AND journal_date <= '2024-12-31'))
+                 AND ('%x%' IS NULL OR lower(properties) LIKE '%x%' ESCAPE '\')"""),
+        AuditQuery("selectPagesFilteredAmong",
+            """SELECT * FROM pages
+               WHERE uuid IN ('p1', 'p2')
+                 AND name >= 'work/' AND name < 'work0'
+                 AND (1 = 1 OR is_journal = 0)
+                 AND ('2024-01-01' IS NULL OR (is_journal = 1 AND journal_date >= '2024-01-01'))
+                 AND ('2024-12-31' IS NULL OR (is_journal = 1 AND journal_date <= '2024-12-31'))
+                 AND ('%x%' IS NULL OR lower(properties) LIKE '%x%' ESCAPE '\')"""),
         AuditQuery("selectPageBacklinkCount",
             "SELECT backlink_count FROM pages WHERE name = 'x'"),
         AuditQuery("selectBacklinkCountsForPages",
@@ -269,7 +307,14 @@ ORDER BY depth, parent_uuid, position"""),
             """SELECT p.uuid, p.name, p.namespace, p.file_path, p.created_at, p.updated_at, p.properties, p.version, p.is_favorite, p.is_journal, p.journal_date, p.is_content_loaded,
                highlight(pages_fts, 0, '<em>', '</em>') AS highlight
                FROM pages_fts pf JOIN pages p ON p.rowid = pf.rowid
-               WHERE pages_fts MATCH 'test*' ORDER BY bm25(pages_fts) LIMIT 10"""),
+               WHERE pages_fts MATCH 'test*' ORDER BY bm25(pages_fts), pf.rowid LIMIT 10 OFFSET 20"""),
+        AuditQuery("countPagesByNameFtsFiltered",
+            """SELECT COUNT(*) FROM pages_fts pf JOIN pages p ON p.rowid = pf.rowid
+               WHERE pages_fts MATCH 'test*'
+                 AND p.name >= 'work/' AND p.name < 'work0'
+                 AND (1 = 1 OR p.is_journal = 0)
+                 AND ('2024-01-01' IS NULL OR (p.is_journal = 1 AND p.journal_date >= '2024-01-01'))
+                 AND ('2024-12-31' IS NULL OR (p.is_journal = 1 AND p.journal_date <= '2024-12-31'))"""),
         AuditQuery("searchPagesByNameFtsInDateRange",
             """SELECT p.uuid, p.name, p.namespace, p.file_path, p.created_at, p.updated_at,
                p.properties, p.version, p.is_favorite, p.is_journal, p.journal_date, p.is_content_loaded,
@@ -331,6 +376,10 @@ ORDER BY depth, parent_uuid, position"""),
         // ── git_config ────────────────────────────────────────────────────────────────────────
         AuditQuery("selectGitConfig",
             "SELECT * FROM git_config WHERE graph_id = 'x'"),
+
+        // ── storage_locations ─────────────────────────────────────────────────────────────────
+        AuditQuery("selectStorageLocation",
+            "SELECT * FROM storage_locations WHERE graph_id = 'x'"),
 
         // ── image_annotations ─────────────────────────────────────────────────────────────────
         AuditQuery("selectAllImageAnnotations",
@@ -483,6 +532,10 @@ ORDER BY depth, parent_uuid, position"""),
                 // ── git_config — needed for selectGitConfig ───────────────────────────────────
                 seed.execute(
                     "INSERT OR IGNORE INTO git_config(graph_id,repo_root) VALUES('g1','/repo')"
+                )
+                // ── storage_locations — needed for selectStorageLocation ──────────────────────
+                seed.execute(
+                    "INSERT OR IGNORE INTO storage_locations(graph_id,kind,updated_at_epoch_ms) VALUES('g1','AppOwned',0)"
                 )
                 seed.execute("ANALYZE")
             }

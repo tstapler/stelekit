@@ -4,10 +4,12 @@
 
 package dev.stapler.stelekit.browser
 
+import androidx.compose.runtime.remember
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.window.ComposeViewport
 import kotlinx.browser.document
 import dev.stapler.stelekit.db.DriverFactory
+import dev.stapler.stelekit.db.GraphLockedElsewhereException
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.git.GitHostAdapter
 import dev.stapler.stelekit.git.WasmGitRepository
@@ -17,8 +19,10 @@ import dev.stapler.stelekit.git.resolve
 import dev.stapler.stelekit.platform.DemoFileSystem
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.HostAccessState
+import dev.stapler.stelekit.platform.EphemeralSettingsMode
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.PlatformSettings
+import dev.stapler.stelekit.platform.security.CredentialStore
 import dev.stapler.stelekit.sync.WasmSectionSyncService
 import dev.stapler.stelekit.repository.GraphBackend
 import dev.stapler.stelekit.model.DEMO_GRAPH_ID
@@ -26,13 +30,39 @@ import dev.stapler.stelekit.service.WasmMediaAttachmentService
 import dev.stapler.stelekit.ui.StelekitApp
 import dev.stapler.stelekit.ui.components.settings.ReconciliationUiState
 import kotlinx.browser.localStorage
+import kotlinx.browser.window
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 private fun markSteleKitReady(): Unit = js("window.__stelekit_ready = true")
 private fun markGraphDialogCapable(capable: Boolean): Unit = js("window.__stelekit_native_graph_picker = capable")
 private fun markDriverBackend(backend: String): Unit = js("window.__stelekit_driver_backend = backend")
+
+/**
+ * Replaces the `#loading` overlay's content with [message] and flags `window.__stelekit_boot_error`
+ * so index.html's own 8-second auto-hide timeout leaves it visible — used when startup must abort
+ * before `ComposeViewport` ever mounts (e.g. [GraphLockedElsewhereException]), since there is no
+ * Compose UI/snackbar available yet to surface the error through.
+ */
+private fun showBootError(message: String): Unit = js(
+    """
+    (function() {
+        window.__stelekit_boot_error = true;
+        var loading = document.getElementById('loading');
+        if (!loading) return;
+        loading.innerHTML = '';
+        var p = document.createElement('p');
+        p.style.fontSize = '15px';
+        p.style.maxWidth = '420px';
+        p.style.textAlign = 'center';
+        p.style.padding = '0 16px';
+        p.textContent = message;
+        loading.appendChild(p);
+    })()
+    """
+)
 
 // Story 5.1.3: `beforeunload` warning gated on PlatformFileSystem.dirtyFileCountFlow.
 //
@@ -55,6 +85,38 @@ private fun markDriverBackend(backend: String): Unit = js("window.__stelekit_dri
 internal fun shouldWarnOnUnload(dirtyCount: Int): Boolean = dirtyCount > 0
 
 private fun setShouldWarnMirror(shouldWarn: Boolean): Unit = js("window.__stelekit_should_warn = shouldWarn")
+
+/**
+ * web-credential-persistence (Task 1.4.1a): resolves a git HTTPS token from the real
+ * [CredentialStore], falling back to the legacy [PlatformFileSystem.githubToken] plaintext value
+ * during the transition window before [migrateLegacyGitCredential] has copied it over. `internal`
+ * (not inlined in the `configResolver` lambda literal) so it has its own test seam — see
+ * `MainCredentialWiringTest.kt`.
+ */
+internal fun resolveGitHttpsToken(httpsTokenKey: String?): String =
+    httpsTokenKey?.let { CredentialStore().retrieve(it) } ?: PlatformFileSystem.githubToken ?: ""
+
+/**
+ * web-credential-persistence (Task 1.4.2a): one-time, boot-local migration of
+ * [persistWebGitCredentials]'s legacy plaintext `githubToken` `PlatformSettings` value into the
+ * real, encrypted [CredentialStore] — check-before-write on the target key makes this idempotent,
+ * no separate "already migrated" flag needed. `internal` (not `private`) so it has its own test
+ * seam — see `MainCredentialMigrationTest.kt`. Not called from [runEphemeralSession]: that path's
+ * `PlatformSettings`/[CredentialStore] reads/writes already route through
+ * [EphemeralSettingsMode]'s in-memory map, so there is no real legacy plaintext to migrate there.
+ */
+internal suspend fun migrateLegacyGitCredential(graphId: String) {
+    val targetKey = "git_https_token_$graphId"
+    if (CredentialStore().retrieve(targetKey) != null) return
+    val legacy = PlatformSettings().getString("githubToken", "")
+    if (legacy.isBlank()) return
+    CredentialStore().store(targetKey, legacy)
+    val settings = PlatformSettings()
+    settings.putString("githubOwner", "")
+    settings.putString("githubRepo", "")
+    settings.putString("githubBranch", "")
+    settings.putString("githubToken", "")
+}
 
 private fun registerBeforeUnloadWarning(): Unit = js(
     """
@@ -96,10 +158,32 @@ private fun preventBrowserTabFocusTraversal(): Unit = js(
 fun main() {
     preventBrowserTabFocusTraversal()
     val scope = MainScope()
+
+    // One-shot startup sweep for an interrupted relocate's staging directory (Story 3.1.2), the
+    // Web counterpart of MainActivity.kt's Android call — self-contained and unconditional
+    // (no GraphManager/graph-registry lookup needed), so it runs as its own child launch rather
+    // than being threaded through the boot sequence below. Fire-and-forget: never gates first
+    // paint, matching this sweep's best-effort "matters on next launch, not this one" nature.
+    scope.launch {
+        dev.stapler.stelekit.db.sweepWasmJsRelocationStaging(scope)
+    }
+
     scope.launch(CoroutineExceptionHandler { _, throwable ->
         println("[SteleKit] Fatal startup error: ${throwable.message}")
         // ComposeViewport will not be mounted — the loading overlay remains visible
     }) {
+        // The "open temporarily" flow (Sidebar's GraphSwitcher → startEphemeralSession()) reloads
+        // into this exact URL — a fresh page load is required because DriverFactory caches exactly
+        // one SQLite driver for the lifetime of the page (see createEphemeralDriverAsync's KDoc),
+        // so an in-place mode switch isn't possible once the normal boot path below has already
+        // created a persistent one. This is a genuinely separate boot sequence, not a variant of
+        // the normal one below — it skips OPFS, localStorage/PlatformSettings, and host-directory
+        // sync entirely rather than threading an "ephemeral" flag through that whole sequence.
+        if (window.location.search.contains("mode=ephemeral")) {
+            runEphemeralSession()
+            return@launch
+        }
+
         // Allow E2E tests to open a named OPFS graph via localStorage override.
         // Tests set window.localStorage['__stelekit_test_graph'] = 'name' before loading.
         val graphId = localStorage.getItem("__stelekit_test_graph") ?: "default"
@@ -125,6 +209,12 @@ fun main() {
         WasmSectionSyncService.githubToken = ghToken
         WasmSectionSyncService.graphId = graphId
 
+        // web-credential-persistence (Task 1.2.2a): must be a direct, awaited suspend call on the
+        // boot coroutine, never a detached scope.launch{} — configResolver and migration below
+        // both need the decrypted cache warm before they run (pre-mortem P1).
+        CredentialStore.preload()
+        migrateLegacyGitCredential(graphId)
+
         // Story 4.3.1: shared configResolver for the write engine (WasmGitRepository), built from
         // the same PlatformFileSystem.githubOwner/githubRepo/githubToken companion fields the read
         // path (readFileSuspend() above, WasmSectionSyncService) already trusts — one credential
@@ -136,7 +226,7 @@ fun main() {
             val repo = PlatformFileSystem.githubRepo
             if (owner.isEmpty() || repo.isEmpty()) return@resolver null
             val remoteUrl = "https://github.com/$owner/$repo"
-            GitHostAdapter.resolve(config, remoteUrl, PlatformFileSystem.githubToken ?: "")
+            GitHostAdapter.resolve(config, remoteUrl, resolveGitHttpsToken(config.httpsTokenKey))
         }
         val wasmGitRepository = WasmGitRepository.withDefaultClient(opfsFileSystem, configResolver)
 
@@ -158,7 +248,13 @@ fun main() {
         // preload → driver → ..." step ordering. A no-op (resolves to NotApplicable) for the vast
         // majority of users who have never connected a host directory.
         val hostAccessState = opfsFileSystem.hostDirectorySync.reconnectHostDirectory(graphId)
-        println("[SteleKit] reconnectHostDirectory('$graphId'): $hostAccessState")
+        // Diagnostic: opfsGraphPath printed alongside hostGraphOpfsPath (logged by
+        // HostDirectorySync.setHostAccessState) so a persisted-envelope mismatch between the two is
+        // directly visible in the console instead of only inferred from a later silent-defer warning.
+        println(
+            "[SteleKit] reconnectHostDirectory('$graphId'): $hostAccessState " +
+                "(opfsGraphPath=$opfsGraphPath, hostGraphOpfsPath=${opfsFileSystem.hostDirectorySync.hostGraphOpfsPath})",
+        )
 
         val isNewUser = !opfsFileSystem.directoryExists(opfsGraphPath)
 
@@ -176,6 +272,12 @@ fun main() {
                 markDriverBackend("opfs")
                 GraphBackend.SQLDELIGHT
             }
+        } catch (e: GraphLockedElsewhereException) {
+            // Do NOT fall back to the demo graph here — that would silently hide a real,
+            // recoverable "open it in that other tab instead" situation from the user.
+            println("[SteleKit] ${e.message}")
+            showBootError(e.message ?: "This graph is already open in another browser tab.")
+            return@launch
         } catch (e: Throwable) {
             println("[SteleKit] SQLite driver init failed, loading demo graph: ${e.message}")
             markDriverBackend("memory")
@@ -218,45 +320,209 @@ fun main() {
             graphManager.switchGraph(DEMO_GRAPH_ID)
         }
 
+        // Bug fix: opfsFileSystem's graphId/hostDirectorySync were only ever wired to the boot-time
+        // graph above (opfsGraphPath/reconnectHostDirectory) — GraphManager's multi-graph switcher
+        // (the sidebar graph dropdown) can activate a different graph at any time afterward, and
+        // nothing told opfsFileSystem. Keep it in sync for the life of the session; skips the demo
+        // graph (never OPFS-backed) and no-ops in demo-fallback mode (no real fileSystem to update).
+        if (!useDemoFallback) {
+            scope.launch {
+                graphManager.graphRegistry.collect { registry ->
+                    val activeId = registry.activeGraphId ?: return@collect
+                    if (activeId == DEMO_GRAPH_ID) return@collect
+                    val info = registry.graphs.firstOrNull { it.id == activeId } ?: return@collect
+                    opfsFileSystem.switchActiveGraph(info.path)
+                }
+            }
+        }
+
         markSteleKitReady()
         markGraphDialogCapable(dev.stapler.stelekit.platform.showDirectoryPickerSupported())
 
         ComposeViewport(document.body!!) {
+            val wasmAttachmentService = remember { WasmMediaAttachmentService(fileSystem) }
+            // Pull-only copy ("Copy pages from..."): in-memory staging, nothing to resume across reloads.
+            val copyHost = remember {
+                dev.stapler.stelekit.ui.screens.copy.inMemoryCopyHostConfig(dev.stapler.stelekit.merge.SourcePlatform.Web)
+            }
             StelekitApp(
                 fileSystem = fileSystem,
                 graphPath = graphPath,
-                graphManager = graphManager,
-                attachmentService = WasmMediaAttachmentService(fileSystem),
-                gitRepository = wasmGitRepository,
-                localChangesCountFlow = opfsFileSystem.dirtyFileCountFlow,
-                hostAccessStateFlow = opfsFileSystem.hostDirectorySync.hostAccessStateFlow,
-                hostWritePendingCountFlow = opfsFileSystem.hostDirectorySync.hostWritePendingCountFlow,
-                hostWriteStuckFlow = opfsFileSystem.hostDirectorySync.hostWriteStuckFlow,
-                onReconnectHostDirectory = {
-                    scope.launch { opfsFileSystem.hostDirectorySync.requestHostDirectoryAccess(graphId) }
-                },
-                // Task 3.1.1c: "Enable live folder sync" — wired the same way the badge's flows
-                // above are, straight to HostDirectorySync.connectHostDirectory. Its own internal
-                // showDirectoryPicker → runHostReconciliation sequence already leaves hostDirHandle
-                // unset on any failure, so a non-Granted result here always means "nothing changed."
-                // lastReconciliationSummary is stashed by runHostReconciliation on the same call,
-                // so it is always fresh when result == Granted.
-                onConnectHostDirectory = connectHostDirectory@{
-                    val result = opfsFileSystem.hostDirectorySync.connectHostDirectory(opfsGraphPath)
-                    val summary = opfsFileSystem.hostDirectorySync.lastReconciliationSummary
-                    if (result != HostAccessState.Granted || summary == null) {
-                        return@connectHostDirectory ReconciliationUiState.Failed(
-                            "Couldn't finish comparing your files"
-                        )
-                    }
-                    ReconciliationUiState.Summary(
-                        identical = summary.identical,
-                        hostChangedConflict = summary.hostChangedConflict,
-                        hostOnlyNew = summary.hostOnlyNew,
-                        browserOnlyNeedsPush = summary.browserOnlyNeedsPush,
-                    )
-                },
+                deps = dev.stapler.stelekit.ui.StelekitAppDeps(
+                    graphManager = graphManager,
+                    captureDeps = dev.stapler.stelekit.ui.StelekitAppCaptureDeps(copyHost = copyHost),
+                    lifecycleHooks = dev.stapler.stelekit.ui.StelekitAppLifecycleHooks(
+                        // WasmMediaAttachmentService.attachBytes (drag-and-drop) needs a
+                        // NotificationManager to surface a failure toast, but StelekitApp creates
+                        // that instance after deps is built — attach it once ready, mirroring
+                        // CaptureController.attachNotificationManager's same pattern on Desktop.
+                        onNotificationManagerReady = { nm -> wasmAttachmentService.attachNotificationManager(nm) },
+                    ),
+                    platformIntegrations = dev.stapler.stelekit.ui.StelekitAppPlatformIntegrations(
+                        // Demo-fallback mode has no persistent OPFS content to write attachments
+                        // into (matches graphMoveQuiesceStrategy/hostLinkStep/insufficientSpaceCheck's
+                        // gate below), so the attach-image affordance is hidden entirely there.
+                        attachmentService = if (useDemoFallback) null else wasmAttachmentService,
+                        gitRepository = wasmGitRepository,
+                        // Phase 3 (Epic 3.3): relocate has no meaning in demo-fallback mode (no
+                        // persistent OPFS content to move), so both are left null there.
+                        graphMoveQuiesceStrategy = if (useDemoFallback) null else
+                            dev.stapler.stelekit.db.createWasmJsGraphMoveQuiesceStrategy(opfsFileSystem),
+                        // Epic 4.1 (Task 4.1.1a): forwards straight to connectHostDirectory —
+                        // reuses the same "no persistent OPFS content in demo-fallback mode" gate
+                        // graphMoveQuiesceStrategy above already applies.
+                        hostLinkStep = if (useDemoFallback) null else
+                            dev.stapler.stelekit.db.createWasmJsHostLinkStep(opfsFileSystem.hostDirectorySync),
+                        storageLocationResolver = if (useDemoFallback) null else
+                            dev.stapler.stelekit.db.createWasmJsStorageLocationResolver(
+                                graphManager = graphManager,
+                                hostAccessState = { opfsFileSystem.hostAccessStateFlow.value },
+                            ),
+                        // MAJOR finding (PR #327 review): real pre-flight free-space check —
+                        // previously never wired, so GraphRelocationCoordinator's default
+                        // BulkCopyVerifier always used InsufficientSpaceCheck.NONE. Same
+                        // demo-fallback gate as graphMoveQuiesceStrategy/hostLinkStep above (no
+                        // persistent OPFS content to check space for in that mode).
+                        insufficientSpaceCheck = if (useDemoFallback) null else
+                            dev.stapler.stelekit.db.WasmJsInsufficientSpaceCheck(),
+                    ),
+                    webSyncDeps = dev.stapler.stelekit.ui.StelekitAppWebSyncDeps(
+                        localChangesCountFlow = opfsFileSystem.dirtyFileCountFlow,
+                        hostAccessStateFlow = opfsFileSystem.hostAccessStateFlow,
+                        hostWritePendingCountFlow = opfsFileSystem.hostWritePendingCountFlow,
+                        hostWriteStuckFlow = opfsFileSystem.hostDirectorySync.hostWriteStuckFlow,
+                        // Bug fix: read the CURRENT active graph via opfsFileSystem.currentGraphId()/
+                        // graphRootPath() at click time, not the boot-time graphId/opfsGraphPath locals
+                        // — graphManager.graphRegistry's collector (below) can have switched opfsFileSystem
+                        // to a different graph since page load, and these callbacks must act on whichever
+                        // graph the user is actually looking at when they click.
+                        onReconnectHostDirectory = {
+                            scope.launch {
+                                opfsFileSystem.hostDirectorySync.requestHostDirectoryAccess(opfsFileSystem.currentGraphId())
+                            }
+                        },
+                        // Task 3.1.1c: "Enable live folder sync" — wired the same way the badge's flows
+                        // above are, straight to HostDirectorySync.connectHostDirectory. Its own internal
+                        // showDirectoryPicker → runHostReconciliation sequence already leaves hostDirHandle
+                        // unset on any failure, so a non-Granted result here always means "nothing changed."
+                        // lastReconciliationSummary is stashed by runHostReconciliation on the same call,
+                        // so it is always fresh when result == Granted.
+                        onConnectHostDirectory = connectHostDirectory@{
+                            val result = opfsFileSystem.hostDirectorySync.connectHostDirectory(opfsFileSystem.graphRootPath())
+                            val summary = opfsFileSystem.hostDirectorySync.lastReconciliationSummary
+                            if (result != HostAccessState.Granted || summary == null) {
+                                return@connectHostDirectory ReconciliationUiState.Failed(
+                                    "Couldn't finish comparing your files"
+                                )
+                            }
+                            ReconciliationUiState.Summary(
+                                identical = summary.identical,
+                                hostChangedConflict = summary.hostChangedConflict,
+                                hostOnlyNew = summary.hostOnlyNew,
+                                browserOnlyNeedsPush = summary.browserOnlyNeedsPush,
+                            )
+                        },
+                        // Task 4.1.2c: detaches the current graph's folder and persists the
+                        // resulting AppOwned storage_locations row in one step (see
+                        // unlinkHostDirectoryAndPersist's own doc comment). A Left is rethrown as
+                        // a Throwable so FolderSyncSettings's own onUnlink catch block logs it —
+                        // that lambda's declared suspend () -> Unit shape has nowhere else to
+                        // surface an Either failure.
+                        onUnlinkHostDirectory = unlink@{
+                            val result = dev.stapler.stelekit.db.unlinkHostDirectoryAndPersist(
+                                opfsFileSystem.hostDirectorySync,
+                                opfsFileSystem.currentGraphId(),
+                                onGraphLocationDetermined = graphManager::onGraphLocationDetermined,
+                            )
+                            if (result is arrow.core.Either.Left) {
+                                throw RuntimeException(result.value.message)
+                            }
+                        },
+                    ),
+                ),
             )
         }
+    }
+}
+
+/**
+ * The "open temporarily" boot sequence: a graph that lives entirely in memory for the lifetime of
+ * this tab. [EphemeralSettingsMode.enable] is called first, before anything else touches
+ * [PlatformSettings] — `persistWebGitCredentials`/`GitCredentialConnectionStore` (reached if the
+ * user configures git sync this session) both instantiate `PlatformSettings()` directly with no
+ * injection seam, so this flag is what keeps a temporary session's credentials out of permanent
+ * `localStorage` rather than requiring every credential-persistence call site to know about
+ * ephemeral mode individually.
+ *
+ * Deliberately does not reuse the normal boot path's returning-user/demo-fallback/host-directory
+ * logic above — none of it applies to a graph that starts empty every time and is never persisted:
+ * there is no OPFS content to preload, no `lastGraphPath` to migrate, and connecting a host
+ * directory would reintroduce exactly the persistent side channel this mode exists to avoid.
+ */
+@OptIn(ExperimentalComposeUiApi::class)
+private suspend fun runEphemeralSession() {
+    EphemeralSettingsMode.enable()
+    // Direct, awaited suspend call — same boot-ordering requirement as the normal path above.
+    // Not a real persistence step here (EphemeralSettingsMode.active is already true), just a
+    // fresh in-memory-only key so store()/retrieve() behave consistently for this session.
+    CredentialStore.preload()
+
+    val fileSystem = PlatformFileSystem()
+    fileSystem.markEphemeral()
+    val graphPath = "/stelekit/ephemeral"
+    fileSystem.preload(graphPath)
+
+    val configResolver: suspend (GitConfig) -> GitHostConfig? = resolver@{ config ->
+        val owner = PlatformFileSystem.githubOwner
+        val repo = PlatformFileSystem.githubRepo
+        if (owner.isEmpty() || repo.isEmpty()) return@resolver null
+        val remoteUrl = "https://github.com/$owner/$repo"
+        GitHostAdapter.resolve(config, remoteUrl, resolveGitHttpsToken(config.httpsTokenKey))
+    }
+    val wasmGitRepository = WasmGitRepository.withDefaultClient(fileSystem, configResolver)
+
+    val driverFactory = DriverFactory()
+    driverFactory.createEphemeralDriverAsync()
+    markDriverBackend("memory-ephemeral")
+
+    // platformSettings is now backed by EphemeralSettingsMode's in-memory map (enabled above),
+    // so the graph registry this constructs/persists internally never reaches localStorage either.
+    val graphManager = GraphManager(
+        platformSettings = PlatformSettings(),
+        driverFactory = driverFactory,
+        fileSystem = fileSystem,
+        defaultBackend = GraphBackend.SQLDELIGHT,
+    )
+    val ephemeralGraphId = graphManager.addGraph(graphPath)
+    graphManager.switchGraph(ephemeralGraphId)
+
+    markSteleKitReady()
+    markGraphDialogCapable(false)
+
+    ComposeViewport(document.body!!) {
+        StelekitApp(
+            fileSystem = fileSystem,
+            graphPath = graphPath,
+            deps = dev.stapler.stelekit.ui.StelekitAppDeps(
+                graphManager = graphManager,
+                platformIntegrations = dev.stapler.stelekit.ui.StelekitAppPlatformIntegrations(
+                    attachmentService = WasmMediaAttachmentService(fileSystem),
+                    gitRepository = wasmGitRepository,
+                    // graphMoveQuiesceStrategy/storageLocationResolver intentionally left null — an
+                    // ephemeral session has no persistent storage to relocate to/from (see this
+                    // function's own doc), so "Move storage location…" stays inert here.
+                ),
+                webSyncDeps = dev.stapler.stelekit.ui.StelekitAppWebSyncDeps(
+                    localChangesCountFlow = fileSystem.dirtyFileCountFlow,
+                    hostAccessStateFlow = fileSystem.hostAccessStateFlow,
+                    hostWritePendingCountFlow = fileSystem.hostWritePendingCountFlow,
+                    hostWriteStuckFlow = fileSystem.hostDirectorySync.hostWriteStuckFlow,
+                    onReconnectHostDirectory = {},
+                    onConnectHostDirectory = {
+                        ReconciliationUiState.Failed("Connecting a local folder isn't available in a temporary session")
+                    },
+                ),
+            ),
+        )
     }
 }

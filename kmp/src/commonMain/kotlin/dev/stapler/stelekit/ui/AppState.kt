@@ -2,6 +2,7 @@ package dev.stapler.stelekit.ui
 
 import androidx.compose.runtime.staticCompositionLocalOf
 import kotlinx.datetime.LocalDate
+import dev.stapler.stelekit.db.DiskConflictBlockMatcher
 import dev.stapler.stelekit.docs.AllPagesDocs
 import dev.stapler.stelekit.docs.FlashcardsDocs
 import dev.stapler.stelekit.docs.GlobalUnlinkedReferencesDocs
@@ -18,6 +19,7 @@ import dev.stapler.stelekit.vault.VaultError
 import dev.stapler.stelekit.vault.VaultNamespace
 import dev.stapler.stelekit.asset.AssetUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.SectionId
 import dev.stapler.stelekit.sections.SectionManifest
 import dev.stapler.stelekit.sections.SectionState
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
@@ -102,7 +104,7 @@ data class AppState(
     val onboardingCompleted: Boolean = false,
     val currentScreen: Screen = Screen.Journals,
     val currentPage: Page? = null,
-    val currentGraphPath: String = "",
+    val currentGraphPath: String? = null,
     val commandPaletteVisible: Boolean = false,
     val searchDialogVisible: Boolean = false,
     val searchDialogInitialQuery: String = "",
@@ -138,8 +140,6 @@ data class AppState(
     // Pending conflicts — files changed externally while the user was on a different page.
     // Keyed by filePath; shown as a dialog when the user next navigates to that page.
     val pendingConflicts: Map<String, PendingConflict> = emptyMap(),
-    // Write error — non-null when a background DB write failed persistently
-    val indexingError: String? = null,
     // Fatal error — non-null when a Throwable-level crash was caught and converted to a
     // recoverable state. Shown on the error report screen so the user can copy the message.
     val fatalError: String? = null,
@@ -162,6 +162,10 @@ data class AppState(
     // AlertDialog's rendering while true (see GraphDialogLayer).
     val diskConflictViewFullVisible: Boolean = false,
     val journalMergeReviewVisible: Boolean = false,
+    // Configured git branch missing on the remote: repair sheet, and the review shown before the
+    // first sync of a repaired branch. Opened from the sync badge; neither auto-opens.
+    val branchRepairVisible: Boolean = false,
+    val firstSyncReviewVisible: Boolean = false,
     // LLM suggestion inbox — mirrors journalMergeReviewVisible's shape. Set true when
     // LlmSuggestionInbox.pendingForGraph(currentGraphId) becomes non-empty; NOT auto-dismissed
     // when it becomes empty via accept/reject (same "do NOT auto-dismiss" rule as journal merge).
@@ -180,12 +184,13 @@ data class AppState(
     // Section support
     val currentManifest: SectionManifest? = null,
     val currentSectionStates: Map<String, SectionState> = emptyMap(),
-    val defaultSection: String = "",
+    val defaultSection: SectionId = SectionId.Global,
     val deviceSetupComplete: Boolean = false,
     val sectionPickerVisible: Boolean = false,
     val sectionPickerPage: Page? = null,
     val deviceSetupWizardVisible: Boolean = false,
     val sectionQuickToggleVisible: Boolean = false,
+    val wikiSubdirFixDialogVisible: Boolean = false,
 ) {
     val canGoBack: Boolean get() = historyIndex > 0
     val canGoForward: Boolean get() = historyIndex < navigationHistory.size - 1
@@ -216,24 +221,54 @@ data class Command(
 /**
  * Represents a conflict between the user's in-progress edits and an external
  * change detected on disk by the file watcher.
+ *
+ * The constructor is private: [ifReal] is the only way to build one, so a call site can
+ * never surface a conflict dialog/banner without first passing
+ * [DiskConflictBlockMatcher.hasRealConflict] — the false-positive class this closes is a bug
+ * that recurred across many independent fixes because that check lived at each call site
+ * instead of being required by the type itself.
  */
-data class DiskConflict(
+data class DiskConflict private constructor(
     val pageUuid: String,
     val pageName: String,
     val filePath: String,
-    val editingBlockUuid: String,
+    // Null when the pending-conflict page has no blocks yet — e.g. the auto-apply write in
+    // observeExternalFileChanges() is fire-and-forget, so navigating to a brand-new page before
+    // that write lands leaves checkAndShowPendingConflict() with no block to point at. Model this
+    // as null rather than a sentinel so callers are forced to handle "no target block" explicitly.
+    val editingBlockUuid: BlockUuid?,
     val localContent: String,
     val diskContent: String,
     val diskBlockContent: String? = null
-)
+) {
+    companion object {
+        /** Returns null when there is nothing to review — see the class doc comment. */
+        fun ifReal(
+            pageUuid: String,
+            pageName: String,
+            filePath: String,
+            editingBlockUuid: BlockUuid?,
+            localContent: String,
+            diskContent: String,
+            diskBlockContent: String?,
+        ): DiskConflict? {
+            if (!DiskConflictBlockMatcher.hasRealConflict(localContent, diskBlockContent)) return null
+            return DiskConflict(pageUuid, pageName, filePath, editingBlockUuid, localContent, diskContent, diskBlockContent)
+        }
+    }
+}
 
 /**
- * A disk conflict detected while the user was NOT viewing the affected page.
- * Stored until the user navigates to that page, at which point [DiskConflict] is
- * built from current DB blocks and the captured disk content.
+ * A disk conflict detected while the user was NOT viewing the affected page. The disk
+ * content is applied to the DB immediately (so it is never lost even if the user never
+ * opens the page), but [previousContent] preserves what the first block held right before
+ * that overwrite, so [DiskConflict] can still offer an undo/review affordance if the user
+ * navigates to the page later.
  */
 data class PendingConflict(
     val filePath: String,
     val pageName: String,
     val diskContent: String,
+    val previousContent: String,
+    val pageExistedLocally: Boolean,
 )

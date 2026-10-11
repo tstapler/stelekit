@@ -171,6 +171,32 @@ class BlockStateManager(
     private val _dirtyBlocks = MutableStateFlow<Map<String, Long>>(emptyMap())
 
     /**
+     * Number of [applyContentChange] content writes issued for a block whose [BlockUpdateEvent.BlockContentPatched]
+     * confirmation hasn't arrived yet (or, on failure, hasn't been accounted for directly).
+     *
+     * Needed because [BlockUpdateEvent.BlockContentPatched] carries no version — the write-actor's
+     * DB row has its own independent `version = version + 1` counter (see SteleDatabase.sq's
+     * updateBlockContent), unrelated to the UI-local keystroke version used for [_dirtyBlocks]. If
+     * [applyContentPatch] cleared dirty and applied the confirmation's content the instant *a*
+     * write confirmed, a confirmation for an *older* keystroke arriving after a *newer* keystroke's
+     * optimistic update landed would silently revert already-typed text — the root cause of the
+     * Android "text jumps back and erases words while typing" bug. Only clear dirty once every
+     * issued write has been accounted for, and never apply the confirmation's content: [_blocks]
+     * already holds the correct, possibly-newer, optimistic content.
+     */
+    private val _pendingContentWriteCounts = MutableStateFlow<Map<String, Int>>(emptyMap())
+
+    /** Returns the remaining pending-write count for [uuidStr] after decrementing by one. */
+    private fun decrementPendingContentWrite(uuidStr: String): Int {
+        var remaining = 0
+        _pendingContentWriteCounts.update { counts ->
+            remaining = (counts[uuidStr] ?: 1) - 1
+            if (remaining <= 0) counts - uuidStr else counts + (uuidStr to remaining)
+        }
+        return remaining
+    }
+
+    /**
      * UUIDs of pages that have at least one block with unsaved local edits.
      * Used by [dev.stapler.stelekit.db.GraphLoader] to protect only truly-dirty pages
      * from auto-reload when an external file change is detected — open-but-unedited pages
@@ -583,10 +609,12 @@ class BlockStateManager(
             if (source != null) {
                 // Push path — events arrive from the actor after each hot-path write.
                 // BlocksWritten: full list (structural ops: delete, merge) — merged with dirty-set.
-                // Patch variants: single-field mutations applied in-place; zero DB re-query.
-                // Use collect (not collectLatest) — applying updates is instant; cancellation
-                // mid-apply would leave _blocks partially updated. Rapid edits are serialized
-                // by the actor queue so no stacking occurs.
+                // Patch variants: single-field mutations applied in-place — except
+                // BlockPropertiesPatched on a cache miss, which awaits a DB re-pull (see
+                // applyPropertiesPatch) rather than dropping the patch.
+                // Use collect (not collectLatest) — applying updates is instant in the common
+                // case; cancellation mid-apply would leave _blocks partially updated. Rapid edits
+                // are serialized by the actor queue so no stacking occurs.
                 pushSource?.let { push ->
                     launch {
                         push.collect { event ->
@@ -600,7 +628,7 @@ class BlockStateManager(
                                 }
                                 is BlockUpdateEvent.BlockContentPatched -> {
                                     if (event.pageUuid != pageUuid) return@collect
-                                    applyContentPatch(pageUuidStr, event.blockUuid, event.newContent)
+                                    applyContentPatch(event.blockUuid)
                                 }
                                 is BlockUpdateEvent.BlockReplaced -> {
                                     if (event.pageUuid != pageUuid) return@collect
@@ -608,7 +636,7 @@ class BlockStateManager(
                                 }
                                 is BlockUpdateEvent.BlockPropertiesPatched -> {
                                     if (event.pageUuid != pageUuid) return@collect
-                                    applyPropertiesPatch(pageUuidStr, event.blockUuid, event.properties)
+                                    applyPropertiesPatch(pageUuid, event.blockUuid, event.properties)
                                 }
                                 is BlockUpdateEvent.PagesInvalidated -> { /* not consumed here */ }
                             }
@@ -677,76 +705,94 @@ class BlockStateManager(
      * preserved at the end of the list so they don't disappear on reactive re-emissions.
      */
     private fun mergeBlocks(localBlocks: List<Block>, incomingBlocks: List<Block>): List<Block> {
-        val merged = incomingBlocks.map { incoming ->
-            val dirtyVersion = _dirtyBlocks.value[incoming.uuid.value]
-            if (dirtyVersion != null && dirtyVersion > incoming.version) {
-                // Block has a local edit not yet confirmed — keep local version
-                val local = localBlocks.find { it.uuid == incoming.uuid }
-                local ?: incoming
-            } else {
-                // DB version is current — accept it and clear dirty flag
-                _dirtyBlocks.update { it - incoming.uuid.value }
-                incoming
-            }
+        val result = BlockTreeAlgorithms.mergeBlocks(
+            localBlocks = localBlocks,
+            incomingBlocks = incomingBlocks,
+            dirtyBlocks = _dirtyBlocks.value,
+            pendingNewBlockUuids = pendingNewBlockUuids.value,
+        )
+        if (result.clearedDirtyUuids.isNotEmpty()) {
+            _dirtyBlocks.update { it - result.clearedDirtyUuids }
         }
-        // Append pending new blocks that aren't yet in the DB (won't appear in incomingBlocks
-        // until the write commits). Once the write commits, they'll be in incomingBlocks and
-        // removed from pendingNewBlockUuids before the next emission.
-        val incomingUuids = incomingBlocks.mapTo(HashSet()) { it.uuid }
-        val pending = localBlocks.filter { it.uuid.value in pendingNewBlockUuids.value && it.uuid !in incomingUuids }
-        return if (pending.isEmpty()) merged else merged + pending
+        return result.mergedBlocks
     }
 
     // ---- In-place patch helpers (Phase 3 push path) ----
     // Apply dirty-set semantics: a block with a pending unconfirmed local edit (dirtyVersion >
     // block.version) keeps its local content; confirmed or clean blocks accept the patched value.
 
-    private fun applyContentPatch(pageUuidStr: String, blockUuid: BlockUuid, newContent: String) {
-        _blocks.update { current ->
-            val pageBlocks = current[pageUuidStr] ?: return@update current
-            val updated = pageBlocks.map { block ->
-                if (block.uuid != blockUuid) return@map block
-                val dirtyVersion = _dirtyBlocks.value[block.uuid.value]
-                if (dirtyVersion != null && dirtyVersion > block.version) block
-                else {
-                    _dirtyBlocks.update { it - block.uuid.value }
-                    block.copy(content = newContent)
-                }
-            }
-            current + (pageUuidStr to updated)
+    /**
+     * Confirmation that a content write issued by [applyContentChange] has landed in the DB.
+     *
+     * Deliberately does NOT apply the event's content to [_blocks]: the block's DB row has its own
+     * independent version counter (`version = version + 1` in SQL), so this confirmation cannot
+     * be matched against the UI-local keystroke version that [_dirtyBlocks] tracks, and a
+     * confirmation for an older keystroke can arrive after a newer keystroke's optimistic update
+     * already landed. [_blocks] already holds the correct (possibly newer) optimistic content;
+     * this only clears the dirty flag, and only once every content write issued for the block has
+     * been confirmed (or otherwise accounted for — see [decrementPendingContentWrite]'s callers).
+     */
+    private fun applyContentPatch(blockUuid: BlockUuid) {
+        if (decrementPendingContentWrite(blockUuid.value) > 0) return
+        _dirtyBlocks.update { it - blockUuid.value }
+    }
+
+    /** Dirty-set conflict resolution shared by the block-replace and properties-patch merge paths:
+     * a pending unconfirmed local edit newer than [incomingVersion] wins ([onKeepLocal]); otherwise
+     * the dirty flag is cleared and the incoming value is accepted ([onAccept]). */
+    private fun <T> resolveDirtyConflict(uuid: BlockUuid, incomingVersion: Long, onKeepLocal: () -> T, onAccept: () -> T): T {
+        val dirtyVersion = _dirtyBlocks.value[uuid.value]
+        if (dirtyVersion != null && dirtyVersion > incomingVersion) return onKeepLocal()
+        _dirtyBlocks.update { it - uuid.value }
+        return onAccept()
+    }
+
+    /** Merges [incoming] into [pageBlocks]: reconciles it against a matching existing block, or
+     * appends it if none matches — a block inserted from outside this page's own edit path (e.g.
+     * voice capture appending via JournalService.appendBlockToPage -> DatabaseWriteActor.saveBlock)
+     * has no existing entry to replace and must not be silently dropped. */
+    private fun mergeIncomingBlock(pageBlocks: List<Block>, incoming: Block): List<Block> {
+        val result = BlockTreeAlgorithms.mergeIncomingBlock(
+            pageBlocks = pageBlocks,
+            incoming = incoming,
+            dirtyBlocks = _dirtyBlocks.value,
+        )
+        if (result.clearedDirtyUuids.isNotEmpty()) {
+            _dirtyBlocks.update { it - result.clearedDirtyUuids }
         }
+        return result.mergedBlocks
     }
 
     private fun applyBlockReplace(pageUuidStr: String, incoming: Block) {
         _blocks.update { current ->
             val pageBlocks = current[pageUuidStr] ?: return@update current
-            val updated = pageBlocks.map { block ->
-                if (block.uuid != incoming.uuid) return@map block
-                val dirtyVersion = _dirtyBlocks.value[block.uuid.value]
-                if (dirtyVersion != null && dirtyVersion > incoming.version) block
-                else {
-                    _dirtyBlocks.update { it - block.uuid.value }
-                    incoming
-                }
-            }
-            current + (pageUuidStr to updated)
+            current + (pageUuidStr to mergeIncomingBlock(pageBlocks, incoming))
         }
     }
 
-    private fun applyPropertiesPatch(pageUuidStr: String, blockUuid: BlockUuid, properties: Map<String, String>) {
-        _blocks.update { current ->
-            val pageBlocks = current[pageUuidStr] ?: return@update current
-            val updated = pageBlocks.map { block ->
-                if (block.uuid != blockUuid) return@map block
-                val dirtyVersion = _dirtyBlocks.value[block.uuid.value]
-                if (dirtyVersion != null && dirtyVersion > block.version) block
-                else {
-                    _dirtyBlocks.update { it - block.uuid.value }
-                    block.copy(properties = properties)
-                }
-            }
-            current + (pageUuidStr to updated)
+    /** Reconciles a properties-only patch onto the block in [pageBlocks] matching [blockUuid],
+     * via [resolveDirtyConflict]; other blocks pass through unchanged. */
+    private fun reconcilePropertiesForBlock(pageBlocks: List<Block>, blockUuid: BlockUuid, properties: Map<String, String>): List<Block> =
+        pageBlocks.map { block ->
+            if (block.uuid != blockUuid) block
+            else resolveDirtyConflict(block.uuid, block.version, onKeepLocal = { block }, onAccept = { block.copy(properties = properties) })
         }
+
+    /** Applies a properties-only patch, re-pulling the page from DB on a cache miss instead of
+     * dropping it (unlike [applyBlockReplace], there's no content/position here to synthesize a
+     * new [Block] from). The hit/miss decision happens inside the single [_blocks] update, not a
+     * separate check before it — that would let a concurrent write remove the block in between and
+     * silently drop the patch. Any future patch-only event must follow the same rule. */
+    private suspend fun applyPropertiesPatch(pageUuid: PageUuid, blockUuid: BlockUuid, properties: Map<String, String>) {
+        val pageUuidStr = pageUuid.value
+        var missed = false
+        _blocks.update { current ->
+            val pageBlocks = current[pageUuidStr] ?: emptyList()
+            missed = pageBlocks.none { it.uuid == blockUuid }
+            if (missed) return@update current
+            current + (pageUuidStr to reconcilePropertiesForBlock(pageBlocks, blockUuid, properties))
+        }
+        if (missed) pullBlocksForPage(pageUuid)
     }
 
     fun blocksForPage(pageUuid: String): List<Block> =
@@ -809,7 +855,10 @@ class BlockStateManager(
     // the per-keystroke onContentChange path in PageView.kt / JournalsView.kt — so a user typing
     // while one of these helpers is landing can still race with it. Closing that gap requires
     // wrapping the keystroke path in the same mutex and has its own latency/UX tradeoffs; it is
-    // tracked as follow-up work, not addressed here.
+    // tracked as follow-up work, not addressed here. applyContentChange's version guard (below)
+    // prevents the specific symptom this caused — a stale write silently reverting already-typed
+    // text — by refusing to apply an update whose version is behind what's already stored, but it
+    // does not merge concurrent edits, so a race still drops one side's content.
     private val contentMutationMutexGuard = Mutex()
     private val contentMutationMutexes = mutableMapOf<String, Mutex>()
 
@@ -1007,14 +1056,25 @@ class BlockStateManager(
                 return
             }
 
-        // Mark dirty BEFORE saving so the observer merge keeps our version
-        _dirtyBlocks.update { it + (uuidStr to version) }
+        // Mark dirty BEFORE saving so the observer merge keeps our version. maxOf guards against
+        // out-of-order keystroke coroutines: each keystroke's updateBlockContent runs in its own
+        // scope.launch on a multi-threaded dispatcher, so a later keystroke's coroutine can reach
+        // this line before an earlier one's — most visible on Android where the IME fires several
+        // onValueChange calls per composition update. Without the guard the dirty marker (and the
+        // _blocks entry below) can regress to an older version, which is what surfaces as typed
+        // text jumping back / getting erased mid-edit.
+        _dirtyBlocks.update { it + (uuidStr to maxOf(it[uuidStr] ?: 0L, version)) }
+        _pendingContentWriteCounts.update { it + (uuidStr to ((it[uuidStr] ?: 0) + 1)) }
 
         val t0 = dev.stapler.stelekit.performance.HistogramWriter.epochMs()
         val writeResult = writeContentOnly(blockUuid, content, block.pageUuid)
         histogramWriter?.record("editor_input", dev.stapler.stelekit.performance.HistogramWriter.epochMs() - t0)
         if (writeResult.isLeft()) {
             logger.warn("applyContentChange: DB write failed for $uuidStr — content lives in-memory only")
+            // No BlockContentPatched confirmation will arrive for a failed write (the actor only
+            // emits it on success) — account for it directly so the pending-write count doesn't
+            // get stuck waiting for a confirmation that will never come.
+            decrementPendingContentWrite(uuidStr)
         }
 
         val updated = block.copy(content = content, version = version)
@@ -1022,7 +1082,9 @@ class BlockStateManager(
             val newBlocks = current.toMutableMap()
             val pageBlocks = newBlocks[block.pageUuid.value]?.toMutableList() ?: return@update current
             val idx = pageBlocks.indexOfFirst { it.uuid == blockUuid }
-            if (idx >= 0) pageBlocks[idx] = updated
+            // Same out-of-order guard as above: never let a stale (lower-version) keystroke
+            // coroutine overwrite content a later keystroke already applied.
+            if (idx >= 0 && pageBlocks[idx].version <= version) pageBlocks[idx] = updated
             newBlocks[block.pageUuid.value] = pageBlocks
             newBlocks
         }

@@ -150,6 +150,10 @@ What's missing or early-stage:
 - **Whiteboards** — not implemented
 - **Plugin system** — scaffolding only
 - **iOS** — disabled, build issues under investigation
+- **Desktop Quick Capture** — `Ctrl+Shift+Space` opens a capture popup, but only while SteleKit
+  is already running; it doesn't launch the app. OS-level capture (macOS Services menu, a
+  Linux file-manager action, a Windows context-menu handler) that works when SteleKit isn't
+  open yet is planned for a later phase.
 
 See [`TODO.md`](TODO.md) for the full roadmap and known issues.
 

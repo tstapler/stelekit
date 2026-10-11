@@ -17,4 +17,6 @@ public data class Git_config(
   public val poll_interval_minutes: Long,
   public val auto_commit: Long,
   public val commit_message_template: String,
+  public val clone_depth_state: String,
+  public val shallow_depth: Long?,
 )

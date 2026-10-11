@@ -105,12 +105,14 @@ internal fun ScreenRouter(
      * entirely, same null-hides-trigger contract as the send side.
      */
     graphLoader: dev.stapler.stelekit.db.GraphLoader? = null,
+    /** Builds the report behind the Logs screen's diagnostics button; null hides the button. */
+    graphDiagnostics: (suspend () -> String)? = null,
 ) {
     if (appState.fatalError != null) {
         FatalErrorScreen(
             message = appState.fatalError,
             onDismiss = { viewModel.clearFatalError() },
-            onRetry = { viewModel.loadGraph(appState.currentGraphPath) },
+            onRetry = { viewModel.loadGraph(appState.currentGraphPath.orEmpty()) },
         )
         return
     }
@@ -153,7 +155,7 @@ internal fun ScreenRouter(
                 blockRepository = repos.blockRepository,
                 pageRepository = repos.pageRepository,
                 blockStateManager = blockStateManager,
-                currentGraphPath = appState.currentGraphPath,
+                currentGraphPath = appState.currentGraphPath.orEmpty(),
                 onToggleFavorite = { viewModel.toggleFavorite(it) },
                 onRefresh = { viewModel.refreshCurrentPage() },
                 onLinkClick = { viewModel.navigateToPageByName(it) },
@@ -175,7 +177,7 @@ internal fun ScreenRouter(
                 viewModel = journalsViewModel,
                 isDebugMode = appState.isDebugMode,
                 onLinkClick = { viewModel.navigateToPageByName(it) },
-                graphPath = appState.currentGraphPath,
+                graphPath = appState.currentGraphPath.orEmpty(),
                 searchViewModel = searchViewModel,
                 onSearchPages = { query -> viewModel.searchPages(query) },
                 suggestionMatcher = suggestionMatcher,
@@ -225,7 +227,7 @@ internal fun ScreenRouter(
             }
             is Screen.Logs -> {
                 NavigationTracingEffect("Logs")
-                LogDashboard()
+                LogDashboard(diagnostics = graphDiagnostics)
             }
             is Screen.Performance -> {
                 NavigationTracingEffect("Performance")
@@ -245,12 +247,12 @@ internal fun ScreenRouter(
                 pageRepository = repos.pageRepository,
                 blockRepository = repos.blockRepository,
                 writeActor = repos.writeActor,
-                graphPath = appState.currentGraphPath,
+                graphPath = appState.currentGraphPath.orEmpty(),
                 suggestionMatcher = suggestionMatcher,
                 onNavigateTo = { viewModel.navigateTo(it) },
             )
             is Screen.Import -> {
-                val graphPath = appState.currentGraphPath
+                val graphPath = appState.currentGraphPath.orEmpty()
                 val importViewModel = remember(graphPath) {
                     dev.stapler.stelekit.ui.screens.ImportViewModel(
                         pageRepository = repos.pageRepository,
@@ -360,7 +362,7 @@ internal fun ScreenRouter(
                         imageAnnotationRepository = repos.imageAnnotationRepository,
                         blockRepository = repos.blockRepository,
                         writeActor = repos.writeActor,
-                        graphPath = appState.currentGraphPath,
+                        graphPath = appState.currentGraphPath.orEmpty(),
                     )
                 }
                 val annotateScope = rememberCoroutineScope()
@@ -390,6 +392,17 @@ internal fun ScreenRouter(
                 DisposableEffect(annotationEditorViewModel) {
                     onDispose { annotationEditorViewModel.close() }
                 }
+                // depth-model-download-stall: safe cast — only Android's OnnxMonocularDepthEstimator
+                // implements DownloadableDepthModel (ADR-002); NoOp/iOS estimators don't, so the
+                // depth-estimation panel simply doesn't render there.
+                val downloadableDepthModel = SensorModule.monocularDepthEstimator as?
+                    dev.stapler.stelekit.platform.ml.DownloadableDepthModel
+                LaunchedEffect(downloadableDepthModel) {
+                    downloadableDepthModel?.modelState?.collect { uiState ->
+                        annotationEditorViewModel.updateDepthModelUiState(uiState)
+                    }
+                }
+                val depthModelScope = rememberCoroutineScope()
                 // Collect the annotation reactively; initialize the viewModel once on first non-null load.
                 var initialized by remember(imageAnnotationUuid) { mutableStateOf(false) }
                 var resolvedAnnotation by remember(imageAnnotationUuid) {
@@ -419,6 +432,18 @@ internal fun ScreenRouter(
                                 viewModel.goBack()
                             }
                         },
+                        onDownloadDepthModel = downloadableDepthModel?.let {
+                            { depthModelScope.launch { it.downloadModel() } }
+                        },
+                        onCancelDownloadDepthModel = downloadableDepthModel?.let {
+                            { it.cancelDownload() }
+                        },
+                        // Real depth estimation (running inference on a captured bitmap) is
+                        // unrelated to the download-stall bug this wiring exists for and needs its
+                        // own bitmap-sourcing work — left null so the panel shows "coming soon"
+                        // instead of a silently-dead button (see project_plans/
+                        // depth-model-download-stall/implementation/adversarial-review.md Blocker 3).
+                        onEstimateDepth = null,
                     )
                 }
             }

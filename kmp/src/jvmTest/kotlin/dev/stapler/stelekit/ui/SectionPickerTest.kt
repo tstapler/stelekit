@@ -1,7 +1,9 @@
 package dev.stapler.stelekit.ui
 
 import arrow.core.Either
+import dev.stapler.stelekit.db.GraphEpoch
 import dev.stapler.stelekit.db.GraphWriter
+import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.model.SectionId
@@ -43,7 +45,13 @@ class SectionPickerTest {
                     return true
                 }
             }
-            val writer = GraphWriter(fileSystem = fs, graphPath = "/graph")
+            val writer = GraphWriter(fileSystem = fs).also {
+                it.currentEpoch = GraphEpoch(
+                    graphId = GraphId("section-picker-test"),
+                    graphPath = "/graph",
+                    sequence = 1L,
+                )
+            }
             val now = Clock.System.now()
             val page = Page(
                 uuid = PageUuid("test-page-1"),
@@ -77,7 +85,13 @@ class SectionPickerTest {
                     return true
                 }
             }
-            val writer = GraphWriter(fileSystem = fs, graphPath = "/graph")
+            val writer = GraphWriter(fileSystem = fs).also {
+                it.currentEpoch = GraphEpoch(
+                    graphId = GraphId("section-picker-test"),
+                    graphPath = "/graph",
+                    sequence = 1L,
+                )
+            }
             val now = Clock.System.now()
             val page = Page(
                 uuid = PageUuid("test-page-2"),
@@ -104,7 +118,13 @@ class SectionPickerTest {
                 return true
             }
         }
-        val writer = GraphWriter(fileSystem = fs, graphPath = "/graph")
+        val writer = GraphWriter(fileSystem = fs).also {
+            it.currentEpoch = GraphEpoch(
+                graphId = GraphId("section-picker-test"),
+                graphPath = "/graph",
+                sequence = 1L,
+            )
+        }
         val now = Clock.System.now()
         val page = Page(
             uuid = PageUuid("test-page-3"),

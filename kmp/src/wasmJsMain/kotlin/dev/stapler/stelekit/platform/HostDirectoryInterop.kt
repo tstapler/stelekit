@@ -20,6 +20,15 @@ import kotlinx.coroutines.await
 internal fun mirrorPendingHostConflictCount(count: Int): Unit = js("window.__stelekit_pending_host_conflicts = count")
 
 /**
+ * Bytes-aware sibling of [mirrorPendingHostConflictCount] for `HostDirectorySync.onHostBytesConflict`/
+ * `flushPendingHostBytesConflicts` (`.md.stek` paranoid-mode `HostOnlyNew` notifications). Kept as
+ * a separate `window.__stelekit_pending_host_bytes_conflicts` global rather than folding into the
+ * plaintext counter so an e2e spec asserting on one mechanism isn't perturbed by unrelated traffic
+ * on the other.
+ */
+internal fun mirrorPendingHostBytesConflictCount(count: Int): Unit = js("window.__stelekit_pending_host_bytes_conflicts = count")
+
+/**
  * `web-local-folder-livesync` (Epic 1.5) browser interop primitives — IndexedDB
  * `FileSystemDirectoryHandle` persistence, `queryPermission()`/`requestPermission()`, the
  * `FileSystemObserver` construction/observe surface, `File.lastModified`/`size` accessors, the
@@ -49,6 +58,10 @@ private fun idbPutHandlePromise(db: JsAny, key: String, handle: JsAny): kotlin.j
 
 private fun idbGetHandlePromise(db: JsAny, key: String): kotlin.js.Promise<JsAny?> = js(
     "new Promise(function(res) { var tx = db.transaction('handles', 'readonly'); var req = tx.objectStore('handles').get(key); req.onsuccess = function() { res(req.result || null); }; req.onerror = function() { res(null); }; })",
+)
+
+private fun idbDeleteHandlePromise(db: JsAny, key: String): kotlin.js.Promise<JsAny> = js(
+    "new Promise(function(res, rej) { var tx = db.transaction('handles', 'readwrite'); tx.objectStore('handles').delete(key); tx.oncomplete = function() { res(true); }; tx.onerror = function(e) { rej(e); }; })",
 )
 
 /**
@@ -82,6 +95,21 @@ internal suspend fun idbGetHandle(db: JsAny, key: String): JsAny? = try {
 } catch (e: Throwable) {
     println("[SteleKit] IndexedDB get failed for key=$key: ${e.message}")
     null
+}
+
+/**
+ * Delete path — log-and-continue on failure, matching [idbPutHandle]'s convention. Used by
+ * `HostDirectorySync.unlinkHostDirectory` (Epic 4.1) to remove a graph's persisted handle so a
+ * later `reconnectHostDirectory` silent-resume never finds it and re-attaches the detached folder.
+ */
+internal suspend fun idbDeleteHandle(db: JsAny, key: String) {
+    try {
+        idbDeleteHandlePromise(db, key).await()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        println("[SteleKit] IndexedDB delete failed for key=$key: ${e.message}")
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -138,14 +166,16 @@ private fun observePromise(observer: JsAny, handle: JsAny, recursive: Boolean): 
     js("observer.observe(handle, { recursive: recursive })")
 
 internal suspend fun observeHandle(observer: JsAny, handle: JsAny, recursive: Boolean = true) {
-    try {
-        observePromise(observer, handle, recursive).await()
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Throwable) {
-        println("[SteleKit] FileSystemObserver.observe failed: ${e.message}")
-    }
+    observePromise(observer, handle, recursive).await<JsAny>()
 }
+
+/**
+ * Stops a previously-started [FileSystemObserver] from delivering further change records.
+ * Needed when switching the active graph (`HostDirectorySync.close`) so a still-live observer
+ * from the old, now-discarded graph's `HostDirectorySync` instance cannot keep firing callbacks
+ * or keep that instance alive via its own captured closure.
+ */
+internal fun disconnectObserver(observer: JsAny): Unit = js("observer.disconnect()")
 
 internal fun changeRecordType(record: JsAny): String = js("record.type")
 

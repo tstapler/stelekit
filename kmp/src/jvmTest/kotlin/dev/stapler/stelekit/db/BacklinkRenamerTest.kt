@@ -2,6 +2,7 @@ package dev.stapler.stelekit.db
 
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.platform.PlatformFileSystem
@@ -50,7 +51,9 @@ class BacklinkRenamerTest {
         graphPath: String
     ): BacklinkRenamer {
         val fs = PlatformFileSystem.withRoot(graphPath)
-        val graphWriter = GraphWriter(fs)
+        val graphWriter = GraphWriter(fs).also {
+            it.currentEpoch = GraphEpoch(GraphId("backlink-renamer-test"), graphPath = graphPath, sequence = 1L)
+        }
         val actor = DatabaseWriteActor(blockRepo, pageRepo)
         return BacklinkRenamer(pageRepo, blockRepo, graphWriter, actor)
     }

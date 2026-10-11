@@ -36,7 +36,10 @@
         document.addEventListener('DOMContentLoaded', function() {
             setTimeout(function() {
                 var loading = document.getElementById('loading');
-                if (loading) loading.classList.add('hidden');
+                // A boot error (e.g. graph locked by another tab) replaces this overlay's content
+                // and must stay visible — ComposeViewport never mounts in that case, so hiding it
+                // would leave a blank page instead of the error message.
+                if (loading && !window.__stelekit_boot_error) loading.classList.add('hidden');
             }, 8000);
         });
     </script>

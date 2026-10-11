@@ -1,7 +1,6 @@
 package dev.stapler.stelekit.platform
 
 import android.content.Context
-import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -31,7 +30,7 @@ internal class ShadowFileCache(context: Context, graphId: String) {
     fun isFirstAccess(): Boolean = freshInstance.getAndSet(false)
 
     companion object {
-        private const val TAG = "ShadowFileCache"
+        private val logger = dev.stapler.stelekit.logging.Logger("ShadowFileCache")
 
         /** Converts a SAF tree document ID (e.g. "primary:personal-wiki/logseq") to a
          *  filesystem-safe directory name by replacing unsafe characters. */
@@ -47,7 +46,7 @@ internal class ShadowFileCache(context: Context, graphId: String) {
         val target = File(base, relativePath).canonicalFile
         return if (target.path.startsWith(base.canonicalPath + File.separator) ||
                    target.path == base.canonicalPath) target else {
-            Log.w(TAG, "safeShadowFile: path escape blocked for '$relativePath'")
+            logger.warn("safeShadowFile: path escape blocked for '$relativePath'")
             null
         }
     }
@@ -82,7 +81,7 @@ internal class ShadowFileCache(context: Context, graphId: String) {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.w(TAG, "syncFromSaf: failed to write shadow $subdir/$fileName", e)
+                logger.warn("syncFromSaf: failed to write shadow $subdir/$fileName", e)
             }
         }
     }
@@ -112,7 +111,7 @@ internal class ShadowFileCache(context: Context, graphId: String) {
             f.writeText(content)
             if (safMtime > 0L) f.setLastModified(safMtime)
         } catch (e: Exception) {
-            Log.w(TAG, "update: failed to write shadow for $relativePath", e)
+            logger.warn("update: failed to write shadow for $relativePath", e)
         }
     }
 
@@ -123,7 +122,7 @@ internal class ShadowFileCache(context: Context, graphId: String) {
         try {
             safeShadowFile(shadowRoot, relativePath)?.takeIf { it.exists() }?.setLastModified(mtime)
         } catch (e: Exception) {
-            Log.w(TAG, "stampMtime: failed for $relativePath", e)
+            logger.warn("stampMtime: failed for $relativePath", e)
         }
     }
 
