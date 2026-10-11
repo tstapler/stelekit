@@ -78,6 +78,12 @@ fun SettingsDialog(
     // Developer settings
     isLibsqlDriverEnabled: Boolean = false,
     onLibsqlDriverToggle: ((Boolean) -> Unit)? = null,
+    // graph-mcp-server (Story 4.1.2): null onMcpServerToggle hides the MCP Server section.
+    mcpServerEnabled: Boolean = false,
+    onMcpServerToggle: ((Boolean) -> Unit)? = null,
+    mcpLauncherCommand: String = "",
+    pendingMcpSuggestionCount: Int = 0,
+    onOpenMcpSuggestions: () -> Unit = {},
     // Section settings
     sectionManifest: SectionManifest? = null,
     sectionStates: Map<String, SectionState> = emptyMap(),
@@ -224,6 +230,11 @@ fun SettingsDialog(
                         DeveloperSettings(
                             isLibsqlDriverEnabled = isLibsqlDriverEnabled,
                             onLibsqlDriverToggle = onLibsqlDriverToggle,
+                            mcpServerEnabled = mcpServerEnabled,
+                            onMcpServerToggle = onMcpServerToggle,
+                            mcpLauncherCommand = mcpLauncherCommand,
+                            pendingMcpSuggestionCount = pendingMcpSuggestionCount,
+                            onOpenMcpSuggestions = onOpenMcpSuggestions,
                         )
                     }
                     SettingsCategory.SECTIONS -> {

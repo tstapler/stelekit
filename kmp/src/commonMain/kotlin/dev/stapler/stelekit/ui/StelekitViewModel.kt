@@ -373,6 +373,7 @@ class StelekitViewModel(
                 ?: platformSettings.getString("lastGraphPath", "").ifEmpty { null },
             isLeftHanded = platformSettings.getBoolean("isLeftHanded", false),
             isLibsqlDriverEnabled = platformSettings.getBoolean("db.libsql.enabled", false),
+            mcpServerEnabled = platformSettings.getBoolean("mcp.server.enabled", false),
             defaultSection = SectionId.fromDbString(platformSettings.getString("defaultSection", "")),
             deviceSetupComplete = platformSettings.getBoolean("deviceSetupComplete", false),
             currentSectionStates = platformSettings.getSectionStates(),
@@ -1926,6 +1927,30 @@ class StelekitViewModel(
     fun setLibsqlDriverEnabled(value: Boolean) {
         platformSettings.putBoolean("db.libsql.enabled", value)
         _uiState.update { it.copy(isLibsqlDriverEnabled = value) }
+    }
+
+    fun setMcpServerEnabled(value: Boolean) {
+        platformSettings.putBoolean("mcp.server.enabled", value)
+        _uiState.update { it.copy(mcpServerEnabled = value) }
+    }
+
+    /** Sets/clears the MCP bind-failure banner's message (graph-mcp-server Task 4.1.3e). */
+    fun setMcpBindFailureMessage(message: String?) {
+        _uiState.update { it.copy(mcpBindFailureMessage = message) }
+    }
+
+    private val _mcpRetryRequests = kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+
+    /** Emits when the user taps Retry on the MCP bind-failure banner; `McpServerController` collects it. */
+    val mcpRetryRequests: kotlinx.coroutines.flow.SharedFlow<Unit> = _mcpRetryRequests
+
+    fun requestMcpRetry() {
+        _mcpRetryRequests.tryEmit(Unit)
+    }
+
+    /** Dismisses the MCP bind-failure banner without retrying. */
+    fun dismissMcpBindFailureBanner() {
+        _uiState.update { it.copy(mcpBindFailureMessage = null) }
     }
 
     fun showDebugMenu() {

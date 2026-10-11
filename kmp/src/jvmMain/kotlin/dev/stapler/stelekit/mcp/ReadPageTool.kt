@@ -138,6 +138,8 @@ internal suspend fun buildReadPageResult(
         is Either.Left -> return McpToolError.Internal(blocksResult.value).toCallToolResult()
         is Either.Right -> blocksResult.value
     }
+    // Bounded by one page's block count; BlockReadRepository has no paginated per-page query.
+    @Suppress("InMemoryPagination")
     val pagedBlocks = allBlocks.drop(blockOffset).take(blockLimit)
     val hasMoreBlocks = allBlocks.size > blockOffset + blockLimit
     val resultJson = renderReadPageResult(page, pagedBlocks, blockOffset, blockLimit, hasMoreBlocks)

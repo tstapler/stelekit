@@ -188,6 +188,43 @@ class StelekitViewModelLlmSuggestionTest {
         scope.cancel()
     }
 
+    // ─── Story 4.1.1: mcpServerEnabled off-by-default setting ───────────────────────────────
+
+    @Test
+    fun mcpServerEnabled_should_DefaultFalse_When_NoPriorPlatformSettingsValue() = runTest {
+        val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
+        val vm = makeViewModel(activeGraphId = "graph-1", scope = scope)
+
+        assertFalse(vm.uiState.value.mcpServerEnabled)
+        scope.cancel()
+    }
+
+    @Test
+    fun setMcpServerEnabled_should_PersistAndUpdateState_When_ToggledOn() = runTest {
+        val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
+        val vm = makeViewModel(activeGraphId = "graph-1", scope = scope)
+        assertFalse(vm.uiState.value.mcpServerEnabled)
+
+        vm.setMcpServerEnabled(true)
+
+        assertTrue(vm.uiState.value.mcpServerEnabled)
+        scope.cancel()
+    }
+
+    @Test
+    fun mcpBindFailureMessage_should_SetAndClear_When_ControllerReportsThenDismisses() = runTest {
+        val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
+        val vm = makeViewModel(activeGraphId = "graph-1", scope = scope)
+        assertEquals(null, vm.uiState.value.mcpBindFailureMessage)
+
+        vm.setMcpBindFailureMessage("Address already in use")
+        assertEquals("Address already in use", vm.uiState.value.mcpBindFailureMessage)
+
+        vm.dismissMcpBindFailureBanner()
+        assertEquals(null, vm.uiState.value.mcpBindFailureMessage)
+        scope.cancel()
+    }
+
     // ─── Story 3.2.2: pendingMcpSuggestionCount, Story 3.2.2d: openLlmSuggestionReviewScreen ──
 
     @Test

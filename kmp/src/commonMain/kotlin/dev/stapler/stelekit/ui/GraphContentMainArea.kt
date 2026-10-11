@@ -154,6 +154,13 @@ private fun GraphContentBanners(
     var hostReconnectBannerDismissedFor by remember { mutableStateOf<Pair<String?, String?>?>(null) }
     val visibility = computeBannerVisibility(deps, inputs, activeGraphInfo, hostReconnectBannerDismissedFor)
 
+    inputs.appState.mcpBindFailureMessage?.let { message ->
+        dev.stapler.stelekit.ui.components.McpBindFailureBanner(
+            message = message,
+            onRetry = { viewModel.requestMcpRetry() },
+            onDismiss = { viewModel.dismissMcpBindFailureBanner() },
+        )
+    }
     if (visibility.showGitBanner) {
         GitDetectionBanner(
             repoRoot = activeGraphInfo!!.detectedRepoRoot!!,
