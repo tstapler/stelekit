@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.94.0](https://github.com/tstapler/stelekit/compare/v0.93.0...v0.94.0) (2026-10-11)
+
+
+### Features
+
+* execute {{query}} blocks as live, auto-updating results ([#398](https://github.com/tstapler/stelekit/issues/398)) ([4420be4](https://github.com/tstapler/stelekit/commit/4420be47c6d166b79a9e472af9631a77d6f74741))
+
+
+### Bug Fixes
+
+* **git:** fail loudly on missing remote branch, detect default branch, add repair flow ([#400](https://github.com/tstapler/stelekit/issues/400)) ([9b9cde9](https://github.com/tstapler/stelekit/commit/9b9cde91fa91396454381f33e9b73affa4341551))
+
 ## [0.93.0](https://github.com/tstapler/stelekit/compare/v0.92.1...v0.93.0) (2026-10-10)
 
 
