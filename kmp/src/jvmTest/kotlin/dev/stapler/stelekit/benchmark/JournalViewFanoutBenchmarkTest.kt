@@ -243,9 +243,12 @@ class JournalViewFanoutBenchmarkTest {
             // Reset counts — only post-reset calls are under test
             countingRepo.resetCounts()
 
-            // Hot-path write: typed WriteBlockContent arm emits BlockContentPatched (not blockInvalidations).
-            // Neither the actor nor BSM should call getBlocksForPage.
-            actor.updateBlockContentOnly(BlockUuid(block.uuid.value), "updated content", pageA)
+            // Hot-path write through BSM's real edit path: it applies the content optimistically,
+            // then the actor's typed WriteBlockContent arm emits BlockContentPatched (not
+            // blockInvalidations). BSM never applies the confirmation's content itself (see
+            // applyContentPatch — doing so reverted newer keystrokes), so driving the actor directly
+            // can't make _blocks change. Neither the actor nor BSM should call getBlocksForPage.
+            bsm.updateBlockContent(BlockUuid(block.uuid.value), "updated content", newVersion = 1L).join()
             advanceUntilIdle()
 
             val actualCount = countingRepo.getCount(pageA)
