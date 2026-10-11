@@ -1521,3 +1521,73 @@ tasks.register<JacocoReport>("jacocoTestReport") {
     classDirectories.setFrom(files(classesTree))
     executionData.setFrom(fileTree(layout.buildDirectory.get()).include("jacoco/jvmTest.exec", "outputs/unit_test_code_coverage/**/*.exec"))
 }
+
+// ── Coverage gate ────────────────────────────────────────────────────────────
+// Floors sit just under today's measured values so a regression fails the build; raise them as
+// coverage improves. Scope is the merge engine — the logic where a silent bug loses user data.
+tasks.register<JacocoCoverageVerification>("jacocoTestCoverageVerification") {
+    group = "verification"
+    description = "Fail if line/branch coverage of the git merge engine drops below its floor."
+    dependsOn("jacocoTestReport")
+    classDirectories.setFrom(files(fileTree("${layout.buildDirectory.get()}/classes/kotlin/jvm/main")))
+    executionData.setFrom(fileTree(layout.buildDirectory.get()).include("jacoco/jvmTest.exec"))
+    violationRules {
+        rule {
+            element = "BUNDLE"
+            includes = listOf("dev.stapler.stelekit.git.merge.*")
+            limit { counter = "LINE"; minimum = "0.90".toBigDecimal() }
+            limit { counter = "BRANCH"; minimum = "0.75".toBigDecimal() }
+        }
+    }
+}
+
+// ── Mutation testing (PIT) ───────────────────────────────────────────────────
+// Line coverage says a line ran; mutation score says a test would notice if it were wrong.
+//   ./gradlew :kmp:mutationTest                                   # merge engine (default)
+//   ./gradlew :kmp:mutationTest -Pmutate.classes='dev.stapler.stelekit.git.*'
+// Report: kmp/build/reports/pitest/index.html. Kotlin bytecode yields some equivalent/noise
+// mutants (inline functions, null-check intrinsics) — read survivors, don't chase 100%.
+val pitest: Configuration by configurations.creating
+dependencies {
+    pitest("org.pitest:pitest-command-line:1.17.4")
+}
+
+tasks.register<JavaExec>("mutationTest") {
+    group = "verification"
+    description = "Run PIT mutation testing against the git merge engine and report the mutation score."
+    dependsOn("jvmTestClasses")
+    val testCompilation = kotlin.jvm().compilations["test"]
+    val runtimeClasspath = files(testCompilation.output.allOutputs, testCompilation.runtimeDependencyFiles)
+    val targetClasses = providers.gradleProperty("mutate.classes").orElse("dev.stapler.stelekit.git.merge.*")
+    val targetTests = providers.gradleProperty("mutate.tests")
+        .orElse("dev.stapler.stelekit.git.merge.*,dev.stapler.stelekit.ui.screens.git.*")
+    val sourceRoots = files("src/commonMain/kotlin", "src/jvmCommonMain/kotlin", "src/jvmMain/kotlin")
+    val reportDir = layout.buildDirectory.dir("reports/pitest")
+    val threshold = providers.gradleProperty("mutate.threshold").orElse("80")
+    classpath = pitest
+    mainClass.set("org.pitest.mutationtest.commandline.MutationCoverageReport")
+    javaLauncher.set(jdk21Launcher)
+    argumentProviders.add(CommandLineArgumentProvider {
+        listOf(
+            "--reportDir", reportDir.get().asFile.absolutePath,
+            "--targetClasses", targetClasses.get(),
+            // Tests live in the same packages as the code under test; never mutate the tests.
+            "--excludedClasses", "*Test,*Test$*,*TestFixtures*,*.testsupport.*",
+            "--targetTests", targetTests.get(),
+            "--sourceDirs", sourceRoots.files.filter { it.exists() }.joinToString(",") { it.absolutePath },
+            "--classPath", runtimeClasspath.files.filter { it.exists() }.joinToString(",") { it.absolutePath },
+            "--outputFormats", "HTML,XML",
+            "--timestampedReports", "false",
+            "--threads", "4",
+            "--mutationThreshold", threshold.get(),
+            "--jvmArgs", "-Xmx2g",
+        )
+    })
+}
+
+// One command for "did we lint, cover, and mutation-test this?"
+tasks.register("qualityCheck") {
+    group = "verification"
+    description = "detekt + coverage floor + mutation score for the git merge engine."
+    dependsOn(":kmp:detekt", "jacocoTestCoverageVerification", "mutationTest")
+}
