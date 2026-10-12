@@ -18,6 +18,8 @@ data class BlockAwareConflictResolution(
     val markerText: String,
     val hunks: List<ConflictHunk>,
     val duplicateBlockIds: List<DuplicateBlockId>,
+    /** Set when the merge engine found no overlap: [markerText] is final, marker-free content. */
+    val autoResolvedBy: MergePolicy?,
 )
 
 /**
@@ -62,7 +64,7 @@ fun tryBlockAwareConflict(
     } else {
         emptyList()
     }
-    return BlockAwareConflictResolution(outcome.markerText, hunks, outcome.duplicateBlockIds)
+    return BlockAwareConflictResolution(outcome.markerText, hunks, outcome.duplicateBlockIds, autoResolvedBy = policy.takeUnless { outcome.hasConflicts })
 }
 
 /**
