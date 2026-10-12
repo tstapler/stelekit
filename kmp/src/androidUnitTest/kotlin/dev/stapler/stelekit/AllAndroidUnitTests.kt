@@ -18,7 +18,6 @@ import dev.stapler.stelekit.platform.security.AndroidCredentialStoreFailsLoudTes
 import dev.stapler.stelekit.platform.sensor.ExifOrientationFixerTest
 import dev.stapler.stelekit.ui.LoadingStateTest
 import dev.stapler.stelekit.ui.components.MermaidWebViewBridgeTest
-import dev.stapler.stelekit.ui.components.git.LfsHeldFilesSheetTest
 import dev.stapler.stelekit.ui.components.MermaidWebViewSettingsTest
 import dev.stapler.stelekit.ui.transfer.QrDecodeViewModelBackgroundingTest
 import dev.stapler.stelekit.voice.AndroidSpeechRecognizerPermissionTest
@@ -31,7 +30,6 @@ import org.junit.runners.Suite
     GitSyncBusyCounterSharedWiringTest::class,
     AndroidGitRepositoryTestRemoteTest::class,
     AndroidGitRepositoryLfsGuardTest::class,
-    LfsHeldFilesSheetTest::class,
     LegacyPathValidationTest::class,
     PlatformFileSystemPickerTest::class,
     PlatformFileSystemSafTest::class,
@@ -62,5 +60,7 @@ import org.junit.runners.Suite
     // NewGraphFlowTest is excluded for the same reason (1) above — it also calls
     // ComposeContentTestRule.setContent, hitting the same resolved-jar/NoSuchMethodError gap.
     // Runs fine under Gradle's testDebugUnitTest.
+    //
+    // LfsHeldFilesSheetTest is excluded for the same reason (1).
 )
 class AllAndroidUnitTests
