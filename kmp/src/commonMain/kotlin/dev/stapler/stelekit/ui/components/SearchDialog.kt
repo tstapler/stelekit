@@ -606,6 +606,7 @@ fun SearchResultRow(
  * Renders chips for active prefix filters parsed from the search query.
  * Shows nothing when [parsedQuery] is null or has no active filters.
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun ActivePrefixChipRow(
     parsedQuery: ParsedQuery?,
@@ -622,7 +623,7 @@ fun ActivePrefixChipRow(
         || parsedQuery.propertyFilters.isNotEmpty()
     if (!hasAnyFilter) return
 
-    Row(
+    FlowRow(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 4.dp),
