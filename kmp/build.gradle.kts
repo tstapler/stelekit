@@ -826,6 +826,10 @@ tasks.named<Test>("jvmTest") {
         file("src/commonMain/kotlin/dev/stapler/stelekit/ui").absolutePath
     )
 
+    // Component-gallery story filter (`GALLERY_FILTER=dialogs- ./gradlew ...`). Read through a provider
+    // so the configuration cache is invalidated when the variable changes instead of replaying a stale value.
+    systemProperty("gallery.filter", providers.environmentVariable("GALLERY_FILTER").orElse("").get())
+
     // BlockHound is installed programmatically via BlockHoundTestBase.installBlockHound().
     // The -javaagent approach (reactor.blockhound:blockhound) crashes on Java 21+ due to
     // ByteBuddy 1.12 JVMTI incompatibility. ByteBuddy's self-attach is used instead.
