@@ -3,12 +3,12 @@
 package dev.stapler.stelekit
 
 import android.app.Application
-import android.os.Looper
 import androidx.activity.OnBackPressedDispatcher
 import androidx.activity.OnBackPressedDispatcherOwner
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -41,6 +41,17 @@ import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.repository.GraphBackend
 import dev.stapler.stelekit.util.UuidGenerator
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.DelicateCoroutinesApi
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.newSingleThreadContext
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withTimeout
+import org.junit.After
+import org.junit.Before
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -55,14 +66,25 @@ import org.robolectric.annotation.Config
 import java.io.File
 
 /** Regression tests for the cross-graph share-target review (REQ-17: nothing the user shares or types is lost silently). */
+@OptIn(ExperimentalCoroutinesApi::class, DelicateCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29], application = Application::class, qualifiers = "w411dp-h891dp-xhdpi")
 class CaptureShareReviewTest {
 
+    private val mainThread = newSingleThreadContext("capture-test-main")
+
+    @Before
+    fun routeMainOffTheTestThread() { Dispatchers.setMain(mainThread) }
+
+    @After
+    fun restoreMain() {
+        Dispatchers.resetMain()
+        mainThread.close()
+    }
+
     @get:Rule
     val composeRule = createComposeRule()
 
-    private fun idle() = shadowOf(Looper.getMainLooper()).idle()
 
     private class MapSettings : Settings {
         private val store = mutableMapOf<String, String>()
@@ -167,14 +189,12 @@ class CaptureShareReviewTest {
         return Harness(app, gm, services, route)
     }
 
-    private fun await(timeoutMs: Long = 10_000, cond: () -> Boolean) {
-        val deadline = System.currentTimeMillis() + timeoutMs
-        while (!cond() && System.currentTimeMillis() < deadline) {
-            idle()
-            Thread.sleep(10)
-        }
-        assertTrue("condition not met in ${timeoutMs}ms", cond())
-    }
+    /**
+     * Blocks until [flow] emits a value matching [predicate] -- woken by the emission itself, no
+     * polling. Safe to block the test thread because Main runs on [mainThread], not the test thread.
+     */
+    private fun <T> awaitState(flow: StateFlow<T>, timeoutMs: Long = 10_000, predicate: (T) -> Boolean): T =
+        runBlocking { withTimeout(timeoutMs) { flow.first(predicate) } }
 
     /** A back dispatcher the test can fire, with a lifecycle the BackHandler treats as started. */
     private class TestBackOwner : OnBackPressedDispatcherOwner, LifecycleOwner {
@@ -190,12 +210,12 @@ class CaptureShareReviewTest {
     fun backSave_withNoResolvableGraph_queuesInTheUnassignedSlot() {
         val h = harness()
         val vm = CaptureViewModel(h.app)
-        await { vm.destination.value is CaptureDestination.Ready }
+        awaitState(vm.destination) { it is CaptureDestination.Ready }
         vm.setDestinationForTest(CaptureDestination.Unavailable(null, "That graph", "isn't available: it was removed.", null))
         vm.updateText("typed before the graph vanished")
 
         vm.backSave()
-        await { vm.backSave.value is CaptureViewModel.BackSaveState.Done }
+        awaitState(vm.backSave) { it is CaptureViewModel.BackSaveState.Done }
 
         assertEquals(1, h.services.inbox.state.value.unassignedCount)
         assertEquals("typed before the graph vanished", h.services.inbox.state.value.items.single().text)
@@ -206,7 +226,7 @@ class CaptureShareReviewTest {
     fun backAfterSaveError_retriesAndQueuesInsteadOfFinishingWithTheTextLost() {
         val h = harness()
         val vm = CaptureViewModel(h.app)
-        await { vm.destination.value is CaptureDestination.Ready }
+        awaitState(vm.destination) { it is CaptureDestination.Ready }
         vm.setDestinationForTest(CaptureDestination.Unavailable(null, "That graph", "isn't available: it was removed.", null))
         vm.updateText("kept after the error")
         vm.setSaveErrorForTest()
@@ -219,7 +239,7 @@ class CaptureShareReviewTest {
         composeRule.waitForIdle()
 
         composeRule.runOnUiThread { owner.onBackPressedDispatcher.onBackPressed() }
-        await { vm.backSave.value is CaptureViewModel.BackSaveState.Done }
+        awaitState(vm.backSave) { it is CaptureViewModel.BackSaveState.Done }
 
         // The screen re-resolves the destination, so the retry may save directly; either way it is not lost.
         val done = vm.backSave.value as CaptureViewModel.BackSaveState.Done
@@ -233,7 +253,7 @@ class CaptureShareReviewTest {
     fun noGraphsContent_staysOpenWithCopyText_whenTheEnqueueFailed() {
         val h = harness(withGraphs = false, inboxFs = ReadOnlyInboxFs())
         val vm = CaptureViewModel(h.app)
-        await { vm.destination.value == CaptureDestination.NoGraphs }
+        awaitState(vm.destination) { it == CaptureDestination.NoGraphs }
         vm.updateText("only copy of this thought")
         var closed = 0
         composeRule.mainClock.autoAdvance = false
@@ -241,7 +261,9 @@ class CaptureShareReviewTest {
         composeRule.mainClock.advanceTimeBy(100)
 
         vm.closeWithoutGraph()
-        await { vm.resultNote.value != null }
+        awaitState(vm.resultNote) { it != null }
+        Snapshot.sendApplyNotifications() // publish the background write to Compose,
+        composeRule.waitForIdle() // and let it process the invalidation, before advancing frames
         composeRule.mainClock.advanceTimeBy(5_000)
 
         assertEquals("a failed enqueue must not auto-close", 0, closed)
@@ -253,7 +275,7 @@ class CaptureShareReviewTest {
     fun noGraphsContent_stillAutoCloses_afterASuccessfulEnqueue() {
         val h = harness(withGraphs = false)
         val vm = CaptureViewModel(h.app)
-        await { vm.destination.value == CaptureDestination.NoGraphs }
+        awaitState(vm.destination) { it == CaptureDestination.NoGraphs }
         vm.updateText("queued fine")
         var closed = 0
         composeRule.mainClock.autoAdvance = false
@@ -261,7 +283,9 @@ class CaptureShareReviewTest {
         composeRule.mainClock.advanceTimeBy(100)
 
         vm.closeWithoutGraph()
-        await { vm.resultNote.value != null }
+        awaitState(vm.resultNote) { it != null }
+        Snapshot.sendApplyNotifications() // publish the background write to Compose,
+        composeRule.waitForIdle() // and let it process the invalidation, before advancing frames
         composeRule.mainClock.advanceTimeBy(5_000)
 
         assertEquals(1, closed)
@@ -277,12 +301,12 @@ class CaptureShareReviewTest {
         val secret = File(h.app.filesDir, "databases-x").apply { writeBytes(byteArrayOf(5, 5, 5)) }
         val vm = CaptureViewModel(h.app)
         vm.beginShare(h.workId().value)
-        await { (vm.destination.value as? CaptureDestination.Ready)?.graph?.id == h.workId() }
+        awaitState(vm.destination) { (it as? CaptureDestination.Ready)?.graph?.id == h.workId() }
         val text = "[image: ${secret.absolutePath}]\nhello"
         vm.updateText(text)
 
         vm.save()
-        await { vm.saveState.value != CaptureViewModel.SaveState.Saving }
+        awaitState(vm.saveState) { it != CaptureViewModel.SaveState.Saving }
 
         val content = h.route.calls.single().second
         assertEquals(null, content.image)
@@ -296,12 +320,12 @@ class CaptureShareReviewTest {
         val outside = File(h.app.filesDir, "databases-y").apply { writeBytes(byteArrayOf(1)) }
         val vm = CaptureViewModel(h.app)
         vm.beginShare(h.workId().value)
-        await { (vm.destination.value as? CaptureDestination.Ready)?.graph?.id == h.workId() }
+        awaitState(vm.destination) { (it as? CaptureDestination.Ready)?.graph?.id == h.workId() }
         vm.attachImage(outside.absolutePath)
         vm.updateText("[image: ${outside.absolutePath}]\ncaption")
 
         vm.save()
-        await { vm.saveState.value != CaptureViewModel.SaveState.Saving }
+        awaitState(vm.saveState) { it != CaptureViewModel.SaveState.Saving }
 
         assertEquals(null, h.route.calls.single().second.image)
     }
@@ -313,12 +337,12 @@ class CaptureShareReviewTest {
         val image = ShareIntake.imageDir(h.app).apply { mkdirs() }.let { File(it, "ok.jpg").apply { writeBytes(byteArrayOf(1, 2, 3)) } }
         val vm = CaptureViewModel(h.app)
         vm.beginShare(h.workId().value)
-        await { (vm.destination.value as? CaptureDestination.Ready)?.graph?.id == h.workId() }
+        awaitState(vm.destination) { (it as? CaptureDestination.Ready)?.graph?.id == h.workId() }
         vm.attachImage(image.absolutePath)
         vm.updateText("[image: ${image.absolutePath}]\ncaption")
 
         vm.save()
-        await { vm.saveState.value != CaptureViewModel.SaveState.Saving }
+        awaitState(vm.saveState) { it != CaptureViewModel.SaveState.Saving }
 
         val content = h.route.calls.single().second
         assertTrue(byteArrayOf(1, 2, 3).contentEquals(content.image))
@@ -348,14 +372,14 @@ class CaptureShareReviewTest {
         val image = ShareIntake.imageDir(h.app).apply { mkdirs() }.let { File(it, "gone.jpg").apply { writeBytes(byteArrayOf(1)) } }
         val vm = CaptureViewModel(h.app)
         vm.beginShare(h.workId().value)
-        await { (vm.destination.value as? CaptureDestination.Ready)?.graph?.id == h.workId() }
+        awaitState(vm.destination) { (it as? CaptureDestination.Ready)?.graph?.id == h.workId() }
         vm.attachImage(image.absolutePath)
         val text = "[image: ${image.absolutePath}]\ncaption"
         vm.updateText(text)
         image.delete()
 
         vm.save()
-        await { vm.saveState.value != CaptureViewModel.SaveState.Saving }
+        awaitState(vm.saveState) { it != CaptureViewModel.SaveState.Saving }
 
         assertTrue(vm.saveState.value is CaptureViewModel.SaveState.Error)
         assertTrue(h.route.calls.isEmpty())
@@ -369,11 +393,11 @@ class CaptureShareReviewTest {
     fun secondShareIntoAnOpenOverlay_queuesTheEarlierText() {
         val h = harness()
         val vm = CaptureViewModel(h.app)
-        await { vm.destination.value is CaptureDestination.Ready }
+        awaitState(vm.destination) { it is CaptureDestination.Ready }
         vm.updateText("first share")
 
         vm.onNewShare("second share", h.workId().value)
-        await { h.services.inbox.state.value.items.isNotEmpty() }
+        awaitState(h.services.inbox.state) { it.items.isNotEmpty() }
 
         assertEquals("first share", h.services.inbox.state.value.items.single().text)
         assertEquals("second share", vm.captureText.value)
@@ -384,11 +408,11 @@ class CaptureShareReviewTest {
     fun secondShare_keepsBothTexts_whenQueuingTheEarlierOneFails() {
         val h = harness(inboxFs = ReadOnlyInboxFs())
         val vm = CaptureViewModel(h.app)
-        await { vm.destination.value is CaptureDestination.Ready }
+        awaitState(vm.destination) { it is CaptureDestination.Ready }
         vm.updateText("first share")
 
         vm.onNewShare("second share", null)
-        await { vm.captureText.value.contains("first share") }
+        awaitState(vm.captureText) { it.contains("first share") }
 
         assertTrue(vm.captureText.value.contains("second share"))
     }
