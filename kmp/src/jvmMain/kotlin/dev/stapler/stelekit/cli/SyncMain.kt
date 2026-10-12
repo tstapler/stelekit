@@ -139,6 +139,20 @@ private suspend fun runDryRun(
     output.result(SyncResult(graph = graphPath, branch = config.remoteBranch, localCommits = 0, remoteCommits = 0, status = "success"))
 }
 
+/**
+ * Stages the wiki subdirectory, then drops any staged file at an LFS-tracked path that is not a pointer
+ * (reported, never committed raw). Returns false when nothing is left to commit after the hold-back.
+ */
+private suspend fun stageHoldingBackLfs(gitRepository: GitRepository, config: GitConfig, output: SyncOutput): Boolean {
+    gitRepository.stageSubdir(config).onLeft { err ->
+        output.error("Failed to stage changes: ${err.message}")
+        throw SyncExitException(5)
+    }
+    val held = gitRepository.stagedLfsViolations(config)
+    held.forEach { output.info("Held back ${it.path}: stored with Git LFS, not committed (SteleKit cannot upload it here yet)") }
+    return held.isEmpty() || gitRepository.hasStagedChanges(config)
+}
+
 private suspend fun runCommitOnly(
     gitRepository: GitRepository,
     config: GitConfig,
@@ -148,16 +162,15 @@ private suspend fun runCommitOnly(
     output.info("Committing local changes...")
     val statusResult = gitRepository.status(config)
     if ((statusResult as? Either.Right)?.value?.hasLocalChanges == true) {
-        gitRepository.stageSubdir(config).onLeft { err ->
-            output.error("Failed to stage changes: ${err.message}")
-            throw SyncExitException(5)
+        val commitNeeded = stageHoldingBackLfs(gitRepository, config, output)
+        if (commitNeeded) {
+            gitRepository.commit(config, buildCommitMessage(config)).onLeft { err ->
+                output.error("Failed to commit: ${err.message}")
+                throw SyncExitException(5)
+            }
+            output.info("Committed local changes")
         }
-        gitRepository.commit(config, buildCommitMessage(config)).onLeft { err ->
-            output.error("Failed to commit: ${err.message}")
-            throw SyncExitException(5)
-        }
-        output.info("Committed local changes")
-        output.result(SyncResult(graph = graphPath, branch = config.remoteBranch, localCommits = 1, remoteCommits = 0, status = "success"))
+        output.result(SyncResult(graph = graphPath, branch = config.remoteBranch, localCommits = if (commitNeeded) 1 else 0, remoteCommits = 0, status = "success"))
     } else {
         output.info("No local changes to commit")
         output.result(SyncResult(graph = graphPath, branch = config.remoteBranch, localCommits = 0, remoteCommits = 0, status = "success"))
@@ -200,16 +213,15 @@ private suspend fun commitLocalChanges(
 ): Int {
     val statusResult = gitRepository.status(config)
     return if ((statusResult as? Either.Right)?.value?.hasLocalChanges == true) {
-        gitRepository.stageSubdir(config).onLeft { err ->
-            output.error("Failed to stage changes: ${err.message}")
-            throw SyncExitException(5)
+        val commitNeeded = stageHoldingBackLfs(gitRepository, config, output)
+        if (commitNeeded) {
+            gitRepository.commit(config, buildCommitMessage(config)).onLeft { err ->
+                output.error("Failed to commit: ${err.message}")
+                throw SyncExitException(5)
+            }
+            output.info("Committed local changes")
         }
-        gitRepository.commit(config, buildCommitMessage(config)).onLeft { err ->
-            output.error("Failed to commit: ${err.message}")
-            throw SyncExitException(5)
-        }
-        output.info("Committed local changes")
-        1
+        if (commitNeeded) 1 else 0
     } else {
         0
     }

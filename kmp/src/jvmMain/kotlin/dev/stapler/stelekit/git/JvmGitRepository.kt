@@ -10,6 +10,8 @@ import arrow.core.right
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
+import dev.stapler.stelekit.git.lfs.LfsIndexVerifier
+import dev.stapler.stelekit.git.lfs.LfsViolation
 import dev.stapler.stelekit.git.model.DEFAULT_CLONE_DEPTH
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.platform.security.CredentialAccess
@@ -231,25 +233,42 @@ class JvmGitRepository(
         ).right()
     }
 
-    override suspend fun stageSubdir(config: GitConfig): Either<DomainError.GitError, Unit> =
+    override suspend fun stageSubdir(config: GitConfig, excludePaths: Set<String>): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
             runGitOp({ e -> DomainError.GitError.CommitFailed("Stage failed: ${e.message}") }) {
-                openGit(config.repoRoot).use { git -> stageWikiSubdir(git, config) }
+                openGit(config.repoRoot).use { git -> stageWikiSubdir(git, config, excludePaths) }
             }
         }
 
-    private fun stageWikiSubdir(git: Git, config: GitConfig): Either<DomainError.GitError, Unit> {
+    private fun stageWikiSubdir(git: Git, config: GitConfig, excludePaths: Set<String>): Either<DomainError.GitError, Unit> {
         val pattern = if (config.wikiSubdir.isNullOrEmpty()) "." else "${config.wikiSubdir}/"
         git.add().addFilepattern(pattern).call()
         // Also stage deletions
         git.add().setUpdate(true).addFilepattern(pattern).call()
+        // Hold-back: the pattern add staged everything, so put the held files back out of the index.
+        LfsIndexVerifier(git.repository).unstagePaths(git, excludePaths)
         return Unit.right()
     }
+
+    override suspend fun stagedLfsViolations(config: GitConfig): List<LfsViolation> =
+        withContext(PlatformDispatcher.IO) {
+            openGit(config.repoRoot).use { git -> LfsIndexVerifier(git.repository).verifyAndUnstage(git) }
+        }
+
+    override suspend fun hasStagedChanges(config: GitConfig): Boolean =
+        withContext(PlatformDispatcher.IO) {
+            openGit(config.repoRoot).use { git ->
+                val status = git.status().call()
+                status.added.isNotEmpty() || status.changed.isNotEmpty() || status.removed.isNotEmpty()
+            }
+        }
 
     override suspend fun commit(config: GitConfig, message: String): Either<DomainError.GitError, String> =
         withContext(PlatformDispatcher.IO) {
             runGitOp({ e -> DomainError.GitError.CommitFailed(e.message ?: "Commit failed") }) {
                 openGit(config.repoRoot).use { git ->
+                    // Backstop: whatever stage path produced the index, a raw blob at an LFS-tracked path never commits.
+                    LfsIndexVerifier(git.repository).refuseOnViolation(git)?.let { return@use it.left() }
                     val commit = git.commit()
                         .setMessage(message)
                         .call()
@@ -428,6 +447,7 @@ class JvmGitRepository(
                 openGit(config.repoRoot).use { git ->
                     val relativePath = filePath.removePrefix("${config.repoRoot}/")
                     git.add().addFilepattern(relativePath).call()
+                    LfsIndexVerifier(git.repository).refuseOnViolation(git)?.let { return@use it.left() }
                     Unit.right()
                 }
             }

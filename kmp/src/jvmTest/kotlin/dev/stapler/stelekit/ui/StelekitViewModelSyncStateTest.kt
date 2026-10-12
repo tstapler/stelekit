@@ -114,7 +114,7 @@ class StelekitViewModelSyncStateTest {
             override suspend fun status(config: GitConfig): Either<DomainError.GitError, GitStatus> =
                 GitStatus(hasLocalChanges = true, untrackedFiles = emptyList(), modifiedFiles = listOf("pages/foo.md")).right()
 
-            override suspend fun stageSubdir(config: GitConfig): Either<DomainError.GitError, Unit> =
+            override suspend fun stageSubdir(config: GitConfig, excludePaths: Set<String>): Either<DomainError.GitError, Unit> =
                 DomainError.GitError.CommitFailed("stage failed").left()
         }
         val service = buildGitSyncService(gitRepository)

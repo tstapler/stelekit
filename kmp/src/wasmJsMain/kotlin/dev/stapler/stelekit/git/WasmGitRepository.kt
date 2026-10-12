@@ -85,7 +85,7 @@ class WasmGitRepository(
 
     override suspend fun init(repoRoot: String): Either<DomainError.GitError, Unit> = Unit.right()
 
-    override suspend fun stageSubdir(config: GitConfig): Either<DomainError.GitError, Unit> = Unit.right()
+    override suspend fun stageSubdir(config: GitConfig, excludePaths: Set<String>): Either<DomainError.GitError, Unit> = Unit.right()
 
     override suspend fun hasDetachedHead(config: GitConfig): Boolean = false
 

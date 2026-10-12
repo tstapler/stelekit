@@ -4,6 +4,7 @@
 package dev.stapler.stelekit.git
 
 import arrow.core.Either
+import arrow.core.getOrElse
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
@@ -12,9 +13,14 @@ import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.git.merge.JournalMergeService
+import dev.stapler.stelekit.git.lfs.LfsGuardCoordinator
+import dev.stapler.stelekit.git.lfs.LfsModeSource
+import dev.stapler.stelekit.git.lfs.LfsPlatformCapabilities
+import dev.stapler.stelekit.git.lfs.LfsViolation
 import dev.stapler.stelekit.git.model.CloneDepthState
 import dev.stapler.stelekit.git.model.ConflictFile
 import dev.stapler.stelekit.git.model.GitAuthType
+import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.git.model.wikiRoot
 import dev.stapler.stelekit.platform.FileSystem
@@ -67,8 +73,20 @@ class GitSyncService(
      * callers that need to observe busy-ness externally (e.g. a quiesce strategy) should inject
      * a shared instance instead. */
     private val gitSyncBusyCounter: GitSyncBusyCounter = GitSyncBusyCounter(),
+    /** Platform capability for Git LFS; the default (no transfer support) keeps the safety-floor-only behaviour. */
+    lfsCapabilities: LfsPlatformCapabilities = LfsPlatformCapabilities.GUARD_ONLY_PLATFORM,
+    /** Seam for the LFS safety floor. Tests inject one; production derives it from [settings] and [gitRepository]. */
+    lfsGuardCoordinator: LfsGuardCoordinator? = null,
+    /** Reachability check for [sync]; defaults to [networkMonitor]. Tests pass a constant so they never skip offline. */
+    private val isOnline: () -> Boolean = { networkMonitor.isOnline },
 ) {
     private val logger = Logger("GitSyncService")
+    private val lfsGuard: LfsGuardCoordinator = lfsGuardCoordinator ?: LfsGuardCoordinator(
+        fileSystem = fileSystem,
+        modeSource = LfsModeSource(settings),
+        capabilities = lfsCapabilities,
+        delegated = gitRepository.guardsLfsInWritePath,
+    )
     private val firstSyncConfirmation: FirstSyncConfirmation? = settings?.let { FirstSyncConfirmation(it) }
 
     /** Applies user-confirmed branch repairs; see [repairBranch]. */
@@ -267,7 +285,7 @@ class GitSyncService(
 
             // 1. Network check
             logger.info("sync/fetch start graphId=$graphId")
-            if (!networkMonitor.isOnline) {
+            if (!isOnline()) {
                 logger.warn("aborting: NetworkMonitor reports offline")
                 val err = DomainError.GitError.Offline
                 _syncState.value = SyncState.Error(err)
@@ -313,26 +331,29 @@ class GitSyncService(
 
             // 5. Commit local changes
             var localCommitsMade = 0
+            var lfsHeld: List<LfsViolation> = emptyList()
             _syncState.value = SyncState.Committing
             val statusResult = gitRepository.status(config)
             if (statusResult is Either.Right && statusResult.value.hasLocalChanges) {
-                gitRepository.stageSubdir(config).onLeft { err ->
+                val staged = stageWithLfsGuard(config, statusResult.value).getOrElse { err ->
                     _syncState.value = SyncState.Error(err)
                     return@withContext err.left()
                 }
-                val message = buildCommitMessage(config)
-                gitRepository.commit(config, message).onLeft { err ->
-                    if (err is DomainError.GitError.RateLimited) {
-                        _syncState.value = SyncState.RateLimited(err.retryAfterSeconds)
-                        scheduleRateLimitRetry(graphId, err.retryAfterSeconds) { g -> sync(g, SyncTrigger.Automatic) }
-                    } else if (err is DomainError.GitError.CredentialExpired) {
-                        _syncState.value = SyncState.CredentialExpired(graphId)
-                    } else {
-                        _syncState.value = SyncState.Error(err)
+                lfsHeld = staged.held
+                if (staged.commitNeeded) {
+                    gitRepository.commit(config, buildCommitMessage(config)).onLeft { err ->
+                        if (err is DomainError.GitError.RateLimited) {
+                            _syncState.value = SyncState.RateLimited(err.retryAfterSeconds)
+                            scheduleRateLimitRetry(graphId, err.retryAfterSeconds) { g -> sync(g, SyncTrigger.Automatic) }
+                        } else if (err is DomainError.GitError.CredentialExpired) {
+                            _syncState.value = SyncState.CredentialExpired(graphId)
+                        } else {
+                            _syncState.value = SyncState.Error(err)
+                        }
+                        return@withContext err.left()
                     }
-                    return@withContext err.left()
+                    localCommitsMade = 1
                 }
-                localCommitsMade = 1
             }
 
             // 6. Fetch
@@ -453,7 +474,8 @@ class GitSyncService(
             recordLastSyncAt(success.lastSyncAt)
             firstSyncConfirmation?.confirm(graphId, config.remoteName, config.remoteBranch)
             _firstSyncReviewPending.value = false
-            _syncState.value = success
+            // Non-fatal: the held files need the user's attention, so the badge keeps showing them instead of fading.
+            _syncState.value = if (lfsHeld.isEmpty()) success else SyncState.LfsActionRequired(lfsHeld)
             success.right()
             } finally {
                 gitSyncBusyCounter.end()
@@ -477,7 +499,7 @@ class GitSyncService(
             rateLimitRetryJob?.cancel()
 
             logger.info("sync/fetch start graphId=$graphId")
-            if (!networkMonitor.isOnline) {
+            if (!isOnline()) {
                 logger.warn("aborting: NetworkMonitor reports offline")
                 val err = DomainError.GitError.Offline
                 _syncState.value = SyncState.Error(err)
@@ -551,13 +573,17 @@ class GitSyncService(
             if (!status.hasLocalChanges) return@withContext (null as String?).right()
 
             _syncState.value = SyncState.Committing
-            gitRepository.stageSubdir(config).onLeft { return@withContext it.left() }
-            val sha = when (val r = gitRepository.commit(config, buildCommitMessage(config))) {
-                is Either.Left -> return@withContext r.value.left()
-                is Either.Right -> r.value
+            val staged = stageWithLfsGuard(config, status).getOrElse { return@withContext it.left() }
+            val sha = if (staged.commitNeeded) {
+                when (val r = gitRepository.commit(config, buildCommitMessage(config))) {
+                    is Either.Left -> return@withContext r.value.left()
+                    is Either.Right -> r.value
+                }
+            } else {
+                null
             }
             refreshLocalStatus(graphId)
-            _syncState.value = SyncState.Idle
+            _syncState.value = if (staged.held.isEmpty()) SyncState.Idle else SyncState.LfsActionRequired(staged.held)
             sha.right()
         }
 
@@ -589,6 +615,7 @@ class GitSyncService(
 
         for ((filePath, side) in sideResolutions) {
             gitRepository.checkoutFile(config, filePath, side).onLeft { return@withContext it.left() }
+            lfsRefusalFor(config, filePath)?.let { return@withContext it.left() }
             gitRepository.markResolved(config, filePath).onLeft { return@withContext it.left() }
         }
 
@@ -612,6 +639,7 @@ class GitSyncService(
                 ).left()
             }
 
+            lfsRefusalFor(config, filePath)?.let { return@withContext it.left() }
             gitRepository.markResolved(config, filePath).onLeft { return@withContext it.left() }
         }
 
@@ -656,6 +684,7 @@ class GitSyncService(
         // filePath here is written to SAF just above via fileSystem.writeFile — markResolved()
         // (AndroidGitRepository, shadow-mirror mode) pulls that SAF content into the shadow tree
         // before staging; same ordering as resolveConflict().
+        lfsRefusalFor(config, filePath)?.let { return@withContext it.left() }
         gitRepository.markResolved(config, filePath).onLeft { return@withContext it.left() }
 
         val message = buildCommitMessage(config, isMerge = true)
@@ -732,6 +761,44 @@ class GitSyncService(
      */
     fun shutdown() {
         scope.cancel()
+    }
+
+    /** Outcome of staging under the LFS guard: what was held back and whether anything is left to commit. */
+    private class LfsStaging(val held: List<LfsViolation>, val commitNeeded: Boolean)
+
+    /**
+     * Stages the wiki subdirectory with the Git LFS safety floor applied. Violating files are left out of the
+     * index and reported in [LfsStaging.held] (or, when [LfsGuardCoordinator.holdBack] is off, the whole commit
+     * is refused). Every path that stages for a commit goes through here.
+     */
+    private suspend fun stageWithLfsGuard(config: GitConfig, status: GitStatus): Either<DomainError.GitError, LfsStaging> {
+        val changed = (status.modifiedFiles + status.untrackedFiles).distinct()
+        val verdict = lfsGuard.evaluate(config, changed, gitRepository.cleanFilterActive)
+        if (!lfsGuard.holdBack && verdict.held.isNotEmpty()) {
+            return DomainError.GitError.LfsRawBinaryRefused(verdict.held.map { it.path }).left()
+        }
+        gitRepository.stageSubdir(config, verdict.heldPaths).onLeft { return it.left() }
+        // Authoritative index check: also catches staged-new files the status lists above do not show.
+        val escaped = try {
+            gitRepository.stagedLfsViolations(config)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Fail closed: if the index cannot be verified, nothing is committed.
+            return DomainError.GitError.CommitFailed("Could not check staged files against Git LFS rules: ${e.message}").left()
+        }
+        val held = verdict.held + escaped.filter { it.path !in verdict.heldPaths }
+        if (held.isNotEmpty()) {
+            logger.warn("lfs: held back ${held.size} file(s) at LFS-tracked paths; the rest still syncs")
+        }
+        return LfsStaging(held, commitNeeded = held.isEmpty() || gitRepository.hasStagedChanges(config)).right()
+    }
+
+    /** Merge-resolution flows cannot leave a file half-resolved, so a violating file refuses the step outright. */
+    private suspend fun lfsRefusalFor(config: GitConfig, filePath: String): DomainError.GitError? {
+        val relative = filePath.removePrefix(config.repoRoot).trimStart('/')
+        val verdict = lfsGuard.evaluate(config, listOf(relative), gitRepository.cleanFilterActive)
+        return if (verdict.held.isEmpty()) null else DomainError.GitError.LfsRawBinaryRefused(verdict.held.map { it.path })
     }
 
     companion object {

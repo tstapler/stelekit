@@ -229,6 +229,18 @@ abstract class JvmFileSystemBase {
         }
     }
 
+    /** Byte size from the file's metadata; unlike reading the file this never loads a large binary. */
+    open fun getFileSize(path: String): Long? {
+        return try {
+            val file = File(validatePath(path))
+            if (file.isFile) file.length() else null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     open fun readFileBytes(path: String): ByteArray? {
         return try {
             val validatedPath = validatePath(path)
