@@ -217,12 +217,13 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
         # Mutation is report-only here: PIT scores whole classes, so a one-line change to a large
         # class is judged on mutants it never touched. Coverage on changed lines is the gate;
-        # `./gradlew :kmp:mutationTest` enforces the default 80 locally.
+        # `./gradlew :kmp:mutationTest` enforces the default 80 locally. Mutants per class are capped
+        # so a large diff still finishes inside mutationTest's 25-minute budget (a timeout fails the step).
         run: >
           xvfb-run --auto-servernum
           ./gradlew --no-daemon --build-cache --continue :kmp:diffCoverage :kmp:mutationTest
           -PdiffCoverage.selectTests "-PdiffCoverage.base=origin/$BASE_REF"
-          -Pmutate.threshold=0
+          -Pmutate.threshold=0 -Pmutate.maxMutationsPerClass=50
 
       - name: Post diff-coverage summary
         if: always()
