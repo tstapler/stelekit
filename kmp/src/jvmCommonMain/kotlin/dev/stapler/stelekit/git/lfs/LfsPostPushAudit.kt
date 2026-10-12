@@ -59,17 +59,20 @@ object LfsPostPushAudit {
         return blobs
     }
 
+    /** A merge commit also carries the other parent's files; those were on the remote already, so only blobs absent from every parent count. */
     private fun addChangedBlobs(repo: Repository, commit: RevCommit, into: MutableMap<String, ObjectId>) {
         TreeWalk(repo).use { tw ->
             tw.isRecursive = true
             tw.filter = TreeFilter.ANY_DIFF
             tw.addTree(commit.tree)
-            val parent = commit.parents.firstOrNull()
-            if (parent != null) tw.addTree(RevWalk(repo).use { it.parseCommit(parent.id).tree })
+            val parentTrees = RevWalk(repo).use { walk -> commit.parents.map { walk.parseCommit(it.id).tree.id } }
+            parentTrees.forEach { tw.addTree(it) }
             while (tw.next()) {
                 val mode = tw.getFileMode(0)
                 if (mode != FileMode.REGULAR_FILE && mode != FileMode.EXECUTABLE_FILE) continue
-                into.putIfAbsent(tw.pathString, tw.getObjectId(0))
+                val id = tw.getObjectId(0)
+                if ((1..parentTrees.size).any { tw.getObjectId(it) == id }) continue
+                into.putIfAbsent(tw.pathString, id)
             }
         }
     }

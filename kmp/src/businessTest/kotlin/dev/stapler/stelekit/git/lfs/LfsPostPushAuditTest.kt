@@ -53,6 +53,30 @@ class LfsPostPushAuditTest {
     }
 
     @Test
+    fun audit_should_NotBlameAMergeCommitForTheOtherParentsFiles() = runBlocking {
+        LfsRepoFixture().use { f ->
+            f.write(".gitattributes", rules)
+            f.write("pages/a.md", "# a")
+            f.add(".")
+            f.commit("base")
+            f.git.checkout().setCreateBranch(true).setName("side").call()
+            f.write("assets/theirs.bin", LfsRepoFixture.PNG)
+            f.add("assets/theirs.bin")
+            val theirs = f.commit("already on the remote").id
+            f.git.checkout().setName("main").call()
+            f.write("pages/b.md", "# b")
+            f.add("pages/b.md")
+            f.commit("my note")
+            val merge = f.git.merge().include(theirs)
+                .setFastForward(org.eclipse.jgit.api.MergeCommand.FastForwardMode.NO_FF).call().newHead
+
+            val findings = LfsPostPushAudit.audit(f.repo, previousRemoteTip = theirs, pushedTip = merge)
+
+            assertTrue(findings.isEmpty(), "theirs.bin was pushed by someone else, not by this push: $findings")
+        }
+    }
+
+    @Test
     fun audit_should_ReportNothing_When_TrackedPathsHoldPointersAndRawFilesAreUntracked() = runBlocking {
         LfsRepoFixture().use { f ->
             f.write(".gitattributes", rules)

@@ -123,6 +123,8 @@ class GraphLoader(
      */
     private fun skipIfLfsPointer(filePath: String, content: String?): String? {
         if (content == null || content.length >= LfsPointerCodec.MAX_POINTER_BYTES) return content
+        // Cheap prefix test first: nearly every page is small, and none of them starts with the pointer's version line.
+        if (!content.startsWith("version ", ignoreCase = true) && !content.startsWith("\uFEFF")) return content
         if (LfsPointerCodec.parse(content.encodeToByteArray()) is LfsPointerParse.NotAPointer) return content
         val warned = lfsPointerWarned
         if (filePath !in warned) {

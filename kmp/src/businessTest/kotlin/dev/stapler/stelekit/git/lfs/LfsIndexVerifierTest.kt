@@ -101,6 +101,57 @@ class LfsIndexVerifierTest {
         }
     }
 
+    /** Leaves the repository mid-merge: HEAD on main (adds pages/b.md), MERGE_HEAD on side (adds the raw assets/r.bin). */
+    private fun startMergeThatBringsInARawRemoteBlob(f: LfsRepoFixture) {
+        f.write(".gitattributes", rules)
+        f.write("pages/a.md", "# a")
+        f.add(".")
+        f.commit("base")
+        f.git.checkout().setCreateBranch(true).setName("side").call()
+        f.write("assets/r.bin", LfsRepoFixture.PNG)
+        f.add("assets/r.bin")
+        f.commit("someone else pushed a raw file")
+        f.git.checkout().setName("main").call()
+        f.write("pages/b.md", "# b")
+        f.add("pages/b.md")
+        f.commit("my note")
+        f.git.merge().include(f.repo.resolve("side")).setCommit(false)
+            .setFastForward(org.eclipse.jgit.api.MergeCommand.FastForwardMode.NO_FF).call()
+    }
+
+    @Test
+    fun stagedViolations_should_IgnoreContentThatCameFromMergeHead_DuringAMerge() = runBlocking {
+        fixture(attributes = null).use { f ->
+            startMergeThatBringsInARawRemoteBlob(f)
+            assertTrue("assets/r.bin" in f.stagedPaths(), "the merge staged the other side's raw file")
+
+            assertTrue(LfsIndexVerifier(f.repo).stagedViolations().isEmpty(), "the remote's file is already remote, not ours to judge")
+        }
+    }
+
+    @Test
+    fun stagedViolations_should_StillJudgeNewlyAuthoredContent_DuringAMerge() = runBlocking {
+        fixture(attributes = null).use { f ->
+            startMergeThatBringsInARawRemoteBlob(f)
+            f.write("assets/mine.bin", LfsRepoFixture.PNG)
+            f.add("assets/mine.bin")
+
+            assertEquals(listOf("assets/mine.bin"), LfsIndexVerifier(f.repo).stagedViolations().map { it.path })
+        }
+    }
+
+    @Test
+    fun verifyAndUnstage_should_NotRevertTheRemotesFile_When_CompletingAMerge() = runBlocking {
+        fixture(attributes = null).use { f ->
+            startMergeThatBringsInARawRemoteBlob(f)
+
+            assertTrue(LfsIndexVerifier(f.repo).verifyAndUnstage(f.git).isEmpty())
+            f.commit("merge")
+
+            assertTrue("assets/r.bin" in f.headBlobs(), "the merge commit keeps the remote's file")
+        }
+    }
+
     @Test
     fun verifyAndUnstage_should_RestoreHeadsVersion_When_AModifiedTrackedFileIsStagedRaw() = runBlocking {
         fixture().use { f ->

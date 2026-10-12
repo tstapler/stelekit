@@ -88,19 +88,27 @@ class LfsIndexVerifier(private val repo: Repository) {
         }
     }
 
+    /**
+     * Index entries that differ from HEAD. While a merge is in progress the other parent's content also differs from
+     * HEAD but is already on the remote, so entries equal to MERGE_HEAD's are not ours to judge: refusing (or
+     * un-staging) them would block, or silently revert, the remote's changes.
+     */
     private fun stagedChanges(dirCache: DirCache): List<StagedBlob> {
         val headTree = repo.resolve(Constants.HEAD + "^{tree}")
+        val mergeTree = repo.resolve(Constants.MERGE_HEAD + "^{tree}")
         val result = ArrayList<StagedBlob>()
         TreeWalk(repo).use { walk ->
             walk.isRecursive = true
             val indexTree = walk.addTree(DirCacheIterator(dirCache))
             val headIndex = if (headTree != null) walk.addTree(headTree) else -1
+            val mergeIndex = if (mergeTree != null) walk.addTree(mergeTree) else -1
             while (walk.next()) {
                 val mode = walk.getFileMode(indexTree)
                 if (mode != FileMode.REGULAR_FILE && mode != FileMode.EXECUTABLE_FILE) continue
                 val id = walk.getObjectId(indexTree)
                 val headId = if (headIndex >= 0) walk.getObjectId(headIndex) else ObjectId.zeroId()
-                if (id != headId) result += StagedBlob(walk.pathString, id)
+                val mergeId = if (mergeIndex >= 0) walk.getObjectId(mergeIndex) else ObjectId.zeroId()
+                if (id != headId && id != mergeId) result += StagedBlob(walk.pathString, id)
             }
         }
         return result
