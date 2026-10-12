@@ -181,7 +181,7 @@ jobs:
     name: Incremental coverage + mutation (changed files)
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 65
+    timeout-minutes: 60
 
     steps:
       - uses: actions/checkout@v4
@@ -212,18 +212,24 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
         run: git fetch --no-tags origin "$BASE_REF:refs/remotes/origin/$BASE_REF"
 
-      - name: Incremental coverage gate (jvmTest + testDebugUnitTest) and mutation score
+      - name: Incremental coverage gate (jvmTest + testDebugUnitTest)
         env:
           BASE_REF: ${{ github.base_ref }}
-        # Mutation is report-only here: PIT scores whole classes, so a one-line change to a large
-        # class is judged on mutants it never touched. Coverage on changed lines is the gate;
-        # `./gradlew :kmp:mutationTest` enforces the default 80 locally. Mutants per class are capped
-        # and mutationTest gets 40 minutes: PIT's own coverage pass takes ~12 of them on a large diff (a timeout fails the step).
         run: >
           xvfb-run --auto-servernum
-          ./gradlew --no-daemon --build-cache --continue :kmp:diffCoverage :kmp:mutationTest
+          ./gradlew --no-daemon --build-cache :kmp:diffCoverage
           -PdiffCoverage.selectTests "-PdiffCoverage.base=origin/$BASE_REF"
-          -Pmutate.threshold=0 -Pmutate.maxMutationsPerClass=50 -Pmutate.timeoutMinutes=40
+
+      # Report-only: PIT scores whole classes, so a one-line change to a large class is judged on
+      # mutants it never touched, and a diff touching GraphLoader/GitSyncService re-runs their large
+      # DB-backed suites per mutant (#417: 249 units did not finish in 40 minutes). A timeout here
+      # must not fail the PR; `./gradlew :kmp:mutationTest` enforces the default 80 locally.
+      - name: Mutation score (report-only)
+        continue-on-error: true
+        timeout-minutes: 30
+        run: >
+          ./gradlew --no-daemon --build-cache :kmp:mutationTest
+          -Pmutate.threshold=0 -Pmutate.maxMutationsPerClass=50 -Pmutate.timeoutMinutes=25
 
       - name: Post diff-coverage summary
         if: always()
