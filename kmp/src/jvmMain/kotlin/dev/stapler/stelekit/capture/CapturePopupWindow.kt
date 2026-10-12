@@ -278,12 +278,7 @@ private fun EditableCaptureContent(controller: CaptureController, shown: Capture
         CaptureFooter(controller, shown)
     }
 
-    // Runs when this composable is newly (re)mounted — the Hidden->Shown transition, since
-    // CapturePopupContent composes nothing while Hidden — and again whenever the target changes
-    // (picking a graph hands focus back to the text field) or a save settles. The field is
-    // disabled while Saving, and a disabled field drops focus, so without re-keying on saveState a
-    // failed save would leave the re-enabled field unfocused and the user unable to type or Tab
-    // back into it. Not requested while Saving: the field can't take focus then.
+    // Keyed on saveState because a disabled field drops focus: after a failed save it must be refocused.
     LaunchedEffect(shown.targetGraphId, shown.saveState) {
         if (shown.saveState != SaveState.Saving) focusRequester.requestFocus()
     }

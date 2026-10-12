@@ -1523,40 +1523,39 @@ tasks.register<JacocoReport>("jacocoTestReport") {
 }
 
 // ── Change-scoped quality gates: incremental coverage + mutation ─────────────
-// Everything below keys off the files changed against a base ref (default origin/main), so one
-// mechanism covers the whole repo instead of a hardcoded package:
-//
-//   ./gradlew :kmp:diffCoverage -PdiffCoverage.selectTests   # run only tests that reference changed code, then gate
-//   ./gradlew :kmp:diffCoverage -x jvmTest                   # re-gate using the jvmTest.exec already on disk
-//   ./gradlew :kmp:qualityCheck -PdiffCoverage.selectTests   # detekt + diffCoverage + mutationTest
-//
-// Properties: diffCoverage.base (origin/main), diffCoverage.threshold (80, percent of changed
-// executable lines), mutate.threshold (80), mutate.classes / mutate.tests (override derivation),
-// mutate.maxClasses (40; above this mutationTest is skipped — PIT cost grows with class count).
-//
-// Why change-scoped test selection (CI design): the canonical JVM suite runs through Bazel, which
-// has no JaCoCo; the full Gradle `jvmTest` has a history of OOM and multi-hour hangs on 2-core
-// runners (see release.yml `test-kmp-jvm`). Running only the tests that mention a changed
-// top-level type bounds both cost and risk while still producing a JaCoCo exec for those lines.
-// Limit: a changed line exercised only by a test that never names its file counts as uncovered —
-// the fix is a direct test, which is the point of the gate. Android/iOS/wasm-only source has no
-// JVM bytecode, so diff-cover treats those lines as non-executable and does not gate them.
+// Keyed off files changed vs diffCoverage.base (default origin/main). Run
+// `./gradlew :kmp:diffCoverage -PdiffCoverage.selectTests` to run only the tests tied to changed
+// code (a test is tied if it names a changed type, shares its package, or is `<Stem>*Test`).
+// Properties: diffCoverage.base, diffCoverage.threshold (80), mutate.threshold (80),
+// mutate.classes / mutate.tests (override derivation), mutate.maxClasses (40).
+// Why selection: the canonical suite runs under Bazel (no JaCoCo) and full Gradle jvmTest has
+// OOM/hang history on 2-core runners (release.yml `test-kmp-jvm`). Android/iOS/wasm-only source
+// has no JVM bytecode, so diff-cover does not gate it.
 val diffBase = providers.gradleProperty("diffCoverage.base").orElse("origin/main")
 val diffThreshold = providers.gradleProperty("diffCoverage.threshold").orElse("80")
 val selectChangedTests = providers.gradleProperty("diffCoverage.selectTests").isPresent
 
-private fun gitLines(vararg args: String): List<String> = try {
-    val proc = ProcessBuilder("git", *args).directory(rootProject.projectDir).redirectErrorStream(false).start()
-    val out = proc.inputStream.bufferedReader().readLines()
-    proc.waitFor()
-    out.filter { it.isNotBlank() }
-} catch (e: Exception) {
-    emptyList()
+// Fails closed: a failed git call must not look like "nothing changed", which would pass the gate.
+private fun gitLines(vararg args: String): List<String> {
+    val errFile = IoFile.createTempFile("git-stderr", ".txt")
+    try {
+        val proc = ProcessBuilder("git", *args).directory(rootProject.projectDir)
+            .redirectError(errFile).start()
+        val out = proc.inputStream.bufferedReader().readLines()
+        val exit = proc.waitFor()
+        if (exit != 0) {
+            throw GradleException("git ${args.joinToString(" ")} failed ($exit): ${errFile.readText().trim()}")
+        }
+        return out.filter { it.isNotBlank() }
+    } finally {
+        errFile.delete()
+    }
 }
 
 // Repo-relative paths changed vs the merge-base: committed, staged, unstaged and untracked.
 val changedFiles: List<String> by lazy {
-    val base = gitLines("merge-base", "HEAD", diffBase.get()).firstOrNull() ?: diffBase.get()
+    val base = gitLines("merge-base", "HEAD", diffBase.get()).firstOrNull()
+        ?: throw GradleException("no merge-base between HEAD and ${diffBase.get()}")
     (gitLines("diff", "--name-only", "--diff-filter=ACMR", base) +
         gitLines("ls-files", "--others", "--exclude-standard")).distinct()
 }
@@ -1574,35 +1573,67 @@ private fun qualifiedStem(path: String): String? {
     return "$pkg.${f.nameWithoutExtension}"
 }
 
+private fun testSourceFiles(sets: List<String>): List<IoFile> =
+    sets.flatMap { set -> fileTree("src/$set/kotlin").matching { include("**/*.kt") }.files }
+
+private fun relativeToRoot(f: IoFile): String = f.relativeTo(rootProject.projectDir).invariantSeparatorsPath
+
+/**
+ * Matches a test source to the changed main classes when it names one (`\bStem\b`), lives in the
+ * same package, or is called `<Stem>*Test`. Name-only matching misses files with no top-level
+ * type (MarkdownMerge.kt holds functions only), hence the package rule.
+ */
+private class TestRelevance(mainClasses: List<String>) {
+    private val stems = mainClasses.map { it.substringAfterLast('.') }.toSet()
+    private val packages = mainClasses.map { it.substringBeforeLast('.') }.toSet()
+    private val word = if (stems.isEmpty()) null
+        else Regex("""\b(${stems.joinToString("|") { Regex.escape(it) }})\b""")
+
+    fun matches(testFile: IoFile, testPackage: String?): Boolean =
+        testPackage in packages ||
+            stems.any { testFile.nameWithoutExtension.startsWith(it) && testFile.nameWithoutExtension.endsWith("Test") } ||
+            (word != null && word.containsMatchIn(testFile.readText()))
+}
+
 val changedMainClasses: List<String> by lazy {
     changedFiles.filter { mainSrcRegex.matches(it) }.mapNotNull { qualifiedStem(it) }
 }
 
-// Test classes that are changed themselves, or whose source mentions a changed main type.
+// Test classes that are changed themselves, or related to a changed main type (see TestRelevance).
 val changedTestClasses: List<String> by lazy {
-    val simpleNames = changedMainClasses.map { it.substringAfterLast('.') }.toSet()
-    if (simpleNames.isEmpty() && changedFiles.none { testSrcRegex.matches(it) }) return@lazy emptyList()
-    val wordRegex = if (simpleNames.isEmpty()) null
-        else Regex("""\b(${simpleNames.joinToString("|") { Regex.escape(it) }})\b""")
     val changedTests = changedFiles.filter { testSrcRegex.matches(it) }.toSet()
-    listOf("commonTest", "businessTest", "jvmTest", "androidUnitTest").flatMap { set ->
-        fileTree("src/$set/kotlin").matching { include("**/*.kt") }.files
-    }.filter { f ->
-        val rel = f.relativeTo(rootProject.projectDir).invariantSeparatorsPath
-        rel in changedTests || (wordRegex != null && wordRegex.containsMatchIn(f.readText()))
-    }.mapNotNull { qualifiedStem(it.relativeTo(rootProject.projectDir).invariantSeparatorsPath) }
+    if (changedMainClasses.isEmpty() && changedTests.isEmpty()) return@lazy emptyList()
+    val relevance = TestRelevance(changedMainClasses)
+    testSourceFiles(listOf("commonTest", "businessTest", "jvmTest", "androidUnitTest"))
+        .mapNotNull { f ->
+            val qualified = qualifiedStem(relativeToRoot(f)) ?: return@mapNotNull null
+            qualified.takeIf {
+                relativeToRoot(f) in changedTests || relevance.matches(f, qualified.substringBeforeLast('.'))
+            }
+        }
         .filter { it.substringAfterLast('.').endsWith("Test") }
         .distinct()
 }
 
 // PIT runs the JVM test pool only, so mutating a class whose tests live solely in androidUnitTest
 // (Robolectric) scores it 0% on a pool that never exercises it. Those classes are still gated by
-// diffCoverage; only mutation targets are narrowed to classes some JVM test references.
+// diffCoverage; only mutation targets are narrowed to classes some JVM test relates to.
 val mutationTargetClasses: List<String> by lazy {
-    val jvmTestText = listOf("commonTest", "businessTest", "jvmTest").flatMap { set ->
-        fileTree("src/$set/kotlin").matching { include("**/*.kt") }.files
-    }.joinToString("\n") { it.readText() }
-    changedMainClasses.filter { Regex("""\b${Regex.escape(it.substringAfterLast('.'))}\b""").containsMatchIn(jvmTestText) }
+    val jvmTests = testSourceFiles(listOf("commonTest", "businessTest", "jvmTest"))
+        .map { it to qualifiedStem(relativeToRoot(it))?.substringBeforeLast('.') }
+    changedMainClasses.filter { main ->
+        val relevance = TestRelevance(listOf(main))
+        jvmTests.any { (file, pkg) -> relevance.matches(file, pkg) }
+    }
+}
+
+/** Restricts a Test task to [selected] classes; an empty list pins a no-op pattern, not the whole suite. */
+private fun Test.runOnlySelected(selected: List<String>) {
+    filter {
+        isFailOnNoMatchingTests = false
+        selected.forEach { includeTestsMatching("$it*") }
+        if (selected.isEmpty()) includeTestsMatching("dev.stapler.stelekit.__no_changed_tests__")
+    }
 }
 
 if (selectChangedTests) {
@@ -1610,13 +1641,7 @@ if (selectChangedTests) {
     val selected = changedTestClasses
     val mainCount = changedMainClasses.size
     val baseRef = diffBase.get()
-    tasks.withType<Test>().matching { it.name == "testDebugUnitTest" }.configureEach {
-        filter {
-            isFailOnNoMatchingTests = false
-            selected.forEach { includeTestsMatching("$it*") }
-            if (selected.isEmpty()) includeTestsMatching("dev.stapler.stelekit.__no_changed_tests__")
-        }
-    }
+    tasks.withType<Test>().matching { it.name == "testDebugUnitTest" }.configureEach { runOnlySelected(selected) }
     tasks.named<Test>("jvmTest") {
         doFirst {
             logger.lifecycle(
@@ -1624,12 +1649,7 @@ if (selectChangedTests) {
                     "changed main class(es) vs $baseRef: $selected"
             )
         }
-        filter {
-            isFailOnNoMatchingTests = false
-            selected.forEach { includeTestsMatching("$it*") }
-            // An empty include list would run the whole suite; pin to a no-op pattern instead.
-            if (selected.isEmpty()) includeTestsMatching("dev.stapler.stelekit.__no_changed_tests__")
-        }
+        runOnlySelected(selected)
     }
 }
 
