@@ -174,13 +174,22 @@ jobs:
           path: kmp/build/reports/detekt/
           retention-days: 7
 
-  # ── Merge-engine quality gate: coverage floor + mutation score ───────────
-  merge-quality:
-    name: Merge engine coverage + mutation (JaCoCo, PIT)
+  # ── Change-scoped quality gate: incremental coverage + mutation ──────────
+  # Repo-wide, keyed off the PR diff (see "Change-scoped quality gates" in kmp/build.gradle.kts).
+  # Deliberately NOT a second full-suite run: the canonical JVM suite is Bazel (bazel-ci.yml, no
+  # JaCoCo) and full Gradle jvmTest has OOM/hang history on 2-core runners (release.yml
+  # `test-kmp-jvm`). This job runs only the tests that reference changed files, under JaCoCo, and
+  # fails when changed executable lines are covered below the threshold (default 80%).
+  diff-coverage:
+    name: Incremental coverage + mutation (changed files)
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # merge-base against the PR base branch
 
       - uses: actions/setup-java@v4
         with:
@@ -193,19 +202,35 @@ jobs:
         with:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
-      - name: Coverage floor and mutation score (git merge engine)
-        # Scoped test run feeds both gates; floors/threshold live in kmp/build.gradle.kts.
+      - name: Install Xvfb (selected tests may include Compose Desktop UI tests)
+        run: sudo apt-get install -y --no-install-recommends xvfb
+
+      - name: Fetch PR base branch
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: git fetch --no-tags origin "$BASE_REF:refs/remotes/origin/$BASE_REF"
+
+      - name: Incremental coverage gate and mutation score
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: >
-          ./gradlew --no-daemon --build-cache
-          :kmp:jvmTest --tests 'dev.stapler.stelekit.git.*' --tests 'dev.stapler.stelekit.ui.screens.git.*'
-          :kmp:jacocoTestCoverageVerification :kmp:mutationTest
+          xvfb-run --auto-servernum
+          ./gradlew --no-daemon --build-cache --continue :kmp:diffCoverage :kmp:mutationTest
+          -PdiffCoverage.selectTests "-PdiffCoverage.base=origin/$BASE_REF"
+
+      - name: Post diff-coverage summary
+        if: always()
+        run: |
+          f=kmp/build/reports/diff-coverage/diff-coverage.md
+          [ -f "$f" ] && cat "$f" >> "$GITHUB_STEP_SUMMARY" || true
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: merge-quality-reports
+          name: diff-coverage-reports
           path: |
             kmp/build/reports/jacoco/
+            kmp/build/reports/diff-coverage/
             kmp/build/reports/pitest/
           retention-days: 7
 
