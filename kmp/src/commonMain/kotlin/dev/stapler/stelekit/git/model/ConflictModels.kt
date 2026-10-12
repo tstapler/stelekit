@@ -4,6 +4,7 @@
 package dev.stapler.stelekit.git.model
 
 import dev.stapler.stelekit.git.merge.DuplicateBlockId
+import dev.stapler.stelekit.git.merge.MergePolicy
 import kotlinx.serialization.Serializable
 
 /**
@@ -26,6 +27,9 @@ import kotlinx.serialization.Serializable
  * went through the line-level fallback instead (non-markdown path, or a block-parse failure).
  * Informational only: resolving the conflict normally does not clear a duplicate id, since the
  * two colliding blocks may both survive into the merged result.
+ * @property autoResolvedBy Non-null only when the markdown merge engine itself produced a clean
+ * result under that policy ([rawContent] is the merged text to write and stage). Never infer it
+ * from "no markers": JGit modify/delete, binary and rename conflicts also leave a marker-free file.
  */
 data class ConflictFile(
     val filePath: String,
@@ -33,6 +37,7 @@ data class ConflictFile(
     val hunks: List<ConflictHunk>,
     val rawContent: String? = null,
     val duplicateBlockIds: List<DuplicateBlockId> = emptyList(),
+    val autoResolvedBy: MergePolicy? = null,
 )
 
 data class ConflictHunk(

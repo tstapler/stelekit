@@ -69,7 +69,7 @@ fun StorageMoveChoiceDialog(
                     onClick = onRelocateChoose,
                     modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
                 ) {
-                    Column {
+                    Column(Modifier.fillMaxWidth()) {
                         Text("Relocate", style = MaterialTheme.typography.bodyMedium)
                         Text(
                             "Move and stop using the old location. The old copy stays until " +
@@ -83,7 +83,7 @@ fun StorageMoveChoiceDialog(
                         onClick = onLinkChoose,
                         modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
                     ) {
-                        Column {
+                        Column(Modifier.fillMaxWidth()) {
                             Text("Link", style = MaterialTheme.typography.bodyMedium)
                             Text(
                                 if (isUnlinking) {

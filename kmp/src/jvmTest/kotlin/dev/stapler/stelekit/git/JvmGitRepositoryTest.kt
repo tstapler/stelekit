@@ -621,14 +621,17 @@ class JvmGitRepositoryTest {
         val bareOrigin = createTempDirectory(prefix).toFile()
         Git.init().setBare(true).setDirectory(bareOrigin).setInitialBranch("main").call().close()
         val seedWorkDir = createTempDirectory("${prefix}seed_").toFile()
-        Git.cloneRepository().setURI(bareOrigin.absolutePath).setDirectory(seedWorkDir).call().use { git ->
+        // Not a clone of the empty origin: that takes its branch name from the machine's
+        // init.defaultBranch, so a runner without it seeds "master" into an origin whose HEAD is "main".
+        Git.init().setInitialBranch("main").setDirectory(seedWorkDir).call().use { git ->
             setIdentity(git)
+            git.remoteAdd().setName("origin").setUri(org.eclipse.jgit.transport.URIish(bareOrigin.absolutePath)).call()
             repeat(commitCount) { i ->
                 File(seedWorkDir, "journal.md").writeText("entry $i\n")
                 git.add().addFilepattern(".").call()
                 git.commit().setMessage("commit $i").call()
             }
-            git.push().call()
+            git.push().setRemote("origin").add("main").call()
         }
         seedWorkDir.deleteRecursively()
         return bareOrigin
@@ -801,7 +804,7 @@ class JvmGitRepositoryTest {
                 git.add().addFilepattern(".").call()
                 git.commit().setMessage("extra commit $i").call()
             }
-            git.push().call()
+            git.push().setRemote("origin").add("main").call()
         }
         seedWorkDir.deleteRecursively()
 
