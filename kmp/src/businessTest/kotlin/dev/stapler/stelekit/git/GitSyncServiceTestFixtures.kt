@@ -40,6 +40,7 @@ internal fun buildGitSyncTestService(
     fileSystem: FileSystem = StubFileSystem(),
     networkMonitor: NetworkMonitor = NetworkMonitor(),
     credentialAccessProvider: (() -> CredentialAccess)? = null,
+    isOnline: (() -> Boolean)? = null,
 ): GitSyncService {
     val stubFs = StubFileSystem()
     val graphLoader = GraphLoader(
@@ -57,5 +58,6 @@ internal fun buildGitSyncTestService(
         networkMonitor = networkMonitor,
         fileSystem = fileSystem,
         credentialAccessProvider = credentialAccessProvider,
+        isOnline = isOnline ?: { networkMonitor.isOnline },
     )
 }

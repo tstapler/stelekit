@@ -32,9 +32,11 @@ import dev.stapler.stelekit.git.lfs.WasmLfsBlobGate
 import dev.stapler.stelekit.git.lfs.WasmLfsContentProbe
 import dev.stapler.stelekit.git.lfs.WasmLfsRulesSource
 import dev.stapler.stelekit.git.merge.Diff3
-import dev.stapler.stelekit.git.merge.findDuplicateBlockIds
+import dev.stapler.stelekit.git.merge.GitAttributes
+import dev.stapler.stelekit.git.merge.gitAttributeProbeDirs
 import dev.stapler.stelekit.git.merge.hasConflicts
-import dev.stapler.stelekit.git.merge.mergeMarkdownBlocks
+import dev.stapler.stelekit.git.merge.MergePolicy
+import dev.stapler.stelekit.git.merge.mergeMarkdownWithPolicy
 import dev.stapler.stelekit.git.merge.toTwoWayConflictMarkerText
 import dev.stapler.stelekit.git.model.GitRefResponse
 import dev.stapler.stelekit.git.model.GitRefUpdateRequest
@@ -439,7 +441,19 @@ class WasmGitWriteService(
         hostConfig: GitHostConfig,
         path: String,
         ref: String,
-    ): Either<DomainError.GitError, String> = when (hostConfig.type) {
+    ): Either<DomainError.GitError, String> =
+        when (val r = fetchRemoteFileContentOrNull(hostConfig, path, ref)) {
+            is Either.Left -> r
+            is Either.Right -> r.value?.right()
+                ?: DomainError.GitError.FetchFailed("Remote file not found: $path@$ref").left()
+        }
+
+    /** Like [fetchRemoteFileContent], but a 404 is `Right(null)` so absence is distinguishable from failure. */
+    private suspend fun fetchRemoteFileContentOrNull(
+        hostConfig: GitHostConfig,
+        path: String,
+        ref: String,
+    ): Either<DomainError.GitError, String?> = when (hostConfig.type) {
         GitHostType.GITHUB -> fetchRawUrl(
             hostConfig,
             url = "https://raw.githubusercontent.com/${hostConfig.owner}/${hostConfig.repo}/$ref/$path",
@@ -451,16 +465,15 @@ class WasmGitWriteService(
         GitHostType.UNSUPPORTED -> DomainError.GitError.NotSupported(hostConfig.type.name).left()
     }
 
-    /** Shared plain-text GET used by both hosts' raw-content-fetch branches above. */
+    /** Shared plain-text GET used by both hosts' raw-content-fetch branches above; 404 is `Right(null)`. */
     private suspend fun fetchRawUrl(
         hostConfig: GitHostConfig,
         url: String,
-    ): Either<DomainError.GitError, String> = try {
+    ): Either<DomainError.GitError, String?> = try {
         val (headerName, headerValue) = GitHostAdapter.authHeader(hostConfig.type, hostConfig.token)
         val response = httpClient.get(url) { header(headerName, headerValue) }
         when {
-            response.status.value == 404 ->
-                DomainError.GitError.FetchFailed("Remote file not found: $url").left()
+            response.status.value == 404 -> null.right()
             response.status.value !in 200..299 -> mapHttpFailure(response.status.value, response.headers) {
                 DomainError.GitError.FetchFailed("GET raw content failed: HTTP ${response.status.value}")
             }.left()
@@ -1002,8 +1015,9 @@ class WasmGitWriteService(
         config: GitConfig,
         hostConfig: GitHostConfig,
         conflictingPaths: Set<String>,
-    ): List<ConflictFile> = conflictingPaths.map { path ->
-        buildConflictFile(config, hostConfig, path)
+    ): List<ConflictFile> {
+        attributeFileCache.clear()
+        return conflictingPaths.map { path -> buildConflictFile(config, hostConfig, path) }
     }
 
     private suspend fun buildConflictFile(
@@ -1023,16 +1037,18 @@ class WasmGitWriteService(
         // checkoutFile's REMOTE-side resolution already uses) — no extra ref-sha fetch needed.
         val remoteContent = fetchRemoteFileContent(hostConfig, apiPath, hostConfig.branch).getOrNull() ?: return fallback
 
-        // Page/journal markdown gets the block-aware merge (BlockDiff3) — it aligns whole
-        // outline blocks by content instead of raw text lines, so a conflict never splits a
-        // block in half and a block moved to a different parent (unlike a plain line edit)
-        // registers as a real change instead of silently vanishing. Any other .md-adjacent file
-        // this repo tracks (or a block parse failure — defensive at this API-content boundary)
-        // falls back to the line-level Diff3 already in use.
-        val blockResult = if (path.endsWith(".md")) {
-            runCatching {
-                mergeMarkdownBlocks(baseContent, localContent, remoteContent)
-            }.getOrNull()
+        // Page/journal markdown gets the block-aware merge (BlockDiff3), or the port of the wiki's
+        // `merge=logseq-union` driver when `.gitattributes` asks for it (a browser cannot run the
+        // python original). Any other file (or a parse failure — defensive at this API-content
+        // boundary) falls back to the line-level Diff3 already in use.
+        val policy = if (path.endsWith(".md")) {
+            val attrs = loadGitAttributes(config, hostConfig, apiPath).getOrNull() ?: return fallback
+            attrs.policyFor(apiPath, default = MergePolicy.Insertions)
+        } else {
+            null
+        }
+        val blockResult = if (policy != null) {
+            runCatching { mergeMarkdownWithPolicy(baseContent, localContent, remoteContent, policy) }.getOrNull()
         } else {
             null
         }
@@ -1040,8 +1056,8 @@ class WasmGitWriteService(
         val markerText: String
         val hasConflicts: Boolean
         if (blockResult != null) {
-            markerText = blockResult.toTwoWayConflictMarkerText(localLabel = "local", remoteLabel = hostConfig.branch)
-            hasConflicts = blockResult.hasConflicts()
+            markerText = blockResult.markerText
+            hasConflicts = blockResult.hasConflicts
         } else {
             val chunks = Diff3.merge(baseContent.lines(), localContent.lines(), remoteContent.lines())
             markerText = chunks.toTwoWayConflictMarkerText(localLabel = "local", remoteLabel = hostConfig.branch)
@@ -1060,8 +1076,38 @@ class WasmGitWriteService(
             wikiRelativePath = path,
             hunks = hunks,
             rawContent = markerText,
-            duplicateBlockIds = blockResult?.findDuplicateBlockIds() ?: emptyList(),
+            duplicateBlockIds = blockResult?.duplicateBlockIds ?: emptyList(),
+            autoResolvedBy = policy.takeIf { blockResult != null && !blockResult.hasConflicts },
         )
+    }
+
+    /** `.gitattributes` text (null = absent) per API path, valid for one [buildConflictFiles] call. */
+    private val attributeFileCache = HashMap<String, String?>()
+
+    /**
+     * `.gitattributes` for [apiPath] from the remote branch, levels per [gitAttributeProbeDirs].
+     * Absence (404) means "no file"; any other fetch failure is returned as Left so the caller
+     * degrades to the plain conflict path instead of silently picking another policy.
+     */
+    private suspend fun loadGitAttributes(
+        config: GitConfig,
+        hostConfig: GitHostConfig,
+        apiPath: String,
+    ): Either<DomainError.GitError, GitAttributes> {
+        val parsed = mutableListOf<GitAttributes>()
+        for (dir in gitAttributeProbeDirs(apiPath, config.wikiSubdir)) {
+            val attrPath = if (dir.isEmpty()) ".gitattributes" else "$dir/.gitattributes"
+            val text = if (attributeFileCache.containsKey(attrPath)) {
+                attributeFileCache[attrPath]
+            } else {
+                when (val r = fetchRemoteFileContentOrNull(hostConfig, attrPath, hostConfig.branch)) {
+                    is Either.Left -> return r
+                    is Either.Right -> r.value.also { attributeFileCache[attrPath] = it }
+                }
+            }
+            if (text != null) parsed += GitAttributes.parse(text, dir)
+        }
+        return GitAttributes.combine(*parsed.toTypedArray()).right()
     }
 
     /**

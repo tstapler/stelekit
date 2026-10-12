@@ -146,6 +146,7 @@ import dev.stapler.stelekit.git.GitRepositoryUnshallowTest
 import dev.stapler.stelekit.git.GitShadowWorktreeNoCoroutineScopeTest
 import dev.stapler.stelekit.git.GitSyncBusyCounterFetchOnlyTest
 import dev.stapler.stelekit.git.GitSyncServiceChangeBackTest
+import dev.stapler.stelekit.git.GitSyncServiceAutoMergeTest
 import dev.stapler.stelekit.git.GitSyncServiceConflictResolutionTest
 import dev.stapler.stelekit.git.GitSyncServiceErrorRoutingTest
 import dev.stapler.stelekit.git.GitSyncServiceFirstSyncGateTest
@@ -344,6 +345,7 @@ import org.junit.runners.Suite
     GitShadowWorktreeNoCoroutineScopeTest::class,
     GitSyncBusyCounterFetchOnlyTest::class,
     GitSyncServiceChangeBackTest::class,
+    GitSyncServiceAutoMergeTest::class,
     GitSyncServiceConflictResolutionTest::class,
     GitSyncServiceErrorRoutingTest::class,
     GitSyncServiceFirstSyncGateTest::class,

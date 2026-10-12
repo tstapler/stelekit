@@ -33,5 +33,7 @@ sealed class SyncState {
         val localCommitsMade: Int,
         val remoteCommitsMerged: Int,
         val lastSyncAt: Long,
+        /** Wiki-relative paths merged automatically by the markdown merge engine during this sync. */
+        val autoMergedPaths: List<String> = emptyList(),
     ) : SyncState()
 }

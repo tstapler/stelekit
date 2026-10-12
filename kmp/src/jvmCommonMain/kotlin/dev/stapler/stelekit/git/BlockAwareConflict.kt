@@ -1,13 +1,13 @@
 package dev.stapler.stelekit.git
 
 import dev.stapler.stelekit.git.merge.DuplicateBlockId
-import dev.stapler.stelekit.git.merge.findDuplicateBlockIds
-import dev.stapler.stelekit.git.merge.hasConflicts
-import dev.stapler.stelekit.git.merge.mergeMarkdownBlocks
-import dev.stapler.stelekit.git.merge.toTwoWayConflictMarkerText
+import dev.stapler.stelekit.git.merge.GitAttributes
+import dev.stapler.stelekit.git.merge.MergePolicy
+import dev.stapler.stelekit.git.merge.mergeMarkdownWithPolicy
 import dev.stapler.stelekit.git.model.ConflictHunk
 import org.eclipse.jgit.dircache.DirCacheEntry
 import org.eclipse.jgit.lib.Repository
+import java.io.File
 
 /**
  * [markerText] is ready to write back to the working tree; [hunks] is ready for
@@ -18,6 +18,8 @@ data class BlockAwareConflictResolution(
     val markerText: String,
     val hunks: List<ConflictHunk>,
     val duplicateBlockIds: List<DuplicateBlockId>,
+    /** Set when the merge engine found no overlap: [markerText] is final, marker-free content. */
+    val autoResolvedBy: MergePolicy?,
 )
 
 /**
@@ -50,20 +52,43 @@ fun tryBlockAwareConflict(
     wikiRoot: String,
 ): BlockAwareConflictResolution? {
     if (!gitRelativePath.endsWith(".md")) return null
-    val (baseText, localText, remoteText) = readConflictStages(repo, gitRelativePath) ?: return null
-
-    val chunks = runCatching { mergeMarkdownBlocks(baseText, localText, remoteText) }.getOrNull() ?: return null
-    val markerText = chunks.toTwoWayConflictMarkerText(localLabel = "HEAD", remoteLabel = "origin")
-    val hunks = if (chunks.hasConflicts()) {
-        ConflictResolver().parseConflictFile(displayPath, markerText, wikiRoot).getOrNull()?.hunks ?: emptyList()
+    val policy = loadGitAttributes(repo, gitRelativePath).policyFor(gitRelativePath, default = MergePolicy.Insertions)
+    // git runs a custom driver with an empty ancestor on add/add; only the port policy mirrors that.
+    val stages = readConflictStages(repo, gitRelativePath, allowMissingBase = policy == MergePolicy.LogseqUnion)
+        ?: return null
+    val (baseText, localText, remoteText) = stages
+    val outcome = runCatching { mergeMarkdownWithPolicy(baseText, localText, remoteText, policy) }.getOrNull()
+        ?: return null
+    val hunks = if (outcome.hasConflicts) {
+        ConflictResolver().parseConflictFile(displayPath, outcome.markerText, wikiRoot).getOrNull()?.hunks ?: emptyList()
     } else {
         emptyList()
     }
-    return BlockAwareConflictResolution(markerText, hunks, chunks.findDuplicateBlockIds())
+    return BlockAwareConflictResolution(outcome.markerText, hunks, outcome.duplicateBlockIds, autoResolvedBy = policy.takeUnless { outcome.hasConflicts })
+}
+
+/**
+ * `.gitattributes` from the work-tree root down to [gitRelativePath]'s directory, deeper files
+ * overriding shallower ones. JGit never runs custom merge drivers (e.g. the wiki's
+ * `*.md merge=logseq-union`), so [GitAttributes] lets us honor the attribute's intent natively.
+ */
+private fun loadGitAttributes(repo: Repository, gitRelativePath: String): GitAttributes {
+    val workTree = repo.workTree ?: return GitAttributes.EMPTY
+    val dirs = gitRelativePath.substringBeforeLast('/', "").split('/').filter { it.isNotEmpty() }
+    val levels = listOf("") + dirs.indices.map { dirs.take(it + 1).joinToString("/") }
+    val parsed = levels.mapNotNull { dir ->
+        val file = if (dir.isEmpty()) File(workTree, ".gitattributes") else File(File(workTree, dir), ".gitattributes")
+        runCatching { if (file.isFile) GitAttributes.parse(file.readText(), dir) else null }.getOrNull()
+    }
+    return GitAttributes.combine(*parsed.toTypedArray())
 }
 
 /** The base/local/remote blob content for [path]'s three unmerged stages, or null if any stage is missing/unreadable. */
-private fun readConflictStages(repo: Repository, path: String): Triple<String, String, String>? {
+private fun readConflictStages(
+    repo: Repository,
+    path: String,
+    allowMissingBase: Boolean,
+): Triple<String, String, String>? {
     val dirCache = repo.readDirCache()
     var idx = dirCache.findEntry(path)
     if (idx < 0) idx = -(idx + 1)
@@ -83,12 +108,12 @@ private fun readConflictStages(repo: Repository, path: String): Triple<String, S
     }
     // A file conflicting for a non-content reason (binary, rename/rename, add/add without a
     // common base) won't carry all three stages — nothing for a text merge to work with.
-    if (base == null || local == null || remote == null) return null
+    if (local == null || remote == null || (base == null && !allowMissingBase)) return null
 
     fun blobText(entry: DirCacheEntry): String? =
         runCatching { repo.open(entry.objectId).bytes.toString(Charsets.UTF_8) }.getOrNull()
 
-    val baseText = blobText(base) ?: return null
+    val baseText = if (base == null) "" else blobText(base) ?: return null
     val localText = blobText(local) ?: return null
     val remoteText = blobText(remote) ?: return null
     return Triple(baseText, localText, remoteText)
