@@ -6,7 +6,8 @@ import io.kotest.property.Arb
 import io.kotest.property.arbitrary.boolean
 import io.kotest.property.arbitrary.element
 import io.kotest.property.arbitrary.orNull
-import io.kotest.property.arbitrary.set
+import io.kotest.property.arbitrary.list
+import io.kotest.property.arbitrary.map
 import io.kotest.property.checkAll
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -105,7 +106,8 @@ class CaptureTargetResolverTest {
             Arb.element(ids).orNull(),
             Arb.element(ids).orNull(),
             Arb.boolean(),
-            Arb.set(Arb.element(ids), 0..4),
+            // Arb.set throws when it can't reach a distinct-element size from a 4-element pool.
+            Arb.list(Arb.element(ids), 0..8).map { it.toSet() },
         ) { default, last, remember, available ->
             val target = CaptureTargetResolver.resolve(default, last, remember, available)
             if (target is CaptureTarget.NamedGraph) {
