@@ -105,6 +105,16 @@ kt_jvm_library(
         # PullIndexingTest's fake. Not the whole common_test_fixtures target: it bundles unregistered @Test
         # classes that AllBusinessTestsCompletenessTest would then find on the classpath.
         "dev/stapler/stelekit/db/sidecar/FakeFileSystem.kt",
+        "dev/stapler/stelekit/error/DomainErrorTest.kt",
+        "dev/stapler/stelekit/git/lfs/GitAttributesMatcherPropertyTest.kt",
+        "dev/stapler/stelekit/git/lfs/GitAttributesMatcherTest.kt",
+        "dev/stapler/stelekit/git/lfs/LfsArbs.kt",
+        "dev/stapler/stelekit/git/lfs/LfsGuardPropertyTest.kt",
+        "dev/stapler/stelekit/git/lfs/LfsGuardTest.kt",
+        "dev/stapler/stelekit/git/lfs/LfsModeResolverTest.kt",
+        "dev/stapler/stelekit/git/lfs/LfsPathPolicyTest.kt",
+        "dev/stapler/stelekit/git/lfs/LfsPointerPropertyTest.kt",
+        "dev/stapler/stelekit/git/lfs/LfsPointerTest.kt",
         "dev/stapler/stelekit/ui/PageSelectionTest.kt",
     ],
     testonly = True,
