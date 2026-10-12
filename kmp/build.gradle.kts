@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 
 import java.io.File as IoFile
+import java.time.Duration
 import java.text.SimpleDateFormat
 import java.util.Date
 import org.gradle.jvm.toolchain.JavaLanguageVersion
@@ -1561,7 +1562,7 @@ val changedFiles: List<String> by lazy {
 }
 
 private val mainSrcRegex = Regex("""^kmp/src/(commonMain|jvmCommonMain|jvmMain)/kotlin/(.+)\.kt$""")
-private val testSrcRegex = Regex("""^kmp/src/(commonTest|businessTest|jvmTest)/kotlin/(.+)\.kt$""")
+private val testSrcRegex = Regex("""^kmp/src/(commonTest|businessTest|jvmTest|androidUnitTest)/kotlin/(.+)\.kt$""")
 
 /** `package.FileStem` for a Kotlin file, using its `package` line (file stem ~ main class name). */
 private fun qualifiedStem(path: String): String? {
@@ -1584,7 +1585,7 @@ val changedTestClasses: List<String> by lazy {
     val wordRegex = if (simpleNames.isEmpty()) null
         else Regex("""\b(${simpleNames.joinToString("|") { Regex.escape(it) }})\b""")
     val changedTests = changedFiles.filter { testSrcRegex.matches(it) }.toSet()
-    listOf("commonTest", "businessTest", "jvmTest").flatMap { set ->
+    listOf("commonTest", "businessTest", "jvmTest", "androidUnitTest").flatMap { set ->
         fileTree("src/$set/kotlin").matching { include("**/*.kt") }.files
     }.filter { f ->
         val rel = f.relativeTo(rootProject.projectDir).invariantSeparatorsPath
@@ -1594,11 +1595,28 @@ val changedTestClasses: List<String> by lazy {
         .distinct()
 }
 
+// PIT runs the JVM test pool only, so mutating a class whose tests live solely in androidUnitTest
+// (Robolectric) scores it 0% on a pool that never exercises it. Those classes are still gated by
+// diffCoverage; only mutation targets are narrowed to classes some JVM test references.
+val mutationTargetClasses: List<String> by lazy {
+    val jvmTestText = listOf("commonTest", "businessTest", "jvmTest").flatMap { set ->
+        fileTree("src/$set/kotlin").matching { include("**/*.kt") }.files
+    }.joinToString("\n") { it.readText() }
+    changedMainClasses.filter { Regex("""\b${Regex.escape(it.substringAfterLast('.'))}\b""").containsMatchIn(jvmTestText) }
+}
+
 if (selectChangedTests) {
     // Resolved eagerly into locals so the Test task closure captures plain values, not the script.
     val selected = changedTestClasses
     val mainCount = changedMainClasses.size
     val baseRef = diffBase.get()
+    tasks.withType<Test>().matching { it.name == "testDebugUnitTest" }.configureEach {
+        filter {
+            isFailOnNoMatchingTests = false
+            selected.forEach { includeTestsMatching("$it*") }
+            if (selected.isEmpty()) includeTestsMatching("dev.stapler.stelekit.__no_changed_tests__")
+        }
+    }
     tasks.named<Test>("jvmTest") {
         doFirst {
             logger.lifecycle(
@@ -1615,11 +1633,38 @@ if (selectChangedTests) {
     }
 }
 
+// Robolectric loads app classes through its own classloader; without these the JaCoCo agent
+// records nothing for them. Screens whose tests live in androidUnitTest are only measurable this way.
+tasks.withType<Test>().matching { it.name == "testDebugUnitTest" }.configureEach {
+    extensions.configure<JacocoTaskExtension> {
+        isIncludeNoLocationClasses = true
+        excludes = listOf("jdk.internal.*")
+    }
+}
+
+// Android unit-test coverage is a separate report: the android-compiled commonMain classes differ
+// from the JVM ones, so JaCoCo cannot bundle both. diff-cover unions the two XML files.
+tasks.register<JacocoReport>("jacocoAndroidTestReport") {
+    dependsOn("testDebugUnitTest")
+    reports {
+        xml.required.set(true)
+        html.required.set(false)
+        xml.outputLocation.set(layout.buildDirectory.file("reports/jacoco/jacoco-android.xml"))
+    }
+    classDirectories.setFrom(
+        fileTree("${layout.buildDirectory.get()}/tmp/kotlin-classes/debug") {
+            exclude("**/R.class", "**/R$*.class", "**/BuildConfig.*")
+        }
+    )
+    sourceDirectories.setFrom(files("src/commonMain/kotlin", "src/androidMain/kotlin"))
+    executionData.setFrom(fileTree(layout.buildDirectory.get()).include("jacoco/testDebugUnitTest.exec"))
+}
+
 val diffCoverageDir = layout.buildDirectory.dir("reports/diff-coverage")
 tasks.register<Exec>("diffCoverage") {
     group = "verification"
     description = "Fail if changed executable lines (vs diffCoverage.base) are covered below diffCoverage.threshold %."
-    dependsOn("jacocoTestReport")
+    dependsOn("jacocoTestReport", "jacocoAndroidTestReport")
     // Reads script-level git state at execution time; not worth plumbing through the cache.
     notCompatibleWithConfigurationCache("diffCoverage derives its inputs from git state")
     workingDir = rootProject.projectDir
@@ -1629,10 +1674,12 @@ tasks.register<Exec>("diffCoverage") {
         outDir.get().asFile.mkdirs()
         val report = xml.get().asFile
         check(report.isFile) { "JaCoCo XML missing at $report — run jvmTest first" }
-        val roots = listOf("commonMain", "jvmCommonMain", "jvmMain").map { "kmp/src/$it/kotlin" }
+        val androidReport = layout.buildDirectory.file("reports/jacoco/jacoco-android.xml").get().asFile
+        val reports = listOfNotNull(report, androidReport.takeIf { it.isFile })
+        val roots = listOf("commonMain", "jvmCommonMain", "jvmMain", "androidMain").map { "kmp/src/$it/kotlin" }
         commandLine(
             listOf(
-                "uvx", "--from", "diff-cover==10.6.0", "diff-cover", report.absolutePath,
+                "uvx", "--from", "diff-cover==10.6.0", "diff-cover") + reports.map { it.absolutePath } + listOf(
                 "--compare-branch", diffBase.get(),
                 "--fail-under", diffThreshold.get(),
                 "--include-untracked",
@@ -1664,7 +1711,7 @@ tasks.register<JavaExec>("mutationTest") {
     val testCompilation = kotlin.jvm().compilations["test"]
     val runtimeClasspath = files(testCompilation.output.allOutputs, testCompilation.runtimeDependencyFiles)
     val targetClasses = providers.gradleProperty("mutate.classes").orElse(
-        provider { changedMainClasses.joinToString(",") { "$it*" } }
+        provider { mutationTargetClasses.joinToString(",") { "$it*" } }
     )
     val targetTests = providers.gradleProperty("mutate.tests").orElse(
         provider { changedTestClasses.joinToString(",") { "$it*" } }
@@ -1673,6 +1720,7 @@ tasks.register<JavaExec>("mutationTest") {
     val sourceRoots = files("src/commonMain/kotlin", "src/jvmCommonMain/kotlin", "src/jvmMain/kotlin")
     val reportDir = layout.buildDirectory.dir("reports/pitest")
     val threshold = providers.gradleProperty("mutate.threshold").orElse("80")
+    timeout.set(Duration.ofMinutes(providers.gradleProperty("mutate.timeoutMinutes").orElse("25").get().toLong()))
     onlyIf {
         val n = targetClasses.get().split(",").count { it.isNotBlank() }
         when {
@@ -1696,7 +1744,12 @@ tasks.register<JavaExec>("mutationTest") {
             "--classPath", runtimeClasspath.files.filter { it.exists() }.joinToString(",") { it.absolutePath },
             "--outputFormats", "HTML,XML",
             "--timestampedReports", "false",
-            "--threads", "4",
+            "--threads", providers.gradleProperty("mutate.threads").orElse("4").get(),
+            // Mutants that hang a coroutine/test are the dominant cost: kill them fast instead of
+            // waiting PIT's default 4s + 25% per timed-out mutant, and cap per-class mutant count.
+            "--timeoutConst", providers.gradleProperty("mutate.timeoutConstMs").orElse("2000").get(),
+            "--timeoutFactor", "1.25",
+            "--maxMutationsPerClass", providers.gradleProperty("mutate.maxMutationsPerClass").orElse("150").get(),
             "--mutationThreshold", threshold.get(),
             "--failWhenNoMutations", "false",
             "--jvmArgs", "-Xmx2g",

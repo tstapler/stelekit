@@ -179,7 +179,8 @@ jobs:
   # Deliberately NOT a second full-suite run: the canonical JVM suite is Bazel (bazel-ci.yml, no
   # JaCoCo) and full Gradle jvmTest has OOM/hang history on 2-core runners (release.yml
   # `test-kmp-jvm`). This job runs only the tests that reference changed files, under JaCoCo, and
-  # fails when changed executable lines are covered below the threshold (default 80%).
+  # fails when changed executable lines are covered below the threshold (default 80%). Coverage is
+  # the union of jvmTest and testDebugUnitTest (Robolectric) JaCoCo data; diffCoverage depends on both.
   diff-coverage:
     name: Incremental coverage + mutation (changed files)
     if: github.event_name == 'pull_request'
@@ -210,7 +211,7 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
         run: git fetch --no-tags origin "$BASE_REF:refs/remotes/origin/$BASE_REF"
 
-      - name: Incremental coverage gate and mutation score
+      - name: Incremental coverage gate (jvmTest + testDebugUnitTest) and mutation score
         env:
           BASE_REF: ${{ github.base_ref }}
         run: >
