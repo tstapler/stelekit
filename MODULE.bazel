@@ -271,6 +271,7 @@ maven.install(
         # ── MCP server SDK (graph-mcp-server) — transitively needs Ktor server-core/SSE,
         # a different Ktor artifact family/version than the client deps above.
         "io.modelcontextprotocol:kotlin-sdk-server-jvm:0.15.0",
+        "io.modelcontextprotocol:kotlin-sdk-testing-jvm:0.15.0",
         "io.ktor:ktor-server-core-jvm:3.5.1",
         "io.ktor:ktor-server-sse-jvm:3.5.1",
 
