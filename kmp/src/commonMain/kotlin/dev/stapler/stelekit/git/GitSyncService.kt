@@ -14,13 +14,13 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.git.merge.JournalMergeService
 import dev.stapler.stelekit.git.lfs.LfsGuardCoordinator
+import dev.stapler.stelekit.git.lfs.LfsGuardedStaging
 import dev.stapler.stelekit.git.lfs.LfsModeSource
 import dev.stapler.stelekit.git.lfs.LfsPlatformCapabilities
 import dev.stapler.stelekit.git.lfs.LfsViolation
 import dev.stapler.stelekit.git.model.CloneDepthState
 import dev.stapler.stelekit.git.model.ConflictFile
 import dev.stapler.stelekit.git.model.GitAuthType
-import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.git.model.wikiRoot
 import dev.stapler.stelekit.platform.FileSystem
@@ -81,11 +81,14 @@ class GitSyncService(
     private val isOnline: () -> Boolean = { networkMonitor.isOnline },
 ) {
     private val logger = Logger("GitSyncService")
-    private val lfsGuard: LfsGuardCoordinator = lfsGuardCoordinator ?: LfsGuardCoordinator(
-        fileSystem = fileSystem,
-        modeSource = LfsModeSource(settings),
-        capabilities = lfsCapabilities,
-        delegated = gitRepository.guardsLfsInWritePath,
+    private val lfsStaging = LfsGuardedStaging(
+        gitRepository,
+        lfsGuardCoordinator ?: LfsGuardCoordinator(
+            fileSystem = fileSystem,
+            modeSource = LfsModeSource(settings),
+            capabilities = lfsCapabilities,
+            delegated = gitRepository.guardsLfsInWritePath,
+        ),
     )
     private val firstSyncConfirmation: FirstSyncConfirmation? = settings?.let { FirstSyncConfirmation(it) }
 
@@ -335,7 +338,7 @@ class GitSyncService(
             _syncState.value = SyncState.Committing
             val statusResult = gitRepository.status(config)
             if (statusResult is Either.Right && statusResult.value.hasLocalChanges) {
-                val staged = stageWithLfsGuard(config, statusResult.value).getOrElse { err ->
+                val staged = lfsStaging.stage(config, statusResult.value).getOrElse { err ->
                     _syncState.value = SyncState.Error(err)
                     return@withContext err.left()
                 }
@@ -573,7 +576,7 @@ class GitSyncService(
             if (!status.hasLocalChanges) return@withContext (null as String?).right()
 
             _syncState.value = SyncState.Committing
-            val staged = stageWithLfsGuard(config, status).getOrElse { return@withContext it.left() }
+            val staged = lfsStaging.stage(config, status).getOrElse { return@withContext it.left() }
             val sha = if (staged.commitNeeded) {
                 when (val r = gitRepository.commit(config, buildCommitMessage(config))) {
                     is Either.Left -> return@withContext r.value.left()
@@ -615,7 +618,7 @@ class GitSyncService(
 
         for ((filePath, side) in sideResolutions) {
             gitRepository.checkoutFile(config, filePath, side).onLeft { return@withContext it.left() }
-            lfsRefusalFor(config, filePath)?.let { return@withContext it.left() }
+            lfsStaging.refusalFor(config, filePath)?.let { return@withContext it.left() }
             gitRepository.markResolved(config, filePath).onLeft { return@withContext it.left() }
         }
 
@@ -639,7 +642,7 @@ class GitSyncService(
                 ).left()
             }
 
-            lfsRefusalFor(config, filePath)?.let { return@withContext it.left() }
+            lfsStaging.refusalFor(config, filePath)?.let { return@withContext it.left() }
             gitRepository.markResolved(config, filePath).onLeft { return@withContext it.left() }
         }
 
@@ -684,7 +687,7 @@ class GitSyncService(
         // filePath here is written to SAF just above via fileSystem.writeFile — markResolved()
         // (AndroidGitRepository, shadow-mirror mode) pulls that SAF content into the shadow tree
         // before staging; same ordering as resolveConflict().
-        lfsRefusalFor(config, filePath)?.let { return@withContext it.left() }
+        lfsStaging.refusalFor(config, filePath)?.let { return@withContext it.left() }
         gitRepository.markResolved(config, filePath).onLeft { return@withContext it.left() }
 
         val message = buildCommitMessage(config, isMerge = true)
@@ -761,44 +764,6 @@ class GitSyncService(
      */
     fun shutdown() {
         scope.cancel()
-    }
-
-    /** Outcome of staging under the LFS guard: what was held back and whether anything is left to commit. */
-    private class LfsStaging(val held: List<LfsViolation>, val commitNeeded: Boolean)
-
-    /**
-     * Stages the wiki subdirectory with the Git LFS safety floor applied. Violating files are left out of the
-     * index and reported in [LfsStaging.held] (or, when [LfsGuardCoordinator.holdBack] is off, the whole commit
-     * is refused). Every path that stages for a commit goes through here.
-     */
-    private suspend fun stageWithLfsGuard(config: GitConfig, status: GitStatus): Either<DomainError.GitError, LfsStaging> {
-        val changed = (status.modifiedFiles + status.untrackedFiles).distinct()
-        val verdict = lfsGuard.evaluate(config, changed, gitRepository.cleanFilterActive)
-        if (!lfsGuard.holdBack && verdict.held.isNotEmpty()) {
-            return DomainError.GitError.LfsRawBinaryRefused(verdict.held.map { it.path }).left()
-        }
-        gitRepository.stageSubdir(config, verdict.heldPaths).onLeft { return it.left() }
-        // Authoritative index check: also catches staged-new files the status lists above do not show.
-        val escaped = try {
-            gitRepository.stagedLfsViolations(config)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            // Fail closed: if the index cannot be verified, nothing is committed.
-            return DomainError.GitError.CommitFailed("Could not check staged files against Git LFS rules: ${e.message}").left()
-        }
-        val held = verdict.held + escaped.filter { it.path !in verdict.heldPaths }
-        if (held.isNotEmpty()) {
-            logger.warn("lfs: held back ${held.size} file(s) at LFS-tracked paths; the rest still syncs")
-        }
-        return LfsStaging(held, commitNeeded = held.isEmpty() || gitRepository.hasStagedChanges(config)).right()
-    }
-
-    /** Merge-resolution flows cannot leave a file half-resolved, so a violating file refuses the step outright. */
-    private suspend fun lfsRefusalFor(config: GitConfig, filePath: String): DomainError.GitError? {
-        val relative = filePath.removePrefix(config.repoRoot).trimStart('/')
-        val verdict = lfsGuard.evaluate(config, listOf(relative), gitRepository.cleanFilterActive)
-        return if (verdict.held.isEmpty()) null else DomainError.GitError.LfsRawBinaryRefused(verdict.held.map { it.path })
     }
 
     companion object {
