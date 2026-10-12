@@ -74,6 +74,9 @@ kt_jvm_test(
     name = "business_tests",
     srcs = glob(["**/*.kt"]),
     test_class = "dev.stapler.stelekit.AllBusinessTests",
+    # DriverFactory resolves its data dir from user.home; the real home is not writable in the
+    # test sandbox, so GraphManager tests that open a file DB failed with SQLITE_CANTOPEN.
+    jvm_flags = ["-Duser.home=$$TEST_TMPDIR"],
     kotlinc_opts = "//:kmp_jvm_kotlinc_opts",
     associates = ["//kmp/src/jvmMain/kotlin:jvm_main_lib"],
     deps = [
