@@ -227,7 +227,7 @@ jobs:
         if: always()
         run: |
           f=kmp/build/reports/diff-coverage/diff-coverage.md
-          [ -f "$f" ] && cat "$f" >> "$GITHUB_STEP_SUMMARY" || true
+          if [ -f "$f" ]; then cat "$f" >> "$GITHUB_STEP_SUMMARY"; fi
 
       - uses: actions/upload-artifact@v4
         if: always()
