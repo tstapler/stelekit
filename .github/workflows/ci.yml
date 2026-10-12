@@ -181,7 +181,7 @@ jobs:
     name: Incremental coverage + mutation (changed files)
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 65
 
     steps:
       - uses: actions/checkout@v4
@@ -218,12 +218,12 @@ jobs:
         # Mutation is report-only here: PIT scores whole classes, so a one-line change to a large
         # class is judged on mutants it never touched. Coverage on changed lines is the gate;
         # `./gradlew :kmp:mutationTest` enforces the default 80 locally. Mutants per class are capped
-        # so a large diff still finishes inside mutationTest's 25-minute budget (a timeout fails the step).
+        # and mutationTest gets 40 minutes: PIT's own coverage pass takes ~12 of them on a large diff (a timeout fails the step).
         run: >
           xvfb-run --auto-servernum
           ./gradlew --no-daemon --build-cache --continue :kmp:diffCoverage :kmp:mutationTest
           -PdiffCoverage.selectTests "-PdiffCoverage.base=origin/$BASE_REF"
-          -Pmutate.threshold=0 -Pmutate.maxMutationsPerClass=50
+          -Pmutate.threshold=0 -Pmutate.maxMutationsPerClass=50 -Pmutate.timeoutMinutes=40
 
       - name: Post diff-coverage summary
         if: always()
