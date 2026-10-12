@@ -33,6 +33,9 @@ internal fun lfsHeldReasonText(reason: LfsViolationReason): String = when (reaso
         "This file looks like a Git LFS pointer but is damaged. The file was not committed."
     LfsViolationReason.ConflictMarkers ->
         "This Git LFS pointer still contains merge conflict markers. The file was not committed."
+    LfsViolationReason.RawBinaryPushed ->
+        "This file was already pushed as a regular file although this repository stores that path with Git LFS. " +
+            "SteleKit did not create that commit; convert it with git lfs migrate on a machine that has Git LFS."
 }
 
 /** Plain-text report of [held], for the "Copy details" action and bug reports. */

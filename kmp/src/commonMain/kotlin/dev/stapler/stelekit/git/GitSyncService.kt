@@ -478,7 +478,8 @@ class GitSyncService(
             firstSyncConfirmation?.confirm(graphId, config.remoteName, config.remoteBranch)
             _firstSyncReviewPending.value = false
             // Non-fatal: the held files need the user's attention, so the badge keeps showing them instead of fading.
-            _syncState.value = if (lfsHeld.isEmpty()) success else SyncState.LfsActionRequired(lfsHeld)
+            val lfsAttention = lfsHeld + gitRepository.lastPushLfsViolations
+            _syncState.value = if (lfsAttention.isEmpty()) success else SyncState.LfsActionRequired(lfsAttention)
             success.right()
             } finally {
                 gitSyncBusyCounter.end()

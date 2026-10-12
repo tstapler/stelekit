@@ -64,7 +64,10 @@ class GitSyncServiceLfsGuardTest {
         override var cleanFilterActive: Boolean = false,
         var stagedThrows: Boolean = false,
         var anythingStaged: Boolean = true,
+        var pushedViolations: List<LfsViolation> = emptyList(),
     ) : StubGitRepository() {
+        override val lastPushLfsViolations: List<LfsViolation> get() = pushedViolations
+
         val stageCalls = mutableListOf<Set<String>>()
         val commits = mutableListOf<String>()
         val pushes = IntArray(1)
@@ -396,6 +399,18 @@ class GitSyncServiceLfsGuardTest {
         assertIs<DomainError.GitError.LfsRawBinaryRefused>(assertIs<Either.Left<DomainError.GitError>>(result).value)
         assertTrue(f.repo.resolved.isEmpty())
         assertFalse(f.repo.commits.isNotEmpty())
+        f.service.shutdown()
+    }
+
+    @Test
+    fun sync_should_SurfaceRawBlobsThatWerePushedOutsideTheGuard_When_ThePushAuditFindsThem() = runBlocking {
+        val pushed = LfsViolation("assets/sneaky.bin", LfsViolationReason.RawBinaryPushed, ".gitattributes:1")
+        val f = fixture(modified = listOf("pages/a.md"), files = mapOf("pages/a.md" to "# a".encodeToByteArray()), configure = { it.pushedViolations = listOf(pushed) })
+
+        val result = f.service.sync(graphId)
+
+        assertTrue(result.isRight(), "the push itself succeeded: $result")
+        assertEquals(listOf(pushed), assertIs<SyncState.LfsActionRequired>(f.service.syncState.value).held)
         f.service.shutdown()
     }
 

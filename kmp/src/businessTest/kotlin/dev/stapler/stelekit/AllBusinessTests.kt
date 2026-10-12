@@ -154,6 +154,7 @@ import dev.stapler.stelekit.git.GitSyncServiceTest
 import dev.stapler.stelekit.git.GitTransportFaultInjectionTest
 import dev.stapler.stelekit.git.GitTransportRetryStateTest
 import dev.stapler.stelekit.git.GitTransportRetryTest
+import dev.stapler.stelekit.git.lfs.LfsPostPushAuditTest
 import dev.stapler.stelekit.git.lfs.LfsStagingCallSitesStructuralTest
 import dev.stapler.stelekit.git.lfs.GitAttributesDifferentialTest
 import dev.stapler.stelekit.git.lfs.LfsGuardCoordinatorTest
@@ -351,6 +352,7 @@ import org.junit.runners.Suite
     GitTransportFaultInjectionTest::class,
     GitTransportRetryStateTest::class,
     GitTransportRetryTest::class,
+    LfsPostPushAuditTest::class,
     LfsStagingCallSitesStructuralTest::class,
     GitAttributesDifferentialTest::class,
     LfsGuardCoordinatorTest::class,

@@ -21,6 +21,9 @@ enum class LfsViolationReason {
 
     /** A pointer file that still contains merge conflict markers. */
     ConflictMarkers,
+
+    /** Already pushed: a raw blob at an LFS-tracked path that reached the remote outside the guard (detection only). */
+    RawBinaryPushed,
 }
 
 data class LfsViolation(

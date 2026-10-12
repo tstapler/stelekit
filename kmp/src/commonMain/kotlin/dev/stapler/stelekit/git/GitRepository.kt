@@ -95,6 +95,12 @@ interface GitRepository {
     val cleanFilterActive: Boolean get() = false
 
     /**
+     * Raw binaries at LFS-tracked paths found in the commits the last [push] sent (detection only: they are
+     * already remote). Empty when nothing was found, nothing was pushed, or the platform cannot audit.
+     */
+    val lastPushLfsViolations: List<LfsViolation> get() = emptyList()
+
+    /**
      * True when this platform's own write path is the sole LFS guard (web: it never stages through a local index),
      * so the service-level guard must not second-guess it.
      */

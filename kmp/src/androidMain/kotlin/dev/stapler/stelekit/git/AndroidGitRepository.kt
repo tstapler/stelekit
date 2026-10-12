@@ -12,6 +12,7 @@ import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.git.lfs.LfsIndexVerifier
+import dev.stapler.stelekit.git.lfs.LfsPostPushAudit
 import dev.stapler.stelekit.git.lfs.LfsViolation
 import dev.stapler.stelekit.git.model.DEFAULT_CLONE_DEPTH
 import dev.stapler.stelekit.git.model.GitConfig
@@ -362,8 +363,14 @@ class AndroidGitRepository(
         worktree?.toUserFacingPath("${worktree.worktreeRootPath}/$relPath") ?: "${config.repoRoot}/$relPath"
     }
 
+    @Volatile private var pushAudit: List<LfsViolation> = emptyList()
+
+    override val lastPushLfsViolations: List<LfsViolation> get() = pushAudit
+
     override suspend fun push(config: GitConfig): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
+            pushAudit = emptyList()
+            val previousRemoteTip = remoteTrackingTip(config)
             val retryLoopStartMs = System.currentTimeMillis()
             runGitTransportOpWithRetry(
                 schedule = RetryPolicies.gitTransportTransient,
@@ -373,8 +380,33 @@ class AndroidGitRepository(
                 onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
             ) {
                 openGitWithoutFreshnessCheck(config).use { git -> doPush(git, config) }
-            }
+            }.also { result -> if (result.isRight()) auditPushedRange(config, previousRemoteTip) }
         }
+
+    private suspend fun remoteTrackingTip(config: GitConfig): org.eclipse.jgit.lib.ObjectId? = try {
+        openGitWithoutFreshnessCheck(config).use {
+            it.repository.exactRef("${Constants.R_REMOTES}${config.remoteName}/${config.remoteBranch}")?.objectId
+        }
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        null
+    }
+
+    /** Best effort and never fatal: the push already succeeded, this only reports what it carried. */
+    private suspend fun auditPushedRange(config: GitConfig, previousRemoteTip: org.eclipse.jgit.lib.ObjectId?) {
+        try {
+            openGitWithoutFreshnessCheck(config).use { git ->
+                val tip = git.repository.resolve(Constants.HEAD) ?: return@use
+                pushAudit = LfsPostPushAudit.audit(git.repository, previousRemoteTip, tip)
+                if (pushAudit.isNotEmpty()) logger.warn("lfs: ${pushAudit.size} raw file(s) at LFS-tracked paths were pushed outside the guard")
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.warn("lfs: post-push audit failed: ${e::class.simpleName}")
+        }
+    }
 
     private fun doPush(git: Git, config: GitConfig): Either<DomainError.GitError, Unit> {
         val localBranch = git.repository.fullBranch
