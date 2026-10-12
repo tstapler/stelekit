@@ -114,6 +114,7 @@ class GitSyncAttributeMergeE2ETest {
     private companion object {
         const val BRANCH = "main"
         const val GRAPH_ID = "g"
+        const val ATTRIBUTES_FILE = ".gitattributes"
         const val MINE = "- mine"
         const val THEIRS = "- theirs"
         const val SHARED_BASE = "- keep\n- shared\n"
@@ -122,7 +123,7 @@ class GitSyncAttributeMergeE2ETest {
         fun syncFailed(result: Any?) = "sync failed: $result"
         fun mergedWas(text: String) = "merged file was:\n$text"
     }
-    private val unionAttr = ".gitattributes" to "*.md merge=logseq-union\n"
+    private val unionAttr = ATTRIBUTES_FILE to "*.md merge=logseq-union\n"
 
     @Test
     fun `logseq-union port keeps both sides of concurrent journal appends and pushes the merge`() = runTest {
@@ -173,7 +174,7 @@ class GitSyncAttributeMergeE2ETest {
 
     @Test
     fun `an unknown custom driver keeps both versions when both sides edit the same block`() = runTest {
-        seed(mapOf(".gitattributes" to "*.md merge=some-custom-driver\n", journal to SHARED_BASE))
+        seed(mapOf(ATTRIBUTES_FILE to "*.md merge=some-custom-driver\n", journal to SHARED_BASE))
         otherCommitsAndPushes(journal, SHARED_THEIRS)
         File(local, journal).writeText(SHARED_MINE)
 
@@ -215,7 +216,7 @@ class GitSyncAttributeMergeE2ETest {
 
     @Test
     fun `merge=text opts a markdown file out of auto-merge`() = runTest {
-        seed(mapOf(".gitattributes" to "*.md merge=text\n", journal to SHARED_BASE))
+        seed(mapOf(ATTRIBUTES_FILE to "*.md merge=text\n", journal to SHARED_BASE))
         otherCommitsAndPushes(journal, SHARED_THEIRS)
         File(local, journal).writeText(SHARED_MINE)
 
