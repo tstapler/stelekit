@@ -1,6 +1,7 @@
 package dev.stapler.stelekit
 
 import dev.stapler.stelekit.db.WalConfiguredCallbackTest
+import dev.stapler.stelekit.git.AndroidGitRepositoryLfsGuardTest
 import dev.stapler.stelekit.git.AndroidGitRepositoryTestRemoteTest
 import dev.stapler.stelekit.git.GitSyncBusyCounterSharedWiringTest
 import dev.stapler.stelekit.platform.LegacyPathValidationTest
@@ -17,6 +18,7 @@ import dev.stapler.stelekit.platform.security.AndroidCredentialStoreFailsLoudTes
 import dev.stapler.stelekit.platform.sensor.ExifOrientationFixerTest
 import dev.stapler.stelekit.ui.LoadingStateTest
 import dev.stapler.stelekit.ui.components.MermaidWebViewBridgeTest
+import dev.stapler.stelekit.ui.components.git.LfsHeldFilesSheetTest
 import dev.stapler.stelekit.ui.components.MermaidWebViewSettingsTest
 import dev.stapler.stelekit.ui.transfer.QrDecodeViewModelBackgroundingTest
 import dev.stapler.stelekit.voice.AndroidSpeechRecognizerPermissionTest
@@ -28,6 +30,8 @@ import org.junit.runners.Suite
     WalConfiguredCallbackTest::class,
     GitSyncBusyCounterSharedWiringTest::class,
     AndroidGitRepositoryTestRemoteTest::class,
+    AndroidGitRepositoryLfsGuardTest::class,
+    LfsHeldFilesSheetTest::class,
     LegacyPathValidationTest::class,
     PlatformFileSystemPickerTest::class,
     PlatformFileSystemSafTest::class,
