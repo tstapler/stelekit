@@ -27,6 +27,7 @@ import dev.stapler.stelekit.git.model.GitLabCompareResponse
 import dev.stapler.stelekit.git.model.GitLabTreeEntry
 import dev.stapler.stelekit.git.merge.Diff3
 import dev.stapler.stelekit.git.merge.GitAttributes
+import dev.stapler.stelekit.git.merge.gitAttributeProbeDirs
 import dev.stapler.stelekit.git.merge.hasConflicts
 import dev.stapler.stelekit.git.merge.MergePolicy
 import dev.stapler.stelekit.git.merge.mergeMarkdownWithPolicy
@@ -348,7 +349,19 @@ class WasmGitWriteService(
         hostConfig: GitHostConfig,
         path: String,
         ref: String,
-    ): Either<DomainError.GitError, String> = when (hostConfig.type) {
+    ): Either<DomainError.GitError, String> =
+        when (val r = fetchRemoteFileContentOrNull(hostConfig, path, ref)) {
+            is Either.Left -> r
+            is Either.Right -> r.value?.right()
+                ?: DomainError.GitError.FetchFailed("Remote file not found: $path@$ref").left()
+        }
+
+    /** Like [fetchRemoteFileContent], but a 404 is `Right(null)` so absence is distinguishable from failure. */
+    private suspend fun fetchRemoteFileContentOrNull(
+        hostConfig: GitHostConfig,
+        path: String,
+        ref: String,
+    ): Either<DomainError.GitError, String?> = when (hostConfig.type) {
         GitHostType.GITHUB -> fetchRawUrl(
             hostConfig,
             url = "https://raw.githubusercontent.com/${hostConfig.owner}/${hostConfig.repo}/$ref/$path",
@@ -360,16 +373,15 @@ class WasmGitWriteService(
         GitHostType.UNSUPPORTED -> DomainError.GitError.NotSupported(hostConfig.type.name).left()
     }
 
-    /** Shared plain-text GET used by both hosts' raw-content-fetch branches above. */
+    /** Shared plain-text GET used by both hosts' raw-content-fetch branches above; 404 is `Right(null)`. */
     private suspend fun fetchRawUrl(
         hostConfig: GitHostConfig,
         url: String,
-    ): Either<DomainError.GitError, String> = try {
+    ): Either<DomainError.GitError, String?> = try {
         val (headerName, headerValue) = GitHostAdapter.authHeader(hostConfig.type, hostConfig.token)
         val response = httpClient.get(url) { header(headerName, headerValue) }
         when {
-            response.status.value == 404 ->
-                DomainError.GitError.FetchFailed("Remote file not found: $url").left()
+            response.status.value == 404 -> null.right()
             response.status.value !in 200..299 -> mapHttpFailure(response.status.value, response.headers) {
                 DomainError.GitError.FetchFailed("GET raw content failed: HTTP ${response.status.value}")
             }.left()
@@ -891,8 +903,9 @@ class WasmGitWriteService(
         config: GitConfig,
         hostConfig: GitHostConfig,
         conflictingPaths: Set<String>,
-    ): List<ConflictFile> = conflictingPaths.map { path ->
-        buildConflictFile(config, hostConfig, path)
+    ): List<ConflictFile> {
+        attributeFileCache.clear()
+        return conflictingPaths.map { path -> buildConflictFile(config, hostConfig, path) }
     }
 
     private suspend fun buildConflictFile(
@@ -916,9 +929,13 @@ class WasmGitWriteService(
         // `merge=logseq-union` driver when `.gitattributes` asks for it (a browser cannot run the
         // python original). Any other file (or a parse failure — defensive at this API-content
         // boundary) falls back to the line-level Diff3 already in use.
-        val blockResult = if (path.endsWith(".md")) {
-            val policy = loadGitAttributes(config, hostConfig, apiPath)
-                .policyFor(apiPath, default = MergePolicy.Insertions)
+        val policy = if (path.endsWith(".md")) {
+            val attrs = loadGitAttributes(config, hostConfig, apiPath).getOrNull() ?: return fallback
+            attrs.policyFor(apiPath, default = MergePolicy.Insertions)
+        } else {
+            null
+        }
+        val blockResult = if (policy != null) {
             runCatching { mergeMarkdownWithPolicy(baseContent, localContent, remoteContent, policy) }.getOrNull()
         } else {
             null
@@ -948,23 +965,37 @@ class WasmGitWriteService(
             hunks = hunks,
             rawContent = markerText,
             duplicateBlockIds = blockResult?.duplicateBlockIds ?: emptyList(),
+            autoResolvedBy = policy.takeIf { blockResult != null && !blockResult.hasConflicts },
         )
     }
 
+    /** `.gitattributes` text (null = absent) per API path, valid for one [buildConflictFiles] call. */
+    private val attributeFileCache = HashMap<String, String?>()
+
     /**
-     * `.gitattributes` at the repo root and (when the wiki is a subfolder) at `wikiSubdir`, read
-     * from the remote branch. Deeper directories are not probed — one request per ancestor per
-     * conflicted file is too chatty for the web client; the wiki case is a single root file.
+     * `.gitattributes` for [apiPath] from the remote branch, levels per [gitAttributeProbeDirs].
+     * Absence (404) means "no file"; any other fetch failure is returned as Left so the caller
+     * degrades to the plain conflict path instead of silently picking another policy.
      */
-    private suspend fun loadGitAttributes(config: GitConfig, hostConfig: GitHostConfig, apiPath: String): GitAttributes {
-        val subdir = config.wikiSubdir?.takeIf { it.isNotEmpty() && apiPath.startsWith("$it/") }
-        val levels = listOfNotNull("", subdir)
-        val parsed = levels.mapNotNull { dir ->
+    private suspend fun loadGitAttributes(
+        config: GitConfig,
+        hostConfig: GitHostConfig,
+        apiPath: String,
+    ): Either<DomainError.GitError, GitAttributes> {
+        val parsed = mutableListOf<GitAttributes>()
+        for (dir in gitAttributeProbeDirs(apiPath, config.wikiSubdir)) {
             val attrPath = if (dir.isEmpty()) ".gitattributes" else "$dir/.gitattributes"
-            fetchRemoteFileContent(hostConfig, attrPath, hostConfig.branch).getOrNull()
-                ?.let { GitAttributes.parse(it, dir) }
+            val text = if (attributeFileCache.containsKey(attrPath)) {
+                attributeFileCache[attrPath]
+            } else {
+                when (val r = fetchRemoteFileContentOrNull(hostConfig, attrPath, hostConfig.branch)) {
+                    is Either.Left -> return r
+                    is Either.Right -> r.value.also { attributeFileCache[attrPath] = it }
+                }
+            }
+            if (text != null) parsed += GitAttributes.parse(text, dir)
         }
-        return GitAttributes.combine(*parsed.toTypedArray())
+        return GitAttributes.combine(*parsed.toTypedArray()).right()
     }
 
     /**

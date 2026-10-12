@@ -10,10 +10,10 @@ import kotlin.test.assertTrue
 
 class MarkdownMergePolicyTest {
     @Test
-    fun `logseq-union attribute selects the port policy and other drivers stay Union`() {
+    fun `logseq-union attribute selects the port policy and unknown drivers are Strict`() {
         val attrs = GitAttributes.parse("*.md merge=logseq-union\n*.org merge=my-driver\n*.txt merge=union")
         assertEquals(MergePolicy.LogseqUnion, attrs.policyFor("a.md", MergePolicy.Strict))
-        assertEquals(MergePolicy.Union, attrs.policyFor("a.org", MergePolicy.Strict))
+        assertEquals(MergePolicy.Strict, attrs.policyFor("a.org", MergePolicy.Union))
         assertEquals(MergePolicy.Union, attrs.policyFor("a.txt", MergePolicy.Strict))
     }
 

@@ -7,25 +7,13 @@ package dev.stapler.stelekit.git.merge
 data class UnionMergeOutput(val text: String, val hasConflictMarkers: Boolean)
 
 /**
- * Faithful Kotlin port of the wiki's custom git merge driver (`merge=logseq-union`, the python
- * `stapler_logseq_tools.merge.MergeDriver`). JGit never runs custom drivers and the app cannot run
- * python on Android/web, so the driver's behavior is reimplemented here, quirks included.
+ * Kotlin port of the wiki's python `merge=logseq-union` driver (quirks included: output has no
+ * trailing newline, several strategies never propagate deletions, duplicate lines collapse).
+ * Strategies, first match wins: data-loss protection, simple addition, same line count
+ * (positional), page-reference (difflib-style dedup), fallback (local then remote-only lines).
  *
- * Strategy order, first match wins (python order, minus `TestCompatibilityStrategy`, a
- * test-environment hack that is inert outside python's own test suite):
- * 1. data-loss protection (either side shrank / dropped lines the other kept)
- * 2. simple addition (one side appended, other unchanged)
- * 3. same line count (positional per-line merge; both-changed lines become an embedded conflict)
- * 4. page-reference (any `[[`, `#` or `((`): difflib-opcode merge that dedups lines
- * 5. fallback: local lines then remote-only lines, deduplicated
- *
- * Quirks preserved on purpose: input is split with python `str.splitlines()` semantics, output is
- * `"\n".join(lines)` (no trailing newline), several strategies never propagate deletions, and
- * duplicate lines collapse.
- *
- * Deviation handled by callers: python exits 0 and git would commit `<<<<<<< LOCAL` markers
- * silently; [UnionMergeOutput.hasConflictMarkers] lets the sync flow surface them as a real
- * conflict instead.
+ * Deviation: python exits 0 and git would commit `<<<<<<< LOCAL` markers; callers use
+ * [UnionMergeOutput.hasConflictMarkers] to surface them as a real conflict instead.
  */
 object LogseqUnionMergeDriver {
     /** The `.gitattributes` `merge=` value this port answers to. */
@@ -33,7 +21,7 @@ object LogseqUnionMergeDriver {
 
     fun merge(baseText: String, localText: String, remoteText: String): UnionMergeOutput {
         val lines = mergeLines(PyStr.splitLines(baseText), PyStr.splitLines(localText), PyStr.splitLines(remoteText))
-        val text = lines.joinToString("\n").replace("\r\n", "\n").replace('\r', '\n')
+        val text = lines.joinToString("\n")
         return UnionMergeOutput(text, text.lineSequence().any { it.startsWith("<<<<<<<") })
     }
 
@@ -178,11 +166,11 @@ object LogseqUnionMergeDriver {
 /** The few python `str` behaviors the driver relies on. */
 internal object PyStr {
     private val whitespace: Set<Char> = buildSet {
-        addAll("\t\n\u000B\u000C\r\u001C\u001D\u001E\u001F \u0085      　".toList())
-        for (c in ' '..' ') add(c)
+        addAll("\t\n\u000B\u000C\r\u001C\u001D\u001E\u001F \u0085\u00A0\u1680\u2028\u2029\u202F\u205F\u3000".toList())
+        for (c in '\u2000'..'\u200A') add(c)
     }
 
-    private val lineBreaks: Set<Char> = "\n\r\u000B\u000C\u001C\u001D\u001E\u0085  ".toSet()
+    private val lineBreaks: Set<Char> = "\n\r\u000B\u000C\u001C\u001D\u001E\u0085\u2028\u2029".toSet()
 
     fun strip(s: String): String = s.trim { it in whitespace }
 

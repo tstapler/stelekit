@@ -7,52 +7,48 @@ package dev.stapler.stelekit.git.merge
  * How [mergeMarkdownBlocks] treats regions both sides changed.
  *
  * - [Strict]: every overlapping change is a conflict.
- * - [Insertions]: both sides inserting at the same spot keeps both (no base content is
- *   contested); edits to the same existing block still conflict. Default for markdown that has
- *   no explicit `merge` attribute.
- * - [Union]: both sides' blocks are always kept — approximates git's built-in `merge=union` and
- *   any unrecognized custom driver. Chosen only when `.gitattributes` asks.
- * - [LogseqUnion]: `merge=logseq-union`. Not block-level at all: it is the line-level strategy
- *   chain of the wiki's python driver, ported to [LogseqUnionMergeDriver]. Use
- *   [mergeMarkdownWithPolicy], not [mergeMarkdownBlocks], to honor it ([BlockDiff3] only
- *   approximates it as [Union]).
+ * - [Insertions]: both sides inserting at the same spot keeps both; edits to the same existing
+ *   block still conflict. Default for markdown with no `merge` attribute.
+ * - [Union]: both sides' blocks are always kept (`merge=union`).
+ * - [LogseqUnion]: `merge=logseq-union`, the line-level chain of [LogseqUnionMergeDriver]. Honor
+ *   it via [mergeMarkdownWithPolicy]; [BlockDiff3] only approximates it as [Union].
  */
 enum class MergePolicy { Strict, Insertions, Union, LogseqUnion }
 
 /**
- * Minimal `.gitattributes` reader covering only the `merge` attribute. JGit never runs custom
- * merge drivers, so the app honors the *intent* of the attribute natively instead of ignoring it.
- *
- * Pattern support: `*`, `?`, `**`, a leading `/` (anchored), and a pattern without `/` matching
- * the basename at any depth — the subset real wiki repos use. Macros and `[attr]` are ignored.
+ * Minimal `.gitattributes` reader for the `merge` attribute only (JGit never runs custom merge
+ * drivers). Patterns: `*`, `?`, `**`, leading `/` (anchored), and a slash-free pattern matches
+ * the basename at any depth. Macros and `[attr]` are ignored; patterns over [MAX_PATTERN_LENGTH]
+ * and rules past [MAX_RULES] are dropped so a hostile file cannot make matching expensive.
  */
 class GitAttributes private constructor(private val rules: List<Rule>) {
 
-    private data class Rule(val matcher: Regex, val mergeValue: String)
+    private class Rule(val pattern: GlobPattern, val mergeValue: String)
 
-    /** The raw `merge` attribute for [relativePath]: `"union"`, `"logseq-union"`, `"-merge"`, … or null if unset. */
+    /** The raw `merge` attribute for [relativePath], or null when unset or reset with `!merge`. */
     fun mergeAttribute(relativePath: String): String? =
-        rules.lastOrNull { it.matcher.matches(relativePath) }?.mergeValue
+        rules.lastOrNull { it.pattern.matches(relativePath) }?.mergeValue?.takeIf { it != UNSPECIFIED }
 
     /**
-     * The merge policy the attribute asks for, or [default] when none is set.
-     *
-     * `logseq-union` maps to [MergePolicy.LogseqUnion] (a faithful port exists). Other unknown
-     * custom drivers map to [MergePolicy.Union]: they can't be executed here, and keep-both is
-     * the safest approximation of a user-defined "merge" driver. Opting out
-     * (`-merge`, `merge=binary`, `merge=text`, `merge=lfs`) yields [MergePolicy.Strict].
+     * The policy the attribute asks for, or [default] when unset. Only `union` and
+     * `logseq-union` keep both sides; every other value (`-merge`, `binary`, `text`, an unknown
+     * custom driver) is [MergePolicy.Strict], since real git would not keep-both either.
      */
     fun policyFor(relativePath: String, default: MergePolicy): MergePolicy {
         val value = mergeAttribute(relativePath) ?: return default
         return when (value) {
-            "-merge", "!merge", "binary", "text", "lfs" -> MergePolicy.Strict
+            "union" -> MergePolicy.Union
             LogseqUnionMergeDriver.DRIVER_NAME -> MergePolicy.LogseqUnion
-            else -> MergePolicy.Union
+            else -> MergePolicy.Strict
         }
     }
 
     companion object {
         val EMPTY = GitAttributes(emptyList())
+
+        const val MAX_PATTERN_LENGTH = 256
+        const val MAX_RULES = 1024
+        private const val UNSPECIFIED = "!merge"
 
         /**
          * Parses [text] from a `.gitattributes` located in [directory] (repo-relative, `""` for
@@ -60,7 +56,7 @@ class GitAttributes private constructor(private val rules: List<Rule>) {
          */
         fun parse(text: String, directory: String = ""): GitAttributes {
             val prefix = directory.trim('/').let { if (it.isEmpty()) "" else "$it/" }
-            val rules = text.lineSequence().mapNotNull { parseLine(it.trim(), prefix) }.toList()
+            val rules = text.lineSequence().mapNotNull { parseLine(it.trim(), prefix) }.take(MAX_RULES).toList()
             return GitAttributes(rules)
         }
 
@@ -70,38 +66,95 @@ class GitAttributes private constructor(private val rules: List<Rule>) {
         private fun parseLine(line: String, prefix: String): Rule? {
             if (line.isEmpty() || line.startsWith("#") || line.startsWith("[attr]")) return null
             val parts = line.split(Regex("\\s+"))
-            if (parts.size < 2) return null
+            if (parts.size < 2 || parts[0].length > MAX_PATTERN_LENGTH) return null
             val merge = parts.drop(1).firstNotNullOfOrNull { attr ->
                 when {
                     attr == "merge" -> "text"
-                    attr == "-merge" || attr == "!merge" -> attr
+                    attr == "-merge" || attr == UNSPECIFIED -> attr
                     attr.startsWith("merge=") -> attr.removePrefix("merge=")
                     else -> null
                 }
             }
             // A line that says nothing about `merge` must not shadow an earlier line that does.
-            return merge?.let { Rule(globToRegex(parts[0], prefix), it) }
-        }
-
-        private fun globToRegex(pattern: String, prefix: String): Regex {
-            val anchored = pattern.startsWith("/") || pattern.dropLast(1).contains('/')
-            val body = pattern.removePrefix("/")
-            val sb = StringBuilder()
-            var i = 0
-            while (i < body.length) {
-                val c = body[i]
-                when {
-                    c == '*' && body.startsWith("**/", i) -> { sb.append("(?:.*/)?"); i += 3; continue }
-                    c == '*' && body.startsWith("**", i) -> { sb.append(".*"); i += 2; continue }
-                    c == '*' -> sb.append("[^/]*")
-                    c == '?' -> sb.append("[^/]")
-                    c in "\\.+()[]{}^$|" -> sb.append('\\').append(c)
-                    else -> sb.append(c)
-                }
-                i++
-            }
-            val head = if (anchored) Regex.escape(prefix) else "${Regex.escape(prefix)}(?:.*/)?"
-            return Regex(head + sb)
+            return merge?.let { Rule(GlobPattern.compile(parts[0], prefix), it) }
         }
     }
+}
+
+/**
+ * Glob matched by NFA simulation: O(path length x pattern length) with no backtracking, so
+ * pathological patterns like `**a**a**a` stay cheap.
+ */
+private class GlobPattern private constructor(private val tokens: List<Token>) {
+
+    private enum class Kind { Literal, One, Star, DoubleStar, DirPrefix }
+
+    // DirPrefix is a leading-directories wildcard: empty, or anything ending in a slash.
+    private class Token(val kind: Kind, val char: Char = ' ')
+
+    fun matches(path: String): Boolean {
+        val m = tokens.size
+        var active = BooleanArray(m + 1)
+        var next = BooleanArray(m + 1)
+        active[0] = true
+        closeOverSkips(active)
+        for (c in path) {
+            next.fill(false)
+            for (i in 0 until m) {
+                if (!active[i]) continue
+                val t = tokens[i]
+                when (t.kind) {
+                    Kind.Literal -> if (c == t.char) next[i + 1] = true
+                    Kind.One -> if (c != '/') next[i + 1] = true
+                    Kind.Star -> if (c != '/') next[i] = true
+                    Kind.DoubleStar -> next[i] = true
+                    Kind.DirPrefix -> {
+                        next[i] = true
+                        if (c == '/') next[i + 1] = true
+                    }
+                }
+            }
+            closeOverSkips(next)
+            val swap = active; active = next; next = swap
+        }
+        return active[m]
+    }
+
+    /** Wildcards may match nothing, so a live wildcard state also activates its successor. */
+    private fun closeOverSkips(states: BooleanArray) {
+        for (i in tokens.indices) {
+            if (states[i] && tokens[i].kind != Kind.Literal && tokens[i].kind != Kind.One) states[i + 1] = true
+        }
+    }
+
+    companion object {
+        fun compile(pattern: String, prefix: String): GlobPattern {
+            val anchored = pattern.startsWith("/") || pattern.dropLast(1).contains('/')
+            val body = pattern.removePrefix("/")
+            val tokens = ArrayList<Token>()
+            prefix.forEach { tokens += Token(Kind.Literal, it) }
+            if (!anchored) tokens += Token(Kind.DirPrefix)
+            var i = 0
+            while (i < body.length) {
+                when {
+                    body.startsWith("**/", i) -> { tokens += Token(Kind.DirPrefix); i += 3 }
+                    body.startsWith("**", i) -> { tokens += Token(Kind.DoubleStar); i += 2 }
+                    body[i] == '*' -> { tokens += Token(Kind.Star); i++ }
+                    body[i] == '?' -> { tokens += Token(Kind.One); i++ }
+                    else -> { tokens += Token(Kind.Literal, body[i]); i++ }
+                }
+            }
+            return GlobPattern(tokens)
+        }
+    }
+}
+
+/**
+ * Directories (repo-relative, `""` = root) whose `.gitattributes` apply to [apiPath], ordered
+ * shallowest first so [GitAttributes.combine] lets deeper files win. Only the root and the wiki
+ * subfolder are probed: one request per ancestor per conflict is too chatty for the web client.
+ */
+fun gitAttributeProbeDirs(apiPath: String, wikiSubdir: String?): List<String> {
+    val subdir = wikiSubdir?.trim('/')?.takeIf { it.isNotEmpty() && apiPath.startsWith("$it/") }
+    return listOfNotNull("", subdir)
 }
