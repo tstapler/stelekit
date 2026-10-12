@@ -73,9 +73,7 @@ object LfsPointerCodec {
             if (space <= 0) return LfsPointerParse.Corrupt("MALFORMED_LINE")
             val key = line.substring(0, space)
             val value = line.substring(space + 1)
-            if (!key.all { it in 'a'..'z' || it in '0'..'9' || it == '.' || it == '-' }) {
-                return LfsPointerParse.Corrupt("BAD_KEY")
-            }
+            if (!key.all(::isKeyChar)) return LfsPointerParse.Corrupt("BAD_KEY")
             pairs += key to value
         }
         if (pairs.first().first != "version") return LfsPointerParse.Corrupt("VERSION_NOT_FIRST")
@@ -125,6 +123,8 @@ object LfsPointerCodec {
         val line = head.copyOfRange(0, minOf(firstLineEnd, 256)).decodeToString().trimEnd('\r').lowercase()
         return "git-lfs" in line || "hawser" in line || "git-media" in line
     }
+
+    private fun isKeyChar(c: Char) = c in 'a'..'z' || c in '0'..'9' || c == '.' || c == '-'
 
     private fun decodeUtf8Strict(bytes: ByteArray): String? {
         val decoded = bytes.decodeToString()

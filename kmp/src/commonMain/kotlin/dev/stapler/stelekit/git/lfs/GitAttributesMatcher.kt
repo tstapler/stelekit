@@ -29,36 +29,37 @@ class AttributeRuleSet(
 
     fun resolve(path: String, attribute: String): AttrState = resolveWithSource(path, attribute).state
 
+    /**
+     * Evaluated the way git does: bottom-up, so the first rule to decide an attribute (the last matching line of
+     * the highest-precedence file) wins, and a macro attribute only expands where its own final state is Set.
+     * That second point is why a `lfs` line for all PNGs followed by a `-lfs` line for one directory leaves `filter`
+     * unspecified inside that directory: the later line decides `lfs` first, so the earlier line's macro never expands.
+     */
     fun resolveWithSource(path: String, attribute: String): AttrResolution {
         val normalised = path.removePrefix("./").trimStart('/')
+        val decided = HashSet<String>()
         var state: AttrState = AttrState.Unspecified
         var source: String? = null
 
-        fun apply(name: String, newState: AttrState, from: String, depth: Int, allowBuiltin: Boolean) {
-            if (name == attribute) {
-                state = newState
-                source = from
-            }
-            if (newState != AttrState.Set || depth > MAX_MACRO_DEPTH) return
-            val expansion = macros[name]
-            // The built-in `binary` macro is only expanded from the root, info and global layers.
-            if (expansion != null && (name != "binary" || allowBuiltin || name in userMacroNames())) {
-                expansion.forEach { (n, s) -> apply(n, s, from, depth + 1, allowBuiltin) }
+        fun fill(attributes: List<Pair<String, AttrState>>, from: String, depth: Int) {
+            for ((name, attrState) in attributes.asReversed()) {
+                if (!decided.add(name)) continue
+                if (name == attribute) {
+                    state = attrState
+                    source = from
+                }
+                if (attrState == AttrState.Set && depth < MAX_MACRO_DEPTH) macros[name]?.let { fill(it, from, depth + 1) }
             }
         }
 
-        for (file in layers) {
+        for (file in layers.asReversed()) {
             val relative = relativeTo(file.dirPrefix, normalised) ?: continue
-            for (rule in file.rules) {
-                if (!ruleMatches(rule, relative)) continue
-                val from = "${file.sourceName}:${rule.line}"
-                rule.attributes.forEach { (name, s) -> apply(name, s, from, 0, file.dirPrefix.isEmpty()) }
+            for (rule in file.rules.asReversed()) {
+                if (ruleMatches(rule, relative)) fill(rule.attributes, "${file.sourceName}:${rule.line}", 0)
             }
         }
         return AttrResolution(state, source)
     }
-
-    private fun userMacroNames(): Set<String> = layers.flatMap { it.macros.keys }.toSet()
 
     private fun ruleMatches(rule: AttrRule, relativePath: String): Boolean {
         if (rule.pattern.endsWith("/")) return false // directory patterns never match a file

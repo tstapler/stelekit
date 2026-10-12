@@ -115,6 +115,14 @@ class GitAttributesMatcherTest {
     }
 
     @Test
+    fun isTracked_should_NotExpandAMacro_When_ALaterLineUnsetsIt() {
+        // git decides bottom-up: `-lfs` decides the macro attribute first, so the earlier `*.png lfs` never expands.
+        val rules = "[attr]lfs filter=lfs\n*.png lfs\nsmall/*.png -lfs\n"
+        assertTracked(rules, "big/x.png", true)
+        assertTracked(rules, "small/s.png", false)
+    }
+
+    @Test
     fun isTracked_should_IgnoreMacroDefinitions_When_InASubdirectoryFile() {
         val p = policy("*.bin lfs", nested = mapOf("sub" to "[attr]lfs filter=lfs"))
         assertFalse(p.isTracked("x.bin"))

@@ -117,6 +117,9 @@ internal object GitWildmatch {
             return ABORT_ALL
         }
 
+        /** A '-' inside a bracket expression is a range operator only when a real end character follows it. */
+        private fun isRangeEnd(next: Char) = next != NUL && next != ']'
+
         private fun isGlobSpecial(c: Char) = c == '*' || c == '?' || c == '[' || c == '\\'
 
         class BracketStep(val result: Int?, val pi: Int = 0)
@@ -140,7 +143,7 @@ internal object GitWildmatch {
                     pCh = pc(pi)
                     if (pCh == NUL) return BracketStep(ABORT_ALL)
                     if (tCh == pCh) matched = true
-                } else if (pCh == '-' && prevCh != NUL && pc(pi + 1) != NUL && pc(pi + 1) != ']') {
+                } else if (pCh == '-' && prevCh != NUL && isRangeEnd(pc(pi + 1))) {
                     pi++
                     pCh = pc(pi)
                     if (pCh == '\\') {
