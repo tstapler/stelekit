@@ -67,6 +67,7 @@ internal class AndroidGitMergeSupport(
             hunks = content.hunks,
             rawContent = content.markerContent,
             duplicateBlockIds = content.blockAware?.duplicateBlockIds ?: emptyList(),
+            autoResolvedBy = content.blockAware?.autoResolvedBy,
         )
     }
 

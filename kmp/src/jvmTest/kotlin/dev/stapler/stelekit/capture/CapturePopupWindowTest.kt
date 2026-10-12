@@ -55,8 +55,24 @@ class CapturePopupWindowTest {
         controller
     }
 
-    /** No graph attached at all — `show()` resolves straight to [CaptureResult.NoActiveGraph]. */
-    private fun newUnavailableController(): CaptureController = CaptureController(PlatformFileSystem())
+    /**
+     * A graph is attached but no capture root is registered, so `save()` fails with a specific
+     * error. (A controller with no graph at all resolves to [CaptureResult.NoActiveGraph], which
+     * the popup renders without a text field — UX AC 7 — so it can't exercise save errors.)
+     */
+    private fun newSaveFailingController(): CaptureController = runBlocking {
+        val graphManager = GraphManager(
+            platformSettings = InMemorySettings(),
+            driverFactory = DriverFactory(),
+            fileSystem = NonVaultFakeFileSystem(),
+            defaultBackend = GraphBackend.IN_MEMORY,
+        )
+        val id = graphManager.addGraph(Files.createTempDirectory("capture-popup-window-fail-test").toString())
+        graphManager.switchGraph(id)
+        graphManager.awaitPendingMigration()
+
+        CaptureController(PlatformFileSystem()).also { it.attachGraphManager(graphManager) }
+    }
 
     private fun setPopupContent(controller: CaptureController) {
         composeTestRule.setContent {
@@ -77,7 +93,7 @@ class CapturePopupWindowTest {
 
     @Test
     fun capturePopupWindow_should_PreserveTypedTextAndShowRetryButton_When_SaveStateIsError() {
-        val controller = newUnavailableController()
+        val controller = newSaveFailingController()
         controller.show()
         controller.updateText("Buy milk")
         setPopupContent(controller)

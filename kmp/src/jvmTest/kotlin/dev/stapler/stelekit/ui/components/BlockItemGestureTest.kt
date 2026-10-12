@@ -3,7 +3,12 @@ package dev.stapler.stelekit.ui.components
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.performClick
@@ -59,9 +64,20 @@ class BlockItemGestureTest {
         content: String = "Plain block text",
         isInSelectionMode: Boolean = false,
         isShiftDown: Boolean = false,
+        physicalShiftPressed: Boolean = false,
     ): Recorder {
         val recorder = Recorder()
         composeTestRule.setContent {
+            // Injected key events don't reach WindowInfo.keyboardModifiers in the test scene, but
+            // BlockViewer reads it live to ignore a stuck isShiftDown flag. Supply it the way a real
+            // window would.
+            val realWindowInfo = LocalWindowInfo.current
+            val windowInfo = remember(realWindowInfo, physicalShiftPressed) {
+                if (!physicalShiftPressed) realWindowInfo else object : WindowInfo by realWindowInfo {
+                    override val keyboardModifiers = PointerKeyboardModifiers(isShiftPressed = true)
+                }
+            }
+            CompositionLocalProvider(LocalWindowInfo provides windowInfo) {
             BlockItem(
                 block = block(content),
                 isEditing = false,
@@ -77,6 +93,7 @@ class BlockItemGestureTest {
                 onNewBlock = {},
                 onSplitBlock = { _, _ -> },
             )
+            }
         }
         return recorder
     }
@@ -121,7 +138,7 @@ class BlockItemGestureTest {
 
     @Test
     fun shiftClick_extendsSelection_notEditMode() {
-        val recorder = render(isShiftDown = true)
+        val recorder = render(isShiftDown = true, physicalShiftPressed = true)
         val node = composeTestRule.onNodeWithText("Plain block text")
         node.performKeyInput { keyDown(Key.ShiftLeft) }
         node.performMouseInput { click() }
