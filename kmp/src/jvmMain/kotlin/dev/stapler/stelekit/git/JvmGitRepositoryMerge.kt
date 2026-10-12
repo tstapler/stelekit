@@ -56,6 +56,7 @@ internal object JvmGitConflictSupport {
             hunks = hunks,
             rawContent = markerContent,
             duplicateBlockIds = blockAware?.duplicateBlockIds ?: emptyList(),
+            autoResolvedBy = blockAware?.autoResolvedBy,
         )
     }
 }

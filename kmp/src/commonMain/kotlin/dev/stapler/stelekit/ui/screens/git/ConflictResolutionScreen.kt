@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -21,6 +22,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -43,6 +45,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import arrow.core.Either
@@ -100,7 +103,8 @@ fun ConflictResolutionScreen(
             conflict.hunks.isNotEmpty() && conflict.hunks.all {
                 val resolution = hunkChoices[it.id]
                 resolution != null && resolution != HunkResolution.Unresolved &&
-                    (resolution != HunkResolution.Manual || !hunkManualText[it.id].isNullOrBlank())
+                    // A Manual result may legitimately be empty (drop both sides).
+                    (resolution != HunkResolution.Manual || hunkManualText[it.id] != null)
             }
         } else {
             sideSelections.containsKey(conflict.filePath)
@@ -355,6 +359,35 @@ private fun HunkEditor(
     enabled: Boolean,
     modifier: Modifier = Modifier,
 ) {
+    val localBlocks = remember(hunk.id) { splitIntoBlocks(hunk.localLines) }
+    val remoteBlocks = remember(hunk.id) { splitIntoBlocks(hunk.remoteLines) }
+    // Picks that reproduce the current result, or null when the result was typed by hand (or
+    // restored from a saved session) and no tick-box state explains it. Such a result must not be
+    // silently overwritten by a toggle: picks stay locked until "Reset to picks".
+    val restoredPicks = remember(hunk.id) {
+        when (resolution) {
+            HunkResolution.AcceptLocal -> BlockPicks.allLocal(localBlocks.size)
+            HunkResolution.AcceptRemote -> BlockPicks.allRemote(remoteBlocks.size)
+            HunkResolution.Manual -> listOf(
+                BlockPicks.NONE,
+                BlockPicks.allLocal(localBlocks.size),
+                BlockPicks.allRemote(remoteBlocks.size),
+                BlockPicks.both(localBlocks.size, remoteBlocks.size),
+            ).firstOrNull { composeResult(localBlocks, remoteBlocks, it) == manualText }
+            HunkResolution.Unresolved -> BlockPicks.NONE
+        }
+    }
+    var picks by remember(hunk.id) { mutableStateOf(restoredPicks ?: BlockPicks.NONE) }
+    var handEdited by remember(hunk.id) { mutableStateOf(restoredPicks == null) }
+    val picksEnabled = enabled && !handEdited
+
+    fun applyPicks(newPicks: BlockPicks) {
+        handEdited = false
+        picks = newPicks
+        onManualTextChange(composeResult(localBlocks, remoteBlocks, newPicks))
+        onResolutionChange(HunkResolution.Manual)
+    }
+
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -362,42 +395,91 @@ private fun HunkEditor(
         ) {
             FilterChip(
                 selected = resolution == HunkResolution.AcceptLocal,
-                onClick = { if (enabled) onResolutionChange(HunkResolution.AcceptLocal) },
+                onClick = {
+                    if (!picksEnabled) return@FilterChip
+                    picks = BlockPicks.allLocal(localBlocks.size)
+                    onResolutionChange(HunkResolution.AcceptLocal)
+                },
                 label = { Text("Keep mine") },
+                enabled = picksEnabled,
                 modifier = Modifier.weight(1f),
             )
             FilterChip(
                 selected = resolution == HunkResolution.AcceptRemote,
-                onClick = { if (enabled) onResolutionChange(HunkResolution.AcceptRemote) },
+                onClick = {
+                    if (!picksEnabled) return@FilterChip
+                    picks = BlockPicks.allRemote(remoteBlocks.size)
+                    onResolutionChange(HunkResolution.AcceptRemote)
+                },
                 label = { Text("Keep theirs") },
+                enabled = picksEnabled,
                 modifier = Modifier.weight(1f),
             )
             FilterChip(
-                selected = resolution == HunkResolution.Manual,
-                onClick = { if (enabled) onResolutionChange(HunkResolution.Manual) },
-                label = { Text("Write my own") },
+                selected = resolution == HunkResolution.Manual && picks == BlockPicks.both(localBlocks.size, remoteBlocks.size),
+                onClick = { if (picksEnabled) applyPicks(BlockPicks.both(localBlocks.size, remoteBlocks.size)) },
+                label = { Text("Keep both") },
+                enabled = picksEnabled,
                 modifier = Modifier.weight(1f),
             )
         }
-        HunkSideBlock(label = "Yours", lines = hunk.localLines)
-        HunkSideBlock(label = "Theirs", lines = hunk.remoteLines)
-        if (resolution == HunkResolution.Manual) {
+        Text(
+            "Tick the blocks to keep. Long-press text to select and copy.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        HunkSideBlocks(
+            label = "Yours",
+            blocks = localBlocks,
+            kept = picks.local,
+            onToggle = { applyPicks(picks.toggleLocal(it)) },
+            enabled = picksEnabled,
+        )
+        HunkSideBlocks(
+            label = "Theirs",
+            blocks = remoteBlocks,
+            kept = picks.remote,
+            onToggle = { applyPicks(picks.toggleRemote(it)) },
+            enabled = picksEnabled,
+        )
+        if (resolution != HunkResolution.Unresolved) {
+            val resultText = when (resolution) {
+                HunkResolution.AcceptLocal -> hunk.localLines.joinToString("\n")
+                HunkResolution.AcceptRemote -> hunk.remoteLines.joinToString("\n")
+                else -> manualText
+            }
             OutlinedTextField(
-                value = manualText,
-                onValueChange = onManualTextChange,
+                value = resultText,
+                onValueChange = {
+                    handEdited = true
+                    onManualTextChange(it)
+                    onResolutionChange(HunkResolution.Manual)
+                },
                 enabled = enabled,
-                label = { Text("Resolved content for this section") },
+                label = { Text("Result (editable)") },
                 textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 2,
             )
+            if (handEdited) {
+                TextButton(onClick = { if (enabled) applyPicks(picks) }, enabled = enabled) {
+                    Text("Reset to picks")
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun HunkSideBlock(label: String, lines: List<String>, modifier: Modifier = Modifier) {
-    if (lines.isEmpty()) return
+private fun HunkSideBlocks(
+    label: String,
+    blocks: List<List<String>>,
+    kept: Set<Int>,
+    onToggle: (Int) -> Unit,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    if (blocks.isEmpty()) return
     Surface(
         modifier = modifier.fillMaxWidth(),
         tonalElevation = 1.dp,
@@ -409,10 +491,22 @@ private fun HunkSideBlock(label: String, lines: List<String>, modifier: Modifier
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Text(
-                lines.joinToString("\n"),
-                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-            )
+            blocks.forEachIndexed { index, block ->
+                Row(verticalAlignment = Alignment.Top) {
+                    Checkbox(
+                        checked = index in kept,
+                        onCheckedChange = { if (enabled) onToggle(index) },
+                        enabled = enabled,
+                        modifier = Modifier.testTag("keep-$label-$index"),
+                    )
+                    SelectionContainer(modifier = Modifier.weight(1f).padding(top = 12.dp)) {
+                        Text(
+                            block.joinToString("\n"),
+                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                        )
+                    }
+                }
+            }
         }
     }
 }

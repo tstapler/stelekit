@@ -160,6 +160,11 @@ kt_jvm_library(
         "@maven//:io_ktor_ktor_serialization_kotlinx_json_jvm",
         "@maven//:io_ktor_ktor_client_okhttp_jvm",
 
+        # MCP server SDK (graph-mcp-server)
+        "@maven//:io_modelcontextprotocol_kotlin_sdk_server_jvm",
+        "@maven//:io_ktor_ktor_server_core_jvm",
+        "@maven//:io_ktor_ktor_server_sse_jvm",
+
         # ktoml — TOML parsing for .stele-sections manifest (from commonMain)
         "@maven//:com_akuleshov7_ktoml_core_jvm",
 

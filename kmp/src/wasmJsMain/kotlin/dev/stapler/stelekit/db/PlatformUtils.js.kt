@@ -20,4 +20,6 @@ actual class PlatformUtils actual constructor() {
         // In browser, no filesystem migration needed
         return true
     }
+
+    actual fun mcpLauncherCommand(graphId: String): String = ""
 }

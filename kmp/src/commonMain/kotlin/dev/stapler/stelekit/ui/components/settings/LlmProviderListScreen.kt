@@ -68,7 +68,7 @@ fun LlmProviderListScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Text("AI Providers", style = MaterialTheme.typography.titleMedium)
                 Text(
                     "Configure the LLM providers used for tag suggestions, voice formatting, " +

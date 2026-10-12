@@ -85,6 +85,7 @@ kt_jvm_test(
         ":graph_content_wiring_test_sources_as_resources",
         "@maven//:com_google_zxing_core",
         "@maven//:io_ktor_ktor_client_mock_jvm",
+        "@maven//:io_modelcontextprotocol_kotlin_sdk_testing_jvm",
         "@maven//:io_projectreactor_tools_blockhound",
         "@maven//:org_jetbrains_compose_ui_ui_test_junit4_desktop",
         "@maven//:org_jetbrains_kotlin_kotlin_reflect",

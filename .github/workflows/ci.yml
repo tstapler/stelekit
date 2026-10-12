@@ -174,6 +174,72 @@ jobs:
           path: kmp/build/reports/detekt/
           retention-days: 7
 
+  # ── Change-scoped quality gate: incremental coverage + mutation ──────────
+  # Runs only the tests tied to the PR's changed files (see kmp/build.gradle.kts) under JaCoCo:
+  # the Bazel suite has no coverage, and full Gradle jvmTest hangs on 2-core runners.
+  diff-coverage:
+    name: Incremental coverage + mutation (changed files)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # merge-base against the PR base branch
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - uses: ./.github/actions/gradle-ci-memory
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+
+      - name: Install Xvfb (selected tests may include Compose Desktop UI tests)
+        run: sudo apt-get install -y --no-install-recommends xvfb
+
+      - name: Install uv (the diffCoverage task runs diff-cover through uvx)
+        run: |
+          pipx install uv==0.8.0
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Fetch PR base branch
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: git fetch --no-tags origin "$BASE_REF:refs/remotes/origin/$BASE_REF"
+
+      - name: Incremental coverage gate (jvmTest + testDebugUnitTest) and mutation score
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        # Mutation is report-only here: PIT scores whole classes, so a one-line change to a large
+        # class is judged on mutants it never touched. Coverage on changed lines is the gate;
+        # `./gradlew :kmp:mutationTest` enforces the default 80 locally.
+        run: >
+          xvfb-run --auto-servernum
+          ./gradlew --no-daemon --build-cache --continue :kmp:diffCoverage :kmp:mutationTest
+          -PdiffCoverage.selectTests "-PdiffCoverage.base=origin/$BASE_REF"
+          -Pmutate.threshold=0
+
+      - name: Post diff-coverage summary
+        if: always()
+        run: |
+          f=kmp/build/reports/diff-coverage/diff-coverage.md
+          if [ -f "$f" ]; then cat "$f" >> "$GITHUB_STEP_SUMMARY"; fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: diff-coverage-reports
+          path: |
+            kmp/build/reports/jacoco/
+            kmp/build/reports/diff-coverage/
+            kmp/build/reports/pitest/
+          retention-days: 7
+
   # ── Android emulator smoke tests ─────────────────────────────────────────
   android-smoke:
     name: Android Smoke Tests (Emulator)
