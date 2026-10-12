@@ -11,6 +11,8 @@ import dev.stapler.stelekit.git.GitRepository
 import dev.stapler.stelekit.git.GitStatus
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.logging.Logger
+import dev.stapler.stelekit.platform.FileSystem
+import dev.stapler.stelekit.platform.Settings
 import kotlinx.coroutines.CancellationException
 
 /** Outcome of staging under the LFS guard: what was held back and whether anything is left to commit. */
@@ -27,6 +29,25 @@ class LfsGuardedStaging(
     private val lfsGuard: LfsGuardCoordinator,
 ) {
     private val logger = Logger("LfsGuardedStaging")
+
+    companion object {
+        /** Production wiring: the guard is derived from [settings] and [gitRepository] unless a test supplies [guard]. */
+        fun create(
+            gitRepository: GitRepository,
+            fileSystem: FileSystem,
+            settings: Settings?,
+            capabilities: LfsPlatformCapabilities,
+            guard: LfsGuardCoordinator?,
+        ) = LfsGuardedStaging(
+            gitRepository,
+            guard ?: LfsGuardCoordinator(
+                fileSystem = fileSystem,
+                modeSource = LfsModeSource(settings),
+                capabilities = capabilities,
+                delegated = gitRepository.guardsLfsInWritePath,
+            ),
+        )
+    }
 
     /**
      * Stages the wiki subdirectory. Violating files are left out of the index and reported in [LfsStaging.held];

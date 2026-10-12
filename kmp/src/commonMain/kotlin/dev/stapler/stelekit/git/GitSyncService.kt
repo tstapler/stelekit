@@ -15,13 +15,13 @@ import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.git.merge.JournalMergeService
 import dev.stapler.stelekit.git.lfs.LfsGuardCoordinator
 import dev.stapler.stelekit.git.lfs.LfsGuardedStaging
-import dev.stapler.stelekit.git.lfs.LfsModeSource
 import dev.stapler.stelekit.git.lfs.LfsPlatformCapabilities
 import dev.stapler.stelekit.git.lfs.LfsViolation
 import dev.stapler.stelekit.git.model.CloneDepthState
 import dev.stapler.stelekit.git.model.ConflictFile
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.SyncState
+import dev.stapler.stelekit.git.model.logSummary
 import dev.stapler.stelekit.git.model.wikiRoot
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.NetworkMonitor
@@ -81,15 +81,7 @@ class GitSyncService(
     private val isOnline: () -> Boolean = { networkMonitor.isOnline },
 ) {
     private val logger = Logger("GitSyncService")
-    private val lfsStaging = LfsGuardedStaging(
-        gitRepository,
-        lfsGuardCoordinator ?: LfsGuardCoordinator(
-            fileSystem = fileSystem,
-            modeSource = LfsModeSource(settings),
-            capabilities = lfsCapabilities,
-            delegated = gitRepository.guardsLfsInWritePath,
-        ),
-    )
+    private val lfsStaging = LfsGuardedStaging.create(gitRepository, fileSystem, settings, lfsCapabilities, lfsGuardCoordinator)
     private val firstSyncConfirmation: FirstSyncConfirmation? = settings?.let { FirstSyncConfirmation(it) }
 
     /** Applies user-confirmed branch repairs; see [repairBranch]. */
@@ -118,34 +110,15 @@ class GitSyncService(
      * missing when the repair happened, so it is probed (a fetch of that branch) instead of trusted.
      * Returns null when no repair is recorded.
      */
-    suspend fun changeBackBranch(): BranchRepairResult? {
-        val previous = previousBranchBeforeRepair() ?: return null
-        val config = when (val r = configRepository.getConfig(graphId)) {
-            is Either.Left -> return BranchRepairResult.SaveFailed(r.value.message)
-            is Either.Right -> r.value ?: return BranchRepairResult.Stale(null)
+    suspend fun changeBackBranch(): BranchRepairResult? =
+        when (val change = branchRepair.changeBackProposal(gitRepository, graphId)) {
+            null -> null
+            is Either.Left -> change.value
+            is Either.Right -> repairBranch(change.value)
         }
-        when (val probe = gitRepository.fetch(config.copy(remoteBranch = previous))) {
-            is Either.Left -> return when (probe.value) {
-                is DomainError.GitError.RemoteBranchNotFound -> BranchRepairResult.TargetNotOnRemote(previous)
-                else -> BranchRepairResult.SaveFailed(probe.value.message)
-            }
-            is Either.Right -> Unit
-        }
-        return repairBranch(
-            BranchRepairProposal(graphId, from = config.remoteBranch, to = previous, available = listOf(previous)),
-        )
-    }
 
     /** Branch the last repair replaced, for "Change back"; null when none is recorded. */
     fun previousBranchBeforeRepair(): String? = firstSyncConfirmation?.previousBranch(graphId)
-
-    /** Never [toString] a state directly: conflict/journal-merge states carry full note contents. */
-    private fun SyncState.logSummary(): String = when (this) {
-        is SyncState.ConflictPending -> "ConflictPending(files=${conflicts.size})"
-        is SyncState.JournalMergeReady -> "JournalMergeReady"
-        is SyncState.Error -> "Error(${error.message})"
-        else -> toString()
-    }
 
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
     val syncState: StateFlow<SyncState> = _syncState.asStateFlow()

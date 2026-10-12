@@ -37,3 +37,11 @@ sealed class SyncState {
         val autoMergedPaths: List<String> = emptyList(),
     ) : SyncState()
 }
+
+/** Never [toString] a state directly: conflict/journal-merge states carry full note contents. */
+internal fun SyncState.logSummary(): String = when (this) {
+    is SyncState.ConflictPending -> "ConflictPending(files=${conflicts.size})"
+    is SyncState.JournalMergeReady -> "JournalMergeReady"
+    is SyncState.Error -> "Error(${error.message})"
+    else -> toString()
+}
