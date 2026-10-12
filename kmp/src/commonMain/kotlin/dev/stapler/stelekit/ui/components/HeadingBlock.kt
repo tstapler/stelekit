@@ -15,7 +15,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import dev.stapler.stelekit.ui.LocalWindowSizeClass
 
 /**
  * Renders a heading block (H1–H6) with appropriate typography.
@@ -38,14 +40,12 @@ internal fun HeadingBlock(
     val textColor = MaterialTheme.colorScheme.onBackground
     val codeBg = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
 
-    val textStyle = when (level) {
-        1 -> MaterialTheme.typography.displaySmall
-        2 -> MaterialTheme.typography.headlineLarge
-        3 -> MaterialTheme.typography.headlineMedium
-        4 -> MaterialTheme.typography.headlineSmall
-        5 -> MaterialTheme.typography.titleLarge
-        else -> MaterialTheme.typography.titleMedium
-    }
+    val spec = headingSpec(level, LocalWindowSizeClass.current)
+    val textStyle = MaterialTheme.typography.bodyMedium.copy(
+        fontSize = spec.fontSize,
+        lineHeight = spec.lineHeight,
+        fontWeight = if (level <= 3) FontWeight.Bold else FontWeight.SemiBold,
+    )
 
     val annotatedString = remember(strippedContent, linkColor, textColor, codeBg) {
         parseMarkdownWithStyling(
