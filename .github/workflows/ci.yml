@@ -206,6 +206,11 @@ jobs:
       - name: Install Xvfb (selected tests may include Compose Desktop UI tests)
         run: sudo apt-get install -y --no-install-recommends xvfb
 
+      - name: Install uv (the diffCoverage task runs diff-cover through uvx)
+        run: |
+          pipx install uv==0.8.0
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
       - name: Fetch PR base branch
         env:
           BASE_REF: ${{ github.base_ref }}
