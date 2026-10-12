@@ -214,10 +214,14 @@ jobs:
       - name: Incremental coverage gate (jvmTest + testDebugUnitTest) and mutation score
         env:
           BASE_REF: ${{ github.base_ref }}
+        # Mutation is report-only here: PIT scores whole classes, so a one-line change to a large
+        # class is judged on mutants it never touched. Coverage on changed lines is the gate;
+        # `./gradlew :kmp:mutationTest` enforces the default 80 locally.
         run: >
           xvfb-run --auto-servernum
           ./gradlew --no-daemon --build-cache --continue :kmp:diffCoverage :kmp:mutationTest
           -PdiffCoverage.selectTests "-PdiffCoverage.base=origin/$BASE_REF"
+          -Pmutate.threshold=0
 
       - name: Post diff-coverage summary
         if: always()
