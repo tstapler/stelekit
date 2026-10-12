@@ -228,7 +228,7 @@ Named wall-clock blockers (no calendar figures: the soak is count-based, and ela
 
 | Id | Blocker | Owner | Needed by |
 |---|---|---|---|
-| D1 | Classify each registered feature MARKETED / DEMO_ONLY / INTERNAL (requirements Open Question 2); provisional classification in A1.1 | Repo owner | B1.1 |
+| D1 | Classify each registered feature MARKETED / DEMO_ONLY / INTERNAL (requirements Open Question 2); provisional classification in A1.1. **RESOLVED 2026-10-11 (owner):** MARKETED = the 5 landing cards (outliner, journals, backlinks, search, local-first) plus git-sync and query-blocks; everything else DEMO_ONLY, internal items explicitly INTERNAL. Both additions have no demo page today, so the provisional 19-line baseline gains up to 2 `:site` gaps (21); T-A1.1.6 recomputes it. | Repo owner | B1.1 |
 | D2 | Approve promoting registration-integrity and new-entry content checks to hard fail | Repo owner | B1.2 |
 | D3 | Approve staleness `--fail` for `feat:` PRs | Repo owner | B2.1 |
 | D4 | Decide whether the Help menu should open demo pages (requirements Open Question 1; `research/architecture.md` Open decisions) | Repo owner | C3.1 (optional) |
