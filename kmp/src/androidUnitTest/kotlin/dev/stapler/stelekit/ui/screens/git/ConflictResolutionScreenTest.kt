@@ -13,8 +13,11 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextReplacement
 import arrow.core.Either
+import arrow.core.left
 import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.MergeSide
 import dev.stapler.stelekit.git.model.ConflictFile
 import dev.stapler.stelekit.git.model.ConflictHunk
@@ -40,6 +43,7 @@ class ConflictResolutionScreenTest {
     )
 
     private var resolvedHunks: Map<String, List<ConflictHunk>>? = null
+    private var resolveResult: Either<DomainError.GitError, Unit> = Unit.right()
 
     private fun show() {
         composeTestRule.setContent {
@@ -48,7 +52,7 @@ class ConflictResolutionScreenTest {
                     conflicts = listOf(conflict),
                     onResolve = { _, hunks ->
                         resolvedHunks = hunks
-                        Unit.right() as Either<dev.stapler.stelekit.error.DomainError.GitError, Unit>
+                        resolveResult
                     },
                     onDismiss = {},
                 )
@@ -69,6 +73,8 @@ class ConflictResolutionScreenTest {
     fun `keep both resolves with both sides in order and ticks every block`() {
         show()
         composeTestRule.onNodeWithText("Keep both").performClick()
+        composeTestRule.onNodeWithTag("keep-Yours-0").performScrollTo().assertIsOn()
+        composeTestRule.onNodeWithTag("keep-Theirs-0").performScrollTo().assertIsOn()
         composeTestRule.onNodeWithText("- mine\n- theirs").assertIsEnabled()
         composeTestRule.onNodeWithText("Finish Merge").performClick()
         composeTestRule.waitForIdle()
@@ -98,5 +104,61 @@ class ConflictResolutionScreenTest {
         composeTestRule.waitForIdle()
 
         assertEquals(HunkResolution.AcceptRemote, assertNotNull(resolvedHunks)[conflict.filePath]!!.single().resolution)
+    }
+
+    @Test
+    fun `reopening a section restores the ticks that produced its result`() {
+        show()
+        composeTestRule.onNodeWithText("Keep both").performClick()
+        composeTestRule.onNodeWithText("Use one version").performClick()
+        composeTestRule.onNodeWithText("Resolve line by line").performClick()
+
+        composeTestRule.onNodeWithTag("keep-Yours-0").performScrollTo().assertIsOn().assertIsEnabled()
+        composeTestRule.onNodeWithTag("keep-Theirs-0").performScrollTo().assertIsOn()
+    }
+
+    @Test
+    fun `hand-edited result is never overwritten by a toggle until reset`() {
+        show()
+        composeTestRule.onNodeWithText("Keep both").performClick()
+        composeTestRule.onNodeWithText("Result (editable)").performTextReplacement("my own words")
+
+        composeTestRule.onNodeWithTag("keep-Yours-0").performScrollTo().assertIsNotEnabled()
+        composeTestRule.onNodeWithText("Keep mine").assertIsNotEnabled()
+        composeTestRule.onNodeWithText("Reset to picks").performScrollTo().assertIsEnabled()
+        composeTestRule.onNodeWithText("Finish Merge").performClick()
+        composeTestRule.waitForIdle()
+        assertEquals("my own words", assertNotNull(resolvedHunks)[conflict.filePath]!!.single().manualContent)
+    }
+
+    @Test
+    fun `reset to picks replaces hand edits with the ticked blocks and re-enables toggles`() {
+        show()
+        composeTestRule.onNodeWithText("Keep both").performClick()
+        composeTestRule.onNodeWithText("Result (editable)").performTextReplacement("my own words")
+        composeTestRule.onNodeWithText("Reset to picks").performScrollTo().performClick()
+
+        composeTestRule.onNodeWithText("- mine\n- theirs").assertIsEnabled()
+        composeTestRule.onNodeWithTag("keep-Yours-0").performScrollTo().assertIsEnabled().assertIsOn()
+    }
+
+    @Test
+    fun `a failed resolve surfaces the error and keeps the screen open`() {
+        resolveResult = DomainError.GitError.CommitFailed("boom").left()
+        var dismissed = false
+        composeTestRule.setContent {
+            MaterialTheme {
+                ConflictResolutionScreen(
+                    conflicts = listOf(conflict),
+                    onResolve = { _, _ -> resolveResult },
+                    onDismiss = { dismissed = true },
+                )
+            }
+        }
+        composeTestRule.onNodeWithText("Finish Merge").performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithText("Resolution failed: boom", substring = true).assertIsEnabled()
+        assertEquals(false, dismissed)
     }
 }

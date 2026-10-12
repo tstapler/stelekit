@@ -361,17 +361,28 @@ private fun HunkEditor(
 ) {
     val localBlocks = remember(hunk.id) { splitIntoBlocks(hunk.localLines) }
     val remoteBlocks = remember(hunk.id) { splitIntoBlocks(hunk.remoteLines) }
-    var picks by remember(hunk.id) {
-        mutableStateOf(
-            when (resolution) {
-                HunkResolution.AcceptLocal -> BlockPicks.allLocal(localBlocks.size)
-                HunkResolution.AcceptRemote -> BlockPicks.allRemote(remoteBlocks.size)
-                else -> BlockPicks.NONE
-            }
-        )
+    // Picks that reproduce the current result, or null when the result was typed by hand (or
+    // restored from a saved session) and no tick-box state explains it. Such a result must not be
+    // silently overwritten by a toggle: picks stay locked until "Reset to picks".
+    val restoredPicks = remember(hunk.id) {
+        when (resolution) {
+            HunkResolution.AcceptLocal -> BlockPicks.allLocal(localBlocks.size)
+            HunkResolution.AcceptRemote -> BlockPicks.allRemote(remoteBlocks.size)
+            HunkResolution.Manual -> listOf(
+                BlockPicks.NONE,
+                BlockPicks.allLocal(localBlocks.size),
+                BlockPicks.allRemote(remoteBlocks.size),
+                BlockPicks.both(localBlocks.size, remoteBlocks.size),
+            ).firstOrNull { composeResult(localBlocks, remoteBlocks, it) == manualText }
+            HunkResolution.Unresolved -> BlockPicks.NONE
+        }
     }
+    var picks by remember(hunk.id) { mutableStateOf(restoredPicks ?: BlockPicks.NONE) }
+    var handEdited by remember(hunk.id) { mutableStateOf(restoredPicks == null) }
+    val picksEnabled = enabled && !handEdited
 
     fun applyPicks(newPicks: BlockPicks) {
+        handEdited = false
         picks = newPicks
         onManualTextChange(composeResult(localBlocks, remoteBlocks, newPicks))
         onResolutionChange(HunkResolution.Manual)
@@ -385,27 +396,30 @@ private fun HunkEditor(
             FilterChip(
                 selected = resolution == HunkResolution.AcceptLocal,
                 onClick = {
-                    if (!enabled) return@FilterChip
+                    if (!picksEnabled) return@FilterChip
                     picks = BlockPicks.allLocal(localBlocks.size)
                     onResolutionChange(HunkResolution.AcceptLocal)
                 },
                 label = { Text("Keep mine") },
+                enabled = picksEnabled,
                 modifier = Modifier.weight(1f),
             )
             FilterChip(
                 selected = resolution == HunkResolution.AcceptRemote,
                 onClick = {
-                    if (!enabled) return@FilterChip
+                    if (!picksEnabled) return@FilterChip
                     picks = BlockPicks.allRemote(remoteBlocks.size)
                     onResolutionChange(HunkResolution.AcceptRemote)
                 },
                 label = { Text("Keep theirs") },
+                enabled = picksEnabled,
                 modifier = Modifier.weight(1f),
             )
             FilterChip(
                 selected = resolution == HunkResolution.Manual && picks == BlockPicks.both(localBlocks.size, remoteBlocks.size),
-                onClick = { if (enabled) applyPicks(BlockPicks.both(localBlocks.size, remoteBlocks.size)) },
+                onClick = { if (picksEnabled) applyPicks(BlockPicks.both(localBlocks.size, remoteBlocks.size)) },
                 label = { Text("Keep both") },
+                enabled = picksEnabled,
                 modifier = Modifier.weight(1f),
             )
         }
@@ -419,14 +433,14 @@ private fun HunkEditor(
             blocks = localBlocks,
             kept = picks.local,
             onToggle = { applyPicks(picks.toggleLocal(it)) },
-            enabled = enabled,
+            enabled = picksEnabled,
         )
         HunkSideBlocks(
             label = "Theirs",
             blocks = remoteBlocks,
             kept = picks.remote,
             onToggle = { applyPicks(picks.toggleRemote(it)) },
-            enabled = enabled,
+            enabled = picksEnabled,
         )
         if (resolution != HunkResolution.Unresolved) {
             val resultText = when (resolution) {
@@ -437,6 +451,7 @@ private fun HunkEditor(
             OutlinedTextField(
                 value = resultText,
                 onValueChange = {
+                    handEdited = true
                     onManualTextChange(it)
                     onResolutionChange(HunkResolution.Manual)
                 },
@@ -446,6 +461,11 @@ private fun HunkEditor(
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 2,
             )
+            if (handEdited) {
+                TextButton(onClick = { if (enabled) applyPicks(picks) }, enabled = enabled) {
+                    Text("Reset to picks")
+                }
+            }
         }
     }
 }
