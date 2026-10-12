@@ -67,7 +67,8 @@ object BlockDiff3 {
                 localGap == remoteGap -> chunks.add(BlockDiff3Chunk.Stable(localGap))
                 localGap == baseGap -> chunks.add(BlockDiff3Chunk.Stable(remoteGap))
                 remoteGap == baseGap -> chunks.add(BlockDiff3Chunk.Stable(localGap))
-                policy == MergePolicy.Union || (policy == MergePolicy.Insertions && baseGap.isEmpty()) ->
+                policy == MergePolicy.Union || policy == MergePolicy.LogseqUnion ||
+                    (policy == MergePolicy.Insertions && baseGap.isEmpty()) ->
                     chunks.add(BlockDiff3Chunk.Stable(localGap + remoteGap.filter { it !in localGap }))
                 else -> chunks.add(BlockDiff3Chunk.Conflict(baseGap, localGap, remoteGap))
             }

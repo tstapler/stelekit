@@ -125,25 +125,55 @@ class GitSyncAttributeMergeE2ETest {
     private val unionAttr = ".gitattributes" to "*.md merge=logseq-union\n"
 
     @Test
-    fun `union attribute keeps both sides of concurrent journal appends and pushes the merge`() = runTest {
+    fun `logseq-union port keeps both sides of concurrent journal appends and pushes the merge`() = runTest {
         seed(mapOf(unionAttr, journal to "- base\n"))
         otherCommitsAndPushes(journal, "- base\n- theirs\n")
         File(local, journal).writeText("- base\n- mine\n") // uncommitted: sync commits it
 
-        val svc = service()
-        val result = svc.sync(GRAPH_ID)
+        val result = service().sync(GRAPH_ID)
 
         assertTrue(result.isRight(), syncFailed(result))
-        val text = File(local, journal).readText()
-        assertTrue(MINE in text && THEIRS in text && "<<<<<<<" !in text, mergedWas(text))
+        // Ported fallback strategy: local lines then remote-only lines, no trailing newline.
+        assertEquals("- base\n- mine\n- theirs", File(local, journal).readText())
         Git.open(local).use { assertEquals(RepositoryState.SAFE, it.repository.repositoryState) }
-        val remoteText = originFile(journal)
-        assertTrue(remoteText != null && MINE in remoteText && THEIRS in remoteText, "origin had:\n$remoteText")
+        assertEquals("- base\n- mine\n- theirs", originFile(journal))
     }
 
     @Test
-    fun `union attribute keeps both versions when both sides edit the same block`() = runTest {
+    fun `logseq-union port auto-merges adjacent-line edits that JGit alone reports as a conflict`() = runTest {
+        seed(mapOf(unionAttr, journal to "- one\n- two\n"))
+        otherCommitsAndPushes(journal, "- one\n- TWO\n")
+        File(local, journal).writeText("- ONE\n- two\n")
+
+        val result = service().sync(GRAPH_ID)
+
+        assertTrue(result.isRight(), syncFailed(result))
+        assertEquals("- ONE\n- TWO", File(local, journal).readText())
+        Git.open(local).use { assertEquals(RepositoryState.SAFE, it.repository.repositoryState) }
+    }
+
+    @Test
+    fun `logseq-union port surfaces a same-line edit as a conflict and never commits its markers`() = runTest {
         seed(mapOf(unionAttr, journal to SHARED_BASE))
+        otherCommitsAndPushes(journal, SHARED_THEIRS)
+        File(local, journal).writeText(SHARED_MINE)
+
+        val svc = service()
+        val result = svc.sync(GRAPH_ID)
+
+        assertIs<Either.Left<*>>(result)
+        val state = assertIs<SyncState.ConflictPending>(svc.syncState.value)
+        val conflict = state.conflicts.single()
+        assertFalse(conflict.isAutoResolved)
+        val hunk = conflict.hunks.single()
+        assertEquals(listOf("- shared mine"), hunk.localLines)
+        assertEquals(listOf("- shared theirs"), hunk.remoteLines)
+        assertFalse("<<<<<<<" in (originFile(journal) ?: ""), "markers must never reach origin")
+    }
+
+    @Test
+    fun `an unknown custom driver keeps both versions when both sides edit the same block`() = runTest {
+        seed(mapOf(".gitattributes" to "*.md merge=some-custom-driver\n", journal to SHARED_BASE))
         otherCommitsAndPushes(journal, SHARED_THEIRS)
         File(local, journal).writeText(SHARED_MINE)
 

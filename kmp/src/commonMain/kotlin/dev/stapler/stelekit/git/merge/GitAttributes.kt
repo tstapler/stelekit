@@ -10,10 +10,14 @@ package dev.stapler.stelekit.git.merge
  * - [Insertions]: both sides inserting at the same spot keeps both (no base content is
  *   contested); edits to the same existing block still conflict. Default for markdown that has
  *   no explicit `merge` attribute.
- * - [Union]: both sides' blocks are always kept — git's built-in `merge=union` semantics, which
- *   is also what the wiki's `logseq-union` driver is for. Chosen only when `.gitattributes` asks.
+ * - [Union]: both sides' blocks are always kept — approximates git's built-in `merge=union` and
+ *   any unrecognized custom driver. Chosen only when `.gitattributes` asks.
+ * - [LogseqUnion]: `merge=logseq-union`. Not block-level at all: it is the line-level strategy
+ *   chain of the wiki's python driver, ported to [LogseqUnionMergeDriver]. Use
+ *   [mergeMarkdownWithPolicy], not [mergeMarkdownBlocks], to honor it ([BlockDiff3] only
+ *   approximates it as [Union]).
  */
-enum class MergePolicy { Strict, Insertions, Union }
+enum class MergePolicy { Strict, Insertions, Union, LogseqUnion }
 
 /**
  * Minimal `.gitattributes` reader covering only the `merge` attribute. JGit never runs custom
@@ -33,14 +37,16 @@ class GitAttributes private constructor(private val rules: List<Rule>) {
     /**
      * The merge policy the attribute asks for, or [default] when none is set.
      *
-     * Unknown custom drivers map to [MergePolicy.Union]: they can't be executed here, and a
-     * "union"-flavored name (`logseq-union`) is by definition a keep-both driver. Opting out
+     * `logseq-union` maps to [MergePolicy.LogseqUnion] (a faithful port exists). Other unknown
+     * custom drivers map to [MergePolicy.Union]: they can't be executed here, and keep-both is
+     * the safest approximation of a user-defined "merge" driver. Opting out
      * (`-merge`, `merge=binary`, `merge=text`, `merge=lfs`) yields [MergePolicy.Strict].
      */
     fun policyFor(relativePath: String, default: MergePolicy): MergePolicy {
         val value = mergeAttribute(relativePath) ?: return default
         return when (value) {
             "-merge", "!merge", "binary", "text", "lfs" -> MergePolicy.Strict
+            LogseqUnionMergeDriver.DRIVER_NAME -> MergePolicy.LogseqUnion
             else -> MergePolicy.Union
         }
     }

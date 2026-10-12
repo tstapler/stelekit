@@ -26,10 +26,10 @@ import dev.stapler.stelekit.git.model.GitLabCommitResponse
 import dev.stapler.stelekit.git.model.GitLabCompareResponse
 import dev.stapler.stelekit.git.model.GitLabTreeEntry
 import dev.stapler.stelekit.git.merge.Diff3
-import dev.stapler.stelekit.git.merge.findDuplicateBlockIds
+import dev.stapler.stelekit.git.merge.GitAttributes
 import dev.stapler.stelekit.git.merge.hasConflicts
 import dev.stapler.stelekit.git.merge.MergePolicy
-import dev.stapler.stelekit.git.merge.mergeMarkdownBlocks
+import dev.stapler.stelekit.git.merge.mergeMarkdownWithPolicy
 import dev.stapler.stelekit.git.merge.toTwoWayConflictMarkerText
 import dev.stapler.stelekit.git.model.GitRefResponse
 import dev.stapler.stelekit.git.model.GitRefUpdateRequest
@@ -912,16 +912,14 @@ class WasmGitWriteService(
         // checkoutFile's REMOTE-side resolution already uses) — no extra ref-sha fetch needed.
         val remoteContent = fetchRemoteFileContent(hostConfig, apiPath, hostConfig.branch).getOrNull() ?: return fallback
 
-        // Page/journal markdown gets the block-aware merge (BlockDiff3) — it aligns whole
-        // outline blocks by content instead of raw text lines, so a conflict never splits a
-        // block in half and a block moved to a different parent (unlike a plain line edit)
-        // registers as a real change instead of silently vanishing. Any other .md-adjacent file
-        // this repo tracks (or a block parse failure — defensive at this API-content boundary)
-        // falls back to the line-level Diff3 already in use.
+        // Page/journal markdown gets the block-aware merge (BlockDiff3), or the port of the wiki's
+        // `merge=logseq-union` driver when `.gitattributes` asks for it (a browser cannot run the
+        // python original). Any other file (or a parse failure — defensive at this API-content
+        // boundary) falls back to the line-level Diff3 already in use.
         val blockResult = if (path.endsWith(".md")) {
-            runCatching {
-                mergeMarkdownBlocks(baseContent, localContent, remoteContent, MergePolicy.Insertions)
-            }.getOrNull()
+            val policy = loadGitAttributes(config, hostConfig, apiPath)
+                .policyFor(apiPath, default = MergePolicy.Insertions)
+            runCatching { mergeMarkdownWithPolicy(baseContent, localContent, remoteContent, policy) }.getOrNull()
         } else {
             null
         }
@@ -929,8 +927,8 @@ class WasmGitWriteService(
         val markerText: String
         val hasConflicts: Boolean
         if (blockResult != null) {
-            markerText = blockResult.toTwoWayConflictMarkerText(localLabel = "local", remoteLabel = hostConfig.branch)
-            hasConflicts = blockResult.hasConflicts()
+            markerText = blockResult.markerText
+            hasConflicts = blockResult.hasConflicts
         } else {
             val chunks = Diff3.merge(baseContent.lines(), localContent.lines(), remoteContent.lines())
             markerText = chunks.toTwoWayConflictMarkerText(localLabel = "local", remoteLabel = hostConfig.branch)
@@ -949,8 +947,24 @@ class WasmGitWriteService(
             wikiRelativePath = path,
             hunks = hunks,
             rawContent = markerText,
-            duplicateBlockIds = blockResult?.findDuplicateBlockIds() ?: emptyList(),
+            duplicateBlockIds = blockResult?.duplicateBlockIds ?: emptyList(),
         )
+    }
+
+    /**
+     * `.gitattributes` at the repo root and (when the wiki is a subfolder) at `wikiSubdir`, read
+     * from the remote branch. Deeper directories are not probed — one request per ancestor per
+     * conflicted file is too chatty for the web client; the wiki case is a single root file.
+     */
+    private suspend fun loadGitAttributes(config: GitConfig, hostConfig: GitHostConfig, apiPath: String): GitAttributes {
+        val subdir = config.wikiSubdir?.takeIf { it.isNotEmpty() && apiPath.startsWith("$it/") }
+        val levels = listOfNotNull("", subdir)
+        val parsed = levels.mapNotNull { dir ->
+            val attrPath = if (dir.isEmpty()) ".gitattributes" else "$dir/.gitattributes"
+            fetchRemoteFileContent(hostConfig, attrPath, hostConfig.branch).getOrNull()
+                ?.let { GitAttributes.parse(it, dir) }
+        }
+        return GitAttributes.combine(*parsed.toTypedArray())
     }
 
     /**

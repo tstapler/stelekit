@@ -18,9 +18,15 @@ class GitAttributesTest {
     )
 
     @Test
-    fun `custom md driver maps to Union at any depth`() {
+    fun `logseq-union driver maps to the ported driver policy at any depth`() {
         assertEquals("logseq-union", wiki.mergeAttribute("journals/2026_10_10.md"))
-        assertEquals(MergePolicy.Union, wiki.policyFor("pages/a/b.md", MergePolicy.Strict))
+        assertEquals(MergePolicy.LogseqUnion, wiki.policyFor("pages/a/b.md", MergePolicy.Strict))
+    }
+
+    @Test
+    fun `unknown custom driver keeps the generic Union policy`() {
+        val attrs = GitAttributes.parse("*.md merge=some-other-driver")
+        assertEquals(MergePolicy.Union, attrs.policyFor("a.md", MergePolicy.Strict))
     }
 
     @Test
@@ -39,7 +45,7 @@ class GitAttributesTest {
     fun `nested attributes override and are directory-scoped`() {
         val combined = GitAttributes.combine(wiki, GitAttributes.parse("*.md merge=text", "pages"))
         assertEquals(MergePolicy.Strict, combined.policyFor("pages/a.md", MergePolicy.Union))
-        assertEquals(MergePolicy.Union, combined.policyFor("journals/a.md", MergePolicy.Strict))
+        assertEquals(MergePolicy.LogseqUnion, combined.policyFor("journals/a.md", MergePolicy.Strict))
     }
 
     private fun blk(c: String) = ParsedBlock(content = c, properties = emptyMap(), level = 0)
