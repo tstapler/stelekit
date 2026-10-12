@@ -128,6 +128,9 @@ private fun SettingsDialogHost(
     fileSystem: FileSystem,
     settings: SettingsDialogDeps,
 ) {
+    val mcpLauncherCommand = remember(appState.currentGraphId) {
+        appState.currentGraphId?.let { dev.stapler.stelekit.db.PlatformUtils().mcpLauncherCommand(it) }.orEmpty()
+    }
     SettingsDialog(
         visible = appState.settingsVisible || appState.llmProviderSettingsVisible,
         onDismiss = {
@@ -170,6 +173,14 @@ private fun SettingsDialogHost(
         hasLlmKey = settings.hasLlmKey,
         isLibsqlDriverEnabled = appState.isLibsqlDriverEnabled,
         onLibsqlDriverToggle = if (isLibsqlDriverSupported) { { viewModel.setLibsqlDriverEnabled(it) } } else null,
+        mcpServerEnabled = appState.mcpServerEnabled,
+        onMcpServerToggle = if (mcpLauncherCommand.isNotEmpty()) { { viewModel.setMcpServerEnabled(it) } } else null,
+        mcpLauncherCommand = mcpLauncherCommand,
+        pendingMcpSuggestionCount = appState.pendingMcpSuggestionCount,
+        onOpenMcpSuggestions = {
+            viewModel.setSettingsVisible(false)
+            viewModel.openLlmSuggestionReviewScreen()
+        },
         sectionManifest = appState.currentManifest,
         sectionStates = appState.currentSectionStates,
         onCreateSection = { id, name, color, pagePfx, journalPfx ->

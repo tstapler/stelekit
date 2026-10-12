@@ -161,6 +161,9 @@ fun LeftSidebar(
     sectionManifest: SectionManifest? = null,
     defaultSection: String = "",
     onSectionIndicatorClick: () -> Unit = {},
+    /** graph-mcp-server Story 3.2.2: count of pending `mcp:`-sourced suggestions not yet reviewed. */
+    pendingMcpSuggestionCount: Int = 0,
+    onOpenMcpSuggestions: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val isMobile = LocalWindowSizeClass.current.isMobile
@@ -291,6 +294,14 @@ fun LeftSidebar(
                 )
             }
 
+            if (pendingMcpSuggestionCount > 0) {
+                PendingMcpSuggestionsBadge(
+                    count = pendingMcpSuggestionCount,
+                    onClick = onOpenMcpSuggestions,
+                    modifier = Modifier.padding(vertical = 4.dp),
+                )
+            }
+
             // Navigation Section
             Text(
                 "Navigation",
@@ -381,6 +392,41 @@ fun LeftSidebar(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Badge for pending MCP-sourced suggestions the review screen hasn't surfaced yet (graph-mcp-server
+ * Story 3.2.2 — closes research/ux.md's "MCP client thinks its work vanished" gap). Mirrors
+ * [PendingConflictsBanner]'s shape; absent entirely when [count] is 0.
+ */
+@Composable
+fun PendingMcpSuggestionsBadge(count: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Surface(
+        color = MaterialTheme.colorScheme.primaryContainer,
+        shape = MaterialTheme.shapes.small,
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .semantics { contentDescription = "$count pending suggestion${if (count == 1) "" else "s"} from MCP. Tap to review." },
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Default.Notifications,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = if (count == 1) "1 suggestion from MCP" else "$count suggestions from MCP",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
         }
     }
 }

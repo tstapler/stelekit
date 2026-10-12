@@ -30,6 +30,8 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.llm.PendingLlmSuggestion
 
@@ -157,7 +159,12 @@ fun LlmSuggestionReviewScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
         ) {
-            AssistChip(onClick = {}, label = { Text(typeBadge(current)) })
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                AssistChip(onClick = {}, label = { Text(typeBadge(current)) })
+                parseMcpClientName(current.sourceProviderId)?.let { clientName ->
+                    McpProvenanceChip(clientName)
+                }
+            }
             Spacer(modifier = Modifier.height(8.dp))
             current.rationale?.let { rationale ->
                 Text(text = rationale, style = MaterialTheme.typography.bodyMedium)
@@ -185,6 +192,27 @@ fun LlmSuggestionReviewScreen(
             }
         }
     }
+}
+
+/**
+ * Second segment of the `"mcp:<client-name>:<proposal-id>"` convention, or `null` (hides
+ * [McpProvenanceChip]) only when the id isn't MCP-sourced at all. A bare `"mcp:"` — malformed,
+ * never produced by `McpClientIdentity` — returns `""` rather than `null`: fail open to showing
+ * provenance over silently hiding it.
+ */
+internal fun parseMcpClientName(sourceProviderId: String): String? {
+    if (!sourceProviderId.startsWith("mcp:")) return null
+    return sourceProviderId.split(":").getOrNull(1)
+}
+
+/** Distinguishes an MCP-client-originated proposal from SteleKit's own matcher (graph-mcp-server Story 3.2.3). */
+@Composable
+private fun McpProvenanceChip(clientName: String) {
+    AssistChip(
+        onClick = {},
+        label = { Text("MCP: $clientName") },
+        modifier = Modifier.semantics { contentDescription = "Proposed by MCP client $clientName" },
+    )
 }
 
 private fun typeBadge(suggestion: PendingLlmSuggestion): String = when (suggestion) {

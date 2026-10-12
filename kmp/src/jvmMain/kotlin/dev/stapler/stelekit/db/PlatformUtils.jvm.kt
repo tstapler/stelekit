@@ -57,4 +57,19 @@ actual class PlatformUtils actual constructor() {
             false
         }
     }
+
+    /**
+     * Runs the launcher shim (`McpLauncherMain`) with the running app's own runtime and
+     * classpath: `java.home` is the bundled jlink image in a jpackage install, so this works
+     * where a bare `java` would not be on `PATH`.
+     */
+    actual fun mcpLauncherCommand(graphId: String): String {
+        val javaHome = System.getProperty("java.home") ?: return ""
+        val exe = if (System.getProperty("os.name").lowercase().contains("win")) "java.exe" else "java"
+        val java = listOf(javaHome, "bin", exe).joinToString(File.separator)
+        val classpath = System.getProperty("java.class.path").orEmpty()
+        return "${quote(java)} -cp ${quote(classpath)} dev.stapler.stelekit.mcp.McpLauncherMainKt --graph-id $graphId"
+    }
+
+    private fun quote(s: String) = if (s.any { it.isWhitespace() }) "\"$s\"" else s
 }
