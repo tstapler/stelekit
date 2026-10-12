@@ -353,10 +353,13 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
      * unconditionally (there is never a reason to pass a replacement staged value — see Task
      * 2.1.2d), and writes the marker immediately: the crash-safety-critical "clear last" write.
      */
-    fun clearDirtySet(newBaseSha: String) {
+    fun clearDirtySet(newBaseSha: String, retain: Map<String, DirtyEntry> = emptyMap()) {
         val gitWriteState = sessionHolder.current.gitWriteState
         gitWriteState.dirtySet.clear()
-        _dirtyFileCountFlow.value = 0
+        // [retain] are entries a push deliberately left out (Git LFS hold-back): they were never uploaded, so they
+        // must stay dirty for the next sync rather than silently drop out of tracking.
+        gitWriteState.dirtySet.putAll(retain)
+        _dirtyFileCountFlow.value = gitWriteState.dirtySet.size
         gitWriteState.baseSha = newBaseSha
         gitWriteState.pendingCommit = PendingCommit.None
         scheduleMarkerWrite()

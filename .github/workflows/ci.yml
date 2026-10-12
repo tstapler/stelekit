@@ -306,7 +306,9 @@ jobs:
             --tests "dev.stapler.stelekit.platform.ByteBufferInteropTest" \
             --tests "dev.stapler.stelekit.platform.OpfsInteropTest" \
             --tests "dev.stapler.stelekit.ui.components.DropZoneInteropTest" \
-            --tests "dev.stapler.stelekit.ui.components.PageDropTargetListenerLifecycleTest"
+            --tests "dev.stapler.stelekit.ui.components.PageDropTargetListenerLifecycleTest" \
+            --tests "dev.stapler.stelekit.git.WasmGitWriteServiceLfsGuardTest" \
+            --tests "dev.stapler.stelekit.git.WasmLfsRulesSourceTest"
 
       - name: Publish wasmJs test report
         uses: mikepenz/action-junit-report@v4
