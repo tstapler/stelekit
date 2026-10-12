@@ -278,13 +278,9 @@ private fun EditableCaptureContent(controller: CaptureController, shown: Capture
         CaptureFooter(controller, shown)
     }
 
-    // Runs once each time this composable is newly (re)mounted — which is exactly the
-    // Hidden->Shown transition, since CapturePopupContent early-returns and composes nothing
-    // while Hidden, and the Error->Retry->Saving path stays within this same composable
-    // (no unmount) so focus isn't stolen from the user mid-retry.
-    // Re-keyed on the target so picking a graph hands focus back to the text field.
-    LaunchedEffect(shown.targetGraphId) {
-        focusRequester.requestFocus()
+    // Keyed on saveState because a disabled field drops focus: after a failed save it must be refocused.
+    LaunchedEffect(shown.targetGraphId, shown.saveState) {
+        if (shown.saveState != SaveState.Saving) focusRequester.requestFocus()
     }
 }
 

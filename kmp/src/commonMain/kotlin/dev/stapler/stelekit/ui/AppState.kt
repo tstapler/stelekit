@@ -130,6 +130,12 @@ data class AppState(
     val isLeftHanded: Boolean = false,
     // Developer flags
     val isLibsqlDriverEnabled: Boolean = false,
+    // graph-mcp-server: off unless the user explicitly opts in — zero new runtime behavior
+    // (no socket, no launcher) when false.
+    val mcpServerEnabled: Boolean = false,
+    // Non-null while McpServerController's most recent bind attempt failed (e.g. a stale
+    // socket from an unclean shutdown); cleared on the next successful start or on dismiss.
+    val mcpBindFailureMessage: String? = null,
     // Multi-graph support
     val currentGraphId: String? = null,
     val currentGraphName: String = "",
@@ -170,6 +176,10 @@ data class AppState(
     // LlmSuggestionInbox.pendingForGraph(currentGraphId) becomes non-empty; NOT auto-dismissed
     // when it becomes empty via accept/reject (same "do NOT auto-dismiss" rule as journal merge).
     val llmSuggestionReviewVisible: Boolean = false,
+    // Count of pending suggestions in the LLM inbox whose sourceProviderId starts with "mcp:" —
+    // surfaced as a sidebar badge and a Settings-panel counter so an MCP-sourced proposal doesn't
+    // silently disappear if the review screen isn't open (graph-mcp-server Story 3.2.2).
+    val pendingMcpSuggestionCount: Int = 0,
     // Export in-flight: true while an exportPage/exportSelectedBlocks coroutine is running
     val isExporting: Boolean = false,
     // Share dialog state

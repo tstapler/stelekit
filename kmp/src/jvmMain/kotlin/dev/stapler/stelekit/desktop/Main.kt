@@ -146,6 +146,9 @@ fun main(args: Array<String>) {
         // owned for the whole process lifetime (see CaptureSurfaces below).
         val captureSurfaces = rememberCaptureSurfaces(fileSystem)
 
+        // Idle (no socket) until the user flips the Settings MCP toggle.
+        val mcpLifecycle = remember { dev.stapler.stelekit.mcp.McpDesktopLifecycle() }
+
         // Mermaid cold-start warm-up (ADR-001 Open Items): GraalJS pays bundle eval +
         // mermaid.initialize() on the first render, which can exceed the render watchdog under
         // load. Warming here on a background coroutine means the first user-visible diagram
@@ -161,6 +164,7 @@ fun main(args: Array<String>) {
             onCloseRequest = {
                 logger.info("Application shutting down")
                 captureSurfaces.stopAll()
+                mcpLifecycle.shutdown()
                 dev.stapler.stelekit.logging.LogManager.flush()
                 // Closing the main window exits the whole JVM anyway, so these stop() calls are
                 // for orderly shutdown (flushing logs, closing the socket file) rather than
@@ -221,7 +225,11 @@ fun main(args: Array<String>) {
                         gitCloneWorkerLauncher = gitCloneWorkerLauncher,
                     ),
                     lifecycleHooks = StelekitAppLifecycleHooks(
-                        onGraphManagerReady = { gm -> captureSurfaces.attachGraphManager(gm) },
+                        onGraphManagerReady = { gm ->
+                            captureSurfaces.attachGraphManager(gm)
+                            mcpLifecycle.onGraphManagerReady(gm)
+                        },
+                        onViewModelReady = mcpLifecycle::onViewModelReady,
                         onNotificationManagerReady = { nm ->
                             captureSurfaces.controller.attachNotificationManager(nm)
                         },

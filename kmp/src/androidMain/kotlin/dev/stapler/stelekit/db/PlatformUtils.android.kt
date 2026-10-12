@@ -38,4 +38,7 @@ actual class PlatformUtils actual constructor() {
             false
         }
     }
+
+    // MCP is JVM/Desktop-only (requirements.md's scope) — no launcher on Android.
+    actual fun mcpLauncherCommand(graphId: String): String = ""
 }
