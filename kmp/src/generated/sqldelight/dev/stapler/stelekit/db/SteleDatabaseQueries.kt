@@ -801,22 +801,26 @@ public class SteleDatabaseQueries(
 
   public fun selectRootBlocksByPageUuidOrdered(page_uuid: String): Query<Blocks> = selectRootBlocksByPageUuidOrdered(page_uuid, ::Blocks)
 
-  public fun <T : Any> selectBlockByLeftUuid(left_uuid: String?, mapper: (
-    id: Long,
-    uuid: String,
-    page_uuid: String,
-    parent_uuid: String?,
+  public fun <T : Any> selectSiblingAfter(
     left_uuid: String?,
-    content: String,
-    level: Long,
-    position: String,
-    created_at: Long,
-    updated_at: Long,
-    properties: String?,
-    version: Long,
-    content_hash: String?,
-    block_type: String,
-  ) -> T): Query<T> = SelectBlockByLeftUuidQuery(left_uuid) { cursor ->
+    parent_uuid: String?,
+    mapper: (
+      id: Long,
+      uuid: String,
+      page_uuid: String,
+      parent_uuid: String?,
+      left_uuid: String?,
+      content: String,
+      level: Long,
+      position: String,
+      created_at: Long,
+      updated_at: Long,
+      properties: String?,
+      version: Long,
+      content_hash: String?,
+      block_type: String,
+    ) -> T,
+  ): Query<T> = SelectSiblingAfterQuery(left_uuid, parent_uuid) { cursor ->
     mapper(
       cursor.getLong(0)!!,
       cursor.getString(1)!!,
@@ -835,7 +839,7 @@ public class SteleDatabaseQueries(
     )
   }
 
-  public fun selectBlockByLeftUuid(left_uuid: String?): Query<Blocks> = selectBlockByLeftUuid(left_uuid, ::Blocks)
+  public fun selectSiblingAfter(left_uuid: String?, parent_uuid: String?): Query<Blocks> = selectSiblingAfter(left_uuid, parent_uuid, ::Blocks)
 
   public fun <T : Any> selectLastChild(parent_uuid: String?, mapper: (
     id: Long,
@@ -6113,8 +6117,9 @@ public class SteleDatabaseQueries(
     override fun toString(): String = "SteleDatabase.sq:selectRootBlocksByPageUuidOrdered"
   }
 
-  private inner class SelectBlockByLeftUuidQuery<out T : Any>(
+  private inner class SelectSiblingAfterQuery<out T : Any>(
     public val left_uuid: String?,
+    public val parent_uuid: String?,
     mapper: (SqlCursor) -> T,
   ) : Query<T>(mapper) {
     override fun addListener(listener: Query.Listener) {
@@ -6125,12 +6130,13 @@ public class SteleDatabaseQueries(
       driver.removeListener("blocks", listener = listener)
     }
 
-    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(null, """SELECT blocks.id, blocks.uuid, blocks.page_uuid, blocks.parent_uuid, blocks.left_uuid, blocks.content, blocks.level, blocks.position, blocks.created_at, blocks.updated_at, blocks.properties, blocks.version, blocks.content_hash, blocks.block_type FROM blocks WHERE left_uuid ${ if (left_uuid == null) "IS" else "=" } ?""", mapper, 1) {
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(null, """SELECT blocks.id, blocks.uuid, blocks.page_uuid, blocks.parent_uuid, blocks.left_uuid, blocks.content, blocks.level, blocks.position, blocks.created_at, blocks.updated_at, blocks.properties, blocks.version, blocks.content_hash, blocks.block_type FROM blocks WHERE left_uuid ${ if (left_uuid == null) "IS" else "=" } ? AND parent_uuid IS ?""", mapper, 2) {
       var parameterIndex = 0
       bindString(parameterIndex++, left_uuid)
+      bindString(parameterIndex++, parent_uuid)
     }
 
-    override fun toString(): String = "SteleDatabase.sq:selectBlockByLeftUuid"
+    override fun toString(): String = "SteleDatabase.sq:selectSiblingAfter"
   }
 
   private inner class SelectLastChildQuery<out T : Any>(

@@ -12,6 +12,7 @@ import dev.stapler.stelekit.cache.LruCache
 import dev.stapler.stelekit.cache.SteleLruCache
 import dev.stapler.stelekit.cache.RepoCacheConfig
 import app.cash.sqldelight.db.SqlDriver
+import dev.stapler.stelekit.db.Blocks
 import dev.stapler.stelekit.db.DirectSqlWrite
 import dev.stapler.stelekit.db.RestrictedDatabaseQueries
 import dev.stapler.stelekit.db.SteleDatabase
@@ -602,7 +603,7 @@ class SqlDelightBlockRepository(
 
                     // Chain repair before deletion — use firstOrNull because duplicate
                     // left_uuid values indicate data corruption; we repair what we can.
-                    val nextSibling = queries.selectBlockByLeftUuid(block.uuid).asFlow().mapToList(PlatformDispatcher.DB).first().firstOrNull()
+                    val nextSibling = siblingAfter(block.uuid, block.parent_uuid)
                     if (nextSibling != null) {
                         queries.updateBlockLeftUuid(block.left_uuid, nextSibling.uuid)
                     }
@@ -613,7 +614,7 @@ class SqlDelightBlockRepository(
                     // Collect affected page names from index BEFORE deletion (CASCADE removes refs).
                     val wikilinkPages = queries.selectWikilinkPageNamesForBlock(block.uuid).asFlow().mapToList(PlatformDispatcher.DB).first().toSet()
                     // Chain repair before deletion
-                    val nextSibling = queries.selectBlockByLeftUuid(block.uuid).asFlow().mapToList(PlatformDispatcher.DB).first().firstOrNull()
+                    val nextSibling = siblingAfter(block.uuid, block.parent_uuid)
                     if (nextSibling != null) {
                         queries.updateBlockLeftUuid(block.left_uuid, nextSibling.uuid)
                     }
@@ -658,7 +659,7 @@ class SqlDelightBlockRepository(
                             // sibling's left_uuid, making the pre-fetched blocksByUuid entry stale.
                             val liveLeftUuid = queries.selectBlockByUuid(block.uuid).asFlow().mapToOneOrNull(PlatformDispatcher.DB).first()?.left_uuid
                                 ?: block.left_uuid
-                            val nextSibling = queries.selectBlockByLeftUuid(block.uuid).asFlow().mapToOneOrNull(PlatformDispatcher.DB).first()
+                            val nextSibling = siblingAfter(block.uuid, block.parent_uuid)
                             if (nextSibling != null) {
                                 queries.updateBlockLeftUuid(liveLeftUuid, nextSibling.uuid)
                             }
@@ -670,7 +671,7 @@ class SqlDelightBlockRepository(
                             // may have updated a sibling's left_uuid, making the pre-fetched map stale.
                             val liveLeftUuid = queries.selectBlockByUuid(block.uuid).asFlow().mapToOneOrNull(PlatformDispatcher.DB).first()?.left_uuid
                                 ?: block.left_uuid
-                            val nextSibling = queries.selectBlockByLeftUuid(block.uuid).asFlow().mapToOneOrNull(PlatformDispatcher.DB).first()
+                            val nextSibling = siblingAfter(block.uuid, block.parent_uuid)
                             if (nextSibling != null) {
                                 queries.updateBlockLeftUuid(liveLeftUuid, nextSibling.uuid)
                             }
@@ -698,7 +699,7 @@ class SqlDelightBlockRepository(
                 val block = queries.selectBlockByUuid(blockUuid.value).asFlow().mapToOneOrNull(PlatformDispatcher.DB).first() ?: return@transaction
 
                 // 1. Repair OLD chain: the block that followed us now follows our old left sibling
-                val blockFollowingOld = queries.selectBlockByLeftUuid(block.uuid).asFlow().mapToOneOrNull(PlatformDispatcher.DB).first()
+                val blockFollowingOld = siblingAfter(block.uuid, block.parent_uuid)
                 if (blockFollowingOld != null) {
                     queries.updateBlockLeftUuid(block.left_uuid, blockFollowingOld.uuid)
                 }
@@ -760,7 +761,7 @@ class SqlDelightBlockRepository(
                 
                 // 3. Chain Repair: The block that was to the right of the moved block 
                 // must have its leftUuid updated to the moved block's old leftUuid.
-                val nextSibling = queries.selectBlockByLeftUuid(block.uuid).asFlow().mapToOneOrNull(PlatformDispatcher.DB).first()
+                val nextSibling = siblingAfter(block.uuid, block.parent_uuid)
                 if (nextSibling != null) {
                     queries.updateBlockLeftUuid(block.left_uuid, nextSibling.uuid)
                 }
@@ -787,6 +788,14 @@ class SqlDelightBlockRepository(
         }
     }
 
+    /**
+     * The sibling that follows [uuid] in the list under [parentUuid]. Every left_uuid lookup must go
+     * through here: a parent's first child also stores the parent's uuid in left_uuid, so matching on
+     * left_uuid alone can return a child instead of the next sibling.
+     */
+    private suspend fun siblingAfter(uuid: String, parentUuid: String?): Blocks? =
+        queries.selectSiblingAfter(uuid, parentUuid).asFlow().mapToList(PlatformDispatcher.DB).first().firstOrNull()
+
     override suspend fun outdentBlock(blockUuid: BlockUuid): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
             queries.transaction {
@@ -802,7 +811,7 @@ class SqlDelightBlockRepository(
                 
                 // 3. Chain Repair: The block that was to the right of the moved block 
                 // must have its leftUuid updated to the moved block's old leftUuid.
-                val nextSibling = queries.selectBlockByLeftUuid(block.uuid).asFlow().mapToOneOrNull(PlatformDispatcher.DB).first()
+                val nextSibling = siblingAfter(block.uuid, block.parent_uuid)
                 if (nextSibling != null) {
                     queries.updateBlockLeftUuid(block.left_uuid, nextSibling.uuid)
                 }
@@ -810,7 +819,7 @@ class SqlDelightBlockRepository(
                 // 3. New hierarchy calculation: New leftUuid is the old parent's UUID.
                 val newLeftUuid = currentParent.uuid
                 // Place immediately after the parent using fractional indexing (no sibling shifting).
-                val blockFollowingOldParent = queries.selectBlockByLeftUuid(currentParent.uuid).asFlow().mapToOneOrNull(PlatformDispatcher.DB).first()
+                val blockFollowingOldParent = siblingAfter(currentParent.uuid, currentParent.parent_uuid)
                 val newPosition = FractionalIndexing.generateKeyBetween(
                     currentParent.position,
                     blockFollowingOldParent?.position
@@ -859,8 +868,7 @@ class SqlDelightBlockRepository(
                 ?.let { queries.selectBlockByUuid(it).asFlow().mapToOneOrNull(PlatformDispatcher.DB).first() }
                 ?.takeIf { it.parent_uuid == block.parent_uuid }
                 ?: return@withContext Unit.right() // block is first in its sibling list
-            val nextSibling = queries.selectBlockByLeftUuid(block.uuid).asFlow().mapToList(PlatformDispatcher.DB).first()
-                .firstOrNull { it.parent_uuid == block.parent_uuid }
+            val nextSibling = siblingAfter(block.uuid, block.parent_uuid)
 
             queries.transaction {
                 // Swap positions and leftUuids
@@ -894,11 +902,9 @@ class SqlDelightBlockRepository(
 
             // Use left_uuid linked-list to find adjacent siblings in O(1) queries —
             // avoids loading all N siblings just to locate the successor and the block after it.
-            val nextSibling = queries.selectBlockByLeftUuid(block.uuid).asFlow().mapToList(PlatformDispatcher.DB).first()
-                .firstOrNull { it.parent_uuid == block.parent_uuid }
+            val nextSibling = siblingAfter(block.uuid, block.parent_uuid)
                 ?: return@withContext Unit.right() // block is last in its sibling list
-            val afterNextSibling = queries.selectBlockByLeftUuid(nextSibling.uuid).asFlow().mapToList(PlatformDispatcher.DB).first()
-                .firstOrNull { it.parent_uuid == block.parent_uuid }
+            val afterNextSibling = siblingAfter(nextSibling.uuid, block.parent_uuid)
 
             queries.transaction {
                 // Swap positions and leftUuids
@@ -963,7 +969,7 @@ class SqlDelightBlockRepository(
                 }
                 
                 // 3. Chain repair for block B (B is being deleted)
-                val blockAfterB = queries.selectBlockByLeftUuid(blockB.uuid).asFlow().mapToOneOrNull(PlatformDispatcher.DB).first()
+                val blockAfterB = siblingAfter(blockB.uuid, blockB.parent_uuid)
                 if (blockAfterB != null) {
                     queries.updateBlockLeftUuid(blockB.left_uuid, blockAfterB.uuid)
                 }
@@ -1007,7 +1013,7 @@ class SqlDelightBlockRepository(
 
                 // Use fractional indexing: new block's position sits between 'block' and its next sibling.
                 // No sibling shifting required — O(0) UPDATE statements.
-                val nextSibling = queries.selectBlockByLeftUuid(block.uuid).asFlow().mapToOneOrNull(PlatformDispatcher.DB).first()
+                val nextSibling = siblingAfter(block.uuid, block.parent_uuid)
                 val newPosition = FractionalIndexing.generateKeyBetween(block.position, nextSibling?.position)
 
                 val now = Clock.System.now().toEpochMilliseconds()
