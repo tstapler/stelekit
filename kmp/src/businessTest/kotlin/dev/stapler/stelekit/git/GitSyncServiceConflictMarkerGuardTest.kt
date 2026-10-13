@@ -4,6 +4,7 @@
 package dev.stapler.stelekit.git
 
 import arrow.core.Either
+import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphWriter
@@ -47,6 +48,10 @@ class GitSyncServiceConflictMarkerGuardTest {
                 calls += "commit"
                 return "sha".right()
             }
+
+            // Ends the sync right after the commit; these tests only assert what was staged and committed.
+            override suspend fun fetch(config: GitConfig): Either<DomainError.GitError, FetchResult> =
+                DomainError.GitError.CommitFailed("stop after commit").left()
 
             override suspend fun push(config: GitConfig): Either<DomainError.GitError, Unit> {
                 calls += "push"
