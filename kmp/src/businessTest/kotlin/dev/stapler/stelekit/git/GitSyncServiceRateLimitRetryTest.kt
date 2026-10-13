@@ -198,7 +198,7 @@ class GitSyncServiceRateLimitRetryTest {
                 override suspend fun status(config: GitConfig): Either<DomainError.GitError, GitStatus> =
                     GitStatus(hasLocalChanges = true, untrackedFiles = emptyList(), modifiedFiles = listOf("pages/foo.md")).right()
 
-                override suspend fun stageSubdir(config: GitConfig): Either<DomainError.GitError, Unit> = Unit.right()
+                override suspend fun stageSubdir(config: GitConfig, excludePaths: Set<String>): Either<DomainError.GitError, Unit> = Unit.right()
 
                 override suspend fun commit(config: GitConfig, message: String): Either<DomainError.GitError, String> {
                     commitCallCount++

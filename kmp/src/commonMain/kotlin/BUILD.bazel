@@ -166,3 +166,14 @@ filegroup(
     ],
     visibility = ["//kmp:__subpackages__"],
 )
+
+# Exposes GitSyncService.kt and LfsGuardedStaging.kt so LfsStagingCallSitesStructuralTest can bundle them as
+# classpath resources and scan their staging call sites under Bazel's sandbox (same idiom as demo_filesystem_source).
+filegroup(
+    name = "git_sync_service_source",
+    srcs = [
+        "dev/stapler/stelekit/git/GitSyncService.kt",
+        "dev/stapler/stelekit/git/lfs/LfsGuardedStaging.kt",
+    ],
+    visibility = ["//kmp:__subpackages__"],
+)

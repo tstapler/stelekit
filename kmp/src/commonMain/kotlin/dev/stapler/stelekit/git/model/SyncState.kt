@@ -4,6 +4,7 @@
 package dev.stapler.stelekit.git.model
 
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.git.lfs.LfsViolation
 import dev.stapler.stelekit.git.merge.JournalMergeProposal
 
 sealed class SyncState {
@@ -21,6 +22,11 @@ sealed class SyncState {
     data class CredentialExpired(val graphId: String) : SyncState()
     /** Emitted when local edits exist but have not yet been synced to the remote. */
     data class LocalChangesPending(val fileCount: Int) : SyncState()
+    /**
+     * Non-fatal: [held] files sit at paths this repository stores with Git LFS, so they were left out of the
+     * commit (never uploaded raw). Everything else synced normally; the held files stay untouched on disk.
+     */
+    data class LfsActionRequired(val held: List<LfsViolation>) : SyncState()
     /** Emitted when a git host rate limit was hit; sync will retry automatically. */
     data class RateLimited(val retryAfterSeconds: Int?) : SyncState()
     data class Success(
@@ -30,4 +36,12 @@ sealed class SyncState {
         /** Wiki-relative paths merged automatically by the markdown merge engine during this sync. */
         val autoMergedPaths: List<String> = emptyList(),
     ) : SyncState()
+}
+
+/** Never [toString] a state directly: conflict/journal-merge states carry full note contents. */
+internal fun SyncState.logSummary(): String = when (this) {
+    is SyncState.ConflictPending -> "ConflictPending(files=${conflicts.size})"
+    is SyncState.JournalMergeReady -> "JournalMergeReady"
+    is SyncState.Error -> "Error(${error.message})"
+    else -> toString()
 }

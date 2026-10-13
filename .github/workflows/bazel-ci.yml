@@ -125,6 +125,14 @@ jobs:
           external-cache: true
           cache-save: ${{ github.event_name != 'pull_request' }}
 
+      - name: Install git-lfs
+        # GitAttributesDifferentialTest compares the .gitattributes matcher with `git check-attr` and
+        # confirms git-lfs stores empty files raw; LFS_DIFFERENTIAL_REQUIRED (below) turns a missing
+        # binary into a failure so that check can never silently skip here.
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq git git-lfs
+
       - name: Run business-logic tests
         # nick-fields/retry absorbs transient Bazel external-repository fetch
         # failures — see bazel-jvm's "Build JVM target" step comment.
@@ -137,6 +145,7 @@ jobs:
             set -o pipefail
             bazel test //kmp:business_tests \
               --config=remote-cache \
+              --test_env=LFS_DIFFERENTIAL_REQUIRED=true \
               --test_output=all 2>&1 | tee "$RUNNER_TEMP/bazel-business-test.log"
 
       - name: CI job report

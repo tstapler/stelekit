@@ -49,6 +49,7 @@ import dev.stapler.stelekit.performance.PerfExporterPickerTest
 import dev.stapler.stelekit.db.DemoFileSystemSyncTest
 import dev.stapler.stelekit.db.DemoGraphPersistenceTest
 import dev.stapler.stelekit.db.GraphInfoSerializationTest
+import dev.stapler.stelekit.db.GraphLoaderLfsPointerTest
 import dev.stapler.stelekit.db.SplitJournalTest
 import dev.stapler.stelekit.repository.BacklinkRepositoryTest
 import dev.stapler.stelekit.sections.CrossSectionBacklinkRenderTest
@@ -154,6 +155,24 @@ import dev.stapler.stelekit.git.GitSyncServiceTest
 import dev.stapler.stelekit.git.GitTransportFaultInjectionTest
 import dev.stapler.stelekit.git.GitTransportRetryStateTest
 import dev.stapler.stelekit.git.GitTransportRetryTest
+import dev.stapler.stelekit.git.lfs.LfsPostPushAuditTest
+import dev.stapler.stelekit.git.lfs.LfsStagingCallSitesStructuralTest
+import dev.stapler.stelekit.git.lfs.GitAttributesDifferentialTest
+import dev.stapler.stelekit.git.lfs.LfsGuardCoordinatorTest
+import dev.stapler.stelekit.git.lfs.LfsRulesLoaderTest
+import dev.stapler.stelekit.git.lfs.LfsRawBinaryNeverCommittedPropertyTest
+import dev.stapler.stelekit.git.lfs.LfsRawBinaryNeverCommittedTest
+import dev.stapler.stelekit.git.lfs.LfsIndexVerifierTest
+import dev.stapler.stelekit.error.DomainErrorTest
+import dev.stapler.stelekit.git.lfs.LfsModeResolverTest
+import dev.stapler.stelekit.git.lfs.LfsGuardPropertyTest
+import dev.stapler.stelekit.git.lfs.LfsGuardTest
+import dev.stapler.stelekit.git.lfs.LfsPathPolicyTest
+import dev.stapler.stelekit.git.lfs.GitAttributesMatcherPropertyTest
+import dev.stapler.stelekit.git.lfs.GitAttributesMatcherTest
+import dev.stapler.stelekit.git.lfs.LfsPointerPropertyTest
+import dev.stapler.stelekit.git.lfs.LfsPointerTest
+import dev.stapler.stelekit.git.GitSyncServiceLfsGuardTest
 import dev.stapler.stelekit.git.ShallowMergeTest
 import dev.stapler.stelekit.git.merge.JournalMergeServiceTest
 import dev.stapler.stelekit.git.merge.LogseqMergeDriverTest
@@ -230,6 +249,7 @@ import org.junit.runners.Suite
     DemoFileSystemSyncTest::class,
     DemoGraphPersistenceTest::class,
     GraphInfoSerializationTest::class,
+    GraphLoaderLfsPointerTest::class,
     SplitJournalTest::class,
     MarkdownTargetWriterTest::class,
     MarkdownTargetWriterContractTest::class,
@@ -334,6 +354,24 @@ import org.junit.runners.Suite
     GitTransportFaultInjectionTest::class,
     GitTransportRetryStateTest::class,
     GitTransportRetryTest::class,
+    LfsPostPushAuditTest::class,
+    LfsStagingCallSitesStructuralTest::class,
+    GitAttributesDifferentialTest::class,
+    LfsGuardCoordinatorTest::class,
+    LfsRulesLoaderTest::class,
+    LfsRawBinaryNeverCommittedPropertyTest::class,
+    LfsRawBinaryNeverCommittedTest::class,
+    LfsIndexVerifierTest::class,
+    DomainErrorTest::class,
+    LfsModeResolverTest::class,
+    LfsGuardPropertyTest::class,
+    LfsGuardTest::class,
+    LfsPathPolicyTest::class,
+    GitAttributesMatcherPropertyTest::class,
+    GitAttributesMatcherTest::class,
+    LfsPointerPropertyTest::class,
+    LfsPointerTest::class,
+    GitSyncServiceLfsGuardTest::class,
     ShallowMergeTest::class,
     StubGitRepositoryFailureSequenceTest::class,
     JournalMergeServiceTest::class,

@@ -25,6 +25,7 @@ class SyncStateTest {
             SyncState.CredentialExpired("graph-1"),
             SyncState.LocalChangesPending(fileCount = 3),
             SyncState.RateLimited(retryAfterSeconds = 5),
+            SyncState.LfsActionRequired(emptyList()),
             SyncState.Success(localCommitsMade = 1, remoteCommitsMerged = 0, lastSyncAt = 0L),
         )
 
@@ -44,6 +45,7 @@ class SyncStateTest {
                 is SyncState.CredentialExpired -> "credential-expired"
                 is SyncState.LocalChangesPending -> "local-changes-pending"
                 is SyncState.RateLimited -> "rate-limited"
+                is SyncState.LfsActionRequired -> "lfs-action-required"
                 is SyncState.Success -> "success"
             }
             assertTrue(label.isNotEmpty())

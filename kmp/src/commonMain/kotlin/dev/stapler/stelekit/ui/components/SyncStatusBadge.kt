@@ -39,7 +39,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.error.toSyncErrorMessage
+import dev.stapler.stelekit.git.lfs.LfsViolation
 import dev.stapler.stelekit.git.model.SyncState
+import dev.stapler.stelekit.ui.components.git.LfsHeldFilesSheet
 import kotlinx.coroutines.delay
 import kotlin.time.Clock
 
@@ -69,6 +71,7 @@ data class GitSyncStatus(
  * - [SyncState.Error]: red error icon with "Error" label (routes to onAuthError if AuthFailed)
  * - [SyncState.Success]: brief green checkmark, fades after 3 seconds
  * - [SyncState.LocalChangesPending(n)]: neutral cloud-upload icon with "n unsynced" label — tappable, same as every other actionable state
+ * - [SyncState.LfsActionRequired]: amber warning chip "N files held"; tap opens the held-files sheet
  * - [SyncState.RateLimited]: neutral sync icon with "Retrying…" label — never clickable, never phrased as "tap to retry"
  *
  * @param status Current sync state + last-synced time — see [GitSyncStatus].
@@ -351,6 +354,8 @@ private fun SyncStateBadge(
             }
         }
 
+        is SyncState.LfsActionRequired -> LfsHeldBadge(held = syncState.held, modifier = modifier)
+
         is SyncState.RateLimited -> {
             // Auto-resolving state — never clickable, never phrased as "tap to retry".
             // Sized to the same minimum region as LocalChangesPending so the badge slot
@@ -375,6 +380,29 @@ private fun SyncStateBadge(
             }
         }
     }
+}
+
+/** Warning (not error) chip for [SyncState.LfsActionRequired]: tapping opens the held-files sheet. */
+@Composable
+private fun LfsHeldBadge(held: List<LfsViolation>, modifier: Modifier = Modifier) {
+    var sheetOpen by remember { mutableStateOf(false) }
+    val label = if (held.size == 1) "1 file held" else "${held.size} files held"
+    Row(
+        modifier = modifier
+            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+            .clickable { sheetOpen = true },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Default.Warning,
+            contentDescription = "$label by Git LFS — tap for details",
+            tint = Color(0xFFF59E0B), // amber-400
+            modifier = Modifier.size(16.dp),
+        )
+        Spacer(modifier = Modifier.width(2.dp))
+        Text(text = label, style = MaterialTheme.typography.labelSmall, color = Color(0xFFF59E0B))
+    }
+    if (sheetOpen) LfsHeldFilesSheet(held = held, onDismiss = { sheetOpen = false })
 }
 
 /** Muted "Synced Nm ago" / "Never synced" text for [SyncState.Idle], ticking every 30s so the

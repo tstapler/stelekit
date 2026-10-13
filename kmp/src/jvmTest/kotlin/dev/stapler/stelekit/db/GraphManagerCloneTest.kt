@@ -81,7 +81,7 @@ class GraphManagerCloneTest {
         override suspend fun fetch(config: GitConfig): Either<DomainError.GitError, FetchResult> = throw UnsupportedOperationException()
         override suspend fun unshallow(config: GitConfig): Either<DomainError.GitError, Unit> = throw UnsupportedOperationException()
         override suspend fun status(config: GitConfig): Either<DomainError.GitError, GitStatus> = throw UnsupportedOperationException()
-        override suspend fun stageSubdir(config: GitConfig): Either<DomainError.GitError, Unit> = throw UnsupportedOperationException()
+        override suspend fun stageSubdir(config: GitConfig, excludePaths: Set<String>): Either<DomainError.GitError, Unit> = throw UnsupportedOperationException()
         override suspend fun commit(config: GitConfig, message: String): Either<DomainError.GitError, String> = throw UnsupportedOperationException()
         override suspend fun merge(config: GitConfig): Either<DomainError.GitError, MergeResult> = throw UnsupportedOperationException()
         override suspend fun push(config: GitConfig): Either<DomainError.GitError, Unit> = throw UnsupportedOperationException()
