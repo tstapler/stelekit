@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.95.0](https://github.com/tstapler/stelekit/compare/v0.94.0...v0.95.0) (2026-10-13)
+
+
+### Features
+
+* **git:** honor .gitattributes merge drivers; resolve conflicts block by block ([#402](https://github.com/tstapler/stelekit/issues/402)) ([c0839b8](https://github.com/tstapler/stelekit/commit/c0839b88553d825d1a57cd95342cbea8e66a8465))
+* **lfs:** commit guard that holds back raw LFS-tracked files ([#417](https://github.com/tstapler/stelekit/issues/417)) ([807db84](https://github.com/tstapler/stelekit/commit/807db84648b2c9298cee826a8a2d4d34681042cc))
+* MCP server for LLM-driven search/management of the SteleKit graph ([#403](https://github.com/tstapler/stelekit/issues/403)) ([a3fc3ec](https://github.com/tstapler/stelekit/commit/a3fc3ecf08b548004bdfa1cc7fa17c54c6f2696f))
+
+
+### Bug Fixes
+
+* **ui:** wrap search filter chips, keep Add provider visible, align storage-move cards ([#414](https://github.com/tstapler/stelekit/issues/414)) ([eabd56f](https://github.com/tstapler/stelekit/commit/eabd56ff247481eded2020a15ba4275a9761751d))
+
 ## [0.94.0](https://github.com/tstapler/stelekit/compare/v0.93.0...v0.94.0) (2026-10-11)
 
 
