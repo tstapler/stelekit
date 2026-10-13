@@ -81,6 +81,7 @@ class GitSyncService(
     private val isOnline: () -> Boolean = { networkMonitor.isOnline },
 ) {
     private val logger = Logger("GitSyncService")
+    private val markerGuard = ConflictMarkerGuard(fileSystem)
     private val lfsStaging = LfsGuardedStaging.create(gitRepository, fileSystem, settings, lfsCapabilities, lfsGuardCoordinator)
     private val firstSyncConfirmation: FirstSyncConfirmation? = settings?.let { FirstSyncConfirmation(it) }
 
@@ -311,6 +312,12 @@ class GitSyncService(
             _syncState.value = SyncState.Committing
             val statusResult = gitRepository.status(config)
             if (statusResult is Either.Right && statusResult.value.hasLocalChanges) {
+                // A conflicted merge leaves markers in the tree; committing them would push them to the remote.
+                markerGuard.findUnresolved(config, statusResult.value)?.let { unresolved ->
+                    logger.warn("refusing to commit: ${unresolved.files.size} file(s) still contain conflict markers")
+                    _syncState.value = unresolved.state
+                    return@withContext unresolved.error.left()
+                }
                 val staged = lfsStaging.stage(config, statusResult.value).getOrElse { err ->
                     _syncState.value = SyncState.Error(err)
                     return@withContext err.left()
@@ -645,10 +652,12 @@ class GitSyncService(
             gitRepository.markResolved(config, filePath).onLeft { return@withContext it.left() }
         }
 
+        val resolvedPaths = (sideResolutions.keys + hunkResolutions.keys).toList()
+        markerGuard.firstWithMarkers(resolvedPaths)?.let { return@withContext markerGuard.refusal(it).left() }
+
         val message = buildCommitMessage(config, isMerge = true)
         gitRepository.commit(config, message).onLeft { return@withContext it.left() }
 
-        val resolvedPaths = (sideResolutions.keys + hunkResolutions.keys).toList()
         graphLoader.beginGitMerge(resolvedPaths)
         try {
             graphLoader.reloadFiles(resolvedPaths.map { FilePath(it) })
@@ -676,6 +685,8 @@ class GitSyncService(
             ).left()
             is Either.Right -> result.value
         } ?: return@withContext DomainError.GitError.CommitFailed("No git config for $graphId").left()
+
+        markerGuard.refusalIfMarkers(filePath, mergedContent)?.let { return@withContext it.left() }
 
         if (!fileSystem.writeFile(filePath, mergedContent)) {
             return@withContext DomainError.GitError.CommitFailed(

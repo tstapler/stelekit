@@ -149,6 +149,7 @@ import dev.stapler.stelekit.git.GitSyncServiceChangeBackTest
 import dev.stapler.stelekit.git.GitSyncServiceAutoMergeTest
 import dev.stapler.stelekit.git.GitSyncServiceConflictResolutionTest
 import dev.stapler.stelekit.git.GitSyncServiceErrorRoutingTest
+import dev.stapler.stelekit.git.GitSyncServiceConflictMarkerGuardTest
 import dev.stapler.stelekit.git.GitSyncServiceFirstSyncGateTest
 import dev.stapler.stelekit.git.GitSyncServiceRateLimitRetryTest
 import dev.stapler.stelekit.git.GitSyncServiceTest
@@ -348,6 +349,7 @@ import org.junit.runners.Suite
     GitSyncServiceAutoMergeTest::class,
     GitSyncServiceConflictResolutionTest::class,
     GitSyncServiceErrorRoutingTest::class,
+    GitSyncServiceConflictMarkerGuardTest::class,
     GitSyncServiceFirstSyncGateTest::class,
     GitSyncServiceRateLimitRetryTest::class,
     GitSyncServiceTest::class,
