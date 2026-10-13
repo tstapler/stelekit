@@ -329,8 +329,11 @@ UPDATE blocks SET level = ? WHERE uuid = ?;
 updateBlockLeftUuid:
 UPDATE blocks SET left_uuid = ? WHERE uuid = ?;
 
-selectBlockByLeftUuid:
-SELECT * FROM blocks WHERE left_uuid = ?;
+-- left_uuid alone is ambiguous: a parent's first child also stores the parent's uuid there, so an
+-- unscoped lookup can return a child instead of the next sibling. Always scope to the sibling list
+-- (IS, not =, so root-level blocks with a NULL parent match).
+selectSiblingAfter:
+SELECT * FROM blocks WHERE left_uuid = ? AND parent_uuid IS ?;
 
 selectLastChild:
 SELECT * FROM blocks WHERE parent_uuid = ? ORDER BY position DESC LIMIT 1;
