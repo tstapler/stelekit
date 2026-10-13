@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.95.1](https://github.com/tstapler/stelekit/compare/v0.95.0...v0.95.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **git:** refuse to commit files that still contain conflict markers ([#422](https://github.com/tstapler/stelekit/issues/422)) ([545ebc9](https://github.com/tstapler/stelekit/commit/545ebc9b7650778943f403ec237d2dbc7eee9031))
+* **outliner:** scope every left_uuid sibling lookup to its parent ([#418](https://github.com/tstapler/stelekit/issues/418)) ([932bad7](https://github.com/tstapler/stelekit/commit/932bad7ad276b835e709871dd52d867e801c03fc))
+* **ui:** scale headings to body text, fix capture race, add component screenshot gallery ([#404](https://github.com/tstapler/stelekit/issues/404)) ([8458248](https://github.com/tstapler/stelekit/commit/84582488dfe0910f2c69f0c5159e6361301173b0))
+
 ## [0.95.0](https://github.com/tstapler/stelekit/compare/v0.94.0...v0.95.0) (2026-10-13)
 
 
