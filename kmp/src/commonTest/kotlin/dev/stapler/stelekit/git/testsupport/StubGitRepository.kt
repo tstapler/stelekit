@@ -38,7 +38,7 @@ open class StubGitRepository : GitRepository {
     override suspend fun fetch(config: GitConfig): Either<DomainError.GitError, FetchResult> = error("not implemented in stub")
     override suspend fun unshallow(config: GitConfig): Either<DomainError.GitError, Unit> = error("not implemented in stub")
     override suspend fun status(config: GitConfig): Either<DomainError.GitError, GitStatus> = error("not implemented in stub")
-    override suspend fun stageSubdir(config: GitConfig): Either<DomainError.GitError, Unit> = error("not implemented in stub")
+    override suspend fun stageSubdir(config: GitConfig, excludePaths: Set<String>): Either<DomainError.GitError, Unit> = error("not implemented in stub")
     override suspend fun commit(config: GitConfig, message: String): Either<DomainError.GitError, String> = error("not implemented in stub")
     override suspend fun merge(config: GitConfig): Either<DomainError.GitError, MergeResult> = error("not implemented in stub")
     override suspend fun push(config: GitConfig): Either<DomainError.GitError, Unit> = error("not implemented in stub")

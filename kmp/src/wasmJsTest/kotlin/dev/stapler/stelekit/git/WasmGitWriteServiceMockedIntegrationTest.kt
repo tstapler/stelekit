@@ -87,7 +87,7 @@ class WasmGitWriteServiceMockedIntegrationTest {
         fileSystem.writeFile("/stelekit/$graphId/pages/Foo.md", "# Foo\n")
 
         val requestPaths = mutableListOf<String>()
-        val engine = MockEngine { request ->
+        val engine = lfsTolerantMockEngine { request ->
             requestPaths += request.url.encodedPath
             when {
                 request.url.encodedPath.endsWith("/git/blobs") -> jsonResponse(
@@ -157,7 +157,7 @@ class WasmGitWriteServiceMockedIntegrationTest {
         fileSystem.writeFileBytes("/stelekit/$graphId/pages/Secret.md.stek", encryptedBytes)
 
         var blobRequestBase64: String? = null
-        val engine = MockEngine { request ->
+        val engine = lfsTolerantMockEngine { request ->
             when {
                 request.url.encodedPath.endsWith("/git/blobs") -> {
                     val body = requestBodyText(request)
@@ -200,7 +200,7 @@ class WasmGitWriteServiceMockedIntegrationTest {
         fileSystem.writeFile("/stelekit/$graphId/pages/Foo.md", "# Foo\n")
 
         var patchCount = 0
-        val engine = MockEngine { request ->
+        val engine = lfsTolerantMockEngine { request ->
             when {
                 request.method == HttpMethod.Get && request.url.encodedPath.endsWith("/git/ref/heads/main") ->
                     jsonResponse("""{"object":{"sha":"8f3c1a9"}}""")
@@ -236,7 +236,7 @@ class WasmGitWriteServiceMockedIntegrationTest {
     @Test
     fun `IT-3_1_2-B fetch() reports remoteCommitCount via the compare API when the ref has moved`() = runTest {
         val fileSystem = PlatformFileSystem()
-        val engine = MockEngine { request ->
+        val engine = lfsTolerantMockEngine { request ->
             when {
                 request.url.encodedPath.endsWith("/git/ref/heads/main") ->
                     jsonResponse("""{"object":{"sha":"c0ffee2"}}""")
@@ -269,7 +269,7 @@ class WasmGitWriteServiceMockedIntegrationTest {
         fileSystem.deleteFile("/stelekit/$graphId/pages/Bar.md")
 
         var requestCount = 0
-        val engine = MockEngine { request ->
+        val engine = lfsTolerantMockEngine { request ->
             requestCount++
             error("unexpected request to ${request.url}")
         }
@@ -292,7 +292,7 @@ class WasmGitWriteServiceMockedIntegrationTest {
         // first fetches the real base-tree membership (BLOCKER-2 fix) — pages/Foo.md and
         // pages/Bar.md both already exist in this mocked tree, so both resolve to "update"/
         // "delete" respectively (not "create"), matching the assertions below.
-        val pushEngine = MockEngine { req ->
+        val pushEngine = lfsTolerantMockEngine { req ->
             requestCount++
             when {
                 req.url.encodedPath.endsWith("/repository/tree") -> {
@@ -343,7 +343,7 @@ class WasmGitWriteServiceMockedIntegrationTest {
             authType = GitAuthType.NONE,
         )
 
-        val engine = MockEngine { req ->
+        val engine = lfsTolerantMockEngine { req ->
             when {
                 req.url.encodedPath.endsWith("/repository/tree") -> {
                     assertEquals("8f3c1a9", req.url.parameters["ref"])
@@ -385,7 +385,7 @@ class WasmGitWriteServiceMockedIntegrationTest {
         fileSystem.preload("/stelekit/$graphId")
         fileSystem.writeFile("/stelekit/$graphId/pages/Foo.md", "# Foo\n")
 
-        val engine = MockEngine { request ->
+        val engine = lfsTolerantMockEngine { request ->
             assertTrue(
                 request.url.encodedPath.endsWith("/repository/compare"),
                 "unexpected path: ${request.url.encodedPath}",
@@ -459,7 +459,7 @@ class WasmGitWriteServiceMockedIntegrationTest {
         fileSystem.writeFile("/stelekit/$graphId/pages/Foo.md", "# Foo\n")
 
         val blobBodies = mutableListOf<String>()
-        val engine = MockEngine { request ->
+        val engine = lfsTolerantMockEngine { request ->
             when {
                 request.method == HttpMethod.Get && request.url.encodedPath.endsWith("/git/ref/heads/main") ->
                     jsonResponse("""{"object":{"sha":"c0ffee2"}}""")
@@ -531,7 +531,7 @@ class WasmGitWriteServiceMockedIntegrationTest {
         // conflict-resolution attempt begins.
         fileSystem.clearDirtySet(newBaseSha = "8f3c1a9")
 
-        val engine = MockEngine { request ->
+        val engine = lfsTolerantMockEngine { request ->
             assertEquals("raw.githubusercontent.com", request.url.host)
             assertEquals("/tstapler/steno-wiki/c0ffee2/pages/Foo.md", request.url.encodedPath)
             respond(content = "# Foo (remote)\n", status = HttpStatusCode.OK)
@@ -604,7 +604,7 @@ class WasmGitWriteServiceMockedIntegrationTest {
         fileSystem.preload("/stelekit/$graphId")
         fileSystem.writeFile("/stelekit/$graphId/pages/Foo.md", "# Foo (local edit)\n")
 
-        val engine = MockEngine { request ->
+        val engine = lfsTolerantMockEngine { request ->
             when {
                 request.method == HttpMethod.Get && request.url.encodedPath.endsWith("/git/ref/heads/main") ->
                     jsonResponse("""{"object":{"sha":"c0ffee2"}}""")
@@ -659,7 +659,7 @@ class WasmGitWriteServiceMockedIntegrationTest {
         var inFlight = 0
         var maxInFlight = 0
         var blobAttempts = 0
-        val engine = MockEngine { request ->
+        val engine = lfsTolerantMockEngine { request ->
             when {
                 request.url.encodedPath.endsWith("/git/blobs") -> {
                     inFlight++
@@ -719,7 +719,7 @@ class WasmGitWriteServiceMockedIntegrationTest {
         fileSystem.preload("/stelekit/$graphId")
         fileSystem.writeFile("/stelekit/$graphId/pages/Foo.md", "# Foo\n")
 
-        val engine = MockEngine { request ->
+        val engine = lfsTolerantMockEngine { request ->
             when {
                 request.url.encodedPath.endsWith("/git/blobs") ->
                     jsonResponse("""{"sha":"blob-sha-1"}""", HttpStatusCode.Created)
@@ -754,7 +754,7 @@ class WasmGitWriteServiceMockedIntegrationTest {
         fileSystem.preload("/stelekit/$graphId")
         fileSystem.writeFile("/stelekit/$graphId/pages/Foo.md", "# Foo\n")
 
-        val engine = MockEngine { request ->
+        val engine = lfsTolerantMockEngine { request ->
             when {
                 request.method == HttpMethod.Get && request.url.encodedPath.endsWith("/git/ref/heads/main") ->
                     jsonResponse("""{"object":{"sha":"c0ffee2"}}""")
@@ -813,7 +813,7 @@ class WasmGitWriteServiceMockedIntegrationTest {
         fileSystem.writeFile("/stelekit/$graphId/pages/Foo.md", "# Foo (local)\n")
         fileSystem.clearDirtySet(newBaseSha = "8f3c1a9")
 
-        val engine = MockEngine { request ->
+        val engine = lfsTolerantMockEngine { request ->
             assertEquals("/tstapler/steno-wiki/c0ffee2/notes/pages/Foo.md", request.url.encodedPath)
             respond(content = "# Foo (remote)\n", status = HttpStatusCode.OK)
         }
@@ -852,7 +852,7 @@ class WasmGitWriteServiceMockedIntegrationTest {
             authType = GitAuthType.NONE,
         )
 
-        val engine = MockEngine { req ->
+        val engine = lfsTolerantMockEngine { req ->
             when {
                 req.url.encodedPath.endsWith("/repository/tree") ->
                     jsonResponse("""[{"path":"notes/pages/Existing.md"}]""")

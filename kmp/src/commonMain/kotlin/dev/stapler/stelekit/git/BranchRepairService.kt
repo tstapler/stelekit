@@ -4,6 +4,8 @@
 package dev.stapler.stelekit.git
 
 import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 
 /** A user-confirmable change of a graph's stored `remote_branch` from [from] to [to]. */
@@ -38,6 +40,29 @@ class BranchRepairService(
     private val configRepository: GitConfigRepository,
     private val firstSync: FirstSyncConfirmation? = null,
 ) {
+    /**
+     * Proposal that undoes the last repair, or the failure to report; null when no repair is recorded.
+     * The previous branch was missing when the repair happened, so it is probed with a fetch, not trusted.
+     */
+    suspend fun changeBackProposal(
+        gitRepository: GitRepository,
+        graphId: String,
+    ): Either<BranchRepairResult, BranchRepairProposal>? {
+        val previous = firstSync?.previousBranch(graphId) ?: return null
+        val config = when (val r = configRepository.getConfig(graphId)) {
+            is Either.Left -> return BranchRepairResult.SaveFailed(r.value.message).left()
+            is Either.Right -> r.value ?: return BranchRepairResult.Stale(null).left()
+        }
+        when (val probe = gitRepository.fetch(config.copy(remoteBranch = previous))) {
+            is Either.Left -> return when (probe.value) {
+                is DomainError.GitError.RemoteBranchNotFound -> BranchRepairResult.TargetNotOnRemote(previous)
+                else -> BranchRepairResult.SaveFailed(probe.value.message)
+            }.left()
+            is Either.Right -> Unit
+        }
+        return BranchRepairProposal(graphId, from = config.remoteBranch, to = previous, available = listOf(previous)).right()
+    }
+
     /** Builds a proposal to move off the missing branch, or null when the remote offers no choice. */
     fun proposalFor(
         graphId: String,

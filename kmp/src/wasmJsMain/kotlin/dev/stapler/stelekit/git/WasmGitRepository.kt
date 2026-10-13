@@ -10,6 +10,7 @@ import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.WasmGitWriteService.Companion.installRetryPolicy
 import dev.stapler.stelekit.git.model.GitCommitLogEntry
+import dev.stapler.stelekit.git.lfs.LfsViolation
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.git.model.GitHostConfig
 import dev.stapler.stelekit.git.model.GitHostType
@@ -85,7 +86,21 @@ class WasmGitRepository(
 
     override suspend fun init(repoRoot: String): Either<DomainError.GitError, Unit> = Unit.right()
 
-    override suspend fun stageSubdir(config: GitConfig): Either<DomainError.GitError, Unit> = Unit.right()
+    override suspend fun stageSubdir(config: GitConfig, excludePaths: Set<String>): Either<DomainError.GitError, Unit> = Unit.right()
+
+    // The web never stages through a local index: WasmGitWriteService is the sole Git LFS guard (it fetches the
+    // rules from the remote and leaves raw binaries at LFS-tracked paths out of every upload), so the service-level
+    // guard stays out of the way and only asks what was held, to show it.
+    override val guardsLfsInWritePath: Boolean get() = true
+
+    override suspend fun stagedLfsViolations(config: GitConfig): List<LfsViolation> {
+        val hostConfig = resolveHostConfig(config).getOrElse { error(it.message) }
+        // Throwing is the fail-closed signal: GitSyncService turns it into a failed sync, nothing is uploaded.
+        return gitWriteService.previewLfsHeld(config, hostConfig, fileSystem.getBaseSha()).getOrElse { error(it.message) }
+    }
+
+    override suspend fun hasStagedChanges(config: GitConfig): Boolean =
+        fileSystem.getDirtySnapshot().keys.any { it !in gitWriteService.lfsHeldPaths() }
 
     override suspend fun hasDetachedHead(config: GitConfig): Boolean = false
 

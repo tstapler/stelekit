@@ -1,6 +1,7 @@
 package dev.stapler.stelekit
 
 import dev.stapler.stelekit.db.WalConfiguredCallbackTest
+import dev.stapler.stelekit.git.AndroidGitRepositoryLfsGuardTest
 import dev.stapler.stelekit.git.AndroidGitRepositoryTestRemoteTest
 import dev.stapler.stelekit.git.GitSyncBusyCounterSharedWiringTest
 import dev.stapler.stelekit.platform.LegacyPathValidationTest
@@ -28,6 +29,7 @@ import org.junit.runners.Suite
     WalConfiguredCallbackTest::class,
     GitSyncBusyCounterSharedWiringTest::class,
     AndroidGitRepositoryTestRemoteTest::class,
+    AndroidGitRepositoryLfsGuardTest::class,
     LegacyPathValidationTest::class,
     PlatformFileSystemPickerTest::class,
     PlatformFileSystemSafTest::class,
@@ -58,5 +60,7 @@ import org.junit.runners.Suite
     // NewGraphFlowTest is excluded for the same reason (1) above — it also calls
     // ComposeContentTestRule.setContent, hitting the same resolved-jar/NoSuchMethodError gap.
     // Runs fine under Gradle's testDebugUnitTest.
+    //
+    // LfsHeldFilesSheetTest is excluded for the same reason (1).
 )
 class AllAndroidUnitTests

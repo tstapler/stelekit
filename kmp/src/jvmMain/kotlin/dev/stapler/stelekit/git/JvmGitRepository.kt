@@ -10,6 +10,9 @@ import arrow.core.right
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
+import dev.stapler.stelekit.git.lfs.LfsIndexVerifier
+import dev.stapler.stelekit.git.lfs.LfsPostPushAudit
+import dev.stapler.stelekit.git.lfs.LfsViolation
 import dev.stapler.stelekit.git.model.DEFAULT_CLONE_DEPTH
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.platform.security.CredentialAccess
@@ -231,25 +234,42 @@ class JvmGitRepository(
         ).right()
     }
 
-    override suspend fun stageSubdir(config: GitConfig): Either<DomainError.GitError, Unit> =
+    override suspend fun stageSubdir(config: GitConfig, excludePaths: Set<String>): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
             runGitOp({ e -> DomainError.GitError.CommitFailed("Stage failed: ${e.message}") }) {
-                openGit(config.repoRoot).use { git -> stageWikiSubdir(git, config) }
+                openGit(config.repoRoot).use { git -> stageWikiSubdir(git, config, excludePaths) }
             }
         }
 
-    private fun stageWikiSubdir(git: Git, config: GitConfig): Either<DomainError.GitError, Unit> {
+    private fun stageWikiSubdir(git: Git, config: GitConfig, excludePaths: Set<String>): Either<DomainError.GitError, Unit> {
         val pattern = if (config.wikiSubdir.isNullOrEmpty()) "." else "${config.wikiSubdir}/"
         git.add().addFilepattern(pattern).call()
         // Also stage deletions
         git.add().setUpdate(true).addFilepattern(pattern).call()
+        // Hold-back: the pattern add staged everything, so put the held files back out of the index.
+        LfsIndexVerifier(git.repository).unstagePaths(git, excludePaths)
         return Unit.right()
     }
+
+    override suspend fun stagedLfsViolations(config: GitConfig): List<LfsViolation> =
+        withContext(PlatformDispatcher.IO) {
+            openGit(config.repoRoot).use { git -> LfsIndexVerifier(git.repository).verifyAndUnstage(git) }
+        }
+
+    override suspend fun hasStagedChanges(config: GitConfig): Boolean =
+        withContext(PlatformDispatcher.IO) {
+            openGit(config.repoRoot).use { git ->
+                val status = git.status().call()
+                status.added.isNotEmpty() || status.changed.isNotEmpty() || status.removed.isNotEmpty()
+            }
+        }
 
     override suspend fun commit(config: GitConfig, message: String): Either<DomainError.GitError, String> =
         withContext(PlatformDispatcher.IO) {
             runGitOp({ e -> DomainError.GitError.CommitFailed(e.message ?: "Commit failed") }) {
                 openGit(config.repoRoot).use { git ->
+                    // Backstop: whatever stage path produced the index, a raw blob at an LFS-tracked path never commits.
+                    LfsIndexVerifier(git.repository).refuseOnViolation(git)?.let { return@use it.left() }
                     val commit = git.commit()
                         .setMessage(message)
                         .call()
@@ -304,8 +324,14 @@ class JvmGitRepository(
         }
     }
 
+    @Volatile private var pushAudit: List<LfsViolation> = emptyList()
+
+    override val lastPushLfsViolations: List<LfsViolation> get() = pushAudit
+
     override suspend fun push(config: GitConfig): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
+            pushAudit = emptyList()
+            val previousRemoteTip = remoteTrackingTip(config)
             val retryLoopStartMs = System.currentTimeMillis()
             runGitTransportOpWithRetry(
                 schedule = RetryPolicies.gitTransportTransient,
@@ -315,8 +341,29 @@ class JvmGitRepository(
                 onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
             ) {
                 openGit(config.repoRoot).use { git -> doPush(git, config) }
-            }
+            }.also { result -> if (result.isRight()) auditPushedRange(config, previousRemoteTip) }
         }
+
+    private fun remoteTrackingTip(config: GitConfig): org.eclipse.jgit.lib.ObjectId? = try {
+        openGit(config.repoRoot).use { it.repository.exactRef("${Constants.R_REMOTES}${config.remoteName}/${config.remoteBranch}")?.objectId }
+    } catch (e: Exception) {
+        null
+    }
+
+    /** Best effort and never fatal: the push already succeeded, this only reports what it carried. */
+    private suspend fun auditPushedRange(config: GitConfig, previousRemoteTip: org.eclipse.jgit.lib.ObjectId?) {
+        try {
+            openGit(config.repoRoot).use { git ->
+                val tip = git.repository.resolve(Constants.HEAD) ?: return@use
+                pushAudit = LfsPostPushAudit.audit(git.repository, previousRemoteTip, tip)
+                if (pushAudit.isNotEmpty()) logger.warn("lfs: ${pushAudit.size} raw file(s) at LFS-tracked paths were pushed outside the guard")
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.warn("lfs: post-push audit failed: ${e::class.simpleName}")
+        }
+    }
 
     private fun doPush(git: Git, config: GitConfig): Either<DomainError.GitError, Unit> {
         val localBranch = git.repository.fullBranch
@@ -428,6 +475,7 @@ class JvmGitRepository(
                 openGit(config.repoRoot).use { git ->
                     val relativePath = filePath.removePrefix("${config.repoRoot}/")
                     git.add().addFilepattern(relativePath).call()
+                    LfsIndexVerifier(git.repository).refuseOnViolation(git)?.let { return@use it.left() }
                     Unit.right()
                 }
             }
