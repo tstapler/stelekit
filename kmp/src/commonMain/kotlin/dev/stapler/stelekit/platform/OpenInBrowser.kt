@@ -6,8 +6,8 @@ package dev.stapler.stelekit.platform
  * Opens the given URL in the platform's default browser.
  * Platform actuals:
  * - androidMain: Intent.ACTION_VIEW + FLAG_ACTIVITY_NEW_TASK
- * - jvmMain: Desktop.getDesktop().browse(URI(url))
+ * - jvmMain: xdg-open on Linux; Desktop.getDesktop().browse(URI(url)) on macOS/Windows
  * - iosMain: UIApplication.sharedApplication.openURL
- * - wasmJsMain: no-op (could use window.open but that's blocked by pop-up blockers)
+ * - wasmJsMain: window.open(url, '_blank') for http(s) URLs; may be blocked by pop-up blockers
  */
 expect fun openInBrowser(url: String)
