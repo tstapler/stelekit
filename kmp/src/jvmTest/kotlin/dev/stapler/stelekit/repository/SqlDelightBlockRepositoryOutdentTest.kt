@@ -211,6 +211,70 @@ class SqlDelightBlockRepositoryOutdentTest {
             "X's own first child must keep pointing at X")
     }
 
+    private fun siblingChainTree(now: kotlin.time.Instant): List<Block> = listOf(
+        block(now, "a", null, null, 0, "a0"),
+        block(now, "b", null, "a", 0, "a1"),
+        block(now, "bc", "b", "b", 1, "a0"), // B's first child: left_uuid is B's uuid
+        block(now, "s", null, "b", 0, "a2"),
+    )
+
+    private suspend fun leftOf(repo: SqlDelightBlockRepository, uuid: String) =
+        repo.getBlockByUuid(BlockUuid(uuid)).first().getOrNull()!!.leftUuid
+
+    @Test
+    fun deleteBulk_should_rechainRealNextSibling_when_deletingSubtrees() = runBlocking {
+        val (blockRepo, pageRepo) = buildRepos()
+        val now = now()
+        pageRepo.savePage(Page(uuid = PageUuid("page-1"), name = "Test Page", createdAt = now, updatedAt = now))
+        blockRepo.saveBlocks(siblingChainTree(now))
+
+        val result = blockRepo.deleteBulk(listOf(BlockUuid("b")), deleteChildren = true)
+        assertTrue(result.isRight(), "bulk delete must succeed: $result")
+
+        assertEquals(BlockUuid("a"), leftOf(blockRepo, "s"), "S must follow A once B's subtree is gone")
+    }
+
+    @Test
+    fun deleteBulk_should_rechainRealNextSibling_when_notDeletingChildren() = runBlocking {
+        val (blockRepo, pageRepo) = buildRepos()
+        val now = now()
+        pageRepo.savePage(Page(uuid = PageUuid("page-1"), name = "Test Page", createdAt = now, updatedAt = now))
+        blockRepo.saveBlocks(siblingChainTree(now))
+
+        val result = blockRepo.deleteBulk(listOf(BlockUuid("b")), deleteChildren = false)
+        assertTrue(result.isRight(), "bulk delete must succeed: $result")
+
+        assertEquals(BlockUuid("a"), leftOf(blockRepo, "s"), "S must follow A once B is gone")
+    }
+
+    @Test
+    fun moveBlockUp_should_rechainRealNextSibling_not_ownFirstChild() = runBlocking {
+        val (blockRepo, pageRepo) = buildRepos()
+        val now = now()
+        pageRepo.savePage(Page(uuid = PageUuid("page-1"), name = "Test Page", createdAt = now, updatedAt = now))
+        blockRepo.saveBlocks(siblingChainTree(now))
+
+        val result = blockRepo.moveBlockUp(BlockUuid("b"))
+        assertTrue(result.isRight(), "move up must succeed: $result")
+
+        assertEquals(BlockUuid("a"), leftOf(blockRepo, "s"), "S now follows A (B moved above A)")
+        assertEquals(BlockUuid("b"), leftOf(blockRepo, "bc"), "B's own first child keeps pointing at B")
+    }
+
+    @Test
+    fun moveBlockDown_should_rechainBlockAfterNextSibling_not_itsFirstChild() = runBlocking {
+        val (blockRepo, pageRepo) = buildRepos()
+        val now = now()
+        pageRepo.savePage(Page(uuid = PageUuid("page-1"), name = "Test Page", createdAt = now, updatedAt = now))
+        blockRepo.saveBlocks(siblingChainTree(now))
+
+        val result = blockRepo.moveBlockDown(BlockUuid("a"))
+        assertTrue(result.isRight(), "move down must succeed: $result")
+
+        assertEquals(BlockUuid("a"), leftOf(blockRepo, "s"), "S now follows A (A moved below B)")
+        assertEquals(BlockUuid("b"), leftOf(blockRepo, "bc"), "B's own first child keeps pointing at B")
+    }
+
     @Test
     fun mergeBlocks_should_rechainRealNextSibling_when_mergedBlockHasChildren() = runBlocking {
         val (blockRepo, pageRepo) = buildRepos()
