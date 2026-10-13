@@ -20,6 +20,8 @@ internal fun openInBrowserWithOs(
     },
 ) {
     if (osName.contains("linux", ignoreCase = true)) {
+        // Only http(s): a value starting with "-" would be parsed by xdg-open as an option.
+        if (!url.startsWith("https://", ignoreCase = true) && !url.startsWith("http://", ignoreCase = true)) return
         // Desktop.browse() is unreliable on Linux (unsupported under Wayland/headless JDKs).
         // Spawned on a daemon thread so process start never blocks the Compose UI thread.
         Thread { runCatching { xdgOpen(url) } }.apply { isDaemon = true }.start()

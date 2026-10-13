@@ -49,6 +49,14 @@ class OpenInBrowserJvmTest {
     }
 
     @Test
+    fun `linux branch refuses non-http urls`() {
+        var xdgUrl: String? = null
+        openInBrowserWithOs("--help", "Linux", xdgOpen = { xdgUrl = it })
+        Thread.sleep(200)
+        assertNull(xdgUrl)
+    }
+
+    @Test
     fun `launcher failures are absorbed`() {
         openInBrowserWithOs(url, "Mac OS X", desktopBrowse = { throw java.io.IOException("boom") })
         val ran = LinkedBlockingQueue<Boolean>()
