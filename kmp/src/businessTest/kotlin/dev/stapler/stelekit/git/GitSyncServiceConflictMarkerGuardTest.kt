@@ -38,7 +38,7 @@ class GitSyncServiceConflictMarkerGuardTest {
 
             override suspend fun markResolved(config: GitConfig, filePath: String) = Unit.right()
 
-            override suspend fun stageSubdir(config: GitConfig): Either<DomainError.GitError, Unit> {
+            override suspend fun stageSubdir(config: GitConfig, excludePaths: Set<String>): Either<DomainError.GitError, Unit> {
                 calls += "stage"
                 return Unit.right()
             }
@@ -94,13 +94,15 @@ class GitSyncServiceConflictMarkerGuardTest {
         svc.shutdown()
     }
 
+    private fun guard(fileContent: String) = ConflictMarkerGuard(object : StubFileSystem() {
+        override fun readFile(path: String): String? = fileContent
+    })
+
     private val status = GitStatus(true, emptyList(), listOf("journals/2026_10_08.md", "assets/x.png"))
 
     @Test
     fun `finds a changed markdown file whose content has conflict markers`() {
-        val svc = service(markered, mutableListOf())
-
-        val found = svc.findFilesWithConflictMarkers(sampleConfig, status)
+        val found = guard(markered).findUnresolved(sampleConfig, status)!!.files
 
         assertEquals(listOf("/repo/journals/2026_10_08.md"), found.map { it.filePath })
         assertTrue(found.single().rawContent == null || found.single().rawContent!!.contains("<<<<<<<"))
@@ -108,9 +110,9 @@ class GitSyncServiceConflictMarkerGuardTest {
 
     @Test
     fun `ignores changed files without conflict markers`() {
-        val svc = service("- clean\n=======\n- divider alone is not a conflict\n", mutableListOf())
+        val clean = guard("- clean\n=======\n- divider alone is not a conflict\n")
 
-        assertEquals(emptyList(), svc.findFilesWithConflictMarkers(sampleConfig, status))
+        assertEquals(null, clean.findUnresolved(sampleConfig, status))
     }
 
     @Test

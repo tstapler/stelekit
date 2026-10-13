@@ -8,7 +8,6 @@ import arrow.core.getOrElse
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
-import dev.stapler.stelekit.db.ConflictMarkerDetector
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.error.DomainError
@@ -20,7 +19,6 @@ import dev.stapler.stelekit.git.lfs.LfsPlatformCapabilities
 import dev.stapler.stelekit.git.lfs.LfsViolation
 import dev.stapler.stelekit.git.model.CloneDepthState
 import dev.stapler.stelekit.git.model.ConflictFile
-import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.git.model.logSummary
@@ -83,6 +81,7 @@ class GitSyncService(
     private val isOnline: () -> Boolean = { networkMonitor.isOnline },
 ) {
     private val logger = Logger("GitSyncService")
+    private val markerGuard = ConflictMarkerGuard(fileSystem)
     private val lfsStaging = LfsGuardedStaging.create(gitRepository, fileSystem, settings, lfsCapabilities, lfsGuardCoordinator)
     private val firstSyncConfirmation: FirstSyncConfirmation? = settings?.let { FirstSyncConfirmation(it) }
 
@@ -314,14 +313,10 @@ class GitSyncService(
             val statusResult = gitRepository.status(config)
             if (statusResult is Either.Right && statusResult.value.hasLocalChanges) {
                 // A conflicted merge leaves markers in the tree; committing them would push them to the remote.
-                val unresolved = findFilesWithConflictMarkers(config, statusResult.value)
-                if (unresolved.isNotEmpty()) {
-                    logger.warn("refusing to commit: ${unresolved.size} file(s) still contain conflict markers")
-                    _syncState.value = SyncState.ConflictPending(unresolved)
-                    return@withContext DomainError.GitError.MergeConflict(
-                        conflictCount = unresolved.size,
-                        conflictPaths = unresolved.map { it.filePath },
-                    ).left()
+                markerGuard.findUnresolved(config, statusResult.value)?.let { unresolved ->
+                    logger.warn("refusing to commit: ${unresolved.files.size} file(s) still contain conflict markers")
+                    _syncState.value = unresolved.state
+                    return@withContext unresolved.error.left()
                 }
                 val staged = lfsStaging.stage(config, statusResult.value).getOrElse { err ->
                     _syncState.value = SyncState.Error(err)
@@ -496,20 +491,6 @@ class GitSyncService(
             }
         }
 
-    private fun unresolvedMarkersError(path: String) =
-        DomainError.GitError.CommitFailed("Refusing to commit $path: it still contains conflict markers")
-
-    internal fun findFilesWithConflictMarkers(config: GitConfig, status: GitStatus): List<ConflictFile> =
-        (status.modifiedFiles + status.untrackedFiles)
-            .filter { it.endsWith(".md") }
-            .mapNotNull { relPath ->
-                val absPath = "${config.repoRoot}/$relPath"
-                val content = fileSystem.readFile(absPath) ?: return@mapNotNull null
-                if (!ConflictMarkerDetector.hasConflictMarkers(content)) return@mapNotNull null
-                ConflictResolver().parseConflictFile(absPath, content, config.wikiRoot).getOrNull()
-                    ?: ConflictFile(absPath, relPath, emptyList(), rawContent = content)
-            }
-
     /**
      * Fetches from remote only — does not merge or push.
      * Emits [SyncState.MergeAvailable] if remote changes were found.
@@ -672,8 +653,7 @@ class GitSyncService(
         }
 
         val resolvedPaths = (sideResolutions.keys + hunkResolutions.keys).toList()
-        resolvedPaths.firstOrNull { path -> fileSystem.readFile(path)?.let(ConflictMarkerDetector::hasConflictMarkers) == true }
-            ?.let { return@withContext unresolvedMarkersError(it).left() }
+        markerGuard.firstWithMarkers(resolvedPaths)?.let { return@withContext markerGuard.refusal(it).left() }
 
         val message = buildCommitMessage(config, isMerge = true)
         gitRepository.commit(config, message).onLeft { return@withContext it.left() }
@@ -706,9 +686,7 @@ class GitSyncService(
             is Either.Right -> result.value
         } ?: return@withContext DomainError.GitError.CommitFailed("No git config for $graphId").left()
 
-        if (ConflictMarkerDetector.hasConflictMarkers(mergedContent)) {
-            return@withContext unresolvedMarkersError(filePath).left()
-        }
+        markerGuard.refusalIfMarkers(filePath, mergedContent)?.let { return@withContext it.left() }
 
         if (!fileSystem.writeFile(filePath, mergedContent)) {
             return@withContext DomainError.GitError.CommitFailed(
