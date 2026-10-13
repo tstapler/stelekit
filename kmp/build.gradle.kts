@@ -1693,8 +1693,12 @@ tasks.register<Exec>("diffCoverage") {
     dependsOn("jacocoTestReport", "jacocoAndroidTestReport")
     // Reads script-level git state at execution time; not worth plumbing through the cache.
     notCompatibleWithConfigurationCache("diffCoverage derives its inputs from git state")
+    // With test selection on and no changed main classes, no test runs, so there is no JaCoCo data
+    // to report and nothing to gate (docs-only and test-only PRs).
+    val nothingToGate = selectChangedTests && changedMainClasses.isEmpty()
+    onlyIf { !nothingToGate }
     workingDir = rootProject.projectDir
-    val xml = layout.buildDirectory.file("reports/jacoco/jacoco.xml")
+    val xml =layout.buildDirectory.file("reports/jacoco/jacoco.xml")
     val outDir = diffCoverageDir
     doFirst {
         outDir.get().asFile.mkdirs()
