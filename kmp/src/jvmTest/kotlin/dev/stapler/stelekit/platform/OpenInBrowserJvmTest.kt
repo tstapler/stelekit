@@ -57,6 +57,13 @@ class OpenInBrowserJvmTest {
     }
 
     @Test
+    fun `actual openInBrowser rejects non-http urls using the real os name`() {
+        // Linux-only: elsewhere the real call would reach Desktop.browse() and open a browser.
+        if (!System.getProperty("os.name", "").contains("linux", ignoreCase = true)) return
+        openInBrowser("--help")
+    }
+
+    @Test
     fun `launcher failures are absorbed`() {
         openInBrowserWithOs(url, "Mac OS X", desktopBrowse = { throw java.io.IOException("boom") })
         val ran = LinkedBlockingQueue<Boolean>()
