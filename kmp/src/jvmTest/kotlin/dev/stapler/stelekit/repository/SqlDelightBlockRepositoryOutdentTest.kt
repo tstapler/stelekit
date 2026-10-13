@@ -186,4 +186,51 @@ class SqlDelightBlockRepositoryOutdentTest {
         assertEquals(BlockUuid("x"), blockRepo.getBlockByUuid(BlockUuid("xc")).first().getOrNull()!!.leftUuid,
             "X's own first child must keep pointing at X; it is not X's next sibling")
     }
+
+    @Test
+    fun moveBlock_should_rechainRealNextSibling_not_ownFirstChild() = runBlocking {
+        val (blockRepo, pageRepo) = buildRepos()
+        val now = now()
+        pageRepo.savePage(Page(uuid = PageUuid("page-1"), name = "Test Page", createdAt = now, updatedAt = now))
+        blockRepo.saveBlocks(
+            listOf(
+                block(now, "a", null, null, 0, "a0"),
+                block(now, "x", null, "a", 0, "a1"),
+                block(now, "xc", "x", "x", 1, "a0"), // X's first child: left_uuid is X's uuid
+                block(now, "s", null, "x", 0, "a2"),
+                block(now, "t", null, "s", 0, "a3"),
+            ),
+        )
+
+        val result = blockRepo.moveBlock(BlockUuid("x"), BlockUuid("t"), "a0")
+        assertTrue(result.isRight(), "move must succeed: $result")
+
+        assertEquals(BlockUuid("a"), blockRepo.getBlockByUuid(BlockUuid("s")).first().getOrNull()!!.leftUuid,
+            "S must close the gap left by X")
+        assertEquals(BlockUuid("x"), blockRepo.getBlockByUuid(BlockUuid("xc")).first().getOrNull()!!.leftUuid,
+            "X's own first child must keep pointing at X")
+    }
+
+    @Test
+    fun mergeBlocks_should_rechainRealNextSibling_when_mergedBlockHasChildren() = runBlocking {
+        val (blockRepo, pageRepo) = buildRepos()
+        val now = now()
+        pageRepo.savePage(Page(uuid = PageUuid("page-1"), name = "Test Page", createdAt = now, updatedAt = now))
+        blockRepo.saveBlocks(
+            listOf(
+                block(now, "a", null, null, 0, "a0"),
+                block(now, "b", null, "a", 0, "a1"),
+                block(now, "bc", "b", "b", 1, "a0"), // B's first child: left_uuid is B's uuid
+                block(now, "s", null, "b", 0, "a2"),
+            ),
+        )
+
+        val result = blockRepo.mergeBlocks(BlockUuid("a"), BlockUuid("b"), " ")
+        assertTrue(result.isRight(), "merge must succeed: $result")
+
+        assertEquals(BlockUuid("a"), blockRepo.getBlockByUuid(BlockUuid("s")).first().getOrNull()!!.leftUuid,
+            "S must follow A once B is gone")
+        val bc = blockRepo.getBlockByUuid(BlockUuid("bc")).first().getOrNull()!!
+        assertEquals(BlockUuid("a"), bc.parentUuid, "B's child is reparented to A")
+    }
 }
