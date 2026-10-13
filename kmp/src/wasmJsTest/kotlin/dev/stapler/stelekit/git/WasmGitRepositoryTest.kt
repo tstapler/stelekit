@@ -140,7 +140,7 @@ class WasmGitRepositoryTest {
 
     @Test
     fun `IT-4_1_1-C log() maps GitHub commit-history responses to GitCommit`() = runTest {
-        val engine = MockEngine { request ->
+        val engine = lfsTolerantMockEngine { request ->
             assertTrue(request.url.encodedPath.endsWith("/commits"), "unexpected path: ${request.url.encodedPath}")
             assertTrue(request.url.encodedQuery.contains("sha=main"), "query was: ${request.url.encodedQuery}")
             assertTrue(request.url.encodedQuery.contains("per_page=10"), "query was: ${request.url.encodedQuery}")
@@ -167,7 +167,7 @@ class WasmGitRepositoryTest {
 
     @Test
     fun `IT-4_1_1-C log() maps GitLab commit-history responses to GitCommit`() = runTest {
-        val engine = MockEngine { request ->
+        val engine = lfsTolerantMockEngine { request ->
             assertTrue(
                 request.url.encodedPath.endsWith("/repository/commits"),
                 "unexpected path: ${request.url.encodedPath}",

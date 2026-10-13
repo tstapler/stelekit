@@ -5,6 +5,7 @@ package dev.stapler.stelekit.git
 
 import arrow.core.Either
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.git.lfs.LfsViolation
 import dev.stapler.stelekit.git.model.ConflictFile
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.platform.security.CredentialAccess
@@ -65,7 +66,11 @@ interface GitRepository {
      */
     suspend fun unshallow(config: GitConfig): Either<DomainError.GitError, Unit>
     suspend fun status(config: GitConfig): Either<DomainError.GitError, GitStatus>
-    suspend fun stageSubdir(config: GitConfig): Either<DomainError.GitError, Unit>
+    /**
+     * Stages the wiki subdirectory. [excludePaths] (repository-relative) are staged by the pattern add and then
+     * un-staged again, so a caller can hold individual files back (Git LFS guard) while the rest commits.
+     */
+    suspend fun stageSubdir(config: GitConfig, excludePaths: Set<String> = emptySet()): Either<DomainError.GitError, Unit>
     suspend fun commit(config: GitConfig, message: String): Either<DomainError.GitError, String>
     suspend fun merge(config: GitConfig): Either<DomainError.GitError, MergeResult>
     suspend fun push(config: GitConfig): Either<DomainError.GitError, Unit>
@@ -75,6 +80,37 @@ interface GitRepository {
     suspend fun markResolved(config: GitConfig, filePath: String): Either<DomainError.GitError, Unit>
     suspend fun hasDetachedHead(config: GitConfig): Boolean
     suspend fun removeStaleLockFile(config: GitConfig): Either<DomainError.GitError, Unit>
+
+    /**
+     * Repository-level LFS backstop: every staged blob at an LFS-tracked path that is not a pointer. Implementations
+     * that report anything also un-stage those paths, so the next [commit] cannot include them. Default empty
+     * (platforms without a staging index of their own, such as web, guard in their own write path).
+     */
+    suspend fun stagedLfsViolations(config: GitConfig): List<LfsViolation> = emptyList()
+
+    /**
+     * True only after a converting clean filter (not the pass-through one) was verified for this repository.
+     * Always false in Phase 1: nothing converts raw files to pointers yet.
+     */
+    val cleanFilterActive: Boolean get() = false
+
+    /**
+     * Raw binaries at LFS-tracked paths found in the commits the last [push] sent (detection only: they are
+     * already remote). Empty when nothing was found, nothing was pushed, or the platform cannot audit.
+     */
+    val lastPushLfsViolations: List<LfsViolation> get() = emptyList()
+
+    /**
+     * True when this platform's own write path is the sole LFS guard (web: it never stages through a local index),
+     * so the service-level guard must not second-guess it.
+     */
+    val guardsLfsInWritePath: Boolean get() = false
+
+    /**
+     * Whether the index currently differs from HEAD. Consulted only after the LFS guard held files back, to avoid
+     * an empty commit when nothing else was staged. Default true: "assume there is something to commit".
+     */
+    suspend fun hasStagedChanges(config: GitConfig): Boolean = true
 
     /** Read-only ref report for the diagnostics export (see `describeGitRefs`); never throws. */
     suspend fun describeRefs(config: GitConfig): String = "(not supported on this platform)"

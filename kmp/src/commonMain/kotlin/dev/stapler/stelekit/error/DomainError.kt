@@ -160,6 +160,51 @@ sealed interface DomainError {
         data class InvalidRefName(val name: String) : GitError {
             override val message: String = "Branch name '$name' is not valid — tap for details"
         }
+
+        /**
+         * A staged blob at a path that `.gitattributes` stores with Git LFS is not a pointer. Hard failure
+         * of the repository-level backstop: the service guard should have held the path back first.
+         */
+        data class LfsRawBinaryRefused(val paths: List<String>) : GitError {
+            override val message: String = "Refusing to commit ${lfsPathList(paths)}: it must be stored with Git LFS."
+        }
+
+        /** A file at an LFS-tracked path looks like a pointer but violates the pointer spec. */
+        data class LfsPointerCorrupt(val path: String) : GitError {
+            override val message: String = "The Git LFS pointer in $path is damaged, so it was not committed."
+        }
+
+        /** The LFS server rejected the credentials; [readOnly] means a read-only token on upload. */
+        data class LfsAuthFailed(val readOnly: Boolean) : GitError {
+            override val message: String =
+                if (readOnly) "Your token can read but not write LFS files."
+                else "Git LFS rejected your credentials. Reconnect your account to download or upload large files."
+        }
+
+        data class LfsQuotaExceeded(val detail: String?) : GitError {
+            override val message: String =
+                "Your Git host's LFS quota is used up, so this file cannot be downloaded or uploaded until the " +
+                    "quota resets or is raised. Your text notes still sync."
+        }
+
+        data class LfsObjectMissing(val oid: String) : GitError {
+            override val message: String =
+                "The Git host no longer has this file (it was removed or never uploaded). " +
+                    "Ask whoever pushed it to push it again."
+        }
+
+        data class LfsObjectIntegrityFailed(val oid: String) : GitError {
+            override val message: String = "A downloaded LFS file did not match its checksum and was discarded."
+        }
+
+        data class LfsNotSupportedHere(val reason: String) : GitError {
+            override val message: String = "Git LFS is not supported here: $reason"
+        }
+
+        data class LfsStorageInsufficient(val neededBytes: Long, val availableBytes: Long) : GitError {
+            override val message: String =
+                "Not enough free space for LFS files: need $neededBytes bytes, have $availableBytes bytes."
+        }
     }
 
     sealed interface AttachmentError : DomainError {
@@ -325,6 +370,14 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.GitError.RemoteBranchNotFound -> message
     is DomainError.GitError.RemoteEmpty -> message
     is DomainError.GitError.InvalidRefName -> message
+    is DomainError.GitError.LfsRawBinaryRefused -> message
+    is DomainError.GitError.LfsPointerCorrupt -> message
+    is DomainError.GitError.LfsAuthFailed -> message
+    is DomainError.GitError.LfsQuotaExceeded -> message
+    is DomainError.GitError.LfsObjectMissing -> message
+    is DomainError.GitError.LfsObjectIntegrityFailed -> message
+    is DomainError.GitError.LfsNotSupportedHere -> message
+    is DomainError.GitError.LfsStorageInsufficient -> message
     is DomainError.AttachmentError.CopyFailed -> "Attachment failed"
     is DomainError.AttachmentError.PickerFailed -> "Could not open file picker"
     is DomainError.AttachmentError.AssetsDirectoryFailed -> "Cannot create assets directory"
@@ -377,4 +430,19 @@ fun DomainError.GitError.toSyncErrorMessage(): String = when (this) {
     is DomainError.GitError.RemoteBranchNotFound -> message
     is DomainError.GitError.RemoteEmpty -> message
     is DomainError.GitError.InvalidRefName -> message
+    is DomainError.GitError.LfsRawBinaryRefused -> message
+    is DomainError.GitError.LfsPointerCorrupt -> message
+    is DomainError.GitError.LfsAuthFailed -> message
+    is DomainError.GitError.LfsQuotaExceeded -> message
+    is DomainError.GitError.LfsObjectMissing -> message
+    is DomainError.GitError.LfsObjectIntegrityFailed -> message
+    is DomainError.GitError.LfsNotSupportedHere -> message
+    is DomainError.GitError.LfsStorageInsufficient -> message
 }
+
+/** Up to three paths verbatim, then "and N more", for one-line LFS messages. */
+internal fun lfsPathList(paths: List<String>): String =
+    if (paths.size <= LFS_PATHS_SHOWN) paths.joinToString(", ")
+    else paths.take(LFS_PATHS_SHOWN).joinToString(", ") + " and ${paths.size - LFS_PATHS_SHOWN} more"
+
+private const val LFS_PATHS_SHOWN = 3

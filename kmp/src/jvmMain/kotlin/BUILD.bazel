@@ -223,3 +223,10 @@ kt_jvm_binary(
     visibility = ["//visibility:public"],
     runtime_deps = [":jvm_main_lib"],
 )
+
+# Exposes JvmGitRepository.kt for LfsStagingCallSitesStructuralTest (see commonMain's git_sync_service_source).
+filegroup(
+    name = "jvm_git_repository_source",
+    srcs = ["dev/stapler/stelekit/git/JvmGitRepository.kt"],
+    visibility = ["//kmp:__subpackages__"],
+)

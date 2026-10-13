@@ -65,6 +65,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -166,16 +167,22 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
             beginShare(overrideGraphId)
             return
         }
-        if (untouched && earlier.isNotEmpty()) queueEarlierShare(earlier)
+        val queueEarlier = if (untouched && earlier.isNotEmpty()) queueEarlierShare(earlier) else null
         if (!untouched || earlier.isNotEmpty()) resetForNewCapture()
         attachImage(imagePath)
         initializeText(text)
         beginShare(overrideGraphId)
+        // After the reset: a fast enqueue failure puts the earlier text back, and a reset that ran
+        // later would wipe it.
+        queueEarlier?.invoke()
     }
 
-    /** Queues the text of a share that a newer one is replacing; on failure it is put back so nothing is dropped. */
-    private fun queueEarlierShare(earlier: String) {
-        val app = steleApp ?: return
+    /**
+     * Snapshots the share a newer one is replacing and returns the action that queues it; on failure
+     * the text is put back so nothing is dropped. Run the action only once the new capture is set up.
+     */
+    private fun queueEarlierShare(earlier: String): (() -> Unit)? {
+        val app = steleApp ?: return null
         val slot = when (val dest = _destination.value) {
             is CaptureDestination.Ready -> InboxSlot.Graph(dest.graph.id)
             is CaptureDestination.Unavailable -> dest.graphId?.let { InboxSlot.Graph(it) } ?: InboxSlot.Unassigned
@@ -183,13 +190,15 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
         }
         val earlierId = currentCaptureId
         val image = trustedImagePath
-        app.appScope.launch {
-            val queued = enqueue(app, slot, earlier, earlierId, image).isRight()
-            if (queued) {
-                toastOnMain("Your earlier note was queued.")
-            } else {
-                _captureText.update { now -> if (now.isBlank()) earlier else "$earlier\n\n$now" }
-                toastOnMain("Couldn't queue your earlier note; it is kept below.")
+        return {
+            app.appScope.launch {
+                val queued = enqueue(app, slot, earlier, earlierId, image).isRight()
+                if (queued) {
+                    toastOnMain("Your earlier note was queued.")
+                } else {
+                    _captureText.update { now -> if (now.isBlank()) earlier else "$earlier\n\n$now" }
+                    toastOnMain("Couldn't queue your earlier note; it is kept below.")
+                }
             }
         }
     }
@@ -214,7 +223,9 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
     fun retryDestination() { destinationTrigger.value++ }
 
     // Test seams (same-module tests drive the UI without a real GraphManager).
+    /** Stops the destination observer first (and waits for it), or it can overwrite the forced value. */
     internal fun setDestinationForTest(destination: CaptureDestination, choices: List<GraphChoice> = emptyList()) {
+        destinationJob?.let { job -> kotlinx.coroutines.runBlocking { job.cancelAndJoin() } }
         _destination.value = destination
         _graphChoices.value = choices
     }
@@ -384,8 +395,10 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
     private val _chipFailure = MutableSharedFlow<String>(extraBufferCapacity = 1)
     val chipFailure: SharedFlow<String> = _chipFailure.asSharedFlow()
 
+    private var destinationJob: kotlinx.coroutines.Job? = null
+
     init {
-        scope.launch { observeDestination() }
+        destinationJob = scope.launch { observeDestination() }
         scope.launch {
             captureText
                 .debounce(300)

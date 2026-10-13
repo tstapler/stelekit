@@ -423,13 +423,21 @@ class CopyFlowController(
      * entry can't be carried over the old manifest is completed instead and stays undoable on its own.
      */
     private fun absorbInterrupted(old: InterruptedCopy, result: MergeResult) {
-        scope.launch(PlatformDispatcher.IO) {
+        absorbJob = scope.launch(PlatformDispatcher.IO) {
             val oldId = MergeId(old.mergeId)
             val previous = services.manifests.load(oldId)
             val into = services.manifests.writerFor(MergeId(result.mergeId))
             val carried = previous != null && into != null && previous.pages.all { into.appendPage(it).isRight() }
             if (carried) services.manifests.delete(oldId) else services.manifests.writerFor(oldId)?.complete()
         }
+    }
+
+    @Volatile
+    private var absorbJob: Job? = null
+
+    /** Completes once the fold started by [finish] has written or given up; lets tests wait without polling. */
+    internal suspend fun awaitAbsorbed() {
+        absorbJob?.join()
     }
 
     private fun finish(result: MergeResult) {

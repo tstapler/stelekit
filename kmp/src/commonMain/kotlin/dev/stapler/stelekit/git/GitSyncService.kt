@@ -4,6 +4,7 @@
 package dev.stapler.stelekit.git
 
 import arrow.core.Either
+import arrow.core.getOrElse
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
@@ -12,10 +13,15 @@ import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.git.merge.JournalMergeService
+import dev.stapler.stelekit.git.lfs.LfsGuardCoordinator
+import dev.stapler.stelekit.git.lfs.LfsGuardedStaging
+import dev.stapler.stelekit.git.lfs.LfsPlatformCapabilities
+import dev.stapler.stelekit.git.lfs.LfsViolation
 import dev.stapler.stelekit.git.model.CloneDepthState
 import dev.stapler.stelekit.git.model.ConflictFile
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.SyncState
+import dev.stapler.stelekit.git.model.logSummary
 import dev.stapler.stelekit.git.model.wikiRoot
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.NetworkMonitor
@@ -67,10 +73,15 @@ class GitSyncService(
      * callers that need to observe busy-ness externally (e.g. a quiesce strategy) should inject
      * a shared instance instead. */
     private val gitSyncBusyCounter: GitSyncBusyCounter = GitSyncBusyCounter(),
+    /** Platform capability for Git LFS; the default (no transfer support) keeps the safety-floor-only behaviour. */
+    lfsCapabilities: LfsPlatformCapabilities = LfsPlatformCapabilities.GUARD_ONLY_PLATFORM,
+    /** Seam for the LFS safety floor. Tests inject one; production derives it from [settings] and [gitRepository]. */
+    lfsGuardCoordinator: LfsGuardCoordinator? = null,
     /** Connectivity probe; defaults to [networkMonitor]. Tests inject one because the JVM monitor pings 8.8.8.8. */
     private val isOnline: () -> Boolean = { networkMonitor.isOnline },
 ) {
     private val logger = Logger("GitSyncService")
+    private val lfsStaging = LfsGuardedStaging.create(gitRepository, fileSystem, settings, lfsCapabilities, lfsGuardCoordinator)
     private val firstSyncConfirmation: FirstSyncConfirmation? = settings?.let { FirstSyncConfirmation(it) }
 
     /** Applies user-confirmed branch repairs; see [repairBranch]. */
@@ -99,34 +110,15 @@ class GitSyncService(
      * missing when the repair happened, so it is probed (a fetch of that branch) instead of trusted.
      * Returns null when no repair is recorded.
      */
-    suspend fun changeBackBranch(): BranchRepairResult? {
-        val previous = previousBranchBeforeRepair() ?: return null
-        val config = when (val r = configRepository.getConfig(graphId)) {
-            is Either.Left -> return BranchRepairResult.SaveFailed(r.value.message)
-            is Either.Right -> r.value ?: return BranchRepairResult.Stale(null)
+    suspend fun changeBackBranch(): BranchRepairResult? =
+        when (val change = branchRepair.changeBackProposal(gitRepository, graphId)) {
+            null -> null
+            is Either.Left -> change.value
+            is Either.Right -> repairBranch(change.value)
         }
-        when (val probe = gitRepository.fetch(config.copy(remoteBranch = previous))) {
-            is Either.Left -> return when (probe.value) {
-                is DomainError.GitError.RemoteBranchNotFound -> BranchRepairResult.TargetNotOnRemote(previous)
-                else -> BranchRepairResult.SaveFailed(probe.value.message)
-            }
-            is Either.Right -> Unit
-        }
-        return repairBranch(
-            BranchRepairProposal(graphId, from = config.remoteBranch, to = previous, available = listOf(previous)),
-        )
-    }
 
     /** Branch the last repair replaced, for "Change back"; null when none is recorded. */
     fun previousBranchBeforeRepair(): String? = firstSyncConfirmation?.previousBranch(graphId)
-
-    /** Never [toString] a state directly: conflict/journal-merge states carry full note contents. */
-    private fun SyncState.logSummary(): String = when (this) {
-        is SyncState.ConflictPending -> "ConflictPending(files=${conflicts.size})"
-        is SyncState.JournalMergeReady -> "JournalMergeReady"
-        is SyncState.Error -> "Error(${error.message})"
-        else -> toString()
-    }
 
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
     val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
@@ -315,26 +307,29 @@ class GitSyncService(
 
             // 5. Commit local changes
             var localCommitsMade = 0
+            var lfsHeld: List<LfsViolation> = emptyList()
             _syncState.value = SyncState.Committing
             val statusResult = gitRepository.status(config)
             if (statusResult is Either.Right && statusResult.value.hasLocalChanges) {
-                gitRepository.stageSubdir(config).onLeft { err ->
+                val staged = lfsStaging.stage(config, statusResult.value).getOrElse { err ->
                     _syncState.value = SyncState.Error(err)
                     return@withContext err.left()
                 }
-                val message = buildCommitMessage(config)
-                gitRepository.commit(config, message).onLeft { err ->
-                    if (err is DomainError.GitError.RateLimited) {
-                        _syncState.value = SyncState.RateLimited(err.retryAfterSeconds)
-                        scheduleRateLimitRetry(graphId, err.retryAfterSeconds) { g -> sync(g, SyncTrigger.Automatic) }
-                    } else if (err is DomainError.GitError.CredentialExpired) {
-                        _syncState.value = SyncState.CredentialExpired(graphId)
-                    } else {
-                        _syncState.value = SyncState.Error(err)
+                lfsHeld = staged.held
+                if (staged.commitNeeded) {
+                    gitRepository.commit(config, buildCommitMessage(config)).onLeft { err ->
+                        if (err is DomainError.GitError.RateLimited) {
+                            _syncState.value = SyncState.RateLimited(err.retryAfterSeconds)
+                            scheduleRateLimitRetry(graphId, err.retryAfterSeconds) { g -> sync(g, SyncTrigger.Automatic) }
+                        } else if (err is DomainError.GitError.CredentialExpired) {
+                            _syncState.value = SyncState.CredentialExpired(graphId)
+                        } else {
+                            _syncState.value = SyncState.Error(err)
+                        }
+                        return@withContext err.left()
                     }
-                    return@withContext err.left()
+                    localCommitsMade = 1
                 }
-                localCommitsMade = 1
             }
 
             // 6. Fetch
@@ -480,7 +475,9 @@ class GitSyncService(
             recordLastSyncAt(success.lastSyncAt)
             firstSyncConfirmation?.confirm(graphId, config.remoteName, config.remoteBranch)
             _firstSyncReviewPending.value = false
-            _syncState.value = success
+            // Non-fatal: the held files need the user's attention, so the badge keeps showing them instead of fading.
+            val lfsAttention = lfsHeld + gitRepository.lastPushLfsViolations
+            _syncState.value = if (lfsAttention.isEmpty()) success else SyncState.LfsActionRequired(lfsAttention)
             success.right()
             } finally {
                 gitSyncBusyCounter.end()
@@ -578,13 +575,17 @@ class GitSyncService(
             if (!status.hasLocalChanges) return@withContext (null as String?).right()
 
             _syncState.value = SyncState.Committing
-            gitRepository.stageSubdir(config).onLeft { return@withContext it.left() }
-            val sha = when (val r = gitRepository.commit(config, buildCommitMessage(config))) {
-                is Either.Left -> return@withContext r.value.left()
-                is Either.Right -> r.value
+            val staged = lfsStaging.stage(config, status).getOrElse { return@withContext it.left() }
+            val sha = if (staged.commitNeeded) {
+                when (val r = gitRepository.commit(config, buildCommitMessage(config))) {
+                    is Either.Left -> return@withContext r.value.left()
+                    is Either.Right -> r.value
+                }
+            } else {
+                null
             }
             refreshLocalStatus(graphId)
-            _syncState.value = SyncState.Idle
+            _syncState.value = if (staged.held.isEmpty()) SyncState.Idle else SyncState.LfsActionRequired(staged.held)
             sha.right()
         }
 
@@ -616,6 +617,7 @@ class GitSyncService(
 
         for ((filePath, side) in sideResolutions) {
             gitRepository.checkoutFile(config, filePath, side).onLeft { return@withContext it.left() }
+            lfsStaging.refusalFor(config, filePath)?.let { return@withContext it.left() }
             gitRepository.markResolved(config, filePath).onLeft { return@withContext it.left() }
         }
 
@@ -639,6 +641,7 @@ class GitSyncService(
                 ).left()
             }
 
+            lfsStaging.refusalFor(config, filePath)?.let { return@withContext it.left() }
             gitRepository.markResolved(config, filePath).onLeft { return@withContext it.left() }
         }
 
@@ -683,6 +686,7 @@ class GitSyncService(
         // filePath here is written to SAF just above via fileSystem.writeFile — markResolved()
         // (AndroidGitRepository, shadow-mirror mode) pulls that SAF content into the shadow tree
         // before staging; same ordering as resolveConflict().
+        lfsStaging.refusalFor(config, filePath)?.let { return@withContext it.left() }
         gitRepository.markResolved(config, filePath).onLeft { return@withContext it.left() }
 
         val message = buildCommitMessage(config, isMerge = true)
