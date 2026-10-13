@@ -196,3 +196,10 @@ filegroup(
     srcs = ["dev/stapler/stelekit/git/GitShadowWorktree.kt"],
     visibility = ["//kmp:__subpackages__"],
 )
+
+# Exposes AndroidGitRepository.kt for LfsStagingCallSitesStructuralTest (see commonMain's git_sync_service_source).
+filegroup(
+    name = "android_git_repository_source",
+    srcs = ["dev/stapler/stelekit/git/AndroidGitRepository.kt"],
+    visibility = ["//kmp:__subpackages__"],
+)

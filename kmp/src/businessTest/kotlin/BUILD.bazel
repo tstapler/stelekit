@@ -33,6 +33,26 @@ java_library(
     resource_strip_prefix = "kmp/src/androidMain/kotlin/dev/stapler/stelekit/git",
 )
 
+# Bundle the three sources LfsStagingCallSitesStructuralTest scans for unguarded staging calls
+# (resource names GitSyncService.kt, JvmGitRepository.kt, AndroidGitRepository.kt).
+java_library(
+    name = "git_sync_service_as_resource",
+    resources = ["//kmp/src/commonMain/kotlin:git_sync_service_source"],
+    resource_strip_prefix = "kmp/src/commonMain/kotlin/dev/stapler/stelekit/git",
+)
+
+java_library(
+    name = "jvm_git_repository_as_resource",
+    resources = ["//kmp/src/jvmMain/kotlin:jvm_git_repository_source"],
+    resource_strip_prefix = "kmp/src/jvmMain/kotlin/dev/stapler/stelekit/git",
+)
+
+java_library(
+    name = "android_git_repository_as_resource",
+    resources = ["//kmp/src/androidMain/kotlin:android_git_repository_source"],
+    resource_strip_prefix = "kmp/src/androidMain/kotlin/dev/stapler/stelekit/git",
+)
+
 # Bundles gap-backlog.md and plan.md as classpath resources ("gap-backlog.md",
 # "plan.md") for DocRepoLocator's Bazel path — see DocRepoLocator's class doc.
 java_library(
@@ -54,6 +74,9 @@ kt_jvm_test(
     name = "business_tests",
     srcs = glob(["**/*.kt"]),
     test_class = "dev.stapler.stelekit.AllBusinessTests",
+    # DriverFactory resolves its data dir from user.home; the real home is not writable in the
+    # test sandbox, so GraphManager tests that open a file DB failed with SQLITE_CANTOPEN.
+    jvm_flags = ["-Duser.home=$$TEST_TMPDIR"],
     kotlinc_opts = "//:kmp_jvm_kotlinc_opts",
     associates = ["//kmp/src/jvmMain/kotlin:jvm_main_lib"],
     deps = [
@@ -70,6 +93,9 @@ kt_jvm_test(
         ":demo_filesystem_as_resource",
         ":sqldatabase_schema_as_resource",
         ":git_shadow_worktree_as_resource",
+        ":git_sync_service_as_resource",
+        ":jvm_git_repository_as_resource",
+        ":android_git_repository_as_resource",
         ":rich_editing_backlog_docs_as_resources",
         ":journey_docs_as_resources",
     ],

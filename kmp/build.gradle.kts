@@ -1778,7 +1778,14 @@ tasks.register<JavaExec>("mutationTest") {
             "--maxMutationsPerClass", providers.gradleProperty("mutate.maxMutationsPerClass").orElse("150").get(),
             "--mutationThreshold", threshold.get(),
             "--failWhenNoMutations", "false",
-            "--jvmArgs", "-Xmx2g",
+            // PIT forks its own JVM, so the source-path properties jvmTest sets (read by
+            // MigrationRunnerSchemaSyncTest and GraphContentDemoFileSystemWiringTest) must be repeated here.
+            "--jvmArgs", listOf(
+                "-Xmx2g",
+                "-Dstelekit.sq.file=${file("src/commonMain/sqldelight/dev/stapler/stelekit/db/SteleDatabase.sq").absolutePath}",
+                "-Dstelekit.appkt.file=${file("src/commonMain/kotlin/dev/stapler/stelekit/ui/App.kt").absolutePath}",
+                "-Dstelekit.ui.dir=${file("src/commonMain/kotlin/dev/stapler/stelekit/ui").absolutePath}",
+            ).joinToString(","),
         )
     })
 }

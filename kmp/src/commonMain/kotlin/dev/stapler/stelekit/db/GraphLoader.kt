@@ -5,6 +5,8 @@ import arrow.core.flatMap
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.git.lfs.LfsPointerCodec
+import dev.stapler.stelekit.git.lfs.LfsPointerParse
 import kotlin.concurrent.Volatile
 
 import dev.stapler.stelekit.model.Block
@@ -111,7 +113,30 @@ class GraphLoader(
      * Returns null if the file does not exist or decryption fails with a non-recoverable error.
      * Returns the plaintext string on success.
      */
-    private fun readFileDecrypted(filePath: String): String? {
+    private fun readFileDecrypted(filePath: String): String? =
+        skipIfLfsPointer(filePath, readFileDecryptedUnchecked(filePath))
+
+    /**
+     * A Git LFS pointer is ~130 bytes of bookkeeping, not a page: loading it would create a junk page and a
+     * later save would write that text back over the real asset. Treated as "not loadable" (null), the same
+     * contract as an unreadable file, and logged once per path.
+     */
+    private fun skipIfLfsPointer(filePath: String, content: String?): String? {
+        if (content == null || content.length >= LfsPointerCodec.MAX_POINTER_BYTES) return content
+        // Cheap prefix test first: nearly every page is small, and none of them starts with the pointer's version line.
+        if (!content.startsWith("version ", ignoreCase = true) && !content.startsWith("\uFEFF")) return content
+        if (LfsPointerCodec.parse(content.encodeToByteArray()) is LfsPointerParse.NotAPointer) return content
+        val warned = lfsPointerWarned
+        if (filePath !in warned) {
+            lfsPointerWarned = warned + filePath // copy-on-write: a racing duplicate log line is harmless
+            logger.warn("Skipping Git LFS pointer file (not a page): ${filePath.redactPath()}")
+        }
+        return null
+    }
+
+    @Volatile private var lfsPointerWarned: Set<String> = emptySet()
+
+    private fun readFileDecryptedUnchecked(filePath: String): String? {
         val layer = cryptoLayer
         if (layer == null) {
             return fileSystem.readFile(filePath)
@@ -150,7 +175,7 @@ class GraphLoader(
      * Paranoid mode falls back to the synchronous path since CryptoLayer decryption is not async.
      */
     private suspend fun readFileDecryptedSuspend(filePath: String): String? {
-        if (cryptoLayer == null) return fileSystem.readFileSuspend(filePath)
+        if (cryptoLayer == null) return skipIfLfsPointer(filePath, fileSystem.readFileSuspend(filePath))
         return readFileDecrypted(filePath) // paranoid mode: CryptoLayer is synchronous
     }
 

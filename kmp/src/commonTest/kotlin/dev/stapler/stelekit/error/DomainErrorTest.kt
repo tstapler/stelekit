@@ -64,6 +64,14 @@ class DomainErrorTest {
             DomainError.GitError.RemoteBranchNotFound("origin", "main", listOf("master")),
             DomainError.GitError.RemoteEmpty,
             DomainError.GitError.InvalidRefName("a..b"),
+            DomainError.GitError.LfsRawBinaryRefused(listOf("assets/photo.png")),
+            DomainError.GitError.LfsPointerCorrupt("assets/photo.png"),
+            DomainError.GitError.LfsAuthFailed(readOnly = false),
+            DomainError.GitError.LfsQuotaExceeded(null),
+            DomainError.GitError.LfsObjectMissing("ab"),
+            DomainError.GitError.LfsObjectIntegrityFailed("ab"),
+            DomainError.GitError.LfsNotSupportedHere("web"),
+            DomainError.GitError.LfsStorageInsufficient(10, 1),
             DomainError.QrTransferError.ChunkDecodeFailed,
             DomainError.QrTransferError.IntegrityCheckFailed,
             DomainError.QrTransferError.PayloadTooLarge(90000, 65536),
@@ -130,6 +138,14 @@ class DomainErrorTest {
                 is DomainError.GitError.RemoteBranchNotFound -> err.message
                 DomainError.GitError.RemoteEmpty -> err.message
                 is DomainError.GitError.InvalidRefName -> err.message
+                is DomainError.GitError.LfsRawBinaryRefused -> err.message
+                is DomainError.GitError.LfsPointerCorrupt -> err.message
+                is DomainError.GitError.LfsAuthFailed -> err.message
+                is DomainError.GitError.LfsQuotaExceeded -> err.message
+                is DomainError.GitError.LfsObjectMissing -> err.message
+                is DomainError.GitError.LfsObjectIntegrityFailed -> err.message
+                is DomainError.GitError.LfsNotSupportedHere -> err.message
+                is DomainError.GitError.LfsStorageInsufficient -> err.message
                 is DomainError.AttachmentError.CopyFailed -> err.message
                 is DomainError.AttachmentError.PickerFailed -> err.message
                 is DomainError.AttachmentError.AssetsDirectoryFailed -> err.message
@@ -161,6 +177,28 @@ class DomainErrorTest {
             }
             assertTrue(msg.isNotEmpty(), "Expected non-empty message for $err")
         }
+    }
+
+    @Test
+    fun lfsRawBinaryRefused_should_MapToTheOneLineRefusalText_When_OnePathIsHeld() {
+        val err = DomainError.GitError.LfsRawBinaryRefused(listOf("assets/photo.png"))
+
+        assertEquals("Refusing to commit assets/photo.png: it must be stored with Git LFS.", err.toSyncErrorMessage())
+        assertEquals("Refusing to commit assets/photo.png: it must be stored with Git LFS.", err.toUiMessage())
+    }
+
+    @Test
+    fun lfsRawBinaryRefused_should_SummariseTheTail_When_ManyPathsAreHeld() {
+        val err = DomainError.GitError.LfsRawBinaryRefused((1..5).map { "a/$it.png" })
+
+        assertEquals("Refusing to commit a/1.png, a/2.png, a/3.png and 2 more: it must be stored with Git LFS.", err.message)
+    }
+
+    @Test
+    fun lfsQuotaExceeded_should_StartWithTheQuotaSentence_When_NoDetailIsKnown() {
+        val message = DomainError.GitError.LfsQuotaExceeded(null).toSyncErrorMessage()
+
+        assertTrue(message.startsWith("Your Git host's LFS quota is used up"), message)
     }
 
     @Test

@@ -1,7 +1,9 @@
 package dev.stapler.stelekit.ui.components
 
 import androidx.test.core.app.ApplicationProvider
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -54,7 +56,9 @@ class MermaidWebViewSecurityDirectiveTest {
             """{"svg":"<svg><text>&lt;img src=x onerror=alert(1)&gt;</text></svg>","securityLevel":"loose"}""",
         )
 
-        val result = withTimeout(1_000) { deferred.await() }
+        // runTest's withTimeout uses virtual time (expires instantly); the bridge completes the
+        // deferred on a real Dispatchers.Default coroutine, so use a real-clock timeout.
+        val result = withContext(Dispatchers.Default) { withTimeout(1_000) { deferred.await() } }
         val rendered = assertIs<MermaidRenderResult.Rendered>(result)
         // The payload must appear HTML-escaped in the returned SVG (proving strict mode held
         // upstream in mermaid.js), never as a live, unescaped <img onerror=...> tag.

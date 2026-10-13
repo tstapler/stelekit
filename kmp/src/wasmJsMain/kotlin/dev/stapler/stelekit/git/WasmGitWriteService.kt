@@ -25,6 +25,12 @@ import dev.stapler.stelekit.git.model.GitLabCommitRequest
 import dev.stapler.stelekit.git.model.GitLabCommitResponse
 import dev.stapler.stelekit.git.model.GitLabCompareResponse
 import dev.stapler.stelekit.git.model.GitLabTreeEntry
+import dev.stapler.stelekit.git.lfs.LfsGuard
+import dev.stapler.stelekit.git.lfs.LfsPathPolicy
+import dev.stapler.stelekit.git.lfs.LfsViolation
+import dev.stapler.stelekit.git.lfs.WasmLfsBlobGate
+import dev.stapler.stelekit.git.lfs.WasmLfsContentProbe
+import dev.stapler.stelekit.git.lfs.WasmLfsRulesSource
 import dev.stapler.stelekit.git.merge.Diff3
 import dev.stapler.stelekit.git.merge.GitAttributes
 import dev.stapler.stelekit.git.merge.gitAttributeProbeDirs
@@ -119,6 +125,92 @@ class WasmGitWriteService(
 
     /** Epic 3.5 (Story 3.5.1): tag matches the class name, per this repo's `Logger` convention. */
     private val logger = Logger("WasmGitWriteService")
+
+    // ======================== Git LFS safety floor (sole web guard) ========================
+    //
+    // The web never stages through a local index, so this class is the only place that can stop a raw binary
+    // being uploaded for a path `.gitattributes` stores with Git LFS. Rules come from the remote at the base
+    // sha (see [WasmLfsRulesSource]); violating dirty entries are left out of the commit and stay dirty.
+
+    private val lfsRulesCache = mutableMapOf<String, String?>()
+
+    private var lfsHeldViolations: List<LfsViolation> = emptyList()
+    private var lfsHeldKeys: Set<String> = emptySet()
+
+    /** Dirty keys (local paths) left out of the most recent commit/push because they are raw at LFS-tracked paths. */
+    fun lfsHeldPaths(): Set<String> = lfsHeldKeys
+
+    /** The same set as violations (repo-relative paths), for the held-files UI. */
+    fun lfsHeldViolations(): List<LfsViolation> = lfsHeldViolations
+
+    private class LfsVerdict(
+        val heldLocal: Set<String>,
+        val violations: List<LfsViolation>,
+        val policy: LfsPathPolicy,
+        val gate: WasmLfsBlobGate,
+    )
+
+    /**
+     * Judges every dirty WRITE against the LFS rules at [ref]. [extraApiPaths] widens rule loading (merge paths).
+     * Returns Left (fail closed) when the rules cannot be read.
+     */
+    private suspend fun lfsVerdict(
+        config: GitConfig,
+        hostConfig: GitHostConfig,
+        ref: String,
+        dirty: Map<String, DirtyEntry>,
+        extraApiPaths: Collection<String> = emptyList(),
+    ): Either<DomainError.GitError, LfsVerdict> {
+        val writes = LinkedHashMap<String, Pair<String, ByteArray>>()
+        val localOverrides = HashMap<String, ByteArray?>()
+        for ((localPath, entry) in dirty) {
+            val apiPath = config.toApiPath(localPath)
+            val isAttributesFile = apiPath.substringAfterLast('/') == LfsPathPolicy.GITATTRIBUTES_FILE
+            val directory = apiPath.substringBeforeLast('/', "")
+            when (entry.op) {
+                DirtyOp.DELETE -> if (isAttributesFile) localOverrides[directory] = null
+                DirtyOp.WRITE -> {
+                    val bytes = fileSystem.getContentBytes("${fileSystem.graphRootPath()}/$localPath") ?: continue
+                    writes[apiPath] = localPath to bytes
+                    if (isAttributesFile) localOverrides[directory] = bytes
+                }
+            }
+        }
+        if (lfsRulesCache.size > LFS_RULES_CACHE_LIMIT) lfsRulesCache.clear()
+        val source = WasmLfsRulesSource(httpClient, hostConfig, ref, localOverrides, lfsRulesCache)
+        val rules = source.load(writes.keys + extraApiPaths).getOrElse { return it.left() }
+        val policy = LfsPathPolicy(rules)
+        val verdict = LfsGuard.evaluate(writes.keys.toList(), policy, WasmLfsContentProbe(writes.mapValues { it.value.second }))
+        val heldLocal = verdict.held.mapNotNull { writes[it.path]?.first }.toSet()
+        return LfsVerdict(heldLocal, verdict.held, policy, WasmLfsBlobGate(policy)).right()
+    }
+
+    /** Records [verdict] as the current held set and returns the entries of [dirty] that may be uploaded. */
+    private fun applyLfsVerdict(verdict: LfsVerdict, dirty: Map<String, DirtyEntry>): Map<String, DirtyEntry> {
+        lfsHeldKeys = verdict.heldLocal
+        lfsHeldViolations = verdict.violations
+        if (verdict.violations.isNotEmpty()) logger.warn("lfs: held back ${verdict.violations.size} file(s) at LFS-tracked paths")
+        return dirty.filterKeys { it !in verdict.heldLocal }
+    }
+
+    /**
+     * Evaluates the current dirty set without uploading anything, so the sync service can show the held files
+     * before it commits. Left means the rules could not be read (fail closed).
+     */
+    suspend fun previewLfsHeld(
+        config: GitConfig,
+        hostConfig: GitHostConfig,
+        baseSha: String,
+    ): Either<DomainError.GitError, List<LfsViolation>> {
+        val dirty = fileSystem.getDirtySnapshot()
+        val verdict = lfsVerdict(config, hostConfig, baseSha, dirty).getOrElse { return it.left() }
+        applyLfsVerdict(verdict, dirty)
+        return verdict.violations.right()
+    }
+
+    /** Held entries as they currently sit in the dirty set, to keep dirty across a successful push. */
+    private fun heldDirtyEntries(): Map<String, DirtyEntry> =
+        fileSystem.getDirtySnapshot().filterKeys { it in lfsHeldKeys }
 
     /**
      * Maps a local (OPFS/dirty-set-relative) path to the repo-relative path GitHub's/GitLab's REST
@@ -402,10 +494,14 @@ class WasmGitWriteService(
         message: String,
         dirty: Map<String, DirtyEntry>,
     ): Either<DomainError.GitError, Unit> {
+        val lfs = lfsVerdict(config, hostConfig, baseSha, dirty).getOrElse { return it.left() }
+        val uploadable = applyLfsVerdict(lfs, dirty)
+        if (uploadable.isEmpty()) return Unit.right()
+
         val deletedPaths = mutableListOf<String>()
         val writes = mutableListOf<Pair<String, ByteArray>>()
 
-        for ((path, entry) in dirty) {
+        for ((path, entry) in uploadable) {
             when (entry.op) {
                 DirtyOp.DELETE -> deletedPaths += path
                 DirtyOp.WRITE -> {
@@ -424,7 +520,7 @@ class WasmGitWriteService(
             }
         }
 
-        val blobShas = createBlobsBounded(hostConfig, writes).getOrElse { return it.left() }
+        val blobShas = createBlobsBounded(config, hostConfig, writes, lfs.gate).getOrElse { return it.left() }
 
         val treeSha = buildTree(
             hostConfig,
@@ -447,12 +543,14 @@ class WasmGitWriteService(
      * concurrent-in-flight assertion is a meaningful test rather than a vacuous one.
      */
     private suspend fun createBlobsBounded(
+        config: GitConfig,
         hostConfig: GitHostConfig,
         writes: List<Pair<String, ByteArray>>,
+        gate: WasmLfsBlobGate,
     ): Either<DomainError.GitError, Map<String, String>> = coroutineScope {
         val semaphore = Semaphore(BLOB_CREATE_CONCURRENCY)
         val results = writes.map { (path, content) ->
-            async { path to semaphore.withPermit { createBlob(hostConfig, content) } }
+            async { path to semaphore.withPermit { createBlob(hostConfig, config.toApiPath(path), content, gate) } }
         }.awaitAll()
 
         val blobShas = mutableMapOf<String, String>()
@@ -469,8 +567,11 @@ class WasmGitWriteService(
     @OptIn(ExperimentalEncodingApi::class)
     private suspend fun createBlob(
         hostConfig: GitHostConfig,
+        apiPath: String,
         content: ByteArray,
+        gate: WasmLfsBlobGate,
     ): Either<DomainError.GitError, String> {
+        gate.requireNotRawAtTrackedPath(apiPath, content) // the one place a blob is ever created
         val encoded = Base64.Default.encode(content)
         return githubPost<GitBlobRequest, GitBlobResponse>(
             hostConfig,
@@ -599,8 +700,8 @@ class WasmGitWriteService(
             logTerminalFailure(step = "ref-update", err = err)
             return err.left()
         }
-        fileSystem.clearDirtySet(newBaseSha = staged.commitSha)
-        logPushSuccess(fileCount = fileCount, commitSha = staged.commitSha)
+        fileSystem.clearDirtySet(newBaseSha = staged.commitSha, retain = heldDirtyEntries())
+        logPushSuccess(fileCount = (fileCount - lfsHeldKeys.size).coerceAtLeast(0), commitSha = staged.commitSha)
         return Unit.right()
     }
 
@@ -684,7 +785,12 @@ class WasmGitWriteService(
         remotePaths: Set<String>,
         message: String,
     ): Either<DomainError.GitError, Unit> {
-        val dirty = fileSystem.getDirtySnapshot()
+        val allDirty = fileSystem.getDirtySnapshot()
+        val lfs = lfsVerdict(
+            config, hostConfig, newBaseSha, allDirty,
+            extraApiPaths = remotePaths.map { config.toApiPath(it) },
+        ).getOrElse { return it.left() }
+        val dirty = applyLfsVerdict(lfs, allDirty)
         val blobShas = mutableMapOf<String, String>()
         val deletedPaths = mutableListOf<String>()
 
@@ -702,7 +808,8 @@ class WasmGitWriteService(
                     if (sizeBytes > MAX_BLOB_BYTES) {
                         return DomainError.GitError.FileTooLarge(path, sizeBytes, MAX_BLOB_BYTES).left()
                     }
-                    blobShas[path] = createBlob(hostConfig, bytes).getOrElse { return it.left() }
+                    blobShas[path] = createBlob(hostConfig, config.toApiPath(path), bytes, lfs.gate)
+                        .getOrElse { return it.left() }
                 }
             }
         }
@@ -711,12 +818,17 @@ class WasmGitWriteService(
         // toLocalPathOrNull's filtering at the call site. Only the outgoing fetch needs the
         // repo-relative API path back.
         for (path in remotePaths) {
+            val apiPath = config.toApiPath(path)
+            // A remote LFS-tracked path stays exactly as the remote has it: the new base tree already holds its
+            // pointer, and fetching it as text would decode a binary into a corrupt local copy and blob.
+            if (lfs.policy.isTracked(apiPath)) continue
             // Remote-fetched content is always text (never encrypted) — applyRemoteContent's own
             // doc comment confirms this write path needs no parallel bytesCache treatment.
-            val content = fetchRemoteFileContent(hostConfig, config.toApiPath(path), newBaseSha)
+            val content = fetchRemoteFileContent(hostConfig, apiPath, newBaseSha)
                 .getOrElse { return it.left() }
             fileSystem.applyRemoteContent("${fileSystem.graphRootPath()}/$path", content)
-            blobShas[path] = createBlob(hostConfig, content.encodeToByteArray()).getOrElse { return it.left() }
+            blobShas[path] = createBlob(hostConfig, apiPath, content.encodeToByteArray(), lfs.gate)
+                .getOrElse { return it.left() }
         }
 
         val treeSha = buildTree(
@@ -1037,14 +1149,22 @@ class WasmGitWriteService(
     private suspend fun pushViaGitLab(
         hostConfig: GitHostConfig,
         context: GitLabPushContext,
-        dirty: Map<String, DirtyEntry>,
+        allDirty: Map<String, DirtyEntry>,
     ): Either<DomainError.GitError, Unit> {
+        val lfs = lfsVerdict(context.config, hostConfig, context.baseSha, allDirty).getOrElse { err ->
+            logTerminalFailure(step = "gitlab-lfs-rules", err = err)
+            return err.left()
+        }
+        val dirty = applyLfsVerdict(lfs, allDirty)
+        if (dirty.isEmpty()) return Unit.right()
         val existingApiPaths = fetchGitLabTreePaths(hostConfig, context.baseSha).getOrElse { err ->
             logTerminalFailure(step = "gitlab-fetch-tree", err = err)
             return err.left()
         }
         val actions = buildGitLabActions(context.config, dirty, context.baseSha, existingApiPaths) { path ->
-            fileSystem.getContentBytes("${fileSystem.graphRootPath()}/$path")
+            fileSystem.getContentBytes("${fileSystem.graphRootPath()}/$path")?.also {
+                lfs.gate.requireNotRawAtTrackedPath(context.config.toApiPath(path), it)
+            }
         }.getOrElse { err ->
             logTerminalFailure(step = "gitlab-build-actions", err = err)
             return err.left()
@@ -1067,7 +1187,7 @@ class WasmGitWriteService(
             when (response.status.value) {
                 in 200..299 -> {
                     val commitResponse = response.body<GitLabCommitResponse>()
-                    fileSystem.clearDirtySet(newBaseSha = commitResponse.id)
+                    fileSystem.clearDirtySet(newBaseSha = commitResponse.id, retain = heldDirtyEntries())
                     logPushSuccess(fileCount = dirty.size, commitSha = commitResponse.id)
                     Unit.right()
                 }
@@ -1202,6 +1322,9 @@ class WasmGitWriteService(
     companion object {
         /** GitHub's hard cap on a single blob create call is 100 MiB; stay well under it. */
         const val MAX_BLOB_BYTES = 75_000_000L
+
+        /** Upper bound on cached remote `.gitattributes` bodies before the cache is dropped. */
+        private const val LFS_RULES_CACHE_LIMIT = 256
 
         /** Task 3.4.1c: max concurrent `createBlob` POSTs in flight per [commit] call. */
         private const val BLOB_CREATE_CONCURRENCY = 3

@@ -38,7 +38,7 @@ class IosGitRepository : GitRepository {
 
     override suspend fun status(config: GitConfig): Either<DomainError.GitError, GitStatus> = notSupported
 
-    override suspend fun stageSubdir(config: GitConfig): Either<DomainError.GitError, Unit> = notSupported
+    override suspend fun stageSubdir(config: GitConfig, excludePaths: Set<String>): Either<DomainError.GitError, Unit> = notSupported
 
     override suspend fun commit(config: GitConfig, message: String): Either<DomainError.GitError, String> =
         notSupported
