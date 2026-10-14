@@ -93,3 +93,41 @@ Based on research, the achievable coverage improvement without blocking on `stel
 This plan is **sound and achievable** for the scoped set of tasks. Its primary constraint — StelekitViewModel not being mockable — is documented and acknowledged: 3 of the 8 zero-coverage files are correctly deferred to `stelekit-viewmodel-decomposition`. Tasks 1.1, 1.2, 2.1, 2.2, 3.1, 3.2, and 4.1 are independently implementable by any engineer familiar with the existing Robolectric test pattern in this codebase.
 
 Coverage floor targets are deliberately conservative to account for measurement uncertainty. Confirm actual numbers with a local `./gradlew testDebugUnitTest :kmp:jacocoTestReport` run before updating the CI gate.
+
+---
+
+## Deferred files — blocked on `stelekit-viewmodel-decomposition`
+
+These three files stay at 0% in this item. Each takes the concrete `StelekitViewModel`
+class (no interface or port to fake), so a test would have to construct the full
+ViewModel dependency graph or subclass a ~1,200-line final-by-default class:
+
+| File | Lines | Why blocked |
+|------|-------|-------------|
+| `GraphContentActiveShell.kt` | 430 | Wires `StelekitViewModel` into the active-graph shell; no seam to substitute |
+| `GraphContentLeftSidebar.kt` | 170 | Reads and drives `StelekitViewModel` state directly |
+| `GraphContentVaultActions.kt` | 148 | Needs `VaultManager` plus the ViewModel constructor chain |
+
+Unblock condition: `stelekit-viewmodel-decomposition` introduces an interface or
+delegation boundary these composables can depend on instead.
+
+## Implementation outcomes (deviations from the plan above)
+
+1. **`BlockStateManager` is a concrete class, not an interface.** `FlashcardsScreenTest`
+   uses a real `BlockStateManager` over `InMemoryBlockRepository` instead of the fake the
+   plan described. The card-flip test asserts `card-next-review` is persisted via
+   `updateBlockProperties`.
+2. **`ScreenRouter` guards are tested through `ScreenRouter` itself.** The in-memory
+   repositories and ViewModels are cheap to build, so the fallback of testing
+   `FatalErrorScreen`/`LoadingOverlay` in isolation was not needed.
+3. **`navigateTo` has no history-size cap.** `StelekitViewModel.navigateTo` only trims
+   *forward* history; there is no `MAX_HISTORY`. `StelekitViewModelNavigationTest` covers
+   the boundaries that exist (index 0, last item, forward-history truncation,
+   `addToHistory = false`). A cap would be a behavior change and is out of scope here.
+4. **There is no package-level coverage floor to update.** The CI gate is
+   `:kmp:diffCoverage` (`kmp/build.gradle.kts`, `diff-cover --fail-under 80` over *changed*
+   lines). It has no per-package or per-class thresholds, so "raise `ui/` to 28%" has no
+   existing knob. Adding a package-floor task needs a merged JVM + Android JaCoCo
+   aggregation measured on a full run, which was not done in this item.
+5. **Dialog predicates live in `GraphDialogLayer.kt`**, not a new file, so their coverage
+   counts toward that file.
