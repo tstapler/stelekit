@@ -118,6 +118,25 @@ class GraphManagerCloneTest {
     }
 
     @Test
+    fun `cloneAndAdd registers the wiki subdirectory, not the clone root`() = runTest {
+        val gm = graphManager()
+        val fakeGit = FakeGitRepository(cloneResult = Unit.right())
+
+        val result = gm.cloneAndAdd(
+            gitRepository = fakeGit,
+            url = "https://example.com/repo.git",
+            localPath = "/tmp/cloned-graph",
+            auth = GitAuth.None,
+            onProgress = {},
+            wikiSubdir = "logseq",
+        )
+
+        assertIs<Either.Right<String>>(result)
+        val registered = gm.graphRegistry.value.graphs.single { it.id == result.value }
+        assertEquals("/tmp/cloned-graph/logseq", registered.path)
+    }
+
+    @Test
     fun `cloneAndAdd propagates clone failure without registering graph`() = runTest {
         val gm = graphManager()
         val expectedError = DomainError.GitError.CloneFailed("network error")

@@ -98,7 +98,7 @@ fun GitSetupScreen(
     initialUseExistingClone: Boolean = true,
     graphPath: String = "",
     onSave: () -> Unit = {},
-    onCloneAndAdd: (suspend (url: String, localPath: String, auth: GitAuth, onProgress: (String) -> Unit) -> Either<DomainError.GitError, String>)? = null,
+    onCloneAndAdd: (suspend (url: String, localPath: String, wikiSubdir: String, auth: GitAuth, onProgress: (String) -> Unit) -> Either<DomainError.GitError, String>)? = null,
     onCloneComplete: ((String) -> Unit)? = null,
     deviceFlowClient: GitHubDeviceFlowClient? = null,
 ) {
@@ -376,7 +376,7 @@ fun GitSetupScreen(
                                     )
                                     GitAuthType.NONE -> GitAuth.None
                                 }
-                                val cloneResult = onCloneAndAdd(cloneUrl, repoRoot, cloneAuth) { progress ->
+                                val cloneResult = onCloneAndAdd(cloneUrl, repoRoot, wikiSubdir, cloneAuth) { progress ->
                                     cloneProgress = progress
                                 }
                                 cloneInProgress = false

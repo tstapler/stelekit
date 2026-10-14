@@ -2,9 +2,11 @@ package dev.stapler.stelekit.ui
 
 import dev.stapler.stelekit.db.BacklinkRenamer
 import dev.stapler.stelekit.db.DatabaseWriteActor
+import dev.stapler.stelekit.db.GraphCacheMarker
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphLoaderPort
 import dev.stapler.stelekit.db.GraphWriterPort
+import dev.stapler.stelekit.model.GraphPath
 import dev.stapler.stelekit.vault.VaultManager
 import dev.stapler.stelekit.db.RenameResult
 import dev.stapler.stelekit.db.UndoManager
@@ -486,8 +488,8 @@ class StelekitViewModel(
             pageRepository.clear()
             blockRepository.clear()
             
-            // Clear cached path to force GraphLoader to do a full scan
-            platformSettings.putString("cached_graph_path", "")
+            // Clear the cache marker to force GraphLoader to do a full scan
+            GraphCacheMarker.clear(platformSettings, GraphPath.of(path))
             
             // Reload
             loadGraph(path)
@@ -537,18 +539,19 @@ class StelekitViewModel(
                     
                     logger.info("Loading graph progressively from: $path (Page count: $pageCount)")
                     
-                    var cachedPath = platformSettings.getString("cached_graph_path", "")
-                    
+                    val graphPath = GraphPath.of(path)
+                    var isCached = GraphCacheMarker.isCached(platformSettings, graphPath)
+
                     if (pageCount == 0L) {
                         logger.info("Database is empty - forcing full re-index")
-                        cachedPath = ""
+                        isCached = false
                     }
-                    
-                    if (path != cachedPath) {
-                        logger.info("Switching graph from '$cachedPath' to '$path' - Clearing persistent cache")
+
+                    if (!isCached) {
+                        logger.info("No cache marker for '$path' - Clearing persistent cache")
                         pageRepository.clear()
                         blockRepository.clear()
-                        platformSettings.putString("cached_graph_path", path)
+                        GraphCacheMarker.mark(platformSettings, graphPath)
                     } else {
                         logger.info("Loading same graph '$path' - Keeping persistent cache for incremental load")
                     }

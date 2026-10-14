@@ -337,6 +337,21 @@ Regression tests: `UpgradeResilienceTest` (TC-UPGRADE-001 exercises every `Flow`
 
 When a workflow is called via `workflow_call`, `github.event_name` inside the called workflow reflects the **caller's** triggering event (e.g. `push`), not `workflow_call`. A job `if:` condition checking `github.event_name == 'workflow_call'` will always be false when called from a push-triggered parent. Remove the job-level `if:` entirely and rely on the workflow-level `on:` triggers instead.
 
+### Graph locations are `GraphPath`, cache state is `GraphCacheMarker`
+
+A git clone has two locations: the repo root and `repoRoot/wikiSubdir`. Only the latter is the graph. Build it with `GraphPath.wikiRoot(repoRoot, wikiSubdir)` (`model/GraphPath.kt`); never register, compare, or persist raw path strings. `GraphManager.cloneAndAdd` takes `wikiSubdir` for this reason — registering the clone root creates a second graph that shares one global cache key with the first.
+
+Per-graph "this DB is populated" state goes through `GraphCacheMarker` (`db/GraphCacheMarker.kt`). Do not reintroduce a single global `cached_graph_path` slot: two graphs alternating over it clear and re-import the whole DB on every switch (observed as a multi-minute startup hang on a 9 485-page graph). Regression tests: `GraphPathTest`, `GraphCacheMarkerTest`, `GraphManagerCloneTest`.
+
+### Android debugging — persisted logs, no logcat
+
+The owner cannot run `adb logcat` (it crashes their Linux machine). Diagnose from what the app persists: `filesDir/logs/current.log`, `previous.log`, `last-crash.txt` (`AndroidFileLogSink`, `AndroidCrashRecorder`, wired in `SteleKitApplication.installPersistentLogging`). On next launch `PreviousSessionLog` replays the crash, the previous session's tail, and Android's recorded exit reason (OOM / ANR / native crash, API 30+) into the in-app Logs screen.
+
+- Log through `Logger`, not `android.util.Log`, so output reaches the persisted sink.
+- Reproduce on the `Pixel_Fold` AVD before theorizing: `~/Android/Sdk/emulator/emulator -avd Pixel_Fold -no-window -no-audio -no-snapshot`. Worktrees have no `local.properties`, so `export ANDROID_HOME=$HOME/Android/Sdk` first. Run one class with `./gradlew :kmp:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=<fqcn>`, read `kmp/build/outputs/androidTest-results/connected/debug/*.xml`, then `adb emu kill`.
+- A screen that reads the DB needs both a JVM Compose test over real SQLDelight (`ui/assets/AssetBrowserScreenTest`) and an on-device test on the Android driver (`androidInstrumentedTest/.../AssetBrowserE2ETest`).
+- Voice: a blank STT transcript must never reach the LLM (`VoiceCaptureViewModel`). There is no on-device LLM pre-warm — `MlKitLlmFormatterProvider.checkEligible()` only queries status — so "Running on-device inference (0 chars input)" in a log means an empty transcript was sent.
+
 ## Testing Infrastructure
 
 See `kmp/TESTING_README.md` for the full testing guide. Test source sets:

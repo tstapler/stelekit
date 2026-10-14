@@ -17,6 +17,7 @@ import dev.stapler.stelekit.migration.MigrationRegistry
 import dev.stapler.stelekit.migration.MigrationRunner
 import dev.stapler.stelekit.migration.MigrationTamperedError
 import dev.stapler.stelekit.model.GraphInfo
+import dev.stapler.stelekit.model.GraphPath
 import dev.stapler.stelekit.model.GraphRegistry
 import dev.stapler.stelekit.vault.VaultManager
 import dev.stapler.stelekit.platform.FileSystem
@@ -271,7 +272,8 @@ class GraphManager(
     }
     
     /**
-     * Clones a remote git repository to [localPath] and registers it as a new graph.
+     * Clones a remote git repository to [localPath] and registers its notes root
+     * ([localPath] joined with [wikiSubdir]) as a new graph.
      * Returns the new graphId on success, or a [DomainError.GitError] on failure.
      * The clone step runs on [PlatformDispatcher.IO]; registration runs on the calling dispatcher.
      */
@@ -281,9 +283,11 @@ class GraphManager(
         localPath: String,
         auth: GitAuth,
         onProgress: (String) -> Unit,
+        wikiSubdir: String = "",
     ): Either<DomainError.GitError, String> {
         val cloneResult = gitRepository.clone(url, localPath, auth, onProgress)
-        return cloneResult.map { addGraph(localPath) }
+        // Register the notes root, not the clone root: the graph is repoRoot/wikiSubdir.
+        return cloneResult.map { addGraph(GraphPath.wikiRoot(localPath, wikiSubdir).value) }
     }
 
     fun removeGraph(id: String): Boolean {

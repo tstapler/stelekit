@@ -5,6 +5,10 @@ import android.util.Log
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.git.CredentialStore
+import dev.stapler.stelekit.logging.AndroidCrashRecorder
+import dev.stapler.stelekit.logging.AndroidFileLogSink
+import dev.stapler.stelekit.logging.LogManager
+import dev.stapler.stelekit.logging.PreviousSessionLog
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.platform.SteleKitContext
@@ -54,6 +58,7 @@ class SteleKitApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        installPersistentLogging()
         try {
             BuildInfo.commitHash = BuildConfig.GIT_COMMIT_HASH
             BuildInfo.appVersion = BuildConfig.VERSION_NAME
@@ -95,7 +100,49 @@ class SteleKitApplication : Application() {
         }
     }
 
+    /**
+     * Logs and crash traces survive the process so the next launch can show them in the Logs
+     * screen. Must not throw: a failure here would take down every component's startup.
+     */
+    private fun installPersistentLogging() {
+        try {
+            val logDir = java.io.File(filesDir, "logs")
+            val sink = AndroidFileLogSink(logDir)
+            PreviousSessionLog.replay(logDir, previousExitNotes())
+            LogManager.addSink(sink)
+            AndroidCrashRecorder.install(logDir)
+        } catch (e: Throwable) {
+            Log.w(TAG, "Persistent logging unavailable", e)
+        }
+    }
+
+    /** Why Android ended the previous process (OOM kill, ANR, native crash…); API 30+. */
+    private fun previousExitNotes(): List<String> {
+        if (android.os.Build.VERSION.SDK_INT < 30) return emptyList()
+        return runCatching {
+            val am = getSystemService(android.app.ActivityManager::class.java)
+            am.getHistoricalProcessExitReasons(packageName, 0, EXIT_REASONS_TO_REPORT).map {
+                "Previous process exit: ${exitReasonName(it.reason)} at=${it.timestamp} " +
+                    "importance=${it.importance} rssKb=${it.rss} ${it.description.orEmpty()}"
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun exitReasonName(reason: Int): String = when (reason) {
+        android.app.ApplicationExitInfo.REASON_CRASH -> "CRASH"
+        android.app.ApplicationExitInfo.REASON_CRASH_NATIVE -> "CRASH_NATIVE"
+        android.app.ApplicationExitInfo.REASON_ANR -> "ANR"
+        android.app.ApplicationExitInfo.REASON_LOW_MEMORY -> "LOW_MEMORY"
+        android.app.ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE -> "EXCESSIVE_RESOURCE_USAGE"
+        android.app.ApplicationExitInfo.REASON_INITIALIZATION_FAILURE -> "INITIALIZATION_FAILURE"
+        android.app.ApplicationExitInfo.REASON_SIGNALED -> "SIGNALED"
+        android.app.ApplicationExitInfo.REASON_USER_REQUESTED -> "USER_REQUESTED"
+        android.app.ApplicationExitInfo.REASON_EXIT_SELF -> "EXIT_SELF"
+        else -> "REASON_$reason"
+    }
+
     companion object {
         private const val TAG = "SteleKitApplication"
+        private const val EXIT_REASONS_TO_REPORT = 3
     }
 }

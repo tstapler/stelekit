@@ -84,7 +84,7 @@ internal fun GraphDialogLayer(
     gitRepository: GitRepository? = null,
     gitConfigRepository: GitConfigRepository? = null,
     activeGraphId: String? = null,
-    onCloneAndAdd: (suspend (url: String, localPath: String, auth: dev.stapler.stelekit.git.GitAuth, onProgress: (String) -> Unit) -> Either<DomainError.GitError, String>)? = null,
+    onCloneAndAdd: (suspend (url: String, localPath: String, wikiSubdir: String, auth: dev.stapler.stelekit.git.GitAuth, onProgress: (String) -> Unit) -> Either<DomainError.GitError, String>)? = null,
     graphPath: String = "",
     onCloneComplete: ((String) -> Unit)? = null,
     onAuthError: (() -> Unit)? = null,

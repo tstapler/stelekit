@@ -1473,8 +1473,8 @@ private fun GraphContent(
                         gitConfigRepository = gitConfigRepository,
                         activeGraphId = activeGraphId,
                         onCloneAndAdd = if (gitRepository != null) {
-                            { url, localPath, auth, onProgress ->
-                                graphManager.cloneAndAdd(gitRepository, url, localPath, auth, onProgress)
+                            { url, localPath, wikiSubdir, auth, onProgress ->
+                                graphManager.cloneAndAdd(gitRepository, url, localPath, auth, onProgress, wikiSubdir)
                             }
                         } else null,
                         graphPath = activeGraphPath,

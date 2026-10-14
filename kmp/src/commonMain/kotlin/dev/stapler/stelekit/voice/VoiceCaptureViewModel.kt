@@ -92,7 +92,18 @@ class VoiceCaptureViewModel(
                         VoiceErrorKind.PERMISSION_DENIED,
                     )
                 }
-                is TranscriptResult.Success -> processTranscript(transcriptResult.text.trim())
+                is TranscriptResult.Success -> {
+                    // A blank transcript must never reach the LLM: the model answers the bare
+                    // prompt template and that invented text would be inserted into the journal.
+                    val text = transcriptResult.text.trim()
+                    if (text.isEmpty()) {
+                        _state.value = VoiceCaptureState.Error(
+                            PipelineStage.TRANSCRIBING, "Nothing was captured — try again"
+                        )
+                    } else {
+                        processTranscript(text)
+                    }
+                }
             }
         }
     }
