@@ -267,6 +267,33 @@ class VoiceCaptureViewModelTest {
     }
 
     @Test
+    fun `blank STT transcript never reaches the LLM`() = runTest {
+        val fakeRecorder = object : AudioRecorder {
+            override suspend fun startRecording(): PlatformAudioFile = PlatformAudioFile("/tmp/test.m4a")
+            override suspend fun stopRecording() = Unit
+            override suspend fun readBytes(file: PlatformAudioFile) = ByteArray(100)
+        }
+        val fakeStt = SpeechToTextProvider { _ -> TranscriptResult.Success("   ") }
+        var llmCalls = 0
+        val fakeLlm = LlmFormatterProvider { _, _ ->
+            llmCalls++
+            LlmResult.Success("- invented text", false)
+        }
+        val vm = VoiceCaptureViewModel(
+            VoicePipelineConfig(audioRecorder = fakeRecorder, sttProvider = fakeStt, llmProvider = fakeLlm),
+            makeJournalService(), scope = this,
+        )
+
+        vm.onMicTapped()
+        advanceUntilIdle()
+
+        assertEquals(0, llmCalls)
+        val state = vm.state.first()
+        assertIs<VoiceCaptureState.Error>(state)
+        assertEquals(PipelineStage.TRANSCRIBING, state.stage)
+    }
+
+    @Test
     fun `STT PermissionDenied emits Error at RECORDING`() = runTest {
         val fakeRecorder = object : AudioRecorder {
             override suspend fun startRecording(): PlatformAudioFile = PlatformAudioFile("/tmp/test.m4a")

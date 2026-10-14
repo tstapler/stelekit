@@ -17,8 +17,13 @@ sealed class AssetFilter {
 
     companion object {
         /** Ordered list of all static variants for UI chip rows.
-         *  Replaces `AssetFilter.entries` (enum API; unavailable on sealed classes). */
-        val all: List<AssetFilter> = listOf(ALL, IMAGES, PDFS, AUDIO, VIDEO, DOCUMENTS, FILES, ORPHANED)
+         *  Replaces `AssetFilter.entries` (enum API; unavailable on sealed classes).
+         *
+         *  A getter, not an eager `val`: if `ALL` is the first member touched, the JVM is still
+         *  initializing it while this companion runs, and an eager list captures `null` for
+         *  `ALL` — the first filter chip then NPEs (Assets screen crashed on every open). */
+        val all: List<AssetFilter>
+            get() = listOf(ALL, IMAGES, PDFS, AUDIO, VIDEO, DOCUMENTS, FILES, ORPHANED)
     }
 }
 
