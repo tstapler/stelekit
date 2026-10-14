@@ -98,5 +98,8 @@ class BleDevicePanelTest {
         rule.mainClock.advanceTimeBy(100)
         rule.onNodeWithText("Cancel").performClick()
         rule.onNodeWithText("Scanning for devices…").assertExists()
+        // The in-flight mock connection must not resurrect a Connected state after Cancel.
+        rule.mainClock.advanceTimeBy(3_000)
+        rule.onNodeWithText("Connected: Bosch GLM").assertDoesNotExist()
     }
 }

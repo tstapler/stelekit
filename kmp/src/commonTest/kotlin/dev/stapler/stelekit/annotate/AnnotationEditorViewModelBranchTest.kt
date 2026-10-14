@@ -285,9 +285,8 @@ class AnnotationEditorViewModelBranchTest {
     // ── Tags ──────────────────────────────────────────────────────────────────
 
     @Test
-    fun addTag_blankIgnored_sanitised_dedupedAndPersisted() = runTest {
-        val imageRepo = InMemoryImageAnnotationRepository()
-        val v = vm(imageRepo = imageRepo)
+    fun addTag_blankIgnored_sanitised_deduped() = runTest {
+        val v = vm(imageRepo = InMemoryImageAnnotationRepository())
         v.addTag("   ")
         assertTrue(v.state.value.imageAnnotation!!.tags.isEmpty())
         v.addTag("Wall Paint!")
@@ -420,18 +419,28 @@ class AnnotationEditorViewModelBranchTest {
 
     // ── initialize ────────────────────────────────────────────────────────────
 
+    @OptIn(DirectRepositoryWrite::class)
     @Test
-    fun initialize_loadsPersistedMeasurements_andSecondCallKeepsUserEdits() = runTest {
+    fun initialize_secondCall_doesNotReloadFromRepository() = runTest {
         val repo = InMemoryMeasurementAnnotationRepository()
+        val seeded = MeasurementAnnotation(
+            uuid = UuidGenerator.generateV7(), imageUuid = "img-001",
+            annotationType = AnnotationType.DISTANCE,
+            normalizedPoints = listOf(NormalizedPoint(0.0, 0.0), NormalizedPoint(0.1, 0.0)),
+        )
+        repo.saveMeasurementAnnotation(seeded)
         val v = vm(measurementRepo = repo)
-        v.drawDistance()
-        val committed = awaitState(v.state) { it.committedAnnotations.size == 1 }
-        // Second initialize: updates image/calibration, must not re-run the load or drop edits.
+        awaitState(v.state) { it.committedAnnotations.size == 1 }
+
+        // Remove behind the VM's back, then re-initialize without any user mutation: a re-run
+        // of the load would replace the list with the (now empty) repository contents.
+        repo.deleteMeasurementAnnotation(seeded.uuid)
         v.initialize(image(ppm = 250.0))
+        withContext(Dispatchers.Default) { kotlinx.coroutines.delay(150) }
+
         val s = v.state.value
         assertEquals(250.0, s.calibration!!.pixelsPerMeter, 1e-9)
-        assertEquals(committed.committedAnnotations.map { it.uuid }, s.committedAnnotations.map { it.uuid })
-        assertNotNull(s.imageAnnotation)
+        assertEquals(listOf(seeded.uuid), s.committedAnnotations.map { it.uuid })
         v.close()
     }
 

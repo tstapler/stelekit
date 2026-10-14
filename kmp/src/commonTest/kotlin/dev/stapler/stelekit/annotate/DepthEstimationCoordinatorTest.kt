@@ -44,8 +44,8 @@ private class FakeDepthEstimator(
     val gate: CompletableDeferred<Unit>? = null,
 ) : MonocularDepthEstimator {
     override val isAvailable = true
-    var initCalls = 0
-    var estimateCalls = 0
+    @kotlin.concurrent.Volatile var initCalls = 0
+    @kotlin.concurrent.Volatile var estimateCalls = 0
 
     override suspend fun initialize(): Either<DomainError, Unit> {
         initCalls++
@@ -69,6 +69,9 @@ class DepthEstimationCoordinatorTest {
         h: Double = 2.0,
         onCal: (Calibration) -> Unit = {},
     ) = DepthEstimationCoordinator(estimator, w, h, onCal)
+
+    private suspend fun settle() =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { kotlinx.coroutines.delay(100) }
 
     private suspend fun DepthEstimationCoordinator.awaitIdleAfterRun() {
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
@@ -127,6 +130,7 @@ class DepthEstimationCoordinatorTest {
         val c = coordinator(FakeDepthEstimator(), w = 0.0, h = 0.0) { called = true }
         c.runDepthEstimation(bitmap, NormalizedPoint(0.5, 0.5))
         c.awaitIdleAfterRun()
+        settle()
         assertFalse(called)
         c.close()
     }
@@ -138,6 +142,7 @@ class DepthEstimationCoordinatorTest {
         val c = coordinator(est) { called = true }
         c.runDepthEstimation(bitmap, NormalizedPoint(0.5, 0.5))
         c.awaitIdleAfterRun()
+        settle()
         assertFalse(called)
         c.close()
     }
@@ -152,6 +157,7 @@ class DepthEstimationCoordinatorTest {
         c.runDepthEstimation(bitmap)
         gate.complete(Unit)
         c.awaitIdleAfterRun()
+        settle()
         assertEquals(1, est.initCalls)
         c.close()
     }

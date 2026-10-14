@@ -39,7 +39,7 @@ class AnnotationEditorScreenRobolectricTest {
     ).also { it.initialize(img) }
 
     @Test
-    fun rendersEveryCommittedAnnotationTypeAndInProgressPolygon() {
+    fun rendersEveryCommittedAnnotationTypeAndInProgressPolygon_doesNotCrash() {
         val img = image()
         val vm = viewModel(img)
         vm.selectTool(AnnotationTool.DISTANCE)
