@@ -94,7 +94,8 @@ private fun ConnectedAwaitingContent(
     }
 }
 
-private fun formatMeters(valueMeters: Double): String {
+// @VisibleForTesting
+internal fun formatMeters(valueMeters: Double): String {
     return if (valueMeters >= 1.0) {
         val factor = 1000.0
         val rounded = kotlin.math.round(valueMeters * factor) / factor
