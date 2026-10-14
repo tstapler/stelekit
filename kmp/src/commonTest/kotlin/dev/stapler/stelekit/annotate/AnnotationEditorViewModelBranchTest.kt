@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -49,7 +50,9 @@ private class FakeDevice(
         MutableStateFlow(DeviceConnectionState.CONNECTED)
     override suspend fun connect(): Either<DomainError, Unit> = Unit.right()
     override suspend fun disconnect() {}
-    override fun measurementFlow(): Flow<MeasurementReading> = readings
+    /** Completes once the ViewModel has consumed a reading — lets negative tests await instead of sleeping. */
+    val consumed = kotlinx.coroutines.CompletableDeferred<Unit>()
+    override fun measurementFlow(): Flow<MeasurementReading> = readings.onEach { consumed.complete(Unit) }
 }
 
 /** Branch-gap coverage for [AnnotationEditorViewModel] — complements [AnnotationEditorViewModelTest]. */
@@ -263,9 +266,10 @@ class AnnotationEditorViewModelBranchTest {
     fun inject_nonPositiveReading_leavesCalibration() = runTest {
         val v = vm()
         v.drawDistance()
-        v.setActiveDevice(FakeDevice(flowOf(MeasurementReading(0.0, "fake-ble"))))
+        val device = FakeDevice(flowOf(MeasurementReading(0.0, "fake-ble")))
+        v.setActiveDevice(device)
         v.injectMeasurementFromDevice()
-        withContext(Dispatchers.Default) { kotlinx.coroutines.delay(200) }
+        withContext(Dispatchers.Default) { withTimeout(10_000) { device.consumed.await() } }
         assertEquals(CalibrationMethod.MANUAL_REFERENCE, v.state.value.calibration?.method)
         v.close()
     }
@@ -611,9 +615,10 @@ class AnnotationEditorViewModelBranchTest {
         )
         val v = vm(measurementRepo = repo)
         awaitState(v.state) { it.committedAnnotations.size == 1 }
-        v.setActiveDevice(FakeDevice(flowOf(MeasurementReading(1.0, "fake-ble"))))
+        val device = FakeDevice(flowOf(MeasurementReading(1.0, "fake-ble")))
+        v.setActiveDevice(device)
         v.injectMeasurementFromDevice()
-        withContext(Dispatchers.Default) { kotlinx.coroutines.delay(200) }
+        withContext(Dispatchers.Default) { withTimeout(10_000) { device.consumed.await() } }
         assertEquals(CalibrationMethod.MANUAL_REFERENCE, v.state.value.calibration?.method)
         v.close()
     }

@@ -71,7 +71,11 @@ class DepthEstimationCoordinatorTest {
     ) = DepthEstimationCoordinator(estimator, w, h, onCal)
 
     private suspend fun DepthEstimationCoordinator.awaitIdleAfterRun() {
-        state.first { !it.isDepthInferenceRunning && (it.depthMap != null || it.depthEstimationError != null) }
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            kotlinx.coroutines.withTimeout(10_000) {
+                state.first { !it.isDepthInferenceRunning && (it.depthMap != null || it.depthEstimationError != null) }
+            }
+        }
     }
 
     @Test
@@ -166,6 +170,8 @@ class DepthEstimationCoordinatorTest {
         val c = coordinator(est)
         c.close()
         c.runDepthEstimation(bitmap)
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { kotlinx.coroutines.delay(100) }
         assertEquals(0, est.initCalls)
+        assertFalse(c.state.value.depthMap != null)
     }
 }
