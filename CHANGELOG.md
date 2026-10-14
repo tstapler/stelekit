@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.95.2](https://github.com/tstapler/stelekit/compare/v0.95.1...v0.95.2) (2026-10-14)
+
+
+### Bug Fixes
+
+* **assets:** Assets screen crashed on every open; persist Android logs across crashes ([#423](https://github.com/tstapler/stelekit/issues/423)) ([a53809c](https://github.com/tstapler/stelekit/commit/a53809c3749c0f33a6654c2ccc35a543aebf9758))
+
 ## [0.95.1](https://github.com/tstapler/stelekit/compare/v0.95.0...v0.95.1) (2026-10-13)
 
 
