@@ -83,4 +83,12 @@ class StelekitViewModelNavigationTest {
         assertEquals(listOf(Screen.Journals), state.navigationHistory)
         assertEquals(0, state.historyIndex)
     }
+
+    @Test
+    fun `history is not capped - every navigation is retained`() {
+        // StelekitViewModel.navigateTo has no history-size limit; this pins that boundary.
+        repeat(150) { vm.navigateTo(if (it % 2 == 0) Screen.Flashcards else Screen.Notifications) }
+        assertEquals(151, state.navigationHistory.size)
+        assertEquals(150, state.historyIndex)
+    }
 }
