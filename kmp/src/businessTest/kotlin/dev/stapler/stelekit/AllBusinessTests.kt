@@ -71,6 +71,7 @@ import dev.stapler.stelekit.ui.PullCopyFlowControllerTest
 import dev.stapler.stelekit.merge.InMemoryMergeStorageTest
 import dev.stapler.stelekit.ui.CopyPagesViewModelTest
 import dev.stapler.stelekit.ui.PageSelectionTest
+import dev.stapler.stelekit.ui.assets.AssetFilterTest
 import dev.stapler.stelekit.voice.VoiceCaptureViewModelTest
 import dev.stapler.stelekit.voice.VoiceNoteBlockFormatTest
 import dev.stapler.stelekit.voice.VoicePipelineFactoryTest
@@ -271,6 +272,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.db.GraphLocatorTest::class,
     MergeUuidRoundTripSpikeTest::class,
     ToolbarActionTest::class,
+    AssetFilterTest::class,
     VoiceCaptureViewModelTest::class,
     VoiceNoteBlockFormatTest::class,
     VoicePipelineFactoryTest::class,

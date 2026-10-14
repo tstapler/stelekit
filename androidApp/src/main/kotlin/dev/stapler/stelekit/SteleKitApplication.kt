@@ -135,11 +135,53 @@ class SteleKitApplication : Application() {
         }
     }
 
+    /**
+     * Logs and crash traces survive the process so the next launch can show them in the Logs
+     * screen without adb/logcat. Must not throw: a failure here would break every startup.
+     */
+    private fun installPersistentLogging() {
+        try {
+            val logDir = java.io.File(filesDir, "logs")
+            val sink = dev.stapler.stelekit.logging.AndroidFileLogSink(logDir)
+            dev.stapler.stelekit.logging.PreviousSessionLog.replay(logDir, previousExitNotes())
+            dev.stapler.stelekit.logging.LogManager.addSink(sink)
+            dev.stapler.stelekit.logging.AndroidCrashRecorder.install(logDir)
+        } catch (e: Throwable) {
+            android.util.Log.w("SteleKitApplication", "Persistent logging unavailable", e)
+        }
+    }
+
+    /** Why Android ended the previous process (OOM kill, ANR, native crash...); API 30+. */
+    private fun previousExitNotes(): List<String> {
+        if (android.os.Build.VERSION.SDK_INT < 30) return emptyList()
+        return runCatching {
+            val am = getSystemService(android.app.ActivityManager::class.java)
+            am.getHistoricalProcessExitReasons(packageName, 0, 3).map {
+                "Previous process exit: ${exitReasonName(it.reason)} at=${it.timestamp} " +
+                    "importance=${it.importance} rssKb=${it.rss} ${it.description.orEmpty()}"
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun exitReasonName(reason: Int): String = when (reason) {
+        android.app.ApplicationExitInfo.REASON_CRASH -> "CRASH"
+        android.app.ApplicationExitInfo.REASON_CRASH_NATIVE -> "CRASH_NATIVE"
+        android.app.ApplicationExitInfo.REASON_ANR -> "ANR"
+        android.app.ApplicationExitInfo.REASON_LOW_MEMORY -> "LOW_MEMORY"
+        android.app.ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE -> "EXCESSIVE_RESOURCE_USAGE"
+        android.app.ApplicationExitInfo.REASON_INITIALIZATION_FAILURE -> "INITIALIZATION_FAILURE"
+        android.app.ApplicationExitInfo.REASON_SIGNALED -> "SIGNALED"
+        android.app.ApplicationExitInfo.REASON_USER_REQUESTED -> "USER_REQUESTED"
+        android.app.ApplicationExitInfo.REASON_EXIT_SELF -> "EXIT_SELF"
+        else -> "REASON_$reason"
+    }
+
     override fun onCreate() {
         super.onCreate()
         // First, so every later startup failure and every feature logger reaches logcat
         // (tags "SteleKit.<Logger tag>"); previously no sink was registered on Android.
         dev.stapler.stelekit.logging.LogManager.addSink(dev.stapler.stelekit.logging.AndroidLogSink())
+        installPersistentLogging()
         try {
             dev.stapler.stelekit.platform.NetworkMonitor.init(this)
             BuildInfo.commitHash = getString(R.string.git_commit_hash)
