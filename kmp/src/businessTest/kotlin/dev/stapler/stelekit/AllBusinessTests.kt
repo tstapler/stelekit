@@ -36,6 +36,9 @@ import dev.stapler.stelekit.capture.JournalAppenderTest
 import dev.stapler.stelekit.clipboard.BlockClipboardTest
 import dev.stapler.stelekit.domain.ImportServiceTest
 import dev.stapler.stelekit.editor.LinkInsertionTest
+import dev.stapler.stelekit.editor.commands.CommandManagerTest
+import dev.stapler.stelekit.editor.commands.CommandSystemRegistryTest
+import dev.stapler.stelekit.editor.commands.EssentialCommandsTest
 import dev.stapler.stelekit.flashcard.FlashcardPropertiesTest
 import dev.stapler.stelekit.flashcard.FlashcardReviewTest
 import dev.stapler.stelekit.llm.IosAvailabilityMappingTest
@@ -235,6 +238,9 @@ import org.junit.runners.Suite
     InboxFallbackAppenderTest::class,
     ImportServiceTest::class,
     LinkInsertionTest::class,
+    CommandManagerTest::class,
+    CommandSystemRegistryTest::class,
+    EssentialCommandsTest::class,
     FlashcardPropertiesTest::class,
     FlashcardReviewTest::class,
     IosAvailabilityMappingTest::class,

@@ -90,3 +90,34 @@ covered counter is 0. This run measures the **denominators**, not a coverage bas
 - iOS is not compiled locally (needs macOS); left to CI `ci-ios.yml`.
 - Docs: `docs/reference/hotspot-ranking.md` row removed, `kmp/README.md:34` updated. `docs/tasks/*` and
   `docs/archive/tasks/*` cite deleted files as historic specs and are left as is.
+
+## T2 — `editor.commands` tests and coverage (AC-3, VERIFIED)
+
+New classes in `kmp/src/businessTest/kotlin/dev/stapler/stelekit/editor/commands/`, registered in `AllBusinessTests.kt`
+(import + `@SuiteClasses`): `CommandManagerTest` (23), `CommandSystemRegistryTest` (14), `EssentialCommandsTest` (15).
+
+```
+ANDROID_HOME=$HOME/Android/Sdk scripts/jvm-display-check.sh -- \
+  ./gradlew :kmp:jvmTest --tests 'dev.stapler.stelekit.editor.commands.*' :kmp:jacocoTestReport
+-> BUILD SUCCESSFUL in 57s; junit XML: 52 tests, 0 failures, 0 errors, 0 skipped
+```
+
+| Package `dev/stapler/stelekit/editor/commands` | covered/total |
+|---|---|
+| BRANCH | **99/132 = 75.0%** (target ≥ 40 = 30%) |
+| LINE | 700/777 = 90.1% |
+| METHOD | 121/141 = 85.8% |
+
+- Source: only the three new classes (filter excludes `CommandPaletteFocusRetentionTest`); no value-semantics fallback test
+  was added, so the figure is behavioural. Report file mtime 19:11 matches the run (not the stale spike report).
+- Pre-change: 0/132 under the same filter (T1.1c). The item's full-suite pre-change figure was not re-measured.
+- Remaining partial branches are the `catch (e: CancellationException) { throw e }` arms in each command lambda and
+  `CommandManager`'s outer catch arms, which no essential command can reach (plan: accepted unreachable).
+
+### Failures found while writing the tests (both were test-harness errors, not production bugs)
+1. `compileTestKotlinJvm` failed: `assertEquals(listOf(Triple(.., 3000L)), events)` could not infer `T` against
+   `Triple<…, Long?>`. Fixed by building expected values with a `Long?`-typed helper.
+2. 9 `CommandManagerTest` cases failed with `Command not found` / empty `getAvailableCommands()`. Cause:
+   `CommandManager.init` seeds the registry with `scope.launch`; I passed `backgroundScope`, and `advanceUntilIdle()` does
+   not run background-scope work. Fixed by passing the `TestScope` itself (seeding completes, so `runTest` is not blocked).
+   No production file was changed.
