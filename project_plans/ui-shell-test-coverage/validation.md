@@ -142,3 +142,15 @@ Accepted CONCERNS (follow-ups, not blocking):
 - FlashcardsScreenTest: "not due" test can pass vacuously before seeded blocks arrive; "Again" asserts only that the property key exists.
 - StelekitViewModelNavigationTest: the history test pins unbounded history — update it if a cap is added.
 - NoopFileSystem/NoopSettings fakes are duplicated across three test files.
+
+## AC7 evidence — no display (2026-10-14)
+
+Run with `env -u DISPLAY -u WAYLAND_DISPLAY -u XAUTHORITY`; `scripts/jvm-display-check.sh` reported no display reachable (and no Xvfb installed), so a UI-dependent test would have failed on `XToolkit`.
+
+`./gradlew :kmp:jvmTest --tests '*GraphDialogLayerLogicTest' --tests '*StelekitViewModelNavigationTest' --tests '*StelekitViewModelUiToggleTest' :kmp:testDebugUnitTest --tests '*WikiSubdirFixDialogTest' --tests '*FlashcardsScreenTest' --tests '*ScreenRouterGuardTest'` → BUILD SUCCESSFUL; every GraphDialogLayerLogicTest (14), StelekitViewModelNavigationTest (7) and StelekitViewModelUiToggleTest (6) case PASSED.
+
+Full commonTest/businessTest run with a display present: `:kmp:jvmTest --tests AllBusinessTests` + the new classes → 1417 tests, 17 skipped, 0 failures, 0 errors.
+
+## AC5 note
+
+`StelekitViewModel` has no history-size cap, so the cap boundary cannot be tested as a cap. `history is not capped - every navigation is retained` pins current behaviour; adding a cap is a product change outside this item.
