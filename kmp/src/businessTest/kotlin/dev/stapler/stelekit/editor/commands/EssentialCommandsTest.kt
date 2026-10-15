@@ -17,8 +17,10 @@ private val FIVE_TEXT_IDS = setOf("text.bold", "text.italic", "text.code", "text
 
 /**
  * Behaviour of the built-in command set. Each command is invoked via `execute` directly (bypassing
- * `isAvailable`) unless the case is about palette visibility. Hidden commands stay hidden: these tests
- * pin what they return, not whether they should be exposed.
+ * `isAvailable`) unless the case is about palette visibility. The palette-visibility tests intentionally
+ * pin the visible set to `media.image` (plus the five selection-gated text commands): production documents
+ * every other command as hidden because it has no working mutation route, so a change to that set should be
+ * a deliberate decision that updates these tests.
  */
 class EssentialCommandsTest {
 
@@ -204,13 +206,11 @@ class EssentialCommandsTest {
     fun execute_should_NeverThrow_When_SweepAllCommandsAcrossContexts() = runTest {
         val contexts = listOf(C0, CSEL, CBLOCK, CBAD) +
             listOf("plain", "## a", "first\nsecond").map { CommandContext(currentText = it) }
-        var results = 0
+        // An exception escaping `execute` fails the test; every command must turn bad input into a result.
         for (command in all()) {
             for (context in contexts) {
                 assertIs<CommandResult>(command.execute(context), "${command.id} with ${context.currentText}")
-                results++
             }
         }
-        assertEquals(all().size * contexts.size, results)
     }
 }

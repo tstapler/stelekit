@@ -32,7 +32,10 @@ private fun notice(message: String, type: NotificationType, durationMs: Long?): 
 
 private val SELECTION = CommandContext(currentText = "hello world", selectionStart = 0, selectionEnd = 5)
 
-/** `EditorCommand.isAvailable` truth table and the `CommandManager` execute paths, through the real essential commands. */
+/**
+ * `EditorCommand.isAvailable` and `executeWithContext` on hand-built commands, then `CommandManager`
+ * execute/availability paths against the real `EssentialCommands` it seeds itself with.
+ */
 @OptIn(ExperimentalCoroutinesApi::class)
 class CommandManagerTest {
 

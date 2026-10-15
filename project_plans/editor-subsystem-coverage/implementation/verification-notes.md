@@ -139,3 +139,19 @@ ANDROID_HOME=$HOME/Android/Sdk scripts/jvm-display-check.sh -- \
 - jvm_tests has no new tests, so 769 = 769 is expected; the new classes run in `business_tests`.
 - The `bazel-ci.yml` PR job runs `//kmp:jvm_tests` under `xvfb-run`; whether CI's sandbox has a writable `$HOME` is not checked here.
 - Earlier flake (T1.1b run 2, `GraphRelocationCoordinatorFlagClearingTest`) did not recur in any later business_tests run.
+
+## sdd:6-verify (VERIFIED)
+
+Reviews: `verify-layer1-tests.md` (0 MUST FIX, 8 SUGGEST, 7 NITPICK), `verify-layer2-architecture.md` (0 BLOCKER,
+1 CONCERN, 3 NITPICK), `verify-layer2-refactor.md` (4 cosmetic items). No repair loop needed.
+
+Applied: corrected the KDoc that contradicted the intentional `{media.image}` pin, corrected the `CommandManagerTest` KDoc,
+dropped the vacuous counter assertion in the no-throw sweep. Deferred as cosmetic: shared fixtures file, recorder helper,
+`run` rename, test splits. Kept: the 512-combination truth table (only exhaustive guard on the precondition formula).
+
+Re-run after edits: `jvmTest --tests 'dev.stapler.stelekit.editor.commands.*'` -> 52 tests, 0 failed; JaCoCo
+`editor.commands` BRANCH 99/132 = 75.0%, LINE 700/777. `bazel test //kmp:business_tests` -> PASSED, 1428 testcases
+(1376 baseline + 52), 0 failing; `AllBusinessTestsCompletenessTest` 1/1 passed.
+
+Layer 3 security/error/observability: no auth, network, input-to-query or secret surface in the diff; no new service
+boundary. Layer 4: N/A (no user-facing surface, no `design/ux.md`).
