@@ -1,3 +1,5 @@
+> **SUPERSEDED** by `project_plans/editor-subsystem-coverage/implementation/plan.md`. This plan uses nonexistent APIs (`CommandManager.execute()`, `CommandConfig.isAvailable()`), says ~29 files (actual: 24), and places tests in `commonTest`, which Bazel never runs. Do not implement from it.
+
 # Implementation Plan: editor-subsystem-dead-code
 
 **Date**: 2026-10-13

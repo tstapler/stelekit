@@ -1,3 +1,5 @@
+> **SUPERSEDED** by `project_plans/editor-subsystem-coverage/requirements.md` (corrects the dead-file count to 24 and the `commands` API names; tests go in `businessTest`).
+
 # Requirements: editor-subsystem-dead-code
 
 **Item**: test: editor.* subsystem is ~7% covered and unreferenced outside editor/ (delete or test)
