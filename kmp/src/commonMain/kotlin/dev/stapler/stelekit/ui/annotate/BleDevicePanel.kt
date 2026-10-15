@@ -44,6 +44,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.platform.measurement.ExternalMeasurementDevice
 import dev.stapler.stelekit.platform.measurement.MeasurementDeviceRegistry
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -94,7 +95,8 @@ private fun ConnectedAwaitingContent(
     }
 }
 
-private fun formatMeters(valueMeters: Double): String {
+// @VisibleForTesting
+internal fun formatMeters(valueMeters: Double): String {
     return if (valueMeters >= 1.0) {
         val factor = 1000.0
         val rounded = kotlin.math.round(valueMeters * factor) / factor
@@ -117,6 +119,7 @@ fun BleDevicePanel(
     var panelState by remember { mutableStateOf<BleDevicePanelState>(BleDevicePanelState.Scanning) }
     var retryCount by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
+    var connectJob by remember { mutableStateOf<Job?>(null) }
 
     LaunchedEffect(retryCount) {
         panelState = BleDevicePanelState.Scanning
@@ -220,7 +223,7 @@ fun BleDevicePanel(
                                 OutlinedButton(
                                     onClick = {
                                         panelState = BleDevicePanelState.Connecting(device.deviceName)
-                                        scope.launch {
+                                        connectJob = scope.launch {
                                             // TODO: replace delay with device.connect() when real BLE connection is wired
                                             delay(MOCK_CONNECTION_DELAY_MS)
                                             panelState = BleDevicePanelState.Connected(device)
@@ -245,7 +248,10 @@ fun BleDevicePanel(
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
-                    TextButton(onClick = { panelState = BleDevicePanelState.Scanning }) {
+                    TextButton(onClick = {
+                        connectJob?.cancel()
+                        panelState = BleDevicePanelState.Scanning
+                    }) {
                         Text("Cancel")
                     }
                 }
