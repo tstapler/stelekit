@@ -154,3 +154,8 @@ Full commonTest/businessTest run with a display present: `:kmp:jvmTest --tests A
 ## AC5 note
 
 `StelekitViewModel` has no history-size cap, so the cap boundary cannot be tested as a cap. `history is not capped - every navigation is retained` pins current behaviour; adding a cap is a product change outside this item.
+
+## Owner decisions (2026-10-14)
+
+- **AC8 (per-package floors):** the existing `:kmp:diffCoverage` gate (`diff-cover --fail-under 80` over changed lines, `kmp/build.gradle.kts`) is accepted as the coverage gate. No per-package floors are built; backlog AC8 is failed with that reason.
+- **AC5 (history-size cap):** `StelekitViewModelNavigationTest` keeps pinning current unbounded history; no cap is added because it would be a product change. The cap clause of AC5 is failed with that reason.
