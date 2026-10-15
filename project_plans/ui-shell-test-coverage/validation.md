@@ -163,3 +163,15 @@ Full commonTest/businessTest run with a display present: `:kmp:jvmTest --tests A
 ## sdd:6-verify re-run (2026-10-15)
 
 Scope: only `GraphDialogLayerHostsTest.kt` (test-only) and docs changed since the 2026-10-14 verify; no production source changed. Layer 1+2: no BLOCKER; CONCERN carried forward — three `GraphDialogLayerHostsTest` cases (`settings host`, `sync review hosts`, `wiki subdir fix host`, `manifest-gated hosts`) only assert that composition does not throw. Layer 3: 7 new test classes re-run with DISPLAY unset, 0 failures (see AC7 evidence); CI "Incremental coverage + mutation" run 38667203613 conclusion=success. Earlier failure (run 38665814954) was a single `OutlinerRegressionTest` 5s `ComposeTimeoutException` in code this branch does not touch; it passed on rerun with no code change. Layer 4 skipped (no ux.md).
+
+## sdd:6-verify re-run (2026-10-15)
+
+No BLOCKER or MUST FIX findings (idiom review + architecture review of the predicate extraction and the seven test files). Predicate extraction verified behavior-preserving and every `shouldShow*` is used by a host.
+
+Recorded deviations and accepted CONCERNS (follow-ups, not blocking):
+- Predicates `shouldShowCommandPalette`, `shouldShowSearchDialog`, `shouldShowGitSetup`, `shouldShowRenameDialog` and the share gate were not extracted; those hosts gate on a single flag inline.
+- `setThemeMode` is not covered in `StelekitViewModelUiToggleTest` (plan task 3.2 test 5 dropped).
+- `GraphDialogLayerHostsTest`: four "host composes" tests assert only that composition does not throw; the full-screen disk-conflict test lacks a positive assertion.
+- `FlashcardsScreenTest`: uses `Dispatchers.Default` + `runBlocking` seeding; "Again" asserts only that the property exists.
+- `GraphDialogLayer.kt` `onMove`/`onMerge` only dismiss the dialog (pre-existing, untouched by this item).
+- Decision 4 (28%/8% floor) above is superseded by the Owner decisions section: no per-package floor was set.
