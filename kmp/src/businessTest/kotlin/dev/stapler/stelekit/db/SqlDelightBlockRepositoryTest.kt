@@ -533,4 +533,91 @@ class SqlDelightBlockRepositoryTest {
         assertEquals(expected, f.blocks.getUnlinkedReferences("Target", limit = 10, offset = 0).first().getOrNull()!!.map { it.uuid.value }.toSet())
         assertTrue(f.blocks.getUnlinkedReferences("Absent", limit = 10, offset = 0).first().getOrNull()!!.isEmpty())
     }
+
+    @Test
+    fun `read paths cover cache hits and missing blocks`() = runBlocking<Unit> {
+        val f = fixture()
+        f.blocks.saveBlocks(listOf(
+            block("R", position = "a0"),
+            block("C", parent = "R", position = "a0"),
+            block("G", parent = "C", level = 2, position = "a0"),
+        ))
+        // hierarchy: miss, then cache hit, then unknown root
+        val first = f.blocks.getBlockHierarchy(BlockUuid("R")).first().getOrNull()!!
+        val second = f.blocks.getBlockHierarchy(BlockUuid("R")).first().getOrNull()!!
+        assertEquals(listOf("R", "C", "G"), first.map { it.block.uuid.value })
+        assertEquals(first.map { it.depth }, second.map { it.depth })
+        assertTrue(f.blocks.getBlockHierarchy(BlockUuid("nope")).first().getOrNull()!!.isEmpty())
+
+        // ancestors: nested, cached, root (none), unknown
+        val anc = f.blocks.getBlockAncestors(BlockUuid("G")).first().getOrNull()!!
+        assertEquals(listOf("R", "C"), anc.map { it.uuid.value })
+        assertEquals(listOf("R", "C"), f.blocks.getBlockAncestors(BlockUuid("G")).first().getOrNull()!!.map { it.uuid.value })
+        assertTrue(f.blocks.getBlockAncestors(BlockUuid("R")).first().getOrNull()!!.isEmpty())
+        assertTrue(f.blocks.getBlockAncestors(BlockUuid("nope")).first().getOrNull()!!.isEmpty())
+
+        // parent / siblings / children edge cases
+        assertNull(f.blocks.getBlockParent(BlockUuid("R")).first().getOrNull())
+        assertNull(f.blocks.getBlockParent(BlockUuid("nope")).first().getOrNull())
+        assertEquals("R", f.blocks.getBlockParent(BlockUuid("C")).first().getOrNull()!!.uuid.value)
+        assertTrue(f.blocks.getBlockSiblings(BlockUuid("nope")).first().getOrNull()!!.isEmpty())
+        assertTrue(f.blocks.getBlockChildren(BlockUuid("G")).first().getOrNull()!!.isEmpty())
+        assertNull(f.get("nope"))
+    }
+
+    @Test
+    fun `moves and deletes keep hierarchy reads fresh after the cache was warmed`() = runBlocking<Unit> {
+        val f = fixture()
+        f.blocks.saveBlocks(listOf(
+            block("P", position = "a0"),
+            block("Q", left = "P", position = "a1"),
+            block("Q1", parent = "Q", position = "a0"),
+        ))
+        f.blocks.getBlockHierarchy(BlockUuid("Q")).first()
+        f.blocks.getBlockAncestors(BlockUuid("Q1")).first()
+        f.blocks.moveBlock(BlockUuid("Q1"), BlockUuid("P"), "a0")
+        assertEquals("P", f.blocks.getBlockParent(BlockUuid("Q1")).first().getOrNull()!!.uuid.value)
+        assertEquals(listOf("P"), f.blocks.getBlockAncestors(BlockUuid("Q1")).first().getOrNull()!!.map { it.uuid.value })
+        f.blocks.deleteBlock(BlockUuid("Q"), deleteChildren = true)
+        assertTrue(f.blocks.getBlockHierarchy(BlockUuid("Q")).first().getOrNull()!!.isEmpty())
+    }
+
+    @Test
+    fun `findDuplicateBlocks groups identical content and ignores unique blocks`() = runBlocking<Unit> {
+        val f = fixture()
+        f.blocks.saveBlocks(listOf(
+            block("D1", content = "same text", position = "a0"),
+            block("D2", left = "D1", content = "same text", position = "a1"),
+            block("D3", left = "D2", content = "different text", position = "a2"),
+        ))
+        val groups = f.blocks.findDuplicateBlocks(10).first().getOrNull()!!
+        assertEquals(1, groups.size)
+        assertEquals(setOf("D1", "D2"), groups.single().blocks.map { it.uuid.value }.toSet())
+    }
+
+    @Test
+    fun `cache management api evicts without changing stored data`() = runBlocking<Unit> {
+        val f = fixture()
+        f.blocks.saveBlocks(listOf(block("E1", position = "a0"), block("E2", parent = "E1", position = "a0")))
+        f.blocks.getBlockHierarchy(BlockUuid("E1")).first()
+        f.blocks.getBlockAncestors(BlockUuid("E2")).first()
+        assertTrue(f.blocks.cacheStats().keys.containsAll(listOf("block", "hierarchy", "ancestors")))
+        f.blocks.evictBlock("E1")
+        f.blocks.cacheEvictPage(PageUuid(page))
+        f.blocks.evictHierarchyForPage("unknown-page")
+        f.blocks.cacheEvictAll()
+        assertEquals(2, f.blocks.getBlocksForPage(PageUuid(page)).first().getOrNull()!!.size)
+        f.blocks.walCheckpoint()
+        f.blocks.compactFtsIndex()
+    }
+
+    @Test
+    fun `reactive referencing blocks emits matches and clear empties the table`() = runBlocking<Unit> {
+        val f = fixture(); f.referenceFixture()
+        val hits = f.blocks.findReferencingBlocksReactive("Target", limit = 10, offset = 0).first().getOrNull()!!
+        assertEquals(setOf("L1", "L2", "L3"), hits.map { it.uuid.value }.toSet())
+        assertTrue(f.blocks.findReferencingBlocksReactive("Absent", limit = 10, offset = 0).first().getOrNull()!!.isEmpty())
+        assertTrue(f.blocks.clear().isRight())
+        assertTrue(f.blocks.getBlocksForPage(PageUuid(page)).first().getOrNull()!!.isEmpty())
+    }
 }
