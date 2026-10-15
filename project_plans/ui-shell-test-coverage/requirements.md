@@ -173,3 +173,9 @@ Once R1–R7 are implemented, update the incremental coverage gate (introduced i
 Original AC8 (per-package floors: `ui/` line ≥ 28%, branch ≥ 8%, `StelekitViewModel` branch ≥ 48%) cannot be met: the CI gate has no per-package thresholds and no merged baseline exists to set one safely.
 
 Revised AC8: the existing incremental gate (`:kmp:diffCoverage`, `diffCoverage.threshold` = 80% line coverage on changed executable lines, kmp/build.gradle.kts) passes in CI for this change. Per-package floors are out of scope until a merged JVM+Android baseline is measured.
+
+## AC5 revision (owner decision, 2026-10-14)
+
+Original AC5 required covering a history-size cap boundary. `StelekitViewModel.navigateTo` has no cap (`StelekitViewModel.kt:1086-1106`), and adding one is a product change outside this item.
+
+Revised AC5: `StelekitViewModelNavigationTest` in `businessTest` covers `goBack()` at index 0, `goForward()` at the last item, and pins that history is not capped. Recorded in `validation.md` (ba1362a5).
