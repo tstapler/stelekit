@@ -121,3 +121,21 @@ ANDROID_HOME=$HOME/Android/Sdk scripts/jvm-display-check.sh -- \
    `CommandManager.init` seeds the registry with `scope.launch`; I passed `backgroundScope`, and `advanceUntilIdle()` does
    not run background-scope work. Fixed by passing the `TestScope` itself (seeding completes, so `runTest` is not blocked).
    No production file was changed.
+
+## T3 — AC-4: no new failures (VERIFIED)
+
+| Run | Tree | Command | Result |
+|---|---|---|---|
+| business_tests | current (d5f31954) | `bazel test //kmp:business_tests --cache_test_results=no` | `PASSED in 154.9s` (new classes registered; baseline was 1376 tests, 0 failures) |
+| jvm_tests (display `:1`) | current | `scripts/jvm-display-check.sh -- bazel test //kmp/src/jvmTest/kotlin:jvm_tests ...` | `FAILED`: 769 testcases, 11 failing |
+| jvm_tests | pre-change 826fdf7a, throwaway worktree | same command | `FAILED`: 769 testcases, 11 failing |
+
+`diff` of the sorted failing `classname :: name` lines, baseline vs current: **identical** (11 each). Failing classes:
+`BacklinkRenamerTest` (7), `GraphLoaderTest` (2), `GraphLoadTimingTest` (1), `DiskConflictResolutionTest` (1).
+
+- Cause (VERIFIED from the failure messages): `Read-only file system` when tests create temp dirs under `/home/tstapler/...`
+  inside Bazel's linux-sandbox; they pass 100/100 under Gradle on the current tree
+  (`./gradlew :kmp:jvmTest --tests '*BacklinkRenamerTest' ... -> BUILD SUCCESSFUL`). Pre-existing and unrelated to `editor/`.
+- jvm_tests has no new tests, so 769 = 769 is expected; the new classes run in `business_tests`.
+- The `bazel-ci.yml` PR job runs `//kmp:jvm_tests` under `xvfb-run`; whether CI's sandbox has a writable `$HOME` is not checked here.
+- Earlier flake (T1.1b run 2, `GraphRelocationCoordinatorFlagClearingTest`) did not recur in any later business_tests run.
