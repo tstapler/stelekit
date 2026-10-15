@@ -159,3 +159,7 @@ Full commonTest/businessTest run with a display present: `:kmp:jvmTest --tests A
 
 - **AC8 (per-package floors):** the existing `:kmp:diffCoverage` gate (`diff-cover --fail-under 80` over changed lines, `kmp/build.gradle.kts`) is accepted as the coverage gate. No per-package floors are built; backlog AC8 is failed with that reason.
 - **AC5 (history-size cap):** `StelekitViewModelNavigationTest` keeps pinning current unbounded history; no cap is added because it would be a product change. The cap clause of AC5 is failed with that reason.
+
+## sdd:6-verify re-run (2026-10-15)
+
+Scope: only `GraphDialogLayerHostsTest.kt` (test-only) and docs changed since the 2026-10-14 verify; no production source changed. Layer 1+2: no BLOCKER; CONCERN carried forward — three `GraphDialogLayerHostsTest` cases (`settings host`, `sync review hosts`, `wiki subdir fix host`, `manifest-gated hosts`) only assert that composition does not throw. Layer 3: 7 new test classes re-run with DISPLAY unset, 0 failures (see AC7 evidence); CI "Incremental coverage + mutation" run 38667203613 conclusion=success. Earlier failure (run 38665814954) was a single `OutlinerRegressionTest` 5s `ComposeTimeoutException` in code this branch does not touch; it passed on rerun with no code change. Layer 4 skipped (no ux.md).
