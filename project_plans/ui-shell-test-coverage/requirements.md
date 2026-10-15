@@ -167,3 +167,9 @@ Once R1–R7 are implemented, update the incremental coverage gate (introduced i
 6. `StelekitViewModel` branch coverage ≥ 50%.
 7. All new tests are headless — they pass without an X11 display and without `xvfb-run`.
 8. CI incremental coverage gate updated to reflect the new floors.
+
+## AC8 revision (owner decision)
+
+Original AC8 (per-package floors: `ui/` line ≥ 28%, branch ≥ 8%, `StelekitViewModel` branch ≥ 48%) cannot be met: the CI gate has no per-package thresholds and no merged baseline exists to set one safely.
+
+Revised AC8: the existing incremental gate (`:kmp:diffCoverage`, `diffCoverage.threshold` = 80% line coverage on changed executable lines, kmp/build.gradle.kts) passes in CI for this change. Per-package floors are out of scope until a merged JVM+Android baseline is measured.
