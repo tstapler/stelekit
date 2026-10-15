@@ -31,7 +31,7 @@ kmp/
     │   └── kotlin/dev/stapler/stelekit/
     │       ├── command/       # Undo/redo command pattern
     │       ├── db/            # GraphLoader, GraphWriter, GraphManager, DriverFactory
-    │       ├── editor/        # Editor state, input handling, persistence
+    │       ├── editor/        # Command palette commands (editor.commands)
     │       ├── model/         # Block, Page, Graph, EditorCommand
     │       ├── outliner/      # Block tree operations, sorting, hierarchy
     │       ├── parser/        # Markdown parser, properties, timestamps
