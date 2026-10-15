@@ -210,6 +210,8 @@ import dev.stapler.stelekit.transfer.qrcode.QrImportServiceTest
 import dev.stapler.stelekit.transfer.qrcode.QrTransferCoordinatorTest
 import dev.stapler.stelekit.transfer.qrcode.TransferSessionTest
 import dev.stapler.stelekit.ui.GalleryViewModelTest
+import dev.stapler.stelekit.ui.StelekitViewModelNavigationTest
+import dev.stapler.stelekit.ui.StelekitViewModelUiToggleTest
 import dev.stapler.stelekit.ui.screens.DiskConflictFullScreenStateTest
 import dev.stapler.stelekit.ui.components.MermaidRenderKeyTest
 import dev.stapler.stelekit.ui.components.MermaidRenderResultTest
@@ -411,6 +413,8 @@ import org.junit.runners.Suite
     QrTransferCoordinatorTest::class,
     TransferSessionTest::class,
     GalleryViewModelTest::class,
+    StelekitViewModelNavigationTest::class,
+    StelekitViewModelUiToggleTest::class,
     DiskConflictFullScreenStateTest::class,
     MermaidRenderKeyTest::class,
     MermaidRenderResultTest::class,
