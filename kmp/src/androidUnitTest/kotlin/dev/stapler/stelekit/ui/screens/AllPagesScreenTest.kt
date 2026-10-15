@@ -18,6 +18,12 @@ import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import org.junit.After
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.isDialog
 import kotlinx.coroutines.runBlocking
 import org.junit.Rule
 import org.junit.Test
@@ -33,6 +39,11 @@ import kotlin.time.Clock
 @Config(qualifiers = "w411dp-h891dp-xxhdpi")
 @OptIn(ExperimentalTestApi::class)
 class AllPagesScreenTest {
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+
+    @After
+    fun tearDown() = scope.cancel()
 
     @get:Rule
     val composeTestRule = createComposeRule()
@@ -52,7 +63,7 @@ class AllPagesScreenTest {
     private fun makeVm(pages: List<Page>): AllPagesViewModel {
         val repo = InMemoryPageRepository()
         runBlocking { pages.forEach { repo.savePage(it) } }
-        return AllPagesViewModel(repo, InMemoryBlockRepository(), CoroutineScope(Dispatchers.Unconfined))
+        return AllPagesViewModel(repo, InMemoryBlockRepository(), scope)
     }
 
     private fun show(
@@ -125,8 +136,8 @@ class AllPagesScreenTest {
         composeTestRule.waitUntil(5_000) { vm.isInSelectionMode.value }
         composeTestRule.onNodeWithText("Delete").performClick()
         composeTestRule.onNodeWithText("Delete 1 selected page(s)? This cannot be undone.").assertExists()
-        composeTestRule.onNode(hasText("Delete") and androidx.compose.ui.test.hasClickAction() and
-            androidx.compose.ui.test.hasAnyAncestor(androidx.compose.ui.test.isDialog())).performClick()
+        composeTestRule.onNode(hasText("Delete") and hasClickAction() and
+            hasAnyAncestor(isDialog())).performClick()
         assertEquals(listOf(listOf("1")), deleted)
     }
 

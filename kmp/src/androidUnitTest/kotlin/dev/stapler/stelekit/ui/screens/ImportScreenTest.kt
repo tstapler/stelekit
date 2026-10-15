@@ -21,6 +21,10 @@ import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.repository.InMemoryPageRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import dev.stapler.stelekit.domain.NoOpTopicEnricher
+import org.junit.After
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Rule
 import org.junit.Test
@@ -34,6 +38,11 @@ import kotlin.test.assertTrue
 @RunWith(RobolectricTestRunner::class)
 @Config(qualifiers = "w411dp-h1600dp-xxhdpi")
 class ImportScreenTest {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+
+    @After
+    fun tearDown() = scope.cancel()
+
 
     @get:Rule
     val composeTestRule = createComposeRule()
@@ -60,8 +69,8 @@ class ImportScreenTest {
         graphPath = "/graphs/test",
         urlFetcher = fetcher,
         matcherFlow = MutableStateFlow(matcher),
-        coroutineScope = CoroutineScope(Dispatchers.Unconfined),
-        topicEnricher = enricher ?: dev.stapler.stelekit.domain.NoOpTopicEnricher(),
+        coroutineScope = scope,
+        topicEnricher = enricher ?: NoOpTopicEnricher(),
     )
 
     private fun show(
@@ -114,7 +123,7 @@ class ImportScreenTest {
     }
 
     @Test
-    fun importScreen_should_showUrlInputAndFetchError_when_fetchFails() {
+    fun importScreen_should_recordTimeoutFetchError_when_fetchFails() {
         val vm = vm(fetcher = FixedFetcher(FetchResult.Failure.Timeout))
         show(vm)
         composeTestRule.onNodeWithText("From URL").performClick()
@@ -182,6 +191,7 @@ class ImportScreenTest {
         composeTestRule.waitUntil(5_000) { saver.saved.isNotEmpty() }
         assertEquals("Imported Page", saver.saved.single().name)
         composeTestRule.waitUntil(5_000) { dismissed > 0 }
+        assertEquals(1, dismissed)
     }
 
     @Test

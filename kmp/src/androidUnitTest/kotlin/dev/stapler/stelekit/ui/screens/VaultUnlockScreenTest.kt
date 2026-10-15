@@ -90,7 +90,7 @@ class VaultUnlockScreenTest {
     }
 
     @Test
-    fun vault_should_mapInvalidCredentialAndTamperedToSameMessage() {
+    fun vault_should_showIncorrectPassphrase_when_invalidCredential() {
         show(VaultState.Error(VaultError.InvalidCredential()))
         composeTestRule.onNodeWithText("Incorrect passphrase.").assertExists()
     }

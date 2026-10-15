@@ -16,6 +16,9 @@ import dev.stapler.stelekit.stats.PageConnectivity
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import org.junit.After
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -71,8 +74,13 @@ class LibraryStatsScreenTest {
         }
     }
 
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+
+    @After
+    fun tearDown() = scope.cancel()
+
     private fun vm(provider: LibraryStatsProvider) =
-        LibraryStatsViewModel(provider, "/graphs/test", CoroutineScope(Dispatchers.Unconfined))
+        LibraryStatsViewModel(provider, "/graphs/test", scope)
 
     private fun show(vm: LibraryStatsViewModel) {
         composeTestRule.setContent { MaterialTheme { LibraryStatsScreen(vm) } }
@@ -84,10 +92,13 @@ class LibraryStatsScreenTest {
         val vm = vm(object : LibraryStatsProvider {
             override suspend fun collect(graphPath: String) = gate.await()
         })
-        show(vm)
-        composeTestRule.waitUntil(5_000) { vm.state.value == LibraryStatsState.Loading }
-        composeTestRule.onNodeWithText("Scanning library…").assertExists()
-        gate.complete(null)
+        try {
+            show(vm)
+            composeTestRule.waitUntil(5_000) { vm.state.value == LibraryStatsState.Loading }
+            composeTestRule.onNodeWithText("Scanning library…").assertExists()
+        } finally {
+            gate.complete(null)
+        }
     }
 
     @Test
@@ -134,7 +145,7 @@ class LibraryStatsScreenTest {
     }
 
     @Test
-    fun libraryStats_should_renderOptionalSections_when_reportHasData() {
+    fun libraryStats_should_showNoDatedJournals_when_journalDatesMissing() {
         val vm = vm(CountingProvider(report().copy(firstJournalDate = null, lastJournalDate = null)))
         show(vm)
         composeTestRule.waitUntil(5_000) { vm.state.value is LibraryStatsState.Loaded }

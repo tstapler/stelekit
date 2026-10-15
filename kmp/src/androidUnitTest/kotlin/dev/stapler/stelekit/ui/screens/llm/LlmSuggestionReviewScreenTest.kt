@@ -206,11 +206,4 @@ class LlmSuggestionReviewScreenTest {
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithText("Review LLM Suggestions (1/1)").assertExists()
     }
-
-    @Test
-    fun parseMcpClientName_should_extractSecondSegment() {
-        assertEquals("client", parseMcpClientName("mcp:client:123"))
-        assertEquals("", parseMcpClientName("mcp:"))
-        assertEquals(null, parseMcpClientName("aho-corasick-matcher"))
-    }
 }

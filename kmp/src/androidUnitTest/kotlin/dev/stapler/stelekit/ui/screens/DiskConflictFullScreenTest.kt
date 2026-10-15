@@ -14,9 +14,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 
-/** Robolectric Compose tests for [DiskConflictFullScreen] plus its pure diff helpers. */
+/** Robolectric Compose tests for [DiskConflictFullScreen]; pure diff helpers are in commonTest. */
 @RunWith(RobolectricTestRunner::class)
 @Config(qualifiers = "w411dp-h1600dp-xxhdpi")
 class DiskConflictFullScreenTest {
@@ -62,27 +61,5 @@ class DiskConflictFullScreenTest {
         show("a", "b")
         composeTestRule.onNodeWithContentDescription("Close comparison").performClick()
         assertEquals(1, dismissed)
-    }
-
-    @Test
-    fun computeDiskDiffState_should_classifyInputs() {
-        assertTrue(computeDiskDiffState("", "x") is DiskDiffState.NoLocalEdit)
-        assertTrue(computeDiskDiffState("x", "x") is DiskDiffState.Identical)
-        assertTrue(computeDiskDiffState("x", "y") is DiskDiffState.Different)
-    }
-
-    @Test
-    fun buildDiffLines_should_handleInsertDeleteChange() {
-        val local = "a\nb\nc\nd"
-        val disk = "a\nB\nc\nd\ne"
-        val state = computeDiskDiffState(local, disk) as DiskDiffState.Different
-        val lines = buildDiffLines(state.patch, local.lines())
-        assertTrue(lines.contains(DiffLineItem("b", DiffLineKind.REMOVED)))
-        assertTrue(lines.contains(DiffLineItem("B", DiffLineKind.ADDED)))
-        assertTrue(lines.contains(DiffLineItem("e", DiffLineKind.ADDED)))
-        assertTrue(lines.contains(DiffLineItem("a", DiffLineKind.UNCHANGED)))
-
-        val delOnly = computeDiskDiffState("x\ny", "x") as DiskDiffState.Different
-        assertTrue(buildDiffLines(delOnly.patch, "x\ny".lines()).contains(DiffLineItem("y", DiffLineKind.REMOVED)))
     }
 }
