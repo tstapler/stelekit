@@ -12,7 +12,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -337,7 +336,8 @@ class SqlDelightBlockRepositoryTest {
         val deleted = f.blocks.deleteBulk(listOf(BlockUuid("A"), BlockUuid("B")), deleteChildren = true)
         assertTrue(deleted.isRight(), deleted.toString())
         assertNull(f.get("A")); assertNull(f.get("A1")); assertNull(f.get("A2")); assertNull(f.get("B"))
-        assertNotNull(f.get("C"))
+        // C's chain must not keep pointing at the deleted B (or A): both predecessors are gone.
+        assertNull(f.get("C")!!.leftUuid)
     }
 
     @Test
@@ -493,12 +493,12 @@ class SqlDelightBlockRepositoryTest {
     }
 
     @Test
-    fun `cache eviction does not change what the DB returns`() = runBlocking<Unit> {
+    fun `reads after cache eviction still return the stored block`() = runBlocking<Unit> {
         val f = fixture(); f.twoRoots()
         f.get("A")
         f.blocks.cacheEvictPage(PageUuid(page))
         f.blocks.cacheEvictAll()
-        assertNotEquals(null, f.get("A"))
+        assertNotNull(f.get("A"))
         assertEquals("content-A", f.get("A")!!.content)
     }
 
@@ -518,7 +518,8 @@ class SqlDelightBlockRepositoryTest {
         val all = f.blocks.getLinkedReferences("Target").first().getOrNull()!!.map { it.uuid.value }.toSet()
         assertEquals(setOf("L1", "L2", "L3"), all)
         val paged = f.blocks.getLinkedReferences("Target", limit = 2, offset = 0).first().getOrNull()!!
-        assertTrue(paged.size <= 2 && paged.all { it.uuid.value.startsWith("L") })
+        assertEquals(2, paged.size)
+        assertTrue(paged.all { it.uuid.value.startsWith("L") })
         assertEquals(3L, f.blocks.countLinkedReferences("Target").first().getOrNull())
         assertTrue(f.blocks.getLinkedReferences("Absent").first().getOrNull()!!.isEmpty())
         assertEquals(0L, f.blocks.countLinkedReferences("Absent").first().getOrNull())
@@ -535,7 +536,7 @@ class SqlDelightBlockRepositoryTest {
     }
 
     @Test
-    fun `read paths cover cache hits and missing blocks`() = runBlocking<Unit> {
+    fun `hierarchy ancestor parent and sibling reads handle repeat reads and missing blocks`() = runBlocking<Unit> {
         val f = fixture()
         f.blocks.saveBlocks(listOf(
             block("R", position = "a0"),
@@ -596,12 +597,11 @@ class SqlDelightBlockRepositoryTest {
     }
 
     @Test
-    fun `cache management api evicts without changing stored data`() = runBlocking<Unit> {
+    fun `cache eviction and maintenance calls leave stored blocks intact`() = runBlocking<Unit> {
         val f = fixture()
         f.blocks.saveBlocks(listOf(block("E1", position = "a0"), block("E2", parent = "E1", position = "a0")))
         f.blocks.getBlockHierarchy(BlockUuid("E1")).first()
         f.blocks.getBlockAncestors(BlockUuid("E2")).first()
-        assertTrue(f.blocks.cacheStats().keys.containsAll(listOf("block", "hierarchy", "ancestors")))
         f.blocks.evictBlock("E1")
         f.blocks.cacheEvictPage(PageUuid(page))
         f.blocks.evictHierarchyForPage("unknown-page")

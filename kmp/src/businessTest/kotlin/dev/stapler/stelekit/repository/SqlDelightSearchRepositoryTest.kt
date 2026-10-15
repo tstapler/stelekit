@@ -141,7 +141,7 @@ class SqlDelightSearchRepositoryTest {
     }
 
     @Test
-    fun `recordPageVisit succeeds and ranking still returns the page`() = runBlocking {
+    fun `recordPageVisit returns Right and the page stays searchable`() = runBlocking {
         val f = fixture()
         assertTrue(f.search.recordPageVisit(PageUuid("p-alpha")).isRight())
         val r = f.run(SearchRequest(query = "alpha", dataTypes = setOf(DataType.TITLES)))

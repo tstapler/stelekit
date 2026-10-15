@@ -88,7 +88,7 @@ class UndoManagerTest {
         val b = block("A", "keep me")
         blocks.saveBlock(b)
         opLogger.logDelete(b)
-        blocks.deleteBlock("A".let { BlockUuid(it) })
+        blocks.deleteBlock(BlockUuid("A"))
         assertNull(get("A"))
 
         undo.undo()
@@ -98,7 +98,7 @@ class UndoManagerTest {
     }
 
     @Test
-    fun `a batch is inverted as one unit`() = harness {
+    fun `undo inverts a whole batch as one unit`() = harness {
         opLogger.logBatchStart("batch-1")
         saveAndLogInsert(block("A", "a", "a0"))
         saveAndLogInsert(block("B", "b", "a1"))
@@ -107,9 +107,18 @@ class UndoManagerTest {
         undo.undo()
         assertNull(get("A"))
         assertNull(get("B"))
+    }
 
-        // Redo replays only the highest-seq undone op, which is the BATCH_END marker (a no-op), so a
-        // batch is not re-applied. Pinned as current behaviour, not as a desired contract.
+    // Known gap, pinned so a fix is a visible test change: redo replays only the highest-seq undone op,
+    // which for a batch is the BATCH_END marker (a no-op), so the batch is not re-applied.
+    @Test
+    fun `redo of an undone batch is currently a no-op (known gap)`() = harness {
+        opLogger.logBatchStart("batch-1")
+        saveAndLogInsert(block("A", "a", "a0"))
+        saveAndLogInsert(block("B", "b", "a1"))
+        opLogger.logBatchEnd("batch-1")
+
+        undo.undo()
         undo.redo()
         assertNull(get("A"))
         assertNull(get("B"))

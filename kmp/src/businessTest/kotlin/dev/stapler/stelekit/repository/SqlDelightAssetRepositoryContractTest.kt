@@ -67,7 +67,7 @@ class SqlDelightAssetRepositoryContractTest {
         getAssetByUuid(AssetUuid(uuid)).first().getOrNull()
 
     @Test
-    fun `save and get round-trips persisted fields and applies insert defaults`() = runBlocking<Unit> {
+    fun `save and get round-trips persisted fields`() = runBlocking<Unit> {
         val r = repo()
         val e = entry("a1", AssetMediaType.PDF, tags = listOf("x", "y"))
             .copy(autoLabels = listOf("l"), ocrText = "ocr", cloudDescription = "desc",
