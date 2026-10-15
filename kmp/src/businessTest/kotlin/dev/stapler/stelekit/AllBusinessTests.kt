@@ -36,6 +36,9 @@ import dev.stapler.stelekit.capture.JournalAppenderTest
 import dev.stapler.stelekit.clipboard.BlockClipboardTest
 import dev.stapler.stelekit.domain.ImportServiceTest
 import dev.stapler.stelekit.editor.LinkInsertionTest
+import dev.stapler.stelekit.editor.commands.CommandManagerTest
+import dev.stapler.stelekit.editor.commands.CommandSystemRegistryTest
+import dev.stapler.stelekit.editor.commands.EssentialCommandsTest
 import dev.stapler.stelekit.flashcard.FlashcardPropertiesTest
 import dev.stapler.stelekit.flashcard.FlashcardReviewTest
 import dev.stapler.stelekit.llm.IosAvailabilityMappingTest
@@ -86,6 +89,8 @@ import dev.stapler.stelekit.auto.AudiobookNoteWriterTest
 import dev.stapler.stelekit.capture.ShareInboxTest
 import dev.stapler.stelekit.db.AtomicFileRelocationStepTest
 import dev.stapler.stelekit.db.BlockHierarchyCteTest
+import dev.stapler.stelekit.db.SqlDelightBlockRepositoryTest
+import dev.stapler.stelekit.db.UndoManagerTest
 import dev.stapler.stelekit.db.BulkCopyVerifierTest
 import dev.stapler.stelekit.db.DiskConflictBlockMatcherTest
 import dev.stapler.stelekit.db.GraphLoaderDirtySetTest
@@ -197,6 +202,8 @@ import dev.stapler.stelekit.performance.OtelProviderStabilityTest
 import dev.stapler.stelekit.platform.measurement.MeasurementInjectionTest
 import dev.stapler.stelekit.platform.security.CredentialAccessTest
 import dev.stapler.stelekit.repository.AssetRepositoryTest
+import dev.stapler.stelekit.repository.SqlDelightAssetRepositoryContractTest
+import dev.stapler.stelekit.repository.SqlDelightSearchRepositoryTest
 import dev.stapler.stelekit.repository.WikilinkBatchInsertTest
 import dev.stapler.stelekit.resilience.RetryPoliciesTest
 import dev.stapler.stelekit.sections.DeviceProfileTest
@@ -237,6 +244,9 @@ import org.junit.runners.Suite
     InboxFallbackAppenderTest::class,
     ImportServiceTest::class,
     LinkInsertionTest::class,
+    CommandManagerTest::class,
+    CommandSystemRegistryTest::class,
+    EssentialCommandsTest::class,
     FlashcardPropertiesTest::class,
     FlashcardReviewTest::class,
     IosAvailabilityMappingTest::class,
@@ -289,6 +299,8 @@ import org.junit.runners.Suite
     AtomicFileRelocationStepTest::class,
     ShareInboxTest::class,
     BlockHierarchyCteTest::class,
+    SqlDelightBlockRepositoryTest::class,
+    UndoManagerTest::class,
     BulkCopyVerifierTest::class,
     DiskConflictBlockMatcherTest::class,
     GraphLoaderDirtySetTest::class,
@@ -400,6 +412,8 @@ import org.junit.runners.Suite
     MeasurementInjectionTest::class,
     CredentialAccessTest::class,
     AssetRepositoryTest::class,
+    SqlDelightAssetRepositoryContractTest::class,
+    SqlDelightSearchRepositoryTest::class,
     WikilinkBatchInsertTest::class,
     RetryPoliciesTest::class,
     DeviceProfileTest::class,

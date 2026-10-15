@@ -657,8 +657,7 @@ class SqlDelightBlockRepository(
                             // Chain repair for the top-level block being deleted.
                             // Re-read left_uuid live: prior iterations in this batch may have updated a
                             // sibling's left_uuid, making the pre-fetched blocksByUuid entry stale.
-                            val liveLeftUuid = queries.selectBlockByUuid(block.uuid).asFlow().mapToOneOrNull(PlatformDispatcher.DB).first()?.left_uuid
-                                ?: block.left_uuid
+                            val liveLeftUuid = liveLeftUuidOf(block.uuid, block.left_uuid)
                             val nextSibling = siblingAfter(block.uuid, block.parent_uuid)
                             if (nextSibling != null) {
                                 queries.updateBlockLeftUuid(liveLeftUuid, nextSibling.uuid)
@@ -669,8 +668,7 @@ class SqlDelightBlockRepository(
                             wikilinkPages.addAll(queries.selectWikilinkPageNamesForBlock(block.uuid).asFlow().mapToList(PlatformDispatcher.DB).first())
                             // Chain repair before deletion. Re-read left_uuid live: prior iterations
                             // may have updated a sibling's left_uuid, making the pre-fetched map stale.
-                            val liveLeftUuid = queries.selectBlockByUuid(block.uuid).asFlow().mapToOneOrNull(PlatformDispatcher.DB).first()?.left_uuid
-                                ?: block.left_uuid
+                            val liveLeftUuid = liveLeftUuidOf(block.uuid, block.left_uuid)
                             val nextSibling = siblingAfter(block.uuid, block.parent_uuid)
                             if (nextSibling != null) {
                                 queries.updateBlockLeftUuid(liveLeftUuid, nextSibling.uuid)
@@ -717,7 +715,8 @@ class SqlDelightBlockRepository(
                 }
                 val otherSiblings = siblings.filter { it.uuid != block.uuid }.sortedBy { it.position }
                 val leftSibling = otherSiblings.lastOrNull { it.position < newPosition }
-                val newLeftUuid = leftSibling?.uuid ?: (newParentUuidResolved ?: block.page_uuid)
+                // null at root: left_uuid has an FK to blocks(uuid), so a page uuid would violate it
+                val newLeftUuid = leftSibling?.uuid ?: newParentUuidResolved
 
                 // 4. Repair NEW chain: the block that will now follow us must point to us
                 val rightSibling = otherSiblings.firstOrNull { it.position >= newPosition }
@@ -796,6 +795,12 @@ class SqlDelightBlockRepository(
     private suspend fun siblingAfter(uuid: String, parentUuid: String?): Blocks? =
         queries.selectSiblingAfter(uuid, parentUuid).asFlow().mapToList(PlatformDispatcher.DB).first().firstOrNull()
 
+    // A live null is real (ON DELETE SET NULL); only a missing row falls back to the stale prefetched value.
+    private suspend fun liveLeftUuidOf(uuid: String, prefetched: String?): String? {
+        val live = queries.selectBlockByUuid(uuid).asFlow().mapToOneOrNull(PlatformDispatcher.DB).first()
+        return if (live != null) live.left_uuid else prefetched
+    }
+
     override suspend fun outdentBlock(blockUuid: BlockUuid): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
             queries.transaction {
@@ -862,8 +867,8 @@ class SqlDelightBlockRepository(
 
             // Use left_uuid linked-list to find adjacent siblings in O(1) queries —
             // avoids loading all N siblings just to locate the predecessor and successor.
-            // block.left_uuid is a page/parent UUID sentinel when block is first; selectBlockByUuid
-            // returns null (pages not in blocks table) or a different-level block — both filtered out.
+            // The first root block has null left_uuid; a first child stores its parent's uuid, which the
+            // parent_uuid check below filters out.
             val prevSibling = block.left_uuid
                 ?.let { queries.selectBlockByUuid(it).asFlow().mapToOneOrNull(PlatformDispatcher.DB).first() }
                 ?.takeIf { it.parent_uuid == block.parent_uuid }
