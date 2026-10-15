@@ -131,3 +131,14 @@ delegation boundary these composables can depend on instead.
    aggregation measured on a full run, which was not done in this item.
 5. **Dialog predicates live in `GraphDialogLayer.kt`**, not a new file, so their coverage
    counts toward that file.
+
+## sdd:6-verify (2026-10-14)
+
+Layer 1+2: no BLOCKERs; GraphDialogLayer.kt predicate extraction verified behavior-preserving by diff comparison.
+Layer 3: `:kmp:testDebugUnitTest` for WikiSubdirFixDialogTest, FlashcardsScreenTest, ScreenRouterGuardTest — BUILD SUCCESSFUL. businessTest/commonTest suites were not re-run in this session.
+
+Accepted CONCERNS (follow-ups, not blocking):
+- ScreenRouterGuardTest: "Dismiss" test has no assertion; "Retry" asserts only `assertNotEquals("Ready", ...)`.
+- FlashcardsScreenTest: "not due" test can pass vacuously before seeded blocks arrive; "Again" asserts only that the property key exists.
+- StelekitViewModelNavigationTest: the history test pins unbounded history — update it if a cap is added.
+- NoopFileSystem/NoopSettings fakes are duplicated across three test files.
