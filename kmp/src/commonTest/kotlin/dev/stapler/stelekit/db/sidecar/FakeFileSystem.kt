@@ -38,6 +38,7 @@ open class FakeFileSystem : FileSystem {
         return true
     }
     override fun renameFile(from: String, to: String): Boolean {
+        if (fileExists(to)) return false
         val text = textFiles.remove(from)
         if (text != null) { textFiles[to] = text; return true }
         val bytes = binaryFiles.remove(from)

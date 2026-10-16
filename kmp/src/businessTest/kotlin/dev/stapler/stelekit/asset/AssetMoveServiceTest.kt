@@ -5,6 +5,8 @@ package dev.stapler.stelekit.asset
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.db.sidecar.FakeFileSystem
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
+import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.repository.AssetRepository
 import dev.stapler.stelekit.repository.InMemoryAssetRepository
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -21,6 +23,12 @@ class AssetMoveServiceTest {
         var createDirCalls = 0
         override fun renameFile(from: String, to: String): Boolean { renameCalls++; return super.renameFile(from, to) }
         override fun createDirectory(path: String): Boolean { createDirCalls++; return super.createDirectory(path) }
+    }
+
+    private class UpdateCountingRepository(private val delegate: InMemoryAssetRepository) : AssetRepository by delegate {
+        var updateCalls = 0
+        override suspend fun updateFilePath(uuid: AssetUuid, filePath: String, relativePath: String) =
+            delegate.updateFilePath(uuid, filePath, relativePath).also { updateCalls++ }
     }
 
     private val oldPath = "/graph/assets/images/doc.pdf"
@@ -66,22 +74,28 @@ class AssetMoveServiceTest {
         val result = move(svc, fs, asset, "pdfs")
 
         assertTrue(result.isLeft())
+        assertTrue(result.leftOrNull() is DomainError.DatabaseError.WriteFailed)
+        assertEquals(1, fs.renameCalls)
         assertEquals(oldPath, repo.getAssetByUuid(asset.uuid).first().getOrNull()?.filePath)
     }
 
     @Test
     fun moveAsset_samePath_isNoOp() = runBlocking {
-        val (fs, repo, svc) = fixture()
+        val fs = RecordingFileSystem()
+        val inner = InMemoryAssetRepository()
+        val repo = UpdateCountingRepository(inner)
+        val svc = AssetMoveService(repo, restrictedQueries = null)
         val asset = testAsset("a3", filePath = oldPath)
         fs.writeFileBytes(oldPath, byteArrayOf(1))
-        repo.saveAsset(asset)
+        inner.saveAsset(asset)
 
         val result = move(svc, fs, asset, "images")
 
         assertTrue(result.isRight())
         assertEquals(0, fs.renameCalls)
         assertEquals(0, fs.createDirCalls)
-        assertEquals(oldPath, repo.getAssetByUuid(asset.uuid).first().getOrNull()?.filePath)
+        assertEquals(0, repo.updateCalls)
+        assertEquals(oldPath, inner.getAssetByUuid(asset.uuid).first().getOrNull()?.filePath)
     }
 
     @Test
@@ -101,6 +115,11 @@ class AssetMoveServiceTest {
         val fs = FakeFileSystem()
         fs.writeFile("/a.txt", "text")
         fs.writeFileBytes("/b.bin", byteArrayOf(1, 2))
+
+        fs.writeFile("/exists.txt", "keep")
+        assertFalse(fs.renameFile("/a.txt", "/exists.txt"), "must not overwrite an existing target")
+        assertEquals("keep", fs.readFile("/exists.txt"))
+        assertTrue(fs.fileExists("/a.txt"))
 
         assertTrue(fs.renameFile("/a.txt", "/c.txt"))
         assertFalse(fs.fileExists("/a.txt"))

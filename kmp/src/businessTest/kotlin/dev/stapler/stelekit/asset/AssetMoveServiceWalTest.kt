@@ -1,4 +1,4 @@
-@file:OptIn(DirectRepositoryWrite::class, DirectSqlWrite::class)
+@file:OptIn(DirectRepositoryWrite::class)
 
 package dev.stapler.stelekit.asset
 
@@ -42,6 +42,7 @@ class AssetMoveServiceWalTest {
     @AfterTest
     fun teardown() = driver.close()
 
+    @OptIn(DirectSqlWrite::class)
     private suspend fun seedWalRowAndAsset() {
         repo.saveAsset(testAsset("w1", filePath = oldPath, mediaType = AssetMediaType.PDF))
         restricted.insertPendingMove("w1", oldPath, newPath, "../assets/images/doc.pdf", newRel, 1L)
@@ -101,5 +102,35 @@ class AssetMoveServiceWalTest {
         assertTrue(fs.fileExists(oldPath))
         assertTrue(fs.fileExists(newPath))
         assertEquals(oldPath, storedPath())
+    }
+
+    // --- WAL bookkeeping around moveAsset itself (restrictedQueries != null) ---
+
+    private suspend fun move(subfolder: String): arrow.core.Either<dev.stapler.stelekit.error.DomainError, Unit> {
+        val asset = testAsset("w1", filePath = oldPath, mediaType = AssetMediaType.PDF)
+        repo.saveAsset(asset)
+        return AssetMoveService(repo, restricted).moveAsset(asset, subfolder, "/graph", fs, GraphWriter(fileSystem = fs), writeActor = null)
+    }
+
+    // No "success clears the WAL row" test: RestrictedDatabaseQueries.lastInsertRowId() throws ClassCastException
+    // (SimpleExecutableQuery -> Query), so insertWalEntry returns null and moveAsset never deletes the row.
+    // Production bug, out of scope for this test-only change; add that test when it is fixed.
+
+    @Test
+    fun moveAsset_renameFails_leavesWalRowForReplay() = runBlocking {
+        // old file absent -> rename returns false after the WAL row was written
+        assertTrue(move("pdfs").isLeft())
+
+        assertEquals(1, walRowCount())
+        assertEquals(oldPath, storedPath())
+    }
+
+    @Test
+    fun moveAsset_samePath_writesNoWalRow() = runBlocking {
+        fs.writeFileBytes(oldPath, byteArrayOf(1))
+
+        assertTrue(move("images").isRight())
+
+        assertEquals(0, walRowCount())
     }
 }

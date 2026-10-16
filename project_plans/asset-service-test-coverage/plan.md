@@ -209,3 +209,10 @@ check are exercised across the two test files.
   Robolectric pass.
 - `SqlDelightAssetRepository` SQL correctness — already gated by the incremental
   coverage PR (#402) and `UpgradeResilienceTest`.
+
+## Implementation deviations
+
+- `AssetMoveServiceWalTest` lives in `businessTest`, not `jvmTest`: `businessTest` is JVM-only (`jvmTest.dependsOn(businessTest)`) and other business tests already open `DriverFactory().createDriver("jdbc:sqlite::memory:")`. It runs in `//kmp:business_tests`.
+- Backfill test uses 120 files directly under `assets/` (`FakeFileSystem.listDirectories` is empty) and asserts batch size via a read/save event log.
+- `FakeFileSystem.renameFile` refuses to overwrite an existing target, matching documented `FileSystem.renameFile` semantics.
+- **Production bug found, not fixed (test-only scope):** `RestrictedDatabaseQueries.lastInsertRowId()` (`db/RestrictedDatabaseQueries.kt:670`) casts a `SimpleExecutableQuery` to `Query` and throws `ClassCastException`. `AssetMoveService.insertWalEntry` swallows it and returns `null`, so `moveAsset` never deletes its WAL row after a successful move and a stale row remains per move. Confirmed by a diagnostic test run. A "success clears WAL" test should be added with the fix.
