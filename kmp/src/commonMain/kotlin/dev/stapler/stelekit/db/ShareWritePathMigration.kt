@@ -24,8 +24,9 @@ import kotlinx.coroutines.withContext
  * Driven by `pages.file_path`, so it never sweeps the repo root: only files a page row points at move.
  * Runs before the file watcher attaches, so the moves raise no external-change events.
  *
- * Retry state lives in one metadata value: `done`, or `assets` plus the asset paths still unresolved.
- * Page conflicts and failures store nothing, so the next open retries the whole pass.
+ * Retry state lives in one metadata value: a first line (`done` once every page is settled, else `open`) followed
+ * by the asset paths still unresolved. Pages and assets retry independently; the value is exactly `done` when
+ * nothing remains.
  */
 class ShareWritePathMigration(
     private val writeActor: DatabaseWriteActor,
@@ -40,16 +41,17 @@ class ShareWritePathMigration(
         val state = db.steleDatabaseQueries.selectMetadata(METADATA_KEY)
             .asFlow().mapToOneOrNull(PlatformDispatcher.DB).first()
         if (state == STATE_DONE) return
-        val pendingAssets = parsePendingAssets(state)
+        val stateLines = state?.lines().orEmpty()
+        val pendingAssets = stateLines.drop(1).filter { it.isNotBlank() }.toSet()
 
-        // Pages are already settled when assets are pending, so skip the full-table read.
-        val pages = if (pendingAssets != null) emptyList() else db.steleDatabaseQueries.selectPageUuidAndFilePath()
+        // Pages are already settled when only assets are pending, so skip the full-table read.
+        val pages = if (stateLines.firstOrNull() == STATE_DONE) emptyList() else db.steleDatabaseQueries.selectPageUuidAndFilePath()
             .asFlow().mapToList(PlatformDispatcher.DB).first()
             .mapNotNull { row -> row.file_path?.let { ShareWritePathRepair.PagePath(row.uuid, it) } }
 
         val outcome = try {
             withContext(PlatformDispatcher.IO) {
-                ShareWritePathRepair(fileSystem).repair(repoRoot, notesPath, pages, pendingAssets.orEmpty())
+                ShareWritePathRepair(fileSystem).repair(repoRoot, notesPath, pages, pendingAssets)
             }
         } catch (e: UnsupportedOperationException) {
             logger.info("Share write-path repair skipped: this file system has no byte access")
@@ -75,7 +77,7 @@ class ShareWritePathMigration(
             try {
                 restricted.transaction {
                     for ((uuid, newPath) in outcome.repoints) restricted.updatePageFilePathByUuid(newPath, uuid)
-                    if (newState != null) restricted.upsertMetadata(METADATA_KEY, newState)
+                    restricted.upsertMetadata(METADATA_KEY, newState)
                 }
                 Unit.right()
             } catch (e: CancellationException) {
@@ -87,13 +89,10 @@ class ShareWritePathMigration(
         }
     }
 
-    private fun parsePendingAssets(state: String?): Set<String>? =
-        state?.takeIf { it.startsWith(STATE_ASSETS) }?.lines()?.drop(1)?.filter { it.isNotBlank() }?.toSet()
-
     companion object {
         const val METADATA_KEY = "share_write_path_repair_v1"
         internal const val STATE_DONE = "done"
-        internal const val STATE_ASSETS = "assets"
+        internal const val STATE_OPEN = "open"
     }
 }
 
@@ -116,11 +115,11 @@ class ShareWritePathRepair(private val fs: FileSystem) {
     ) {
         val clean: Boolean get() = conflicts.isEmpty() && failures.isEmpty() && pendingAssets.isEmpty()
 
-        /** The metadata value to persist, or null to leave it unset so the whole pass retries. */
-        fun nextState(): String? = when {
-            conflicts.isNotEmpty() || failures.isNotEmpty() -> null
-            pendingAssets.isEmpty() -> ShareWritePathMigration.STATE_DONE
-            else -> (listOf(ShareWritePathMigration.STATE_ASSETS) + pendingAssets.sorted()).joinToString("\n")
+        /** The metadata value to persist: page status on the first line, then each asset still to settle. */
+        fun nextState(): String {
+            val pagesSettled = conflicts.isEmpty() && failures.isEmpty()
+            val head = if (pagesSettled) ShareWritePathMigration.STATE_DONE else ShareWritePathMigration.STATE_OPEN
+            return (listOf(head) + pendingAssets.sorted()).joinToString("\n")
         }
     }
 
@@ -195,7 +194,7 @@ class ShareWritePathRepair(private val fs: FileSystem) {
         val newExists = fs.fileExists(new)
         if (!oldExists && !newExists) return Settled.NEITHER
         // An unreadable or oversized file is not an absent one: repointing past it would orphan its content.
-        if ((oldExists && isTooLarge(old)) || (newExists && isTooLarge(new))) return Settled.FAILED
+        if (listOf(old to oldExists, new to newExists).any { (path, exists) -> exists && isTooLarge(path) }) return Settled.FAILED
         val oldBytes = if (oldExists) fs.readFileBytes(old) ?: return Settled.FAILED else null
         val newBytes = if (newExists) fs.readFileBytes(new) ?: return Settled.FAILED else null
         return when {
@@ -244,8 +243,9 @@ class ShareWritePathRepair(private val fs: FileSystem) {
         /** Asset refs come from page markdown, so they are untrusted: no escapes, absolute paths, drives or backslashes. */
         private fun isSafeAssetRef(ref: String): Boolean = isSafeRelative(ref) && !ref.startsWith("/")
 
+        private val UNSAFE_CHARS = setOf('\\', ':', '\u0000')
+
         private fun isSafeRelative(path: String): Boolean =
-            path.isNotEmpty() && '\\' !in path && ':' !in path && '\u0000' !in path &&
-                path.split('/').none { it == ".." || it == "." }
+            path.isNotEmpty() && path.none { it in UNSAFE_CHARS } && path.split('/').none { it == ".." || it == "." }
     }
 }

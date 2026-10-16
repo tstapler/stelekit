@@ -144,7 +144,7 @@ class ShareWritePathRepairTest {
         assertEquals(setOf("a.jpg"), first.pendingAssets)
         assertFalse(first.clean)
         assertTrue(first.conflicts.isEmpty() && first.failures.isEmpty(), "an asset problem must not force a page rescan")
-        assertEquals(ShareWritePathMigration.STATE_ASSETS + "\na.jpg", first.nextState())
+        assertEquals(ShareWritePathMigration.STATE_DONE + "\na.jpg", first.nextState())
 
         fs.deleteFile("$notes/assets/a.jpg")
         val second = repair.repair(root, notes, emptyList(), first.pendingAssets)
@@ -167,7 +167,7 @@ class ShareWritePathRepairTest {
 
         assertTrue(outcome.repoints.isEmpty(), "an unreadable file is not an absent one")
         assertEquals(listOf(blocked), outcome.failures)
-        assertEquals(null, outcome.nextState())
+        assertEquals(ShareWritePathMigration.STATE_OPEN, outcome.nextState())
         assertTrue(unreadable.fileExists(blocked))
     }
 
@@ -232,5 +232,19 @@ class ShareWritePathRepairTest {
 
         assertEquals(mapOf("p1" to "$notes/pages/Foo.md"), outcome.repoints)
         assertEquals("- real\n", fs.readFile("$notes/pages/Foo.md"))
+    }
+
+    @Test
+    fun repair_should_KeepPendingAssets_When_AnotherPageConflictsInTheSameRun() {
+        put("$root/journals/a.md", "- ![x](../assets/x.jpg)\n")
+        fs.writeFileBytes("$root/assets/x.jpg", byteArrayOf(1))
+        fs.writeFileBytes("$notes/assets/x.jpg", byteArrayOf(2))
+        put("$root/journals/b.md", "- phone\n")
+        put("$notes/journals/b.md", "- desktop\n")
+
+        val outcome = run(PagePath("a", "$root/journals/a.md"), PagePath("b", "$root/journals/b.md"))
+
+        assertEquals(ShareWritePathMigration.STATE_OPEN + "\nx.jpg", outcome.nextState())
+        assertEquals(mapOf("a" to "$notes/journals/a.md"), outcome.repoints)
     }
 }

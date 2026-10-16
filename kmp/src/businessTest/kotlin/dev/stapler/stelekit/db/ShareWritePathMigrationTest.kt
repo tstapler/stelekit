@@ -77,7 +77,7 @@ class ShareWritePathMigrationTest {
         migrate()
 
         assertEquals("$root/journals/2026_10_16.md", filePathOf("p1"))
-        assertNull(state(), "a conflict must retry the whole pass on the next open")
+        assertEquals(ShareWritePathMigration.STATE_OPEN, state(), "a conflict must retry the whole pass on the next open")
     }
 
     @Test
@@ -89,7 +89,7 @@ class ShareWritePathMigrationTest {
 
         migrate()
         assertEquals("$notes/journals/2026_10_16.md", filePathOf("p1"))
-        assertEquals(ShareWritePathMigration.STATE_ASSETS + "\na.jpg", state())
+        assertEquals(ShareWritePathMigration.STATE_DONE + "\na.jpg", state())
 
         fs.deleteFile("$notes/assets/a.jpg")
         migrate()
@@ -106,7 +106,7 @@ class ShareWritePathMigrationTest {
         runBlocking { ShareWritePathMigration(actor, fs).runIfNeeded(db, root, root) }
 
         assertEquals("$root/journals/2026_10_16.md", filePathOf("p1"))
-        assertNull(state(), "the subdir may not be detected yet, so it must not be marked done")
+        assertNull(state(), "the subdir may not be detected yet, so nothing may be stored")
     }
 
     @Test
@@ -119,5 +119,26 @@ class ShareWritePathMigrationTest {
 
         assertEquals("$root/journals/2026_10_16.md", filePathOf("p1"))
         assertTrue(fs.fileExists("$root/journals/2026_10_16.md"))
+    }
+
+    @Test
+    fun runIfNeeded_should_RetryPendingAssetOnNextOpen_When_AnotherPageStillConflicts() {
+        fs.writeFile("$root/journals/a.md", "- ![x](../assets/x.jpg)\n")
+        fs.writeFileBytes("$root/assets/x.jpg", byteArrayOf(1))
+        fs.writeFileBytes("$notes/assets/x.jpg", byteArrayOf(2))
+        fs.writeFile("$root/journals/b.md", "- phone\n")
+        fs.writeFile("$notes/journals/b.md", "- desktop\n")
+        insertPage("a", "$root/journals/a.md")
+        insertPage("b", "$root/journals/b.md")
+
+        migrate()
+        assertEquals(ShareWritePathMigration.STATE_OPEN + "\nx.jpg", state())
+
+        fs.deleteFile("$notes/assets/x.jpg")
+        fs.deleteFile("$notes/journals/b.md")
+        migrate()
+
+        assertTrue(fs.fileExists("$notes/assets/x.jpg"), "the asset must survive a page conflict in the first run")
+        assertEquals(ShareWritePathMigration.STATE_DONE, state())
     }
 }
