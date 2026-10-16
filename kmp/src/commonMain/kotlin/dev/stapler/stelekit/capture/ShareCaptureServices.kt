@@ -49,7 +49,7 @@ class ShareCaptureServices(
  */
 fun createTargetWriterRouter(
     graphManager: GraphManager,
-    graphFileSystem: PlatformFileSystem,
+    graphFileSystem: FileSystem,
     capabilities: TargetWriterCapabilities,
     canonicalize: (String) -> String,
     activeHooks: ActiveWriteHooks,

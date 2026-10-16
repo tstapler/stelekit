@@ -66,10 +66,10 @@ class JournalAppenderOffGraphTest {
         managers.clear()
     }
 
-    private fun newManager(workPath: String = workRoot, activeWikiSubdir: String? = null): GraphManager {
+    private fun newManager(workPath: String = workRoot, activeWikiSubdir: String? = null, workWikiSubdir: String? = null): GraphManager {
         val graphs = listOf(active to "/graphs/active", work to workPath)
             .map { (id, path) ->
-                val subdir = activeWikiSubdir.takeIf { id == active }
+                val subdir = if (id == active) activeWikiSubdir else workWikiSubdir
                 GraphInfo(
                     id = id, path = path, displayName = id.value, addedAt = 0L,
                     detectedWikiSubdir = subdir, effectivePath = subdir?.let { "$path/$it" },
@@ -338,6 +338,22 @@ class JournalAppenderOffGraphTest {
         assertNotNull(inSubdir, "journal must land in <repoRoot>/logseq/journals, the only folder git sync stages")
         assertTrue(targetFs.readFile("$activeRoot/logseq/journals/${inSubdir.substringAfterLast('/')}")!!.contains("hello subdir"))
         assertTrue(targetFs.listFiles("$activeRoot/journals").isEmpty(), "nothing may be written to <repoRoot>/journals")
+    }
+
+    @Test
+    fun productionRouter_should_WriteInactiveGraphJournalUnderWikiSubdir() = realTime {
+        val m = newManager(workWikiSubdir = "logseq")
+        m.awaitPendingMigration()
+        val router = createTargetWriterRouter(
+            m, targetFs, TargetWriterCapabilities(platformSupportsOffGraphWrite = true),
+            MarkdownTargetWriter.NoSymlinks, ActiveWriteHooks(),
+        )
+        val route = RouterOffGraphRoute(router, RegistryGraphLocator(m.graphRegistry), AssetCopier(targetFs)) { day }
+
+        assertIs<AppendOutcome.AppendedOffGraph>(route.appendContent(work, ShareContent("hello work"), c1))
+
+        assertNotNull(targetFs.listFiles("$workRoot/logseq/journals").singleOrNull(), "journal must be under <repoRoot>/logseq/journals")
+        assertTrue(targetFs.listFiles("$workRoot/journals").isEmpty(), "nothing may be written to <repoRoot>/journals")
     }
 
     @Test

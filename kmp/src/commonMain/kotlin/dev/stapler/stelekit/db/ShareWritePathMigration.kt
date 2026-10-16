@@ -12,22 +12,20 @@ import arrow.core.right
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
-import dev.stapler.stelekit.merge.AssetCopier
 import dev.stapler.stelekit.platform.FileSystem
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
 /**
- * Moves journals, pages and assets that share/capture writers wrote to `<repoRoot>/journals|pages|assets`
- * into `<repoRoot>/<wikiSubdir>/…`, where the graph (and git sync's staging) actually lives.
+ * Moves journals, pages and assets that share/capture writers put in `<repoRoot>/journals|pages|assets`
+ * into `<repoRoot>/<wikiSubdir>/…` (the only folder git sync stages) and repoints their page rows.
  *
- * Those writers used the registry `path` (the repo root) instead of the effective notes path, so on a
- * graph with `wikiSubdir = "logseq"` a shared journal landed outside the only folder git sync stages and
- * never reached the remote. Page rows kept pointing at the stray file, so later editor saves went there too.
+ * Driven by `pages.file_path`, so it never sweeps the repo root: only files a page row points at move.
+ * Runs before the file watcher attaches, so the moves raise no external-change events.
  *
- * Driven by the DB's `pages.file_path`, never by scanning the repo root, so a file SteleKit did not write
- * is never touched. Runs once per graph; a run that leaves a conflict or failure is retried on the next open.
+ * Retry state lives in one metadata value: `done`, or `assets` plus the asset paths still unresolved.
+ * Page conflicts and failures store nothing, so the next open retries the whole pass.
  */
 class ShareWritePathMigration(
     private val writeActor: DatabaseWriteActor,
@@ -39,23 +37,32 @@ class ShareWritePathMigration(
         // Nothing to repair, and NOT marked done: the wiki subdir may simply not be detected yet.
         if (!ShareWritePathRepair.isSubdirLayout(repoRoot, notesPath)) return
 
-        val done = db.steleDatabaseQueries.selectMetadata(METADATA_KEY)
+        val state = db.steleDatabaseQueries.selectMetadata(METADATA_KEY)
             .asFlow().mapToOneOrNull(PlatformDispatcher.DB).first()
-        if (done == "done") return
+        if (state == STATE_DONE) return
+        val pendingAssets = parsePendingAssets(state)
 
-        val pages = db.steleDatabaseQueries.selectPageUuidAndFilePath()
+        // Pages are already settled when assets are pending, so skip the full-table read.
+        val pages = if (pendingAssets != null) emptyList() else db.steleDatabaseQueries.selectPageUuidAndFilePath()
             .asFlow().mapToList(PlatformDispatcher.DB).first()
             .mapNotNull { row -> row.file_path?.let { ShareWritePathRepair.PagePath(row.uuid, it) } }
 
-        val outcome = withContext(PlatformDispatcher.IO) {
-            ShareWritePathRepair(fileSystem).repair(repoRoot, notesPath, pages)
+        val outcome = try {
+            withContext(PlatformDispatcher.IO) {
+                ShareWritePathRepair(fileSystem).repair(repoRoot, notesPath, pages, pendingAssets.orEmpty())
+            }
+        } catch (e: UnsupportedOperationException) {
+            logger.info("Share write-path repair skipped: this file system has no byte access")
+            return
         }
         logger.info(
             "Share write-path repair: moved=${outcome.moved} repointed=${outcome.repoints.size} " +
-                "assetsMoved=${outcome.assetsMoved} conflicts=${outcome.conflicts.size} failures=${outcome.failures.size}",
+                "assetsMoved=${outcome.assetsMoved} conflicts=${outcome.conflicts.size} " +
+                "failures=${outcome.failures.size} pendingAssets=${outcome.pendingAssets.size}",
         )
         outcome.conflicts.forEach { logger.warn("Share write-path repair: both copies exist and differ, left in place: $it") }
         outcome.failures.forEach { logger.warn("Share write-path repair: could not move $it") }
+        outcome.warnings.forEach { logger.warn("Share write-path repair: $it") }
 
         writeBack(db, outcome)
     }
@@ -63,12 +70,13 @@ class ShareWritePathMigration(
     @OptIn(DirectSqlWrite::class)
     private suspend fun writeBack(db: SteleDatabase, outcome: ShareWritePathRepair.Outcome) {
         val restricted = RestrictedDatabaseQueries(db.steleDatabaseQueries)
+        val newState = outcome.nextState()
         writeActor.execute {
             try {
                 restricted.transaction {
                     for ((uuid, newPath) in outcome.repoints) restricted.updatePageFilePathByUuid(newPath, uuid)
+                    if (newState != null) restricted.upsertMetadata(METADATA_KEY, newState)
                 }
-                if (outcome.clean) restricted.upsertMetadata(METADATA_KEY, "done")
                 Unit.right()
             } catch (e: CancellationException) {
                 throw e
@@ -79,8 +87,13 @@ class ShareWritePathMigration(
         }
     }
 
+    private fun parsePendingAssets(state: String?): Set<String>? =
+        state?.takeIf { it.startsWith(STATE_ASSETS) }?.lines()?.drop(1)?.filter { it.isNotBlank() }?.toSet()
+
     companion object {
         const val METADATA_KEY = "share_write_path_repair_v1"
+        internal const val STATE_DONE = "done"
+        internal const val STATE_ASSETS = "assets"
     }
 }
 
@@ -97,57 +110,95 @@ class ShareWritePathRepair(private val fs: FileSystem) {
         /** Both copies exist with different bytes; left untouched for the user to resolve. */
         val conflicts: List<String>,
         val failures: List<String>,
+        /** Assets (relative to `assets/`) still to settle; retried without re-reading page rows. */
+        val pendingAssets: Set<String>,
+        val warnings: List<String> = emptyList(),
     ) {
-        val clean: Boolean get() = conflicts.isEmpty() && failures.isEmpty()
+        val clean: Boolean get() = conflicts.isEmpty() && failures.isEmpty() && pendingAssets.isEmpty()
+
+        /** The metadata value to persist, or null to leave it unset so the whole pass retries. */
+        fun nextState(): String? = when {
+            conflicts.isNotEmpty() || failures.isNotEmpty() -> null
+            pendingAssets.isEmpty() -> ShareWritePathMigration.STATE_DONE
+            else -> (listOf(ShareWritePathMigration.STATE_ASSETS) + pendingAssets.sorted()).joinToString("\n")
+        }
     }
 
     private enum class Settled { MOVED, ALREADY_THERE, DEDUPED, NEITHER, CONFLICT, FAILED }
 
-    fun repair(repoRoot: String, notesPath: String, pages: List<PagePath>): Outcome {
-        val root = repoRoot.trimEnd('/')
-        val notes = notesPath.trimEnd('/')
+    private class Progress {
         val repoints = mutableMapOf<String, String>()
         val conflicts = mutableListOf<String>()
         val failures = mutableListOf<String>()
+        val warnings = mutableListOf<String>()
+        val pendingAssets = linkedSetOf<String>()
         var moved = 0
         var assetsMoved = 0
-        val assetRefs = LinkedHashSet<String>()
-        val assetScanner = AssetCopier(fs)
 
-        if (!isSubdirLayout(root, notes)) return Outcome(repoints, 0, 0, conflicts, failures)
+        fun toOutcome() = Outcome(repoints, moved, assetsMoved, conflicts, failures, pendingAssets, warnings)
+    }
 
+    /** [retryAssets] are asset paths left over from an earlier run; they are settled without any page rows. */
+    fun repair(repoRoot: String, notesPath: String, pages: List<PagePath>, retryAssets: Set<String> = emptySet()): Outcome {
+        val root = repoRoot.trimEnd('/')
+        val notes = notesPath.trimEnd('/')
+        val progress = Progress()
+        if (!isSubdirLayout(root, notes)) return progress.toOutcome()
+
+        val assetRefs = LinkedHashSet(retryAssets)
+        settlePages(root, notes, pages, progress, assetRefs)
+        settleAssets(root, notes, assetRefs, progress)
+        return progress.toOutcome()
+    }
+
+    private fun settlePages(root: String, notes: String, pages: List<PagePath>, progress: Progress, assetRefs: MutableSet<String>) {
         for (page in pages) {
             val rel = strayRelativePath(root, notes, page.filePath) ?: continue
             val newPath = "$notes/$rel"
             when (settle(page.filePath, newPath)) {
-                Settled.MOVED -> { moved++; repoints[page.uuid] = newPath }
-                Settled.ALREADY_THERE, Settled.DEDUPED -> repoints[page.uuid] = newPath
-                Settled.CONFLICT -> conflicts += page.filePath
-                Settled.FAILED -> failures += page.filePath
-                Settled.NEITHER -> continue
+                Settled.MOVED -> { progress.moved++; progress.repoints[page.uuid] = newPath }
+                Settled.ALREADY_THERE, Settled.DEDUPED -> progress.repoints[page.uuid] = newPath
+                Settled.CONFLICT -> progress.conflicts += page.filePath
+                Settled.FAILED -> progress.failures += page.filePath
+                Settled.NEITHER -> Unit
             }
-            if (page.uuid in repoints) fs.readFile(newPath)?.let { assetRefs += assetScanner.assetRefs(it) }
+            if (page.uuid !in progress.repoints) continue
+            // Ciphertext has no readable links, so its assets cannot be found from here.
+            if (newPath.endsWith(ENCRYPTED_SUFFIX)) progress.warnings += "assets of encrypted page not scanned: $newPath"
+            else fs.readFile(newPath)?.let { assetRefs += AssetLinks.refs(it) }
         }
+    }
 
+    private fun settleAssets(root: String, notes: String, assetRefs: Set<String>, progress: Progress) {
+        val oldAssets = "$root/assets"
+        val newAssets = "$notes/assets"
         for (asset in assetRefs) {
-            if (asset.startsWith("/") || asset.split('/').any { it == ".." }) continue
-            val old = "$root/assets/$asset"
-            when (settle(old, "$notes/assets/$asset")) {
-                Settled.MOVED -> assetsMoved++
-                Settled.CONFLICT -> conflicts += old
-                Settled.FAILED -> failures += old
+            if (!isSafeAssetRef(asset)) continue
+            val old = "$oldAssets/$asset"
+            val new = "$newAssets/$asset"
+            if (!PageFileResolver.isWithin(oldAssets, old) || !PageFileResolver.isWithin(newAssets, new)) continue
+            val result = settle(old, new)
+            when (result) {
+                Settled.MOVED -> progress.assetsMoved++
+                Settled.CONFLICT, Settled.FAILED -> {
+                    progress.pendingAssets += asset
+                    progress.warnings += "asset ${if (result == Settled.CONFLICT) "differs from" else "could not be moved to"} its notes copy: $old"
+                }
                 Settled.ALREADY_THERE, Settled.DEDUPED, Settled.NEITHER -> Unit
             }
         }
-        return Outcome(repoints, moved, assetsMoved, conflicts, failures)
     }
 
-    /** Copy, read back, then delete: only primitives every platform's [FileSystem] implements, and never a lost file. */
+    /** Copy, read back, then delete: only primitives every platform implements, and never a lost file. */
     private fun settle(old: String, new: String): Settled {
-        val oldBytes = fs.readFileBytes(old)
-        val newBytes = fs.readFileBytes(new)
+        val oldExists = fs.fileExists(old)
+        val newExists = fs.fileExists(new)
+        if (!oldExists && !newExists) return Settled.NEITHER
+        // An unreadable or oversized file is not an absent one: repointing past it would orphan its content.
+        if ((oldExists && isTooLarge(old)) || (newExists && isTooLarge(new))) return Settled.FAILED
+        val oldBytes = if (oldExists) fs.readFileBytes(old) ?: return Settled.FAILED else null
+        val newBytes = if (newExists) fs.readFileBytes(new) ?: return Settled.FAILED else null
         return when {
-            oldBytes == null && newBytes == null -> Settled.NEITHER
             oldBytes == null -> Settled.ALREADY_THERE
             newBytes != null -> when {
                 !oldBytes.contentEquals(newBytes) -> Settled.CONFLICT
@@ -168,7 +219,14 @@ class ShareWritePathRepair(private val fs: FileSystem) {
         }
     }
 
+    private fun isTooLarge(path: String): Boolean = (fs.getFileSize(path) ?: 0L) > MAX_FILE_BYTES
+
     companion object {
+        /** Files are held in memory up to three times while copying; skip anything bigger (an Android OOM kills the app). */
+        private const val MAX_FILE_BYTES = 32L * 1024 * 1024
+        private const val ENCRYPTED_SUFFIX = ".stek"
+        private val STRAY_FOLDERS = setOf("journals", "pages")
+
         fun isSubdirLayout(repoRoot: String, notesPath: String): Boolean {
             val root = repoRoot.trimEnd('/')
             return root.isNotEmpty() && notesPath.trimEnd('/').startsWith("$root/")
@@ -178,9 +236,16 @@ class ShareWritePathRepair(private val fs: FileSystem) {
         private fun strayRelativePath(root: String, notes: String, filePath: String): String? {
             if (!filePath.startsWith("$root/") || filePath.startsWith("$notes/")) return null
             val rel = filePath.removePrefix("$root/")
-            return rel.takeIf { it.substringBefore('/') in STRAY_FOLDERS && it.contains('/') && ".." !in it.split('/') }
+            val folder = rel.substringBefore('/')
+            if (folder !in STRAY_FOLDERS || !rel.contains('/') || !isSafeRelative(rel)) return null
+            return rel.takeIf { PageFileResolver.isWithin("$root/$folder", filePath) }
         }
 
-        private val STRAY_FOLDERS = setOf("journals", "pages")
+        /** Asset refs come from page markdown, so they are untrusted: no escapes, absolute paths, drives or backslashes. */
+        private fun isSafeAssetRef(ref: String): Boolean = isSafeRelative(ref) && !ref.startsWith("/")
+
+        private fun isSafeRelative(path: String): Boolean =
+            path.isNotEmpty() && '\\' !in path && ':' !in path && '\u0000' !in path &&
+                path.split('/').none { it == ".." || it == "." }
     }
 }

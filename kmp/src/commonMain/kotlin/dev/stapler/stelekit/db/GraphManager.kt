@@ -981,18 +981,21 @@ class GraphManager(
                             val db = factory.steleDatabase()
                             UuidMigration(writeActor).runIfNeeded(db)
                             logger.info("init[${elapsed()}ms]: UuidMigration done")
-                            FilePathRootMigration(writeActor).runIfNeeded(db, graphInfo.effectiveNotesPath.value)
-                            logger.info("init[${elapsed()}ms]: FilePathRootMigration done")
+                            // Before FilePathRootMigration: that one re-roots rows onto the notes path, which would hide
+                            // share files still sitting in the repo root from this repair.
                             // Best-effort: a failed repair is retried on the next open and must never block opening the graph.
+                            // Throwable, not Exception: on Android an uncaught OutOfMemoryError kills the process.
                             try {
                                 ShareWritePathMigration(writeActor, fileSystem)
                                     .runIfNeeded(db, graphInfo.repoRootObj.value, graphInfo.effectiveNotesPath.value)
+                                logger.info("init[${elapsed()}ms]: ShareWritePathMigration done")
                             } catch (e: CancellationException) {
                                 throw e
-                            } catch (e: Exception) {
+                            } catch (e: Throwable) {
                                 logger.error("ShareWritePathMigration failed for graph $id", e)
                             }
-                            logger.info("init[${elapsed()}ms]: ShareWritePathMigration done")
+                            FilePathRootMigration(writeActor).runIfNeeded(db, graphInfo.effectiveNotesPath.value)
+                            logger.info("init[${elapsed()}ms]: FilePathRootMigration done")
                             try {
                                 MigrationRunner(
                                     registry = MigrationRegistry,

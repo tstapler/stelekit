@@ -32,6 +32,7 @@ import dev.stapler.stelekit.capture.CaptureTargetResolverTest
 import dev.stapler.stelekit.query.QueryExecutorTest
 import dev.stapler.stelekit.capture.InboxFallbackAppenderTest
 import dev.stapler.stelekit.capture.JournalAppenderOffGraphTest
+import dev.stapler.stelekit.db.ShareWritePathMigrationTest
 import dev.stapler.stelekit.db.ShareWritePathRepairTest
 import dev.stapler.stelekit.capture.JournalAppenderTest
 import dev.stapler.stelekit.clipboard.BlockClipboardTest
@@ -248,6 +249,7 @@ import org.junit.runners.Suite
     CaptureTargetResolverTest::class,
     JournalAppenderTest::class,
     JournalAppenderOffGraphTest::class,
+    ShareWritePathMigrationTest::class,
     ShareWritePathRepairTest::class,
     InboxFallbackAppenderTest::class,
     ImportServiceTest::class,

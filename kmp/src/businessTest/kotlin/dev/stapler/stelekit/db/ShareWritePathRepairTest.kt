@@ -132,4 +132,105 @@ class ShareWritePathRepairTest {
         assertTrue(second.repoints.isEmpty())
         assertEquals("- shared\n", fs.readFile("$notes/journals/2026_10_16.md"))
     }
+
+    @Test
+    fun repair_should_RetryConflictingAsset_WithoutPageRows_AfterPagesAreRepointed() {
+        put("$root/journals/2026_10_16.md", "- look\n  ![image](../assets/a.jpg)\n")
+        fs.writeFileBytes("$root/assets/a.jpg", byteArrayOf(1))
+        fs.writeFileBytes("$notes/assets/a.jpg", byteArrayOf(2))
+
+        val first = run(PagePath("p1", "$root/journals/2026_10_16.md"))
+
+        assertEquals(setOf("a.jpg"), first.pendingAssets)
+        assertFalse(first.clean)
+        assertTrue(first.conflicts.isEmpty() && first.failures.isEmpty(), "an asset problem must not force a page rescan")
+        assertEquals(ShareWritePathMigration.STATE_ASSETS + "\na.jpg", first.nextState())
+
+        fs.deleteFile("$notes/assets/a.jpg")
+        val second = repair.repair(root, notes, emptyList(), first.pendingAssets)
+
+        assertContentEquals(byteArrayOf(1), fs.readFileBytes("$notes/assets/a.jpg"))
+        assertEquals(1, second.assetsMoved)
+        assertEquals(ShareWritePathMigration.STATE_DONE, second.nextState())
+    }
+
+    @Test
+    fun repair_should_NotRepoint_When_StrayFileExistsButIsUnreadable() {
+        put("$root/journals/2026_10_16.md", "- newer edits\n")
+        val blocked = "$root/journals/2026_10_16.md"
+        val unreadable = object : FakeRelocationFileSystem() {
+            override fun readFileBytes(path: String): ByteArray? = if (path == blocked) null else super.readFileBytes(path)
+        }
+        unreadable.writeFile(blocked, "- newer edits\n")
+
+        val outcome = ShareWritePathRepair(unreadable).repair(root, notes, listOf(PagePath("p1", blocked)))
+
+        assertTrue(outcome.repoints.isEmpty(), "an unreadable file is not an absent one")
+        assertEquals(listOf(blocked), outcome.failures)
+        assertEquals(null, outcome.nextState())
+        assertTrue(unreadable.fileExists(blocked))
+    }
+
+    @Test
+    fun repair_should_KeepSourceAndLeaveNoPartialCopy_When_WriteFails() {
+        val src = "$root/journals/2026_10_16.md"
+        val failing = object : FakeRelocationFileSystem() {
+            override fun writeFileBytes(path: String, data: ByteArray): Boolean = false
+        }
+        failing.writeFile(src, "- x\n")
+
+        val outcome = ShareWritePathRepair(failing).repair(root, notes, listOf(PagePath("p1", src)))
+
+        assertEquals(listOf(src), outcome.failures)
+        assertTrue(failing.fileExists(src))
+        assertFalse(failing.fileExists("$notes/journals/2026_10_16.md"))
+    }
+
+    @Test
+    fun repair_should_SkipFilesTooLargeToCopySafely() {
+        val src = "$root/journals/2026_10_16.md"
+        val huge = object : FakeRelocationFileSystem() {
+            override fun getFileSize(path: String): Long? = 64L * 1024 * 1024
+        }
+        huge.writeFile(src, "- big\n")
+
+        val outcome = ShareWritePathRepair(huge).repair(root, notes, listOf(PagePath("p1", src)))
+
+        assertTrue(outcome.repoints.isEmpty())
+        assertEquals(listOf(src), outcome.failures)
+        assertTrue(huge.fileExists(src))
+    }
+
+    @Test
+    fun repair_should_IgnoreAssetRefsThatEscapeTheAssetsFolder() {
+        put("$root/secret.txt", "outside the assets folder")
+        put("$root/journals/2026_10_16.md", "- a ![x](../assets/../secret.txt)\n- b ![y](../assets/..\\secret.txt)\n- c ![z](../assets/C:/secret.txt)\n")
+
+        val outcome = run(PagePath("p1", "$root/journals/2026_10_16.md"))
+
+        assertEquals(0, outcome.assetsMoved)
+        assertEquals("outside the assets folder", fs.readFile("$root/secret.txt"))
+        assertNull(fs.readFile("$notes/secret.txt"))
+    }
+
+    @Test
+    fun repair_should_WarnButNotBlock_When_PageIsEncrypted() {
+        put("$root/journals/2026_10_16.md.stek", "ciphertext")
+
+        val outcome = run(PagePath("p1", "$root/journals/2026_10_16.md.stek"))
+
+        assertEquals(mapOf("p1" to "$notes/journals/2026_10_16.md.stek"), outcome.repoints)
+        assertEquals(1, outcome.warnings.size)
+        assertEquals(ShareWritePathMigration.STATE_DONE, outcome.nextState())
+    }
+
+    @Test
+    fun repair_should_RepointRowsPointingAtANonexistentRootPath_When_RealFileIsUnderNotes() {
+        put("$notes/pages/Foo.md", "- real\n")
+
+        val outcome = run(PagePath("p1", "$root/pages/Foo.md"))
+
+        assertEquals(mapOf("p1" to "$notes/pages/Foo.md"), outcome.repoints)
+        assertEquals("- real\n", fs.readFile("$notes/pages/Foo.md"))
+    }
 }
