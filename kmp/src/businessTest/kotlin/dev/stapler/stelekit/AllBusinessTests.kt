@@ -49,6 +49,8 @@ import dev.stapler.stelekit.llm.LlmSettingsTest
 import dev.stapler.stelekit.performance.HistogramRegressionTest
 import dev.stapler.stelekit.performance.HistogramWriterTest
 import dev.stapler.stelekit.performance.PerfExporterPickerTest
+import dev.stapler.stelekit.performance.PerfExporterRegressionTest
+import dev.stapler.stelekit.performance.QueryStatsRepositoryTest
 import dev.stapler.stelekit.db.DemoFileSystemSyncTest
 import dev.stapler.stelekit.db.DemoGraphPersistenceTest
 import dev.stapler.stelekit.db.GraphInfoSerializationTest
@@ -261,6 +263,8 @@ import org.junit.runners.Suite
     HistogramRegressionTest::class,
     HistogramWriterTest::class,
     PerfExporterPickerTest::class,
+    PerfExporterRegressionTest::class,
+    QueryStatsRepositoryTest::class,
     BacklinkRepositoryTest::class,
     CrossSectionBacklinkRenderTest::class,
     NewPageAutoAssignmentTest::class,
