@@ -93,6 +93,8 @@ filegroup(
         "dev/stapler/stelekit/ui/App.kt",
         "dev/stapler/stelekit/ui/GraphContentActiveShell.kt",
         "dev/stapler/stelekit/ui/GraphContentGraphIoSetup.kt",
+        "dev/stapler/stelekit/ui/GraphContentSupportingViewModels.kt",
+        "dev/stapler/stelekit/ui/GraphContentVaultSetup.kt",
         "dev/stapler/stelekit/ui/GraphContentViewModelSetup.kt",
     ],
     visibility = ["//kmp:__subpackages__"],
