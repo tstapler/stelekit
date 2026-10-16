@@ -190,6 +190,7 @@ data class AppState(
     val shareJournalToDate: LocalDate? = null,
     val shareIsGoogleAuthenticated: Boolean = false,
     val shareGoogleEmail: String? = null,
+    val shareStripTrackingParams: Boolean = false,
     val isExportingToDrive: Boolean = false,
     // Section support
     val currentManifest: SectionManifest? = null,
