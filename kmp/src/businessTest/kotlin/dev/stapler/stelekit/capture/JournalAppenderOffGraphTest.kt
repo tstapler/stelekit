@@ -66,9 +66,15 @@ class JournalAppenderOffGraphTest {
         managers.clear()
     }
 
-    private fun newManager(workPath: String = workRoot): GraphManager {
+    private fun newManager(workPath: String = workRoot, activeWikiSubdir: String? = null): GraphManager {
         val graphs = listOf(active to "/graphs/active", work to workPath)
-            .map { (id, path) -> GraphInfo(id = id, path = path, displayName = id.value, addedAt = 0L) }
+            .map { (id, path) ->
+                val subdir = activeWikiSubdir.takeIf { id == active }
+                GraphInfo(
+                    id = id, path = path, displayName = id.value, addedAt = 0L,
+                    detectedWikiSubdir = subdir, effectivePath = subdir?.let { "$path/$it" },
+                )
+            }
         val settings = MapSettings()
         settings.putString("graph_registry", Json.encodeToString(GraphRegistry(activeGraphId = active, graphs = graphs)))
         return GraphManager(
@@ -318,6 +324,20 @@ class JournalAppenderOffGraphTest {
         assertTrue(onDisk.contains("hello active"), onDisk)
         assertTrue(onDisk.contains("id:: $c1"), onDisk)
         assertEquals(1, Regex("hello active").findAll(onDisk).count())
+    }
+
+    @Test
+    fun router_should_WriteJournalUnderWikiSubdir_When_ActiveGraphHasOne() = realTime {
+        val m = newManager(activeWikiSubdir = "logseq")
+        m.awaitPendingMigration()
+        val route = activeFixture(m)
+
+        assertIs<AppendOutcome.AppendedOffGraph>(route.appendContent(active, ShareContent("hello subdir"), c1))
+
+        val inSubdir = targetFs.listFiles("$activeRoot/logseq/journals").singleOrNull()
+        assertNotNull(inSubdir, "journal must land in <repoRoot>/logseq/journals, the only folder git sync stages")
+        assertTrue(targetFs.readFile("$activeRoot/logseq/journals/${inSubdir.substringAfterLast('/')}")!!.contains("hello subdir"))
+        assertTrue(targetFs.listFiles("$activeRoot/journals").isEmpty(), "nothing may be written to <repoRoot>/journals")
     }
 
     @Test
