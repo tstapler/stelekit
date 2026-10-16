@@ -10,6 +10,7 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.error.DomainError.ExportError
 import dev.stapler.stelekit.export.ClipboardProvider
 import dev.stapler.stelekit.export.ExportService
+import dev.stapler.stelekit.export.ShareExportSettings
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.NotificationType
 import dev.stapler.stelekit.model.Page
@@ -72,7 +73,14 @@ class ShareExportCoordinator(
     private val blockStateManager: BlockStateManager?,
     private val scope: CoroutineScope,
     private val uiState: MutableStateFlow<AppState>,
+    private val shareExportSettings: ShareExportSettings? = null,
 ) {
+
+    init {
+        shareExportSettings?.let { s ->
+            uiState.update { it.copy(shareStripTrackingParams = s.getStripTrackingParams()) }
+        }
+    }
 
     // ===== Share Dialog =====
 
@@ -96,6 +104,12 @@ class ShareExportCoordinator(
         uiState.update { it.copy(shareScope = scope) }
     }
 
+    /** Persists and applies the opt-in "strip tracking parameters" share option. */
+    fun setStripTrackingParams(enabled: Boolean) {
+        shareExportSettings?.setStripTrackingParams(enabled)
+        uiState.update { it.copy(shareStripTrackingParams = enabled) }
+    }
+
     /**
      * Resolve export content for any [ShareScope].
      *
@@ -113,22 +127,24 @@ class ShareExportCoordinator(
     ): Either<DomainError, String> {
         val svc = exportService
             ?: return ExportError.SerializationFailed("Export service unavailable").left()
+        val strip = uiState.value.shareStripTrackingParams
         return when (shareScope) {
-            ShareScope.CurrentPage -> svc.exportToString(page, allBlocks, formatId)
+            ShareScope.CurrentPage -> svc.exportToString(page, allBlocks, formatId, strip)
             ShareScope.SelectedBlocks -> svc.exportToString(
                 page,
                 svc.subtreeBlocks(allBlocks, selectedUuids),
                 formatId,
+                strip,
             )
             ShareScope.PageAndLinks -> svc.exportPageWithLinks(
-                page, allBlocks, formatId, pageRepository, blockRepository,
+                page, allBlocks, formatId, pageRepository, blockRepository, strip,
             )
             ShareScope.JournalRange -> {
                 val from = journalFrom
                     ?: return ExportError.SerializationFailed("Start date not set for journal export").left()
                 val to = journalTo
                     ?: return ExportError.SerializationFailed("End date not set for journal export").left()
-                svc.exportJournalRange(from, to, formatId, pageRepository, blockRepository)
+                svc.exportJournalRange(from, to, formatId, pageRepository, blockRepository, strip)
             }
         }
     }
@@ -145,16 +161,18 @@ class ShareExportCoordinator(
         onDone: () -> Unit = {},
     ) {
         val svc = exportService ?: return
+        val strip = uiState.value.shareStripTrackingParams
         scope.launch {
             try {
                 when (shareScope) {
                     ShareScope.CurrentPage ->
-                        svc.exportToClipboard(page, allBlocks, formatId)
+                        svc.exportToClipboard(page, allBlocks, formatId, strip)
                     ShareScope.SelectedBlocks ->
                         svc.exportToClipboard(
                             page,
                             svc.subtreeBlocks(allBlocks, selectedUuids),
                             formatId,
+                            strip,
                         )
                     else -> {
                         val result = resolveExportContent(
@@ -324,7 +342,7 @@ class ShareExportCoordinator(
         uiState.update { it.copy(isExporting = true) }
         scope.launch(Dispatchers.Default) {
             try {
-                val result = exportService.exportToClipboard(page, sortedBlocks, formatId)
+                val result = exportService.exportToClipboard(page, sortedBlocks, formatId, uiState.value.shareStripTrackingParams)
                 withContext(Dispatchers.Main) {
                     result.onRight {
                         notificationManager?.show("Copied as ${formatDisplayName(formatId)}", NotificationType.SUCCESS)
@@ -361,7 +379,7 @@ class ShareExportCoordinator(
         scope.launch(Dispatchers.Default) {
             try {
                 val subtreeBlocks = exportService.subtreeBlocks(allBlocks, selectedUuids)
-                val result = exportService.exportToClipboard(page, subtreeBlocks, formatId)
+                val result = exportService.exportToClipboard(page, subtreeBlocks, formatId, uiState.value.shareStripTrackingParams)
                 withContext(Dispatchers.Main) {
                     result.onRight {
                         notificationManager?.show("Copied as ${formatDisplayName(formatId)}", NotificationType.SUCCESS)

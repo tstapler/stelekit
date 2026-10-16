@@ -190,6 +190,21 @@ fun ShareContent(
             }
         }
 
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Switch(
+                checked = appState.shareStripTrackingParams,
+                onCheckedChange = { viewModel.setStripTrackingParams(it) },
+            )
+            Text(
+                text = "Strip tracking parameters from URLs",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+
         HorizontalDivider()
 
         // ── Destination tiles ─────────────────────────────────────────────────
