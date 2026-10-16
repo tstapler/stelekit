@@ -99,7 +99,7 @@ class JournalAppenderOffGraphTest {
             offGraphWriterFor = { info ->
                 MarkdownTargetWriter(
                     targetFs,
-                    OffGraphTarget(info.id, info.path, isActive = false),
+                    OffGraphTarget(info.id, info.effectiveNotesPath.value, isActive = false),
                     capabilities,
                     MarkdownTargetWriter.NoSymlinks,
                 )
@@ -117,7 +117,7 @@ class JournalAppenderOffGraphTest {
             capabilities = capabilities,
             activeWriterFor = { error("target is not the ready graph in these tests") },
             offGraphWriterFor = { info ->
-                MarkdownTargetWriter(targetFs, OffGraphTarget(info.id, info.path, isActive = false), capabilities, MarkdownTargetWriter.NoSymlinks)
+                MarkdownTargetWriter(targetFs, OffGraphTarget(info.id, info.effectiveNotesPath.value, isActive = false), capabilities, MarkdownTargetWriter.NoSymlinks)
             },
         )
         val raw = RouterOffGraphRoute(router, RegistryGraphLocator(m.graphRegistry), AssetCopier(targetFs), today)

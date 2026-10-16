@@ -545,6 +545,8 @@ class GraphRelocationCoordinator(
      * directory `FileSystem.newAppOwnedGraphPath()` allocated when this graph was created or last
      * relocated. [StorageLocation.HostFolder] is a known, documented gap — see [hostFolderUnsupported].
      */
+    // Relocation moves the whole picked folder, not just the notes subdir.
+    @OptIn(dev.stapler.stelekit.model.RegistryRootPath::class)
     private fun resolveSourceRoot(location: StorageLocation): Either<DomainError.StorageError, String> =
         when (location) {
             is StorageLocation.AppOwned ->

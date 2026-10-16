@@ -173,7 +173,7 @@ private fun GraphContentBanners(
     }
     if (visibility.showContentMismatchBanner) {
         val mismatchInfo = activeGraphInfo?.directoryScanCandidates?.firstOrNull() ?: dev.stapler.stelekit.diagnostics.DirectoryScanResult(
-            path = activeGraphInfo?.effectivePath ?: activeGraphInfo?.path ?: "",
+            path = activeGraphInfo?.effectiveNotesPath?.value ?: "",
             pages = true,
             journals = true,
             name = activeGraphInfo?.detectedWikiSubdir ?: activeGraphInfo?.displayName ?: "",

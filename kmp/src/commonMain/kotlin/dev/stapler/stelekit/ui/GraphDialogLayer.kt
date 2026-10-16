@@ -409,7 +409,7 @@ private fun WikiSubdirFixHost(appState: AppState, viewModel: StelekitViewModel) 
     val activeGraphInfo = appState.activeGraphInfo()
     if (appState.shouldShowWikiSubdirFixDialog() && activeGraphInfo != null) {
         val mismatchInfo = activeGraphInfo.directoryScanCandidates.firstOrNull() ?: dev.stapler.stelekit.diagnostics.DirectoryScanResult(
-            path = activeGraphInfo.effectivePath ?: activeGraphInfo.path,
+            path = activeGraphInfo.effectiveNotesPath.value,
             pages = true,
             journals = true,
             name = activeGraphInfo.detectedWikiSubdir ?: activeGraphInfo.displayName,

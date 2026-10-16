@@ -203,7 +203,7 @@ private fun rememberGraphWriter(
     ).also { writer ->
         val id = activeGraphInfo?.id
         if (id != null) {
-            writer.currentEpoch = GraphEpoch(graphId = id, graphPath = activeGraphInfo.path, sequence = 1L)
+            writer.currentEpoch = GraphEpoch(graphId = id, graphPath = activeGraphInfo.effectiveNotesPath.value, sequence = 1L)
         }
     }
 }

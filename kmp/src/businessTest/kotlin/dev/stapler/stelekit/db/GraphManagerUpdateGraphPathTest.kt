@@ -1,3 +1,6 @@
+// These tests assert the registry identity path itself (graph relocation / locator), which is what the gate marks.
+@file:OptIn(dev.stapler.stelekit.model.RegistryRootPath::class)
+
 package dev.stapler.stelekit.db
 
 import dev.stapler.stelekit.model.GraphId

@@ -28,6 +28,10 @@ import dev.stapler.stelekit.migration.MigrationRunner
 import dev.stapler.stelekit.migration.MigrationTamperedError
 import dev.stapler.stelekit.diagnostics.DirectoryScanResult
 import dev.stapler.stelekit.model.DEMO_GRAPH_ID
+import dev.stapler.stelekit.model.EffectiveNotesPath
+import dev.stapler.stelekit.model.RegistryRootPath
+import dev.stapler.stelekit.model.RepoRoot
+import dev.stapler.stelekit.model.WikiSubdir
 import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.GraphInfo
 import dev.stapler.stelekit.model.GraphRegistry
@@ -263,11 +267,11 @@ class GraphManager(
             try {
                 val registry = json.decodeFromString<GraphRegistry>(registryJson)
                 // Strip any stale demo entries that were persisted before the isDemo guard
-                val demoStripped = registry.graphs.filter { !it.isDemo && it.path != "/demo" }
+                val demoStripped = registry.graphs.filter { !it.isDemo && it.identityPath != "/demo" }
                 val cleanedRegistry = if (demoStripped.size < registry.graphs.size) {
                     val strippedCount = registry.graphs.size - demoStripped.size
                     logger.info("loadRegistry: stripped $strippedCount demo entries")
-                    val strippedIds = registry.graphs.filter { it.isDemo || it.path == "/demo" }
+                    val strippedIds = registry.graphs.filter { it.isDemo || it.identityPath == "/demo" }
                                                   .map { it.id }.toSet()
                 val adjustedActiveId = if (registry.activeGraphId in strippedIds) null
                                        else registry.activeGraphId
@@ -282,7 +286,7 @@ class GraphManager(
                 // and must survive restarts.
                 val refreshed = cleanedRegistry.copy(
                     graphs = cleanedRegistry.graphs.map { graph ->
-                        val named = if (graph.displayName.isBlank()) graph.copy(displayName = fileSystem.displayNameForPath(graph.path)) else graph
+                        val named = if (graph.displayName.isBlank()) graph.copy(displayName = fileSystem.displayNameForPath(graph.identityPath)) else graph
                         clearMalformedSafDetection(named)
                     }
                 )
@@ -465,7 +469,7 @@ class GraphManager(
             }
             val wikiSubdir = gitConfig?.wikiSubdir ?: detected?.second ?: ""
             val effectiveRoot = repoRoot ?: expandedPath
-            val effectivePath = if (wikiSubdir.isEmpty()) effectiveRoot else "$effectiveRoot/$wikiSubdir"
+            val effectivePath = EffectiveNotesPath.of(RepoRoot(effectiveRoot), WikiSubdir(wikiSubdir)).value
             val hasContent = fileSystem.directoryExists("$effectivePath/pages") || fileSystem.directoryExists("$effectivePath/journals")
             val candidates = dev.stapler.stelekit.diagnostics.scanForWikiCandidates(scanRoot, fileSystem)
             val contentMismatch = !hasContent && candidates.isNotEmpty()
@@ -741,7 +745,7 @@ class GraphManager(
             val gitConfig = gitConfigRepo?.getConfig(newId.value)?.getOrNull()
             val wikiSubdir = gitConfig?.wikiSubdir ?: detected?.second ?: ""
             val effectiveRoot = repoRoot ?: expandedNewPath
-            val effectivePath = if (wikiSubdir.isEmpty()) effectiveRoot else "$effectiveRoot/$wikiSubdir"
+            val effectivePath = EffectiveNotesPath.of(RepoRoot(effectiveRoot), WikiSubdir(wikiSubdir)).value
             val hasContent = fileSystem.directoryExists("$effectivePath/pages") || fileSystem.directoryExists("$effectivePath/journals")
             val candidates = dev.stapler.stelekit.diagnostics.scanForWikiCandidates(scanRoot, fileSystem)
             val contentMismatch = !hasContent && candidates.isNotEmpty()
@@ -977,12 +981,12 @@ class GraphManager(
                             val db = factory.steleDatabase()
                             UuidMigration(writeActor).runIfNeeded(db)
                             logger.info("init[${elapsed()}ms]: UuidMigration done")
-                            FilePathRootMigration(writeActor).runIfNeeded(db, graphInfo.path)
+                            FilePathRootMigration(writeActor).runIfNeeded(db, graphInfo.effectiveNotesPath.value)
                             logger.info("init[${elapsed()}ms]: FilePathRootMigration done")
                             // Best-effort: a failed repair is retried on the next open and must never block opening the graph.
                             try {
                                 ShareWritePathMigration(writeActor, fileSystem)
-                                    .runIfNeeded(db, graphInfo.detectedRepoRoot ?: graphInfo.path, graphInfo.effectiveNotesPath.value)
+                                    .runIfNeeded(db, graphInfo.repoRootObj.value, graphInfo.effectiveNotesPath.value)
                             } catch (e: CancellationException) {
                                 throw e
                             } catch (e: Exception) {
@@ -996,7 +1000,7 @@ class GraphManager(
                                     evaluator = DslEvaluator(repoSet),
                                     applier = ChangeApplier(writeActor, opLogger = null),
                                     flusher = null,
-                                ).runPending(id.value, repoSet, graphInfo.path)
+                                ).runPending(id.value, repoSet, graphInfo.effectiveNotesPath.value)
                             } catch (e: InterruptedMigrationException) {
                                 logger.error("MigrationRunner: interrupted migration detected for graph $id", e)
                             } catch (e: MigrationTamperedError) {
@@ -1178,7 +1182,7 @@ class GraphManager(
      * skips SAF paths, so drop the stale fields rather than let them feed effectivePath.
      */
     private fun clearMalformedSafDetection(graph: GraphInfo): GraphInfo {
-        val isSaf = graph.path.startsWith("saf://") || graph.path.startsWith("content://")
+        val isSaf = graph.identityPath.startsWith("saf://") || graph.identityPath.startsWith("content://")
         val malformed = graph.detectedRepoRoot?.let { it.startsWith("saf:") || it.startsWith("content:") } == true ||
             graph.detectedWikiSubdir?.contains("://") == true ||
             graph.detectedWikiSubdir?.startsWith("content%3A") == true
@@ -1207,7 +1211,7 @@ class GraphManager(
     private fun GraphInfo.relocatedTo(newPath: String): GraphInfo {
         // A subdir is only re-derivable when the repo root is the graph folder itself; for a graph
         // nested in a repo it is relative to a root that did not move, so fall back to re-detection.
-        if (detectedRepoRoot != null && detectedRepoRoot != path) {
+        if (detectedRepoRoot != null && detectedRepoRoot != identityPath) {
             return copy(path = newPath, detectedRepoRoot = null, detectedWikiSubdir = null, effectivePath = null)
         }
         val subdir = detectedWikiSubdir.orEmpty()
@@ -1285,8 +1289,7 @@ class GraphManager(
         updateGraphField(graphId) { info ->
             val repoRoot = info.detectedRepoRoot
             val wikiSubdir = gitConfig?.wikiSubdir ?: info.detectedWikiSubdir ?: ""
-            val root = repoRoot ?: info.path
-            val effectivePath = if (wikiSubdir.isEmpty()) root else "$root/$wikiSubdir"
+            val effectivePath = EffectiveNotesPath.of(RepoRoot(repoRoot ?: info.identityPath), WikiSubdir(wikiSubdir)).value
             val hasContent = fileSystem.directoryExists("$effectivePath/pages") || fileSystem.directoryExists("$effectivePath/journals")
             val candidates = info.directoryScanCandidates
             val contentMismatch = !hasContent && candidates.isNotEmpty()
@@ -1299,8 +1302,7 @@ class GraphManager(
     }
     suspend fun updateWikiSubdir(graphId: GraphId, wikiSubdir: String) {
         updateGraphField(graphId) { info ->
-            val root = info.detectedRepoRoot ?: info.path
-            val effectivePath = if (wikiSubdir.isEmpty()) root else "$root/$wikiSubdir"
+            val effectivePath = EffectiveNotesPath.of(info.repoRootObj, WikiSubdir(wikiSubdir)).value
             val hasContent = fileSystem.directoryExists("$effectivePath/pages") || fileSystem.directoryExists("$effectivePath/journals")
             val candidates = info.directoryScanCandidates
             val contentMismatch = !hasContent && candidates.isNotEmpty()
@@ -1328,7 +1330,7 @@ class GraphManager(
 
     suspend fun updateGraphCandidates(graphId: GraphId, candidates: List<DirectoryScanResult>) =
         updateGraphField(graphId) { g ->
-            val effectivePath = g.effectivePath ?: g.path
+            val effectivePath = g.effectiveNotesPath.value
             val hasContent = fileSystem.directoryExists("$effectivePath/pages") || fileSystem.directoryExists("$effectivePath/journals")
             val contentMismatch = !hasContent && candidates.isNotEmpty()
             g.copy(
@@ -1609,3 +1611,7 @@ private fun StorageLocation.toStorageLocationRow(): StorageLocationRow = when (t
     is StorageLocation.DirectAccessFolder -> StorageLocationRow(kind = "DirectAccessFolder", treeUri = null, realPath = realPath, displayName = null)
     is StorageLocation.HostFolder -> StorageLocationRow(kind = "HostFolder", treeUri = null, realPath = null, displayName = displayName)
 }
+
+/** GraphManager owns the registry, so its identity-path reads (demo/SAF checks, relocation, display) opt in here once. */
+@OptIn(RegistryRootPath::class)
+private val GraphInfo.identityPath: String get() = path

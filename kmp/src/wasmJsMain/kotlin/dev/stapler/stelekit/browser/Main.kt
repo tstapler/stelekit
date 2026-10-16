@@ -331,7 +331,8 @@ fun main() {
                     val activeId = registry.activeGraphId ?: return@collect
                     if (activeId == DEMO_GRAPH_ID) return@collect
                     val info = registry.graphs.firstOrNull { it.id == activeId } ?: return@collect
-                    opfsFileSystem.switchActiveGraph(info.path)
+                    @OptIn(dev.stapler.stelekit.model.RegistryRootPath::class) val opfsGraphKey = info.path // OPFS keys graphs by registry path
+                    opfsFileSystem.switchActiveGraph(opfsGraphKey)
                 }
             }
         }

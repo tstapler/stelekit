@@ -18,6 +18,12 @@ value class WikiSubdir(val value: String) {
 /** Fully-resolved path where pages/ and journals/ directories actually live. */
 @JvmInline
 value class EffectiveNotesPath(val value: String) {
+    companion object {
+        /** The one place a repo root and wiki subdir combine into the folder that holds `pages/`, `journals/` and `assets/`. */
+        fun of(root: RepoRoot, subdir: WikiSubdir): EffectiveNotesPath =
+            EffectiveNotesPath(if (subdir.isRoot) root.value else "${root.value}/${subdir.value}")
+    }
+
     fun pagesDir(): String = if (value.isEmpty()) "pages" else "$value/pages"
     fun journalsDir(): String = if (value.isEmpty()) "journals" else "$value/journals"
 }

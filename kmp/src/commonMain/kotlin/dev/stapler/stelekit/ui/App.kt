@@ -276,6 +276,8 @@ private fun rememberGraphManagerState(
  * don't force a graph switch (and an unnecessary migration cycle) on every launch when the user
  * has already chosen a different graph.
  */
+// Compares against the filesystem-default graph folder, i.e. graph identity.
+@OptIn(dev.stapler.stelekit.model.RegistryRootPath::class)
 internal fun initialGraphPath(graphManager: GraphManager, graphPath: String): String {
     val persistedPath = graphManager.getActiveGraphInfo()?.path
     return if (!persistedPath.isNullOrEmpty()) persistedPath else graphPath

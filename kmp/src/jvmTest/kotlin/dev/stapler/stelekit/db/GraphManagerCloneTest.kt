@@ -1,6 +1,9 @@
 // Copyright (c) 2026 Tyler Stapler
 // SPDX-License-Identifier: Elastic-2.0
 
+// Asserts the registry identity path itself (clone destination / relocation), which is what the gate marks.
+@file:OptIn(dev.stapler.stelekit.model.RegistryRootPath::class)
+
 package dev.stapler.stelekit.db
 
 import arrow.core.Either

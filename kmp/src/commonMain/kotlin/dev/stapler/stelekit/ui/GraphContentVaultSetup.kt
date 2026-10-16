@@ -47,7 +47,7 @@ internal fun rememberGraphContentVaultSetup(
 ): GraphContentVaultSetup {
     val graphRegistry by graphManager.graphRegistry.collectAsState()
     val activeGraphInfo = remember(graphRegistry) { graphManager.getActiveGraphInfo() }
-    val activeGraphPath = activeGraphInfo?.effectivePath ?: activeGraphInfo?.path ?: ""
+    val activeGraphPath = activeGraphInfo?.effectiveNotesPath?.value ?: ""
 
     val effectiveFileSystem: FileSystem = remember(activeGraphInfo?.isDemo, fileSystem) {
         graphContentFileSystem(activeGraphInfo?.isDemo == true, fileSystem)

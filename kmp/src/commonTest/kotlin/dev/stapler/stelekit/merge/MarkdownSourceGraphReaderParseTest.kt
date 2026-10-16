@@ -19,7 +19,7 @@ class MarkdownSourceGraphReaderParseTest {
     private val fs = FakeFileSystem()
     private val reader = MarkdownSourceGraphReader(fs)
 
-    private fun seed(rel: String, text: String) { fs.writeFileBytes("${graph.path}/$rel", text.encodeToByteArray()) }
+    private fun seed(rel: String, text: String) { fs.writeFileBytes("${graph.effectiveNotesPath.value}/$rel", text.encodeToByteArray()) }
 
     private suspend fun listAll(): List<SourceEntry> =
         (reader.listEntries(graph, null, 100) as Either.Right).value
@@ -37,14 +37,14 @@ class MarkdownSourceGraphReaderParseTest {
     @Test
     fun crlfTabsFenceCollapsedAndOrgBlocksMatchTheProductionParser() = runTest {
         val text = MergeFixtures.REAL_CRLF_TAB
-        val expected = MergeConverters.parseMarkdown(text, "${graph.path}/pages/Notes.md", "Notes", false).mergePage
+        val expected = MergeConverters.parseMarkdown(text, "${graph.effectiveNotesPath.value}/pages/Notes.md", "Notes", false).mergePage
         assertEquals(expected, readOk("pages/Notes.md", text))
     }
 
     @Test
     fun fencedDashLinesMatchTheProductionParser() = runTest {
         val text = MergeFixtures.FENCE_WITH_DASH_LINES
-        val expected = MergeConverters.parseMarkdown(text, "${graph.path}/pages/Fence.md", "Fence", false).mergePage
+        val expected = MergeConverters.parseMarkdown(text, "${graph.effectiveNotesPath.value}/pages/Fence.md", "Fence", false).mergePage
         assertEquals(expected, readOk("pages/Fence.md", text))
     }
 
@@ -119,8 +119,8 @@ class MarkdownSourceGraphReaderParseTest {
 
     @Test
     fun garbageAndNonUtf8AreUnreadableNotACrash() = runTest {
-        fs.writeFileBytes("${graph.path}/pages/Bin.md", byteArrayOf(0x2D, 0x20, 0xC3.toByte(), 0x28, 0xFF.toByte(), 0xFE.toByte()))
-        fs.writeFileBytes("${graph.path}/pages/Nul.md", "- a\u0000b".encodeToByteArray())
+        fs.writeFileBytes("${graph.effectiveNotesPath.value}/pages/Bin.md", byteArrayOf(0x2D, 0x20, 0xC3.toByte(), 0x28, 0xFF.toByte(), 0xFE.toByte()))
+        fs.writeFileBytes("${graph.effectiveNotesPath.value}/pages/Nul.md", "- a\u0000b".encodeToByteArray())
         seed("pages/Ok.md", "- fine\n")
         assertIs<ReadError.Unreadable>((read("pages/Bin.md") as Either.Left).value)
         assertIs<ReadError.Unreadable>((read("pages/Nul.md") as Either.Left).value)
