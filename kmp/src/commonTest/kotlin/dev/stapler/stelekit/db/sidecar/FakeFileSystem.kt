@@ -37,6 +37,13 @@ open class FakeFileSystem : FileSystem {
         binaryFiles.remove(path)
         return true
     }
+    override fun renameFile(from: String, to: String): Boolean {
+        val text = textFiles.remove(from)
+        if (text != null) { textFiles[to] = text; return true }
+        val bytes = binaryFiles.remove(from)
+        if (bytes != null) { binaryFiles[to] = bytes; return true }
+        return false
+    }
     override fun pickDirectory(): String? = null
     override fun getLastModifiedTime(path: String): Long? = null
     override fun readFileBytes(path: String): ByteArray? =
