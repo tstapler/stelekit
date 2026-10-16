@@ -32,15 +32,19 @@ class DesktopFilePickerTest {
     @Test
     fun `pickImageFile returns HardwareUnavailable when headless`() {
         val java = File(System.getProperty("java.home"), "bin/java").absolutePath
+        val outFile = File.createTempFile("picker-probe", ".out")
         val process = ProcessBuilder(
             java, "-Djava.awt.headless=true",
             "-cp", System.getProperty("java.class.path"),
             HeadlessPickerProbe::class.java.name,
-        ).redirectErrorStream(true).start()
+        ).redirectErrorStream(true).redirectOutput(outFile).start()
 
-        val finished = process.waitFor(60, TimeUnit.SECONDS)
-        val output = process.inputStream.bufferedReader().readText()
-        if (!finished) process.destroyForcibly()
+        val finished = try {
+            process.waitFor(60, TimeUnit.SECONDS)
+        } finally {
+            process.destroyForcibly()
+        }
+        val output = outFile.readText().also { outFile.delete() }
 
         assertTrue(finished, "child JVM timed out: $output")
         val line = output.lines().firstOrNull { it.startsWith("LEFT:") || it == "RIGHT" }

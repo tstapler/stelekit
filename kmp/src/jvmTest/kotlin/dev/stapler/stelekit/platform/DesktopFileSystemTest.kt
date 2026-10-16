@@ -73,7 +73,7 @@ class DesktopFileSystemTest {
 
     @Test
     fun `readFile rejects path outside home`() {
-        assertNull(fs.readFile("/etc/hostname"))
+        assertNull(fs.readFile("/etc/hosts"))
     }
 
     @Test
@@ -149,7 +149,7 @@ class DesktopFileSystemTest {
         assertFalse(fs.fileExists(p("missing")))
         assertTrue(fs.directoryExists(p("d")))
         assertFalse(fs.directoryExists(p("f.md")))
-        assertFalse(fs.fileExists("/etc/hostname"))
+        assertFalse(fs.fileExists("/etc/hosts"))
         assertFalse(fs.directoryExists("/etc"))
     }
 
@@ -178,6 +178,6 @@ class DesktopFileSystemTest {
         assertTrue(fs.deleteFile(p("tree")))
         assertFalse(File(root, "tree").exists())
         assertTrue(fs.deleteFile(p("never-existed")))
-        assertFalse(fs.deleteFile("/etc/hostname"))
+        assertFalse(fs.deleteFile("/nonexistent-stelekit-root/x"))
     }
 }
