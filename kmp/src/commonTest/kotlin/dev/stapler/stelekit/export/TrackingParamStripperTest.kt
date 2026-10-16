@@ -97,6 +97,14 @@ class TrackingParamStripperTest {
     }
 
     @Test
+    fun stripInContent_prefixUrls_andCodeSpans_areNotCorrupted() {
+        val a = "https://x.com/?utm_source=a"
+        val b = "https://x.com/?utm_source=a&id=1"
+        val out = TrackingParamStripper.stripInContent("<$a> <$b> `curl $a`")
+        assertEquals("<https://x.com/> <https://x.com/?id=1> `curl $a`", out)
+    }
+
+    @Test
     fun stripInContent_leavesTextWithoutLinksAlone() {
         val text = "what? utm_source=nothing here"
         assertEquals(text, TrackingParamStripper.stripInContent(text))

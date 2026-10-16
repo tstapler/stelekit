@@ -340,9 +340,10 @@ class ShareExportCoordinator(
         }
         if (uiState.value.isExporting) return
         uiState.update { it.copy(isExporting = true) }
+        val strip = uiState.value.shareStripTrackingParams
         scope.launch(Dispatchers.Default) {
             try {
-                val result = exportService.exportToClipboard(page, sortedBlocks, formatId, uiState.value.shareStripTrackingParams)
+                val result = exportService.exportToClipboard(page, sortedBlocks, formatId, strip)
                 withContext(Dispatchers.Main) {
                     result.onRight {
                         notificationManager?.show("Copied as ${formatDisplayName(formatId)}", NotificationType.SUCCESS)
@@ -376,10 +377,11 @@ class ShareExportCoordinator(
         }
         if (uiState.value.isExporting) return
         uiState.update { it.copy(isExporting = true) }
+        val strip = uiState.value.shareStripTrackingParams
         scope.launch(Dispatchers.Default) {
             try {
                 val subtreeBlocks = exportService.subtreeBlocks(allBlocks, selectedUuids)
-                val result = exportService.exportToClipboard(page, subtreeBlocks, formatId, uiState.value.shareStripTrackingParams)
+                val result = exportService.exportToClipboard(page, subtreeBlocks, formatId, strip)
                 withContext(Dispatchers.Main) {
                     result.onRight {
                         notificationManager?.show("Copied as ${formatDisplayName(formatId)}", NotificationType.SUCCESS)
