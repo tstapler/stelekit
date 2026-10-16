@@ -979,6 +979,16 @@ class GraphManager(
                             logger.info("init[${elapsed()}ms]: UuidMigration done")
                             FilePathRootMigration(writeActor).runIfNeeded(db, graphInfo.path)
                             logger.info("init[${elapsed()}ms]: FilePathRootMigration done")
+                            // Best-effort: a failed repair is retried on the next open and must never block opening the graph.
+                            try {
+                                ShareWritePathMigration(writeActor, fileSystem)
+                                    .runIfNeeded(db, graphInfo.detectedRepoRoot ?: graphInfo.path, graphInfo.effectiveNotesPath.value)
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                logger.error("ShareWritePathMigration failed for graph $id", e)
+                            }
+                            logger.info("init[${elapsed()}ms]: ShareWritePathMigration done")
                             try {
                                 MigrationRunner(
                                     registry = MigrationRegistry,

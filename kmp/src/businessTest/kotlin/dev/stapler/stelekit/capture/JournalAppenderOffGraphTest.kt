@@ -377,6 +377,23 @@ class JournalAppenderOffGraphTest {
     }
 
     @Test
+    fun appendContent_should_StoreImageUnderWikiSubdirAssets_When_ActiveGraphHasOne() = realTime {
+        val m = newManager(activeWikiSubdir = "logseq")
+        m.awaitPendingMigration()
+        val appender = JournalAppender(m, PlatformFileSystem(), InboxFallbackAppender(activeFixture(m), inbox))
+        val image = byteArrayOf(9, 8, 7)
+
+        assertIs<AppendOutcome.AppendedOffGraph>(
+            appender.appendContent(CaptureTarget.NamedGraph(active), ShareContent("look", image, "image/png"), c1),
+        )
+
+        val assets = targetFs.allFilePaths().filter { "/assets/" in it }
+        assertEquals(1, assets.size, assets.toString())
+        assertTrue(assets.single().startsWith("$activeRoot/logseq/assets/"), "asset must sit beside the journal it links to: $assets")
+        assertContentEquals(image, targetFs.readFileBytes(assets.single()))
+    }
+
+    @Test
     fun blockUuid_should_PassUuidThrough_And_HashOtherIds() {
         assertEquals(c1, OffGraphCapture.blockUuid(c1.uppercase()))
         val hashed = OffGraphCapture.blockUuid("not-a-uuid")
