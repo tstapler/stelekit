@@ -36,6 +36,8 @@ import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.repository.JournalService
 import dev.stapler.stelekit.repository.SearchRepository
+import dev.stapler.stelekit.repository.DataType
+import dev.stapler.stelekit.repository.SearchScope
 import dev.stapler.stelekit.repository.SearchRequest
 import dev.stapler.stelekit.repository.PageRepository
 import dev.stapler.stelekit.ui.i18n.Language
@@ -2179,7 +2181,12 @@ class StelekitViewModel(
      * Search pages for autocomplete
      */
     fun searchPages(query: String): Flow<List<SearchResultItem>> {
-        val request = SearchRequest(query = query, limit = 10)
+        val request = SearchRequest(
+            query = query,
+            scope = SearchScope.PAGES_ONLY,
+            dataTypes = setOf(DataType.TITLES),
+            limit = 10,
+        )
         return searchRepository.searchWithFilters(request).map {
             val searchResult = it.getOrNull()
             if (searchResult != null) {
