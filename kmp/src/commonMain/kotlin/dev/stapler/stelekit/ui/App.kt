@@ -557,7 +557,9 @@ private fun GraphContent(deps: GraphContentDeps) {
     // See GraphContentSupportingViewModels.kt: Journals/AllPages/LibraryStats/Search view models,
     // plus the disposal effect that closes all of them (and blockStateManager/viewModel) when
     // GraphContent leaves composition.
-    val supportingViewModels = rememberGraphContentSupportingViewModels(deps, blockStateManager, viewModel)
+    val supportingViewModels = rememberGraphContentSupportingViewModels(
+        deps, effectiveFileSystem, activeGraphPath, blockStateManager, viewModel,
+    )
     val activeSectionIds = supportingViewModels.activeSectionIds
     val journalsViewModel = supportingViewModels.journalsViewModel
     val allPagesViewModel = supportingViewModels.allPagesViewModel

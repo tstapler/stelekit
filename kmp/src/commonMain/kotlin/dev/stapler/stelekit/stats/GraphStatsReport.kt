@@ -47,7 +47,7 @@ data class GraphStatsReport(
     val journalDays: Int,
     /** Calendar days between first and last journal. */
     val journalSpanDays: Int,
-    /** journalDays / journalSpanDays — fraction of days that have a journal entry. */
+    /** journalDays / (journalSpanDays + 1), or zero when no dated journals exist. */
     val journalFillRate: Float,
 
     // ── Density ───────────────────────────────────────────────────────────
