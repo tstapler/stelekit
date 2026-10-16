@@ -84,7 +84,7 @@ class AssetBrowserViewModelTest {
 
         // list is cleared immediately; results return only after the 300ms debounce fires
         assertEquals("sunrise", vm.uiState.value.searchQuery)
-        val state = vm.await { it.assets.isNotEmpty() }
+        val state = vm.await { it.assets.size == 1 }
         assertEquals(listOf("s"), state.assets.map { it.uuid.value })
     }
 
