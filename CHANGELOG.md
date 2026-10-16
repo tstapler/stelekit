@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.96.0](https://github.com/tstapler/stelekit/compare/v0.95.2...v0.96.0) (2026-10-16)
+
+
+### Features
+
+* **share:** opt-in stripping of ad-tracking query params on export ([#435](https://github.com/tstapler/stelekit/issues/435)) ([c176f5f](https://github.com/tstapler/stelekit/commit/c176f5f60126851d97941bb987b295d38ac487cb))
+
+
+### Bug Fixes
+
+* **stats:** collect web library stats through effective graph filesystem ([#431](https://github.com/tstapler/stelekit/issues/431)) ([20c8a5c](https://github.com/tstapler/stelekit/commit/20c8a5c1922584b15c7d31909a7a946517824cfb))
+
 ## [0.95.2](https://github.com/tstapler/stelekit/compare/v0.95.1...v0.95.2) (2026-10-14)
 
 
