@@ -476,6 +476,7 @@ class StelekitViewModel(
         blockStateManager = blockStateManager,
         scope = scope,
         uiState = _uiState,
+        shareExportSettings = dev.stapler.stelekit.export.ShareExportSettings(platformSettings),
     )
 
     private val _indexingProgress = MutableStateFlow<IndexingState>(IndexingState.Idle)
@@ -1820,6 +1821,9 @@ class StelekitViewModel(
 
     /** Updates the share scope selection (persists across dialog invocations in the session). */
     fun setShareScope(scope: ShareScope) = shareExportCoordinator.setShareScope(scope)
+
+    /** Persists the opt-in "strip tracking parameters" share option. */
+    fun setStripTrackingParams(enabled: Boolean) = shareExportCoordinator.setStripTrackingParams(enabled)
 
     /**
      * Resolve export content for any [ShareScope].

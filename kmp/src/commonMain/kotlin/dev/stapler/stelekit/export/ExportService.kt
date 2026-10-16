@@ -44,13 +44,15 @@ class ExportService(
     suspend fun exportToClipboard(
         page: Page,
         blocks: List<Block>,
-        formatId: String
+        formatId: String,
+        stripTrackingParams: Boolean = false,
     ): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
+            val exportBlocks = prepareBlocks(blocks, stripTrackingParams)
             val exporter = exporterMap[formatId]
                 ?: return@withContext ExportError.SerializationFailed("Unknown export format: $formatId").left()
-            val resolvedRefs = resolveBlockRefs(collectBlockRefUuids(blocks))
-            val output = runCatching { exporter.export(page, blocks, resolvedRefs) }
+            val resolvedRefs = resolveBlockRefs(collectBlockRefUuids(exportBlocks))
+            val output = runCatching { exporter.export(page, exportBlocks, resolvedRefs) }
                 .getOrElse { e ->
                     if (e is CancellationException) throw e
                     return@withContext ExportError.SerializationFailed(e.message ?: "unknown").left()
@@ -58,7 +60,7 @@ class ExportService(
             runCatching {
                 if (formatId == "html") {
                     val plainText = exporterMap["plain-text"]
-                        ?.export(page, blocks, resolvedRefs)
+                        ?.export(page, exportBlocks, resolvedRefs)
                         ?: output
                     clipboard.writeHtml(output, plainText)
                 } else {
@@ -83,19 +85,24 @@ class ExportService(
     suspend fun exportToString(
         page: Page,
         blocks: List<Block>,
-        formatId: String
+        formatId: String,
+        stripTrackingParams: Boolean = false,
     ): Either<DomainError, String> = withContext(PlatformDispatcher.DB) {
         try {
+            val exportBlocks = prepareBlocks(blocks, stripTrackingParams)
             val exporter = exporterMap[formatId]
                 ?: return@withContext ExportError.SerializationFailed("Unknown export format: $formatId").left()
-            val resolvedRefs = resolveBlockRefs(collectBlockRefUuids(blocks))
-            exporter.export(page, blocks, resolvedRefs).right()
+            val resolvedRefs = resolveBlockRefs(collectBlockRefUuids(exportBlocks))
+            exporter.export(page, exportBlocks, resolvedRefs).right()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             ExportError.SerializationFailed(e.message ?: "unknown").left()
         }
     }
+
+    private fun prepareBlocks(blocks: List<Block>, stripTrackingParams: Boolean): List<Block> =
+        if (stripTrackingParams) TrackingParamStripper.stripInBlocks(blocks) else blocks
 
     /**
      * Scans [blocks] for `((uuid))` references and returns the set of referenced UUIDs.
@@ -176,8 +183,10 @@ class ExportService(
         formatId: String,
         pageRepo: PageRepository,
         blockRepo: BlockReadRepository,
+        stripTrackingParams: Boolean = false,
     ): Either<DomainError, String> = withContext(PlatformDispatcher.DB) {
         try {
+            val exportBlocks = prepareBlocks(blocks, stripTrackingParams)
             val exporter = exporterMap[formatId]
                 ?: return@withContext ExportError.SerializationFailed("Unknown export format: $formatId").left()
 
@@ -185,12 +194,12 @@ class ExportService(
             val parts = mutableListOf<String>()
 
             // Export the root page
-            val rootRefs = resolveBlockRefs(collectBlockRefUuids(blocks))
-            parts.add(exporter.export(page, blocks, rootRefs))
+            val rootRefs = resolveBlockRefs(collectBlockRefUuids(exportBlocks))
+            parts.add(exporter.export(page, exportBlocks, rootRefs))
 
             // Collect wiki-link targets from root blocks
             val linkedPageNames = mutableSetOf<String>()
-            for (block in blocks) {
+            for (block in exportBlocks) {
                 InlineParser(block.content).parse().forEach { node ->
                     if (node is WikiLinkNode) linkedPageNames.add(node.target)
                 }
@@ -205,9 +214,12 @@ class ExportService(
                     pageRepo.getPageByName(linkedName).first().getOrNull()
                 }.getOrNull() ?: continue
 
-                val linkedBlocks = runCatching {
-                    blockRepo.getBlocksForPage(linkedPage.uuid).first().getOrNull() ?: emptyList()
-                }.getOrNull() ?: emptyList()
+                val linkedBlocks = prepareBlocks(
+                    runCatching {
+                        blockRepo.getBlocksForPage(linkedPage.uuid).first().getOrNull() ?: emptyList()
+                    }.getOrNull() ?: emptyList(),
+                    stripTrackingParams,
+                )
 
                 if (linkedBlocks.isEmpty()) continue
 
@@ -239,6 +251,7 @@ class ExportService(
         formatId: String,
         pageRepo: PageRepository,
         blockRepo: BlockReadRepository,
+        stripTrackingParams: Boolean = false,
     ): Either<DomainError, String> = withContext(PlatformDispatcher.DB) {
         try {
             val exporter = exporterMap[formatId]
@@ -274,9 +287,12 @@ class ExportService(
 
             val parts = mutableListOf<String>()
             for (journalPage in journalPages) {
-                val pageBlocks = runCatching {
-                    blockRepo.getBlocksForPage(journalPage.uuid).first().getOrNull() ?: emptyList()
-                }.getOrNull() ?: emptyList()
+                val pageBlocks = prepareBlocks(
+                    runCatching {
+                        blockRepo.getBlocksForPage(journalPage.uuid).first().getOrNull() ?: emptyList()
+                    }.getOrNull() ?: emptyList(),
+                    stripTrackingParams,
+                )
 
                 if (pageBlocks.isEmpty()) continue
 
