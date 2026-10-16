@@ -23,6 +23,22 @@ class ApplyAutocompleteSelectionTest {
         updatedAt = now,
     )
 
+    @Test(timeout = 5_000)
+    fun `partial wiki link typing parses and detects autocomplete without hanging`() {
+        val text = "The people working on [[NOP ("
+        for (cursor in 0..text.length) {
+            val prefix = text.take(cursor)
+            dev.stapler.stelekit.parsing.InlineParser(prefix).parse()
+            val match = detectAutocompleteMatch(TextFieldValue(prefix, TextRange(cursor)))
+            if (cursor >= text.indexOf("[[") + 2) {
+                assertEquals(prefix.substringAfter("[["), match?.first?.groupValues?.get(1))
+                assertEquals(AutocompleteTrigger.WIKI_LINK, match?.second)
+            } else {
+                assertEquals(null, match)
+            }
+        }
+    }
+
     @Test
     fun `selectedIndex out of bounds does not crash and is a no-op`() {
         val searchResults = listOf<SearchResultItem>(SearchResultItem.PageItem(page("Alpha")))

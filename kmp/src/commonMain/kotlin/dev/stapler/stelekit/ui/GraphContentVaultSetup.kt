@@ -16,6 +16,9 @@ import dev.stapler.stelekit.model.GraphInfo
 import dev.stapler.stelekit.platform.DemoFileSystem
 import dev.stapler.stelekit.platform.FileSystem
 
+internal fun graphContentFileSystem(isDemo: Boolean, fileSystem: FileSystem): FileSystem =
+    if (isDemo) DemoFileSystem() else fileSystem
+
 /** Bundles [GraphContent]'s per-graph vault/crypto setup (Parameter Object pattern). */
 internal class GraphContentVaultSetup(
     val activeGraphInfo: GraphInfo?,
@@ -46,8 +49,8 @@ internal fun rememberGraphContentVaultSetup(
     val activeGraphInfo = remember(graphRegistry) { graphManager.getActiveGraphInfo() }
     val activeGraphPath = activeGraphInfo?.effectivePath ?: activeGraphInfo?.path ?: ""
 
-    val effectiveFileSystem: FileSystem = remember(activeGraphInfo?.isDemo) {
-        if (activeGraphInfo?.isDemo == true) DemoFileSystem() else fileSystem
+    val effectiveFileSystem: FileSystem = remember(activeGraphInfo?.isDemo, fileSystem) {
+        graphContentFileSystem(activeGraphInfo?.isDemo == true, fileSystem)
     }
 
     val vault = rememberVaultState(graphManager, fileSystem, cryptoEngine, activeGraphPath)

@@ -29,6 +29,7 @@ kt_jvm_library(
         "dev/stapler/stelekit/search/FtsQueryBuilderTest.kt",
         "dev/stapler/stelekit/sections/SectionFilterTest.kt",
         "dev/stapler/stelekit/sections/SectionManifestParserTest.kt",
+        "dev/stapler/stelekit/stats/LibraryStatsProviderTest.kt",
         "dev/stapler/stelekit/ui/screens/git/GitSetupScreenHelpersTest.kt",
     ],
     kotlinc_opts = "//:kmp_jvm_kotlinc_opts",

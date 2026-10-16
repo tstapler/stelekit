@@ -64,7 +64,6 @@ few months stale or scope changes.
 | `ui/GraphDialogLayer.kt` | 4 | 24 | 96 | pending |
 | `ui/screens/git/GitSetupScreen.kt` | 5 | 19 | 95 | pending |
 | `git/GitSyncService.kt` | 6 | 15 | 90 | pending |
-| `editor/viewmodel/EditorViewModel.kt` | 11 | 8 | 88 | pending |
 | `ui/components/BlockList.kt` | 6 | 14 | 84 | pending |
 | `db/DatabaseWriteActor.kt` | 3 | 27 | 81 | pending |
 | `ui/screens/AllPagesScreen.kt` | 9 | 8 | 72 | pending |

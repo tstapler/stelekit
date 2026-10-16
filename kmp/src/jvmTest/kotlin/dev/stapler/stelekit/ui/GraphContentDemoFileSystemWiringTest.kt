@@ -158,10 +158,24 @@ class GraphContentDemoFileSystemWiringTest {
             "App.kt",
             "GraphContentActiveShell.kt",
             "GraphContentGraphIoSetup.kt",
+            "GraphContentSupportingViewModels.kt",
+            "GraphContentVaultSetup.kt",
             "GraphContentViewModelSetup.kt",
         )
         val source = wiringFiles.joinToString("\n") { readWiringSource(it) }
 
+        assertTrue(
+            "Library Stats must receive the graph's effective filesystem and path",
+            source.contains("rememberGraphContentSupportingViewModels(\n        deps, effectiveFileSystem, activeGraphPath, blockStateManager, viewModel,"),
+        )
+        assertTrue(
+            "Library Stats must select its provider with the effective filesystem",
+            source.contains("graphContentLibraryStatsProvider(deps.coreServices.libraryStatsProvider, effectiveFileSystem)"),
+        )
+        assertTrue(
+            "Vault setup must use the tested graph filesystem resolver",
+            source.contains("graphContentFileSystem(activeGraphInfo?.isDemo == true, fileSystem)"),
+        )
         assertTrue(
             "sidecarManager must use effectiveFileSystem",
             source.contains("if (graphPath != null) SidecarManager(effectiveFileSystem, graphPath) else null"),

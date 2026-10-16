@@ -132,7 +132,7 @@ private fun SettingsDialogHost(
         appState.currentGraphId?.let { dev.stapler.stelekit.db.PlatformUtils().mcpLauncherCommand(it) }.orEmpty()
     }
     SettingsDialog(
-        visible = appState.settingsVisible || appState.llmProviderSettingsVisible,
+        visible = appState.shouldShowSettingsDialog(),
         onDismiss = {
             viewModel.setSettingsVisible(false)
             viewModel.dismissLlmProviderSettings()
@@ -312,7 +312,7 @@ private fun rememberExistingGitConfig(
 
 @Composable
 private fun ConflictResolutionDialogHost(appState: AppState, viewModel: StelekitViewModel, gitSync: GitSyncDeps) {
-    if (appState.conflictResolutionVisible) {
+    if (appState.shouldShowConflictResolution()) {
         val liveSyncState by viewModel.syncState.collectAsState()
         val conflictFiles = if (liveSyncState is SyncState.ConflictPending)
             (liveSyncState as SyncState.ConflictPending).conflicts
@@ -343,7 +343,7 @@ private fun ConflictResolutionDialogHost(appState: AppState, viewModel: Stelekit
 
 @Composable
 private fun JournalMergeReviewHost(appState: AppState, viewModel: StelekitViewModel) {
-    if (appState.journalMergeReviewVisible) {
+    if (appState.shouldShowJournalMergeReview()) {
         val liveSyncState by viewModel.syncState.collectAsState()
         val proposal = (liveSyncState as? SyncState.JournalMergeReady)?.proposal
         if (proposal != null) {
@@ -359,7 +359,7 @@ private fun JournalMergeReviewHost(appState: AppState, viewModel: StelekitViewMo
 
 @Composable
 private fun LlmSuggestionReviewHost(appState: AppState, viewModel: StelekitViewModel) {
-    if (appState.llmSuggestionReviewVisible) {
+    if (appState.shouldShowLlmSuggestionReview()) {
         val liveSuggestions by viewModel.llmSuggestions.collectAsState()
         val currentGraphId = appState.currentGraphId
         val pendingForGraph = if (currentGraphId != null) {
@@ -380,7 +380,7 @@ private fun LlmSuggestionReviewHost(appState: AppState, viewModel: StelekitViewM
 
 @Composable
 private fun DiskConflictHost(appState: AppState, viewModel: StelekitViewModel) {
-    if (!appState.diskConflictViewFullVisible) {
+    if (appState.shouldShowDiskConflictDialog()) {
         appState.diskConflict?.let { conflict ->
             DiskConflictDialog(
                 conflict = conflict,
@@ -393,7 +393,7 @@ private fun DiskConflictHost(appState: AppState, viewModel: StelekitViewModel) {
         }
     }
 
-    if (appState.diskConflictViewFullVisible) {
+    if (appState.shouldShowDiskConflictFullScreen()) {
         appState.diskConflict?.let { conflict ->
             DiskConflictFullScreen(
                 localContent = conflict.localContent,
@@ -406,8 +406,8 @@ private fun DiskConflictHost(appState: AppState, viewModel: StelekitViewModel) {
 
 @Composable
 private fun WikiSubdirFixHost(appState: AppState, viewModel: StelekitViewModel) {
-    val activeGraphInfo = appState.availableGraphs.firstOrNull { it.id.value == appState.currentGraphId }
-    if (appState.wikiSubdirFixDialogVisible && activeGraphInfo != null) {
+    val activeGraphInfo = appState.activeGraphInfo()
+    if (appState.shouldShowWikiSubdirFixDialog() && activeGraphInfo != null) {
         val mismatchInfo = activeGraphInfo.directoryScanCandidates.firstOrNull() ?: dev.stapler.stelekit.diagnostics.DirectoryScanResult(
             path = activeGraphInfo.effectivePath ?: activeGraphInfo.path,
             pages = true,
@@ -470,9 +470,10 @@ private fun ShareDialogHost(appState: AppState, viewModel: StelekitViewModel, sh
 @Composable
 private fun DeviceSetupWizardHost(appState: AppState, viewModel: StelekitViewModel) {
     // Device setup wizard — shown once when a graph with sections is first opened
-    if (appState.deviceSetupWizardVisible && appState.currentManifest != null) {
+    val manifest = appState.currentManifest
+    if (appState.shouldShowDeviceSetupWizard() && manifest != null) {
         DeviceSetupWizard(
-            manifest = appState.currentManifest,
+            manifest = manifest,
             onComplete = { defaultSection, sectionStates ->
                 viewModel.completeDeviceSetup(defaultSection, sectionStates)
             },
@@ -486,7 +487,7 @@ private fun SectionDialogsHost(appState: AppState, viewModel: StelekitViewModel)
     val manifest = appState.currentManifest ?: return
 
     // Section picker dialog — opened when the SectionBadge is tapped on a non-journal page
-    if (appState.sectionPickerVisible) {
+    if (appState.shouldShowSectionPicker()) {
         val pickerPage = appState.sectionPickerPage
         // Only ACTIVE sections are offered as move targets — hidden/removed sections are not
         // reachable on this device so moving a page there would make it disappear immediately.
@@ -506,7 +507,7 @@ private fun SectionDialogsHost(appState: AppState, viewModel: StelekitViewModel)
     }
 
     // Section quick-toggle panel
-    if (appState.sectionQuickToggleVisible) {
+    if (appState.shouldShowSectionQuickToggle()) {
         SectionQuickTogglePanel(
             manifest = manifest,
             sectionStates = appState.currentSectionStates,
@@ -561,3 +562,33 @@ private suspend fun exportAndSaveBugReport(
             notificationManager.show("Failed to save bug report. Check storage permissions.")
     }
 }
+
+// Dialog-selection predicates: which dialog is up is a pure function of AppState, kept here
+// (not inline in the hosts) so commonTest can pin the gating without rendering Compose.
+
+internal fun AppState.shouldShowSettingsDialog(): Boolean = settingsVisible || llmProviderSettingsVisible
+
+internal fun AppState.shouldShowConflictResolution(): Boolean = conflictResolutionVisible
+
+internal fun AppState.shouldShowJournalMergeReview(): Boolean = journalMergeReviewVisible
+
+internal fun AppState.shouldShowLlmSuggestionReview(): Boolean = llmSuggestionReviewVisible
+
+/** The compact disk-conflict dialog; yields to the full-screen comparison when that is requested. */
+internal fun AppState.shouldShowDiskConflictDialog(): Boolean = diskConflict != null && !diskConflictViewFullVisible
+
+internal fun AppState.shouldShowDiskConflictFullScreen(): Boolean = diskConflict != null && diskConflictViewFullVisible
+
+internal fun AppState.activeGraphInfo(): dev.stapler.stelekit.model.GraphInfo? =
+    availableGraphs.firstOrNull { it.id.value == currentGraphId }
+
+/** Needs an active graph entry to read the scan candidates from, so no graph means no dialog. */
+internal fun AppState.shouldShowWikiSubdirFixDialog(): Boolean =
+    wikiSubdirFixDialogVisible && activeGraphInfo() != null
+
+internal fun AppState.shouldShowDeviceSetupWizard(): Boolean =
+    deviceSetupWizardVisible && currentManifest != null
+
+internal fun AppState.shouldShowSectionPicker(): Boolean = currentManifest != null && sectionPickerVisible
+
+internal fun AppState.shouldShowSectionQuickToggle(): Boolean = currentManifest != null && sectionQuickToggleVisible

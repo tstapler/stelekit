@@ -38,12 +38,10 @@
     <ID>LargeClass:BlockStateManager.kt$BlockStateManager : BlockEditingPortBlockStructurePortBlockSelectionPortBlockNavigationPort</ID>
     <ID>LargeClass:DatabaseWriteActor.kt$DatabaseWriteActor</ID>
     <ID>LargeClass:DemoFileSystem.kt$DemoFileSystem : FileSystem</ID>
-    <ID>LargeClass:EditorViewModel.kt$EditorViewModel</ID>
     <ID>LargeClass:GraphLoader.kt$GraphLoader : GraphLoaderPort</ID>
     <ID>LargeClass:GraphManager.kt$GraphManager : StorageLocationStore</ID>
     <ID>LargeClass:GraphWriter.kt$GraphWriter : GraphWriterPort</ID>
     <ID>LargeClass:MigrationRunner.kt$MigrationRunner</ID>
-    <ID>LargeClass:PersistenceManager.kt$PersistenceManager : IPersistenceManager</ID>
     <ID>LargeClass:PlatformFileSystem.kt$PlatformFileSystem : FileSystem</ID>
     <ID>LargeClass:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries</ID>
     <ID>LargeClass:SqlDelightBlockRepository.kt$SqlDelightBlockRepository : BlockRepository</ID>
@@ -101,15 +99,11 @@
     <ID>ParameterNaming:Sidebar.kt$onGraphSelected</ID>
     <ID>TooManyFunctions:AndroidGitRepository.kt$AndroidGitRepository : GitRepository</ID>
     <ID>TooManyFunctions:AnnotationEditorViewModel.kt$AnnotationEditorViewModel</ID>
-    <ID>TooManyFunctions:BlockOperations.kt$BlockOperations : IBlockOperationsBlockRepository</ID>
     <ID>TooManyFunctions:BlockParser.kt$BlockParser</ID>
     <ID>TooManyFunctions:BlockStateManager.kt$BlockStateManager : BlockEditingPortBlockStructurePortBlockSelectionPortBlockNavigationPort</ID>
     <ID>TooManyFunctions:DatabaseWriteActor.kt$DatabaseWriteActor</ID>
     <ID>TooManyFunctions:DatalogBlockRepository.kt$DatalogBlockRepository : BlockRepository</ID>
     <ID>TooManyFunctions:DatalogPageRepository.kt$DatalogPageRepository : PageRepository</ID>
-    <ID>TooManyFunctions:DefaultTextOperations.kt$DefaultTextOperations : ITextOperations</ID>
-    <ID>TooManyFunctions:EditorState.kt$EditorStateManager</ID>
-    <ID>TooManyFunctions:EditorViewModel.kt$EditorViewModel</ID>
     <ID>TooManyFunctions:GraphLoader.kt$GraphLoader : GraphLoaderPort</ID>
     <ID>TooManyFunctions:GraphManager.kt$GraphManager : StorageLocationStore</ID>
     <ID>TooManyFunctions:GraphWriter.kt$GraphWriter : GraphWriterPort</ID>
@@ -118,9 +112,6 @@
     <ID>TooManyFunctions:InMemoryRepositories.kt$InMemoryPageRepository : PageRepository</ID>
     <ID>TooManyFunctions:JournalsViewModel.kt$JournalsViewModel</ID>
     <ID>TooManyFunctions:JvmGitRepository.kt$JvmGitRepository : GitRepository</ID>
-    <ID>TooManyFunctions:OptimizedTextOperations.kt$OptimizedTextOperations : ITextOperations</ID>
-    <ID>TooManyFunctions:PersistenceErrorHandler.kt$PersistenceErrorHandler</ID>
-    <ID>TooManyFunctions:PersistenceManager.kt$PersistenceManager : IPersistenceManager</ID>
     <ID>TooManyFunctions:PlatformFileSystem.kt$PlatformFileSystem : FileSystem</ID>
     <ID>TooManyFunctions:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries</ID>
     <ID>TooManyFunctions:SqlDelightAssetRepository.kt$SqlDelightAssetRepository : AssetRepository</ID>
@@ -128,7 +119,6 @@
     <ID>TooManyFunctions:SqlDelightPageRepository.kt$SqlDelightPageRepository : PageRepository</ID>
     <ID>TooManyFunctions:SqlDelightSearchRepository.kt$SqlDelightSearchRepository : SearchRepository</ID>
     <ID>TooManyFunctions:StelekitViewModel.kt$StelekitViewModel</ID>
-    <ID>TooManyFunctions:TextOperations.kt$TextOperations : ITextOperations</ID>
     <ID>UnusedParameter:BlockEditor.kt$localVersion: Long</ID>
     <ID>UnusedParameter:StelekitViewModel.kt$StelekitViewModel$reset: Boolean = false</ID>
   </CurrentIssues>
