@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.97.0](https://github.com/tstapler/stelekit/compare/v0.96.1...v0.97.0) (2026-10-17)
+
+
+### Features
+
+* three-way merge misplaced pages, and let the user review notes outside the notes folder ([#440](https://github.com/tstapler/stelekit/issues/440)) ([2ee4550](https://github.com/tstapler/stelekit/commit/2ee455090e9c71161cc71feff39396af7f7b54ef))
+
 ## [0.96.1](https://github.com/tstapler/stelekit/compare/v0.96.0...v0.96.1) (2026-10-17)
 
 
