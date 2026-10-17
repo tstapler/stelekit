@@ -38,6 +38,7 @@ import dev.stapler.stelekit.db.misplaced.MisplacedFilesServiceTest
 import dev.stapler.stelekit.ui.misplaced.MisplacedFilesControllerTest
 import dev.stapler.stelekit.git.merge.StrayPageMergeTest
 import dev.stapler.stelekit.db.GraphManagerNotesPathTest
+import dev.stapler.stelekit.ui.NotesPathAccessorsTest
 import dev.stapler.stelekit.db.ShareWritePathRepairTest
 import dev.stapler.stelekit.capture.JournalAppenderTest
 import dev.stapler.stelekit.clipboard.BlockClipboardTest
@@ -261,6 +262,7 @@ import org.junit.runners.Suite
     StrayPageMergeTest::class,
     ShareWritePathRepairTest::class,
     GraphManagerNotesPathTest::class,
+    NotesPathAccessorsTest::class,
     InboxFallbackAppenderTest::class,
     ImportServiceTest::class,
     LinkInsertionTest::class,

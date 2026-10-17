@@ -247,9 +247,8 @@ class ActiveTargetWriter(
     private suspend fun resolveNew(key: PageKey): Either<DomainError, String> = withContext(PlatformDispatcher.IO) {
         val date = if (key.isJournal) JournalUtils.parseJournalDate(key.name) else null
         val resolved = if (date != null) {
-            val root = graphPath.value.trimEnd('/')
-            val stems = fs.listFiles("$root/journals").map { it.substringBefore('.') }
-            PageFileResolver.resolveJournal(date, graphPath, stems, fs.readFile("$root/logseq/config.edn"), encrypted)
+            val stems = fs.listFiles(graphPath.child("journals")).map { it.substringBefore('.') }
+            PageFileResolver.resolveJournal(date, graphPath, stems, fs.readFile(graphPath.child("logseq/config.edn")), encrypted)
         } else {
             PageFileResolver.resolve(key.name, key.isJournal, graphPath, encrypted)
         }

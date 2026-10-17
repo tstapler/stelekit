@@ -512,7 +512,7 @@ private fun GraphContent(deps: GraphContentDeps) {
     val shareProvider = viewModelStack.shareProvider
     val viewModel = viewModelStack.viewModel
     RegisterActiveWriteHooks(
-        deps.activeWriteHooks, activeGraphInfo?.id, graphWriter, effectiveFileSystem, vaultSetup.activeNotesPath, blockStateManager,
+        deps.activeWriteHooks, activeGraphInfo?.id, graphWriter, effectiveFileSystem, activeGraphInfo?.effectiveNotesPath, blockStateManager,
     )
     LaunchedEffect(viewModel) { deps.onViewModelReady?.invoke(viewModel) }
 
