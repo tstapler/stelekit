@@ -2,6 +2,7 @@ package dev.stapler.stelekit.db
 
 import kotlin.test.Test
 import kotlin.test.assertTrue
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 class ImageStoragePathResolverTest {
 
@@ -9,7 +10,7 @@ class ImageStoragePathResolverTest {
     fun resolvePath_should_returnCorrectPath_when_graphPathAndUuidProvided() {
         val graphPath = "/home/user/my-graph"
         val uuid = "a3f8b2c1-d4e5-6789-abcd-ef0123456789"
-        val result = ImageStoragePathResolver.resolvePath(graphPath, uuid)
+        val result = ImageStoragePathResolver.resolvePath(EffectiveNotesPath(graphPath), uuid)
 
         // Must start with graphPath/assets/images/
         assertTrue(result.startsWith("$graphPath/assets/images/"), "Path should start with $graphPath/assets/images/")
@@ -22,7 +23,7 @@ class ImageStoragePathResolverTest {
     @Test
     fun assetsImagesDir_should_returnCorrectDirectory() {
         val graphPath = "/tmp/test-graph"
-        val dir = ImageStoragePathResolver.assetsImagesDir(graphPath)
+        val dir = ImageStoragePathResolver.assetsImagesDir(EffectiveNotesPath(graphPath))
         assertTrue(dir == "$graphPath/assets/images")
     }
 }

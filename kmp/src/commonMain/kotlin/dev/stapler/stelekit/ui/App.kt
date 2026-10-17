@@ -201,7 +201,7 @@ private fun RegisterActiveWriteHooks(
     graphId: GraphId?,
     graphWriter: dev.stapler.stelekit.db.GraphWriter,
     fileSystem: FileSystem,
-    graphPath: String?,
+    graphPath: dev.stapler.stelekit.model.EffectiveNotesPath?,
     blockStateManager: dev.stapler.stelekit.ui.state.BlockStateManager,
 ) {
     if (hooks == null || graphId == null || graphPath == null) return
@@ -512,7 +512,7 @@ private fun GraphContent(deps: GraphContentDeps) {
     val shareProvider = viewModelStack.shareProvider
     val viewModel = viewModelStack.viewModel
     RegisterActiveWriteHooks(
-        deps.activeWriteHooks, activeGraphInfo?.id, graphWriter, effectiveFileSystem, activeGraphPath, blockStateManager,
+        deps.activeWriteHooks, activeGraphInfo?.id, graphWriter, effectiveFileSystem, vaultSetup.activeNotesPath, blockStateManager,
     )
     LaunchedEffect(viewModel) { deps.onViewModelReady?.invoke(viewModel) }
 

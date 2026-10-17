@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import org.junit.Rule
 import org.junit.Test
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * Story 3.2.4 / UX Acceptance Test criterion 2: a user can reach the receive surface in **≤ 2
@@ -98,7 +99,7 @@ class QrImportEntryPointUxTest {
         val importViewModel = ImportViewModel(
             pageRepository = pageRepo,
             graphWriter = graphWriter,
-            graphPath = "/tmp/test",
+            graphPath = EffectiveNotesPath("/tmp/test"),
             urlFetcher = NoOpUrlFetcher(),
             matcherFlow = matcherFlow,
         )

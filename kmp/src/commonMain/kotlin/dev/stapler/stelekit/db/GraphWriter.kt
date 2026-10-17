@@ -12,6 +12,7 @@ import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
@@ -35,7 +36,7 @@ import kotlinx.coroutines.sync.withPermit
  * discipline). [sequence] is a monotonic counter incremented on every switch, used purely so a
  * captured-vs-current mismatch is observable/loggable — it has no other behavioral role.
  */
-data class GraphEpoch(val graphId: GraphId, val graphPath: String, val sequence: Long)
+data class GraphEpoch(val graphId: GraphId, val graphPath: EffectiveNotesPath, val sequence: Long)
 
 /**
  * Handles writing page and block changes back to markdown files.
@@ -123,7 +124,7 @@ class GraphWriter(
      * [relativeFilePath]'s default parameter) that only ever read the active graph's path and
      * were not part of the epoch-capture migration. `null` when no graph has been loaded yet.
      */
-    val graphPath: String? get() = currentEpoch?.graphPath
+    val graphPath: EffectiveNotesPath? get() = currentEpoch?.graphPath
 
     override fun setCryptoLayer(layer: CryptoLayer?) { cryptoLayer = layer }
 
@@ -148,7 +149,7 @@ class GraphWriter(
     data class SaveRequest(
         val page: Page,
         val blocks: List<Block>,
-        val graphPath: String
+        val graphPath: EffectiveNotesPath
     )
 
     // Per-page debounce: pageUuid → pending Job + latest request
@@ -218,7 +219,7 @@ class GraphWriter(
      * Queue a page for debounced saving. Per-page debounce: only the latest
      * save request for a given page fires, preventing cross-page save drops.
      */
-    suspend fun queueSave(page: Page, blocks: List<Block>, graphPath: String) {
+    suspend fun queueSave(page: Page, blocks: List<Block>, graphPath: EffectiveNotesPath) {
         val currentScope = scope ?: return
         val request = SaveRequest(page, blocks, graphPath)
         pendingMutex.withLock {
@@ -251,12 +252,12 @@ class GraphWriter(
      * failure paths (AAD/graphPath guard mismatch, decrypt failure, saga step failure — all
      * only logged inside [savePageInternal]).
      */
-    override suspend fun savePage(page: Page, blocks: List<Block>, graphPath: String): Either<DomainError, Unit> {
+    override suspend fun savePage(page: Page, blocks: List<Block>, graphPath: EffectiveNotesPath): Either<DomainError, Unit> {
         val succeeded = savePageInternal(page, blocks, graphPath)
         return if (succeeded) {
             Unit.right()
         } else {
-            DomainError.DatabaseError.WriteFailed("Failed to save page '${page.name}' to $graphPath").left()
+            DomainError.DatabaseError.WriteFailed("Failed to save page '${page.name}' to ${graphPath.value}").left()
         }
     }
 
@@ -265,7 +266,7 @@ class GraphWriter(
      * Calculates the new file path based on the new name and moves the file.
      * Returns true if successful, false otherwise.
      */
-    override suspend fun renamePage(page: Page, newName: String, graphPath: String): Boolean {
+    override suspend fun renamePage(page: Page, newName: String, graphPath: EffectiveNotesPath): Boolean {
         // Capture the active epoch ONCE here, before queuing for saveMutex — never re-read
         // this@GraphWriter.currentEpoch again below. If this call queues behind another
         // in-flight save/rename/delete and a graph switch happens while it waits, it must still
@@ -297,7 +298,7 @@ class GraphWriter(
         val renameLayer = cryptoLayer
         // Use the epoch captured before this call queued for saveMutex — never the live field —
         // so an in-flight rename always finishes against the graph it was requested for.
-        val renameGraphPath = capturedEpoch.graphPath
+        val renameGraphPath = capturedEpoch.graphPath.value
         if (renameLayer != null && renameGraphPath.isEmpty()) {
             logger.error("renamePage aborted — cryptoLayer is set but graphPath is empty (AAD would be wrong)")
             return@withContext false
@@ -408,7 +409,7 @@ class GraphWriter(
         // Guard: cannot delete pages in the hidden-volume reserve area
         val deleteLayer = cryptoLayer
         // Use the epoch captured before this call queued for saveMutex — never the live field.
-        val deleteGraphPath = capturedEpoch.graphPath
+        val deleteGraphPath = capturedEpoch.graphPath.value
         if (deleteLayer != null && deleteLayer.checkNotHiddenReserve(relativeFilePath(path, deleteGraphPath)).isLeft()) {
             logger.error("Delete blocked — restricted path: $path")
             return@withContext false
@@ -448,7 +449,7 @@ class GraphWriter(
      * (temp-file + rename). A partial write of an .md.stek ciphertext cannot be recovered —
      * the AEAD tag will fail to verify and the page will be permanently unreadable.
      */
-    private suspend fun savePageInternal(page: Page, blocks: List<Block>, graphPath: String): Boolean {
+    private suspend fun savePageInternal(page: Page, blocks: List<Block>, graphPath: EffectiveNotesPath): Boolean {
         // Capture the active epoch ONCE here, before queuing for saveMutex — for consistency with
         // renamePage/deletePage's identical fix (see GraphWriterEpochCaptureTest). Note the actual
         // write destination is the explicit `graphPath` parameter above (already safe); this
@@ -462,7 +463,7 @@ class GraphWriter(
             // Capture cryptoLayer once at lock entry — also used by getPageFilePath so
             // the file extension (.md.stek vs .md) is consistent with all subsequent encrypt/decrypt calls.
             val capturedCryptoLayer = cryptoLayer
-            val capturedGraphPath = capturedEpoch?.graphPath ?: ""
+            val capturedGraphPath = capturedEpoch?.graphPath?.value ?: ""
             // GAP-3: fail fast if encryption is active but the graph path hasn't been set yet.
             // relativeFilePath() with empty graphPath strips only the leading "/" from absolute paths,
             // producing the wrong AAD string and making the file permanently unreadable.
@@ -752,7 +753,7 @@ class GraphWriter(
             val capturedCryptoLayer = cryptoLayer
             val extension = if (capturedCryptoLayer != null) ".md.stek" else ".md"
             val safeName = FileUtils.sanitizeFileName(page.name)
-            val movePageToSectionGraphPath = graphPath ?: ""
+            val movePageToSectionGraphPath = graphPath?.value ?: ""
             val base = if (movePageToSectionGraphPath.endsWith("/")) movePageToSectionGraphPath else "$movePageToSectionGraphPath/"
             val newPath = "$base$newPathPrefix/$safeName$extension"
 
@@ -792,12 +793,12 @@ class GraphWriter(
         }
     }
 
-    private fun getPageFilePath(page: Page, graphPath: String, layer: CryptoLayer? = cryptoLayer): String {
+    private fun getPageFilePath(page: Page, graphPath: EffectiveNotesPath, layer: CryptoLayer? = cryptoLayer): String {
         return PageFileResolver.pagePath(page.name, page.isJournal, graphPath, encrypted = layer != null)
     }
 
     /** Compute the graph-root-relative path used as AAD for file encryption. */
-    private fun relativeFilePath(absoluteFilePath: String, base: String = graphPath ?: ""): String {
+    private fun relativeFilePath(absoluteFilePath: String, base: String = graphPath?.value ?: ""): String {
         val baseWithSlash = if (base.endsWith("/")) base else "$base/"
         return if (absoluteFilePath.startsWith(baseWithSlash)) {
             absoluteFilePath.removePrefix(baseWithSlash)

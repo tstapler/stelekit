@@ -25,6 +25,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Clock
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 @OptIn(DirectRepositoryWrite::class)
 class NormalizeJournalNamesMigrationTest {
@@ -74,7 +75,7 @@ class NormalizeJournalNamesMigrationTest {
         harness.repoSet.pageRepository.savePage(hyphenPage)
         harness.repoSet.blockRepository.saveBlock(block)
 
-        harness.buildRunner().runPending("graph-1", harness.repoSet, "/tmp/test")
+        harness.buildRunner().runPending("graph-1", harness.repoSet, EffectiveNotesPath("/tmp/test"))
 
         val renamed = harness.repoSet.pageRepository.getPageByName(underscoreName).first().getOrNull()
         val old = harness.repoSet.pageRepository.getPageByName(hyphenName).first().getOrNull()
@@ -97,7 +98,7 @@ class NormalizeJournalNamesMigrationTest {
         harness.repoSet.blockRepository.saveBlock(emptyBlock)
         harness.repoSet.blockRepository.saveBlock(existingBlock)
 
-        harness.buildRunner().runPending("graph-1", harness.repoSet, "/tmp/test")
+        harness.buildRunner().runPending("graph-1", harness.repoSet, EffectiveNotesPath("/tmp/test"))
 
         val undBlocks = harness.repoSet.blockRepository.getBlocksForPage(PageUuid("page-und")).first().getOrNull() ?: emptyList()
         val hypBlocks = harness.repoSet.blockRepository.getBlocksForPage(PageUuid("page-hyp")).first().getOrNull() ?: emptyList()
@@ -125,7 +126,7 @@ class NormalizeJournalNamesMigrationTest {
         harness.repoSet.pageRepository.savePage(underscorePage)
         harness.repoSet.blockRepository.saveBlock(block)
 
-        harness.buildRunner().runPending("graph-1", harness.repoSet, "/tmp/test")
+        harness.buildRunner().runPending("graph-1", harness.repoSet, EffectiveNotesPath("/tmp/test"))
 
         val page = harness.repoSet.pageRepository.getPageByName(underscoreName).first().getOrNull()
         assertEquals(underscoreName, page?.name)
@@ -136,7 +137,7 @@ class NormalizeJournalNamesMigrationTest {
         val nonJournalPage = makePage("page-nj", "some-page-with-hyphens", isJournal = false)
         harness.repoSet.pageRepository.savePage(nonJournalPage)
 
-        harness.buildRunner().runPending("graph-1", harness.repoSet, "/tmp/test")
+        harness.buildRunner().runPending("graph-1", harness.repoSet, EffectiveNotesPath("/tmp/test"))
 
         val page = harness.repoSet.pageRepository.getPageByName("some-page-with-hyphens").first().getOrNull()
         assertEquals("some-page-with-hyphens", page?.name, "Non-journal pages with hyphens must not be renamed")

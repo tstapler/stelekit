@@ -22,6 +22,7 @@ import kotlin.math.roundToInt
 import kotlin.test.Test
 import kotlin.test.assertTrue
 import kotlin.time.Clock
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * CI-enforced block-insert latency benchmarks.
@@ -158,7 +159,7 @@ class BlockInsertBenchmarkTest {
             ).also {
                 it.currentEpoch = dev.stapler.stelekit.db.GraphEpoch(
                     graphId = dev.stapler.stelekit.model.GraphId("block-insert-benchmark-test"),
-                    graphPath = tempDir.absolutePath,
+                    graphPath = EffectiveNotesPath(tempDir.absolutePath),
                     sequence = 1L,
                 )
             }
@@ -175,7 +176,7 @@ class BlockInsertBenchmarkTest {
                 scope = scope,
                 graphWriter = graphWriter,
                 pageRepository = repoSet.pageRepository,
-                graphPathProvider = { tempDir.absolutePath },
+                graphPathProvider = { EffectiveNotesPath(tempDir.absolutePath) },
                 writeActor = actor,
             )
             bsm.observePage(PageUuid(page.uuid.value))

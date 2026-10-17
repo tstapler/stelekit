@@ -13,6 +13,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 class MarkdownTargetWriterTest {
     private val root = "/graphs/b"
@@ -72,7 +73,7 @@ class MarkdownTargetWriterTest {
     }
 
     private val fs = RecordingFs()
-    private val target = OffGraphTarget(GraphId("b"), root, isActive = false)
+    private val target = OffGraphTarget(GraphId("b"), EffectiveNotesPath(root), isActive = false)
     private val caps = TargetWriterCapabilities(platformSupportsOffGraphWrite = true)
     private fun writer(
         t: OffGraphTarget = target,

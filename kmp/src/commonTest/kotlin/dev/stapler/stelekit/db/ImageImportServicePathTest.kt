@@ -8,6 +8,7 @@ import dev.stapler.stelekit.repository.InMemoryImageAnnotationRepository
 import kotlin.test.Test
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 class ImageImportServicePathTest {
 
@@ -25,7 +26,7 @@ class ImageImportServicePathTest {
         val graphPath = "/graph"
         val uuid = "a3f8b2c1-d4e5-6789-abcd-ef0123456789"
 
-        val result = service.reservePath(graphPath, uuid)
+        val result = service.reservePath(EffectiveNotesPath(graphPath), uuid)
         assertIs<Either.Right<String>>(result)
 
         val resolvedPath = result.value
@@ -44,7 +45,7 @@ class ImageImportServicePathTest {
         val fs = FakeFileSystem()
         val service = buildService(fs)
         val uuid = "abc12345-0000-0000-0000-000000000000"
-        val result = service.reservePath("/graph", uuid)
+        val result = service.reservePath(EffectiveNotesPath("/graph"), uuid)
 
         assertIs<Either.Right<String>>(result)
         // UUID prefix is first 8 non-dash chars: abc12345

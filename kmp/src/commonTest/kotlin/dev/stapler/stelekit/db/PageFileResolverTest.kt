@@ -15,6 +15,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 class PageFileResolverTest {
     private val graph = "/g"
@@ -35,10 +36,10 @@ class PageFileResolverTest {
 
     @Test
     fun namespaceAndJournalNames() {
-        assertEquals("/g/pages/a%2Fb.md", pathOf(PageFileResolver.resolve("a/b", false, "/g")))
-        assertEquals("/g/pages/a%2Fb.md", pathOf(PageFileResolver.resolve("a/b", false, "/g/")))
-        assertEquals("/g/journals/Oct 7th, 2026.md", pathOf(PageFileResolver.resolve("Oct 7th, 2026", true, "/g")))
-        assertEquals("/g/pages/x.md.stek", pathOf(PageFileResolver.resolve("x", false, "/g", encrypted = true)))
+        assertEquals("/g/pages/a%2Fb.md", pathOf(PageFileResolver.resolve("a/b", false, EffectiveNotesPath("/g"))))
+        assertEquals("/g/pages/a%2Fb.md", pathOf(PageFileResolver.resolve("a/b", false, EffectiveNotesPath("/g/"))))
+        assertEquals("/g/journals/Oct 7th, 2026.md", pathOf(PageFileResolver.resolve("Oct 7th, 2026", true, EffectiveNotesPath("/g"))))
+        assertEquals("/g/pages/x.md.stek", pathOf(PageFileResolver.resolve("x", false, EffectiveNotesPath("/g"), encrypted = true)))
     }
 
     @Test
@@ -48,8 +49,8 @@ class PageFileResolverTest {
             val isJournal = flags and 1 == 1
             val enc = flags and 2 == 2
             val expected = legacy(name, isJournal, graph, enc)
-            assertEquals(expected, PageFileResolver.pagePath(name, isJournal, graph, enc))
-            assertEquals(expected, pathOf(PageFileResolver.resolve(name, isJournal, graph, enc)))
+            assertEquals(expected, PageFileResolver.pagePath(name, isJournal, EffectiveNotesPath(graph), enc))
+            assertEquals(expected, pathOf(PageFileResolver.resolve(name, isJournal, EffectiveNotesPath(graph), enc)))
         }
     }
 
@@ -62,7 +63,7 @@ class PageFileResolverTest {
         for (journal in listOf(false, true)) {
             val folder = "/g/" + if (journal) "journals" else "pages"
             for (n in names) {
-                val r = PageFileResolver.resolve(n, journal, graph)
+                val r = PageFileResolver.resolve(n, journal, EffectiveNotesPath(graph))
                 if (r is Either.Right) assertTrue(PageFileResolver.isWithin(folder, r.value), "$n -> ${r.value}")
             }
         }
@@ -70,7 +71,7 @@ class PageFileResolverTest {
 
     @Test
     fun nulNameIsInvalid() {
-        val err = (PageFileResolver.resolve("a\u0000b", false, graph) as Either.Left).value
+        val err = (PageFileResolver.resolve("a\u0000b", false, EffectiveNotesPath(graph)) as Either.Left).value
         assertIs<PageFileError.InvalidPageName>(err)
     }
 
@@ -78,7 +79,7 @@ class PageFileResolverTest {
     fun arbitraryNamesAreContainedOrRefused() = runTest {
         checkAll(Arb.string(0..60), Arb.string(0..6)) { a, b ->
             for (n in listOf(a, "../$a", "$a/../$b", "$a\\..\\..\\$b", "..$a")) {
-                when (val r = PageFileResolver.resolve(n, false, graph)) {
+                when (val r = PageFileResolver.resolve(n, false, EffectiveNotesPath(graph))) {
                     is Either.Right -> assertTrue(PageFileResolver.isWithin("/g/pages", r.value), "$n -> ${r.value}")
                     is Either.Left -> assertTrue(n.contains('\u0000'), "unexpected refusal for $n")
                 }
@@ -103,7 +104,7 @@ class PageFileResolverTest {
     @Test
     fun journalStemRoundTripsAndMatchesEnsureTodayJournalName() = runTest {
         checkAll(dates) { d ->
-            val path = pathOf(PageFileResolver.resolveJournal(d, graph, emptyList()))
+            val path = pathOf(PageFileResolver.resolveJournal(d, EffectiveNotesPath(graph), emptyList()))
             val stem = path.removePrefix("/g/journals/").removeSuffix(".md")
             assertEquals(d, JournalUtils.parseJournalDate(stem))
             // GraphLoader names the page decodeFileName(stem); ensureTodayJournal names it date.toString() with '_'.
@@ -116,9 +117,9 @@ class PageFileResolverTest {
         checkAll(dates) { d ->
             val hyphen = d.toString()
             val otherDay = LocalDate(d.year, d.month.ordinal + 1, if (d.day == 1) 2 else 1).toString()
-            assertEquals("/g/journals/$hyphen.md", pathOf(PageFileResolver.resolveJournal(d, graph, listOf(otherDay, hyphen))))
+            assertEquals("/g/journals/$hyphen.md", pathOf(PageFileResolver.resolveJournal(d, EffectiveNotesPath(graph), listOf(otherDay, hyphen))))
             val under = hyphen.replace('-', '_')
-            assertEquals("/g/journals/$under.md", pathOf(PageFileResolver.resolveJournal(d, graph, listOf(hyphen, under))))
+            assertEquals("/g/journals/$under.md", pathOf(PageFileResolver.resolveJournal(d, EffectiveNotesPath(graph), listOf(hyphen, under))))
         }
     }
 
@@ -127,7 +128,7 @@ class PageFileResolverTest {
         val d = LocalDate(2026, 10, 7)
         val cfg = """{:preferred-format :markdown
                       :journal/file-name-format "yyyy-MM-dd"}"""
-        val r = PageFileResolver.resolveJournal(d, graph, emptyList(), configEdn = cfg)
+        val r = PageFileResolver.resolveJournal(d, EffectiveNotesPath(graph), emptyList(), configEdn = cfg)
         assertEquals(PageFileError.JournalFormatUnsupported("yyyy-MM-dd"), (r as Either.Left).value)
         assertEquals("yyyy-MM-dd", PageFileResolver.parseJournalFileNameFormat(cfg))
     }
@@ -142,7 +143,7 @@ class PageFileResolverTest {
             ";; :journal/file-name-format \"yyyy-MM-dd\"\n{}",
             "{:x \"a;b\" ; :journal/file-name-format \"yyyy-MM-dd\"\n}",
         )) {
-            assertEquals(expected, pathOf(PageFileResolver.resolveJournal(d, graph, emptyList(), configEdn = cfg)), "cfg=$cfg")
+            assertEquals(expected, pathOf(PageFileResolver.resolveJournal(d, EffectiveNotesPath(graph), emptyList(), configEdn = cfg)), "cfg=$cfg")
         }
         assertNull(PageFileResolver.parseJournalFileNameFormat("{:journal/file-name-format nil}"))
     }

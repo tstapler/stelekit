@@ -17,6 +17,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Clock
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * Golden-file style integration test that validates the full end-to-end migration
@@ -119,7 +120,7 @@ class MigrationRegressionTest {
         MigrationRegistry.register(stampMigration)
 
         val runner = harness.buildRunner()
-        val result = runner.runPending("regression-graph", harness.repoSet, "/tmp/regression")
+        val result = runner.runPending("regression-graph", harness.repoSet, EffectiveNotesPath("/tmp/regression"))
 
         // One migration was registered and must have been applied.
         assertEquals(1, result.applied, "Expected exactly one migration applied")
@@ -174,12 +175,12 @@ class MigrationRegressionTest {
         val runner = harness.buildRunner()
 
         // First run — should apply to all five blocks.
-        val firstResult = runner.runPending("idempotent-graph", harness.repoSet, "/tmp/idempotent")
+        val firstResult = runner.runPending("idempotent-graph", harness.repoSet, EffectiveNotesPath("/tmp/idempotent"))
         assertEquals(1, firstResult.applied, "First run should apply the migration once")
 
         // Second run — migration is already in changelog; evaluator finds all properties
         // already set so no BlockChanges are emitted.
-        val secondResult = runner.runPending("idempotent-graph", harness.repoSet, "/tmp/idempotent")
+        val secondResult = runner.runPending("idempotent-graph", harness.repoSet, EffectiveNotesPath("/tmp/idempotent"))
         assertEquals(
             0,
             secondResult.applied,
@@ -228,7 +229,7 @@ class MigrationRegressionTest {
         MigrationRegistry.registerAll(m1, m2)
 
         val runner = harness.buildRunner()
-        val result = runner.runPending("two-migration-graph", harness.repoSet, "/tmp/two")
+        val result = runner.runPending("two-migration-graph", harness.repoSet, EffectiveNotesPath("/tmp/two"))
 
         assertEquals(2, result.applied, "Both migrations should be applied")
         assertEquals(0, result.skipped)
@@ -268,7 +269,7 @@ class MigrationRegressionTest {
         MigrationRegistry.register(noMatchMigration)
 
         val runner = harness.buildRunner()
-        val result = runner.runPending("no-match-graph", harness.repoSet, "/tmp/no-match")
+        val result = runner.runPending("no-match-graph", harness.repoSet, EffectiveNotesPath("/tmp/no-match"))
 
         // The migration ran but touched nothing — still counts as applied.
         assertEquals(1, result.applied)

@@ -94,7 +94,7 @@ private fun rememberBlockStateManager(
             graphLoader = graphLoader,
             graphWriter = graphWriter,
             pageRepository = repos.pageRepository,
-            graphPathProvider = { viewModelRefProvider()?.uiState?.value?.currentGraphPath ?: "" },
+            graphPathProvider = { viewModelRefProvider()?.uiState?.value?.currentNotesPath },
             histogramWriter = repos.histogramWriter,
             writeActor = repos.writeActor,
             invalidationSource = repos.writeActor?.blockInvalidations,

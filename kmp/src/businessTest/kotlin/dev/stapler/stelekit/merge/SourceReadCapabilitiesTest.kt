@@ -6,9 +6,10 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 class SourceReadCapabilitiesTest {
-    private val graph = OffGraphTarget(GraphId("b"), "/graphs/b", isActive = false)
+    private val graph = OffGraphTarget(GraphId("b"), EffectiveNotesPath("/graphs/b"), isActive = false)
     private fun reason(c: SourceReadCapabilities, g: OffGraphTarget = graph) = c.canReadOffGraph(g).leftOrNull()
 
     @Test

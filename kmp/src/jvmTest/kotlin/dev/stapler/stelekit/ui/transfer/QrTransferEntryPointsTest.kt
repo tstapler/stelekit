@@ -28,6 +28,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Rule
 import org.junit.Test
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * Story 3.1.4: the "Send via QR" page-menu action is flag-gated on [QrTransferSettings.enabled] —
@@ -120,7 +121,7 @@ class QrTransferEntryPointsTest {
             graphLoader = graphLoader,
             scope = scope,
             pageRepository = pageRepo,
-            graphPathProvider = { viewModelRef?.uiState?.value?.currentGraphPath ?: "" },
+            graphPathProvider = { EffectiveNotesPath(viewModelRef?.uiState?.value?.currentGraphPath ?: "") },
         )
         val viewModel = StelekitViewModel(
             StelekitViewModelDependencies(
@@ -175,7 +176,7 @@ class QrTransferEntryPointsTest {
         val importViewModel = ImportViewModel(
             pageRepository = pageRepo,
             graphWriter = graphWriter,
-            graphPath = "/tmp/test",
+            graphPath = EffectiveNotesPath("/tmp/test"),
             urlFetcher = NoOpUrlFetcher(),
             matcherFlow = matcherFlow,
         )

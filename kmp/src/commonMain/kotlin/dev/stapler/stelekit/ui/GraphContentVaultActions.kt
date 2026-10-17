@@ -242,15 +242,16 @@ private suspend fun unlockVault(
  * [applyCreatedVault] (identical rationale).
  */
 private fun seedGraphEpochForVaultEvent(ctx: VaultActionContext, callerName: String) {
-    val activeGraphId = ctx.vaultSetup.activeGraphInfo?.id
-    if (activeGraphId == null) {
+    val activeGraphInfo = ctx.vaultSetup.activeGraphInfo
+    val activeGraphId = activeGraphInfo?.id
+    if (activeGraphInfo == null || activeGraphId == null) {
         ctx.graphContentLogger.error("$callerName: no active graph — cannot establish GraphEpoch")
         return
     }
     val writer = ctx.graphIoStack.graphWriter
     writer.currentEpoch = GraphEpoch(
         graphId = activeGraphId,
-        graphPath = ctx.vaultSetup.activeGraphPath,
+        graphPath = activeGraphInfo.effectiveNotesPath,
         sequence = (writer.currentEpoch?.sequence ?: 0L) + 1,
     )
 }

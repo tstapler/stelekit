@@ -33,6 +33,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /** Robolectric Compose tests for [ImportScreen]: input stage, URL tab, review stage and confirm. */
 @RunWith(RobolectricTestRunner::class)
@@ -49,7 +50,7 @@ class ImportScreenTest {
 
     private class RecordingSaver : PageSaver {
         val saved = mutableListOf<Page>()
-        override suspend fun save(page: Page, blocks: List<Block>, graphPath: String) {
+        override suspend fun save(page: Page, blocks: List<Block>, graphPath: EffectiveNotesPath) {
             saved += page
         }
     }
@@ -66,7 +67,7 @@ class ImportScreenTest {
     ) = ImportViewModel(
         pageRepository = InMemoryPageRepository(),
         pageSaver = saver,
-        graphPath = "/graphs/test",
+        graphPath = EffectiveNotesPath("/graphs/test"),
         urlFetcher = fetcher,
         matcherFlow = MutableStateFlow(matcher),
         coroutineScope = scope,

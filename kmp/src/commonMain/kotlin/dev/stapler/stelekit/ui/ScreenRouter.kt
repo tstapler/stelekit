@@ -63,6 +63,7 @@ import dev.stapler.stelekit.ui.screens.SearchViewModel
 import dev.stapler.stelekit.tags.TagSuggestionViewModel
 import dev.stapler.stelekit.ui.transfer.QrDecodeScreen
 import dev.stapler.stelekit.ui.transfer.QrDecodeViewModel
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * Routes the current [Screen] to its composable. Owns screen transition animations.
@@ -252,7 +253,7 @@ internal fun ScreenRouter(
                 onNavigateTo = { viewModel.navigateTo(it) },
             )
             is Screen.Import -> {
-                val graphPath = appState.currentGraphPath.orEmpty()
+                val graphPath = appState.currentNotesPath ?: EffectiveNotesPath("")
                 val importViewModel = remember(graphPath) {
                     dev.stapler.stelekit.ui.screens.ImportViewModel(
                         pageRepository = repos.pageRepository,

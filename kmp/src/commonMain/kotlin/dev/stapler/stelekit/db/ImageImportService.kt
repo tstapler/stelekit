@@ -27,6 +27,7 @@ import dev.stapler.stelekit.util.UuidGenerator
 import kotlinx.coroutines.CancellationException
 import kotlin.math.roundToInt
 import kotlin.time.Clock
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * Orchestrates the full image import pipeline for Epic 2.
@@ -60,9 +61,9 @@ class ImageImportService(
      *
      * Returns the resolved file path that the caller should write image bytes to.
      */
-    fun reservePath(graphPath: String, uuid: String): Either<DomainError, String> {
+    fun reservePath(graphPath: EffectiveNotesPath, uuid: String): Either<DomainError, String> {
         val dir = ImageStoragePathResolver.assetsImagesDir(graphPath)
-        ensureDirectory("$graphPath/assets")
+        ensureDirectory("${graphPath.value}/assets")
         ensureDirectory(dir)
         return ImageStoragePathResolver.resolvePath(graphPath, uuid).right()
     }
@@ -81,7 +82,7 @@ class ImageImportService(
     @OptIn(DirectRepositoryWrite::class)
     suspend fun import(
         tempFile: PlatformImageFile,
-        graphPath: String,
+        graphPath: EffectiveNotesPath,
         pageUuid: PageUuid,
         source: ImageSource = ImageSource.FILE,
         insertToJournalPage: Boolean = false,
@@ -108,7 +109,7 @@ class ImageImportService(
             uuid = annotationUuid,
             blockUuid = blockUuid,
             pageUuid = pageUuid.value,
-            graphPath = graphPath,
+            graphPath = graphPath.value,
             filePath = destPath,
             source = source,
             capturedAtMs = tempFile.capturedAtMs,

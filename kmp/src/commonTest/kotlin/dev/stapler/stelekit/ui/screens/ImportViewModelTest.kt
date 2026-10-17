@@ -26,6 +26,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Clock
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ImportViewModelTest {
@@ -37,9 +38,9 @@ class ImportViewModelTest {
     private class RecordingPageSaver(
         var throwOnSave: Throwable? = null,
     ) : PageSaver {
-        val savedCalls = mutableListOf<Triple<Page, List<Block>, String>>()
+        val savedCalls = mutableListOf<Triple<Page, List<Block>, EffectiveNotesPath>>()
 
-        override suspend fun save(page: Page, blocks: List<Block>, graphPath: String) {
+        override suspend fun save(page: Page, blocks: List<Block>, graphPath: EffectiveNotesPath) {
             throwOnSave?.let { throw it }
             savedCalls.add(Triple(page, blocks, graphPath))
         }
@@ -91,7 +92,7 @@ class ImportViewModelTest {
             pageRepository = pageRepo,
             pageSaver = pageSaver,
             pageDeleter = pageDeleter,
-            graphPath = graphPath,
+            graphPath = EffectiveNotesPath(graphPath),
             urlFetcher = urlFetcher,
             matcherFlow = matcherFlow,
             topicEnricher = topicEnricher,

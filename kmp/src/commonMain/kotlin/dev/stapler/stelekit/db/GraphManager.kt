@@ -1003,7 +1003,7 @@ class GraphManager(
                                     evaluator = DslEvaluator(repoSet),
                                     applier = ChangeApplier(writeActor, opLogger = null),
                                     flusher = null,
-                                ).runPending(id.value, repoSet, graphInfo.effectiveNotesPath.value)
+                                ).runPending(id.value, repoSet, graphInfo.effectiveNotesPath)
                             } catch (e: InterruptedMigrationException) {
                                 logger.error("MigrationRunner: interrupted migration detected for graph $id", e)
                             } catch (e: MigrationTamperedError) {

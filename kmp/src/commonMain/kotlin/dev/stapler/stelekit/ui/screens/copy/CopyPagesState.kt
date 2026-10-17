@@ -248,7 +248,7 @@ class CapabilityDestinationProbe(
     override suspend fun probe(graph: GraphInfo, direction: CopyDirection): DestinationStatus {
         val target = OffGraphTarget(
             graphId = graph.id,
-            path = graph.effectiveNotesPath.value,
+            path = graph.effectiveNotesPath,
             isActive = false,
             encrypted = graph.isParanoidMode,
         )

@@ -22,6 +22,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Clock
 import kotlinx.coroutines.runBlocking
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 class LlmSuggestionWriterTest {
 
@@ -31,7 +32,7 @@ class LlmSuggestionWriterTest {
     ) : GraphWriterPort {
         var savedPage: Page? = null
         var savedBlocks: List<Block>? = null
-        var savedGraphPath: String? = null
+        var savedGraphPath: EffectiveNotesPath? = null
         var saveCallCount: Int = 0
 
         override fun setCryptoLayer(layer: CryptoLayer?) {}
@@ -39,8 +40,8 @@ class LlmSuggestionWriterTest {
         override fun startAutoSave(debounceMs: Long) {}
         override fun stopAutoSave() {}
         override suspend fun flush() {}
-        override suspend fun renamePage(page: Page, newName: String, graphPath: String) = true
-        override suspend fun savePage(page: Page, blocks: List<Block>, graphPath: String): Either<DomainError, Unit> {
+        override suspend fun renamePage(page: Page, newName: String, graphPath: EffectiveNotesPath) = true
+        override suspend fun savePage(page: Page, blocks: List<Block>, graphPath: EffectiveNotesPath): Either<DomainError, Unit> {
             saveCallCount++
             savedPage = page
             savedBlocks = blocks
@@ -56,7 +57,7 @@ class LlmSuggestionWriterTest {
     }
 
     private val now = Clock.System.now()
-    private val graphPath = "/tmp/graph"
+    private val graphPath = EffectiveNotesPath("/tmp/graph")
 
     private fun page(uuid: String, name: String = "Test Page") = Page(
         uuid = PageUuid(uuid),

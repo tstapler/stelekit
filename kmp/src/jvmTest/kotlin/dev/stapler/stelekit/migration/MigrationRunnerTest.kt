@@ -20,6 +20,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * Tests for [MigrationRunner] covering the four key behaviours specified in Task 3.3:
@@ -110,7 +111,7 @@ class MigrationRunnerTest {
         MigrationRegistry.registerAll(m1, m2)
 
         val runner = buildRunner(db, repoSet, actor)
-        val result = runner.runPending("graph-test", repoSet, "/tmp/test-graph")
+        val result = runner.runPending("graph-test", repoSet, EffectiveNotesPath("/tmp/test-graph"))
 
         assertEquals(2, result.applied, "Expected both migrations to be applied")
         assertEquals(0, result.skipped, "Expected no skipped migrations on first run")
@@ -139,11 +140,11 @@ class MigrationRunnerTest {
         val runner = buildRunner(db, repoSet, actor)
 
         // First run — applies m1
-        val firstResult = runner.runPending("graph-idem", repoSet, "/tmp/test-graph")
+        val firstResult = runner.runPending("graph-idem", repoSet, EffectiveNotesPath("/tmp/test-graph"))
         assertEquals(1, firstResult.applied)
 
         // Second run — nothing pending
-        val secondResult = runner.runPending("graph-idem", repoSet, "/tmp/test-graph")
+        val secondResult = runner.runPending("graph-idem", repoSet, EffectiveNotesPath("/tmp/test-graph"))
         assertEquals(0, secondResult.applied, "Second run should apply nothing")
         assertEquals(1, secondResult.skipped, "Second run should report 1 already-applied")
 
@@ -166,7 +167,7 @@ class MigrationRunnerTest {
         MigrationRegistry.register(original)
 
         val runner = buildRunner(db, repoSet, actor)
-        runner.runPending("graph-tamper", repoSet, "/tmp/test-graph")
+        runner.runPending("graph-tamper", repoSet, EffectiveNotesPath("/tmp/test-graph"))
 
         // Now simulate tampering: re-register V001 with a different checksumBody.
         // @BeforeTest/@AfterTest only guard between tests — within a test we clear manually
@@ -181,7 +182,7 @@ class MigrationRunnerTest {
 
         // Second run should detect the checksum mismatch.
         assertFailsWith<MigrationTamperedError> {
-            runner.runPending("graph-tamper", repoSet, "/tmp/test-graph")
+            runner.runPending("graph-tamper", repoSet, EffectiveNotesPath("/tmp/test-graph"))
         }
 
         actor.close()
@@ -216,7 +217,7 @@ class MigrationRunnerTest {
 
         // Runner should detect the RUNNING row and throw.
         assertFailsWith<InterruptedMigrationException> {
-            runner.runPending("graph-interrupted", repoSet, "/tmp/test-graph")
+            runner.runPending("graph-interrupted", repoSet, EffectiveNotesPath("/tmp/test-graph"))
         }
 
         actor.close()

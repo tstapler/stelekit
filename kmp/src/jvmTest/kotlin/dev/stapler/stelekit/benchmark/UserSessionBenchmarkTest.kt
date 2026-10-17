@@ -28,6 +28,7 @@ import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertTrue
 import kotlin.time.measureTime
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * End-to-end user session benchmark with interleaved reads and writes.
@@ -200,7 +201,7 @@ class UserSessionBenchmarkTest {
             ).also {
                 it.currentEpoch = dev.stapler.stelekit.db.GraphEpoch(
                     graphId = dev.stapler.stelekit.model.GraphId("user-session-benchmark-test"),
-                    graphPath = tempDir.absolutePath,
+                    graphPath = EffectiveNotesPath(tempDir.absolutePath),
                     sequence = 1L,
                 )
             }

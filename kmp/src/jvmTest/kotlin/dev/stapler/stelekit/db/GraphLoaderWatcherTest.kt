@@ -20,6 +20,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlin.time.Clock
 import java.io.File
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * Tests for the file-watcher loop fix (Fix 2):
@@ -123,7 +124,7 @@ class GraphLoaderWatcherTest {
                 )
             )
 
-            writer.savePage(page, blocks, graphDir.absolutePath)
+            writer.savePage(page, blocks, EffectiveNotesPath(graphDir.absolutePath))
 
             // Verify the callback was invoked with the correct path
             assertNotNull(callbackFilePath, "onFileWritten callback should have been called")
@@ -177,7 +178,7 @@ class GraphLoaderWatcherTest {
             val blocks = listOf(
                 Block(uuid = BlockUuid("b1"), pageUuid = PageUuid("p1"), content = "Hello", level = 0, position = "a0", createdAt = now, updatedAt = now)
             )
-            writer.savePage(page, blocks, graphDir.absolutePath)
+            writer.savePage(page, blocks, EffectiveNotesPath(graphDir.absolutePath))
 
             // Verify the file was written
             val filePath = File(graphDir, "pages/IntegPage.md").absolutePath

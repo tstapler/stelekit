@@ -40,6 +40,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * Story 7.3 — visibility/accept/reject wiring, race-guard and multi-graph guards.
@@ -111,8 +112,8 @@ class StelekitViewModelLlmSuggestionTest {
         override fun startAutoSave(debounceMs: Long) {}
         override fun stopAutoSave() {}
         override suspend fun flush() {}
-        override suspend fun renamePage(page: Page, newName: String, graphPath: String) = true
-        override suspend fun savePage(page: Page, blocks: List<Block>, graphPath: String): Either<DomainError, Unit> {
+        override suspend fun renamePage(page: Page, newName: String, graphPath: EffectiveNotesPath) = true
+        override suspend fun savePage(page: Page, blocks: List<Block>, graphPath: EffectiveNotesPath): Either<DomainError, Unit> {
             saveCallCount++
             return failWith?.left() ?: Unit.right()
         }

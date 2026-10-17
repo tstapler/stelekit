@@ -48,6 +48,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * Pins the S15 log lines that are the local-only source for metrics M1-M5, and that they carry no page
@@ -150,7 +151,7 @@ class MetricsLogContractTest {
     fun `copy run and undo log the exact S15 key sets and no page body`() = realTime {
         val m = manager().also { it.awaitPendingMigration() }
         val writer = MarkdownTargetWriter(
-            targetFs, OffGraphTarget(other, otherRoot, isActive = false), TargetWriterCapabilities(platformSupportsOffGraphWrite = true),
+            targetFs, OffGraphTarget(other, EffectiveNotesPath(otherRoot), isActive = false), TargetWriterCapabilities(platformSupportsOffGraphWrite = true),
         ) { it }
         val router = TargetWriterRouter(
             graphManager = m,
@@ -184,7 +185,7 @@ class MetricsLogContractTest {
     private val shareKeys = listOf("target", "writer", "override", "outcome")
 
     private fun journalPath(): String =
-        PageFileResolver.resolveJournal(day, otherRoot, targetFs.listFiles("$otherRoot/journals").map { it.substringBefore('.') })
+        PageFileResolver.resolveJournal(day, EffectiveNotesPath(otherRoot), targetFs.listFiles("$otherRoot/journals").map { it.substringBefore('.') })
             .fold({ error("unresolvable: $it") }, { it })
 
     @Test
@@ -197,7 +198,7 @@ class MetricsLogContractTest {
             capabilities = caps,
             activeWriterFor = { error("target is not the ready graph in these tests") },
             offGraphWriterFor = { info ->
-                MarkdownTargetWriter(targetFs, OffGraphTarget(info.id, info.effectiveNotesPath.value, isActive = false), caps, MarkdownTargetWriter.NoSymlinks)
+                MarkdownTargetWriter(targetFs, OffGraphTarget(info.id, EffectiveNotesPath(info.effectiveNotesPath.value), isActive = false), caps, MarkdownTargetWriter.NoSymlinks)
             },
         )
         val raw = RouterOffGraphRoute(router, RegistryGraphLocator(m.graphRegistry), AssetCopier(targetFs)) { day }

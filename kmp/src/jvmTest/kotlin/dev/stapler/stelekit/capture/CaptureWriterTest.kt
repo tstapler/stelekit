@@ -39,6 +39,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlin.time.Clock
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * Coverage for [CaptureWriter] — the shared commonMain write path extracted from
@@ -64,7 +65,7 @@ class CaptureWriterTest {
         try {
             requireNotNull(repoSet.writeActor) { "expected a live writeActor for this AC" }
 
-            val result = CaptureWriter.writeCapture(repoSet, fileSystem, graphPath, "Buy milk")
+            val result = CaptureWriter.writeCapture(repoSet, fileSystem, EffectiveNotesPath(graphPath), "Buy milk")
 
             val saved = assertIs<CaptureResult.Saved>(result)
             assertTrue(saved.page.isJournal)
@@ -94,7 +95,7 @@ class CaptureWriterTest {
             )
             requireNotNull(repoSet.writeActor).savePage(stub)
 
-            val result = CaptureWriter.writeCapture(repoSet, fileSystem, graphPath, "hello")
+            val result = CaptureWriter.writeCapture(repoSet, fileSystem, EffectiveNotesPath(graphPath), "hello")
 
             assertIs<CaptureResult.Saved>(result)
             val text = java.io.File(file).readText()
@@ -131,7 +132,7 @@ class CaptureWriterTest {
 
         // The throw happens before GraphWriter is ever reached, so a real PlatformFileSystem
         // (required by writeCapture's signature) is never actually touched here.
-        val result = CaptureWriter.writeCapture(repoSet, PlatformFileSystem(), "/tmp/graph", "Buy milk")
+        val result = CaptureWriter.writeCapture(repoSet, PlatformFileSystem(), EffectiveNotesPath("/tmp/graph"), "Buy milk")
 
         val failed = assertIs<CaptureResult.Failed>(result)
         assertTrue(failed.message.contains("boom"), "expected the thrown message to surface, got: ${failed.message}")
@@ -175,9 +176,9 @@ class CaptureWriterTest {
         try {
             val captureId = "capture-fixed-id"
 
-            val first = CaptureWriter.writeCapture(repoSet, fileSystem, graphPath, "First", captureId)
+            val first = CaptureWriter.writeCapture(repoSet, fileSystem, EffectiveNotesPath(graphPath), "First", captureId)
             val second = CaptureWriter.writeCapture(
-                repoSet, fileSystem, graphPath, "First edited", captureId,
+                repoSet, fileSystem, EffectiveNotesPath(graphPath), "First edited", captureId,
             )
 
             assertIs<CaptureResult.Saved>(first)

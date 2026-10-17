@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.CancellationException
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * Preview of a page rename operation — shown to the user before committing.
@@ -110,7 +111,7 @@ class BacklinkRenamer(
      * and rewrites all affected pages' disk files.
      */
     @OptIn(DirectRepositoryWrite::class)
-    suspend fun execute(page: Page, newName: String, graphPath: String): RenameResult {
+    suspend fun execute(page: Page, newName: String, graphPath: EffectiveNotesPath): RenameResult {
         return try {
             // 1. Snapshot affected blocks BEFORE any rename so we use the old name in queries.
             val affectedBlocks = affectedBlocksForRename(page.name)
@@ -156,7 +157,7 @@ class BacklinkRenamer(
      * For the page that was renamed, passes `filePath = null` so [GraphWriter] recalculates
      * the file path from the new name rather than using the now-stale stored path.
      */
-    private suspend fun rewritePageFile(pageUuid: PageUuid, renamedPageUuid: PageUuid, graphPath: String) {
+    private suspend fun rewritePageFile(pageUuid: PageUuid, renamedPageUuid: PageUuid, graphPath: EffectiveNotesPath) {
         val page = pageRepository.getPageByUuid(pageUuid).first().getOrNull() ?: run {
             logger.error("Page not found for backlink file rewrite: $pageUuid")
             return

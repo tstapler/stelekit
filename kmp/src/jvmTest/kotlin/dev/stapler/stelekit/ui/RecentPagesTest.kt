@@ -20,6 +20,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.time.Clock
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * Tests for the recent-pages logic in StelekitViewModel:
@@ -68,7 +69,7 @@ class RecentPagesTest {
             scope = scope,
             graphWriter = graphWriter,
             pageRepository = pageRepo,
-            graphPathProvider = { viewModelRef?.uiState?.value?.currentGraphPath ?: "" }
+            graphPathProvider = { EffectiveNotesPath(viewModelRef?.uiState?.value?.currentGraphPath ?: "") }
         )
         return StelekitViewModel(
             StelekitViewModelDependencies(

@@ -20,6 +20,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import org.junit.Rule
 import org.junit.Test
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 private fun makeBlockStateManager(
     pageRepo: PopulatedFakePageRepository,
@@ -32,7 +33,7 @@ private fun makeBlockStateManager(
     graphLoader = graphLoader,
     scope = scope,
     pageRepository = pageRepo,
-    graphPathProvider = { viewModelRef()?.uiState?.value?.currentGraphPath ?: "" }
+    graphPathProvider = { EffectiveNotesPath(viewModelRef()?.uiState?.value?.currentGraphPath ?: "") }
 )
 
 class PageViewUITest {
