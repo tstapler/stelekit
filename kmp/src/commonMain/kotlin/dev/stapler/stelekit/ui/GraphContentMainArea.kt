@@ -23,6 +23,8 @@ import dev.stapler.stelekit.ui.components.BrowserOnlySyncBanner
 import dev.stapler.stelekit.ui.components.HostReconnectBanner
 import dev.stapler.stelekit.ui.components.git.GitDetectionBanner
 import kotlinx.coroutines.CoroutineScope
+import dev.stapler.stelekit.ui.misplaced.MisplacedFilesController
+import dev.stapler.stelekit.ui.misplaced.MisplacedFilesHost
 
 /**
  * Everything [GraphContentMainArea] needs beyond [GraphContentDeps] (Parameter Object pattern) —
@@ -141,6 +143,28 @@ private fun computeBannerVisibility(
 }
 
 /** Connectivity banners: git-detected, browser-only-sync, host-reconnect (in that stacking order). */
+/** Tracks journals and pages outside the notes folder for the active graph and offers to move or ignore them. */
+@Composable
+private fun MisplacedFilesBannerHost(
+    deps: GraphContentDeps,
+    viewModel: StelekitViewModel,
+    activeGraphInfo: dev.stapler.stelekit.model.GraphInfo?,
+) {
+    val graph = activeGraphInfo?.takeUnless { it.isDemo }
+    val controller = remember(graph?.id, graph?.repoRootObj, graph?.effectiveNotesPath) {
+        graph?.let { info ->
+            MisplacedFilesController(
+                service = deps.graphManager.createMisplacedFilesService(info.id),
+                repoRoot = { info.repoRootObj },
+                notesPath = { info.effectiveNotesPath },
+                onFilesChanged = { viewModel.loadGraph(info.effectiveNotesPath) },
+            )
+        }
+    }
+    LaunchedEffect(controller) { controller?.refresh() }
+    controller?.let { MisplacedFilesHost(it) }
+}
+
 @Composable
 private fun GraphContentBanners(
     deps: GraphContentDeps,
@@ -153,6 +177,7 @@ private fun GraphContentBanners(
     // the same graph.
     var hostReconnectBannerDismissedFor by remember { mutableStateOf<Pair<String?, String?>?>(null) }
     val visibility = computeBannerVisibility(deps, inputs, activeGraphInfo, hostReconnectBannerDismissedFor)
+    MisplacedFilesBannerHost(deps, viewModel, activeGraphInfo)
 
     inputs.appState.mcpBindFailureMessage?.let { message ->
         dev.stapler.stelekit.ui.components.McpBindFailureBanner(

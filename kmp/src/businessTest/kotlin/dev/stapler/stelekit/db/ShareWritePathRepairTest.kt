@@ -5,6 +5,8 @@
 package dev.stapler.stelekit.db
 
 import dev.stapler.stelekit.db.ShareWritePathRepair.PagePath
+import dev.stapler.stelekit.model.RepoRoot
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -19,7 +21,7 @@ class ShareWritePathRepairTest {
     private val repair = ShareWritePathRepair(fs)
 
     private fun put(path: String, text: String) = fs.writeFile(path, text)
-    private fun run(vararg pages: PagePath) = repair.repair(root, notes, pages.toList())
+    private fun run(vararg pages: PagePath) = repair.repair(RepoRoot(root), EffectiveNotesPath(notes), pages.toList())
 
     @Test
     fun repair_should_MoveStrayJournalAndRepointPage() {
@@ -73,16 +75,16 @@ class ShareWritePathRepairTest {
 
     @Test
     fun repair_should_KeepBothAndReportConflict_When_CopiesDiffer() {
-        put("$root/journals/2026_10_16.md", "- phone\n")
-        put("$notes/journals/2026_10_16.md", "- desktop\n")
+        put("$root/journals/2026_10_16.md", "title:: phone\n- x\n")
+        put("$notes/journals/2026_10_16.md", "title:: desktop\n- y\n")
 
         val outcome = run(PagePath("p1", "$root/journals/2026_10_16.md"))
 
         assertTrue(outcome.repoints.isEmpty(), "a conflicting page must keep its old path")
         assertEquals(listOf("$root/journals/2026_10_16.md"), outcome.conflicts)
         assertFalse(outcome.clean, "a conflict must be retried, not marked done")
-        assertEquals("- phone\n", fs.readFile("$root/journals/2026_10_16.md"))
-        assertEquals("- desktop\n", fs.readFile("$notes/journals/2026_10_16.md"))
+        assertEquals("title:: phone\n- x\n", fs.readFile("$root/journals/2026_10_16.md"))
+        assertEquals("title:: desktop\n- y\n", fs.readFile("$notes/journals/2026_10_16.md"))
     }
 
     @Test
@@ -116,7 +118,7 @@ class ShareWritePathRepairTest {
     fun repair_should_BeNoOp_When_GraphHasNoWikiSubdir() {
         put("$root/journals/2026_10_16.md", "- x\n")
 
-        val outcome = ShareWritePathRepair(fs).repair(root, root, listOf(PagePath("p1", "$root/journals/2026_10_16.md")))
+        val outcome = ShareWritePathRepair(fs).repair(RepoRoot(root), EffectiveNotesPath(root), listOf(PagePath("p1", "$root/journals/2026_10_16.md")))
 
         assertTrue(outcome.repoints.isEmpty())
         assertTrue(fs.fileExists("$root/journals/2026_10_16.md"))
@@ -147,7 +149,7 @@ class ShareWritePathRepairTest {
         assertEquals(ShareWritePathMigration.STATE_DONE + "\na.jpg", first.nextState())
 
         fs.deleteFile("$notes/assets/a.jpg")
-        val second = repair.repair(root, notes, emptyList(), first.pendingAssets)
+        val second = repair.repair(RepoRoot(root), EffectiveNotesPath(notes), emptyList(), first.pendingAssets)
 
         assertContentEquals(byteArrayOf(1), fs.readFileBytes("$notes/assets/a.jpg"))
         assertEquals(1, second.assetsMoved)
@@ -163,7 +165,7 @@ class ShareWritePathRepairTest {
         }
         unreadable.writeFile(blocked, "- newer edits\n")
 
-        val outcome = ShareWritePathRepair(unreadable).repair(root, notes, listOf(PagePath("p1", blocked)))
+        val outcome = ShareWritePathRepair(unreadable).repair(RepoRoot(root), EffectiveNotesPath(notes), listOf(PagePath("p1", blocked)))
 
         assertTrue(outcome.repoints.isEmpty(), "an unreadable file is not an absent one")
         assertEquals(listOf(blocked), outcome.failures)
@@ -179,7 +181,7 @@ class ShareWritePathRepairTest {
         }
         failing.writeFile(src, "- x\n")
 
-        val outcome = ShareWritePathRepair(failing).repair(root, notes, listOf(PagePath("p1", src)))
+        val outcome = ShareWritePathRepair(failing).repair(RepoRoot(root), EffectiveNotesPath(notes), listOf(PagePath("p1", src)))
 
         assertEquals(listOf(src), outcome.failures)
         assertTrue(failing.fileExists(src))
@@ -194,7 +196,7 @@ class ShareWritePathRepairTest {
         }
         huge.writeFile(src, "- big\n")
 
-        val outcome = ShareWritePathRepair(huge).repair(root, notes, listOf(PagePath("p1", src)))
+        val outcome = ShareWritePathRepair(huge).repair(RepoRoot(root), EffectiveNotesPath(notes), listOf(PagePath("p1", src)))
 
         assertTrue(outcome.repoints.isEmpty())
         assertEquals(listOf(src), outcome.failures)
@@ -239,12 +241,84 @@ class ShareWritePathRepairTest {
         put("$root/journals/a.md", "- ![x](../assets/x.jpg)\n")
         fs.writeFileBytes("$root/assets/x.jpg", byteArrayOf(1))
         fs.writeFileBytes("$notes/assets/x.jpg", byteArrayOf(2))
-        put("$root/journals/b.md", "- phone\n")
-        put("$notes/journals/b.md", "- desktop\n")
+        put("$root/journals/b.md", "title:: phone\n- x\n")
+        put("$notes/journals/b.md", "title:: desktop\n- y\n")
 
         val outcome = run(PagePath("a", "$root/journals/a.md"), PagePath("b", "$root/journals/b.md"))
 
         assertEquals(ShareWritePathMigration.STATE_OPEN + "\nx.jpg", outcome.nextState())
         assertEquals(mapOf("a" to "$notes/journals/a.md"), outcome.repoints)
+    }
+
+    private val backupBase = "$root/.stelekit/share-path-repair-backup/journals/2026_10_16.md"
+
+    @Test
+    fun repair_should_MergeBothCopiesAndBackThemUp_When_PagesDifferButCombine() {
+        put("$root/journals/2026_10_16.md", "- phone note\n  id:: 00000000-0000-4000-8000-0000000000a1\n")
+        put("$notes/journals/2026_10_16.md", "- desktop note\n")
+
+        val outcome = run(PagePath("p1", "$root/journals/2026_10_16.md"))
+
+        assertEquals(1, outcome.merged)
+        assertEquals(mapOf("p1" to "$notes/journals/2026_10_16.md"), outcome.repoints)
+        val merged = fs.readFile("$notes/journals/2026_10_16.md")!!
+        assertTrue(merged.contains("- desktop note") && merged.contains("- phone note"), merged)
+        assertFalse(fs.fileExists("$root/journals/2026_10_16.md"), "the stray copy is folded in, not left behind")
+        assertEquals("- desktop note\n", fs.readFile("$backupBase.notes"), "the notes original must be recoverable")
+        assertTrue(fs.readFile("$backupBase.stray")!!.contains("- phone note"), "the stray original must be recoverable")
+        assertTrue(outcome.clean)
+    }
+
+    @Test
+    fun repair_should_RestoreNotesCopyAndKeepStray_When_MergedWriteFails() {
+        val notesPath = "$notes/journals/2026_10_16.md"
+        val failing = object : FakeRelocationFileSystem() {
+            override fun writeFile(path: String, content: String): Boolean =
+                if (path == notesPath && content.contains("- phone note")) false else super.writeFile(path, content)
+        }
+        failing.writeFile("$root/journals/2026_10_16.md", "- phone note\n")
+        failing.writeFile(notesPath, "- desktop note\n")
+
+        val outcome = ShareWritePathRepair(failing).repair(RepoRoot(root), EffectiveNotesPath(notes), listOf(PagePath("p1", "$root/journals/2026_10_16.md")))
+
+        assertTrue(outcome.repoints.isEmpty())
+        assertEquals(listOf("$root/journals/2026_10_16.md"), outcome.failures)
+        assertEquals("- desktop note\n", failing.readFile(notesPath), "a failed merge must leave the notes copy as it was")
+        assertEquals("- phone note\n", failing.readFile("$root/journals/2026_10_16.md"), "and keep the stray copy")
+    }
+
+    @Test
+    fun repair_should_MergeSharedAndDisjointBlocksWithoutDuplicates() {
+        put("$root/journals/2026_10_16.md", "- shared\n- phone only\n")
+        put("$notes/journals/2026_10_16.md", "- shared\n- desktop only\n")
+
+        run(PagePath("p1", "$root/journals/2026_10_16.md"))
+
+        assertEquals(
+            listOf("- shared", "- desktop only", "- phone only"),
+            fs.readFile("$notes/journals/2026_10_16.md")!!.lines().filter { it.isNotBlank() },
+        )
+    }
+
+    @Test
+    fun repair_should_KeepEncryptedPagesAsConflicts() {
+        put("$root/journals/2026_10_16.md.stek", "cipher-a")
+        put("$notes/journals/2026_10_16.md.stek", "cipher-b")
+
+        val outcome = run(PagePath("p1", "$root/journals/2026_10_16.md.stek"))
+
+        assertTrue(outcome.repoints.isEmpty())
+        assertEquals(listOf("$root/journals/2026_10_16.md.stek"), outcome.conflicts)
+    }
+
+    @Test
+    fun repair_should_ExplainWhyAMergeWasRefused() {
+        put("$root/journals/2026_10_16.md", "title:: phone\n- x\n")
+        put("$notes/journals/2026_10_16.md", "- y\n")
+
+        val outcome = run(PagePath("p1", "$root/journals/2026_10_16.md"))
+
+        assertEquals(listOf("$root/journals/2026_10_16.md"), outcome.conflicts)
+        assertTrue(outcome.warnings.any { it.startsWith("not merged") }, outcome.warnings.toString())
     }
 }
