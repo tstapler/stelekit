@@ -75,8 +75,8 @@ class SourceReadCapabilities(
         }
         if (!verified) return ReadCapabilityReason.PlatformUnsupported.left()
         if (!hasGrant(graph)) return ReadCapabilityReason.NoGrant(canRegrant).left()
-        if (!folderExists(graph.path)) return ReadCapabilityReason.FolderMissing.left()
-        if (!isReadable(graph.path)) return ReadCapabilityReason.UnreadableIo.left()
+        if (!folderExists(graph.path.value)) return ReadCapabilityReason.FolderMissing.left()
+        if (!isReadable(graph.path.value)) return ReadCapabilityReason.UnreadableIo.left()
         return Unit.right()
     }
 

@@ -17,6 +17,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 class GraphWriterTest {
 
@@ -106,7 +107,7 @@ class GraphWriterTest {
                 val blocks = listOf(blockA, blockA1, blockB, blockB1)
                 
                 // Save
-                writer.savePage(page, blocks, graphPath)
+                writer.savePage(page, blocks, EffectiveNotesPath(graphPath))
                 
                 // Read file content
                 val filePath = File(tempDir, "pages/TestPage.md").absolutePath
@@ -135,7 +136,7 @@ class GraphWriterTest {
             val page = TestFixtures.samplePage()
             val writer = GraphWriter(fileSystem = failingFileSystem)
             writer.startAutoSave(this)
-            writer.queueSave(page, emptyList(), "/tmp/graph")
+            writer.queueSave(page, emptyList(), EffectiveNotesPath("/tmp/graph"))
             writer.flush()
 
             val writerLogs = LogManager.logs.value.filter { it.tag == "GraphWriter" }
@@ -159,7 +160,7 @@ class GraphWriterTest {
             val page = TestFixtures.samplePage()
             val writer = GraphWriter(fileSystem = FakeFileSystem())
             writer.startAutoSave(this)
-            writer.queueSave(page, emptyList(), "/tmp/graph")
+            writer.queueSave(page, emptyList(), EffectiveNotesPath("/tmp/graph"))
             writer.flush()
 
             val writerLogs = LogManager.logs.value.filter { it.tag == "GraphWriter" }
@@ -252,7 +253,7 @@ class GraphWriterTest {
                 filePath = "/tmp/pages/TestPageTC16.md",
             )
 
-            writer.savePage(page, emptyList(), "/tmp")
+            writer.savePage(page, emptyList(), EffectiveNotesPath("/tmp"))
 
             assertTrue(writtenPaths.isEmpty(), "File must not be written when conflict detected")
             assertEquals(0, preWriteCount, "onPreWrite (sentinel) must not be called — bail occurs before the saga")
@@ -298,7 +299,7 @@ class GraphWriterTest {
                 filePath = "/tmp/pages/TestPageTC17.md",
             )
 
-            writer.savePage(page, emptyList(), "/tmp")
+            writer.savePage(page, emptyList(), EffectiveNotesPath("/tmp"))
 
             assertEquals(1, writtenPaths.size, "File must be written when no conflict detected")
             assertEquals(0, conflictCallCount, "onPreWriteConflict must not be called when no conflict")
@@ -348,7 +349,7 @@ class GraphWriterTest {
             )
 
             // Attempt to save — write fails → saga compensation runs
-            writer.savePage(page, emptyList(), "/tmp")
+            writer.savePage(page, emptyList(), EffectiveNotesPath("/tmp"))
 
             // preMarkPendingWrite should have been called (Step 0)
             assertEquals(1, preWriteCount,

@@ -40,6 +40,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 class FakeFileSystem : FileSystem {
     override fun getDefaultGraphPath(): String = "/tmp"
@@ -534,7 +535,7 @@ class BlockStateManagerTest {
             scope = scope,
             graphWriter = writer,
             pageRepository = pageRepo,
-            graphPathProvider = { "/graph" }
+            graphPathProvider = { EffectiveNotesPath("/graph") }
         )
 
         assertFalse(manager.hasPendingDiskWrite(pageUuid), "No pending write initially")
@@ -554,7 +555,7 @@ class BlockStateManagerTest {
             scope = scope,
             graphWriter = writer,
             pageRepository = pageRepo,
-            graphPathProvider = { "/graph" }
+            graphPathProvider = { EffectiveNotesPath("/graph") }
         )
 
         pageRepo.savePage(createPageWithFilePath("/graph/pages/test-page.md"))
@@ -588,7 +589,7 @@ class BlockStateManagerTest {
             scope = scope,
             graphWriter = writer,
             pageRepository = pageRepo,
-            graphPathProvider = { "/graph" }
+            graphPathProvider = { EffectiveNotesPath("/graph") }
         )
 
         pageRepo.savePage(createPageWithFilePath("/graph/pages/test-page.md"))
@@ -629,7 +630,7 @@ class BlockStateManagerTest {
             scope = scope,
             graphWriter = writer,
             pageRepository = pageRepo,
-            graphPathProvider = { "/graph" }
+            graphPathProvider = { EffectiveNotesPath("/graph") }
         )
 
         pageRepo.savePage(createPageWithFilePath("/graph/pages/test-page.md"))
@@ -670,7 +671,7 @@ class BlockStateManagerTest {
             scope = scope,
             graphWriter = writer,
             pageRepository = pageRepo,
-            graphPathProvider = { "/graph" }
+            graphPathProvider = { EffectiveNotesPath("/graph") }
         )
 
         // Set up two pages
@@ -734,7 +735,7 @@ class BlockStateManagerTest {
             scope = scope,
             graphWriter = writer,
             pageRepository = pageRepo,
-            graphPathProvider = { "/graph" }
+            graphPathProvider = { EffectiveNotesPath("/graph") }
         )
 
         pageRepo.savePage(createPageWithFilePath("/graph/pages/test-page.md"))

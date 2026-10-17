@@ -7,9 +7,10 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 class TargetWriterCapabilitiesTest {
-    private val inactive = OffGraphTarget(GraphId("b"), "/graphs/b", isActive = false)
+    private val inactive = OffGraphTarget(GraphId("b"), EffectiveNotesPath("/graphs/b"), isActive = false)
     private val saf = inactive.copy(storage = StorageLocation.SafFolder("b", "content://tree"))
     private val desktop = TargetWriterCapabilities(platformSupportsOffGraphWrite = true)
 
@@ -57,7 +58,7 @@ class TargetWriterCapabilitiesTest {
 
     @Test
     fun safPathWithoutStorageLocationIsTreatedAsNoGrant() {
-        val unknown = inactive.copy(path = "saf://tree/b")
+        val unknown = inactive.copy(path = EffectiveNotesPath("saf://tree/b"))
         assertEquals(WriteCapabilityReason.NoGrant(canRegrant = false), reason(desktop, unknown))
     }
 

@@ -3,6 +3,7 @@ package dev.stapler.stelekit.db
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.outliner.JournalUtils
 import dev.stapler.stelekit.util.FileUtils
 import kotlinx.datetime.LocalDate
@@ -76,8 +77,9 @@ object PageFileResolver {
      * Unvalidated mapping, byte-for-byte what `GraphWriter.getPageFilePath` returned before
      * extraction. Safe only because [FileUtils.sanitizeFileName] encodes separators; prefer [resolve].
      */
-    fun pagePath(name: String, isJournal: Boolean, graphPath: String, encrypted: Boolean): String {
-        val base = if (graphPath.endsWith("/")) graphPath else "$graphPath/"
+    fun pagePath(name: String, isJournal: Boolean, graphPath: EffectiveNotesPath, encrypted: Boolean): String {
+        val root = graphPath.value
+        val base = if (root.endsWith("/")) root else "$root/"
         val folder = if (isJournal) "journals" else "pages"
         val extension = if (encrypted) ".md.stek" else ".md"
         return "$base$folder/${FileUtils.sanitizeFileName(name)}$extension"
@@ -87,7 +89,7 @@ object PageFileResolver {
     fun resolve(
         name: String,
         isJournal: Boolean,
-        graphPath: String,
+        graphPath: EffectiveNotesPath,
         encrypted: Boolean = false,
     ): Either<PageFileError, String> {
         if (name.contains('\u0000')) return PageFileError.InvalidPageName(name).left()
@@ -103,7 +105,7 @@ object PageFileResolver {
      */
     fun resolveJournal(
         date: LocalDate,
-        graphPath: String,
+        graphPath: EffectiveNotesPath,
         existingStems: Collection<String>,
         configEdn: String? = null,
         encrypted: Boolean = false,
@@ -154,8 +156,9 @@ object PageFileResolver {
         return out.toString()
     }
 
-    private fun checkInFolder(path: String, graphPath: String, isJournal: Boolean): Either<PageFileError, String> {
-        val folder = (if (graphPath.endsWith("/")) graphPath else "$graphPath/") + if (isJournal) "journals" else "pages"
+    private fun checkInFolder(path: String, graphPath: EffectiveNotesPath, isJournal: Boolean): Either<PageFileError, String> {
+        val root = graphPath.value
+        val folder = (if (root.endsWith("/")) root else "$root/") + if (isJournal) "journals" else "pages"
         return if (isWithin(folder, path)) path.right() else PageFileError.PathOutsideGraph(path).left()
     }
 

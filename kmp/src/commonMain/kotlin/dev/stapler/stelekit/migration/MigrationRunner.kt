@@ -9,6 +9,7 @@ import dev.stapler.stelekit.repository.RepositorySet
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.CancellationException
 import kotlin.time.Clock
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 // ── Result / error types ───────────────────────────────────────────────────
 
@@ -69,7 +70,7 @@ class MigrationRunner(
      *
      * @return [RunResult] summarising how many migrations were applied and skipped.
      */
-    suspend fun runPending(graphId: String, repoSet: RepositorySet, graphPath: String): RunResult {
+    suspend fun runPending(graphId: String, repoSet: RepositorySet, graphPath: EffectiveNotesPath): RunResult {
         val startMs = Clock.System.now().toEpochMilliseconds()
 
         // 1. Load applied IDs (id → checksum)

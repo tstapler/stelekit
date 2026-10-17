@@ -39,6 +39,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlin.time.Clock
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 enum class ImportTab { PASTE, URL }
 
@@ -85,7 +86,7 @@ data class ImportState(
  * Exists to allow the [ImportViewModel] to be tested without a real [GraphWriter].
  */
 fun interface PageSaver {
-    suspend fun save(page: Page, blocks: List<Block>, graphPath: String)
+    suspend fun save(page: Page, blocks: List<Block>, graphPath: EffectiveNotesPath)
 
     companion object {
         fun from(writer: GraphWriterPort): PageSaver = PageSaver { page, blocks, path ->
@@ -110,7 +111,7 @@ fun interface PageDeleter {
 class ImportViewModel(
     private val pageRepository: PageRepository,
     private val pageSaver: PageSaver,
-    private val graphPath: String,
+    private val graphPath: EffectiveNotesPath,
     private val urlFetcher: UrlFetcher,
     private val matcherFlow: StateFlow<AhoCorasickMatcher?>,
     private val topicEnricher: TopicEnricher = NoOpTopicEnricher(),
@@ -141,7 +142,7 @@ class ImportViewModel(
     constructor(
         pageRepository: PageRepository,
         graphWriter: GraphWriterPort,
-        graphPath: String,
+        graphPath: EffectiveNotesPath,
         urlFetcher: UrlFetcher,
         matcherFlow: StateFlow<AhoCorasickMatcher?>,
         topicEnricher: TopicEnricher = NoOpTopicEnricher(),

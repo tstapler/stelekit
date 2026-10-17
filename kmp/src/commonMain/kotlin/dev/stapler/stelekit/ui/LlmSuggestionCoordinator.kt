@@ -122,7 +122,7 @@ class LlmSuggestionCoordinator(
             return
         }
 
-        val graphPath = uiState.value.currentGraphPath ?: return
+        val graphPath = uiState.value.currentNotesPath ?: return
 
         llmSuggestionInbox.remove(id)
 

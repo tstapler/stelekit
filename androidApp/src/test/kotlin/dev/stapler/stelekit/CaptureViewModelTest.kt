@@ -62,6 +62,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * Covers Epics 2.1-2.3 of project_plans/stelekit-capture-auto-enrich (ScanState, the debounced
@@ -279,7 +280,7 @@ class CaptureViewModelTest {
         pageRepository: PageRepository,
         blockRepository: BlockRepository,
     ): CaptureViewModel.SavedCaptureContext = CaptureViewModel.SavedCaptureContext(
-        block, page, blocks, graphPath, graphId, writer, writeActor, pageRepository, blockRepository,
+        block, page, blocks, EffectiveNotesPath(graphPath), graphId, writer, writeActor, pageRepository, blockRepository,
     )
 
     /** Reflectively overwrites the private `_scanState` backing [MutableStateFlow]'s value. */

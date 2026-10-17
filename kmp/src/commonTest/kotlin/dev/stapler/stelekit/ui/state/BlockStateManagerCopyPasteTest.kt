@@ -20,6 +20,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * Integration tests for copy/paste operations through [BlockStateManager] (Epic 6, Task 6.2).
@@ -68,7 +69,7 @@ class BlockStateManagerCopyPasteTest {
             scope,
             graphWriter = GraphWriter(FakeFileSystem()),
             pageRepository = pageRepo,
-            graphPathProvider = { "/fake/graph" },
+            graphPathProvider = { EffectiveNotesPath("/fake/graph") },
         )
     }
 

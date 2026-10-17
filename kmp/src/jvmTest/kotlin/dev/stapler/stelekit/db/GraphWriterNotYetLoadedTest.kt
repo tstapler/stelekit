@@ -8,6 +8,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.time.Clock
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * Story 3.1.2's `requireNotNull` fail-fast: `renamePage`/`deletePage`, called on a freshly
@@ -33,7 +34,7 @@ class GraphWriterNotYetLoadedTest {
         )
 
         val exception = assertFailsWith<IllegalStateException> {
-            runBlocking { writer.renamePage(page, "NewName", "/graph") }
+            runBlocking { writer.renamePage(page, "NewName", EffectiveNotesPath("/graph")) }
         }
         assertEquals("renamePage/deletePage called before any graph was loaded", exception.message)
     }

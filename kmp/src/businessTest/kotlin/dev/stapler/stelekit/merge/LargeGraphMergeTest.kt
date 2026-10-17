@@ -43,6 +43,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.time.Instant
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * The 8 030-page SLO for copy (same page count as `LargeGraphWarmStartCrashTest`): a full copy
@@ -258,7 +259,7 @@ class LargeGraphMergeTest {
                 val mgr = manager(active = src)
                 val writer = CountingTarget(
                     MarkdownTargetWriter(
-                        targetFs, OffGraphTarget(dst, "/data/${dst.value}", isActive = false),
+                        targetFs, OffGraphTarget(dst, EffectiveNotesPath("/data/${dst.value}"), isActive = false),
                         TargetWriterCapabilities(platformSupportsOffGraphWrite = true), MarkdownTargetWriter.NoSymlinks,
                     ),
                     activity,

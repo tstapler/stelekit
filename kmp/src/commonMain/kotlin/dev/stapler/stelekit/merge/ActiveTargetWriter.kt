@@ -27,6 +27,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import okio.ByteString.Companion.toByteString
 import kotlin.time.Clock
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /** Why an [ActiveTargetWriter] write wrote nothing but may succeed later; carried by [DomainError.MergeError.Retryable]. */
 enum class WriteRetryReason(val message: String) {
@@ -66,7 +67,7 @@ class ActiveTargetWriter(
     private val writeActor: DatabaseWriteActor,
     private val graphWriter: GraphWriter,
     private val fs: FileSystem,
-    private val graphPath: String,
+    private val graphPath: EffectiveNotesPath,
     private val encrypted: Boolean = false,
     private val isPageDirty: suspend (PageUuid) -> Boolean = { graphWriter.hasPendingForPage(it) },
 ) : TargetWriter {
@@ -237,7 +238,7 @@ class ActiveTargetWriter(
     private suspend fun pathFor(key: PageKey, row: Page?): Either<DomainError, String> {
         val stored = row?.filePath?.takeIf { it.isNotBlank() }
         val path = stored ?: resolveNew(key).getOrReturn { return it.left() }
-        if (!PageFileResolver.isWithin(graphPath, path)) {
+        if (!PageFileResolver.isWithin(graphPath.value, path)) {
             return refuse(WriteRefusedReason.PathOutsideGraph(path)).left()
         }
         return path.right()
@@ -246,7 +247,7 @@ class ActiveTargetWriter(
     private suspend fun resolveNew(key: PageKey): Either<DomainError, String> = withContext(PlatformDispatcher.IO) {
         val date = if (key.isJournal) JournalUtils.parseJournalDate(key.name) else null
         val resolved = if (date != null) {
-            val root = graphPath.trimEnd('/')
+            val root = graphPath.value.trimEnd('/')
             val stems = fs.listFiles("$root/journals").map { it.substringBefore('.') }
             PageFileResolver.resolveJournal(date, graphPath, stems, fs.readFile("$root/logseq/config.edn"), encrypted)
         } else {
@@ -306,7 +307,7 @@ class ActiveTargetWriter(
             repos: RepositorySet,
             graphWriter: GraphWriter,
             fs: FileSystem,
-            graphPath: String,
+            graphPath: EffectiveNotesPath,
             encrypted: Boolean = false,
             isPageDirty: suspend (PageUuid) -> Boolean = { graphWriter.hasPendingForPage(it) },
         ): ActiveTargetWriter = ActiveTargetWriter(

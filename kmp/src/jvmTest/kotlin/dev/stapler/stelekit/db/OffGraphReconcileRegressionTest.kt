@@ -35,6 +35,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * Permanent regression for Spike 0.1.1 (ADR-001): pages written into a CLOSED graph through the
@@ -148,7 +149,7 @@ class OffGraphReconcileRegressionTest {
 
     /** Writes through the production off-graph writer, as a copy into a closed target does. */
     private fun writerFor(id: GraphId, root: File) = MarkdownTargetWriter.forFilePaths(
-        fs, OffGraphTarget(id, root.absolutePath, isActive = false), TargetWriterCapabilities(platformSupportsOffGraphWrite = true),
+        fs, OffGraphTarget(id, EffectiveNotesPath(root.absolutePath), isActive = false), TargetWriterCapabilities(platformSupportsOffGraphWrite = true),
     )
 
     private fun page(name: String, uuid: String, text: String = "hello") =

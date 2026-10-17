@@ -18,6 +18,7 @@ import dev.stapler.stelekit.util.FractionalIndexing
 import dev.stapler.stelekit.util.UuidGenerator
 import kotlinx.coroutines.flow.first
 import kotlin.time.Clock
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * Resolves any [PendingLlmSuggestion] variant to one `Page + List<Block>` write and calls
@@ -43,7 +44,7 @@ class LlmSuggestionWriter(
 
     suspend fun materializeAndWrite(
         suggestion: PendingLlmSuggestion,
-        graphPath: String,
+        graphPath: EffectiveNotesPath,
     ): Either<DomainError, Unit> = when (suggestion) {
         is PendingLlmSuggestion.BlockEdit -> writeBlockEdit(
             pageUuid = suggestion.pageUuid,
@@ -82,7 +83,7 @@ class LlmSuggestionWriter(
         blockUuid: String,
         currentContentSnapshot: String,
         newContent: String,
-        graphPath: String,
+        graphPath: EffectiveNotesPath,
     ): Either<DomainError, Unit> {
         val blockResult = blockRepository.getBlockByUuid(BlockUuid(blockUuid)).first()
         val block = when (blockResult) {
@@ -120,7 +121,7 @@ class LlmSuggestionWriter(
 
     private suspend fun writeNewPage(
         suggestion: PendingLlmSuggestion.NewPage,
-        graphPath: String,
+        graphPath: EffectiveNotesPath,
     ): Either<DomainError, Unit> {
         // Best-effort check (pitfalls §5.1): confirm any page explicitly wiki-linked from the
         // proposed content is still resolvable via a bounded chunked lookup. Absence alone is

@@ -6,6 +6,7 @@ import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.SectionId
 import dev.stapler.stelekit.vault.CryptoLayer
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * Port interface for [GraphWriter] used by [dev.stapler.stelekit.ui.StelekitViewModel].
@@ -46,7 +47,7 @@ interface GraphWriterPort {
      * Rename a page file: moves the on-disk file from its current path to the new name's path.
      * Returns true if successful, false otherwise.
      */
-    suspend fun renamePage(page: Page, newName: String, graphPath: String): Boolean
+    suspend fun renamePage(page: Page, newName: String, graphPath: EffectiveNotesPath): Boolean
 
     /**
      * Immediately save a page and its blocks to disk (bypasses debouncing).
@@ -61,7 +62,7 @@ interface GraphWriterPort {
      *   surface failures to the user (e.g. [dev.stapler.stelekit.llm.LlmSuggestionWriter]) must
      *   now check it.
      */
-    suspend fun savePage(page: Page, blocks: List<Block>, graphPath: String): Either<DomainError, Unit>
+    suspend fun savePage(page: Page, blocks: List<Block>, graphPath: EffectiveNotesPath): Either<DomainError, Unit>
 
     /**
      * Delete a page file from disk.

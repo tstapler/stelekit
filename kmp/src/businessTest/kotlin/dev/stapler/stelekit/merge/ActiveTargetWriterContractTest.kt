@@ -36,6 +36,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /** The real file/DB hop: in-memory repositories, the real actor, `GraphWriter` and `GraphLoader`. */
 class ActiveTargetWriterContractTest : TargetWriterContractSuite() {
@@ -225,11 +226,11 @@ class ActiveTargetWriterContractTest : TargetWriterContractSuite() {
         private val bsm: BlockStateManager
 
         init {
-            graphWriter.currentEpoch = GraphEpoch(GraphId("active"), root, 1L)
+            graphWriter.currentEpoch = GraphEpoch(GraphId("active"), EffectiveNotesPath(root), 1L)
             graphWriter.startAutoSave(editorScope, 50L)
             bsm = BlockStateManager(
                 blockRepository = blocks, graphLoader = loader, scope = editorScope, graphWriter = graphWriter,
-                pageRepository = pages, graphPathProvider = { root }, writeActor = actor,
+                pageRepository = pages, graphPathProvider = { EffectiveNotesPath(root) }, writeActor = actor,
                 invalidationSource = actor.blockInvalidations, pushSource = actor.blocksPushed,
             )
         }
@@ -241,7 +242,7 @@ class ActiveTargetWriterContractTest : TargetWriterContractSuite() {
         }
 
         override val writer = ActiveTargetWriter(
-            pageRepository = pages, blockRepository = lookupBlocks, writeActor = actor, graphWriter = graphWriter, fs = fs, graphPath = root,
+            pageRepository = pages, blockRepository = lookupBlocks, writeActor = actor, graphWriter = graphWriter, fs = fs, graphPath = EffectiveNotesPath(root),
             isPageDirty = { id -> isEditing(id.value) },
         )
 
@@ -281,7 +282,7 @@ class ActiveTargetWriterContractTest : TargetWriterContractSuite() {
             val page = checkNotNull(pageRow(key))
             val block = rows(page).first { it.content == from }
             actor.updateBlockContentOnly(block.uuid, to, page.uuid)
-            graphWriter.savePage(page, rows(page), root)
+            graphWriter.savePage(page, rows(page), EffectiveNotesPath(root))
         }
 
         /** Edit through [BlockStateManager]; the disk save stays debounced until [flushEditor]. */
@@ -327,7 +328,7 @@ class ActiveTargetWriterContractTest : TargetWriterContractSuite() {
         }
 
         suspend fun rawSave(key: PageKey, blocksToSave: List<Block>): Either<DomainError, Unit> =
-            graphWriter.savePage(checkNotNull(pageRow(key)), blocksToSave, root)
+            graphWriter.savePage(checkNotNull(pageRow(key)), blocksToSave, EffectiveNotesPath(root))
 
         suspend fun flushEditor(key: PageKey) {
             val id = checkNotNull(pageRow(key)).uuid.value

@@ -7,6 +7,7 @@ import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.RepositorySet
 import kotlinx.coroutines.flow.first
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * After all migrations for a graph have run, flushes DB-applied changes back to Markdown
@@ -24,7 +25,7 @@ class PostMigrationFlusher(private val graphWriter: GraphWriter) {
      * @param touchedPageUuids set of page UUIDs that were mutated by any migration
      * @param graphPath the root directory of the Logseq graph on disk
      */
-    suspend fun flush(repoSet: RepositorySet, touchedPageUuids: Set<String>, graphPath: String) {
+    suspend fun flush(repoSet: RepositorySet, touchedPageUuids: Set<String>, graphPath: EffectiveNotesPath) {
         // Deduplicate is automatic since touchedPageUuids is a Set.
         for (pageUuidStr in touchedPageUuids) {
             val pageUuid = PageUuid(pageUuidStr)

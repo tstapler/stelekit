@@ -86,6 +86,7 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 sealed class IndexingState {
     object Idle : IndexingState()
@@ -2271,7 +2272,7 @@ class StelekitViewModel(
     fun renamePage(page: Page, newName: String): Job? {
         val trimmed = newName.trim()
         if (trimmed.isBlank() || trimmed == page.name) return null
-        val graphPath = _uiState.value.currentGraphPath ?: return null
+        val graphPath = _uiState.value.currentNotesPath ?: return null
         return scope.launch {
             _uiState.update { it.copy(renameDialogBusy = true, renameDialogError = null) }
             // Guard: reject rename if a page with the target name already exists.

@@ -5,6 +5,7 @@ import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.StorageLocation
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * Spike 0.1.2 (SAF atomic replace) has NOT been run: no device. Until it records "yes" and this
@@ -48,7 +49,7 @@ sealed interface WriteCapabilityReason {
 /** What the policy needs to know about a target; the active graph is always writable (via ActiveTargetWriter). */
 data class OffGraphTarget(
     val graphId: GraphId,
-    val path: String,
+    val path: EffectiveNotesPath,
     val isActive: Boolean,
     /** True when the graph has a `CryptoLayer` (`.md.stek` files). */
     val encrypted: Boolean = false,
@@ -75,7 +76,7 @@ class TargetWriterCapabilities(
         if (!platformSupportsOffGraphWrite || storage is StorageLocation.HostFolder) {
             return WriteCapabilityReason.PlatformUnsupported.left()
         }
-        val saf = storage is StorageLocation.SafFolder || target.path.startsWith("saf://") || target.path.startsWith("content://")
+        val saf = storage is StorageLocation.SafFolder || target.path.value.startsWith("saf://") || target.path.value.startsWith("content://")
         if (!saf) return Unit.right()
         val granted = storage is StorageLocation.SafFolder && hasVerifiedSafGrant(storage)
         return when {

@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertNull
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * Regression coverage for `StelekitViewModel.observeExternalFileChanges`'s fire-and-forget
@@ -103,7 +104,7 @@ class ExternalFileChangeErrorHandlingTest {
         val searchRepo = InMemorySearchRepository()
         @Suppress("DEPRECATION")
         val graphWriter = GraphWriter(PlatformFileSystem(), pageRepository = pageRepo).also {
-            it.currentEpoch = GraphEpoch(GraphId("ext-change-error-test"), graphPath = "", sequence = 1L)
+            it.currentEpoch = GraphEpoch(GraphId("ext-change-error-test"), graphPath = EffectiveNotesPath(""), sequence = 1L)
         }
         val bsm = BlockStateManager(
             blockRepository = blockRepo,
@@ -111,7 +112,7 @@ class ExternalFileChangeErrorHandlingTest {
             scope = scope,
             graphWriter = graphWriter,
             pageRepository = pageRepo,
-            graphPathProvider = { "" },
+            graphPathProvider = { EffectiveNotesPath("") },
         )
         val viewModel = StelekitViewModel(
             StelekitViewModelDependencies(

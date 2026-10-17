@@ -38,6 +38,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 class JournalAppenderOffGraphTest {
     private val active = GraphId("aaaaaaaaaaaaaaaa")
@@ -99,7 +100,7 @@ class JournalAppenderOffGraphTest {
             offGraphWriterFor = { info ->
                 MarkdownTargetWriter(
                     targetFs,
-                    OffGraphTarget(info.id, info.effectiveNotesPath.value, isActive = false),
+                    OffGraphTarget(info.id, EffectiveNotesPath(info.effectiveNotesPath.value), isActive = false),
                     capabilities,
                     MarkdownTargetWriter.NoSymlinks,
                 )
@@ -117,7 +118,7 @@ class JournalAppenderOffGraphTest {
             capabilities = capabilities,
             activeWriterFor = { error("target is not the ready graph in these tests") },
             offGraphWriterFor = { info ->
-                MarkdownTargetWriter(targetFs, OffGraphTarget(info.id, info.effectiveNotesPath.value, isActive = false), capabilities, MarkdownTargetWriter.NoSymlinks)
+                MarkdownTargetWriter(targetFs, OffGraphTarget(info.id, EffectiveNotesPath(info.effectiveNotesPath.value), isActive = false), capabilities, MarkdownTargetWriter.NoSymlinks)
             },
         )
         val raw = RouterOffGraphRoute(router, RegistryGraphLocator(m.graphRegistry), AssetCopier(targetFs), today)
@@ -131,7 +132,7 @@ class JournalAppenderOffGraphTest {
     private fun stems() = targetFs.listFiles("$workRoot/journals").map { it.substringBefore('.') }
 
     private fun journalPath(): String =
-        PageFileResolver.resolveJournal(day, workRoot, stems()).fold({ error("unresolvable: $it") }, { it })
+        PageFileResolver.resolveJournal(day, EffectiveNotesPath(workRoot), stems()).fold({ error("unresolvable: $it") }, { it })
 
     private fun seedJournal(stem: String, text: String): String {
         val path = "$workRoot/journals/$stem.md"
@@ -366,7 +367,7 @@ class JournalAppenderOffGraphTest {
         val before = activeJournal()
         val ready = assertNotNull(m.readyGraph.value)
         hooks.register(
-            ActiveWriteBinding(active, GraphWriter(targetFs, ready.repoSet.writeActor), targetFs, activeRoot) { true },
+            ActiveWriteBinding(active, GraphWriter(targetFs, ready.repoSet.writeActor), targetFs, EffectiveNotesPath(activeRoot)) { true },
         )
 
         val outcome = route.appendContent(active, ShareContent("while editing"), "00000000-0000-4000-8000-000000000002")

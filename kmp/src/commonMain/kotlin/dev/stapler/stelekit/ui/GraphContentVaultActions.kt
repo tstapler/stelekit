@@ -250,7 +250,7 @@ private fun seedGraphEpochForVaultEvent(ctx: VaultActionContext, callerName: Str
     val writer = ctx.graphIoStack.graphWriter
     writer.currentEpoch = GraphEpoch(
         graphId = activeGraphId,
-        graphPath = ctx.vaultSetup.activeGraphPath,
+        graphPath = checkNotNull(ctx.vaultSetup.activeGraphInfo).effectiveNotesPath,
         sequence = (writer.currentEpoch?.sequence ?: 0L) + 1,
     )
 }

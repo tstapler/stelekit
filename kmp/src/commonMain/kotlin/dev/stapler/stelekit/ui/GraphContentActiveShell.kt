@@ -544,7 +544,7 @@ internal fun GraphContentActiveShell(
                             repos.propertyRepository,
                             repos.blockRepository,
                             actor,
-                            conflictPagePersister(repos.pageRepository, repos.blockRepository, graphIoStack.graphWriter) { activeGraphPath },
+                            conflictPagePersister(repos.pageRepository, repos.blockRepository, graphIoStack.graphWriter) { activeGraphInfo?.effectiveNotesPath },
                         )
                     }
                 },

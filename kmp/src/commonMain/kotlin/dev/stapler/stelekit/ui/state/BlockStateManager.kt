@@ -42,6 +42,7 @@ import arrow.core.right
 import dev.stapler.stelekit.clipboard.BlockClipboard
 import dev.stapler.stelekit.clipboard.BlockTreeAlgorithms
 import dev.stapler.stelekit.clipboard.ClipboardOperation
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * Single source of truth for block state across all screens (JournalsView, PageView).
@@ -69,7 +70,7 @@ class BlockStateManager(
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     private val graphWriter: GraphWriter? = null,
     private val pageRepository: PageRepository? = null,
-    private val graphPathProvider: () -> String = { "" },
+    private val graphPathProvider: () -> EffectiveNotesPath? = { null },
     private val writeActor: DatabaseWriteActor? = null,
     private val histogramWriter: dev.stapler.stelekit.performance.HistogramWriter? = null,
     // When provided, observePage uses initial-pull + invalidation-driven re-query instead of a
@@ -1099,8 +1100,7 @@ class BlockStateManager(
      */
     private suspend fun queueDiskSave(pageUuid: String) {
         if (graphWriter == null || pageRepository == null) return
-        val graphPath = graphPathProvider()
-        if (graphPath.isEmpty()) return
+        val graphPath = graphPathProvider()?.takeIf { it.value.isNotEmpty() } ?: return
 
         diskWriteDebounce.debounce("disk-$pageUuid") {
             val page = pageRepository.getPageByUuid(PageUuid(pageUuid)).first().getOrNull() ?: return@debounce
@@ -1159,8 +1159,7 @@ class BlockStateManager(
      */
     suspend fun savePageNow(pageUuid: String) {
         if (graphWriter == null || pageRepository == null) return
-        val graphPath = graphPathProvider()
-        if (graphPath.isEmpty()) return
+        val graphPath = graphPathProvider()?.takeIf { it.value.isNotEmpty() } ?: return
         val page = pageRepository.getPageByUuid(PageUuid(pageUuid)).first().getOrNull() ?: return
         // Use local blocks only if non-empty. An empty list may be transient (the brief window
         // between deleteBlocksForPage and saveBlocks in parseAndSavePage), so fall back to the DB

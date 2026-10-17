@@ -38,7 +38,7 @@ class MarkdownTargetWriter(
     private val canonicalize: (String) -> String,
 ) : TargetWriter {
 
-    private val ownership = PageUuidOwnership(fs, target.path) { readText(it) }
+    private val ownership = PageUuidOwnership(fs, target.path.value) { readText(it) }
     private val tempSweeper = StaleTempSweeper(fs, TMP_SUFFIX)
 
     override suspend fun readExisting(page: PageKey): Either<DomainError, MergePage?> = io {
@@ -119,7 +119,7 @@ class MarkdownTargetWriter(
             PageFileResolver.resolve(page.name, false, target.path, target.encrypted)
         }
         val path = resolved.getOrReturn { return@resolveSafe refuse(it.toRefusal()).left() }
-        if (!PageFileResolver.isWithin(canonicalize(target.path), canonicalize(path))) {
+        if (!PageFileResolver.isWithin(canonicalize(target.path.value), canonicalize(path))) {
             return refuse(WriteRefusedReason.PathOutsideGraph(path)).left()
         }
         return path.right()
@@ -134,7 +134,7 @@ class MarkdownTargetWriter(
     private fun resolveJournalPath(page: PageKey): Either<PageFileError, String> {
         val date = JournalUtils.parseJournalDate(page.name)
             ?: return PageFileResolver.resolve(page.name, true, target.path, target.encrypted)
-        val root = target.path.trimEnd('/')
+        val root = target.path.value.trimEnd('/')
         val stems = fs.listFiles("$root/journals").map { it.substringBefore('.') }
         return PageFileResolver.resolveJournal(date, target.path, stems, fs.readFile("$root/logseq/config.edn"), target.encrypted)
     }
