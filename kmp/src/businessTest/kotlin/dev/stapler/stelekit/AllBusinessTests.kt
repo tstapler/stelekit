@@ -34,6 +34,8 @@ import dev.stapler.stelekit.capture.InboxFallbackAppenderTest
 import dev.stapler.stelekit.capture.JournalAppenderOffGraphTest
 import dev.stapler.stelekit.db.ShareWritePathMigrationTest
 import dev.stapler.stelekit.ui.NotesPathWiringTest
+import dev.stapler.stelekit.db.misplaced.MisplacedFilesServiceTest
+import dev.stapler.stelekit.git.merge.StrayPageMergeTest
 import dev.stapler.stelekit.db.ShareWritePathRepairTest
 import dev.stapler.stelekit.capture.JournalAppenderTest
 import dev.stapler.stelekit.clipboard.BlockClipboardTest
@@ -252,6 +254,8 @@ import org.junit.runners.Suite
     JournalAppenderOffGraphTest::class,
     ShareWritePathMigrationTest::class,
     NotesPathWiringTest::class,
+    MisplacedFilesServiceTest::class,
+    StrayPageMergeTest::class,
     ShareWritePathRepairTest::class,
     InboxFallbackAppenderTest::class,
     ImportServiceTest::class,

@@ -987,7 +987,7 @@ class GraphManager(
                             // Throwable, not Exception: on Android an uncaught OutOfMemoryError kills the process.
                             try {
                                 ShareWritePathMigration(writeActor, fileSystem)
-                                    .runIfNeeded(db, graphInfo.repoRootObj.value, graphInfo.effectiveNotesPath.value)
+                                    .runIfNeeded(db, graphInfo.repoRootObj, graphInfo.effectiveNotesPath)
                                 logger.info("init[${elapsed()}ms]: ShareWritePathMigration done")
                             } catch (e: CancellationException) {
                                 throw e

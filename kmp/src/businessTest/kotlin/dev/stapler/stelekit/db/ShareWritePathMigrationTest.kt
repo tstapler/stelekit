@@ -5,6 +5,8 @@
 package dev.stapler.stelekit.db
 
 import app.cash.sqldelight.db.SqlDriver
+import dev.stapler.stelekit.model.EffectiveNotesPath
+import dev.stapler.stelekit.model.RepoRoot
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
 import kotlinx.coroutines.runBlocking
@@ -12,6 +14,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -55,7 +58,7 @@ class ShareWritePathMigrationTest {
 
     private fun state(): String? = db.steleDatabaseQueries.selectMetadata(ShareWritePathMigration.METADATA_KEY).executeAsOneOrNull()
 
-    private fun migrate() = runBlocking { ShareWritePathMigration(actor, fs).runIfNeeded(db, root, notes) }
+    private fun migrate() = runBlocking { ShareWritePathMigration(actor, fs).runIfNeeded(db, RepoRoot(root), EffectiveNotesPath(notes)) }
 
     @Test
     fun runIfNeeded_should_RepointRowAndMarkDone_When_FileMoves() {
@@ -70,8 +73,8 @@ class ShareWritePathMigrationTest {
 
     @Test
     fun runIfNeeded_should_LeaveStateUnsetAndRowUntouched_When_CopiesConflict() {
-        fs.writeFile("$root/journals/2026_10_16.md", "- phone\n")
-        fs.writeFile("$notes/journals/2026_10_16.md", "- desktop\n")
+        fs.writeFile("$root/journals/2026_10_16.md", "title:: phone\n- x\n")
+        fs.writeFile("$notes/journals/2026_10_16.md", "title:: desktop\n- y\n")
         insertPage("p1", "$root/journals/2026_10_16.md")
 
         migrate()
@@ -103,7 +106,7 @@ class ShareWritePathMigrationTest {
         fs.writeFile("$root/journals/2026_10_16.md", "- x\n")
         insertPage("p1", "$root/journals/2026_10_16.md")
 
-        runBlocking { ShareWritePathMigration(actor, fs).runIfNeeded(db, root, root) }
+        runBlocking { ShareWritePathMigration(actor, fs).runIfNeeded(db, RepoRoot(root), EffectiveNotesPath(root)) }
 
         assertEquals("$root/journals/2026_10_16.md", filePathOf("p1"))
         assertNull(state(), "the subdir may not be detected yet, so nothing may be stored")
@@ -115,7 +118,7 @@ class ShareWritePathMigrationTest {
         fs.writeFile("$root/journals/2026_10_16.md", "- x\n")
         insertPage("p1", "$root/journals/2026_10_16.md")
 
-        ShareWritePathMigration(actor, fs).runIfNeeded(db, root, notes)
+        ShareWritePathMigration(actor, fs).runIfNeeded(db, RepoRoot(root), EffectiveNotesPath(notes))
 
         assertEquals("$root/journals/2026_10_16.md", filePathOf("p1"))
         assertTrue(fs.fileExists("$root/journals/2026_10_16.md"))
@@ -126,8 +129,8 @@ class ShareWritePathMigrationTest {
         fs.writeFile("$root/journals/a.md", "- ![x](../assets/x.jpg)\n")
         fs.writeFileBytes("$root/assets/x.jpg", byteArrayOf(1))
         fs.writeFileBytes("$notes/assets/x.jpg", byteArrayOf(2))
-        fs.writeFile("$root/journals/b.md", "- phone\n")
-        fs.writeFile("$notes/journals/b.md", "- desktop\n")
+        fs.writeFile("$root/journals/b.md", "title:: phone\n- x\n")
+        fs.writeFile("$notes/journals/b.md", "title:: desktop\n- y\n")
         insertPage("a", "$root/journals/a.md")
         insertPage("b", "$root/journals/b.md")
 
@@ -140,5 +143,20 @@ class ShareWritePathMigrationTest {
 
         assertTrue(fs.fileExists("$notes/assets/x.jpg"), "the asset must survive a page conflict in the first run")
         assertEquals(ShareWritePathMigration.STATE_DONE, state())
+    }
+
+    @Test
+    fun runIfNeeded_should_MergeBothCopiesRepointRowAndMarkDone_When_PagesDifferButCombine() {
+        fs.writeFile("$root/journals/2026_10_16.md", "- phone note\n")
+        fs.writeFile("$notes/journals/2026_10_16.md", "- desktop note\n")
+        insertPage("p1", "$root/journals/2026_10_16.md")
+
+        migrate()
+
+        assertEquals("$notes/journals/2026_10_16.md", filePathOf("p1"))
+        assertEquals(ShareWritePathMigration.STATE_DONE, state())
+        val merged = fs.readFile("$notes/journals/2026_10_16.md")!!
+        assertTrue(merged.contains("- desktop note") && merged.contains("- phone note"), merged)
+        assertFalse(fs.fileExists("$root/journals/2026_10_16.md"))
     }
 }
