@@ -109,7 +109,7 @@ private fun newService(
                 ?: emptyList<Page>().right()
         },
         assetCopier = AssetCopier(graphFileSystem, config.canonicalize),
-        graphRoot = { id -> graphManager.graphRegistry.value.graphs.firstOrNull { it.id == id }?.path },
+        graphRoot = { id -> graphManager.graphRegistry.value.graphs.firstOrNull { it.id == id }?.effectiveNotesPath?.value },
     )
 
 /** [CopyFlowGateway] over [PageMergeService] and the [PageSource] being browsed (the open graph in Push). */

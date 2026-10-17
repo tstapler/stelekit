@@ -136,7 +136,7 @@ class JournalAppender(
     ): AppendOutcome {
         val noGraph = AppendOutcome.Failed("No active graph", CaptureResult.NoActiveGraph)
         val repoSet = graphManager.getActiveRepositorySet() ?: return noGraph
-        val graphPath = graphManager.getActiveGraphInfo()?.path ?: return noGraph
+        val graphPath = graphManager.getActiveGraphInfo()?.effectiveNotesPath?.value ?: return noGraph
         val graphId = graphManager.getActiveGraphId() ?: return noGraph
 
         val writer = writerFactory(repoSet)

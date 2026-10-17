@@ -54,6 +54,8 @@ fun createAndroidStorageLocationResolver(
     graphManager: GraphManager,
     context: Context,
 ): StorageLocationResolver {
+    // Storage relocation addresses the whole graph folder.
+    @OptIn(dev.stapler.stelekit.model.RegistryRootPath::class)
     fun graphPath(graphId: String): String? = graphManager.getGraphInfo(GraphId(graphId))?.path
 
     return AndroidStorageLocationResolver(

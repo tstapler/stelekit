@@ -159,7 +159,7 @@ class JournalAppenderTest {
         m.awaitPendingMigration()
         // A directory where today's journal file belongs makes the page flush fail after the DB write landed,
         // on every platform (an unregistered graph root is only refused where the temp dir is not allow-listed).
-        val graphPath = m.getActiveGraphInfo()!!.path
+        val graphPath = m.getActiveGraphInfo()!!.effectiveNotesPath.value
         val blocker = java.io.File("$graphPath/journals/${OffGraphCapture.todayJournalPageName()}.md").also { it.mkdirs() }
         val failed = JournalAppender(m, fileSystem).append(CaptureTarget.ActiveGraph, "partial", captureId)
         assertIs<AppendOutcome.Failed>(failed)
@@ -178,7 +178,7 @@ class JournalAppenderTest {
     @Test
     fun activePathKeepsEveryBlockOfTodaysJournalWhenItsRowIsAnUnloadedStub() = realTime {
         val (appender, manager) = readyAppender()
-        val graphPath = manager.getActiveGraphInfo()!!.path
+        val graphPath = manager.getActiveGraphInfo()!!.effectiveNotesPath.value
         val name = OffGraphCapture.todayJournalPageName()
         val today = dev.stapler.stelekit.outliner.JournalUtils.parseJournalDate(name)!!
         val file = "$graphPath/journals/$name.md"

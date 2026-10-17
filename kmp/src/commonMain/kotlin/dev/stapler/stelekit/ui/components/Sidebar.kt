@@ -808,7 +808,7 @@ fun GraphSwitcher(
                                 // storageLocationResolver doc) — still open the picker so the
                                 // "Browse…" row keeps working, just without the backfill side effect.
                                 movingStorageSource = storageLocationResolver?.resolveOrBackfill(graphId)
-                                movingStorageIsLinkAvailable = isGraphGitCloned(editingGraph.path)
+                                movingStorageIsLinkAvailable = isGraphGitCloned(editingGraph.pickedFolderPath)
                                 movingStorageForGraph = editingGraph
                             }
                         },
@@ -1009,7 +1009,7 @@ fun GraphItem(
                     // Prefer the real linked host folder's name over the internal OPFS path —
                     // the path (e.g. "/stelekit/notes") tells the user nothing about which real
                     // folder on disk the graph is backed by once host-directory-livesync is wired up.
-                    text = graph.description.ifBlank { null } ?: graph.hostDirName?.let { "linked to: $it" } ?: graph.path,
+                    text = graph.description.ifBlank { null } ?: graph.hostDirName?.let { "linked to: $it" } ?: graph.pickedFolderPath,
                     style = MaterialTheme.typography.bodySmall,
                     color = (if (isActive) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
                         .copy(alpha = 0.6f),
@@ -1267,3 +1267,7 @@ fun NavigationItem(
         }
     }
 }
+
+/** The folder the user picked or cloned: shown in the UI and probed for a `.git` clone, never used for notes I/O. */
+@OptIn(dev.stapler.stelekit.model.RegistryRootPath::class)
+private val GraphInfo.pickedFolderPath: String get() = path

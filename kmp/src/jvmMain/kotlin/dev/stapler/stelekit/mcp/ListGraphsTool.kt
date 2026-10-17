@@ -16,6 +16,8 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 
 /** Builds one `{id, name, path, isActive}` entry for a single graph. */
+// The tool lists registry paths.
+@OptIn(dev.stapler.stelekit.model.RegistryRootPath::class)
 private fun GraphInfo.toJson(activeGraphId: GraphId?) = buildJsonObject {
     put("id", JsonPrimitive(id.value))
     put("name", JsonPrimitive(displayName))

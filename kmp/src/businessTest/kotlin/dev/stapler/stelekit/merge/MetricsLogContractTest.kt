@@ -197,7 +197,7 @@ class MetricsLogContractTest {
             capabilities = caps,
             activeWriterFor = { error("target is not the ready graph in these tests") },
             offGraphWriterFor = { info ->
-                MarkdownTargetWriter(targetFs, OffGraphTarget(info.id, info.path, isActive = false), caps, MarkdownTargetWriter.NoSymlinks)
+                MarkdownTargetWriter(targetFs, OffGraphTarget(info.id, info.effectiveNotesPath.value, isActive = false), caps, MarkdownTargetWriter.NoSymlinks)
             },
         )
         val raw = RouterOffGraphRoute(router, RegistryGraphLocator(m.graphRegistry), AssetCopier(targetFs)) { day }

@@ -49,7 +49,7 @@ class ShareCaptureServices(
  */
 fun createTargetWriterRouter(
     graphManager: GraphManager,
-    graphFileSystem: PlatformFileSystem,
+    graphFileSystem: FileSystem,
     capabilities: TargetWriterCapabilities,
     canonicalize: (String) -> String,
     activeHooks: ActiveWriteHooks,
@@ -59,7 +59,7 @@ fun createTargetWriterRouter(
     capabilities = capabilities,
     activeWriterFor = { ready -> activeTargetWriterFor(ready, activeHooks, graphFileSystem, graphManager) },
     offGraphWriterFor = { info ->
-        MarkdownTargetWriter(graphFileSystem, OffGraphTarget(info.id, info.path, isActive = false), capabilities, canonicalize)
+        MarkdownTargetWriter(graphFileSystem, OffGraphTarget(info.id, info.effectiveNotesPath.value, isActive = false), capabilities, canonicalize)
     },
 )
 

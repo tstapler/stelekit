@@ -53,6 +53,8 @@ class GraphDiagnosticsCollector(
         }
     }
 
+    // Diagnostics report the registry path itself, next to the notes path.
+    @OptIn(dev.stapler.stelekit.model.RegistryRootPath::class)
     private fun StringBuilder.appendRegistry() {
         val registry = graphManager.graphRegistry.value
         appendLine("## Registry (${registry.graphs.size} graphs)")
@@ -73,6 +75,8 @@ class GraphDiagnosticsCollector(
         appendLine()
     }
 
+    // Diagnostics report the registry path itself, next to the notes path.
+    @OptIn(dev.stapler.stelekit.model.RegistryRootPath::class)
     private suspend fun StringBuilder.appendActiveGraph(active: GraphInfo) {
         appendLine("## Active graph: ${active.displayName}")
         appendLine("path=${active.path}")
