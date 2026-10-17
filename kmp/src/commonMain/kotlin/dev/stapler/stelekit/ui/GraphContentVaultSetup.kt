@@ -15,13 +15,9 @@ import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.model.GraphInfo
 import dev.stapler.stelekit.platform.DemoFileSystem
 import dev.stapler.stelekit.platform.FileSystem
-import dev.stapler.stelekit.model.EffectiveNotesPath
 
 internal fun graphContentFileSystem(isDemo: Boolean, fileSystem: FileSystem): FileSystem =
     if (isDemo) DemoFileSystem() else fileSystem
-
-/** The active graph's notes folder as a typed value, for page writers; null when no graph is active. */
-internal val GraphContentVaultSetup.activeNotesPath: EffectiveNotesPath? get() = activeGraphInfo?.effectiveNotesPath
 
 /** Bundles [GraphContent]'s per-graph vault/crypto setup (Parameter Object pattern). */
 internal class GraphContentVaultSetup(

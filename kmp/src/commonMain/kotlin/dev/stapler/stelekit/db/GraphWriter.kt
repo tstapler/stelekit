@@ -793,12 +793,12 @@ class GraphWriter(
         }
     }
 
-    private fun getPageFilePath(page: Page, graphPath: EffectiveNotesPath, layer: CryptoLayer? = cryptoLayer): String {
+    private fun getPageFilePath(page: Page, graphPath: EffectiveNotesPath, layer: CryptoLayer?): String {
         return PageFileResolver.pagePath(page.name, page.isJournal, graphPath, encrypted = layer != null)
     }
 
     /** Compute the graph-root-relative path used as AAD for file encryption. */
-    private fun relativeFilePath(absoluteFilePath: String, base: String = graphPath?.value ?: ""): String {
+    private fun relativeFilePath(absoluteFilePath: String, base: String): String {
         val baseWithSlash = if (base.endsWith("/")) base else "$base/"
         return if (absoluteFilePath.startsWith(baseWithSlash)) {
             absoluteFilePath.removePrefix(baseWithSlash)
