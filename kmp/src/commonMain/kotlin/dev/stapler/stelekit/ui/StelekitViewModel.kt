@@ -384,6 +384,9 @@ class StelekitViewModel(
     )
     val uiState: StateFlow<AppState> = _uiState.asStateFlow()
 
+    /** The notes folder of the graph the view model has loaded, or null before one is. */
+    val currentNotesPath: EffectiveNotesPath? get() = _uiState.value.currentNotesPath
+
     // See GitSyncCoordinator's class doc for why syncState/gitLastSyncAt are re-exposed as
     // forwarding properties here, and why it shares _uiState directly rather than owning a
     // separate StateFlow of its own.

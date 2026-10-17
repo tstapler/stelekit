@@ -1146,6 +1146,12 @@ class GraphManager(
         return getGraphInfo(activeId)
     }
 
+    /** The active graph's notes folder, or null when none is open. Callers that only need the folder ask for it, not for the whole [GraphInfo]. */
+    fun getActiveNotesPath(): EffectiveNotesPath? = getActiveGraphInfo()?.effectiveNotesPath
+
+    /** The notes folder of graph [id], or null when it is not registered. */
+    fun getNotesPath(id: GraphId): EffectiveNotesPath? = getGraphInfo(id)?.effectiveNotesPath
+
     fun getGraphIds(): Set<GraphId> =
         _graphRegistry.value.graphs.map { it.id }.toSet()
     

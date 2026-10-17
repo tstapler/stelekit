@@ -134,9 +134,8 @@ class MarkdownTargetWriter(
     private fun resolveJournalPath(page: PageKey): Either<PageFileError, String> {
         val date = JournalUtils.parseJournalDate(page.name)
             ?: return PageFileResolver.resolve(page.name, true, target.path, target.encrypted)
-        val root = target.path.value.trimEnd('/')
-        val stems = fs.listFiles("$root/journals").map { it.substringBefore('.') }
-        return PageFileResolver.resolveJournal(date, target.path, stems, fs.readFile("$root/logseq/config.edn"), target.encrypted)
+        val stems = fs.listFiles(target.path.child("journals")).map { it.substringBefore('.') }
+        return PageFileResolver.resolveJournal(date, target.path, stems, fs.readFile(target.path.child("logseq/config.edn")), target.encrypted)
     }
 
     private fun PageFileError.toRefusal(): WriteRefusedReason = when (this) {

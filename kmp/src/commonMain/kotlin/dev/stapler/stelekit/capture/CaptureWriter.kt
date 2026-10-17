@@ -184,7 +184,7 @@ object CaptureWriter {
     ): CaptureResult {
         resolveCaptureAvailability(graphManager)?.let { return it }
         val repoSet = graphManager.getActiveRepositorySet() ?: return CaptureResult.NoActiveGraph
-        val graphPath = graphManager.getActiveGraphInfo()?.effectiveNotesPath ?: return CaptureResult.NoActiveGraph
+        val graphPath = graphManager.getActiveNotesPath() ?: return CaptureResult.NoActiveGraph
         return writeCapture(repoSet, fileSystem, graphPath, text, captureId)
     }
 }

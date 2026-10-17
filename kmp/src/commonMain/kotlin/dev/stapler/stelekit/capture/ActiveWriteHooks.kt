@@ -52,7 +52,7 @@ internal fun activeTargetWriterFor(
     graphManager: GraphManager,
 ): TargetWriter {
     val bound = hooks.binding.value?.takeIf { it.graphId == ready.id }
-    val path = bound?.graphPath ?: graphManager.getActiveGraphInfo()?.takeIf { it.id == ready.id }?.effectiveNotesPath
+    val path = bound?.graphPath ?: graphManager.getNotesPath(ready.id)
     val actor = ready.repoSet.writeActor
     if (path == null || actor == null) return RefusingWriter(ready.id)
     val fs = bound?.fileSystem ?: graphFileSystem
