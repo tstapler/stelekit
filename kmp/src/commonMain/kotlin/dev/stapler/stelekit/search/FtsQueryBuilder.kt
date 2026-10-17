@@ -18,6 +18,7 @@ package dev.stapler.stelekit.search
 object FtsQueryBuilder {
 
     private val STRIP_CHARS = Regex("""[:^~{}\[\]!#]""")
+    private val GROUPING_CHARS = Regex("[()]")
     private val LEADING_OPERATORS = setOf("AND", "OR", "NOT")
 
     /**
@@ -107,7 +108,7 @@ object FtsQueryBuilder {
     }
 
     private fun flushTokens(buf: StringBuilder, out: MutableList<Segment>) {
-        val text = buf.toString().trim()
+        val text = buf.toString().replace(GROUPING_CHARS, " ").trim()
         if (text.isNotBlank()) {
             text.split(Regex("[-\\s]+"))
                 .filter { it.isNotBlank() }
