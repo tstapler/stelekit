@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.96.1](https://github.com/tstapler/stelekit/compare/v0.96.0...v0.96.1) (2026-10-17)
+
+
+### Bug Fixes
+
+* **capture:** write shares under the wiki subdir, repair misplaced files, gate GraphInfo.path ([#437](https://github.com/tstapler/stelekit/issues/437)) ([227f1ef](https://github.com/tstapler/stelekit/commit/227f1efbedb43621f10a5de23c93ea95972fc8c3))
+
 ## [0.96.0](https://github.com/tstapler/stelekit/compare/v0.95.2...v0.96.0) (2026-10-16)
 
 
