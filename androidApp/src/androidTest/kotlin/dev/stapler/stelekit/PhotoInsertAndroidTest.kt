@@ -24,6 +24,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import java.io.File
 import java.io.IOException
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * TC-PHOTO-001..005: Android instrumented tests for the image import pipeline.
@@ -81,7 +82,7 @@ class PhotoInsertAndroidTest {
 
         val result = service.import(
             tempFile = PlatformImageFile(photoFile.absolutePath),
-            graphPath = graphDir.absolutePath,
+            graphPath = EffectiveNotesPath(graphDir.absolutePath),
             pageUuid = PageUuid("page-001"),
             source = ImageSource.FILE,
         )
@@ -101,7 +102,7 @@ class PhotoInsertAndroidTest {
 
         val result = service.import(
             tempFile = PlatformImageFile(photoFile.absolutePath),
-            graphPath = graphDir.absolutePath,
+            graphPath = EffectiveNotesPath(graphDir.absolutePath),
             pageUuid = PageUuid("page-001"),
             source = ImageSource.CAMERA,
         )
@@ -124,7 +125,7 @@ class PhotoInsertAndroidTest {
 
         val result = service.import(
             tempFile = PlatformImageFile(photoFile.absolutePath),
-            graphPath = graphDir.absolutePath,
+            graphPath = EffectiveNotesPath(graphDir.absolutePath),
             pageUuid = PageUuid("page-002"),
             source = ImageSource.FILE,
         )
@@ -148,7 +149,7 @@ class PhotoInsertAndroidTest {
 
         val result = service.import(
             tempFile = PlatformImageFile("${tempDir.absolutePath}/nonexistent.jpg"),
-            graphPath = graphDir.absolutePath,
+            graphPath = EffectiveNotesPath(graphDir.absolutePath),
             pageUuid = PageUuid("page-001"),
         )
 
