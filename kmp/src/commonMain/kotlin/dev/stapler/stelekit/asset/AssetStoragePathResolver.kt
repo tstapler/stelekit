@@ -1,5 +1,7 @@
 package dev.stapler.stelekit.asset
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
+
 object AssetStoragePathResolver {
 
     fun resolveSubfolder(mimeType: String): String = when {
@@ -12,8 +14,8 @@ object AssetStoragePathResolver {
         else -> "files"
     }
 
-    fun resolvePath(graphRoot: String, subfolder: String, filename: String): String =
-        "$graphRoot/assets/$subfolder/$filename"
+    fun resolvePath(notesPath: EffectiveNotesPath, subfolder: String, filename: String): String =
+        notesPath.child("assets/$subfolder/$filename")
 
     fun relativeMarkdownPath(subfolder: String, filename: String): String =
         "../assets/$subfolder/$filename"

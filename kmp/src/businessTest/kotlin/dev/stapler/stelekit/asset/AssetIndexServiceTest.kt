@@ -2,6 +2,7 @@
 
 package dev.stapler.stelekit.asset
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.db.sidecar.FakeFileSystem
 import dev.stapler.stelekit.repository.AssetRepository
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
@@ -41,7 +42,7 @@ class AssetIndexServiceTest {
         fs.writeFileBytes(path, pngMagic)
 
         val entry = AssetIndexService(repo)
-            .registerAsset(path, "/graph", pageUuid = "page-1", writeActor = null, fileSystem = fs)
+            .registerAsset(path, EffectiveNotesPath("/graph"), pageUuid = "page-1", writeActor = null, fileSystem = fs)
             .getOrNull()!!
 
         assertEquals(AssetMediaType.IMAGE, entry.mediaType)
@@ -59,7 +60,7 @@ class AssetIndexServiceTest {
         fs.writeFileBytes("/graph/assets/files/blob.bin", byteArrayOf(1, 2, 3))
 
         val entry = AssetIndexService(repo)
-            .registerAsset("/graph/assets/files/blob.bin", "/graph", mimeHint = "application/pdf", writeActor = null, fileSystem = fs)
+            .registerAsset("/graph/assets/files/blob.bin", EffectiveNotesPath("/graph"), mimeHint = "application/pdf", writeActor = null, fileSystem = fs)
             .getOrNull()!!
 
         assertEquals(AssetMediaType.PDF, entry.mediaType)
@@ -71,7 +72,7 @@ class AssetIndexServiceTest {
         val repo = CountingRepository(InMemoryAssetRepository())
         val fs = ReadLoggingFileSystem()
 
-        AssetIndexService(repo).startBackfill("/graph", writeActor = null, fileSystem = fs)
+        AssetIndexService(repo).startBackfill(EffectiveNotesPath("/graph"), writeActor = null, fileSystem = fs)
 
         // fire-and-forget on Dispatchers.Default: wait until the job has hit the missing-dir early return
         withTimeout(5_000) { fs.assetsDirChecked.await() }
@@ -90,7 +91,7 @@ class AssetIndexServiceTest {
         val total = AssetIndexService.BACKFILL_BATCH_SIZE * 2 + 20
         repeat(total) { fs.writeFileBytes("/graph/assets/f$it.png", pngMagic) }
 
-        AssetIndexService(repo).startBackfill("/graph", writeActor = null, fileSystem = fs)
+        AssetIndexService(repo).startBackfill(EffectiveNotesPath("/graph"), writeActor = null, fileSystem = fs)
 
         withTimeout(10_000) {
             while (repo.countAssets().getOrNull() != total.toLong()) delay(20)

@@ -677,7 +677,7 @@ class GraphWriter(
         LogseqPageSerializer.serialize(page, blocks)
 
     /**
-     * Scans all .md files under [graphRoot]/pages/ and [graphRoot]/journals/ for occurrences
+     * Scans all .md files under [notesPath]/pages/ and [notesPath]/journals/ for occurrences
      * of [oldRelativePath] in image/link references and rewrites them to [newRelativePath].
      *
      * Patterns replaced:
@@ -690,10 +690,10 @@ class GraphWriter(
     suspend fun rewriteAssetReference(
         oldRelativePath: String,
         newRelativePath: String,
-        graphRoot: String,
+        notesPath: EffectiveNotesPath,
     ) {
         val semaphore = Semaphore(4)
-        val dirs = listOf("$graphRoot/pages", "$graphRoot/journals")
+        val dirs = listOf(notesPath.pagesDir(), notesPath.journalsDir())
         coroutineScope {
             for (dir in dirs) {
                 if (!fileSystem.directoryExists(dir)) continue

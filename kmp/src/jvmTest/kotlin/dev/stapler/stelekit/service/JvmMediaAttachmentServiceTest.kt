@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.service
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertNull
@@ -11,7 +12,7 @@ class JvmMediaAttachmentServiceTest {
     @Test fun `attachBytes should return null on JVM because the platform does not override the default`() = runTest {
         val service = JvmMediaAttachmentService()
 
-        val result = service.attachBytes(byteArrayOf(1, 2, 3), "x.png", "/tmp/g")
+        val result = service.attachBytes(byteArrayOf(1, 2, 3), "x.png", EffectiveNotesPath("/tmp/g"))
 
         assertNull(result)
     }

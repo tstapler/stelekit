@@ -2,6 +2,7 @@
 
 package dev.stapler.stelekit.asset
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.db.sidecar.FakeFileSystem
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
@@ -45,7 +46,7 @@ class AssetMoveServiceTest {
         fs: RecordingFileSystem,
         asset: AssetEntry,
         subfolder: String,
-    ) = svc.moveAsset(asset, subfolder, "/graph", fs, GraphWriter(fileSystem = fs), writeActor = null)
+    ) = svc.moveAsset(asset, subfolder, EffectiveNotesPath("/graph"), fs, GraphWriter(fileSystem = fs), writeActor = null)
 
     @Test
     fun moveAsset_happyPath_renamesFileAndUpdatesDb() = runBlocking {

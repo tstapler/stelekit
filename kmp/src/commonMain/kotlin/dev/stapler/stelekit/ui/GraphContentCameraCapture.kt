@@ -162,8 +162,8 @@ private suspend fun attachImageToBlock(
     inputs: GraphContentMainAreaInputs,
     editingBlockUuid: BlockUuid,
 ) {
-    val graphRoot = inputs.appState.currentGraphPath ?: return
-    val result = attachmentService.pickAndAttach(graphRoot = graphRoot, pageRelativePath = "") ?: return
+    val notesPath = inputs.appState.currentNotesPath ?: return
+    val result = attachmentService.pickAndAttach(notesPath = notesPath, pageRelativePath = "") ?: return
     result.fold(
         ifLeft = { err -> inputs.graphContentLogger.warn("Image attachment failed: $err") },
         ifRight = { attachment -> inputs.viewModelStack.blockStateManager.insertTextAtCursor(editingBlockUuid, attachment.toMarkdown()) },
@@ -175,14 +175,14 @@ private fun onFileDrop(
     inputs: GraphContentMainAreaInputs,
     files: List<Any>,
 ) {
-    val graphRoot = inputs.appState.currentGraphPath
+    val notesPath = inputs.appState.currentNotesPath
     val pageUuid = (inputs.appState.currentScreen as? Screen.PageView)?.page?.uuid
-    if (pageUuid == null || graphRoot == null) return
+    if (pageUuid == null || notesPath == null) return
     inputs.scope.launch {
         handleFileDrop(
             files = files,
             attachmentService = attachmentService,
-            graphRoot = graphRoot,
+            notesPath = notesPath,
             onAttached = { markdown ->
                 inputs.viewModelStack.blockStateManager.addBlockWithContent(pageUuid = pageUuid, content = markdown)
             },
@@ -204,7 +204,7 @@ private fun onFileDrop(
 internal suspend fun handleFileDrop(
     files: List<Any>,
     attachmentService: MediaAttachmentService,
-    graphRoot: String,
+    notesPath: EffectiveNotesPath,
     onAttached: (markdown: String) -> Unit,
     onError: (DomainError) -> Unit,
 ) {
@@ -213,11 +213,11 @@ internal suspend fun handleFileDrop(
             is DroppedFileBytes -> attachmentService.attachBytes(
                 bytes = file.bytes,
                 suggestedName = file.suggestedName,
-                graphRoot = graphRoot,
+                notesPath = notesPath,
             )
             else -> attachmentService.attachFilePath(
                 filePath = file.toString(),
-                graphRoot = graphRoot,
+                notesPath = notesPath,
             )
         } ?: return@forEach
         result.fold(
@@ -232,8 +232,8 @@ private suspend fun pasteImageToBlock(
     inputs: GraphContentMainAreaInputs,
     editingBlockUuid: BlockUuid?,
 ) {
-    val graphRoot = inputs.appState.currentGraphPath ?: return
-    val result = attachmentService.pasteFromClipboard(graphRoot) ?: return
+    val notesPath = inputs.appState.currentNotesPath ?: return
+    val result = attachmentService.pasteFromClipboard(notesPath) ?: return
     result.fold(
         ifLeft = { err -> inputs.graphContentLogger.warn("Clipboard paste failed: $err") },
         ifRight = { attachment ->
