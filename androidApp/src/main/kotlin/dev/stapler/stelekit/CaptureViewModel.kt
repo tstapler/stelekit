@@ -868,7 +868,7 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
         val steleApp = getApplication<SteleKitApplication>()
         val graphManager = steleApp.graphManager ?: return
         val repoSet = graphManager.getActiveRepositorySet() ?: return
-        val graphPath = graphManager.getActiveGraphInfo()?.effectiveNotesPath ?: return
+        val graphPath = graphManager.getActiveNotesPath() ?: return
         val writer = GraphWriter(steleApp.fileSystem, writeActor = repoSet.writeActor)
         // Deliberately not reverting markAccepted()'s fold on failure — see Story 4.1.1's AC: the
         // link stays; only the stub page failed to materialize.

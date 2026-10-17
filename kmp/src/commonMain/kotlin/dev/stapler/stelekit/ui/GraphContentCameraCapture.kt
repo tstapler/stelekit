@@ -354,7 +354,7 @@ private suspend fun saveCapturedImage(
         navigateAfterImport = captureState.pendingCaptureNavigateAfterImport.value,
     )
     try {
-        val graphPath = deps.graphManager.getActiveGraphInfo()?.effectiveNotesPath ?: return
+        val graphPath = deps.graphManager.getActiveNotesPath() ?: return
         val result = importCapturedImage(inputs, photo, graphPath)
         applyCapturedImageResult(viewModel, inputs, result, target, graphPath)
     } catch (e: CancellationException) {
