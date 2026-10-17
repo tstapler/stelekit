@@ -27,6 +27,9 @@ import dev.stapler.stelekit.migration.MigrationRegistry
 import dev.stapler.stelekit.migration.MigrationRunner
 import dev.stapler.stelekit.migration.MigrationTamperedError
 import dev.stapler.stelekit.diagnostics.DirectoryScanResult
+import dev.stapler.stelekit.db.misplaced.MisplacedFilesService
+import dev.stapler.stelekit.db.misplaced.PageFilePathRepointer
+import dev.stapler.stelekit.db.misplaced.SettingsMisplacedIgnoreStore
 import dev.stapler.stelekit.model.DEMO_GRAPH_ID
 import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.model.RegistryRootPath
@@ -1395,6 +1398,16 @@ class GraphManager(
      *
      * Called from [GraphContent] to wire the [GitSyncService] construction.
      */
+    /** The misplaced-files service for [graphId]; it repoints page rows in whichever graph is open when files move. */
+    fun createMisplacedFilesService(graphId: GraphId): MisplacedFilesService {
+        val repointPages: suspend (Map<String, String>) -> Unit = { moves ->
+            val factory = currentFactory as? dev.stapler.stelekit.repository.RepositoryFactoryImpl
+            val actor = _activeRepositorySet.value?.writeActor
+            if (factory != null && actor != null) PageFilePathRepointer(factory.steleDatabase(), actor).repoint(moves)
+        }
+        return MisplacedFilesService(fileSystem, SettingsMisplacedIgnoreStore(platformSettings, graphId), repointPages)
+    }
+
     fun createGitConfigRepository(): dev.stapler.stelekit.git.GitConfigRepository? {
         val factory = currentFactory as? dev.stapler.stelekit.repository.RepositoryFactoryImpl ?: return null
         val actor = _activeRepositorySet.value?.writeActor ?: return null
