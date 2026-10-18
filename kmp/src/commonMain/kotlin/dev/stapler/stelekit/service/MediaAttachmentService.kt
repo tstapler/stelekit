@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.service
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import arrow.core.Either
 import dev.stapler.stelekit.error.DomainError
 
@@ -36,7 +37,7 @@ fun AttachmentResult.toMarkdown(): String = markdownImageLink(alt = displayName,
  *
  * All implementations must:
  * - Run the file copy on [dev.stapler.stelekit.coroutines.PlatformDispatcher.IO].
- * - Create `<graphRoot>/assets/` if it does not exist.
+ * - Create `<notesPath>/assets/` if it does not exist.
  * - Handle duplicate filenames via suffix counter (photo.jpg → photo-1.jpg → photo-2.jpg).
  * - Write to a temp file first, then atomically rename, to prevent Coil reading partial writes.
  * - Return [arrow.core.Either.Left] with [DomainError] on any failure; never throw.
@@ -44,7 +45,7 @@ fun AttachmentResult.toMarkdown(): String = markdownImageLink(alt = displayName,
 interface MediaAttachmentService {
     /**
      * Opens the platform file picker (gallery on mobile, file chooser on desktop),
-     * copies the selected file to `<graphRoot>/assets/<uniqueName>`, and returns
+     * copies the selected file to `<notesPath>/assets/<uniqueName>`, and returns
      * the relative markdown path.
      *
      * Returns [Either.Right] with [AttachmentResult] on success.
@@ -52,7 +53,7 @@ interface MediaAttachmentService {
      * Returns `null` if the user cancels without selecting a file (no error, no result).
      */
     suspend fun pickAndAttach(
-        graphRoot: String,
+        notesPath: EffectiveNotesPath,
         pageRelativePath: String
     ): Either<DomainError, AttachmentResult>?
 
@@ -72,7 +73,7 @@ interface MediaAttachmentService {
      */
     suspend fun attachFilePath(
         filePath: String,
-        graphRoot: String
+        notesPath: EffectiveNotesPath
     ): Either<DomainError, AttachmentResult>? = null
 
     /**
@@ -90,7 +91,7 @@ interface MediaAttachmentService {
     suspend fun attachBytes(
         bytes: ByteArray,
         suggestedName: String,
-        graphRoot: String
+        notesPath: EffectiveNotesPath
     ): Either<DomainError, AttachmentResult>? = null
 
     /**
@@ -104,7 +105,7 @@ interface MediaAttachmentService {
 
     /**
      * Reads image data from the platform clipboard, copies it into
-     * `<graphRoot>/assets/`, and returns the relative markdown path.
+     * `<notesPath>/assets/`, and returns the relative markdown path.
      *
      * Returns [Either.Right] with [AttachmentResult] on success.
      * Returns [Either.Left] with [DomainError.AttachmentError] on failure.
@@ -112,5 +113,5 @@ interface MediaAttachmentService {
      *
      * Default returns `null` (no-op).
      */
-    suspend fun pasteFromClipboard(graphRoot: String): Either<DomainError, AttachmentResult>? = null
+    suspend fun pasteFromClipboard(notesPath: EffectiveNotesPath): Either<DomainError, AttachmentResult>? = null
 }

@@ -71,8 +71,7 @@ private suspend fun attachImageFromCommandPalette(
     // process — see GraphContentCameraCapture's saveCapturedImage for the same pattern/rationale.
     try {
         val editingBlockUuid = env.blockStateManager.editingBlockUuid.value
-        val graphRoot = viewModel.uiState.value.currentGraphPath ?: return
-        val result = attachmentService.pickAndAttach(graphRoot = graphRoot, pageRelativePath = "") ?: return
+        val result = attachmentService.pickAndAttach(viewModel.uiState.value.currentNotesPath ?: return, pageRelativePath = "") ?: return
         applyAttachmentResult(result, editingBlockUuid, env)
     } catch (e: CancellationException) {
         throw e

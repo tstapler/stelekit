@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.service
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
@@ -28,52 +29,10 @@ private fun String.isImageExtension() = substringAfterLast('.', "").lowercase() 
 class JvmMediaAttachmentService : MediaAttachmentService {
 
     override suspend fun pickAndAttach(
-        graphRoot: String,
+        notesPath: EffectiveNotesPath,
         pageRelativePath: String
     ): Either<DomainError, AttachmentResult>? = withContext(PlatformDispatcher.IO) {
-        val selectedFile: File? = showFilePicker()
-        if (selectedFile == null) return@withContext null
-
-        val assetsDir = File("$graphRoot/assets")
-        try {
-            assetsDir.mkdirs()
-        } catch (e: Exception) {
-            if (e is CancellationException) throw e
-            return@withContext DomainError.AttachmentError.AssetsDirectoryFailed(
-                e.message ?: "unknown"
-            ).left()
-        }
-
-        val stem = selectedFile.nameWithoutExtension
-        val ext = selectedFile.extension
-        val uniqueName = uniqueFileName(assetsDir.toOkioPath(), stem, ext, FileSystem.SYSTEM)
-        val destFile = File(assetsDir, uniqueName)
-        val tmpFile = File(assetsDir, ".tmp-${java.util.UUID.randomUUID()}")
-
-        try {
-            selectedFile.inputStream().use { input ->
-                tmpFile.outputStream().use { output -> input.copyTo(output) }
-            }
-            Files.move(tmpFile.toPath(), destFile.toPath(), StandardCopyOption.ATOMIC_MOVE)
-        } catch (e: java.nio.file.AtomicMoveNotSupportedException) {
-            try {
-                Files.move(tmpFile.toPath(), destFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
-            } catch (e2: Exception) {
-                if (e2 is CancellationException) throw e2
-                tmpFile.delete()
-                return@withContext DomainError.AttachmentError.CopyFailed(
-                    e2.message ?: "move failed"
-                ).left()
-            }
-        } catch (e: Exception) {
-            if (e is CancellationException) throw e
-            tmpFile.delete()
-            return@withContext DomainError.AttachmentError.CopyFailed(
-                e.message ?: "copy failed"
-            ).left()
-        }
-
-        AttachmentResult(relativePath = "../assets/$uniqueName", displayName = uniqueName).right()
+        showFilePicker()?.let { attachExistingFile(it, notesPath) }
     }
 
     /**
@@ -82,8 +41,8 @@ class JvmMediaAttachmentService : MediaAttachmentService {
      */
     override suspend fun attachFilePath(
         filePath: String,
-        graphRoot: String
-    ): Either<DomainError, AttachmentResult>? = attachExistingFile(File(filePath), graphRoot)
+        notesPath: EffectiveNotesPath
+    ): Either<DomainError, AttachmentResult>? = attachExistingFile(File(filePath), notesPath)
 
     /**
      * Copies an already-selected file to the graph's assets directory.
@@ -92,9 +51,9 @@ class JvmMediaAttachmentService : MediaAttachmentService {
      */
     suspend fun attachExistingFile(
         file: File,
-        graphRoot: String
+        notesPath: EffectiveNotesPath
     ): Either<DomainError, AttachmentResult>? = withContext(PlatformDispatcher.IO) {
-        val assetsDir = File("$graphRoot/assets")
+        val assetsDir = File(notesPath.child("assets"))
         try {
             assetsDir.mkdirs()
         } catch (e: Exception) {
@@ -150,7 +109,7 @@ class JvmMediaAttachmentService : MediaAttachmentService {
         return name.isImageExtension()
     }
 
-    override suspend fun pasteFromClipboard(graphRoot: String): Either<DomainError, AttachmentResult>? =
+    override suspend fun pasteFromClipboard(notesPath: EffectiveNotesPath): Either<DomainError, AttachmentResult>? =
         withContext(PlatformDispatcher.IO) {
             val cb = java.awt.Toolkit.getDefaultToolkit().systemClipboard
             // File list first — preserves original filename and format
@@ -159,7 +118,7 @@ class JvmMediaAttachmentService : MediaAttachmentService {
                 val file = (cb.getData(java.awt.datatransfer.DataFlavor.javaFileListFlavor) as? List<*>)
                     ?.firstOrNull() as? File
                 if (file != null && file.name.isImageExtension()) {
-                    return@withContext attachExistingFile(file, graphRoot)
+                    return@withContext attachExistingFile(file, notesPath)
                 }
             }
             // Raw image flavor (e.g., screenshots)
@@ -173,7 +132,7 @@ class JvmMediaAttachmentService : MediaAttachmentService {
                 val tmp = File(System.getProperty("java.io.tmpdir"), "clipboard-${java.util.UUID.randomUUID()}.png")
                 try {
                     javax.imageio.ImageIO.write(bi, "png", tmp)
-                    return@withContext attachExistingFile(tmp, graphRoot)
+                    return@withContext attachExistingFile(tmp, notesPath)
                 } catch (e: Exception) {
                     if (e is CancellationException) throw e
                     tmp.delete()

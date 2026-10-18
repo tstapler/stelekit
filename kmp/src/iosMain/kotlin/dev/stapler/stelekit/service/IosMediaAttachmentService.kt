@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.service
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import arrow.core.Either
 import dev.stapler.stelekit.error.DomainError
 
@@ -18,7 +19,7 @@ import dev.stapler.stelekit.error.DomainError
  */
 class IosMediaAttachmentService : MediaAttachmentService {
     override suspend fun pickAndAttach(
-        graphRoot: String,
+        notesPath: EffectiveNotesPath,
         pageRelativePath: String
     ): Either<DomainError, AttachmentResult>? {
         return null

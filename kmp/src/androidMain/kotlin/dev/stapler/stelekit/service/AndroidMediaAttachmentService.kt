@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.service
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -42,23 +43,23 @@ class AndroidMediaAttachmentService(
 ) : MediaAttachmentService {
 
     override suspend fun pickAndAttach(
-        graphRoot: String,
+        notesPath: EffectiveNotesPath,
         pageRelativePath: String
     ): Either<DomainError, AttachmentResult>? {
         val uri: Uri? = withContext(Dispatchers.Main) { launchGalleryPicker() }
         if (uri == null) return null
 
         return withContext(PlatformDispatcher.IO) {
-            if (graphRoot.startsWith("saf://")) {
-                pickAndAttachSaf(uri, graphRoot)
+            if (notesPath.value.startsWith("saf://")) {
+                pickAndAttachSaf(uri, notesPath)
             } else {
-                pickAndAttachLegacy(uri, graphRoot)
+                pickAndAttachLegacy(uri, notesPath)
             }
         }
     }
 
-    private fun pickAndAttachSaf(uri: Uri, graphRoot: String): Either<DomainError, AttachmentResult> {
-        val assetsPath = "$graphRoot/assets"
+    private fun pickAndAttachSaf(uri: Uri, notesPath: EffectiveNotesPath): Either<DomainError, AttachmentResult> {
+        val assetsPath = notesPath.child("assets")
         if (!fileSystem.directoryExists(assetsPath)) {
             if (!fileSystem.createDirectory(assetsPath)) {
                 return DomainError.AttachmentError.AssetsDirectoryFailed(
@@ -78,8 +79,8 @@ class AndroidMediaAttachmentService(
         }
     }
 
-    private fun pickAndAttachLegacy(uri: Uri, graphRoot: String): Either<DomainError, AttachmentResult> {
-        val assetsDir = File("$graphRoot/assets")
+    private fun pickAndAttachLegacy(uri: Uri, notesPath: EffectiveNotesPath): Either<DomainError, AttachmentResult> {
+        val assetsDir = File(notesPath.child("assets"))
         try {
             assetsDir.mkdirs()
         } catch (e: Exception) {
@@ -132,7 +133,7 @@ class AndroidMediaAttachmentService(
         return false
     }
 
-    override suspend fun pasteFromClipboard(graphRoot: String): Either<DomainError, AttachmentResult>? =
+    override suspend fun pasteFromClipboard(notesPath: EffectiveNotesPath): Either<DomainError, AttachmentResult>? =
         withContext(PlatformDispatcher.IO) {
             val cm = context.getSystemService(android.content.ClipboardManager::class.java)
                 ?: return@withContext null
@@ -142,8 +143,8 @@ class AndroidMediaAttachmentService(
                 val mimeType = context.contentResolver.getType(uri) ?: continue
                 if (!mimeType.startsWith("image/")) continue
                 val ext = mimeType.substringAfter("image/").substringBefore(";").let { if (it == "jpeg") "jpg" else it }
-                if (graphRoot.startsWith("saf://")) {
-                    val assetsPath = "$graphRoot/assets"
+                if (notesPath.value.startsWith("saf://")) {
+                    val assetsPath = notesPath.child("assets")
                     if (!fileSystem.directoryExists(assetsPath)) {
                         if (!fileSystem.createDirectory(assetsPath)) {
                             return@withContext DomainError.AttachmentError.AssetsDirectoryFailed(
@@ -159,7 +160,7 @@ class AndroidMediaAttachmentService(
                         DomainError.AttachmentError.CopyFailed("writeFileBytes returned false").left()
                     }
                 }
-                val assetsDir = File("$graphRoot/assets")
+                val assetsDir = File(notesPath.child("assets"))
                 try {
                     assetsDir.mkdirs()
                 } catch (e: Exception) {

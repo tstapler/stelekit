@@ -2,6 +2,7 @@
 
 package dev.stapler.stelekit.asset
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import app.cash.sqldelight.db.SqlDriver
 import dev.stapler.stelekit.db.DirectSqlWrite
 import dev.stapler.stelekit.db.DriverFactory
@@ -51,7 +52,7 @@ class AssetMoveServiceWalTest {
     private fun walRowCount() = database.steleDatabaseQueries.selectAllPendingMoves().executeAsList().size
 
     private suspend fun replay() =
-        AssetMoveService(repo, restricted).replayPendingMoves("/graph", fs, GraphWriter(fileSystem = fs), writeActor = null)
+        AssetMoveService(repo, restricted).replayPendingMoves(EffectiveNotesPath("/graph"), fs, GraphWriter(fileSystem = fs), writeActor = null)
 
     private suspend fun storedPath() = repo.getAssetByUuid(AssetUuid("w1")).first().getOrNull()?.filePath
 
@@ -109,7 +110,7 @@ class AssetMoveServiceWalTest {
     private suspend fun move(subfolder: String): arrow.core.Either<dev.stapler.stelekit.error.DomainError, Unit> {
         val asset = testAsset("w1", filePath = oldPath, mediaType = AssetMediaType.PDF)
         repo.saveAsset(asset)
-        return AssetMoveService(repo, restricted).moveAsset(asset, subfolder, "/graph", fs, GraphWriter(fileSystem = fs), writeActor = null)
+        return AssetMoveService(repo, restricted).moveAsset(asset, subfolder, EffectiveNotesPath("/graph"), fs, GraphWriter(fileSystem = fs), writeActor = null)
     }
 
     // No "success clears the WAL row" test: RestrictedDatabaseQueries.lastInsertRowId() throws ClassCastException

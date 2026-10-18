@@ -3,16 +3,90 @@
 
 package dev.stapler.stelekit.service
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import kotlinx.coroutines.test.runTest
+import java.awt.GraphicsEnvironment
+import java.awt.Toolkit
+import java.awt.datatransfer.StringSelection
+import java.awt.datatransfer.DataFlavor
+import java.awt.datatransfer.Transferable
+import java.awt.image.BufferedImage
+import java.io.File
+import java.nio.file.Files
 import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
+import org.junit.Assume.assumeFalse
 
 class JvmMediaAttachmentServiceTest {
     @Test fun `attachBytes should return null on JVM because the platform does not override the default`() = runTest {
         val service = JvmMediaAttachmentService()
 
-        val result = service.attachBytes(byteArrayOf(1, 2, 3), "x.png", "/tmp/g")
+        val result = service.attachBytes(byteArrayOf(1, 2, 3), "x.png", EffectiveNotesPath("/tmp/g"))
 
         assertNull(result)
+    }
+
+    @Test fun `attachFilePath should copy the file into the notes folder assets, not the repo root`() = runTest {
+        val repoRoot = Files.createTempDirectory("repo").toFile()
+        val notes = File(repoRoot, "logseq")
+        val source = File(Files.createTempDirectory("src").toFile(), "photo.png").apply { writeBytes(byteArrayOf(9, 8, 7)) }
+
+        val result = JvmMediaAttachmentService().attachFilePath(source.path, EffectiveNotesPath(notes.path))
+
+        val attachment = assertNotNull(result).getOrNull()
+        assertEquals("../assets/photo.png", attachment?.relativePath)
+        assertEquals(listOf<Byte>(9, 8, 7), File(notes, "assets/photo.png").readBytes().toList())
+        assertTrue(!File(repoRoot, "assets").exists(), "assets must not be created beside the notes folder")
+    }
+
+    private fun withClipboard(flavor: DataFlavor, data: Any, block: suspend () -> Unit) = runTest {
+        assumeFalse("needs a display for the system clipboard", GraphicsEnvironment.isHeadless())
+        val clipboard = try {
+            Toolkit.getDefaultToolkit().systemClipboard.also { cb ->
+                cb.setContents(
+                    object : Transferable {
+                        override fun getTransferDataFlavors() = arrayOf(flavor)
+                        override fun isDataFlavorSupported(f: DataFlavor) = f == flavor
+                        override fun getTransferData(f: DataFlavor): Any = data
+                    },
+                    null,
+                )
+            }
+        } catch (e: Exception) {
+            assumeFalse("system clipboard unavailable: ${e.message}", true)
+            return@runTest
+        }
+        try {
+            block()
+        } finally {
+            clipboard.setContents(StringSelection(""), null)
+        }
+    }
+
+    @Test fun `pasteFromClipboard should attach a copied image file into the notes folder assets`() {
+        val notes = Files.createTempDirectory("notes").toFile()
+        val source = File(Files.createTempDirectory("src").toFile(), "clip.png").apply { writeBytes(byteArrayOf(1)) }
+
+        withClipboard(DataFlavor.javaFileListFlavor, listOf(source)) {
+            val result = JvmMediaAttachmentService().pasteFromClipboard(EffectiveNotesPath(notes.path))
+
+            assertEquals("../assets/clip.png", assertNotNull(result).getOrNull()?.relativePath)
+            assertTrue(File(notes, "assets/clip.png").exists())
+        }
+    }
+
+    @Test fun `pasteFromClipboard should save a raw clipboard image such as a screenshot into the notes folder assets`() {
+        val notes = Files.createTempDirectory("notes").toFile()
+
+        withClipboard(DataFlavor.imageFlavor, BufferedImage(2, 2, BufferedImage.TYPE_INT_ARGB)) {
+            val result = JvmMediaAttachmentService().pasteFromClipboard(EffectiveNotesPath(notes.path))
+
+            val relative = assertNotNull(result).getOrNull()?.relativePath
+            assertTrue(relative?.startsWith("../assets/clipboard-") == true, "unexpected path: $relative")
+            assertTrue(File(notes, "assets").listFiles().orEmpty().any { it.extension == "png" })
+        }
     }
 }
