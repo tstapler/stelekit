@@ -4,6 +4,7 @@
 
 package dev.stapler.stelekit.ui
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -226,7 +227,7 @@ private suspend fun unlockVault(
         // Set graph paths before cryptoLayer so any concurrent reader that observes cryptoLayer
         // != null will also see the correct graphPath (used as AAD base).
         seedGraphEpochForVaultEvent(ctx, "onVaultUnlock")
-        ctx.graphIoStack.graphLoader.setGraphPath(ctx.vaultSetup.activeGraphPath)
+        ctx.graphIoStack.graphLoader.setGraphPath(EffectiveNotesPath(ctx.vaultSetup.activeGraphPath))
         ctx.graphIoStack.graphLoader.setCryptoLayer(layer)
         ctx.graphIoStack.graphWriter.setCryptoLayer(layer)
         ctx.vaultSetup.vaultCredentialStore?.onVaultUnlocked(unlockResult.dek)
@@ -286,7 +287,7 @@ private fun applyCreatedVault(
     // GraphId sourced only from GraphManager.getActiveGraphInfo()?.id — see
     // unlockVault's identical rationale above.
     seedGraphEpochForVaultEvent(ctx, "onCreateVault")
-    ctx.graphIoStack.graphLoader.setGraphPath(ctx.vaultSetup.activeGraphPath)
+    ctx.graphIoStack.graphLoader.setGraphPath(EffectiveNotesPath(ctx.vaultSetup.activeGraphPath))
     ctx.graphIoStack.graphLoader.setCryptoLayer(layer)
     ctx.graphIoStack.graphWriter.setCryptoLayer(layer)
     ctx.vaultSetup.vaultCredentialStore?.onVaultUnlocked(unlockResult.dek)

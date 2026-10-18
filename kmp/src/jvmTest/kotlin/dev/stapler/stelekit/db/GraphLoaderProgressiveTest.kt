@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.db
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
@@ -124,7 +125,7 @@ class GraphLoaderProgressiveTest {
 
         withTimeout(10_000) {
             loader.loadGraphProgressive(
-                graphPath = "/graph",
+                notesPath = EffectiveNotesPath("/graph"),
                 immediateJournalCount = 10,
                 onProgress = {},
                 onPhase1Complete = {
@@ -180,7 +181,7 @@ class GraphLoaderProgressiveTest {
 
         withTimeout(10_000) {
             loader.loadGraphProgressive(
-                graphPath = "/graph",
+                notesPath = EffectiveNotesPath("/graph"),
                 immediateJournalCount = 10,
                 onProgress = {},
                 onPhase1Complete = { phase1Called = true },
@@ -252,7 +253,7 @@ class GraphLoaderProgressiveTest {
         // Warm path launches background job and returns immediately — well within 10s
         withTimeout(10_000) {
             loader.loadGraphProgressive(
-                graphPath = "/graph",
+                notesPath = EffectiveNotesPath("/graph"),
                 immediateJournalCount = 10,
                 onProgress = {},
                 onPhase1Complete = {},
@@ -332,7 +333,7 @@ class GraphLoaderProgressiveTest {
 
         withTimeout(10_000) {
             loader.loadGraphProgressive(
-                graphPath = "/graph",
+                notesPath = EffectiveNotesPath("/graph"),
                 immediateJournalCount = 10,
                 onProgress = {},
                 onPhase1Complete = { listFilesCountAtPhase1.set(listFilesCount.get()) },
@@ -392,7 +393,7 @@ class GraphLoaderProgressiveTest {
 
         withTimeout(10_000) {
             loader.loadGraphProgressive(
-                graphPath = "/graph",
+                notesPath = EffectiveNotesPath("/graph"),
                 immediateJournalCount = 10,
                 onProgress = {},
                 onPhase1Complete = { phase1Fired.set(true) },
@@ -472,7 +473,7 @@ class GraphLoaderProgressiveTest {
 
         withTimeout(10_000) {
             loader.loadGraphProgressive(
-                graphPath = "/graph",
+                notesPath = EffectiveNotesPath("/graph"),
                 immediateJournalCount = 10,
                 onProgress = {},
                 onPhase1Complete = {},
@@ -530,7 +531,7 @@ class GraphLoaderProgressiveTest {
 
         withTimeout(10_000) {
             loader.loadGraphProgressive(
-                graphPath = "/graph",
+                notesPath = EffectiveNotesPath("/graph"),
                 immediateJournalCount = 10,
                 onProgress = {},
                 onPhase1Complete = {},
@@ -638,7 +639,7 @@ class GraphLoaderProgressiveTest {
         var fullyLoadedCalled = false
         
         graphLoader.loadGraphProgressive(
-            graphPath = "/graph",
+            notesPath = EffectiveNotesPath("/graph"),
             immediateJournalCount = 10,
             onProgress = {},
             onPhase1Complete = { 

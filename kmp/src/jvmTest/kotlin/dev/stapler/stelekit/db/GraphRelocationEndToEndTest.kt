@@ -7,6 +7,7 @@
 
 package dev.stapler.stelekit.db
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import arrow.core.Either
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
@@ -291,7 +292,7 @@ class GraphRelocationEndToEndTest {
         val pageRepo = InMemoryPageRepository()
         val blockRepo = InMemoryBlockRepository()
         val loader = GraphLoader(fileSystem, pageRepo, blockRepo)
-        loader.loadGraph(graphPath) { }
+        loader.loadGraph(EffectiveNotesPath(graphPath)) { }
         val pages = pageRepo.getAllPagesSnapshot().getOrNull().orEmpty()
         return pages.associate { page ->
             val blocks = blockRepo.getBlocksForPage(page.uuid).first().getOrNull().orEmpty()

@@ -53,7 +53,7 @@ class GraphLoaderWatcherTest {
             val loader = GraphLoader(fileSystem, pageRepo, blockRepo, watcherPollIntervalMs = 100L)
 
             // Load the (empty) graph so the watcher has a base state
-            loader.loadGraph(graphDir.absolutePath) {}
+            loader.loadGraph(EffectiveNotesPath(graphDir.absolutePath)) {}
 
             // Write a file directly (simulating GraphWriter)
             val pagePath = File(graphDir, "pages/TestPage.md").absolutePath
@@ -170,7 +170,7 @@ class GraphLoaderWatcherTest {
             @Suppress("DEPRECATION")
             val writer = GraphWriter(fileSystem, pageRepository = pageRepo, onFileWritten = loader::markFileWrittenByUs)
 
-            loader.loadGraph(graphDir.absolutePath) {}
+            loader.loadGraph(EffectiveNotesPath(graphDir.absolutePath)) {}
 
             // Save a page via GraphWriter (onFileWritten fires → markFileWrittenByUs)
             val now = Clock.System.now()
@@ -220,7 +220,7 @@ class GraphLoaderWatcherTest {
             val pagePath = File(graphDir, "pages/Watched.md").absolutePath
             File(pagePath).writeText("- Original content\n")
 
-            loader.loadGraph(graphDir.absolutePath) {}
+            loader.loadGraph(EffectiveNotesPath(graphDir.absolutePath)) {}
 
             val page = pageRepo.getAllPagesSnapshot().getOrNull()
                 ?.firstOrNull { it.name.contains("Watched", ignoreCase = true) }

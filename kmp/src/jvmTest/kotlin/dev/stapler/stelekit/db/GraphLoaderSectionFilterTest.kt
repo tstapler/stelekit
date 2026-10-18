@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.db
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.db.sidecar.FakeFileSystem
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
@@ -62,7 +63,7 @@ class GraphLoaderSectionFilterTest {
     @Test
     fun `root page loaded with empty sectionId when no section prefix matches`() = runBlocking {
         val (loader, pageRepo) = setup()
-        loader.loadGraphProgressive("/graph", 5, onProgress = {}, onPhase1Complete = {}, onFullyLoaded = {})
+        loader.loadGraphProgressive(EffectiveNotesPath("/graph"), 5, onProgress = {}, onPhase1Complete = {}, onFullyLoaded = {})
 
         val pages = pageRepo.getAllPagesSnapshot().getOrNull() ?: emptyList()
         val rootPage = pages.firstOrNull { it.name.equals("Root Page", ignoreCase = true) }
@@ -73,7 +74,7 @@ class GraphLoaderSectionFilterTest {
     @Test
     fun `resolvePageFilePath finds root page in standard pages directory`() = runBlocking {
         val (loader, _) = setup()
-        loader.loadGraphProgressive("/graph", 5, onProgress = {}, onPhase1Complete = {}, onFullyLoaded = {})
+        loader.loadGraphProgressive(EffectiveNotesPath("/graph"), 5, onProgress = {}, onPhase1Complete = {}, onFullyLoaded = {})
 
         assertEquals("/graph/pages/Root Page.md", loader.resolvePageFilePath("Root Page"))
     }
@@ -83,7 +84,7 @@ class GraphLoaderSectionFilterTest {
         // Work Page lives in pages/acme-work/ — not found by resolvePageFilePath which only
         // checks pages/<name>.md and journals/<name>.md. Epic 2.2 will add section fallback.
         val (loader, _) = setup()
-        loader.loadGraphProgressive("/graph", 5, onProgress = {}, onPhase1Complete = {}, onFullyLoaded = {})
+        loader.loadGraphProgressive(EffectiveNotesPath("/graph"), 5, onProgress = {}, onPhase1Complete = {}, onFullyLoaded = {})
 
         assertNull(loader.resolvePageFilePath("Work Page"), "Section-subdir pages not resolved pre-Epic-2")
     }

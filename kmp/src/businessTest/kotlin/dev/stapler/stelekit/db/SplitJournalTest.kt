@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.db
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.parsing.ParseMode
 import dev.stapler.stelekit.platform.FileSystem
@@ -84,7 +85,7 @@ class SplitJournalTest {
             journalDateResolver = journalService,
             sectionFilter = sectionFilter,
         )
-        loader.setGraphPath("/graph")
+        loader.setGraphPath(EffectiveNotesPath("/graph"))
         return Repos(pageRepo, blockRepo, loader)
     }
 

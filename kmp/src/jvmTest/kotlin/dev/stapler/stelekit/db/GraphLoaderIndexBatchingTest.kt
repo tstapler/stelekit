@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.db
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import arrow.core.Either
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.Page
@@ -68,7 +69,7 @@ class GraphLoaderIndexBatchingTest {
         val pages = (1..250).map { unloadedPage("note$it") }
         val pageRepo = RecordingRepository(pages)
         val loader = GraphLoader(PartiallyBrokenFileSystem(), pageRepo, FakeBlockRepository())
-        loader.setGraphPath(GRAPH_PATH)
+        loader.setGraphPath(EffectiveNotesPath(GRAPH_PATH))
 
         withTimeout(120_000) { loader.indexRemainingPages { } }
 
@@ -91,7 +92,7 @@ class GraphLoaderIndexBatchingTest {
             (1..30).map { unloadedPage("broken$it") }
         val pageRepo = RecordingRepository(pages)
         val loader = GraphLoader(PartiallyBrokenFileSystem(), pageRepo, FakeBlockRepository())
-        loader.setGraphPath(GRAPH_PATH)
+        loader.setGraphPath(EffectiveNotesPath(GRAPH_PATH))
 
         // Must terminate despite 30 pages that can never leave the unloaded set —
         // the drain offset has to advance past them instead of refetching them forever.

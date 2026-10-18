@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.benchmark
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
@@ -108,7 +109,7 @@ class UnifiedBenchmarkRunner {
             return kotlinx.coroutines.runBlocking {
                 val totalMs = kotlin.time.measureTime {
                     loader.loadGraphProgressive(
-                        graphPath = dir.absolutePath,
+                        notesPath = EffectiveNotesPath(dir.absolutePath),
                         immediateJournalCount = 10,
                         onProgress = {},
                         onPhase1Complete = {

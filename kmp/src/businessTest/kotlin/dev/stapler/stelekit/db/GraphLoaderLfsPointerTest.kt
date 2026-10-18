@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.db
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.git.lfs.LfsOid
 import dev.stapler.stelekit.git.lfs.LfsPointer
 import dev.stapler.stelekit.git.lfs.LfsPointerCodec
@@ -40,7 +41,7 @@ class GraphLoaderLfsPointerTest {
         val pages = InMemoryPageRepository()
         val loader = GraphLoader(fs, pages, InMemoryBlockRepository())
 
-        loader.loadGraph("/g") {}
+        loader.loadGraph(EffectiveNotesPath("/g")) {}
 
         val names = pages.getAllPagesSnapshot().getOrNull().orEmpty().map { it.name.lowercase() }
         assertTrue("real" in names, "ordinary pages still load: $names")
@@ -54,7 +55,7 @@ class GraphLoaderLfsPointerTest {
         val fs = GraphFs(mutableMapOf("/g/pages/Notes.md" to "- version https://git-lfs.github.com/spec/v1 is the pointer format\n"))
         val pages = InMemoryPageRepository()
 
-        GraphLoader(fs, pages, InMemoryBlockRepository()).loadGraph("/g") {}
+        GraphLoader(fs, pages, InMemoryBlockRepository()).loadGraph(EffectiveNotesPath("/g")) {}
 
         assertTrue("notes" in pages.getAllPagesSnapshot().getOrNull().orEmpty().map { it.name.lowercase() })
     }

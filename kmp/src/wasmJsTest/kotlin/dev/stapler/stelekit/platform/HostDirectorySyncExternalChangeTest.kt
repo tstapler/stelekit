@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.platform
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.db.ExternalFileChange
 import dev.stapler.stelekit.db.FileRegistry
 import dev.stapler.stelekit.db.GraphFileWatcher
@@ -100,7 +101,7 @@ class HostDirectorySyncExternalChangeTest {
             val hostRoot = rootDir(Dir("pages", listOf(TextFile("Foo.md", "- changed content", lastModified = 5_000L))))
             fs.hostDirectorySync.pollHostDirectoryOnce(hostRoot, graphPath)
 
-            watcher.startWatching(graphPath)
+            watcher.startWatching(EffectiveNotesPath(graphPath))
             awaitCondition { received.isNotEmpty() }
 
             assertEquals(1, received.size, "exactly one ExternalFileChange expected")

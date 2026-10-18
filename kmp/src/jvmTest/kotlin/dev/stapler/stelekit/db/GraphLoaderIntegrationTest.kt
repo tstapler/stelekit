@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.db
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.model.Page
@@ -51,7 +52,7 @@ class GraphLoaderIntegrationTest {
         val path = "/graph/pages/testpage.md"
         fileSystem.files[path] = content
         
-        graphLoader.loadGraph("/graph") { _ -> }
+        graphLoader.loadGraph(EffectiveNotesPath("/graph")) { _ -> }
         
         // Verify Page
         val pages = pageRepository.getAllPagesSnapshot().getOrNull() ?: emptyList()

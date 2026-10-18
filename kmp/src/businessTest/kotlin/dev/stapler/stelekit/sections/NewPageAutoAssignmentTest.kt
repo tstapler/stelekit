@@ -86,7 +86,7 @@ class NewPageAutoAssignmentTest {
         override fun setCryptoLayer(layer: CryptoLayer?) {}
         override fun closeAndClearCryptoLayer() {}
         override suspend fun loadGraphProgressive(
-            graphPath: String, immediateJournalCount: Int,
+            notesPath: EffectiveNotesPath, immediateJournalCount: Int,
             onProgress: (String) -> Unit, onPhase1Complete: () -> Unit, onFullyLoaded: () -> Unit,
         ) {}
         override suspend fun indexRemainingPages(onProgress: (String) -> Unit) {}
