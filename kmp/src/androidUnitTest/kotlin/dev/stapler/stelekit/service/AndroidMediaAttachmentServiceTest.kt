@@ -22,7 +22,13 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import org.junit.After
 import org.junit.Before
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
@@ -68,12 +74,18 @@ private class FakeFileSystem : FileSystem {
 }
 
 /** Asserts attachments land in `<notes folder>/assets`, the folder git sync stages, for both local and SAF graphs. */
+@OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29])
 class AndroidMediaAttachmentServiceTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
     private val uri = Uri.parse("content://stelekit.test.images/shot")
     private val png = byteArrayOf(1, 2, 3)
+
+    // runTest blocks Robolectric's main thread, so pickAndAttach's withContext(Dispatchers.Main) would deadlock.
+    @Before fun useTestMainDispatcher() = Dispatchers.setMain(UnconfinedTestDispatcher())
+
+    @After fun restoreMainDispatcher() = Dispatchers.resetMain()
 
     @Before fun registerProvider() {
         ImageProvider.file = File.createTempFile("shot", ".png").apply { writeBytes(png) }
