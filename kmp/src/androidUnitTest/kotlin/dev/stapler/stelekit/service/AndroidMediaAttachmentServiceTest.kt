@@ -14,8 +14,8 @@ import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
 import androidx.test.core.app.ApplicationProvider
-import dev.stapler.stelekit.db.sidecar.FakeFileSystem
 import dev.stapler.stelekit.model.EffectiveNotesPath
+import dev.stapler.stelekit.platform.FileSystem
 import java.io.File
 import java.nio.file.Files
 import kotlin.test.Test
@@ -44,6 +44,27 @@ class ImageProvider : ContentProvider() {
     companion object {
         lateinit var file: File
     }
+}
+
+/** In-memory SAF stand-in; the Bazel android unit-test target has no access to commonTest fakes. */
+private class FakeFileSystem : FileSystem {
+    private val files = mutableMapOf<String, ByteArray>()
+    private val dirs = mutableSetOf<String>()
+
+    override fun getDefaultGraphPath() = "/graph"
+    override fun expandTilde(path: String) = path
+    override fun readFile(path: String): String? = files[path]?.decodeToString()
+    override fun writeFile(path: String, content: String): Boolean = writeFileBytes(path, content.encodeToByteArray())
+    override fun listFiles(path: String) = emptyList<String>()
+    override fun listDirectories(path: String) = emptyList<String>()
+    override fun fileExists(path: String) = path in files
+    override fun directoryExists(path: String) = path in dirs
+    override fun createDirectory(path: String): Boolean = dirs.add(path).let { true }
+    override fun deleteFile(path: String) = files.remove(path) != null
+    override fun pickDirectory(): String? = null
+    override fun getLastModifiedTime(path: String): Long? = null
+    override fun readFileBytes(path: String): ByteArray? = files[path]
+    override fun writeFileBytes(path: String, data: ByteArray): Boolean { files[path] = data; return true }
 }
 
 /** Asserts attachments land in `<notes folder>/assets`, the folder git sync stages, for both local and SAF graphs. */
