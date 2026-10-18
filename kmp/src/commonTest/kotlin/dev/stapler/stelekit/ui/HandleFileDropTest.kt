@@ -111,4 +111,11 @@ class HandleFileDropTest {
         assertEquals(error, errorSeen)
         assertNull(attachedMarkdown)
     }
+
+    @Test
+    fun pasteFromClipboard_returnsNull_byDefault_forPlatformsWithoutClipboardImages() = runTest {
+        val service = FakeMediaAttachmentService()
+
+        assertNull(service.pasteFromClipboard(EffectiveNotesPath("/graph")))
+    }
 }

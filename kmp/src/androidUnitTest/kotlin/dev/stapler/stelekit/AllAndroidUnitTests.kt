@@ -13,6 +13,7 @@ import dev.stapler.stelekit.platform.SafPermissionPersistenceTest
 import dev.stapler.stelekit.platform.SafPermissionStateTransitionTest
 import dev.stapler.stelekit.platform.ShadowFileCacheTest
 import dev.stapler.stelekit.platform.UpgradePathTest
+import dev.stapler.stelekit.service.AndroidMediaAttachmentServiceTest
 import dev.stapler.stelekit.platform.security.AndroidCredentialStoreCommitTest
 import dev.stapler.stelekit.platform.security.AndroidCredentialStoreFailsLoudTest
 import dev.stapler.stelekit.platform.sensor.ExifOrientationFixerTest
@@ -34,6 +35,7 @@ import org.junit.runners.Suite
     PlatformFileSystemPickerTest::class,
     PlatformFileSystemSafTest::class,
     PlatformFileSystemUriLogicTest::class,
+    AndroidMediaAttachmentServiceTest::class,
     SafChangeDetectorFileObserverTest::class,
     SafPermissionPersistenceTest::class,
     SafPermissionStateTransitionTest::class,

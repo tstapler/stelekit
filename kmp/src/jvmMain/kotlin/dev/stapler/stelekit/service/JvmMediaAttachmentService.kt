@@ -32,49 +32,7 @@ class JvmMediaAttachmentService : MediaAttachmentService {
         notesPath: EffectiveNotesPath,
         pageRelativePath: String
     ): Either<DomainError, AttachmentResult>? = withContext(PlatformDispatcher.IO) {
-        val selectedFile: File? = showFilePicker()
-        if (selectedFile == null) return@withContext null
-
-        val assetsDir = File(notesPath.child("assets"))
-        try {
-            assetsDir.mkdirs()
-        } catch (e: Exception) {
-            if (e is CancellationException) throw e
-            return@withContext DomainError.AttachmentError.AssetsDirectoryFailed(
-                e.message ?: "unknown"
-            ).left()
-        }
-
-        val stem = selectedFile.nameWithoutExtension
-        val ext = selectedFile.extension
-        val uniqueName = uniqueFileName(assetsDir.toOkioPath(), stem, ext, FileSystem.SYSTEM)
-        val destFile = File(assetsDir, uniqueName)
-        val tmpFile = File(assetsDir, ".tmp-${java.util.UUID.randomUUID()}")
-
-        try {
-            selectedFile.inputStream().use { input ->
-                tmpFile.outputStream().use { output -> input.copyTo(output) }
-            }
-            Files.move(tmpFile.toPath(), destFile.toPath(), StandardCopyOption.ATOMIC_MOVE)
-        } catch (e: java.nio.file.AtomicMoveNotSupportedException) {
-            try {
-                Files.move(tmpFile.toPath(), destFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
-            } catch (e2: Exception) {
-                if (e2 is CancellationException) throw e2
-                tmpFile.delete()
-                return@withContext DomainError.AttachmentError.CopyFailed(
-                    e2.message ?: "move failed"
-                ).left()
-            }
-        } catch (e: Exception) {
-            if (e is CancellationException) throw e
-            tmpFile.delete()
-            return@withContext DomainError.AttachmentError.CopyFailed(
-                e.message ?: "copy failed"
-            ).left()
-        }
-
-        AttachmentResult(relativePath = "../assets/$uniqueName", displayName = uniqueName).right()
+        showFilePicker()?.let { attachExistingFile(it, notesPath) }
     }
 
     /**
