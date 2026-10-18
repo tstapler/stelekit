@@ -83,6 +83,8 @@ import dev.stapler.stelekit.ui.components.MermaidBlockInteractionTest
 import dev.stapler.stelekit.ui.components.MermaidBlockTest
 import dev.stapler.stelekit.ui.components.ParseMarkdownWithStylingTest
 import dev.stapler.stelekit.ui.components.SearchDialogTest
+import dev.stapler.stelekit.ui.components.SteleKitAssetMapperTest
+import dev.stapler.stelekit.ui.components.SteleKitSafPathMapperTest
 import dev.stapler.stelekit.ui.components.SuggestionContextMenuTest
 import dev.stapler.stelekit.ui.components.SuggestionNavigatorPanelTest
 import dev.stapler.stelekit.ui.components.SuggestionRenderBenchmarkTest
@@ -193,6 +195,8 @@ import org.junit.runners.Suite
     MermaidBlockTest::class,
     ParseMarkdownWithStylingTest::class,
     SearchDialogTest::class,
+    SteleKitAssetMapperTest::class,
+    SteleKitSafPathMapperTest::class,
     SuggestionContextMenuTest::class,
     SuggestionNavigatorPanelTest::class,
     SuggestionRenderBenchmarkTest::class,

@@ -12,6 +12,7 @@ import coil3.compose.LocalPlatformContext
 import coil3.map.Mapper
 import coil3.request.Options
 import coil3.toUri
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.platform.FileSystem
 
 /**
@@ -28,11 +29,9 @@ import dev.stapler.stelekit.platform.FileSystem
  * path separator characters (`/`, `\`) to prevent escaping the assets directory.
  */
 class SteleKitAssetMapper(
-    graphRoot: String,
+    private val notesPath: EffectiveNotesPath,
     private val fileSystem: FileSystem? = null,
 ) : Mapper<String, Uri> {
-    private val graphRoot = graphRoot.trimEnd('/')
-
     override fun map(data: String, options: Options): Uri? {
         if (!data.startsWith("../assets/")) return null
         val filename = data.removePrefix("../assets/")
@@ -46,9 +45,9 @@ class SteleKitAssetMapper(
             return null
         }
         // Delegate to platform FileSystem for SAF-backed graphs (returns content:// on Android)
-        fileSystem?.resolveAssetUri(graphRoot, "assets/$filename")
+        fileSystem?.resolveAssetUri(notesPath, "assets/$filename")
             ?.let { return it.toUri() }
-        return "file://$graphRoot/assets/$filename".toUri()
+        return "file://${notesPath.child("assets/$filename")}".toUri()
     }
 }
 
@@ -66,22 +65,22 @@ class SteleKitSafPathMapper(private val fileSystem: FileSystem) : Mapper<String,
 }
 
 /**
- * Returns a Coil [ImageLoader] scoped to the current graph root path.
- * Registers [SteleKitAssetMapper] when [LocalGraphRootPath] is non-null so that
+ * Returns a Coil [ImageLoader] scoped to the current notes folder.
+ * Registers [SteleKitAssetMapper] when [LocalNotesPath] is non-null so that
  * `../assets/<filename>` paths resolve to absolute URIs (content:// for SAF graphs).
  * Registers [SteleKitSafPathMapper] when [LocalFileSystem] is non-null so that
  * full `saf://` paths (used by [ImageAnnotation.filePath]) also resolve correctly.
  */
 @Composable
 fun rememberSteleKitImageLoader(): ImageLoader {
-    val graphRoot = LocalGraphRootPath.current
+    val notesPath = LocalNotesPath.current
     val fileSystem = LocalFileSystem.current
     val context: PlatformContext = LocalPlatformContext.current
-    return remember(graphRoot, fileSystem, context) {
+    return remember(notesPath, fileSystem, context) {
         ImageLoader.Builder(context)
             .components {
-                if (graphRoot != null) {
-                    add(SteleKitAssetMapper(graphRoot, fileSystem))
+                if (notesPath != null) {
+                    add(SteleKitAssetMapper(notesPath, fileSystem))
                 }
                 if (fileSystem != null) {
                     add(SteleKitSafPathMapper(fileSystem))
