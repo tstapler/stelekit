@@ -76,6 +76,7 @@ import dev.stapler.stelekit.ui.OutlinerRegressionTest
 import dev.stapler.stelekit.ui.RecentPagesTest
 import dev.stapler.stelekit.ui.StelekitViewModelLlmSettingsTest
 import dev.stapler.stelekit.ui.StelekitViewModelLoadingTest
+import dev.stapler.stelekit.platform.FileSystemResolveLoadableUriTest
 import dev.stapler.stelekit.ui.components.ApplyAutocompleteSelectionTest
 import dev.stapler.stelekit.ui.components.BlockItemCodeFenceDispatchTest
 import dev.stapler.stelekit.ui.components.MermaidBlockFocusTest
@@ -195,6 +196,7 @@ import org.junit.runners.Suite
     MermaidBlockTest::class,
     ParseMarkdownWithStylingTest::class,
     SearchDialogTest::class,
+    FileSystemResolveLoadableUriTest::class,
     SteleKitAssetMapperTest::class,
     SteleKitSafPathMapperTest::class,
     SuggestionContextMenuTest::class,

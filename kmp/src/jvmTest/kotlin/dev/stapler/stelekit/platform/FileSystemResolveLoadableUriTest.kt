@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.platform
 
 import dev.stapler.stelekit.db.sidecar.FakeFileSystem
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -41,5 +42,9 @@ class FileSystemResolveLoadableUriTest {
 
     @Test fun `empty string returns null`() {
         assertNull(fs.resolveLoadableUri(""))
+    }
+
+    @Test fun `asset uri is null on base FileSystem so callers build a file uri`() {
+        assertNull(fs.resolveAssetUri(EffectiveNotesPath("/home/user/graph"), "assets/photo.jpg"))
     }
 }
