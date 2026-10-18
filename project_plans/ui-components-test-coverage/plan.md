@@ -139,3 +139,16 @@ Tasks are independent — all six test files can be written in parallel. Recomme
 - Do not use `rememberCoroutineScope()` in test helpers; use `CoroutineScope(Dispatchers.Unconfined)` for any scope passed to helpers.
 - For `VaultSettings`, `FolderSyncSettings`, and `SectionsSettings`, the nullable-callback pattern means the composable self-gates: null callback → UI element absent. Tests for the hidden state are cheap and cover branch logic.
 - `ShareContent` date-range validation lives in a local `parseDateRange()` function inside the composable — test it via UI interaction (fill fields + trigger export button) rather than calling it directly.
+
+---
+
+## Amendment: alignment with the 10 backlog criteria
+
+Supersedes the "out of scope" note and Task 4 placement above.
+
+- **Task 4 (revised):** `ShareContentTest` moves to `androidUnitTest` (Robolectric) per backlog AC1; cover scope selector, format toggle, invalid-date error, dismiss callback.
+- **Task 8 (new):** `PerformanceDashboardTest` and `LogDashboardTest` smoke tests (render, assert ≥ 1 text node) targeting ≥ 30% lines each (AC6).
+- **Task 9 (new):** extend `ShareInboxPanelTest` with a NeedsNewerApp status row and a quarantine-confirm dialog (AC7).
+- **Task 10 (revised gate):** run `jacocoTestReport` plus the Android unit-test report, merge, and report real `ui.components` line coverage vs the 60% target (AC8). If the merge isn't achievable or the number falls short, mark AC8 `/backlog/fail-7` with the measured figure rather than claiming it.
+- **Test-writing note:** Robolectric's default 320x470 px screen clips unscrollable columns (verified: VaultSettings "Cancel" had zero height, so submit never fired). Use `@Config(qualifiers = "w480dp-h1600dp")`.
+- **Order:** Task 4, Task 9, Task 1 (done, 13 tests green), Tasks 2, 3, 5, then 8, 6, 10.

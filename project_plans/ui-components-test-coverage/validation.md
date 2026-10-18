@@ -103,6 +103,23 @@ for the established pattern).
 - **PerformanceDashboard / LogDashboard remain at 0%:** Explicitly accepted. High line count,
   pure diagnostic rendering, no user-data state machines.
 
+## Re-validation against the 10 backlog criteria
+
+| Backlog AC | Plan task | Status |
+|---|---|---|
+| 1 ShareContent ≥ 60% | Task 4 (revised, Robolectric) | FEASIBLE; needs viewModel-free harness check |
+| 2 VaultSettings ≥ 60% | Task 1 | Tests written, 13 green; coverage % not yet measured |
+| 3 SectionsSettings ≥ 50% | Task 3 | Tests written, not yet run (gradle build-cache lock contention) |
+| 4 FolderSyncSettings ≥ 50% | Task 2 | Planned |
+| 5 AutocompleteMenu ≥ 60% jvmTest | Task 5 | Planned; Popup caveat (Challenge 4) |
+| 6 Dashboards ≥ 30% | Task 8 | Planned (added) |
+| 7 ShareInboxPanel +5% branch | Task 9 | Planned (added) |
+| 8 Package ≥ 60% merged | Task 10 | AT RISK: needs measurement; fail-with-figure if short |
+| 9 Headless, RobolectricTestRunner | all | FEASIBLE |
+| 10 No broken/ignored tests | all | FEASIBLE (new files only) |
+
+**Readiness gate: PASS (with AC8 flagged at risk).** Every criterion maps to a task; no blockers.
+
 ## Estimate Summary
 
 | Task | Estimate | Category |

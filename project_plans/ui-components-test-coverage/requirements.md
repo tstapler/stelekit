@@ -87,3 +87,16 @@ AC-6: `ReferencesPanelTest` exists (or is extended) in `jvmTest` to raise line c
 AC-7: All new tests pass `bazel test //kmp:jvm_tests` (jvmTest targets) or `./gradlew testDebugUnitTest` (androidUnitTest targets) without a display (Robolectric tests are headless).
 
 AC-8: No source-code modifications — tests only interact with already-public composable signatures and fake/in-memory dependencies.
+
+## Amendment (supersedes conflicting text above)
+
+The backlog item's 10 criteria are authoritative. Where the sections above conflict, these win:
+
+- Dashboards are IN scope (backlog AC6): `PerformanceDashboard` and `LogDashboard` each need ≥ 30% line coverage via smoke tests (renders without crash, asserts ≥ 1 text node). Goal 4 / Non-Goal exclusion above is withdrawn.
+- `ShareInboxPanel` is IN scope (backlog AC7): extend `ShareInboxPanelTest` with a NeedsNewerApp status row and a quarantine-confirm dialog; branch coverage +≥ 5%.
+- `ShareContent` tests go in `androidUnitTest` (Robolectric), per backlog AC1: scope selector, format toggle, journal-date validation error, dismiss callback. Targets ≥ 60% lines.
+- `VaultSettings` ≥ 60%, `AutocompleteMenu` ≥ 60% (jvmTest), `SectionsSettings` ≥ 50%, `FolderSyncSettings` ≥ 50% (backlog AC2-5).
+- Overall `ui.components` ≥ 60% lines in merged jacoco (backlog AC8) — measured, not assumed; see plan Task 10.
+- Robolectric tests use `@RunWith(RobolectricTestRunner::class)`; no existing test is broken, skipped or `@Ignore`d (backlog AC9-10).
+- Robolectric screens default to 320x470 px and clip unscrollable settings columns; tests use `@Config(qualifiers = "w480dp-h1600dp")`.
+- Priority order: ShareContent, ShareInboxPanel, VaultSettings, then FolderSync/Sections/Autocomplete, then dashboards.
