@@ -15,6 +15,7 @@ import dev.stapler.stelekit.db.DiffMergeTest
 import dev.stapler.stelekit.db.ExternalChangeConflictTest
 import dev.stapler.stelekit.db.FileRegistryTest
 import dev.stapler.stelekit.db.GraphLoaderIntegrationTest
+import dev.stapler.stelekit.db.GraphLoaderNotesPathTest
 import dev.stapler.stelekit.db.GraphLoaderProgressiveTest
 import dev.stapler.stelekit.db.GraphLoaderSectionFilterTest
 import dev.stapler.stelekit.db.GraphLoaderTest
@@ -133,6 +134,7 @@ import org.junit.runners.Suite
     ExternalChangeConflictTest::class,
     FileRegistryTest::class,
     GraphLoaderIntegrationTest::class,
+    GraphLoaderNotesPathTest::class,
     GraphLoaderProgressiveTest::class,
     GraphLoaderSectionFilterTest::class,
     GraphLoaderTest::class,
