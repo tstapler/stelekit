@@ -21,6 +21,7 @@ import dev.stapler.stelekit.db.GraphLoaderSectionFilterTest
 import dev.stapler.stelekit.db.GraphLoaderTest
 import dev.stapler.stelekit.sections.SectionFilterTest
 import dev.stapler.stelekit.sections.SectionManifestParserTest
+import dev.stapler.stelekit.sections.NotesFolderMetadataStoresTest
 import dev.stapler.stelekit.db.GraphLoaderWatcherTest
 import dev.stapler.stelekit.db.GraphWriterTest
 import dev.stapler.stelekit.db.MigrationRunnerApplyAllTest
@@ -140,6 +141,7 @@ import org.junit.runners.Suite
     GraphLoaderTest::class,
     SectionFilterTest::class,
     SectionManifestParserTest::class,
+    NotesFolderMetadataStoresTest::class,
     GraphLoaderWatcherTest::class,
     GraphWriterTest::class,
     MigrationRunnerApplyAllTest::class,

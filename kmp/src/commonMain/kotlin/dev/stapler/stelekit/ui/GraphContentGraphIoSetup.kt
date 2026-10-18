@@ -4,6 +4,7 @@
 
 package dev.stapler.stelekit.ui
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -86,7 +87,7 @@ private fun rememberImageIoSetup(
     graphContentLogger: Logger,
 ): ImageIoSetup {
     val sidecarManager = remember(activeGraphPath, effectiveFileSystem) {
-        val graphPath = activeGraphPath.ifEmpty { null }
+        val graphPath = activeGraphPath.ifEmpty { null }?.let(::EffectiveNotesPath)
         if (graphPath != null) SidecarManager(effectiveFileSystem, graphPath) else null
     }
     val imageSidecarManager = remember(activeGraphPath, effectiveFileSystem) {
@@ -129,7 +130,7 @@ private suspend fun reindexImageSidecarsIfEmpty(
         fileSystem = effectiveFileSystem,
         imageAnnotationRepository = repos.imageAnnotationRepository,
         measurementAnnotationRepository = repos.measurementAnnotationRepository,
-    ).rebuildFromSidecars(activeGraphPath)
+    ).rebuildFromSidecars(EffectiveNotesPath(activeGraphPath))
         .onLeft { err -> graphContentLogger.warn("Sidecar reindex failed: ${err.message}") }
 }
 

@@ -138,7 +138,7 @@ class ImageAnnotationOfflineTest {
         assertIs<Either.Right<Unit>>(writeResult, "Sidecar write failed: $writeResult")
 
         // Read — must not call any network
-        val readResult = sidecarManager.readSidecar("/graph", "uuid-sidecar-offline")
+        val readResult = sidecarManager.readSidecar(EffectiveNotesPath("/graph"), "uuid-sidecar-offline")
         assertIs<Either.Right<*>>(readResult, "Sidecar read failed: $readResult")
         assertNotNull(readResult.value) { "Sidecar content should not be null after write" }
     }

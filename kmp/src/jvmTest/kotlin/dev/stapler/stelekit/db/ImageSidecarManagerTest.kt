@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.db
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import arrow.core.Either
 import dev.stapler.stelekit.db.sidecar.FakeFileSystem
 import dev.stapler.stelekit.db.sidecar.ImageSidecarIndexer
@@ -49,7 +50,7 @@ class ImageSidecarManagerTest {
         val writeResult = manager.writeSidecar(ann, measurements)
         assertIs<Either.Right<Unit>>(writeResult)
 
-        val readResult = manager.readSidecar("/graph", ann.uuid)
+        val readResult = manager.readSidecar(EffectiveNotesPath("/graph"), ann.uuid)
         assertIs<Either.Right<SidecarFile?>>(readResult)
         val sidecar = readResult.value
         assertNotNull(sidecar)
@@ -73,7 +74,7 @@ class ImageSidecarManagerTest {
     fun readSidecar_should_returnNullRight_when_fileDoesNotExist() {
         val fs = FakeFileSystem()
         val manager = ImageSidecarManager(fs)
-        val readResult = manager.readSidecar("/graph", "non-existent-uuid")
+        val readResult = manager.readSidecar(EffectiveNotesPath("/graph"), "non-existent-uuid")
         assertIs<Either.Right<SidecarFile?>>(readResult)
         assertNull(readResult.value)
     }
@@ -102,7 +103,7 @@ class ImageSidecarIndexerTest {
         val measurementRepo = InMemoryMeasurementAnnotationRepository()
         val indexer = ImageSidecarIndexer(fs, imageRepo, measurementRepo)
 
-        val result = indexer.rebuildFromSidecars("/graph")
+        val result = indexer.rebuildFromSidecars(EffectiveNotesPath("/graph"))
         assertIs<Either.Right<Int>>(result)
         assertEquals(3, result.value)
 
@@ -118,7 +119,7 @@ class ImageSidecarIndexerTest {
         val measurementRepo = InMemoryMeasurementAnnotationRepository()
         val indexer = ImageSidecarIndexer(fs, imageRepo, measurementRepo)
 
-        val result = indexer.rebuildFromSidecars("/graph")
+        val result = indexer.rebuildFromSidecars(EffectiveNotesPath("/graph"))
         assertIs<Either.Right<Int>>(result)
         assertEquals(0, result.value)
     }

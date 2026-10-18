@@ -27,6 +27,7 @@ kt_jvm_library(
         "dev/stapler/stelekit/migration/DslEvaluatorTest.kt",
         "dev/stapler/stelekit/migration/MigrationDslTest.kt",
         "dev/stapler/stelekit/search/FtsQueryBuilderTest.kt",
+        "dev/stapler/stelekit/sections/NotesFolderMetadataStoresTest.kt",
         "dev/stapler/stelekit/sections/SectionFilterTest.kt",
         "dev/stapler/stelekit/sections/SectionManifestParserTest.kt",
         "dev/stapler/stelekit/stats/LibraryStatsProviderTest.kt",

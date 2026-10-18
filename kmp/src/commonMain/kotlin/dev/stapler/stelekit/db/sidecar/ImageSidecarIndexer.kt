@@ -5,6 +5,7 @@ import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.ImageAnnotationRepository
@@ -30,15 +31,15 @@ class ImageSidecarIndexer(
     private val json = Json { ignoreUnknownKeys = true }
 
     /**
-     * Scan all `.measure.json` files under `<graphPath>/.stelekit/images/` and upsert
+     * Scan all `.measure.json` files under `<notesPath>/.stelekit/images/` and upsert
      * each into the repository.
      *
      * Returns the number of sidecars successfully upserted, or [DomainError] on a
      * hard failure (individual parse errors are logged and skipped).
      */
     @OptIn(DirectRepositoryWrite::class)
-    suspend fun rebuildFromSidecars(graphPath: String): Either<DomainError, Int> {
-        val imagesDir = "$graphPath/.stelekit/images"
+    suspend fun rebuildFromSidecars(notesPath: EffectiveNotesPath): Either<DomainError, Int> {
+        val imagesDir = notesPath.child(".stelekit/images")
         if (!fileSystem.directoryExists(imagesDir)) {
             logger.info("ImageSidecarIndexer: no sidecar directory at $imagesDir, nothing to rebuild")
             return 0.right()

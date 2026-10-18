@@ -4,13 +4,13 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.platform.FileSystem
 import kotlinx.coroutines.CancellationException
 class SectionManifestWriter(private val fileSystem: FileSystem) {
 
-    fun write(graphPath: String, manifest: SectionManifest): Either<DomainError, Unit> {
-        val base = if (graphPath.endsWith("/")) graphPath else "$graphPath/"
-        val path = "$base${SectionManifest.FILENAME}"
+    fun write(notesPath: EffectiveNotesPath, manifest: SectionManifest): Either<DomainError, Unit> {
+        val path = notesPath.child(SectionManifest.FILENAME)
         return try {
             val content = encodeSectionManifestToml(manifest)
             if (fileSystem.writeFile(path, content)) Unit.right()
