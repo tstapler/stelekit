@@ -83,6 +83,7 @@ import dev.stapler.stelekit.ui.components.MermaidBlockFocusTest
 import dev.stapler.stelekit.ui.components.MermaidBlockInteractionTest
 import dev.stapler.stelekit.ui.components.MermaidBlockTest
 import dev.stapler.stelekit.ui.components.ParseMarkdownWithStylingTest
+import dev.stapler.stelekit.ui.components.RememberSteleKitImageLoaderTest
 import dev.stapler.stelekit.ui.components.SearchDialogTest
 import dev.stapler.stelekit.ui.components.SteleKitAssetMapperTest
 import dev.stapler.stelekit.ui.components.SteleKitSafPathMapperTest
@@ -198,6 +199,7 @@ import org.junit.runners.Suite
     SearchDialogTest::class,
     FileSystemResolveLoadableUriTest::class,
     SteleKitAssetMapperTest::class,
+    RememberSteleKitImageLoaderTest::class,
     SteleKitSafPathMapperTest::class,
     SuggestionContextMenuTest::class,
     SuggestionNavigatorPanelTest::class,
