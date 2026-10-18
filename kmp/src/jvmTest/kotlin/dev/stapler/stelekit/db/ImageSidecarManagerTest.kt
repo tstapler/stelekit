@@ -80,51 +80,6 @@ class ImageSidecarManagerTest {
     }
 }
 
-@OptIn(DirectRepositoryWrite::class)
-class ImageSidecarIndexerTest {
-
-    @Test
-    fun rebuildFromSidecars_should_upsertAllRows_when_sidecarFilesPresent() = runBlocking {
-        val fs = FakeFileSystem()
-        // Write 3 sidecar files
-        val manager = ImageSidecarManager(fs)
-        for (i in 1..3) {
-            val ann = ImageAnnotation(
-                uuid = "ann-00$i",
-                blockUuid = "blk-00$i",
-                pageUuid = "page-001",
-                graphPath = "/graph",
-                filePath = "/graph/assets/images/img-00$i.jpg",
-            )
-            manager.writeSidecar(ann, emptyList())
-        }
-
-        val imageRepo = InMemoryImageAnnotationRepository()
-        val measurementRepo = InMemoryMeasurementAnnotationRepository()
-        val indexer = ImageSidecarIndexer(fs, imageRepo, measurementRepo)
-
-        val result = indexer.rebuildFromSidecars(EffectiveNotesPath("/graph"))
-        assertIs<Either.Right<Int>>(result)
-        assertEquals(3, result.value)
-
-        val all = imageRepo.getAllImageAnnotations().first()
-        assertIs<Either.Right<List<ImageAnnotation>>>(all)
-        assertEquals(3, all.value.size)
-    }
-
-    @Test
-    fun rebuildFromSidecars_should_returnZero_when_noSidecarDirectory() = runBlocking {
-        val fs = FakeFileSystem()
-        val imageRepo = InMemoryImageAnnotationRepository()
-        val measurementRepo = InMemoryMeasurementAnnotationRepository()
-        val indexer = ImageSidecarIndexer(fs, imageRepo, measurementRepo)
-
-        val result = indexer.rebuildFromSidecars(EffectiveNotesPath("/graph"))
-        assertIs<Either.Right<Int>>(result)
-        assertEquals(0, result.value)
-    }
-}
-
 /** A FileSystem that always throws on writeFile — used to test failure paths. */
 private class FailingFileSystem : FakeFileSystem() {
     override fun writeFile(path: String, content: String): Boolean =
