@@ -705,7 +705,7 @@ class StelekitViewModel(
 
                     withContext(Dispatchers.Default) {
                         graphLoader.loadGraphProgressive(
-                            graphPath = path,
+                            notesPath = dev.stapler.stelekit.model.EffectiveNotesPath(path),
                             immediateJournalCount = 10,
                             onProgress = { status ->
                                 _uiState.update { it.copy(statusMessage = status) }

@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.db
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.platform.FileSystem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -129,7 +130,7 @@ class GraphFileWatcherTest {
         val fixture = buildWatcher(fileSystem, onReloadFile = { _, _ -> reloadCalled = true })
         val watcher = fixture.watcher
 
-        watcher.startWatching(graphPath)
+        watcher.startWatching(EffectiveNotesPath(graphPath))
         // Prime the registry: without this, the first poll classifies the file as NEW and
         // calls onReloadFile directly, bypassing externalFileChanges entirely.
         fixture.registry.scanDirectory("$graphPath/pages")
@@ -173,7 +174,7 @@ class GraphFileWatcherTest {
         val fixture = buildWatcher(fileSystem, onReloadFile = { _, _ -> reloadCalled = true })
         val watcher = fixture.watcher
 
-        watcher.startWatching(graphPath)
+        watcher.startWatching(EffectiveNotesPath(graphPath))
         fixture.registry.scanDirectory("$graphPath/pages")
 
         fileSystem.addFile(filePath, "- Changed externally\n", initialModTime + 5000L)
@@ -201,7 +202,7 @@ class GraphFileWatcherTest {
         val fileSystem = WatcherFakeFileSystem()
         val fixture = buildWatcher(fileSystem, onReloadFile = { _, _ -> })
 
-        fixture.watcher.startWatching("/graph")
+        fixture.watcher.startWatching(EffectiveNotesPath("/graph"))
         fixture.watcher.close()
         fixture.watcher.close() // second close must not throw
     }
@@ -220,7 +221,7 @@ class GraphFileWatcherTest {
         val fixture = buildWatcher(fileSystem, onReloadFile = { _, _ -> reloadCalled = true })
         val watcher = fixture.watcher
 
-        watcher.startWatching(graphPath)
+        watcher.startWatching(EffectiveNotesPath(graphPath))
         fixture.registry.scanDirectory("$graphPath/pages")
         watcher.close()
 
@@ -248,7 +249,7 @@ class GraphFileWatcherTest {
         val fixture = buildWatcher(fileSystem, onReloadFile = { _, _ -> reloadCalled = true })
         val watcher = fixture.watcher
 
-        watcher.startWatching(graphPath)
+        watcher.startWatching(EffectiveNotesPath(graphPath))
         fixture.registry.scanDirectory("$graphPath/pages")
         watcher.beginGitMerge(listOf(filePath))
 
@@ -275,7 +276,7 @@ class GraphFileWatcherTest {
         val fixture = buildWatcher(fileSystem, onReloadFile = { _, _ -> })
         val watcher = fixture.watcher
 
-        watcher.startWatching(graphPath)
+        watcher.startWatching(EffectiveNotesPath(graphPath))
         fixture.registry.scanDirectory("$graphPath/pages")
         watcher.beginGitMerge(listOf(filePath))
         watcher.endGitMerge()
@@ -321,7 +322,7 @@ class GraphFileWatcherTest {
         )
         val watcher = fixture.watcher
 
-        watcher.startWatching(graphPath)
+        watcher.startWatching(EffectiveNotesPath(graphPath))
         fixture.registry.scanDirectory("$graphPath/pages")
 
         // Simulate external edit
@@ -359,7 +360,7 @@ class GraphFileWatcherTest {
         )
         val watcher = fixture.watcher
 
-        watcher.startWatching(graphPath)
+        watcher.startWatching(EffectiveNotesPath(graphPath))
         fixture.registry.scanDirectory("$graphPath/pages")
 
         val collectJob = launch {
@@ -405,7 +406,7 @@ class GraphFileWatcherTest {
         )
         val watcher = fixture.watcher
 
-        watcher.startWatching(graphPath)
+        watcher.startWatching(EffectiveNotesPath(graphPath))
         fixture.registry.scanDirectory("$graphPath/journals")
 
         // External tool writes to the journal while user is viewing it (no edits)
@@ -441,7 +442,7 @@ class GraphFileWatcherTest {
         )
         val watcher = fixture.watcher
 
-        watcher.startWatching(graphPath)
+        watcher.startWatching(EffectiveNotesPath(graphPath))
         fixture.registry.scanDirectory("$graphPath/journals")
 
         fileSystem.addFile(journalFilePath, "- External addition\n", 2000L)
@@ -467,7 +468,7 @@ class GraphFileWatcherTest {
 
         assertFalse(watcher.isRunning, "isRunning must be false before startWatching")
 
-        watcher.startWatching("/graph")
+        watcher.startWatching(EffectiveNotesPath("/graph"))
         assertTrue(watcher.isRunning, "isRunning must be true after startWatching")
 
         watcher.stopWatching()
@@ -500,7 +501,7 @@ class GraphFileWatcherTest {
         )
         val watcher = fixture.watcher
 
-        watcher.startWatching(graphPath)
+        watcher.startWatching(EffectiveNotesPath(graphPath))
         fixture.registry.scanDirectory("$graphPath/pages")
 
         fileSystem.addFile(filePath, "- V2\n", 2000L)

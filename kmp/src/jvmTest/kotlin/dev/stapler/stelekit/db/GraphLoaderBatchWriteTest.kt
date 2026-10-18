@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.db
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import arrow.core.Either
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
@@ -152,7 +153,7 @@ class GraphLoaderBatchWriteTest {
 
         val path = "/graph/pages/batch-test.md"
         fs.files[path] = ""
-        loader.setGraphPath("/graph")
+        loader.setGraphPath(EffectiveNotesPath("/graph"))
 
         // V1: 10 blocks
         val v1Content = (1..10).joinToString("\n") { "- Block $it version-one" }
@@ -225,7 +226,7 @@ class GraphLoaderBatchWriteTest {
 
         val path = "/graph/pages/meta-test.md"
         fs.files[path] = ""
-        loader.setGraphPath("/graph")
+        loader.setGraphPath(EffectiveNotesPath("/graph"))
 
         // Parse 5 top-level blocks in METADATA_ONLY mode (creates stub blocks)
         val content = (1..5).joinToString("\n") { "- Block $it stub" }

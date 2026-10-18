@@ -2,6 +2,7 @@
 
 package dev.stapler.stelekit.db
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.repository.GraphBackend
@@ -63,7 +64,7 @@ class MoveInProgressFlagWatcherIntegrationTest {
         val loader = repoSet.createGraphLoader(fileSystem, graphId = graphId, watcherPollIntervalMs = 100L)
 
         File(graphDir, "pages/Watched.md").writeText("- Original content\n")
-        loader.loadGraph(graphDir.absolutePath) {}
+        loader.loadGraph(EffectiveNotesPath(graphDir.absolutePath)) {}
 
         val page = repoSet.pageRepository.getAllPagesSnapshot().getOrNull()
             ?.firstOrNull { it.name.contains("Watched", ignoreCase = true) }

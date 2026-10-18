@@ -111,7 +111,7 @@ class OffGraphReconcileRegressionTest {
         val changes = CopyOnWriteArrayList<ExternalFileChange>()
         val collector = CoroutineScope(Dispatchers.Default).launch { loader.externalFileChanges.collect { changes += it } }
         delay(50) // let the collector subscribe before any watcher tick can emit
-        loader.loadGraphProgressive(root.absolutePath, 10, {}, {}, {})
+        loader.loadGraphProgressive(EffectiveNotesPath(root.absolutePath), 10, {}, {}, {})
         delay(1_000) // warm-start reconcile runs on a background job; also lets >= 8 watcher polls fire
         loader.indexRemainingPages {}
         delay(800)

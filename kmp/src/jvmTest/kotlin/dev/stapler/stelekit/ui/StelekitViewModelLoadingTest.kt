@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.ui
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import arrow.core.Either
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.ExternalFileChange
@@ -324,7 +325,7 @@ class StelekitViewModelLoadingTest {
         override fun setCryptoLayer(layer: CryptoLayer?) = Unit
         override fun closeAndClearCryptoLayer() = Unit
         override suspend fun loadGraphProgressive(
-            graphPath: String,
+            notesPath: EffectiveNotesPath,
             immediateJournalCount: Int,
             onProgress: (String) -> Unit,
             onPhase1Complete: () -> Unit,

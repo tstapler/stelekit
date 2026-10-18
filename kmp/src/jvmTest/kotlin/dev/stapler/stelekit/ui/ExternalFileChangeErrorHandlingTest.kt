@@ -58,7 +58,7 @@ class ExternalFileChangeErrorHandlingTest {
         override fun setCryptoLayer(layer: CryptoLayer?) {}
         override fun closeAndClearCryptoLayer() {}
         override suspend fun loadGraphProgressive(
-            graphPath: String,
+            notesPath: EffectiveNotesPath,
             immediateJournalCount: Int,
             onProgress: (String) -> Unit,
             onPhase1Complete: () -> Unit,

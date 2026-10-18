@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.ui.screenshots
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import io.github.takahirom.roborazzi.captureRoboImage
@@ -130,7 +131,7 @@ class JournalsViewScreenshotTest {
         val phase1Done = CompletableDeferred<Unit>()
         loadScope.launch {
             graphLoader.loadGraphProgressive(
-                graphPath = graphPath,
+                notesPath = EffectiveNotesPath(graphPath),
                 immediateJournalCount = 5,
                 onProgress = { },
                 onPhase1Complete = { phase1Done.complete(Unit) },

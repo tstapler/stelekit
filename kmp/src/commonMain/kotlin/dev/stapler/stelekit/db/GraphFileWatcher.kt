@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.db
 
 import dev.stapler.stelekit.logging.Logger
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.platform.FileSystem
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -110,13 +111,13 @@ class GraphFileWatcher(
     private val gitMergeSuppressedFiles = mutableSetOf<String>()
 
     /**
-     * Starts watching [graphPath] for file changes.
+     * Starts watching [notesPath] for file changes.
      * Cancels any previous watcher before starting a new one.
      */
-    fun startWatching(graphPath: String) {
+    fun startWatching(notesPath: EffectiveNotesPath) {
         fileSystem.stopExternalChangeDetection()
         scheduler?.stop()
-        logger.info("Started watching graph for changes: $graphPath")
+        logger.info("Started watching graph for changes: ${notesPath.value}")
 
         val newScheduler = ChangeDetectionScheduler(baseIntervalMs = pollIntervalMs) {
             // Early-exit for a graph currently mid-relocate/link: its files are being moved out
@@ -133,8 +134,8 @@ class GraphFileWatcher(
             // see ChangeDetectionScheduler's class doc comment for why that matters on
             // Android, where a SAF/DocumentsProvider query can lag behind a write that
             // already landed on disk.
-            val pagesChanged = checkDirectoryForChanges("$graphPath/pages")
-            val journalsChanged = checkDirectoryForChanges("$graphPath/journals")
+            val pagesChanged = checkDirectoryForChanges(notesPath.pagesDir())
+            val journalsChanged = checkDirectoryForChanges(notesPath.journalsDir())
             RescanOutcome(foundChange = pagesChanged || journalsChanged)
         }
         scheduler = newScheduler
