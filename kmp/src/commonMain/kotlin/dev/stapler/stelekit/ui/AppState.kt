@@ -24,6 +24,7 @@ import dev.stapler.stelekit.sections.SectionManifest
 import dev.stapler.stelekit.sections.SectionState
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
 import dev.stapler.stelekit.ui.i18n.Language
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /** Vault unlock state for paranoid-mode graphs. */
 sealed interface VaultState {
@@ -190,6 +191,7 @@ data class AppState(
     val shareJournalToDate: LocalDate? = null,
     val shareIsGoogleAuthenticated: Boolean = false,
     val shareGoogleEmail: String? = null,
+    val shareStripTrackingParams: Boolean = false,
     val isExportingToDrive: Boolean = false,
     // Section support
     val currentManifest: SectionManifest? = null,
@@ -282,3 +284,10 @@ data class PendingConflict(
     val previousContent: String,
     val pageExistedLocally: Boolean,
 )
+
+/**
+ * [AppState.currentGraphPath] as the typed notes folder. The UI stores it as a string, but it is always the
+ * active graph's notes folder (see `GraphManager.mirrorActiveNotesPath`), so this is the one place that
+ * string becomes an [EffectiveNotesPath] for page writers.
+ */
+val AppState.currentNotesPath: EffectiveNotesPath? get() = currentGraphPath?.let(::EffectiveNotesPath)

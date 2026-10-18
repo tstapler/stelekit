@@ -29,6 +29,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Clock
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * Tests for the disk-conflict resolution flow (Fix 3):
@@ -91,7 +92,7 @@ class DiskConflictResolutionTest {
         val searchRepo = InMemorySearchRepository()
         @Suppress("DEPRECATION")
         val graphWriter = GraphWriter(PlatformFileSystem(), pageRepository = pageRepo).also {
-            it.currentEpoch = GraphEpoch(GraphId("disk-conflict-test"), graphPath = "", sequence = 1L)
+            it.currentEpoch = GraphEpoch(GraphId("disk-conflict-test"), graphPath = EffectiveNotesPath(""), sequence = 1L)
         }
         var viewModelRef: StelekitViewModel? = null
         val bsm = BlockStateManager(
@@ -100,7 +101,7 @@ class DiskConflictResolutionTest {
             scope = scope,
             graphWriter = graphWriter,
             pageRepository = pageRepo,
-            graphPathProvider = { viewModelRef?.uiState?.value?.currentGraphPath ?: "" }
+            graphPathProvider = { EffectiveNotesPath(viewModelRef?.uiState?.value?.currentGraphPath ?: "") }
         )
         return StelekitViewModel(
             StelekitViewModelDependencies(
@@ -129,7 +130,7 @@ class DiskConflictResolutionTest {
         val searchRepo = InMemorySearchRepository()
         @Suppress("DEPRECATION")
         val graphWriter = GraphWriter(PlatformFileSystem(), pageRepository = pageRepo).also {
-            it.currentEpoch = GraphEpoch(GraphId("disk-conflict-test"), graphPath = "", sequence = 1L)
+            it.currentEpoch = GraphEpoch(GraphId("disk-conflict-test"), graphPath = EffectiveNotesPath(""), sequence = 1L)
         }
         var viewModelRef: StelekitViewModel? = null
         val bsm = BlockStateManager(
@@ -138,7 +139,7 @@ class DiskConflictResolutionTest {
             scope = scope,
             graphWriter = graphWriter,
             pageRepository = pageRepo,
-            graphPathProvider = { viewModelRef?.uiState?.value?.currentGraphPath ?: "" }
+            graphPathProvider = { EffectiveNotesPath(viewModelRef?.uiState?.value?.currentGraphPath ?: "") }
         )
         val vm = StelekitViewModel(
             StelekitViewModelDependencies(
@@ -955,7 +956,7 @@ class DiskConflictResolutionTest {
             // Dispatchers.IO pool, whose scheduling latency under CI's maxParallelForks CPU
             // contention could exceed the withTimeout budget below even with instant fake work.
             val graphWriter = GraphWriter(fs, pageRepository = pageRepo, ioDispatcher = Dispatchers.Unconfined).also {
-                it.currentEpoch = GraphEpoch(GraphId("disk-conflict-rename-test"), graphPath = tempDir.absolutePath, sequence = 1L)
+                it.currentEpoch = GraphEpoch(GraphId("disk-conflict-rename-test"), graphPath = EffectiveNotesPath(tempDir.absolutePath), sequence = 1L)
             }
             val scope = CoroutineScope(Dispatchers.Unconfined)
             val writeActor = dev.stapler.stelekit.db.DatabaseWriteActor(blockRepo, pageRepo, scope = scope)
@@ -967,7 +968,7 @@ class DiskConflictResolutionTest {
                 scope = scope,
                 graphWriter = graphWriter,
                 pageRepository = pageRepo,
-                graphPathProvider = { viewModelRef?.uiState?.value?.currentGraphPath ?: "" }
+                graphPathProvider = { EffectiveNotesPath(viewModelRef?.uiState?.value?.currentGraphPath ?: "") }
             )
             val vm = StelekitViewModel(
                 StelekitViewModelDependencies(

@@ -13,6 +13,7 @@ import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.repository.RepositorySet
 import kotlinx.coroutines.flow.first
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /** Result of [JournalAppender.append]; idempotent on `captureId`. */
 sealed interface AppendOutcome {
@@ -20,7 +21,7 @@ sealed interface AppendOutcome {
     data class Appended(
         val saved: CaptureResult.Saved,
         val graphId: GraphId,
-        val graphPath: String,
+        val graphPath: EffectiveNotesPath,
         val repoSet: RepositorySet,
         val writer: GraphWriter,
     ) : AppendOutcome
@@ -136,7 +137,7 @@ class JournalAppender(
     ): AppendOutcome {
         val noGraph = AppendOutcome.Failed("No active graph", CaptureResult.NoActiveGraph)
         val repoSet = graphManager.getActiveRepositorySet() ?: return noGraph
-        val graphPath = graphManager.getActiveGraphInfo()?.path ?: return noGraph
+        val graphPath = graphManager.getActiveNotesPath() ?: return noGraph
         val graphId = graphManager.getActiveGraphId() ?: return noGraph
 
         val writer = writerFactory(repoSet)
@@ -157,7 +158,7 @@ class JournalAppender(
      * The DB row can outlive a failed page flush, so [AppendOutcome.AlreadyPresent] is only reported once
      * the page file has been re-flushed with the block; otherwise the caller (inbox drain) keeps the item.
      */
-    private suspend fun confirmFlushed(repoSet: RepositorySet, block: Block, graphPath: String, writer: GraphWriter): AppendOutcome {
+    private suspend fun confirmFlushed(repoSet: RepositorySet, block: Block, graphPath: EffectiveNotesPath, writer: GraphWriter): AppendOutcome {
         val page = repoSet.pageRepository.getPageByUuid(block.pageUuid).first().getOrNull()
             ?: return AppendOutcome.Failed("Page for an existing capture is missing")
         val blocks = repoSet.blockRepository.getBlocksForPage(page.uuid).first().getOrNull().orEmpty()

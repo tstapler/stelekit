@@ -120,10 +120,10 @@ class SteleKitApplication : Application() {
         val services = shareServices() ?: return "this device can't save to a graph that isn't open."
         return try {
             kotlinx.coroutines.withContext(Dispatchers.IO) {
-                if (!fileSystem.directoryExists(info.path)) return@withContext "its folder is missing."
+                if (!fileSystem.directoryExists(info.effectiveNotesPath.value)) return@withContext "its folder is missing."
                 val storage = graphManager?.getStorageLocation(info.id.value)
                 val target = dev.stapler.stelekit.merge.OffGraphTarget(
-                    info.id, info.path, isActive = false, encrypted = info.isParanoidMode, storage = storage,
+                    info.id, info.effectiveNotesPath, isActive = false, encrypted = info.isParanoidMode, storage = storage,
                 )
                 services.capabilities.canWriteOffGraph(target).fold({ it.userText }, { null })
             }

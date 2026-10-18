@@ -32,6 +32,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * Story 6.6 — Device profile tests (FR-12).
@@ -83,7 +84,7 @@ class DeviceProfileTest {
         override fun setCryptoLayer(layer: CryptoLayer?) {}
         override fun closeAndClearCryptoLayer() {}
         override suspend fun loadGraphProgressive(
-            graphPath: String,
+            notesPath: EffectiveNotesPath,
             immediateJournalCount: Int,
             onProgress: (String) -> Unit,
             onPhase1Complete: () -> Unit,
@@ -107,8 +108,8 @@ class DeviceProfileTest {
         override fun startAutoSave(debounceMs: Long) {}
         override fun stopAutoSave() {}
         override suspend fun flush() {}
-        override suspend fun renamePage(page: Page, newName: String, graphPath: String) = true
-        override suspend fun savePage(page: Page, blocks: List<Block>, graphPath: String): Either<DomainError, Unit> = Unit.right()
+        override suspend fun renamePage(page: Page, newName: String, graphPath: EffectiveNotesPath) = true
+        override suspend fun savePage(page: Page, blocks: List<Block>, graphPath: EffectiveNotesPath): Either<DomainError, Unit> = Unit.right()
         override suspend fun deletePage(page: Page) = true
         override suspend fun movePageToSection(
             page: Page,

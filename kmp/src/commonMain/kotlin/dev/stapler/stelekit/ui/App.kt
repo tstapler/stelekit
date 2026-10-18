@@ -201,7 +201,7 @@ private fun RegisterActiveWriteHooks(
     graphId: GraphId?,
     graphWriter: dev.stapler.stelekit.db.GraphWriter,
     fileSystem: FileSystem,
-    graphPath: String?,
+    graphPath: dev.stapler.stelekit.model.EffectiveNotesPath?,
     blockStateManager: dev.stapler.stelekit.ui.state.BlockStateManager,
 ) {
     if (hooks == null || graphId == null || graphPath == null) return
@@ -276,6 +276,8 @@ private fun rememberGraphManagerState(
  * don't force a graph switch (and an unnecessary migration cycle) on every launch when the user
  * has already chosen a different graph.
  */
+// Compares against the filesystem-default graph folder, i.e. graph identity.
+@OptIn(dev.stapler.stelekit.model.RegistryRootPath::class)
 internal fun initialGraphPath(graphManager: GraphManager, graphPath: String): String {
     val persistedPath = graphManager.getActiveGraphInfo()?.path
     return if (!persistedPath.isNullOrEmpty()) persistedPath else graphPath
@@ -510,7 +512,7 @@ private fun GraphContent(deps: GraphContentDeps) {
     val shareProvider = viewModelStack.shareProvider
     val viewModel = viewModelStack.viewModel
     RegisterActiveWriteHooks(
-        deps.activeWriteHooks, activeGraphInfo?.id, graphWriter, effectiveFileSystem, activeGraphPath, blockStateManager,
+        deps.activeWriteHooks, activeGraphInfo?.id, graphWriter, effectiveFileSystem, activeGraphInfo?.effectiveNotesPath, blockStateManager,
     )
     LaunchedEffect(viewModel) { deps.onViewModelReady?.invoke(viewModel) }
 
@@ -557,7 +559,9 @@ private fun GraphContent(deps: GraphContentDeps) {
     // See GraphContentSupportingViewModels.kt: Journals/AllPages/LibraryStats/Search view models,
     // plus the disposal effect that closes all of them (and blockStateManager/viewModel) when
     // GraphContent leaves composition.
-    val supportingViewModels = rememberGraphContentSupportingViewModels(deps, blockStateManager, viewModel)
+    val supportingViewModels = rememberGraphContentSupportingViewModels(
+        deps, effectiveFileSystem, activeGraphPath, blockStateManager, viewModel,
+    )
     val activeSectionIds = supportingViewModels.activeSectionIds
     val journalsViewModel = supportingViewModels.journalsViewModel
     val allPagesViewModel = supportingViewModels.allPagesViewModel

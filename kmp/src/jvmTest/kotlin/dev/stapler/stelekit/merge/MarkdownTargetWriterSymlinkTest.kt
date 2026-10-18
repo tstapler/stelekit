@@ -13,6 +13,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /** Task 2.3.1e: symlinks are only observable on a real directory, with the JVM canonicalizer wired in. */
 class MarkdownTargetWriterSymlinkTest {
@@ -33,7 +34,7 @@ class MarkdownTargetWriterSymlinkTest {
 
     private fun writer(): MarkdownTargetWriter {
         val fs = PlatformFileSystem().also { it.registerGraphRoot(graph.absolutePath); it.registerGraphRoot(outside.absolutePath) }
-        val target = OffGraphTarget(GraphId("b"), graph.absolutePath, isActive = false)
+        val target = OffGraphTarget(GraphId("b"), EffectiveNotesPath(graph.absolutePath), isActive = false)
         return MarkdownTargetWriter.forFilePaths(fs, target, TargetWriterCapabilities(platformSupportsOffGraphWrite = true))
     }
 

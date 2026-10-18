@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /** One flagged block as the review list shows it. [block] is kept so actions need no re-read. */
 data class ConflictRow(
@@ -230,10 +231,10 @@ fun conflictPagePersister(
     pageRepository: PageRepository,
     blockRepository: BlockRepository,
     graphWriter: GraphWriter,
-    graphPath: () -> String,
+    graphPath: () -> EffectiveNotesPath?,
 ): suspend (PageUuid) -> Unit = { pageUuid ->
     val path = graphPath()
-    if (path.isNotEmpty()) {
+    if (path != null && path.value.isNotEmpty()) {
         val page = pageRepository.getPageByUuid(pageUuid).first().getOrNull()
         val blocks = blockRepository.getBlocksForPage(pageUuid).first().getOrNull()
         if (page != null && blocks != null) graphWriter.savePage(page, blocks, path)

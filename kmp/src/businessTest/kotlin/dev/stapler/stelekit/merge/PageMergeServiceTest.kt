@@ -42,6 +42,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 class PageMergeServiceTest {
     private val src = GraphId("aaaaaaaaaaaaaaaa")
@@ -563,7 +564,7 @@ class PageMergeServiceTest {
         val root = "/data/${dst.value}"
         files.writeFileBytes("$root/pages/Ex.md", "- keep".encodeToByteArray())
         val writer = MarkdownTargetWriter(
-            files, OffGraphTarget(dst, root, isActive = false), TargetWriterCapabilities(platformSupportsOffGraphWrite = true),
+            files, OffGraphTarget(dst, EffectiveNotesPath(root), isActive = false), TargetWriterCapabilities(platformSupportsOffGraphWrite = true),
         ) { it }
         val env = Env(target = writer)
         val source = FakeSource(listOf(entry(1, "Fresh"), entry(2, "Ex")))

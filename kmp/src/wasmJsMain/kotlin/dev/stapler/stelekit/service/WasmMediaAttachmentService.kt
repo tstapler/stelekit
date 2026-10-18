@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.service
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
@@ -43,7 +44,7 @@ class WasmMediaAttachmentService(private val fileSystem: FileSystem) : MediaAtta
     }
 
     override suspend fun pickAndAttach(
-        graphRoot: String,
+        notesPath: EffectiveNotesPath,
         pageRelativePath: String,
     ): Either<DomainError, AttachmentResult>? {
         val fileObj = try {
@@ -61,15 +62,15 @@ class WasmMediaAttachmentService(private val fileSystem: FileSystem) : MediaAtta
         } catch (e: Throwable) {
             return DomainError.AttachmentError.CopyFailed(e.message ?: "read failed").left()
         }
-        return persistAttachment(name, arrayBuffer, graphRoot)
+        return persistAttachment(name, arrayBuffer, notesPath)
     }
 
     override suspend fun attachBytes(
         bytes: ByteArray,
         suggestedName: String,
-        graphRoot: String
+        notesPath: EffectiveNotesPath
     ): Either<DomainError, AttachmentResult> =
-        persistAttachment(suggestedName, bytes.toJsUint8Array(), graphRoot)
+        persistAttachment(suggestedName, bytes.toJsUint8Array(), notesPath)
 
     /**
      * Shared write-then-register-blob-URL sequence for both [pickAndAttach] and [attachBytes] —
@@ -80,10 +81,10 @@ class WasmMediaAttachmentService(private val fileSystem: FileSystem) : MediaAtta
     private suspend fun persistAttachment(
         suggestedName: String,
         arrayBuffer: JsAny,
-        graphRoot: String,
+        notesPath: EffectiveNotesPath,
     ): Either<DomainError, AttachmentResult> = withContext(PlatformDispatcher.IO) {
         try {
-            val assetsPath = "$graphRoot/assets"
+            val assetsPath = notesPath.child("assets")
             fileSystem.createDirectory(assetsPath)
 
             val stem = if ('.' in suggestedName) suggestedName.substringBeforeLast('.') else suggestedName

@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.benchmark
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
@@ -40,7 +41,7 @@ class GraphLoadJankTest {
         var phase2Ms = -1L
 
         loader.loadGraphProgressive(
-            graphPath = graphPath,
+            notesPath = EffectiveNotesPath(graphPath),
             immediateJournalCount = 10,
             onProgress = {},
             onPhase1Complete = { phase1TtiMs = (Clock.System.now() - start).inWholeMilliseconds },

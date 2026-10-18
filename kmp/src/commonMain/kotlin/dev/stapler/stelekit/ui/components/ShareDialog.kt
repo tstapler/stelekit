@@ -4,12 +4,14 @@
 package dev.stapler.stelekit.ui.components
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.export.ShareProvider
 import dev.stapler.stelekit.model.Block
@@ -188,6 +190,25 @@ fun ShareContent(
                     modifier = Modifier.weight(1f),
                 )
             }
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .toggleable(
+                    value = appState.shareStripTrackingParams,
+                    role = Role.Switch,
+                    onValueChange = { viewModel.setStripTrackingParams(it) },
+                ),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Switch(checked = appState.shareStripTrackingParams, onCheckedChange = null)
+            Text(
+                text = "Strip tracking parameters from URLs",
+                style = MaterialTheme.typography.bodyMedium,
+            )
         }
 
         HorizontalDivider()

@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.97.0](https://github.com/tstapler/stelekit/compare/v0.96.1...v0.97.0) (2026-10-17)
+
+
+### Features
+
+* three-way merge misplaced pages, and let the user review notes outside the notes folder ([#440](https://github.com/tstapler/stelekit/issues/440)) ([2ee4550](https://github.com/tstapler/stelekit/commit/2ee455090e9c71161cc71feff39396af7f7b54ef))
+
+## [0.96.1](https://github.com/tstapler/stelekit/compare/v0.96.0...v0.96.1) (2026-10-17)
+
+
+### Bug Fixes
+
+* **capture:** write shares under the wiki subdir, repair misplaced files, gate GraphInfo.path ([#437](https://github.com/tstapler/stelekit/issues/437)) ([227f1ef](https://github.com/tstapler/stelekit/commit/227f1efbedb43621f10a5de23c93ea95972fc8c3))
+
+## [0.96.0](https://github.com/tstapler/stelekit/compare/v0.95.2...v0.96.0) (2026-10-16)
+
+
+### Features
+
+* **share:** opt-in stripping of ad-tracking query params on export ([#435](https://github.com/tstapler/stelekit/issues/435)) ([c176f5f](https://github.com/tstapler/stelekit/commit/c176f5f60126851d97941bb987b295d38ac487cb))
+
+
+### Bug Fixes
+
+* **stats:** collect web library stats through effective graph filesystem ([#431](https://github.com/tstapler/stelekit/issues/431)) ([20c8a5c](https://github.com/tstapler/stelekit/commit/20c8a5c1922584b15c7d31909a7a946517824cfb))
+
+## [0.95.2](https://github.com/tstapler/stelekit/compare/v0.95.1...v0.95.2) (2026-10-14)
+
+
+### Bug Fixes
+
+* **assets:** Assets screen crashed on every open; persist Android logs across crashes ([#423](https://github.com/tstapler/stelekit/issues/423)) ([a53809c](https://github.com/tstapler/stelekit/commit/a53809c3749c0f33a6654c2ccc35a543aebf9758))
+
 ## [0.95.1](https://github.com/tstapler/stelekit/compare/v0.95.0...v0.95.1) (2026-10-13)
 
 

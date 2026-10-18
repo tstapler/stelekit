@@ -103,7 +103,7 @@ class TargetWriterRouter(
                 // await. After an await it means init failed, so fall through to the file writer.
                 !awaited && graphManager.graphRegistry.value.activeGraphId == target -> null
                 else -> capabilities.canWriteOffGraph(
-                    OffGraphTarget(target, info.path, isActive = false, encrypted = isEncrypted(target), storage = storage),
+                    OffGraphTarget(target, info.effectiveNotesPath, isActive = false, encrypted = isEncrypted(target), storage = storage),
                 ).fold(
                     { reason -> DomainError.MergeError.WriteRefused(WriteRefusedReason.Unwritable(reason)).left() },
                     { block(offGraphWriterFor(info)) },

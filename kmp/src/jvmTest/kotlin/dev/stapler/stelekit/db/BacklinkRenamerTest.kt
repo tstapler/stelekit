@@ -18,6 +18,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * Integration tests for [BacklinkRenamer.execute].
@@ -52,7 +53,7 @@ class BacklinkRenamerTest {
     ): BacklinkRenamer {
         val fs = PlatformFileSystem.withRoot(graphPath)
         val graphWriter = GraphWriter(fs).also {
-            it.currentEpoch = GraphEpoch(GraphId("backlink-renamer-test"), graphPath = graphPath, sequence = 1L)
+            it.currentEpoch = GraphEpoch(GraphId("backlink-renamer-test"), graphPath = EffectiveNotesPath(graphPath), sequence = 1L)
         }
         val actor = DatabaseWriteActor(blockRepo, pageRepo)
         return BacklinkRenamer(pageRepo, blockRepo, graphWriter, actor)
@@ -76,7 +77,7 @@ class BacklinkRenamerTest {
             pageRepo.savePage(alphaPage)
 
             val renamer = buildRenamer(pageRepo, blockRepo, tempDir.absolutePath)
-            val result = renamer.execute(alphaPage, "Beta", tempDir.absolutePath)
+            val result = renamer.execute(alphaPage, "Beta", EffectiveNotesPath(tempDir.absolutePath))
 
             assertIs<RenameResult.Success>(result)
             assertEquals("Alpha", result.oldName)
@@ -114,7 +115,7 @@ class BacklinkRenamerTest {
             blockRepo.saveBlock(linkBlock)
 
             val renamer = buildRenamer(pageRepo, blockRepo, tempDir.absolutePath)
-            val result = renamer.execute(alphaPage, "Beta", tempDir.absolutePath)
+            val result = renamer.execute(alphaPage, "Beta", EffectiveNotesPath(tempDir.absolutePath))
 
             assertIs<RenameResult.Success>(result)
             assertEquals(1, result.updatedBlockCount)
@@ -149,7 +150,7 @@ class BacklinkRenamerTest {
             blockRepo.saveBlock(linkBlock)
 
             val renamer = buildRenamer(pageRepo, blockRepo, tempDir.absolutePath)
-            val result = renamer.execute(alphaPage, "Beta", tempDir.absolutePath)
+            val result = renamer.execute(alphaPage, "Beta", EffectiveNotesPath(tempDir.absolutePath))
 
             assertIs<RenameResult.Success>(result)
 
@@ -182,7 +183,7 @@ class BacklinkRenamerTest {
             blockRepo.saveBlock(linkBlock)
 
             val renamer = buildRenamer(pageRepo, blockRepo, tempDir.absolutePath)
-            val result = renamer.execute(alphaPage, "Beta", tempDir.absolutePath)
+            val result = renamer.execute(alphaPage, "Beta", EffectiveNotesPath(tempDir.absolutePath))
 
             assertIs<RenameResult.Success>(result)
             assertEquals(1, result.updatedBlockCount)
@@ -207,7 +208,7 @@ class BacklinkRenamerTest {
             val missingPage = makePage("page-missing", "Ghost")
 
             val renamer = buildRenamer(pageRepo, blockRepo, tempDir.absolutePath)
-            val result = renamer.execute(missingPage, "NewName", tempDir.absolutePath)
+            val result = renamer.execute(missingPage, "NewName", EffectiveNotesPath(tempDir.absolutePath))
 
             assertIs<RenameResult.Failure>(result)
         } finally {
@@ -268,7 +269,7 @@ class BacklinkRenamerTest {
             blockRepo.saveBlock(linkBlock)
 
             val renamer = buildRenamer(pageRepo, blockRepo, tempDir.absolutePath)
-            val result = renamer.execute(alphaPage, "Beta", tempDir.absolutePath)
+            val result = renamer.execute(alphaPage, "Beta", EffectiveNotesPath(tempDir.absolutePath))
 
             assertIs<RenameResult.Success>(result)
             assertEquals(1, result.updatedBlockCount)
@@ -292,7 +293,7 @@ class BacklinkRenamerTest {
             pageRepo.savePage(noFilePage)
 
             val renamer = buildRenamer(pageRepo, blockRepo, tempDir.absolutePath)
-            val result = renamer.execute(noFilePage, "Beta", tempDir.absolutePath)
+            val result = renamer.execute(noFilePage, "Beta", EffectiveNotesPath(tempDir.absolutePath))
 
             assertIs<RenameResult.Failure>(result)
         } finally {

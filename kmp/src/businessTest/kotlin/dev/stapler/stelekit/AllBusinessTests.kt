@@ -32,10 +32,21 @@ import dev.stapler.stelekit.capture.CaptureTargetResolverTest
 import dev.stapler.stelekit.query.QueryExecutorTest
 import dev.stapler.stelekit.capture.InboxFallbackAppenderTest
 import dev.stapler.stelekit.capture.JournalAppenderOffGraphTest
+import dev.stapler.stelekit.db.ShareWritePathMigrationTest
+import dev.stapler.stelekit.ui.NotesPathWiringTest
+import dev.stapler.stelekit.db.misplaced.MisplacedFilesServiceTest
+import dev.stapler.stelekit.ui.misplaced.MisplacedFilesControllerTest
+import dev.stapler.stelekit.git.merge.StrayPageMergeTest
+import dev.stapler.stelekit.db.GraphManagerNotesPathTest
+import dev.stapler.stelekit.ui.NotesPathAccessorsTest
+import dev.stapler.stelekit.db.ShareWritePathRepairTest
 import dev.stapler.stelekit.capture.JournalAppenderTest
 import dev.stapler.stelekit.clipboard.BlockClipboardTest
 import dev.stapler.stelekit.domain.ImportServiceTest
 import dev.stapler.stelekit.editor.LinkInsertionTest
+import dev.stapler.stelekit.editor.commands.CommandManagerTest
+import dev.stapler.stelekit.editor.commands.CommandSystemRegistryTest
+import dev.stapler.stelekit.editor.commands.EssentialCommandsTest
 import dev.stapler.stelekit.flashcard.FlashcardPropertiesTest
 import dev.stapler.stelekit.flashcard.FlashcardReviewTest
 import dev.stapler.stelekit.llm.IosAvailabilityMappingTest
@@ -46,6 +57,8 @@ import dev.stapler.stelekit.llm.LlmSettingsTest
 import dev.stapler.stelekit.performance.HistogramRegressionTest
 import dev.stapler.stelekit.performance.HistogramWriterTest
 import dev.stapler.stelekit.performance.PerfExporterPickerTest
+import dev.stapler.stelekit.performance.PerfExporterRegressionTest
+import dev.stapler.stelekit.performance.QueryStatsRepositoryTest
 import dev.stapler.stelekit.db.DemoFileSystemSyncTest
 import dev.stapler.stelekit.db.DemoGraphPersistenceTest
 import dev.stapler.stelekit.db.GraphInfoSerializationTest
@@ -72,6 +85,10 @@ import dev.stapler.stelekit.merge.InMemoryMergeStorageTest
 import dev.stapler.stelekit.ui.CopyPagesViewModelTest
 import dev.stapler.stelekit.ui.PageSelectionTest
 import dev.stapler.stelekit.ui.assets.AssetFilterTest
+import dev.stapler.stelekit.ui.assets.AssetBrowserViewModelTest
+import dev.stapler.stelekit.asset.AssetMoveServiceTest
+import dev.stapler.stelekit.asset.AssetMoveServiceWalTest
+import dev.stapler.stelekit.asset.AssetIndexServiceTest
 import dev.stapler.stelekit.voice.VoiceCaptureViewModelTest
 import dev.stapler.stelekit.voice.VoiceNoteBlockFormatTest
 import dev.stapler.stelekit.voice.VoicePipelineFactoryTest
@@ -86,6 +103,8 @@ import dev.stapler.stelekit.auto.AudiobookNoteWriterTest
 import dev.stapler.stelekit.capture.ShareInboxTest
 import dev.stapler.stelekit.db.AtomicFileRelocationStepTest
 import dev.stapler.stelekit.db.BlockHierarchyCteTest
+import dev.stapler.stelekit.db.SqlDelightBlockRepositoryTest
+import dev.stapler.stelekit.db.UndoManagerTest
 import dev.stapler.stelekit.db.BulkCopyVerifierTest
 import dev.stapler.stelekit.db.DiskConflictBlockMatcherTest
 import dev.stapler.stelekit.db.GraphLoaderDirtySetTest
@@ -197,6 +216,8 @@ import dev.stapler.stelekit.performance.OtelProviderStabilityTest
 import dev.stapler.stelekit.platform.measurement.MeasurementInjectionTest
 import dev.stapler.stelekit.platform.security.CredentialAccessTest
 import dev.stapler.stelekit.repository.AssetRepositoryTest
+import dev.stapler.stelekit.repository.SqlDelightAssetRepositoryContractTest
+import dev.stapler.stelekit.repository.SqlDelightSearchRepositoryTest
 import dev.stapler.stelekit.repository.WikilinkBatchInsertTest
 import dev.stapler.stelekit.resilience.RetryPoliciesTest
 import dev.stapler.stelekit.sections.DeviceProfileTest
@@ -210,6 +231,8 @@ import dev.stapler.stelekit.transfer.qrcode.QrImportServiceTest
 import dev.stapler.stelekit.transfer.qrcode.QrTransferCoordinatorTest
 import dev.stapler.stelekit.transfer.qrcode.TransferSessionTest
 import dev.stapler.stelekit.ui.GalleryViewModelTest
+import dev.stapler.stelekit.ui.StelekitViewModelNavigationTest
+import dev.stapler.stelekit.ui.StelekitViewModelUiToggleTest
 import dev.stapler.stelekit.ui.screens.DiskConflictFullScreenStateTest
 import dev.stapler.stelekit.ui.components.MermaidRenderKeyTest
 import dev.stapler.stelekit.ui.components.MermaidRenderResultTest
@@ -232,9 +255,20 @@ import org.junit.runners.Suite
     CaptureTargetResolverTest::class,
     JournalAppenderTest::class,
     JournalAppenderOffGraphTest::class,
+    ShareWritePathMigrationTest::class,
+    NotesPathWiringTest::class,
+    MisplacedFilesServiceTest::class,
+    MisplacedFilesControllerTest::class,
+    StrayPageMergeTest::class,
+    ShareWritePathRepairTest::class,
+    GraphManagerNotesPathTest::class,
+    NotesPathAccessorsTest::class,
     InboxFallbackAppenderTest::class,
     ImportServiceTest::class,
     LinkInsertionTest::class,
+    CommandManagerTest::class,
+    CommandSystemRegistryTest::class,
+    EssentialCommandsTest::class,
     FlashcardPropertiesTest::class,
     FlashcardReviewTest::class,
     IosAvailabilityMappingTest::class,
@@ -245,6 +279,8 @@ import org.junit.runners.Suite
     HistogramRegressionTest::class,
     HistogramWriterTest::class,
     PerfExporterPickerTest::class,
+    PerfExporterRegressionTest::class,
+    QueryStatsRepositoryTest::class,
     BacklinkRepositoryTest::class,
     CrossSectionBacklinkRenderTest::class,
     NewPageAutoAssignmentTest::class,
@@ -273,6 +309,10 @@ import org.junit.runners.Suite
     MergeUuidRoundTripSpikeTest::class,
     ToolbarActionTest::class,
     AssetFilterTest::class,
+    AssetBrowserViewModelTest::class,
+    AssetMoveServiceTest::class,
+    AssetMoveServiceWalTest::class,
+    AssetIndexServiceTest::class,
     VoiceCaptureViewModelTest::class,
     VoiceNoteBlockFormatTest::class,
     VoicePipelineFactoryTest::class,
@@ -287,6 +327,8 @@ import org.junit.runners.Suite
     AtomicFileRelocationStepTest::class,
     ShareInboxTest::class,
     BlockHierarchyCteTest::class,
+    SqlDelightBlockRepositoryTest::class,
+    UndoManagerTest::class,
     BulkCopyVerifierTest::class,
     DiskConflictBlockMatcherTest::class,
     GraphLoaderDirtySetTest::class,
@@ -398,6 +440,8 @@ import org.junit.runners.Suite
     MeasurementInjectionTest::class,
     CredentialAccessTest::class,
     AssetRepositoryTest::class,
+    SqlDelightAssetRepositoryContractTest::class,
+    SqlDelightSearchRepositoryTest::class,
     WikilinkBatchInsertTest::class,
     RetryPoliciesTest::class,
     DeviceProfileTest::class,
@@ -411,6 +455,8 @@ import org.junit.runners.Suite
     QrTransferCoordinatorTest::class,
     TransferSessionTest::class,
     GalleryViewModelTest::class,
+    StelekitViewModelNavigationTest::class,
+    StelekitViewModelUiToggleTest::class,
     DiskConflictFullScreenStateTest::class,
     MermaidRenderKeyTest::class,
     MermaidRenderResultTest::class,

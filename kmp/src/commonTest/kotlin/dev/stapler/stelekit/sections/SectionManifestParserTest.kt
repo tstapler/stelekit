@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.sections
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.db.sidecar.FakeFileSystem
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -30,7 +31,7 @@ class SectionManifestParserTest {
         """.trimIndent()
 
         val fs = FakeFileSystem().apply { writeFile("/graph/${SectionManifest.FILENAME}", toml) }
-        val manifest = SectionManifestParser(fs).parse("/graph").getOrNull()
+        val manifest = SectionManifestParser(fs).parse(EffectiveNotesPath("/graph")).getOrNull()
 
         assertNotNull(manifest)
         if (!TOML_PARSING_SUPPORTED) {
@@ -62,7 +63,7 @@ class SectionManifestParserTest {
     @Test
     fun `missing file returns empty manifest`() {
         // Implementation returns SectionManifest().right() (not null) when file is absent.
-        val manifest = SectionManifestParser(FakeFileSystem()).parse("/graph").getOrNull()
+        val manifest = SectionManifestParser(FakeFileSystem()).parse(EffectiveNotesPath("/graph")).getOrNull()
         assertNotNull(manifest)
         assertTrue(manifest.sections.isEmpty(), "Expected empty sections for missing file")
     }
@@ -82,7 +83,7 @@ class SectionManifestParserTest {
         """.trimIndent()
 
         val fs = FakeFileSystem().apply { writeFile("/graph/${SectionManifest.FILENAME}", toml) }
-        val result = SectionManifestParser(fs).parse("/graph")
+        val result = SectionManifestParser(fs).parse(EffectiveNotesPath("/graph"))
         assertTrue(result.isRight(), "Parse should succeed despite unknown fields; got: $result")
         val expectedSections = if (TOML_PARSING_SUPPORTED) 1 else 0
         assertEquals(expectedSections, result.getOrNull()!!.sections.size)
@@ -101,7 +102,7 @@ class SectionManifestParserTest {
         """.trimIndent()
 
         val fs = FakeFileSystem().apply { writeFile("/graph/${SectionManifest.FILENAME}", toml) }
-        val manifest = SectionManifestParser(fs).parse("/graph").getOrNull()
+        val manifest = SectionManifestParser(fs).parse(EffectiveNotesPath("/graph")).getOrNull()
 
         assertNotNull(manifest)
         if (!TOML_PARSING_SUPPORTED) {

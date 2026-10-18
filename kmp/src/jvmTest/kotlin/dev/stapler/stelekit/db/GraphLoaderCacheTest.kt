@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.db
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.platform.FileSystem
@@ -128,7 +129,7 @@ class GraphLoaderCacheTest {
         h.fs.dirs.add("/graph/pages")
 
         // Prime: load V1 into DB
-        h.loader.setGraphPath("/graph")
+        h.loader.setGraphPath(EffectiveNotesPath("/graph"))
         h.loader.parseAndSavePage(FilePath(filePath), "- Block V1", ParseMode.FULL)
 
         // Verify V1 in DB
@@ -171,7 +172,7 @@ class GraphLoaderCacheTest {
         h.fs.dirs.add("/graph/pages")
 
         // Prime: load V1
-        h.loader.setGraphPath("/graph")
+        h.loader.setGraphPath(EffectiveNotesPath("/graph"))
         h.loader.parseAndSavePage(FilePath(filePath), "- Block V1", ParseMode.FULL)
 
         val page = h.pageRepo.getAllPagesSnapshot().getOrNull()?.firstOrNull()
@@ -207,7 +208,7 @@ class GraphLoaderCacheTest {
         h.fs.addFile(filePath, "- Block V1", modTime = 1000L)
         h.fs.dirs.add("/graph/pages")
 
-        h.loader.setGraphPath("/graph")
+        h.loader.setGraphPath(EffectiveNotesPath("/graph"))
         h.loader.parseAndSavePage(FilePath(filePath), "- Block V1", ParseMode.FULL)
 
         val page = h.pageRepo.getAllPagesSnapshot().getOrNull()?.firstOrNull()
@@ -256,7 +257,7 @@ class GraphLoaderCacheTest {
         h.fs.addFile(filePath, contentV1, modTime = 0L) // SAF returns 0 mtime
         h.fs.dirs.add("/graph/pages")
 
-        h.loader.setGraphPath("/graph")
+        h.loader.setGraphPath(EffectiveNotesPath("/graph"))
 
         // Force initial load to populate DB and store content hash
         h.loader.loadFullPage_forceLoad(filePath, contentV1)
@@ -298,7 +299,7 @@ class GraphLoaderCacheTest {
         h.fs.addFile(filePath, contentV1, modTime = 0L)
         h.fs.dirs.add("/graph/pages")
 
-        h.loader.setGraphPath("/graph")
+        h.loader.setGraphPath(EffectiveNotesPath("/graph"))
 
         // Force initial load
         h.loader.loadFullPage_forceLoad(filePath, contentV1)
@@ -350,7 +351,7 @@ class GraphLoaderCacheTest {
         h.fs.addFile(filePath, contentV1, modTime = 500L)
         h.fs.dirs.add("/graph/pages")
 
-        h.loader.setGraphPath("/graph")
+        h.loader.setGraphPath(EffectiveNotesPath("/graph"))
 
         // Load V1 so page.updatedAt is set
         h.loader.parseAndSavePage(FilePath(filePath), contentV1, ParseMode.FULL)
@@ -393,9 +394,9 @@ class GraphLoaderCacheTest {
         h.fs.addFile(filePath, "- Block V1", modTime = 1000L)
         h.fs.dirs.add("/graph/pages")
 
-        h.loader.setGraphPath("/graph")
+        h.loader.setGraphPath(EffectiveNotesPath("/graph"))
         h.loader.parseAndSavePage(FilePath(filePath), "- Block V1", ParseMode.FULL)
-        h.loader.startWatching("/graph")
+        h.loader.startWatching(EffectiveNotesPath("/graph"))
         h.loader.fileRegistry.scanDirectory("/graph/pages")
 
         val page = h.pageRepo.getAllPagesSnapshot().getOrNull()?.firstOrNull()

@@ -62,23 +62,12 @@ interface GraphLoaderPort {
      * Phase 2 indexes remaining pages in the background.
      */
     suspend fun loadGraphProgressive(
-        graphPath: String,
-        immediateJournalCount: Int = 10,
-        onProgress: (String) -> Unit,
-        onPhase1Complete: () -> Unit,
-        onFullyLoaded: () -> Unit,
-    )
-
-    /**
-     * Loads the graph progressively using a strongly-typed [dev.stapler.stelekit.model.EffectiveNotesPath].
-     */
-    suspend fun loadGraphProgressive(
         notesPath: dev.stapler.stelekit.model.EffectiveNotesPath,
         immediateJournalCount: Int = 10,
         onProgress: (String) -> Unit,
         onPhase1Complete: () -> Unit,
         onFullyLoaded: () -> Unit,
-    ) = loadGraphProgressive(notesPath.value, immediateJournalCount, onProgress, onPhase1Complete, onFullyLoaded)
+    )
 
     /**
      * Finds and fully indexes all pages that were only partially loaded (METADATA_ONLY).

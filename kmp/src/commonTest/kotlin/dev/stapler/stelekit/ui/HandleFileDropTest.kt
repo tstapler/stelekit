@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.ui
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
@@ -31,11 +32,11 @@ class HandleFileDropTest {
         var lastAttachFilePath: String? = null
 
         override suspend fun pickAndAttach(
-            graphRoot: String,
+            notesPath: EffectiveNotesPath,
             pageRelativePath: String,
         ): Either<DomainError, AttachmentResult>? = null
 
-        override suspend fun attachFilePath(filePath: String, graphRoot: String): Either<DomainError, AttachmentResult>? {
+        override suspend fun attachFilePath(filePath: String, notesPath: EffectiveNotesPath): Either<DomainError, AttachmentResult>? {
             attachFilePathCalls++
             lastAttachFilePath = filePath
             return attachFilePathResult
@@ -44,7 +45,7 @@ class HandleFileDropTest {
         override suspend fun attachBytes(
             bytes: ByteArray,
             suggestedName: String,
-            graphRoot: String,
+            notesPath: EffectiveNotesPath,
         ): Either<DomainError, AttachmentResult>? {
             attachBytesCalls++
             return attachBytesResult
@@ -62,7 +63,7 @@ class HandleFileDropTest {
         handleFileDrop(
             files = listOf(DroppedFileBytes("photo.png", byteArrayOf(1, 2, 3))),
             attachmentService = service,
-            graphRoot = "/graph",
+            notesPath = EffectiveNotesPath("/graph"),
             onAttached = { attachedMarkdown = it },
             onError = { errorSeen = it },
         )
@@ -81,7 +82,7 @@ class HandleFileDropTest {
         handleFileDrop(
             files = listOf("some-native-file-token"),
             attachmentService = service,
-            graphRoot = "/graph",
+            notesPath = EffectiveNotesPath("/graph"),
             onAttached = { attachedMarkdown = it },
             onError = { errorSeen = it },
         )
@@ -102,12 +103,19 @@ class HandleFileDropTest {
         handleFileDrop(
             files = listOf(DroppedFileBytes("photo.png", byteArrayOf(1, 2, 3))),
             attachmentService = service,
-            graphRoot = "/graph",
+            notesPath = EffectiveNotesPath("/graph"),
             onAttached = { attachedMarkdown = it },
             onError = { errorSeen = it },
         )
 
         assertEquals(error, errorSeen)
         assertNull(attachedMarkdown)
+    }
+
+    @Test
+    fun pasteFromClipboard_returnsNull_byDefault_forPlatformsWithoutClipboardImages() = runTest {
+        val service = FakeMediaAttachmentService()
+
+        assertNull(service.pasteFromClipboard(EffectiveNotesPath("/graph")))
     }
 }

@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.merge
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import arrow.core.Either
 import dev.stapler.stelekit.db.FakeRelocationFileSystem
 import dev.stapler.stelekit.db.GraphLoader
@@ -41,7 +42,7 @@ class SourceReaderParityTest {
 
         val pageRepo = InMemoryPageRepository()
         val blockRepo = InMemoryBlockRepository()
-        GraphLoader(fs, pageRepo, blockRepo, JournalService(pageRepo, blockRepo)).loadGraph(root) {}
+        GraphLoader(fs, pageRepo, blockRepo, JournalService(pageRepo, blockRepo)).loadGraph(EffectiveNotesPath(root)) {}
 
         val reader = MarkdownSourceGraphReader(fs)
         val entries = (reader.listEntries(graph, null, 100) as Either.Right).value

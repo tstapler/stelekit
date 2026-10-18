@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.asset
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -39,7 +40,7 @@ class AssetStoragePathResolverTest {
     }
 
     @Test fun `resolvePath constructs absolute path`() {
-        val path = AssetStoragePathResolver.resolvePath("/home/user/graph", "images", "photo.jpg")
+        val path = AssetStoragePathResolver.resolvePath(EffectiveNotesPath("/home/user/graph"), "images", "photo.jpg")
         assertEquals("/home/user/graph/assets/images/photo.jpg", path)
     }
 

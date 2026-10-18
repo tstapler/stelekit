@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.db
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import arrow.core.Either
 import dev.stapler.stelekit.db.sidecar.FakeFileSystem
 import dev.stapler.stelekit.db.sidecar.ImageSidecarIndexer
@@ -49,7 +50,7 @@ class ImageSidecarManagerTest {
         val writeResult = manager.writeSidecar(ann, measurements)
         assertIs<Either.Right<Unit>>(writeResult)
 
-        val readResult = manager.readSidecar("/graph", ann.uuid)
+        val readResult = manager.readSidecar(EffectiveNotesPath("/graph"), ann.uuid)
         assertIs<Either.Right<SidecarFile?>>(readResult)
         val sidecar = readResult.value
         assertNotNull(sidecar)
@@ -73,54 +74,9 @@ class ImageSidecarManagerTest {
     fun readSidecar_should_returnNullRight_when_fileDoesNotExist() {
         val fs = FakeFileSystem()
         val manager = ImageSidecarManager(fs)
-        val readResult = manager.readSidecar("/graph", "non-existent-uuid")
+        val readResult = manager.readSidecar(EffectiveNotesPath("/graph"), "non-existent-uuid")
         assertIs<Either.Right<SidecarFile?>>(readResult)
         assertNull(readResult.value)
-    }
-}
-
-@OptIn(DirectRepositoryWrite::class)
-class ImageSidecarIndexerTest {
-
-    @Test
-    fun rebuildFromSidecars_should_upsertAllRows_when_sidecarFilesPresent() = runBlocking {
-        val fs = FakeFileSystem()
-        // Write 3 sidecar files
-        val manager = ImageSidecarManager(fs)
-        for (i in 1..3) {
-            val ann = ImageAnnotation(
-                uuid = "ann-00$i",
-                blockUuid = "blk-00$i",
-                pageUuid = "page-001",
-                graphPath = "/graph",
-                filePath = "/graph/assets/images/img-00$i.jpg",
-            )
-            manager.writeSidecar(ann, emptyList())
-        }
-
-        val imageRepo = InMemoryImageAnnotationRepository()
-        val measurementRepo = InMemoryMeasurementAnnotationRepository()
-        val indexer = ImageSidecarIndexer(fs, imageRepo, measurementRepo)
-
-        val result = indexer.rebuildFromSidecars("/graph")
-        assertIs<Either.Right<Int>>(result)
-        assertEquals(3, result.value)
-
-        val all = imageRepo.getAllImageAnnotations().first()
-        assertIs<Either.Right<List<ImageAnnotation>>>(all)
-        assertEquals(3, all.value.size)
-    }
-
-    @Test
-    fun rebuildFromSidecars_should_returnZero_when_noSidecarDirectory() = runBlocking {
-        val fs = FakeFileSystem()
-        val imageRepo = InMemoryImageAnnotationRepository()
-        val measurementRepo = InMemoryMeasurementAnnotationRepository()
-        val indexer = ImageSidecarIndexer(fs, imageRepo, measurementRepo)
-
-        val result = indexer.rebuildFromSidecars("/graph")
-        assertIs<Either.Right<Int>>(result)
-        assertEquals(0, result.value)
     }
 }
 

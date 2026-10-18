@@ -37,6 +37,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * Story 6.8 — New-page auto-assignment tests (FR-13).
@@ -85,7 +86,7 @@ class NewPageAutoAssignmentTest {
         override fun setCryptoLayer(layer: CryptoLayer?) {}
         override fun closeAndClearCryptoLayer() {}
         override suspend fun loadGraphProgressive(
-            graphPath: String, immediateJournalCount: Int,
+            notesPath: EffectiveNotesPath, immediateJournalCount: Int,
             onProgress: (String) -> Unit, onPhase1Complete: () -> Unit, onFullyLoaded: () -> Unit,
         ) {}
         override suspend fun indexRemainingPages(onProgress: (String) -> Unit) {}
@@ -104,8 +105,8 @@ class NewPageAutoAssignmentTest {
         override fun startAutoSave(debounceMs: Long) {}
         override fun stopAutoSave() {}
         override suspend fun flush() {}
-        override suspend fun renamePage(page: Page, newName: String, graphPath: String) = true
-        override suspend fun savePage(page: Page, blocks: List<Block>, graphPath: String): Either<DomainError, Unit> = Unit.right()
+        override suspend fun renamePage(page: Page, newName: String, graphPath: EffectiveNotesPath) = true
+        override suspend fun savePage(page: Page, blocks: List<Block>, graphPath: EffectiveNotesPath): Either<DomainError, Unit> = Unit.right()
         override suspend fun deletePage(page: Page) = true
         override suspend fun movePageToSection(
             page: Page, newSectionId: SectionId, newPathPrefix: String,

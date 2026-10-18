@@ -70,6 +70,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.time.Clock
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 class CaptureViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -347,7 +348,7 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
         val block: Block,
         val page: Page,
         val blocks: List<Block>,
-        val graphPath: String,
+        val graphPath: EffectiveNotesPath,
         val graphId: GraphId,
         val writer: GraphWriter,
         val writeActor: DatabaseWriteActor?,
@@ -867,7 +868,7 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
         val steleApp = getApplication<SteleKitApplication>()
         val graphManager = steleApp.graphManager ?: return
         val repoSet = graphManager.getActiveRepositorySet() ?: return
-        val graphPath = graphManager.getActiveGraphInfo()?.path ?: return
+        val graphPath = graphManager.getActiveNotesPath() ?: return
         val writer = GraphWriter(steleApp.fileSystem, writeActor = repoSet.writeActor)
         // Deliberately not reverting markAccepted()'s fold on failure — see Story 4.1.1's AC: the
         // link stays; only the stub page failed to materialize.
@@ -883,7 +884,7 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
     private suspend fun ensureStubPage(
         pageRepository: PageRepository,
         writer: GraphWriter,
-        graphPath: String,
+        graphPath: EffectiveNotesPath,
         term: String,
     ): Boolean {
         val existing = pageRepository.getPageByName(term).first().getOrNull()

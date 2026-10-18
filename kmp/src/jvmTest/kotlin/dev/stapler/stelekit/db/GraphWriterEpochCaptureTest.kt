@@ -17,6 +17,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertTrue
 import kotlin.time.Clock
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * Story 3.1.2/3.1.3: proves `renamePage`/`deletePage`/`savePageInternal` each capture
@@ -64,23 +65,23 @@ class GraphWriterEpochCaptureTest {
                 checkPreWriteConflict = { _, _ -> gate.await(); false },
                 ioDispatcher = StandardTestDispatcher(testScheduler),
             )
-            val epochA = GraphEpoch(GraphId("graph-a"), "/home/graph-a", sequence = 1L)
+            val epochA = GraphEpoch(GraphId("graph-a"), EffectiveNotesPath("/home/graph-a"), sequence = 1L)
             writer.currentEpoch = epochA
 
             val blockedPage = page("save-uuid", "Blocked", "/home/graph-a/pages/Blocked.md")
             val renamedPage = page("rename-uuid", "ToRename", "/home/graph-a/pages/ToRename.md")
 
             // C1: occupies saveMutex, suspended on the gate inside checkPreWriteConflict.
-            val c1 = launch { writer.savePage(blockedPage, emptyList(), "/home/graph-a") }
+            val c1 = launch { writer.savePage(blockedPage, emptyList(), EffectiveNotesPath("/home/graph-a")) }
             advanceUntilIdle()
 
             // C2: captures epochA at entry, then genuinely suspends acquiring saveMutex
             // (held by C1) — never reaches its own body yet.
-            val c2 = launch { writer.renamePage(renamedPage, "Renamed", "/home/graph-a") }
+            val c2 = launch { writer.renamePage(renamedPage, "Renamed", EffectiveNotesPath("/home/graph-a")) }
             advanceUntilIdle()
 
             // Switch the live epoch while C2 is still queued on saveMutex.
-            val epochB = GraphEpoch(GraphId("graph-b"), "/home/graph-b", sequence = 2L)
+            val epochB = GraphEpoch(GraphId("graph-b"), EffectiveNotesPath("/home/graph-b"), sequence = 2L)
             writer.currentEpoch = epochB
 
             gate.complete(Unit)
@@ -112,19 +113,19 @@ class GraphWriterEpochCaptureTest {
                 checkPreWriteConflict = { _, _ -> gate.await(); false },
                 ioDispatcher = StandardTestDispatcher(testScheduler),
             )
-            val epochA = GraphEpoch(GraphId("graph-a"), "/home/graph-a", sequence = 1L)
+            val epochA = GraphEpoch(GraphId("graph-a"), EffectiveNotesPath("/home/graph-a"), sequence = 1L)
             writer.currentEpoch = epochA
 
             val blockedPage = page("save-uuid-2", "Blocked", "/home/graph-a/pages/Blocked.md")
             val deletedPage = page("delete-uuid", "ToDelete", "/home/graph-a/pages/ToDelete.md")
 
-            val c1 = launch { writer.savePage(blockedPage, emptyList(), "/home/graph-a") }
+            val c1 = launch { writer.savePage(blockedPage, emptyList(), EffectiveNotesPath("/home/graph-a")) }
             advanceUntilIdle()
 
             val c2 = launch { writer.deletePage(deletedPage) }
             advanceUntilIdle()
 
-            val epochB = GraphEpoch(GraphId("graph-b"), "/home/graph-b", sequence = 2L)
+            val epochB = GraphEpoch(GraphId("graph-b"), EffectiveNotesPath("/home/graph-b"), sequence = 2L)
             writer.currentEpoch = epochB
 
             gate.complete(Unit)
@@ -167,18 +168,18 @@ class GraphWriterEpochCaptureTest {
             checkPreWriteConflict = { _, _ -> gate.await(); false },
             ioDispatcher = StandardTestDispatcher(testScheduler),
         )
-        writer.currentEpoch = GraphEpoch(GraphId("graph-a"), "/home/graph-a", sequence = 1L)
+        writer.currentEpoch = GraphEpoch(GraphId("graph-a"), EffectiveNotesPath("/home/graph-a"), sequence = 1L)
 
         val firstPage = page("save-uuid-3", "First", "/home/graph-a/pages/First.md")
         val secondPage = page("save-uuid-4", "Second", "/home/graph-a/pages/Second.md")
 
-        val c1 = async { writer.savePage(firstPage, emptyList(), "/home/graph-a") }
+        val c1 = async { writer.savePage(firstPage, emptyList(), EffectiveNotesPath("/home/graph-a")) }
         advanceUntilIdle()
 
-        val c2 = async { writer.savePage(secondPage, emptyList(), "/home/graph-a") }
+        val c2 = async { writer.savePage(secondPage, emptyList(), EffectiveNotesPath("/home/graph-a")) }
         advanceUntilIdle()
 
-        writer.currentEpoch = GraphEpoch(GraphId("graph-b"), "/home/graph-b", sequence = 2L)
+        writer.currentEpoch = GraphEpoch(GraphId("graph-b"), EffectiveNotesPath("/home/graph-b"), sequence = 2L)
 
         gate.complete(Unit)
         advanceUntilIdle()

@@ -24,6 +24,7 @@ import kotlinx.coroutines.channels.ClosedSendChannelException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlin.time.Clock
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * Shared capture write path (commonMain), extracted from `CaptureViewModel.performSave()`
@@ -47,7 +48,7 @@ object CaptureWriter {
     suspend fun writeCapture(
         repoSet: RepositorySet,
         fileSystem: PlatformFileSystem,
-        graphPath: String,
+        graphPath: EffectiveNotesPath,
         text: String,
         captureId: String? = null,
         writer: GraphWriter = GraphWriter(fileSystem, writeActor = repoSet.writeActor),
@@ -183,7 +184,7 @@ object CaptureWriter {
     ): CaptureResult {
         resolveCaptureAvailability(graphManager)?.let { return it }
         val repoSet = graphManager.getActiveRepositorySet() ?: return CaptureResult.NoActiveGraph
-        val graphPath = graphManager.getActiveGraphInfo()?.path ?: return CaptureResult.NoActiveGraph
+        val graphPath = graphManager.getActiveNotesPath() ?: return CaptureResult.NoActiveGraph
         return writeCapture(repoSet, fileSystem, graphPath, text, captureId)
     }
 }

@@ -2,8 +2,12 @@
 // SPDX-License-Identifier: Elastic-2.0
 // https://www.elastic.co/licensing/elastic-license
 
+// Asserts the registry identity path itself (clone destination / relocation), which is what the gate marks.
+@file:OptIn(dev.stapler.stelekit.model.RegistryRootPath::class)
+
 package dev.stapler.stelekit.db
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import arrow.core.Either
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
@@ -288,7 +292,7 @@ class GraphRelocationEndToEndTest {
         val pageRepo = InMemoryPageRepository()
         val blockRepo = InMemoryBlockRepository()
         val loader = GraphLoader(fileSystem, pageRepo, blockRepo)
-        loader.loadGraph(graphPath) { }
+        loader.loadGraph(EffectiveNotesPath(graphPath)) { }
         val pages = pageRepo.getAllPagesSnapshot().getOrNull().orEmpty()
         return pages.associate { page ->
             val blocks = blockRepo.getBlocksForPage(page.uuid).first().getOrNull().orEmpty()

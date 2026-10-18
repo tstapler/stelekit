@@ -25,6 +25,7 @@ import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * Story 9.4 — Offline-first audit tests.
@@ -90,7 +91,7 @@ class ImageAnnotationOfflineTest {
 
             val result = service.import(
                 tempFile = tempFile,
-                graphPath = "/graph",
+                graphPath = EffectiveNotesPath("/graph"),
                 pageUuid = PageUuid("page-001"),
                 source = ImageSource.FILE,
                 insertToJournalPage = false,
@@ -137,7 +138,7 @@ class ImageAnnotationOfflineTest {
         assertIs<Either.Right<Unit>>(writeResult, "Sidecar write failed: $writeResult")
 
         // Read — must not call any network
-        val readResult = sidecarManager.readSidecar("/graph", "uuid-sidecar-offline")
+        val readResult = sidecarManager.readSidecar(EffectiveNotesPath("/graph"), "uuid-sidecar-offline")
         assertIs<Either.Right<*>>(readResult, "Sidecar read failed: $readResult")
         assertNotNull(readResult.value) { "Sidecar content should not be null after write" }
     }

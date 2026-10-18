@@ -16,13 +16,14 @@ import dev.stapler.stelekit.platform.FileSystem
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /** The open graph's editor-side objects a share write must go through, so it sees the editor's unsaved edits. */
 class ActiveWriteBinding(
     val graphId: GraphId,
     val graphWriter: GraphWriter,
     val fileSystem: FileSystem,
-    val graphPath: String,
+    val graphPath: EffectiveNotesPath,
     /** True when the editor has unsaved or debounced edits for the page. */
     val isPageDirty: suspend (PageUuid) -> Boolean,
 )
@@ -51,7 +52,7 @@ internal fun activeTargetWriterFor(
     graphManager: GraphManager,
 ): TargetWriter {
     val bound = hooks.binding.value?.takeIf { it.graphId == ready.id }
-    val path = bound?.graphPath ?: graphManager.getActiveGraphInfo()?.takeIf { it.id == ready.id }?.path
+    val path = bound?.graphPath ?: graphManager.getNotesPath(ready.id)
     val actor = ready.repoSet.writeActor
     if (path == null || actor == null) return RefusingWriter(ready.id)
     val fs = bound?.fileSystem ?: graphFileSystem

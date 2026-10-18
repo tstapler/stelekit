@@ -2,6 +2,7 @@ package dev.stapler.stelekit.merge
 
 import dev.stapler.stelekit.db.FakeRelocationFileSystem
 import dev.stapler.stelekit.model.GraphId
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 class MarkdownTargetWriterContractTest : TargetWriterContractSuite() {
     override fun newHarness(): TargetHarness = Harness()
@@ -11,7 +12,7 @@ class MarkdownTargetWriterContractTest : TargetWriterContractSuite() {
         private val fs = FakeRelocationFileSystem()
         override val writer = MarkdownTargetWriter(
             fs,
-            OffGraphTarget(GraphId("b"), root, isActive = false),
+            OffGraphTarget(GraphId("b"), EffectiveNotesPath(root), isActive = false),
             TargetWriterCapabilities(platformSupportsOffGraphWrite = true),
             MarkdownTargetWriter.NoSymlinks,
         )

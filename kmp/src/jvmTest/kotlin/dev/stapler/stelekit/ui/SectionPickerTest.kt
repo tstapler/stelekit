@@ -19,6 +19,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlin.time.Clock
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * Story 6.5 — Section picker and subscription-toggle tests.
@@ -48,7 +49,7 @@ class SectionPickerTest {
             val writer = GraphWriter(fileSystem = fs).also {
                 it.currentEpoch = GraphEpoch(
                     graphId = GraphId("section-picker-test"),
-                    graphPath = "/graph",
+                    graphPath = EffectiveNotesPath("/graph"),
                     sequence = 1L,
                 )
             }
@@ -88,7 +89,7 @@ class SectionPickerTest {
             val writer = GraphWriter(fileSystem = fs).also {
                 it.currentEpoch = GraphEpoch(
                     graphId = GraphId("section-picker-test"),
-                    graphPath = "/graph",
+                    graphPath = EffectiveNotesPath("/graph"),
                     sequence = 1L,
                 )
             }
@@ -121,7 +122,7 @@ class SectionPickerTest {
         val writer = GraphWriter(fileSystem = fs).also {
             it.currentEpoch = GraphEpoch(
                 graphId = GraphId("section-picker-test"),
-                graphPath = "/graph",
+                graphPath = EffectiveNotesPath("/graph"),
                 sequence = 1L,
             )
         }

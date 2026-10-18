@@ -34,6 +34,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import arrow.core.Either
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /** In-flight camera-capture state, shared by [GraphContentScreenAndCapture] and [GraphContentCaptureDialogs]. */
 private class CaptureState(
@@ -161,8 +162,7 @@ private suspend fun attachImageToBlock(
     inputs: GraphContentMainAreaInputs,
     editingBlockUuid: BlockUuid,
 ) {
-    val graphRoot = inputs.appState.currentGraphPath ?: return
-    val result = attachmentService.pickAndAttach(graphRoot = graphRoot, pageRelativePath = "") ?: return
+    val result = attachmentService.pickAndAttach(inputs.appState.currentNotesPath ?: return, pageRelativePath = "") ?: return
     result.fold(
         ifLeft = { err -> inputs.graphContentLogger.warn("Image attachment failed: $err") },
         ifRight = { attachment -> inputs.viewModelStack.blockStateManager.insertTextAtCursor(editingBlockUuid, attachment.toMarkdown()) },
@@ -174,14 +174,12 @@ private fun onFileDrop(
     inputs: GraphContentMainAreaInputs,
     files: List<Any>,
 ) {
-    val graphRoot = inputs.appState.currentGraphPath
-    val pageUuid = (inputs.appState.currentScreen as? Screen.PageView)?.page?.uuid
-    if (pageUuid == null || graphRoot == null) return
+    val pageUuid = (inputs.appState.currentScreen as? Screen.PageView)?.page?.uuid ?: return
     inputs.scope.launch {
         handleFileDrop(
             files = files,
             attachmentService = attachmentService,
-            graphRoot = graphRoot,
+            notesPath = inputs.appState.currentNotesPath ?: return@launch,
             onAttached = { markdown ->
                 inputs.viewModelStack.blockStateManager.addBlockWithContent(pageUuid = pageUuid, content = markdown)
             },
@@ -203,7 +201,7 @@ private fun onFileDrop(
 internal suspend fun handleFileDrop(
     files: List<Any>,
     attachmentService: MediaAttachmentService,
-    graphRoot: String,
+    notesPath: EffectiveNotesPath,
     onAttached: (markdown: String) -> Unit,
     onError: (DomainError) -> Unit,
 ) {
@@ -212,11 +210,11 @@ internal suspend fun handleFileDrop(
             is DroppedFileBytes -> attachmentService.attachBytes(
                 bytes = file.bytes,
                 suggestedName = file.suggestedName,
-                graphRoot = graphRoot,
+                notesPath = notesPath,
             )
             else -> attachmentService.attachFilePath(
                 filePath = file.toString(),
-                graphRoot = graphRoot,
+                notesPath = notesPath,
             )
         } ?: return@forEach
         result.fold(
@@ -231,8 +229,7 @@ private suspend fun pasteImageToBlock(
     inputs: GraphContentMainAreaInputs,
     editingBlockUuid: BlockUuid?,
 ) {
-    val graphRoot = inputs.appState.currentGraphPath ?: return
-    val result = attachmentService.pasteFromClipboard(graphRoot) ?: return
+    val result = attachmentService.pasteFromClipboard(inputs.appState.currentNotesPath ?: return) ?: return
     result.fold(
         ifLeft = { err -> inputs.graphContentLogger.warn("Clipboard paste failed: $err") },
         ifRight = { attachment ->
@@ -353,7 +350,7 @@ private suspend fun saveCapturedImage(
         navigateAfterImport = captureState.pendingCaptureNavigateAfterImport.value,
     )
     try {
-        val graphPath = deps.graphManager.getActiveGraphInfo()?.path ?: return
+        val graphPath = deps.graphManager.getActiveNotesPath() ?: return
         val result = importCapturedImage(inputs, photo, graphPath)
         applyCapturedImageResult(viewModel, inputs, result, target, graphPath)
     } catch (e: CancellationException) {
@@ -378,7 +375,7 @@ private suspend fun saveCapturedImage(
 private suspend fun importCapturedImage(
     inputs: GraphContentMainAreaInputs,
     photo: CapturedPhoto,
-    graphPath: String,
+    graphPath: EffectiveNotesPath,
 ): Either<DomainError, ImageAnnotation>? {
     val service = inputs.graphIoStack.imageImportService ?: return null
     val result = withImportTimeout {
@@ -401,7 +398,7 @@ private fun applyCapturedImageResult(
     inputs: GraphContentMainAreaInputs,
     result: Either<DomainError, ImageAnnotation>?,
     target: CaptureTarget,
-    graphPath: String,
+    graphPath: EffectiveNotesPath,
 ) {
     if (inputs.graphIoStack.imageImportService != null && result == null) {
         viewModel.sendSnackbar("Image save timed out — try again")
@@ -418,12 +415,12 @@ private fun placeCapturedImage(
     viewModel: StelekitViewModel,
     target: CaptureTarget,
     annotation: ImageAnnotation,
-    graphPath: String,
+    graphPath: EffectiveNotesPath,
 ) {
     if (target.navigateAfterImport) {
         viewModel.navigateToAnnotationEditor(annotation.uuid, target.pageUuid)
     } else if (target.captureBlockUuid != null) {
-        val relPath = annotation.filePath.removePrefix("$graphPath/")
+        val relPath = annotation.filePath.removePrefix("${graphPath.value}/")
         inputs.viewModelStack.blockStateManager.insertTextAtCursor(target.captureBlockUuid, markdownImageLink("", "../$relPath"))
     }
 }

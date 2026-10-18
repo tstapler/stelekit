@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.db
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.model.BlockType
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.repository.DatalogBlockRepository
@@ -30,7 +31,7 @@ class DemoGraphIntegrationTest {
             val blockRepository = DatalogBlockRepository()
             val graphLoader = GraphLoader(fileSystem, pageRepository, blockRepository)
 
-            graphLoader.loadGraph(graphDir.absolutePath) {}
+            graphLoader.loadGraph(EffectiveNotesPath(graphDir.absolutePath)) {}
 
             val pages = pageRepository.getAllPagesSnapshot().getOrNull() ?: emptyList()
             Triple(pages, pageRepository, blockRepository)

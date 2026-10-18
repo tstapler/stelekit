@@ -37,7 +37,7 @@ class MarkdownSourceGraphReader(
         limit: Int,
     ): Either<ReadError, List<SourceEntry>> {
         gate(graph)?.let { return it.left() }
-        val root = graph.path.trimEnd('/')
+        val root = graph.effectiveNotesPath.directory()
         if (!fileSystem.directoryExists(root)) return ReadError.FolderMissing.left()
         val sorted = if (afterName == null || session?.root != root) {
             val listed = try {
@@ -64,7 +64,7 @@ class MarkdownSourceGraphReader(
 
     override suspend fun readPage(graph: GraphInfo, entry: SourceEntry): Either<ReadError, StagedPage> {
         gate(graph)?.let { return it.left() }
-        val root = graph.path.trimEnd('/')
+        val root = graph.effectiveNotesPath.directory()
         val path = "$root/${entry.fileName}"
         val folder = entry.fileName.substringBefore('/')
         if (folder !in FOLDERS.map { it.first } || !PageFileResolver.isWithin("$root/$folder", path)) {

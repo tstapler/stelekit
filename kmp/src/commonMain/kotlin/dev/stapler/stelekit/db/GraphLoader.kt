@@ -11,6 +11,7 @@ import kotlin.concurrent.Volatile
 
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageName
@@ -97,13 +98,12 @@ class GraphLoader(
      * Uses graph-root-relative path (e.g. "pages/Note.md.stek") per plan OPEN-1 decision.
      */
     private fun relativePathFor(absoluteFilePath: String): String {
-        val graphPath = currentGraphPath
-        if (graphPath.isEmpty()) return absoluteFilePath
-        val base = if (graphPath.endsWith("/")) graphPath else "$graphPath/"
+        val notesPath = currentNotesPath ?: return absoluteFilePath
+        val base = notesPath.child("")
         return if (absoluteFilePath.startsWith(base)) {
             absoluteFilePath.removePrefix(base)
         } else {
-            logger.error("relativePathFor: '$absoluteFilePath' is outside graph root '$graphPath' — AAD may be non-portable")
+            logger.error("relativePathFor: '$absoluteFilePath' is outside graph root '${notesPath.value}' — AAD may be non-portable")
             absoluteFilePath
         }
     }
@@ -141,7 +141,7 @@ class GraphLoader(
         if (layer == null) {
             return fileSystem.readFile(filePath)
         }
-        if (currentGraphPath.isEmpty()) {
+        if (currentNotesPath == null) {
             logger.error("readFileDecrypted: cryptoLayer is set but graphPath is empty — refusing to decrypt (wrong AAD)")
             return null
         }
@@ -342,7 +342,7 @@ class GraphLoader(
     }
 
     // Tracks the currently loaded graph path so on-demand loads can resolve file paths
-    var currentGraphPath: String = ""
+    var currentNotesPath: EffectiveNotesPath? = null
         private set
 
     // Platform-agnostic parallelism configuration
@@ -400,8 +400,8 @@ class GraphLoader(
      * Must be called before [cryptoLayer] is assigned so the first decryption uses
      * the correct relative path rather than falling back to the absolute path.
      */
-    fun setGraphPath(path: String) {
-        currentGraphPath = path
+    fun setGraphPath(notesPath: EffectiveNotesPath) {
+        currentNotesPath = notesPath
     }
 
     /**
@@ -473,7 +473,7 @@ class GraphLoader(
             emitExternalFileChange(filePath, hostBytes.decodeToString())
             return
         }
-        if (currentGraphPath.isEmpty()) {
+        if (currentNotesPath == null) {
             logger.error("emitExternalFileChangeBytes: cryptoLayer is set but graphPath is empty — refusing to decrypt (wrong AAD)")
             return
         }
@@ -524,12 +524,12 @@ class GraphLoader(
      * graphs resolve correctly.
      */
     fun resolvePageFilePath(pageName: String): String? {
-        if (currentGraphPath.isEmpty()) return null
+        val notesPath = currentNotesPath ?: return null
         val candidates = listOf(
-            "$currentGraphPath/pages/$pageName.md.stek",
-            "$currentGraphPath/journals/$pageName.md.stek",
-            "$currentGraphPath/pages/$pageName.md",
-            "$currentGraphPath/journals/$pageName.md"
+            notesPath.child("pages/$pageName.md.stek"),
+            notesPath.child("journals/$pageName.md.stek"),
+            notesPath.child("pages/$pageName.md"),
+            notesPath.child("journals/$pageName.md")
         )
         return candidates.firstOrNull { fileSystem.fileExists(it) }
     }
@@ -558,8 +558,9 @@ class GraphLoader(
         }
     }
 
-    suspend fun loadGraph(graphPath: String, onProgress: (String) -> Unit) {
-        currentGraphPath = graphPath
+    suspend fun loadGraph(notesPath: EffectiveNotesPath, onProgress: (String) -> Unit) {
+        currentNotesPath = notesPath
+        val graphPath = notesPath.value
         PerformanceMonitor.startTrace("loadGraph")
         val traceId = genId()
         val rootSpan = Span("graph_load", traceId)
@@ -573,8 +574,8 @@ class GraphLoader(
             logger.info("Starting graph load from: $graphPath")
             val startTime = Clock.System.now()
 
-            val pagesDir = "$graphPath/pages"
-            val journalsDir = "$graphPath/journals"
+            val pagesDir = notesPath.pagesDir()
+            val journalsDir = notesPath.journalsDir()
 
             sanitizeDirectory(pagesDir)
             sanitizeDirectory(journalsDir)
@@ -599,7 +600,7 @@ class GraphLoader(
             }
 
             // Start watching after initial load
-            startWatching(graphPath)
+            startWatching(notesPath)
             rootSpan.finish("OK", "graph.path" to graphPath.redactPath(), "duration.ms" to duration.inWholeMilliseconds.toString())
         } catch (e: CancellationException) {
             throw e
@@ -613,13 +614,14 @@ class GraphLoader(
     }
 
     override suspend fun loadGraphProgressive(
-        graphPath: String,
+        notesPath: EffectiveNotesPath,
         immediateJournalCount: Int,
         onProgress: (String) -> Unit,
         onPhase1Complete: () -> Unit,
         onFullyLoaded: () -> Unit,
     ) {
-        currentGraphPath = graphPath
+        currentNotesPath = notesPath
+        val graphPath = notesPath.value
         PerformanceMonitor.startTrace("loadGraphProgressive")
         val traceId = genId()
         val rootSpan = Span("graph_load.progressive", traceId)
@@ -635,8 +637,8 @@ class GraphLoader(
             logger.info("Starting progressive graph load from: $graphPath")
             val startTime = Clock.System.now()
 
-            val pagesDir = "$graphPath/pages"
-            val journalsDir = "$graphPath/journals"
+            val pagesDir = notesPath.pagesDir()
+            val journalsDir = notesPath.journalsDir()
 
             // Warm-start fast path: DB already has journals from a previous session on the
             // same graph (ViewModel clears the DB before calling us when the graph path changes,
@@ -689,7 +691,7 @@ class GraphLoader(
                         warmSpan.finish("OK", "duration.ms" to totalDuration.inWholeMilliseconds.toString())
                         onFullyLoaded()
                         onBulkImportComplete?.invoke()
-                        startWatching(graphPath)
+                        startWatching(notesPath)
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Throwable) {
@@ -751,7 +753,7 @@ class GraphLoader(
             onBulkImportComplete?.invoke()
 
             // Start watching after initial load
-            startWatching(graphPath)
+            startWatching(notesPath)
             rootSpan.finish("OK", "graph.path" to graphPath.redactPath(),
                 "duration.ms" to totalDuration.inWholeMilliseconds.toString())
         } catch (e: CancellationException) {
@@ -765,8 +767,8 @@ class GraphLoader(
         }
     }
 
-    fun startWatching(graphPath: String) {
-        fileWatcher.startWatching(graphPath)
+    fun startWatching(notesPath: EffectiveNotesPath) {
+        fileWatcher.startWatching(notesPath)
     }
 
     /**
@@ -1956,11 +1958,9 @@ class GraphLoader(
         sectionId: String,
         date: kotlinx.datetime.LocalDate,
     ): Either<DomainError, Page> {
-        val graphPath = currentGraphPath
-        if (graphPath.isEmpty()) {
-            return DomainError.DatabaseError.WriteFailed("No graph loaded").left()
-        }
-        val journalDir = if (sectionId.isBlank()) "$graphPath/journals" else "$graphPath/journals/$sectionId"
+        val notesPath = currentNotesPath
+            ?: return DomainError.DatabaseError.WriteFailed("No graph loaded").left()
+        val journalDir = if (sectionId.isBlank()) notesPath.journalsDir() else notesPath.child("journals/$sectionId")
         val filePath = "$journalDir/$date.md"
 
         if (!fileSystem.directoryExists(journalDir)) {

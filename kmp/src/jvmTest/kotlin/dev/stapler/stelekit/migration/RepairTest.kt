@@ -20,6 +20,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * Tests for [MigrationRunner.repair], [MigrationRunner.baseline], and
@@ -180,7 +181,7 @@ class RepairTest {
 
         // Apply V001 normally first
         val runner = buildRunner(db, repoSet, actor)
-        runner.runPending("graph-baseline-exists", repoSet, "/tmp/test-graph")
+        runner.runPending("graph-baseline-exists", repoSet, EffectiveNotesPath("/tmp/test-graph"))
 
         // Trying to baseline V001 again should throw
         assertFailsWith<IllegalStateException> {
@@ -205,7 +206,7 @@ class RepairTest {
         MigrationRegistry.register(m1)
 
         val runner = buildRunner(db, repoSet, actor)
-        runner.runPending("graph-checksum", repoSet, "/tmp/test-graph")
+        runner.runPending("graph-checksum", repoSet, EffectiveNotesPath("/tmp/test-graph"))
 
         val changelogRepo = ChangelogRepository(db)
         val originalChecksum = changelogRepo.appliedIds("graph-checksum")["V001"]!!

@@ -1,4 +1,5 @@
 package dev.stapler.stelekit.asset
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 import arrow.core.Either
 import arrow.core.right
@@ -32,7 +33,7 @@ class AssetIndexService(
     @Suppress("UnusedParameter")
     suspend fun registerAsset(
         filePath: String,
-        graphRoot: String,
+        notesPath: EffectiveNotesPath,
         mimeHint: String? = null,
         pageUuid: String? = null,
         writeActor: DatabaseWriteActor?,
@@ -86,18 +87,18 @@ class AssetIndexService(
     }
 
     /**
-     * Scans `<graphRoot>/assets/` recursively in bounded batches (<= 50 per batch),
+     * Scans `<notesPath>/assets/` recursively in bounded batches (<= 50 per batch),
      * skipping already-indexed files, registering new ones.
      * Launched as a non-blocking background job.
      */
     fun startBackfill(
-        graphRoot: String,
+        notesPath: EffectiveNotesPath,
         writeActor: DatabaseWriteActor?,
         fileSystem: FileSystem,
     ) {
         scope.launch {
             try {
-                backfillGraph(graphRoot, writeActor, fileSystem)
+                backfillGraph(notesPath, writeActor, fileSystem)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
@@ -107,11 +108,11 @@ class AssetIndexService(
     }
 
     private suspend fun backfillGraph(
-        graphRoot: String,
+        notesPath: EffectiveNotesPath,
         writeActor: DatabaseWriteActor?,
         fileSystem: FileSystem,
     ) {
-        val assetsDir = "$graphRoot/assets"
+        val assetsDir = notesPath.child("assets")
         if (!fileSystem.directoryExists(assetsDir)) return
 
         val allFiles = collectFilesRecursively(assetsDir, fileSystem)

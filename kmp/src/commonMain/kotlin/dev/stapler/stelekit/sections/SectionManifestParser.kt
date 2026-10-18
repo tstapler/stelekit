@@ -4,14 +4,14 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.platform.FileSystem
 import kotlinx.coroutines.CancellationException
 
 class SectionManifestParser(private val fileSystem: FileSystem) {
 
-    fun parse(graphPath: String): Either<DomainError, SectionManifest> {
-        val base = if (graphPath.endsWith("/")) graphPath else "$graphPath/"
-        val path = "$base${SectionManifest.FILENAME}"
+    fun parse(notesPath: EffectiveNotesPath): Either<DomainError, SectionManifest> {
+        val path = notesPath.child(SectionManifest.FILENAME)
         if (!fileSystem.fileExists(path)) return SectionManifest().right()
 
         val content = fileSystem.readFile(path)

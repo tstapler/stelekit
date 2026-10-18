@@ -1,17 +1,27 @@
 package dev.stapler.stelekit.ui
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
+import arrow.core.Either
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.ExternalFileChange
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphLoaderPort
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.db.WriteError
+import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageName
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.parsing.ParseMode
 import dev.stapler.stelekit.platform.PlatformFileSystem
+import dev.stapler.stelekit.repository.DataType
 import dev.stapler.stelekit.repository.InMemorySearchRepository
+import dev.stapler.stelekit.repository.SearchRepository
+import dev.stapler.stelekit.repository.SearchRequest
+import dev.stapler.stelekit.repository.SearchResult
+import dev.stapler.stelekit.repository.SearchScope
+import dev.stapler.stelekit.ui.screens.SearchResultItem
 import dev.stapler.stelekit.ui.fixtures.FakeBlockRepository
 import dev.stapler.stelekit.ui.fixtures.FakeFileSystem
 import dev.stapler.stelekit.ui.fixtures.FakePageRepository
@@ -21,10 +31,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
@@ -56,25 +68,60 @@ class StelekitViewModelLoadingTest {
         fileSystem: FakeFileSystem = FakeFileSystem(),
         settings: InMemorySettings = InMemorySettings(),
         graphLoader: GraphLoaderPort? = null,
+        searchRepository: SearchRepository = InMemorySearchRepository(),
     ): StelekitViewModel {
         val pageRepo = FakePageRepository()
         val blockRepo = FakeBlockRepository()
         val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
         val resolvedLoader = graphLoader ?: GraphLoader(fileSystem, pageRepo, blockRepo)
         val graphWriter = GraphWriter(PlatformFileSystem())
-        val searchRepo = InMemorySearchRepository()
         return StelekitViewModel(
             StelekitViewModelDependencies(
                 fileSystem = fileSystem,
                 pageRepository = pageRepo,
                 blockRepository = blockRepo,
-                searchRepository = searchRepo,
+                searchRepository = searchRepository,
                 graphLoader = resolvedLoader,
                 graphWriter = graphWriter,
                 platformSettings = settings,
                 scope = scope,
             )
         )
+    }
+
+    @Test
+    fun autocomplete_requests_only_page_titles_for_each_typing_prefix() = runBlocking {
+        val requests = mutableListOf<SearchRequest>()
+        val now = kotlin.time.Clock.System.now()
+        val cachedPages = listOf("compute-nop", "NOP (notes)").map { name ->
+            Page(uuid = PageUuid(java.util.UUID.randomUUID().toString()), name = name, createdAt = now, updatedAt = now)
+        }
+        val delegate = InMemorySearchRepository()
+        val searchRepository = object : SearchRepository by delegate {
+            override fun searchWithFilters(searchRequest: SearchRequest): Flow<Either<DomainError, SearchResult>> {
+                requests.add(searchRequest)
+                return flowOf(Either.Right(
+                    SearchResult(
+                        blocks = emptyList(), pages = cachedPages, totalCount = cachedPages.size, hasMore = false,
+                    ),
+                ))
+            }
+        }
+        val vm = makeViewModel(searchRepository = searchRepository)
+
+        try {
+            for (query in listOf("", "N", "NO", "NOP", "NOP (", "[NOP", "NOP]")) {
+                val items = vm.searchPages(query).toList().single()
+                assertEquals(cachedPages, items.filterIsInstance<SearchResultItem.PageItem>().map { it.page })
+                val request = requests.last()
+                assertEquals(query, request.query)
+                assertEquals(SearchScope.PAGES_ONLY, request.scope, "Autocomplete must not search block content")
+                assertEquals(setOf(DataType.TITLES), request.dataTypes)
+                assertEquals(10, request.limit)
+            }
+        } finally {
+            vm.close()
+        }
     }
 
     // ─── Normal load path ────────────────────────────────────────────────────
@@ -278,7 +325,7 @@ class StelekitViewModelLoadingTest {
         override fun setCryptoLayer(layer: CryptoLayer?) = Unit
         override fun closeAndClearCryptoLayer() = Unit
         override suspend fun loadGraphProgressive(
-            graphPath: String,
+            notesPath: EffectiveNotesPath,
             immediateJournalCount: Int,
             onProgress: (String) -> Unit,
             onPhase1Complete: () -> Unit,

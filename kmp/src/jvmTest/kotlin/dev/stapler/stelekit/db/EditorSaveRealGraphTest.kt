@@ -20,6 +20,7 @@ import org.junit.Test
 import java.io.File
 import java.nio.file.Files
 import kotlin.random.Random
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * Real-graph check (skipped unless `SPIKE_GRAPH_PATH` is set; the graph is only read): load a page through the real
@@ -89,13 +90,13 @@ class EditorSaveRealGraphTest {
                     val actor = DatabaseWriteActor(blocks, pages, scope = scope)
                     val loader = GraphLoader(fs, pages, blocks, externalWriteActor = actor)
                     val writer = GraphWriter(fs, actor)
-                    writer.currentEpoch = GraphEpoch(GraphId("g"), dir.absolutePath, 1L)
+                    writer.currentEpoch = GraphEpoch(GraphId("g"), EffectiveNotesPath(dir.absolutePath), 1L)
                     loader.applyExternalFileChange(FilePath(copy.absolutePath), original, ParseMode.FULL, DatabaseWriteActor.Priority.HIGH)
                     val page = pages.getAllPagesSnapshot().getOrNull().orEmpty().firstOrNull()
                     if (page == null) { skipped++; actor.close(); continue }
                     val rows = blocks.getBlocksForPage(page.uuid).first().getOrNull().orEmpty()
                     val old = oldSerialize(page, rows)
-                    writer.savePage(page, rows, dir.absolutePath)
+                    writer.savePage(page, rows, EffectiveNotesPath(dir.absolutePath))
                     val now = copy.readText()
                     actor.close()
                     val oldRt = old == original

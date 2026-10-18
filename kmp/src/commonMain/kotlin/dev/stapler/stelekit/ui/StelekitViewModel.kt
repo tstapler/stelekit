@@ -36,6 +36,8 @@ import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.repository.JournalService
 import dev.stapler.stelekit.repository.SearchRepository
+import dev.stapler.stelekit.repository.DataType
+import dev.stapler.stelekit.repository.SearchScope
 import dev.stapler.stelekit.repository.SearchRequest
 import dev.stapler.stelekit.repository.PageRepository
 import dev.stapler.stelekit.ui.i18n.Language
@@ -84,6 +86,7 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 sealed class IndexingState {
     object Idle : IndexingState()
@@ -381,6 +384,9 @@ class StelekitViewModel(
     )
     val uiState: StateFlow<AppState> = _uiState.asStateFlow()
 
+    /** The notes folder of the graph the view model has loaded, or null before one is. */
+    val currentNotesPath: EffectiveNotesPath? get() = _uiState.value.currentNotesPath
+
     // See GitSyncCoordinator's class doc for why syncState/gitLastSyncAt are re-exposed as
     // forwarding properties here, and why it shares _uiState directly rather than owning a
     // separate StateFlow of its own.
@@ -474,6 +480,7 @@ class StelekitViewModel(
         blockStateManager = blockStateManager,
         scope = scope,
         uiState = _uiState,
+        shareExportSettings = dev.stapler.stelekit.export.ShareExportSettings(platformSettings),
     )
 
     private val _indexingProgress = MutableStateFlow<IndexingState>(IndexingState.Idle)
@@ -698,7 +705,7 @@ class StelekitViewModel(
 
                     withContext(Dispatchers.Default) {
                         graphLoader.loadGraphProgressive(
-                            graphPath = path,
+                            notesPath = dev.stapler.stelekit.model.EffectiveNotesPath(path),
                             immediateJournalCount = 10,
                             onProgress = { status ->
                                 _uiState.update { it.copy(statusMessage = status) }
@@ -716,7 +723,7 @@ class StelekitViewModel(
                                 scope.launch { journalService.ensureTodayJournal() }
 
                                 // Load the section manifest from disk.
-                                scope.launch { sectionManagementCoordinator.loadSectionManifest(path) }
+                                scope.launch { sectionManagementCoordinator.loadSectionManifest(dev.stapler.stelekit.model.EffectiveNotesPath(path)) }
 
                                 startMidnightBoundaryWatcher()
                             },
@@ -1819,6 +1826,9 @@ class StelekitViewModel(
     /** Updates the share scope selection (persists across dialog invocations in the session). */
     fun setShareScope(scope: ShareScope) = shareExportCoordinator.setShareScope(scope)
 
+    /** Persists the opt-in "strip tracking parameters" share option. */
+    fun setStripTrackingParams(enabled: Boolean) = shareExportCoordinator.setStripTrackingParams(enabled)
+
     /**
      * Resolve export content for any [ShareScope].
      *
@@ -2179,7 +2189,12 @@ class StelekitViewModel(
      * Search pages for autocomplete
      */
     fun searchPages(query: String): Flow<List<SearchResultItem>> {
-        val request = SearchRequest(query = query, limit = 10)
+        val request = SearchRequest(
+            query = query,
+            scope = SearchScope.PAGES_ONLY,
+            dataTypes = setOf(DataType.TITLES),
+            limit = 10,
+        )
         return searchRepository.searchWithFilters(request).map {
             val searchResult = it.getOrNull()
             if (searchResult != null) {
@@ -2260,7 +2275,7 @@ class StelekitViewModel(
     fun renamePage(page: Page, newName: String): Job? {
         val trimmed = newName.trim()
         if (trimmed.isBlank() || trimmed == page.name) return null
-        val graphPath = _uiState.value.currentGraphPath ?: return null
+        val graphPath = _uiState.value.currentNotesPath ?: return null
         return scope.launch {
             _uiState.update { it.copy(renameDialogBusy = true, renameDialogError = null) }
             // Guard: reject rename if a page with the target name already exists.

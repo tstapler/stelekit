@@ -149,9 +149,3 @@ data class DepthCoordinatorState(
         return result
     }
 }
-
-private fun FloatArray?.contentEquals(other: FloatArray?): Boolean {
-    if (this === other) return true
-    if (this == null || other == null) return false
-    return this.contentEquals(other)
-}

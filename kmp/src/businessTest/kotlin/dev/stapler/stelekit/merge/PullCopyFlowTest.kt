@@ -105,7 +105,7 @@ class PullCopyFlowTest {
             )
             service = PageMergeService(router, okio, "/app", nowEpochMs = { 1_000L }).also { services += it }
             val fs = FakeRelocationFileSystem()
-            files.forEach { (rel, bytes) -> fs.writeFileBytes("${srcInfo.path}/$rel", bytes) }
+            files.forEach { (rel, bytes) -> fs.writeFileBytes("${srcInfo.effectiveNotesPath.value}/$rel", bytes) }
             val base = MarkdownSourceGraphReader(fs)
             source = PullPageSource(reader?.invoke(base) ?: base).also { sources += it }
         }
@@ -163,8 +163,8 @@ class PullCopyFlowTest {
         val listed = (env.source.listPages(SelectionFilter(), null, 100, 0) as Either.Right).value
         val read = (env.source.readPages(listed.map { it.uuid }) as Either.Right).value
         val reader = MarkdownSourceGraphReader(FakeRelocationFileSystem().also { fs ->
-            fs.writeFileBytes("${srcInfo.path}/pages/Many.md", text(many))
-            fs.writeFileBytes("${srcInfo.path}/pages/Ids.md", text(withId))
+            fs.writeFileBytes("${srcInfo.effectiveNotesPath.value}/pages/Many.md", text(many))
+            fs.writeFileBytes("${srcInfo.effectiveNotesPath.value}/pages/Ids.md", text(withId))
         })
         for (sp in read) {
             val entry = (reader.listEntries(srcInfo, null, 100) as Either.Right).value.first { it.name == sp.page.name }

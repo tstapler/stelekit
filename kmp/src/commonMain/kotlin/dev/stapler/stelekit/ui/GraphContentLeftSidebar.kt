@@ -242,6 +242,8 @@ private fun updateGraphPath(
     }
 }
 
+// Relinking identifies the graph by its registry path.
+@OptIn(dev.stapler.stelekit.model.RegistryRootPath::class)
 private fun relinkHostDirectory(inputs: GraphContentLeftSidebarInputs, deps: GraphContentDeps, viewModel: StelekitViewModel, id: String) {
     // Must call synchronously here, before scope.launch — same transient-user-activation
     // constraint as onAddGraph above.

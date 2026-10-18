@@ -15,6 +15,10 @@ import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.model.GraphInfo
 import dev.stapler.stelekit.platform.DemoFileSystem
 import dev.stapler.stelekit.platform.FileSystem
+import dev.stapler.stelekit.model.EffectiveNotesPath
+
+internal fun graphContentFileSystem(isDemo: Boolean, fileSystem: FileSystem): FileSystem =
+    if (isDemo) DemoFileSystem() else fileSystem
 
 /** Bundles [GraphContent]'s per-graph vault/crypto setup (Parameter Object pattern). */
 internal class GraphContentVaultSetup(
@@ -25,7 +29,10 @@ internal class GraphContentVaultSetup(
     val vaultStateState: MutableState<VaultState>,
     val vaultManagerState: MutableState<dev.stapler.stelekit.vault.VaultManager?>,
     val vaultCredentialStore: dev.stapler.stelekit.git.VaultCredentialStore?,
-)
+) {
+    /** The active graph's notes folder as a typed value, for page writers; null when no graph is active. */
+    val activeNotesPath: EffectiveNotesPath? get() = activeGraphInfo?.effectiveNotesPath
+}
 
 /**
  * Resolves the active graph's info/path, picks the effective [FileSystem] (swapped for
@@ -44,10 +51,10 @@ internal fun rememberGraphContentVaultSetup(
 ): GraphContentVaultSetup {
     val graphRegistry by graphManager.graphRegistry.collectAsState()
     val activeGraphInfo = remember(graphRegistry) { graphManager.getActiveGraphInfo() }
-    val activeGraphPath = activeGraphInfo?.effectivePath ?: activeGraphInfo?.path ?: ""
+    val activeGraphPath = activeGraphInfo?.effectiveNotesPath?.value ?: ""
 
-    val effectiveFileSystem: FileSystem = remember(activeGraphInfo?.isDemo) {
-        if (activeGraphInfo?.isDemo == true) DemoFileSystem() else fileSystem
+    val effectiveFileSystem: FileSystem = remember(activeGraphInfo?.isDemo, fileSystem) {
+        graphContentFileSystem(activeGraphInfo?.isDemo == true, fileSystem)
     }
 
     val vault = rememberVaultState(graphManager, fileSystem, cryptoEngine, activeGraphPath)

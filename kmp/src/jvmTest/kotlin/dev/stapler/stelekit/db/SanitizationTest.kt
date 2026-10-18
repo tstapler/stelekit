@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.db
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
@@ -55,7 +56,7 @@ class SanitizationTest {
         assertFalse(fileSystem.fileExists(safePath))
 
         // Run loadGraph which triggers sanitizeDirectory
-        graphLoader.loadGraph("/graph") { }
+        graphLoader.loadGraph(EffectiveNotesPath("/graph")) { }
         
         // Verify migration
         assertFalse(fileSystem.fileExists(unsafePath), "Unsafe file should be deleted")
@@ -81,7 +82,7 @@ class SanitizationTest {
         fileSystem.files[safePath] = contentSafe
         
         // Run loadGraph
-        graphLoader.loadGraph("/graph") { }
+        graphLoader.loadGraph(EffectiveNotesPath("/graph")) { }
         
         // Verify no overwrite happened
         assertTrue(fileSystem.fileExists(unsafePath), "Unsafe file should remain if target exists (to avoid data loss)")

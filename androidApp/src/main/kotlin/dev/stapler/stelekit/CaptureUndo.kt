@@ -36,7 +36,7 @@ internal class CaptureUndo(private val app: SteleKitApplication) {
     private suspend fun undoOpenGraph(captureId: String): Boolean {
         val gm = app.graphManager ?: return false
         val repoSet = gm.getActiveRepositorySet() ?: return false
-        val graphPath = gm.getActiveGraphInfo()?.path ?: return false
+        val graphPath = gm.getActiveNotesPath() ?: return false
         val block = repoSet.blockRepository.getBlockByUuid(BlockUuid(captureId)).first().getOrNull() ?: return false
         val page = repoSet.pageRepository.getPageByUuid(block.pageUuid).first().getOrNull() ?: return false
         val actor = repoSet.writeActor ?: return false

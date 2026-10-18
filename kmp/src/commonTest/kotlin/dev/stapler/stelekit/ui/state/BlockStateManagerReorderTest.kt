@@ -20,6 +20,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * Regression tests for reorder persistence (Epic 1, Task 1.2).
@@ -63,7 +64,7 @@ class BlockStateManagerReorderTest {
             scope,
             graphWriter = GraphWriter(FakeFileSystem()),
             pageRepository = pageRepo,
-            graphPathProvider = { "/fake/graph" },
+            graphPathProvider = { EffectiveNotesPath("/fake/graph") },
         )
     }
 

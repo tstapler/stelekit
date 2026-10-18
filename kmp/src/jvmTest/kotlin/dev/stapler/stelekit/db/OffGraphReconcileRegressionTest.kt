@@ -35,6 +35,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * Permanent regression for Spike 0.1.1 (ADR-001): pages written into a CLOSED graph through the
@@ -110,7 +111,7 @@ class OffGraphReconcileRegressionTest {
         val changes = CopyOnWriteArrayList<ExternalFileChange>()
         val collector = CoroutineScope(Dispatchers.Default).launch { loader.externalFileChanges.collect { changes += it } }
         delay(50) // let the collector subscribe before any watcher tick can emit
-        loader.loadGraphProgressive(root.absolutePath, 10, {}, {}, {})
+        loader.loadGraphProgressive(EffectiveNotesPath(root.absolutePath), 10, {}, {}, {})
         delay(1_000) // warm-start reconcile runs on a background job; also lets >= 8 watcher polls fire
         loader.indexRemainingPages {}
         delay(800)
@@ -148,7 +149,7 @@ class OffGraphReconcileRegressionTest {
 
     /** Writes through the production off-graph writer, as a copy into a closed target does. */
     private fun writerFor(id: GraphId, root: File) = MarkdownTargetWriter.forFilePaths(
-        fs, OffGraphTarget(id, root.absolutePath, isActive = false), TargetWriterCapabilities(platformSupportsOffGraphWrite = true),
+        fs, OffGraphTarget(id, EffectiveNotesPath(root.absolutePath), isActive = false), TargetWriterCapabilities(platformSupportsOffGraphWrite = true),
     )
 
     private fun page(name: String, uuid: String, text: String = "hello") =

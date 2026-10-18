@@ -174,7 +174,7 @@ class PullPageSource(
         }
         return when (error) {
             ReadError.NoGrant, ReadError.FolderMissing, ReadError.Encrypted ->
-                DomainError.FileSystemError.ReadFailed(source.path, error.message).left()
+                DomainError.FileSystemError.ReadFailed(source.effectiveNotesPath.value, error.message).left()
             is ReadError.TooLarge, is ReadError.Unreadable -> {
                 val bad = UnreadablePage(entry.name, DomainError.FileSystemError.ReadFailed(entry.fileName, error.message))
                 unreadable.update { it + bad }

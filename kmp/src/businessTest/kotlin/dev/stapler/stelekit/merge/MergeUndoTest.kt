@@ -13,13 +13,14 @@ import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 class MergeUndoTest {
     private val root = "/graphs/b"
     private val day = 24L * 60 * 60 * 1000
     private val fs = FakeRelocationFileSystem()
     private val store = MergeManifestStore(FakeFileSystem(), "/app")
-    private val target = OffGraphTarget(GraphId("b"), root, isActive = false)
+    private val target = OffGraphTarget(GraphId("b"), EffectiveNotesPath(root), isActive = false)
     private val real = MarkdownTargetWriter(fs, target, TargetWriterCapabilities(platformSupportsOffGraphWrite = true)) { it }
     private var writer: TargetWriter = real
     private var now = 1_000L

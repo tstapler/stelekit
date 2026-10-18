@@ -16,6 +16,7 @@ import androidx.compose.ui.test.performSemanticsAction
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ApplicationProvider
 import dev.stapler.stelekit.capture.AppendOutcome
 import dev.stapler.stelekit.capture.CaptureTargetSettings
@@ -44,6 +45,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.newSingleThreadContext
@@ -76,8 +78,18 @@ class CaptureShareReviewTest {
     @Before
     fun routeMainOffTheTestThread() { Dispatchers.setMain(mainThread) }
 
+    private val viewModels = mutableListOf<CaptureViewModel>()
+
+    /** Tracked so teardown can stop their coroutines: they read Dispatchers.Main from other threads. */
+    private fun captureViewModel(app: Application) = CaptureViewModel(app).also { viewModels += it }
+
+    // resetMain throws "Dispatchers.Main is used concurrently with setting it" if any coroutine is
+    // still reading Main, so cancel the ViewModel scopes and drain the Main thread first.
     @After
     fun restoreMain() {
+        viewModels.forEach { it.viewModelScope.cancel() }
+        viewModels.clear()
+        runBlocking(mainThread) { }
         Dispatchers.resetMain()
         mainThread.close()
     }
@@ -209,7 +221,7 @@ class CaptureShareReviewTest {
     @Config(sdk = [29], application = SteleKitApplication::class)
     fun backSave_withNoResolvableGraph_queuesInTheUnassignedSlot() {
         val h = harness()
-        val vm = CaptureViewModel(h.app)
+        val vm = captureViewModel(h.app)
         awaitState(vm.destination) { it is CaptureDestination.Ready }
         vm.setDestinationForTest(CaptureDestination.Unavailable(null, "That graph", "isn't available: it was removed.", null))
         vm.updateText("typed before the graph vanished")
@@ -225,7 +237,7 @@ class CaptureShareReviewTest {
     @Config(sdk = [29], application = SteleKitApplication::class)
     fun backAfterSaveError_retriesAndQueuesInsteadOfFinishingWithTheTextLost() {
         val h = harness()
-        val vm = CaptureViewModel(h.app)
+        val vm = captureViewModel(h.app)
         awaitState(vm.destination) { it is CaptureDestination.Ready }
         vm.setDestinationForTest(CaptureDestination.Unavailable(null, "That graph", "isn't available: it was removed.", null))
         vm.updateText("kept after the error")
@@ -252,7 +264,7 @@ class CaptureShareReviewTest {
     @Config(sdk = [29], application = SteleKitApplication::class)
     fun noGraphsContent_staysOpenWithCopyText_whenTheEnqueueFailed() {
         val h = harness(withGraphs = false, inboxFs = ReadOnlyInboxFs())
-        val vm = CaptureViewModel(h.app)
+        val vm = captureViewModel(h.app)
         awaitState(vm.destination) { it == CaptureDestination.NoGraphs }
         vm.updateText("only copy of this thought")
         var closed = 0
@@ -274,7 +286,7 @@ class CaptureShareReviewTest {
     @Config(sdk = [29], application = SteleKitApplication::class)
     fun noGraphsContent_stillAutoCloses_afterASuccessfulEnqueue() {
         val h = harness(withGraphs = false)
-        val vm = CaptureViewModel(h.app)
+        val vm = captureViewModel(h.app)
         awaitState(vm.destination) { it == CaptureDestination.NoGraphs }
         vm.updateText("queued fine")
         var closed = 0
@@ -299,7 +311,7 @@ class CaptureShareReviewTest {
     fun imageMarkerInPlainText_isSavedAsText_andNoFileIsRead() {
         val h = harness()
         val secret = File(h.app.filesDir, "databases-x").apply { writeBytes(byteArrayOf(5, 5, 5)) }
-        val vm = CaptureViewModel(h.app)
+        val vm = captureViewModel(h.app)
         vm.beginShare(h.workId().value)
         awaitState(vm.destination) { (it as? CaptureDestination.Ready)?.graph?.id == h.workId() }
         val text = "[image: ${secret.absolutePath}]\nhello"
@@ -318,7 +330,7 @@ class CaptureShareReviewTest {
     fun attachImage_rejectsPathsOutsideThePrivateShareImageDir() {
         val h = harness()
         val outside = File(h.app.filesDir, "databases-y").apply { writeBytes(byteArrayOf(1)) }
-        val vm = CaptureViewModel(h.app)
+        val vm = captureViewModel(h.app)
         vm.beginShare(h.workId().value)
         awaitState(vm.destination) { (it as? CaptureDestination.Ready)?.graph?.id == h.workId() }
         vm.attachImage(outside.absolutePath)
@@ -335,7 +347,7 @@ class CaptureShareReviewTest {
     fun attachedPrivateImage_isSentAsRealImageContent() {
         val h = harness()
         val image = ShareIntake.imageDir(h.app).apply { mkdirs() }.let { File(it, "ok.jpg").apply { writeBytes(byteArrayOf(1, 2, 3)) } }
-        val vm = CaptureViewModel(h.app)
+        val vm = captureViewModel(h.app)
         vm.beginShare(h.workId().value)
         awaitState(vm.destination) { (it as? CaptureDestination.Ready)?.graph?.id == h.workId() }
         vm.attachImage(image.absolutePath)
@@ -370,7 +382,7 @@ class CaptureShareReviewTest {
     fun missingAttachedImage_failsVisibly_andKeepsTheText() {
         val h = harness()
         val image = ShareIntake.imageDir(h.app).apply { mkdirs() }.let { File(it, "gone.jpg").apply { writeBytes(byteArrayOf(1)) } }
-        val vm = CaptureViewModel(h.app)
+        val vm = captureViewModel(h.app)
         vm.beginShare(h.workId().value)
         awaitState(vm.destination) { (it as? CaptureDestination.Ready)?.graph?.id == h.workId() }
         vm.attachImage(image.absolutePath)
@@ -392,7 +404,7 @@ class CaptureShareReviewTest {
     @Config(sdk = [29], application = SteleKitApplication::class)
     fun secondShareIntoAnOpenOverlay_queuesTheEarlierText() {
         val h = harness()
-        val vm = CaptureViewModel(h.app)
+        val vm = captureViewModel(h.app)
         awaitState(vm.destination) { it is CaptureDestination.Ready }
         vm.updateText("first share")
 
@@ -407,7 +419,7 @@ class CaptureShareReviewTest {
     @Config(sdk = [29], application = SteleKitApplication::class)
     fun secondShare_keepsBothTexts_whenQueuingTheEarlierOneFails() {
         val h = harness(inboxFs = ReadOnlyInboxFs())
-        val vm = CaptureViewModel(h.app)
+        val vm = captureViewModel(h.app)
         awaitState(vm.destination) { it is CaptureDestination.Ready }
         vm.updateText("first share")
 
@@ -438,7 +450,7 @@ class CaptureShareReviewTest {
 
     @Test
     fun dismissWithTypedText_asksBeforeDiscarding_andOffersCopyText() {
-        val vm = CaptureViewModel(ApplicationProvider.getApplicationContext())
+        val vm = captureViewModel(ApplicationProvider.getApplicationContext())
         vm.updateText("words I typed")
         var dismissed = 0
         composeRule.setContent { MaterialTheme { CaptureScreen(vm, onSaved = {}, onDismiss = { dismissed++ }) } }
@@ -455,7 +467,7 @@ class CaptureShareReviewTest {
 
     @Test
     fun dismissWithBlankText_closesAtOnce() {
-        val vm = CaptureViewModel(ApplicationProvider.getApplicationContext())
+        val vm = captureViewModel(ApplicationProvider.getApplicationContext())
         var dismissed = 0
         composeRule.setContent { MaterialTheme { CaptureScreen(vm, onSaved = {}, onDismiss = { dismissed++ }) } }
         composeRule.waitForIdle()

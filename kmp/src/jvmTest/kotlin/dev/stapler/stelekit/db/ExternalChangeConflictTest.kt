@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.db
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.FilePath
@@ -82,7 +83,7 @@ class ExternalChangeConflictTest {
 
         // Setup: register the file
         fs.externalWrite(filePath, "- Original entry")
-        loader.loadGraph("/graph") {}
+        loader.loadGraph(EffectiveNotesPath("/graph")) {}
 
         // Simulate GraphWriter saving user's content
         fs.writeFile(filePath, "- User typed content")
@@ -104,7 +105,7 @@ class ExternalChangeConflictTest {
 
         // Seed graph with content
         fs.externalWrite(filePath, "- My journal notes\n- Second item")
-        loader.loadGraph("/graph") {}
+        loader.loadGraph(EffectiveNotesPath("/graph")) {}
 
         // Simulate what happened in production: external process blanks the file
         fs.externalWrite(filePath, "")
@@ -121,7 +122,7 @@ class ExternalChangeConflictTest {
         val filePath = "/graph/journals/2026_04_13.md"
 
         fs.externalWrite(filePath, "- Original")
-        loader.loadGraph("/graph") {}
+        loader.loadGraph(EffectiveNotesPath("/graph")) {}
 
         // GraphWriter saves
         fs.writeFile(filePath, "- User edits")
@@ -147,7 +148,7 @@ class ExternalChangeConflictTest {
         val filePath = "/graph/journals/2026_04_13.md"
 
         fs.externalWrite(filePath, "- Unchanged content")
-        loader.loadGraph("/graph") {}
+        loader.loadGraph(EffectiveNotesPath("/graph")) {}
 
         // Touch: same content, new modtime only (e.g. git sync, Logseq, Dropbox)
         val existing = fs.files[filePath]!!
@@ -176,7 +177,7 @@ class ExternalChangeConflictTest {
         val filePath = "/graph/journals/2026_04_13.md"
 
         fs.externalWrite(filePath, "- Original entry")
-        loader.loadGraph("/graph") {}
+        loader.loadGraph(EffectiveNotesPath("/graph")) {}
 
         // Record how many pages exist before the change
         val pagesBefore = pageRepo.getAllPagesSnapshot().getOrNull() ?: emptyList()
@@ -226,7 +227,7 @@ class ExternalChangeConflictTest {
         val filePath = "/graph/journals/2026_04_13.md"
         fs2.externalWrite(filePath, "- Important journal entry\n- Second item")
 
-        loader2.loadGraph("/graph") {}
+        loader2.loadGraph(EffectiveNotesPath("/graph")) {}
 
         val pagesAfterLoad = pageRepo2.getAllPagesSnapshot().getOrNull() ?: emptyList()
         val journalPage = pagesAfterLoad.firstOrNull { it.name.contains("2026") }
@@ -297,7 +298,7 @@ class ExternalChangeConflictTest {
         val filePath = "/graph/journals/2026_04_13.md"
 
         fs.externalWrite(filePath, "- Version 1")
-        loader.loadGraph("/graph") {}
+        loader.loadGraph(EffectiveNotesPath("/graph")) {}
 
         // Register current state
         loader.fileRegistry.detectChanges("/graph/journals")
@@ -317,7 +318,7 @@ class ExternalChangeConflictTest {
         val filePath = "/graph/journals/2026_04_13.md"
 
         fs.externalWrite(filePath, "- Initial")
-        loader.loadGraph("/graph") {}
+        loader.loadGraph(EffectiveNotesPath("/graph")) {}
 
         // Rapid external writes: V1 then V2
         fs.externalWrite(filePath, "- Remote V1")

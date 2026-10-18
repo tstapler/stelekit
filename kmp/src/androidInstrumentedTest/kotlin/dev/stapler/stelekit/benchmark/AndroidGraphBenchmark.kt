@@ -2,6 +2,7 @@
 
 package dev.stapler.stelekit.benchmark
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import androidx.core.content.FileProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -75,7 +76,7 @@ class AndroidGraphBenchmark {
         var phase1Ms = -1L
 
         loader.loadGraphProgressive(
-            graphPath = graphDir.absolutePath,
+            notesPath = EffectiveNotesPath(graphDir.absolutePath),
             immediateJournalCount = 5,
             onProgress = {},
             onPhase1Complete = { phase1Ms = System.currentTimeMillis() - start },
@@ -117,7 +118,7 @@ class AndroidGraphBenchmark {
         actor.savePage(page)
 
         loader.loadGraphProgressive(
-            graphPath = graphDir.absolutePath,
+            notesPath = EffectiveNotesPath(graphDir.absolutePath),
             immediateJournalCount = 5,
             onProgress = {},
             onPhase1Complete = {},
@@ -197,7 +198,7 @@ class AndroidGraphBenchmark {
 
         // Load the graph fully before measuring (simulates post-launch steady state)
         loader.loadGraphProgressive(
-            graphPath = graphDir.absolutePath,
+            notesPath = EffectiveNotesPath(graphDir.absolutePath),
             immediateJournalCount = 5,
             onProgress = {},
             onPhase1Complete = {},

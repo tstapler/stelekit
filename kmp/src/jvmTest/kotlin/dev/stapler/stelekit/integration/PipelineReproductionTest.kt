@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.integration
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.outliner.BlockSorter
 import dev.stapler.stelekit.parsing.OutlinerParser
@@ -58,7 +59,7 @@ class PipelineReproductionTest {
 
         fileSystem.files["/graph/pages/test.md"] = content
         
-        graphLoader.loadGraph("/graph") { }
+        graphLoader.loadGraph(EffectiveNotesPath("/graph")) { }
         
         val pagesResult = pageRepository.getAllPagesSnapshot()
         val pages = pagesResult.getOrNull()!!

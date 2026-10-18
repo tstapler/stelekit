@@ -20,6 +20,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlin.time.Clock
 import java.io.File
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * Tests for the file-watcher loop fix (Fix 2):
@@ -52,7 +53,7 @@ class GraphLoaderWatcherTest {
             val loader = GraphLoader(fileSystem, pageRepo, blockRepo, watcherPollIntervalMs = 100L)
 
             // Load the (empty) graph so the watcher has a base state
-            loader.loadGraph(graphDir.absolutePath) {}
+            loader.loadGraph(EffectiveNotesPath(graphDir.absolutePath)) {}
 
             // Write a file directly (simulating GraphWriter)
             val pagePath = File(graphDir, "pages/TestPage.md").absolutePath
@@ -123,7 +124,7 @@ class GraphLoaderWatcherTest {
                 )
             )
 
-            writer.savePage(page, blocks, graphDir.absolutePath)
+            writer.savePage(page, blocks, EffectiveNotesPath(graphDir.absolutePath))
 
             // Verify the callback was invoked with the correct path
             assertNotNull(callbackFilePath, "onFileWritten callback should have been called")
@@ -169,7 +170,7 @@ class GraphLoaderWatcherTest {
             @Suppress("DEPRECATION")
             val writer = GraphWriter(fileSystem, pageRepository = pageRepo, onFileWritten = loader::markFileWrittenByUs)
 
-            loader.loadGraph(graphDir.absolutePath) {}
+            loader.loadGraph(EffectiveNotesPath(graphDir.absolutePath)) {}
 
             // Save a page via GraphWriter (onFileWritten fires → markFileWrittenByUs)
             val now = Clock.System.now()
@@ -177,7 +178,7 @@ class GraphLoaderWatcherTest {
             val blocks = listOf(
                 Block(uuid = BlockUuid("b1"), pageUuid = PageUuid("p1"), content = "Hello", level = 0, position = "a0", createdAt = now, updatedAt = now)
             )
-            writer.savePage(page, blocks, graphDir.absolutePath)
+            writer.savePage(page, blocks, EffectiveNotesPath(graphDir.absolutePath))
 
             // Verify the file was written
             val filePath = File(graphDir, "pages/IntegPage.md").absolutePath
@@ -219,7 +220,7 @@ class GraphLoaderWatcherTest {
             val pagePath = File(graphDir, "pages/Watched.md").absolutePath
             File(pagePath).writeText("- Original content\n")
 
-            loader.loadGraph(graphDir.absolutePath) {}
+            loader.loadGraph(EffectiveNotesPath(graphDir.absolutePath)) {}
 
             val page = pageRepo.getAllPagesSnapshot().getOrNull()
                 ?.firstOrNull { it.name.contains("Watched", ignoreCase = true) }

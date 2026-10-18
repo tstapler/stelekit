@@ -38,6 +38,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 class JournalAppenderOffGraphTest {
     private val active = GraphId("aaaaaaaaaaaaaaaa")
@@ -66,9 +67,15 @@ class JournalAppenderOffGraphTest {
         managers.clear()
     }
 
-    private fun newManager(workPath: String = workRoot): GraphManager {
+    private fun newManager(workPath: String = workRoot, activeWikiSubdir: String? = null, workWikiSubdir: String? = null): GraphManager {
         val graphs = listOf(active to "/graphs/active", work to workPath)
-            .map { (id, path) -> GraphInfo(id = id, path = path, displayName = id.value, addedAt = 0L) }
+            .map { (id, path) ->
+                val subdir = if (id == active) activeWikiSubdir else workWikiSubdir
+                GraphInfo(
+                    id = id, path = path, displayName = id.value, addedAt = 0L,
+                    detectedWikiSubdir = subdir, effectivePath = subdir?.let { "$path/$it" },
+                )
+            }
         val settings = MapSettings()
         settings.putString("graph_registry", Json.encodeToString(GraphRegistry(activeGraphId = active, graphs = graphs)))
         return GraphManager(
@@ -93,7 +100,7 @@ class JournalAppenderOffGraphTest {
             offGraphWriterFor = { info ->
                 MarkdownTargetWriter(
                     targetFs,
-                    OffGraphTarget(info.id, info.path, isActive = false),
+                    OffGraphTarget(info.id, EffectiveNotesPath(info.effectiveNotesPath.value), isActive = false),
                     capabilities,
                     MarkdownTargetWriter.NoSymlinks,
                 )
@@ -111,7 +118,7 @@ class JournalAppenderOffGraphTest {
             capabilities = capabilities,
             activeWriterFor = { error("target is not the ready graph in these tests") },
             offGraphWriterFor = { info ->
-                MarkdownTargetWriter(targetFs, OffGraphTarget(info.id, info.path, isActive = false), capabilities, MarkdownTargetWriter.NoSymlinks)
+                MarkdownTargetWriter(targetFs, OffGraphTarget(info.id, EffectiveNotesPath(info.effectiveNotesPath.value), isActive = false), capabilities, MarkdownTargetWriter.NoSymlinks)
             },
         )
         val raw = RouterOffGraphRoute(router, RegistryGraphLocator(m.graphRegistry), AssetCopier(targetFs), today)
@@ -125,7 +132,7 @@ class JournalAppenderOffGraphTest {
     private fun stems() = targetFs.listFiles("$workRoot/journals").map { it.substringBefore('.') }
 
     private fun journalPath(): String =
-        PageFileResolver.resolveJournal(day, workRoot, stems()).fold({ error("unresolvable: $it") }, { it })
+        PageFileResolver.resolveJournal(day, EffectiveNotesPath(workRoot), stems()).fold({ error("unresolvable: $it") }, { it })
 
     private fun seedJournal(stem: String, text: String): String {
         val path = "$workRoot/journals/$stem.md"
@@ -321,6 +328,36 @@ class JournalAppenderOffGraphTest {
     }
 
     @Test
+    fun router_should_WriteJournalUnderWikiSubdir_When_ActiveGraphHasOne() = realTime {
+        val m = newManager(activeWikiSubdir = "logseq")
+        m.awaitPendingMigration()
+        val route = activeFixture(m)
+
+        assertIs<AppendOutcome.AppendedOffGraph>(route.appendContent(active, ShareContent("hello subdir"), c1))
+
+        val inSubdir = targetFs.listFiles("$activeRoot/logseq/journals").singleOrNull()
+        assertNotNull(inSubdir, "journal must land in <repoRoot>/logseq/journals, the only folder git sync stages")
+        assertTrue(targetFs.readFile("$activeRoot/logseq/journals/${inSubdir.substringAfterLast('/')}")!!.contains("hello subdir"))
+        assertTrue(targetFs.listFiles("$activeRoot/journals").isEmpty(), "nothing may be written to <repoRoot>/journals")
+    }
+
+    @Test
+    fun productionRouter_should_WriteInactiveGraphJournalUnderWikiSubdir() = realTime {
+        val m = newManager(workWikiSubdir = "logseq")
+        m.awaitPendingMigration()
+        val router = createTargetWriterRouter(
+            m, targetFs, TargetWriterCapabilities(platformSupportsOffGraphWrite = true),
+            MarkdownTargetWriter.NoSymlinks, ActiveWriteHooks(),
+        )
+        val route = RouterOffGraphRoute(router, RegistryGraphLocator(m.graphRegistry), AssetCopier(targetFs)) { day }
+
+        assertIs<AppendOutcome.AppendedOffGraph>(route.appendContent(work, ShareContent("hello work"), c1))
+
+        assertNotNull(targetFs.listFiles("$workRoot/logseq/journals").singleOrNull(), "journal must be under <repoRoot>/logseq/journals")
+        assertTrue(targetFs.listFiles("$workRoot/journals").isEmpty(), "nothing may be written to <repoRoot>/journals")
+    }
+
+    @Test
     fun router_should_Defer_When_EditorHasUnsavedEditsOnTheJournal() = realTime {
         val m = newManager()
         m.awaitPendingMigration()
@@ -330,7 +367,7 @@ class JournalAppenderOffGraphTest {
         val before = activeJournal()
         val ready = assertNotNull(m.readyGraph.value)
         hooks.register(
-            ActiveWriteBinding(active, GraphWriter(targetFs, ready.repoSet.writeActor), targetFs, activeRoot) { true },
+            ActiveWriteBinding(active, GraphWriter(targetFs, ready.repoSet.writeActor), targetFs, EffectiveNotesPath(activeRoot)) { true },
         )
 
         val outcome = route.appendContent(active, ShareContent("while editing"), "00000000-0000-4000-8000-000000000002")
@@ -354,6 +391,23 @@ class JournalAppenderOffGraphTest {
         assertTrue(onDisk.contains("![image](../assets/"), onDisk)
         val asset = targetFs.allFilePaths().single { it.startsWith("$activeRoot/assets/") }
         assertContentEquals(image, targetFs.readFileBytes(asset))
+    }
+
+    @Test
+    fun appendContent_should_StoreImageUnderWikiSubdirAssets_When_ActiveGraphHasOne() = realTime {
+        val m = newManager(activeWikiSubdir = "logseq")
+        m.awaitPendingMigration()
+        val appender = JournalAppender(m, PlatformFileSystem(), InboxFallbackAppender(activeFixture(m), inbox))
+        val image = byteArrayOf(9, 8, 7)
+
+        assertIs<AppendOutcome.AppendedOffGraph>(
+            appender.appendContent(CaptureTarget.NamedGraph(active), ShareContent("look", image, "image/png"), c1),
+        )
+
+        val assets = targetFs.allFilePaths().filter { "/assets/" in it }
+        assertEquals(1, assets.size, assets.toString())
+        assertTrue(assets.single().startsWith("$activeRoot/logseq/assets/"), "asset must sit beside the journal it links to: $assets")
+        assertContentEquals(image, targetFs.readFileBytes(assets.single()))
     }
 
     @Test

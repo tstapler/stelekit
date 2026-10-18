@@ -5,6 +5,7 @@ import arrow.core.flatMap
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.db.PageFileResolver
+import dev.stapler.stelekit.db.AssetLinks
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.util.ContentHasher
@@ -32,7 +33,7 @@ class AssetCopier(
     private val canonicalize: (String) -> String = { it },
 ) {
     /** Pure: asset paths (relative to `assets/`) referenced from [content]. */
-    fun assetRefs(content: String): List<String> = LINK.findAll(content).map { it.groupValues[2] }.toList()
+    fun assetRefs(content: String): List<String> = AssetLinks.refs(content)
 
     /**
      * [dryRun] resolves outcomes and counts without writing, for `plan()`; `apply()` passes false.
@@ -172,7 +173,6 @@ class AssetCopier(
     private companion object {
         const val HASH_LEN = 8
 
-        /** `[text](../assets/<path>)` or `![alt](../assets/<path>)`; group 2 is the path under assets/. */
-        val LINK = Regex("""(!?\[[^\]]*]\(\s*\.\./assets/)([^)\s]+)""")
+        val LINK = AssetLinks.LINK
     }
 }

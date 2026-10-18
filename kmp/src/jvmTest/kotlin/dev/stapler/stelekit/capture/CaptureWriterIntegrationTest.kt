@@ -20,6 +20,7 @@ import java.nio.file.Files
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * Coverage for [CaptureWriter.writeCapture] against the real `SQLDELIGHT` backend. The unit
@@ -61,7 +62,7 @@ class CaptureWriterIntegrationTest {
             val repoSet = factory.createRepositorySet(GraphBackend.SQLDELIGHT, scope)
             requireNotNull(repoSet.writeActor) { "expected a live writeActor for the SQLDELIGHT backend" }
 
-            val result = CaptureWriter.writeCapture(repoSet, fileSystem, graphDir, CAPTURED_TEXT)
+            val result = CaptureWriter.writeCapture(repoSet, fileSystem, EffectiveNotesPath(graphDir), CAPTURED_TEXT)
             return assertIs<CaptureResult.Saved>(result).page.uuid
         } finally {
             scope.cancel()

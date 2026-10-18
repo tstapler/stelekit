@@ -91,7 +91,7 @@ class RouterOffGraphRoute(
     override suspend fun appendContent(graphId: GraphId, content: ShareContent, captureId: String?): AppendOutcome {
         val id = captureId ?: UuidGenerator.generateV7()
         if (content.text.isBlank() && content.image == null) return AppendOutcome.Failed("Nothing to save")
-        val root = locator.locate(graphId).fold({ return AppendOutcome.Failed(it.message) }, { it.path })
+        val root = locator.locate(graphId).fold({ return AppendOutcome.Failed(it.message) }, { it.effectiveNotesPath.value })
         val date = OffGraphCapture.journalDateFor(id, today())
         val page = PageKey(JournalUtils.formatDateForJournal(date), isJournal = true)
         val uuid = OffGraphCapture.blockUuid(id)

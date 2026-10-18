@@ -16,6 +16,7 @@ import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.time.Clock
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * TC-08: Regression guard that asserts the debounce contract for file writes during
@@ -90,7 +91,7 @@ class FileSystemCallCountTest {
         ).also {
             it.currentEpoch = GraphEpoch(
                 graphId = GraphId("fs-count-test-graph"),
-                graphPath = graphPath,
+                graphPath = EffectiveNotesPath(graphPath),
                 sequence = 1L,
             )
         }
@@ -106,7 +107,7 @@ class FileSystemCallCountTest {
             scope = scope,
             graphWriter = graphWriter,
             pageRepository = pageRepo,
-            graphPathProvider = { graphPath },
+            graphPathProvider = { EffectiveNotesPath(graphPath) },
         )
 
         return Harness(bsm, countingFs, scope)

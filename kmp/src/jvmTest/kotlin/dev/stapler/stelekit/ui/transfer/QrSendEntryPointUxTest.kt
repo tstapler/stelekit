@@ -31,6 +31,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.Rule
 import org.junit.Test
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * UX Acceptance Test criterion 1 (validation.md): "Send via QR" must reach the encoder screen
@@ -88,7 +89,7 @@ class QrSendEntryPointUxTest {
             graphLoader = graphLoader,
             scope = scope,
             pageRepository = pageRepo,
-            graphPathProvider = { viewModelRef?.uiState?.value?.currentGraphPath ?: "" },
+            graphPathProvider = { EffectiveNotesPath(viewModelRef?.uiState?.value?.currentGraphPath ?: "") },
         )
         val viewModel = StelekitViewModel(
             StelekitViewModelDependencies(

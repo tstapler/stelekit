@@ -7,13 +7,14 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /** Real-filesystem check that canonical containment catches symlinks the lexical check cannot see. */
 class PathContainmentSymlinkTest {
     private fun canonical(p: Path): String = p.toRealPath().toString()
 
     private fun resolved(name: String, journal: Boolean, graph: Path): String =
-        (PageFileResolver.resolve(name, journal, graph.toString()) as Either.Right).value
+        (PageFileResolver.resolve(name, journal, EffectiveNotesPath(graph.toString())) as Either.Right).value
 
     private fun withGraph(block: (graph: Path, outside: Path) -> Unit) {
         val base = Files.createTempDirectory("stelekit_contain_")

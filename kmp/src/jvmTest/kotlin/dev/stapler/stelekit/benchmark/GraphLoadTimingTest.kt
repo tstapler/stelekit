@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.benchmark
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.model.Block
@@ -115,7 +116,7 @@ class GraphLoadTimingTest {
 
         val loadMs = measureTime {
             loader.loadGraphProgressive(
-                graphPath             = graphPath,
+                notesPath             = EffectiveNotesPath(graphPath),
                 immediateJournalCount = 10,
                 onProgress            = {},
                 onPhase1Complete      = { phase1Ms = (Clock.System.now() - start).inWholeMilliseconds },
@@ -249,7 +250,7 @@ class GraphLoadTimingTest {
         println("  Starting graph load with concurrent writes...")
         val loadJob = CoroutineScope(Dispatchers.Default).launch {
             loader.loadGraphProgressive(
-                graphPath             = graphPath,
+                notesPath             = EffectiveNotesPath(graphPath),
                 immediateJournalCount = 10,
                 onProgress            = {},
                 onPhase1Complete      = { currentPhase.set(2) },
@@ -538,7 +539,7 @@ class GraphLoadTimingTest {
             val repoSet = factory.createRepositorySet(GraphBackend.SQLDELIGHT, scope)
             val loader = repoSet.createGraphLoader(fileSystem)
             loader.loadGraphProgressive(
-                graphPath             = dir.absolutePath,
+                notesPath             = EffectiveNotesPath(dir.absolutePath),
                 immediateJournalCount = 10,
                 onProgress            = {},
                 onPhase1Complete      = {},

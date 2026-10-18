@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.db
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
@@ -69,7 +70,7 @@ class AppLoadJournalIntegrationTest {
     /** Mirrors what StelekitViewModel.loadGraph() does: progressive load then ensureTodayJournal. */
     private suspend fun Harness.appLoad() {
         graphLoader.loadGraphProgressive(
-            graphPath = "/graph",
+            notesPath = EffectiveNotesPath("/graph"),
             immediateJournalCount = 10,
             onProgress = {},
             onPhase1Complete = {},
@@ -505,7 +506,7 @@ class AppLoadJournalIntegrationTest {
         val ensureDeferred = async { h.journalService.ensureTodayJournal() }
         val loadDeferred = async {
             h.graphLoader.loadGraphProgressive(
-                graphPath = "/graph",
+                notesPath = EffectiveNotesPath("/graph"),
                 immediateJournalCount = 10,
                 onProgress = {},
                 onPhase1Complete = {},

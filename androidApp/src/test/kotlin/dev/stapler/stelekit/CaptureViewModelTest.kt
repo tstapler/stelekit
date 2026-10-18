@@ -62,6 +62,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /**
  * Covers Epics 2.1-2.3 of project_plans/stelekit-capture-auto-enrich (ScanState, the debounced
@@ -279,7 +280,7 @@ class CaptureViewModelTest {
         pageRepository: PageRepository,
         blockRepository: BlockRepository,
     ): CaptureViewModel.SavedCaptureContext = CaptureViewModel.SavedCaptureContext(
-        block, page, blocks, graphPath, graphId, writer, writeActor, pageRepository, blockRepository,
+        block, page, blocks, EffectiveNotesPath(graphPath), graphId, writer, writeActor, pageRepository, blockRepository,
     )
 
     /** Reflectively overwrites the private `_scanState` backing [MutableStateFlow]'s value. */
@@ -987,7 +988,7 @@ class CaptureViewModelTest {
             block = block,
             page = page,
             blocks = listOf(block),
-            graphPath = graphManager.getActiveGraphInfo()!!.path,
+            graphPath = graphManager.getActiveGraphInfo()!!.effectiveNotesPath.value,
             // Deliberately does not match the real active graph id — simulates the user
             // switching graphs in the window between save() and a post-save chip tap.
             graphId = GraphId("mismatched-graph-id"),
@@ -1049,7 +1050,7 @@ class CaptureViewModelTest {
             block = block,
             page = page,
             blocks = listOf(block),
-            graphPath = graphManager.getActiveGraphInfo()!!.path,
+            graphPath = graphManager.getActiveGraphInfo()!!.effectiveNotesPath.value,
             graphId = graphManager.getActiveGraphId()!!,
             writer = writer,
             writeActor = repoSet.writeActor,
@@ -1311,7 +1312,7 @@ class CaptureViewModelTest {
             block = block,
             page = page,
             blocks = listOf(block),
-            graphPath = graphManager.getActiveGraphInfo()!!.path,
+            graphPath = graphManager.getActiveGraphInfo()!!.effectiveNotesPath.value,
             graphId = graphManager.getActiveGraphId()!!,
             writer = fakeWriter,
             writeActor = repoSet.writeActor,
@@ -1475,7 +1476,7 @@ class CaptureViewModelTest {
             block = block,
             page = page,
             blocks = listOf(block),
-            graphPath = graphManager.getActiveGraphInfo()!!.path,
+            graphPath = graphManager.getActiveGraphInfo()!!.effectiveNotesPath.value,
             graphId = graphManager.getActiveGraphId()!!,
             writer = fakeWriter,
             writeActor = repoSet.writeActor,
@@ -1591,7 +1592,7 @@ class CaptureViewModelTest {
             block = block,
             page = page,
             blocks = listOf(block),
-            graphPath = graphManager.getActiveGraphInfo()!!.path,
+            graphPath = graphManager.getActiveGraphInfo()!!.effectiveNotesPath.value,
             graphId = graphManager.getActiveGraphId()!!,
             writer = writer,
             writeActor = repoSet.writeActor,

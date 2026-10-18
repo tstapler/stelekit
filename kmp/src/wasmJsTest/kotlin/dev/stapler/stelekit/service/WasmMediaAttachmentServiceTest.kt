@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.service
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.ui.NotificationManager
@@ -89,7 +90,7 @@ class WasmMediaAttachmentServiceTest {
     @Test
     fun attachBytes_writesFileToOpfsAssetsDir_forFreshName() = runTest {
         val service = newService()
-        val graphRoot = uniqueGraphRoot()
+        val graphRoot = EffectiveNotesPath(uniqueGraphRoot())
 
         val result = service.attachBytes(byteArrayOf(1, 2, 3, 4), "test.png", graphRoot)
 
@@ -101,7 +102,7 @@ class WasmMediaAttachmentServiceTest {
     @Test
     fun attachBytes_appliesDashOneSuffix_whenNameAlreadyExists() = runTest {
         val service = newService()
-        val graphRoot = uniqueGraphRoot()
+        val graphRoot = EffectiveNotesPath(uniqueGraphRoot())
 
         service.attachBytes(byteArrayOf(1, 2), "dup.png", graphRoot)
         val second = service.attachBytes(byteArrayOf(3, 4), "dup.png", graphRoot)
@@ -114,7 +115,7 @@ class WasmMediaAttachmentServiceTest {
     @Test
     fun attachBytes_returnsCopyFailedLeft_whenOpfsWriteThrows() = runTest {
         val service = newService()
-        val graphRoot = uniqueGraphRoot()
+        val graphRoot = EffectiveNotesPath(uniqueGraphRoot())
 
         val original = monkeypatchCreateWritableToReject()
         val result = try {
@@ -134,7 +135,7 @@ class WasmMediaAttachmentServiceTest {
         // then write() failing is exactly the case opfsWriteFileBytes's writableAbort() call exists
         // for (PR #361 Gate-2 review, MAJOR 4: an un-aborted stream leaks OPFS's exclusive file lock).
         val service = newService()
-        val graphRoot = uniqueGraphRoot()
+        val graphRoot = EffectiveNotesPath(uniqueGraphRoot())
 
         val originalWrite = monkeypatchWritableWriteToReject()
         val originalAbort = spyOnWritableAbort()
