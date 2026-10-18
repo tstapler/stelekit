@@ -7,6 +7,7 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.AnnotationType
 import dev.stapler.stelekit.model.Calibration
 import dev.stapler.stelekit.model.CalibrationMethod
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.model.ImageAnnotation
 import dev.stapler.stelekit.model.ImageSensorData
 import dev.stapler.stelekit.model.ImageSource
@@ -20,7 +21,7 @@ import kotlinx.serialization.json.Json
 /**
  * Reads and writes `.measure.json` sidecar files for image annotations.
  *
- * Sidecar path convention: `<graphPath>/.stelekit/images/<uuid>.measure.json`
+ * Sidecar path convention: `<notesPath>/.stelekit/images/<uuid>.measure.json`
  *
  * IMPORTANT: always call [writeSidecar] BEFORE the SQLDelight row insert.
  * If the sidecar write fails, return the error without touching SQLDelight.
@@ -42,8 +43,9 @@ class ImageSidecarManager(
         measurements: List<MeasurementAnnotation>,
     ): Either<DomainError, Unit> {
         return try {
-            val path = sidecarPath(annotation.graphPath, annotation.uuid)
-            ensureSidecarDir(annotation.graphPath)
+            val notesPath = EffectiveNotesPath(annotation.graphPath)
+            val path = sidecarPath(notesPath, annotation.uuid)
+            ensureSidecarDir(notesPath)
 
             val sidecar = SidecarFile(
                 schemaVersion = 1,
@@ -58,20 +60,20 @@ class ImageSidecarManager(
             throw e
         } catch (e: Exception) {
             DomainError.FileSystemError.WriteFailed(
-                sidecarPath(annotation.graphPath, annotation.uuid),
+                sidecarPath(EffectiveNotesPath(annotation.graphPath), annotation.uuid),
                 e.message ?: "unknown"
             ).left()
         }
     }
 
     /**
-     * Read and deserialize the sidecar for [uuid] in [graphPath].
+     * Read and deserialize the sidecar for [uuid] in [notesPath].
      *
      * Returns `null` wrapped in [Either.Right] when the file does not exist (not an error).
      * Returns [Either.Left] only for malformed JSON or I/O errors.
      */
-    fun readSidecar(graphPath: String, uuid: String): Either<DomainError, SidecarFile?> {
-        val path = sidecarPath(graphPath, uuid)
+    fun readSidecar(notesPath: EffectiveNotesPath, uuid: String): Either<DomainError, SidecarFile?> {
+        val path = sidecarPath(notesPath, uuid)
         return try {
             val content = fileSystem.readFile(path) ?: return null.right()
             val sidecar = json.decodeFromString(SidecarFile.serializer(), content)
@@ -85,12 +87,12 @@ class ImageSidecarManager(
         }
     }
 
-    /** Compute the sidecar file path for the given graph and annotation UUID. */
-    fun sidecarPath(graphPath: String, uuid: String): String =
-        "$graphPath/.stelekit/images/$uuid.measure.json"
+    /** Compute the sidecar file path for the given notes folder and annotation UUID. */
+    fun sidecarPath(notesPath: EffectiveNotesPath, uuid: String): String =
+        notesPath.child(".stelekit/images/$uuid.measure.json")
 
-    private fun ensureSidecarDir(graphPath: String) {
-        val steleDir = "$graphPath/.stelekit"
+    private fun ensureSidecarDir(notesPath: EffectiveNotesPath) {
+        val steleDir = notesPath.child(".stelekit")
         val imagesDir = "$steleDir/images"
         if (!fileSystem.directoryExists(steleDir)) fileSystem.createDirectory(steleDir)
         if (!fileSystem.directoryExists(imagesDir)) fileSystem.createDirectory(imagesDir)

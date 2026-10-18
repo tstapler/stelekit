@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.db.sidecar
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import arrow.core.Either
 import dev.stapler.stelekit.model.AnnotationType
 import dev.stapler.stelekit.model.Calibration
@@ -79,7 +80,7 @@ class SidecarSerializationTest {
         val writeResult = manager.writeSidecar(ann, measurements)
         assertIs<Either.Right<Unit>>(writeResult)
 
-        val readResult = manager.readSidecar("/graph", ann.uuid)
+        val readResult = manager.readSidecar(EffectiveNotesPath("/graph"), ann.uuid)
         assertIs<Either.Right<SidecarFile?>>(readResult)
         val sidecar = readResult.value
         assertNotNull(sidecar)
@@ -97,7 +98,7 @@ class SidecarSerializationTest {
         val fs = fakeFileSystem()
         fs.writeFile("/graph/.stelekit/images/ann-abc123.measure.json", "NOT_JSON{{{")
         val manager = ImageSidecarManager(fs)
-        val result = manager.readSidecar("/graph", "ann-abc123")
+        val result = manager.readSidecar(EffectiveNotesPath("/graph"), "ann-abc123")
         assertIs<Either.Left<*>>(result)
     }
 
@@ -119,7 +120,7 @@ class SidecarSerializationTest {
         val fs = fakeFileSystem()
         fs.writeFile("/graph/.stelekit/images/ann-v1test.measure.json", v1Json)
         val manager = ImageSidecarManager(fs)
-        val result = manager.readSidecar("/graph", "ann-v1test")
+        val result = manager.readSidecar(EffectiveNotesPath("/graph"), "ann-v1test")
         assertIs<Either.Right<SidecarFile?>>(result)
         assertEquals(1, result.value?.schemaVersion)
     }
@@ -139,7 +140,7 @@ class SidecarSerializationTest {
             )
         )
         manager.writeSidecar(ann, measurements)
-        val roundTripped = manager.readSidecar("/graph", ann.uuid)
+        val roundTripped = manager.readSidecar(EffectiveNotesPath("/graph"), ann.uuid)
         assertIs<Either.Right<SidecarFile?>>(roundTripped)
         val loaded = roundTripped.value?.measurements?.first()
         assertNotNull(loaded)

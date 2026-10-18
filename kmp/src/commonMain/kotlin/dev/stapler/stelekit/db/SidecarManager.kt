@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.db
 
 import dev.stapler.stelekit.logging.Logger
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import kotlinx.coroutines.CancellationException
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.platform.FileSystem
@@ -24,7 +25,7 @@ import dev.stapler.stelekit.util.ContentHasher
  */
 class SidecarManager(
     private val fileSystem: FileSystem,
-    private val graphPath: String,
+    private val notesPath: EffectiveNotesPath,
 ) {
     private val logger = Logger("SidecarManager")
 
@@ -83,12 +84,12 @@ class SidecarManager(
     }
 
     fun sidecarPath(pageSlug: String): String =
-        "$graphPath/.stelekit/pages/$pageSlug.meta.json"
+        notesPath.child(".stelekit/pages/$pageSlug.meta.json")
 
     private fun ensureSidecarDir() {
-        val dir = "$graphPath/.stelekit/pages"
+        val dir = notesPath.child(".stelekit/pages")
         if (!fileSystem.directoryExists(dir)) {
-            fileSystem.createDirectory("$graphPath/.stelekit")
+            fileSystem.createDirectory(notesPath.child(".stelekit"))
             fileSystem.createDirectory(dir)
         }
     }

@@ -723,7 +723,7 @@ class StelekitViewModel(
                                 scope.launch { journalService.ensureTodayJournal() }
 
                                 // Load the section manifest from disk.
-                                scope.launch { sectionManagementCoordinator.loadSectionManifest(path) }
+                                scope.launch { sectionManagementCoordinator.loadSectionManifest(dev.stapler.stelekit.model.EffectiveNotesPath(path)) }
 
                                 startMidnightBoundaryWatcher()
                             },

@@ -17,6 +17,7 @@ import dev.stapler.stelekit.repository.PageRepository
 import dev.stapler.stelekit.sections.SectionDefinition
 import dev.stapler.stelekit.sections.SectionFilter
 import dev.stapler.stelekit.sections.SectionManifest
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.sections.SectionManifestParser
 import dev.stapler.stelekit.sections.SectionManifestWriter
 import dev.stapler.stelekit.sections.SectionState
@@ -79,8 +80,8 @@ class SectionManagementCoordinator(
     private val sectionManifestParser = SectionManifestParser(fileSystem)
     private val sectionManifestWriter = SectionManifestWriter(fileSystem)
 
-    internal suspend fun loadSectionManifest(graphPath: String) {
-        val manifest = sectionManifestParser.parse(graphPath).getOrNull() ?: SectionManifest()
+    internal suspend fun loadSectionManifest(notesPath: EffectiveNotesPath) {
+        val manifest = sectionManifestParser.parse(notesPath).getOrNull() ?: SectionManifest()
         uiState.update { it.copy(currentManifest = manifest) }
         // Wire section filter so GraphLoader assigns sectionId to page paths on disk
         val states = uiState.value.currentSectionStates
@@ -137,7 +138,7 @@ class SectionManagementCoordinator(
         journalPathPrefix: String,
     ) {
         val manifest = uiState.value.currentManifest ?: SectionManifest()
-        val graphPath = uiState.value.currentGraphPath ?: return
+        val notesPath = uiState.value.currentNotesPath ?: return
         val newSection = SectionDefinition(
             id = id,
             displayName = displayName,
@@ -147,7 +148,7 @@ class SectionManagementCoordinator(
         )
         val updated = manifest.copy(sections = manifest.sections + newSection)
         scope.launch {
-            sectionManifestWriter.write(graphPath, updated).fold(
+            sectionManifestWriter.write(notesPath, updated).fold(
                 ifLeft = { err -> logger.error("createSection write failed: ${err.message}") },
                 ifRight = { uiState.update { it.copy(currentManifest = updated) } },
             )
@@ -156,12 +157,12 @@ class SectionManagementCoordinator(
 
     fun renameSection(id: String, newDisplayName: String) {
         val manifest = uiState.value.currentManifest ?: return
-        val graphPath = uiState.value.currentGraphPath ?: return
+        val notesPath = uiState.value.currentNotesPath ?: return
         val updated = manifest.copy(
             sections = manifest.sections.map { if (it.id == id) it.copy(displayName = newDisplayName) else it }
         )
         scope.launch {
-            sectionManifestWriter.write(graphPath, updated).fold(
+            sectionManifestWriter.write(notesPath, updated).fold(
                 ifLeft = { err -> logger.error("renameSection write failed: ${err.message}") },
                 ifRight = { uiState.update { it.copy(currentManifest = updated) } },
             )
@@ -170,10 +171,10 @@ class SectionManagementCoordinator(
 
     fun deleteSection(id: String) {
         val manifest = uiState.value.currentManifest ?: return
-        val graphPath = uiState.value.currentGraphPath ?: return
+        val notesPath = uiState.value.currentNotesPath ?: return
         val updated = manifest.copy(sections = manifest.sections.filter { it.id != id })
         scope.launch {
-            sectionManifestWriter.write(graphPath, updated).fold(
+            sectionManifestWriter.write(notesPath, updated).fold(
                 ifLeft = { err -> logger.error("deleteSection write failed: ${err.message}") },
                 ifRight = {
                     val newStates = uiState.value.currentSectionStates - id

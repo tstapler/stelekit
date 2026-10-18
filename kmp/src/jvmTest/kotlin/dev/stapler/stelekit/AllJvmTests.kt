@@ -16,11 +16,15 @@ import dev.stapler.stelekit.db.ExternalChangeConflictTest
 import dev.stapler.stelekit.db.FileRegistryTest
 import dev.stapler.stelekit.db.GraphLoaderIntegrationTest
 import dev.stapler.stelekit.db.GraphLoaderNotesPathTest
+import dev.stapler.stelekit.db.ImageSidecarIndexerTest
+import dev.stapler.stelekit.db.ImageSidecarManagerTest
+import dev.stapler.stelekit.ui.SectionManagementCoordinatorTest
 import dev.stapler.stelekit.db.GraphLoaderProgressiveTest
 import dev.stapler.stelekit.db.GraphLoaderSectionFilterTest
 import dev.stapler.stelekit.db.GraphLoaderTest
 import dev.stapler.stelekit.sections.SectionFilterTest
 import dev.stapler.stelekit.sections.SectionManifestParserTest
+import dev.stapler.stelekit.sections.NotesFolderMetadataStoresTest
 import dev.stapler.stelekit.db.GraphLoaderWatcherTest
 import dev.stapler.stelekit.db.GraphWriterTest
 import dev.stapler.stelekit.db.MigrationRunnerApplyAllTest
@@ -135,11 +139,15 @@ import org.junit.runners.Suite
     FileRegistryTest::class,
     GraphLoaderIntegrationTest::class,
     GraphLoaderNotesPathTest::class,
+    ImageSidecarIndexerTest::class,
+    ImageSidecarManagerTest::class,
+    SectionManagementCoordinatorTest::class,
     GraphLoaderProgressiveTest::class,
     GraphLoaderSectionFilterTest::class,
     GraphLoaderTest::class,
     SectionFilterTest::class,
     SectionManifestParserTest::class,
+    NotesFolderMetadataStoresTest::class,
     GraphLoaderWatcherTest::class,
     GraphWriterTest::class,
     MigrationRunnerApplyAllTest::class,
