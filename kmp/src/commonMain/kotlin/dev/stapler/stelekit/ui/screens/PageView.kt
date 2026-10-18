@@ -32,6 +32,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.model.SectionId
@@ -45,7 +46,7 @@ import dev.stapler.stelekit.sections.SectionManifest
 import dev.stapler.stelekit.ui.components.PageContent
 import dev.stapler.stelekit.ui.components.EditorCapabilities
 import dev.stapler.stelekit.ui.components.EditorToolbar
-import dev.stapler.stelekit.ui.components.LocalGraphRootPath
+import dev.stapler.stelekit.ui.components.LocalNotesPath
 import dev.stapler.stelekit.ui.components.SectionBadge
 import dev.stapler.stelekit.ui.components.parseMarkdownWithStyling
 import dev.stapler.stelekit.ui.components.pageDropTarget
@@ -233,7 +234,7 @@ fun PageView(
     // Provide the graph root path so that ImageBlock / rememberSteleKitImageLoader can resolve
     // relative Logseq asset paths (e.g. `../assets/image.png`).
     // currentGraphPath is the graph root directory as stored in AppState.
-    CompositionLocalProvider(LocalGraphRootPath provides currentGraphPath.ifEmpty { null }) {
+    CompositionLocalProvider(LocalNotesPath provides currentGraphPath.ifEmpty { null }?.let(::EffectiveNotesPath)) {
 
     Box(modifier = Modifier.fillMaxSize().imePadding()
         .let { m -> if (capabilities.onPasteImage != null) m.onPreviewKeyEvent { event ->
@@ -640,7 +641,7 @@ fun PageView(
         }
     }
 
-    } // CompositionLocalProvider(LocalGraphRootPath)
+    } // CompositionLocalProvider(LocalNotesPath)
 
     // Story 3.1.4 — QR transfer sender overlay, opened from the "Send via QR" menu action above.
     if (showQrEncodeScreen && qrTransferSettings != null) {

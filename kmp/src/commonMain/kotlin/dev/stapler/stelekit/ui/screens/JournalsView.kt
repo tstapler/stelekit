@@ -27,6 +27,7 @@ import dev.stapler.stelekit.tags.TagSuggestionState
 import dev.stapler.stelekit.tags.TagSuggestionViewModel
 import dev.stapler.stelekit.tags.WikiLinkExtractor
 import dev.stapler.stelekit.ui.components.tags.SuggestionBottomSheet
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
@@ -35,7 +36,7 @@ import dev.stapler.stelekit.model.SectionId
 import dev.stapler.stelekit.ui.components.PageContent
 import dev.stapler.stelekit.ui.components.EditorCapabilities
 import dev.stapler.stelekit.ui.components.EditorToolbar
-import dev.stapler.stelekit.ui.components.LocalGraphRootPath
+import dev.stapler.stelekit.ui.components.LocalNotesPath
 import dev.stapler.stelekit.ui.components.asLazyKey
 import dev.stapler.stelekit.ui.components.SuggestionItem
 import dev.stapler.stelekit.ui.components.typedItems
@@ -133,7 +134,7 @@ fun JournalsView(
 
     val toolbarHeightDp = with(LocalDensity.current) { toolbarHeight.toDp() }
 
-    CompositionLocalProvider(LocalGraphRootPath provides graphPath.ifEmpty { null }) {
+    CompositionLocalProvider(LocalNotesPath provides graphPath.ifEmpty { null }?.let(::EffectiveNotesPath)) {
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -363,7 +364,7 @@ fun JournalsView(
             )
         }
     }
-    } // CompositionLocalProvider(LocalGraphRootPath)
+    } // CompositionLocalProvider(LocalNotesPath)
 }
 
 @Composable

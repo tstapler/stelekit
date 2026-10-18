@@ -872,8 +872,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     }
 
     override fun registerBlobUrl(path: String, url: String) { blobUrlCache[path] = url }
-    override fun resolveAssetUri(graphRoot: String, relativePath: String): String? =
-        blobUrlCache["${graphRoot.trimEnd('/')}/$relativePath"]
+    override fun resolveAssetUri(notesPath: dev.stapler.stelekit.model.EffectiveNotesPath, relativePath: String): String? =
+        blobUrlCache[notesPath.child(relativePath)]
 
     companion object {
         private const val DOWNLOAD_PREFIX = "/_wasm_dl_/"

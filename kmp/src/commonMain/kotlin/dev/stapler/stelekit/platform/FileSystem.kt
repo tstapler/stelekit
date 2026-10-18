@@ -333,12 +333,12 @@ interface FileSystem {
     fun setOnHostWriteFailed(callback: ((dev.stapler.stelekit.error.DomainError.FileSystemError.WriteFailed) -> Unit)?) { /* no-op */ }
 
     /**
-     * Returns a platform-loadable URI string for a file at [graphRoot]/[relativePath].
+     * Returns a platform-loadable URI string for a file at [notesPath]/[relativePath].
      * On Android SAF paths this returns the `content://` document URI (or a `file://`
      * real path when MANAGE_EXTERNAL_STORAGE is granted); on other platforms returns null
      * to fall through to the default `file://` construction in the caller.
      */
-    fun resolveAssetUri(graphRoot: String, relativePath: String): String? = null
+    fun resolveAssetUri(notesPath: dev.stapler.stelekit.model.EffectiveNotesPath, relativePath: String): String? = null
 
     /**
      * Registers a blob/object URL for [path] so platforms that can't serve files via
