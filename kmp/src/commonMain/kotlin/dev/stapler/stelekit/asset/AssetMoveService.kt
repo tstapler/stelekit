@@ -1,4 +1,5 @@
 package dev.stapler.stelekit.asset
+import dev.stapler.stelekit.model.EffectiveNotesPath
 
 import arrow.core.Either
 import arrow.core.left
@@ -47,13 +48,13 @@ class AssetMoveService(
     suspend fun moveAsset(
         asset: AssetEntry,
         newSubfolder: String,
-        graphRoot: String,
+        notesPath: EffectiveNotesPath,
         fileSystem: FileSystem,
         graphWriter: GraphWriter,
         writeActor: DatabaseWriteActor?,
     ): Either<DomainError, Unit> {
         return moveMutex.withLock {
-            moveAssetInternal(asset, newSubfolder, graphRoot, fileSystem, graphWriter, writeActor)
+            moveAssetInternal(asset, newSubfolder, notesPath, fileSystem, graphWriter, writeActor)
         }
     }
 
@@ -63,19 +64,19 @@ class AssetMoveService(
     private suspend fun moveAssetInternal(
         asset: AssetEntry,
         newSubfolder: String,
-        graphRoot: String,
+        notesPath: EffectiveNotesPath,
         fileSystem: FileSystem,
         graphWriter: GraphWriter,
         writeActor: DatabaseWriteActor?,
     ): Either<DomainError, Unit> {
         require(newSubfolder in allowedSubfolders) { "Invalid subfolder: $newSubfolder" }
         val filename = asset.filePath.substringAfterLast('/')
-        val newFilePath = AssetStoragePathResolver.resolvePath(graphRoot, newSubfolder, filename)
+        val newFilePath = AssetStoragePathResolver.resolvePath(notesPath, newSubfolder, filename)
         val newRelativePath = AssetStoragePathResolver.relativeMarkdownPath(newSubfolder, filename)
 
         if (asset.filePath == newFilePath) return Unit.right()
 
-        val targetDir = "$graphRoot/assets/$newSubfolder"
+        val targetDir = notesPath.child("assets/$newSubfolder")
         try {
             fileSystem.createDirectory(targetDir)
         } catch (e: CancellationException) {
@@ -105,7 +106,7 @@ class AssetMoveService(
 
         // 3. Rewrite markdown references (best-effort)
         try {
-            graphWriter.rewriteAssetReference(asset.relativePath, newRelativePath, graphRoot)
+            graphWriter.rewriteAssetReference(asset.relativePath, newRelativePath, notesPath)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -130,7 +131,7 @@ class AssetMoveService(
      * Idempotent — safe to call multiple times.
      */
     suspend fun replayPendingMoves(
-        graphRoot: String,
+        notesPath: EffectiveNotesPath,
         fileSystem: FileSystem,
         graphWriter: GraphWriter,
         writeActor: DatabaseWriteActor?,
@@ -154,7 +155,7 @@ class AssetMoveService(
                     newFilePath = row.new_file_path,
                     oldRelativePath = row.old_relative_path,
                     newRelativePath = row.new_relative_path,
-                    graphRoot = graphRoot,
+                    notesPath = notesPath,
                     fileSystem = fileSystem,
                     graphWriter = graphWriter,
                     writeActor = writeActor,
@@ -175,7 +176,7 @@ class AssetMoveService(
         newFilePath: String,
         oldRelativePath: String,
         newRelativePath: String,
-        graphRoot: String,
+        notesPath: EffectiveNotesPath,
         fileSystem: FileSystem,
         graphWriter: GraphWriter,
         writeActor: DatabaseWriteActor?,
@@ -187,7 +188,7 @@ class AssetMoveService(
             oldExists && !newExists -> {
                 // Incomplete move — complete it
                 try { fileSystem.renameFile(oldFilePath, newFilePath) } catch (e: CancellationException) { throw e } catch (_: Exception) {}
-                try { graphWriter.rewriteAssetReference(oldRelativePath, newRelativePath, graphRoot) } catch (e: CancellationException) { throw e } catch (_: Exception) {}
+                try { graphWriter.rewriteAssetReference(oldRelativePath, newRelativePath, notesPath) } catch (e: CancellationException) { throw e } catch (_: Exception) {}
                 val uuid = AssetUuid(assetUuid)
                 if (writeActor != null) {
                     writeActor.execute { assetRepository.updateFilePath(uuid, newFilePath, newRelativePath) }
