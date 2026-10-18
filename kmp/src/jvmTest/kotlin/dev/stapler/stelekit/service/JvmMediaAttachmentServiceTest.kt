@@ -10,6 +10,7 @@ import java.awt.Toolkit
 import java.awt.datatransfer.StringSelection
 import java.awt.datatransfer.DataFlavor
 import java.awt.datatransfer.Transferable
+import java.awt.image.BufferedImage
 import java.io.File
 import java.nio.file.Files
 import kotlin.test.Test
@@ -41,17 +42,15 @@ class JvmMediaAttachmentServiceTest {
         assertTrue(!File(repoRoot, "assets").exists(), "assets must not be created beside the notes folder")
     }
 
-    @Test fun `pasteFromClipboard should attach a copied image file into the notes folder assets`() = runTest {
+    private fun withClipboard(flavor: DataFlavor, data: Any, block: suspend () -> Unit) = runTest {
         assumeFalse("needs a display for the system clipboard", GraphicsEnvironment.isHeadless())
-        val notes = Files.createTempDirectory("notes").toFile()
-        val source = File(Files.createTempDirectory("src").toFile(), "clip.png").apply { writeBytes(byteArrayOf(1)) }
         val clipboard = try {
             Toolkit.getDefaultToolkit().systemClipboard.also { cb ->
                 cb.setContents(
                     object : Transferable {
-                        override fun getTransferDataFlavors() = arrayOf(DataFlavor.javaFileListFlavor)
-                        override fun isDataFlavorSupported(flavor: DataFlavor) = flavor == DataFlavor.javaFileListFlavor
-                        override fun getTransferData(flavor: DataFlavor): Any = listOf(source)
+                        override fun getTransferDataFlavors() = arrayOf(flavor)
+                        override fun isDataFlavorSupported(f: DataFlavor) = f == flavor
+                        override fun getTransferData(f: DataFlavor): Any = data
                     },
                     null,
                 )
@@ -60,14 +59,34 @@ class JvmMediaAttachmentServiceTest {
             assumeFalse("system clipboard unavailable: ${e.message}", true)
             return@runTest
         }
-
-        val result = try {
-            JvmMediaAttachmentService().pasteFromClipboard(EffectiveNotesPath(notes.path))
+        try {
+            block()
         } finally {
             clipboard.setContents(StringSelection(""), null)
         }
+    }
 
-        assertEquals("../assets/clip.png", assertNotNull(result).getOrNull()?.relativePath)
-        assertTrue(File(notes, "assets/clip.png").exists())
+    @Test fun `pasteFromClipboard should attach a copied image file into the notes folder assets`() {
+        val notes = Files.createTempDirectory("notes").toFile()
+        val source = File(Files.createTempDirectory("src").toFile(), "clip.png").apply { writeBytes(byteArrayOf(1)) }
+
+        withClipboard(DataFlavor.javaFileListFlavor, listOf(source)) {
+            val result = JvmMediaAttachmentService().pasteFromClipboard(EffectiveNotesPath(notes.path))
+
+            assertEquals("../assets/clip.png", assertNotNull(result).getOrNull()?.relativePath)
+            assertTrue(File(notes, "assets/clip.png").exists())
+        }
+    }
+
+    @Test fun `pasteFromClipboard should save a raw clipboard image such as a screenshot into the notes folder assets`() {
+        val notes = Files.createTempDirectory("notes").toFile()
+
+        withClipboard(DataFlavor.imageFlavor, BufferedImage(2, 2, BufferedImage.TYPE_INT_ARGB)) {
+            val result = JvmMediaAttachmentService().pasteFromClipboard(EffectiveNotesPath(notes.path))
+
+            val relative = assertNotNull(result).getOrNull()?.relativePath
+            assertTrue(relative?.startsWith("../assets/clipboard-") == true, "unexpected path: $relative")
+            assertTrue(File(notes, "assets").listFiles().orEmpty().any { it.extension == "png" })
+        }
     }
 }
