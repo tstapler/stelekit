@@ -351,9 +351,7 @@ class QrTransferCoordinator(
             // `TimeoutCancellationException` once event delivery got fast enough for a caller to
             // react before this line ran (see the coroutine-start fix in
             // QrTransferCoordinatorTest.kt's EventRecorder, which inadvertently exposed this).
-            // Capacity 1, not RENDEZVOUS: a caller reacting to CollisionDetected can trySend before
-            // this coroutine reaches receive(); a rendezvous trySend would then fail silently and hang.
-            val channel = Channel<QrImportService.CollisionChoice?>(1)
+            val channel = Channel<QrImportService.CollisionChoice?>(Channel.RENDEZVOUS)
             collisionChannel = channel
             emitEvent(CoordinatorEvent.CollisionDetected(PageName(existing.name), decodedName))
             val resolved = channel.receive()
