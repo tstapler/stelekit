@@ -288,6 +288,10 @@ import dev.stapler.stelekit.capture.CaptureSocketClientTest
 import dev.stapler.stelekit.capture.CaptureSocketListenerTest
 import dev.stapler.stelekit.desktop.MainCaptureFlowTest
 import dev.stapler.stelekit.desktop.MainCliCaptureIntegrationTest
+import dev.stapler.stelekit.capture.CaptureWriterSourceAuditTest
+import dev.stapler.stelekit.docs.WebsiteDocsCoverageTest
+import dev.stapler.stelekit.transfer.AirGapGuardTest
+import dev.stapler.stelekit.git.PatLeakageAuditTest
 import org.junit.runner.RunWith
 import org.junit.runners.Suite
 
@@ -584,6 +588,10 @@ import org.junit.runners.Suite
     CaptureSocketListenerTest::class,
     MainCaptureFlowTest::class,
     MainCliCaptureIntegrationTest::class,
+    CaptureWriterSourceAuditTest::class,
+    WebsiteDocsCoverageTest::class,
+    AirGapGuardTest::class,
+    PatLeakageAuditTest::class,
     AllJvmTestsCompletenessTest::class,
 )
 class AllJvmTests

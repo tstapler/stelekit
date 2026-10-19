@@ -10,8 +10,4 @@ internal val UNREGISTERED_JVM_TESTS: Set<String> = setOf(
     "dev.stapler.stelekit.ui.StelekitViewModelShareExportTest", // fails under Bazel: onDone never fires within 5s
     "dev.stapler.stelekit.capture.CapturePopupWindowTest", // fails under Bazel
     "dev.stapler.stelekit.capture.CapturePopupWindowUxTest", // fails under Bazel
-    "dev.stapler.stelekit.capture.CaptureWriterSourceAuditTest", // fails under Bazel
-    "dev.stapler.stelekit.docs.WebsiteDocsCoverageTest", // fails under Bazel
-    "dev.stapler.stelekit.transfer.AirGapGuardTest", // fails under Bazel
-    "dev.stapler.stelekit.git.PatLeakageAuditTest", // reads wasmJsMain sources; not staged in the Bazel sandbox
 )

@@ -50,6 +50,12 @@ kt_jvm_test(
         ],
     ),
     associates = ["//kmp/src/jvmMain/kotlin:jvm_main_lib"],
+    # Source-scanning audit tests walk up from the working directory (the runfiles root) to find these paths.
+    data = [
+        "//kmp/src/commonMain/kotlin:source_audit_sources",
+        "//kmp/src/wasmJsMain/kotlin:git_sources",
+        "//site/src/content/docs/user:user_docs",
+    ],
     env = {
         # Force software OpenGL for Compose Desktop tests on headless CI
         "LIBGL_ALWAYS_SOFTWARE": "1",
