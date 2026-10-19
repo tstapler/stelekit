@@ -4,6 +4,7 @@ import java.io.File
 import java.util.jar.JarFile
 import kotlin.test.Test
 import kotlin.test.assertTrue
+import org.junit.Assume
 import org.junit.runners.Suite
 
 /**
@@ -15,8 +16,12 @@ class AllJvmTestsCompletenessTest {
 
     private val excludedFromBazel = Regex("""(Screenshot|Roborazzi)|Mermaid(EngineActor|JvmEngine|RendererFallback|RendererSmoke|SecurityDirective)Test""")
 
+    private val location = File(AllJvmTests::class.java.protectionDomain.codeSource.location.toURI())
+
+    // Gradle runs every class in an unpacked directory that also holds sources Bazel excludes, so only the Bazel jar is comparable.
+    private fun assumeBazelJar() = Assume.assumeTrue(location.isFile)
+
     private fun compiledClassNames(): List<String> {
-        val location = File(AllJvmTests::class.java.protectionDomain.codeSource.location.toURI())
         val entries = if (location.isDirectory) {
             location.walkTopDown().filter { it.extension == "class" }
                 .map { it.relativeTo(location).path }.toList()
@@ -50,6 +55,7 @@ class AllJvmTestsCompletenessTest {
 
     @Test
     fun `every jvmTest class is registered in AllJvmTests`() {
+        assumeBazelJar()
         val unlisted = (testClasses - registered - UNREGISTERED_JVM_TESTS).sorted()
         assertTrue(
             unlisted.isEmpty(),
@@ -59,6 +65,7 @@ class AllJvmTestsCompletenessTest {
 
     @Test
     fun `the unregistered list holds only classes that are still unregistered`() {
+        assumeBazelJar()
         val stale = (UNREGISTERED_JVM_TESTS.filter { it in registered || it !in testClasses }).sorted()
         assertTrue(
             stale.isEmpty(),
@@ -68,6 +75,7 @@ class AllJvmTestsCompletenessTest {
 
     @Test
     fun `the scan sees this test class`() {
+        assumeBazelJar()
         assertTrue(AllJvmTestsCompletenessTest::class.java.name in testClasses, "scan found ${testClasses.size} classes")
     }
 }
