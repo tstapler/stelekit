@@ -76,6 +76,8 @@ kt_jvm_test(
         "requires-display",
     ],
     test_class = "dev.stapler.stelekit.AllJvmTests",
+    # One JUnit suite runs in one JVM, so Bazel cannot shard it; the default 300s timeout is too short once the suite is complete.
+    timeout = "long",
     visibility = ["//visibility:public"],
     deps = [
         "//kmp/src/commonMain/resources:common_resources",
