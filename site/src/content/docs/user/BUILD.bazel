@@ -1,0 +1,6 @@
+# Stages the user docs for jvmTest's WebsiteDocsCoverageTest, which checks every Screen has a page.
+filegroup(
+    name = "user_docs",
+    srcs = glob(["*.md", "*.mdx"], allow_empty = True),
+    visibility = ["//kmp/src/jvmTest/kotlin:__pkg__"],
+)
