@@ -270,6 +270,24 @@ import dev.stapler.stelekit.ui.transfer.QrSendEntryPointUxTest
 import dev.stapler.stelekit.ui.transfer.QrTransferAccessibilityUxTest
 import dev.stapler.stelekit.ui.transfer.QrTransferEntryPointsTest
 import dev.stapler.stelekit.ui.VoiceCaptureStateTransitionTest
+import dev.stapler.stelekit.mcp.ListBacklinksToolTest
+import dev.stapler.stelekit.mcp.ListGraphsToolTest
+import dev.stapler.stelekit.mcp.McpAdapterTest
+import dev.stapler.stelekit.mcp.McpClientIdentityTest
+import dev.stapler.stelekit.mcp.McpEndToEndReadTest
+import dev.stapler.stelekit.mcp.McpLauncherMainTest
+import dev.stapler.stelekit.mcp.McpRealSubprocessSmokeTest
+import dev.stapler.stelekit.mcp.McpSocketServerTest
+import dev.stapler.stelekit.mcp.McpToolTimeoutTest
+import dev.stapler.stelekit.mcp.PageResourceTest
+import dev.stapler.stelekit.mcp.ProposeBlockEditToolTest
+import dev.stapler.stelekit.mcp.ProposeNewPageToolTest
+import dev.stapler.stelekit.mcp.ReadPageToolTest
+import dev.stapler.stelekit.mcp.SearchGraphToolTest
+import dev.stapler.stelekit.capture.CaptureSocketClientTest
+import dev.stapler.stelekit.capture.CaptureSocketListenerTest
+import dev.stapler.stelekit.desktop.MainCaptureFlowTest
+import dev.stapler.stelekit.desktop.MainCliCaptureIntegrationTest
 import org.junit.runner.RunWith
 import org.junit.runners.Suite
 
@@ -548,6 +566,24 @@ import org.junit.runners.Suite
     QrTransferAccessibilityUxTest::class,
     QrTransferEntryPointsTest::class,
     VoiceCaptureStateTransitionTest::class,
+    ListBacklinksToolTest::class,
+    ListGraphsToolTest::class,
+    McpAdapterTest::class,
+    McpClientIdentityTest::class,
+    McpEndToEndReadTest::class,
+    McpLauncherMainTest::class,
+    McpRealSubprocessSmokeTest::class,
+    McpSocketServerTest::class,
+    McpToolTimeoutTest::class,
+    PageResourceTest::class,
+    ProposeBlockEditToolTest::class,
+    ProposeNewPageToolTest::class,
+    ReadPageToolTest::class,
+    SearchGraphToolTest::class,
+    CaptureSocketClientTest::class,
+    CaptureSocketListenerTest::class,
+    MainCaptureFlowTest::class,
+    MainCliCaptureIntegrationTest::class,
     AllJvmTestsCompletenessTest::class,
 )
 class AllJvmTests

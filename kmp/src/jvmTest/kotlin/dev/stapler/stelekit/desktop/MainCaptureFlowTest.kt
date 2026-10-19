@@ -4,6 +4,7 @@
 
 package dev.stapler.stelekit.desktop
 
+import dev.stapler.stelekit.createShortTempDirectory
 import com.tulskiy.keymaster.common.HotKey
 import com.tulskiy.keymaster.common.HotKeyListener
 import com.tulskiy.keymaster.common.MediaKey
@@ -78,7 +79,7 @@ class MainCaptureFlowTest {
             fileSystem = NonVaultFakeFileSystem(),
             defaultBackend = GraphBackend.SQLDELIGHT,
         )
-        val graphPath = Files.createTempDirectory("main-capture-flow-test").toString()
+        val graphPath = createShortTempDirectory("main-capture-flow-test").toString()
         val id = graphManager.addGraph(graphPath)
         graphManager.switchGraph(id)
         graphManager.awaitPendingMigration()
@@ -100,13 +101,11 @@ class MainCaptureFlowTest {
         controller.updateText("Buy milk")
         controller.save()
 
+        // Idle and Saving are both transient: stopping at the first non-Idle state raced the async save under load.
         val saved = withTimeout(5_000) {
-            var state = controller.state.first { it is CapturePopupState.Shown && it.saveState != SaveState.Saving }
-            while (state is CapturePopupState.Shown && state.saveState == SaveState.Idle) {
-                delay(10)
-                state = controller.state.value
+            controller.state.first {
+                it is CapturePopupState.Shown && it.saveState !in setOf(SaveState.Idle, SaveState.Saving)
             }
-            state
         }
         assertIs<CapturePopupState.Shown>(saved).let { assertTrue(it.saveState == SaveState.Saved, "expected Saved, got $it") }
 
@@ -124,13 +123,13 @@ class MainCaptureFlowTest {
         val hotkeyListener = JKeymasterHotkeyListener(providerFactory = { fakeProvider })
         controller.start(hotkeyListener) // registers with fakeProvider; also fires show() once
 
-        val socketPath = Files.createTempDirectory("main-shutdown-socket").resolve("stelekit.sock").toString()
+        val socketPath = createShortTempDirectory("main-shutdown-socket").resolve("stelekit.sock").toString()
         val socketListener = CaptureSocketListener(fileSystem, socketPath = socketPath)
         socketListener.attachGraphManager(graphManager)
         socketListener.start()
         assertTrue(java.nio.file.Path.of(socketPath).exists(), "expected the socket listener to have bound")
 
-        val pendingDir = Files.createTempDirectory("main-shutdown-pending")
+        val pendingDir = createShortTempDirectory("main-shutdown-pending")
         val poller = PendingCapturePoller(fileSystem, directory = pendingDir.toString(), pollIntervalMs = 100L)
         poller.attachGraphManager(graphManager)
         poller.start()
@@ -164,9 +163,9 @@ class MainCaptureFlowTest {
             val (graphManager, fileSystem) = newActiveSqlDelightGraphManager()
             val controller = CaptureController(fileSystem)
             val hotkeyListener = JKeymasterHotkeyListener(providerFactory = { AutoFiringFakeProvider() })
-            val pendingDir = Files.createTempDirectory("main-attach-pending")
+            val pendingDir = createShortTempDirectory("main-attach-pending")
             val poller = PendingCapturePoller(fileSystem, directory = pendingDir.toString())
-            val socketPath = Files.createTempDirectory("main-attach-socket").resolve("stelekit.sock").toString()
+            val socketPath = createShortTempDirectory("main-attach-socket").resolve("stelekit.sock").toString()
             val socketListener = CaptureSocketListener(fileSystem, socketPath = socketPath)
 
             val surfaces = CaptureSurfaces(controller, hotkeyListener, poller, socketListener)
