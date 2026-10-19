@@ -4,7 +4,10 @@
 package dev.stapler.stelekit.stats
 
 import dev.stapler.stelekit.db.sidecar.FakeFileSystem
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.platform.FileSystemLibraryStatsProvider
+import dev.stapler.stelekit.platform.LibraryStatsProvider
+import dev.stapler.stelekit.platform.NoOpLibraryStatsProvider
 import dev.stapler.stelekit.ui.graphContentFileSystem
 import dev.stapler.stelekit.ui.graphContentLibraryStatsProvider
 import kotlinx.coroutines.Job
@@ -28,7 +31,7 @@ class LibraryStatsProviderTest {
         files.writeFile("$root/pages/Beta.md", "- content #topic")
         files.writeFile("$root/pages/ignored.txt", "- not markdown")
         files.writeFile("$root/journals/2026_10_15.md", "- [[Alpha]]")
-        val report = FileSystemLibraryStatsProvider(files).collect(root)!!
+        val report = FileSystemLibraryStatsProvider(files).collect(EffectiveNotesPath(root))!!
         assertEquals(root, report.graphPath)
         assertEquals(2, report.pageCount)
         assertEquals(1, report.journalCount)
@@ -41,14 +44,14 @@ class LibraryStatsProviderTest {
 
     @Test
     fun missingGraphReturnsNull() = runTest {
-        assertNull(FileSystemLibraryStatsProvider(FakeFileSystem()).collect("/stelekit/missing"))
+        assertNull(FileSystemLibraryStatsProvider(FakeFileSystem()).collect(EffectiveNotesPath("/stelekit/missing")))
     }
 
     @Test
     fun emptyGraphReturnsAnEmptyReport() = runTest {
         val files = FakeFileSystem()
         files.createDirectory("/stelekit/empty")
-        val report = FileSystemLibraryStatsProvider(files).collect("/stelekit/empty")!!
+        val report = FileSystemLibraryStatsProvider(files).collect(EffectiveNotesPath("/stelekit/empty"))!!
         assertEquals(0, report.pageCount)
         assertEquals(0, report.journalCount)
         assertEquals(0, report.totalBlocks)
@@ -60,7 +63,7 @@ class LibraryStatsProviderTest {
         val files = FakeFileSystem()
         files.writeFile("/stelekit/default/journals/2026_10_14.md", "- yesterday")
         files.writeFile("/stelekit/default/journals/2026_10_15.md", "- today")
-        val report = FileSystemLibraryStatsProvider(files).collect("/stelekit/default")!!
+        val report = FileSystemLibraryStatsProvider(files).collect(EffectiveNotesPath("/stelekit/default"))!!
         assertEquals(1f, report.journalFillRate)
     }
 
@@ -68,7 +71,7 @@ class LibraryStatsProviderTest {
     fun productionSelectionUsesDemoFilesystemForDemoGraph() = runTest {
         val effective = graphContentFileSystem(isDemo = true, FakeFileSystem())
         val provider = graphContentLibraryStatsProvider(NoOpLibraryStatsProvider, effective)
-        val report = provider.collect("/demo")!!
+        val report = provider.collect(EffectiveNotesPath("/demo"))!!
         assertTrue(report.pageCount > 0)
         assertTrue(report.totalBlocks > 0)
     }
@@ -80,22 +83,22 @@ class LibraryStatsProviderTest {
         val effective = graphContentFileSystem(isDemo = false, files)
         assertSame(files, effective)
         val provider = graphContentLibraryStatsProvider(NoOpLibraryStatsProvider, effective)
-        assertEquals(1, provider.collect("/stelekit/default")!!.pageCount)
+        assertEquals(1, provider.collect(EffectiveNotesPath("/stelekit/default"))!!.pageCount)
     }
 
     @Test
     fun productionSelectionPreservesCustomProviderForEveryGraph() = runTest {
         val paths = mutableListOf<String>()
         val custom = object : LibraryStatsProvider {
-            override suspend fun collect(graphPath: String): GraphStatsReport? {
-                paths += graphPath
+            override suspend fun collect(notesPath: EffectiveNotesPath): GraphStatsReport? {
+                paths += notesPath.value
                 return null
             }
         }
         for ((isDemo, path) in listOf(true to "/demo", false to "/stelekit/default")) {
             val provider = graphContentLibraryStatsProvider(custom, graphContentFileSystem(isDemo, FakeFileSystem()))
             assertSame(custom, provider)
-            provider.collect(path)
+            provider.collect(EffectiveNotesPath(path))
         }
         assertEquals(listOf("/demo", "/stelekit/default"), paths)
     }

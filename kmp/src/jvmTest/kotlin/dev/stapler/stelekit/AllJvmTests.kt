@@ -186,6 +186,7 @@ import org.junit.runners.Suite
     VisitRecencyMultiplierTest::class,
     FtsQueryBuilderTest::class,
     dev.stapler.stelekit.stats.LibraryStatsProviderTest::class,
+    dev.stapler.stelekit.stats.FileLibraryStatsProviderTest::class,
     LibraryWrappedTest::class,
     OutlinerMonkeyTest::class,
     QrCodecJvmTest::class,

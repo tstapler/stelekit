@@ -12,8 +12,8 @@ import dev.stapler.stelekit.platform.HostAccessState
 import dev.stapler.stelekit.platform.PluginHost
 import dev.stapler.stelekit.domain.NoOpUrlFetcher
 import dev.stapler.stelekit.domain.UrlFetcher
-import dev.stapler.stelekit.stats.LibraryStatsProvider
-import dev.stapler.stelekit.stats.NoOpLibraryStatsProvider
+import dev.stapler.stelekit.platform.LibraryStatsProvider
+import dev.stapler.stelekit.platform.NoOpLibraryStatsProvider
 import dev.stapler.stelekit.ui.components.settings.ReconciliationUiState
 import dev.stapler.stelekit.voice.VoicePipelineConfig
 import dev.stapler.stelekit.voice.VoiceSettings
