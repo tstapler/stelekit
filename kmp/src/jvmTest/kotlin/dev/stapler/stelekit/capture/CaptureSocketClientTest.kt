@@ -74,7 +74,8 @@ class CaptureSocketClientTest {
         val pendingCapturesDir = createShortTempDirectory("capture-socket-client-test-pending")
 
         try {
-            val result = CaptureSocketClient.trySend("Buy milk", socketPath.toString())
+            // The production timeout is tuned for hotkey latency; the first journal write on a cold JVM exceeds it.
+            val result = CaptureSocketClient.trySend("Buy milk", socketPath.toString(), timeoutMs = 10_000)
 
             assertTrue(result.delivered, "expected delivery over a live socket to succeed")
             assertTrue(result.captureId.isNotBlank())

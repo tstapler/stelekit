@@ -32,7 +32,7 @@ object CaptureSocketClient {
 
     private val logger = Logger("CaptureSocketClient")
 
-    private const val CONNECT_TIMEOUT_MS = 200L
+    const val DEFAULT_TIMEOUT_MS = 200L
     private const val OK_RESPONSE = "OK\n"
 
     /**
@@ -43,6 +43,7 @@ object CaptureSocketClient {
     fun trySend(
         text: String,
         socketPath: String = CaptureSocketPath.path(),
+        timeoutMs: Long = DEFAULT_TIMEOUT_MS,
     ): CaptureSendResult {
         val captureId = UuidGenerator.generateV7()
         val pending = PendingCaptureFile(
@@ -53,7 +54,7 @@ object CaptureSocketClient {
         val payload = (Json.encodeToString(pending) + "\n").toByteArray(Charsets.UTF_8)
 
         val delivered = try {
-            sendWithTimeout(socketPath, payload)
+            sendWithTimeout(socketPath, payload, timeoutMs)
         } catch (e: Exception) {
             logger.warn("Capture socket delivery failed; caller should fall back to file", e)
             false
@@ -67,13 +68,13 @@ object CaptureSocketClient {
      * timeout the thread is interrupted, which closes the (interruptible) [SocketChannel] per
      * its `InterruptibleChannel` contract.
      */
-    private fun sendWithTimeout(socketPath: String, payload: ByteArray): Boolean {
+    private fun sendWithTimeout(socketPath: String, payload: ByteArray, timeoutMs: Long): Boolean {
         val executor = Executors.newSingleThreadExecutor { r ->
             Thread(r, "CaptureSocketClient").apply { isDaemon = true }
         }
         return try {
             executor.submit<Boolean> { sendBlocking(socketPath, payload) }
-                .get(CONNECT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                .get(timeoutMs, TimeUnit.MILLISECONDS)
         } catch (e: TimeoutException) {
             false
         } finally {
