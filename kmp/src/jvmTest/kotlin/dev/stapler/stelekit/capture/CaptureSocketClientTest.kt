@@ -4,6 +4,7 @@
 
 package dev.stapler.stelekit.capture
 
+import dev.stapler.stelekit.createShortTempDirectory
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.platform.PlatformFileSystem
@@ -42,7 +43,7 @@ class CaptureSocketClientTest {
             fileSystem = NonVaultFakeFileSystem(),
             defaultBackend = GraphBackend.IN_MEMORY,
         )
-        val graphPath = Files.createTempDirectory("capture-socket-client-test").toString()
+        val graphPath = createShortTempDirectory("capture-socket-client-test").toString()
         val id = graphManager.addGraph(graphPath)
         graphManager.switchGraph(id)
         graphManager.awaitPendingMigration()
@@ -61,7 +62,7 @@ class CaptureSocketClientTest {
     }
 
     private fun newSocketPath() =
-        Files.createTempDirectory("capture-socket-client-test-sock").resolve("stelekit.sock")
+        createShortTempDirectory("capture-socket-client-test-sock").resolve("stelekit.sock")
 
     @Test
     fun trySend_should_ReturnDeliveredTrue_And_WriteNoFile_When_ListenerIsBoundAndAcknowledges() = runBlocking {
@@ -70,7 +71,7 @@ class CaptureSocketClientTest {
         val listener = CaptureSocketListener(fileSystem, socketPath.toString())
         listener.attachGraphManager(graphManager)
         listener.start()
-        val pendingCapturesDir = Files.createTempDirectory("capture-socket-client-test-pending")
+        val pendingCapturesDir = createShortTempDirectory("capture-socket-client-test-pending")
 
         try {
             val result = CaptureSocketClient.trySend("Buy milk", socketPath.toString())

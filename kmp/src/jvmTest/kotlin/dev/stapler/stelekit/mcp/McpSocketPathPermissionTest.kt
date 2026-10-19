@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 package dev.stapler.stelekit.mcp
 
+import dev.stapler.stelekit.createShortTempDirectory
 import dev.stapler.stelekit.model.GraphId
 import java.nio.file.Files
 import java.nio.file.Path
@@ -58,7 +59,7 @@ private fun mcpDirUnder(home: String): Path = Paths.get(home, ".stelekit", "mcp"
 /** Runs [block] with `user.home` pointed at a fresh temp directory, restored afterward. */
 internal fun <T> withTempHome(block: (String) -> T): T {
     val original = System.getProperty("user.home")
-    val tempHome = Files.createTempDirectory("stelekit-mcp-test-home")
+    val tempHome = createShortTempDirectory("stelekit-mcp-test-home")
     System.setProperty("user.home", tempHome.toString())
     try {
         return block(tempHome.toString())

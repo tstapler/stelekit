@@ -4,6 +4,7 @@
 
 package dev.stapler.stelekit.capture
 
+import dev.stapler.stelekit.createShortTempDirectory
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.platform.PlatformFileSystem
@@ -55,7 +56,7 @@ class CaptureSocketListenerTest {
             fileSystem = NonVaultFakeFileSystem(),
             defaultBackend = GraphBackend.IN_MEMORY,
         )
-        val graphPath = Files.createTempDirectory("capture-socket-listener-test").toString()
+        val graphPath = createShortTempDirectory("capture-socket-listener-test").toString()
         val id = graphManager.addGraph(graphPath)
         graphManager.switchGraph(id)
         graphManager.awaitPendingMigration()
@@ -74,7 +75,7 @@ class CaptureSocketListenerTest {
     }
 
     private fun newSocketPath(): Path =
-        Files.createTempDirectory("capture-socket-listener-test-sock").resolve("stelekit.sock")
+        createShortTempDirectory("capture-socket-listener-test-sock").resolve("stelekit.sock")
 
     /** Sends [payload] (without a trailing newline — callers add one when they want one) and reads the response. */
     private fun sendAndReceive(socketPath: Path, payload: ByteArray): String {
