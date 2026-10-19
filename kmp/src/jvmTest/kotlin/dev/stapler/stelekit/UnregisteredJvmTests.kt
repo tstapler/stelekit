@@ -7,8 +7,30 @@ package dev.stapler.stelekit
  * Do not add entries: register new test classes instead.
  */
 internal val UNREGISTERED_JVM_TESTS: Set<String> = setOf(
+    "dev.stapler.stelekit.capture.CapturePopupWindowTest", // fails under Bazel
+    "dev.stapler.stelekit.capture.CapturePopupWindowUxTest", // fails under Bazel
+    "dev.stapler.stelekit.capture.CaptureSocketClientTest", // fails under Bazel
+    "dev.stapler.stelekit.capture.CaptureSocketListenerTest", // fails under Bazel
+    "dev.stapler.stelekit.capture.CaptureWriterSourceAuditTest", // fails under Bazel
+    "dev.stapler.stelekit.desktop.MainCaptureFlowTest", // fails under Bazel
+    "dev.stapler.stelekit.desktop.MainCliCaptureIntegrationTest", // fails under Bazel
+    "dev.stapler.stelekit.docs.WebsiteDocsCoverageTest", // fails under Bazel
+    "dev.stapler.stelekit.mcp.ListBacklinksToolTest", // fails under Bazel
+    "dev.stapler.stelekit.mcp.ListGraphsToolTest", // fails under Bazel
+    "dev.stapler.stelekit.mcp.McpAdapterTest", // fails under Bazel
+    "dev.stapler.stelekit.mcp.McpClientIdentityTest", // fails under Bazel
+    "dev.stapler.stelekit.mcp.McpEndToEndReadTest", // fails under Bazel
+    "dev.stapler.stelekit.mcp.McpLauncherMainTest", // fails under Bazel
+    "dev.stapler.stelekit.mcp.McpRealSubprocessSmokeTest", // fails under Bazel
+    "dev.stapler.stelekit.mcp.McpSocketServerTest", // fails under Bazel
+    "dev.stapler.stelekit.mcp.McpToolTimeoutTest", // fails under Bazel
+    "dev.stapler.stelekit.mcp.PageResourceTest", // fails under Bazel
+    "dev.stapler.stelekit.mcp.ProposeBlockEditToolTest", // fails under Bazel
+    "dev.stapler.stelekit.mcp.ProposeNewPageToolTest", // fails under Bazel
+    "dev.stapler.stelekit.mcp.ReadPageToolTest", // fails under Bazel
+    "dev.stapler.stelekit.mcp.SearchGraphToolTest", // fails under Bazel
+    "dev.stapler.stelekit.transfer.AirGapGuardTest", // fails under Bazel
     "dev.stapler.stelekit.git.PatLeakageAuditTest", // reads wasmJsMain sources; not staged in the Bazel sandbox
-    "dev.stapler.stelekit.annotate.AnnotationExporterTest",
     "dev.stapler.stelekit.benchmark.BlockInsertBenchmarkTest",
     "dev.stapler.stelekit.benchmark.JournalViewFanoutBenchmarkTest",
     "dev.stapler.stelekit.benchmark.LatencyShimFileSystemTest",
@@ -16,64 +38,6 @@ internal val UNREGISTERED_JVM_TESTS: Set<String> = setOf(
     "dev.stapler.stelekit.benchmark.LibsqlSequentialWriteBenchmarkTest",
     "dev.stapler.stelekit.benchmark.UnifiedBenchmarkRunner",
     "dev.stapler.stelekit.benchmark.UserSessionBenchmarkTest",
-    "dev.stapler.stelekit.capture.CaptureControllerTargetTest",
-    "dev.stapler.stelekit.capture.CaptureControllerTest",
-    "dev.stapler.stelekit.capture.CaptureDeliveryDedupIntegrationTest",
-    "dev.stapler.stelekit.capture.CapturePopupWindowTest",
-    "dev.stapler.stelekit.capture.CapturePopupWindowUxTest",
-    "dev.stapler.stelekit.capture.CaptureSocketClientTest",
-    "dev.stapler.stelekit.capture.CaptureSocketListenerTest",
-    "dev.stapler.stelekit.capture.CaptureWriterIntegrationTest",
-    "dev.stapler.stelekit.capture.CaptureWriterSourceAuditTest",
-    "dev.stapler.stelekit.capture.CaptureWriterTest",
-    "dev.stapler.stelekit.capture.JKeymasterHotkeyListenerTest",
-    "dev.stapler.stelekit.capture.PendingCapturePollerIntegrationTest",
-    "dev.stapler.stelekit.capture.PendingCapturePollerTest",
-    "dev.stapler.stelekit.capture.PendingCaptureWriterTest",
-    "dev.stapler.stelekit.cli.ArgParserTest",
-    "dev.stapler.stelekit.coroutines.GraphScopedSessionThreadSafetyTest",
-    "dev.stapler.stelekit.desktop.CaptureCliArgsTest",
-    "dev.stapler.stelekit.desktop.MainCaptureFlowTest",
-    "dev.stapler.stelekit.desktop.MainCliCaptureIntegrationTest",
-    "dev.stapler.stelekit.docs.WebsiteDocsCoverageTest",
-    "dev.stapler.stelekit.domain.CaptureEnrichmentCoordinatorRealDispatcherTest",
-    "dev.stapler.stelekit.domain.PageNameIndexResilienceTest",
-    "dev.stapler.stelekit.domain.WaybackMachineServiceTest",
-    "dev.stapler.stelekit.llm.CustomOpenAiCompatibleLlmProviderTest",
-    "dev.stapler.stelekit.mcp.ListBacklinksToolTest",
-    "dev.stapler.stelekit.mcp.ListGraphsToolTest",
-    "dev.stapler.stelekit.mcp.McpAdapterTest",
-    "dev.stapler.stelekit.mcp.McpClientIdentityTest",
-    "dev.stapler.stelekit.mcp.McpEndToEndReadTest",
-    "dev.stapler.stelekit.mcp.McpLauncherMainTest",
-    "dev.stapler.stelekit.mcp.McpPendingCapTest",
-    "dev.stapler.stelekit.mcp.McpRealSubprocessSmokeTest",
-    "dev.stapler.stelekit.mcp.McpSocketPathPermissionTest",
-    "dev.stapler.stelekit.mcp.McpSocketServerTest",
-    "dev.stapler.stelekit.mcp.McpToolErrorTest",
-    "dev.stapler.stelekit.mcp.McpToolTimeoutTest",
-    "dev.stapler.stelekit.mcp.PageResourceTest",
-    "dev.stapler.stelekit.mcp.ProposeBlockEditToolTest",
-    "dev.stapler.stelekit.mcp.ProposeNewPageToolTest",
-    "dev.stapler.stelekit.mcp.ReadPageToolTest",
-    "dev.stapler.stelekit.mcp.SearchGraphToolTest",
-    "dev.stapler.stelekit.merge.MarkdownTargetWriterSymlinkTest",
-    "dev.stapler.stelekit.merge.RoundTripGuardPassRateRegressionTest",
-    "dev.stapler.stelekit.merge.RoundTripGuardPassRateSpikeTest",
-    "dev.stapler.stelekit.merge.RoundTripGuardRealGraphTest",
-    "dev.stapler.stelekit.performance.InstrumentedPageRepositoryTest",
-    "dev.stapler.stelekit.platform.DesktopFileSystemTest",
-    "dev.stapler.stelekit.platform.JvmFileSystemBaseWhitelistTest",
-    "dev.stapler.stelekit.platform.OpenInBrowserJvmTest",
-    "dev.stapler.stelekit.platform.ReplaceFileAtomicallyTest",
-    "dev.stapler.stelekit.platform.security.JvmCredentialStoreTest",
-    "dev.stapler.stelekit.platform.sensor.DesktopFilePickerTest",
-    "dev.stapler.stelekit.service.AttachmentFileNamingTest",
-    "dev.stapler.stelekit.service.JvmMediaAttachmentServiceTest",
-    "dev.stapler.stelekit.transfer.AirGapGuardTest",
-    "dev.stapler.stelekit.transfer.FrameTransportSignatureTest",
-    "dev.stapler.stelekit.transfer.qrcode.QrRoundTripFidelityTest",
-    "dev.stapler.stelekit.transfer.qrcode.QrTransferSettingsPersistenceTest",
     "dev.stapler.stelekit.ui.annotate.AnnotationEditorScreenKeyboardTest",
     "dev.stapler.stelekit.ui.annotate.AnnotationEditorScreenTagWiringTest",
     "dev.stapler.stelekit.ui.annotate.AnnotationToolbarShortcutTest",
@@ -130,5 +94,4 @@ internal val UNREGISTERED_JVM_TESTS: Set<String> = setOf(
     "dev.stapler.stelekit.ui.transfer.QrTransferAccessibilityUxTest",
     "dev.stapler.stelekit.ui.transfer.QrTransferEntryPointsTest",
     "dev.stapler.stelekit.ui.VoiceCaptureStateTransitionTest",
-    "dev.stapler.stelekit.voice.GeminiLlmFormatterProviderTest",
 )
