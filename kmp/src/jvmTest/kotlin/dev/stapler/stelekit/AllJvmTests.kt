@@ -250,5 +250,6 @@ import org.junit.runners.Suite
     RemoteLlmProviderTest::class,
     WhisperSpeechToTextProviderTest::class,
     PlatformSettingsContainsKeyTest::class,
+    AllJvmTestsCompletenessTest::class,
 )
 class AllJvmTests
