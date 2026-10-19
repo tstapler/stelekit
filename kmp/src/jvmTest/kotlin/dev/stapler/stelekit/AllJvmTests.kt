@@ -292,6 +292,9 @@ import dev.stapler.stelekit.capture.CaptureWriterSourceAuditTest
 import dev.stapler.stelekit.docs.WebsiteDocsCoverageTest
 import dev.stapler.stelekit.transfer.AirGapGuardTest
 import dev.stapler.stelekit.git.PatLeakageAuditTest
+import dev.stapler.stelekit.ui.StelekitViewModelShareExportTest
+import dev.stapler.stelekit.capture.CapturePopupWindowTest
+import dev.stapler.stelekit.capture.CapturePopupWindowUxTest
 import org.junit.runner.RunWith
 import org.junit.runners.Suite
 
@@ -592,6 +595,9 @@ import org.junit.runners.Suite
     WebsiteDocsCoverageTest::class,
     AirGapGuardTest::class,
     PatLeakageAuditTest::class,
+    StelekitViewModelShareExportTest::class,
+    CapturePopupWindowTest::class,
+    CapturePopupWindowUxTest::class,
     AllJvmTestsCompletenessTest::class,
 )
 class AllJvmTests
