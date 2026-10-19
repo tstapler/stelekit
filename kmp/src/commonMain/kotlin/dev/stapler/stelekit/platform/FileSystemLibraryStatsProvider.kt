@@ -4,18 +4,20 @@
 package dev.stapler.stelekit.platform
 
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.stats.GraphStatsReport
-import dev.stapler.stelekit.stats.LibraryStatsProvider
 import dev.stapler.stelekit.stats.MarkdownGraphStatsCollector
 import kotlinx.coroutines.withContext
 
 class FileSystemLibraryStatsProvider(private val fileSystem: FileSystem) : LibraryStatsProvider {
-    override suspend fun collect(graphPath: String): GraphStatsReport? = withContext(PlatformDispatcher.IO) {
-        if (!fileSystem.directoryExists(graphPath)) return@withContext null
+    override suspend fun collect(notesPath: EffectiveNotesPath): GraphStatsReport? = withContext(PlatformDispatcher.IO) {
+        if (!fileSystem.directoryExists(notesPath.directory())) return@withContext null
+        val pagesDir = notesPath.pagesDir()
+        val journalsDir = notesPath.journalsDir()
         MarkdownGraphStatsCollector().collect(
-            graphPath = graphPath,
-            pageFiles = fileSystem.listFiles("$graphPath/pages"),
-            journalFiles = fileSystem.listFiles("$graphPath/journals"),
+            graphPath = notesPath.directory(),
+            pageFiles = fileSystem.listFiles(pagesDir).map { "$pagesDir/$it" },
+            journalFiles = fileSystem.listFiles(journalsDir).map { "$journalsDir/$it" },
             readFile = fileSystem::readFileSuspend,
         )
     }

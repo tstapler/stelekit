@@ -8,9 +8,10 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.stats.BenchmarkTargets
 import dev.stapler.stelekit.stats.GraphStatsReport
-import dev.stapler.stelekit.stats.LibraryStatsProvider
+import dev.stapler.stelekit.platform.LibraryStatsProvider
 import dev.stapler.stelekit.stats.NamespaceStat
 import dev.stapler.stelekit.stats.PageConnectivity
 import kotlinx.coroutines.CompletableDeferred
@@ -68,7 +69,7 @@ class LibraryStatsScreenTest {
 
     private class CountingProvider(val result: GraphStatsReport?) : LibraryStatsProvider {
         var calls = 0
-        override suspend fun collect(graphPath: String): GraphStatsReport? {
+        override suspend fun collect(notesPath: EffectiveNotesPath): GraphStatsReport? {
             calls++
             return result
         }
@@ -80,7 +81,7 @@ class LibraryStatsScreenTest {
     fun tearDown() = scope.cancel()
 
     private fun vm(provider: LibraryStatsProvider) =
-        LibraryStatsViewModel(provider, "/graphs/test", scope)
+        LibraryStatsViewModel(provider, EffectiveNotesPath("/graphs/test"), scope)
 
     private fun show(vm: LibraryStatsViewModel) {
         composeTestRule.setContent { MaterialTheme { LibraryStatsScreen(vm) } }
@@ -90,7 +91,7 @@ class LibraryStatsScreenTest {
     fun libraryStats_should_showScanningLabel_when_stateIsLoading() {
         val gate = CompletableDeferred<GraphStatsReport?>()
         val vm = vm(object : LibraryStatsProvider {
-            override suspend fun collect(graphPath: String) = gate.await()
+            override suspend fun collect(notesPath: EffectiveNotesPath) = gate.await()
         })
         try {
             show(vm)
@@ -125,7 +126,7 @@ class LibraryStatsScreenTest {
     @Test
     fun libraryStats_should_showErrorMessage_when_providerThrows() {
         val vm = vm(object : LibraryStatsProvider {
-            override suspend fun collect(graphPath: String): GraphStatsReport? = error("disk on fire")
+            override suspend fun collect(notesPath: EffectiveNotesPath): GraphStatsReport? = error("disk on fire")
         })
         show(vm)
         composeTestRule.waitUntil(5_000) { vm.state.value is LibraryStatsState.Error }

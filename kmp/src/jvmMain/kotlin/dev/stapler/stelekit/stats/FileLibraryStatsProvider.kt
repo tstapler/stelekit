@@ -3,13 +3,15 @@
 
 package dev.stapler.stelekit.stats
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
+import dev.stapler.stelekit.platform.LibraryStatsProvider
 import java.io.File
 
 class FileLibraryStatsProvider : LibraryStatsProvider {
     private val collector = GraphStatsCollector()
 
-    override suspend fun collect(graphPath: String): GraphStatsReport? {
-        val dir = File(graphPath)
+    override suspend fun collect(notesPath: EffectiveNotesPath): GraphStatsReport? {
+        val dir = File(notesPath.directory())
         if (!dir.isDirectory) return null
         return collector.collect(dir)
     }

@@ -7,10 +7,11 @@ package dev.stapler.stelekit.ui
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.FileSystemLibraryStatsProvider
-import dev.stapler.stelekit.stats.LibraryStatsProvider
-import dev.stapler.stelekit.stats.NoOpLibraryStatsProvider
+import dev.stapler.stelekit.platform.LibraryStatsProvider
+import dev.stapler.stelekit.platform.NoOpLibraryStatsProvider
 import dev.stapler.stelekit.sections.SectionState
 import dev.stapler.stelekit.sections.getSectionStates
 import dev.stapler.stelekit.ui.screens.AllPagesViewModel
@@ -63,7 +64,7 @@ internal fun rememberGraphContentSupportingViewModels(
     val allPagesViewModel = remember { AllPagesViewModel(repos.pageRepository, repos.blockRepository) }
     val libraryStatsViewModel = remember(deps.coreServices.libraryStatsProvider, effectiveFileSystem, graphPath) {
         val provider = graphContentLibraryStatsProvider(deps.coreServices.libraryStatsProvider, effectiveFileSystem)
-        LibraryStatsViewModel(provider, graphPath)
+        LibraryStatsViewModel(provider, EffectiveNotesPath(graphPath))
     }
     val searchViewModel = remember { SearchViewModel(repos.searchRepository, pageRepository = repos.pageRepository) }
 
