@@ -171,6 +171,43 @@ import dev.stapler.stelekit.repository.SqlDelightBlockRepositoryWarmPathTest
 import dev.stapler.stelekit.repository.SqlDelightImageAnnotationRepositoryTest
 import dev.stapler.stelekit.repository.SqlDelightMeasurementAnnotationRepositoryTest
 import dev.stapler.stelekit.repository.UpgradeResilienceTest
+import dev.stapler.stelekit.annotate.AnnotationExporterTest
+import dev.stapler.stelekit.capture.CaptureControllerTargetTest
+import dev.stapler.stelekit.capture.CaptureControllerTest
+import dev.stapler.stelekit.capture.CaptureDeliveryDedupIntegrationTest
+import dev.stapler.stelekit.capture.CaptureWriterIntegrationTest
+import dev.stapler.stelekit.capture.CaptureWriterTest
+import dev.stapler.stelekit.capture.JKeymasterHotkeyListenerTest
+import dev.stapler.stelekit.capture.PendingCapturePollerIntegrationTest
+import dev.stapler.stelekit.capture.PendingCapturePollerTest
+import dev.stapler.stelekit.capture.PendingCaptureWriterTest
+import dev.stapler.stelekit.cli.ArgParserTest
+import dev.stapler.stelekit.coroutines.GraphScopedSessionThreadSafetyTest
+import dev.stapler.stelekit.desktop.CaptureCliArgsTest
+import dev.stapler.stelekit.domain.CaptureEnrichmentCoordinatorRealDispatcherTest
+import dev.stapler.stelekit.domain.PageNameIndexResilienceTest
+import dev.stapler.stelekit.domain.WaybackMachineServiceTest
+import dev.stapler.stelekit.llm.CustomOpenAiCompatibleLlmProviderTest
+import dev.stapler.stelekit.mcp.McpPendingCapTest
+import dev.stapler.stelekit.mcp.McpSocketPathPermissionTest
+import dev.stapler.stelekit.mcp.McpToolErrorTest
+import dev.stapler.stelekit.merge.MarkdownTargetWriterSymlinkTest
+import dev.stapler.stelekit.merge.RoundTripGuardPassRateRegressionTest
+import dev.stapler.stelekit.merge.RoundTripGuardPassRateSpikeTest
+import dev.stapler.stelekit.merge.RoundTripGuardRealGraphTest
+import dev.stapler.stelekit.performance.InstrumentedPageRepositoryTest
+import dev.stapler.stelekit.platform.DesktopFileSystemTest
+import dev.stapler.stelekit.platform.JvmFileSystemBaseWhitelistTest
+import dev.stapler.stelekit.platform.OpenInBrowserJvmTest
+import dev.stapler.stelekit.platform.ReplaceFileAtomicallyTest
+import dev.stapler.stelekit.platform.security.JvmCredentialStoreTest
+import dev.stapler.stelekit.platform.sensor.DesktopFilePickerTest
+import dev.stapler.stelekit.service.AttachmentFileNamingTest
+import dev.stapler.stelekit.service.JvmMediaAttachmentServiceTest
+import dev.stapler.stelekit.transfer.FrameTransportSignatureTest
+import dev.stapler.stelekit.transfer.qrcode.QrRoundTripFidelityTest
+import dev.stapler.stelekit.transfer.qrcode.QrTransferSettingsPersistenceTest
+import dev.stapler.stelekit.voice.GeminiLlmFormatterProviderTest
 import org.junit.runner.RunWith
 import org.junit.runners.Suite
 
@@ -350,6 +387,43 @@ import org.junit.runners.Suite
     SqlDelightImageAnnotationRepositoryTest::class,
     SqlDelightMeasurementAnnotationRepositoryTest::class,
     UpgradeResilienceTest::class,
+    AnnotationExporterTest::class,
+    CaptureControllerTargetTest::class,
+    CaptureControllerTest::class,
+    CaptureDeliveryDedupIntegrationTest::class,
+    CaptureWriterIntegrationTest::class,
+    CaptureWriterTest::class,
+    JKeymasterHotkeyListenerTest::class,
+    PendingCapturePollerIntegrationTest::class,
+    PendingCapturePollerTest::class,
+    PendingCaptureWriterTest::class,
+    ArgParserTest::class,
+    GraphScopedSessionThreadSafetyTest::class,
+    CaptureCliArgsTest::class,
+    CaptureEnrichmentCoordinatorRealDispatcherTest::class,
+    PageNameIndexResilienceTest::class,
+    WaybackMachineServiceTest::class,
+    CustomOpenAiCompatibleLlmProviderTest::class,
+    McpPendingCapTest::class,
+    McpSocketPathPermissionTest::class,
+    McpToolErrorTest::class,
+    MarkdownTargetWriterSymlinkTest::class,
+    RoundTripGuardPassRateRegressionTest::class,
+    RoundTripGuardPassRateSpikeTest::class,
+    RoundTripGuardRealGraphTest::class,
+    InstrumentedPageRepositoryTest::class,
+    DesktopFileSystemTest::class,
+    JvmFileSystemBaseWhitelistTest::class,
+    OpenInBrowserJvmTest::class,
+    ReplaceFileAtomicallyTest::class,
+    JvmCredentialStoreTest::class,
+    DesktopFilePickerTest::class,
+    AttachmentFileNamingTest::class,
+    JvmMediaAttachmentServiceTest::class,
+    FrameTransportSignatureTest::class,
+    QrRoundTripFidelityTest::class,
+    QrTransferSettingsPersistenceTest::class,
+    GeminiLlmFormatterProviderTest::class,
     AllJvmTestsCompletenessTest::class,
 )
 class AllJvmTests
