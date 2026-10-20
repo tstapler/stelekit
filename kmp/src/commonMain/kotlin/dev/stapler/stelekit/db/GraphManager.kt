@@ -76,6 +76,15 @@ import kotlinx.serialization.json.Json
 /** Default bound on waiting for [GraphWriteLock] in switchGraph before degrading open. */
 val LOCK_ACQUIRE_TIMEOUT: Duration = 10.seconds
 
+/**
+ * Setting holding the active graph's effective notes folder (repo root + wiki subdir), never the
+ * raw repo root. [GraphManager.mirrorActiveNotesPath] is its only writer.
+ */
+const val LAST_NOTES_PATH_KEY = "lastNotesPath"
+
+/** Pre-rename name of [LAST_NOTES_PATH_KEY]; read-only fallback for upgrades and the sync CLI. */
+const val LEGACY_LAST_GRAPH_PATH_KEY = "lastGraphPath"
+
 /** The active graph's id and repository set, published together. */
 data class ReadyGraph(val id: GraphId, val repoSet: RepositorySet)
 
@@ -310,12 +319,13 @@ class GraphManager(
     
     /**
      * Migrate from the old single-graph setup to multi-graph.
-     * - Checks for existing `lastGraphPath` setting
+     * - Checks for existing [LAST_NOTES_PATH_KEY] setting (or its legacy name)
      * - Renames `logseq.db` to `logseq-graph-{hash}.db`
      * - Creates GraphRegistry with the migrated graph as active
      */
     private fun migrateFromSingleGraph() {
-        val lastGraphPath = platformSettings.getString("lastGraphPath", "")
+        val lastGraphPath = platformSettings.getString(LAST_NOTES_PATH_KEY, "")
+            .ifEmpty { platformSettings.getString(LEGACY_LAST_GRAPH_PATH_KEY, "") }
         if (lastGraphPath.isEmpty()) {
             // No previous graph - fresh install
             return
@@ -858,7 +868,7 @@ class GraphManager(
         val isAlreadyTargetGraph = currentGraphId == id && !forceReinit
         val hasReadyOrInitializingRepositories = _activeRepositorySet.value != null || activeGraphJobs.containsKey(id)
         if (isAlreadyTargetGraph && hasReadyOrInitializingRepositories) {
-            // A picker flow may have just overwritten lastGraphPath with the raw repo root.
+            // Heals a setting left stale (e.g. by a pre-rename build) while this graph was already active.
             mirrorActiveNotesPath()
             return
         }
@@ -1204,7 +1214,7 @@ class GraphManager(
     }
 
     /**
-     * Legacy mirror of the active graph's notes folder in `lastGraphPath`, for readers outside the
+     * Mirror of the active graph's notes folder in [LAST_NOTES_PATH_KEY], for readers outside the
      * registry (sync CLI, single-graph migration). Always derives from the registry's current
      * active graph, so concurrent callers converge instead of the last writer winning with a
      * stale graph.
@@ -1214,8 +1224,8 @@ class GraphManager(
         val active = registry.graphs.firstOrNull { it.id == registry.activeGraphId } ?: return
         if (active.isDemo) return
         val notesPath = active.effectiveNotesPath.value
-        if (platformSettings.getString("lastGraphPath", "") != notesPath) {
-            platformSettings.putString("lastGraphPath", notesPath)
+        if (platformSettings.getString(LAST_NOTES_PATH_KEY, "") != notesPath) {
+            platformSettings.putString(LAST_NOTES_PATH_KEY, notesPath)
         }
     }
 

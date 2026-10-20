@@ -3,6 +3,8 @@ package dev.stapler.stelekit.cli
 import arrow.core.Either
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.GraphManager
+import dev.stapler.stelekit.db.LAST_NOTES_PATH_KEY
+import dev.stapler.stelekit.db.LEGACY_LAST_GRAPH_PATH_KEY
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.buildCommitMessage
 import dev.stapler.stelekit.git.GitRepository
@@ -48,7 +50,8 @@ suspend fun runSync(args: Array<String>) {
     val settings = PlatformSettings()
 
     val rawGraphPath = syncArgs.graphPath
-        ?: settings.getString("lastGraphPath", "").takeIf { it.isNotEmpty() }
+        ?: settings.getString(LAST_NOTES_PATH_KEY, "").takeIf { it.isNotEmpty() }
+        ?: settings.getString(LEGACY_LAST_GRAPH_PATH_KEY, "").takeIf { it.isNotEmpty() }
         ?: run {
             output.error("No graph path specified and no last opened graph found. Use --graph <path>.")
             exitProcess(4)

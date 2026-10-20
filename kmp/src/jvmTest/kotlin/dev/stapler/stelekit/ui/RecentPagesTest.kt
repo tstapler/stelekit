@@ -29,7 +29,7 @@ import dev.stapler.stelekit.model.EffectiveNotesPath
  * - Deduplication: revisiting a page moves it to the top
  * - Persistence: stale UUIDs (not in repo) are filtered out
  *
- * We pre-seed `platformSettings` with "lastGraphPath" so the VM is initialized with the
+ * We pre-seed `platformSettings` with "lastNotesPath" so the VM is initialized with the
  * correct graph path WITHOUT triggering loadGraph (which would clear the fake repo).
  * onboardingCompleted defaults to false, so loadGraph is skipped in init.
  */
@@ -55,7 +55,7 @@ class RecentPagesTest {
         graphPath: String,
         initialGraphPathProvider: () -> String? = { null },
     ): StelekitViewModel {
-        settings.putString("lastGraphPath", graphPath)
+        settings.putString("lastNotesPath", graphPath)
         val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
         val blockRepo = FakeBlockRepository()
         val searchRepo = InMemorySearchRepository()
@@ -89,7 +89,7 @@ class RecentPagesTest {
 
     // -------------------------------------------------------------------------
     // The registry (via initialGraphPathProvider) owns the graph path; the legacy
-    // lastGraphPath setting is only a fallback and must never override it.
+    // lastNotesPath setting is only a fallback and must never override it.
     // -------------------------------------------------------------------------
     @Test
     fun initialGraphPath_follows_the_registry_over_a_stale_legacy_setting() = runBlocking {
