@@ -68,6 +68,35 @@ object StrayPageMerge {
         return StrayPageMergeResult.Merged(text, added)
     }
 
+    /**
+     * The fallback for pages [merge] refuses: puts every block of [strayText] after the last block of [notesText]
+     * for the user to tidy by hand. The notes copy is untouched; any properties above the stray copy's first block
+     * become a block of their own, and an `id::` the notes copy already uses is left off the appended block (two
+     * blocks sharing an id would collide) — the only text this drops.
+     */
+    fun appendAll(notesText: String, strayText: String): StrayPageMergeResult.Merged {
+        if (strayText.isBlank()) return StrayPageMergeResult.Merged(notesText, 0)
+        val firstBullet = strayText.lines().indexOfFirst { BULLET.matches(it) }.let { if (it < 0) strayText.lines().size else it }
+        val lines = strayText.lines()
+        val preamble = lines.take(firstBullet).filter { it.isNotBlank() }
+        val usedIds = notesText.lines().mapNotNull { BLOCK_ID.matchEntire(it)?.groupValues?.get(1) }.toMutableSet()
+        val blockLines = lines.drop(firstBullet).dropLastWhile { it.isBlank() }.filter { line ->
+            val id = BLOCK_ID.matchEntire(line)?.groupValues?.get(1)
+            id == null || usedIds.add(id)
+        }
+        val appended = buildList {
+            if (preamble.isNotEmpty()) {
+                add("- Properties from the misplaced copy")
+                preamble.forEach { add("  ${it.trim()}") }
+            }
+            addAll(blockLines)
+        }
+        val added = appended.count { BULLET.matches(it) }
+        val base = notesText.trimEnd('\n')
+        val text = (if (base.isEmpty()) "" else base + "\n") + appended.joinToString("\n") + "\n"
+        return StrayPageMergeResult.Merged(text, added)
+    }
+
     /** Folds [incoming] into [target] in place and returns how many blocks (at any depth) were added. */
     private fun mergeInto(target: MutableList<Node>, incoming: List<Node>): Int {
         var added = 0

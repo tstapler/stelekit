@@ -23,6 +23,9 @@ import kotlinx.coroutines.launch
 /** One misplaced file with what moving it would do; [proposal] is null until it has been worked out. */
 data class MisplacedItem(val file: MisplacedFile, val proposal: ProposedResolution?) {
     val movable: Boolean get() = proposal != null && proposal != ProposedResolution.Missing && proposal !is ProposedResolution.CannotMerge
+
+    /** True when automatic merging is refused but the user can still append the stray blocks to the notes page. */
+    val appendable: Boolean get() = (proposal as? ProposedResolution.CannotMerge)?.canAppend == true
 }
 
 data class MisplacedFilesUiState(
@@ -83,13 +86,16 @@ class MisplacedFilesController(
 
     fun moveAll() = move(_state.value.items.filter { it.movable }.map { it.file })
 
-    fun move(files: List<MisplacedFile>) {
+    /** Appends [file]'s blocks to the end of the notes copy when automatic merging refused it; both originals are backed up. */
+    fun mergeAnyway(file: MisplacedFile) = move(listOf(file), appendOnRefusal = true)
+
+    fun move(files: List<MisplacedFile>, appendOnRefusal: Boolean = false) {
         if (files.isEmpty() || _state.value.busy) return
         _state.update { it.copy(busy = true, summary = null) }
         scope.launch {
             try {
                 val (root, notes) = locations() ?: return@launch
-                val results = service.moveAll(root, notes, files)
+                val results = service.moveAll(root, notes, files, appendOnRefusal)
                 _state.update { it.copy(summary = summarize(results.map { (_, result) -> result })) }
                 if (results.any { (_, result) -> result is StrayResult.Done }) onFilesChanged()
             } finally {
