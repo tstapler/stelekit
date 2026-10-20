@@ -11,6 +11,7 @@ import kotlinx.browser.document
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.GraphLockedElsewhereException
 import dev.stapler.stelekit.db.GraphManager
+import dev.stapler.stelekit.db.writeLastNotesPath
 import dev.stapler.stelekit.git.GitHostAdapter
 import dev.stapler.stelekit.git.WasmGitRepository
 import dev.stapler.stelekit.git.model.GitConfig
@@ -26,6 +27,7 @@ import dev.stapler.stelekit.platform.security.CredentialStore
 import dev.stapler.stelekit.sync.WasmSectionSyncService
 import dev.stapler.stelekit.repository.GraphBackend
 import dev.stapler.stelekit.model.DEMO_GRAPH_ID
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.service.WasmMediaAttachmentService
 import dev.stapler.stelekit.ui.StelekitApp
 import dev.stapler.stelekit.ui.components.settings.ReconciliationUiState
@@ -298,11 +300,11 @@ fun main() {
         } else {
             fileSystem = opfsFileSystem
             graphPath = opfsGraphPath
-            // lastGraphPath feeds the single-graph → multi-graph migration in loadRegistry().
+            // lastNotesPath feeds the single-graph → multi-graph migration in loadRegistry().
             // Only write it for returning users; new users start fresh and have no old registry
-            // to migrate, so leaving lastGraphPath unset is correct.
+            // to migrate, so leaving lastNotesPath unset is correct.
             if (!isNewUser) {
-                PlatformSettings().putString("lastGraphPath", graphPath)
+                PlatformSettings().writeLastNotesPath(EffectiveNotesPath(graphPath))
             }
         }
 
@@ -457,7 +459,7 @@ fun main() {
  *
  * Deliberately does not reuse the normal boot path's returning-user/demo-fallback/host-directory
  * logic above — none of it applies to a graph that starts empty every time and is never persisted:
- * there is no OPFS content to preload, no `lastGraphPath` to migrate, and connecting a host
+ * there is no OPFS content to preload, no `lastNotesPath` to migrate, and connecting a host
  * directory would reintroduce exactly the persistent side channel this mode exists to avoid.
  */
 @OptIn(ExperimentalComposeUiApi::class)

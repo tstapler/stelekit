@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.97.1](https://github.com/tstapler/stelekit/compare/v0.97.0...v0.97.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* merge misplaced pages as block trees so shared parents combine instead of being refused or misfiled ([#475](https://github.com/tstapler/stelekit/issues/475)) ([7ad5e52](https://github.com/tstapler/stelekit/commit/7ad5e5261273aa8f09bc919e7c140f432be36888))
+* **search:** treat literal parentheses as FTS token boundaries ([#466](https://github.com/tstapler/stelekit/issues/466)) ([6748876](https://github.com/tstapler/stelekit/commit/67488765e4de052018e0e2aa4bf7bfc72b5c5af9))
+* write block sidecar positions as quoted strings so read can parse them ([#470](https://github.com/tstapler/stelekit/issues/470)) ([3988d53](https://github.com/tstapler/stelekit/commit/3988d53f9145384af3e6403537e15a1dcc43a5c8))
+
 ## [0.97.0](https://github.com/tstapler/stelekit/compare/v0.96.1...v0.97.0) (2026-10-17)
 
 

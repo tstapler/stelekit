@@ -149,7 +149,7 @@ class LargeGraphWarmStartCrashTest {
             val fileSystem = LargeGraphFileSystem()
             val settings = InMemorySettings().apply {
                 putBoolean("onboardingCompleted", true)
-                putString("lastGraphPath", GRAPH_PATH)
+                putString("lastNotesPath", GRAPH_PATH)
                 // Same cached path ⇒ "Keeping persistent cache for incremental load",
                 // exactly as in the field logs.
                 putString("cached_graph_path", GRAPH_PATH)

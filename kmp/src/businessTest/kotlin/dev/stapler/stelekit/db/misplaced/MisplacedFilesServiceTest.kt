@@ -109,6 +109,33 @@ class MisplacedFilesServiceTest {
     }
 
     @Test
+    fun moveAll_should_AppendTheStrayBlocksAndBackUpBothCopies_When_AppendOnRefusalAndTheMergeIsRefused(): Unit = runBlocking {
+        fs.writeFile("/graphs/g/journals/clash.md", "title:: a\n- x\n")
+        fs.writeFile("/graphs/g/logseq/journals/clash.md", "- y\n")
+
+        val result = service().moveAll(root, notes, scan(), appendOnRefusal = true).single().second
+
+        assertEquals(StrayResult.How.MERGED, assertIs<StrayResult.Done>(result).how)
+        assertEquals(
+            listOf("- y", "- Properties from the misplaced copy", "  title:: a", "- x"),
+            fs.readFile("/graphs/g/logseq/journals/clash.md")!!.lines().filter { it.isNotBlank() },
+        )
+        assertFalse(fs.fileExists("/graphs/g/journals/clash.md"))
+        assertEquals("title:: a\n- x\n", fs.readFile("/graphs/g/.stelekit/share-path-repair-backup/journals/clash.md.stray"))
+        assertEquals("- y\n", fs.readFile("/graphs/g/.stelekit/share-path-repair-backup/journals/clash.md.notes"))
+    }
+
+    @Test
+    fun preview_should_OfferAppend_OnlyWhenTheMergeItselfWasRefused(): Unit = runBlocking {
+        fs.writeFile("/graphs/g/journals/clash.md", "title:: a\n- x\n")
+        fs.writeFile("/graphs/g/logseq/journals/clash.md", "- y\n")
+
+        val proposal = assertIs<ProposedResolution.CannotMerge>(service().preview(root, notes, scan().single()))
+
+        assertTrue(proposal.canAppend)
+    }
+
+    @Test
     fun moveAll_should_MoveTheAssetsAPageLinksTo(): Unit = runBlocking {
         fs.writeFile("/graphs/g/journals/photo.md", "- ![x](../assets/a.png)\n")
         fs.writeFileBytes("/graphs/g/assets/a.png", byteArrayOf(1, 2))
