@@ -49,11 +49,7 @@ suspend fun runSync(args: Array<String>) {
     val settings = PlatformSettings()
 
     val graphPath = resolveNotesPath(syncArgs, settings.getString("lastGraphPath", ""))
-        .getOrElse { message ->
-            output.error(message)
-            exitProcess(4)
-        }
-        .directory()
+        .getOrElse { message -> output.error(message); exitProcess(4) }.directory()
 
     output.info("Syncing graph at: $graphPath")
 
