@@ -76,15 +76,6 @@ import kotlinx.serialization.json.Json
 /** Default bound on waiting for [GraphWriteLock] in switchGraph before degrading open. */
 val LOCK_ACQUIRE_TIMEOUT: Duration = 10.seconds
 
-/**
- * Setting holding the active graph's effective notes folder (repo root + wiki subdir), never the
- * raw repo root. [GraphManager.mirrorActiveNotesPath] is its only writer.
- */
-const val LAST_NOTES_PATH_KEY = "lastNotesPath"
-
-/** Pre-rename name of [LAST_NOTES_PATH_KEY]; read-only fallback for upgrades and the sync CLI. */
-const val LEGACY_LAST_GRAPH_PATH_KEY = "lastGraphPath"
-
 /** The active graph's id and repository set, published together. */
 data class ReadyGraph(val id: GraphId, val repoSet: RepositorySet)
 
@@ -324,8 +315,7 @@ class GraphManager(
      * - Creates GraphRegistry with the migrated graph as active
      */
     private fun migrateFromSingleGraph() {
-        val lastGraphPath = platformSettings.getString(LAST_NOTES_PATH_KEY, "")
-            .ifEmpty { platformSettings.getString(LEGACY_LAST_GRAPH_PATH_KEY, "") }
+        val lastGraphPath = platformSettings.lastNotesPath()?.value.orEmpty()
         if (lastGraphPath.isEmpty()) {
             // No previous graph - fresh install
             return
@@ -1223,10 +1213,7 @@ class GraphManager(
         val registry = _graphRegistry.value
         val active = registry.graphs.firstOrNull { it.id == registry.activeGraphId } ?: return
         if (active.isDemo) return
-        val notesPath = active.effectiveNotesPath.value
-        if (platformSettings.getString(LAST_NOTES_PATH_KEY, "") != notesPath) {
-            platformSettings.putString(LAST_NOTES_PATH_KEY, notesPath)
-        }
+        platformSettings.writeLastNotesPath(active.effectiveNotesPath)
     }
 
     /** Re-points a graph at its moved folder; detection results tied to the old location are dropped. */

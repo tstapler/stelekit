@@ -11,6 +11,7 @@ import kotlinx.browser.document
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.GraphLockedElsewhereException
 import dev.stapler.stelekit.db.GraphManager
+import dev.stapler.stelekit.db.writeLastNotesPath
 import dev.stapler.stelekit.git.GitHostAdapter
 import dev.stapler.stelekit.git.WasmGitRepository
 import dev.stapler.stelekit.git.model.GitConfig
@@ -26,6 +27,7 @@ import dev.stapler.stelekit.platform.security.CredentialStore
 import dev.stapler.stelekit.sync.WasmSectionSyncService
 import dev.stapler.stelekit.repository.GraphBackend
 import dev.stapler.stelekit.model.DEMO_GRAPH_ID
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.service.WasmMediaAttachmentService
 import dev.stapler.stelekit.ui.StelekitApp
 import dev.stapler.stelekit.ui.components.settings.ReconciliationUiState
@@ -302,7 +304,7 @@ fun main() {
             // Only write it for returning users; new users start fresh and have no old registry
             // to migrate, so leaving lastNotesPath unset is correct.
             if (!isNewUser) {
-                PlatformSettings().putString("lastNotesPath", graphPath)
+                PlatformSettings().writeLastNotesPath(EffectiveNotesPath(graphPath))
             }
         }
 

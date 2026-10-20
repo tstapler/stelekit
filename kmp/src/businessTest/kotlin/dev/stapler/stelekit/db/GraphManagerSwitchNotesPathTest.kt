@@ -96,7 +96,7 @@ class GraphManagerSwitchNotesPathTest {
 
     @Test
     fun `upgrade from the legacy lastGraphPath key populates lastNotesPath`() = runTest {
-        val legacy = StubSettings(mapOf(LEGACY_LAST_GRAPH_PATH_KEY to "/data/graphs/clone"))
+        val legacy = StubSettings(mapOf("lastGraphPath" to "/data/graphs/clone"))
         val (manager, settings) = newManager(listOf(clone(), saf()), legacy)
         manager.awaitPendingMigration()
 
