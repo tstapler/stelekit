@@ -1,6 +1,10 @@
 package dev.stapler.stelekit.cli
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
 import dev.stapler.stelekit.model.EffectiveNotesPath
+import java.io.File
 
 class ArgParseException(message: String, val exitCode: Int) : Exception(message)
 
@@ -40,13 +44,16 @@ fun parseArgs(args: Array<String>): SyncArgs {
 
 /**
  * The notes folder to sync: `--graph`, else the last opened graph (`lastGraphPath` mirrors its notes
- * folder). Canonicalized to block path traversal (e.g. "../../etc") and resolve symlinks.
+ * folder). Canonicalized to block path traversal (e.g. "../../etc") and resolve symlinks. Left is the
+ * message to show when there is no usable folder.
  */
-internal fun resolveNotesPath(args: SyncArgs, lastGraphPath: String): EffectiveNotesPath? {
+internal fun resolveNotesPath(args: SyncArgs, lastGraphPath: String): Either<String, EffectiveNotesPath> {
     val requested = args.graphPath
         ?: lastGraphPath.takeIf { it.isNotEmpty() }?.let(::EffectiveNotesPath)
-        ?: return null
-    return EffectiveNotesPath(java.io.File(requested.directory()).canonicalFile.path)
+        ?: return "No graph path specified and no last opened graph found. Use --graph <path>.".left()
+    val directory = File(requested.directory()).canonicalFile
+    if (!directory.isDirectory) return "Graph path does not exist or is not a directory: ${directory.path}".left()
+    return EffectiveNotesPath(directory.path).right()
 }
 
 private val USAGE = """

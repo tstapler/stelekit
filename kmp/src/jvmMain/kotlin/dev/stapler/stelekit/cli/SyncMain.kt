@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.cli
 
 import arrow.core.Either
+import arrow.core.getOrElse
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.error.DomainError
@@ -47,17 +48,12 @@ suspend fun runSync(args: Array<String>) {
     val fileSystem = PlatformFileSystem()
     val settings = PlatformSettings()
 
-    val notesPath = resolveNotesPath(syncArgs, settings.getString("lastGraphPath", ""))
-        ?: run {
-            output.error("No graph path specified and no last opened graph found. Use --graph <path>.")
+    val graphPath = resolveNotesPath(syncArgs, settings.getString("lastGraphPath", ""))
+        .getOrElse { message ->
+            output.error(message)
             exitProcess(4)
         }
-
-    if (!java.io.File(notesPath.directory()).isDirectory) {
-        output.error("Graph path does not exist or is not a directory: ${notesPath.directory()}")
-        exitProcess(4)
-    }
-    val graphPath = notesPath.directory()
+        .directory()
 
     output.info("Syncing graph at: $graphPath")
 
