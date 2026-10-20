@@ -2,6 +2,7 @@ package dev.stapler.stelekit.diagnostics
 
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.db.GraphManager
+import dev.stapler.stelekit.db.LAST_NOTES_PATH_KEY
 import dev.stapler.stelekit.git.GitConfigRepository
 import dev.stapler.stelekit.git.GitRepository
 import dev.stapler.stelekit.git.redactSecrets
@@ -83,7 +84,7 @@ class GraphDiagnosticsCollector(
         appendLine("pathExists=${fileSystem.directoryExists(active.path)}")
         val notesPath = active.effectiveNotesPath.value
         appendLine("effectiveNotesPath=$notesPath (wikiSubdir=${active.detectedWikiSubdir ?: "<none>"})")
-        appendLine("lastGraphPath matches effectiveNotesPath=${settings.getString("lastGraphPath", "") == notesPath}")
+        appendLine("lastNotesPath matches effectiveNotesPath=${settings.getString(LAST_NOTES_PATH_KEY, "") == notesPath}")
         appendLine()
 
         val disk = appendDisk(notesPath)
@@ -244,7 +245,7 @@ class GraphDiagnosticsCollector(
 
     private companion object {
         val JOURNAL_FILE = Regex("""(\d{4})_(\d{2})_(\d{2})""")
-        val SETTING_KEYS = listOf("cached_graph_path", "lastGraphPath", "onboardingCompleted")
+        val SETTING_KEYS = listOf("cached_graph_path", LAST_NOTES_PATH_KEY, "onboardingCompleted")
         const val DB_BATCH = 500
         const val MAX_DB_BATCHES = 40
         const val MAX_LISTED = 40

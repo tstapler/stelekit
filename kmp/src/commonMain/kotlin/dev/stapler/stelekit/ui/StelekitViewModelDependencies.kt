@@ -77,7 +77,7 @@ data class StelekitViewModelDependencies(
     val activeGraphIdProvider: () -> String? = { null },
     /**
      * The active graph's notes folder (repo root + wikiSubdir), resolved from the graph registry.
-     * Null or empty falls back to the legacy `lastGraphPath` setting (first launch, demo graph,
+     * Null or empty falls back to the `lastNotesPath` setting (first launch, demo graph,
      * tests) — the registry is the source of truth whenever a real graph is active.
      */
     val initialGraphPathProvider: () -> String? = { null },

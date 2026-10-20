@@ -4,6 +4,7 @@ import arrow.core.Either
 import arrow.core.getOrElse
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.GraphManager
+import dev.stapler.stelekit.db.lastNotesPath
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.buildCommitMessage
 import dev.stapler.stelekit.git.GitRepository
@@ -48,7 +49,7 @@ suspend fun runSync(args: Array<String>) {
     val fileSystem = PlatformFileSystem()
     val settings = PlatformSettings()
 
-    val graphPath = resolveNotesPath(syncArgs, settings.getString("lastGraphPath", ""))
+    val graphPath = resolveNotesPath(syncArgs, settings.lastNotesPath()?.value.orEmpty())
         .getOrElse { message -> output.error(message); exitProcess(4) }.directory()
 
     output.info("Syncing graph at: $graphPath")
