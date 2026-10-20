@@ -4,6 +4,7 @@
 
 package dev.stapler.stelekit.desktop
 
+import dev.stapler.stelekit.createShortTempDirectory
 import dev.stapler.stelekit.capture.CaptureSocketListener
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.GraphManager
@@ -43,7 +44,7 @@ class MainCliCaptureIntegrationTest {
             fileSystem = NonVaultFakeFileSystem(),
             defaultBackend = GraphBackend.IN_MEMORY,
         )
-        val graphPath = Files.createTempDirectory("main-cli-capture-test").toString()
+        val graphPath = createShortTempDirectory("main-cli-capture-test").toString()
         val id = graphManager.addGraph(graphPath)
         graphManager.switchGraph(id)
         graphManager.awaitPendingMigration()
@@ -58,8 +59,8 @@ class MainCliCaptureIntegrationTest {
     @Test
     fun main_should_WritePendingCaptureFileAndExit_When_InvokedWithCaptureTextFlag_WithoutLaunchingComposeWindow() =
         runBlocking {
-            val socketDir = Files.createTempDirectory("main-cli-capture-socket")
-            val pendingDir = Files.createTempDirectory("main-cli-capture-pending")
+            val socketDir = createShortTempDirectory("main-cli-capture-socket")
+            val pendingDir = createShortTempDirectory("main-cli-capture-pending")
             val boundSocketPath = socketDir.resolve("stelekit.sock").toString()
 
             // Delivered path: a real listener is bound, so runHeadlessCapture must not fall back
@@ -89,8 +90,8 @@ class MainCliCaptureIntegrationTest {
 
     @Test
     fun cliCaptureBranch_should_ReuseSameCaptureId_When_FallingBackToPendingCaptureWriter() {
-        val pendingDir = Files.createTempDirectory("main-cli-capture-pending-2")
-        val unboundSocketPath = Files.createTempDirectory("main-cli-capture-socket-2")
+        val pendingDir = createShortTempDirectory("main-cli-capture-pending-2")
+        val unboundSocketPath = createShortTempDirectory("main-cli-capture-socket-2")
             .resolve("no-listener.sock").toString()
 
         val result = runHeadlessCapture("Buy milk", unboundSocketPath, pendingDir.toString())

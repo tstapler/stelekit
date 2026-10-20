@@ -28,7 +28,7 @@ class NotesFolderMetadataStoresTest {
             uuid = BlockUuid("block-1"),
             pageUuid = PageUuid("page-1"),
             content = "hello",
-            position = "5", // SidecarManager.read only parses integer positions
+            position = "a0",
             createdAt = at,
             updatedAt = at,
         )

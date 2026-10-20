@@ -4,6 +4,7 @@
 
 package dev.stapler.stelekit.db
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -19,31 +20,40 @@ class FilePathRootMigrationTest {
 
     @Test
     fun `reroots a journal path onto the new graph root`() {
-        val result = FilePathRootMigration.rerootFilePath("/stelekit/default/journals/2026_09_03.md", "/stelekit/notes")
+        val result = FilePathRootMigration.rerootFilePath("/stelekit/default/journals/2026_09_03.md", EffectiveNotesPath("/stelekit/notes"))
         assertEquals("/stelekit/notes/journals/2026_09_03.md", result)
     }
 
     @Test
     fun `reroots a page path onto the new graph root`() {
-        val result = FilePathRootMigration.rerootFilePath("/stelekit/default/pages/Sonar.md", "/stelekit/notes")
+        val result = FilePathRootMigration.rerootFilePath("/stelekit/default/pages/Sonar.md", EffectiveNotesPath("/stelekit/notes"))
         assertEquals("/stelekit/notes/pages/Sonar.md", result)
     }
 
     @Test
     fun `reroots a nested namespace page path onto the new graph root`() {
-        val result = FilePathRootMigration.rerootFilePath("/stelekit/default/pages/foo/Bar.md", "/stelekit/notes")
+        val result = FilePathRootMigration.rerootFilePath("/stelekit/default/pages/foo/Bar.md", EffectiveNotesPath("/stelekit/notes"))
         assertEquals("/stelekit/notes/pages/foo/Bar.md", result)
     }
 
     @Test
     fun `is a no-op when the path already matches the current graph root`() {
-        val result = FilePathRootMigration.rerootFilePath("/stelekit/notes/journals/2026_09_03.md", "/stelekit/notes")
+        val result = FilePathRootMigration.rerootFilePath("/stelekit/notes/journals/2026_09_03.md", EffectiveNotesPath("/stelekit/notes"))
         assertEquals("/stelekit/notes/journals/2026_09_03.md", result)
     }
 
     @Test
     fun `returns null for a path with neither a journals nor pages segment`() {
-        val result = FilePathRootMigration.rerootFilePath("/stelekit/default/CLAUDE.md", "/stelekit/notes")
+        val result = FilePathRootMigration.rerootFilePath("/stelekit/default/CLAUDE.md", EffectiveNotesPath("/stelekit/notes"))
         assertNull(result)
+    }
+
+    @Test
+    fun `reroots onto a notes folder inside a repo with a wiki subdir`() {
+        val result = FilePathRootMigration.rerootFilePath(
+            "/repo/pages/Sonar.md",
+            EffectiveNotesPath("/repo/logseq"),
+        )
+        assertEquals("/repo/logseq/pages/Sonar.md", result)
     }
 }
