@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 package dev.stapler.stelekit.export
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import arrow.core.Either
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.platform.FileSystem
@@ -16,12 +17,12 @@ import dev.stapler.stelekit.platform.FileSystem
  */
 interface GraphZipExporter {
     /**
-     * Recursively reads every file under [graphPath] via [fileSystem], zips it, and hands the
+     * Recursively reads every file under [notesPath] (the folder holding `pages/`, `journals/` and `assets/`, not the repo root) via [fileSystem], zips it, and hands the
      * result to the platform's native share/save-file mechanism. [graphName] seeds the suggested
      * file/share name. Right(Unit) covers both "shared successfully" and "user cancelled the
      * share sheet" — per `design/ux.md` Surface 11, export is a convenience, never a gate on
      * graph creation, so callers only need to distinguish "no hard failure" from
      * [DomainError.ExportError.ShareFailed].
      */
-    suspend fun export(fileSystem: FileSystem, graphPath: String, graphName: String): Either<DomainError, Unit>
+    suspend fun export(fileSystem: FileSystem, notesPath: EffectiveNotesPath, graphName: String): Either<DomainError, Unit>
 }

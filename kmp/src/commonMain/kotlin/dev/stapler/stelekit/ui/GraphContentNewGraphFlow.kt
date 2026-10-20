@@ -4,6 +4,7 @@
 
 package dev.stapler.stelekit.ui
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -300,7 +301,7 @@ internal fun GraphContentNewGraphDialogs(
             bodyText = warningCopy,
             onExportZip = zipExporter?.let { exporter ->
                 {
-                    exporter.export(fileSystem, path, "stelekit-graph").isRight()
+                    exporter.export(fileSystem, EffectiveNotesPath(path), "stelekit-graph").isRight()
                 }
             },
             onCreateAnyway = {

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 package dev.stapler.stelekit.export
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
@@ -163,12 +164,12 @@ internal object StoredZipWriter {
 class WasmJsGraphZipExporter : GraphZipExporter {
     override suspend fun export(
         fileSystem: FileSystem,
-        graphPath: String,
+        notesPath: EffectiveNotesPath,
         graphName: String,
     ): Either<DomainError, Unit> = withContext(PlatformDispatcher.Default) {
         try {
-            val entries = fileSystem.listFilesRecursiveWithModTimes(graphPath).mapNotNull { (relativePath, _) ->
-                val path = "$graphPath/$relativePath"
+            val entries = fileSystem.listFilesRecursiveWithModTimes(notesPath.directory()).mapNotNull { (relativePath, _) ->
+                val path = notesPath.child(relativePath)
                 // Read raw bytes, not through the String API: a round-trip through String mangles
                 // non-UTF-8 byte sequences (images/attachments, paranoid-mode STEK-encrypted
                 // files). FileSystem.readFileBytes() has no wasmJs override (throws), so go through
