@@ -997,7 +997,7 @@ class GraphManager(
                             } catch (e: Throwable) {
                                 logger.error("ShareWritePathMigration failed for graph $id", e)
                             }
-                            FilePathRootMigration(writeActor).runIfNeeded(db, graphInfo.effectiveNotesPath.value)
+                            FilePathRootMigration(writeActor).runIfNeeded(db, graphInfo.effectiveNotesPath)
                             logger.info("init[${elapsed()}ms]: FilePathRootMigration done")
                             try {
                                 MigrationRunner(

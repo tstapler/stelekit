@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.export
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import kotlin.random.Random
 import kotlin.test.Test
@@ -109,7 +110,7 @@ class GraphZipExporterWasmJsTest {
         fileSystem.preload(graphPath)
         fileSystem.writeFile("$graphPath/pages/Solo.md", "- only page")
 
-        val result = WasmJsGraphZipExporter().export(fileSystem, graphPath, "stelekit-graph")
+        val result = WasmJsGraphZipExporter().export(fileSystem, EffectiveNotesPath(graphPath), "stelekit-graph")
 
         assertTrue(result.isRight(), "export must succeed (Right) for a plain markdown graph: $result")
     }
@@ -143,7 +144,7 @@ class GraphZipExporterWasmJsTest {
         fileSystem.writeFile(path, "placeholder text — must NOT end up in the export")
         fileSystem.writeFileBytes(path, binaryContent)
 
-        val result = WasmJsGraphZipExporter().export(fileSystem, graphPath, "stelekit-graph")
+        val result = WasmJsGraphZipExporter().export(fileSystem, EffectiveNotesPath(graphPath), "stelekit-graph")
         assertTrue(result.isRight(), "export must succeed (Right) for a binary attachment: $result")
 
         val entries = fileSystem.listFilesRecursiveWithModTimes(graphPath).map { (rel, _) ->

@@ -4,12 +4,14 @@ package dev.stapler.stelekit.export
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.SteleKitContext
 import java.io.File
 import java.util.zip.ZipInputStream
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import org.junit.runner.RunWith
@@ -68,7 +70,7 @@ class AndroidGraphZipExporterBinaryRoundTripTest {
             "test setup: writing the text fixture file failed"
         }
 
-        AndroidGraphZipExporter().export(fileSystem, graphPath, "roundtrip-graph")
+        AndroidGraphZipExporter().export(fileSystem, EffectiveNotesPath(graphPath), "roundtrip-graph")
 
         val zipFile = File(context.cacheDir, "share_export/roundtrip-graph.zip")
         assertTrue(zipFile.exists(), "export must write the zip file to cacheDir before the share-sheet step")
@@ -84,5 +86,20 @@ class AndroidGraphZipExporterBinaryRoundTripTest {
             entries["pages/Alpha.md"],
             "text file content must still round-trip correctly",
         )
+    }
+
+    @Test
+    fun export_should_ZipOnlyTheNotesFolder_When_GraphHasAWikiSubdir() = runTest {
+        SteleKitContext.init(context)
+        val fileSystem = PlatformFileSystem().apply { init(context) }
+        val repoRoot = File(context.filesDir, "graphs/wiki-subdir-test").absolutePath
+        File(repoRoot).deleteRecursively()
+        check(fileSystem.writeFile("$repoRoot/README.md", "repo-level file")) { "test setup: repo root file" }
+        check(fileSystem.writeFile("$repoRoot/logseq/pages/Alpha.md", "# Alpha")) { "test setup: notes file" }
+
+        AndroidGraphZipExporter().export(fileSystem, EffectiveNotesPath("$repoRoot/logseq"), "wiki-subdir-graph")
+
+        val entries = readZipEntries(File(context.cacheDir, "share_export/wiki-subdir-graph.zip"))
+        assertEquals(setOf("pages/Alpha.md"), entries.keys, "zip must be rooted at the notes folder, without repo-level files")
     }
 }

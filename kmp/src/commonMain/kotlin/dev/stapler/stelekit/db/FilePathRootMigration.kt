@@ -4,6 +4,7 @@
 
 package dev.stapler.stelekit.db
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import app.cash.sqldelight.coroutines.mapToOneOrNull
@@ -42,7 +43,7 @@ class FilePathRootMigration(
      * Runs the migration if it hasn't run yet for this graph.
      * Safe to call on every app start — checks the metadata guard first.
      */
-    suspend fun runIfNeeded(db: SteleDatabase, graphPath: String) {
+    suspend fun runIfNeeded(db: SteleDatabase, notesPath: EffectiveNotesPath) {
         val alreadyDone = db.steleDatabaseQueries.selectMetadata("file_path_root_migration_v1")
             .asFlow().mapToOneOrNull(PlatformDispatcher.DB).first()
         if (alreadyDone == "done") {
@@ -50,13 +51,13 @@ class FilePathRootMigration(
             return
         }
 
-        logger.info("Running file-path-root migration for graph root: $graphPath")
-        migrate(db, graphPath)
+        logger.info("Running file-path-root migration for notes folder: ${notesPath.value}")
+        migrate(db, notesPath)
         logger.info("File-path-root migration complete")
     }
 
     @OptIn(DirectSqlWrite::class)
-    private suspend fun migrate(db: SteleDatabase, graphPath: String) {
+    private suspend fun migrate(db: SteleDatabase, notesPath: EffectiveNotesPath) {
         val restricted = RestrictedDatabaseQueries(db.steleDatabaseQueries)
 
         val allRows = db.steleDatabaseQueries
@@ -66,7 +67,7 @@ class FilePathRootMigration(
         val remap = mutableMapOf<String, String>() // uuid -> new file_path
         for (row in allRows) {
             val filePath = row.file_path ?: continue
-            val rerooted = rerootFilePath(filePath, graphPath)
+            val rerooted = rerootFilePath(filePath, notesPath)
             if (rerooted != null && rerooted != filePath) {
                 remap[row.uuid] = rerooted
             }
@@ -103,16 +104,16 @@ class FilePathRootMigration(
 
     companion object {
         /**
-         * Rewrites [filePath]'s root segment to [graphPath], preserving everything from its last
+         * Rewrites [filePath]'s root segment to [notesPath], preserving everything from its last
          * `/journals/` or `/pages/` segment onward. Returns null if neither marker is present (an
          * unrecognized layout — left untouched rather than guessed at).
          */
-        internal fun rerootFilePath(filePath: String, graphPath: String): String? {
+        internal fun rerootFilePath(filePath: String, notesPath: EffectiveNotesPath): String? {
             val journalsIdx = filePath.lastIndexOf("/journals/")
             val pagesIdx = filePath.lastIndexOf("/pages/")
             val idx = maxOf(journalsIdx, pagesIdx)
             if (idx == -1) return null
-            return graphPath + filePath.substring(idx)
+            return notesPath.directory() + filePath.substring(idx)
         }
     }
 }

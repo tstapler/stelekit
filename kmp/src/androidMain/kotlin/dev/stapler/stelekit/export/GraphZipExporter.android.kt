@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 package dev.stapler.stelekit.export
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import android.content.Intent
 import androidx.core.content.FileProvider
 import arrow.core.Either
@@ -33,7 +34,7 @@ class AndroidGraphZipExporter : GraphZipExporter {
 
     override suspend fun export(
         fileSystem: FileSystem,
-        graphPath: String,
+        notesPath: EffectiveNotesPath,
         graphName: String,
     ): Either<DomainError, Unit> = withContext(PlatformDispatcher.IO) {
         try {
@@ -43,8 +44,8 @@ class AndroidGraphZipExporter : GraphZipExporter {
             val zipFile = File(cacheDir, "$safeName.zip")
 
             ZipOutputStream(FileOutputStream(zipFile)).use { zip ->
-                for ((relativePath, _) in fileSystem.listFilesRecursiveWithModTimes(graphPath)) {
-                    val content = fileSystem.readFileBytes("$graphPath/$relativePath") ?: continue
+                for ((relativePath, _) in fileSystem.listFilesRecursiveWithModTimes(notesPath.directory())) {
+                    val content = fileSystem.readFileBytes(notesPath.child(relativePath)) ?: continue
                     zip.putNextEntry(ZipEntry(relativePath))
                     zip.write(content)
                     zip.closeEntry()
