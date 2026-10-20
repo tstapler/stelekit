@@ -151,4 +151,37 @@ class ArgParserTest {
 
         assertEquals(5, ex.exitCode, "--dry-run + --fetch-only must produce exitCode 5")
     }
+
+    // ---- resolveNotesPath ----
+
+    @Test
+    fun `resolveNotesPath prefers --graph over the last opened graph`() {
+        val graph = java.nio.file.Files.createTempDirectory("sync-graph").toFile()
+        val other = java.nio.file.Files.createTempDirectory("sync-last").toFile()
+
+        val result = resolveNotesPath(SyncArgs(graphPath = EffectiveNotesPath(graph.path)), other.path)
+
+        assertEquals(EffectiveNotesPath(graph.canonicalPath), result)
+    }
+
+    @Test
+    fun `resolveNotesPath falls back to the last opened graph`() {
+        val last = java.nio.file.Files.createTempDirectory("sync-last").toFile()
+
+        assertEquals(EffectiveNotesPath(last.canonicalPath), resolveNotesPath(SyncArgs(), last.path))
+    }
+
+    @Test
+    fun `resolveNotesPath is null when neither is given`() {
+        assertNull(resolveNotesPath(SyncArgs(), ""))
+    }
+
+    @Test
+    fun `resolveNotesPath canonicalizes dot-dot segments`() {
+        val graph = java.nio.file.Files.createTempDirectory("sync-graph").toFile()
+
+        val result = resolveNotesPath(SyncArgs(graphPath = EffectiveNotesPath("${graph.path}/sub/..")), "")
+
+        assertEquals(EffectiveNotesPath(graph.canonicalPath), result)
+    }
 }

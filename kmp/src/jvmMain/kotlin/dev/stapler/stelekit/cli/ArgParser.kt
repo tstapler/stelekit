@@ -38,6 +38,17 @@ fun parseArgs(args: Array<String>): SyncArgs {
     return SyncArgs(graphPath, commitOnly, fetchOnly, dryRun, jsonOutput)
 }
 
+/**
+ * The notes folder to sync: `--graph`, else the last opened graph (`lastGraphPath` mirrors its notes
+ * folder). Canonicalized to block path traversal (e.g. "../../etc") and resolve symlinks.
+ */
+internal fun resolveNotesPath(args: SyncArgs, lastGraphPath: String): EffectiveNotesPath? {
+    val requested = args.graphPath
+        ?: lastGraphPath.takeIf { it.isNotEmpty() }?.let(::EffectiveNotesPath)
+        ?: return null
+    return EffectiveNotesPath(java.io.File(requested.directory()).canonicalFile.path)
+}
+
 private val USAGE = """
     Usage: stelekit-sync [options]
 
