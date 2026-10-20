@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.git.merge
 
 import dev.stapler.stelekit.git.model.ConflictFile
+import dev.stapler.stelekit.model.RepoRoot
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -144,7 +145,7 @@ class JournalMergeServiceTest {
             hunks = emptyList(),
         )
 
-        val proposal = service.propose(conflictFile, "/graph", writeBackupToDisk = false)
+        val proposal = service.propose(conflictFile, RepoRoot("/graph"), writeBackupToDisk = false)
 
         assertEquals("/graph/journals/2026-06-12.md", proposal.filePath)
         assertTrue(proposal.localContent.contains("- local entry"), "localContent must include local-side lines")
@@ -182,7 +183,7 @@ class JournalMergeServiceTest {
             wikiRelativePath = "journals/2026-06-01.md",
             hunks = emptyList(),
         )
-        val proposal = service.propose(conflictFile, "/graph", writeBackupToDisk = false)
+        val proposal = service.propose(conflictFile, RepoRoot("/graph"), writeBackupToDisk = false)
         // proposedMerge = "line 1\nline 2" (2 lines); remote has 20 lines. 2 < 20*0.9=18 → true
         assertTrue(proposal.confidenceWarning, "Expected confidenceWarning=true when merge is much smaller than inputs")
     }
@@ -196,12 +197,29 @@ class JournalMergeServiceTest {
             wikiRelativePath = "journals/2026-06-01.md",
             hunks = emptyList(),
         )
-        val proposal = service.propose(conflictFile, "/graph")
+        val proposal = service.propose(conflictFile, RepoRoot("/graph"))
         assertEquals("", proposal.proposedMerge)
         assertFalse(proposal.backupPath.contains(".md.md"))
     }
 
     // ---- Stub FileSystem ----
+
+    @Test
+    fun propose_graphWithWikiSubdir_writesBackupAtRepoRootOutsideSyncedSubdir() = runTest {
+        val fs = StubFileSystem(readResult = "<<<<<<< LOCAL\n- a\n=======\n- b\n>>>>>>> REMOTE")
+        val service = JournalMergeService(fileSystem = fs)
+        val conflictFile = ConflictFile(
+            filePath = "/repo/logseq/journals/2026-06-12.md",
+            wikiRelativePath = "journals/2026-06-12.md",
+            hunks = emptyList(),
+        )
+
+        val proposal = service.propose(conflictFile, RepoRoot("/repo"))
+
+        assertTrue(proposal.backupPath.startsWith("/repo/.stelekit-backup/"), "backup must sit at the repo root: ${proposal.backupPath}")
+        assertFalse(proposal.backupPath.startsWith("/repo/logseq/"), "git sync stages the wiki subdir, so the backup must not live in it")
+        assertEquals(setOf(proposal.backupPath), fs.written.keys)
+    }
 
     private class StubFileSystem(private val readResult: String? = null) : dev.stapler.stelekit.platform.FileSystem {
         val written = mutableMapOf<String, String>()
