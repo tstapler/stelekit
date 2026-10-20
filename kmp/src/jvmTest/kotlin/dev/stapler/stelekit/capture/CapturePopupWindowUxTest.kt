@@ -8,6 +8,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
+import dev.stapler.stelekit.createShortTempDirectory
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.platform.PlatformFileSystem
@@ -65,7 +66,8 @@ class CapturePopupWindowUxTest {
             fileSystem = NonVaultFakeFileSystem(),
             defaultBackend = GraphBackend.IN_MEMORY,
         )
-        val graphPath = Files.createTempDirectory("capture-popup-ux-fail-test").toString()
+        // Outside user.home on purpose: the unregistered PlatformFileSystem whitelists home, and Bazel's tmpdir is under it.
+        val graphPath = createShortTempDirectory("capture-popup-ux-fail-test").toString()
         val id = graphManager.addGraph(graphPath)
         graphManager.switchGraph(id)
         graphManager.awaitPendingMigration()

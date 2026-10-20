@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.platform
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import kotlinx.coroutines.test.runTest
 import kotlin.random.Random
 import kotlin.test.Test
@@ -119,7 +120,7 @@ class PlatformFileSystemRelinkHostDirectoryTest {
         fs.writeFileBytes("$existingPath/vault/secret.md.stek", byteArrayOf(1, 2, 3))
         assertNotNull(fs.getContentBytes("$existingPath/vault/secret.md.stek"))
         fs.registerBlobUrl("$existingPath/assets/old.png", "blob:stale-image")
-        assertEquals("blob:stale-image", fs.resolveAssetUri(existingPath, "assets/old.png"))
+        assertEquals("blob:stale-image", fs.resolveAssetUri(EffectiveNotesPath(existingPath), "assets/old.png"))
 
         val newFolderName = "notes-b"
         val host = fakeDirEntry(
@@ -156,7 +157,7 @@ class PlatformFileSystemRelinkHostDirectoryTest {
             "stale bytesCache-only (paranoid-mode) entry must be pruned after relink",
         )
         assertNull(
-            fs.resolveAssetUri(existingPath, "assets/old.png"),
+            fs.resolveAssetUri(EffectiveNotesPath(existingPath), "assets/old.png"),
             "stale blobUrlCache-only (image) entry must be pruned after relink",
         )
         assertTrue(fs.supportsHostDirectoryLink)

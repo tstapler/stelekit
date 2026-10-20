@@ -3,16 +3,18 @@
 
 package dev.stapler.stelekit.stats
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import java.io.File
 import kotlinx.coroutines.runBlocking
 
 /** JVM adapter retained for the graphStats CLI. */
 class GraphStatsCollector {
     fun collect(graphDir: File): GraphStatsReport = runBlocking {
+        val notesPath = EffectiveNotesPath(graphDir.absolutePath)
         MarkdownGraphStatsCollector().collect(
-            graphPath = graphDir.absolutePath,
-            pageFiles = File(graphDir, "pages").listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty(),
-            journalFiles = File(graphDir, "journals").listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty(),
+            graphPath = notesPath.directory(),
+            pageFiles = File(notesPath.pagesDir()).listFiles()?.filter { it.isFile }?.map { it.path }.orEmpty(),
+            journalFiles = File(notesPath.journalsDir()).listFiles()?.filter { it.isFile }?.map { it.path }.orEmpty(),
             readFile = { path -> runCatching { File(path).readText() }.getOrNull() },
         )
     }

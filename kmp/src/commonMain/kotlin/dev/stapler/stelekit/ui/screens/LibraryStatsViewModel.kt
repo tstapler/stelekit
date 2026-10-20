@@ -3,9 +3,10 @@
 
 package dev.stapler.stelekit.ui.screens
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.stats.GraphStatsReport
-import dev.stapler.stelekit.stats.LibraryStatsProvider
-import dev.stapler.stelekit.stats.NoOpLibraryStatsProvider
+import dev.stapler.stelekit.platform.LibraryStatsProvider
+import dev.stapler.stelekit.platform.NoOpLibraryStatsProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -24,7 +25,7 @@ sealed class LibraryStatsState {
 
 class LibraryStatsViewModel(
     private val provider: LibraryStatsProvider = NoOpLibraryStatsProvider,
-    val graphPath: String = "",
+    val notesPath: EffectiveNotesPath = EffectiveNotesPath(""),
     scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) {
     private val scope = scope
@@ -35,14 +36,14 @@ class LibraryStatsViewModel(
         if (_state.value == LibraryStatsState.Loading) return
         scope.launch {
             _state.value = LibraryStatsState.Loading
-            val report = runCatching { provider.collect(graphPath) }.getOrElse { e ->
+            val report = runCatching { provider.collect(notesPath) }.getOrElse { e ->
                 _state.value = LibraryStatsState.Error(e.message ?: "Scan failed")
                 return@launch
             }
             _state.value = if (report != null)
                 LibraryStatsState.Loaded(report)
             else
-                LibraryStatsState.Error("Graph path not found: $graphPath")
+                LibraryStatsState.Error("Graph path not found: ${notesPath.directory()}")
         }
     }
 

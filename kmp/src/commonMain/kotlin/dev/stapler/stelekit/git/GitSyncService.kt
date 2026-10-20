@@ -12,6 +12,7 @@ import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.FilePath
+import dev.stapler.stelekit.model.RepoRoot
 import dev.stapler.stelekit.git.merge.JournalMergeService
 import dev.stapler.stelekit.git.lfs.LfsGuardCoordinator
 import dev.stapler.stelekit.git.lfs.LfsGuardedStaging
@@ -22,7 +23,6 @@ import dev.stapler.stelekit.git.model.ConflictFile
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.git.model.logSummary
-import dev.stapler.stelekit.git.model.wikiRoot
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.NetworkMonitor
 import dev.stapler.stelekit.platform.Settings
@@ -414,7 +414,7 @@ class GitSyncService(
                         // conflicts require sequential resolution and must go through the manual screen.
                         if (journalConflicts.size == 1 && journalMergeService != null) {
                             val proposal = try {
-                                journalMergeService.propose(journalConflicts.first(), config.wikiRoot)
+                                journalMergeService.propose(journalConflicts.first(), RepoRoot(config.repoRoot))
                             } catch (e: CancellationException) {
                                 throw e
                             } catch (e: Exception) {

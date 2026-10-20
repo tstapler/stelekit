@@ -335,9 +335,9 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     // FileSystem implementation — SAF paths
     // -------------------------------------------------------------------------
 
-    override fun resolveAssetUri(graphRoot: String, relativePath: String): String? {
-        if (!graphRoot.startsWith("saf://")) return null
-        val fullPath = "$graphRoot/$relativePath"
+    override fun resolveAssetUri(notesPath: dev.stapler.stelekit.model.EffectiveNotesPath, relativePath: String): String? {
+        if (!notesPath.value.startsWith("saf://")) return null
+        val fullPath = notesPath.child(relativePath)
         if (isDirectAccess()) {
             val realPath = resolveToRealPath(fullPath)
             if (realPath != null) return "file://$realPath"

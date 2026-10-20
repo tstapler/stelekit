@@ -179,3 +179,11 @@ filegroup(
     ],
     visibility = ["//kmp:__subpackages__"],
 )
+
+# Staged as test data so jvmTest's AirGapGuardTest and CaptureWriterSourceAuditTest can scan
+# these sources as plain files, which Bazel's sandbox does not otherwise provide.
+filegroup(
+    name = "source_audit_sources",
+    srcs = glob(["dev/stapler/stelekit/transfer/**/*.kt"]) + ["dev/stapler/stelekit/capture/CaptureWriter.kt"],
+    visibility = ["//kmp/src/jvmTest/kotlin:__pkg__"],
+)

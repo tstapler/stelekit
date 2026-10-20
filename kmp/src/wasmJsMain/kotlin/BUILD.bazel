@@ -1,0 +1,7 @@
+# Not built by Bazel (wasmJs compiles via Gradle); this package only stages sources for
+# jvmTest's PatLeakageAuditTest, which scans them as plain files.
+filegroup(
+    name = "git_sources",
+    srcs = glob(["dev/stapler/stelekit/git/**/*.kt"]),
+    visibility = ["//kmp/src/jvmTest/kotlin:__pkg__"],
+)

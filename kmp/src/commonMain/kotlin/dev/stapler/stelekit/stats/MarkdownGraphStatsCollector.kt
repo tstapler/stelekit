@@ -30,6 +30,7 @@ class MarkdownGraphStatsCollector {
 
     private data class JournalEntry(val scan: FileScan, val date: String?)
 
+    /** [pageFiles] and [journalFiles] are full file paths, so this package never joins notes-folder paths itself; [graphPath] only labels the report. */
     suspend fun collect(
         graphPath: String,
         pageFiles: List<String>,
@@ -39,18 +40,20 @@ class MarkdownGraphStatsCollector {
         val context = currentCoroutineContext()
         context.ensureActive()
         val pages = mutableListOf<FileScan>()
-        for ((index, name) in pageFiles.withIndex()) {
+        for ((index, path) in pageFiles.withIndex()) {
             if (index % FILES_PER_CHECKPOINT == 0) yield()
+            val name = path.substringAfterLast('/')
             if (!name.endsWith(".md")) continue
-            pages += scan(readFile("$graphPath/pages/$name").orEmpty(), pageNameFromFile(name))
+            pages += scan(readFile(path).orEmpty(), pageNameFromFile(name))
         }
         val journals = mutableListOf<JournalEntry>()
-        for ((index, name) in journalFiles.withIndex()) {
+        for ((index, path) in journalFiles.withIndex()) {
             if (index % FILES_PER_CHECKPOINT == 0) yield()
+            val name = path.substringAfterLast('/')
             if (!name.endsWith(".md")) continue
             val m = journalDateRegex.find(name.removeSuffix(".md"))
             val date = m?.let { "${it.groupValues[1]}-${it.groupValues[2]}-${it.groupValues[3]}" }
-            journals += JournalEntry(scan(readFile("$graphPath/journals/$name").orEmpty(), pageNameFromFile(name)), date)
+            journals += JournalEntry(scan(readFile(path).orEmpty(), pageNameFromFile(name)), date)
         }
 
         val allScans = pages + journals.map { it.scan }

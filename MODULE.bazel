@@ -210,10 +210,10 @@ maven.install(
         "io.arrow-kt:arrow-resilience-jvm:2.2.1.1",
 
         # ── Kotlinx ──────────────────────────────────────────────────────────
-        "org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.10.2",
-        "org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.10.2",
-        "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2",
-        "org.jetbrains.kotlinx:kotlinx-coroutines-test-jvm:1.10.2",
+        "org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.11.0",
+        "org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.11.0",
+        "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0",
+        "org.jetbrains.kotlinx:kotlinx-coroutines-test-jvm:1.11.0",
         "org.jetbrains.kotlinx:kotlinx-datetime-jvm:0.7.1",
         "org.jetbrains.kotlinx:kotlinx-serialization-json-jvm:1.10.0",
 
