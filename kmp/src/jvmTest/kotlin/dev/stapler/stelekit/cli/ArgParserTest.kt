@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.cli
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -112,7 +113,7 @@ class ArgParserTest {
     fun `compatible flags parse to SyncArgs without exception`() {
         val result = parseArgs(arrayOf("--graph", "/my/graph", "--dry-run", "--json"))
 
-        assertEquals("/my/graph", result.graphPath)
+        assertEquals(EffectiveNotesPath("/my/graph"), result.graphPath)
         assertTrue(result.dryRun, "--dry-run must set dryRun = true")
         assertTrue(result.jsonOutput, "--json must set jsonOutput = true")
         assertFalse(result.commitOnly, "commitOnly must be false when not supplied")

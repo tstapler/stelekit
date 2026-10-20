@@ -1,9 +1,11 @@
 package dev.stapler.stelekit.cli
 
+import dev.stapler.stelekit.model.EffectiveNotesPath
+
 class ArgParseException(message: String, val exitCode: Int) : Exception(message)
 
 fun parseArgs(args: Array<String>): SyncArgs {
-    var graphPath: String? = null
+    var graphPath: EffectiveNotesPath? = null
     var commitOnly = false
     var fetchOnly = false
     var dryRun = false
@@ -15,7 +17,7 @@ fun parseArgs(args: Array<String>): SyncArgs {
             "--help" -> throw ArgParseException(USAGE, 0)
             "--graph" -> {
                 if (i + 1 >= args.size) throw ArgParseException("--graph requires a path argument", 5)
-                graphPath = args[++i]
+                graphPath = EffectiveNotesPath(args[++i])
             }
             "--commit-only" -> commitOnly = true
             "--fetch-only" -> fetchOnly = true
