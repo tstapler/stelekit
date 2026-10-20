@@ -23,7 +23,6 @@ import dev.stapler.stelekit.git.model.ConflictFile
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.git.model.logSummary
-import dev.stapler.stelekit.git.model.wikiRoot
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.NetworkMonitor
 import dev.stapler.stelekit.platform.Settings
