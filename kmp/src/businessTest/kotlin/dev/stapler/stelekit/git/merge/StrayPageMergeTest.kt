@@ -77,4 +77,49 @@ class StrayPageMergeTest {
             is StrayPageMergeResult.Refused -> Unit
         }
     }
+
+    @Test
+    fun merge_should_MergeChildrenOfASharedParent_NotMoveThemUnderAnotherBlock() {
+        val result = merged(
+            notes = "- Created Pages\n\t- [[A]]\n- x\n",
+            stray = "- Created Pages\n\t- [[B]]\n- y\n",
+        )
+
+        assertEquals(listOf("- Created Pages", "\t- [[A]]", "\t- [[B]]", "- x", "- y"), result.text.lines().filter { it.isNotBlank() })
+        assertEquals(2, result.addedFromStray)
+    }
+
+    @Test
+    fun merge_should_TreatCollapsedAsViewStateNotContent() {
+        val result = merged(notes = "- Summary\n  collapsed:: true\n  - a\n", stray = "- Summary\n  - b\n")
+
+        assertEquals(listOf("- Summary", "  collapsed:: true", "  - a", "  - b"), result.text.lines().filter { it.isNotBlank() })
+        assertEquals(1, result.addedFromStray)
+    }
+
+    @Test
+    fun merge_should_ReindentAddedBlocksToTheNotesCopysStyle() {
+        val result = merged(notes = "- Summary\n\t- a\n", stray = "- Summary\n  - b\n    - c\n- Other\n  - d\n")
+
+        assertEquals(
+            listOf("- Summary", "\t- a", "\t- b", "\t\t- c", "- Other", "\t- d"),
+            result.text.lines().filter { it.isNotBlank() },
+        )
+        assertEquals(4, result.addedFromStray)
+    }
+
+    @Test
+    fun merge_should_KeepNotesLinesAsWritten() {
+        val notes = "- Summary \n  - a\n    SCHEDULED: <2026-10-17 Sat>\n"
+
+        assertEquals(notes, merged(notes = notes, stray = "- Summary\n  - a\n    SCHEDULED: <2026-10-17 Sat>\n").text)
+    }
+
+    @Test
+    fun merge_should_KeepBothCopiesOfABlockWhoseBodyDiffers() {
+        val result = merged(notes = "- todo\n  SCHEDULED: <2026-10-17 Sat>\n", stray = "- todo\n  SCHEDULED: <2026-10-18 Sun>\n")
+
+        assertEquals(2, result.text.lines().count { it == "- todo" })
+        assertEquals(1, result.addedFromStray)
+    }
 }
