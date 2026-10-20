@@ -19,4 +19,4 @@ Owner decision, 2026-10-19:
 - Android WorkManager input data packs `RepoRoot.value` and re-wraps on read.
 
 ## Implementation
-Tracked as its own tranche, following `plan.md` phases 1–5 (git types first, then vault + migration, then tests: subdir-layout vault path, WorkManager round trip, `GitConfig` serialization).
+Filed as its own tranche: backlog item `007f3d26-f628-4f09-925f-d771284f7d46` ("refactor: type git and vault paths as RepoRoot; move vault files to repo root (ADR-020)", P3, status idea). Not implemented by this ADR's commit. It follows `plan.md` phases 1–5 (git types first, then vault + migration, then tests: subdir-layout vault path, WorkManager round trip, `GitConfig` serialization).
