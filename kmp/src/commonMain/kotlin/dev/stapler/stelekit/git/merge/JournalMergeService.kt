@@ -2,6 +2,7 @@ package dev.stapler.stelekit.git.merge
 
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.git.model.ConflictFile
+import dev.stapler.stelekit.model.RepoRoot
 import dev.stapler.stelekit.platform.FileSystem
 import kotlinx.coroutines.withContext
 import kotlin.time.Clock
@@ -33,7 +34,7 @@ class JournalMergeService(
     @OptIn(ExperimentalTime::class)
     suspend fun propose(
         conflictFile: ConflictFile,
-        graphRoot: String,
+        repoRoot: RepoRoot,
         writeBackupToDisk: Boolean = true,
     ): JournalMergeProposal {
         val content = withContext(PlatformDispatcher.IO) {
@@ -56,9 +57,9 @@ class JournalMergeService(
 
         val fileName = conflictFile.filePath.substringAfterLast("/")
         val backupPath = if (writeBackupToDisk) {
-            writeBackup(graphRoot, fileName, content)
+            writeBackup(repoRoot, fileName, content)
         } else {
-            computeBackupPath(graphRoot, fileName)
+            computeBackupPath(repoRoot, fileName)
         }
 
         return JournalMergeProposal(
@@ -111,9 +112,9 @@ class JournalMergeService(
     }
 
     @OptIn(ExperimentalTime::class)
-    suspend fun writeBackup(graphRoot: String, fileName: String, content: String): String {
-        val backupPath = computeBackupPath(graphRoot, fileName)
-        val backupDir = "$graphRoot/.stelekit-backup"
+    suspend fun writeBackup(repoRoot: RepoRoot, fileName: String, content: String): String {
+        val backupPath = computeBackupPath(repoRoot, fileName)
+        val backupDir = backupDir(repoRoot)
         withContext(PlatformDispatcher.IO) {
             fileSystem.createDirectory(backupDir)
             fileSystem.writeFile(backupPath, content)
@@ -122,12 +123,15 @@ class JournalMergeService(
     }
 
     @OptIn(ExperimentalTime::class)
-    private fun computeBackupPath(graphRoot: String, fileName: String): String {
+    private fun computeBackupPath(repoRoot: RepoRoot, fileName: String): String {
         val epochMs = Clock.System.now().toEpochMilliseconds()
-        val backupDir = "$graphRoot/.stelekit-backup"
+        val backupDir = backupDir(repoRoot)
         val stem = if (fileName.endsWith(".md")) fileName.removeSuffix(".md") else fileName
         return "$backupDir/$stem-$epochMs.md"
     }
+
+    // At the repo root, not the notes folder: git sync stages the wiki subdir, and a backup inside it would be committed.
+    private fun backupDir(repoRoot: RepoRoot): String = "${repoRoot.value.trimEnd('/')}/.stelekit-backup"
 
     private enum class ParseState {
         OUTSIDE, LOCAL, BASE, REMOTE
