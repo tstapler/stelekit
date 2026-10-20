@@ -4,8 +4,10 @@ package dev.stapler.stelekit.ui.misplaced
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import dev.stapler.stelekit.db.ProposedResolution
@@ -29,9 +31,16 @@ class MisplacedFilesUiTest {
         proposal,
     )
 
-    private fun show(state: MisplacedFilesUiState, onMove: (MisplacedItem) -> Unit = {}, onIgnoreAll: () -> Unit = {}) {
+    private fun show(
+        state: MisplacedFilesUiState,
+        onMove: (MisplacedItem) -> Unit = {},
+        onIgnoreAll: () -> Unit = {},
+        onMergeAnyway: (MisplacedItem) -> Unit = {},
+    ) {
         composeTestRule.setContent {
-            MaterialTheme { MisplacedFilesDialog(state, onMove = onMove, onIgnore = {}, onMoveAll = {}, onIgnoreAll = onIgnoreAll, onClose = {}) }
+            MaterialTheme {
+                MisplacedFilesDialog(state, onMove = onMove, onMergeAnyway = onMergeAnyway, onIgnore = {}, onMoveAll = {}, onIgnoreAll = onIgnoreAll, onClose = {})
+            }
         }
     }
 
@@ -90,6 +99,25 @@ class MisplacedFilesUiTest {
         composeTestRule.onNodeWithText("Merge").assertIsNotEnabled()
         composeTestRule.onNodeWithText("Move all").assertIsNotEnabled()
         composeTestRule.onNodeWithText("Ignore").assertIsEnabled()
+    }
+
+    @Test
+    fun dialog_should_OfferMergeAnywayOnlyForARefusalThatCanBeAppended() {
+        val appended = mutableListOf<String>()
+        show(
+            MisplacedFilesUiState(
+                items = listOf(
+                    item("props", hasCopy = true, proposal = ProposedResolution.CannotMerge("the stray copy has content outside its block list", canAppend = true)),
+                    item("unreadable", hasCopy = true, proposal = ProposedResolution.CannotMerge("the copy in your notes cannot be read")),
+                ),
+                dialogVisible = true,
+            ),
+            onMergeAnyway = { appended += it.file.name },
+        )
+
+        composeTestRule.onAllNodesWithText("Merge anyway").assertCountEquals(1)
+        composeTestRule.onNodeWithText("Merge anyway").performClick()
+        assertEquals(listOf("props"), appended)
     }
 
     @Test
