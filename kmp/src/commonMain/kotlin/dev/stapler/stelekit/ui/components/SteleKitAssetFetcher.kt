@@ -10,6 +10,7 @@ import coil3.PlatformContext
 import coil3.Uri
 import coil3.compose.LocalPlatformContext
 import coil3.map.Mapper
+import coil3.memory.MemoryCache
 import coil3.request.Options
 import coil3.toUri
 import dev.stapler.stelekit.model.EffectiveNotesPath
@@ -64,12 +65,47 @@ class SteleKitSafPathMapper(private val fileSystem: FileSystem) : Mapper<String,
     }
 }
 
+/** Share of the app heap budget the single image memory cache may use. */
+private const val IMAGE_MEMORY_CACHE_PERCENT = 0.10
+
+/**
+ * One bounded memory cache for every [ImageLoader] this app builds. Each loader otherwise gets its
+ * own cache sized at Coil's default share of the heap, and Coil keeps every built loader reachable
+ * (it registers a ComponentCallbacks with the Context), so one loader per image block/asset card
+ * multiplied the cache budget instead of bounding it. Touched from composition only (main thread).
+ */
+private var sharedMemoryCache: MemoryCache? = null
+
+internal fun sharedImageMemoryCache(context: PlatformContext): MemoryCache =
+    sharedMemoryCache ?: MemoryCache.Builder()
+        .maxSizePercent(context, IMAGE_MEMORY_CACHE_PERCENT)
+        .build()
+        .also { sharedMemoryCache = it }
+
+internal fun buildSteleKitImageLoader(
+    context: PlatformContext,
+    notesPath: EffectiveNotesPath?,
+    fileSystem: FileSystem?,
+): ImageLoader =
+    ImageLoader.Builder(context)
+        .memoryCache(sharedImageMemoryCache(context))
+        .components {
+            if (notesPath != null) {
+                add(SteleKitAssetMapper(notesPath, fileSystem))
+            }
+            if (fileSystem != null) {
+                add(SteleKitSafPathMapper(fileSystem))
+            }
+        }
+        .build()
+
 /**
  * Returns a Coil [ImageLoader] scoped to the current notes folder.
  * Registers [SteleKitAssetMapper] when [LocalNotesPath] is non-null so that
  * `../assets/<filename>` paths resolve to absolute URIs (content:// for SAF graphs).
  * Registers [SteleKitSafPathMapper] when [LocalFileSystem] is non-null so that
  * full `saf://` paths (used by [ImageAnnotation.filePath]) also resolve correctly.
+ * All loaders share one bounded memory cache ([sharedImageMemoryCache]).
  */
 @Composable
 fun rememberSteleKitImageLoader(): ImageLoader {
@@ -77,15 +113,6 @@ fun rememberSteleKitImageLoader(): ImageLoader {
     val fileSystem = LocalFileSystem.current
     val context: PlatformContext = LocalPlatformContext.current
     return remember(notesPath, fileSystem, context) {
-        ImageLoader.Builder(context)
-            .components {
-                if (notesPath != null) {
-                    add(SteleKitAssetMapper(notesPath, fileSystem))
-                }
-                if (fileSystem != null) {
-                    add(SteleKitSafPathMapper(fileSystem))
-                }
-            }
-            .build()
+        buildSteleKitImageLoader(context, notesPath, fileSystem)
     }
 }

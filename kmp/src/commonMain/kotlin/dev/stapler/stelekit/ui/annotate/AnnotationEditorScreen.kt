@@ -70,6 +70,12 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import coil3.compose.LocalPlatformContext
+import coil3.request.ImageRequest
+import coil3.size.Size
+import dev.stapler.stelekit.platform.image.MAX_LOUPE_EDGE_PX
+import dev.stapler.stelekit.platform.image.capLongestEdge
+import dev.stapler.stelekit.ui.components.rememberSteleKitImageLoader
 import dev.stapler.stelekit.model.AnnotationType
 import dev.stapler.stelekit.model.Calibration
 import dev.stapler.stelekit.model.CalibrationMethod
@@ -401,6 +407,7 @@ fun AnnotationEditorScreen(
             }
             AsyncImage(
                 model = imageUri,
+                imageLoader = rememberSteleKitImageLoader(),
                 contentDescription = "Annotated image",
                 modifier = Modifier
                     .fillMaxSize()
@@ -1488,6 +1495,16 @@ private fun LoupeOverlay(
         .coerceIn(marginPx, canvasSize.width - loupeSizePx - marginPx)
     val innerWidthDp = (canvasSize.width * zoomFactor / density).dp
     val innerHeightDp = (canvasSize.height * zoomFactor / density).dp
+    // 3x the canvas decodes to ~85 MB on a tall phone; cap the decode and let FillBounds upscale.
+    val platformContext = LocalPlatformContext.current
+    val loupeModel = remember(imageUri, canvasSize, zoomFactor, platformContext) {
+        val (w, h) = capLongestEdge(
+            (canvasSize.width * zoomFactor).toInt(),
+            (canvasSize.height * zoomFactor).toInt(),
+            MAX_LOUPE_EDGE_PX,
+        )
+        ImageRequest.Builder(platformContext).data(imageUri).size(Size(w.coerceAtLeast(1), h.coerceAtLeast(1))).build()
+    }
     val innerOffsetXPx = loupeSizePx / 2f - touchOffset.x * zoomFactor
     val innerOffsetYPx = loupeSizePx / 2f - touchOffset.y * zoomFactor
     Box(
@@ -1498,7 +1515,8 @@ private fun LoupeOverlay(
         // Clipped inner area: zoomed image + crosshair
         Box(modifier = Modifier.fillMaxSize().clip(CircleShape)) {
             AsyncImage(
-                model = imageUri,
+                model = loupeModel,
+                imageLoader = rememberSteleKitImageLoader(),
                 contentDescription = null,
                 contentScale = ContentScale.FillBounds,
                 modifier = Modifier

@@ -19,6 +19,7 @@ import dev.stapler.stelekit.platform.security.AndroidCredentialStoreFailsLoudTes
 import dev.stapler.stelekit.platform.sensor.ExifOrientationFixerTest
 import dev.stapler.stelekit.ui.LoadingStateTest
 import dev.stapler.stelekit.ui.components.MermaidWebViewBridgeTest
+import dev.stapler.stelekit.ui.components.SteleKitImageLoaderMemoryTest
 import dev.stapler.stelekit.ui.components.MermaidWebViewSettingsTest
 import dev.stapler.stelekit.ui.transfer.QrDecodeViewModelBackgroundingTest
 import dev.stapler.stelekit.voice.AndroidSpeechRecognizerPermissionTest
@@ -48,6 +49,7 @@ import org.junit.runners.Suite
     AndroidSpeechRecognizerPermissionTest::class,
     QrDecodeViewModelBackgroundingTest::class,
     MermaidWebViewBridgeTest::class,
+    SteleKitImageLoaderMemoryTest::class,
     MermaidWebViewSettingsTest::class,
     // MermaidWebViewHostTest and MermaidWebViewSecurityDirectiveTest are deliberately NOT
     // registered here (unlike Gradle's testDebugUnitTest, which does run them): this repo's

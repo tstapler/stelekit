@@ -3,6 +3,7 @@ package dev.stapler.stelekit.ui.components
 import android.content.Context
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
+import dev.stapler.stelekit.platform.sensor.cappedCaptureResolutionSelector
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -65,6 +66,7 @@ actual fun CameraViewfinderDialog(
     val imageCapture = remember {
         ImageCapture.Builder()
             .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+            .setResolutionSelector(cappedCaptureResolutionSelector())
             .build()
     }
 

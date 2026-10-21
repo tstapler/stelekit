@@ -2,6 +2,7 @@ package dev.stapler.stelekit.platform.ml
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import dev.stapler.stelekit.platform.image.inSampleSizeFor
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
@@ -37,7 +38,14 @@ class MlKitImageLabeler : ImageLabeler {
     }
 
     private fun decodeAndResize(bytes: ByteArray, maxSize: Int): Bitmap? {
-        val original = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return null
+        // Sub-sample at decode: ML Kit only needs maxSize px, and a full-res decode of a 50 MP
+        // photo is ~200 MB. Target 2x maxSize so the final scale step keeps quality.
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        val opts = BitmapFactory.Options().apply {
+            inSampleSize = inSampleSizeFor(bounds.outWidth, bounds.outHeight, 4L * maxSize * maxSize)
+        }
+        val original = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts) ?: return null
         val scale = minOf(maxSize.toFloat() / original.width, maxSize.toFloat() / original.height, 1f)
         return if (scale >= 1f) original
         else {

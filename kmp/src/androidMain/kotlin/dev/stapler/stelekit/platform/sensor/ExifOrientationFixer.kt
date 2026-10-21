@@ -8,6 +8,7 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.platform.image.inSampleSizeFor
 import kotlinx.coroutines.CancellationException
 import java.io.File
 import java.io.FileOutputStream
@@ -85,14 +86,10 @@ object ExifOrientationFixer {
                 }
             } else {
                 // Decode, rotate, re-encode
-                val original = BitmapFactory.decodeFile(inputPath)
+                val rotated = decodeAndRotateBounded(inputPath, matrix)
                     ?: return DomainError.SensorError.CaptureFailed(
                         "BitmapFactory.decodeFile returned null for $inputPath"
                     ).left()
-                val rotated = Bitmap.createBitmap(
-                    original, 0, 0, original.width, original.height, matrix, true
-                )
-                original.recycle()
 
                 FileOutputStream(destination).use { out ->
                     rotated.compress(Bitmap.CompressFormat.JPEG, jpegQuality, out)
@@ -126,6 +123,34 @@ object ExifOrientationFixer {
             ).left()
         }
     }
+
+    /**
+     * Decodes [path] within the 16 MP decode budget and rotates it. A full-resolution decode plus the
+     * rotated copy held two full bitmaps at once (~400 MB for a 50 MP photo). On
+     * [OutOfMemoryError] the sample size doubles and decoding retries, up to 3 times.
+     */
+    private fun decodeAndRotateBounded(path: String, matrix: Matrix): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(path, bounds)
+        var sample = inSampleSizeFor(bounds.outWidth, bounds.outHeight)
+        var attempt = 0
+        while (true) {
+            try {
+                val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+                val original = BitmapFactory.decodeFile(path, opts) ?: return null
+                return try {
+                    Bitmap.createBitmap(original, 0, 0, original.width, original.height, matrix, true)
+                } finally {
+                    original.recycle()
+                }
+            } catch (e: OutOfMemoryError) {
+                if (++attempt > MAX_OOM_RETRIES) throw e
+                sample *= 2
+            }
+        }
+    }
+
+    private const val MAX_OOM_RETRIES = 3
 
     /**
      * Build a [Matrix] that applies the rotation/flip described by [orientationValue].

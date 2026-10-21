@@ -107,6 +107,7 @@ class AndroidCameraProvider(
                 // 3. Build ImageCapture use case
                 val imageCapture = ImageCapture.Builder()
                     .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+                    .setResolutionSelector(cappedCaptureResolutionSelector())
                     .build()
 
                 // 4. Bind to ProcessLifecycleOwner — no Activity reference required.
