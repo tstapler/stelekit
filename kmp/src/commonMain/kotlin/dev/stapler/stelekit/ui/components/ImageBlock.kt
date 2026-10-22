@@ -30,6 +30,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil3.compose.AsyncImage
+import coil3.compose.rememberAsyncImagePainter
+import dev.stapler.stelekit.platform.image.ImageTier
 
 /**
  * Renders a Logseq image node as a full-width async image using Coil 3.
@@ -56,10 +58,12 @@ internal fun ImageBlock(
     val imageLoader = rememberSteleKitImageLoader()
     var showLightbox by remember { mutableStateOf(false) }
 
+    val tiered by rememberTieredImageModel(url, ImageTier.DISPLAY)
     AsyncImage(
-        model = url,
+        model = tiered.model,
         contentDescription = altText,
         imageLoader = imageLoader,
+        placeholder = tiered.placeholder?.let { rememberAsyncImagePainter(it, imageLoader) },
         contentScale = ContentScale.Fit,
         modifier = modifier
             .fillMaxWidth()
