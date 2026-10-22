@@ -141,6 +141,7 @@ import dev.stapler.stelekit.db.GraphWriterEpochCaptureTest
 import dev.stapler.stelekit.db.GraphWriterNotYetLoadedTest
 import dev.stapler.stelekit.db.ImageAnnotationOfflineTest
 import dev.stapler.stelekit.db.ImageImportServiceIntegrationTest
+import dev.stapler.stelekit.db.EnsureParentDirectoryTest
 import dev.stapler.stelekit.db.JvmDriverConnectionPropsTest
 import dev.stapler.stelekit.db.LargeGraphWarmStartCrashTest
 import dev.stapler.stelekit.db.libsql.JvmLibsqlDriverTest
@@ -446,6 +447,7 @@ import org.junit.runners.Suite
     GraphWriterNotYetLoadedTest::class,
     ImageAnnotationOfflineTest::class,
     ImageImportServiceIntegrationTest::class,
+    EnsureParentDirectoryTest::class,
     JvmDriverConnectionPropsTest::class,
     LargeGraphWarmStartCrashTest::class,
     JvmLibsqlDriverTest::class,
