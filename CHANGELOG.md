@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.98.1](https://github.com/tstapler/stelekit/compare/v0.98.0...v0.98.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* shared database directory creation no longer races across processes ([#488](https://github.com/tstapler/stelekit/issues/488)) ([54b5978](https://github.com/tstapler/stelekit/commit/54b5978e3b6b64d367749c1eb7e601813a39739c))
+
 ## [0.98.0](https://github.com/tstapler/stelekit/compare/v0.97.1...v0.98.0) (2026-10-22)
 
 
