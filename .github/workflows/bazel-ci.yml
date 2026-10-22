@@ -34,7 +34,7 @@ jobs:
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@0.19.0
         with:
-          bazelisk-version: "1.x"
+          bazelisk-version: ""  # use the runner image's Bazelisk; "1.x" needs a GitHub releases lookup that intermittently fails
           # Shared across all 5 Bazel jobs (not job-scoped): their action graphs
           # heavily overlap (commonMain compile, external repo fetch/build, etc.),
           # and GitHub evicts the whole repo's caches once combined size crosses
@@ -50,7 +50,7 @@ jobs:
 
       - name: Install Xvfb (headless display for Compose Desktop tests)
         run: |
-          sudo apt-get install -y --no-install-recommends xvfb
+          sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends xvfb
           # Ensure /tmp/.X11-unix exists before Bazel sandbox tries to bind-mount it
           # (xvfb-run creates the socket, but Bazel validates the mount source at startup)
           mkdir -p /tmp/.X11-unix
@@ -118,7 +118,7 @@ jobs:
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@0.19.0
         with:
-          bazelisk-version: "1.x"
+          bazelisk-version: ""  # use the runner image's Bazelisk; "1.x" needs a GitHub releases lookup that intermittently fails
           # Shared across all 5 Bazel jobs — see comment on bazel-jvm's setup step.
           disk-cache: shared
           repository-cache: true
@@ -183,14 +183,14 @@ jobs:
           packages: "platform-tools"
 
       - name: Install host tools required by aar_import
-        run: sudo apt-get install -y --no-install-recommends unzip
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends unzip
 
       - uses: ./.github/actions/setup-bcp
 
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@0.19.0
         with:
-          bazelisk-version: "1.x"
+          bazelisk-version: ""  # use the runner image's Bazelisk; "1.x" needs a GitHub releases lookup that intermittently fails
           # Shared across all 5 Bazel jobs — see comment on bazel-jvm's setup step.
           disk-cache: shared
           repository-cache: true
@@ -244,14 +244,14 @@ jobs:
           packages: "platform-tools"
 
       - name: Install host tools required by aar_import
-        run: sudo apt-get install -y --no-install-recommends unzip
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends unzip
 
       - uses: ./.github/actions/setup-bcp
 
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@0.19.0
         with:
-          bazelisk-version: "1.x"
+          bazelisk-version: ""  # use the runner image's Bazelisk; "1.x" needs a GitHub releases lookup that intermittently fails
           # Shared across all 5 Bazel jobs — see comment on bazel-jvm's setup step.
           disk-cache: shared
           repository-cache: true
@@ -320,7 +320,7 @@ jobs:
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@0.19.0
         with:
-          bazelisk-version: "1.x"
+          bazelisk-version: ""  # use the runner image's Bazelisk; "1.x" needs a GitHub releases lookup that intermittently fails
           # Shared across all 5 Bazel jobs — see comment on bazel-jvm's setup step.
           disk-cache: shared
           repository-cache: true

@@ -41,7 +41,7 @@ jobs:
 
       - name: Install fdroidserver
         run: |
-          sudo apt-get install -y aapt zipalign
+          sudo apt-get update -qq && sudo apt-get install -y aapt zipalign
           # Ensure uv is available (pre-installed on ubuntu-latest; install via
           # pip3 as fallback if the runner image is older).
           command -v uv >/dev/null 2>&1 || pip3 install --user uv
