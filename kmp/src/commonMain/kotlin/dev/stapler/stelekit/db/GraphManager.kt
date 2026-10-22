@@ -411,6 +411,14 @@ class GraphManager(
     fun graphIdFromPath(path: String): GraphId =
         GraphId(ContentHasher.sha256(path).take(16))
 
+    /** Typed entry point for callers that already hold the folder the loader and writers target. */
+    suspend fun addGraph(
+        notesPath: EffectiveNotesPath,
+        location: StorageLocation? = null,
+        displayName: String? = null,
+        description: String = "",
+    ): GraphId = addGraph(notesPath.directory(), location, displayName, description)
+
     suspend fun addGraph(
         path: String,
         location: StorageLocation? = null,

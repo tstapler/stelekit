@@ -9,6 +9,7 @@ import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.GraphInfo
 import dev.stapler.stelekit.model.GraphRegistry
 import dev.stapler.stelekit.repository.GraphBackend
+import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
@@ -38,6 +39,16 @@ class GraphManagerNotesPathTest {
     @Test
     fun getActiveNotesPath_should_BeNull_When_NoGraphIsActive() {
         assertNull(manager(activeId = null).getActiveNotesPath())
+    }
+
+    @Test
+    fun addGraph_should_RegisterTheNotesDirectory_When_GivenATypedNotesPath() = runTest {
+        val m = manager(activeId = null)
+
+        val id = m.addGraph(EffectiveNotesPath("/graphs/typed"))
+
+        assertEquals(m.graphIdFromPath("/graphs/typed"), id)
+        assertEquals(EffectiveNotesPath("/graphs/typed"), m.getNotesPath(id))
     }
 
     @Test
