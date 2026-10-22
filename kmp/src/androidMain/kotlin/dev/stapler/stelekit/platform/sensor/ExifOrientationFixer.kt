@@ -132,25 +132,17 @@ object ExifOrientationFixer {
     private fun decodeAndRotateBounded(path: String, matrix: Matrix): Bitmap? {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(path, bounds)
-        var sample = inSampleSizeFor(bounds.outWidth, bounds.outHeight)
-        var attempt = 0
-        while (true) {
+        return retryOnOutOfMemory(inSampleSizeFor(bounds.outWidth, bounds.outHeight)) { sample ->
+            val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+            val original = BitmapFactory.decodeFile(path, opts) ?: return@retryOnOutOfMemory null
             try {
-                val opts = BitmapFactory.Options().apply { inSampleSize = sample }
-                val original = BitmapFactory.decodeFile(path, opts) ?: return null
-                return try {
-                    Bitmap.createBitmap(original, 0, 0, original.width, original.height, matrix, true)
-                } finally {
-                    original.recycle()
-                }
-            } catch (e: OutOfMemoryError) {
-                if (++attempt > MAX_OOM_RETRIES) throw e
-                sample *= 2
+                Bitmap.createBitmap(original, 0, 0, original.width, original.height, matrix, true)
+            } finally {
+                original.recycle()
             }
         }
     }
 
-    private const val MAX_OOM_RETRIES = 3
 
     /**
      * Build a [Matrix] that applies the rotation/flip described by [orientationValue].
@@ -197,6 +189,22 @@ object ExifOrientationFixer {
             }
         } catch (_: Exception) {
             null
+        }
+    }
+}
+
+private const val MAX_OOM_RETRIES = 3
+
+/** Runs [block] with [startSample]; on [OutOfMemoryError] doubles the sample size and retries up to 3 times. */
+internal fun <T> retryOnOutOfMemory(startSample: Int, block: (sampleSize: Int) -> T): T {
+    var sample = startSample
+    var attempt = 0
+    while (true) {
+        try {
+            return block(sample)
+        } catch (e: OutOfMemoryError) {
+            if (++attempt > MAX_OOM_RETRIES) throw e
+            sample *= 2
         }
     }
 }

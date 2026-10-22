@@ -48,4 +48,13 @@ class ImageSamplingTest {
             }
         }
     }
+
+    @Test
+    fun loupeDecodeIsCappedAndNeverBelowOnePixel() {
+        assertEquals(800 to 1200, loupeDecodeSize(800, 1200, 1f))
+        val (w, h) = loupeDecodeSize(1080, 2400, 3f)
+        assertEquals(MAX_LOUPE_EDGE_PX, h)
+        assertTrue(w in 1..MAX_LOUPE_EDGE_PX)
+        assertEquals(1 to 1, loupeDecodeSize(0, 0, 3f))
+    }
 }

@@ -4,6 +4,7 @@
 package dev.stapler.stelekit.platform.sensor
 
 import android.util.Size
+import androidx.camera.core.ImageCapture
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 
@@ -19,4 +20,11 @@ internal fun cappedCaptureResolutionSelector(): ResolutionSelector =
         .setResolutionStrategy(
             ResolutionStrategy(MAX_CAPTURE_SIZE, ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER)
         )
+        .build()
+
+/** The still-capture use case shared by the headless provider and the viewfinder dialog. */
+internal fun buildCappedImageCapture(): ImageCapture =
+    ImageCapture.Builder()
+        .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+        .setResolutionSelector(cappedCaptureResolutionSelector())
         .build()

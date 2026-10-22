@@ -73,8 +73,7 @@ import coil3.compose.AsyncImage
 import coil3.compose.LocalPlatformContext
 import coil3.request.ImageRequest
 import coil3.size.Size
-import dev.stapler.stelekit.platform.image.MAX_LOUPE_EDGE_PX
-import dev.stapler.stelekit.platform.image.capLongestEdge
+import dev.stapler.stelekit.platform.image.loupeDecodeSize
 import dev.stapler.stelekit.ui.components.rememberSteleKitImageLoader
 import dev.stapler.stelekit.model.AnnotationType
 import dev.stapler.stelekit.model.Calibration
@@ -1498,12 +1497,8 @@ private fun LoupeOverlay(
     // 3x the canvas decodes to ~85 MB on a tall phone; cap the decode and let FillBounds upscale.
     val platformContext = LocalPlatformContext.current
     val loupeModel = remember(imageUri, canvasSize, zoomFactor, platformContext) {
-        val (w, h) = capLongestEdge(
-            (canvasSize.width * zoomFactor).toInt(),
-            (canvasSize.height * zoomFactor).toInt(),
-            MAX_LOUPE_EDGE_PX,
-        )
-        ImageRequest.Builder(platformContext).data(imageUri).size(Size(w.coerceAtLeast(1), h.coerceAtLeast(1))).build()
+        val (w, h) = loupeDecodeSize(canvasSize.width, canvasSize.height, zoomFactor)
+        ImageRequest.Builder(platformContext).data(imageUri).size(Size(w, h)).build()
     }
     val innerOffsetXPx = loupeSizePx / 2f - touchOffset.x * zoomFactor
     val innerOffsetYPx = loupeSizePx / 2f - touchOffset.y * zoomFactor

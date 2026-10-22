@@ -41,3 +41,9 @@ fun capLongestEdge(width: Int, height: Int, maxEdge: Int): Pair<Int, Int> {
     val scale = maxEdge.toDouble() / longest
     return maxOf(1, (width * scale).toInt()) to maxOf(1, (height * scale).toInt())
 }
+
+/** Decode size for the annotation loupe: the canvas magnified by [zoomFactor], capped at [MAX_LOUPE_EDGE_PX]. */
+fun loupeDecodeSize(canvasWidth: Int, canvasHeight: Int, zoomFactor: Float): Pair<Int, Int> {
+    val (w, h) = capLongestEdge((canvasWidth * zoomFactor).toInt(), (canvasHeight * zoomFactor).toInt(), MAX_LOUPE_EDGE_PX)
+    return w.coerceAtLeast(1) to h.coerceAtLeast(1)
+}

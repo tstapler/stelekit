@@ -105,10 +105,7 @@ class AndroidCameraProvider(
                 }
 
                 // 3. Build ImageCapture use case
-                val imageCapture = ImageCapture.Builder()
-                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
-                    .setResolutionSelector(cappedCaptureResolutionSelector())
-                    .build()
+                val imageCapture = buildCappedImageCapture()
 
                 // 4. Bind to ProcessLifecycleOwner — no Activity reference required.
                 // Use fully-qualified class to avoid the Glance bindToLifecycle extension clash.
