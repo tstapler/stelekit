@@ -83,6 +83,8 @@ import dev.stapler.stelekit.ui.CopyFlowControllerTest
 import dev.stapler.stelekit.ui.PullCopyFlowControllerTest
 import dev.stapler.stelekit.merge.InMemoryMergeStorageTest
 import dev.stapler.stelekit.ui.CopyPagesViewModelTest
+import dev.stapler.stelekit.platform.image.ImageSamplingTest
+import dev.stapler.stelekit.platform.image.ImageTiersTest
 import dev.stapler.stelekit.ui.PageSelectionTest
 import dev.stapler.stelekit.ui.assets.AssetFilterTest
 import dev.stapler.stelekit.ui.assets.AssetBrowserViewModelTest
@@ -304,6 +306,8 @@ import org.junit.runners.Suite
     PullIndexingTest::class,
     PullCopyViewModelTest::class,
     PageSelectionTest::class,
+    ImageSamplingTest::class,
+    ImageTiersTest::class,
     dev.stapler.stelekit.merge.TargetWriterRouterInFlightSwitchTest::class,
     dev.stapler.stelekit.db.GraphLocatorTest::class,
     MergeUuidRoundTripSpikeTest::class,

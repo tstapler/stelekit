@@ -17,8 +17,10 @@ import dev.stapler.stelekit.db.FileRegistryTest
 import dev.stapler.stelekit.db.GraphLoaderIntegrationTest
 import dev.stapler.stelekit.db.GraphLoaderNotesPathTest
 import dev.stapler.stelekit.db.ImageSidecarIndexerTest
+import dev.stapler.stelekit.platform.image.PlatformImageDownscalerJvmTest
 import dev.stapler.stelekit.db.ImageSidecarManagerTest
 import dev.stapler.stelekit.ui.SectionManagementCoordinatorTest
+import dev.stapler.stelekit.ui.SectionsSettingsDialogsTest
 import dev.stapler.stelekit.db.GraphLoaderProgressiveTest
 import dev.stapler.stelekit.db.GraphLoaderSectionFilterTest
 import dev.stapler.stelekit.db.GraphLoaderTest
@@ -78,12 +80,16 @@ import dev.stapler.stelekit.ui.StelekitViewModelLlmSettingsTest
 import dev.stapler.stelekit.ui.StelekitViewModelLoadingTest
 import dev.stapler.stelekit.platform.FileSystemResolveLoadableUriTest
 import dev.stapler.stelekit.ui.components.ApplyAutocompleteSelectionTest
+import dev.stapler.stelekit.ui.components.AutocompleteMenuTest
 import dev.stapler.stelekit.ui.components.BlockItemCodeFenceDispatchTest
+import dev.stapler.stelekit.ui.components.LogDashboardTest
 import dev.stapler.stelekit.ui.components.MermaidBlockFocusTest
 import dev.stapler.stelekit.ui.components.MermaidBlockInteractionTest
 import dev.stapler.stelekit.ui.components.MermaidBlockTest
 import dev.stapler.stelekit.ui.components.ParseMarkdownWithStylingTest
+import dev.stapler.stelekit.ui.components.PerformanceDashboardTest
 import dev.stapler.stelekit.ui.components.RememberSteleKitImageLoaderTest
+import dev.stapler.stelekit.ui.components.SteleKitImageLoaderMemoryTest
 import dev.stapler.stelekit.ui.components.SearchDialogTest
 import dev.stapler.stelekit.ui.components.SteleKitAssetMapperTest
 import dev.stapler.stelekit.ui.components.SteleKitSafPathMapperTest
@@ -318,6 +324,7 @@ import org.junit.runners.Suite
     GraphLoaderIntegrationTest::class,
     GraphLoaderNotesPathTest::class,
     ImageSidecarIndexerTest::class,
+    PlatformImageDownscalerJvmTest::class,
     ImageSidecarManagerTest::class,
     SectionManagementCoordinatorTest::class,
     GraphLoaderProgressiveTest::class,
@@ -375,6 +382,7 @@ import org.junit.runners.Suite
     FileSystemResolveLoadableUriTest::class,
     SteleKitAssetMapperTest::class,
     RememberSteleKitImageLoaderTest::class,
+    SteleKitImageLoaderMemoryTest::class,
     SteleKitSafPathMapperTest::class,
     SuggestionContextMenuTest::class,
     SuggestionNavigatorPanelTest::class,
@@ -598,6 +606,10 @@ import org.junit.runners.Suite
     StelekitViewModelShareExportTest::class,
     CapturePopupWindowTest::class,
     CapturePopupWindowUxTest::class,
+    AutocompleteMenuTest::class,
+    LogDashboardTest::class,
+    PerformanceDashboardTest::class,
+    SectionsSettingsDialogsTest::class,
     AllJvmTestsCompletenessTest::class,
 )
 class AllJvmTests

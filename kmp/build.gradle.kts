@@ -1540,7 +1540,8 @@ tasks.register<JacocoReport>("jacocoTestReport") {
 // mutate.classes / mutate.tests (override derivation), mutate.maxClasses (40).
 // Why selection: the canonical suite runs under Bazel (no JaCoCo) and full Gradle jvmTest has
 // OOM/hang history on 2-core runners (release.yml `test-kmp-jvm`). Android/iOS/wasm-only source
-// has no JVM bytecode, so diff-cover does not gate it.
+// has no JVM bytecode, so diff-cover does not gate it (androidMain is the exception: Robolectric
+// tests are measured via jacocoAndroidTestReport).
 val diffBase = providers.gradleProperty("diffCoverage.base").orElse("origin/main")
 val diffThreshold = providers.gradleProperty("diffCoverage.threshold").orElse("80")
 val selectChangedTests = providers.gradleProperty("diffCoverage.selectTests").isPresent
@@ -1570,7 +1571,7 @@ val changedFiles: List<String> by lazy {
         gitLines("ls-files", "--others", "--exclude-standard")).distinct()
 }
 
-private val mainSrcRegex = Regex("""^kmp/src/(commonMain|jvmCommonMain|jvmMain)/kotlin/(.+)\.kt$""")
+private val mainSrcRegex = Regex("""^kmp/src/(commonMain|jvmCommonMain|jvmMain|androidMain)/kotlin/(.+)\.kt$""")
 private val testSrcRegex = Regex("""^kmp/src/(commonTest|businessTest|jvmTest|androidUnitTest)/kotlin/(.+)\.kt$""")
 
 /** `package.FileStem` for a Kotlin file, using its `package` line (file stem ~ main class name). */
@@ -1605,8 +1606,16 @@ private class TestRelevance(mainClasses: List<String>) {
             (word != null && word.containsMatchIn(testFile.readText()))
 }
 
+// androidMain is included so a change there selects its Robolectric (androidUnitTest) tests; the
+// Android JaCoCo report below is what measures it.
 val changedMainClasses: List<String> by lazy {
     changedFiles.filter { mainSrcRegex.matches(it) }.mapNotNull { qualifiedStem(it) }
+}
+
+// PIT mutates JVM bytecode only, so androidMain classes are never mutation targets.
+val changedJvmMainClasses: List<String> by lazy {
+    changedFiles.filter { mainSrcRegex.matches(it) && !it.startsWith("kmp/src/androidMain/") }
+        .mapNotNull { qualifiedStem(it) }
 }
 
 // Test classes that are changed themselves, or related to a changed main type (see TestRelevance).
@@ -1631,7 +1640,7 @@ val changedTestClasses: List<String> by lazy {
 val mutationTargetClasses: List<String> by lazy {
     val jvmTests = testSourceFiles(listOf("commonTest", "businessTest", "jvmTest"))
         .map { it to qualifiedStem(relativeToRoot(it))?.substringBeforeLast('.') }
-    changedMainClasses.filter { main ->
+    changedJvmMainClasses.filter { main ->
         val relevance = TestRelevance(listOf(main))
         jvmTests.any { (file, pkg) -> relevance.matches(file, pkg) }
     }

@@ -22,6 +22,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import dev.stapler.stelekit.platform.image.ImageTier
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.CalibrationMethod
 
@@ -84,8 +85,9 @@ internal fun ImageAnnotationBlockItem(
                 ),
         ) {
             val imageLoader = rememberSteleKitImageLoader()
+            val tiered by rememberTieredImageModel(imagePath, ImageTier.THUMBNAIL)
             AsyncImage(
-                model = imagePath,
+                model = tiered.model,
                 contentDescription = "Annotated image",
                 imageLoader = imageLoader,
                 contentScale = ContentScale.Crop,

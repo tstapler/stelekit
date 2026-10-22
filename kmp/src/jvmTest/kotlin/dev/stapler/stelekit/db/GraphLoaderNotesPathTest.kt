@@ -18,6 +18,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
+private const val SECRET = "secret"
+
 /** Behaviour of [GraphLoader] before and after a notes folder has been set. */
 class GraphLoaderNotesPathTest {
 
@@ -59,7 +61,7 @@ class GraphLoaderNotesPathTest {
     @Test
     fun `host bytes are dropped when a crypto layer is set without a notes folder`() = runBlocking {
         loader.setCryptoLayer(layer)
-        val bytes = layer.encrypt("pages/N.md.stek", "secret".encodeToByteArray())
+        val bytes = layer.encrypt("pages/N.md.stek", SECRET.encodeToByteArray())
 
         assertNull(contentEmittedBy { loader.emitExternalFileChangeBytes("/g/pages/N.md.stek", bytes) })
     }
@@ -68,9 +70,9 @@ class GraphLoaderNotesPathTest {
     fun `host bytes decrypt with the notes-relative path as AAD`() = runBlocking {
         loader.setGraphPath(EffectiveNotesPath("/g/"))
         loader.setCryptoLayer(layer)
-        val bytes = layer.encrypt("pages/N.md.stek", "secret".encodeToByteArray())
+        val bytes = layer.encrypt("pages/N.md.stek", SECRET.encodeToByteArray())
 
-        assertEquals("secret", contentEmittedBy { loader.emitExternalFileChangeBytes("/g/pages/N.md.stek", bytes) })
+        assertEquals(SECRET, contentEmittedBy { loader.emitExternalFileChangeBytes("/g/pages/N.md.stek", bytes) })
     }
 
     @Test

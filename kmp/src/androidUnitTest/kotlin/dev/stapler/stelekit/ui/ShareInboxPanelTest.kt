@@ -41,6 +41,9 @@ import dev.stapler.stelekit.ui.components.ShareInboxPanelContent
 import dev.stapler.stelekit.ui.components.ShareInboxStartNotice
 import dev.stapler.stelekit.ui.components.StartNoticeGate
 import dev.stapler.stelekit.ui.components.queuedAtLabel
+import dev.stapler.stelekit.ui.components.queuedSharesNotice
+import dev.stapler.stelekit.ui.components.queuedSharesSummary
+import dev.stapler.stelekit.ui.components.shareGraphNameOf
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.datetime.TimeZone
 import org.junit.Rule
@@ -67,9 +70,11 @@ class ShareInboxPanelTest {
         val copied = mutableListOf<String>()
         val retried = mutableListOf<String>()
         var retryResult = RetryResult.Drained
+        var discardSucceeds = true
 
         override suspend fun copyText(item: InboxItem): String? = item.text
         override suspend fun discard(item: InboxItem): Boolean {
+            if (!discardSucceeds) return false
             state.value = state.value.copy(items = state.value.items - item)
             return true
         }
@@ -280,5 +285,152 @@ class ShareInboxPanelTest {
         assertEquals("Today 08:53", queuedAtLabel(noon, noon, zone))
         assertEquals("Yesterday 08:53", queuedAtLabel(noon - 86_400_000L, noon, zone))
         assertEquals("2025-10-07 08:53", queuedAtLabel(noon - 2 * 86_400_000L, noon, zone))
+    }
+
+    @Test
+    fun retryNow_should_AnnounceAdded_WhenDrained() {
+        show(ShareInboxState(items = listOf(item("a"))))
+
+        row("a").runAction("Retry now for Work graph")
+
+        composeTestRule.onNodeWithText("Added to Work graph").assertIsDisplayed()
+    }
+
+    @Test
+    fun retryNow_should_AnnounceStillQueued_WhenKept() {
+        val actions = show(ShareInboxState(items = listOf(item("a"))))
+        actions.retryResult = RetryResult.Kept
+
+        row("a").runAction("Retry now for Work graph")
+
+        composeTestRule.onNodeWithText("Couldn't add it to Work graph yet. The share is still queued").assertIsDisplayed()
+    }
+
+    @Test
+    fun retryNow_should_AnnounceGone_WhenNotFound() {
+        val actions = show(ShareInboxState(items = listOf(item("a"))))
+        actions.retryResult = RetryResult.NotFound
+
+        row("a").runAction("Retry now for Work graph")
+
+        composeTestRule.onNodeWithText("That share is no longer queued").assertIsDisplayed()
+    }
+
+    @Test
+    fun copyText_should_AnnounceFailure_WhenTextCannotBeRecovered() {
+        val actions = show(ShareInboxState(items = listOf(item("a", text = null))))
+
+        composeTestRule.onNodeWithContentDescription("Queued share for Work graph: '', ${queuedAtLabel(0L, 0L)}")
+            .runAction("Copy text for Work graph")
+
+        composeTestRule.onNodeWithText("Couldn't recover the text of this share").assertIsDisplayed()
+        assertEquals(emptyList(), actions.copied)
+    }
+
+    @Test
+    fun discardDialog_cancel_should_KeepTheShare() {
+        val actions = show(ShareInboxState(items = listOf(item("a"))))
+        row("a").runAction("Discard share for Work graph")
+
+        composeTestRule.onNodeWithText("Cancel").performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onAllNodesWithText("Discard this share?").assertCountEquals(0)
+        assertEquals(1, actions.state.value.items.size)
+    }
+
+    @Test
+    fun discardDialog_should_AnnounceFailure_WhenDiscardFails() {
+        val actions = show(ShareInboxState(items = listOf(item("a"))))
+        actions.discardSucceeds = false
+        row("a").runAction("Discard share for Work graph")
+
+        composeTestRule.onAllNodesWithText("Discard").onLast().performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithText("Couldn't discard the share").assertIsDisplayed()
+        assertEquals(1, actions.state.value.items.size)
+    }
+
+    @Test
+    fun discardDialog_should_AnnounceSuccess_NamingTheGraph() {
+        show(ShareInboxState(items = listOf(item("a"))))
+        row("a").runAction("Discard share for Work graph")
+
+        composeTestRule.onAllNodesWithText("Discard").onLast().performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithText("Discarded the share for Work graph").assertIsDisplayed()
+    }
+
+    @Test
+    fun lastError_should_BeShownOnTheRow() {
+        val withError = InboxItem(work, "e", 0L, "meeting notes e", InboxItemStatus.Ready, hasImage = false, lastError = "disk full")
+        show(ShareInboxState(items = listOf(withError)))
+
+        composeTestRule.onNodeWithText("Not added yet: disk full").assertIsDisplayed()
+    }
+
+    @Test
+    fun emptyInbox_should_SayNoQueuedShares_AndOmitTheWaitingHint() {
+        show(ShareInboxState())
+
+        composeTestRule.onNodeWithText("No queued shares").assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("A share waits here until its graph is open or reachable.").assertCountEquals(0)
+    }
+
+    @Test
+    fun newerAppItem_should_ExplainItIsKeptUntilTheAppUpdates() {
+        show(ShareInboxState(items = listOf(item("a", text = null, status = InboxItemStatus.NeedsNewerApp(2)))))
+
+        composeTestRule.onNodeWithText("For Work graph, ${queuedAtLabel(0L, 0L)}. Kept untouched until you update the app.")
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithContentDescription(
+            "Queued share for Work graph needs a newer app version. Kept untouched, ${queuedAtLabel(0L, 0L)}",
+        ).assertIsDisplayed()
+    }
+
+    @Test
+    fun quarantinedCopy_should_PutRescuedTextOnClipboard_AndAnnounceIt() {
+        val actions = show(ShareInboxState(quarantined = listOf(QuarantinedShare("a.json", "rescued"))))
+
+        composeTestRule.onNodeWithText("Copy text").performClick()
+        composeTestRule.waitForIdle()
+
+        assertEquals(listOf("rescued"), actions.copied)
+        composeTestRule.onNodeWithText("Copied the share that couldn't be read").assertIsDisplayed()
+    }
+
+    @Test
+    fun summary_should_CoverUnassignedMultiGraphAndQuarantineOnly() {
+        val other = InboxSlot.Graph(GraphId("cccccccccccccccc"))
+        val unassigned = InboxItem(InboxSlot.Unassigned, "u", 0L, "t", InboxItemStatus.Ready, hasImage = false)
+        val inOther = InboxItem(other, "o", 0L, "t", InboxItemStatus.Ready, hasImage = false)
+
+        assertEquals("1 share waiting for a graph", queuedSharesSummary(ShareInboxState(items = listOf(unassigned)), names))
+        assertEquals("2 shares queued for 2 graphs", queuedSharesSummary(ShareInboxState(items = listOf(item("a"), inOther)), names))
+        assertEquals("2 shares couldn't be read", queuedSharesSummary(ShareInboxState(quarantined = listOf(QuarantinedShare("a", null), QuarantinedShare("b", null))), names))
+        assertEquals(null, queuedSharesSummary(ShareInboxState(), names))
+    }
+
+    @Test
+    fun notice_should_ConjugateAndNameWhereTheSharesAreWaiting() {
+        val other = InboxSlot.Graph(GraphId("cccccccccccccccc"))
+        val unassigned = InboxItem(InboxSlot.Unassigned, "u", 0L, "t", InboxItemStatus.Ready, hasImage = false)
+        val inOther = InboxItem(other, "o", 0L, "t", InboxItemStatus.Ready, hasImage = false)
+
+        assertEquals("1 share is queued for Work graph", queuedSharesNotice(ShareInboxState(items = listOf(item("a"))), names))
+        assertEquals("2 shares are queued for Work graph", queuedSharesNotice(ShareInboxState(items = listOf(item("a"), item("b"))), names))
+        assertEquals("1 share is waiting for a graph", queuedSharesNotice(ShareInboxState(items = listOf(unassigned)), names))
+        assertEquals("2 shares are queued across 2 graphs", queuedSharesNotice(ShareInboxState(items = listOf(item("a"), inOther)), names))
+        assertEquals(null, queuedSharesNotice(ShareInboxState(), names))
+    }
+
+    @Test
+    fun graphNames_should_FallBackForUnassignedAndRemovedGraphs() {
+        val nameOf = shareGraphNameOf(emptyList())
+
+        assertEquals("the first graph you create", nameOf(InboxSlot.Unassigned))
+        assertEquals("a removed graph (bbbbbbbbbbbbbbbb)", nameOf(work))
     }
 }
