@@ -5,7 +5,7 @@ import dev.stapler.stelekit.db.libsql.JvmLibsqlDriver
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import java.io.File
-import java.io.IOException
+import java.nio.file.Files
 import java.util.Properties
 import java.util.logging.Logger
 
@@ -67,6 +67,11 @@ internal fun buildMainDbConnectionProps() = Properties().apply {
     setProperty("analysis_limit", "400")
 }
 
+/** Idempotent: processes sharing the data dir race to create it, and `mkdirs()` returns false for the loser. */
+internal fun ensureParentDirectory(path: String) {
+    File(path).parentFile?.let { Files.createDirectories(it.toPath()) }
+}
+
 actual class DriverFactory actual constructor() {
     actual fun init(context: Any) {
         // No-op on JVM
@@ -74,11 +79,7 @@ actual class DriverFactory actual constructor() {
 
     actual fun createDriver(jdbcUrl: String): SqlDriver {
         if (jdbcUrl.startsWith("jdbc:sqlite:") && !jdbcUrl.contains(":memory:")) {
-            val path = jdbcUrl.substringAfter("jdbc:sqlite:")
-            val parentDir = File(path).parentFile
-            if (parentDir != null && !parentDir.exists() && !parentDir.mkdirs()) {
-                throw IOException("Failed to create database directory: ${parentDir.absolutePath}")
-            }
+            ensureParentDirectory(jdbcUrl.substringAfter("jdbc:sqlite:"))
         }
 
         // Properties are applied to every connection the pool creates at startup.
@@ -149,11 +150,7 @@ actual class DriverFactory actual constructor() {
 
     actual fun createTelemetryDriver(graphId: String): SqlDriver {
         val jdbcUrl = getTelemetryDatabaseUrl(graphId)
-        val path = jdbcUrl.substringAfter("jdbc:sqlite:")
-        val parentDir = java.io.File(path).parentFile
-        if (parentDir != null && !parentDir.exists() && !parentDir.mkdirs()) {
-            throw IOException("Failed to create telemetry database directory: ${parentDir.absolutePath}")
-        }
+        ensureParentDirectory(jdbcUrl.substringAfter("jdbc:sqlite:"))
         // Single connection: telemetry writes are serialized by HistogramWriter channel and
         // drain loop. poolSize=1 means no WAL snapshot issues across connections.
         val connectionProps = Properties().apply {
