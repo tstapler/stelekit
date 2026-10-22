@@ -3,12 +3,8 @@
 
 package dev.stapler.stelekit.ui.components
 
-import android.content.Context
-import androidx.test.core.app.ApplicationProvider
-import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
-import org.robolectric.annotation.Config
+import coil3.PlatformContext
+import kotlin.test.Test
 import kotlin.test.assertNotNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
@@ -17,11 +13,9 @@ import kotlin.test.assertTrue
  * Every image block / asset card used to build its own ImageLoader with its own default-sized
  * memory cache, so image memory scaled with the number of loaders instead of being bounded.
  */
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
 class SteleKitImageLoaderMemoryTest {
 
-    private val context: Context get() = ApplicationProvider.getApplicationContext()
+    private val context = PlatformContext.INSTANCE
 
     @Test
     fun `all loaders share one memory cache`() {
@@ -34,7 +28,7 @@ class SteleKitImageLoaderMemoryTest {
     @Test
     fun `shared memory cache is bounded below a quarter of the heap budget`() {
         val max = checkNotNull(sharedImageMemoryCache(context).maxSize)
-        val memoryClassBytes = Runtime.getRuntime().maxMemory()
-        assertTrue(max in 1 until memoryClassBytes / 4, "cache max=$max heap=$memoryClassBytes")
+        val heapBytes = Runtime.getRuntime().maxMemory()
+        assertTrue(max in 1 until heapBytes / 4, "cache max=$max heap=$heapBytes")
     }
 }
