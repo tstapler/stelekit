@@ -17,6 +17,7 @@ import dev.stapler.stelekit.service.AndroidMediaAttachmentServiceTest
 import dev.stapler.stelekit.platform.security.AndroidCredentialStoreCommitTest
 import dev.stapler.stelekit.platform.security.AndroidCredentialStoreFailsLoudTest
 import dev.stapler.stelekit.platform.sensor.ExifOrientationFixerTest
+import dev.stapler.stelekit.platform.sensor.ImageMemoryGlueTest
 import dev.stapler.stelekit.ui.LoadingStateTest
 import dev.stapler.stelekit.ui.components.MermaidWebViewBridgeTest
 import dev.stapler.stelekit.ui.components.MermaidWebViewSettingsTest
@@ -44,6 +45,7 @@ import org.junit.runners.Suite
     AndroidCredentialStoreCommitTest::class,
     AndroidCredentialStoreFailsLoudTest::class,
     ExifOrientationFixerTest::class,
+    ImageMemoryGlueTest::class,
     LoadingStateTest::class,
     AndroidSpeechRecognizerPermissionTest::class,
     QrDecodeViewModelBackgroundingTest::class,

@@ -18,6 +18,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
  * Regression tests for [ExifOrientationFixer] verifying that Samsung-style EXIF
@@ -327,5 +328,31 @@ class ExifOrientationFixerTest {
                 "PlatformDispatcher.IO — a full-res decode/rotate/encode on the calling " +
                 "(Main) thread is the dispatcher-hop hang this test guards against",
         )
+    }
+
+    /** Output pixel count of the JPEG at [file], read from its header only. */
+    private fun decodedPixels(file: File): Long {
+        val o = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeFile(file.absolutePath, o)
+        return o.outWidth.toLong() * o.outHeight
+    }
+
+    @Test
+    fun `rotating an oversized photo stays within the decode pixel budget`() {
+        // 5000x4000 = 20 MP. Before the fix this decoded and rotated at full size (two 80 MB
+        // bitmaps live at once); now it must be sub-sampled to <= 16 MP.
+        val input = tempFolder.newFile("huge.jpg")
+        val bitmap = Bitmap.createBitmap(5000, 4000, Bitmap.Config.RGB_565)
+        FileOutputStream(input).use { bitmap.compress(Bitmap.CompressFormat.JPEG, 50, it) }
+        bitmap.recycle()
+        val exif = ExifInterface(input.absolutePath)
+        exif.setAttribute(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_ROTATE_90.toString())
+        exif.saveAttributes()
+
+        val result = ExifOrientationFixer.fixOrientation(input.absolutePath)
+
+        assertIs<Either.Right<ExifOrientationFixer.FixResult>>(result)
+        val pixels = decodedPixels(File(result.value.outputPath))
+        assertTrue(pixels in 1..dev.stapler.stelekit.platform.image.MAX_DECODE_PIXELS, "output pixels: $pixels")
     }
 }
