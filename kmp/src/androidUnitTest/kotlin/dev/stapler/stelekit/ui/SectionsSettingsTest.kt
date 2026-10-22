@@ -12,8 +12,6 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performTextClearance
-import androidx.compose.ui.test.performTextInput
 import dev.stapler.stelekit.sections.SectionDefinition
 import dev.stapler.stelekit.sections.SectionManifest
 import dev.stapler.stelekit.sections.SectionState
@@ -26,7 +24,9 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import kotlin.test.assertEquals
 
-// Tall screen: dialogs with four text fields clip on the 320x470 default.
+// Tall screen: avoids clipping on the 320x470 default.
+// Dialogs containing text fields live in jvmTest SectionsSettingsDialogsTest: under Robolectric any
+// OutlinedTextField inside a Dialog window never lets Compose go idle (infinite layout loop -> heap OOM).
 @Config(qualifiers = "w480dp-h1600dp")
 @RunWith(RobolectricTestRunner::class)
 class SectionsSettingsTest {
@@ -78,56 +78,6 @@ class SectionsSettingsTest {
     }
 
     @Test
-    fun createDialog_should_AutofillFolders_AndSubmit() {
-        val calls = show(SectionManifest())
-
-        composeTestRule.onNodeWithText("New Section").performClick()
-        composeTestRule.onNodeWithText("Display name").performTextInput("My Notes")
-        composeTestRule.onNodeWithText("Create").performClick()
-
-        assertEquals(listOf(listOf("my-notes", "My Notes", null, "my-notes", "journals-my-notes")), calls.created)
-    }
-
-    @Test
-    fun createDialog_should_ShowError_WhenNameBlank() {
-        val calls = show(SectionManifest())
-
-        composeTestRule.onAllNodesWithText("New Section").onFirst().performClick()
-        composeTestRule.onNodeWithText("Create").performClick()
-
-        composeTestRule.onNodeWithText("Display name is required").assertIsDisplayed()
-        assertEquals(0, calls.created.size)
-    }
-
-    @Test
-    fun createDialog_should_RequireFolders_WhenCleared() {
-        val calls = show(SectionManifest())
-
-        composeTestRule.onNodeWithText("New Section").performClick()
-        composeTestRule.onNodeWithText("Display name").performTextInput("Notes")
-        composeTestRule.onNodeWithText("Pages folder").performTextClearance()
-        composeTestRule.onNodeWithText("Create").performClick()
-        composeTestRule.onNodeWithText("Pages folder is required").assertIsDisplayed()
-
-        composeTestRule.onNodeWithText("Pages folder").performTextInput("notes")
-        composeTestRule.onNodeWithText("Journals folder").performTextClearance()
-        composeTestRule.onNodeWithText("Create").performClick()
-        composeTestRule.onNodeWithText("Journals folder is required").assertIsDisplayed()
-        assertEquals(0, calls.created.size)
-    }
-
-    @Test
-    fun createDialog_cancel_should_DismissWithoutCallback() {
-        val calls = show(SectionManifest())
-
-        composeTestRule.onNodeWithText("New Section").performClick()
-        composeTestRule.onNodeWithText("Cancel").performClick()
-
-        composeTestRule.onAllNodesWithText("Create").assertCountEquals(0)
-        assertEquals(0, calls.created.size)
-    }
-
-    @Test
     fun deleteConfirmation_should_CallDelete_WhenConfirmed() {
         val calls = show(SectionManifest(sections = listOf(work)))
 
@@ -147,30 +97,6 @@ class SectionsSettingsTest {
 
         assertEquals(0, calls.deleted.size)
         composeTestRule.onAllNodesWithText("Delete Section").assertCountEquals(0)
-    }
-
-    @Test
-    fun renameDialog_should_CallRename_WithTrimmedName() {
-        val calls = show(SectionManifest(sections = listOf(work)))
-
-        composeTestRule.onNodeWithContentDescriptionText("Rename section").performClick()
-        composeTestRule.onNodeWithText("Display name").performTextClearance()
-        composeTestRule.onNodeWithText("Display name").performTextInput("  Job  ")
-        composeTestRule.onNodeWithText("Rename").performClick()
-
-        assertEquals(listOf("work" to "Job"), calls.renamed)
-    }
-
-    @Test
-    fun renameDialog_should_ShowError_WhenNameCleared() {
-        val calls = show(SectionManifest(sections = listOf(work)))
-
-        composeTestRule.onNodeWithContentDescriptionText("Rename section").performClick()
-        composeTestRule.onNodeWithText("Display name").performTextClearance()
-        composeTestRule.onNodeWithText("Rename").performClick()
-
-        composeTestRule.onNodeWithText("Name is required").assertIsDisplayed()
-        assertEquals(0, calls.renamed.size)
     }
 
     @Test

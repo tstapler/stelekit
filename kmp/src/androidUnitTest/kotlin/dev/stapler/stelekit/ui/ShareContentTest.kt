@@ -12,6 +12,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import arrow.core.Either
@@ -161,7 +162,8 @@ class ShareContentTest {
     fun scopeSelection_should_UpdateViewModelScope() {
         val vm = showContent()
 
-        composeTestRule.onNodeWithText("Page + Linked Pages").performClick()
+        // Only the RadioButton is clickable, not its label; scope radios are the first four selectables, in ShareScope order.
+        composeTestRule.onAllNodes(isSelectable())[ShareScope.PageAndLinks.ordinal].performClick()
 
         assertEquals(ShareScope.PageAndLinks, vm.uiState.value.shareScope)
     }
