@@ -189,6 +189,7 @@ import dev.stapler.stelekit.capture.PendingCapturePollerIntegrationTest
 import dev.stapler.stelekit.capture.PendingCapturePollerTest
 import dev.stapler.stelekit.capture.PendingCaptureWriterTest
 import dev.stapler.stelekit.cli.ArgParserTest
+import dev.stapler.stelekit.cli.SyncCommandsTest
 import dev.stapler.stelekit.coroutines.GraphScopedSessionThreadSafetyTest
 import dev.stapler.stelekit.desktop.CaptureCliArgsTest
 import dev.stapler.stelekit.domain.CaptureEnrichmentCoordinatorRealDispatcherTest
@@ -495,6 +496,7 @@ import org.junit.runners.Suite
     PendingCapturePollerTest::class,
     PendingCaptureWriterTest::class,
     ArgParserTest::class,
+    SyncCommandsTest::class,
     GraphScopedSessionThreadSafetyTest::class,
     CaptureCliArgsTest::class,
     CaptureEnrichmentCoordinatorRealDispatcherTest::class,

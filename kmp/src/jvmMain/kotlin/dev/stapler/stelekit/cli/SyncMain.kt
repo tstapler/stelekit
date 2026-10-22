@@ -21,7 +21,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.system.exitProcess
 
 // Thrown instead of exitProcess so that try/finally in runSync always calls graphManager.shutdown().
-private class SyncExitException(val code: Int) : Exception()
+internal class SyncExitException(val code: Int) : Exception()
 
 fun main(args: Array<String>) {
     val rootJob = Job()
@@ -70,7 +70,7 @@ suspend fun runSync(args: Array<String>) {
     if (exitCode != 0) exitProcess(exitCode)
 }
 
-private suspend fun runSyncWithManager(
+internal suspend fun runSyncWithManager(
     syncArgs: SyncArgs,
     graphManager: GraphManager,
     gitRepository: GitRepository,
@@ -117,7 +117,7 @@ private suspend fun runSyncWithManager(
     }
 }
 
-private suspend fun runDryRun(
+internal suspend fun runDryRun(
     gitRepository: GitRepository,
     config: GitConfig,
     output: SyncOutput,
@@ -144,7 +144,7 @@ private suspend fun stageHoldingBackLfs(gitRepository: GitRepository, config: Gi
     return held.isEmpty() || gitRepository.hasStagedChanges(config)
 }
 
-private suspend fun runCommitOnly(
+internal suspend fun runCommitOnly(
     gitRepository: GitRepository,
     config: GitConfig,
     output: SyncOutput,
@@ -168,7 +168,7 @@ private suspend fun runCommitOnly(
     }
 }
 
-private suspend fun runFetchOnly(
+internal suspend fun runFetchOnly(
     gitRepository: GitRepository,
     config: GitConfig,
     output: SyncOutput,
@@ -185,7 +185,7 @@ private suspend fun runFetchOnly(
     }
 }
 
-private suspend fun runFullSync(
+internal suspend fun runFullSync(
     gitRepository: GitRepository,
     config: GitConfig,
     output: SyncOutput,
@@ -280,7 +280,7 @@ private suspend fun pushChanges(
     }
 }
 
-private fun handleGitError(
+internal fun handleGitError(
     err: DomainError.GitError,
     output: SyncOutput,
     graphPath: EffectiveNotesPath,
