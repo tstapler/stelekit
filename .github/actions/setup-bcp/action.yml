@@ -17,6 +17,7 @@ runs:
       if: steps.bcp-cache.outputs.cache-hit != 'true'
       shell: bash
       run: |
+        sudo apt-get update
         sudo apt-get install -y --no-install-recommends protobuf-compiler
         cargo install --git https://github.com/tstapler/bazel-cache-proxy --rev 7806c5f bazel-cache-proxy --locked
 
