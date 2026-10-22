@@ -245,6 +245,7 @@ jobs:
             kmp/build/reports/jacoco/
             kmp/build/reports/diff-coverage/
             kmp/build/reports/pitest/
+            kmp/build/test-results/jvmTest/
           retention-days: 7
 
   # ── Android emulator smoke tests ─────────────────────────────────────────
