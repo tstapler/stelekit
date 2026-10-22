@@ -3,6 +3,8 @@ package dev.stapler.stelekit.ui
 import dev.stapler.stelekit.db.BacklinkRenamer
 import dev.stapler.stelekit.db.ConflictMarkerDetector
 import dev.stapler.stelekit.db.DatabaseWriteActor
+import dev.stapler.stelekit.db.clearLastNotesPath
+import dev.stapler.stelekit.db.lastNotesPath
 import dev.stapler.stelekit.db.DiskConflictBlockMatcher
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphLoaderPort
@@ -373,7 +375,7 @@ class StelekitViewModel(
             isLoading = true,
             onboardingCompleted = platformSettings.getBoolean("onboardingCompleted", false),
             currentGraphPath = deps.initialGraphPathProvider()?.ifEmpty { null }
-                ?: platformSettings.getString("lastGraphPath", "").ifEmpty { null },
+                ?: platformSettings.lastNotesPath()?.value,
             isLeftHanded = platformSettings.getBoolean("isLeftHanded", false),
             isLibsqlDriverEnabled = platformSettings.getBoolean("db.libsql.enabled", false),
             mcpServerEnabled = platformSettings.getBoolean("mcp.server.enabled", false),
@@ -640,7 +642,6 @@ class StelekitViewModel(
 
     fun setGraphPath(path: String) {
         logger.info("setGraphPath: '$path'")
-        platformSettings.putString("lastGraphPath", path)
         _uiState.update { it.copy(currentGraphPath = path) }
         scope.launch {
             recentMutex.withLock {
@@ -769,7 +770,7 @@ class StelekitViewModel(
                     logger.info("Graph loaded successfully")
                 } else {
                     logger.error("Failed to load graph at $path — clearing stale path, graph_registry, and resetting onboarding")
-                    platformSettings.putString("lastGraphPath", "")
+                    platformSettings.clearLastNotesPath()
                     platformSettings.putBoolean("onboardingCompleted", false)
                     // Also clear the graph_registry so GraphManager doesn't restore
                     // a GraphInfo that points to this invalid path on the next launch.

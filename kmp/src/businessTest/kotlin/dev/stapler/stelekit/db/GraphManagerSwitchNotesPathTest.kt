@@ -17,7 +17,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * StelekitViewModel loads whatever `lastGraphPath` holds when GraphContent is rebuilt for a new
+ * StelekitViewModel loads whatever `lastNotesPath` holds when GraphContent is rebuilt for a new
  * activeGraphId. switchGraph() must therefore point that setting at the target graph's
  * effectiveNotesPath (repo root + wikiSubdir), or a switch reloads the previous graph's folder.
  */
@@ -73,36 +73,45 @@ class GraphManagerSwitchNotesPathTest {
     private fun saf() = GraphInfo(id = safId, path = safPath, displayName = "personal-wiki", addedAt = 0L)
 
     @Test
-    fun `switching graphs A to B to A points lastGraphPath at each graph's own notes path`() = runTest {
+    fun `switching graphs A to B to A points lastNotesPath at each graph's own notes path`() = runTest {
         val (manager, settings) = newManager(listOf(clone(), saf()))
         manager.awaitPendingMigration()
-        assertEquals("/data/graphs/clone/logseq", settings.getString("lastGraphPath", ""))
+        assertEquals("/data/graphs/clone/logseq", settings.getString("lastNotesPath", ""))
 
         manager.switchGraph(safId)
-        assertEquals(safPath, settings.getString("lastGraphPath", ""))
+        assertEquals(safPath, settings.getString("lastNotesPath", ""))
 
         manager.switchGraph(cloneId)
-        assertEquals("/data/graphs/clone/logseq", settings.getString("lastGraphPath", ""))
+        assertEquals("/data/graphs/clone/logseq", settings.getString("lastNotesPath", ""))
     }
 
     @Test
-    fun `startup corrects a lastGraphPath that belongs to a different graph`() = runTest {
-        val stale = StubSettings(mapOf("lastGraphPath" to safPath))
+    fun `startup corrects a lastNotesPath that belongs to a different graph`() = runTest {
+        val stale = StubSettings(mapOf("lastNotesPath" to safPath))
         val (manager, settings) = newManager(listOf(clone(), saf()), stale)
         manager.awaitPendingMigration()
 
-        assertEquals("/data/graphs/clone/logseq", settings.getString("lastGraphPath", ""))
+        assertEquals("/data/graphs/clone/logseq", settings.getString("lastNotesPath", ""))
+    }
+
+    @Test
+    fun `upgrade from the legacy lastGraphPath key populates lastNotesPath`() = runTest {
+        val legacy = StubSettings(mapOf("lastGraphPath" to "/data/graphs/clone"))
+        val (manager, settings) = newManager(listOf(clone(), saf()), legacy)
+        manager.awaitPendingMigration()
+
+        assertEquals("/data/graphs/clone/logseq", settings.getString(LAST_NOTES_PATH_KEY, ""))
     }
 
     @Test
     fun `re-selecting the already-active graph restores its notes path`() = runTest {
         val (manager, settings) = newManager(listOf(clone(), saf()))
         manager.awaitPendingMigration()
-        settings.putString("lastGraphPath", "/data/graphs/clone") // raw root, as a picker flow writes it
+        settings.putString("lastNotesPath", "/data/graphs/clone") // raw root, as a picker flow writes it
 
         manager.switchGraph(cloneId)
 
-        assertEquals("/data/graphs/clone/logseq", settings.getString("lastGraphPath", ""))
+        assertEquals("/data/graphs/clone/logseq", settings.getString("lastNotesPath", ""))
     }
 
     private class SafRow(
@@ -150,7 +159,7 @@ class GraphManagerSwitchNotesPathTest {
 
         manager.updateWikiSubdir(cloneId, "notes")
 
-        assertEquals("/data/graphs/clone/notes", settings.getString("lastGraphPath", ""))
+        assertEquals("/data/graphs/clone/notes", settings.getString("lastNotesPath", ""))
     }
 
     @Test
@@ -160,17 +169,17 @@ class GraphManagerSwitchNotesPathTest {
 
         manager.updateWikiSubdir(safId, "notes")
 
-        assertEquals("/data/graphs/clone/logseq", settings.getString("lastGraphPath", ""))
+        assertEquals("/data/graphs/clone/logseq", settings.getString("lastNotesPath", ""))
     }
 
     @Test
-    fun `switching to the demo graph does not touch lastGraphPath`() = runTest {
+    fun `switching to the demo graph does not touch lastNotesPath`() = runTest {
         val (manager, settings) = newManager(listOf(clone(), saf()))
         manager.awaitPendingMigration()
 
         manager.switchGraph(manager.addDemoGraph())
 
-        assertEquals("/data/graphs/clone/logseq", settings.getString("lastGraphPath", ""))
+        assertEquals("/data/graphs/clone/logseq", settings.getString("lastNotesPath", ""))
     }
 
     @Test
@@ -181,7 +190,7 @@ class GraphManagerSwitchNotesPathTest {
         manager.updateGraphContentPath(cloneId, "/moved/clone")
 
         assertEquals("/moved/clone/logseq", manager.getGraphInfo(cloneId)!!.effectiveNotesPath.value)
-        assertEquals("/moved/clone/logseq", settings.getString("lastGraphPath", ""))
+        assertEquals("/moved/clone/logseq", settings.getString("lastNotesPath", ""))
     }
 
     @Test
@@ -223,10 +232,10 @@ class GraphManagerSwitchNotesPathTest {
 
         val matching = GraphDiagnosticsCollector(manager, StubFileSystem(), repos, settings).collect()
         assertTrue("effectiveNotesPath=/data/graphs/clone/logseq (wikiSubdir=logseq)" in matching, matching)
-        assertTrue("lastGraphPath matches effectiveNotesPath=true" in matching, matching)
+        assertTrue("lastNotesPath matches effectiveNotesPath=true" in matching, matching)
 
-        settings.putString("lastGraphPath", safPath)
+        settings.putString("lastNotesPath", safPath)
         val stale = GraphDiagnosticsCollector(manager, StubFileSystem(), repos, settings).collect()
-        assertTrue("lastGraphPath matches effectiveNotesPath=false" in stale, stale)
+        assertTrue("lastNotesPath matches effectiveNotesPath=false" in stale, stale)
     }
 }

@@ -7,19 +7,15 @@ import kotlin.test.assertTrue
 
 class WebsiteDocsCoverageTest {
 
+    // Gradle: the demo-graph resource lives inside the repo tree. Bazel: it is in a jar, but the
+    // runfiles root (the working directory) holds the staged kmp/ and site/ directories.
     private val repoRoot: File by lazy {
         val resource = javaClass.classLoader.getResource("demo-graph/pages")
-            ?: error(
-                "demo-graph/pages not found on classpath — is the test classpath misconfigured?"
-            )
-        var dir = File(resource.toURI())
-        while (dir != dir.parentFile) {
-            if (dir.resolve("kmp").isDirectory && dir.resolve("site").isDirectory) return@lazy dir
-            dir = dir.parentFile
-        }
-        error(
-            "Could not locate repository root (dir containing both kmp/ and site/) from: $resource"
-        )
+        val starts = listOfNotNull(resource?.takeIf { it.protocol == "file" }?.let { File(it.toURI()) }, File(".").absoluteFile)
+        starts.firstNotNullOfOrNull { start ->
+            generateSequence(start) { it.parentFile }
+                .firstOrNull { it.resolve("kmp").isDirectory && it.resolve("site").isDirectory }
+        } ?: error("Could not locate repository root (dir containing both kmp/ and site/) from: $starts")
     }
 
     private val siteDocsDir: File by lazy {

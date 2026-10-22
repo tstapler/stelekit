@@ -1,8 +1,10 @@
 package dev.stapler.stelekit.cli
 
 import arrow.core.Either
+import arrow.core.getOrElse
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.GraphManager
+import dev.stapler.stelekit.db.lastNotesPath
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.buildCommitMessage
 import dev.stapler.stelekit.git.GitRepository
@@ -47,20 +49,8 @@ suspend fun runSync(args: Array<String>) {
     val fileSystem = PlatformFileSystem()
     val settings = PlatformSettings()
 
-    val rawGraphPath = syncArgs.graphPath
-        ?: settings.getString("lastGraphPath", "").takeIf { it.isNotEmpty() }
-        ?: run {
-            output.error("No graph path specified and no last opened graph found. Use --graph <path>.")
-            exitProcess(4)
-        }
-
-    // Canonicalize to prevent path traversal (e.g. "../../etc") and resolve symlinks.
-    val graphFile = java.io.File(rawGraphPath).canonicalFile
-    if (!graphFile.isDirectory) {
-        output.error("Graph path does not exist or is not a directory: ${graphFile.path}")
-        exitProcess(4)
-    }
-    val graphPath = graphFile.path
+    val graphPath = resolveNotesPath(syncArgs, settings.lastNotesPath()?.value.orEmpty())
+        .getOrElse { message -> output.error(message); exitProcess(4) }.directory()
 
     output.info("Syncing graph at: $graphPath")
 

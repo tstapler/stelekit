@@ -3,6 +3,8 @@
 
 package dev.stapler.stelekit.cli
 
+import arrow.core.right
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -112,7 +114,7 @@ class ArgParserTest {
     fun `compatible flags parse to SyncArgs without exception`() {
         val result = parseArgs(arrayOf("--graph", "/my/graph", "--dry-run", "--json"))
 
-        assertEquals("/my/graph", result.graphPath)
+        assertEquals(EffectiveNotesPath("/my/graph"), result.graphPath)
         assertTrue(result.dryRun, "--dry-run must set dryRun = true")
         assertTrue(result.jsonOutput, "--json must set jsonOutput = true")
         assertFalse(result.commitOnly, "commitOnly must be false when not supplied")
@@ -149,5 +151,47 @@ class ArgParserTest {
         }
 
         assertEquals(5, ex.exitCode, "--dry-run + --fetch-only must produce exitCode 5")
+    }
+
+    // ---- resolveNotesPath ----
+
+    @Test
+    fun `resolveNotesPath prefers --graph over the last opened graph`() {
+        val graph = java.nio.file.Files.createTempDirectory("sync-graph").toFile()
+        val other = java.nio.file.Files.createTempDirectory("sync-last").toFile()
+
+        val result = resolveNotesPath(SyncArgs(graphPath = EffectiveNotesPath(graph.path)), other.path)
+
+        assertEquals(EffectiveNotesPath(graph.canonicalPath).right(), result)
+    }
+
+    @Test
+    fun `resolveNotesPath falls back to the last opened graph`() {
+        val last = java.nio.file.Files.createTempDirectory("sync-last").toFile()
+
+        assertEquals(EffectiveNotesPath(last.canonicalPath).right(), resolveNotesPath(SyncArgs(), last.path))
+    }
+
+    @Test
+    fun `resolveNotesPath reports when neither is given`() {
+        assertTrue(resolveNotesPath(SyncArgs(), "").leftOrNull()!!.contains("No graph path specified"))
+    }
+
+    @Test
+    fun `resolveNotesPath reports a path that is not a directory`() {
+        val missing = java.nio.file.Files.createTempDirectory("sync-graph").toFile().resolve("nope")
+
+        val message = resolveNotesPath(SyncArgs(graphPath = EffectiveNotesPath(missing.path)), "").leftOrNull()
+
+        assertTrue(message!!.contains("not a directory"), message)
+    }
+
+    @Test
+    fun `resolveNotesPath canonicalizes dot-dot segments`() {
+        val graph = java.nio.file.Files.createTempDirectory("sync-graph").toFile()
+
+        val result = resolveNotesPath(SyncArgs(graphPath = EffectiveNotesPath("${graph.path}/sub/..")), "")
+
+        assertEquals(EffectiveNotesPath(graph.canonicalPath).right(), result)
     }
 }

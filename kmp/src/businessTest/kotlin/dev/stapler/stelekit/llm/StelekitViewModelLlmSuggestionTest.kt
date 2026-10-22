@@ -141,7 +141,7 @@ class StelekitViewModelLlmSuggestionTest {
                 searchRepository = InMemorySearchRepository(),
                 graphLoader = StubGraphLoaderPort(),
                 graphWriter = graphWriter,
-                platformSettings = StubSettings().apply { putString("lastGraphPath", "/tmp/graph") },
+                platformSettings = StubSettings().apply { putString("lastNotesPath", "/tmp/graph") },
                 scope = scope,
                 activeGraphIdProvider = { activeGraphId },
                 llmSuggestionInbox = inbox,
@@ -377,6 +377,31 @@ class StelekitViewModelLlmSuggestionTest {
 
         val snackbar = withTimeout(1_000) { vm.snackbarEvents.first() }
         assertEquals("disk full", snackbar, "a failed accept must surface the write failure via a snackbar")
+        scope.cancel()
+    }
+
+    @Test
+    fun setGraphPath_should_NotWriteLastNotesPath_When_PickerPassesRepoRoot() = runTest {
+        val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
+        val settings = StubSettings().apply { putString("lastNotesPath", "/repo/logseq") }
+        val vm = StelekitViewModel(
+            StelekitViewModelDependencies(
+                fileSystem = StubFileSystem(),
+                pageRepository = InMemoryPageRepository(),
+                blockRepository = InMemoryBlockRepository(),
+                searchRepository = InMemorySearchRepository(),
+                graphLoader = StubGraphLoaderPort(),
+                graphWriter = RecordingGraphWriterPort(),
+                platformSettings = settings,
+                scope = scope,
+                activeGraphIdProvider = { "graph-1" },
+            )
+        )
+
+        vm.setGraphPath("/repo")
+        advanceUntilIdle()
+
+        assertEquals("/repo/logseq", settings.getString("lastNotesPath", ""))
         scope.cancel()
     }
 }

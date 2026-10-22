@@ -50,6 +50,7 @@ fun MisplacedFilesHost(controller: MisplacedFilesController) {
         MisplacedFilesDialog(
             state = state,
             onMove = { controller.move(listOf(it.file)) },
+            onMergeAnyway = { controller.mergeAnyway(it.file) },
             onIgnore = { controller.ignore(listOf(it.file)) },
             onMoveAll = controller::moveAll,
             onIgnoreAll = controller::ignoreAll,
@@ -98,6 +99,7 @@ internal fun MisplacedFilesSummary(text: String, onDismiss: () -> Unit, modifier
 internal fun MisplacedFilesDialog(
     state: MisplacedFilesUiState,
     onMove: (MisplacedItem) -> Unit,
+    onMergeAnyway: (MisplacedItem) -> Unit,
     onIgnore: (MisplacedItem) -> Unit,
     onMoveAll: () -> Unit,
     onIgnoreAll: () -> Unit,
@@ -117,7 +119,7 @@ internal fun MisplacedFilesDialog(
                 )
                 LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
                     typedItems(state.items, key = { it.file.relativePath }) { item ->
-                        MisplacedItemRow(item, busy = state.busy, onMove = { onMove(item) }, onIgnore = { onIgnore(item) })
+                        MisplacedItemRow(item, busy = state.busy, onMove = { onMove(item) }, onMergeAnyway = { onMergeAnyway(item) }, onIgnore = { onIgnore(item) })
                         HorizontalDivider()
                     }
                 }
@@ -138,13 +140,14 @@ internal fun MisplacedFilesDialog(
 }
 
 @Composable
-private fun MisplacedItemRow(item: MisplacedItem, busy: Boolean, onMove: () -> Unit, onIgnore: () -> Unit) {
+private fun MisplacedItemRow(item: MisplacedItem, busy: Boolean, onMove: () -> Unit, onMergeAnyway: () -> Unit, onIgnore: () -> Unit) {
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
         Text(item.file.name, fontWeight = FontWeight.Bold, fontSize = 14.sp)
         Text(item.file.relativePath, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(misplacedStatusText(item), fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
         Row {
             TextButton(onClick = onMove, enabled = item.movable && !busy) { Text(if (item.file.hasCopyInNotes) "Merge" else "Move") }
+            if (item.appendable) TextButton(onClick = onMergeAnyway, enabled = !busy) { Text("Merge anyway") }
             TextButton(onClick = onIgnore, enabled = !busy) { Text("Ignore") }
         }
     }
@@ -159,5 +162,7 @@ internal fun misplacedStatusText(item: MisplacedItem): String = when (val propos
     is ProposedResolution.MergeIntoExisting ->
         "Also in your notes. Merging adds ${proposal.blocksToAdd} ${if (proposal.blocksToAdd == 1) "block" else "blocks"} " +
             "to that page and removes nothing."
-    is ProposedResolution.CannotMerge -> "Can't merge automatically: ${proposal.reason}. Both copies are kept."
+    is ProposedResolution.CannotMerge ->
+        "Can't merge automatically: ${proposal.reason}. Both copies are kept." +
+            if (proposal.canAppend) " \"Merge anyway\" adds this copy's blocks to the end of the page for you to tidy; both originals are backed up." else ""
 }

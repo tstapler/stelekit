@@ -16,7 +16,9 @@ import dev.stapler.stelekit.util.ContentHasher
  * sidecar entry, its UUID is preserved regardless of position.
  *
  * Sidecar format (one line per block):
- * {"uuid":"<uuid>","hash":"<sha256>","pos":<int>,"parent":"<uuid-or-null>"}
+ * {"uuid":"<uuid>","hash":"<sha256>","pos":"<fractional-index>","parent":"<uuid-or-null>"}
+ *
+ * Older sidecars wrote `pos` as a bare integer, or as an unquoted fractional index; both still read.
  *
  * The file diffs cleanly in `git diff` because only the lines for edited blocks change.
  *
@@ -31,7 +33,7 @@ class SidecarManager(
 
     data class SidecarEntry(
         val uuid: String,
-        val pos: Int,
+        val pos: String,
         val parentUuid: String?,
     )
 
@@ -46,7 +48,7 @@ class SidecarManager(
             for (block in blocks) {
                 val hash = block.contentHash ?: ContentHasher.sha256ForContent(block.content)
                 val parentJson = if (block.parentUuid != null) "\"${block.parentUuid}\"" else "null"
-                appendLine("""{"uuid":"${block.uuid}","hash":"$hash","pos":${block.position},"parent":$parentJson}""")
+                appendLine("""{"uuid":"${block.uuid}","hash":"$hash","pos":"${block.position}","parent":$parentJson}""")
             }
         }.trimEnd()
         fileSystem.writeFile(path, ndjson)
@@ -94,7 +96,7 @@ class SidecarManager(
         }
     }
 
-    // Parse a single NDJSON line: {"uuid":"...","hash":"...","pos":N,"parent":"..."|null}
+    // Parse a single NDJSON line: {"uuid":"...","hash":"...","pos":"..."|N,"parent":"..."|null}
     // Uses a minimal hand-rolled parser to avoid kotlinx.serialization dependency changes.
     private fun parseSidecarLine(line: String): Pair<String, SidecarEntry>? {
         fun extractString(key: String): String? {
@@ -107,14 +109,20 @@ class SidecarManager(
             return line.substring(start, end)
         }
 
-        fun extractInt(key: String): Int? {
+        // Quoted ("a0"), or bare (5, or an unquoted fractional index from older writers).
+        fun extractPosition(key: String): String? {
             val prefix = "\"$key\":"
             val idx = line.indexOf(prefix)
             if (idx < 0) return null
             val start = idx + prefix.length
-            val end = (start until line.length).firstOrNull { !line[it].isDigit() && line[it] != '-' }
-                ?: return null
-            return line.substring(start, end).toIntOrNull()
+            if (start >= line.length) return null
+            if (line[start] == '"') {
+                val end = line.indexOf('"', start + 1)
+                if (end < 0) return null
+                return line.substring(start + 1, end)
+            }
+            val end = (start until line.length).firstOrNull { line[it] == ',' || line[it] == '}' } ?: return null
+            return line.substring(start, end).trim().ifEmpty { null }
         }
 
         fun extractNullableString(key: String): String? {
@@ -125,7 +133,7 @@ class SidecarManager(
 
         val uuid = extractString("uuid") ?: return null
         val hash = extractString("hash") ?: return null
-        val pos = extractInt("pos") ?: return null
+        val pos = extractPosition("pos") ?: return null
         val parent = extractNullableString("parent")
         return hash to SidecarEntry(uuid = uuid, pos = pos, parentUuid = parent)
     }

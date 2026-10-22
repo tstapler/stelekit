@@ -29,9 +29,14 @@ import dev.stapler.stelekit.ui.fixtures.InMemorySettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -50,7 +55,15 @@ import kotlin.time.Clock
  * then re-run unchanged against the post-extraction `ShareExportCoordinator` to prove the move
  * preserved behavior.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class StelekitViewModelShareExportTest {
+
+    // ShareExportCoordinator hops to Dispatchers.Main to call onDone; Bazel's test classpath has no Main provider.
+    @BeforeTest
+    fun installMainDispatcher() = Dispatchers.setMain(Dispatchers.Default)
+
+    @AfterTest
+    fun resetMainDispatcher() = Dispatchers.resetMain()
 
     private val now = Clock.System.now()
 

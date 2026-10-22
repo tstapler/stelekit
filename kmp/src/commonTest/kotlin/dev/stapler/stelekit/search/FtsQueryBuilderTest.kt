@@ -56,6 +56,20 @@ class FtsQueryBuilderTest {
 
     // ── Dangerous character stripping ─────────────────────────────────────
 
+    @Test fun partialParenthesizedPageTitleDoesNotEmitFtsGrouping() {
+        assertEquals("NOP*", build("NOP ("))
+        assertEquals("NOP* AND Synthetic*", build("NOP (Synthetic)"))
+        assertEquals("NOP* AND Synthetic*", build("NOP(Synthetic)"))
+        assertEquals("NOP* OR Synthetic*", FtsQueryBuilder.buildOr("NOP (Synthetic)"))
+    }
+
+    @Test fun literalParenthesesAndUnicodePreservePrefixTerms() {
+        assertEquals("", build("( ) (()"))
+        assertEquals("東京* AND notes*", build("(東京) notes"))
+        assertEquals("\"NOP (Synthetic)\"", build("\"NOP (Synthetic)\""))
+        assertEquals("taxes*", build("OR (taxes)"))
+    }
+
     @Test fun colonStripped() = assertEquals("taxesproperty*", build("taxes:property"))
     @Test fun caretStripped() = assertEquals("taxes2*", build("taxes^2"))
     @Test fun bracketStripped() = assertEquals("taxes0*", build("taxes[0]"))
