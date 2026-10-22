@@ -100,6 +100,8 @@ Mitigations in place:
 - `startup --max_idle_secs=1800` in `.bazelrc` — reap truly-idle orphans within 30m instead of 3h.
 - Wrap any bazel invocation you expect to run unattended (agent sessions, scripts) in `timeout <N> bazel ...` so a starved build can't run indefinitely.
 
+Host-OOM protection: Bazel test JVMs are capped at `-Xmx4g` (`jvm_flags` in `kmp/src/jvmTest/kotlin/BUILD.bazel`; a JVM without `-Xmx` may claim 25% of host RAM), and `scripts/bazel-lowprio.sh <bazel args>` runs Bazel at `oom_score_adj=1000`, `nice 10`, idle IO so the kernel kills a runaway build before the desktop. The server inherits the setting from whoever starts it — `bazel shutdown` once if a server is already up.
+
 If you're about to end an agent session/worktree that ran Bazel, run `bazel shutdown` from inside it first — it only tears down that workspace's own server, not anyone else's.
 
 To find and clear existing orphans:
