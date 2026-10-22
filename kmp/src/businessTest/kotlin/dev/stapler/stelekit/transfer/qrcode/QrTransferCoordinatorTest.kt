@@ -42,6 +42,9 @@ import kotlinx.coroutines.withTimeout
  * — a fake [FrameTransportReceiver] for the transfer-data path and a fake [QrScanner] for
  * diagnostics + pre-flight (Bug 3 fix — an actual injected instance, not a function reference).
  */
+// `bazel coverage` instrumentation slows Dispatchers.Default enough to trip a 5s await timeout.
+private const val AWAIT_TIMEOUT_MS = 30_000L
+
 class QrTransferCoordinatorTest {
 
     private class NoOpFileSystem : FileSystem {
@@ -191,7 +194,7 @@ class QrTransferCoordinatorTest {
             coordinator.events.collect { channel.send(it) }
         }
 
-        suspend fun awaitEvent(timeoutMs: Long = 30_000, predicate: (CoordinatorEvent) -> Boolean): CoordinatorEvent =
+        suspend fun awaitEvent(timeoutMs: Long = AWAIT_TIMEOUT_MS, predicate: (CoordinatorEvent) -> Boolean): CoordinatorEvent =
             withTimeout(timeoutMs) { channel.receiveAsFlow().first(predicate) }
 
         /**
@@ -201,7 +204,7 @@ class QrTransferCoordinatorTest {
          * event (e.g. `ScanHintUpdated`) without discarding earlier events it still needs to assert
          * on (e.g. `FragmentAdmitted`).
          */
-        suspend fun awaitEventCollecting(timeoutMs: Long = 30_000, predicate: (CoordinatorEvent) -> Boolean): List<CoordinatorEvent> =
+        suspend fun awaitEventCollecting(timeoutMs: Long = AWAIT_TIMEOUT_MS, predicate: (CoordinatorEvent) -> Boolean): List<CoordinatorEvent> =
             withTimeout(timeoutMs) {
                 val seen = mutableListOf<CoordinatorEvent>()
                 channel.receiveAsFlow().first { event ->
@@ -212,7 +215,7 @@ class QrTransferCoordinatorTest {
             }
 
         /** Drains events until a terminal (Success/Failed) event, returning everything seen. */
-        suspend fun awaitTerminal(timeoutMs: Long = 30_000): List<CoordinatorEvent> = withTimeout(timeoutMs) {
+        suspend fun awaitTerminal(timeoutMs: Long = AWAIT_TIMEOUT_MS): List<CoordinatorEvent> = withTimeout(timeoutMs) {
             val seen = mutableListOf<CoordinatorEvent>()
             channel.receiveAsFlow().first { event ->
                 seen.add(event)
