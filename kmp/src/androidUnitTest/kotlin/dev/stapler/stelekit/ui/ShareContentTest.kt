@@ -180,9 +180,10 @@ class ShareContentTest {
     }
 
     @Test
-    fun exportButtons_should_BeEnabled_ForCurrentPage_AndDisabledWithoutPage() {
+    fun exportButtons_should_BeEnabled_ForCurrentPage() {
         showContent()
         composeTestRule.onNodeWithText("Copy to Clipboard").assertIsEnabled()
+        composeTestRule.onNodeWithText("Save to File").assertIsEnabled()
     }
 
     @Test

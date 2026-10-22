@@ -17,6 +17,12 @@ class PerformanceDashboardTest {
     val composeTestRule = createComposeRule()
 
     private val tabs = listOf("Histograms", "Traces", "Events", "Plans", "SQL Stats")
+    private val emptyStateByTab = mapOf(
+        "Histograms" to "No samples recorded yet",
+        "Traces" to "No spans recorded yet",
+        "Plans" to "Query plan repository not available",
+        "SQL Stats" to "Query stats repository not available",
+    )
 
     private fun show() {
         composeTestRule.setContent { MaterialTheme { PerformanceDashboard() } }
@@ -30,13 +36,13 @@ class PerformanceDashboardTest {
     }
 
     @Test
-    fun dashboard_should_SwitchThroughEveryTab_WithoutCrashing() {
+    fun dashboard_should_ShowEachTabsEmptyState_WhenNothingIsRecorded() {
         show()
 
         tabs.forEach { tab ->
             composeTestRule.onNodeWithText(tab).performClick()
             composeTestRule.waitForIdle()
-            composeTestRule.onNodeWithText(tab).assertIsDisplayed()
+            emptyStateByTab[tab]?.let { composeTestRule.onNodeWithText(it, substring = true).assertIsDisplayed() }
         }
     }
 }

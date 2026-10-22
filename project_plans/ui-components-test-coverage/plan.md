@@ -8,10 +8,6 @@ All new test files are placed in `androidUnitTest` (Robolectric, headless) or
 `jvmTest` (Compose Desktop) per the placement matrix in `research.md`. No
 production source changes are required.
 
-**Out-of-scope deliberately:** `PerformanceDashboard.kt` (804 lines, diagnostic
-only) and `LogDashboard.kt` (diagnostic only) — their complexity-to-risk ratio
-does not justify the effort at this stage.
-
 ---
 
 ## Task Breakdown
@@ -152,3 +148,27 @@ Supersedes the "out of scope" note and Task 4 placement above.
 - **Task 10 (revised gate):** run `jacocoTestReport` plus the Android unit-test report, merge, and report real `ui.components` line coverage vs the 60% target (AC8). If the merge isn't achievable or the number falls short, mark AC8 `/backlog/fail-7` with the measured figure rather than claiming it.
 - **Test-writing note:** Robolectric's default 320x470 px screen clips unscrollable columns (verified: VaultSettings "Cancel" had zero height, so submit never fired). Use `@Config(qualifiers = "w480dp-h1600dp")`.
 - **Order:** Task 4, Task 9, Task 1 (done, 13 tests green), Tasks 2, 3, 5, then 8, 6, 10.
+
+---
+
+## Final status (supersedes the task list above where they differ)
+
+Coverage = union of `jacoco.xml` (jvmTest) and `jacoco-android.xml` (testDebugUnitTest) after a full
+run of both suites; lines covered/total.
+
+| Backlog AC | Test file(s) | Source set | Measured |
+|---|---|---|---|
+| 1 ShareContent ≥60% | `ShareContentTest` (16) | androidUnitTest | `ShareContent` fn 66.9% (ShareDialog.kt file: 59.7%) |
+| 2 VaultSettings ≥60% | `VaultSettingsTest` (13) | androidUnitTest | 96.2% |
+| 3 SectionsSettings ≥50% | `SectionsSettingsTest` (5) + `SectionsSettingsDialogsTest` (6) | androidUnitTest + jvmTest | 98.3% |
+| 4 FolderSyncSettings ≥50% | `FolderSyncSettingsTest` (10) | androidUnitTest | 66.0% |
+| 5 AutocompleteMenu ≥60% | `AutocompleteMenuTest` (10) | jvmTest | 92.9% |
+| 6 Dashboards ≥30% | `PerformanceDashboardTest` (2), `LogDashboardTest` (3) | jvmTest | 35.1% / 60.5% |
+| 7 ShareInboxPanel branches | `ShareInboxPanelTest` 15 → 29 | androidUnitTest | 89.9% lines, 36.5% branches (no pre-change branch baseline recorded) |
+| 8 package ≥60% | — | — | `ui.components` 66.6% lines (JVM-only 63.9%) |
+
+Deviations: dialogs containing an `OutlinedTextField` hang Robolectric (infinite layout loop, then heap
+OOM that fails every later test in the JVM), so the create/rename-section dialog tests run on Compose
+Desktop and need a display (`scripts/jvm-display-check.sh`). `ReferencesPanelTest` (Task 6) was not built:
+it is not among the backlog criteria. The Escape-key filter test for `AutocompleteMenu` was dropped
+because key injection does not reach the `Popup` in the test harness.

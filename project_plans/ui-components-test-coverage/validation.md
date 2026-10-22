@@ -120,15 +120,4 @@ for the established pattern).
 
 **Readiness gate: PASS (with AC8 flagged at risk).** Every criterion maps to a task; no blockers.
 
-## Estimate Summary
-
-| Task | Estimate | Category |
-|---|---|---|
-| VaultSettingsTest (androidUnitTest) | 3h | test |
-| FolderSyncSettingsTest (androidUnitTest) | 3h | test |
-| SectionsSettingsTest (androidUnitTest) | 2h | test |
-| ShareContentTest (jvmTest) | 4h | test |
-| AutocompleteMenuTest (jvmTest) | 2h | test |
-| ReferencesPanelTest (jvmTest) | 2h | test |
-| Coverage gate verification | 0.5h | test |
-| **Total** | **16.5h** | |
+See `plan.md` "Final status" for what was built and the measured coverage.

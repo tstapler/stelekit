@@ -5,6 +5,7 @@ package dev.stapler.stelekit.ui
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -23,6 +24,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 // Tall screen: the unscrollable settings column clips the passphrase form on the 320x470 default.
@@ -123,9 +125,10 @@ class VaultSettingsTest {
         composeTestRule.onNodeWithText("Confirm passphrase").performTextInput("two")
 
         composeTestRule.onNodeWithText("Passphrases do not match").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Encrypt graph").assertIsNotEnabled()
         composeTestRule.onNodeWithText("Encrypt graph").performClick()
         composeTestRule.waitForIdle()
-        assertTrue(!called)
+        assertFalse(called)
     }
 
     @Test

@@ -13,12 +13,31 @@ import androidx.compose.ui.test.assertCountEquals
 import dev.stapler.stelekit.logging.LogEntry
 import dev.stapler.stelekit.logging.LogLevel
 import dev.stapler.stelekit.logging.LogManager
+import org.junit.After
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 
 class LogDashboardTest {
     @get:Rule
     val composeTestRule = createComposeRule()
+
+    private var savedMinLevel = LogManager.minLevel
+
+    // LogManager is a process-wide singleton: a raised minLevel would drop the entries these tests add, and
+    // leftover entries would leak into other test classes.
+    @Before
+    fun lowerMinLevel() {
+        savedMinLevel = LogManager.minLevel
+        LogManager.minLevel = LogLevel.DEBUG
+        LogManager.clearLogs()
+    }
+
+    @After
+    fun restoreMinLevel() {
+        LogManager.minLevel = savedMinLevel
+        LogManager.clearLogs()
+    }
 
     private fun show() {
         composeTestRule.setContent { MaterialTheme { LogDashboard() } }
