@@ -200,7 +200,7 @@ jobs:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
       - name: Install Xvfb (selected tests may include Compose Desktop UI tests)
-        run: sudo apt-get install -y --no-install-recommends xvfb
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends xvfb
 
       - name: Install uv (the diffCoverage task runs diff-cover through uvx)
         run: |
