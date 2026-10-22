@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.98.0](https://github.com/tstapler/stelekit/compare/v0.97.1...v0.98.0) (2026-10-22)
+
+
+### Features
+
+* **images:** thumbnail/display derivatives + tiered image loading ([#481](https://github.com/tstapler/stelekit/issues/481)) ([909acc0](https://github.com/tstapler/stelekit/commit/909acc09797fe44321521211e931b3cb95e661e3))
+* merge anyway for misplaced pages the automatic merge refuses ([#478](https://github.com/tstapler/stelekit/issues/478)) ([670f2fe](https://github.com/tstapler/stelekit/commit/670f2fe769803143c54fbad8fb0e6f379c4e75b0))
+
+
+### Bug Fixes
+
+* **android:** bound image memory across capture, annotation and Coil caches ([#480](https://github.com/tstapler/stelekit/issues/480)) ([f686228](https://github.com/tstapler/stelekit/commit/f68622851c71c8c6396a32de5e4683175d9d3c8e))
+
 ## [0.97.1](https://github.com/tstapler/stelekit/compare/v0.97.0...v0.97.1) (2026-10-20)
 
 
