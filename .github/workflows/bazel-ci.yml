@@ -50,7 +50,7 @@ jobs:
 
       - name: Install Xvfb (headless display for Compose Desktop tests)
         run: |
-          sudo apt-get install -y --no-install-recommends xvfb
+          sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends xvfb
           # Ensure /tmp/.X11-unix exists before Bazel sandbox tries to bind-mount it
           # (xvfb-run creates the socket, but Bazel validates the mount source at startup)
           mkdir -p /tmp/.X11-unix
@@ -183,7 +183,7 @@ jobs:
           packages: "platform-tools"
 
       - name: Install host tools required by aar_import
-        run: sudo apt-get install -y --no-install-recommends unzip
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends unzip
 
       - uses: ./.github/actions/setup-bcp
 
@@ -244,7 +244,7 @@ jobs:
           packages: "platform-tools"
 
       - name: Install host tools required by aar_import
-        run: sudo apt-get install -y --no-install-recommends unzip
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends unzip
 
       - uses: ./.github/actions/setup-bcp
 
