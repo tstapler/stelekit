@@ -17,6 +17,7 @@ import dev.stapler.stelekit.db.FileRegistryTest
 import dev.stapler.stelekit.db.GraphLoaderIntegrationTest
 import dev.stapler.stelekit.db.GraphLoaderNotesPathTest
 import dev.stapler.stelekit.db.ImageSidecarIndexerTest
+import dev.stapler.stelekit.platform.image.PlatformImageDownscalerJvmTest
 import dev.stapler.stelekit.db.ImageSidecarManagerTest
 import dev.stapler.stelekit.ui.SectionManagementCoordinatorTest
 import dev.stapler.stelekit.db.GraphLoaderProgressiveTest
@@ -319,6 +320,7 @@ import org.junit.runners.Suite
     GraphLoaderIntegrationTest::class,
     GraphLoaderNotesPathTest::class,
     ImageSidecarIndexerTest::class,
+    PlatformImageDownscalerJvmTest::class,
     ImageSidecarManagerTest::class,
     SectionManagementCoordinatorTest::class,
     GraphLoaderProgressiveTest::class,

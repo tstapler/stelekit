@@ -17,6 +17,7 @@ import dev.stapler.stelekit.model.MeasurementAnnotation
 import dev.stapler.stelekit.model.MeasurementUnit
 import dev.stapler.stelekit.model.NormalizedPoint
 import dev.stapler.stelekit.platform.FileSystem
+import dev.stapler.stelekit.platform.image.ImageDerivativeService
 import dev.stapler.stelekit.platform.sensor.PlatformImageFile
 import dev.stapler.stelekit.repository.BlockWriteRepository
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
@@ -35,6 +36,7 @@ import dev.stapler.stelekit.model.EffectiveNotesPath
  * Import flow:
  * 1. Reserve a stable file path in `<graph>/assets/images/`
  * 2. Copy image bytes from the temp [PlatformImageFile] path to the reserved path
+ * 2b. Generate thumbnail/display derivatives (best effort)
  * 3. Create an [ImageAnnotation] domain object
  * 4. Write the JSON sidecar FIRST (per Known Issues transactional write order)
  * 5. Save the [ImageAnnotation] to SQLDelight via the repository
@@ -52,6 +54,7 @@ class ImageImportService(
     private val journalService: JournalService? = null,
     private val writeActor: DatabaseWriteActor? = null,
     private val measurementAnnotationRepository: MeasurementAnnotationRepository? = null,
+    private val derivativeService: ImageDerivativeService? = null,
 ) {
 
     /**
@@ -101,6 +104,12 @@ class ImageImportService(
             ifRight = { /* success — continue */ },
         )
 
+        // Step 2b: Thumbnail/display copies, once, so lists never decode the original. Best effort:
+        // a failure leaves thumbnailPath null and views fall back to the original.
+        val thumbnailPath = derivativeService
+            ?.ensure(fileSystem, graphPath, destPath)
+            ?.thumbnail
+
         // Step 3: Build the domain object.
         // Merge EXIF data from PlatformImageFile with motion sensor data (GPS, bearing,
         // pitch/roll) captured at the moment of image capture (Story 8.1.5).
@@ -111,6 +120,7 @@ class ImageImportService(
             pageUuid = pageUuid.value,
             graphPath = graphPath.value,
             filePath = destPath,
+            thumbnailPath = thumbnailPath,
             source = source,
             capturedAtMs = tempFile.capturedAtMs,
             importedAtMs = now.toEpochMilliseconds(),

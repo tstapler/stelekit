@@ -103,6 +103,7 @@ private fun rememberImageIoSetup(
                 journalService = repos.journalService,
                 writeActor = repos.writeActor,
                 measurementAnnotationRepository = repos.measurementAnnotationRepository,
+                derivativeService = dev.stapler.stelekit.platform.image.ImageDerivativeService.shared,
             )
         } else null
     }
