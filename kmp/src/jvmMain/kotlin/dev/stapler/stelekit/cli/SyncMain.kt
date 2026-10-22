@@ -77,7 +77,7 @@ private suspend fun runSyncWithManager(
     output: SyncOutput,
     graphPath: EffectiveNotesPath,
 ) {
-    val graphId = graphManager.addGraph(graphPath.directory())
+    val graphId = graphManager.addGraph(graphPath)
     graphManager.switchGraph(graphId)
     graphManager.awaitPendingMigration()
 
