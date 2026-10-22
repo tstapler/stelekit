@@ -50,7 +50,7 @@ suspend fun runSync(args: Array<String>) {
     val fileSystem = PlatformFileSystem()
     val settings = PlatformSettings()
 
-    val graphPath = resolveNotesPath(syncArgs, settings.lastNotesPath()?.value.orEmpty())
+    val graphPath = resolveNotesPath(syncArgs, settings.lastNotesPath())
         .getOrElse { message -> output.error(message); exitProcess(4) }
 
     output.info("Syncing graph at: ${graphPath.directory()}")

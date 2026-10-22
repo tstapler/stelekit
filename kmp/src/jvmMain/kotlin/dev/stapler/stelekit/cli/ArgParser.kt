@@ -47,9 +47,9 @@ fun parseArgs(args: Array<String>): SyncArgs {
  * folder). Canonicalized to block path traversal (e.g. "../../etc") and resolve symlinks. Left is the
  * message to show when there is no usable folder.
  */
-internal fun resolveNotesPath(args: SyncArgs, lastGraphPath: String): Either<String, EffectiveNotesPath> {
+internal fun resolveNotesPath(args: SyncArgs, lastGraphPath: EffectiveNotesPath?): Either<String, EffectiveNotesPath> {
     val requested = args.graphPath
-        ?: lastGraphPath.takeIf { it.isNotEmpty() }?.let(::EffectiveNotesPath)
+        ?: lastGraphPath?.takeIf { it.directory().isNotEmpty() }
         ?: return "No graph path specified and no last opened graph found. Use --graph <path>.".left()
     val directory = File(requested.directory()).canonicalFile
     if (!directory.isDirectory) return "Graph path does not exist or is not a directory: ${directory.path}".left()
