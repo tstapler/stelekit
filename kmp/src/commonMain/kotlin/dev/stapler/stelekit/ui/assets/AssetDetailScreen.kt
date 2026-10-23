@@ -36,6 +36,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -57,6 +58,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import coil3.compose.rememberAsyncImagePainter
+import dev.stapler.stelekit.platform.image.ImageTier
+import dev.stapler.stelekit.ui.components.rememberTieredImageModel
 import dev.stapler.stelekit.asset.AssetEntry
 import dev.stapler.stelekit.asset.AssetMediaType
 import dev.stapler.stelekit.ui.components.rememberSteleKitImageLoader
@@ -237,12 +241,14 @@ private fun ImageViewer(asset: AssetEntry, modifier: Modifier = Modifier) {
         offsetX = (offsetX + panChange.x).coerceIn(-panBound.x, panBound.x)
         offsetY = (offsetY + panChange.y).coerceIn(-panBound.y, panBound.y)
     }
-    val coilModel = when {
-        asset.relativePath.startsWith("../assets/") -> asset.relativePath
-        asset.filePath.startsWith("saf://") -> asset.filePath
-        asset.filePath.startsWith("file://") || asset.filePath.startsWith("content://") -> asset.filePath
-        else -> "file://${asset.filePath}"
-    }
+    // Display-size copy until the user zooms in; then the original, with the display copy as placeholder.
+    var zoomedIn by remember(asset.filePath) { mutableStateOf(false) }
+    LaunchedEffect(scale > 1f) { if (scale > 1f) zoomedIn = true }
+    val reference = asset.imageReference()
+    val display by rememberTieredImageModel(reference, ImageTier.DISPLAY)
+    val original by rememberTieredImageModel(reference, ImageTier.ORIGINAL)
+    val coilModel = (if (zoomedIn) original.model else display.model)?.let(::coilModelFor)
+    val placeholderPainter = display.model?.takeIf { zoomedIn }?.let { rememberAsyncImagePainter(coilModelFor(it), imageLoader) }
 
     Column(modifier = modifier.fillMaxWidth()) {
         Box(
@@ -263,6 +269,7 @@ private fun ImageViewer(asset: AssetEntry, modifier: Modifier = Modifier) {
             AsyncImage(
                 model = coilModel,
                 imageLoader = imageLoader,
+                placeholder = placeholderPainter,
                 contentDescription = asset.filePath.substringAfterLast('/'),
                 contentScale = ContentScale.Fit,
                 onSuccess = { state ->
