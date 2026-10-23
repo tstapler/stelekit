@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.platform
 
+import dev.stapler.stelekit.model.RepoRoot
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
@@ -135,7 +136,7 @@ class JsGitManagerTest {
             val sharedWriteService = WasmGitWriteService(client, fileSystem)
             val config = GitConfig(
                 graphId = graphId,
-                repoRoot = "/stelekit/$graphId",
+                repoRoot = RepoRoot("/stelekit/$graphId"),
                 wikiSubdir = "",
                 authType = GitAuthType.GITHUB_OAUTH,
             )
@@ -187,7 +188,7 @@ class JsGitManagerTest {
             fileSystem.preload("/stelekit/$graphId")
             val config = GitConfig(
                 graphId = graphId,
-                repoRoot = "/stelekit/$graphId",
+                repoRoot = RepoRoot("/stelekit/$graphId"),
                 wikiSubdir = "",
                 authType = GitAuthType.GITHUB_OAUTH,
             )

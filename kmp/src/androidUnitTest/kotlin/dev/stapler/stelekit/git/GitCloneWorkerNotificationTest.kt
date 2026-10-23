@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.model.RepoRoot
 import android.content.Context
 import androidx.core.app.NotificationManagerCompat
 import androidx.test.core.app.ApplicationProvider
@@ -91,7 +92,7 @@ class GitCloneWorkerNotificationTest {
     ): GitRepository = object : StubGitRepository() {
         override suspend fun clone(
             url: String,
-            localPath: String,
+            localPath: RepoRoot,
             auth: GitAuth,
             onProgress: (CloneProgress) -> Unit,
             onStateChange: (GitTransportRetryState) -> Unit,

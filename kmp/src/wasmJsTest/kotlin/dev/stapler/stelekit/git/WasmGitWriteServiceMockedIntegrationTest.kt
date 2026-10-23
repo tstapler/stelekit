@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.model.RepoRoot
 import arrow.core.Either
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.WasmGitWriteService.Companion.installRetryPolicy
@@ -114,7 +115,7 @@ class WasmGitWriteServiceMockedIntegrationTest {
         val writeService = WasmGitWriteService(client, fileSystem)
         val config = GitConfig(
             graphId = graphId,
-            repoRoot = "/stelekit/$graphId",
+            repoRoot = RepoRoot("/stelekit/$graphId"),
             wikiSubdir = "",
             authType = GitAuthType.GITHUB_OAUTH,
         )
@@ -175,7 +176,7 @@ class WasmGitWriteServiceMockedIntegrationTest {
         val writeService = WasmGitWriteService(client, fileSystem)
         val config = GitConfig(
             graphId = graphId,
-            repoRoot = "/stelekit/$graphId",
+            repoRoot = RepoRoot("/stelekit/$graphId"),
             wikiSubdir = "",
             authType = GitAuthType.GITHUB_OAUTH,
         )
@@ -277,7 +278,7 @@ class WasmGitWriteServiceMockedIntegrationTest {
         val writeService = WasmGitWriteService(client, fileSystem)
         val config = GitConfig(
             graphId = graphId,
-            repoRoot = "/stelekit/$graphId",
+            repoRoot = RepoRoot("/stelekit/$graphId"),
             wikiSubdir = "",
             authType = GitAuthType.NONE,
         )
@@ -338,7 +339,7 @@ class WasmGitWriteServiceMockedIntegrationTest {
 
         val config = GitConfig(
             graphId = graphId,
-            repoRoot = "/stelekit/$graphId",
+            repoRoot = RepoRoot("/stelekit/$graphId"),
             wikiSubdir = "",
             authType = GitAuthType.NONE,
         )
@@ -400,7 +401,7 @@ class WasmGitWriteServiceMockedIntegrationTest {
         val writeService = WasmGitWriteService(client, fileSystem)
         val config = GitConfig(
             graphId = graphId,
-            repoRoot = "/stelekit/$graphId",
+            repoRoot = RepoRoot("/stelekit/$graphId"),
             wikiSubdir = "",
             authType = GitAuthType.NONE,
         )
@@ -431,7 +432,7 @@ class WasmGitWriteServiceMockedIntegrationTest {
         val writeService = WasmGitWriteService(client, fileSystem)
         val config = GitConfig(
             graphId = graphId,
-            repoRoot = "/stelekit/$graphId",
+            repoRoot = RepoRoot("/stelekit/$graphId"),
             wikiSubdir = "",
             authType = GitAuthType.NONE,
         )
@@ -502,7 +503,7 @@ class WasmGitWriteServiceMockedIntegrationTest {
         val writeService = WasmGitWriteService(client, fileSystem)
         val config = GitConfig(
             graphId = graphId,
-            repoRoot = "/stelekit/$graphId",
+            repoRoot = RepoRoot("/stelekit/$graphId"),
             wikiSubdir = "",
             authType = GitAuthType.GITHUB_OAUTH,
         )
@@ -540,7 +541,7 @@ class WasmGitWriteServiceMockedIntegrationTest {
         val writeService = WasmGitWriteService(client, fileSystem)
         val config = GitConfig(
             graphId = graphId,
-            repoRoot = "/stelekit/$graphId",
+            repoRoot = RepoRoot("/stelekit/$graphId"),
             wikiSubdir = "",
             authType = GitAuthType.GITHUB_OAUTH,
         )
@@ -576,7 +577,7 @@ class WasmGitWriteServiceMockedIntegrationTest {
         val writeService = WasmGitWriteService(client, fileSystem)
         val config = GitConfig(
             graphId = graphId,
-            repoRoot = "/stelekit/$graphId",
+            repoRoot = RepoRoot("/stelekit/$graphId"),
             wikiSubdir = "",
             authType = GitAuthType.GITHUB_OAUTH,
         )
@@ -619,7 +620,7 @@ class WasmGitWriteServiceMockedIntegrationTest {
         val writeService = WasmGitWriteService(client, fileSystem)
         val config = GitConfig(
             graphId = graphId,
-            repoRoot = "/stelekit/$graphId",
+            repoRoot = RepoRoot("/stelekit/$graphId"),
             wikiSubdir = "",
             authType = GitAuthType.GITHUB_OAUTH,
         )
@@ -693,7 +694,7 @@ class WasmGitWriteServiceMockedIntegrationTest {
         val writeService = WasmGitWriteService(client, fileSystem)
         val config = GitConfig(
             graphId = graphId,
-            repoRoot = "/stelekit/$graphId",
+            repoRoot = RepoRoot("/stelekit/$graphId"),
             wikiSubdir = "",
             authType = GitAuthType.GITHUB_OAUTH,
         )
@@ -737,7 +738,7 @@ class WasmGitWriteServiceMockedIntegrationTest {
         val writeService = WasmGitWriteService(client, fileSystem)
         val config = GitConfig(
             graphId = graphId,
-            repoRoot = "/stelekit/$graphId-repo-root",
+            repoRoot = RepoRoot("/stelekit/$graphId-repo-root"),
             wikiSubdir = "notes",
             authType = GitAuthType.GITHUB_OAUTH,
         )
@@ -786,7 +787,7 @@ class WasmGitWriteServiceMockedIntegrationTest {
         val writeService = WasmGitWriteService(client, fileSystem)
         val config = GitConfig(
             graphId = graphId,
-            repoRoot = "/stelekit/$graphId-repo-root",
+            repoRoot = RepoRoot("/stelekit/$graphId-repo-root"),
             wikiSubdir = "notes",
             authType = GitAuthType.GITHUB_OAUTH,
         )
@@ -821,7 +822,7 @@ class WasmGitWriteServiceMockedIntegrationTest {
         val writeService = WasmGitWriteService(client, fileSystem)
         val config = GitConfig(
             graphId = graphId,
-            repoRoot = "/stelekit/$graphId-repo-root",
+            repoRoot = RepoRoot("/stelekit/$graphId-repo-root"),
             wikiSubdir = "notes",
             authType = GitAuthType.GITHUB_OAUTH,
         )
@@ -847,7 +848,7 @@ class WasmGitWriteServiceMockedIntegrationTest {
 
         val config = GitConfig(
             graphId = graphId,
-            repoRoot = "/stelekit/$graphId-repo-root",
+            repoRoot = RepoRoot("/stelekit/$graphId-repo-root"),
             wikiSubdir = "notes",
             authType = GitAuthType.NONE,
         )

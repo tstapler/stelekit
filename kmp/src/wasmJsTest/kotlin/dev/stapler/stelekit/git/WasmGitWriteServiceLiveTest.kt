@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.model.RepoRoot
 import arrow.core.Either
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.WasmGitWriteService.Companion.installRetryPolicy
@@ -121,7 +122,7 @@ class WasmGitWriteServiceLiveTest {
         val writeService = WasmGitWriteService.withDefaultClient(fileSystem)
         val config = GitConfig(
             graphId = graphId,
-            repoRoot = "/stelekit/$graphId",
+            repoRoot = RepoRoot("/stelekit/$graphId"),
             wikiSubdir = "",
             authType = GitAuthType.GITHUB_OAUTH,
         )
@@ -168,7 +169,7 @@ class WasmGitWriteServiceLiveTest {
         val writeService = WasmGitWriteService.withDefaultClient(fileSystem)
         val config = GitConfig(
             graphId = graphId,
-            repoRoot = "/stelekit/$graphId",
+            repoRoot = RepoRoot("/stelekit/$graphId"),
             wikiSubdir = "",
             authType = GitAuthType.NONE,
         )
@@ -234,7 +235,7 @@ class WasmGitWriteServiceLiveTest {
         val writeService = WasmGitWriteService.withDefaultClient(fileSystem)
         val config = GitConfig(
             graphId = graphId,
-            repoRoot = "/stelekit/$graphId",
+            repoRoot = RepoRoot("/stelekit/$graphId"),
             wikiSubdir = "",
             authType = GitAuthType.NONE,
         )

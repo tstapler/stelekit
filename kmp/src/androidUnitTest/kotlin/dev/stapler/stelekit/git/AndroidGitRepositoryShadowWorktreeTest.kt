@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.model.RepoRoot
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import arrow.core.Either
@@ -90,7 +91,7 @@ class AndroidGitRepositoryShadowWorktreeTest {
         fs.seed("$repoRoot/note.md", "- Hello\n")
 
         registerAmpleStorage(repository, repoRoot)
-        val initResult = repository.init(repoRoot)
+        val initResult = repository.init(RepoRoot(repoRoot))
         assertTrue(initResult.isRight(), "init failed: $initResult")
 
         // Strengthens this test past a no-op-commit false positive: prove init()'s unconditional
@@ -112,7 +113,7 @@ class AndroidGitRepositoryShadowWorktreeTest {
 
         val config = GitConfig(
             graphId = "wiki-basic",
-            repoRoot = repoRoot,
+            repoRoot = RepoRoot(repoRoot),
             wikiSubdir = null,
             authType = GitAuthType.NONE,
         )
@@ -145,7 +146,7 @@ class AndroidGitRepositoryShadowWorktreeTest {
             fs.seed("$repoRoot/conflict.md", "- base\n")
 
             registerAmpleStorage(repository, repoRoot)
-            val initResult = repository.init(repoRoot)
+            val initResult = repository.init(RepoRoot(repoRoot))
             assertTrue(initResult.isRight(), "init failed: $initResult")
 
             val shadowPath = repository.resolveForJGit(repoRoot)
@@ -157,7 +158,7 @@ class AndroidGitRepositoryShadowWorktreeTest {
 
             val config = GitConfig(
                 graphId = "wiki-merge",
-                repoRoot = repoRoot,
+                repoRoot = RepoRoot(repoRoot),
                 wikiSubdir = null,
                 remoteBranch = branchName,
                 authType = GitAuthType.NONE,
@@ -267,7 +268,7 @@ class AndroidGitRepositoryShadowWorktreeTest {
         fs.seed("$repoRoot/conflict.md", "- base\n")
 
         registerAmpleStorage(repository, repoRoot)
-        assertTrue(repository.init(repoRoot).isRight())
+        assertTrue(repository.init(RepoRoot(repoRoot)).isRight())
 
         val shadowPath = repository.resolveForJGit(repoRoot)
         Git.open(File(shadowPath)).use { git -> setTestIdentity(git) }
@@ -275,7 +276,7 @@ class AndroidGitRepositoryShadowWorktreeTest {
 
         val config = GitConfig(
             graphId = "wiki-resolve",
-            repoRoot = repoRoot,
+            repoRoot = RepoRoot(repoRoot),
             wikiSubdir = null,
             remoteBranch = branchName,
             authType = GitAuthType.NONE,
@@ -361,7 +362,7 @@ class AndroidGitRepositoryShadowWorktreeTest {
         fs.seed("$repoRoot/conflict.md", "base\n")
 
         registerAmpleStorage(repository, repoRoot)
-        assertTrue(repository.init(repoRoot).isRight())
+        assertTrue(repository.init(RepoRoot(repoRoot)).isRight())
 
         val shadowPath = repository.resolveForJGit(repoRoot)
         Git.open(File(shadowPath)).use { git -> setTestIdentity(git) }
@@ -369,7 +370,7 @@ class AndroidGitRepositoryShadowWorktreeTest {
 
         val config = GitConfig(
             graphId = "wiki-markresolved",
-            repoRoot = repoRoot,
+            repoRoot = RepoRoot(repoRoot),
             wikiSubdir = null,
             remoteBranch = branchName,
             authType = GitAuthType.NONE,
@@ -476,7 +477,7 @@ class AndroidGitRepositoryShadowWorktreeTest {
         fs.seed("$repoRoot/fileB.md", "base B\n")
 
         registerAmpleStorage(repository, repoRoot)
-        assertTrue(repository.init(repoRoot).isRight())
+        assertTrue(repository.init(RepoRoot(repoRoot)).isRight())
 
         val shadowPath = repository.resolveForJGit(repoRoot)
         Git.open(File(shadowPath)).use { git -> setTestIdentity(git) }
@@ -484,7 +485,7 @@ class AndroidGitRepositoryShadowWorktreeTest {
 
         val config = GitConfig(
             graphId = "wiki-abort",
-            repoRoot = repoRoot,
+            repoRoot = RepoRoot(repoRoot),
             wikiSubdir = null,
             remoteBranch = branchName,
             authType = GitAuthType.NONE,
@@ -570,7 +571,7 @@ class AndroidGitRepositoryShadowWorktreeTest {
         val repository = newRepository(fs)
 
         registerAmpleStorage(repository, repoRoot)
-        assertTrue(repository.init(repoRoot).isRight())
+        assertTrue(repository.init(RepoRoot(repoRoot)).isRight())
 
         val worktree = repository.shadowWorktreeFor(repoRoot)
         assertNotNull(worktree, "shadow-mirror mode must be active when pathResolver returns null for a saf:// root")

@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.model.RepoRoot
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import arrow.core.Either
@@ -81,7 +82,7 @@ class AndroidGitRepositoryStorageGuardTest {
 
             val result = repository.clone(
                 url = "/should-never-be-reached",
-                localPath = repoRoot,
+                localPath = RepoRoot(repoRoot),
                 auth = GitAuth.None,
                 onProgress = {},
                 onStateChange = {},
@@ -120,7 +121,7 @@ class AndroidGitRepositoryStorageGuardTest {
 
         val result = repository.clone(
             url = originDir.absolutePath,
-            localPath = repoRoot,
+            localPath = RepoRoot(repoRoot),
             auth = GitAuth.None,
             onProgress = {},
             onStateChange = {},
@@ -223,7 +224,7 @@ class AndroidGitRepositoryStorageGuardTest {
 
         val result = repository.clone(
             url = originDir.absolutePath,
-            localPath = repoRoot,
+            localPath = RepoRoot(repoRoot),
             auth = GitAuth.None,
             onProgress = {},
             onStateChange = {},

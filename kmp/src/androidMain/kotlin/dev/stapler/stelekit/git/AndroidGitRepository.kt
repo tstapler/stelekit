@@ -75,7 +75,7 @@ class AndroidGitRepository(
     override suspend fun init(repoRoot: RepoRoot): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
             runGitOp({ e -> DomainError.GitError.CloneFailed("init failed: ${e.message}") }) {
-                val worktree = shadow.shadowWorktreeFor(repoRoot)
+                val worktree = shadow.shadowWorktreeFor(repoRoot.value)
                 shadow.insufficientShadowStorageError(worktree, repoRoot.value)?.let { return@runGitOp it.left() }
                 // GitConfig.remoteBranch defaults to "main" — JGit's own default initial branch
                 // is "master" regardless of the host's `init.defaultBranch` git config, so a
