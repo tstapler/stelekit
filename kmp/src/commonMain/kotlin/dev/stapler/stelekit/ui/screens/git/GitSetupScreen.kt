@@ -107,7 +107,7 @@ fun GitSetupScreen(
     var cloneUrl by remember { mutableStateOf("") }
     var repoRoot by remember {
         mutableStateOf(
-            existingConfig?.repoRoot
+            existingConfig?.repoRoot?.value
                 ?: detectedRepoRoot
                 ?: if (initialCloneMode == CloneMode.UseExistingClone) graphPath else ""
         )

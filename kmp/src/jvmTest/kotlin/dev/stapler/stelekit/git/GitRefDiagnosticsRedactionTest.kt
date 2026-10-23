@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.model.RepoRoot
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
 import org.eclipse.jgit.api.Git
@@ -22,7 +23,7 @@ class GitRefDiagnosticsRedactionTest {
                 git.repository.config.setString("remote", "origin", "url", url)
                 git.repository.config.save()
                 val config = GitConfig(
-                    graphId = "g", repoRoot = dir.absolutePath, wikiSubdir = null,
+                    graphId = "g", repoRoot = RepoRoot(dir.absolutePath), wikiSubdir = null,
                     remoteBranch = "main", authType = GitAuthType.NONE,
                 )
 

@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.git.lfs
 
+import dev.stapler.stelekit.model.RepoRoot
 import dev.stapler.stelekit.git.JvmGitRepository
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
@@ -115,7 +116,7 @@ class LfsPostPushAuditTest {
                 f.write("pages/a.md", "# a")
                 f.add(".")
                 f.commit("base")
-                val config = GitConfig(graphId = "g", repoRoot = f.dir.absolutePath, wikiSubdir = null, authType = GitAuthType.NONE)
+                val config = GitConfig(graphId = "g", repoRoot = RepoRoot(f.dir.absolutePath), wikiSubdir = null, authType = GitAuthType.NONE)
                 val repository = JvmGitRepository()
                 assertTrue(repository.push(config).isRight())
                 assertTrue(repository.lastPushLfsViolations.isEmpty())

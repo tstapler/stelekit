@@ -291,7 +291,7 @@ class GitSyncService(
 
             // 3a. Detached HEAD check
             if (gitRepository.hasDetachedHead(config)) {
-                val err = DomainError.GitError.DetachedHead(config.repoRoot)
+                val err = DomainError.GitError.DetachedHead(config.repoRoot.value)
                 _syncState.value = SyncState.Error(err)
                 return@withContext err.left()
             }
@@ -414,7 +414,7 @@ class GitSyncService(
                         // conflicts require sequential resolution and must go through the manual screen.
                         if (journalConflicts.size == 1 && journalMergeService != null) {
                             val proposal = try {
-                                journalMergeService.propose(journalConflicts.first(), RepoRoot(config.repoRoot))
+                                journalMergeService.propose(journalConflicts.first(), config.repoRoot)
                             } catch (e: CancellationException) {
                                 throw e
                             } catch (e: Exception) {

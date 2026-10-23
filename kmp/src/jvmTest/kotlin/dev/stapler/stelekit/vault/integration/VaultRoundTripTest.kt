@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.vault.integration
 
+import dev.stapler.stelekit.model.RepoRoot
 import arrow.core.Either
 import dev.stapler.stelekit.vault.*
 import kotlinx.coroutines.test.runTest
@@ -27,7 +28,7 @@ class VaultRoundTripTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManager(store)
         val graphPath = "/tmp/rt-test"
-        val dek = vm.createVault(graphPath, "pass".toCharArray(), argon2Params = params).getOrNull()!!.dek
+        val dek = vm.createVault(RepoRoot(graphPath), "pass".toCharArray(), argon2Params = params).getOrNull()!!.dek
         val layer = CryptoLayer(engine, dek)
         val content = "# My Note\n- hello".encodeToByteArray()
         val encrypted = layer.encrypt("pages/MyNote.md.stek", content)
@@ -43,7 +44,7 @@ class VaultRoundTripTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManager(store)
         val graphPath = "/tmp/rt-test"
-        val dek = vm.createVault(graphPath, "pass".toCharArray(), argon2Params = params).getOrNull()!!.dek
+        val dek = vm.createVault(RepoRoot(graphPath), "pass".toCharArray(), argon2Params = params).getOrNull()!!.dek
         val layer = CryptoLayer(engine, dek)
 
         val original = "# My Note\n- hello".encodeToByteArray()
@@ -61,7 +62,7 @@ class VaultRoundTripTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManager(store)
         val graphPath = "/tmp/rt-test"
-        val dek = vm.createVault(graphPath, "pass".toCharArray(), argon2Params = params).getOrNull()!!.dek
+        val dek = vm.createVault(RepoRoot(graphPath), "pass".toCharArray(), argon2Params = params).getOrNull()!!.dek
         val layer = CryptoLayer(engine, dek)
 
         val pages = (1..5).map { i -> "pages/Page$i.md.stek" to "# Page $i\n- content $i".encodeToByteArray() }
@@ -81,7 +82,7 @@ class VaultRoundTripTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManager(store)
         val graphPath = "/tmp/rt-test"
-        val dek = vm.createVault(graphPath, "pass".toCharArray(), argon2Params = params).getOrNull()!!.dek
+        val dek = vm.createVault(RepoRoot(graphPath), "pass".toCharArray(), argon2Params = params).getOrNull()!!.dek
         val layer = CryptoLayer(engine, dek)
 
         val content = "# Note\n- data".encodeToByteArray()
@@ -97,7 +98,7 @@ class VaultRoundTripTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManager(store)
         val graphPath = "/tmp/rt-test"
-        val dek = vm.createVault(graphPath, "pass".toCharArray(), argon2Params = params).getOrNull()!!.dek
+        val dek = vm.createVault(RepoRoot(graphPath), "pass".toCharArray(), argon2Params = params).getOrNull()!!.dek
         val layer = CryptoLayer(engine, dek)
 
         val original = "original content".encodeToByteArray()
@@ -121,7 +122,7 @@ class VaultRoundTripTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManager(store)
         val graphPath = "/tmp/rt-test"
-        val dek = vm.createVault(graphPath, "pass".toCharArray(), argon2Params = params).getOrNull()!!.dek
+        val dek = vm.createVault(RepoRoot(graphPath), "pass".toCharArray(), argon2Params = params).getOrNull()!!.dek
         val layer1 = CryptoLayer(engine, dek)
 
         val content = "# Persistent Note\n- persists through lock".encodeToByteArray()
@@ -130,7 +131,7 @@ class VaultRoundTripTest {
         vm.lock()
 
         // Re-unlock
-        val unlockResult = vm.unlock(graphPath, "pass".toCharArray(), params).getOrNull()!!
+        val unlockResult = vm.unlock(RepoRoot(graphPath), "pass".toCharArray(), params).getOrNull()!!
         val layer2 = CryptoLayer(engine, unlockResult.dek)
         val raw = store["$graphPath/pages/Persist.md.stek"]!!
         val decrypted = layer2.decrypt("pages/Persist.md.stek", raw)
@@ -143,16 +144,16 @@ class VaultRoundTripTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManager(store)
         val graphPath = "/tmp/rt-test"
-        val dek = vm.createVault(graphPath, "original".toCharArray(), argon2Params = params).getOrNull()!!.dek
+        val dek = vm.createVault(RepoRoot(graphPath), "original".toCharArray(), argon2Params = params).getOrNull()!!.dek
         val layer = CryptoLayer(engine, dek)
 
         val content = "# Note\n- content".encodeToByteArray()
         store["$graphPath/pages/Note.md.stek"] = layer.encrypt("pages/Note.md.stek", content)
 
-        vm.unlock(graphPath, "original".toCharArray(), params)
-        vm.addKeyslot(graphPath, dek, "new-pass".toCharArray(), argon2Params = params)
+        vm.unlock(RepoRoot(graphPath), "original".toCharArray(), params)
+        vm.addKeyslot(RepoRoot(graphPath), dek, "new-pass".toCharArray(), argon2Params = params)
 
-        val unlockResult = vm.unlock(graphPath, "new-pass".toCharArray(), params).getOrNull()!!
+        val unlockResult = vm.unlock(RepoRoot(graphPath), "new-pass".toCharArray(), params).getOrNull()!!
         val layer2 = CryptoLayer(engine, unlockResult.dek)
         val result = layer2.decrypt("pages/Note.md.stek", store["$graphPath/pages/Note.md.stek"]!!)
         assertTrue(result.isRight())
@@ -173,16 +174,16 @@ class VaultRoundTripTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManager(store)
         val graphPath = "/tmp/rt-test"
-        val dek = vm.createVault(graphPath, "pass".toCharArray(), argon2Params = params).getOrNull()!!.dek
+        val dek = vm.createVault(RepoRoot(graphPath), "pass".toCharArray(), argon2Params = params).getOrNull()!!.dek
 
-        assertTrue(store.containsKey(VaultManager.vaultFilePath(graphPath)), "Vault file missing after createVault")
+        assertTrue(store.containsKey(VaultManager.vaultFilePath(RepoRoot(graphPath))), "Vault file missing after createVault")
 
-        vm.unlock(graphPath, "pass".toCharArray(), params)
-        vm.addKeyslot(graphPath, dek, "second".toCharArray(), argon2Params = params)
-        assertTrue(store.containsKey(VaultManager.vaultFilePath(graphPath)), "Vault file missing after addKeyslot")
+        vm.unlock(RepoRoot(graphPath), "pass".toCharArray(), params)
+        vm.addKeyslot(RepoRoot(graphPath), dek, "second".toCharArray(), argon2Params = params)
+        assertTrue(store.containsKey(VaultManager.vaultFilePath(RepoRoot(graphPath))), "Vault file missing after addKeyslot")
 
-        vm.removeKeyslot(graphPath, 1)
-        assertTrue(store.containsKey(VaultManager.vaultFilePath(graphPath)), "Vault file missing after removeKeyslot")
+        vm.removeKeyslot(RepoRoot(graphPath), 1)
+        assertTrue(store.containsKey(VaultManager.vaultFilePath(RepoRoot(graphPath))), "Vault file missing after removeKeyslot")
     }
 
     // RT-11 — Rename: decrypt at old path, re-encrypt at new path, readable at new path only

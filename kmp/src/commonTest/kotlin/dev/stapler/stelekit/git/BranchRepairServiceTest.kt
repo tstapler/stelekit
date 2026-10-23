@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.model.RepoRoot
 import arrow.core.Either
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
@@ -41,7 +42,7 @@ class BranchRepairServiceTest {
     }
 
     private fun config(branch: String) =
-        GitConfig(graphId = "g", repoRoot = "/r", wikiSubdir = null, remoteBranch = branch, authType = GitAuthType.NONE)
+        GitConfig(graphId = "g", repoRoot = RepoRoot("/r"), wikiSubdir = null, remoteBranch = branch, authType = GitAuthType.NONE)
 
     private val proposal = BranchRepairProposal("g", from = "main", to = "master", available = listOf("master"))
 

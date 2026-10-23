@@ -26,7 +26,7 @@ internal object JvmGitConflictSupport {
     }
 
     private fun buildConflictFile(repo: Repository, filePath: String, config: GitConfig): ConflictFile {
-        val absolutePath = "${config.repoRoot}/$filePath"
+        val absolutePath = "${config.repoRoot.value}/$filePath"
         val wikiRelPath = if (!config.wikiSubdir.isNullOrEmpty() &&
             filePath.startsWith("${config.wikiSubdir}/")) {
             filePath.removePrefix("${config.wikiSubdir}/")

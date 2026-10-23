@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.model.RepoRoot
 import dev.stapler.stelekit.db.ConflictMarkerDetector
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.model.ConflictFile
@@ -24,7 +25,7 @@ class ConflictMarkerGuard(private val fileSystem: FileSystem) {
         (status.modifiedFiles + status.untrackedFiles)
             .filter { it.endsWith(".md") }
             .mapNotNull { relPath ->
-                val absPath = "${config.repoRoot}/$relPath"
+                val absPath = "${config.repoRoot.value}/$relPath"
                 val content = fileSystem.readFile(absPath) ?: return@mapNotNull null
                 if (!ConflictMarkerDetector.hasConflictMarkers(content)) return@mapNotNull null
                 ConflictResolver().parseConflictFile(absPath, content, config.wikiRoot).getOrNull()

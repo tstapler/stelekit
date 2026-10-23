@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.git.lfs
 
+import dev.stapler.stelekit.model.RepoRoot
 import dev.stapler.stelekit.platform.FileSystem
 import kotlinx.coroutines.CancellationException
 
@@ -13,7 +14,7 @@ import kotlinx.coroutines.CancellationException
  */
 class LfsRulesLoader(
     private val fileSystem: FileSystem,
-    private val repoRoot: String,
+    private val repoRoot: RepoRoot,
     private val ignoreCase: Boolean = false,
 ) {
     fun load(changedPaths: Collection<String>): AttributeRuleSet {
@@ -25,9 +26,9 @@ class LfsRulesLoader(
         }
         val files = directories.mapNotNull { dir ->
             val location = if (dir.isEmpty()) ".gitattributes" else "$dir/.gitattributes"
-            readText("$repoRoot/$location")?.let { GitAttributesParser.parse(it, dirPrefix = dir) }
+            readText("${repoRoot.value}/$location")?.let { GitAttributesParser.parse(it, dirPrefix = dir) }
         }
-        val info = readText("$repoRoot/.git/info/attributes")
+        val info = readText("${repoRoot.value}/.git/info/attributes")
             ?.let { GitAttributesParser.parse(it, dirPrefix = "", allowMacros = true, sourceName = ".git/info/attributes") }
         return AttributeRuleSet(files, info, ignoreCase)
     }
@@ -43,11 +44,11 @@ class LfsRulesLoader(
 }
 
 /** [LfsContentProbe] over a [FileSystem] rooted at the repository. */
-class FileSystemLfsContentProbe(private val fileSystem: FileSystem, private val repoRoot: String) : LfsContentProbe {
-    override suspend fun size(path: String): Long? = guarded { fileSystem.getFileSize("$repoRoot/$path") }
+class FileSystemLfsContentProbe(private val fileSystem: FileSystem, private val repoRoot: RepoRoot) : LfsContentProbe {
+    override suspend fun size(path: String): Long? = guarded { fileSystem.getFileSize("${repoRoot.value}/$path") }
 
     override suspend fun readHead(path: String, maxBytes: Int): ByteArray? = guarded {
-        fileSystem.readFileBytes("$repoRoot/$path")?.let { if (it.size > maxBytes) it.copyOf(maxBytes) else it }
+        fileSystem.readFileBytes("${repoRoot.value}/$path")?.let { if (it.size > maxBytes) it.copyOf(maxBytes) else it }
     }
 
     private inline fun <T> guarded(block: () -> T?): T? =

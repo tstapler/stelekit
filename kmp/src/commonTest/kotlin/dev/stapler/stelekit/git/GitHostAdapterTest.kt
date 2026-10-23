@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.model.RepoRoot
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.git.model.GitHostConfig
@@ -85,7 +86,7 @@ class GitHostAdapterTest {
 
     private fun sampleConfig(remoteBranch: String = "main") = GitConfig(
         graphId = "g1",
-        repoRoot = "/repo",
+        repoRoot = RepoRoot("/repo"),
         wikiSubdir = "",
         remoteBranch = remoteBranch,
         authType = GitAuthType.HTTPS_TOKEN,

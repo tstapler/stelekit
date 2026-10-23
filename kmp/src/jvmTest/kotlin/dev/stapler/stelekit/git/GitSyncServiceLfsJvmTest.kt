@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.model.RepoRoot
 import arrow.core.right
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphWriter
@@ -72,7 +73,7 @@ class GitSyncServiceLfsJvmTest {
                 save()
             }
         }
-        config = GitConfig(graphId = "g", repoRoot = work.absolutePath, wikiSubdir = null, authType = GitAuthType.NONE)
+        config = GitConfig(graphId = "g", repoRoot = RepoRoot(work.absolutePath), wikiSubdir = null, authType = GitAuthType.NONE)
     }
 
     @AfterTest

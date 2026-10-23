@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.model.RepoRoot
 import arrow.core.Either
 import dev.stapler.stelekit.git.model.DEFAULT_CLONE_DEPTH
 import dev.stapler.stelekit.git.model.GitAuthType
@@ -34,7 +35,7 @@ import org.eclipse.jgit.api.TransportCommand
  * of the Desktop git implementation itself (only credential/device-flow helpers around it); this
  * closes that gap while proving Desktop's plain-`repoRoot` git path is unaffected by the
  * Android SAF shadow-worktree work landing in parallel — `JvmGitRepository` has no shadow/mapper
- * concept at all, by construction, so `config.repoRoot` is used as a real filesystem path
+ * concept at all, by construction, so `config.repoRoot.value` is used as a real filesystem path
  * throughout.
  */
 class JvmGitRepositoryTest {
@@ -49,7 +50,7 @@ class JvmGitRepositoryTest {
         repository = JvmGitRepository()
         config = GitConfig(
             graphId = "test-graph",
-            repoRoot = tempDir.absolutePath,
+            repoRoot = RepoRoot(tempDir.absolutePath),
             wikiSubdir = null,
             authType = GitAuthType.NONE,
         )
@@ -69,14 +70,14 @@ class JvmGitRepositoryTest {
         // PersonIdent resolution (repo config, falling back to system properties). Set a
         // repo-local identity explicitly so this test is hermetic regardless of the running
         // machine's ~/.gitconfig.
-        Git.open(File(config.repoRoot)).use { git ->
+        Git.open(File(config.repoRoot.value)).use { git ->
             val storedConfig = git.repository.config
             storedConfig.setString("user", null, "name", "Stelekit Test")
             storedConfig.setString("user", null, "email", "stelekit-test@example.com")
             storedConfig.save()
         }
 
-        File(config.repoRoot, "journal.md").writeText("# Test journal entry\n")
+        File(config.repoRoot.value, "journal.md").writeText("# Test journal entry\n")
 
         val stageResult = repository.stageSubdir(config)
         assertTrue(stageResult.isRight(), "stageSubdir failed: $stageResult")
@@ -95,9 +96,9 @@ class JvmGitRepositoryTest {
         assertEquals(1, commits.size, "expected exactly one commit in the log")
         assertEquals("Initial commit", commits.single().shortMessage)
 
-        // config.repoRoot is a plain real filesystem path throughout -- no shadow/mapper
+        // config.repoRoot.value is a plain real filesystem path throughout -- no shadow/mapper
         // indirection exists on Desktop (that's an Android-only concept in this project).
-        assertEquals(tempDir.absolutePath, config.repoRoot)
+        assertEquals(tempDir.absolutePath, config.repoRoot.value)
     }
 
     private fun setIdentity(git: Git) {
@@ -114,8 +115,8 @@ class JvmGitRepositoryTest {
      */
     private fun cloneToNewBareOrigin(prefix: String): File {
         val originDir = createTempDirectory(prefix).toFile()
-        Git.cloneRepository().setURI(config.repoRoot).setBare(true).setDirectory(originDir).call().close()
-        Git.open(File(config.repoRoot)).use { git ->
+        Git.cloneRepository().setURI(config.repoRoot.value).setBare(true).setDirectory(originDir).call().close()
+        Git.open(File(config.repoRoot.value)).use { git ->
             git.remoteAdd().setName("origin")
                 .setUri(org.eclipse.jgit.transport.URIish(originDir.absolutePath))
                 .call()
@@ -137,11 +138,11 @@ class JvmGitRepositoryTest {
     @Test
     fun `merge conflict reports real conflict marker content parsed into hunks`() = runTest {
         assertTrue(repository.init(config.repoRoot).isRight())
-        Git.open(File(config.repoRoot)).use { git -> setIdentity(git) }
-        val baseBranch = Git.open(File(config.repoRoot)).use { it.repository.branch }
+        Git.open(File(config.repoRoot.value)).use { git -> setIdentity(git) }
+        val baseBranch = Git.open(File(config.repoRoot.value)).use { it.repository.branch }
         val mergeConfig = config.copy(remoteBranch = baseBranch)
 
-        File(config.repoRoot, "conflict.md").writeText("- base\n")
+        File(config.repoRoot.value, "conflict.md").writeText("- base\n")
         assertTrue(repository.stageSubdir(mergeConfig).isRight())
         assertTrue(repository.commit(mergeConfig, "base commit").isRight())
 
@@ -156,7 +157,7 @@ class JvmGitRepositoryTest {
             originGit.push().call()
         }
 
-        File(config.repoRoot, "conflict.md").writeText("- local version\n")
+        File(config.repoRoot.value, "conflict.md").writeText("- local version\n")
         assertTrue(repository.stageSubdir(mergeConfig).isRight())
         assertTrue(repository.commit(mergeConfig, "local change").isRight())
 
@@ -192,11 +193,11 @@ class JvmGitRepositoryTest {
     @Test
     fun `resolving a hunk writes the final content to the real working-tree file and clears the conflict`() = runTest {
         assertTrue(repository.init(config.repoRoot).isRight())
-        Git.open(File(config.repoRoot)).use { git -> setIdentity(git) }
-        val baseBranch = Git.open(File(config.repoRoot)).use { it.repository.branch }
+        Git.open(File(config.repoRoot.value)).use { git -> setIdentity(git) }
+        val baseBranch = Git.open(File(config.repoRoot.value)).use { it.repository.branch }
         val mergeConfig = config.copy(remoteBranch = baseBranch)
 
-        File(config.repoRoot, "conflict.md").writeText("- base\n")
+        File(config.repoRoot.value, "conflict.md").writeText("- base\n")
         assertTrue(repository.stageSubdir(mergeConfig).isRight())
         assertTrue(repository.commit(mergeConfig, "base commit").isRight())
 
@@ -211,7 +212,7 @@ class JvmGitRepositoryTest {
             originGit.push().call()
         }
 
-        File(config.repoRoot, "conflict.md").writeText("- local version\n")
+        File(config.repoRoot.value, "conflict.md").writeText("- local version\n")
         assertTrue(repository.stageSubdir(mergeConfig).isRight())
         assertTrue(repository.commit(mergeConfig, "local change").isRight())
 
@@ -221,7 +222,7 @@ class JvmGitRepositoryTest {
         val conflict = (mergeResult as Either.Right).value.conflicts.single()
         val hunk = conflict.hunks.single()
 
-        Git.open(File(config.repoRoot)).use {
+        Git.open(File(config.repoRoot.value)).use {
             assertEquals(RepositoryState.MERGING, it.repository.repositoryState, "expected a genuine in-progress merge conflict")
         }
 
@@ -236,8 +237,8 @@ class JvmGitRepositoryTest {
         val commitResult = repository.commit(mergeConfig, "resolve conflict")
         assertTrue(commitResult.isRight(), "commit failed: $commitResult")
 
-        assertEquals(resolvedContent, File(config.repoRoot, "conflict.md").readText())
-        Git.open(File(config.repoRoot)).use {
+        assertEquals(resolvedContent, File(config.repoRoot.value, "conflict.md").readText())
+        Git.open(File(config.repoRoot.value)).use {
             assertEquals(
                 RepositoryState.SAFE,
                 it.repository.repositoryState,
@@ -259,11 +260,11 @@ class JvmGitRepositoryTest {
     @Test
     fun `merge surfaces a real duplicate block id without flagging the ordinary conflict's own two sides`() = runTest {
         assertTrue(repository.init(config.repoRoot).isRight())
-        Git.open(File(config.repoRoot)).use { git -> setIdentity(git) }
-        val baseBranch = Git.open(File(config.repoRoot)).use { it.repository.branch }
+        Git.open(File(config.repoRoot.value)).use { git -> setIdentity(git) }
+        val baseBranch = Git.open(File(config.repoRoot.value)).use { it.repository.branch }
         val mergeConfig = config.copy(remoteBranch = baseBranch)
 
-        File(config.repoRoot, "dup.md").writeText("- first\n\tid:: dup\n- second\n\tid:: other\n")
+        File(config.repoRoot.value, "dup.md").writeText("- first\n\tid:: dup\n- second\n\tid:: other\n")
         assertTrue(repository.stageSubdir(mergeConfig).isRight())
         assertTrue(repository.commit(mergeConfig, "base commit").isRight())
 
@@ -281,7 +282,7 @@ class JvmGitRepositoryTest {
 
         // local edits "second"'s content too (a real conflict with remote's edit), and separately
         // adds a new block that happens to reuse "dup" — an independent, genuine duplicate.
-        File(config.repoRoot, "dup.md").writeText(
+        File(config.repoRoot.value, "dup.md").writeText(
             "- first\n\tid:: dup\n- second local\n\tid:: other\n- local extra\n\tid:: dup\n",
         )
         assertTrue(repository.stageSubdir(mergeConfig).isRight())
@@ -322,11 +323,11 @@ class JvmGitRepositoryTest {
     @Test
     fun `merge auto-resolves a reparented block and a distant edit separated by an untouched block`() = runTest {
         assertTrue(repository.init(config.repoRoot).isRight())
-        Git.open(File(config.repoRoot)).use { git -> setIdentity(git) }
-        val baseBranch = Git.open(File(config.repoRoot)).use { it.repository.branch }
+        Git.open(File(config.repoRoot.value)).use { git -> setIdentity(git) }
+        val baseBranch = Git.open(File(config.repoRoot.value)).use { it.repository.branch }
         val mergeConfig = config.copy(remoteBranch = baseBranch)
 
-        File(config.repoRoot, "page.md").writeText("- A\n- B\n- C\n- D\n")
+        File(config.repoRoot.value, "page.md").writeText("- A\n- B\n- C\n- D\n")
         assertTrue(repository.stageSubdir(mergeConfig).isRight())
         assertTrue(repository.commit(mergeConfig, "base commit").isRight())
 
@@ -343,7 +344,7 @@ class JvmGitRepositoryTest {
         }
 
         // local edits D only; A/B/C untouched — C separates the two edited regions.
-        File(config.repoRoot, "page.md").writeText("- A\n- B\n- C\n- D edited\n")
+        File(config.repoRoot.value, "page.md").writeText("- A\n- B\n- C\n- D edited\n")
         assertTrue(repository.stageSubdir(mergeConfig).isRight())
         assertTrue(repository.commit(mergeConfig, "edit D").isRight())
 
@@ -356,7 +357,7 @@ class JvmGitRepositoryTest {
             "expected a reparent and a distant edit, separated by an untouched block, to auto-resolve: $merge",
         )
 
-        val merged = File(config.repoRoot, "page.md").readText()
+        val merged = File(config.repoRoot.value, "page.md").readText()
         assertTrue(merged.contains("\t- B"), "expected B reparented under A in merged content, got: $merged")
         assertTrue(merged.contains("- D edited"), "expected local's edit to D preserved, got: $merged")
     }
@@ -375,16 +376,16 @@ class JvmGitRepositoryTest {
     @Test
     fun `abortMerge resets a conflicted merge back to pre-merge HEAD content and clears merge state`() = runTest {
         assertTrue(repository.init(config.repoRoot).isRight())
-        Git.open(File(config.repoRoot)).use { git -> setIdentity(git) }
+        Git.open(File(config.repoRoot.value)).use { git -> setIdentity(git) }
         // GitConfig.remoteBranch defaults to the literal "main", but git's actual init branch
         // name depends on the running machine/CI runner's init.defaultBranch — derive it for real
         // instead of assuming, exactly like the merge-conflict tests above (this test previously
         // used the bare `config` here, which only passed when the ambient git config happened to
         // default to "main").
-        val baseBranch = Git.open(File(config.repoRoot)).use { it.repository.branch }
+        val baseBranch = Git.open(File(config.repoRoot.value)).use { it.repository.branch }
         val mergeConfig = config.copy(remoteBranch = baseBranch)
 
-        File(config.repoRoot, "shared.md").writeText("base\n")
+        File(config.repoRoot.value, "shared.md").writeText("base\n")
         assertTrue(repository.stageSubdir(mergeConfig).isRight())
         assertTrue(repository.commit(mergeConfig, "base commit").isRight())
 
@@ -399,7 +400,7 @@ class JvmGitRepositoryTest {
             originGit.push().call()
         }
 
-        File(config.repoRoot, "shared.md").writeText("local change\n")
+        File(config.repoRoot.value, "shared.md").writeText("local change\n")
         assertTrue(repository.stageSubdir(mergeConfig).isRight())
         assertTrue(repository.commit(mergeConfig, "local change").isRight())
 
@@ -408,7 +409,7 @@ class JvmGitRepositoryTest {
         assertTrue(mergeResult.isRight(), "merge failed: $mergeResult")
         assertTrue((mergeResult as Either.Right).value.hasConflicts, "expected a conflict")
 
-        Git.open(File(config.repoRoot)).use { git ->
+        Git.open(File(config.repoRoot.value)).use { git ->
             assertEquals(
                 org.eclipse.jgit.lib.RepositoryState.MERGING,
                 git.repository.repositoryState,
@@ -419,7 +420,7 @@ class JvmGitRepositoryTest {
         val abortResult = repository.abortMerge(mergeConfig)
         assertTrue(abortResult.isRight(), "abortMerge failed: $abortResult")
 
-        Git.open(File(config.repoRoot)).use { git ->
+        Git.open(File(config.repoRoot.value)).use { git ->
             assertEquals(
                 org.eclipse.jgit.lib.RepositoryState.SAFE,
                 git.repository.repositoryState,
@@ -428,7 +429,7 @@ class JvmGitRepositoryTest {
         }
         assertEquals(
             "local change\n",
-            File(config.repoRoot, "shared.md").readText(),
+            File(config.repoRoot.value, "shared.md").readText(),
             "expected working tree reset to pre-merge (local) HEAD content",
         )
 
@@ -443,7 +444,7 @@ class JvmGitRepositoryTest {
     /**
      * Regression test for the "Test connection" button in the clone-a-new-repo setup flow always
      * failing with "repository not found: <local repoRoot>" (GitSetupScreen previously called
-     * [JvmGitRepository.fetch], which `Git.open()`s `config.repoRoot` — but that path is only
+     * [JvmGitRepository.fetch], which `Git.open()`s `config.repoRoot.value` — but that path is only
      * created by [JvmGitRepository.clone] on Save, so it never exists yet at test time).
      * [testRemote] must succeed against a real, reachable remote without any local repo present.
      */
@@ -549,7 +550,7 @@ class JvmGitRepositoryTest {
     ) = launch {
         repository.clone(
             url = "https://192.0.2.1/repo.git",
-            localPath = destination.absolutePath,
+            localPath = RepoRoot(destination.absolutePath),
             auth = GitAuth.None,
             onProgress = {},
             onStateChange = { state -> if (isAttemptFailureState(state)) firstAttemptOutcome.complete(state) },
@@ -606,7 +607,7 @@ class JvmGitRepositoryTest {
     @Test
     fun `doFetch() and doPush() apply the same GIT_TRANSPORT_TIMEOUT_SECONDS constant as clone(), not a duplicated per-platform literal`() = runTest {
         assertTrue(repository.init(config.repoRoot).isRight())
-        Git.open(File(config.repoRoot)).use { git ->
+        Git.open(File(config.repoRoot.value)).use { git ->
             val fetchCmd = git.fetch().setTimeout(GIT_TRANSPORT_TIMEOUT_SECONDS)
             assertEquals(GIT_TRANSPORT_TIMEOUT_SECONDS, transportTimeoutSecondsOf(fetchCmd))
 
@@ -649,7 +650,7 @@ class JvmGitRepositoryTest {
 
         val result = repository.clone(
             url = bareOrigin.absolutePath,
-            localPath = destination.absolutePath,
+            localPath = RepoRoot(destination.absolutePath),
             auth = GitAuth.None,
             onProgress = {},
             onStateChange = {},
@@ -694,7 +695,7 @@ class JvmGitRepositoryTest {
 
         val result = repository.clone(
             url = bareOrigin.absolutePath,
-            localPath = destination.absolutePath,
+            localPath = RepoRoot(destination.absolutePath),
             auth = GitAuth.None,
             onProgress = {},
             onStateChange = {},
@@ -746,7 +747,7 @@ class JvmGitRepositoryTest {
 
         val firstAttempt = repository.clone(
             url = bareOrigin.absolutePath,
-            localPath = destination.absolutePath,
+            localPath = RepoRoot(destination.absolutePath),
             auth = GitAuth.None,
             onProgress = {},
             onStateChange = {},
@@ -757,7 +758,7 @@ class JvmGitRepositoryTest {
 
         val retriedAttempt = repository.clone(
             url = bareOrigin.absolutePath,
-            localPath = destination.absolutePath,
+            localPath = RepoRoot(destination.absolutePath),
             auth = GitAuth.None,
             onProgress = {},
             onStateChange = {},
@@ -774,9 +775,9 @@ class JvmGitRepositoryTest {
     fun `log against a shallow-cloned repo returns up to maxCount commits without throwing`() = runTest {
         val bareOrigin = createBareOriginWithCommits("stelekit_shallow_log_origin_", DEFAULT_CLONE_DEPTH + 5)
         val destination = File(tempDir, "shallow-log-dest")
-        assertTrue(repository.clone(bareOrigin.absolutePath, destination.absolutePath, GitAuth.None, onProgress = {}, onStateChange = {}).isRight())
+        assertTrue(repository.clone(bareOrigin.absolutePath, RepoRoot(destination.absolutePath), GitAuth.None, onProgress = {}, onStateChange = {}).isRight())
 
-        val shallowConfig = config.copy(graphId = "shallow-log-graph", repoRoot = destination.absolutePath)
+        val shallowConfig = config.copy(graphId = "shallow-log-graph", repoRoot = RepoRoot(destination.absolutePath))
         val logResult = repository.log(shallowConfig, maxCount = 10)
         assertTrue(logResult.isRight(), "log() must not throw against a shallow repo: $logResult")
         val commits = (logResult as Either.Right).value
@@ -793,7 +794,7 @@ class JvmGitRepositoryTest {
     fun `countRemoteCommitsBestEffort against a shallow-cloned repo returns a bounded non-negative count without throwing`() = runTest {
         val bareOrigin = createBareOriginWithCommits("stelekit_shallow_count_origin_", DEFAULT_CLONE_DEPTH + 5)
         val destination = File(tempDir, "shallow-count-dest")
-        assertTrue(repository.clone(bareOrigin.absolutePath, destination.absolutePath, GitAuth.None, onProgress = {}, onStateChange = {}).isRight())
+        assertTrue(repository.clone(bareOrigin.absolutePath, RepoRoot(destination.absolutePath), GitAuth.None, onProgress = {}, onStateChange = {}).isRight())
 
         // Advance the remote by a few more commits within the shallow window, then fetch.
         val seedWorkDir = createTempDirectory("stelekit_shallow_count_seed2_").toFile()
@@ -808,7 +809,7 @@ class JvmGitRepositoryTest {
         }
         seedWorkDir.deleteRecursively()
 
-        val shallowConfig = config.copy(graphId = "shallow-count-graph", repoRoot = destination.absolutePath)
+        val shallowConfig = config.copy(graphId = "shallow-count-graph", repoRoot = RepoRoot(destination.absolutePath))
         val fetchResult = repository.fetch(shallowConfig)
         assertTrue(fetchResult.isRight(), "fetch failed against shallow repo: $fetchResult")
         val fetch = (fetchResult as Either.Right).value
@@ -831,7 +832,7 @@ class JvmGitRepositoryTest {
 
         val result = repository.clone(
             url = bareOrigin.absolutePath,
-            localPath = destination.absolutePath,
+            localPath = RepoRoot(destination.absolutePath),
             auth = GitAuth.None,
             onProgress = { progressCalls += it },
             onStateChange = {},

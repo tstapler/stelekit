@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.git.testsupport
 
+import dev.stapler.stelekit.model.RepoRoot
 import arrow.core.Either
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
@@ -71,7 +72,7 @@ class StubGitRepositoryFailureSequenceTest {
             onFailed = { e -> DomainError.GitError.CloneFailed(e.message ?: "Clone failed") },
             onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
         ) {
-            repo.clone("https://example.invalid/repo.git", "/tmp/repo", GitAuth.None, onProgress = {}, onStateChange = {})
+            repo.clone("https://example.invalid/repo.git", RepoRoot("/tmp/repo"), GitAuth.None, onProgress = {}, onStateChange = {})
         }
 
         assertIs<Either.Right<Unit>>(result)
@@ -100,7 +101,7 @@ class StubGitRepositoryFailureSequenceTest {
             onFailed = { e -> DomainError.GitError.CloneFailed(e.message ?: "Clone failed") },
             onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
         ) {
-            repo.clone("https://example.invalid/repo.git", "/tmp/repo", GitAuth.None, onProgress = {}, onStateChange = {})
+            repo.clone("https://example.invalid/repo.git", RepoRoot("/tmp/repo"), GitAuth.None, onProgress = {}, onStateChange = {})
         }
 
         assertIs<Either.Left<DomainError.GitError>>(result)

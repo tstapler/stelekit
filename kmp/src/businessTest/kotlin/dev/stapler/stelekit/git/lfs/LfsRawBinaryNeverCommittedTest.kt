@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.git.lfs
 
+import dev.stapler.stelekit.model.RepoRoot
 import arrow.core.Either
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.JvmGitRepository
@@ -24,7 +25,7 @@ class LfsRawBinaryNeverCommittedTest {
     private val rules = "assets/** filter=lfs\n"
 
     private fun config(f: LfsRepoFixture) =
-        GitConfig(graphId = "g", repoRoot = f.dir.absolutePath, wikiSubdir = null, authType = GitAuthType.NONE)
+        GitConfig(graphId = "g", repoRoot = RepoRoot(f.dir.absolutePath), wikiSubdir = null, authType = GitAuthType.NONE)
 
     /** Asserts the invariant from the outside: walk every blob in HEAD. */
     private fun assertNoRawBlobAtTrackedPath(f: LfsRepoFixture) {

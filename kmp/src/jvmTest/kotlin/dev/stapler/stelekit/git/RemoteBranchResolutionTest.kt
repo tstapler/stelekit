@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.model.RepoRoot
 import arrow.core.Either
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.model.GitAuthType
@@ -37,12 +38,12 @@ class RemoteBranchResolutionTest {
     private suspend fun cloneOf(origin: File, remoteBranch: String): GitConfig {
         val dest = tracked(createTempDirectory("stelekit_clone_").toFile())
         val dir = File(dest, "repo")
-        val result = repository.clone(origin.absolutePath, dir.absolutePath, GitAuth.None, onProgress = {})
+        val result = repository.clone(origin.absolutePath, RepoRoot(dir.absolutePath), GitAuth.None, onProgress = {})
         assertTrue(result.isRight(), "clone failed: $result")
         Git.open(dir).use { BareOriginFixtures.setIdentity(it) }
         return GitConfig(
             graphId = "g",
-            repoRoot = dir.absolutePath,
+            repoRoot = RepoRoot(dir.absolutePath),
             wikiSubdir = null,
             remoteBranch = remoteBranch,
             authType = GitAuthType.NONE,
@@ -92,14 +93,14 @@ class RemoteBranchResolutionTest {
         val merge = (repository.merge(config) as Either.Right).value
         assertFalse(merge.hasConflicts)
         assertEquals(1, merge.mergedCommitCount)
-        assertTrue(File(config.repoRoot, "logseq/journals/2026_10_10.md").exists())
+        assertTrue(File(config.repoRoot.value, "logseq/journals/2026_10_10.md").exists())
     }
 
     @Test
     fun `fetch does not report changes when local is only ahead`() = runTest {
         val config = cloneOf(origin("master"), remoteBranch = "master")
-        File(config.repoRoot, "local.md").writeText("local\n")
-        Git.open(File(config.repoRoot)).use { git ->
+        File(config.repoRoot.value, "local.md").writeText("local\n")
+        Git.open(File(config.repoRoot.value)).use { git ->
             git.add().addFilepattern(".").call()
             git.commit().setMessage("local only").call()
         }
@@ -130,7 +131,7 @@ class RemoteBranchResolutionTest {
         Git.init().setDirectory(dir).setInitialBranch("main").call().use { git ->
             git.remoteAdd().setName("origin").setUri(org.eclipse.jgit.transport.URIish(empty.absolutePath)).call()
         }
-        val config = GitConfig("g", dir.absolutePath, null, remoteBranch = "main", authType = GitAuthType.NONE)
+        val config = GitConfig("g", RepoRoot(dir.absolutePath), null, remoteBranch = "main", authType = GitAuthType.NONE)
 
         val result = repository.fetch(config)
 
@@ -150,10 +151,10 @@ class RemoteBranchResolutionTest {
     fun `push uses an explicit refspec and creates no stray branch on the remote`() = runTest {
         val origin = origin("master")
         val config = cloneOf(origin, remoteBranch = "master")
-        Git.open(File(config.repoRoot)).use { git ->
+        Git.open(File(config.repoRoot.value)).use { git ->
             // A leftover local `main` (e.g. from an old `git init` default) must not be pushed.
             git.branchCreate().setName("main").call()
-            File(config.repoRoot, "local.md").writeText("local\n")
+            File(config.repoRoot.value, "local.md").writeText("local\n")
             git.add().addFilepattern(".").call()
             git.commit().setMessage("local commit").call()
         }
@@ -162,7 +163,7 @@ class RemoteBranchResolutionTest {
 
         assertTrue(result.isRight(), "push failed: $result")
         assertEquals(listOf("master"), BareOriginFixtures.remoteBranches(origin))
-        val localHead = Git.open(File(config.repoRoot)).use { it.repository.resolve("HEAD").name }
+        val localHead = Git.open(File(config.repoRoot.value)).use { it.repository.resolve("HEAD").name }
         assertEquals(localHead, BareOriginFixtures.remoteHead(origin, "master"))
     }
 
@@ -170,12 +171,12 @@ class RemoteBranchResolutionTest {
     fun `push sends the current local branch to the configured remote branch name`() = runTest {
         val origin = origin("master")
         val config = cloneOf(origin, remoteBranch = "master")
-        Git.open(File(config.repoRoot)).use { git ->
+        Git.open(File(config.repoRoot.value)).use { git ->
             // Local branch name differs from the remote one and has no upstream config.
             git.branchRename().setOldName("master").setNewName("work").call()
             git.repository.config.unsetSection("branch", "work")
             git.repository.config.save()
-            File(config.repoRoot, "local.md").writeText("local\n")
+            File(config.repoRoot.value, "local.md").writeText("local\n")
             git.add().addFilepattern(".").call()
             git.commit().setMessage("local commit").call()
         }
@@ -184,7 +185,7 @@ class RemoteBranchResolutionTest {
 
         assertTrue(result.isRight(), "push failed: $result")
         assertEquals(listOf("master"), BareOriginFixtures.remoteBranches(origin))
-        val localHead = Git.open(File(config.repoRoot)).use { it.repository.resolve("HEAD").name }
+        val localHead = Git.open(File(config.repoRoot.value)).use { it.repository.resolve("HEAD").name }
         assertEquals(localHead, BareOriginFixtures.remoteHead(origin, "master"))
     }
 }

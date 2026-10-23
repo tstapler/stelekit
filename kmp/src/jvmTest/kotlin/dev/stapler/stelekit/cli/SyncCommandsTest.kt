@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.cli
 
+import dev.stapler.stelekit.model.RepoRoot
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
@@ -42,7 +43,7 @@ class SyncCommandsTest {
 
     private val notesDir = "/graphs/notes/logseq"
     private val notesPath = EffectiveNotesPath(notesDir)
-    private val config = GitConfig(graphId = "g", repoRoot = "/graphs/notes", wikiSubdir = "logseq", authType = GitAuthType.NONE)
+    private val config = GitConfig(graphId = "g", repoRoot = RepoRoot("/graphs/notes"), wikiSubdir = "logseq", authType = GitAuthType.NONE)
     private val json = SyncOutput(jsonMode = true)
 
     private class MapSettings : Settings {

@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.model.RepoRoot
 import android.content.Context
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
@@ -224,7 +225,7 @@ internal suspend fun runSlowPathFetch(
 private fun dev.stapler.stelekit.db.Git_config.toGitConfig() =
     dev.stapler.stelekit.git.model.GitConfig(
         graphId = graph_id,
-        repoRoot = repo_root,
+        repoRoot = RepoRoot(repo_root),
         wikiSubdir = wiki_subdir.ifEmpty { null },
         remoteName = remote_name,
         remoteBranch = remote_branch,

@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.model.RepoRoot
 import arrow.core.Either
 import dev.stapler.stelekit.error.DomainError
 import kotlinx.coroutines.CancellationException
@@ -46,7 +47,7 @@ class JvmGitCloneWorkerLauncher(private val gitRepository: GitRepository) : GitC
         onStateChange: (GitTransportRetryState) -> Unit,
         graphDisplayName: String?,
     ): Either<DomainError.GitError, Unit> {
-        val deferred = scope.async { gitRepository.clone(url, localPath, auth, onProgress, onStateChange) }
+        val deferred = scope.async { gitRepository.clone(url, RepoRoot(localPath), auth, onProgress, onStateChange) }
         currentClone = deferred
         try {
             return deferred.await()

@@ -4,8 +4,10 @@
 package dev.stapler.stelekit.model
 
 import kotlin.jvm.JvmInline
+import kotlinx.serialization.Serializable
 
 /** Root directory of a repository or graph on disk or SAF storage. */
+@Serializable
 @JvmInline
 value class RepoRoot(val value: String)
 
