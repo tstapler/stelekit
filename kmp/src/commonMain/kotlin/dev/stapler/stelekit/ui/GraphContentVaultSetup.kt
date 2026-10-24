@@ -37,6 +37,12 @@ internal class GraphContentVaultSetup(
     val activeNotesPath: EffectiveNotesPath? get() = activeGraphInfo?.effectiveNotesPath
 }
 
+internal fun migrateAndResolveRepoRoot(info: GraphInfo?, fileSystem: FileSystem): RepoRoot? =
+    info?.takeIf { !it.isDemo }?.let {
+        VaultRootMigration(fileSystem).migrate(it.repoRootObj, it.effectiveNotesPath)
+        it.repoRootObj
+    }
+
 /**
  * Resolves the active graph's info/path, picks the effective [FileSystem] (swapped for
  * [DemoFileSystem] when the active graph is the demo graph), and sets up paranoid-mode vault
@@ -56,12 +62,7 @@ internal fun rememberGraphContentVaultSetup(
     val activeGraphInfo = remember(graphRegistry) { graphManager.getActiveGraphInfo() }
     val activeGraphPath = activeGraphInfo?.effectiveNotesPath?.value ?: ""
     // Vault files live at the repo root (ADR-020); move any left in the notes folder before they are read.
-    val activeRepoRoot: RepoRoot? = remember(activeGraphInfo) {
-        activeGraphInfo?.takeIf { !it.isDemo }?.let { info ->
-            VaultRootMigration(fileSystem).migrate(info.repoRootObj, info.effectiveNotesPath)
-            info.repoRootObj
-        }
-    }
+    val activeRepoRoot: RepoRoot? = remember(activeGraphInfo) { migrateAndResolveRepoRoot(activeGraphInfo, fileSystem) }
 
     val effectiveFileSystem: FileSystem = remember(activeGraphInfo?.isDemo, fileSystem) {
         graphContentFileSystem(activeGraphInfo?.isDemo == true, fileSystem)

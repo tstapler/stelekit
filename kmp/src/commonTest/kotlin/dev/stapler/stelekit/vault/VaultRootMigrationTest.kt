@@ -104,4 +104,34 @@ class VaultRootMigrationTest {
         assertTrue(fs.fileExists(vaultOld))
         assertFalse(fs.fileExists(vaultNew))
     }
+
+    @Test
+    fun `a throwing filesystem leaves the source intact and does not propagate`() {
+        val fs = object : FakeFileSystem() {
+            override fun writeFileBytes(path: String, data: ByteArray): Boolean =
+                if (path == vaultNew) error("disk full") else super.writeFileBytes(path, data)
+        }
+        fs.writeFileBytes(vaultOld, bytes(1))
+
+        assertEquals(0, VaultRootMigration(fs).migrate(root, notes))
+        assertTrue(fs.fileExists(vaultOld))
+    }
+
+    @Test
+    fun `a copy that reads back different bytes is rejected`() {
+        val fs = object : FakeFileSystem() {
+            override fun readFileBytes(path: String): ByteArray? =
+                super.readFileBytes(path)?.let { if (path == vaultNew) bytes(0) else it }
+        }
+        fs.writeFileBytes(vaultOld, bytes(1))
+
+        assertEquals(0, VaultRootMigration(fs).migrate(root, notes))
+        assertTrue(fs.fileExists(vaultOld))
+    }
+
+    @Test
+    fun `RepoRoot serializes as a bare string`() {
+        assertEquals("\"/repo\"", Json.encodeToString(RepoRoot.serializer(), root))
+        assertEquals(root, Json.decodeFromString(RepoRoot.serializer(), "\"/repo\""))
+    }
 }

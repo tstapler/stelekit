@@ -108,7 +108,7 @@ internal fun rememberGraphContentVaultActions(
     )
 }
 
-private fun buildAddKeyslotHandler(
+internal fun buildAddKeyslotHandler(
     vaultManager: VaultManager?,
     repoRoot: RepoRoot?,
 ): (suspend (CharArray) -> Either<VaultError, Unit>)? {
@@ -120,7 +120,7 @@ private fun buildAddKeyslotHandler(
     }
 }
 
-private fun buildRemoveKeyslotHandler(
+internal fun buildRemoveKeyslotHandler(
     vaultManager: VaultManager?,
     repoRoot: RepoRoot?,
 ): (suspend (Int) -> Either<VaultError, Unit>)? {
@@ -155,7 +155,7 @@ private fun buildLockVaultHandler(
     }
 }
 
-private fun buildListActiveSlotsHandler(
+internal fun buildListActiveSlotsHandler(
     vaultManager: VaultManager?,
     repoRoot: RepoRoot?,
 ): (suspend () -> List<Int>)? {
