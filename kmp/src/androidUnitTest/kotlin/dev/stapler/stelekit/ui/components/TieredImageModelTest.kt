@@ -6,6 +6,7 @@ package dev.stapler.stelekit.ui.components
 import android.graphics.Bitmap
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.State
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.junit4.createComposeRule
 import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.platform.FileSystem
@@ -16,6 +17,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.ByteArrayOutputStream
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -24,6 +27,9 @@ import kotlin.test.assertTrue
 /** In-memory stand-in; the Bazel android unit-test target has no access to commonTest fakes. */
 private class MemoryFileSystem : FileSystem {
     val files = mutableMapOf<String, ByteArray>()
+    /** When set, existence checks for [blockedPath] wait on it, holding that lookup pending. */
+    @Volatile var blockedPath: String? = null
+    @Volatile var gate: CountDownLatch? = null
     private val dirs = mutableSetOf<String>()
 
     override fun getDefaultGraphPath() = "/graph"
@@ -32,7 +38,10 @@ private class MemoryFileSystem : FileSystem {
     override fun writeFile(path: String, content: String): Boolean = writeFileBytes(path, content.encodeToByteArray())
     override fun listFiles(path: String) = emptyList<String>()
     override fun listDirectories(path: String) = emptyList<String>()
-    override fun fileExists(path: String) = path in files
+    override fun fileExists(path: String): Boolean {
+        if (path == blockedPath) gate?.await(10, TimeUnit.SECONDS)
+        return path in files
+    }
     override fun directoryExists(path: String) = path in dirs
     override fun createDirectory(path: String): Boolean = dirs.add(path).let { true }
     override fun deleteFile(path: String) = files.remove(path) != null
@@ -109,5 +118,27 @@ class TieredImageModelTest {
         rule.waitUntil(timeoutMillis = 10_000) { state.value.model != null }
         assertTrue(assertNotNull(state.value.model).endsWith(".display.jpg"), state.value.toString())
         assertTrue(assertNotNull(state.value.placeholder).endsWith(".thumb.jpg"), state.value.toString())
+    }
+
+    @Test
+    fun `changing the reference drops the previous image while the new one is looked up`() {
+        fs.files["/graph/assets/first.png"] = png(600, 400)
+        fs.files["/graph/assets/second.png"] = png(600, 400)
+        val reference = mutableStateOf("../assets/first.png")
+        lateinit var state: State<TieredImageModel>
+        rule.setContent {
+            CompositionLocalProvider(LocalNotesPath provides graph, LocalFileSystem provides fs) {
+                state = rememberTieredImageModel(reference.value, ImageTier.THUMBNAIL, graph)
+            }
+        }
+        rule.waitUntil(timeoutMillis = 10_000) { state.value.model != null }
+
+        val gate = CountDownLatch(1)
+        fs.gate = gate
+        fs.blockedPath = "/graph/assets/second.png"
+        reference.value = "../assets/second.png"
+        rule.waitForIdle()
+        assertNull(state.value.model, "first image must not linger on the second slot: ${state.value}")
+        gate.countDown()
     }
 }

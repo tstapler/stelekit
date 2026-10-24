@@ -26,6 +26,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,7 +36,9 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import dev.stapler.stelekit.asset.AssetEntry
 import dev.stapler.stelekit.asset.AssetMediaType
+import dev.stapler.stelekit.platform.image.ImageTier
 import dev.stapler.stelekit.ui.components.rememberSteleKitImageLoader
+import dev.stapler.stelekit.ui.components.rememberTieredImageModel
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -76,8 +79,9 @@ private fun AssetGridItem(
             contentAlignment = Alignment.Center,
         ) {
             if (asset.mediaType == AssetMediaType.IMAGE) {
+                val tiered by rememberTieredImageModel(asset.imageReference(), ImageTier.THUMBNAIL)
                 AsyncImage(
-                    model = asset.relativePath,
+                    model = tiered.model?.let(::coilModelFor),
                     contentDescription = asset.filePath.substringAfterLast('/'),
                     imageLoader = imageLoader,
                     contentScale = ContentScale.Crop,
@@ -136,8 +140,9 @@ private fun AssetListItem(
             leadingContent = {
                 val imageLoader = rememberSteleKitImageLoader()
                 if (asset.mediaType == AssetMediaType.IMAGE) {
+                    val tiered by rememberTieredImageModel(asset.imageReference(), ImageTier.THUMBNAIL)
                     AsyncImage(
-                        model = asset.relativePath,
+                        model = tiered.model?.let(::coilModelFor),
                         contentDescription = null,
                         imageLoader = imageLoader,
                         contentScale = ContentScale.Crop,
