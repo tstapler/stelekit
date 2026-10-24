@@ -39,6 +39,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -155,7 +156,7 @@ private fun AssetDetailContent(
     LazyColumn(modifier = modifier) {
         item {
             if (asset.mediaType == AssetMediaType.IMAGE) {
-                ImageViewer(asset = asset)
+                key(asset.filePath) { ImageViewer(asset = asset) }
             } else {
                 NonImageTypeIcon(asset = asset)
             }

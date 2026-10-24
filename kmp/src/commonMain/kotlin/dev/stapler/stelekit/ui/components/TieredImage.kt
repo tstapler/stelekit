@@ -35,10 +35,11 @@ fun rememberTieredImageModel(
 ): State<TieredImageModel> {
     val fileSystem = LocalFileSystem.current
     val original = remember(reference, graph) { ImageTierResolver.localOriginalPath(reference, graph) }
-    return produceState(
-        initialValue = TieredImageModel(model = if (original == null || tier == ImageTier.ORIGINAL) reference else null, placeholder = null),
-        reference, tier, graph, fileSystem, recordedThumbnail,
-    ) {
+    val initial = TieredImageModel(model = if (original == null || tier == ImageTier.ORIGINAL) reference else null, placeholder = null)
+    return produceState(initialValue = initial, reference, tier, graph, fileSystem, recordedThumbnail) {
+        // produceState keeps the previous key's value until the producer assigns; a reused list
+        // slot would otherwise show the previous image while this one is looked up.
+        value = initial
         if (original == null || tier == ImageTier.ORIGINAL) {
             value = TieredImageModel(reference, null)
             return@produceState
