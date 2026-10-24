@@ -4,6 +4,7 @@
 
 package dev.stapler.stelekit.ui
 
+import dev.stapler.stelekit.model.RepoRoot
 import dev.stapler.stelekit.model.EffectiveNotesPath
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -63,6 +64,7 @@ internal fun rememberGraphContentVaultActions(
     var vaultManager by vaultSetup.vaultManagerState
     val cryptoEngine = deps.platformIntegrations.cryptoEngine
     val activeGraphPath = vaultSetup.activeGraphPath
+    val activeRepoRoot = vaultSetup.activeRepoRoot
 
     BootstrapGraphLoad(vaultSetup, viewModel)
     ObserveVaultLockCleanup(ctx)
@@ -88,7 +90,7 @@ internal fun rememberGraphContentVaultActions(
     }
 
     val onCreateVault: (suspend (CharArray) -> Either<VaultError, Unit>)? =
-        if (cryptoEngine != null && activeGraphPath.isNotEmpty()) {
+        if (cryptoEngine != null && activeRepoRoot != null) {
             { passphrase -> createVault(ctx, cryptoEngine, passphrase) { newManager -> vaultManager = newManager; isParanoidMode = true } }
         } else null
 
@@ -99,31 +101,31 @@ internal fun rememberGraphContentVaultActions(
     return GraphContentVaultActions(
         onVaultUnlock = onVaultUnlock,
         onCreateVault = onCreateVault,
-        onAddKeyslot = buildAddKeyslotHandler(activeVaultManager, activeGraphPath),
-        onRemoveKeyslot = buildRemoveKeyslotHandler(activeVaultManager, activeGraphPath),
+        onAddKeyslot = buildAddKeyslotHandler(activeVaultManager, activeRepoRoot),
+        onRemoveKeyslot = buildRemoveKeyslotHandler(activeVaultManager, activeRepoRoot),
         onLockVault = buildLockVaultHandler(activeVaultManager, ctx, env.scope),
-        onListActiveSlots = buildListActiveSlotsHandler(activeVaultManager, activeGraphPath),
+        onListActiveSlots = buildListActiveSlotsHandler(activeVaultManager, activeRepoRoot),
     )
 }
 
 private fun buildAddKeyslotHandler(
     vaultManager: VaultManager?,
-    activeGraphPath: String,
+    repoRoot: RepoRoot?,
 ): (suspend (CharArray) -> Either<VaultError, Unit>)? {
-    if (vaultManager == null) return null
+    if (vaultManager == null || repoRoot == null) return null
     return { passphrase ->
         val dek = vaultManager.currentDek()
         if (dek == null) Either.Left(VaultError.InvalidCredential("Vault is locked"))
-        else vaultManager.addKeyslot(activeGraphPath, dek, passphrase)
+        else vaultManager.addKeyslot(repoRoot, dek, passphrase)
     }
 }
 
 private fun buildRemoveKeyslotHandler(
     vaultManager: VaultManager?,
-    activeGraphPath: String,
+    repoRoot: RepoRoot?,
 ): (suspend (Int) -> Either<VaultError, Unit>)? {
-    if (vaultManager == null) return null
-    return { slotIndex -> vaultManager.removeKeyslot(activeGraphPath, slotIndex) }
+    if (vaultManager == null || repoRoot == null) return null
+    return { slotIndex -> vaultManager.removeKeyslot(repoRoot, slotIndex) }
 }
 
 private fun buildLockVaultHandler(
@@ -155,10 +157,10 @@ private fun buildLockVaultHandler(
 
 private fun buildListActiveSlotsHandler(
     vaultManager: VaultManager?,
-    activeGraphPath: String,
+    repoRoot: RepoRoot?,
 ): (suspend () -> List<Int>)? {
-    if (vaultManager == null) return null
-    return { vaultManager.listActiveKeyslotIndices(activeGraphPath) }
+    if (vaultManager == null || repoRoot == null) return null
+    return { vaultManager.listActiveKeyslotIndices(repoRoot) }
 }
 
 /**
@@ -220,7 +222,7 @@ private suspend fun unlockVault(
     vaultManager: VaultManager,
     cryptoEngine: dev.stapler.stelekit.vault.CryptoEngine,
     passphrase: CharArray,
-): VaultState = when (val result = vaultManager.unlock(ctx.vaultSetup.activeGraphPath, passphrase)) {
+): VaultState = when (val result = vaultManager.unlock(requireNotNull(ctx.vaultSetup.activeRepoRoot) { "unlock needs an active graph" }, passphrase)) {
     is Either.Right -> {
         val unlockResult = result.value
         val layer = CryptoLayer(cryptoEngine, unlockResult.dek)
@@ -267,7 +269,7 @@ private suspend fun createVault(
         fileReadBytes = { path -> ctx.deps.fileSystem.readFileBytes(path) },
         fileWriteBytes = { path, data -> ctx.deps.fileSystem.writeFileBytes(path, data) },
     )
-    return when (val result = tempManager.createVault(ctx.vaultSetup.activeGraphPath, passphrase)) {
+    return when (val result = tempManager.createVault(requireNotNull(ctx.vaultSetup.activeRepoRoot) { "createVault needs an active graph" }, passphrase)) {
         is Either.Right -> {
             applyCreatedVault(ctx, tempManager, cryptoEngine, result.value, onVaultCreated)
             Either.Right(Unit)

@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.model.RepoRoot
 import arrow.core.Either
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.lfs.LfsViolation
@@ -18,7 +19,7 @@ import dev.stapler.stelekit.platform.security.CredentialAccess
 @Suppress("MissingDirectRepositoryWrite") // git network/filesystem ops — not DB writes, not actor-routed
 interface GitRepository {
     suspend fun isGitRepo(path: String): Boolean
-    suspend fun init(repoRoot: String): Either<DomainError.GitError, Unit>
+    suspend fun init(repoRoot: RepoRoot): Either<DomainError.GitError, Unit>
 
     /**
      * [onProgress] widened from `(String) -> Unit` to `(CloneProgress) -> Unit` (git-sync-resilience
@@ -34,7 +35,7 @@ interface GitRepository {
      */
     suspend fun clone(
         url: String,
-        localPath: String,
+        localPath: RepoRoot,
         auth: GitAuth,
         onProgress: (CloneProgress) -> Unit,
         onStateChange: (GitTransportRetryState) -> Unit = {},

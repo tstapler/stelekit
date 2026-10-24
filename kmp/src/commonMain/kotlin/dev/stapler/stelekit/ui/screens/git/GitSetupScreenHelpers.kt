@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.ui.screens.git
 
+import dev.stapler.stelekit.model.RepoRoot
 import dev.stapler.stelekit.git.GitAuth
 import dev.stapler.stelekit.git.GitCredentialConnectionStore
 import dev.stapler.stelekit.git.GitHostAdapter
@@ -165,7 +166,7 @@ internal fun buildConfig(
     cloneDepthState: CloneDepthState = CloneDepthState.None,
 ): GitConfig = GitConfig(
     graphId = graphId,
-    repoRoot = repoRoot,
+    repoRoot = RepoRoot(repoRoot),
     wikiSubdir = wikiSubdir,
     authType = authType,
     sshKeyPath = sshKeyPath.takeIf { it.isNotBlank() },

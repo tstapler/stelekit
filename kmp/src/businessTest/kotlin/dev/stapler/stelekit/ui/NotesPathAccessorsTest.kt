@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 package dev.stapler.stelekit.ui
 
+import dev.stapler.stelekit.model.RepoRoot
 import androidx.compose.runtime.mutableStateOf
 import dev.stapler.stelekit.db.FakeRelocationFileSystem
 import dev.stapler.stelekit.model.EffectiveNotesPath
@@ -17,6 +18,7 @@ class NotesPathAccessorsTest {
     private fun vaultSetup(info: GraphInfo?) = GraphContentVaultSetup(
         activeGraphInfo = info,
         activeGraphPath = "",
+        activeRepoRoot = null,
         effectiveFileSystem = FakeRelocationFileSystem(),
         isParanoidModeState = mutableStateOf(false),
         vaultStateState = mutableStateOf<VaultState>(VaultState.Locked),

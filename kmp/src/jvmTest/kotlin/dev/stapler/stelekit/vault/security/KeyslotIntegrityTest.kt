@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.vault.security
 
+import dev.stapler.stelekit.model.RepoRoot
 import arrow.core.Either
 import dev.stapler.stelekit.vault.*
 import kotlinx.coroutines.test.runTest
@@ -24,8 +25,8 @@ class KeyslotIntegrityTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManager(store)
         val graphPath = "/tmp/ki-test"
-        vm.createVault(graphPath, "correct".toCharArray(), argon2Params = params)
-        val vaultPath = VaultManager.vaultFilePath(graphPath)
+        vm.createVault(RepoRoot(graphPath), "correct".toCharArray(), argon2Params = params)
+        val vaultPath = VaultManager.vaultFilePath(RepoRoot(graphPath))
         val original = store[vaultPath]!!
 
         var detectedTampering = 0
@@ -35,7 +36,7 @@ class KeyslotIntegrityTest {
             val mutated = original.copyOf()
             mutated[i] = (mutated[i].toInt() xor 0x01).toByte()
             store[vaultPath] = mutated
-            val result = vm.unlock(graphPath, "correct".toCharArray(), params)
+            val result = vm.unlock(RepoRoot(graphPath), "correct".toCharArray(), params)
             if (result.isLeft()) detectedTampering++
             store[vaultPath] = original
         }
@@ -59,9 +60,9 @@ class KeyslotIntegrityTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManager(store)
         val graphPath = "/tmp/ki-test"
-        vm.createVault(graphPath, "correct".toCharArray(), argon2Params = params)
+        vm.createVault(RepoRoot(graphPath), "correct".toCharArray(), argon2Params = params)
         // Unlock should succeed — active slot 0 is valid, slots 1-7 are random
-        val result = vm.unlock(graphPath, "correct".toCharArray(), params)
+        val result = vm.unlock(RepoRoot(graphPath), "correct".toCharArray(), params)
         assertTrue(result.isRight(), "Expected unlock to succeed with valid slot")
     }
 
@@ -70,8 +71,8 @@ class KeyslotIntegrityTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManager(store)
         val graphPath = "/tmp/ki-test"
-        val dek = vm.createVault(graphPath, "correct".toCharArray(), argon2Params = params).getOrNull()!!.dek
-        val vaultPath = VaultManager.vaultFilePath(graphPath)
+        val dek = vm.createVault(RepoRoot(graphPath), "correct".toCharArray(), argon2Params = params).getOrNull()!!.dek
+        val vaultPath = VaultManager.vaultFilePath(RepoRoot(graphPath))
         val rawBytes = store[vaultPath]!!
 
         // Compute expected MAC key using the same HKDF derivation as VaultManager

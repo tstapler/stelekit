@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.git.lfs
 
+import dev.stapler.stelekit.model.RepoRoot
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -14,7 +15,7 @@ class LfsRulesLoaderTest {
         MemoryFileSystem(files.associate { (path, text) -> "$root/$path" to text.encodeToByteArray() }.toMutableMap())
 
     private fun policy(fs: MemoryFileSystem, vararg changed: String, ignoreCase: Boolean = false) =
-        LfsPathPolicy(LfsRulesLoader(fs, root, ignoreCase).load(changed.toList()))
+        LfsPathPolicy(LfsRulesLoader(fs, RepoRoot(root), ignoreCase).load(changed.toList()))
 
     @Test
     fun load_should_ReadTheRootAndEveryAncestorDirectoryFile() {
@@ -58,7 +59,7 @@ class LfsRulesLoaderTest {
     @Test
     fun load_should_SeeAWorkingTreeEditOnTheNextCall_When_NothingIsCached() {
         val fs = fs(".gitattributes" to "# nothing\n")
-        val loader = LfsRulesLoader(fs, root)
+        val loader = LfsRulesLoader(fs, RepoRoot(root))
         assertFalse(LfsPathPolicy(loader.load(listOf("x.png"))).isTracked("x.png"))
 
         fs.files["$root/.gitattributes"] = "*.png filter=lfs\n".encodeToByteArray()

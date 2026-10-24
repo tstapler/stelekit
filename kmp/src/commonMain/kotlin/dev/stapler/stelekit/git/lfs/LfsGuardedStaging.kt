@@ -76,7 +76,7 @@ class LfsGuardedStaging(
 
     /** Merge-resolution flows cannot leave a file half-resolved, so a violating file refuses the step outright. */
     suspend fun refusalFor(config: GitConfig, filePath: String): DomainError.GitError? {
-        val relative = filePath.removePrefix(config.repoRoot).trimStart('/')
+        val relative = filePath.removePrefix(config.repoRoot.value).trimStart('/')
         val verdict = lfsGuard.evaluate(config, listOf(relative), gitRepository.cleanFilterActive)
         return if (verdict.held.isEmpty()) null else DomainError.GitError.LfsRawBinaryRefused(verdict.held.map { it.path })
     }

@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.model.RepoRoot
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.SteleDatabase
@@ -58,7 +59,7 @@ class GitConfigCloneDepthMappingTest {
 
     private fun baseConfig(graphId: String, repoRoot: String) = GitConfig(
         graphId = graphId,
-        repoRoot = repoRoot,
+        repoRoot = RepoRoot(repoRoot),
         wikiSubdir = null,
         authType = GitAuthType.NONE,
     )
@@ -188,7 +189,7 @@ class GitConfigCloneDepthMappingTest {
             val jvmGitRepository = JvmGitRepository()
             val cloneResult = jvmGitRepository.clone(
                 url = bareOrigin.absolutePath,
-                localPath = destination.absolutePath,
+                localPath = RepoRoot(destination.absolutePath),
                 auth = GitAuth.None,
                 onProgress = {},
                 onStateChange = {},

@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.model.RepoRoot
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import arrow.core.Either
@@ -55,7 +56,7 @@ class AndroidGitRepositoryLfsGuardTest {
             pathResolver = { null },
             fileSystem = FakeSafFileSystem(),
         )
-        assertTrue(repository.init(root.absolutePath).isRight())
+        assertTrue(repository.init(RepoRoot(root.absolutePath)).isRight())
         Git.open(root).use { git ->
             git.repository.config.apply {
                 setString("user", null, "name", "Stelekit Test")
@@ -69,7 +70,7 @@ class AndroidGitRepositoryLfsGuardTest {
             }
         }
         File(root, ".gitattributes").writeText("assets/** filter=lfs\n")
-        config = GitConfig(graphId = "g", repoRoot = root.absolutePath, wikiSubdir = null, authType = GitAuthType.NONE)
+        config = GitConfig(graphId = "g", repoRoot = RepoRoot(root.absolutePath), wikiSubdir = null, authType = GitAuthType.NONE)
     }
 
     @After
