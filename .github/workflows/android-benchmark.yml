@@ -150,7 +150,7 @@ jobs:
 
       - name: Compare to baseline and post PR comment
         if: github.event_name == 'pull_request' && steps.pick.outputs.head_file != ''
-        uses: tstapler/benchdiff@03845d60bd136fe36f365cf8f6ac4a6f9ae86257 # main
+        uses: tstapler/benchdiff@3921c948d6d9cbc538a62d3808d979c06cc13a94 # v0.1.0
         with:
           head: bench-head.json
           base: ${{ steps.pick.outputs.has_base == 'true' && 'bench-base.json' || '' }}
