@@ -258,6 +258,16 @@ class SqlDelightBlockRepository(
             }
         }
 
+    override suspend fun countAllBlocks(): Either<DomainError, Long> = withContext(PlatformDispatcher.DB) {
+        try {
+            queries.countBlocks().executeAsOne().right()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            DomainError.DatabaseError.ReadFailed(e.message ?: "unknown").left()
+        }
+    }
+
     override suspend fun getBlocksByUuids(uuids: List<BlockUuid>): Either<DomainError, List<Block>> =
         withContext(PlatformDispatcher.DB) {
             if (uuids.isEmpty()) return@withContext emptyList<Block>().right()

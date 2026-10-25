@@ -107,6 +107,8 @@ class InMemoryBlockRepository : BlockRepository {
         }
     }
 
+    override suspend fun countAllBlocks(): Either<DomainError, Long> = blocks.value.size.toLong().right()
+
     override suspend fun countBlocksForPages(pageUuids: Collection<PageUuid>): Either<DomainError, Map<PageUuid, Int>> {
         val wanted = pageUuids.toSet()
         return blocks.value.values.filter { it.pageUuid in wanted }.groupingBy { it.pageUuid }.eachCount().right()
