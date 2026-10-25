@@ -16,6 +16,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -114,6 +115,18 @@ class VaultRootMigrationTest {
         fs.writeFileBytes(vaultOld, bytes(1))
 
         assertEquals(0, VaultRootMigration(fs).migrate(root, notes))
+        assertTrue(fs.fileExists(vaultOld))
+    }
+
+    @Test
+    fun `cancellation propagates and leaves the source intact`() {
+        val fs = object : FakeFileSystem() {
+            override fun writeFileBytes(path: String, data: ByteArray): Boolean =
+                if (path == vaultNew) throw kotlinx.coroutines.CancellationException("cancelled") else super.writeFileBytes(path, data)
+        }
+        fs.writeFileBytes(vaultOld, bytes(1))
+
+        assertFailsWith<kotlinx.coroutines.CancellationException> { VaultRootMigration(fs).migrate(root, notes) }
         assertTrue(fs.fileExists(vaultOld))
     }
 
