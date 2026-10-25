@@ -22,6 +22,9 @@ interface BlockReadRepository {
     suspend fun countBlocksForPages(pageUuids: Collection<PageUuid>): Either<DomainError, Map<PageUuid, Int>> =
         emptyMap<PageUuid, Int>().right()
 
+    /** Total blocks stored, for diagnostics. Default: unknown, reported as 0. */
+    suspend fun countAllBlocks(): Either<DomainError, Long> = 0L.right()
+
     /**
      * Retrieve a single block by its UUID
      */

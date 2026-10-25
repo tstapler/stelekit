@@ -470,15 +470,21 @@ class GraphManager(
             val scanRoot = repoRoot ?: expandedPath
             // Best-effort: this launch is fire-and-forget, so a DB failure here (read-only or closed
             // database) must degrade to "no stored git config" rather than escape as an uncaught throw.
+            val gitConfigRepo = createGitConfigRepository()
             val gitConfig = try {
-                createGitConfigRepository()?.getConfig(graphId.value)?.getOrNull()
+                gitConfigRepo?.getConfig(graphId.value)?.getOrNull()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
                 logger.warn("addGraph: git config lookup failed for graph $graphId: ${e.message}")
                 null
             }
-            val wikiSubdir = gitConfig?.wikiSubdir ?: detected?.second ?: ""
+            // Every launch re-adds the graph before its database is open, so the stored wikiSubdir is
+            // unreadable then; keep the resolved one rather than downgrade the notes folder to the repo root.
+            val resolvedWikiSubdir = if (gitConfigRepo == null) {
+                _graphRegistry.value.graphs.firstOrNull { it.id == graphId }?.detectedWikiSubdir
+            } else null
+            val wikiSubdir = gitConfig?.wikiSubdir ?: resolvedWikiSubdir ?: detected?.second ?: ""
             val effectiveRoot = repoRoot ?: expandedPath
             val effectivePath = EffectiveNotesPath.of(RepoRoot(effectiveRoot), WikiSubdir(wikiSubdir)).value
             val hasContent = fileSystem.directoryExists("$effectivePath/pages") || fileSystem.directoryExists("$effectivePath/journals")

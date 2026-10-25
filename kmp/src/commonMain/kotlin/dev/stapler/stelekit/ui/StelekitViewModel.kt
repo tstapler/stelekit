@@ -60,6 +60,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlin.time.Clock
+import kotlin.time.measureTime
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -619,6 +620,20 @@ class StelekitViewModel(
         }
     }
 
+    private fun hasGraphContent(path: String): Boolean =
+        fileSystem.directoryExists("$path/pages") || fileSystem.directoryExists("$path/journals")
+
+    /** Wipes the page/block cache, logging row counts and timings so a slow or interrupted wipe shows in the persisted logs. */
+    @OptIn(DirectRepositoryWrite::class)
+    private suspend fun clearPersistedCache(reason: String) {
+        val pages = pageRepository.countPages().first().getOrNull() ?: 0L
+        val blocks = blockRepository.countAllBlocks().getOrNull() ?: 0L
+        logger.info("Clearing persistent cache ($reason): pages=$pages blocks=$blocks")
+        val pagesTime = measureTime { pageRepository.clear() }
+        val blocksTime = measureTime { blockRepository.clear() }
+        logger.info("Cleared persistent cache ($reason): pages in ${pagesTime.inWholeMilliseconds}ms, blocks in ${blocksTime.inWholeMilliseconds}ms")
+    }
+
     @OptIn(DirectRepositoryWrite::class)
     fun triggerReindex() {
         val path = _uiState.value.currentGraphPath ?: return
@@ -627,9 +642,7 @@ class StelekitViewModel(
             logger.info("Manually triggering re-index for $path")
             _uiState.update { it.copy(statusMessage = "Clearing database...") }
             
-            // Clear repositories
-            pageRepository.clear()
-            blockRepository.clear()
+            clearPersistedCache("manual reindex")
             
             // Clear cached path to force GraphLoader to do a full scan
             platformSettings.putString(cachedGraphPathKey(), "")
@@ -695,10 +708,17 @@ class StelekitViewModel(
                         cachedPath = ""
                     }
                     
+                    if (path != cachedPath && pageCount > 0L && !hasGraphContent(path)) {
+                        // A folder with neither pages/ nor journals/ (e.g. a repo root whose notes live in a
+                        // wiki subdirectory) would wipe a populated cache and then load nothing.
+                        logger.warn("Not loading '$path': no pages/ or journals/ folder, but the database holds $pageCount pages (cached path '$cachedPath') - keeping the cache")
+                        _uiState.update { it.copy(isLoading = false, statusMessage = "No pages or journals folder at $path") }
+                        return@launch
+                    }
+
                     if (path != cachedPath) {
                         logger.info("Switching graph from '$cachedPath' to '$path' - Clearing persistent cache")
-                        pageRepository.clear()
-                        blockRepository.clear()
+                        clearPersistedCache("graph switch")
                         platformSettings.putString(cacheKey, path)
                     } else {
                         logger.info("Loading same graph '$path' - Keeping persistent cache for incremental load")
