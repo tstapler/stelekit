@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.98.1](https://github.com/tstapler/stelekit/compare/v0.98.0...v0.98.1) (2026-10-25)
+
+
+### Bug Fixes
+
+* a launch no longer wipes the page cache by starting on the repo root ([#492](https://github.com/tstapler/stelekit/issues/492)) ([ba884bd](https://github.com/tstapler/stelekit/commit/ba884bd1d8129ac9623db590cabee6f0c8b37910))
+* **assets:** load asset browser images from thumbnail/display tiers ([#490](https://github.com/tstapler/stelekit/issues/490)) ([046fafe](https://github.com/tstapler/stelekit/commit/046fafe121642008e2ac1a3e9e67a23550164008))
+* shared database directory creation no longer races across processes ([#488](https://github.com/tstapler/stelekit/issues/488)) ([54b5978](https://github.com/tstapler/stelekit/commit/54b5978e3b6b64d367749c1eb7e601813a39739c))
+
 ## [0.98.0](https://github.com/tstapler/stelekit/compare/v0.97.1...v0.98.0) (2026-10-22)
 
 
