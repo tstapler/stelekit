@@ -48,6 +48,7 @@ import dev.stapler.stelekit.repository.RepositorySet
 import dev.stapler.stelekit.util.ContentHasher
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
@@ -119,8 +120,12 @@ class GraphManager(
     /** Test seam; null in production. */
     private val initHooks: GraphInitHooks? = null,
 ) : StorageLocationStore {
-    private val coroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val logger = Logger("GraphManager")
+    // Fire-and-forget launches here have no awaiting caller; log instead of reaching the uncaught-exception handler.
+    private val coroutineScope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Default +
+            CoroutineExceptionHandler { _, t -> logger.error("GraphManager background task failed: ${t.message}") },
+    )
     private val json = Json { ignoreUnknownKeys = true }
     private val _backgroundDetection = MutableStateFlow<kotlinx.coroutines.Job?>(null)
 
@@ -463,44 +468,7 @@ class GraphManager(
             }
         }
 
-        // Fire-and-forget git detection & candidate scan; updates registry when complete
-        _backgroundDetection.value = coroutineScope.launch(PlatformDispatcher.IO) {
-            val detected = detectGitRoot(expandedPath)
-            val repoRoot = detected?.first
-            val scanRoot = repoRoot ?: expandedPath
-            // Best-effort: this launch is fire-and-forget, so a DB failure here (read-only or closed
-            // database) must degrade to "no stored git config" rather than escape as an uncaught throw.
-            var gitConfigReadable = false
-            val gitConfig = try {
-                val repo = createGitConfigRepository()
-                gitConfigReadable = repo != null
-                repo?.getConfig(graphId.value)?.getOrNull()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Throwable) {
-                logger.warn("addGraph: git config lookup failed for graph $graphId: ${e.message}")
-                null
-            }
-            // Every launch re-adds the graph before its database is open, so the stored wikiSubdir is
-            // unreadable then; keep the resolved one rather than downgrade the notes folder to the repo root.
-            val resolvedWikiSubdir = if (!gitConfigReadable) {
-                _graphRegistry.value.graphs.firstOrNull { it.id == graphId }?.detectedWikiSubdir
-            } else null
-            val wikiSubdir = gitConfig?.wikiSubdir ?: resolvedWikiSubdir ?: detected?.second ?: ""
-            val effectiveRoot = repoRoot ?: expandedPath
-            val effectivePath = EffectiveNotesPath.of(RepoRoot(effectiveRoot), WikiSubdir(wikiSubdir)).value
-            val hasContent = fileSystem.directoryExists("$effectivePath/pages") || fileSystem.directoryExists("$effectivePath/journals")
-            val candidates = dev.stapler.stelekit.diagnostics.scanForWikiCandidates(scanRoot, fileSystem)
-            val contentMismatch = !hasContent && candidates.isNotEmpty()
-            updateGraphInfoDetection(
-                graphId = graphId,
-                repoRoot = repoRoot,
-                wikiSubdir = wikiSubdir,
-                effectivePath = effectivePath,
-                contentMismatch = contentMismatch,
-                candidates = candidates
-            )
-        }
+        launchDetection(graphId, expandedPath)
 
         return graphId
     }
@@ -756,27 +724,7 @@ class GraphManager(
             saveRegistry()
         }
 
-        coroutineScope.launch(PlatformDispatcher.IO) {
-            val detected = detectGitRoot(expandedNewPath)
-            val repoRoot = detected?.first
-            val scanRoot = repoRoot ?: expandedNewPath
-            val gitConfigRepo = createGitConfigRepository()
-            val gitConfig = gitConfigRepo?.getConfig(newId.value)?.getOrNull()
-            val wikiSubdir = gitConfig?.wikiSubdir ?: detected?.second ?: ""
-            val effectiveRoot = repoRoot ?: expandedNewPath
-            val effectivePath = EffectiveNotesPath.of(RepoRoot(effectiveRoot), WikiSubdir(wikiSubdir)).value
-            val hasContent = fileSystem.directoryExists("$effectivePath/pages") || fileSystem.directoryExists("$effectivePath/journals")
-            val candidates = dev.stapler.stelekit.diagnostics.scanForWikiCandidates(scanRoot, fileSystem)
-            val contentMismatch = !hasContent && candidates.isNotEmpty()
-            updateGraphInfoDetection(
-                graphId = newId,
-                repoRoot = repoRoot,
-                wikiSubdir = wikiSubdir,
-                effectivePath = effectivePath,
-                contentMismatch = contentMismatch,
-                candidates = candidates
-            )
-        }
+        launchDetection(newId, expandedNewPath)
 
         return UpdateGraphPathResult.Success(newId)
     }
@@ -1427,7 +1375,66 @@ class GraphManager(
         return MisplacedFilesService(fileSystem, SettingsMisplacedIgnoreStore(platformSettings, graphId), repointPages)
     }
 
+    /**
+     * Fire-and-forget git-root / wiki-subdir detection for [graphId]; the registry is updated when it
+     * completes. Tracked in [_backgroundDetection] so [awaitBackgroundDetection] covers every caller.
+     * Failures are logged, never thrown: nothing awaits this job, so a Throwable escaping it would reach
+     * the uncaught-exception handler (and fail whichever unrelated test runs next).
+     */
+    private fun launchDetection(graphId: GraphId, path: String) {
+        _backgroundDetection.value = coroutineScope.launch(PlatformDispatcher.IO) {
+            try {
+                detectAndRecord(graphId, path)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                logger.warn("detection failed for graph $graphId: ${e.message}")
+            }
+        }
+    }
+
+    private suspend fun detectAndRecord(graphId: GraphId, path: String) {
+        val detected = detectGitRoot(path)
+        val repoRoot = detected?.first
+        val scanRoot = repoRoot ?: path
+        // Best-effort: this launch is fire-and-forget, so a DB failure here (read-only or closed
+        // database) must degrade to "no stored git config" rather than escape as an uncaught throw.
+        var gitConfigReadable = false
+        val gitConfig = try {
+            val repo = createGitConfigRepository()
+            gitConfigReadable = repo != null
+            repo?.getConfig(graphId.value)?.getOrNull()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            logger.warn("detection: git config lookup failed for graph $graphId: ${e.message}")
+            null
+        }
+        // Every launch re-adds the graph before its database is open, so the stored wikiSubdir is
+        // unreadable then; keep the resolved one rather than downgrade the notes folder to the repo root.
+        val resolvedWikiSubdir = if (!gitConfigReadable) {
+            _graphRegistry.value.graphs.firstOrNull { it.id == graphId }?.detectedWikiSubdir
+        } else null
+        val wikiSubdir = gitConfig?.wikiSubdir ?: resolvedWikiSubdir ?: detected?.second ?: ""
+        val effectiveRoot = repoRoot ?: path
+        val effectivePath = EffectiveNotesPath.of(RepoRoot(effectiveRoot), WikiSubdir(wikiSubdir)).value
+        val hasContent = fileSystem.directoryExists("$effectivePath/pages") || fileSystem.directoryExists("$effectivePath/journals")
+        val candidates = dev.stapler.stelekit.diagnostics.scanForWikiCandidates(scanRoot, fileSystem)
+        val contentMismatch = !hasContent && candidates.isNotEmpty()
+        updateGraphInfoDetection(
+            graphId = graphId,
+            repoRoot = repoRoot,
+            wikiSubdir = wikiSubdir,
+            effectivePath = effectivePath,
+            contentMismatch = contentMismatch,
+            candidates = candidates
+        )
+    }
+
     fun createGitConfigRepository(): dev.stapler.stelekit.git.GitConfigRepository? {
+        // steleDatabase() opens a real SQLite file and runs MigrationRunner; an IN_MEMORY graph must never do that
+        // (it shares the data directory with every other process, e.g. parallel test forks).
+        if (defaultBackend != GraphBackend.SQLDELIGHT) return null
         val factory = currentFactory as? dev.stapler.stelekit.repository.RepositoryFactoryImpl ?: return null
         val actor = _activeRepositorySet.value?.writeActor ?: return null
         return dev.stapler.stelekit.git.SqlDelightGitConfigRepository(
