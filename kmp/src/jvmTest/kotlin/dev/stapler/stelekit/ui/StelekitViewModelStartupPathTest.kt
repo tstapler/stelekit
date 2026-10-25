@@ -23,6 +23,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.time.Clock
 
 /**
@@ -67,6 +68,9 @@ class StelekitViewModelStartupPathTest {
 
     private fun pageCount(h: Harness) = runBlocking { h.pages.countPages().first().getOrNull() }
 
+    private fun stalePageExists(h: Harness) =
+        runBlocking { h.pages.getPageByUuid(PageUuid("p1")).first().getOrNull() != null }
+
     @Test
     fun loadGraph_should_KeepCache_When_FolderHasNoPagesOrJournals() = runBlocking {
         val h = harness(dirs = setOf(root, notes, "$notes/pages"), cachedPath = notes)
@@ -86,11 +90,12 @@ class StelekitViewModelStartupPathTest {
         val h = harness(dirs = setOf(root, notes, "$notes/pages"), cachedPath = root)
         try {
             h.vm.loadGraph(notes)
+            // Not "zero pages": loading creates today's journal right after the wipe.
             withTimeout(10_000) {
-                while (h.settings.getString(cacheKey, "") != notes || pageCount(h) != 0L) delay(10)
+                while (h.settings.getString(cacheKey, "") != notes || stalePageExists(h)) delay(10)
             }
 
-            assertEquals(0L, pageCount(h), "a real graph switch still wipes the stale cache")
+            assertFalse(stalePageExists(h), "a real graph switch still wipes the stale cache")
             assertEquals(notes, h.settings.getString(cacheKey, ""))
         } finally {
             h.scope.cancel()
