@@ -63,6 +63,7 @@ class GraphManagerUpdateHostDirNameTest {
     fun `updateHostDirName returns false for an unknown GraphId and does not touch the registry`() = runTest {
         val graphManager = newManager()
         val id = graphManager.addGraph("/some/path")
+        graphManager.awaitBackgroundDetection() // its registry write would otherwise land between the two reads
         val before = graphManager.graphRegistry.value
 
         val result = graphManager.updateHostDirName(GraphId("unknown"), "some-name")
