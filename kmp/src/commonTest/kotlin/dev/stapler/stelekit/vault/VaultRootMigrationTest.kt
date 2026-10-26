@@ -94,6 +94,28 @@ class VaultRootMigrationTest {
     }
 
     @Test
+    fun `a torn partial destination is completed from the source`() {
+        val fs = FakeFileSystem()
+        fs.writeFileBytes(vaultOld, bytes(1, 2, 3, 4))
+        fs.writeFileBytes(vaultNew, bytes(1, 2))
+
+        assertEquals(1, VaultRootMigration(fs).migrate(root, notes))
+        assertContentEquals(bytes(1, 2, 3, 4), fs.readFileBytes(vaultNew))
+        assertFalse(fs.fileExists(vaultOld))
+    }
+
+    @Test
+    fun `a differing non-prefix destination is never overwritten`() {
+        val fs = FakeFileSystem()
+        fs.writeFileBytes(vaultOld, bytes(1, 2, 3, 4))
+        fs.writeFileBytes(vaultNew, bytes(9, 9))
+
+        assertEquals(0, VaultRootMigration(fs).migrate(root, notes))
+        assertContentEquals(bytes(9, 9), fs.readFileBytes(vaultNew))
+        assertContentEquals(bytes(1, 2, 3, 4), fs.readFileBytes(vaultOld))
+    }
+
+    @Test
     fun `a failed copy leaves the source intact`() {
         val fs = object : FakeFileSystem() {
             override fun writeFileBytes(path: String, data: ByteArray): Boolean =

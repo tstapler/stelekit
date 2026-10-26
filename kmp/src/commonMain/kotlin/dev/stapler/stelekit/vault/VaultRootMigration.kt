@@ -13,8 +13,8 @@ import dev.stapler.stelekit.platform.FileSystem
  * ADR-020: vault files live at the repo root. Wiki-subfolder users have them under the notes folder,
  * so on open this copies each one to the repo root, verifies it, then deletes the original.
  *
- * Stateless and idempotent: a destination that already exists is never overwritten and its source is left
- * alone, so a crash between copy and delete just resumes on the next open. A flat layout (repo root ==
+ * Stateless and idempotent: a destination that already exists is never overwritten (unless it is a truncated
+ * prefix of the source, i.e. a torn copy) and its source is left alone, so a crash between copy and delete just resumes on the next open. A flat layout (repo root ==
  * notes folder) is a no-op.
  */
 class VaultRootMigration(private val fileSystem: FileSystem) {
@@ -33,12 +33,17 @@ class VaultRootMigration(private val fileSystem: FileSystem) {
         return files.count { (from, to) -> move(from, to) }
     }
 
+    // A crash mid-write leaves a truncated destination; without this the next open would treat it as the real file.
+    private fun isTornCopy(dest: ByteArray?, source: ByteArray): Boolean =
+        dest != null && dest.size < source.size && source.copyOf(dest.size).contentEquals(dest)
+
     private fun EffectiveNotesPath.asRepoRoot() = RepoRoot(directory())
 
     private fun move(from: String, to: String): Boolean {
-        if (!fileSystem.fileExists(from) || fileSystem.fileExists(to)) return false
+        if (!fileSystem.fileExists(from)) return false
         return try {
             val bytes = fileSystem.readFileBytes(from) ?: return false
+            if (fileSystem.fileExists(to) && !isTornCopy(fileSystem.readFileBytes(to), bytes)) return false
             fileSystem.createDirectory(to.substringBeforeLast('/'))
             if (!fileSystem.writeFileBytes(to, bytes) || !fileSystem.readFileBytes(to).contentEquals(bytes)) {
                 logger.warn("copy to $to failed verification; leaving $from in place")
