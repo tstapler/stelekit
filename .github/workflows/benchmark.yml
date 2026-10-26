@@ -158,41 +158,46 @@ jobs:
             git pull --rebase origin main
           done
 
-      - name: Compare to baseline and post PR comment
+      - name: Select head and baseline summaries
+        id: pick
         if: github.event_name == 'pull_request'
+        run: |
+          SHA7="${GITHUB_SHA:0:7}"
+          # Same selection as the old inline script: head = this commit's summary (else newest), base = newest other.
+          HEAD_FILE=""; BASE_FILE=""; NEWEST=""
+          for f in benchmarks/history/*.json; do   # glob sorts by name, i.e. by timestamp
+            [ -e "$f" ] || continue
+            NEWEST="$f"
+            case "$f" in *"$SHA7"*) HEAD_FILE="$f" ;; *) BASE_FILE="$f" ;; esac
+          done
+          [ -n "$HEAD_FILE" ] || HEAD_FILE="$NEWEST"
+          if [ -z "$HEAD_FILE" ]; then echo "No benchmark summary produced"; exit 0; fi
+          node scripts/benchdiff-export.js --kind jvm --in "$HEAD_FILE" --out bench-head.json
+          echo "head_file=$HEAD_FILE" >> "$GITHUB_OUTPUT"
+          if [ -n "$BASE_FILE" ]; then
+            node scripts/benchdiff-export.js --kind jvm --in "$BASE_FILE" --out bench-base.json
+            echo "has_base=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compare to baseline and post PR comment
+        if: github.event_name == 'pull_request' && steps.pick.outputs.head_file != ''
+        uses: tstapler/benchdiff@3921c948d6d9cbc538a62d3808d979c06cc13a94 # v0.1.0
+        with:
+          head: bench-head.json
+          base: ${{ steps.pick.outputs.has_base == 'true' && 'bench-base.json' || '' }}
+          format: benchdiff
+          title: JVM Load Benchmark (Desktop)
+          tag: jvm-load-benchmark
+
+      - name: Post flamegraphs and query stats comment
+        if: github.event_name == 'pull_request' && steps.pick.outputs.head_file != ''
         uses: actions/github-script@v7
+        env:
+          HEAD_FILE: ${{ steps.pick.outputs.head_file }}
         with:
           script: |
             const fs = require('fs');
-            const path = require('path');
-
-            const histDir = 'benchmarks/history';
-            if (!fs.existsSync(histDir)) { console.log('No benchmark history'); return; }
-
-            const allFiles = fs.readdirSync(histDir).filter(f => f.endsWith('.json') && f !== '.gitkeep').sort();
-            if (allFiles.length === 0) { console.log('No previous benchmarks'); return; }
-
-            const sha = '${{ github.sha }}'.slice(0, 7);
-            const newFile = allFiles.filter(f => f.includes(sha)).pop() || allFiles[allFiles.length - 1];
-            const baseFile = allFiles.filter(f => !f.includes(sha)).pop();
-
-            if (!baseFile) { console.log('No baseline to compare against'); return; }
-
-            const curr = JSON.parse(fs.readFileSync(path.join(histDir, newFile)));
-            const base = JSON.parse(fs.readFileSync(path.join(histDir, baseFile)));
-
-            const delta = (a, b, lowerIsBetter = true, unit = 'ms') => {
-              if (a == null || b == null || a < 0 || b < 0) return '';
-              const d = a - b;
-              if (d === 0) return `0 (0%)`;
-              const sign = d > 0 ? '+' : '';
-              const rounded = unit === 'ms' ? Math.round(d) : parseFloat(d.toFixed(2));
-              const pct = b !== 0 ? ` (${sign}${Math.round((d / b) * 100)}%)` : '';
-              const emoji = lowerIsBetter ? (d < 0 ? ' ✅' : ' ⚠️') : (d > 0 ? ' ✅' : ' ⚠️');
-              return `${sign}${rounded}${unit}${pct}${emoji}`;
-            };
-            const fmtMs = v => (v == null || v < 0) ? 'n/a' : `${v}ms`;
-            const fmtJ = v => (v === undefined || v == null || v < 0) ? 'n/a' : `${v}x`;
+            const curr = JSON.parse(fs.readFileSync(process.env.HEAD_FILE));
 
             const allocHotspots = (curr.allocHotspots || []).slice(0, 5)
               .map(h => `\`${h.pct}%\` ${h.frame}`)
@@ -216,25 +221,9 @@ jobs:
               `| \`${q.table}:${q.op}\` | ${q.calls} | ${q.p50}ms | ${q.p99}ms | ${q.maxMs}ms | ${q.totalMs}ms |`
             ).join('\n');
 
-            const pageCountStr = curr.pageCount != null ? curr.pageCount : 'n/a';
             const body = [
-              '## JVM Load Benchmark (Desktop)',
-              '',
-              '_Synthetic in-memory benchmark measuring load performance for the desktop (JVM) app._',
-              '',
-              `Comparing \`${curr.gitSha}\` (this PR) vs \`${base.gitSha}\` (baseline)  `,
-              `Graph config: \`${curr.graphConfig || 'SMALL'}\` — ${pageCountStr} pages`,
-              '',
-              '| Metric | This PR | Baseline | Delta |',
-              '|--------|---------|----------|-------|',
-              `| Phase 1 TTI ↓ | ${fmtMs(curr.phase1TtiMs)} | ${fmtMs(base.phase1TtiMs)} | ${delta(curr.phase1TtiMs, base.phase1TtiMs)} |`,
-              `| Phase 2 background ↓ | ${fmtMs(curr.phase2Ms)} | ${fmtMs(base.phase2Ms)} | ${delta(curr.phase2Ms, base.phase2Ms)} |`,
-              `| Phase 3 index ↓ | ${fmtMs(curr.phase3Ms)} | ${fmtMs(base.phase3Ms)} | ${delta(curr.phase3Ms, base.phase3Ms)} |`,
-              `| Total ↓ | ${fmtMs(curr.totalMs)} | ${fmtMs(base.totalMs)} | ${delta(curr.totalMs, base.totalMs)} |`,
-              `| Write p95 (baseline) ↓ | ${fmtMs(curr.jankBaselineP95Ms)} | ${fmtMs(base.jankBaselineP95Ms)} | ${delta(curr.jankBaselineP95Ms, base.jankBaselineP95Ms)} |`,
-              `| Write p95 (under load) ↓ | ${fmtMs(curr.jankLoadP95Ms)} | ${fmtMs(base.jankLoadP95Ms)} | ${delta(curr.jankLoadP95Ms, base.jankLoadP95Ms)} |`,
-              `| Jank factor ↓ | ${fmtJ(curr.jankFactor)} | ${fmtJ(base.jankFactor)} | ${delta(curr.jankFactor, base.jankFactor, true, 'x')} |`,
-              '_↓ lower is better_',
+              '<!-- stelekit:jvm-load-benchmark-details -->',
+              '### JVM Load Benchmark: profiling details',
               '',
               '<details>',
               '<summary>Flamegraphs (this PR)</summary>',
@@ -272,7 +261,7 @@ jobs:
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number,
             });
-            const existing = comments.find(c => c.user.login === 'github-actions[bot]' && (c.body.includes('## JVM Load Benchmark') || c.body.includes('## Benchmark Results')));
+            const existing = comments.find(c => c.user.login === 'github-actions[bot]' && c.body.includes('<!-- stelekit:jvm-load-benchmark-details -->'));
             if (existing) {
               await github.rest.issues.updateComment({
                 owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body,
