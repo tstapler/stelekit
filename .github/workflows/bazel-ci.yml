@@ -226,7 +226,12 @@ jobs:
           timeout_minutes: 55
           max_attempts: 2
           retry_wait_seconds: 30
-          command: set -o pipefail; bazel build //kmp:android_app --config=android --config=remote-cache 2>&1 | tee "$RUNNER_TEMP/bazel-android-build.log"
+          # The sampler prints to the job log, which survives a killed runner (the vmstat log does not).
+          command: |
+            set -o pipefail
+            (while sleep 60; do echo "[mem] $(free -m | awk '/Mem:/{print "used="$3"M avail="$7"M"}')"; done) &
+            trap 'kill $!' EXIT
+            bazel build //kmp:android_app --config=android --config=remote-cache 2>&1 | tee "$RUNNER_TEMP/bazel-android-build.log"
 
       - name: CI job report
         if: always()
