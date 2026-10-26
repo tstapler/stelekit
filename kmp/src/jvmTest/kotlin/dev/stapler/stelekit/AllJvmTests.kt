@@ -69,6 +69,7 @@ import dev.stapler.stelekit.transfer.qrcode.QrCodecJvmTest
 import dev.stapler.stelekit.ui.DemoBannerTest
 import dev.stapler.stelekit.ui.DiskConflictResolutionTest
 import dev.stapler.stelekit.ui.GraphContentDemoFileSystemWiringTest
+import dev.stapler.stelekit.ui.GraphContentVaultRepoRootTest
 import dev.stapler.stelekit.ui.GraphSwitcherDemoFilterTest
 import dev.stapler.stelekit.ui.DragDropReorderTest
 import dev.stapler.stelekit.ui.InitializingScreenThemedTest
@@ -397,6 +398,7 @@ import org.junit.runners.Suite
     TopBarTest::class,
     DemoBannerTest::class,
     GraphContentDemoFileSystemWiringTest::class,
+    GraphContentVaultRepoRootTest::class,
     InitializingScreenThemedTest::class,
     GraphSwitcherDemoFilterTest::class,
     DiskConflictResolutionTest::class,

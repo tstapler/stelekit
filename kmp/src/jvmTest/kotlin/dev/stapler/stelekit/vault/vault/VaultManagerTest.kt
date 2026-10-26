@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.vault.vault
 
+import dev.stapler.stelekit.model.RepoRoot
 import dev.stapler.stelekit.vault.*
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -32,9 +33,9 @@ class VaultManagerTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManagerWithStore(store)
         val graphPath = "/tmp/test-graph"
-        val result = vm.createVault(graphPath, "correct".toCharArray(), argon2Params = params)
+        val result = vm.createVault(RepoRoot(graphPath), "correct".toCharArray(), argon2Params = params)
         assertTrue(result.isRight())
-        val vaultBytes = store[VaultManager.vaultFilePath(graphPath)]
+        val vaultBytes = store[VaultManager.vaultFilePath(RepoRoot(graphPath))]
         assertNotNull(vaultBytes)
         assertEquals(VaultHeader.TOTAL_SIZE, vaultBytes.size)
         assertContentEquals(VaultHeader.MAGIC, vaultBytes.sliceArray(0 until 4))
@@ -45,8 +46,8 @@ class VaultManagerTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManagerWithStore(store)
         val graphPath = "/tmp/test-graph"
-        vm.createVault(graphPath, "correct".toCharArray(), argon2Params = params)
-        val result = vm.unlock(graphPath, "correct".toCharArray(), params)
+        vm.createVault(RepoRoot(graphPath), "correct".toCharArray(), argon2Params = params)
+        val result = vm.unlock(RepoRoot(graphPath), "correct".toCharArray(), params)
         assertTrue(result.isRight())
         val unlockResult = result.getOrNull()!!
         assertEquals(32, unlockResult.dek.size)
@@ -58,8 +59,8 @@ class VaultManagerTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManagerWithStore(store)
         val graphPath = "/tmp/test-graph"
-        vm.createVault(graphPath, "correct".toCharArray(), argon2Params = params)
-        val result = vm.unlock(graphPath, "wrong".toCharArray(), params)
+        vm.createVault(RepoRoot(graphPath), "correct".toCharArray(), argon2Params = params)
+        val result = vm.unlock(RepoRoot(graphPath), "wrong".toCharArray(), params)
         assertTrue(result.isLeft())
         assertIs<VaultError.InvalidCredential>(result.leftOrNull())
     }
@@ -81,9 +82,9 @@ class VaultManagerTest {
             fileWriteBytes = { path, data -> store[path] = data; true },
         )
         val graphPath = "/tmp/test-graph"
-        vm.createVault(graphPath, "correct".toCharArray(), argon2Params = params)
+        vm.createVault(RepoRoot(graphPath), "correct".toCharArray(), argon2Params = params)
         decryptCount = 0
-        vm.unlock(graphPath, "correct".toCharArray(), params)
+        vm.unlock(RepoRoot(graphPath), "correct".toCharArray(), params)
         assertEquals(8, decryptCount, "Expected exactly 8 decryptAEAD calls — all slots tried for deniability")
     }
 
@@ -92,15 +93,15 @@ class VaultManagerTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManagerWithStore(store)
         val graphPath = "/tmp/test-graph"
-        val r1 = vm.createVault(graphPath, "original".toCharArray(), argon2Params = params)
+        val r1 = vm.createVault(RepoRoot(graphPath), "original".toCharArray(), argon2Params = params)
         val dek = r1.getOrNull()!!.dek
-        vm.unlock(graphPath, "original".toCharArray(), params)
-        vm.addKeyslot(graphPath, dek, "second".toCharArray(), argon2Params = params)
+        vm.unlock(RepoRoot(graphPath), "original".toCharArray(), params)
+        vm.addKeyslot(RepoRoot(graphPath), dek, "second".toCharArray(), argon2Params = params)
         // New passphrase works
-        val r2 = vm.unlock(graphPath, "second".toCharArray(), params)
+        val r2 = vm.unlock(RepoRoot(graphPath), "second".toCharArray(), params)
         assertTrue(r2.isRight())
         // Original passphrase still works
-        val r3 = vm.unlock(graphPath, "original".toCharArray(), params)
+        val r3 = vm.unlock(RepoRoot(graphPath), "original".toCharArray(), params)
         assertTrue(r3.isRight())
     }
 
@@ -109,16 +110,16 @@ class VaultManagerTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManagerWithStore(store)
         val graphPath = "/tmp/test-graph"
-        val dek = vm.createVault(graphPath, "original".toCharArray(), argon2Params = params).getOrNull()!!.dek
-        vm.unlock(graphPath, "original".toCharArray(), params)
-        vm.addKeyslot(graphPath, dek, "second".toCharArray(), argon2Params = params)
+        val dek = vm.createVault(RepoRoot(graphPath), "original".toCharArray(), argon2Params = params).getOrNull()!!.dek
+        vm.unlock(RepoRoot(graphPath), "original".toCharArray(), params)
+        vm.addKeyslot(RepoRoot(graphPath), dek, "second".toCharArray(), argon2Params = params)
         // Remove slot 0 (original)
-        vm.removeKeyslot(graphPath, 0)
+        vm.removeKeyslot(RepoRoot(graphPath), 0)
         // Original no longer works
-        val r1 = vm.unlock(graphPath, "original".toCharArray(), params)
+        val r1 = vm.unlock(RepoRoot(graphPath), "original".toCharArray(), params)
         assertTrue(r1.isLeft())
         // Second still works
-        val r2 = vm.unlock(graphPath, "second".toCharArray(), params)
+        val r2 = vm.unlock(RepoRoot(graphPath), "second".toCharArray(), params)
         assertTrue(r2.isRight())
     }
 
@@ -131,14 +132,14 @@ class VaultManagerTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManagerWithStore(store)
         val graphPath = "/tmp/test-graph"
-        vm.createVault(graphPath, "correct".toCharArray(), argon2Params = params)
+        vm.createVault(RepoRoot(graphPath), "correct".toCharArray(), argon2Params = params)
         // Flip a byte at offset 5 (inside the 8-byte random padding, bytes 5..12).
         // The active slot (slot 0) still decrypts correctly, but the MAC over bytes 0..2572 fails.
-        val vaultPath = VaultManager.vaultFilePath(graphPath)
+        val vaultPath = VaultManager.vaultFilePath(RepoRoot(graphPath))
         val bytes = store[vaultPath]!!.copyOf()
         bytes[5] = (bytes[5].toInt() xor 0xFF).toByte()
         store[vaultPath] = bytes
-        val result = vm.unlock(graphPath, "correct".toCharArray(), params)
+        val result = vm.unlock(RepoRoot(graphPath), "correct".toCharArray(), params)
         assertIs<VaultError.InvalidCredential>(result.leftOrNull())
     }
 
@@ -147,8 +148,8 @@ class VaultManagerTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManagerWithStore(store)
         val graphPath = "/tmp/test-graph"
-        vm.createVault(graphPath, "correct".toCharArray(), argon2Params = params)
-        val unlockResult = vm.unlock(graphPath, "correct".toCharArray(), params).getOrNull()!!
+        vm.createVault(RepoRoot(graphPath), "correct".toCharArray(), argon2Params = params)
+        val unlockResult = vm.unlock(RepoRoot(graphPath), "correct".toCharArray(), params).getOrNull()!!
         val dekRef = vm.currentDek()!!
         vm.lock()
         assertTrue(dekRef.all { it == 0.toByte() }, "DEK must be zeroed after lock()")
@@ -161,8 +162,8 @@ class VaultManagerTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManagerWithStore(store)
         val graphPath = "/tmp/test-graph"
-        vm.createVault(graphPath, "correct".toCharArray(), argon2Params = params)
-        vm.unlock(graphPath, "correct".toCharArray(), params)
+        vm.createVault(RepoRoot(graphPath), "correct".toCharArray(), argon2Params = params)
+        vm.unlock(RepoRoot(graphPath), "correct".toCharArray(), params)
         vm.lock()
         val event = vm.vaultEvents.first { it is VaultManager.VaultEvent.Locked }
         assertIs<VaultManager.VaultEvent.Locked>(event)
@@ -173,11 +174,11 @@ class VaultManagerTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManagerWithStore(store)
         val graphPath = "/tmp/test-graph"
-        val dek = vm.createVault(graphPath, "original".toCharArray(), argon2Params = params).getOrNull()!!.dek
+        val dek = vm.createVault(RepoRoot(graphPath), "original".toCharArray(), argon2Params = params).getOrNull()!!.dek
         // Remove slot 0 and add new one with different passphrase
-        vm.unlock(graphPath, "original".toCharArray(), params)
-        vm.addKeyslot(graphPath, dek, "new-passphrase".toCharArray(), argon2Params = params)
-        val newUnlock = vm.unlock(graphPath, "new-passphrase".toCharArray(), params).getOrNull()!!
+        vm.unlock(RepoRoot(graphPath), "original".toCharArray(), params)
+        vm.addKeyslot(RepoRoot(graphPath), dek, "new-passphrase".toCharArray(), argon2Params = params)
+        val newUnlock = vm.unlock(RepoRoot(graphPath), "new-passphrase".toCharArray(), params).getOrNull()!!
         // DEK is the same (provider rotation, not DEK rotation)
         assertContentEquals(dek, newUnlock.dek)
     }
@@ -187,12 +188,12 @@ class VaultManagerTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManagerWithStore(store)
         val graphPath = "/tmp/test-graph"
-        vm.createVault(graphPath, "correct".toCharArray(), argon2Params = params)
-        val vaultPath = VaultManager.vaultFilePath(graphPath)
+        vm.createVault(RepoRoot(graphPath), "correct".toCharArray(), argon2Params = params)
+        val vaultPath = VaultManager.vaultFilePath(RepoRoot(graphPath))
         val bytes = store[vaultPath]!!.copyOf()
         bytes[4] = 0xFF.toByte()  // Overwrite version byte
         store[vaultPath] = bytes
-        val result = vm.unlock(graphPath, "correct".toCharArray(), params)
+        val result = vm.unlock(RepoRoot(graphPath), "correct".toCharArray(), params)
         assertTrue(result.isLeft())
         assertIs<VaultError.UnsupportedVersion>(result.leftOrNull())
     }
@@ -202,14 +203,14 @@ class VaultManagerTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManagerWithStore(store)
         val graphPath = "/tmp/test-graph"
-        vm.createVault(graphPath, "correct".toCharArray(), argon2Params = params)
+        vm.createVault(RepoRoot(graphPath), "correct".toCharArray(), argon2Params = params)
         // Overwrite the keyslot area (bytes 13..2060) with random data — all AEAD tags will fail.
-        val vaultPath = VaultManager.vaultFilePath(graphPath)
+        val vaultPath = VaultManager.vaultFilePath(RepoRoot(graphPath))
         val bytes = store[vaultPath]!!.copyOf()
         val randomSlotArea = engine.secureRandom(VaultHeader.KEYSLOT_COUNT * Keyslot.TOTAL_SIZE)
         randomSlotArea.copyInto(bytes, 13)
         store[vaultPath] = bytes
-        val result = vm.unlock(graphPath, "correct".toCharArray(), params)
+        val result = vm.unlock(RepoRoot(graphPath), "correct".toCharArray(), params)
         assertIs<VaultError.InvalidCredential>(result.leftOrNull())
     }
 
@@ -219,8 +220,8 @@ class VaultManagerTest {
         val vm = makeVaultManagerWithStore(store)
         val graphPath = "/tmp/test-graph"
         val customParams = Argon2Params(memory = 8192, iterations = 2, parallelism = 1)
-        vm.createVault(graphPath, "correct".toCharArray(), argon2Params = customParams)
-        val vaultPath = VaultManager.vaultFilePath(graphPath)
+        vm.createVault(RepoRoot(graphPath), "correct".toCharArray(), argon2Params = customParams)
+        val vaultPath = VaultManager.vaultFilePath(RepoRoot(graphPath))
         val bytes = store[vaultPath]!!
         val header = VaultHeaderSerializer.deserialize(bytes).getOrNull()!!
         val slot = header.keyslots[0]
@@ -235,14 +236,14 @@ class VaultManagerTest {
         val vm = makeVaultManagerWithStore(store)
         val graphPath = "/tmp/test-graph"
         // createVault fills OUTER slot 0
-        val dek = vm.createVault(graphPath, "slot0".toCharArray(), argon2Params = params).getOrNull()!!.dek
+        val dek = vm.createVault(RepoRoot(graphPath), "slot0".toCharArray(), argon2Params = params).getOrNull()!!.dek
         // Fill remaining OUTER slots (1, 2, 3)
         for (i in 1..3) {
-            val r = vm.addKeyslot(graphPath, dek, "slot$i".toCharArray(), argon2Params = params)
+            val r = vm.addKeyslot(RepoRoot(graphPath), dek, "slot$i".toCharArray(), argon2Params = params)
             assertTrue(r.isRight(), "Expected OUTER slot $i to be added successfully")
         }
         // All 4 OUTER slots are now full; 5th OUTER call must fail with SlotsFull
-        val overflow = vm.addKeyslot(graphPath, dek, "overflow".toCharArray(), argon2Params = params)
+        val overflow = vm.addKeyslot(RepoRoot(graphPath), dek, "overflow".toCharArray(), argon2Params = params)
         assertIs<VaultError.SlotsFull>(overflow.leftOrNull())
     }
 
@@ -251,9 +252,9 @@ class VaultManagerTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManagerWithStore(store)
         val graphPath = "/tmp/test-graph"
-        vm.createVault(graphPath, "correct".toCharArray(), argon2Params = params)
-        val r1 = vm.unlock(graphPath, "correct".toCharArray(), params).getOrNull()!!
-        val r2 = vm.unlock(graphPath, "correct".toCharArray(), params).getOrNull()!!
+        vm.createVault(RepoRoot(graphPath), "correct".toCharArray(), argon2Params = params)
+        val r1 = vm.unlock(RepoRoot(graphPath), "correct".toCharArray(), params).getOrNull()!!
+        val r2 = vm.unlock(RepoRoot(graphPath), "correct".toCharArray(), params).getOrNull()!!
         assertContentEquals(r1.dek, r2.dek)
     }
 
@@ -262,9 +263,9 @@ class VaultManagerTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManagerWithStore(store)
         val graphPath = "/tmp/test-graph"
-        vm.createVault(graphPath, "original".toCharArray(), argon2Params = params)
+        vm.createVault(RepoRoot(graphPath), "original".toCharArray(), argon2Params = params)
         // Vault is never unlocked — sessionDek is null
-        val result = vm.removeKeyslot(graphPath, 0)
+        val result = vm.removeKeyslot(RepoRoot(graphPath), 0)
         assertIs<VaultError.InvalidCredential>(result.leftOrNull())
     }
 
@@ -273,14 +274,14 @@ class VaultManagerTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManagerWithStore(store)
         val graphPath = "/tmp/test-graph"
-        vm.createVault(graphPath, "original".toCharArray(), argon2Params = params)
+        vm.createVault(RepoRoot(graphPath), "original".toCharArray(), argon2Params = params)
         val wrongDek = engine.secureRandom(32)
         // addKeyslot verifies the DEK via header MAC before modifying any slots.
         // A wrong DEK cannot produce the correct MAC, so the operation must be rejected.
-        val r = vm.addKeyslot(graphPath, wrongDek, "injected".toCharArray(), argon2Params = params)
+        val r = vm.addKeyslot(RepoRoot(graphPath), wrongDek, "injected".toCharArray(), argon2Params = params)
         assertIs<VaultError.InvalidCredential>(r.leftOrNull(), "Wrong DEK must be rejected by addKeyslot")
         // The vault must still be unlockable with the original passphrase
-        val unlock = vm.unlock(graphPath, "original".toCharArray(), params)
+        val unlock = vm.unlock(RepoRoot(graphPath), "original".toCharArray(), params)
         assertTrue(unlock.isRight(), "Original slot must be unmodified after rejected addKeyslot")
     }
 
@@ -289,8 +290,8 @@ class VaultManagerTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManagerWithStore(store)
         val graphPath = "/tmp/test-graph"
-        vm.createVault(graphPath, "correct".toCharArray(), argon2Params = params)
-        val sentinelPath = VaultManager.hiddenReserveSentinelPath(graphPath)
+        vm.createVault(RepoRoot(graphPath), "correct".toCharArray(), argon2Params = params)
+        val sentinelPath = VaultManager.hiddenReserveSentinelPath(RepoRoot(graphPath))
         val sentinelBytes = store[sentinelPath]
         assertNotNull(sentinelBytes, "Sentinel file must be written")
         assertTrue(sentinelBytes.size == 256, "Sentinel must be 256 bytes")
@@ -302,8 +303,8 @@ class VaultManagerTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManagerWithStore(store)
         val graphPath = "/tmp/test-graph"
-        vm.createVault(graphPath, "hidden-pass".toCharArray(), namespace = VaultNamespace.HIDDEN, argon2Params = params)
-        val result = vm.unlock(graphPath, "hidden-pass".toCharArray(), params)
+        vm.createVault(RepoRoot(graphPath), "hidden-pass".toCharArray(), namespace = VaultNamespace.HIDDEN, argon2Params = params)
+        val result = vm.unlock(RepoRoot(graphPath), "hidden-pass".toCharArray(), params)
         assertTrue(result.isRight())
         assertEquals(VaultNamespace.HIDDEN, result.getOrNull()!!.namespace)
     }
@@ -313,7 +314,7 @@ class VaultManagerTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManagerWithStore(store)
         val passphrase = "correct".toCharArray()
-        vm.createVault("/tmp/test-graph", passphrase, argon2Params = params)
+        vm.createVault(RepoRoot("/tmp/test-graph"), passphrase, argon2Params = params)
         assertTrue(passphrase.all { it == ' ' }, "Passphrase must be zeroed after createVault")
     }
 
@@ -322,9 +323,9 @@ class VaultManagerTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManagerWithStore(store)
         val graphPath = "/tmp/test-graph"
-        val dek = vm.createVault(graphPath, "original".toCharArray(), argon2Params = params).getOrNull()!!.dek
+        val dek = vm.createVault(RepoRoot(graphPath), "original".toCharArray(), argon2Params = params).getOrNull()!!.dek
         val newPassphrase = "second".toCharArray()
-        vm.addKeyslot(graphPath, dek, newPassphrase, argon2Params = params)
+        vm.addKeyslot(RepoRoot(graphPath), dek, newPassphrase, argon2Params = params)
         assertTrue(newPassphrase.all { it == ' ' }, "Passphrase must be zeroed after addKeyslot")
     }
 
@@ -332,8 +333,8 @@ class VaultManagerTest {
     @Test fun `empty passphrase can create and unlock vault`() = runTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManagerWithStore(store)
-        vm.createVault("/tmp/test-graph", "testpassword".toCharArray(), argon2Params = params)
-        val result = vm.unlock("/tmp/test-graph", "testpassword".toCharArray(), params)
+        vm.createVault(RepoRoot("/tmp/test-graph"), "testpassword".toCharArray(), argon2Params = params)
+        val result = vm.unlock(RepoRoot("/tmp/test-graph"), "testpassword".toCharArray(), params)
         assertTrue(result.isRight(), "Non-empty passphrase must unlock the vault it created")
     }
 
@@ -347,10 +348,10 @@ class VaultManagerTest {
         // U+1F511 KEY emoji — encoded as a surrogate pair in Kotlin Char (two chars)
         val emoji = "🔑".toCharArray()  // 🔑
         assertFailsWith<IllegalArgumentException> {
-            vm.createVault("/tmp/test-graph", emoji, argon2Params = params)
+            vm.createVault(RepoRoot("/tmp/test-graph"), emoji, argon2Params = params)
         }
         // No vault file should have been written
-        assertNull(store[VaultManager.vaultFilePath("/tmp/test-graph")], "No vault file must be written for rejected passphrase")
+        assertNull(store[VaultManager.vaultFilePath(RepoRoot("/tmp/test-graph"))], "No vault file must be written for rejected passphrase")
     }
 
     // VM-24 — Different passphrases produce distinct vaults (not interchangeable)
@@ -359,11 +360,11 @@ class VaultManagerTest {
         val store2 = mutableMapOf<String, ByteArray>()
         val vm1 = makeVaultManagerWithStore(store1)
         val vm2 = makeVaultManagerWithStore(store2)
-        vm1.createVault("/tmp/test-graph", "testpassword".toCharArray(), argon2Params = params)
-        vm2.createVault("/tmp/test-graph", "otherpassword".toCharArray(), argon2Params = params)
+        vm1.createVault(RepoRoot("/tmp/test-graph"), "testpassword".toCharArray(), argon2Params = params)
+        vm2.createVault(RepoRoot("/tmp/test-graph"), "otherpassword".toCharArray(), argon2Params = params)
         // Each vault can only be unlocked with its own passphrase
-        val r1 = vm1.unlock("/tmp/test-graph", "otherpassword".toCharArray(), params)
-        val r2 = vm2.unlock("/tmp/test-graph", "testpassword".toCharArray(), params)
+        val r1 = vm1.unlock(RepoRoot("/tmp/test-graph"), "otherpassword".toCharArray(), params)
+        val r2 = vm2.unlock(RepoRoot("/tmp/test-graph"), "testpassword".toCharArray(), params)
         assertTrue(r1.isLeft(), "Wrong passphrase must not unlock vault 1")
         assertTrue(r2.isLeft(), "Wrong passphrase must not unlock vault 2")
     }
@@ -374,11 +375,11 @@ class VaultManagerTest {
         val vm = makeVaultManagerWithStore(store)
         val graphPath = "/tmp/test-graph"
         // Create OUTER vault and unlock it
-        vm.createVault(graphPath, "outer-pass".toCharArray(), argon2Params = params)
-        vm.unlock(graphPath, "outer-pass".toCharArray(), params)
+        vm.createVault(RepoRoot(graphPath), "outer-pass".toCharArray(), argon2Params = params)
+        vm.unlock(RepoRoot(graphPath), "outer-pass".toCharArray(), params)
 
         // Attempt to remove a HIDDEN slot (index 4) while authenticated as OUTER
-        val result = vm.removeKeyslot(graphPath, slotIndex = 4)
+        val result = vm.removeKeyslot(RepoRoot(graphPath), slotIndex = 4)
         assertIs<VaultError.InvalidCredential>(result.leftOrNull(),
             "OUTER session must not remove HIDDEN keyslot — got: $result")
     }
@@ -388,14 +389,14 @@ class VaultManagerTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManagerWithStore(store)
         val graphPath = "/tmp/test-graph"
-        vm.createVault(graphPath, "pass".toCharArray(), argon2Params = params)
-        vm.unlock(graphPath, "pass".toCharArray(), params)
+        vm.createVault(RepoRoot(graphPath), "pass".toCharArray(), argon2Params = params)
+        vm.unlock(RepoRoot(graphPath), "pass".toCharArray(), params)
 
-        val negative = vm.removeKeyslot(graphPath, slotIndex = -1)
+        val negative = vm.removeKeyslot(RepoRoot(graphPath), slotIndex = -1)
         assertIs<VaultError.InvalidCredential>(negative.leftOrNull(),
             "Negative slot index must be rejected")
 
-        val tooLarge = vm.removeKeyslot(graphPath, slotIndex = 8)
+        val tooLarge = vm.removeKeyslot(RepoRoot(graphPath), slotIndex = 8)
         assertIs<VaultError.InvalidCredential>(tooLarge.leftOrNull(),
             "Slot index >= KEYSLOT_COUNT must be rejected")
     }
@@ -408,9 +409,9 @@ class VaultManagerTest {
         val vm = makeVaultManagerWithStore(store)
         val graphPath = "/tmp/test-graph"
         val customParams = Argon2Params(memory = 8192, iterations = 2, parallelism = 1)
-        vm.createVault(graphPath, "correct".toCharArray(), argon2Params = customParams)
+        vm.createVault(RepoRoot(graphPath), "correct".toCharArray(), argon2Params = customParams)
         // Pass null — uses params stored in the keyslot (the only correct production path)
-        val result = vm.unlock(graphPath, "correct".toCharArray(), argon2Params = null)
+        val result = vm.unlock(RepoRoot(graphPath), "correct".toCharArray(), argon2Params = null)
         assertTrue(result.isRight(), "Production unlock path must succeed using stored slot params")
         assertEquals(32, result.getOrNull()!!.dek.size)
         assertEquals(VaultNamespace.OUTER, result.getOrNull()!!.namespace)
@@ -421,8 +422,8 @@ class VaultManagerTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManagerWithStore(store)
         val graphPath = "/tmp/test-graph"
-        vm.createVault(graphPath, "correct".toCharArray(), argon2Params = params)
-        vm.unlock(graphPath, "correct".toCharArray(), params)
+        vm.createVault(RepoRoot(graphPath), "correct".toCharArray(), argon2Params = params)
+        vm.unlock(RepoRoot(graphPath), "correct".toCharArray(), params)
         val event = vm.vaultEvents.first { it is VaultManager.VaultEvent.Unlocked }
         assertIs<VaultManager.VaultEvent.Unlocked>(event)
         assertEquals(VaultNamespace.OUTER, event.namespace)
@@ -435,7 +436,7 @@ class VaultManagerTest {
             fileReadBytes = { null },
             fileWriteBytes = { _, _ -> false },
         )
-        val result = vm.createVault("/tmp/test-graph", "pass".toCharArray(), argon2Params = params)
+        val result = vm.createVault(RepoRoot("/tmp/test-graph"), "pass".toCharArray(), argon2Params = params)
         assertTrue(result.isLeft())
         assertIs<VaultError.CorruptedFile>(result.leftOrNull())
     }
@@ -454,12 +455,12 @@ class VaultManagerTest {
             },
         )
         val graphPath = "/tmp/test-graph"
-        val dek = vm.createVault(graphPath, "original".toCharArray(), argon2Params = params).getOrNull()!!.dek
-        val result = vm.addKeyslot(graphPath, dek, "second".toCharArray(), argon2Params = params)
+        val dek = vm.createVault(RepoRoot(graphPath), "original".toCharArray(), argon2Params = params).getOrNull()!!.dek
+        val result = vm.addKeyslot(RepoRoot(graphPath), dek, "second".toCharArray(), argon2Params = params)
         assertTrue(result.isLeft())
         assertIs<VaultError.CorruptedFile>(result.leftOrNull())
         // Vault must still be intact — the original slot must still unlock
-        val unlock = vm.unlock(graphPath, "original".toCharArray(), params)
+        val unlock = vm.unlock(RepoRoot(graphPath), "original".toCharArray(), params)
         assertTrue(unlock.isRight(), "Vault must remain unlockable after failed addKeyslot write")
     }
 
@@ -478,11 +479,11 @@ class VaultManagerTest {
             },
         )
         val graphPath = "/tmp/test-graph"
-        val dek = vm.createVault(graphPath, "pass".toCharArray(), argon2Params = params).getOrNull()!!.dek
-        vm.unlock(graphPath, "pass".toCharArray(), params)
+        val dek = vm.createVault(RepoRoot(graphPath), "pass".toCharArray(), argon2Params = params).getOrNull()!!.dek
+        vm.unlock(RepoRoot(graphPath), "pass".toCharArray(), params)
         // Add a second slot so the last-slot guard passes, then a write failure returns CorruptedFile
-        vm.addKeyslot(graphPath, dek, "pass2".toCharArray(), argon2Params = params)
-        val result = vm.removeKeyslot(graphPath, slotIndex = 0)
+        vm.addKeyslot(RepoRoot(graphPath), dek, "pass2".toCharArray(), argon2Params = params)
+        val result = vm.removeKeyslot(RepoRoot(graphPath), slotIndex = 0)
         assertTrue(result.isLeft())
         assertIs<VaultError.CorruptedFile>(result.leftOrNull())
     }
@@ -492,10 +493,10 @@ class VaultManagerTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManagerWithStore(store)
         val graphPath = "/tmp/test-graph"
-        vm.createVault(graphPath, "sole".toCharArray(), argon2Params = params)
-        vm.unlock(graphPath, "sole".toCharArray(), params)
+        vm.createVault(RepoRoot(graphPath), "sole".toCharArray(), argon2Params = params)
+        vm.unlock(RepoRoot(graphPath), "sole".toCharArray(), params)
         // Only one active slot — removing it must be refused
-        val result = vm.removeKeyslot(graphPath, slotIndex = 0)
+        val result = vm.removeKeyslot(RepoRoot(graphPath), slotIndex = 0)
         assertTrue(result.isLeft(), "Removing the last slot must return an error; got $result")
         assertIs<VaultError.InvalidCredential>(result.leftOrNull())
     }
@@ -507,7 +508,7 @@ class VaultManagerTest {
             fileReadBytes = { null },
             fileWriteBytes = { _, _ -> true },
         )
-        val result = vm.unlock("/tmp/nonexistent-graph", "pass".toCharArray(), params)
+        val result = vm.unlock(RepoRoot("/tmp/nonexistent-graph"), "pass".toCharArray(), params)
         assertTrue(result.isLeft())
         assertIs<VaultError.NotAVault>(result.leftOrNull())
     }

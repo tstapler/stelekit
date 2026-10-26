@@ -4,12 +4,13 @@
 package dev.stapler.stelekit.git.model
 
 import dev.stapler.stelekit.logging.Logger
+import dev.stapler.stelekit.model.RepoRoot
 import kotlinx.serialization.Serializable
 
 @Serializable
 data class GitConfig(
     val graphId: String,
-    val repoRoot: String,
+    val repoRoot: RepoRoot,
     val wikiSubdir: String?,
     val remoteName: String = "origin",
     val remoteBranch: String = "main",
@@ -25,7 +26,7 @@ data class GitConfig(
     val cloneDepthState: CloneDepthState = CloneDepthState.None,
 )
 
-val GitConfig.wikiRoot: String get() = if (wikiSubdir.isNullOrEmpty()) repoRoot else "$repoRoot/$wikiSubdir"
+val GitConfig.wikiRoot: String get() = if (wikiSubdir.isNullOrEmpty()) repoRoot.value else "${repoRoot.value}/$wikiSubdir"
 
 enum class GitAuthType { NONE, SSH_KEY, HTTPS_TOKEN, GITHUB_OAUTH }
 

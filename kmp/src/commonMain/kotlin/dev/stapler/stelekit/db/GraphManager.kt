@@ -442,7 +442,7 @@ class GraphManager(
             // The .db, .db-wal, and .db-shm files must never be committed to git
             // as they are binary and will cause unresolvable merge conflicts.
             checkGitignoreForDatabase(expandedPath)
-            val ipm = fileSystem.fileExists(VaultManager.vaultFilePath(expandedPath))
+            val ipm = fileSystem.fileExists(VaultManager.vaultFilePath(RepoRoot(expandedPath)))
             dn to ipm
         }
         val info = GraphInfo(
@@ -515,7 +515,7 @@ class GraphManager(
         description: String = "",
         onStateChange: (GitTransportRetryState) -> Unit = {},
     ): Either<DomainError.GitError, GraphId> {
-        val cloneResult = gitRepository.clone(url, localPath, auth, onProgress, onStateChange)
+        val cloneResult = gitRepository.clone(url, RepoRoot(localPath), auth, onProgress, onStateChange)
         return cloneResult.map { addGraph(localPath, location, displayName, description) }
     }
 

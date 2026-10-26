@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.vault.perf
 
+import dev.stapler.stelekit.model.RepoRoot
 import dev.stapler.stelekit.vault.*
 import kotlinx.coroutines.test.runTest
 import org.junit.Assume.assumeTrue
@@ -80,9 +81,9 @@ class VaultPerformanceTest {
         )
         val graphPath = "/tmp/perf-test"
         @Suppress("DEPRECATION")
-        vm.createVault(graphPath, "pass".toCharArray(), argon2Params = TEST_ARGON2_PARAMS)
+        vm.createVault(RepoRoot(graphPath), "pass".toCharArray(), argon2Params = TEST_ARGON2_PARAMS)
         @Suppress("DEPRECATION")
-        vm.unlock(graphPath, "pass".toCharArray(), TEST_ARGON2_PARAMS)
+        vm.unlock(RepoRoot(graphPath), "pass".toCharArray(), TEST_ARGON2_PARAMS)
         val dekRef = vm.currentDek()!!
         val elapsed = measureTime { vm.lock() }
         assertTrue(dekRef.all { it == 0.toByte() }, "DEK must be zeroed after lock()")

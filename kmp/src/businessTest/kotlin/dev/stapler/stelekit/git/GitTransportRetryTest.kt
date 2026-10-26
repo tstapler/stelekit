@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.model.RepoRoot
 import arrow.core.Either
 import arrow.core.right
 import arrow.resilience.Schedule
@@ -93,7 +94,7 @@ class GitTransportRetryTest {
             onFailed = { e -> DomainError.GitError.CloneFailed(e.message ?: "Clone failed") },
             onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
         ) {
-            repo.clone(url = "https://example.invalid/graph.git", localPath = "/tmp/graph", auth = GitAuth.None, onProgress = {}, onStateChange = {})
+            repo.clone(url = "https://example.invalid/graph.git", localPath = RepoRoot("/tmp/graph"), auth = GitAuth.None, onProgress = {}, onStateChange = {})
         }
 
         assertEquals(3, cloneSequence.invocationCount, "clone() must be invoked once, then retried twice before succeeding")

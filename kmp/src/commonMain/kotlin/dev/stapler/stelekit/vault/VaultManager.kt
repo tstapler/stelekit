@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.vault
 
+import dev.stapler.stelekit.model.RepoRoot
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
@@ -66,7 +67,7 @@ class VaultManager(
     class UnlockResult(val dek: ByteArray, val namespace: VaultNamespace)
 
     /**
-     * Create a new vault at [graphPath]/.stele-vault with a single passphrase keyslot.
+     * Create a new vault at [repoRoot]/.stele-vault with a single passphrase keyslot.
      *
      * The vault is automatically unlocked after creation — [lock] manages DEK zeroing.
      * Returns an [UnlockResult] so the caller can inject the DEK into a [CryptoLayer]
@@ -75,7 +76,7 @@ class VaultManager(
      * [argon2Params] defaults to [DEFAULT_ARGON2_PARAMS]; supply a calibrated set for production use.
      */
     suspend fun createVault(
-        graphPath: String,
+        repoRoot: RepoRoot,
         passphrase: CharArray,
         namespace: VaultNamespace = VaultNamespace.OUTER,
         argon2Params: Argon2Params = DEFAULT_ARGON2_PARAMS,
@@ -126,14 +127,14 @@ class VaultManager(
             }
             val headerBytes = VaultHeaderSerializer.serialize(finalHeader)
 
-            val vaultPath = vaultFilePath(graphPath)
+            val vaultPath = vaultFilePath(repoRoot)
             if (!fileWriteBytes(vaultPath, headerBytes)) {
                 return@withContext VaultError.CorruptedFile("Failed to write vault file to $vaultPath").left()
             }
 
             // Pre-create the hidden-reserve directory so it exists even before a hidden graph is written.
             // Written as a random-byte sentinel — indistinguishable from encrypted file content.
-            val reservePath = hiddenReserveSentinelPath(graphPath)
+            val reservePath = hiddenReserveSentinelPath(repoRoot)
             if (!fileWriteBytes(reservePath, crypto.secureRandom(256))) {
                 // Non-fatal: the reserve sentinel is best-effort infrastructure.
                 // Log-worthy but not a reason to fail vault creation.
@@ -156,14 +157,14 @@ class VaultManager(
      * The passphrase CharArray is zero-filled after derivation regardless of outcome.
      */
     suspend fun unlock(
-        graphPath: String,
+        repoRoot: RepoRoot,
         passphrase: CharArray,
         argon2Params: Argon2Params? = null,
     ): Either<VaultError, UnlockResult> = withContext(Dispatchers.Default) {
         if (passphrase.any { it.isSurrogate() }) {
             logger.warn("Passphrase contains supplementary Unicode characters — CESU-8 encoding used, may not interoperate with standard tools")
         }
-        val vaultPath = vaultFilePath(graphPath)
+        val vaultPath = vaultFilePath(repoRoot)
         val rawBytes = withContext(PlatformDispatcher.IO) { fileReadBytes(vaultPath) }
             ?: return@withContext VaultError.NotAVault("Vault file not found at $vaultPath").left()
 
@@ -290,7 +291,7 @@ class VaultManager(
      * The caller must first unlock with an existing provider to supply [dek].
      */
     suspend fun addKeyslot(
-        graphPath: String,
+        repoRoot: RepoRoot,
         dek: ByteArray,
         passphrase: CharArray,
         namespace: VaultNamespace = VaultNamespace.OUTER,
@@ -299,7 +300,7 @@ class VaultManager(
         val localDek = dek.copyOf()   // isolated from concurrent lock() zeroing of the live session array
         try {
             validatePassphrase(passphrase)
-            val vaultPath = vaultFilePath(graphPath)
+            val vaultPath = vaultFilePath(repoRoot)
             val rawBytes = withContext(PlatformDispatcher.IO) { fileReadBytes(vaultPath) }
                 ?: return@withContext VaultError.NotAVault("Vault file not found").left()
             val header = when (val r = VaultHeaderSerializer.deserialize(rawBytes)) {
@@ -373,7 +374,7 @@ class VaultManager(
      *    cannot remove HIDDEN keyslots (slots 4–7) and vice versa.
      */
     suspend fun removeKeyslot(
-        graphPath: String,
+        repoRoot: RepoRoot,
         slotIndex: Int,
     ): Either<VaultError, Unit> = withContext(Dispatchers.Default) {
         val currentSession = session ?: return@withContext VaultError.InvalidCredential("Vault is locked").left()
@@ -389,7 +390,7 @@ class VaultManager(
                 ).left()
             }
 
-            val vaultPath = vaultFilePath(graphPath)
+            val vaultPath = vaultFilePath(repoRoot)
             val rawBytes = withContext(PlatformDispatcher.IO) { fileReadBytes(vaultPath) }
                 ?: return@withContext VaultError.NotAVault("Vault file not found").left()
             val header = when (val r = VaultHeaderSerializer.deserialize(rawBytes)) {
@@ -557,12 +558,12 @@ class VaultManager(
      * identified by the DEK-derived marker. Requires the vault to be unlocked.
      * Returns an empty list when locked.
      */
-    suspend fun listActiveKeyslotIndices(graphPath: String): List<Int> = withContext(Dispatchers.Default) {
+    suspend fun listActiveKeyslotIndices(repoRoot: RepoRoot): List<Int> = withContext(Dispatchers.Default) {
         val currentSession = session ?: return@withContext emptyList()
         val dek = currentSession.dek.copyOf()
         val ns = currentSession.namespace
         try {
-            val vaultPath = vaultFilePath(graphPath)
+            val vaultPath = vaultFilePath(repoRoot)
             val rawBytes = withContext(PlatformDispatcher.IO) { fileReadBytes(vaultPath) }
                 ?: return@withContext emptyList()
             val header = when (val r = VaultHeaderSerializer.deserialize(rawBytes)) {
@@ -637,17 +638,19 @@ class VaultManager(
         /** Maximum Argon2id parallelism accepted from stored vault params — prevents thread/OOM DoS. */
         const val MAX_ARGON2_PARALLELISM = 64
 
-        fun vaultFilePath(graphPath: String): String {
-            require(graphPath.isNotEmpty()) { "graphPath must not be empty" }
-            require(!graphPath.contains("..")) { "graphPath must not contain '..' path traversal" }
-            val base = if (graphPath.endsWith("/")) graphPath.dropLast(1) else graphPath
+        fun vaultFilePath(repoRoot: RepoRoot): String {
+            val path = repoRoot.value
+            require(path.isNotEmpty()) { "repoRoot must not be empty" }
+            require(!path.contains("..")) { "repoRoot must not contain '..' path traversal" }
+            val base = if (path.endsWith("/")) path.dropLast(1) else path
             return "$base/.stele-vault"
         }
 
-        fun hiddenReserveSentinelPath(graphPath: String): String {
-            require(graphPath.isNotEmpty()) { "graphPath must not be empty" }
-            require(!graphPath.contains("..")) { "graphPath must not contain '..' path traversal" }
-            val base = if (graphPath.endsWith("/")) graphPath.dropLast(1) else graphPath
+        fun hiddenReserveSentinelPath(repoRoot: RepoRoot): String {
+            val path = repoRoot.value
+            require(path.isNotEmpty()) { "repoRoot must not be empty" }
+            require(!path.contains("..")) { "repoRoot must not contain '..' path traversal" }
+            val base = if (path.endsWith("/")) path.dropLast(1) else path
             return "$base/_hidden_reserve/.stele-reserve"
         }
     }

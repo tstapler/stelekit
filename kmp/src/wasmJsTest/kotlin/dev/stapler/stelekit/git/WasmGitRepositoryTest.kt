@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.model.RepoRoot
 import arrow.core.Either
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.model.GitAuthType
@@ -61,7 +62,7 @@ class WasmGitRepositoryTest {
 
     private val config = GitConfig(
         graphId = "default",
-        repoRoot = "/stelekit/default",
+        repoRoot = RepoRoot("/stelekit/default"),
         wikiSubdir = "",
         authType = GitAuthType.GITHUB_OAUTH,
     )
@@ -88,7 +89,7 @@ class WasmGitRepositoryTest {
             val engine = MockEngine { _ -> requestCount++; error("must not make any network call") }
             val repo = buildRepository(engine)
 
-            assertTrue(repo.isGitRepo(config.repoRoot))
+            assertTrue(repo.isGitRepo(config.repoRoot.value))
             assertEquals(Either.Right(Unit), repo.init(config.repoRoot))
             assertEquals(Either.Right(Unit), repo.stageSubdir(config))
             assertEquals(Either.Right(Unit), repo.removeStaleLockFile(config))
@@ -99,7 +100,7 @@ class WasmGitRepositoryTest {
     @Test
     fun `IT-4_1_1-A status() reflects the dirty snapshot`() = runTest {
         val fileSystem = PlatformFileSystem()
-        fileSystem.preload(config.repoRoot)
+        fileSystem.preload(config.repoRoot.value)
         val engine = MockEngine { _ -> error("status() must not make any network call") }
         val client = HttpClient(engine) { install(ContentNegotiation) { json(gitApiJson) } }
         val writeService = WasmGitWriteService(client, fileSystem)
@@ -108,7 +109,7 @@ class WasmGitRepositoryTest {
         val emptyStatus = repo.status(config).getOrNull()
         assertEquals(GitStatus(hasLocalChanges = false, untrackedFiles = emptyList(), modifiedFiles = emptyList()), emptyStatus)
 
-        fileSystem.writeFile("${config.repoRoot}/pages/Foo.md", "# Foo\n")
+        fileSystem.writeFile("${config.repoRoot.value}/pages/Foo.md", "# Foo\n")
         val dirtyStatus = repo.status(config).getOrNull()
         assertEquals(
             GitStatus(hasLocalChanges = true, untrackedFiles = emptyList(), modifiedFiles = listOf("pages/Foo.md")),

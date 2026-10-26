@@ -5,6 +5,7 @@ package dev.stapler.stelekit.db
 
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
+import dev.stapler.stelekit.model.RepoRoot
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.repository.GraphBackend
@@ -69,7 +70,7 @@ class GraphManagerRestartNotesPathTest {
             first.awaitBackgroundDetection()
             first.switchGraph(id)
             first.awaitPendingMigration()
-            val config = GitConfig(graphId = id.value, repoRoot = root, wikiSubdir = "logseq", authType = GitAuthType.NONE)
+            val config = GitConfig(graphId = id.value, repoRoot = RepoRoot(root), wikiSubdir = "logseq", authType = GitAuthType.NONE)
             first.createGitConfigRepository()!!.saveConfig(config)
             first.updateEffectivePathFromGitConfig(id, config)
             assertEquals(notes, first.getActiveGraphInfo()?.effectiveNotesPath?.value)

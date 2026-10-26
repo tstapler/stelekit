@@ -45,12 +45,12 @@ internal class AndroidGitMergeSupport(
         worktree: GitShadowWorktree?,
     ): ConflictFile {
         // filePath is git-relative (e.g. "pages/foo.md"), relative to whatever directory JGit
-        // actually opened — the shadow worktree root in shadow-mirror mode, not config.repoRoot
+        // actually opened — the shadow worktree root in shadow-mirror mode, not config.repoRoot.value
         // (the SAF root string). toUserFacingPath() strips worktreeRootPath, so it must be given
         // a shadow-absolute path, never a repoRoot-prefixed one (fixed after Phase 3 review
         // flagged the repoRoot-prefixed form as a no-op strip that doubled the SAF root).
         val absolutePath = worktree?.toUserFacingPath("${worktree.worktreeRootPath}/$filePath")
-            ?: "${config.repoRoot}/$filePath"
+            ?: "${config.repoRoot.value}/$filePath"
         val wikiRelPath = if (!config.wikiSubdir.isNullOrEmpty() &&
             filePath.startsWith("${config.wikiSubdir}/")) {
             filePath.removePrefix("${config.wikiSubdir}/")
@@ -94,7 +94,7 @@ internal class AndroidGitMergeSupport(
         worktree: GitShadowWorktree?,
     ): ConflictContent {
         val jgitMarkerContent = worktree?.readShadowFile(filePath)
-            ?: runCatching { File(resolveForJGit(config.repoRoot), filePath).readText() }.getOrNull()
+            ?: runCatching { File(resolveForJGit(config.repoRoot.value), filePath).readText() }.getOrNull()
         val blockAware = tryBlockAwareConflict(repo, filePath, absolutePath, config.wikiRoot)
         val markerContent = blockAware?.markerText ?: jgitMarkerContent
         val hunks = blockAware?.hunks ?: markerContent?.let {
@@ -124,7 +124,7 @@ internal class AndroidGitMergeSupport(
         }
         if (worktree != null && content.markerContent != null) {
             worktree.writeBackQueue.enqueue(filePath)
-            GitShadowFlushActor(fileSystem, worktree, worktree.writeBackQueue, config.repoRoot).flush()
+            GitShadowFlushActor(fileSystem, worktree, worktree.writeBackQueue, config.repoRoot.value).flush()
         }
     }
 

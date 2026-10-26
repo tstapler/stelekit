@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.git.testsupport
 
+import dev.stapler.stelekit.model.RepoRoot
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
 
@@ -13,7 +14,7 @@ import dev.stapler.stelekit.git.model.GitConfig
  */
 val sampleConfig: GitConfig = GitConfig(
     graphId = "test-graph",
-    repoRoot = "/repo",
+    repoRoot = RepoRoot("/repo"),
     wikiSubdir = "",
     authType = GitAuthType.NONE,
 )

@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.model.RepoRoot
 import arrow.core.Either
 import arrow.core.getOrElse
 import arrow.core.left
@@ -84,7 +85,7 @@ class WasmGitRepository(
 
     override suspend fun isGitRepo(path: String): Boolean = true
 
-    override suspend fun init(repoRoot: String): Either<DomainError.GitError, Unit> = Unit.right()
+    override suspend fun init(repoRoot: RepoRoot): Either<DomainError.GitError, Unit> = Unit.right()
 
     override suspend fun stageSubdir(config: GitConfig, excludePaths: Set<String>): Either<DomainError.GitError, Unit> = Unit.right()
 
@@ -259,7 +260,7 @@ class WasmGitRepository(
 
     override suspend fun clone(
         url: String,
-        localPath: String,
+        localPath: RepoRoot,
         auth: GitAuth,
         onProgress: (CloneProgress) -> Unit,
         onStateChange: (GitTransportRetryState) -> Unit,

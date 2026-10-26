@@ -1,0 +1,58 @@
+name: Bazel test artifacts
+description: >
+  Always-run companion to `bazel test --test_output=errors`. Bazel skips a
+  failing test's output entirely once it exceeds --experimental_ui_max_stdouterr_bytes
+  (1 MiB by default), so a noisy suite fails in CI with no test name in the log.
+  This copies the per-target test.xml / test.log / flaky-attempt logs out of
+  bazel-testlogs, lists the failing test cases in the job summary, and uploads
+  everything as an artifact. Call once with `if: always()` after the test step.
+
+inputs:
+  name:
+    description: Artifact name (unique per job)
+    required: true
+  targets-dir:
+    description: Directory under bazel-testlogs to collect, e.g. kmp/src/jvmTest/kotlin
+    required: true
+  bazel-flags:
+    description: Extra flags `bazel info` needs to resolve the same output base as the test step (e.g. --config=android)
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Collect test logs and summarize failures
+      shell: bash
+      env:
+        # Via env, not spliced into the script — template-injection risk (see ci-job-report).
+        TARGETS_DIR: ${{ inputs.targets-dir }}
+        BAZEL_FLAGS: ${{ inputs.bazel-flags }}
+        OUT_DIR: ${{ runner.temp }}/bazel-test-artifacts
+      run: |
+        set +e
+        mkdir -p "$OUT_DIR"
+        # shellcheck disable=SC2086 # BAZEL_FLAGS is intentionally word-split
+        testlogs=$(bazel info bazel-testlogs $BAZEL_FLAGS 2>/dev/null)
+        if [ -z "$testlogs" ] || [ ! -d "$testlogs/$TARGETS_DIR" ]; then
+          echo "No test logs under '$testlogs/$TARGETS_DIR' — nothing to collect."
+          exit 0
+        fi
+        (cd "$testlogs/$TARGETS_DIR" && find . \( -name test.xml -o -name test.log -o -name 'attempt_*.log' -o -name outputs.zip \) -print0 \
+          | xargs -0 -I{} cp --parents -L {} "$OUT_DIR/")
+        {
+          echo "### Failing test cases (${TARGETS_DIR})"
+          echo '```'
+          failures=$(grep -rhB1 '<failure' "$OUT_DIR" --include=test.xml \
+            | grep -oE "testcase name='[^']*' classname='[^']*'" | sort -u | head -n 100)
+          [ -n "$failures" ] && echo "$failures" || echo "(none found in test.xml — see uploaded artifact)"
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Upload test logs
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.name }}
+        path: ${{ runner.temp }}/bazel-test-artifacts
+        if-no-files-found: ignore
+        retention-days: 7

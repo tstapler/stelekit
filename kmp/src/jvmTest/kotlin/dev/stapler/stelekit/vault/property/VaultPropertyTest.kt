@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.vault.property
 
+import dev.stapler.stelekit.model.RepoRoot
 import dev.stapler.stelekit.vault.*
 import kotlinx.coroutines.test.runTest
 import kotlin.test.*
@@ -111,8 +112,8 @@ class VaultPropertyTest {
             val passLength = 8 + (i * 4)
             val passChars = CharArray(passLength) { printableAscii[engine.secureRandom(1)[0].toInt().and(0xFF) % printableAscii.size] }
             val graphPath = "/tmp/prop-test-$i"
-            vm.createVault(graphPath, passChars.copyOf(), argon2Params = params)
-            val result = vm.unlock(graphPath, passChars.copyOf(), argon2Params = null)
+            vm.createVault(RepoRoot(graphPath), passChars.copyOf(), argon2Params = params)
+            val result = vm.unlock(RepoRoot(graphPath), passChars.copyOf(), argon2Params = null)
             assertTrue(result.isRight(), "Round-trip must succeed for random passphrase of length $passLength (iteration $i)")
             assertEquals(32, result.getOrNull()!!.dek.size)
         }

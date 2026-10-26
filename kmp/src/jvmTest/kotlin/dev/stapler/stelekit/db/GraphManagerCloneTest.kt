@@ -6,6 +6,7 @@
 
 package dev.stapler.stelekit.db
 
+import dev.stapler.stelekit.model.RepoRoot
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
@@ -72,14 +73,14 @@ class GraphManagerCloneTest {
     ) : GitRepository {
         override suspend fun clone(
             url: String,
-            localPath: String,
+            localPath: RepoRoot,
             auth: GitAuth,
             onProgress: (CloneProgress) -> Unit,
             onStateChange: (GitTransportRetryState) -> Unit,
         ): Either<DomainError.GitError, Unit> = cloneResult
 
         override suspend fun isGitRepo(path: String): Boolean = throw UnsupportedOperationException()
-        override suspend fun init(repoRoot: String): Either<DomainError.GitError, Unit> = throw UnsupportedOperationException()
+        override suspend fun init(repoRoot: RepoRoot): Either<DomainError.GitError, Unit> = throw UnsupportedOperationException()
         override suspend fun testRemote(url: String, auth: GitAuth): Either<DomainError.GitError, Unit> = throw UnsupportedOperationException()
         override suspend fun fetch(config: GitConfig): Either<DomainError.GitError, FetchResult> = throw UnsupportedOperationException()
         override suspend fun unshallow(config: GitConfig): Either<DomainError.GitError, Unit> = throw UnsupportedOperationException()

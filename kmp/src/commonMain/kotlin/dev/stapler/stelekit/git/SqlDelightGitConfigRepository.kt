@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.model.RepoRoot
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
@@ -56,7 +57,7 @@ class SqlDelightGitConfigRepository(
                 @OptIn(DirectSqlWrite::class)
                 database.steleDatabaseQueries.insertOrReplaceGitConfig(
                     graph_id = config.graphId,
-                    repo_root = config.repoRoot,
+                    repo_root = config.repoRoot.value,
                     wiki_subdir = config.wikiSubdir.orEmpty(),
                     remote_name = config.remoteName,
                     remote_branch = config.remoteBranch,
@@ -100,7 +101,7 @@ class SqlDelightGitConfigRepository(
 
     private fun Git_config.toModel(): GitConfig = GitConfig(
         graphId = graph_id,
-        repoRoot = repo_root,
+        repoRoot = RepoRoot(repo_root),
         wikiSubdir = wiki_subdir.ifEmpty { null },
         remoteName = remote_name,
         remoteBranch = remote_branch,

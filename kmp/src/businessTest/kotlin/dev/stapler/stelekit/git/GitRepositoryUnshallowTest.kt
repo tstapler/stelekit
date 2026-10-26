@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.model.RepoRoot
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.SteleDatabase
@@ -79,7 +80,7 @@ class GitRepositoryUnshallowTest {
 
     private fun baseConfig(repoRoot: String) = GitConfig(
         graphId = "graph-unshallow",
-        repoRoot = repoRoot,
+        repoRoot = RepoRoot(repoRoot),
         wikiSubdir = null,
         authType = GitAuthType.NONE,
         remoteName = "origin",

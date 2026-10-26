@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.model.RepoRoot
 import android.app.ForegroundServiceStartNotAllowedException
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -130,7 +131,7 @@ class GitCloneWorker @JvmOverloads constructor(
         var terminalReasonTag: String? = null
         val result = gitRepository.clone(
             url,
-            localPath,
+            RepoRoot(localPath),
             auth,
             onProgress = { progress ->
                 if (throttle.shouldEmit(progress)) {

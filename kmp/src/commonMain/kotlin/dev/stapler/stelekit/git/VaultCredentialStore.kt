@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.model.RepoRoot
 import arrow.core.Either
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.platform.FileSystem
@@ -17,7 +18,7 @@ import kotlin.concurrent.Volatile
 /**
  * Vault-integrated [CredentialAccess] implementation.
  *
- * Credentials are stored in `<graphPath>/.stele-credentials` encrypted with the vault DEK
+ * Credentials are stored in `<repoRoot>/.stele-credentials` encrypted with the vault DEK
  * using the same STEK format as note files ([CryptoLayer]).
  *
  * Lifecycle — must be called from the vault event handlers in App.kt:
@@ -31,7 +32,7 @@ import kotlin.concurrent.Volatile
  * so lock() zeroing the live session DEK does not race with in-flight encrypt/decrypt calls.
  */
 class VaultCredentialStore(
-    private val graphPath: String,
+    private val repoRoot: RepoRoot,
     private val cryptoEngine: CryptoEngine,
     private val fileSystem: FileSystem,
 ) : CredentialAccess {
@@ -95,7 +96,7 @@ class VaultCredentialStore(
     }
 
     private fun loadCredentials(layer: CryptoLayer): Map<String, String> {
-        val filePath = credentialFilePath(graphPath)
+        val filePath = credentialFilePath(repoRoot)
         val raw = try { fileSystem.readFileBytes(filePath) } catch (_: Exception) { null }
             ?: return emptyMap()
         return when (val result = layer.decrypt(RELATIVE_PATH, raw)) {
@@ -107,7 +108,7 @@ class VaultCredentialStore(
     }
 
     private fun saveCredentials(layer: CryptoLayer, credentials: Map<String, String>) {
-        val filePath = credentialFilePath(graphPath)
+        val filePath = credentialFilePath(repoRoot)
         val plaintext = json.encodeToString(credentials).encodeToByteArray()
         val encrypted = layer.encrypt(RELATIVE_PATH, plaintext)
         try {
@@ -119,6 +120,6 @@ class VaultCredentialStore(
 
     companion object {
         private const val RELATIVE_PATH = ".stele-credentials"
-        fun credentialFilePath(graphPath: String): String = "$graphPath/.stele-credentials"
+        fun credentialFilePath(repoRoot: RepoRoot): String = "${repoRoot.value.trimEnd('/')}/.stele-credentials"
     }
 }
