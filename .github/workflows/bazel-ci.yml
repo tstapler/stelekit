@@ -179,6 +179,9 @@ jobs:
     # directly exposed to the com_android_dex fetch flake (--config=android
     # pulls rules_android) — see bazel-jvm's comment for the incident.
     timeout-minutes: 125
+    permissions:
+      contents: read
+      pull-requests: write  # benchdiff's sticky memory comment
     steps:
       - uses: actions/checkout@v4
 
@@ -226,16 +229,39 @@ jobs:
           timeout_minutes: 55
           max_attempts: 2
           retry_wait_seconds: 30
-          # The sampler prints to the job log, which survives a killed runner (the vmstat log does not).
-          # -Xmx5g (vs .bazelrc's 6g) frees ~1G of headroom on the 16G runner; the peak was 14.4G with 1.6G free.
+          # The wrapper logs memory to the job log (survives a killed runner) and writes ci-mem-head/metrics.json.
           command: |
-            set -o pipefail
-            (while sleep 60; do
-              echo "[mem] $(free -m | awk '/Mem:/{print "used="$3"M avail="$7"M"}')"
-              ps -eo rss,args --sort=-rss --no-headers | head -6 | awk '{printf "[mem-top] %dM ", $1/1024; $1=""; print substr($0,1,140)}'
-            done) &
-            trap 'kill $!' EXIT
-            bazel --host_jvm_args=-Xmx5g build //kmp:android_app --config=android --config=remote-cache 2>&1 | tee "$RUNNER_TEMP/bazel-android-build.log"
+            scripts/ci/with-mem-sampler.sh ci-mem-head/metrics.json android-build -- \
+              bash -c 'set -o pipefail; bazel build //kmp:android_app --config=android --config=remote-cache 2>&1 | tee "$RUNNER_TEMP/bazel-android-build.log"'
+
+      # Memory trend: main saves its numbers, PRs diff against the latest main run. Advisory only.
+      - name: Restore main's memory baseline
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@v4
+        with:
+          path: ci-mem-base
+          key: ci-mem-android-${{ github.sha }}
+          restore-keys: ci-mem-android-
+
+      - name: Save memory baseline (main only)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && hashFiles('ci-mem-head/metrics.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: ci-mem-head
+          key: ci-mem-android-${{ github.sha }}
+
+      - name: Compare memory to main
+        if: github.event_name == 'pull_request' && hashFiles('ci-mem-head/metrics.json') != ''
+        continue-on-error: true
+        uses: tstapler/benchdiff@3921c948d6d9cbc538a62d3808d979c06cc13a94 # v0.1.0
+        with:
+          head: ci-mem-head/metrics.json
+          base: ${{ hashFiles('ci-mem-base/metrics.json') != '' && 'ci-mem-base/metrics.json' || '' }}
+          format: benchdiff
+          threshold: 10
+          min-abs: 500
+          title: CI memory (Bazel Android build, 16 GB runner)
+          tag: ci-memory-android
 
       - name: CI job report
         if: always()
