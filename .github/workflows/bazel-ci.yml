@@ -227,11 +227,15 @@ jobs:
           max_attempts: 2
           retry_wait_seconds: 30
           # The sampler prints to the job log, which survives a killed runner (the vmstat log does not).
+          # -Xmx5g (vs .bazelrc's 6g) frees ~1G of headroom on the 16G runner; the peak was 14.4G with 1.6G free.
           command: |
             set -o pipefail
-            (while sleep 60; do echo "[mem] $(free -m | awk '/Mem:/{print "used="$3"M avail="$7"M"}')"; done) &
+            (while sleep 60; do
+              echo "[mem] $(free -m | awk '/Mem:/{print "used="$3"M avail="$7"M"}')"
+              ps -eo rss,args --sort=-rss --no-headers | head -6 | awk '{printf "[mem-top] %dM ", $1/1024; $1=""; print substr($0,1,140)}'
+            done) &
             trap 'kill $!' EXIT
-            bazel build //kmp:android_app --config=android --config=remote-cache 2>&1 | tee "$RUNNER_TEMP/bazel-android-build.log"
+            bazel --host_jvm_args=-Xmx5g build //kmp:android_app --config=android --config=remote-cache 2>&1 | tee "$RUNNER_TEMP/bazel-android-build.log"
 
       - name: CI job report
         if: always()
