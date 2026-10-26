@@ -24,6 +24,7 @@ import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 import kotlin.time.Clock
 
 /**
@@ -45,10 +46,13 @@ class StelekitViewModelStartupPathTest {
 
     private class Harness(val vm: StelekitViewModel, val pages: FakePageRepository, val settings: InMemorySettings, val scope: CoroutineScope)
 
-    private fun harness(dirs: Set<String>, cachedPath: String): Harness {
+    private fun harness(
+        dirs: Set<String>,
+        cachedPath: String,
+        pages: FakePageRepository = FakePageRepository(listOf(page())),
+    ): Harness {
         val fileSystem = DirectoriesFileSystem(dirs)
         val settings = InMemorySettings().also { it.putString(cacheKey, cachedPath) }
-        val pages = FakePageRepository(listOf(page()))
         val blocks = FakeBlockRepository()
         val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
         val vm = StelekitViewModel(
@@ -97,6 +101,26 @@ class StelekitViewModelStartupPathTest {
 
             assertFalse(stalePageExists(h), "a real graph switch still wipes the stale cache")
             assertEquals(notes, h.settings.getString(cacheKey, ""))
+        } finally {
+            h.scope.cancel()
+        }
+    }
+
+    @Test
+    fun loadGraph_should_ReportProgress_When_TheCacheWipeIsSlow() = runBlocking {
+        val slowPages = object : FakePageRepository(listOf(page())) {
+            override suspend fun clear() {
+                delay(600)
+                super.clear()
+            }
+        }
+        val h = harness(dirs = setOf(root, notes, "$notes/pages"), cachedPath = root, pages = slowPages)
+        try {
+            h.vm.wipeWatchdogIntervalMs = 100
+            h.vm.loadGraph(notes)
+
+            val status = withTimeout(10_000) { h.vm.uiState.first { it.statusMessage.startsWith("Still clearing") } }
+            assertTrue(status.statusMessage.contains("s)"), status.statusMessage)
         } finally {
             h.scope.cancel()
         }
