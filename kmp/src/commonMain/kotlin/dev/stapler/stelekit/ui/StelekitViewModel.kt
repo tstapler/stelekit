@@ -641,8 +641,8 @@ class StelekitViewModel(
             }
         }
         try {
-            val pagesTime = measureTime { pageRepository.clear() }
             val blocksTime = measureTime { blockRepository.clear() }
+            val pagesTime = measureTime { pageRepository.clear() }
             logger.info("Cleared persistent cache ($reason): pages in ${pagesTime.inWholeMilliseconds}ms, blocks in ${blocksTime.inWholeMilliseconds}ms")
         } finally {
             watchdog.cancel()
@@ -907,8 +907,8 @@ class StelekitViewModel(
     @OptIn(DirectRepositoryWrite::class)
     fun clear() {
         scope.launch {
-            pageRepository.clear()
             blockRepository.clear()
+            pageRepository.clear()
         }
     }
 

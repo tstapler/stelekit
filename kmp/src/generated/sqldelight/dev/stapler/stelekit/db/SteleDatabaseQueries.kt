@@ -4016,6 +4016,21 @@ public class SteleDatabaseQueries(
   /**
    * @return The number of rows updated.
    */
+  public suspend fun deleteLeafBlocks(): Long {
+    val result = driver.execute(-1_186_180_720, """DELETE FROM blocks WHERE uuid NOT IN (SELECT parent_uuid FROM blocks WHERE parent_uuid IS NOT NULL)""", 0).await()
+    notifyQueries(-1_186_180_720) { emit ->
+      emit("block_references")
+      emit("blocks")
+      emit("blocks_fts")
+      emit("properties")
+      emit("wikilink_references")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
   public suspend fun deleteBlocksByPageUuid(page_uuid: String): Long {
     val result = driver.execute(-2_119_562_093, """DELETE FROM blocks WHERE page_uuid = ?""", 1) {
           var parameterIndex = 0
