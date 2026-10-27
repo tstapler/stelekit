@@ -353,6 +353,10 @@ DELETE FROM blocks WHERE parent_uuid = ?;
 deleteAllBlocks:
 DELETE FROM blocks;
 
+-- Leaves only: a bulk wipe that lets ON DELETE CASCADE walk parent->child is ~10x slower with the FTS delete trigger.
+deleteLeafBlocks:
+DELETE FROM blocks WHERE uuid NOT IN (SELECT parent_uuid FROM blocks WHERE parent_uuid IS NOT NULL);
+
 deleteBlocksByPageUuid:
 DELETE FROM blocks WHERE page_uuid = ?;
 

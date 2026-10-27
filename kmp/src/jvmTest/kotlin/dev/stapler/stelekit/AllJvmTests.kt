@@ -146,6 +146,7 @@ import dev.stapler.stelekit.db.DatabaseOpenDiagnosticsTest
 import dev.stapler.stelekit.db.EnsureParentDirectoryTest
 import dev.stapler.stelekit.db.GraphManagerDetectionLeakTest
 import dev.stapler.stelekit.db.GraphManagerRestartNotesPathTest
+import dev.stapler.stelekit.repository.BlockRepositoryClearTest
 import dev.stapler.stelekit.repository.CountAllBlocksTest
 import dev.stapler.stelekit.ui.StelekitViewModelStartupPathTest
 import dev.stapler.stelekit.db.JvmDriverConnectionPropsTest
@@ -459,6 +460,7 @@ import org.junit.runners.Suite
     EnsureParentDirectoryTest::class,
     GraphManagerDetectionLeakTest::class,
     GraphManagerRestartNotesPathTest::class,
+    BlockRepositoryClearTest::class,
     CountAllBlocksTest::class,
     StelekitViewModelStartupPathTest::class,
     JvmDriverConnectionPropsTest::class,
