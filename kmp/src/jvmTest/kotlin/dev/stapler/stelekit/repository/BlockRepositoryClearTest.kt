@@ -53,27 +53,31 @@ class BlockRepositoryClearTest {
     }
 
     @Test
-    fun clear_should_RemoveAChainDeeperThanSqliteTriggerRecursionLimit() = runBlocking {
+    fun clear_should_RemoveAChainDeeperThanSqliteTriggerRecursionLimit_When_BlocksAreCleared() = runBlocking {
         val (driver, blocks, pages) = fixture()
+        assertEquals(1L, driver.count("PRAGMA foreign_keys"), "cascade path is only exercised with foreign keys on")
         pages.seedPage()
-        val depth = 1500 // SQLite refuses to cascade deeper than 1000 nested trigger levels
-        blocks.saveBlocks((0 until depth).map { block(it, if (it == 0) null else it - 1, "chain $it") })
+        blocks.saveBlocks(deepChain())
 
         blocks.clear()
 
         assertEquals(0L, driver.count("SELECT count(*) FROM blocks"))
+        assertEquals(0L, driver.count("SELECT count(*) FROM blocks_fts WHERE blocks_fts MATCH 'chain'"))
     }
 
     @Test
-    fun clear_should_RemoveBlocksThenPages_When_PagesAreClearedAfterBlocks() = runBlocking {
+    fun clear_should_RemoveBlocksAndPages_When_PagesAreClearedFirstOnADeepChain() = runBlocking {
         val (driver, blocks, pages) = fixture()
+        assertEquals(1L, driver.count("PRAGMA foreign_keys"), "cascade path is only exercised with foreign keys on")
         pages.seedPage()
-        blocks.saveBlocks(listOf(block(0, null, "x"), block(1, 0, "y")))
+        blocks.saveBlocks(deepChain())
 
-        blocks.clear()
         pages.clear()
 
         assertEquals(0L, driver.count("SELECT count(*) FROM blocks"))
         assertEquals(0L, driver.count("SELECT count(*) FROM pages"))
     }
+
+    // SQLite refuses to cascade deeper than 1000 nested trigger levels.
+    private fun deepChain() = (0 until 1500).map { block(it, if (it == 0) null else it - 1, "chain $it") }
 }

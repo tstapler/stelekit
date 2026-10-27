@@ -641,7 +641,6 @@ class StelekitViewModel(
             }
         }
         try {
-            // Blocks first: deleting pages cascades into blocks through the slow per-row path.
             val blocksTime = measureTime { blockRepository.clear() }
             val pagesTime = measureTime { pageRepository.clear() }
             logger.info("Cleared persistent cache ($reason): pages in ${pagesTime.inWholeMilliseconds}ms, blocks in ${blocksTime.inWholeMilliseconds}ms")
