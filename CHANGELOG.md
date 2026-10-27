@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.99.1](https://github.com/tstapler/stelekit/compare/v0.99.0...v0.99.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* clear blocks leaf-first and before pages so the cache wipe is ~6x faster ([#499](https://github.com/tstapler/stelekit/issues/499)) ([8379630](https://github.com/tstapler/stelekit/commit/8379630ce98d328efd9d8566f954e146559e7507))
+
 ## [0.99.0](https://github.com/tstapler/stelekit/compare/v0.98.1...v0.99.0) (2026-10-26)
 
 
