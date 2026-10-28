@@ -29,6 +29,11 @@ data class EditorCapabilities(
      */
     val onPasteImage: ((editingBlockUuid: BlockUuid?) -> Boolean)? = null,
     /**
+     * Handles Ctrl/Cmd+V when the clipboard holds multi-block HTML (a list, several paragraphs).
+     * Returns true if consumed; false lets the ordinary text paste run. Null disables it.
+     */
+    val onPasteHtml: ((editingBlockUuid: BlockUuid?) -> Boolean)? = null,
+    /**
      * Triggers a camera capture and inserts the resulting IMAGE_ANNOTATION block on the
      * current page below the editing cursor. Null hides the camera toolbar button.
      * Only non-null on Android when SensorModule.cameraProvider.isAvailable is true.

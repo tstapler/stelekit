@@ -124,6 +124,8 @@ data class StelekitAppPlatformIntegrations(
      */
     val googleAuthManager: dev.stapler.stelekit.platform.google.GoogleAuthManager? = null,
     val requestCameraPermission: (suspend () -> Boolean)? = null,
+    /** Reads HTML from the system clipboard (bounded). Null disables rich-text paste; set on Desktop. */
+    val readClipboardHtml: (() -> dev.stapler.stelekit.domain.ClipboardHtml?)? = null,
     /**
      * Platform quiesce port for Story 3.1.3/3.1.5's `GraphRelocationCoordinator` — pass
      * `createAndroidGraphMoveQuiesceStrategy(...)` on Android, `createWasmJsGraphMoveQuiesceStrategy(...)`

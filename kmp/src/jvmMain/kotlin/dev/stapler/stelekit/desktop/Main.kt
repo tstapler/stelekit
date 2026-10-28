@@ -222,6 +222,7 @@ fun main(args: Array<String>) {
                     platformIntegrations = StelekitAppPlatformIntegrations(
                         cryptoEngine = dev.stapler.stelekit.vault.JvmCryptoEngine(),
                         attachmentService = attachmentService,
+                        readClipboardHtml = { dev.stapler.stelekit.domain.HtmlClipboardReader.read() },
                         gitRepository = gitRepository,
                         gitCloneWorkerLauncher = gitCloneWorkerLauncher,
                     ),

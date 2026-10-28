@@ -133,6 +133,11 @@ private fun buildEditorCapabilities(
         onPasteImage = attachmentService?.let { service ->
             { editingBlockUuid: BlockUuid? -> tryPasteImage(service, inputs, editingBlockUuid) }
         },
+        onPasteHtml = deps.platformIntegrations.readClipboardHtml?.let { read ->
+            { editingBlockUuid: BlockUuid? ->
+                pasteClipboardHtml(read, inputs.viewModelStack.blockStateManager, viewModel::sendSnackbar, editingBlockUuid)
+            }
+        },
         onCaptureImage = buildOnCaptureImage(deps, viewModel, inputs, captureState),
     )
 }
