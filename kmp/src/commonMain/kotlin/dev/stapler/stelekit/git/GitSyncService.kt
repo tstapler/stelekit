@@ -78,6 +78,8 @@ class GitSyncService(
     lfsGuardCoordinator: LfsGuardCoordinator? = null,
     /** Connectivity probe; defaults to [networkMonitor]. Tests inject one because the JVM monitor pings 8.8.8.8. */
     private val isOnline: () -> Boolean = { networkMonitor.isOnline },
+    /** Extra context for the periodic-sync job only; tests inject a virtual-time dispatcher here. */
+    private val periodicSyncContext: kotlin.coroutines.CoroutineContext = kotlin.coroutines.EmptyCoroutineContext,
 ) {
     private val logger = Logger("GitSyncService")
     private val markerGuard = ConflictMarkerGuard(fileSystem)
@@ -751,7 +753,7 @@ class GitSyncService(
     fun startPeriodicSync(graphId: String, intervalMinutes: Int) {
         stopPeriodicSync()
         if (intervalMinutes <= 0) return
-        periodicSyncJob = scope.launch {
+        periodicSyncJob = scope.launch(periodicSyncContext) {
             while (true) {
                 delay(intervalMinutes * 60_000L)
                 refreshLocalStatus(graphId)
