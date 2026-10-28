@@ -710,23 +710,24 @@ class StelekitViewModel(
                 if (graphExists) {
                     _uiState.update { it.copy(statusMessage = "Checking database...") }
                     
-                    val pageCountResult = pageRepository.countPages().first()
-                    val pageCount = pageCountResult.getOrNull() ?: 0L
-                    
-                    logger.info("Loading graph progressively from: $path (Page count: $pageCount)")
-                    
+                    // null = the count query failed (e.g. OutOfMemoryError); that must never read as "empty",
+                    // or a populated cache is wiped and re-imported into the same exhausted heap.
+                    val pageCount: Long? = pageRepository.countPages().first().getOrNull()
+
+                    logger.info("Loading graph progressively from: $path (Page count: ${pageCount ?: "unknown"})")
+
                     // Per-graph marker: a switch must not look like "same graph" (stale cache) or wipe the
                     // other graph's incremental cache. The legacy global key seeds a graph's first load.
                     val cacheKey = cachedGraphPathKey()
                     var cachedPath = platformSettings.getString(cacheKey, "")
                         .ifEmpty { platformSettings.getString(CACHED_GRAPH_PATH_KEY, "") }
-                    
+
                     if (pageCount == 0L) {
                         logger.info("Database is empty - forcing full re-index")
                         cachedPath = ""
                     }
-                    
-                    if (path != cachedPath && pageCount > 0L && !hasGraphContent(path)) {
+
+                    if (path != cachedPath && (pageCount ?: 0L) > 0L && !hasGraphContent(path)) {
                         // A folder with neither pages/ nor journals/ (e.g. a repo root whose notes live in a
                         // wiki subdirectory) would wipe a populated cache and then load nothing.
                         logger.warn("Not loading '$path': no pages/ or journals/ folder, but the database holds $pageCount pages (cached path '$cachedPath') - keeping the cache")
@@ -734,7 +735,9 @@ class StelekitViewModel(
                         return@launch
                     }
 
-                    if (path != cachedPath) {
+                    if (pageCount == null) {
+                        logger.warn("Page count unavailable - keeping the persistent cache for incremental load")
+                    } else if (path != cachedPath) {
                         logger.info("Switching graph from '$cachedPath' to '$path' - Clearing persistent cache")
                         clearPersistedCache("graph switch")
                         platformSettings.putString(cacheKey, path)

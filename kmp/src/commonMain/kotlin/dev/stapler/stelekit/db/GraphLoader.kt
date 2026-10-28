@@ -414,6 +414,18 @@ class GraphLoader(
     }
 
     /**
+     * Permanently retires this loader: stops its watcher and cancels everything on [parallelScope].
+     * Unlike [stopWatching] it leaves [writeActor] open, because that actor is shared with the repositories.
+     */
+    fun dispose() {
+        cancelBackgroundWork()
+        fileWatcher.close()
+        parallelScope.cancel()
+    }
+
+    internal val isWatching: Boolean get() = fileWatcher.isRunning
+
+    /**
      * Called by GraphWriter after it writes a file, so the watcher doesn't treat
      * our own write as an external change.
      *
@@ -1818,6 +1830,11 @@ class GraphLoader(
         forceReload: Boolean,
     ) {
         val filePathStr = filePath.value
+        // Git-merge reloads pass every changed path, binary assets and sidecar JSON included.
+        if (!FileRegistry.isPageFileName(filePathStr)) {
+            logger.debug("Skipping non-page file: $filePathStr")
+            return
+        }
         if (mode == ParseMode.METADATA_ONLY && isPriorityFile(filePathStr)) return
 
         val lock = getFileLock(filePathStr)

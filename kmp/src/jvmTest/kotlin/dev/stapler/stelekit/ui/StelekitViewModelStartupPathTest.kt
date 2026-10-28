@@ -3,8 +3,11 @@
 
 package dev.stapler.stelekit.ui
 
+import arrow.core.Either
+import arrow.core.left
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphWriter
+import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.platform.PlatformFileSystem
@@ -18,7 +21,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
@@ -121,6 +126,24 @@ class StelekitViewModelStartupPathTest {
 
             val status = withTimeout(10_000) { h.vm.uiState.first { it.statusMessage.startsWith("Still clearing") } }
             assertTrue(status.statusMessage.contains("s)"), status.statusMessage)
+        } finally {
+            h.scope.cancel()
+        }
+    }
+
+    @Test
+    fun loadGraph_should_KeepCache_When_PageCountQueryFails() = runBlocking {
+        val failingCount = object : FakePageRepository(listOf(page())) {
+            override fun countPages(): Flow<Either<DomainError, Long>> =
+                flowOf(DomainError.DatabaseError.ReadFailed("OutOfMemoryError").left())
+        }
+        val h = harness(dirs = setOf(root, notes, "$notes/pages"), cachedPath = root, pages = failingCount)
+        try {
+            h.vm.loadGraph(notes)
+            withTimeout(10_000) { h.vm.uiState.first { !it.isLoading } }
+
+            assertTrue(stalePageExists(h), "an unreadable page count is not an empty database")
+            assertEquals(root, h.settings.getString(cacheKey, ""), "cache marker is untouched when nothing was wiped")
         } finally {
             h.scope.cancel()
         }

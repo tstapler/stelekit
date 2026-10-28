@@ -134,6 +134,7 @@ import dev.stapler.stelekit.db.FileSystemCallCountTest
 import dev.stapler.stelekit.db.GraphFileWatcherTest
 import dev.stapler.stelekit.db.GraphLoaderBatchWriteTest
 import dev.stapler.stelekit.db.GraphLoaderCacheTest
+import dev.stapler.stelekit.db.GraphLoaderNonPageFileTest
 import dev.stapler.stelekit.db.GraphLoaderIndexBatchingTest
 import dev.stapler.stelekit.db.GraphManagerCloneTest
 import dev.stapler.stelekit.db.GraphManagerDatabaseLifecycleTest
@@ -448,6 +449,7 @@ import org.junit.runners.Suite
     GraphFileWatcherTest::class,
     GraphLoaderBatchWriteTest::class,
     GraphLoaderCacheTest::class,
+    GraphLoaderNonPageFileTest::class,
     GraphLoaderIndexBatchingTest::class,
     GraphManagerCloneTest::class,
     GraphManagerDatabaseLifecycleTest::class,
