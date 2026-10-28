@@ -1,0 +1,66 @@
+{
+  "jacoco.xml": {
+    "instruction": {
+      "covered": 454343,
+      "total": 798258,
+      "pct": 56.9
+    },
+    "branch": {
+      "covered": 26353,
+      "total": 64202,
+      "pct": 41.0
+    },
+    "line": {
+      "covered": 46237,
+      "total": 70152,
+      "pct": 65.9
+    },
+    "complexity": {
+      "covered": 18983,
+      "total": 52356,
+      "pct": 36.3
+    },
+    "method": {
+      "covered": 11385,
+      "total": 19855,
+      "pct": 57.3
+    },
+    "class": {
+      "covered": 3096,
+      "total": 4658,
+      "pct": 66.5
+    }
+  },
+  "jacoco-android.xml": {
+    "instruction": {
+      "covered": 245612,
+      "total": 804133,
+      "pct": 30.5
+    },
+    "branch": {
+      "covered": 16177,
+      "total": 65000,
+      "pct": 24.9
+    },
+    "line": {
+      "covered": 23144,
+      "total": 71369,
+      "pct": 32.4
+    },
+    "complexity": {
+      "covered": 9887,
+      "total": 52904,
+      "pct": 18.7
+    },
+    "method": {
+      "covered": 5865,
+      "total": 19997,
+      "pct": 29.3
+    },
+    "class": {
+      "covered": 1607,
+      "total": 4691,
+      "pct": 34.3
+    }
+  }
+}
