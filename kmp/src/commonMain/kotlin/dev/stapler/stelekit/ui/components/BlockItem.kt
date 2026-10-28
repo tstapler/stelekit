@@ -163,10 +163,12 @@ internal fun BlockItem(
     // Only update if the incoming version is newer than our local version
     LaunchedEffect(block.version) {
         if (block.version > localVersion) {
-            val newSelection = if (textFieldValue.selection.max <= block.content.length) {
-                textFieldValue.selection
-            } else {
-                TextRange(block.content.length)
+            val newSelection = when {
+                // Programmatic insertion (link/text): requestEditBlock supplies the confirmed new cursor
+                isEditing && initialCursorPosition != null ->
+                    TextRange(initialCursorPosition.coerceIn(0, block.content.length))
+                textFieldValue.selection.max <= block.content.length -> textFieldValue.selection
+                else -> TextRange(block.content.length)
             }
             textFieldValue = TextFieldValue(text = block.content, selection = newSelection)
             localVersion = block.version
