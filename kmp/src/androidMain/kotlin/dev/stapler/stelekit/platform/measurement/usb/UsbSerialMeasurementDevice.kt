@@ -63,6 +63,8 @@ class UsbSerialMeasurementDevice(private val port: SerialMeterPort) : ExternalMe
     override suspend fun disconnect() {
         try {
             port.close()
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) {
             // Closing an already-unplugged port throws; the end state is the same.
         }

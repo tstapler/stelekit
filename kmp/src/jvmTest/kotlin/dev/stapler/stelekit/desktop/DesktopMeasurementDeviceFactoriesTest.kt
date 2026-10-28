@@ -6,6 +6,7 @@ package dev.stapler.stelekit.desktop
 import dev.stapler.stelekit.platform.measurement.ble.NoOpBleScanner
 import dev.stapler.stelekit.platform.measurement.keyboard.KeyboardEmulationDevice
 import dev.stapler.stelekit.platform.measurement.keyboard.KeyboardEmulationDeviceFactory
+import dev.stapler.stelekit.wiring.ObservableEffect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
@@ -28,9 +29,12 @@ class DesktopMeasurementDeviceFactoriesTest {
 
     @Test
     fun keyboardFallback_emitsItsDevice() = runBlocking {
-        val device = defaultMeasurementDeviceFactories()
-            .filterIsInstance<KeyboardEmulationDeviceFactory>().single().scan().first()
+        val factories = defaultMeasurementDeviceFactories()
+        val device = factories.filterIsInstance<KeyboardEmulationDeviceFactory>().single().scan().first()
 
-        assertTrue(device is KeyboardEmulationDevice)
+        ObservableEffect.assert("desktop-keyboard-device-emitted") {
+            assertTrue(device is KeyboardEmulationDevice)
+            assertEquals(KeyboardEmulationDevice.DEVICE_ID, device.deviceId)
+        }
     }
 }
