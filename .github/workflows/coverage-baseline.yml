@@ -1,0 +1,61 @@
+name: Coverage baseline
+
+# Full (not change-scoped) JaCoCo run so the coverage map ranks gaps from measured data. Nightly
+# and on demand; never on pull_request, so there is no draft-PR condition to skip it (BUG-002).
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 6 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: coverage-baseline
+  cancel-in-progress: false
+
+jobs:
+  coverage-baseline:
+    name: Full JaCoCo baseline (JVM + Robolectric)
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - uses: ./.github/actions/gradle-ci-memory
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+
+      - name: Install Xvfb (jvmTest includes Compose Desktop UI tests)
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends xvfb
+
+      - name: Run coverage tiers (jvmTest, testDebugUnitTest)
+        run: scripts/ci/coverage-run.sh coverage-baseline-out
+
+      - name: Summarize totals
+        if: always()
+        run: |
+          if [ -f coverage-baseline-out/totals.json ]; then
+            { echo '### Coverage totals'; echo '```json'; cat coverage-baseline-out/totals.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-baseline
+          path: |
+            coverage-baseline-out/jacoco.xml
+            coverage-baseline-out/jacoco-android.xml
+            coverage-baseline-out/runtime.json
+            coverage-baseline-out/totals.json
+          retention-days: 30
