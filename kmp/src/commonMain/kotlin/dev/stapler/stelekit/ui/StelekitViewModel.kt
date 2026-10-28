@@ -629,10 +629,28 @@ class StelekitViewModel(
         val pages = pageRepository.countPages().first().getOrNull() ?: 0L
         val blocks = blockRepository.countAllBlocks().getOrNull() ?: 0L
         logger.info("Clearing persistent cache ($reason): pages=$pages blocks=$blocks")
-        val pagesTime = measureTime { pageRepository.clear() }
-        val blocksTime = measureTime { blockRepository.clear() }
-        logger.info("Cleared persistent cache ($reason): pages in ${pagesTime.inWholeMilliseconds}ms, blocks in ${blocksTime.inWholeMilliseconds}ms")
+        _uiState.update { it.copy(statusMessage = "Clearing cached data ($pages pages, $blocks blocks)...") }
+        // A single DELETE has no progress, and a wedged one logs nothing at all; say it is still running.
+        val watchdog = scope.launch {
+            var waitedMs = 0L
+            while (true) {
+                delay(wipeWatchdogIntervalMs)
+                waitedMs += wipeWatchdogIntervalMs
+                logger.warn("Still clearing persistent cache ($reason) after ${waitedMs / 1000}s")
+                _uiState.update { it.copy(statusMessage = "Still clearing cached data (${waitedMs / 1000}s)...") }
+            }
+        }
+        try {
+            val blocksTime = measureTime { blockRepository.clear() }
+            val pagesTime = measureTime { pageRepository.clear() }
+            logger.info("Cleared persistent cache ($reason): pages in ${pagesTime.inWholeMilliseconds}ms, blocks in ${blocksTime.inWholeMilliseconds}ms")
+        } finally {
+            watchdog.cancel()
+        }
     }
+
+    /** How often a still-running cache wipe is reported; a var only so tests need not wait 10 s. */
+    internal var wipeWatchdogIntervalMs: Long = WIPE_WATCHDOG_INTERVAL_MS
 
     @OptIn(DirectRepositoryWrite::class)
     fun triggerReindex() {
@@ -889,8 +907,8 @@ class StelekitViewModel(
     @OptIn(DirectRepositoryWrite::class)
     fun clear() {
         scope.launch {
-            pageRepository.clear()
             blockRepository.clear()
+            pageRepository.clear()
         }
     }
 
@@ -2424,6 +2442,7 @@ class StelekitViewModel(
 
     companion object {
         private const val CACHED_GRAPH_PATH_KEY = "cached_graph_path"
+        private const val WIPE_WATCHDOG_INTERVAL_MS = 10_000L
         private const val MIN_MIDNIGHT_DELAY_MS = 1_000L
     }
 }

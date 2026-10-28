@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.99.1](https://github.com/tstapler/stelekit/compare/v0.99.0...v0.99.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* clear blocks leaf-first and before pages so the cache wipe is ~6x faster ([#499](https://github.com/tstapler/stelekit/issues/499)) ([8379630](https://github.com/tstapler/stelekit/commit/8379630ce98d328efd9d8566f954e146559e7507))
+
+## [0.99.0](https://github.com/tstapler/stelekit/compare/v0.98.1...v0.99.0) (2026-10-26)
+
+
+### Features
+
+* make a slow cache wipe visible and log the SQLite state that decides its cost ([#497](https://github.com/tstapler/stelekit/issues/497)) ([3b7515b](https://github.com/tstapler/stelekit/commit/3b7515b4e085b8fab5cc779ae150f397a6e08f28))
+
+
+### Bug Fixes
+
+* **ci:** stop Bazel Android build from killing the runner ([#495](https://github.com/tstapler/stelekit/issues/495)) ([82afcfd](https://github.com/tstapler/stelekit/commit/82afcfdcfe7e6dcaee88db7314217176fc7cfe44))
+* graph detection can no longer leak an uncaught exception into other tests ([#493](https://github.com/tstapler/stelekit/issues/493)) ([95cc735](https://github.com/tstapler/stelekit/commit/95cc735d2e505f4114dd7a658c2b844c49335125))
+
 ## [0.98.1](https://github.com/tstapler/stelekit/compare/v0.98.0...v0.98.1) (2026-10-25)
 
 

@@ -16,6 +16,7 @@ import dev.stapler.stelekit.db.Blocks
 import dev.stapler.stelekit.db.DirectSqlWrite
 import dev.stapler.stelekit.db.RestrictedDatabaseQueries
 import dev.stapler.stelekit.db.SteleDatabase
+import dev.stapler.stelekit.db.deleteAllBlocksLeafFirst
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.PageUuid
@@ -1395,7 +1396,7 @@ class SqlDelightBlockRepository(
 
     override suspend fun clear(): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
-            queries.deleteAllBlocks()
+            queries.transaction { queries.deleteAllBlocksLeafFirst() }
             blockCache.invalidateAll()
             hierarchyCache.invalidateAll()
             ancestorsCache.invalidateAll()
