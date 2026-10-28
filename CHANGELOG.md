@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.99.2](https://github.com/tstapler/stelekit/compare/v0.99.1...v0.99.2) (2026-10-28)
+
+
+### Bug Fixes
+
+* stop parsing binary files as pages, keep cache on failed count, dispose superseded loaders ([#501](https://github.com/tstapler/stelekit/issues/501)) ([b58337a](https://github.com/tstapler/stelekit/commit/b58337a69ae8b16ddf3ab1656ea1f45eed2c7f0d))
+* **ui:** sync block cursor after programmatic link insertion ([#502](https://github.com/tstapler/stelekit/issues/502)) ([6228676](https://github.com/tstapler/stelekit/commit/622867638fcb88071151beebc27afd356374960a))
+
 ## [0.99.1](https://github.com/tstapler/stelekit/compare/v0.99.0...v0.99.1) (2026-10-27)
 
 
