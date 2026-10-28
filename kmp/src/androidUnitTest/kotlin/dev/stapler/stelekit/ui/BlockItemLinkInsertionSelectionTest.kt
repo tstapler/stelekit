@@ -46,9 +46,10 @@ class BlockItemLinkInsertionSelectionTest {
     private fun selectionAfterUpdate(
         before: String,
         after: String,
-        cursorAfter: Int,
+        cursorAfter: Int?,
+        cursorBefore: Int? = before.length,
     ): TextRange? {
-        var current by mutableStateOf(block(before, 0) to (before.length as Int?))
+        var current by mutableStateOf(block(before, 0) to cursorBefore)
         composeTestRule.setContent {
             MaterialTheme {
                 BlockItem(
@@ -100,5 +101,16 @@ class BlockItemLinkInsertionSelectionTest {
     @Test
     fun cursorBeyondContentIsClamped() {
         assertEquals(TextRange(5), selectionAfterUpdate("Hello world", "Hello", 99))
+    }
+
+    @Test
+    fun externalUpdateWithoutCursorKeepsInBoundsSelection() {
+        // Undo/sync passes no cursor: the selection set before the update (end of "Hello world") survives
+        assertEquals(TextRange(5), selectionAfterUpdate("Hello", "Hello world", cursorAfter = null))
+    }
+
+    @Test
+    fun externalUpdateWithoutCursorClampsSelectionBeyondNewContent() {
+        assertEquals(TextRange(2), selectionAfterUpdate("Hello world", "Hi", cursorAfter = null))
     }
 }
