@@ -28,7 +28,7 @@ import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
 import dev.stapler.stelekit.repository.InMemorySearchRepository
 import dev.stapler.stelekit.ui.state.BlockStateManager
-import dev.stapler.stelekit.ui.state.FakeFileSystem
+import dev.stapler.stelekit.db.sidecar.FakeFileSystem
 import dev.stapler.stelekit.vault.CryptoLayer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
