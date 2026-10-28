@@ -64,6 +64,12 @@ import dev.stapler.stelekit.db.DemoGraphPersistenceTest
 import dev.stapler.stelekit.db.GraphInfoSerializationTest
 import dev.stapler.stelekit.db.GraphLoaderLfsPointerTest
 import dev.stapler.stelekit.db.SplitJournalTest
+import dev.stapler.stelekit.console.CommandLineTokenizerTest
+import dev.stapler.stelekit.console.ConsoleScopeOwnershipAuditTest
+import dev.stapler.stelekit.console.ConsoleSessionTest
+import dev.stapler.stelekit.console.ScrollbackBufferTest
+import dev.stapler.stelekit.security.RedactorSingleSiteAuditTest
+import dev.stapler.stelekit.security.RedactorTest
 import dev.stapler.stelekit.repository.BacklinkRepositoryTest
 import dev.stapler.stelekit.sections.CrossSectionBacklinkRenderTest
 import dev.stapler.stelekit.sections.NewPageAutoAssignmentTest
@@ -490,5 +496,11 @@ import org.junit.runners.Suite
     PlantedDeadCodeConstructorTest::class,
     WiringAllowlistRenewalTest::class,
     WiringCompletenessTest::class,
+    CommandLineTokenizerTest::class,
+    ConsoleScopeOwnershipAuditTest::class,
+    ConsoleSessionTest::class,
+    ScrollbackBufferTest::class,
+    RedactorSingleSiteAuditTest::class,
+    RedactorTest::class,
 )
 class AllBusinessTests

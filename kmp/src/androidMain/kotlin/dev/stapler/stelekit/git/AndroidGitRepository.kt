@@ -3,6 +3,8 @@
 
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.security.Redactor
+
 import dev.stapler.stelekit.model.RepoRoot
 import android.content.Context
 import arrow.core.Either
@@ -558,7 +560,7 @@ class AndroidGitRepository(
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                "<failed to open repo: ${e::class.simpleName}: ${redactSecrets(e.message.orEmpty())}>"
+                "<failed to open repo: ${e::class.simpleName}: ${Redactor.redactGitMessage(e.message.orEmpty())}>"
             }
         }
 

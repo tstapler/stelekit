@@ -230,6 +230,10 @@ internal fun ScreenRouter(
                 NavigationTracingEffect("Logs")
                 LogDashboard(diagnostics = graphDiagnostics)
             }
+            is Screen.Console -> {
+                NavigationTracingEffect("Console")
+                ConsoleRoute(onClose = { if (!viewModel.goBack()) viewModel.navigateTo(Screen.Journals) })
+            }
             is Screen.Performance -> {
                 NavigationTracingEffect("Performance")
                 PerformanceDashboard(

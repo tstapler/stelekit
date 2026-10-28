@@ -6,5 +6,9 @@
 # Their entry points are a Dialog / DropdownMenu window; under Robolectric those windows were not
 # reachable by semantics queries (verified: opening them left the root tree unchanged). Later units
 # that add a screen on those surfaces should first make popup windows queryable in the harness.
-# Planned additions: Console (U3), Assets search/empty state (U10), Drive (U13).
+# Console (U3) is not listed: it is reachable only from Settings > Developer (a Dialog) or the overflow
+# menu (a DropdownMenu), both unreachable here, and developer mode is off on a first open. Its first-open
+# check is ConsoleScreenRetentionTest / ConsoleEntryPointTest (androidUnitTest), which compose the screen
+# and the real console setup directly. Close this gap when the harness can query popup windows.
+# Planned additions: Assets search/empty state (U10), Drive (U13).
 Assets browser

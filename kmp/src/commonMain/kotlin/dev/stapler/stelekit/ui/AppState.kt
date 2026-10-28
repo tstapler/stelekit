@@ -56,6 +56,9 @@ sealed class Screen {
     @HelpExempt(reason = "Developer profiling screen; reachable only from debug menu")
     data object Performance : Screen()
 
+    @HelpExempt(reason = "Developer console; reachable only while developer mode is on")
+    data object Console : Screen()
+
     @HelpPage(docs = GlobalUnlinkedReferencesDocs::class)
     data object GlobalUnlinkedReferences : Screen()
 

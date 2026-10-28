@@ -131,8 +131,18 @@ private fun SettingsDialogHost(
     val mcpLauncherCommand = remember(appState.currentGraphId) {
         appState.currentGraphId?.let { dev.stapler.stelekit.db.PlatformUtils().mcpLauncherCommand(it) }.orEmpty()
     }
+    val console = LocalConsole.current
+    val developerModeOn = rememberDeveloperModeEnabled()
     SettingsDialog(
         visible = appState.shouldShowSettingsDialog(),
+        isDeveloperModeEnabled = developerModeOn,
+        onDeveloperModeToggle = console?.let { c -> { on: Boolean -> c.developerMode.set(on) } },
+        onOpenConsole = console?.let {
+            {
+                viewModel.setSettingsVisible(false)
+                viewModel.navigateTo(Screen.Console)
+            }
+        },
         onDismiss = {
             viewModel.setSettingsVisible(false)
             viewModel.dismissLlmProviderSettings()
