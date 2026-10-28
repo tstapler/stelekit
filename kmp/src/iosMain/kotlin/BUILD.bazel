@@ -1,0 +1,10 @@
+# Not built by Bazel (iOS compiles via Gradle); stages sources for WiringCompletenessTest only.
+# All iosMain sources for WiringCompletenessTest.
+# Bundled as classpath resources by //kmp/src/businessTest/kotlin:wiring_kmp_sources_as_resources so
+# the wiring and test-audit gates (businessTest/.../wiring, .../audit) can read sources under Bazel's
+# sandbox. A subdirectory with its own BUILD.bazel is not crossed by glob(); none exists here.
+filegroup(
+    name = "wiring_audit_sources",
+    srcs = glob(["**/*.kt"]),
+    visibility = ["//kmp/src/businessTest/kotlin:__pkg__"],
+)

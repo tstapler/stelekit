@@ -69,6 +69,67 @@ java_library(
     resource_strip_prefix = "docs",
 )
 
+# ── Wiring and test-audit inputs (WiringInputs.kt) ─────────────────────────────
+# java_library(resources=...) takes ONE resource_strip_prefix per target, so there is one library per
+# distinct prefix. Stripping to "kmp/src" keeps the source-set directory in the resource name
+# ("commonMain/kotlin/dev/stapler/stelekit/..."), so same-named files in different source sets
+# (desktop/Main.kt vs browser/Main.kt) never collide.
+java_library(
+    name = "wiring_kmp_sources_as_resources",
+    resources = [
+        "//kmp/src/androidInstrumentedTest/kotlin:test_audit_sources",
+        "//kmp/src/androidMain/kotlin:wiring_audit_sources",
+        "//kmp/src/androidUnitTest/kotlin:test_audit_sources",
+        "//kmp/src/commonMain/kotlin:wiring_audit_sources",
+        "//kmp/src/commonTest/kotlin:test_audit_sources",
+        "//kmp/src/iosMain/kotlin:wiring_audit_sources",
+        "//kmp/src/jvmCommonMain/kotlin:wiring_audit_sources",
+        "//kmp/src/jvmMain/kotlin:wiring_audit_sources",
+        "//kmp/src/jvmTest/kotlin:test_audit_sources",
+        "//kmp/src/wasmJsMain/kotlin:wiring_audit_sources",
+        ":business_test_sources",
+    ],
+    resource_strip_prefix = "kmp/src",
+)
+
+filegroup(
+    name = "business_test_sources",
+    srcs = glob(["**/*.kt"]),
+)
+
+# androidApp/src/main and /test keep "src/main/kotlin/..." and "src/test/kotlin/..." names.
+java_library(
+    name = "wiring_androidapp_sources_as_resources",
+    resources = [
+        "//androidApp:wiring_main_sources",
+        "//androidApp:wiring_test_sources",
+    ],
+    resource_strip_prefix = "androidApp",
+)
+
+# wiring-allowlist.txt, wiring-catalog.txt, first-open-screens.txt, test-*-baseline.txt, ...
+java_library(
+    name = "business_test_data_as_resources",
+    resources = ["//kmp/src/businessTest/resources:business_test_data"],
+    resource_strip_prefix = "kmp/src/businessTest/resources",
+)
+
+# The ReachabilityBaseline copy ("reachability-baseline.txt"); a second strip prefix, so a second library.
+java_library(
+    name = "reachability_baseline_as_resource",
+    resources = ["//scripts/ci:reachability-baseline.txt"],
+    resource_strip_prefix = "scripts/ci",
+)
+
+# ObservableEffect (commonTest) for the wiring tests; no @Test classes, so the completeness guard ignores it.
+kt_jvm_library(
+    name = "observable_effect",
+    srcs = ["//kmp/src/commonTest/kotlin:observable_effect_source"],
+    testonly = True,
+    kotlinc_opts = "//:kmp_jvm_kotlinc_opts",
+    deps = ["@maven//:org_jetbrains_kotlin_kotlin_stdlib"],
+)
+
 # Runnable test target — bazel test //kmp:business_tests
 kt_jvm_test(
     name = "business_tests",
@@ -98,6 +159,11 @@ kt_jvm_test(
         ":android_git_repository_as_resource",
         ":rich_editing_backlog_docs_as_resources",
         ":journey_docs_as_resources",
+        ":wiring_kmp_sources_as_resources",
+        ":wiring_androidapp_sources_as_resources",
+        ":business_test_data_as_resources",
+        ":reachability_baseline_as_resource",
+        ":observable_effect",
     ],
     visibility = ["//kmp:__subpackages__"],
 )

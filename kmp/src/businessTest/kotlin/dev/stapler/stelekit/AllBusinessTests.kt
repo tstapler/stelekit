@@ -248,6 +248,13 @@ import dev.stapler.stelekit.voice.GenAiErrorMappingTest
 import dev.stapler.stelekit.voice.LlmProviderSupportTest
 import dev.stapler.stelekit.voice.MlKitAvailabilityMappingTest
 import dev.stapler.stelekit.voice.VoicePipelineConfigTest
+import dev.stapler.stelekit.audit.TestHygieneAuditTest
+import dev.stapler.stelekit.audit.TestPlacementAuditTest
+import dev.stapler.stelekit.wiring.FirstOpenSmokeCatalogTest
+import dev.stapler.stelekit.wiring.ObservableEffectCatalogTest
+import dev.stapler.stelekit.wiring.PlantedDeadCodeConstructorTest
+import dev.stapler.stelekit.wiring.WiringAllowlistRenewalTest
+import dev.stapler.stelekit.wiring.WiringCompletenessTest
 import org.junit.runner.RunWith
 import org.junit.runners.Suite
 
@@ -476,5 +483,12 @@ import org.junit.runners.Suite
     MlKitAvailabilityMappingTest::class,
     VoicePipelineConfigTest::class,
     QueryExecutorTest::class,
+    TestHygieneAuditTest::class,
+    TestPlacementAuditTest::class,
+    FirstOpenSmokeCatalogTest::class,
+    ObservableEffectCatalogTest::class,
+    PlantedDeadCodeConstructorTest::class,
+    WiringAllowlistRenewalTest::class,
+    WiringCompletenessTest::class,
 )
 class AllBusinessTests
