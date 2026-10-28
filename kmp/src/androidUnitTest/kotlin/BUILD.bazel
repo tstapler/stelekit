@@ -22,6 +22,8 @@ kt_android_library(
             # Roborazzi screenshot tests — no Bazel integration; kept in Gradle
             "**/*Roborazzi*.kt",
             "**/*Screenshot*.kt",
+            # Composes @Composable lambdas; this target has no Compose compiler plugin (Gradle-only)
+            "**/ArchiveUrlEntryPointTest.kt",
         ],
     ),
     custom_package = "dev.stapler.stelekit",

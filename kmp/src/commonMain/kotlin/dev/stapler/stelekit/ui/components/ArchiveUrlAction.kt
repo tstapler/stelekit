@@ -13,6 +13,7 @@ import dev.stapler.stelekit.domain.WaybackMachineService
 import kotlinx.coroutines.launch
 
 /** Archive action for URLs in rendered blocks; null (default) disables right-click archiving. */
+@Suppress("CompositionLocalAllowlist") // set once by GraphContentActiveShell; threading it through BlockList/BlockRenderer would touch every page screen
 val LocalArchiveUrlAction = staticCompositionLocalOf<((url: String, blockUuid: String) -> Unit)?> { null }
 
 /**
