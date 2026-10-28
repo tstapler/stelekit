@@ -341,6 +341,9 @@ kotlin {
                 // Kable — Kotlin coroutine BLE for Android (GATT scanning and peripheral management)
                 implementation("com.juul.kable:core:0.32.0")
 
+                // USB-OTG serial laser meters (MIT, per LICENSE.txt at tag 3.11.0; dynamic aar, not shaded).
+                implementation("com.github.mik3y:usb-serial-for-android:3.11.0")
+
                 // ONNX Runtime — monocular depth inference (Depth Anything V2 ViT-S)
                 // Model (~100MB) is downloaded on first use via DepthModelDownloader, not bundled.
                 implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")

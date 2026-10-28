@@ -207,6 +207,7 @@ import dev.stapler.stelekit.coroutines.GraphScopedSessionThreadSafetyTest
 import dev.stapler.stelekit.desktop.CaptureCliArgsTest
 import dev.stapler.stelekit.domain.CaptureEnrichmentCoordinatorRealDispatcherTest
 import dev.stapler.stelekit.domain.PageNameIndexResilienceTest
+import dev.stapler.stelekit.desktop.DesktopMeasurementDeviceFactoriesTest
 import dev.stapler.stelekit.domain.HtmlPasteEntryPointTest
 import dev.stapler.stelekit.domain.WaybackMachineServiceTest
 import dev.stapler.stelekit.llm.CustomOpenAiCompatibleLlmProviderTest
@@ -531,6 +532,7 @@ import org.junit.runners.Suite
     PageNameIndexResilienceTest::class,
     WaybackMachineServiceTest::class,
     HtmlPasteEntryPointTest::class,
+    DesktopMeasurementDeviceFactoriesTest::class,
     CustomOpenAiCompatibleLlmProviderTest::class,
     McpPendingCapTest::class,
     McpSocketPathPermissionTest::class,

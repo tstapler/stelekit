@@ -9,8 +9,12 @@ import dev.stapler.stelekit.platform.SteleKitContext
 import dev.stapler.stelekit.platform.WriteBehindQueue
 import dev.stapler.stelekit.app.R
 import dev.stapler.stelekit.performance.BuildInfo
+import android.content.Context
+import dev.stapler.stelekit.platform.measurement.MeasurementDeviceFactory
 import dev.stapler.stelekit.platform.measurement.MeasurementDeviceRegistry
 import dev.stapler.stelekit.platform.measurement.ble.KableBleScanner
+import dev.stapler.stelekit.platform.measurement.keyboard.KeyboardEmulationDeviceFactory
+import dev.stapler.stelekit.platform.measurement.usb.AndroidUsbSerialFactory
 import dev.stapler.stelekit.platform.ml.OnnxMonocularDepthEstimator
 import dev.stapler.stelekit.platform.security.CredentialStore
 import dev.stapler.stelekit.platform.sensor.AndroidCameraFrameSource
@@ -32,6 +36,13 @@ import dev.stapler.stelekit.capture.createShareCaptureServices
 import dev.stapler.stelekit.capture.shareInboxConfigFor
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+
+/** Every measurement transport the Android app offers; keyboard entry is the always-available fallback. */
+internal fun defaultMeasurementDeviceFactories(context: Context): List<MeasurementDeviceFactory> = listOf(
+    KableBleScanner(context),
+    KeyboardEmulationDeviceFactory(),
+    AndroidUsbSerialFactory(context),
+)
 
 class SteleKitApplication : Application() {
 
@@ -196,7 +207,7 @@ class SteleKitApplication : Application() {
             SensorModule.depthSensorProvider = ARCoreDepthProvider(applicationContext)
             SensorModule.motionSensorProvider = AndroidMotionSensorProvider(applicationContext)
             SensorModule.monocularDepthEstimator = OnnxMonocularDepthEstimator(applicationContext)
-            MeasurementDeviceRegistry.register(KableBleScanner(applicationContext))
+            defaultMeasurementDeviceFactories(applicationContext).forEach(MeasurementDeviceRegistry::register)
             fileSystem = PlatformFileSystem().apply { init(applicationContext) }
             // Activate write-behind when MANAGE_EXTERNAL_STORAGE is not granted.
             // Direct access (when granted) is faster than write-behind and makes it unnecessary.

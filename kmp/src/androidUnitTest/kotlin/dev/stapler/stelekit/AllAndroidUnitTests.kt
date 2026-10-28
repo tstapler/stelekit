@@ -14,6 +14,7 @@ import dev.stapler.stelekit.platform.SafPermissionStateTransitionTest
 import dev.stapler.stelekit.platform.ShadowFileCacheTest
 import dev.stapler.stelekit.platform.UpgradePathTest
 import dev.stapler.stelekit.service.AndroidMediaAttachmentServiceTest
+import dev.stapler.stelekit.platform.measurement.usb.AndroidUsbSerialFactoryTest
 import dev.stapler.stelekit.platform.security.AndroidCredentialStoreCommitTest
 import dev.stapler.stelekit.platform.security.AndroidCredentialStoreFailsLoudTest
 import dev.stapler.stelekit.platform.image.PlatformImageDownscalerAndroidTest
@@ -38,6 +39,7 @@ import org.junit.runners.Suite
     PlatformFileSystemSafTest::class,
     PlatformFileSystemUriLogicTest::class,
     AndroidMediaAttachmentServiceTest::class,
+    AndroidUsbSerialFactoryTest::class,
     SafChangeDetectorFileObserverTest::class,
     SafPermissionPersistenceTest::class,
     SafPermissionStateTransitionTest::class,
