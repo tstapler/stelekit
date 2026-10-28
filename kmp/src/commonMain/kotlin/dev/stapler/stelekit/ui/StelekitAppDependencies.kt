@@ -41,6 +41,8 @@ data class StelekitAppCoreServices(
     val pluginHost: PluginHost = PluginHost(),
     val encryptionManager: EncryptionManager = DefaultEncryptionManager(),
     val urlFetcher: UrlFetcher = NoOpUrlFetcher(),
+    /** Null hides the block URL "archive" action (right-click a URL). Constructed by each platform root. */
+    val waybackService: dev.stapler.stelekit.domain.WaybackMachineService? = null,
     val libraryStatsProvider: LibraryStatsProvider = NoOpLibraryStatsProvider,
     val voicePipeline: VoicePipelineConfig = VoicePipelineConfig(),
     val spanRecorder: SpanRecorder = NoOpSpanRecorder,

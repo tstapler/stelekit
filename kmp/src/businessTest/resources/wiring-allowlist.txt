@@ -9,7 +9,6 @@ DesktopSyncScheduler  awaiting-unit U2  2026-10-27  renewals=0
 IOSCameraProvider  out-of-scope-ios  never
 IOSKableBleScanner  out-of-scope-ios  never
 KeyboardEmulationDeviceFactory  awaiting-unit U12  2026-10-27  renewals=0
-KtorWaybackMachineService  awaiting-unit U12  2026-10-27  renewals=0
 NoOpBleScanner  awaiting-unit U12  2026-10-27  renewals=0
 NoOpCameraProvider  awaiting-unit U12  2026-10-27  renewals=0
 OcrPlugin  awaiting-unit U9  2026-10-27  renewals=0

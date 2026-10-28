@@ -216,6 +216,7 @@ fun main(args: Array<String>) {
                 deps = StelekitAppDeps(
                     coreServices = StelekitAppCoreServices(
                         urlFetcher = UrlFetcherJvm(),
+                        waybackService = dev.stapler.stelekit.domain.KtorWaybackMachineService(UrlFetcherJvm.createDefaultClient()),
                         spanRecorder = spanRecorder,
                     ),
                     platformIntegrations = StelekitAppPlatformIntegrations(
