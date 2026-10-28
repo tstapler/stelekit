@@ -9,6 +9,9 @@ Usage:
   reachability-scan.py [--root DIR] [--confirm] [--explain]
   reachability-scan.py [--root DIR] --write-baseline FILE
   reachability-scan.py [--root DIR] --check-baseline FILE     (exit 1 on a type not in the baseline)
+      [--allowlist FILE]       also fail if an `awaiting-unit` wiring-allowlist class the scan
+                               reports is missing from the baseline (the two files are twins)
+      [--allowlist-prev FILE]  also fail if an allowlist entry's `renewals=` dropped versus FILE
 
 Output line: TypeName<TAB>file<TAB>register-row-number (row from the plan's Disposition Register,
 mirrored in REGISTER below; "-" for a type the register does not account for).
@@ -254,6 +257,34 @@ def read_baseline(path):
     return entries
 
 
+def read_allowlist(path):
+    """wiring-allowlist.txt -> {class: (reason, date, renewals)}; fields are separated by 2+ spaces."""
+    entries = {}
+    with open(path, encoding="utf-8") as f:
+        for ln in f:
+            ln = ln.strip()
+            if not ln or ln.startswith("#"):
+                continue
+            parts = re.split(r"\s{2,}", ln)
+            renewals = 0
+            if parts and parts[-1].startswith("renewals="):
+                renewals = int(parts.pop().split("=", 1)[1])
+            entries[parts[0]] = (parts[1] if len(parts) > 1 else "", parts[2] if len(parts) > 2 else "", renewals)
+    return entries
+
+
+def allowlist_problems(found, baseline, allowlist, previous=None):
+    problems = []
+    for name, (reason, _date, _renewals) in sorted(allowlist.items()):
+        if reason.startswith("awaiting-unit") and name in found and name not in baseline:
+            problems.append(f"allowlist twin: {name} is awaiting-unit and reported unreferenced by the scan "
+                            f"but missing from the baseline; shrink or grow both files together")
+    for name, (_r, _d, renewals) in sorted((previous or {}).items()):
+        if name in allowlist and allowlist[name][2] < renewals:
+            problems.append(f"allowlist renewals lowered for {name}: {renewals} -> {allowlist[name][2]}")
+    return problems
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--root", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
@@ -261,6 +292,8 @@ def main(argv=None):
     ap.add_argument("--explain", action="store_true", help="also print filtered names with the filter reason")
     ap.add_argument("--write-baseline")
     ap.add_argument("--check-baseline")
+    ap.add_argument("--allowlist")
+    ap.add_argument("--allowlist-prev")
     args = ap.parse_args(argv)
     root = os.path.abspath(args.root)
     candidates, skipped = scan(root)
@@ -283,6 +316,14 @@ def main(argv=None):
             for n, r in candidates:
                 if n in new:
                     print(f"NEW unreferenced type (not in baseline): {n}\t{r}")
+            return 1
+        problems = []
+        if args.allowlist:
+            previous = read_allowlist(args.allowlist_prev) if args.allowlist_prev else None
+            problems = allowlist_problems(found, set(baseline), read_allowlist(args.allowlist), previous)
+        for problem in problems:
+            print(problem)
+        if problems:
             return 1
         print(f"OK: no new unreferenced types ({len(found)} found, {len(baseline)} in baseline)")
         return 0

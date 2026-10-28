@@ -109,6 +109,37 @@ class ReachabilityScanTest(unittest.TestCase):
         code, out = run_cli("--root", REPO, "--check-baseline", BASELINE)
         self.assertEqual(code, 0, out)
 
+    def test_reachabilityJob_should_FailNaming_When_AwaitingUnitClassReportedByScanIsMissingFromBaseline(self):
+        with tempfile.TemporaryDirectory() as root:
+            write(root, "kmp/src/commonMain/kotlin/a/FooPlugin.kt", "class FooPlugin\n")
+            write(root, "baseline.txt", "FooPlugin\tkmp/src/commonMain/kotlin/a/FooPlugin.kt\t-\n")
+            write(root, "allowlist.txt", "FooPlugin  awaiting-unit U8  2026-10-27  renewals=0\n")
+            baseline, allowlist = os.path.join(root, "baseline.txt"), os.path.join(root, "allowlist.txt")
+            code, out = run_cli("--root", root, "--check-baseline", baseline, "--allowlist", allowlist)
+            self.assertEqual(code, 0, out)
+            write(root, "baseline.txt", "")
+            code, out = run_cli("--root", root, "--check-baseline", baseline, "--allowlist", allowlist)
+            self.assertEqual(code, 1)
+            self.assertIn("FooPlugin", out)
+
+    def test_allowlistRenewals_should_FailNaming_When_PreviousRenewalCountLowered(self):
+        with tempfile.TemporaryDirectory() as root:
+            write(root, "kmp/src/commonMain/kotlin/a/Other.kt", "fun other() = 1\n")
+            write(root, "baseline.txt", "")
+            write(root, "prev.txt", "FooPlugin  awaiting-unit U8  2026-10-27  renewals=2\n")
+            write(root, "now.txt", "FooPlugin  awaiting-unit U8  2026-10-27  renewals=1\n")
+            baseline = os.path.join(root, "baseline.txt")
+            args = ("--root", root, "--check-baseline", baseline, "--allowlist", os.path.join(root, "now.txt"),
+                    "--allowlist-prev", os.path.join(root, "prev.txt"))
+            code, out = run_cli(*args)
+            self.assertEqual(code, 1)
+            self.assertIn("FooPlugin", out)
+
+    def test_wiringAllowlist_should_BeInSyncWithBaselineAtHead(self):
+        allowlist = os.path.join(REPO, "kmp", "src", "businessTest", "resources", "wiring-allowlist.txt")
+        code, out = run_cli("--root", REPO, "--check-baseline", BASELINE, "--allowlist", allowlist)
+        self.assertEqual(code, 0, out)
+
 
 if __name__ == "__main__":
     unittest.main()
