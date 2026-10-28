@@ -174,6 +174,36 @@ jobs:
           path: kmp/build/reports/detekt/
           retention-days: 7
 
+  # ── Reachability ratchet + script tests (no Gradle, no memory impact) ─────
+  # The name-based scan fails on a new unreferenced type and prints "baseline can shrink" for a
+  # removed one (ADR-002 layer 2). --allowlist ties it to wiring-allowlist.txt: an awaiting-unit
+  # class the scan reports must also be in the baseline, and a PR may not lower an entry's renewals.
+  reachability:
+    name: Reachability (baseline ratchet)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # base branch needed to compare allowlist renewals
+
+      - name: Python tests (scan, coverage-baseline workflow, coverage map)
+        run: python3 -m unittest scripts/ci/reachability_scan_test.py scripts/ci/coverage_baseline_workflow_test.py scripts/ci/coverage-map_test.py -v
+
+      - name: Previous wiring allowlist (pull requests only)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          mkdir -p .cache
+          MERGE_BASE=$(git merge-base HEAD "$BASE_SHA")
+          git show "$MERGE_BASE:kmp/src/businessTest/resources/wiring-allowlist.txt" > .cache/wiring-allowlist.prev 2>/dev/null || : > .cache/wiring-allowlist.prev
+
+      - name: Scan against the baseline
+        run: |
+          ARGS=(--check-baseline scripts/ci/reachability-baseline.txt --allowlist kmp/src/businessTest/resources/wiring-allowlist.txt)
+          if [ -s .cache/wiring-allowlist.prev ]; then ARGS+=(--allowlist-prev .cache/wiring-allowlist.prev); fi
+          python3 scripts/ci/reachability-scan.py "${ARGS[@]}"
+
   # ── Change-scoped quality gate: incremental coverage + mutation ──────────
   # Runs only the tests tied to the PR's changed files (see kmp/build.gradle.kts) under JaCoCo:
   # the Bazel suite has no coverage, and full Gradle jvmTest hangs on 2-core runners.

@@ -64,6 +64,8 @@ _GIT_TESTSUPPORT_SRCS = [
     "dev/stapler/stelekit/git/testsupport/StubConfigRepository.kt",
     "dev/stapler/stelekit/git/testsupport/StubFileSystem.kt",
     "dev/stapler/stelekit/git/testsupport/StubGitRepository.kt",
+    # FakePlatformPorts for WiredAppFixture (androidUnitTest) and DesktopWiredAppFixture (jvmTest); no @Test methods.
+    "dev/stapler/stelekit/wiring/FakePlatformPorts.kt",
 ]
 
 kt_jvm_library(
@@ -145,4 +147,21 @@ kt_jvm_library(
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
     ],
     visibility = ["//kmp/src:__subpackages__"],
+)
+
+# All commonTest sources for TestHygieneAuditTest.
+# Bundled as classpath resources by //kmp/src/businessTest/kotlin:wiring_kmp_sources_as_resources so
+# the wiring and test-audit gates (businessTest/.../wiring, .../audit) can read sources under Bazel's
+# sandbox. A subdirectory with its own BUILD.bazel is not crossed by glob(); none exists here.
+filegroup(
+    name = "test_audit_sources",
+    srcs = glob(["**/*.kt"]),
+    visibility = ["//kmp/src/businessTest/kotlin:__pkg__"],
+)
+
+# ObservableEffect only (no @Test classes); consumed by business_tests via //kmp/src/businessTest/kotlin:observable_effect.
+filegroup(
+    name = "observable_effect_source",
+    srcs = ["dev/stapler/stelekit/wiring/ObservableEffect.kt"],
+    visibility = ["//kmp/src/businessTest/kotlin:__pkg__"],
 )
