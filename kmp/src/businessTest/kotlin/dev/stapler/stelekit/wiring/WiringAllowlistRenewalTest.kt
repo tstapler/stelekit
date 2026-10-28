@@ -65,4 +65,23 @@ class WiringAllowlistRenewalTest {
         val twice = eval("FooPlugin  awaiting-unit U8  2026-10-27\nFooPlugin  awaiting-unit U8  2026-10-27", today = LocalDate.parse("2026-11-01"))
         assertTrue(twice.any { "duplicate allowlist entry: FooPlugin" in it }, twice.toString())
     }
+
+    @Test
+    fun allowlist_should_KeepVerifiedFalsePositivesAndEntryPoints_WithoutExpiry_But_RequireEvidence() {
+        val farFuture = LocalDate.parse("2035-01-01")
+        val ok = eval("FooPlugin  false-positive used in-file by the currentSpan extension  2026-10-27", today = farFuture)
+        assertEquals(emptyList(), ok)
+        val entry = eval("FooPlugin  entry-point run by ./gradlew :kmp:jvmBenchmark  2026-10-27", today = farFuture)
+        assertEquals(emptyList(), entry)
+
+        val noEvidence = eval("FooPlugin  entry-point  2026-10-27", today = farFuture)
+        assertTrue(noEvidence.any { "must cite its evidence" in it }, noEvidence.toString())
+        val never = eval("FooPlugin  false-positive because it is used  never", today = farFuture)
+        assertTrue(never.any { "records its verification date" in it }, never.toString())
+        val renewed = eval("FooPlugin  false-positive because it is used  2026-10-27  renewals=1", today = farFuture)
+        assertTrue(renewed.any { "takes no renewals" in it }, renewed.toString())
+        // Unverified reasons still expire.
+        val temporary = eval("FooPlugin  temporary reason  2026-10-27", today = farFuture)
+        assertTrue(temporary.any { it.startsWith("expired allowlist entry: FooPlugin") }, temporary.toString())
+    }
 }

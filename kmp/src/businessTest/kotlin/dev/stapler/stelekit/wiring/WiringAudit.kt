@@ -233,6 +233,13 @@ object WiringAudit {
                         v += "${e.cls}: blocked-on-owner must name OD-1..OD-6 or a 'pass 12.n' item, got '${e.reason}'"
                     }
                 }
+                // Verified facts, not pending work: dated with the verification day, never expire. The
+                // reason must carry the evidence after the class word.
+                "false-positive", "entry-point" -> {
+                    if (e.isNeverExpiring) v += "${e.cls}: ${e.reasonClass} records its verification date, not 'never'"
+                    if (e.renewals != 0) v += "${e.cls}: ${e.reasonClass} takes no renewals"
+                    if (e.reason.substringAfter(' ', "").isBlank()) v += "${e.cls}: ${e.reasonClass} must cite its evidence after the class word"
+                }
                 else -> {
                     if (e.isNeverExpiring) {
                         v += "${e.cls}: only out-of-scope-ios may be dated 'never'"
