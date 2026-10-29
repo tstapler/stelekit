@@ -12,7 +12,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import kotlinx.coroutines.CancellationException
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /** Story 7.3b: USB serial scanning and parsing over a fake [SerialMeterPort] (no hardware; OD-4 unanswered). */
@@ -91,6 +93,44 @@ class AndroidUsbSerialFactoryTest {
 
         assertTrue(device.connect().isLeft())
         assertEquals(DeviceConnectionState.ERROR, device.connectionState.value)
+    }
+
+    private class ThrowingPort(private val failure: () -> Throwable) : SerialMeterPort {
+        override val id = "x"
+        override val name = "Throwing"
+        override fun open() = throw failure()
+        override fun read(buffer: ByteArray, timeoutMs: Int): Int = throw failure()
+        override fun close() = throw failure()
+    }
+
+    @Test
+    fun disconnect_swallowsACloseFailure() = runBlocking {
+        val device = factory { listOf(ThrowingPort { java.io.IOException("gone") }) }.scan().first()
+
+        device.disconnect()
+
+        assertEquals(DeviceConnectionState.DISCONNECTED, device.connectionState.value)
+    }
+
+    @Test
+    fun cancellation_isNeverSwallowed() = runBlocking {
+        val cancel = { CancellationException("cancelled") }
+        val device = factory { listOf(ThrowingPort(cancel)) }.scan().first()
+
+        assertFailsWith<CancellationException> { device.connect() }
+        assertFailsWith<CancellationException> { device.disconnect() }
+        assertFailsWith<CancellationException> { factory { throw cancel() }.scan().toList() }
+        val reading = object : SerialMeterPort {
+            override val id = "y"
+            override val name = "Reading"
+            override fun open() {}
+            override fun read(buffer: ByteArray, timeoutMs: Int): Int = throw cancel()
+            override fun close() {}
+        }
+        val connected = factory { listOf(reading) }.scan().first()
+        connected.connect()
+        assertFailsWith<CancellationException> { connected.measurementFlow().toList() }
+        Unit
     }
 
     @Test

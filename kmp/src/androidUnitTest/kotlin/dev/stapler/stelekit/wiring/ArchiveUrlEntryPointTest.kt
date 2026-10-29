@@ -11,6 +11,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.test.rightClick
 import arrow.core.Either
@@ -118,6 +119,31 @@ class ArchiveUrlEntryPointTest {
         assertEquals(listOf(url), service.requested)
         assertEquals(emptyList(), updates)
         composeRule.onNodeWithText("Couldn't archive - Retry").assertExists()
+    }
+
+    @Test
+    fun alreadyArchived_appendsTheExistingArchiveLink() {
+        val service = FakeWayback(ArchiveResult.AlreadyArchived(archived).right())
+        val updates = mutableListOf<Pair<String, String>>()
+        setContent(service, updates)
+
+        composeRule.onNodeWithText(url).performMouseInput { rightClick(Offset(20f, 10f)) }
+        composeRule.waitForIdle()
+
+        assertEquals(listOf(blockUuid to " [archived]($archived)"), updates)
+    }
+
+    @Test
+    fun retryOnTheFailureSnackbar_archivesAgain() {
+        val service = FakeWayback(DomainError.NetworkError.RequestFailed("boom").left())
+        setContent(service, mutableListOf())
+
+        composeRule.onNodeWithText(url).performMouseInput { rightClick(Offset(20f, 10f)) }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Retry").performClick()
+        composeRule.waitForIdle()
+
+        assertEquals(listOf(url, url), service.requested)
     }
 
     @Test
