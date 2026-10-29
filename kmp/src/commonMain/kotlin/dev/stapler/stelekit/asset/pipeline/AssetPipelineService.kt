@@ -22,6 +22,7 @@ import kotlinx.coroutines.yield
 class AssetPipelineService(
     private val registry: PluginRegistry,
     private val assetRepository: AssetRepository,
+    private val writeActor: DatabaseWriteActor,
 ) {
     private val logger = Logger("AssetPipelineService")
     private val scope = CoroutineScope(
@@ -34,8 +35,7 @@ class AssetPipelineService(
     private val attemptedUuids = mutableSetOf<String>()
     private var backfillJob: Job? = null
 
-    @OptIn(DirectRepositoryWrite::class)
-    suspend fun processAsset(asset: AssetEntry, writeActor: DatabaseWriteActor?) {
+    suspend fun processAsset(asset: AssetEntry) {
         val alreadyAttempted = attemptedMutex.withLock { !attemptedUuids.add(asset.uuid.value) }
         if (alreadyAttempted) return
 
@@ -74,31 +74,27 @@ class AssetPipelineService(
 
         val now = Clock.System.now().toEpochMilliseconds()
         if (failed) {
-            if (writeActor != null) {
-                writeActor.execute { assetRepository.markMlFailed(asset.uuid, now) }
-            } else {
+            writeActor.execute {
+                @OptIn(DirectRepositoryWrite::class)
                 assetRepository.markMlFailed(asset.uuid, now)
             }
         } else {
             val finalLabels = allLabels.distinct()
-            if (writeActor != null) {
-                writeActor.execute {
-                    assetRepository.updateAutoLabels(asset.uuid, finalLabels, "LOCAL")
-                    assetRepository.updateOcrText(asset.uuid, ocrText)
-                    assetRepository.markMlProcessed(asset.uuid, now)
-                }
-            } else {
+            writeActor.execute {
+                @OptIn(DirectRepositoryWrite::class)
                 assetRepository.updateAutoLabels(asset.uuid, finalLabels, "LOCAL")
+                @OptIn(DirectRepositoryWrite::class)
                 assetRepository.updateOcrText(asset.uuid, ocrText)
+                @OptIn(DirectRepositoryWrite::class)
                 assetRepository.markMlProcessed(asset.uuid, now)
             }
         }
     }
 
-    fun scheduleProcess(asset: AssetEntry, writeActor: DatabaseWriteActor?) {
+    fun scheduleProcess(asset: AssetEntry) {
         scope.launch {
             try {
-                processAsset(asset, writeActor)
+                processAsset(asset)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
@@ -107,11 +103,11 @@ class AssetPipelineService(
         }
     }
 
-    fun scheduleBackfill(writeActor: DatabaseWriteActor?) {
+    fun scheduleBackfill() {
         backfillJob?.cancel()
         backfillJob = scope.launch {
             try {
-                drainUnprocessed(writeActor)
+                drainUnprocessed()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
@@ -120,7 +116,7 @@ class AssetPipelineService(
         }
     }
 
-    private suspend fun drainUnprocessed(writeActor: DatabaseWriteActor?) {
+    private suspend fun drainUnprocessed() {
         val batchSize = 10
         var offset = 0
         while (true) {
@@ -130,7 +126,7 @@ class AssetPipelineService(
             if (batch.isEmpty()) break
             val filtered = attemptedMutex.withLock { batch.filter { it.uuid.value !in attemptedUuids } }
             for (asset in filtered) {
-                processAsset(asset, writeActor)
+                processAsset(asset)
             }
             yield()
             if (batch.size < batchSize) break
