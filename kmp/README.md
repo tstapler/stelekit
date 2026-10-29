@@ -39,7 +39,6 @@ kmp/
     │       ├── performance/   # PerformanceMonitor, DebounceManager
     │       ├── platform/      # FileSystem, GitManager, PlatformSettings (expect)
     │       ├── repository/    # SQLDelight repositories (blocks, pages, search)
-    │       ├── rtc/           # Real-time collaboration (early-stage)
     │       ├── search/        # Datalog query, vector search stubs
     │       └── ui/            # Compose components, screens, theme, i18n
     ├── jvmMain/               # Desktop implementations (DriverFactory, FileSystem)
