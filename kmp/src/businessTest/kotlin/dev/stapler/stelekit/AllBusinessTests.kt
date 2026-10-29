@@ -73,6 +73,7 @@ import dev.stapler.stelekit.security.RedactorTest
 import dev.stapler.stelekit.repository.BacklinkRepositoryTest
 import dev.stapler.stelekit.sections.CrossSectionBacklinkRenderTest
 import dev.stapler.stelekit.sections.NewPageAutoAssignmentTest
+import dev.stapler.stelekit.ui.CommandManagerCoordinatorEquivalenceTest
 import dev.stapler.stelekit.merge.MarkdownTargetWriterTest
 import dev.stapler.stelekit.merge.MarkdownTargetWriterContractTest
 import dev.stapler.stelekit.merge.ActiveTargetWriterContractTest
@@ -300,6 +301,7 @@ import org.junit.runners.Suite
     BacklinkRepositoryTest::class,
     CrossSectionBacklinkRenderTest::class,
     NewPageAutoAssignmentTest::class,
+    CommandManagerCoordinatorEquivalenceTest::class,
     DemoFileSystemSyncTest::class,
     DemoGraphPersistenceTest::class,
     GraphInfoSerializationTest::class,

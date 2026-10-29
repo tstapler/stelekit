@@ -239,7 +239,15 @@ internal fun GraphContentActiveShell(
             }
         }
 
+        val archiveUrlAction = dev.stapler.stelekit.ui.components.rememberArchiveUrlAction(
+            deps.coreServices.waybackService,
+            snackbarHostState,
+        ) { blockUuid, appendText ->
+            blockStateManager.appendToBlock(dev.stapler.stelekit.model.BlockUuid(blockUuid), appendText)
+        }
+
         CompositionLocalProvider(
+            dev.stapler.stelekit.ui.components.LocalArchiveUrlAction provides archiveUrlAction,
             LocalWindowSizeClass provides windowSizeClass,
             LocalOpenSearchWithText provides { text -> viewModel.setSearchDialogVisible(true, text) },
             LocalFileSystem provides effectiveFileSystem,

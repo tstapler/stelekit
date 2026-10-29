@@ -89,6 +89,7 @@ fun BlockRenderer(
     hasSectionFilter: Boolean = false,
     localPageNames: Set<String> = emptySet(),
     onUnavailableLinkTap: () -> Unit = {},
+    onArchiveUrl: ((url: String, blockUuid: String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     BlockItem(
@@ -142,6 +143,7 @@ fun BlockRenderer(
         hasSectionFilter = hasSectionFilter,
         localPageNames = localPageNames,
         onUnavailableLinkTap = onUnavailableLinkTap,
+        onArchiveUrl = onArchiveUrl,
         modifier = modifier
     )
 }

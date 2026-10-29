@@ -37,6 +37,11 @@ UISTATE_RE = re.compile(r".*UiState$")
 KNOWN_FALSE_POSITIVES = {
     "InitializingDebugScreen": "used inside SettingsDialogHost.kt (register row 34)",
     "OtelSpanElement": "used by the in-file currentSpan extension consumed by OtelSqlDelightExtensions.kt (register row 35)",
+    # Register row 36: kotlinx-benchmark entry points, launched by `./gradlew :kmp:jvmBenchmark`
+    # (verified 2026-10-27: kmp/build/reports/benchmarks/main/*/jvm.json held all three classes).
+    "AhoCorasickBenchmark": "JMH entry point run by ./gradlew :kmp:jvmBenchmark (register row 36)",
+    "MarkdownEngineBenchmark": "JMH entry point run by ./gradlew :kmp:jvmBenchmark (register row 36)",
+    "SearchBenchmark": "JMH entry point run by ./gradlew :kmp:jvmBenchmark (register row 36)",
 }
 
 # Disposition Register (plan.md "Disposition Register"): row number -> type names it covers.

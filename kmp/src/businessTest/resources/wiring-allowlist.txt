@@ -2,16 +2,11 @@
 # Generated at U1 from a real WiringCompletenessTest run against an empty allowlist.
 # Date = the day the entry was set; it expires 90 days later (renewal cap 2). Each unit that wires
 # or deletes a class removes its line in the same PR (stale-entry rule).
-AndroidUsbSerialFactory  awaiting-unit U12  2026-10-27  renewals=0
 CloudClaudePlugin  awaiting-unit U11  2026-10-27  renewals=0
 CloudVisionPlugin  awaiting-unit U11  2026-10-27  renewals=0
 DesktopSyncScheduler  awaiting-unit U2  2026-10-27  renewals=0
 IOSCameraProvider  out-of-scope-ios  never
 IOSKableBleScanner  out-of-scope-ios  never
-KeyboardEmulationDeviceFactory  awaiting-unit U12  2026-10-27  renewals=0
-KtorWaybackMachineService  awaiting-unit U12  2026-10-27  renewals=0
-NoOpBleScanner  awaiting-unit U12  2026-10-27  renewals=0
-NoOpCameraProvider  awaiting-unit U12  2026-10-27  renewals=0
 OcrPlugin  awaiting-unit U9  2026-10-27  renewals=0
 OnDeviceLabelingPlugin  awaiting-unit U8  2026-10-27  renewals=0
 PdfTextPlugin  awaiting-unit U8  2026-10-27  renewals=0
@@ -20,3 +15,10 @@ WebcamCameraProvider  awaiting-unit U14  2026-10-27  renewals=0
 WorkManagerSyncScheduler  awaiting-unit U2  2026-10-27  renewals=0
 CoreMlImageLabeler  out-of-scope-ios  never
 IosPdfTextExtractor  out-of-scope-ios  never
+# Verified false positives and entry points (Task 7.5a); non-expiring, dated with the verification day.
+AhoCorasickBenchmark  entry-point kotlinx-benchmark class run by ./gradlew :kmp:jvmBenchmark (7 benchmarks in kmp/build/reports/benchmarks/main/*/jvm.json)  2026-10-27  renewals=0
+ICommandRegistry  false-positive interface seam implemented by CommandRegistry in editor/commands/CommandRegistry.kt:57  2026-10-27  renewals=0
+InitializingDebugScreen  false-positive enum used inside ui/SettingsDialogHost.kt (the scan counts a same-file use as no use)  2026-10-27  renewals=0
+MarkdownEngineBenchmark  entry-point kotlinx-benchmark class run by ./gradlew :kmp:jvmBenchmark (4 benchmarks in kmp/build/reports/benchmarks/main/*/jvm.json)  2026-10-27  renewals=0
+OtelSpanElement  false-positive consumed via the in-file currentSpan extension used by OtelSqlDelightExtensions.kt  2026-10-27  renewals=0
+SearchBenchmark  entry-point kotlinx-benchmark class run by ./gradlew :kmp:jvmBenchmark (6 benchmarks in kmp/build/reports/benchmarks/main/*/jvm.json)  2026-10-27  renewals=0

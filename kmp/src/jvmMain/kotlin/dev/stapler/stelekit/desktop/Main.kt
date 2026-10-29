@@ -25,6 +25,12 @@ import dev.stapler.stelekit.capture.JKeymasterHotkeyListener
 import dev.stapler.stelekit.capture.PendingCapturePoller
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.merge.sweepMergeArtifactsOnDisk
+import dev.stapler.stelekit.platform.measurement.MeasurementDeviceFactory
+import dev.stapler.stelekit.platform.measurement.MeasurementDeviceRegistry
+import dev.stapler.stelekit.platform.measurement.ble.NoOpBleScanner
+import dev.stapler.stelekit.platform.sensor.NoOpCameraProvider
+import dev.stapler.stelekit.platform.sensor.SensorModule
+import dev.stapler.stelekit.platform.measurement.keyboard.KeyboardEmulationDeviceFactory
 import dev.stapler.stelekit.domain.UrlFetcherJvm
 import dev.stapler.stelekit.service.JvmMediaAttachmentService
 import dev.stapler.stelekit.git.JvmGitCloneWorkerLauncher
@@ -50,6 +56,12 @@ import io.opentelemetry.api.trace.Tracer
 import java.awt.KeyboardFocusManager
 import javax.swing.UIManager
 
+/** Measurement transports on Desktop: typed/keyboard-wedge entry; BLE and USB have no desktop implementation. */
+internal fun defaultMeasurementDeviceFactories(): List<MeasurementDeviceFactory> = listOf(
+    KeyboardEmulationDeviceFactory(),
+    NoOpBleScanner(),
+)
+
 fun main(args: Array<String>) {
     // Headless CLI capture mode: try the socket fast path first (delivers immediately if
     // SteleKit is already running), falling back to the pending-capture queue — reusing the
@@ -61,6 +73,10 @@ fun main(args: Array<String>) {
         println("Captured.")
         return
     }
+
+    defaultMeasurementDeviceFactories().forEach(MeasurementDeviceRegistry::register)
+    // Desktop has no live capture (import only); stated here so a future webcam provider replaces this line.
+    SensorModule.cameraProvider = NoOpCameraProvider()
 
     // Initialize file logging before anything else
     val fileLogSink = dev.stapler.stelekit.logging.FileLogSink()
@@ -216,11 +232,13 @@ fun main(args: Array<String>) {
                 deps = StelekitAppDeps(
                     coreServices = StelekitAppCoreServices(
                         urlFetcher = UrlFetcherJvm(),
+                        waybackService = dev.stapler.stelekit.domain.KtorWaybackMachineService(UrlFetcherJvm.createDefaultClient()),
                         spanRecorder = spanRecorder,
                     ),
                     platformIntegrations = StelekitAppPlatformIntegrations(
                         cryptoEngine = dev.stapler.stelekit.vault.JvmCryptoEngine(),
                         attachmentService = attachmentService,
+                        readClipboardHtml = { dev.stapler.stelekit.domain.HtmlClipboardReader.read() },
                         gitRepository = gitRepository,
                         gitCloneWorkerLauncher = gitCloneWorkerLauncher,
                     ),

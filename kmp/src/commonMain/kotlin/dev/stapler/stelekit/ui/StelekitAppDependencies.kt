@@ -41,6 +41,8 @@ data class StelekitAppCoreServices(
     val pluginHost: PluginHost = PluginHost(),
     val encryptionManager: EncryptionManager = DefaultEncryptionManager(),
     val urlFetcher: UrlFetcher = NoOpUrlFetcher(),
+    /** Null hides the block URL "archive" action (right-click a URL). Constructed by each platform root. */
+    val waybackService: dev.stapler.stelekit.domain.WaybackMachineService? = null,
     val libraryStatsProvider: LibraryStatsProvider = NoOpLibraryStatsProvider,
     val voicePipeline: VoicePipelineConfig = VoicePipelineConfig(),
     val spanRecorder: SpanRecorder = NoOpSpanRecorder,
@@ -122,6 +124,8 @@ data class StelekitAppPlatformIntegrations(
      */
     val googleAuthManager: dev.stapler.stelekit.platform.google.GoogleAuthManager? = null,
     val requestCameraPermission: (suspend () -> Boolean)? = null,
+    /** Reads HTML from the system clipboard (bounded). Null disables rich-text paste; set on Desktop. */
+    val readClipboardHtml: (() -> dev.stapler.stelekit.domain.ClipboardHtml?)? = null,
     /**
      * Platform quiesce port for Story 3.1.3/3.1.5's `GraphRelocationCoordinator` — pass
      * `createAndroidGraphMoveQuiesceStrategy(...)` on Android, `createWasmJsGraphMoveQuiesceStrategy(...)`
