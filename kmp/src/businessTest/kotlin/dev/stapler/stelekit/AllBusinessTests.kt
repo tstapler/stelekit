@@ -126,6 +126,7 @@ import dev.stapler.stelekit.voice.VoiceSettingsTest
 import dev.stapler.stelekit.asset.AssetMediaTypeTest
 import dev.stapler.stelekit.asset.AssetStoragePathResolverTest
 import dev.stapler.stelekit.asset.MimeTypeDetectorTest
+import dev.stapler.stelekit.asset.pipeline.AssetPipelineDrainBugTest
 import dev.stapler.stelekit.asset.pipeline.AssetPipelineServiceTest
 import dev.stapler.stelekit.asset.pipeline.DefaultAssetPluginsTest
 import dev.stapler.stelekit.asset.pipeline.PluginRegistryTest
@@ -371,6 +372,7 @@ import org.junit.runners.Suite
     AssetMediaTypeTest::class,
     AssetStoragePathResolverTest::class,
     MimeTypeDetectorTest::class,
+    AssetPipelineDrainBugTest::class,
     AssetPipelineServiceTest::class,
     DefaultAssetPluginsTest::class,
     PluginRegistryTest::class,
