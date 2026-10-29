@@ -17,7 +17,6 @@ DatalogQuery	kmp/src/commonMain/kotlin/dev/stapler/stelekit/search/DatalogQuery.
 DatalogSearchSupport	kmp/src/commonMain/kotlin/dev/stapler/stelekit/search/DatalogQuery.kt	18
 DeleteBlockCommand	kmp/src/commonMain/kotlin/dev/stapler/stelekit/command/BlockCommands.kt	23
 DesktopFileSystem	kmp/src/jvmMain/kotlin/dev/stapler/stelekit/platform/DesktopFileSystem.kt	-
-DesktopSyncScheduler	kmp/src/jvmMain/kotlin/dev/stapler/stelekit/git/DesktopSyncScheduler.kt	1
 DriveExportService	kmp/src/commonMain/kotlin/dev/stapler/stelekit/platform/google/DriveExportService.kt	28
 EavTuple	kmp/src/jvmMain/kotlin/dev/stapler/stelekit/repository/Migration.kt	22
 ExplanationContent	kmp/src/commonMain/kotlin/dev/stapler/stelekit/docs/DiataxisDoc.kt	-

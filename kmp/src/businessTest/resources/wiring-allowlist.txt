@@ -4,7 +4,6 @@
 # or deletes a class removes its line in the same PR (stale-entry rule).
 CloudClaudePlugin  awaiting-unit U11  2026-10-27  renewals=0
 CloudVisionPlugin  awaiting-unit U11  2026-10-27  renewals=0
-DesktopSyncScheduler  awaiting-unit U2  2026-10-27  renewals=0
 IOSCameraProvider  out-of-scope-ios  never
 IOSKableBleScanner  out-of-scope-ios  never
 OcrPlugin  awaiting-unit U9  2026-10-27  renewals=0
@@ -12,7 +11,6 @@ OnDeviceLabelingPlugin  awaiting-unit U8  2026-10-27  renewals=0
 PdfTextPlugin  awaiting-unit U8  2026-10-27  renewals=0
 WebCameraProvider  awaiting-unit U14  2026-10-27  renewals=0
 WebcamCameraProvider  awaiting-unit U14  2026-10-27  renewals=0
-WorkManagerSyncScheduler  awaiting-unit U2  2026-10-27  renewals=0
 CoreMlImageLabeler  out-of-scope-ios  never
 IosPdfTextExtractor  out-of-scope-ios  never
 # Verified false positives and entry points (Task 7.5a); non-expiring, dated with the verification day.

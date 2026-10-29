@@ -176,6 +176,10 @@ internal fun GraphContentActiveShell(
     val syncState by viewModel.syncState.collectAsState()
     val gitLastSyncAt by viewModel.gitLastSyncAt.collectAsState()
     val firstSyncReviewPending by viewModel.firstSyncReviewPending.collectAsState()
+    val scheduledSyncSettings = rememberScheduledSyncSettingsState(inputs.gitSyncStack) {
+        viewModel.setSettingsVisible(false)
+        viewModel.openGitSetup()
+    }
 
     val focusManager = LocalFocusManager.current
     BoxWithConstraints(
@@ -344,6 +348,7 @@ internal fun GraphContentActiveShell(
                         syncState = syncState,
                         gitLastSyncAt = gitLastSyncAt,
                         firstSyncReviewPending = firstSyncReviewPending,
+                        scheduledSyncPaused = scheduledSyncSettings?.status?.paused == true,
                         storageLocationResolver = storageLocationResolver,
                         gitRepository = gitRepository,
                         onStorageLocationChoose = onStorageLocationChoose,
@@ -426,6 +431,7 @@ internal fun GraphContentActiveShell(
             deps = GraphDialogLayerDeps(
                 settings = SettingsDialogDeps(
                     assetIndexing = deps.assets?.indexing,
+                    scheduledSync = scheduledSyncSettings,
                     voiceSettings = voiceSettings,
                     llmCredentialStore = llmCredentialStore,
                     llmProviderRegistry = llmProviderRegistry,

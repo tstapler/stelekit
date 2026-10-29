@@ -7,6 +7,7 @@ import android.content.Context
 import androidx.compose.runtime.Composable
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.GraphManager
+import dev.stapler.stelekit.git.BackgroundSyncSchedulerFactory
 import dev.stapler.stelekit.platform.SteleKitContext
 import dev.stapler.stelekit.repository.GraphBackend
 import dev.stapler.stelekit.repository.RepositorySet
@@ -32,6 +33,7 @@ class WiredAppFixture private constructor(
     val repos: RepositorySet,
     val ports: FakePlatformPorts,
     private val dataDir: File,
+    schedulerFactory: BackgroundSyncSchedulerFactory,
 ) {
     internal val deps = GraphContentDeps(
         repos = repos,
@@ -39,7 +41,10 @@ class WiredAppFixture private constructor(
         platformSettings = ports.settings,
         graphManager = graphManager,
         notificationManager = NotificationManager(),
-        platformIntegrations = StelekitAppPlatformIntegrations(gitRepository = ports.gitRepository),
+        platformIntegrations = StelekitAppPlatformIntegrations(
+            backgroundSyncSchedulerFactory = schedulerFactory,
+            gitRepository = ports.gitRepository,
+        ),
     )
 
     /** Composes the vault, graph-IO and sync stacks exactly as `GraphContent` does and returns the sync bundle. */
@@ -73,6 +78,7 @@ class WiredAppFixture private constructor(
             dataDir: File,
             ports: FakePlatformPorts = FakePlatformPorts(),
             graphPath: String = "/test/wired-graph",
+            schedulerFactory: BackgroundSyncSchedulerFactory = BackgroundSyncSchedulerFactory.None,
         ): WiredAppFixture {
             SteleKitContext.init(context)
             DriverFactory.setContext(context)
@@ -83,7 +89,7 @@ class WiredAppFixture private constructor(
                 fileSystem = ports.fileSystem,
                 defaultBackend = GraphBackend.IN_MEMORY,
             )
-            return WiredAppFixture(manager, manager.openGraph(graphPath), ports, dataDir)
+            return WiredAppFixture(manager, manager.openGraph(graphPath), ports, dataDir, schedulerFactory)
         }
     }
 }

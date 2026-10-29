@@ -214,6 +214,8 @@ import dev.stapler.stelekit.git.lfs.GitAttributesMatcherTest
 import dev.stapler.stelekit.git.lfs.LfsPointerPropertyTest
 import dev.stapler.stelekit.git.lfs.LfsPointerTest
 import dev.stapler.stelekit.git.GitSyncServiceLfsGuardTest
+import dev.stapler.stelekit.git.GitSyncServicePeriodicTest
+import dev.stapler.stelekit.git.PeriodicSyncDriverTest
 import dev.stapler.stelekit.git.ShallowMergeTest
 import dev.stapler.stelekit.git.merge.JournalMergeServiceTest
 import dev.stapler.stelekit.git.merge.LogseqMergeDriverTest
@@ -455,6 +457,8 @@ import org.junit.runners.Suite
     LfsPointerPropertyTest::class,
     LfsPointerTest::class,
     GitSyncServiceLfsGuardTest::class,
+    GitSyncServicePeriodicTest::class,
+    PeriodicSyncDriverTest::class,
     ShallowMergeTest::class,
     StubGitRepositoryFailureSequenceTest::class,
     JournalMergeServiceTest::class,

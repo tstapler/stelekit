@@ -46,7 +46,6 @@ KNOWN_FALSE_POSITIVES = {
 
 # Disposition Register (plan.md "Disposition Register"): row number -> type names it covers.
 REGISTER = {
-    1: ["DesktopSyncScheduler"],
     4: ["AssetIndexService"],
     5: ["AssetMoveService"],
     6: ["AssetPipelineService"],

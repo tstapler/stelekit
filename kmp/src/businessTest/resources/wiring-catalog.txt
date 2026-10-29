@@ -4,3 +4,5 @@
 # Each wiring unit appends its line in its own PR.
 ConsoleCommand  ConsoleEntryPointTest  effect:console-help
 MeasurementDeviceFactory  DesktopMeasurementDeviceFactoriesTest  effect:desktop-keyboard-device-emitted
+BackgroundSyncScheduler  GitSyncStackEntryPointTest  effect:scheduled-sync-tick
+BackgroundSyncScheduler  GitSyncSchedulingEntryPointTest  effect:periodic-work-enqueued

@@ -88,6 +88,17 @@ data class StelekitAppLifecycleHooks(
  */
 data class StelekitAppPlatformIntegrations(
     /**
+     * Closed-app sync scheduler. No default on purpose: every host must name its value so a new
+     * host cannot silently ship without it. Pass `WorkManagerSyncSchedulerFactory(context)` on
+     * Android and [dev.stapler.stelekit.git.BackgroundSyncSchedulerFactory.None] elsewhere.
+     */
+    val backgroundSyncSchedulerFactory: dev.stapler.stelekit.git.BackgroundSyncSchedulerFactory,
+    /**
+     * Reports OS background restrictions (battery saver, restricted standby bucket) so Settings can
+     * say that closed-app checks are limited. Null means the platform has none to report.
+     */
+    val backgroundRestrictionProbe: dev.stapler.stelekit.git.BackgroundRestrictionProbe? = null,
+    /**
      * Platform-specific git implementation. Pass `JvmGitRepository` on Desktop,
      * `AndroidGitRepository` on Android. When null, git sync is disabled.
      */
@@ -262,16 +273,16 @@ data class StelekitAppCaptureDeps(
 )
 
 /**
- * Every optional [StelekitApp] dependency, grouped by theme. [StelekitApp] must default this
- * parameter via `remember { StelekitAppDeps() }`, not a plain `= StelekitAppDeps()` — see
- * [StelekitAppCoreServices]'s doc for why.
+ * Every [StelekitApp] dependency, grouped by theme. Hosts must construct this explicitly (it has no
+ * default because [StelekitAppPlatformIntegrations.backgroundSyncSchedulerFactory] has none); wrap
+ * the construction in `remember { }` — see [StelekitAppCoreServices]'s doc for why.
  */
 data class StelekitAppDeps(
     val graphManager: GraphManager? = null,
     val coreServices: StelekitAppCoreServices = StelekitAppCoreServices(),
     val voiceConfig: StelekitAppVoiceConfig = StelekitAppVoiceConfig(),
     val lifecycleHooks: StelekitAppLifecycleHooks = StelekitAppLifecycleHooks(),
-    val platformIntegrations: StelekitAppPlatformIntegrations = StelekitAppPlatformIntegrations(),
+    val platformIntegrations: StelekitAppPlatformIntegrations,
     val webSyncDeps: StelekitAppWebSyncDeps = StelekitAppWebSyncDeps(),
     val captureDeps: StelekitAppCaptureDeps = StelekitAppCaptureDeps(),
 )
@@ -293,12 +304,14 @@ data class GraphContentDeps(
     val onViewModelReady: ((StelekitViewModel) -> Unit)? = null,
     val coreServices: StelekitAppCoreServices = StelekitAppCoreServices(),
     val voiceConfig: StelekitAppVoiceConfig = StelekitAppVoiceConfig(),
-    val platformIntegrations: StelekitAppPlatformIntegrations = StelekitAppPlatformIntegrations(),
+    val platformIntegrations: StelekitAppPlatformIntegrations,
     val webSyncDeps: StelekitAppWebSyncDeps = StelekitAppWebSyncDeps(),
     /** App-scoped copy flow; survives graph switches (it sits above the `key(activeGraphId)` that recreates [GraphContent]). Null hides copy. */
     val copyFlow: dev.stapler.stelekit.ui.screens.copy.CopyFlowController? = null,
     /** Threaded to `SettingsDialog`'s "Keyboard Shortcuts" row — see [StelekitAppCaptureDeps]. */
     val hotkeyComboLabel: String? = null,
+    /** Test seams for the sync service the stack builds; production keeps the defaults. */
+    val gitSyncSeams: GitSyncServiceSeams = GitSyncServiceSeams(),
     /** Where this graph registers its editor-side writer for the share router. */
     val activeWriteHooks: dev.stapler.stelekit.capture.ActiveWriteHooks? = null,
     /** Per-graph asset index/move stack; set by [GraphContent] itself (see GraphContentAssetSetup.kt), null in hosts. */

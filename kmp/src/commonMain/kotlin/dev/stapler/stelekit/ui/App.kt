@@ -63,7 +63,7 @@ internal suspend fun <T> withImportTimeout(
 fun StelekitApp(
     fileSystem: FileSystem,
     graphPath: String,
-    deps: StelekitAppDeps = remember { StelekitAppDeps() },
+    deps: StelekitAppDeps,
 ) {
     val platformSettings = remember { PlatformSettings() }
     val scope = rememberCoroutineScope()

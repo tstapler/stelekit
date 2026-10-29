@@ -362,6 +362,7 @@ fun main() {
                         onNotificationManagerReady = { nm -> wasmAttachmentService.attachNotificationManager(nm) },
                     ),
                     platformIntegrations = dev.stapler.stelekit.ui.StelekitAppPlatformIntegrations(
+                        backgroundSyncSchedulerFactory = dev.stapler.stelekit.git.BackgroundSyncSchedulerFactory.None,
                         // Demo-fallback mode has no persistent OPFS content to write attachments
                         // into (matches graphMoveQuiesceStrategy/hostLinkStep/insufficientSpaceCheck's
                         // gate below), so the attach-image affordance is hidden entirely there.
@@ -509,6 +510,7 @@ private suspend fun runEphemeralSession() {
             deps = dev.stapler.stelekit.ui.StelekitAppDeps(
                 graphManager = graphManager,
                 platformIntegrations = dev.stapler.stelekit.ui.StelekitAppPlatformIntegrations(
+                    backgroundSyncSchedulerFactory = dev.stapler.stelekit.git.BackgroundSyncSchedulerFactory.None,
                     attachmentService = WasmMediaAttachmentService(fileSystem),
                     gitRepository = wasmGitRepository,
                     // graphMoveQuiesceStrategy/storageLocationResolver intentionally left null — an

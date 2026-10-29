@@ -26,6 +26,9 @@ fun App(
             fileSystem = fileSystem,
             graphPath = graphPath,
             deps = StelekitAppDeps(
+                platformIntegrations = dev.stapler.stelekit.ui.StelekitAppPlatformIntegrations(
+                    backgroundSyncSchedulerFactory = dev.stapler.stelekit.git.BackgroundSyncSchedulerFactory.None,
+                ),
                 coreServices = StelekitAppCoreServices(
                     urlFetcher = UrlFetcherJvm(),
                     libraryStatsProvider = FileLibraryStatsProvider(),
