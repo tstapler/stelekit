@@ -60,7 +60,7 @@ class ConsoleEntryPointTest {
 
         ObservableEffect.assert("console-help") {
             assertTrue(result.isRight(), "help must succeed: $result")
-            assertEquals(listOf("diag", "help", "logs"), session.scrollback.lines.value.drop(1).map { it.text.substringBefore(' ') })
+            assertEquals(listOf("diag", "help", "logs", "schema", "sql", "tables"), session.scrollback.lines.value.drop(1).map { it.text.substringBefore(' ') })
         }
     }
 

@@ -12,6 +12,9 @@ import dev.stapler.stelekit.console.DeveloperMode
 import dev.stapler.stelekit.console.commands.DiagCommand
 import dev.stapler.stelekit.console.commands.HelpCommand
 import dev.stapler.stelekit.console.commands.LogsCommand
+import dev.stapler.stelekit.console.commands.SchemaCommand
+import dev.stapler.stelekit.console.commands.SqlCommand
+import dev.stapler.stelekit.console.commands.TablesCommand
 import dev.stapler.stelekit.diagnostics.GraphDiagnosticsCollector
 import dev.stapler.stelekit.git.GitConfigRepository
 
@@ -38,9 +41,15 @@ internal fun rememberGraphContentConsoleSetup(
             gitConfigRepository = gitConfigRepository,
             gitRepository = deps.platformIntegrations.gitRepository,
         )
+        val sqlConsole = { deps.repos.sqlConsole }
         ConsoleSession(
             developerMode = developerMode,
-            registry = ConsoleRegistry(listOf(HelpCommand(), DiagCommand(collector::collect), LogsCommand())),
+            registry = ConsoleRegistry(
+                listOf(
+                    HelpCommand(), DiagCommand(collector::collect), LogsCommand(),
+                    SqlCommand(sqlConsole = sqlConsole), TablesCommand(sqlConsole), SchemaCommand(sqlConsole),
+                ),
+            ),
         )
     }
     DisposableEffect(session) { onDispose { session.close() } }

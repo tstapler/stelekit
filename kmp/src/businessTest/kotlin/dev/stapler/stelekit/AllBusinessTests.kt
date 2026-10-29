@@ -65,8 +65,12 @@ import dev.stapler.stelekit.db.GraphInfoSerializationTest
 import dev.stapler.stelekit.db.GraphLoaderLfsPointerTest
 import dev.stapler.stelekit.db.SplitJournalTest
 import dev.stapler.stelekit.console.CommandLineTokenizerTest
+import dev.stapler.stelekit.console.ConsoleBoundedStreamingTest
 import dev.stapler.stelekit.console.ConsoleScopeOwnershipAuditTest
 import dev.stapler.stelekit.console.ConsoleSessionTest
+import dev.stapler.stelekit.console.CredentialColumnInventoryTest
+import dev.stapler.stelekit.console.SqlCommandTest
+import dev.stapler.stelekit.console.SqlConsoleBypassTest
 import dev.stapler.stelekit.console.ScrollbackBufferTest
 import dev.stapler.stelekit.security.RedactorSingleSiteAuditTest
 import dev.stapler.stelekit.security.RedactorTest
@@ -499,8 +503,12 @@ import org.junit.runners.Suite
     WiringAllowlistRenewalTest::class,
     WiringCompletenessTest::class,
     CommandLineTokenizerTest::class,
+    ConsoleBoundedStreamingTest::class,
     ConsoleScopeOwnershipAuditTest::class,
     ConsoleSessionTest::class,
+    CredentialColumnInventoryTest::class,
+    SqlCommandTest::class,
+    SqlConsoleBypassTest::class,
     ScrollbackBufferTest::class,
     RedactorSingleSiteAuditTest::class,
     RedactorTest::class,
