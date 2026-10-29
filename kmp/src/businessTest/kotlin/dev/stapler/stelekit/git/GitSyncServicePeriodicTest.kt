@@ -16,17 +16,10 @@ import dev.stapler.stelekit.git.testsupport.sampleConfig
 import dev.stapler.stelekit.platform.NetworkMonitor
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
-import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.Delay
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.InternalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestCoroutineScheduler
-import kotlinx.coroutines.test.TestDispatcher
-import java.util.concurrent.Semaphore
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
-import kotlin.coroutines.CoroutineContext
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -41,19 +34,8 @@ import kotlin.test.assertTrue
  * when a continuation is dispatched from a non-test thread, so each tick is fully settled (parked
  * in its delay again) before virtual time moves on. No real sleeps, no polling.
  */
-@OptIn(ExperimentalCoroutinesApi::class, InternalCoroutinesApi::class)
+@OptIn(ExperimentalCoroutinesApi::class)
 class GitSyncServicePeriodicTest {
-
-    private class HopAwareDispatcher(
-        private val inner: TestDispatcher,
-        private val testThread: Thread,
-    ) : CoroutineDispatcher(), Delay by inner {
-        val resumedFromOtherThread = Semaphore(0)
-        override fun dispatch(context: CoroutineContext, block: Runnable) {
-            inner.dispatch(context, block)
-            if (Thread.currentThread() !== testThread) resumedFromOtherThread.release()
-        }
-    }
 
     private class CountingGitRepository : StubGitRepository() {
         val fetches = AtomicInteger(0)
@@ -67,7 +49,7 @@ class GitSyncServicePeriodicTest {
 
     private val scheduler = TestCoroutineScheduler()
     private val repo = CountingGitRepository()
-    private val dispatcher = HopAwareDispatcher(StandardTestDispatcher(scheduler), Thread.currentThread())
+    private val dispatcher = HopAwareTestDispatcher(StandardTestDispatcher(scheduler), Thread.currentThread())
     private var service: GitSyncService? = null
 
     private fun buildService(): GitSyncService {
@@ -94,7 +76,7 @@ class GitSyncServicePeriodicTest {
     private fun runOneInterval(intervalMinutes: Int) {
         scheduler.advanceTimeBy(intervalMinutes * 60_000L)
         scheduler.runCurrent()
-        assertTrue(dispatcher.resumedFromOtherThread.tryAcquire(30, TimeUnit.SECONDS), "tick never returned from its IO hop")
+        assertTrue(dispatcher.awaitTickReturned(), "tick never returned from its IO hop")
         scheduler.runCurrent()
     }
 
@@ -116,6 +98,21 @@ class GitSyncServicePeriodicTest {
         scheduler.advanceTimeBy(24 * 60 * 60_000L)
         scheduler.runCurrent()
         assertEquals(0, repo.fetches.get())
+    }
+
+    @Test
+    fun `startPeriodicSync should contain only delegation to the driver when source is audited`() {
+        val source = dev.stapler.stelekit.wiring.WiringInputs.productionSources
+            .getValue("commonMain/dev/stapler/stelekit/git/GitSyncService.kt")
+        val start = source.indexOf("fun startPeriodicSync(")
+        val end = source.indexOf("fun stopPeriodicSync")
+        val body = source.substring(start, end)
+        listOf("while (", "delay(", "launch", "++", "counter").forEach {
+            assertTrue(it !in body, "startPeriodicSync must only delegate to PeriodicSyncDriver, found `$it`")
+        }
+        assertTrue("periodicDriver.start(" in body)
+        val driverDecl = source.substring(source.indexOf("private val periodicDriver"), source.indexOf("val scheduledSyncStatus"))
+        assertTrue("refreshLocalStatus(periodicGraphId)" in driverDecl && "fetchOnly(periodicGraphId).toTickOutcome()" in driverDecl)
     }
 
     @Test
