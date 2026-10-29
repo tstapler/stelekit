@@ -122,6 +122,8 @@ data class StelekitAppPlatformIntegrations(
      */
     val googleAuthManager: dev.stapler.stelekit.platform.google.GoogleAuthManager? = null,
     val requestCameraPermission: (suspend () -> Boolean)? = null,
+    /** Downloads, clones and other work that finishes later; shown on the Background jobs screen. */
+    val backgroundJobs: dev.stapler.stelekit.jobs.BackgroundJobRegistry = dev.stapler.stelekit.jobs.NoBackgroundJobs,
     /**
      * Platform quiesce port for Story 3.1.3/3.1.5's `GraphRelocationCoordinator` — pass
      * `createAndroidGraphMoveQuiesceStrategy(...)` on Android, `createWasmJsGraphMoveQuiesceStrategy(...)`

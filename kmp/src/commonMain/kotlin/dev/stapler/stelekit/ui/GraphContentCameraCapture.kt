@@ -103,6 +103,7 @@ internal fun GraphContentScreenAndCapture(deps: GraphContentDeps, viewModel: Ste
             qrTransferSettings = inputs.tagVoiceStack.qrTransferSettings,
             graphLoader = inputs.graphIoStack.graphLoader,
             graphDiagnostics = diagnosticsCollector::collect,
+            backgroundJobs = deps.platformIntegrations.backgroundJobs,
             capabilities = buildEditorCapabilities(deps, viewModel, inputs, captureState),
             onImportImage = buildOnImportImage(deps, viewModel, inputs, captureState),
             platformSettings = deps.platformSettings,

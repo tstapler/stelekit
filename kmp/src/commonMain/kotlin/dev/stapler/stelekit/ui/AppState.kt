@@ -50,6 +50,9 @@ sealed class Screen {
     @HelpExempt(reason = "System surface shown automatically; users do not navigate to it deliberately")
     data object Notifications : Screen()
 
+    @HelpExempt(reason = "Status surface for downloads and clones; reached from the overflow menu")
+    data object BackgroundJobs : Screen()
+
     @HelpExempt(reason = "Developer log viewer; reachable only from debug menu")
     data object Logs : Screen()
 

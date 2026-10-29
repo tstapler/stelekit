@@ -200,6 +200,13 @@ fun TopBar(
                         color = MaterialTheme.colorScheme.primary
                     )
                     DropdownMenuItem(
+                        text = { Text("Background jobs") },
+                        onClick = {
+                            overflowMenuExpanded = false
+                            onNavigate(Screen.BackgroundJobs)
+                        }
+                    )
+                    DropdownMenuItem(
                         text = { Text("Logs") },
                         onClick = {
                             overflowMenuExpanded = false

@@ -53,6 +53,7 @@ import dev.stapler.stelekit.ui.gallery.GalleryScreen
 import dev.stapler.stelekit.ui.gallery.GalleryViewModel
 import dev.stapler.stelekit.ui.screens.AllPagesScreen
 import dev.stapler.stelekit.ui.screens.AllPagesViewModel
+import dev.stapler.stelekit.ui.screens.BackgroundJobsScreen
 import dev.stapler.stelekit.ui.screens.GlobalUnlinkedReferencesScreen
 import dev.stapler.stelekit.ui.screens.JournalsView
 import dev.stapler.stelekit.ui.screens.JournalsViewModel
@@ -108,6 +109,7 @@ internal fun ScreenRouter(
     graphLoader: dev.stapler.stelekit.db.GraphLoader? = null,
     /** Builds the report behind the Logs screen's diagnostics button; null hides the button. */
     graphDiagnostics: (suspend () -> String)? = null,
+    backgroundJobs: dev.stapler.stelekit.jobs.BackgroundJobRegistry = dev.stapler.stelekit.jobs.NoBackgroundJobs,
 ) {
     if (appState.fatalError != null) {
         FatalErrorScreen(
@@ -225,6 +227,10 @@ internal fun ScreenRouter(
             is Screen.Notifications -> {
                 NavigationTracingEffect("Notifications")
                 NotificationHistory(notificationManager)
+            }
+            is Screen.BackgroundJobs -> {
+                NavigationTracingEffect("BackgroundJobs")
+                BackgroundJobsScreen(backgroundJobs)
             }
             is Screen.Logs -> {
                 NavigationTracingEffect("Logs")

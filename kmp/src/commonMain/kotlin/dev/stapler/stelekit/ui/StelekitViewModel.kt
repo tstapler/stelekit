@@ -1160,6 +1160,7 @@ class StelekitViewModel(
                     is Screen.AllPages -> "Opened All Pages"
                     is Screen.Notifications -> "Opened Notifications"
                     is Screen.Logs -> "Opened Logs"
+                    is Screen.BackgroundJobs -> "Opened Background jobs"
                     is Screen.Performance -> "Opened Performance"
                     is Screen.GlobalUnlinkedReferences -> "Opened Unlinked References"
                     is Screen.Import -> "Import text as new page"
@@ -1259,6 +1260,7 @@ class StelekitViewModel(
             "all-pages" -> Screen.AllPages()
             "notifications" -> Screen.Notifications
             "logs" -> Screen.Logs
+            "background-jobs" -> Screen.BackgroundJobs
             else -> Screen.Journals
         }
         navigateTo(newScreen)

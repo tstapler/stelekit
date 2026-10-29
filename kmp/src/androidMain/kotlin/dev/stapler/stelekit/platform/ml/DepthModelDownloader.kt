@@ -17,6 +17,8 @@ import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.jobs.JobKind
+import dev.stapler.stelekit.jobs.JobTags
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.ui.annotate.DepthModelUiState
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -77,6 +79,9 @@ class DepthModelDownloader(private val context: Context) {
             )
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
             .setInputData(Data.EMPTY)
+            .addTag(JobTags.ANY)
+            .addTag(JobTags.kind(JobKind.ModelDownload))
+            .addTag(JobTags.title("Depth model download"))
             .build()
         // KEEP: an already queued or running job is left alone; a finished one is replaced by this new run.
         workManager.enqueueUniqueWork(UNIQUE_WORK_NAME, ExistingWorkPolicy.KEEP, request)
