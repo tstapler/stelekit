@@ -13,6 +13,7 @@ import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.ui.annotate.DepthModelUiState
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -25,6 +26,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.File
+import java.io.IOException
 
 /**
  * Downloads the Depth Anything V2 ViT-S ONNX model on first use via Android's [DownloadManager].
@@ -98,7 +100,19 @@ class DepthModelDownloader(private val context: Context) {
         }
 
         if (activeDownloadId == -1L) {
-            enqueueDownload()
+            try {
+                enqueueDownload()
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                logger.warn("Failed to start depth model download", e)
+                runCatching { activeReceiver?.let { context.unregisterReceiver(it) } }
+                activeReceiver = null
+                pollingJob?.cancel()
+                activeDownloadId = -1L
+                val reason = "Couldn't start the download. Check your connection and storage, then retry."
+                _modelState.value = ModelState.Failed(reason)
+                return DomainError.SensorError.HardwareUnavailable(reason).left()
+            }
         } else {
             logger.info("downloadModel() called while a download is already in flight — reattaching")
         }
@@ -122,7 +136,7 @@ class DepthModelDownloader(private val context: Context) {
         activeReceiver = null
         val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
         downloadManager.remove(activeDownloadId)
-        runCatching { modelFile.delete() } // belt-and-suspenders — guards an async-deletion race
+        runCatching { downloadTarget()?.delete() } // belt-and-suspenders — guards an async-deletion race
         activeDownloadId = -1L
         _modelState.value = ModelState.Absent
     }
@@ -134,13 +148,18 @@ class DepthModelDownloader(private val context: Context) {
      * call [downloadModel].
      */
     private fun enqueueDownload() {
-        modelFile.parentFile?.mkdirs()
+        // DownloadManager runs in a system process and is refused (SecurityException) any
+        // destination under the app-private filesDir, so it writes to the app-specific external
+        // dir and finalizeDownload() moves the result into modelFile.
+        val target = downloadTarget() ?: throw IOException("External storage unavailable")
+        target.parentFile?.mkdirs()
+        target.delete() // a stale partial would make DownloadManager rename the new file
         val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
 
         val request = DownloadManager.Request(Uri.parse(MODEL_URL)).apply {
             setTitle("Depth model")
             setDescription("Downloading depth estimation model (~100 MB)")
-            setDestinationUri(Uri.fromFile(modelFile))
+            setDestinationUri(Uri.fromFile(target))
             setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE)
             setAllowedOverMetered(true)
             setAllowedOverRoaming(false)
@@ -172,11 +191,8 @@ class DepthModelDownloader(private val context: Context) {
                     } else false
                 } ?: false
 
-                _modelState.value = if (succeeded && isModelReady()) {
-                    ModelState.Ready
-                } else {
-                    ModelState.Failed()
-                }
+                // Copying ~100MB must not run on the main thread the receiver is invoked on.
+                scope.launch { _modelState.value = if (succeeded && finalizeDownload()) ModelState.Ready else ModelState.Failed() }
             }
         }
         activeReceiver = receiver
@@ -209,6 +225,24 @@ class DepthModelDownloader(private val context: Context) {
             ).left()
             else -> error("unreachable — filtered to Ready/Failed/Absent above")
         }
+
+    private fun downloadTarget(): File? =
+        context.getExternalFilesDir(null)?.let { File(it, "models/depth_anything_v2_small.onnx.download") }
+
+    /** Streams the finished download into [modelFile] via a temp file so a half-copy never passes [isModelReady]. */
+    private fun finalizeDownload(): Boolean = try {
+        val source = downloadTarget()?.takeIf { it.exists() } ?: return isModelReady()
+        modelFile.parentFile?.mkdirs()
+        val partial = File(modelFile.parentFile, "${modelFile.name}.partial")
+        source.inputStream().use { input -> partial.outputStream().use { input.copyTo(it) } }
+        modelFile.delete()
+        check(partial.renameTo(modelFile)) { "rename to ${modelFile.name} failed" }
+        source.delete()
+        isModelReady()
+    } catch (e: Exception) {
+        logger.warn("Failed to finalize depth model download", e)
+        false
+    }
 
     /** Absolute path of the model file. Safe to pass to [ai.onnxruntime.OrtSession]. */
     fun modelFilePath(): String = modelFile.absolutePath
@@ -257,7 +291,7 @@ class DepthModelDownloader(private val context: Context) {
                     runCatching { activeReceiver?.let { context.unregisterReceiver(it) } }
                     activeReceiver = null
                     downloadManager.remove(downloadId)
-                    runCatching { modelFile.delete() }
+                    runCatching { downloadTarget()?.delete() }
                     activeDownloadId = -1L
                     _modelState.value = ModelState.Failed(reason = "This is taking longer than expected.")
                     break
