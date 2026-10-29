@@ -5,6 +5,10 @@ package dev.stapler.stelekit.performance
 
 import android.content.Context
 import android.content.pm.ApplicationInfo
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import arrow.core.Either
@@ -14,6 +18,7 @@ import dev.stapler.stelekit.asset.AssetIndexService
 import dev.stapler.stelekit.asset.AssetIndexingController
 import dev.stapler.stelekit.asset.pipeline.AssetBuildFlags
 import dev.stapler.stelekit.asset.pipeline.AssetPipelineService
+import dev.stapler.stelekit.asset.pipeline.MAX_UNSCALED_IMAGE_BYTES
 import dev.stapler.stelekit.asset.pipeline.PipelineProgress
 import dev.stapler.stelekit.asset.pipeline.PipelineRunMarker
 import dev.stapler.stelekit.asset.pipeline.PlatformCaps
@@ -32,6 +37,7 @@ import dev.stapler.stelekit.platform.SteleKitContext
 import dev.stapler.stelekit.platform.ml.ImageLabeler
 import dev.stapler.stelekit.platform.ml.Label
 import dev.stapler.stelekit.platform.ml.PdfTextExtractor
+import dev.stapler.stelekit.platform.ml.TextRecognizer
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
 import dev.stapler.stelekit.repository.SqlDelightAssetRepository
@@ -47,6 +53,7 @@ import org.junit.FixMethodOrder
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.MethodSorters
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
@@ -57,7 +64,7 @@ import java.util.concurrent.locks.LockSupport
  *
  * Runs the real stack (index walk, `defaultAssetPlugins`, `AssetPipelineService`) with fake ML
  * ports over an owner-scale graph: a database of at least [MIN_DB_BYTES], at least [MIN_ASSET_ROWS]
- * `asset_index` rows, and ten 15 MB files standing in for 40 MP photos. It runs twice, in order:
+ * `asset_index` rows, and ten real 40 MP (7000x5714) JPEGs. It runs twice, in order:
  * indexing only (every plugin key unset, the configuration U8 ships) and then all on-device
  * plugin keys set (the configuration U9 ships). The preconditions fail the test rather than let a
  * smaller database or a larger heap pass it, because that would not falsify the 512 MB assumption.
@@ -81,10 +88,22 @@ class AssetPipelineHeapGateTest {
     private class CountingLabeler : ImageLabeler {
         val calls = AtomicInteger()
         val bytesSeen = AtomicLong()
+        val maxBytes = AtomicLong()
         override suspend fun labelImage(imageBytes: ByteArray): Either<DomainError, List<Label>> {
             calls.incrementAndGet()
             bytesSeen.addAndGet(imageBytes.size.toLong())
+            maxBytes.accumulateAndGet(imageBytes.size.toLong(), ::maxOf)
             return listOf(Label("cat", 0.9f)).right()
+        }
+    }
+
+    private class CountingRecognizer : TextRecognizer {
+        val calls = AtomicInteger()
+        val maxBytes = AtomicLong()
+        override suspend fun recognize(imageBytes: ByteArray): Either<DomainError, String> {
+            calls.incrementAndGet()
+            maxBytes.accumulateAndGet(imageBytes.size.toLong(), ::maxOf)
+            return "Invoice 4821".right()
         }
     }
 
@@ -117,6 +136,7 @@ class AssetPipelineHeapGateTest {
     private val settings = FakeSettings()
     private val labeler = CountingLabeler()
     private val pdf = CountingPdf()
+    private val recognizer = CountingRecognizer()
 
     private fun <T> measured(label: String, block: suspend () -> T): T {
         System.gc()
@@ -142,7 +162,7 @@ class AssetPipelineHeapGateTest {
         val marker = PipelineRunMarker(settings)
         val controller = AssetIndexingController(settings, AssetIndexService(repo), toggleVisibleProvider = { true }, runMarker = marker)
         val actor = DatabaseWriteActor(InMemoryBlockRepository(), InMemoryPageRepository())
-        val caps = PlatformCaps(labeler, pdf)
+        val caps = PlatformCaps(labeler, pdf, recognizer)
         val pipeline = AssetPipelineService(
             PluginRegistry(), repo, actor,
             pluginSource = { defaultAssetPlugins(caps, settings, fs) },
@@ -173,6 +193,7 @@ class AssetPipelineHeapGateTest {
         assertEquals("nothing may be marked processed or failed", rows, runBlocking { repo.countUnprocessedAssets().getOrNull() })
         assertEquals(0, labeler.calls.get())
         assertEquals(0, pdf.calls.get())
+        assertEquals(0, recognizer.calls.get())
         controller.close()
         pipeline.shutdown()
     }
@@ -182,6 +203,7 @@ class AssetPipelineHeapGateTest {
         settings.putBoolean(AssetBuildFlags.PIPELINE_ENABLED_KEY, true)
         settings.putBoolean(PluginEnableKeys.keyFor(PluginEnableKeys.IMAGE_LABELS), true)
         settings.putBoolean(PluginEnableKeys.keyFor(PluginEnableKeys.PDF_TEXT), true)
+        settings.putBoolean(PluginEnableKeys.keyFor(PluginEnableKeys.TEXT_RECOGNITION), true)
         val (controller, pipeline) = newStack()
         val rows = runBlocking { repo.countAssets().getOrNull() ?: -1L }
         assertTrue("run1 must have indexed at least $MIN_ASSET_ROWS rows first (was $rows)", rows >= MIN_ASSET_ROWS)
@@ -194,11 +216,17 @@ class AssetPipelineHeapGateTest {
         val end = pipeline.progress.value
         AndroidSpikeSupport.record(
             SPIKE, "run2_result",
-            "progress=$end labeler_calls=${labeler.calls.get()} labeler_bytes_mb=${labeler.bytesSeen.get() / MB} pdf_calls=${pdf.calls.get()}",
+            "progress=$end labeler_calls=${labeler.calls.get()} labeler_bytes_mb=${labeler.bytesSeen.get() / MB} labeler_max_bytes=${labeler.maxBytes.get()} " +
+                "ocr_calls=${recognizer.calls.get()} ocr_max_bytes=${recognizer.maxBytes.get()} pdf_calls=${pdf.calls.get()}",
         )
         assertTrue("drain must finish, was $end", end is PipelineProgress.Finished)
         assertEquals("every row reaches a terminal state", 0L, runBlocking { repo.countUnprocessedAssets().getOrNull() })
-        assertTrue("the 40 MP-class files went through the labeler", labeler.bytesSeen.get() >= BIG_FILE_COUNT * BIG_FILE_BYTES)
+        assertEquals("every image was labeled", (IMAGE_FILES + BIG_FILE_COUNT).toLong(), labeler.calls.get().toLong())
+        assertEquals("every image was read for text", (IMAGE_FILES + BIG_FILE_COUNT).toLong(), recognizer.calls.get().toLong())
+        assertTrue(
+            "no model saw the original 40 MP file (labeler max ${labeler.maxBytes.get()}, ocr max ${recognizer.maxBytes.get()} bytes)",
+            labeler.maxBytes.get() < MAX_UNSCALED_IMAGE_BYTES && recognizer.maxBytes.get() < MAX_UNSCALED_IMAGE_BYTES,
+        )
         controller.close()
         pipeline.shutdown()
     }
@@ -219,7 +247,10 @@ class AssetPipelineHeapGateTest {
         private const val IMAGE_FILES = 9_300
         private const val PDF_FILES = 200
         private const val BIG_FILE_COUNT = 10
-        private const val BIG_FILE_BYTES = 15L * MB
+        private const val PHOTO_WIDTH = 7_000
+        private const val PHOTO_HEIGHT = 5_714
+        private const val PHOTO_TEXT_PX = 700f
+        private const val JPEG_QUALITY = 85
         private const val FILES_PER_DIR = 500
         private const val PAGES_PER_BATCH = 250
         private const val BLOCKS_PER_PAGE = 10
@@ -287,13 +318,25 @@ class AssetPipelineHeapGateTest {
                 val dir = File(root, "assets/pdf").apply { mkdirs() }
                 File(dir, "doc$i.pdf").writeBytes("%PDF-1.4\n%$i\n%%EOF".encodeToByteArray())
             }
+            val photo = fortyMegapixelJpeg()
             for (i in 0 until BIG_FILE_COUNT) {
                 val dir = File(root, "assets/big").apply { mkdirs() }
-                File(dir, "photo$i.jpg").outputStream().use { out ->
-                    out.write(jpeg)
-                    val chunk = ByteArray(MB.toInt()) { (it + i).toByte() }
-                    repeat((BIG_FILE_BYTES / MB).toInt()) { out.write(chunk) }
-                }
+                // Bytes after the JPEG end marker are ignored by decoders and keep each content hash distinct.
+                File(dir, "photo$i.jpg").writeBytes(photo + ByteArray(i + 1) { (it + i).toByte() })
+            }
+        }
+
+        /** A real, decodable 7000x5714 (40 MP) JPEG; the file is small but the full decode is 160 MB as ARGB_8888. */
+        private fun fortyMegapixelJpeg(): ByteArray {
+            val bitmap = Bitmap.createBitmap(PHOTO_WIDTH, PHOTO_HEIGHT, Bitmap.Config.RGB_565)
+            try {
+                val canvas = Canvas(bitmap)
+                canvas.drawColor(Color.WHITE)
+                val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK; textSize = PHOTO_TEXT_PX }
+                canvas.drawText("Invoice 4821", PHOTO_TEXT_PX / 2, PHOTO_HEIGHT / 2f, paint)
+                return ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, it) }.toByteArray()
+            } finally {
+                bitmap.recycle()
             }
         }
 
