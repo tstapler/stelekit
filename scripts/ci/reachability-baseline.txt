@@ -35,7 +35,6 @@ MoveBlockDownCommand	kmp/src/commonMain/kotlin/dev/stapler/stelekit/command/Bloc
 MoveBlockUpCommand	kmp/src/commonMain/kotlin/dev/stapler/stelekit/command/BlockCommands.kt	23
 NamespaceUtils	kmp/src/commonMain/kotlin/dev/stapler/stelekit/outliner/NamespaceUtils.kt	-
 NoOpErrorTracker	kmp/src/commonMain/kotlin/dev/stapler/stelekit/error/ErrorTracker.kt	32
-OcrPlugin	kmp/src/commonMain/kotlin/dev/stapler/stelekit/asset/pipeline/OcrPlugin.kt	10
 OutdentBlockCommand	kmp/src/commonMain/kotlin/dev/stapler/stelekit/command/BlockCommands.kt	23
 PageOptics	kmp/src/commonMain/kotlin/dev/stapler/stelekit/model/ModelOptics.kt	-
 PlaceholderInferenceWorker	kmp/src/commonMain/kotlin/dev/stapler/stelekit/search/VectorSearch.kt	17

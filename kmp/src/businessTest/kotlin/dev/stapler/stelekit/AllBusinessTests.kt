@@ -133,6 +133,7 @@ import dev.stapler.stelekit.asset.pipeline.AssetPipelineProgressTest
 import dev.stapler.stelekit.asset.pipeline.AssetPipelineOomInjectionTest
 import dev.stapler.stelekit.asset.pipeline.AssetPipelineCrashLoopBreakerTest
 import dev.stapler.stelekit.asset.pipeline.DefaultAssetPluginsTest
+import dev.stapler.stelekit.asset.pipeline.OcrPluginTest
 import dev.stapler.stelekit.asset.pipeline.PluginRegistryTest
 import dev.stapler.stelekit.auto.AudiobookNoteFormatterTest
 import dev.stapler.stelekit.auto.AudiobookNoteWriterTest
@@ -386,6 +387,7 @@ import org.junit.runners.Suite
     AssetPipelineOomInjectionTest::class,
     AssetPipelineCrashLoopBreakerTest::class,
     DefaultAssetPluginsTest::class,
+    OcrPluginTest::class,
     PluginRegistryTest::class,
     AudiobookNoteFormatterTest::class,
     AudiobookNoteWriterTest::class,

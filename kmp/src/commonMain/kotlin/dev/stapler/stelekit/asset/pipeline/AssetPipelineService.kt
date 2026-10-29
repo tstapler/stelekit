@@ -114,10 +114,15 @@ class AssetPipelineService(
         val now = Clock.System.now().toEpochMilliseconds()
         if (!failed) {
             val finalLabels = allLabels.distinct()
+            val storedOcr = ocrText?.let { text ->
+                truncateUtf8(text).also {
+                    if (it.length < text.length) logger.warn("ocr text truncated to $MAX_OCR_TEXT_BYTES bytes for ${asset.uuid.value}")
+                }
+            }
             val saved = writeGuarded {
                 @OptIn(DirectRepositoryWrite::class)
                 assetRepository.updateAutoLabels(asset.uuid, finalLabels, "LOCAL")
-                    .flatMap { assetRepository.updateOcrText(asset.uuid, ocrText) }
+                    .flatMap { assetRepository.updateOcrText(asset.uuid, storedOcr) }
                     .flatMap { assetRepository.markMlProcessed(asset.uuid, now) }
             }
             if (saved) return@withPermit Outcome.Processed

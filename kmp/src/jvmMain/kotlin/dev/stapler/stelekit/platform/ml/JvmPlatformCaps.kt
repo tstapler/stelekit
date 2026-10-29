@@ -14,4 +14,5 @@ fun defaultOnnxModelFile(): File =
 fun jvmPlatformCaps(modelFile: File = defaultOnnxModelFile()): PlatformCaps = PlatformCaps(
     imageLabeler = if (modelFile.isFile) OnnxImageLabeler(modelFile.path) else NoOpImageLabeler(),
     pdfText = JvmPdfTextExtractor(),
+    textRecognizer = NoOpTextRecognizer(),
 )
