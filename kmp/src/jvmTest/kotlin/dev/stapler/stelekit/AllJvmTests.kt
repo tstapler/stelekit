@@ -176,6 +176,7 @@ import dev.stapler.stelekit.git.RemoteDefaultBranchTest
 import dev.stapler.stelekit.git.VaultCredentialStoreTest
 import dev.stapler.stelekit.google.DriveApiClientContentTypeTest
 import dev.stapler.stelekit.google.DriveExportServiceTest
+import dev.stapler.stelekit.google.GoogleAuthCodeExchangeHttpTest
 import dev.stapler.stelekit.google.GoogleApiClientTest
 import dev.stapler.stelekit.google.GoogleTokenRefresherTest
 import dev.stapler.stelekit.google.JvmGoogleAuthManagerTest
@@ -503,6 +504,7 @@ import org.junit.runners.Suite
     VaultCredentialStoreTest::class,
     DriveApiClientContentTypeTest::class,
     DriveExportServiceTest::class,
+    GoogleAuthCodeExchangeHttpTest::class,
     GoogleApiClientTest::class,
     GoogleTokenRefresherTest::class,
     JvmGoogleAuthManagerTest::class,
