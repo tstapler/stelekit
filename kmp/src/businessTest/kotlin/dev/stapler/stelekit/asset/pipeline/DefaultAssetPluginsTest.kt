@@ -133,10 +133,10 @@ class DefaultAssetPluginsTest {
         val settings = FakeSettings()
         val service = AssetPipelineService(
             PluginRegistry(), repo, DatabaseWriteActor(InMemoryBlockRepository(), InMemoryPageRepository()),
-        ) { defaultAssetPlugins(caps, settings, fs) }
+            pluginSource = { defaultAssetPlugins(caps, settings, fs) },
+        )
 
         service.scheduleBackfill()
-        kotlinx.coroutines.delay(200)
 
         assertEquals(2L, repo.countUnprocessedAssets().getOrNull(), "nothing marked processed or failed")
         assertEquals(0, labeler.calls)
@@ -154,11 +154,12 @@ class DefaultAssetPluginsTest {
         val settings = FakeSettings()
         val service = AssetPipelineService(
             PluginRegistry(), repo, DatabaseWriteActor(InMemoryBlockRepository(), InMemoryPageRepository()),
-        ) { defaultAssetPlugins(caps, settings, fs) }
+            pluginSource = { defaultAssetPlugins(caps, settings, fs) },
+        )
 
         settings.putBoolean(PluginEnableKeys.keyFor(PluginEnableKeys.IMAGE_LABELS), true)
         service.scheduleBackfill()
-        withTimeout(10_000) { while (repo.countUnprocessedAssets().getOrNull() != 1L) kotlinx.coroutines.delay(20) }
+        withTimeout(10_000) { service.progress.first { it is PipelineProgress.Finished } }
 
         assertEquals(1, labeler.calls)
         assertEquals(0, pdf.calls)

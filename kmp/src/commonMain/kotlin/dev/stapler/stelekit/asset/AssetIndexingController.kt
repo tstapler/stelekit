@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.asset
 
 import dev.stapler.stelekit.asset.pipeline.AssetBuildFlags
+import dev.stapler.stelekit.asset.pipeline.PipelineRunMarker
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.EffectiveNotesPath
@@ -8,6 +9,11 @@ import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.service.AttachmentResult
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,8 +30,14 @@ class AssetIndexingController(
     private val settings: Settings,
     private val indexService: AssetIndexService,
     private val toggleVisibleProvider: () -> Boolean = { AssetBuildFlags.PIPELINE_TOGGLE_VISIBLE },
+    /** Shared with the plugin drain so one marker covers the whole pipeline. */
+    private val runMarker: PipelineRunMarker = PipelineRunMarker(settings),
 ) {
     private val logger = Logger("AssetIndexingController")
+
+    private companion object {
+        const val MARKER_OWNER = "index"
+    }
 
     private class GraphContext(
         val notesPath: EffectiveNotesPath,
@@ -34,7 +46,22 @@ class AssetIndexingController(
     )
 
     private var graph: GraphContext? = null
+
+    // Evaluated before the flag is read: a tripped breaker writes the flag off.
+    private val _breakerTripped = MutableStateFlow(runMarker.evaluateAtLaunch())
     private val _enabled = MutableStateFlow(readFlag())
+
+    /** True after repeated unclean exits turned the pipeline off; cleared when the owner re-enables it. */
+    val breakerTripped: StateFlow<Boolean> = _breakerTripped.asStateFlow()
+
+    private val markerScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    init {
+        // A finished walk is a clean stop; every other stop path ends the marker explicitly.
+        markerScope.launch {
+            indexService.progress.collect { if (it is AssetIndexProgress.Finished) runMarker.end(MARKER_OWNER) }
+        }
+    }
 
     val toggleVisible: Boolean get() = toggleVisibleProvider()
 
@@ -56,6 +83,10 @@ class AssetIndexingController(
     /** Persists the flag and starts or stops the backfill immediately, without a restart. */
     fun setEnabled(value: Boolean) {
         if (!toggleVisible) return
+        if (value) {
+            runMarker.reset()
+            _breakerTripped.value = false
+        }
         settings.putBoolean(AssetBuildFlags.PIPELINE_ENABLED_KEY, value)
         _enabled.value = value
         reconcile()
@@ -70,7 +101,7 @@ class AssetIndexingController(
     /** The graph is (re)loading or closing; `loadGraph` must never overlap the backfill. */
     fun onGraphNotReady() {
         graph = null
-        indexService.stopBackfill()
+        stopIndexing()
     }
 
     /**
@@ -78,20 +109,28 @@ class AssetIndexingController(
      * It restarts on the next graph-ready or switch flip, not automatically.
      */
     fun onMemoryPressure() {
-        indexService.stopBackfill()
+        stopIndexing()
     }
 
     fun close() {
         graph = null
+        runMarker.end(MARKER_OWNER)
+        markerScope.cancel()
         indexService.close()
+    }
+
+    private fun stopIndexing() {
+        indexService.stopBackfill()
+        runMarker.end(MARKER_OWNER)
     }
 
     private fun reconcile() {
         val ctx = graph
         if (isActive && ctx != null) {
+            runMarker.begin(MARKER_OWNER)
             indexService.startBackfill(ctx.notesPath, ctx.writeActor, ctx.fileSystem)
         } else {
-            indexService.stopBackfill()
+            stopIndexing()
         }
     }
 

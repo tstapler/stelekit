@@ -126,7 +126,12 @@ import dev.stapler.stelekit.voice.VoiceSettingsTest
 import dev.stapler.stelekit.asset.AssetMediaTypeTest
 import dev.stapler.stelekit.asset.AssetStoragePathResolverTest
 import dev.stapler.stelekit.asset.MimeTypeDetectorTest
+import dev.stapler.stelekit.asset.pipeline.AssetPipelineDrainBugTest
 import dev.stapler.stelekit.asset.pipeline.AssetPipelineServiceTest
+import dev.stapler.stelekit.asset.pipeline.AssetPipelineTerminalStateTest
+import dev.stapler.stelekit.asset.pipeline.AssetPipelineProgressTest
+import dev.stapler.stelekit.asset.pipeline.AssetPipelineOomInjectionTest
+import dev.stapler.stelekit.asset.pipeline.AssetPipelineCrashLoopBreakerTest
 import dev.stapler.stelekit.asset.pipeline.DefaultAssetPluginsTest
 import dev.stapler.stelekit.asset.pipeline.PluginRegistryTest
 import dev.stapler.stelekit.auto.AudiobookNoteFormatterTest
@@ -371,7 +376,12 @@ import org.junit.runners.Suite
     AssetMediaTypeTest::class,
     AssetStoragePathResolverTest::class,
     MimeTypeDetectorTest::class,
+    AssetPipelineDrainBugTest::class,
     AssetPipelineServiceTest::class,
+    AssetPipelineTerminalStateTest::class,
+    AssetPipelineProgressTest::class,
+    AssetPipelineOomInjectionTest::class,
+    AssetPipelineCrashLoopBreakerTest::class,
     DefaultAssetPluginsTest::class,
     PluginRegistryTest::class,
     AudiobookNoteFormatterTest::class,

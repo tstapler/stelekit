@@ -17,6 +17,8 @@ import dev.stapler.stelekit.asset.AssetIndexingController
 import dev.stapler.stelekit.asset.AssetMoveService
 import dev.stapler.stelekit.asset.IndexingMediaAttachmentService
 import dev.stapler.stelekit.asset.pipeline.AssetPipelineService
+import dev.stapler.stelekit.asset.pipeline.PauseReason
+import dev.stapler.stelekit.asset.pipeline.PipelineRunMarker
 import dev.stapler.stelekit.asset.pipeline.PluginRegistry
 import dev.stapler.stelekit.asset.pipeline.defaultAssetPlugins
 import dev.stapler.stelekit.error.DomainError
@@ -61,26 +63,30 @@ internal fun rememberGraphContentAssetStack(
 ): GraphContentAssetStack {
     val repos = deps.repos
     val delegateAttachments = deps.platformIntegrations.attachmentService
-    val indexing = remember(repos, deps.platformSettings) {
-        AssetIndexingController(deps.platformSettings, AssetIndexService(repos.assetRepository))
+    // One marker for the whole pipeline (index walk + plugin drain): the crash-loop breaker counts runs, not parts.
+    val runMarker = remember(deps.platformSettings) { PipelineRunMarker(deps.platformSettings) }
+    val indexing = remember(repos, deps.platformSettings, runMarker) {
+        AssetIndexingController(deps.platformSettings, AssetIndexService(repos.assetRepository), runMarker = runMarker)
     }
     val moveService = remember(repos) { AssetMoveService(repos.assetRepository, repos.restrictedQueries) }
     DisposableEffect(indexing) { onDispose { indexing.close() } }
     // Plugins are re-derived from the per-plugin settings keys at each drain start; with none set
     // the pipeline never starts and only indexing runs.
     val caps = deps.platformIntegrations.platformCaps
-    val pipeline = remember(repos, deps.platformSettings, caps, effectiveFileSystem) {
+    val pipeline = remember(repos, deps.platformSettings, caps, effectiveFileSystem, runMarker) {
         repos.writeActor?.let { actor ->
-            AssetPipelineService(PluginRegistry(), repos.assetRepository, actor) {
-                defaultAssetPlugins(caps, deps.platformSettings, effectiveFileSystem)
-            }
+            AssetPipelineService(
+                PluginRegistry(), repos.assetRepository, actor,
+                pluginSource = { defaultAssetPlugins(caps, deps.platformSettings, effectiveFileSystem) },
+                runMarker = runMarker,
+            )
         }
     }
     DisposableEffect(pipeline) { onDispose { pipeline?.shutdown() } }
     DisposableEffect(indexing, pipeline, memoryPressure) {
         val unregister = memoryPressure.register {
             indexing.onMemoryPressure()
-            pipeline?.cancelBackfill()
+            pipeline?.pause(PauseReason.Memory)
         }
         onDispose { unregister() }
     }

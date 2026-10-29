@@ -14,6 +14,7 @@ import dev.stapler.stelekit.asset.AssetIndexProgress
 import dev.stapler.stelekit.asset.AssetIndexService
 import dev.stapler.stelekit.asset.AssetIndexingController
 import dev.stapler.stelekit.asset.pipeline.AssetBuildFlags
+import dev.stapler.stelekit.asset.pipeline.PipelineRunMarker
 import dev.stapler.stelekit.repository.InMemoryAssetRepository
 import dev.stapler.stelekit.ui.components.settings.PluginsSettings
 import dev.stapler.stelekit.ui.components.settings.assetIndexStatusLine
@@ -84,5 +85,28 @@ class AssetIndexingSwitchTest {
         assertEquals("Indexing files...", assetIndexStatusLine(true, AssetIndexProgress.Indexing(0, 3000)))
         assertEquals("1200 of 3000 indexed", assetIndexStatusLine(true, AssetIndexProgress.Indexing(1200, 3000)))
         assertEquals("3000 of 3000 indexed", assetIndexStatusLine(true, AssetIndexProgress.Finished(3000)))
+    }
+
+    @Test
+    fun breakerTripped_showsTheReasonOnTheRow_andSwitchingOnClearsIt() {
+        PipelineRunMarker(settings, "p1").begin("index")
+        PipelineRunMarker(settings, "p2").also { it.evaluateAtLaunch(); it.begin("index") }
+        PipelineRunMarker(settings, "p3").evaluateAtLaunch()
+        val c = AssetIndexingController(
+            settings, AssetIndexService(InMemoryAssetRepository()),
+            toggleVisibleProvider = { true }, runMarker = PipelineRunMarker(settings, "p4"),
+        )
+        composeRule.setContent { PluginsSettings(c) }
+
+        composeRule.onNodeWithText("Turned off after repeated crashes. Switch on to try again.").assertExists()
+        composeRule.onNode(isToggleable()).assertIsOff()
+
+        composeRule.onNode(isToggleable()).performClick()
+        composeRule.waitForIdle()
+
+        composeRule.onNode(isToggleable()).assertIsOn()
+        assertEquals(0, composeRule.onAllNodes(hasText("Turned off after repeated crashes. Switch on to try again.")).fetchSemanticsNodes().size)
+        assertEquals(0, PipelineRunMarker(settings, "p5").uncleanExits)
+        c.close()
     }
 }

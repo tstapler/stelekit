@@ -35,12 +35,14 @@ fun PluginsSettings(assetIndexing: AssetIndexingController? = null) {
     }
 }
 
+internal const val ASSET_INDEXING_BREAKER_TEXT = "Turned off after repeated crashes. Switch on to try again."
 internal const val ASSET_INDEXING_HELPER = "Scans attached files so they appear in Assets. Off by default."
 
 @Composable
 private fun AssetIndexingRow(controller: AssetIndexingController) {
     val enabled by controller.enabled.collectAsState()
     val progress by controller.progress.collectAsState()
+    val breakerTripped by controller.breakerTripped.collectAsState()
     Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
@@ -52,6 +54,13 @@ private fun AssetIndexingRow(controller: AssetIndexingController) {
                 )
             }
             Switch(checked = enabled, onCheckedChange = controller::setEnabled)
+        }
+        if (breakerTripped && !enabled) {
+            Text(
+                ASSET_INDEXING_BREAKER_TEXT,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
         }
         assetIndexStatusLine(enabled, progress)?.let {
             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
