@@ -299,4 +299,8 @@ data class GraphContentDeps(
     val hotkeyComboLabel: String? = null,
     /** Where this graph registers its editor-side writer for the share router. */
     val activeWriteHooks: dev.stapler.stelekit.capture.ActiveWriteHooks? = null,
+    /** Where in-process long-running work (git sync, storage moves) reports to the jobs list. */
+    val jobTracker: dev.stapler.stelekit.jobs.JobTracker = dev.stapler.stelekit.jobs.NoJobTracker,
+    /** Everything the Background jobs screen lists: in-process jobs plus the platform store. */
+    val backgroundJobs: dev.stapler.stelekit.jobs.BackgroundJobRegistry = dev.stapler.stelekit.jobs.NoBackgroundJobs,
 )

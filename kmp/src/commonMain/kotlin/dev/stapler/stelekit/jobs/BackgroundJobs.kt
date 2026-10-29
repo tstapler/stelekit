@@ -9,6 +9,9 @@ import kotlinx.coroutines.flow.flowOf
 enum class JobKind(val label: String) {
     GitClone("Git clone"),
     ModelDownload("Model download"),
+    GitSync("Git sync"),
+    PageCopy("Page copy"),
+    StorageMove("Storage move"),
 }
 
 sealed interface JobState {
@@ -30,6 +33,8 @@ data class JobStatus(
     val kind: JobKind,
     val title: String,
     val state: JobState,
+    /** False when nothing can stop the job from here. */
+    val cancellable: Boolean = true,
 ) {
     val isActive: Boolean get() = state is JobState.Queued || state is JobState.Running
 }

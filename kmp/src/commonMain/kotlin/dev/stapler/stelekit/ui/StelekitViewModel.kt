@@ -395,6 +395,7 @@ class StelekitViewModel(
     // separate StateFlow of its own.
     private val gitSyncCoordinator = GitSyncCoordinator(
         activeGitSyncService = activeGitSyncService,
+        jobTracker = deps.jobTracker,
         localChangesCountFlow = localChangesCountFlow,
         activeGraphIdProvider = activeGraphIdProvider,
         onDismissGitDetection = onDismissGitDetection,

@@ -63,12 +63,12 @@ class WorkManagerJobRegistry(
 
 internal fun defaultProgressKey(kind: JobKind): String? = when (kind) {
     JobKind.ModelDownload -> DepthModelDownloadWorker.KEY_PROGRESS
-    JobKind.GitClone -> null
+    else -> null
 }
 
 internal fun defaultErrorKey(kind: JobKind): String? = when (kind) {
     JobKind.ModelDownload -> DepthModelDownloadWorker.KEY_ERROR
-    JobKind.GitClone -> null
+    else -> null
 }
 
 /** Null for work that carries [JobTags.ANY] but no recognisable kind. */

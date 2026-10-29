@@ -19,6 +19,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
+import dev.stapler.stelekit.jobs.JobHandle
+import dev.stapler.stelekit.jobs.JobKind
+import dev.stapler.stelekit.jobs.JobTracker
 
 /**
  * Owns "Move storage location…" (Epic 3.4/4.1/4.2) for [GraphContent]: the
@@ -44,7 +47,7 @@ private class StorageMoveMutableState(
 )
 
 /** Non-state collaborators [runStorageMove] needs (bundled for parameter-count relief). */
-private class StorageMoveEnv(val scope: CoroutineScope, val graphContentLogger: Logger)
+private class StorageMoveEnv(val scope: CoroutineScope, val graphContentLogger: Logger, val jobTracker: JobTracker)
 
 /**
  * Builds the composition root for "Move storage location…" — the only place a real
@@ -65,7 +68,7 @@ internal fun rememberGraphContentStorageMoveController(
     val graphManager = deps.graphManager
     val graphRelocationCoordinator = rememberGraphRelocationCoordinator(deps, graphWriter)
     val state = remember { StorageMoveMutableState() }
-    val env = StorageMoveEnv(scope, graphContentLogger)
+    val env = StorageMoveEnv(scope, graphContentLogger, deps.jobTracker)
 
     fun startStorageMove(operation: StorageMoveOperation, graphName: String) {
         runStorageMove(graphRelocationCoordinator, state, env, operation, graphName)
@@ -160,11 +163,17 @@ private fun runStorageMove(
         // for genuinely concurrent callers from different entry points; this closes the common
         // rapid-retry/double-click case cleanly instead of relying on that race alone.
         previousJob?.cancelAndJoin()
+        val handle = env.jobTracker.begin(JobKind.StorageMove, "Moving $graphName") { state.jobState.value?.cancel() }
         try {
-            states.collect { s -> state.stateState.value = s }
+            states.collect { s ->
+                state.stateState.value = s
+                reportStorageMove(handle, s)
+            }
         } catch (e: CancellationException) {
+            handle.cancelled()
             throw e
         } catch (e: Throwable) {
+            handle.fail(e.message)
             // BLOCKER 3 fix (PR #327 review): mirrors the camera-capture scope.launch pattern
             // below — an uncaught Throwable on this plain rememberCoroutineScope() (no
             // CoroutineExceptionHandler) would otherwise kill the Android process even though
@@ -174,5 +183,15 @@ private fun runStorageMove(
                 dev.stapler.stelekit.error.DomainError.StorageError.RelocationFailed(operation.graphId),
             )
         }
+    }
+}
+
+private fun reportStorageMove(handle: JobHandle, state: StorageMoveUiState) {
+    when (state) {
+        is StorageMoveUiState.Copying -> handle.progress(if (state.total > 0) state.count * 100 / state.total else null)
+        StorageMoveUiState.Summary -> handle.succeed()
+        is StorageMoveUiState.Failed -> handle.fail(state.reason.message)
+        is StorageMoveUiState.ReopenFailed -> handle.fail(state.cause.message)
+        else -> Unit
     }
 }

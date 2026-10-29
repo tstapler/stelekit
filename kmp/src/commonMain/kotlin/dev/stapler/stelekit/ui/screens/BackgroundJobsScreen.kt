@@ -75,7 +75,7 @@ private fun JobRow(job: JobStatus, onCancel: () -> Unit) {
                 is JobState.Queued -> LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 else -> Unit
             }
-            if (job.isActive) TextButton(onClick = onCancel) { Text("Cancel") }
+            if (job.isActive && job.cancellable) TextButton(onClick = onCancel) { Text("Cancel") }
         }
     }
 }
