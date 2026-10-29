@@ -70,6 +70,9 @@ class QueryPlanAuditTest {
         // tags JSON column has no structural index; full-scan for tag aggregation is acceptable
         // (cold admin / export path)
         "selectAllTagsJson",
+        // content_hash has no index; read once per attach (idempotent registration), LIMIT 1 over a
+        // uuid-only projection. Add idx_asset_content_hash (+ MigrationRunner entry) if it gets hot.
+        "selectAssetUuidByContentHash",
         // size_bytes has no index — size-sorted browsing is an uncommon path; add
         // idx_asset_size if it becomes a hot read pattern
         "selectAssetsBySizeKeyset", "selectAssetsByMediaTypeBySizeKeyset",
@@ -430,6 +433,10 @@ ORDER BY depth, parent_uuid, position"""),
             "SELECT COUNT(*) FROM asset_index WHERE is_orphan = 1"),
         AuditQuery("selectAllTagsJson",
             "SELECT tags FROM asset_index WHERE tags IS NOT NULL AND tags != '' AND tags != '[]'"),
+        AuditQuery("selectAssetFilePathsIn",
+            "SELECT file_path FROM asset_index WHERE file_path IN ('/g/a.png', '/g/b.png')"),
+        AuditQuery("selectAssetUuidByContentHash",
+            "SELECT uuid FROM asset_index WHERE content_hash = 'abc' LIMIT 1"),
 
         // ── page_visits ────────────────────────────────────────────────────────────────────────
         AuditQuery("selectPageVisitsByUuids",

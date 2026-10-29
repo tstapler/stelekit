@@ -134,6 +134,7 @@ private fun SettingsDialogHost(
     val console = LocalConsole.current
     val developerModeOn = rememberDeveloperModeEnabled()
     SettingsDialog(
+        assetIndexing = settings.assetIndexing,
         visible = appState.shouldShowSettingsDialog(),
         isDeveloperModeEnabled = developerModeOn,
         onDeveloperModeToggle = console?.let { c -> { on: Boolean -> c.developerMode.set(on) } },

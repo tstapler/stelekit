@@ -108,6 +108,8 @@ internal fun ScreenRouter(
     graphLoader: dev.stapler.stelekit.db.GraphLoader? = null,
     /** Builds the report behind the Logs screen's diagnostics button; null hides the button. */
     graphDiagnostics: (suspend () -> String)? = null,
+    /** Moves an asset into an `assets/` subfolder; null hides the Move action on the asset detail screen. */
+    assetMover: AssetMover? = null,
 ) {
     if (appState.fatalError != null) {
         FatalErrorScreen(
@@ -360,7 +362,7 @@ internal fun ScreenRouter(
 
             is Screen.AssetDetail -> {
                 NavigationTracingEffect("AssetDetail")
-                val assetDetailViewModel = remember(currentScreen.assetUuid) {
+                val assetDetailViewModel = remember(currentScreen.assetUuid, assetMover) {
                     dev.stapler.stelekit.ui.assets.AssetDetailViewModel(
                         assetRepository = repos.assetRepository,
                         assetUuid = currentScreen.assetUuid,
@@ -368,6 +370,7 @@ internal fun ScreenRouter(
                         blockRepository = repos.blockRepository,
                         writeActor = repos.writeActor,
                         graphPath = appState.currentGraphPath.orEmpty(),
+                        mover = assetMover,
                     )
                 }
                 val annotateScope = rememberCoroutineScope()

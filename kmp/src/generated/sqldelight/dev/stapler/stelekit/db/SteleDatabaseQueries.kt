@@ -3693,6 +3693,14 @@ public class SteleDatabaseQueries(
     cursor.getString(0)!!
   }
 
+  public fun selectAssetFilePathsIn(paths: Collection<String>): Query<String> = SelectAssetFilePathsInQuery(paths) { cursor ->
+    cursor.getString(0)!!
+  }
+
+  public fun selectAssetUuidByContentHash(contentHash: String?): Query<String> = SelectAssetUuidByContentHashQuery(contentHash) { cursor ->
+    cursor.getString(0)!!
+  }
+
   public fun <T : Any> selectAllPendingMoves(mapper: (
     id: Long,
     asset_uuid: String,
@@ -8312,6 +8320,51 @@ public class SteleDatabaseQueries(
     }
 
     override fun toString(): String = "SteleDatabase.sq:selectOrphanedAssets"
+  }
+
+  private inner class SelectAssetFilePathsInQuery<out T : Any>(
+    public val paths: Collection<String>,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("asset_index", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("asset_index", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> {
+      val pathsIndexes = createArguments(count = paths.size)
+      return driver.executeQuery(null, """SELECT file_path FROM asset_index WHERE file_path IN $pathsIndexes""", mapper, paths.size) {
+            var parameterIndex = 0
+            paths.forEach { paths_ ->
+              bindString(parameterIndex++, paths_)
+            }
+          }
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectAssetFilePathsIn"
+  }
+
+  private inner class SelectAssetUuidByContentHashQuery<out T : Any>(
+    public val contentHash: String?,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("asset_index", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("asset_index", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(null, """SELECT uuid FROM asset_index WHERE content_hash ${ if (contentHash == null) "IS" else "=" } ? LIMIT 1""", mapper, 1) {
+      var parameterIndex = 0
+      bindString(parameterIndex++, contentHash)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectAssetUuidByContentHash"
   }
 
   private inner class SelectStorageLocationQuery<out T : Any>(

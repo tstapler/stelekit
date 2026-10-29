@@ -195,6 +195,10 @@ class SteleKitApplication : Application() {
         installPersistentLogging()
         try {
             dev.stapler.stelekit.platform.NetworkMonitor.init(this)
+            // Debug/internal builds expose the Asset indexing switch; release variants stay hidden
+            // until the heap-gate flip PR (AssetBuildFlags.RELEASE_TOGGLE_VISIBLE).
+            dev.stapler.stelekit.asset.pipeline.AssetBuildFlags.internalBuild =
+                applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0
             BuildInfo.commitHash = getString(R.string.git_commit_hash)
             BuildInfo.appVersion = packageManager.getPackageInfo(packageName, 0).versionName.orEmpty()
             SteleKitContext.init(this)

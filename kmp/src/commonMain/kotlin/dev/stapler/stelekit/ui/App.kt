@@ -431,7 +431,6 @@ private fun GraphContent(deps: GraphContentDeps) {
     val deviceLlmAvailable = deps.voiceConfig.deviceLlmAvailable
     val gitRepository = deps.platformIntegrations.gitRepository
     val cryptoEngine = deps.platformIntegrations.cryptoEngine
-    val attachmentService = deps.platformIntegrations.attachmentService
     val hotkeyComboLabel = deps.hotkeyComboLabel
     val googleAuthManager = deps.platformIntegrations.googleAuthManager
     val storageLocationResolver = deps.platformIntegrations.storageLocationResolver
@@ -519,13 +518,23 @@ private fun GraphContent(deps: GraphContentDeps) {
     )
     LaunchedEffect(viewModel) { deps.onViewModelReady?.invoke(viewModel) }
 
+    // See GraphContentAssetSetup.kt: asset index/move services, the Asset indexing switch, and the
+    // attachment service that registers new files with the index.
+    val assetStack = rememberGraphContentAssetStack(deps, effectiveFileSystem, graphIoStack, viewModel.uiState, graphContentLogger)
+    val shellDeps = remember(deps, assetStack) {
+        deps.copy(
+            platformIntegrations = deps.platformIntegrations.copy(attachmentService = assetStack.attachmentService),
+            assets = assetStack,
+        )
+    }
+
     // See GraphContentStorageMove.kt: GraphRelocationCoordinator, StorageMoveUiState, and the
     // Move-storage-location callbacks wired into the sidebar and StorageMoveProgressDialog.
     val storageMoveController = rememberGraphContentStorageMoveController(deps, graphWriter, scope, graphContentLogger, viewModel)
 
     // See GraphContentBootstrapEffects.kt: memory-pressure registration + /image command wiring.
     WireGraphContentBootstrapEffects(
-        viewModel, onMemoryPressure, attachmentService,
+        viewModel, onMemoryPressure, assetStack.attachmentService,
         GraphContentBootstrapEnv(blockStateManager, scope, graphContentLogger),
     )
 
@@ -599,7 +608,7 @@ private fun GraphContent(deps: GraphContentDeps) {
                 }
                 else -> {
                     GraphContentActiveShell(
-                        deps,
+                        shellDeps,
                         viewModel,
                         GraphContentActiveShellInputs(
                             scope = scope,

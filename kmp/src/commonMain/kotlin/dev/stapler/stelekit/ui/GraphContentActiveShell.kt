@@ -425,6 +425,7 @@ internal fun GraphContentActiveShell(
             frameMetric = frameMetricState,
             deps = GraphDialogLayerDeps(
                 settings = SettingsDialogDeps(
+                    assetIndexing = deps.assets?.indexing,
                     voiceSettings = voiceSettings,
                     llmCredentialStore = llmCredentialStore,
                     llmProviderRegistry = llmProviderRegistry,

@@ -1,7 +1,6 @@
 AddBlockCommand	kmp/src/commonMain/kotlin/dev/stapler/stelekit/command/BlockCommands.kt	23
 AndroidPdfTextExtractor	kmp/src/androidMain/kotlin/dev/stapler/stelekit/platform/ml/AndroidPdfTextExtractor.kt	13
 AppStateOptics	kmp/src/commonMain/kotlin/dev/stapler/stelekit/ui/AppStateOptics.kt	-
-AssetIndexService	kmp/src/commonMain/kotlin/dev/stapler/stelekit/asset/AssetIndexService.kt	4
 AssetMoveService	kmp/src/commonMain/kotlin/dev/stapler/stelekit/asset/AssetMoveService.kt	5
 AssetPendingMove	kmp/src/commonMain/kotlin/dev/stapler/stelekit/asset/AssetModels.kt	-
 AssetPipelineService	kmp/src/commonMain/kotlin/dev/stapler/stelekit/asset/pipeline/AssetPipelineService.kt	6
