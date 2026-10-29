@@ -41,6 +41,13 @@ def run_cli(*argv):
 
 
 class ReachabilityScanTest(unittest.TestCase):
+    def test_reachabilitySummary_should_PrintMetricOneLine_When_CatalogGiven(self):
+        catalog = os.path.join(REPO, "kmp", "src", "businessTest", "resources", "wiring-catalog.txt")
+        allowlist = os.path.join(REPO, "kmp", "src", "businessTest", "resources", "wiring-allowlist.txt")
+        code, out = run_cli("--root", REPO, "--check-baseline", BASELINE, "--allowlist", allowlist, "--catalog", catalog)
+        self.assertEqual(code, 0, out)
+        self.assertRegex(out, r"unreferenced types: \d+ \(baseline \d+\); wired features with entry-point tests: \d+ of \d+")
+
     def test_reachabilityScan_should_ListKnownDormantAndExcludeFalsePositives_When_RunAtHead(self):
         candidates, skipped = scan_mod.scan(REPO)
         names = {n for n, _ in candidates}

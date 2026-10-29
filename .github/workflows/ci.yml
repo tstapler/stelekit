@@ -200,7 +200,7 @@ jobs:
 
       - name: Scan against the baseline
         run: |
-          ARGS=(--check-baseline scripts/ci/reachability-baseline.txt --allowlist kmp/src/businessTest/resources/wiring-allowlist.txt)
+          ARGS=(--check-baseline scripts/ci/reachability-baseline.txt --allowlist kmp/src/businessTest/resources/wiring-allowlist.txt --catalog kmp/src/businessTest/resources/wiring-catalog.txt)
           if [ -s .cache/wiring-allowlist.prev ]; then ARGS+=(--allowlist-prev .cache/wiring-allowlist.prev); fi
           python3 scripts/ci/reachability-scan.py "${ARGS[@]}"
 
