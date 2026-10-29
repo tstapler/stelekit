@@ -90,6 +90,7 @@ import dev.stapler.stelekit.merge.PullIndexingTest
 import dev.stapler.stelekit.ui.PullCopyViewModelTest
 import dev.stapler.stelekit.transfer.MergeUuidRoundTripSpikeTest
 import dev.stapler.stelekit.ui.ToolbarActionTest
+import dev.stapler.stelekit.ui.MemoryPressureListenersTest
 import dev.stapler.stelekit.ui.CopyFlowControllerTest
 import dev.stapler.stelekit.ui.PullCopyFlowControllerTest
 import dev.stapler.stelekit.merge.InMemoryMergeStorageTest
@@ -339,6 +340,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.db.GraphLocatorTest::class,
     MergeUuidRoundTripSpikeTest::class,
     ToolbarActionTest::class,
+    MemoryPressureListenersTest::class,
     AssetFilterTest::class,
     AssetBrowserViewModelTest::class,
     AssetMoveServiceTest::class,

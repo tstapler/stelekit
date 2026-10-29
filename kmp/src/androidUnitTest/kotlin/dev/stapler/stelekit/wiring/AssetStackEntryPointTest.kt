@@ -18,6 +18,7 @@ import dev.stapler.stelekit.service.AttachmentResult
 import dev.stapler.stelekit.service.MediaAttachmentService
 import dev.stapler.stelekit.ui.AppState
 import dev.stapler.stelekit.ui.GraphContentAssetStack
+import dev.stapler.stelekit.ui.MemoryPressureListeners
 import dev.stapler.stelekit.ui.rememberGraphContentAssetStack
 import dev.stapler.stelekit.ui.rememberGraphContentGraphIoStack
 import dev.stapler.stelekit.ui.rememberGraphContentVaultSetup
@@ -84,7 +85,9 @@ class AssetStackEntryPointTest {
             val io = rememberGraphContentGraphIoStack(
                 deps, vault.effectiveFileSystem, vault.activeGraphPath, vault.activeGraphInfo, Logger("AssetStackEntryPointTest"),
             )
-            stack = rememberGraphContentAssetStack(deps, vault.effectiveFileSystem, io, appState, Logger("AssetStackEntryPointTest"))
+            stack = rememberGraphContentAssetStack(
+                deps, vault.effectiveFileSystem, io, appState, MemoryPressureListeners(), Logger("AssetStackEntryPointTest"),
+            )
         }
         composeRule.waitForIdle()
         return Triple(wired, appState, { stack })
