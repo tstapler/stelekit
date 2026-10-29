@@ -16,9 +16,9 @@ import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
 import dev.stapler.stelekit.repository.SqlDelightAssetRepository
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.withTimeout
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -59,9 +59,7 @@ class AssetPipelineDrainBugTest {
         val service = AssetPipelineService(registry, repo, actor)
 
         service.scheduleBackfill()
-        withTimeoutOrNull(5_000) {
-            while ((repo.countUnprocessedAssets().getOrNull() ?: Long.MAX_VALUE) > 0L) delay(25)
-        }
+        withTimeout(10_000) { service.progress.first { it is PipelineProgress.Finished } }
 
         val left = repo.countUnprocessedAssets().getOrNull()
         service.shutdown()
