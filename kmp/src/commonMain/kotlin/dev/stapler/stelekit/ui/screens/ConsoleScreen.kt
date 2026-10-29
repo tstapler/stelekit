@@ -138,8 +138,8 @@ fun ConsoleScreen(session: ConsoleSession, modifier: Modifier = Modifier) {
         }
 
         LazyRow(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            typedItems(suggestedCommands(session), key = { it }) { chip ->
-                AssistChip(onClick = { input = chip }, label = { Text(chip) }, enabled = !running)
+            typedItems(suggestedCommands(session), key = { it.label }) { chip ->
+                AssistChip(onClick = { input = chip.input }, label = { Text(chip.label) }, enabled = !running)
             }
         }
         LazyRow(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
@@ -174,10 +174,19 @@ fun ConsoleScreen(session: ConsoleSession, modifier: Modifier = Modifier) {
 }
 
 /** First-open chips; a chip appears only if its verb is registered, so unbuilt verbs never show. */
-private fun suggestedCommands(session: ConsoleSession): List<String> {
+private fun suggestedCommands(session: ConsoleSession): List<Chip> {
     val verbs = session.commands.map { it.name }.toSet()
-    return CHIPS.filter { it.substringBefore(':').substringBefore(' ') in verbs }
+    return CHIPS.filter { it.input.substringBefore(' ') in verbs }
 }
 
-private val CHIPS = listOf("tables", "sql: newest journals", "diag", "help", "logs")
+/** [label] is what the chip says; [input] is what tapping it puts on the command line. */
+private class Chip(val label: String, val input: String = label)
+
+private val CHIPS = listOf(
+    Chip("tables"),
+    Chip("sql: newest journals", "sql \"select name from pages where is_journal = 1 order by updated_at desc limit 3\""),
+    Chip("diag"),
+    Chip("help"),
+    Chip("logs"),
+)
 private val PUNCTUATION_KEYS = listOf("\"", "'", "-", "_", "/", "|", "*", ";")

@@ -135,7 +135,7 @@ class ConsoleSession(
         emit(runEpoch, ScrollbackKind.INPUT, line)
         historyState.value = (historyState.value + safe(line)).takeLast(MAX_HISTORY)
         val command = registry.find(tokens.first()) ?: return fail(runEpoch, ConsoleError.UnknownCommand(tokens.first()))
-        command.disabledReason?.let { return fail(runEpoch, ConsoleError.Denied(it)) }
+        command.disabledReason?.let { return fail(runEpoch, ConsoleError.Unsupported(it)) }
         val out = object : ConsoleOutput {
             override fun info(text: String) = emit(runEpoch, ScrollbackKind.OUTPUT, text)
             override fun error(text: String) = emit(runEpoch, ScrollbackKind.ERROR, text)

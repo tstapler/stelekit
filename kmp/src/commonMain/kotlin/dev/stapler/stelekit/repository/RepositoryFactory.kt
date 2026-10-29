@@ -72,6 +72,8 @@ data class RepositorySet(
     val imageAnnotationRepository: ImageAnnotationRepository = InMemoryImageAnnotationRepository(),
     val measurementAnnotationRepository: MeasurementAnnotationRepository = InMemoryMeasurementAnnotationRepository(),
     val assetRepository: dev.stapler.stelekit.repository.AssetRepository = InMemoryAssetRepository(),
+    /** Console-owned read-only SQL connection; null when the backend has no database file. Never the app pool. */
+    val sqlConsole: dev.stapler.stelekit.console.views.SqlConsoleView? = null,
 ) {
     /** Live-query executor bound to this graph's repositories; a new RepositorySet gets a fresh one. */
     val queryExecutor: dev.stapler.stelekit.query.QueryExecutor by lazy {
@@ -124,6 +126,7 @@ class RepositoryFactoryImpl(
     private var wrappedDriver: app.cash.sqldelight.db.SqlDriver? = null
     private var activeTelemetryDriver: app.cash.sqldelight.db.SqlDriver? = null
     private var activeTelemetryDb: TelemetryDatabase? = null
+    private var activeSqlConsole: dev.stapler.stelekit.console.views.SqlConsoleView? = null
 
     // Set by createRepositorySet before repositories are instantiated so constructors receive
     // the live perf objects. Fields are written once before first use — not thread-safe by design.
@@ -433,6 +436,9 @@ class RepositoryFactoryImpl(
             assetRepository = if (backend == GraphBackend.SQLDELIGHT)
                 SqlDelightAssetRepository(database)
             else InMemoryAssetRepository(),
+            sqlConsole = if (backend == GraphBackend.SQLDELIGHT)
+                dev.stapler.stelekit.db.SqlConsoleReader(jdbcUrl).also { activeSqlConsole = it }
+            else null,
         )
     }
 
@@ -517,6 +523,9 @@ class RepositoryFactoryImpl(
     fun steleDatabase(): SteleDatabase = database
 
     override fun close() {
+        // Before the write driver: the console connection must not outlive the database it reads.
+        activeSqlConsole?.close()
+        activeSqlConsole = null
         // PRAGMA optimize + driver close per SQLite docs recommendation at connection close.
         // Platform-specific: JVM/iOS use runBlocking; WASM/JS skips PRAGMA (in-memory only).
         // Close write driver first (flushes WAL), then read driver.

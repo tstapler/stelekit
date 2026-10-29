@@ -12,6 +12,11 @@ sealed interface ConsoleError {
         override val message: String get() = "Denied: $reason"
     }
 
+    /** The verb exists but cannot run in this build or on this platform; mirrors how `help` lists it. */
+    data class Unsupported(val reason: String) : ConsoleError {
+        override val message: String get() = "disabled: $reason"
+    }
+
     data class UnknownCommand(val name: String) : ConsoleError {
         override val message: String get() = "Unknown command '$name'. Type 'help' for the list."
     }
