@@ -17,3 +17,7 @@ Delete all unreferenced code (loses planned features, contradicts owner decision
 
 ## Consequences
 Six items need owner input (OD-1..OD-6; OD-6 schedules the unfunded dev-plan PR-A1/PR-A2); the rest proceed. The register is the single place a future reader learns why something was kept or removed.
+
+## Amendment 2026-10-29: `false-positive` and `entry-point` allowlist entries do not expire
+
+The 90-day expiry and 2-renewal cap fit entries that stand for pending work (`awaiting-unit`, `awaiting OD-n`, `awaiting pass 12.n`). A `false-positive` entry (the scan misreads a seam) or an `entry-point` entry (a type launched by a framework, not referenced) is not pending work and cannot be cleared by wiring or deleting it, so an expiry would fail the gate on a calendar date without any code having changed. U12 implemented these two classes as non-expiring (`WiringAllowlist`); `out-of-scope-ios` was already non-expiring. The stale-entry rule still applies: if a root constructs the class, or the class no longer exists, the entry fails.

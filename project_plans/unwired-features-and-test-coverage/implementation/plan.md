@@ -146,6 +146,8 @@ Chosen C. Guardrails ship first so each later wiring PR visibly shrinks `Reachab
 | 35 | `OtelSpanElement` | **Keep (false positive)** | Used by `currentSpan` extension in-file, consumed by `OtelSqlDelightExtensions.kt:33` | Task 7.5a | n/a |
 | 36 | `jvmMain/.../benchmarks/*Benchmark` | **Keep (verify)** | Entry points; Task 7.5a confirms they are launched by Gradle/JMH and adds them to the allowlist | Task 7.5a | n/a |
 | 37 | `BackgroundSyncScheduler` interface (port for closed-process scheduling) | **Keep** | Port for closed-process scheduling; implemented by `WorkManagerSyncScheduler`; wired by Story 2.2 and a seam in `WiringCompletenessTest` | Story 2.2 | n/a |
+| 38 | `IOSKableBleScanner`, `IosMediaAttachmentService`, `LidarHardwareCheck`, `UrlFetcherIos` (all under `iosMain`) | **Out of scope (iOS)** | Same reason as row 14: iOS has no Bazel/KMP path here. Found by the U0a scan (Task 0.2) after the register was written | Allowlist under `out-of-scope-ios` (non-expiring) | n/a |
+| 39 | `AppStateOptics`, `BlockOptics`, `PageOptics`, `PropertyOptics`, `CursorState`, `LruWeigher`, `NamespaceUtils`, `PropertiesParser`/`PropertiesResult`, `MeasureTemplateResolver`, `ChunkChecksum`, `LfsPointerSniffer`, `GitObjectContentVerifier`, `DesktopFileSystem`, `AssetPendingMove`, `ExplanationDoc`/`ExplanationContent`/`TutorialDoc`/`TutorialContent`, `BenchmarkRegistry`/`GraphPreset` | **Unclassified (owner triage)** | Reported dormant by the U0a scan but absent from the original register. Not yet read for intent; some are probably helpers used only in-file or by tests, some may be leftovers. No disposition is assumed here | Triage in U14: each gets Wire, Keep (false positive, allowlist) or DeleteSuperseded. Any deletion needs OD-5 confirmation for that name | n/a |
 
 Deletion mechanics (all `OwnerGate`): remove the types and their tests, remove names from `AllBusinessTests`'s class list (its completeness test fails otherwise), run `./gradlew detekt` and compile for Android, JVM, wasm, then the Bazel `//kmp:business_tests` class-count check (recount from the real run), per `editor-subsystem-dead-code/research/architecture.md`.
 
@@ -279,6 +281,7 @@ Deletion mechanics (all `OwnerGate`): remove the types and their tests, remove n
 **Goal**: Replace every estimate with a measured number or a run spike, and prove the one suspected defect, before building on any of it.
 
 #### Story 0.1: Run-not-estimated coverage baseline
+**Superseded in part (ADR-003 addendum 2026-10-29)**: coverage and mutation are per PR, not nightly; ignore the nightly `CoverageRatchet`, scheduled PIT and nightly issue filing below. The existing `diffCoverage` 80% PR gate is the coverage gate.
 **As the** owner, **I want** real line, branch and mutation numbers per package, **so that** the coverage map ranks gaps from data.
 **Acceptance Criteria**:
 - A scheduled full run exists and its output is a committed artifact, not a console dump.
@@ -1205,6 +1208,7 @@ Deletion mechanics (all `OwnerGate`): remove the types and their tests, remove n
 ##### Task 11.2b: Populate the first map, set ratchet floors, record in ADR-003 addendum (S)
 
 #### Story 11.3: Gating policy
+**Superseded in part (ADR-003 addendum 2026-10-29)**: coverage and mutation are per PR, not nightly; ignore the nightly `CoverageRatchet`, scheduled PIT and nightly issue filing below. The existing `diffCoverage` 80% PR gate is the coverage gate.
 **Acceptance Criteria**:
 - PR path unchanged and cheap.
   - *Given* a PR, *Then* the existing `diffCoverage` threshold 80 (`kmp/build.gradle.kts:1546`) and report-only PIT remain the only coverage gates; no new job is added to the PR path that raises CI memory (pitfalls E5).
@@ -1350,7 +1354,7 @@ Basis: bands and weights INFERRED from public price ratios and the class bands i
 | M2: coverage map with run numbers, tier, target, ranked gaps | Stories 0.1, 11.1, 11.2, 11.4 |
 | M3: read-only SQL + diagnostics on-device in any build; guarded writes (confirm + backup) and restore in dev/internal builds only until pass 12.1 | Epic 3 (Stories 3.1-3.3): plain `sql` is always read-only, `sql!` is the only write path and is compiled out of release builds until item 12.1 passes on a copy of the real DB; credential-exposure statement per Spike 0.3e (Story 3.2) |
 | M4: desktop sync pulls remote while open, test + manual run | **Partially met at U2** (Stories 2.0-2.3: fetch-only ticks, staleness visible, driver, UI). **Closes only at U16 / Story 2.4**, which depends on dev-plan PR-A1/PR-A2 outside this plan; manual run 12.3 repeats after U16. The final N=0 check (Story 11.5) reports M4 as "visibility met, pull pending" (partially met) until then; scheduling of PR-A1/PR-A2 is owner decision OD-6; the staleness-visibility acceptance observation is in requirements.md metric 4 |
-| M5: every dormant item has a recorded decision | Disposition Register (37 rows), ADR-001, ADR-008 |
+| M5: every dormant item has a recorded decision | Disposition Register (39 rows; rows 38-39 added after the U0a scan), ADR-001, ADR-008 |
 | Owner decision: wire if adds functionality; delete only superseded | Register; every deletion an `OwnerGate` |
 | Owner decision: console read-only default + guarded writes | ADR-006, Story 3.3 |
 | Owner decision: CloudClaude with consent, cap, EXIF strip, revocation; drop Vision | Epic 6 (consent enforced by `GrantedConsent` token + per-asset gate, Story 6.2), Task 6.4a, ADR-005 |

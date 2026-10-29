@@ -19,3 +19,14 @@ Kover (second engine, two disagreeing numbers); Bazel coverage (unproven for `ru
 
 ## Consequences
 First map exists after one full baseline run (CI wall-clock). Targets are replaced by measured-informed ones in an addendum to this ADR.
+
+## Addendum 2026-10-29: coverage is per pull request, not nightly
+
+The owner asked for coverage to be incremental per PR instead of a nightly job. `.github/workflows/ci.yml` already runs a per-PR job, "Incremental coverage + mutation (changed files)": `:kmp:diffCoverage` fails a PR whose changed lines are under 80% covered (jacoco over `jvmTest` and `testDebugUnitTest`, selected test classes only), and PIT runs report-only on changed classes. That job is the coverage gate.
+
+What changes against the original decision:
+- No nightly `CoverageRatchet`, no nightly issue filing and no scheduled Tier 1 PIT run. The U0a baseline run of PIT over Tier 1 timed out at 1h20m with no survivor count, so a scheduled run was not workable as written; PIT stays per PR on changed classes.
+- `coverage-baseline.yml` keeps `workflow_dispatch` only, for producing a full-package map on demand.
+- Story 11.1 and 11.2 still produce the package map and `coverage-tiers.yml`, generated from Gradle XMLs; Story 11.3 reduces to the existing PR path plus the wiring gate. Story 11.4 waves are driven by the map and merge as ordinary PRs, each under the 80% changed-line gate.
+
+Observed limits of the per-PR job (PRs #507, #515, #520): it runs 200-400 selected test classes under jacoco on a 2-core runner. It produced `ComposeTimeoutException` in unrelated Compose UI tests and one `OutOfMemoryError` in the Kotlin compiler on a very large composable lambda. Treat a red result there as a signal to root-cause (extract composables, fix the slow test), not to retry until green.
