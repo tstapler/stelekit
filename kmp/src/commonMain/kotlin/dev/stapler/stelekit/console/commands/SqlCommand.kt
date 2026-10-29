@@ -10,6 +10,7 @@ import dev.stapler.stelekit.console.ConsoleCommand
 import dev.stapler.stelekit.console.ConsoleContext
 import dev.stapler.stelekit.console.ConsoleError
 import dev.stapler.stelekit.console.ConsoleOutput
+import dev.stapler.stelekit.console.ResultTable
 import dev.stapler.stelekit.console.views.SqlConsoleError
 import dev.stapler.stelekit.console.views.SqlConsoleView
 import dev.stapler.stelekit.console.views.SqlEnd
@@ -91,18 +92,18 @@ internal object SqlRunner {
         val result = try {
             console.query(sql, buffer, limits)
         } catch (e: CancellationException) {
-            withContext(NonCancellable) { render(buffer, out) }
+            withContext(NonCancellable) { render(buffer, sql, explain = true, limits, out) }
             throw e
         }
         val elapsedMs = started.elapsedNow().inWholeMilliseconds
         return result.fold(
             ifLeft = { it.toConsoleError().left() },
-            ifRight = { end -> finish(end, buffer, elapsedMs, limits, out) },
+            ifRight = { end -> finish(end, buffer, sql, elapsedMs, limits, out) },
         )
     }
 
-    private fun finish(end: SqlEnd, buffer: SqlResultBuffer, elapsedMs: Long, limits: SqlLimits, out: ConsoleOutput): Either<ConsoleError, Unit> {
-        render(buffer, out)
+    private fun finish(end: SqlEnd, buffer: SqlResultBuffer, sql: String, elapsedMs: Long, limits: SqlLimits, out: ConsoleOutput): Either<ConsoleError, Unit> {
+        render(buffer, sql, explain = end != SqlEnd.Completed, limits, out)
         return when (end) {
             SqlEnd.Completed -> out.info("OK: ${buffer.rows.size} rows in $elapsedMs ms").let { Unit.right() }
             SqlEnd.RowCap -> out.info("TRUNCATED at ${limits.maxRows} rows. OK in $elapsedMs ms").let { Unit.right() }
@@ -110,11 +111,16 @@ internal object SqlRunner {
         }
     }
 
-    private fun render(buffer: SqlResultBuffer, out: ConsoleOutput) {
+    /** Hands the rows to the output as one grid; [explain] adds the EXPLAIN QUERY PLAN chip for a stopped query. */
+    private fun render(buffer: SqlResultBuffer, sql: String, explain: Boolean, limits: SqlLimits, out: ConsoleOutput) {
         if (buffer.columns.isEmpty()) return
-        out.info(buffer.columns.joinToString(" | "))
-        out.info(buffer.columns.joinToString("-+-") { "-".repeat(it.length.coerceAtLeast(3)) })
-        buffer.rows.forEach { row -> out.info(row.joinToString(" | ") { it?.replace('\n', ' ')?.replace('\r', ' ') ?: "NULL" }) }
+        val table = ResultTable(
+            columns = buffer.columns,
+            rows = buffer.rows.map { row -> row.map { ResultTable.cappedCell(it, limits.maxCellChars) } },
+            truncatedAtRows = limits.maxRows.takeIf { buffer.truncated },
+            explainSql = if (explain) ResultTable.explainTarget(sql) else null,
+        )
+        out.table(table)
     }
 
     private fun SqlConsoleError.toConsoleError(): ConsoleError = when (this) {
