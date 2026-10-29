@@ -42,8 +42,6 @@ PluginMigration	kmp/src/jvmMain/kotlin/dev/stapler/stelekit/repository/Migration
 PropertiesParser	kmp/src/commonMain/kotlin/dev/stapler/stelekit/parser/PropertiesParser.kt	-
 PropertiesResult	kmp/src/commonMain/kotlin/dev/stapler/stelekit/parser/PropertiesParser.kt	-
 PropertyOptics	kmp/src/commonMain/kotlin/dev/stapler/stelekit/model/ModelOptics.kt	-
-RTCManager	kmp/src/commonMain/kotlin/dev/stapler/stelekit/rtc/RTCManager.kt	16
-RTCOp	kmp/src/commonMain/kotlin/dev/stapler/stelekit/rtc/RTCManager.kt	16
 RemoteInferenceWorker	kmp/src/commonMain/kotlin/dev/stapler/stelekit/search/VectorSearch.kt	17
 SplitBlockCommand	kmp/src/commonMain/kotlin/dev/stapler/stelekit/command/BlockCommands.kt	23
 TutorialContent	kmp/src/commonMain/kotlin/dev/stapler/stelekit/docs/DiataxisDoc.kt	-

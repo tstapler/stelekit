@@ -51,7 +51,7 @@ class ReachabilityScanTest(unittest.TestCase):
     def test_reachabilityScan_should_ListKnownDormantAndExcludeFalsePositives_When_RunAtHead(self):
         candidates, skipped = scan_mod.scan(REPO)
         names = {n for n, _ in candidates}
-        for known in ("RTCManager", "DatalogEngine", "CloudClaudePlugin"):
+        for known in ("DatalogEngine", "CloudClaudePlugin"):
             self.assertIn(known, names)
         for false_positive in ("InitializingDebugScreen", "OtelSpanElement"):
             self.assertNotIn(false_positive, names)
