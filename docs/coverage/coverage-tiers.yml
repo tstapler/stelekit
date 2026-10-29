@@ -1,0 +1,58 @@
+# Package -> tier for scripts/ci/coverage-map.py (plan Epic 11 tiers table). A package is the first
+# directory under dev/stapler/stelekit in any kmp/src/*Main source set. The generator fails, listing
+# every package missing here, so a new package must be classified in the PR that adds it.
+# T1 data integrity / security / sync (x4) | T2 domain services, view models (x2) | T3 UI, platform glue (x1) | T4 excluded (x0)
+# Granularity limit: one tier per top-level package, so `asset` (T1 write paths + T2 pipeline) and
+# `platform` (T2 google + T3 glue) take the tier that fits most of their lines.
+
+(root): T3
+asset: T2
+benchmark: T4
+benchmarks: T4
+browser: T3
+cache: T2
+calibration: T4
+capture: T2
+cli: T3
+clipboard: T3
+command: T2
+console: T1
+coroutines: T2
+db: T1
+desktop: T3
+diagnostics: T3
+docs: T4
+domain: T2
+editor: T2
+error: T2
+export: T2
+flashcard: T2
+git: T1
+llm: T2
+loader: T2
+logging: T3
+mcp: T2
+merge: T1
+migration: T1
+model: T3
+outliner: T1
+parser: T1
+parsing: T1
+performance: T3
+platform: T3
+query: T1
+repository: T1
+resilience: T2
+rtc: T2
+search: T2
+sections: T2
+security: T1
+service: T2
+stats: T3
+sync: T2
+tags: T2
+transfer: T2
+ui: T3
+util: T2
+vault: T1
+voice: T2
