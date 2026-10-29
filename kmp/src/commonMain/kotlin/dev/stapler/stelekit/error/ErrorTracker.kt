@@ -19,12 +19,3 @@ interface ErrorTracker {
      */
     fun flush()
 }
-
-/**
- * Default no-op implementation of ErrorTracker.
- */
-object NoOpErrorTracker : ErrorTracker {
-    override fun trackError(throwable: Throwable, message: String?, metadata: Map<String, String>) {}
-    override fun recordBreadcrumb(message: String, category: String?, metadata: Map<String, String>) {}
-    override fun flush() {}
-}
