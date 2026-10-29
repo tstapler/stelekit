@@ -42,6 +42,7 @@ kt_android_library(
         "@maven//:androidx_compose_ui_ui_test_junit4",
         "@maven//:androidx_compose_ui_ui_test_manifest",
         "//kmp/src/commonTest/kotlin:git_testsupport_android",
+        "//kmp/src/commonTest/kotlin:observable_effect_android",
     ],
 )
 

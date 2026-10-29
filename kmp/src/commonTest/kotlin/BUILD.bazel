@@ -165,3 +165,24 @@ filegroup(
     srcs = ["dev/stapler/stelekit/wiring/ObservableEffect.kt"],
     visibility = ["//kmp/src/businessTest/kotlin:__pkg__"],
 )
+
+# ObservableEffect for jvm_tests entry-point tests (no @Test classes, so it adds nothing to a completeness guard).
+kt_jvm_library(
+    name = "observable_effect_jvm",
+    srcs = ["dev/stapler/stelekit/wiring/ObservableEffect.kt"],
+    testonly = True,
+    kotlinc_opts = "//:kmp_jvm_kotlinc_opts",
+    visibility = ["//kmp/src/jvmTest/kotlin:__pkg__"],
+    deps = ["@maven//:org_jetbrains_kotlin_kotlin_stdlib"],
+)
+
+# Same source for android_unit_tests entry-point tests.
+kt_android_library(
+    name = "observable_effect_android",
+    srcs = ["dev/stapler/stelekit/wiring/ObservableEffect.kt"],
+    custom_package = "dev.stapler.stelekit.wiring",
+    testonly = True,
+    kotlinc_opts = "//:kmp_android_kotlinc_opts",
+    visibility = ["//kmp/src/androidUnitTest/kotlin:__pkg__"],
+    deps = ["@maven//:org_jetbrains_kotlin_kotlin_stdlib"],
+)
