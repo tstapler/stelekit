@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.git
 
+import arrow.core.Either
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
 import kotlinx.coroutines.CancellationException
@@ -35,6 +36,15 @@ sealed interface TickOutcome {
     data class Failure(val message: String, val error: DomainError? = null) : TickOutcome
     data class Skip(val reason: SkipReason) : TickOutcome
 }
+
+/** A fetch result as a tick outcome: offline is a skip (not a failure), anything else is a failure. */
+internal fun Either<DomainError.GitError, FetchResult>.toTickOutcome(): TickOutcome = fold(
+    { err ->
+        if (err is DomainError.GitError.Offline) TickOutcome.Skip(SkipReason.Offline)
+        else TickOutcome.Failure(err.message, err)
+    },
+    { TickOutcome.Success },
+)
 
 /**
  * What the Settings section and the sync badge read. All timestamps are wall-clock epoch millis

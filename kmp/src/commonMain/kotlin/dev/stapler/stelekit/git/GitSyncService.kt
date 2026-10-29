@@ -200,15 +200,9 @@ class GitSyncService(
 
     @kotlin.concurrent.Volatile private var periodicGraphId: String = graphId
     private val periodicDriver = PeriodicSyncDriver(
-        tick = {
-            refreshLocalStatus(periodicGraphId)
-            fetchOnly(periodicGraphId).toTickOutcome()
-        },
-        scope = scope,
-        clock = wallClockMs,
-        isBusy = { gitSyncBusyCounter.isBusy.value },
-        label = graphId,
-        launchContext = periodicSyncContext,
+        tick = { refreshLocalStatus(periodicGraphId); fetchOnly(periodicGraphId).toTickOutcome() },
+        scope = scope, clock = wallClockMs, isBusy = { gitSyncBusyCounter.isBusy.value },
+        label = graphId, launchContext = periodicSyncContext,
     )
 
     /** Observable state of the scheduled-sync loop (last check, next check, pause); see [PeriodicSyncDriver]. */
@@ -776,14 +770,6 @@ class GitSyncService(
 
     /** Cancels the periodic sync loop without shutting down the service. */
     fun stopPeriodicSync() = periodicDriver.stop()
-
-    private fun Either<DomainError.GitError, FetchResult>.toTickOutcome(): TickOutcome = fold(
-        { err ->
-            if (err is DomainError.GitError.Offline) TickOutcome.Skip(SkipReason.Offline)
-            else TickOutcome.Failure(err.message, err)
-        },
-        { TickOutcome.Success },
-    )
 
     /**
      * Shuts down this service, cancelling all coroutines — including any pending
