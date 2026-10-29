@@ -1,4 +1,3 @@
-AddBlockCommand	kmp/src/commonMain/kotlin/dev/stapler/stelekit/command/BlockCommands.kt	23
 AppStateOptics	kmp/src/commonMain/kotlin/dev/stapler/stelekit/ui/AppStateOptics.kt	-
 AssetPendingMove	kmp/src/commonMain/kotlin/dev/stapler/stelekit/asset/AssetModels.kt	-
 BenchmarkRegistry	kmp/src/commonMain/kotlin/dev/stapler/stelekit/benchmark/BenchmarkTypes.kt	-
@@ -12,14 +11,12 @@ DatalogEngine	kmp/src/commonMain/kotlin/dev/stapler/stelekit/search/DatalogQuery
 DatalogPattern	kmp/src/commonMain/kotlin/dev/stapler/stelekit/search/DatalogQuery.kt	18
 DatalogQuery	kmp/src/commonMain/kotlin/dev/stapler/stelekit/search/DatalogQuery.kt	18
 DatalogSearchSupport	kmp/src/commonMain/kotlin/dev/stapler/stelekit/search/DatalogQuery.kt	18
-DeleteBlockCommand	kmp/src/commonMain/kotlin/dev/stapler/stelekit/command/BlockCommands.kt	23
 DesktopFileSystem	kmp/src/jvmMain/kotlin/dev/stapler/stelekit/platform/DesktopFileSystem.kt	-
 ExplanationContent	kmp/src/commonMain/kotlin/dev/stapler/stelekit/docs/DiataxisDoc.kt	-
 ExplanationDoc	kmp/src/commonMain/kotlin/dev/stapler/stelekit/docs/DiataxisDoc.kt	-
 GitObjectContentVerifier	kmp/src/androidMain/kotlin/dev/stapler/stelekit/git/GitObjectContentVerifier.android.kt	-
 GraphPreset	kmp/src/commonMain/kotlin/dev/stapler/stelekit/benchmark/BenchmarkTypes.kt	-
 IOSKableBleScanner	kmp/src/iosMain/kotlin/dev/stapler/stelekit/platform/measurement/ble/IOSKableBleScanner.kt	-
-IndentBlockCommand	kmp/src/commonMain/kotlin/dev/stapler/stelekit/command/BlockCommands.kt	23
 InferenceBridge	kmp/src/commonMain/kotlin/dev/stapler/stelekit/search/VectorSearch.kt	17
 InferenceWorker	kmp/src/commonMain/kotlin/dev/stapler/stelekit/search/VectorSearch.kt	17
 IosMediaAttachmentService	kmp/src/iosMain/kotlin/dev/stapler/stelekit/service/IosMediaAttachmentService.kt	-
@@ -28,12 +25,8 @@ LfsPointerSniffer	kmp/src/commonMain/kotlin/dev/stapler/stelekit/git/lfs/LfsPoin
 LidarHardwareCheck	kmp/src/iosMain/kotlin/dev/stapler/stelekit/platform/sensor/IOSLidarDepthProvider.kt	-
 LruWeigher	kmp/src/commonMain/kotlin/dev/stapler/stelekit/cache/LruCache.kt	-
 MeasureTemplateResolver	kmp/src/commonMain/kotlin/dev/stapler/stelekit/domain/MeasurementPropertySyncer.kt	-
-MergeBlockCommand	kmp/src/commonMain/kotlin/dev/stapler/stelekit/command/BlockCommands.kt	23
-MoveBlockDownCommand	kmp/src/commonMain/kotlin/dev/stapler/stelekit/command/BlockCommands.kt	23
-MoveBlockUpCommand	kmp/src/commonMain/kotlin/dev/stapler/stelekit/command/BlockCommands.kt	23
 NamespaceUtils	kmp/src/commonMain/kotlin/dev/stapler/stelekit/outliner/NamespaceUtils.kt	-
 NoOpErrorTracker	kmp/src/commonMain/kotlin/dev/stapler/stelekit/error/ErrorTracker.kt	32
-OutdentBlockCommand	kmp/src/commonMain/kotlin/dev/stapler/stelekit/command/BlockCommands.kt	23
 PageOptics	kmp/src/commonMain/kotlin/dev/stapler/stelekit/model/ModelOptics.kt	-
 PlaceholderInferenceWorker	kmp/src/commonMain/kotlin/dev/stapler/stelekit/search/VectorSearch.kt	17
 PropertiesParser	kmp/src/commonMain/kotlin/dev/stapler/stelekit/parser/PropertiesParser.kt	-
@@ -42,10 +35,8 @@ PropertyOptics	kmp/src/commonMain/kotlin/dev/stapler/stelekit/model/ModelOptics.
 RTCManager	kmp/src/commonMain/kotlin/dev/stapler/stelekit/rtc/RTCManager.kt	16
 RTCOp	kmp/src/commonMain/kotlin/dev/stapler/stelekit/rtc/RTCManager.kt	16
 RemoteInferenceWorker	kmp/src/commonMain/kotlin/dev/stapler/stelekit/search/VectorSearch.kt	17
-SplitBlockCommand	kmp/src/commonMain/kotlin/dev/stapler/stelekit/command/BlockCommands.kt	23
 TutorialContent	kmp/src/commonMain/kotlin/dev/stapler/stelekit/docs/DiataxisDoc.kt	-
 TutorialDoc	kmp/src/commonMain/kotlin/dev/stapler/stelekit/docs/DiataxisDoc.kt	-
-UpdateBlockContentCommand	kmp/src/commonMain/kotlin/dev/stapler/stelekit/command/BlockCommands.kt	23
 UrlFetcherIos	kmp/src/iosMain/kotlin/dev/stapler/stelekit/domain/UrlFetcherIos.kt	-
 VectorSearch	kmp/src/commonMain/kotlin/dev/stapler/stelekit/search/VectorSearch.kt	17
 VisualQueryBuilder	kmp/src/commonMain/kotlin/dev/stapler/stelekit/search/DatalogQuery.kt	18
