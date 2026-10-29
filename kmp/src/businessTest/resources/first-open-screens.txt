@@ -1,0 +1,10 @@
+# Screens FirstOpenSmokeTest (androidApp/src/test) must open from MainActivity (plan Task 1.3c).
+# Each unit appends the screens it adds in its own PR and adds the same name to FIRST_OPEN_SCREENS in
+# FirstOpenSmokeTest; FirstOpenSmokeCatalogTest fails a screen listed here that the test omits.
+#
+# Not listed yet, though the plan names them for U1: Settings > Git sync, Settings > Plugins and Logs.
+# Their entry points are a Dialog / DropdownMenu window; under Robolectric those windows were not
+# reachable by semantics queries (verified: opening them left the root tree unchanged). Later units
+# that add a screen on those surfaces should first make popup windows queryable in the harness.
+# Planned additions: Console (U3), Assets search/empty state (U10), Drive (U13).
+Assets browser
