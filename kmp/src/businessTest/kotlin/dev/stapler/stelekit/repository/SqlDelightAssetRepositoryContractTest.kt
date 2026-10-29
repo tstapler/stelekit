@@ -261,4 +261,28 @@ class SqlDelightAssetRepositoryContractTest {
         assertNotNull(r.get("a"))
         assertEquals(1L, r.get("a")!!.sizeBytes)
     }
+
+    @Test
+    fun `getIndexedFilePaths returns only indexed paths, chunking past 500`() = runBlocking<Unit> {
+        val r = repo()
+        r.saveAsset(entry("a", path = "/g/assets/a.bin"))
+        val probe = (0 until 1200).map { "/g/assets/missing$it.bin" } + "/g/assets/a.bin"
+        assertEquals(setOf("/g/assets/a.bin"), r.getIndexedFilePaths(probe).getOrNull())
+    }
+
+    @Test
+    fun `findUuidByContentHash finds the row or null`() = runBlocking<Unit> {
+        val r = repo()
+        r.saveAsset(entry("a").copy(contentHash = "h1"))
+        assertEquals(AssetUuid("a"), r.findUuidByContentHash("h1").getOrNull())
+        assertNull(r.findUuidByContentHash("nope").getOrNull())
+    }
+
+    @Test
+    fun `hash and path lookups against a closed database return ReadFailed, not a throw`() = runBlocking<Unit> {
+        val r = repo()
+        driver!!.close()
+        assertTrue(r.getIndexedFilePaths(listOf("/g/assets/a.bin")).isLeft())
+        assertTrue(r.findUuidByContentHash("h1").isLeft())
+    }
 }
