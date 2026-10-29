@@ -80,6 +80,8 @@ data class SettingsDialogDeps(
     val captureGraphs: List<dev.stapler.stelekit.model.GraphInfo> = emptyList(),
     // Interim Settings > Plugins "Asset indexing" row (Task 4.1d); null hides it.
     val assetIndexing: dev.stapler.stelekit.asset.AssetIndexingController? = null,
+    /** Scheduled-sync switch, interval and status; null hides the Settings section (no git on this platform). */
+    val scheduledSync: dev.stapler.stelekit.ui.components.settings.ScheduledSyncSettingsState? = null,
 )
 
 /**

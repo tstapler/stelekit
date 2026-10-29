@@ -10,6 +10,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Composition
 import androidx.compose.runtime.Recomposer
 import dev.stapler.stelekit.db.DriverFactory
+import dev.stapler.stelekit.git.BackgroundSyncSchedulerFactory
+import dev.stapler.stelekit.git.GitSyncBusyCounter
+import dev.stapler.stelekit.ui.GitSyncServiceSeams
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.repository.GraphBackend
 import dev.stapler.stelekit.repository.RepositorySet
@@ -53,8 +56,15 @@ class HeadlessComposition : AutoCloseable {
         advance()
     }
 
-    /** Delivers one frame so pending recompositions and effects run. */
-    fun advance() = clock.sendFrame(frame++)
+    /**
+     * Delivers one frame so pending recompositions and effects run. State written from another
+     * thread (a collected Flow) only invalidates the composition once apply notifications are sent;
+     * a real window does that through Compose's global snapshot manager, which this headless host lacks.
+     */
+    fun advance() {
+        androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications()
+        clock.sendFrame(frame++)
+    }
 
     /** Leaves composition, running every `DisposableEffect` `onDispose`. */
     fun dispose() {
@@ -79,6 +89,8 @@ class DesktopWiredAppFixture private constructor(
     val repos: RepositorySet,
     val ports: FakePlatformPorts,
     private val dataDir: File,
+    seams: GitSyncServiceSeams,
+    busyCounter: GitSyncBusyCounter?,
 ) {
     internal val deps = GraphContentDeps(
         repos = repos,
@@ -86,7 +98,12 @@ class DesktopWiredAppFixture private constructor(
         platformSettings = ports.settings,
         graphManager = graphManager,
         notificationManager = NotificationManager(),
-        platformIntegrations = StelekitAppPlatformIntegrations(gitRepository = ports.gitRepository),
+        platformIntegrations = StelekitAppPlatformIntegrations(
+            backgroundSyncSchedulerFactory = BackgroundSyncSchedulerFactory.None,
+            gitRepository = ports.gitRepository,
+            gitSyncBusyCounter = busyCounter,
+        ),
+        gitSyncSeams = seams,
     )
 
     /** Composes the vault, graph-IO and sync stacks exactly as `GraphContent` does and returns the sync bundle. */
@@ -111,6 +128,8 @@ class DesktopWiredAppFixture private constructor(
             dataDir: File,
             ports: FakePlatformPorts = FakePlatformPorts(),
             graphPath: String = "/test/wired-graph",
+            seams: GitSyncServiceSeams = GitSyncServiceSeams(),
+            busyCounter: GitSyncBusyCounter? = null,
         ): DesktopWiredAppFixture {
             System.setProperty("stelekit.devDataDir", dataDir.absolutePath)
             val manager = GraphManager(
@@ -119,7 +138,7 @@ class DesktopWiredAppFixture private constructor(
                 fileSystem = ports.fileSystem,
                 defaultBackend = GraphBackend.SQLDELIGHT,
             )
-            return DesktopWiredAppFixture(manager, manager.openGraph(graphPath), ports, dataDir)
+            return DesktopWiredAppFixture(manager, manager.openGraph(graphPath), ports, dataDir, seams, busyCounter)
         }
     }
 }

@@ -236,6 +236,7 @@ fun main(args: Array<String>) {
                         spanRecorder = spanRecorder,
                     ),
                     platformIntegrations = StelekitAppPlatformIntegrations(
+                        backgroundSyncSchedulerFactory = dev.stapler.stelekit.git.BackgroundSyncSchedulerFactory.None,
                         cryptoEngine = dev.stapler.stelekit.vault.JvmCryptoEngine(),
                         attachmentService = attachmentService,
                         readClipboardHtml = { dev.stapler.stelekit.domain.HtmlClipboardReader.read() },

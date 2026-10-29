@@ -320,6 +320,8 @@ import dev.stapler.stelekit.ui.StelekitViewModelShareExportTest
 import dev.stapler.stelekit.capture.CapturePopupWindowTest
 import dev.stapler.stelekit.capture.CapturePopupWindowUxTest
 import dev.stapler.stelekit.wiring.DesktopWiredAppFixtureTest
+import dev.stapler.stelekit.wiring.GitSyncServiceRegistryBalanceTest
+import dev.stapler.stelekit.wiring.GitSyncStackEntryPointTest
 import org.junit.runner.RunWith
 import org.junit.runners.Suite
 
@@ -649,5 +651,7 @@ import org.junit.runners.Suite
     SectionsSettingsDialogsTest::class,
     AllJvmTestsCompletenessTest::class,
     DesktopWiredAppFixtureTest::class,
+    GitSyncStackEntryPointTest::class,
+    GitSyncServiceRegistryBalanceTest::class,
 )
 class AllJvmTests

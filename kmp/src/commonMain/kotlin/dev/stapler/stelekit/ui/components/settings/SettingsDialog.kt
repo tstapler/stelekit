@@ -122,6 +122,8 @@ fun SettingsDialog(
     captureGraphs: List<dev.stapler.stelekit.model.GraphInfo> = emptyList(),
     // Interim Plugins row (Task 4.1d): null hides it; the build gate lives in the controller.
     assetIndexing: dev.stapler.stelekit.asset.AssetIndexingController? = null,
+    // Scheduled sync switch + interval (git-backed graphs only); null hides the section.
+    scheduledSync: ScheduledSyncSettingsState? = null,
 ) {
     if (visible) {
         Dialog(
@@ -159,7 +161,7 @@ fun SettingsDialog(
             @Composable
             fun CategoryContent(category: SettingsCategory) {
                 when (category) {
-                    SettingsCategory.GENERAL -> {
+                    SettingsCategory.GENERAL -> Column {
                         GeneralSettings(
                             currentTheme = currentTheme,
                             onThemeChange = onThemeChange,
@@ -192,6 +194,10 @@ fun SettingsDialog(
                                 onBrowseClickForMove = onBrowseClickForMove,
                                 onUnlink = onUnlinkHostDirectory,
                             )
+                        }
+                        if (scheduledSync != null) {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            ScheduledSyncSection(scheduledSync)
                         }
                     }
                     SettingsCategory.EDITOR -> EditorSettings()

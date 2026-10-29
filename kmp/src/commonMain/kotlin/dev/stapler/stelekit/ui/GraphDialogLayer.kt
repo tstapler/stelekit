@@ -212,6 +212,7 @@ private fun SettingsDialogHost(
         hotkeyComboLabel = settings.hotkeyComboLabel,
         captureTargetSettings = settings.captureTargetSettings,
         captureGraphs = settings.captureGraphs,
+        scheduledSync = settings.scheduledSync,
     )
 }
 

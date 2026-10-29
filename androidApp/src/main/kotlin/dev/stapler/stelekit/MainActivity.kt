@@ -39,7 +39,9 @@ import dev.stapler.stelekit.git.AndroidGitRepository
 import dev.stapler.stelekit.git.GitCloneWorker
 import dev.stapler.stelekit.git.GitShadowWorktree
 import dev.stapler.stelekit.git.GitSyncBusyCounter
-import dev.stapler.stelekit.git.GitSyncServiceRegistry
+import dev.stapler.stelekit.git.AndroidBackgroundRestrictionProbe
+import dev.stapler.stelekit.git.BackgroundSyncSchedulerFactory
+import dev.stapler.stelekit.git.WorkManagerSyncScheduler
 import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.service.rememberAndroidMediaAttachmentService
 import dev.stapler.stelekit.ui.StelekitApp
@@ -401,18 +403,10 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            // Keep GitSyncServiceRegistry in sync so GitSyncWorker can reach the active service
-            // even when the process was revived by WorkManager without the UI being foregrounded.
+            // GitSyncServiceRegistry (read by GitSyncWorker) is registered by
+            // rememberGraphContentGitSyncStack beside registerGitSyncService, keyed on the graph id
+            // captured at composition so a graph switch can no longer unregister the wrong graph.
             val appGm = app.graphManager
-            val activeGitSyncService by (appGm?.activeGitSyncService
-                ?: kotlinx.coroutines.flow.MutableStateFlow(null)).collectAsState()
-            LaunchedEffect(activeGitSyncService) {
-                if (appGm == null) return@LaunchedEffect
-                val graphId = appGm.getActiveGraphId() ?: return@LaunchedEffect
-                val svc = activeGitSyncService
-                if (svc != null) GitSyncServiceRegistry.register(graphId.value, svc)
-                else GitSyncServiceRegistry.unregister(graphId.value)
-            }
 
             // Story 4.1.5: drives the notification deep link once both a target graph id
             // (pendingGitSetupGraphId) and the active graph's ViewModel (activeViewModel, kept
@@ -473,6 +467,10 @@ class MainActivity : ComponentActivity() {
                         onViewModelReady = { vm -> activeViewModel = vm },
                     ),
                     platformIntegrations = StelekitAppPlatformIntegrations(
+                        backgroundSyncSchedulerFactory = BackgroundSyncSchedulerFactory(
+                            minimumIntervalMinutes = WorkManagerSyncScheduler.MIN_PERIODIC_INTERVAL_MINUTES.toInt(),
+                        ) { graphId -> WorkManagerSyncScheduler(applicationContext, graphId) },
+                        backgroundRestrictionProbe = AndroidBackgroundRestrictionProbe(applicationContext),
                         gitRepository = gitRepository,
                         gitCloneWorkerLauncher = gitCloneWorkerLauncher,
                         attachmentService = attachmentService,
