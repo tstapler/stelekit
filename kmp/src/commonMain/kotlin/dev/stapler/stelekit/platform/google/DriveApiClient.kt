@@ -64,7 +64,7 @@ private data class DriveFolderResponse(
 class DriveApiClient(
     private val authClient: GoogleAuthClient,
     private val httpClient: HttpClient,
-) : DriveUploader {
+) : DriveUploader, DriveBrowserPort {
 
     // ── Drive REST API v3 ─────────────────────────────────────────────────────
 
@@ -149,8 +149,8 @@ class DriveApiClient(
      * Returns up to 100 files ordered by modified time descending.
      * Does NOT include trashed files.
      */
-    suspend fun listFiles(
-        folderId: String? = null,
+    override suspend fun listFiles(
+        folderId: String?,
     ): Either<DomainError, List<DriveFile>> {
         val token = authClient.getValidToken().getOrNull()
             ?: return DomainError.NetworkError.HttpError(
@@ -265,7 +265,7 @@ class DriveApiClient(
      * Returns the raw bytes. For large files this may allocate significant memory;
      * callers should stream to disk for files > 50 MB.
      */
-    suspend fun downloadFile(fileId: String): Either<DomainError, ByteArray> {
+    override suspend fun downloadFile(fileId: String): Either<DomainError, ByteArray> {
         val token = authClient.getValidToken().getOrNull()
             ?: return DomainError.NetworkError.HttpError(
                 statusCode = 401,

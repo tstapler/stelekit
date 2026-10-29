@@ -202,6 +202,11 @@ class SteleKitApplication : Application() {
             // The console's sql! write path follows the same rule (ConsoleBuildFlags.RELEASE_WRITES_ENABLED).
             dev.stapler.stelekit.console.ConsoleBuildFlags.internalBuild =
                 dev.stapler.stelekit.asset.pipeline.AssetBuildFlags.internalBuild
+            // Debug/internal builds expose Google Photos import, Drive export and Drive browsing;
+            // release variants stay hidden until GoogleBuildFlags.RELEASE_VISIBLE is flipped after
+            // the OAuth device pass.
+            dev.stapler.stelekit.platform.google.GoogleBuildFlags.internalBuild =
+                applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0
             BuildInfo.commitHash = getString(R.string.git_commit_hash)
             BuildInfo.appVersion = packageManager.getPackageInfo(packageName, 0).versionName.orEmpty()
             SteleKitContext.init(this)

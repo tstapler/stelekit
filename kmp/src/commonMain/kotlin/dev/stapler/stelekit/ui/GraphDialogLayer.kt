@@ -180,6 +180,12 @@ private fun SettingsDialogHost(
         googleAuthError = settings.googleAuthError,
         onConnectGoogle = settings.onConnectGoogle,
         onDisconnectGoogle = settings.onDisconnectGoogle,
+        onBrowseDrive = if (settings.driveBrowseAvailable) {
+            {
+                viewModel.setSettingsVisible(false)
+                viewModel.navigateTo(Screen.DriveBrowser)
+            }
+        } else null,
         tagSettings = settings.tagSettings,
         hasLlmKey = settings.hasLlmKey,
         isLibsqlDriverEnabled = appState.isLibsqlDriverEnabled,

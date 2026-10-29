@@ -6,6 +6,10 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.ui.semantics.stateDescription
+import dev.stapler.stelekit.platform.google.GooglePhotosImportState
+import dev.stapler.stelekit.platform.google.GooglePhotosSessionPicker
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckCircle
@@ -64,6 +68,37 @@ private fun FormatToolbarButton(spec: FormatButtonSpec) {
     }
 }
 
+internal const val GOOGLE_PHOTOS_SIGNED_OUT_REASON = "Sign in to Google in Settings"
+
+/** Everything the toolbar needs to draw and fire the "From Google Photos" entry. */
+class GooglePhotosToolbarState(
+    val signedIn: Boolean,
+    val status: GooglePhotosImportState,
+    val onImport: () -> Unit,
+    val onDismissFailure: () -> Unit = {},
+)
+
+/** The single status line under the toolbar: opening, importing, or a failure with Retry. */
+@Composable
+internal fun GooglePhotosStatusLine(state: GooglePhotosToolbarState) {
+    val text = when (val status = state.status) {
+        GooglePhotosImportState.Idle -> if (state.signedIn) null else GOOGLE_PHOTOS_SIGNED_OUT_REASON
+        GooglePhotosImportState.Opening -> "Opening Google Photos…"
+        GooglePhotosImportState.Importing -> "Importing from Google Photos…"
+        is GooglePhotosImportState.Failed -> status.message
+    } ?: return
+    Row(
+        modifier = Modifier.padding(horizontal = 12.dp).fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text, style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
+        if (state.status is GooglePhotosImportState.Failed) {
+            TextButton(onClick = state.onImport) { Text("Retry") }
+            TextButton(onClick = state.onDismissFailure) { Text("Dismiss") }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MobileBlockToolbar(
@@ -89,6 +124,8 @@ fun MobileBlockToolbar(
     onSuggestTags: (() -> Unit)? = null,
     onAttachImage: (() -> Unit)? = null,
     onCaptureImage: (() -> Unit)? = null,
+    /** "From Google Photos" entry (Story 8.1); null hides it. */
+    googlePhotos: GooglePhotosToolbarState? = null,
     /** GAP-005 (Story D.2.1): toggles the currently-editing block's TODO/DOING/DONE marker. */
     onTodoToggle: () -> Unit = {},
     /** GAP-011 / Story D.4.2: explicit, discoverable, non-long-press entry point into block
@@ -315,7 +352,24 @@ fun MobileBlockToolbar(
                                 Icon(Icons.Default.CameraAlt, contentDescription = null)
                             }
                         }
+                        if (googlePhotos != null) {
+                            val busy = googlePhotos.status is GooglePhotosImportState.Opening ||
+                                googlePhotos.status is GooglePhotosImportState.Importing
+                            IconButton(
+                                onClick = googlePhotos.onImport,
+                                enabled = googlePhotos.signedIn && !busy,
+                                modifier = Modifier.semantics {
+                                    contentDescription = if (googlePhotos.signedIn) "From Google Photos"
+                                    else "From Google Photos. $GOOGLE_PHOTOS_SIGNED_OUT_REASON"
+                                    stateDescription = GooglePhotosSessionPicker.PICKER_UI_COPY
+                                }
+                            ) {
+                                Icon(Icons.Default.PhotoLibrary, contentDescription = null)
+                            }
+                        }
                     }
+
+                    if (googlePhotos != null) GooglePhotosStatusLine(googlePhotos)
 
                     Row(
                         modifier = Modifier

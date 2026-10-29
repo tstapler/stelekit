@@ -453,6 +453,7 @@ internal fun GraphContentActiveShell(
                     googleAuthError = googleAuthError,
                     onConnectGoogle = onConnectGoogle,
                     onDisconnectGoogle = onDisconnectGoogle,
+                    driveBrowseAvailable = deps.platformIntegrations.google != null,
                     tagSettings = tagSettings,
                     hasLlmKey = hasTagSuggestionLlmProvider,
                     hostAccessState = hostAccessState,

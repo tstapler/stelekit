@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -137,6 +139,12 @@ fun AnnotationEditorScreen(
     onExportToDrive: (() -> Unit)? = null,
     /** Story 7.4: Drive export state for progress/success/error feedback. */
     driveExportState: DriveExportUiState = DriveExportUiState.Idle,
+    /** Cancels an in-flight Drive upload ("Uploading… Cancel"). Null hides the action. */
+    onCancelDriveExport: (() -> Unit)? = null,
+    /** Opens the Drive link shown after a successful export. */
+    onOpenDriveLink: ((String) -> Unit)? = null,
+    /** Non-null while Drive export is unavailable (signed out); shown instead of letting the tap upload. */
+    driveExportDisabledReason: String? = null,
     /**
      * Optional callback invoked when the user taps "Download depth model".
      *
@@ -584,6 +592,9 @@ fun AnnotationEditorScreen(
                 DriveExportButton(
                     exportState = driveExportState,
                     onExport = onExportToDrive,
+                    onCancel = onCancelDriveExport,
+                    onOpenLink = onOpenDriveLink,
+                    disabledReason = driveExportDisabledReason,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .padding(8.dp),
@@ -740,30 +751,60 @@ internal fun DriveExportButton(
     exportState: DriveExportUiState,
     onExport: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Cancels an in-flight upload; null hides the Cancel action. */
+    onCancel: (() -> Unit)? = null,
+    /** Opens the Drive link shown after a successful export; null shows the link as plain text. */
+    onOpenLink: ((String) -> Unit)? = null,
+    /** Non-null while export is unavailable (signed out): the button is dimmed and shows this reason. */
+    disabledReason: String? = null,
 ) {
     when (exportState) {
         is DriveExportUiState.Idle, is DriveExportUiState.Error -> {
-            androidx.compose.material3.FloatingActionButton(
-                onClick = onExport,
-                modifier = modifier,
-                containerColor = Color(0xFF1565C0),
-                contentColor = Color.White,
-            ) {
-                Icon(Icons.Default.CloudUpload, contentDescription = "Export to Google Drive")
+            Column(modifier = modifier, horizontalAlignment = Alignment.End) {
+                androidx.compose.material3.FloatingActionButton(
+                    onClick = { if (disabledReason == null) onExport() },
+                    containerColor = Color(0xFF1565C0).copy(alpha = if (disabledReason == null) 1f else 0.5f),
+                    contentColor = Color.White,
+                ) {
+                    Icon(Icons.Default.CloudUpload, contentDescription = "Export to Google Drive")
+                }
+                if (disabledReason != null) {
+                    Text(
+                        text = disabledReason,
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(top = 4.dp).widthIn(max = 220.dp),
+                    )
+                } else if (exportState is DriveExportUiState.Error) {
+                    Text(
+                        text = exportState.message,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = 4.dp).widthIn(max = 220.dp),
+                    )
+                }
             }
         }
         is DriveExportUiState.Loading -> {
-            androidx.compose.material3.FloatingActionButton(
-                onClick = {},
+            Surface(
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                color = Color(0xFFE3F2FD),
                 modifier = modifier,
-                containerColor = Color(0xFF1565C0).copy(alpha = 0.5f),
-                contentColor = Color.White,
             ) {
-                androidx.compose.material3.CircularProgressIndicator(
-                    color = Color.White,
-                    strokeWidth = 2.dp,
-                    modifier = Modifier.padding(4.dp),
-                )
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    androidx.compose.material3.CircularProgressIndicator(
+                        color = Color(0xFF1565C0),
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("Uploading…", style = MaterialTheme.typography.labelSmall, color = Color(0xFF1565C0))
+                    if (onCancel != null) {
+                        TextButton(onClick = onCancel) { Text("Cancel") }
+                    }
+                }
             }
         }
         is DriveExportUiState.Success -> {
@@ -778,11 +819,24 @@ internal fun DriveExportButton(
                 ) {
                     Icon(Icons.Default.CloudUpload, contentDescription = null, tint = Color(0xFF1565C0))
                     Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = "Saved to Drive",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color(0xFF1565C0),
-                    )
+                    Column {
+                        Text(
+                            text = "Saved to Drive",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFF1565C0),
+                        )
+                        Text(
+                            text = exportState.driveLink,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFF1565C0),
+                            textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
+                            modifier = if (onOpenLink != null) {
+                                Modifier.clickable { onOpenLink(exportState.driveLink) }
+                            } else {
+                                Modifier
+                            },
+                        )
+                    }
                 }
             }
         }

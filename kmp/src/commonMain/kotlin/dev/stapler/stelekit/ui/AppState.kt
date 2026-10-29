@@ -79,6 +79,10 @@ sealed class Screen {
     @HelpExempt(reason = "Asset management surface; power-user feature not in primary nav")
     data object AssetBrowser : Screen()
 
+    /** Google Drive file browser, opened from Settings > Google Account > Browse Drive. */
+    @HelpExempt(reason = "Opened from Settings > Google Account; not a primary navigation destination")
+    data object DriveBrowser : Screen()
+
     /** Detail view for a single asset. */
     @HelpExempt(reason = "Opened by tapping an asset in the browser; not a primary nav destination")
     data class AssetDetail(val assetUuid: AssetUuid) : Screen()

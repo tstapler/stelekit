@@ -139,6 +139,12 @@ data class StelekitAppPlatformIntegrations(
      * (default), the panel is rendered but the buttons are no-ops.
      */
     val googleAuthManager: dev.stapler.stelekit.platform.google.GoogleAuthManager? = null,
+    /**
+     * Google Photos import, Drive export and Drive browsing. Null (default) hides every one of
+     * those surfaces; the Android root passes a value only when `GoogleBuildFlags.visible`.
+     * When set, [googleAuthManager] should be the same integration's `authManager`.
+     */
+    val google: dev.stapler.stelekit.platform.google.GoogleIntegration? = null,
     val requestCameraPermission: (suspend () -> Boolean)? = null,
     /** Reads HTML from the system clipboard (bounded). Null disables rich-text paste; set on Desktop. */
     val readClipboardHtml: (() -> dev.stapler.stelekit.domain.ClipboardHtml?)? = null,
