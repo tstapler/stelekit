@@ -16,6 +16,15 @@ interface BackupFiles {
 
     /** Bytes free on the volume holding [path], or null when unknown. */
     fun usableSpace(path: String): Long?
+
+    /** Copies [from] to the not-yet-existing [to]; false (and no partial file left) on any failure. */
+    fun copy(from: String, to: String): Boolean
+
+    /** The whole text file at [path], or null when it does not exist or cannot be read. */
+    fun readText(path: String): String?
+
+    /** Replaces the text file at [path] durably (written beside it, then renamed). */
+    fun writeText(path: String, text: String): Boolean
 }
 
 /** File access for console backups, or null where the platform has no database file (iOS, wasm). */

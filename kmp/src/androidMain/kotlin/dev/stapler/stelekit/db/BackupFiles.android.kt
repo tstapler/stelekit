@@ -4,6 +4,8 @@
 package dev.stapler.stelekit.db
 
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 actual fun platformBackupFiles(): BackupFiles? = FileBackupFiles
 
@@ -22,4 +24,20 @@ private object FileBackupFiles : BackupFiles {
     override fun rename(from: String, to: String) = File(from).renameTo(File(to))
     override fun sizeOf(path: String) = File(path).takeIf { it.isFile }?.length()
     override fun usableSpace(path: String) = generateSequence(File(path).absoluteFile) { it.parentFile }.firstOrNull { it.exists() }?.usableSpace
+    override fun copy(from: String, to: String): Boolean = try {
+        Files.copy(File(from).toPath(), File(to).toPath())
+        true
+    } catch (_: java.io.IOException) {
+        File(to).delete()
+        false
+    }
+    override fun readText(path: String) = File(path).takeIf { it.isFile }?.let { runCatching { it.readText() }.getOrNull() }
+    override fun writeText(path: String, text: String): Boolean = try {
+        val tmp = File("$path.tmp")
+        tmp.writeText(text)
+        Files.move(tmp.toPath(), File(path).toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+        true
+    } catch (_: java.io.IOException) {
+        false
+    }
 }

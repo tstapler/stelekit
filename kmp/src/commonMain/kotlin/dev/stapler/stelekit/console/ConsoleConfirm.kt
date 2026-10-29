@@ -22,17 +22,14 @@ sealed interface ConfirmAnswer {
     /** The default: dismissing the modal or cancelling the command lands here. */
     data object Cancel : ConfirmAnswer
 
-    /** [typed] is what the owner entered for a [ConfirmTier.TypedCount] confirm, otherwise null. */
+    /** [typed] is what the owner entered for a typed confirm ([ConfirmTier.TypedCount], [ConfirmTier.TypedPhrase]), otherwise null. */
     data class Proceed(val typed: String? = null) : ConfirmAnswer
 }
 
 /** True when [answer] satisfies [tier]: a typed count must match exactly after trimming surrounding spaces. */
 fun ConfirmAnswer.satisfies(tier: ConfirmTier): Boolean = when (this) {
     ConfirmAnswer.Cancel -> false
-    is ConfirmAnswer.Proceed -> when (tier) {
-        ConfirmTier.Standard -> true
-        is ConfirmTier.TypedCount -> typed?.trim() == tier.count.toString()
-    }
+    is ConfirmAnswer.Proceed -> tier.requiredText.let { it == null || typed?.trim() == it }
 }
 
 /** Asks the owner to confirm; implemented by the console session, which shows the modal. */

@@ -67,6 +67,11 @@ import dev.stapler.stelekit.db.SplitJournalTest
 import dev.stapler.stelekit.console.CommandLineTokenizerTest
 import dev.stapler.stelekit.console.ConfirmPolicyTest
 import dev.stapler.stelekit.console.ConsoleBackupTest
+import dev.stapler.stelekit.console.DbOnlyRowsGuardTest
+import dev.stapler.stelekit.console.DbRestoreLockStressTest
+import dev.stapler.stelekit.console.DbRestoreTest
+import dev.stapler.stelekit.console.GraphRestoreCommandTest
+import dev.stapler.stelekit.console.RestoreRecoveryTest
 import dev.stapler.stelekit.console.ConsoleBuildFlagsTest
 import dev.stapler.stelekit.console.ConsoleSessionConfirmTest
 import dev.stapler.stelekit.console.SqlConsoleWriterTest
@@ -547,6 +552,11 @@ import org.junit.runners.Suite
     CommandLineTokenizerTest::class,
     ConfirmPolicyTest::class,
     ConsoleBackupTest::class,
+    DbOnlyRowsGuardTest::class,
+    DbRestoreLockStressTest::class,
+    DbRestoreTest::class,
+    GraphRestoreCommandTest::class,
+    RestoreRecoveryTest::class,
     ConsoleBuildFlagsTest::class,
     ConsoleSessionConfirmTest::class,
     SqlConsoleWriterTest::class,

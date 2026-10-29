@@ -897,6 +897,7 @@ class GraphManager(
 
                     initHooks?.beforeCreateRepositorySet(id)
                     val dbUrl = driverFactory.getDatabaseUrl(id.value)
+                    RestoreRecovery.recoverBeforeOpen(dbUrl)
                     val factory = dev.stapler.stelekit.repository.RepositoryFactoryImpl(driverFactory, dbUrl, graphId = id.value)
                     val deviceInfo = try {
                         dev.stapler.stelekit.performance.getDeviceInfo()

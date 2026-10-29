@@ -28,6 +28,9 @@ class ConsoleBackupTest {
         override fun rename(from: String, to: String): Boolean { val v = files.remove(from.substringAfterLast('/')) ?: return false; files[to.substringAfterLast('/')] = v; return true }
         override fun sizeOf(path: String) = if (path.endsWith("graph.db")) dbBytes else files[path.substringAfterLast('/')]?.let { 1L }
         override fun usableSpace(path: String) = free
+        override fun copy(from: String, to: String) = false
+        override fun readText(path: String): String? = null
+        override fun writeText(path: String, text: String) = false
     }
 
     private class FakeEngine(val files: FakeFiles, val clock: () -> Long) : BackupEngine {

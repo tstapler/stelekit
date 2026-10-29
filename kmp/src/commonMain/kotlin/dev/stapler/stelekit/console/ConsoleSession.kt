@@ -7,6 +7,7 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
+import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.security.Redactor
 import kotlin.concurrent.Volatile
 import kotlinx.coroutines.CancellationException
@@ -54,6 +55,8 @@ class ConsoleSession(
     private val scope = CoroutineScope(
         SupervisorJob() + dispatcher + CoroutineExceptionHandler { _, t -> emit(epoch, ScrollbackKind.ERROR, "Internal error: ${describe(t)}") },
     )
+    /** One line per run naming the verb only, never the arguments: a statement can carry data the owner does not want in logs. */
+    private val audit = Logger("ConsoleAudit")
     private val pendingAnswer = MutableStateFlow<CompletableDeferred<ConfirmAnswer>?>(null)
     private val confirmState = MutableStateFlow<ConfirmRequest?>(null)
     private val context = ConsoleContext(registry, confirmer = ConsoleConfirmer { request -> askOwner(request) })
@@ -146,6 +149,7 @@ class ConsoleSession(
         historyState.value = (historyState.value + safe(line)).takeLast(MAX_HISTORY)
         val command = registry.find(tokens.first()) ?: return fail(runEpoch, ConsoleError.UnknownCommand(tokens.first()))
         command.disabledReason?.let { return fail(runEpoch, ConsoleError.Unsupported(it)) }
+        audit.info("console run verb=${command.name}")
         val out = object : ConsoleOutput {
             override fun info(text: String) = emit(runEpoch, ScrollbackKind.OUTPUT, text)
             override fun error(text: String) = emit(runEpoch, ScrollbackKind.ERROR, text)

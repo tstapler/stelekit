@@ -65,4 +65,17 @@ class WriteConfirmPanelTest {
         composeRule.onNodeWithTag("console-write-confirm-button").assertIsEnabled().performClick()
         assertEquals(listOf<ConfirmAnswer>(ConfirmAnswer.Proceed(" 12 ")), answers)
     }
+
+    @Test
+    fun panel_should_RequireTheExactRestorePhrase_When_TypedPhraseTier() {
+        val answers = mutableListOf<ConfirmAnswer>()
+        composeRule.setContent { WriteConfirmPanel(request(ConfirmTier.TypedPhrase("RESTORE")), onAnswer = { answers += it }) }
+        composeRule.onNodeWithTag("console-write-confirm-button").assertIsNotEnabled()
+        composeRule.onNodeWithTag("console-write-typed-count").performTextInput("restore")
+        composeRule.onNodeWithTag("console-write-confirm-button").assertIsNotEnabled()
+        composeRule.onNodeWithTag("console-write-typed-count").performTextClearance()
+        composeRule.onNodeWithTag("console-write-typed-count").performTextInput("RESTORE")
+        composeRule.onNodeWithTag("console-write-confirm-button").assertIsEnabled().performClick()
+        assertEquals(listOf<ConfirmAnswer>(ConfirmAnswer.Proceed("RESTORE")), answers)
+    }
 }
