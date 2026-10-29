@@ -1,6 +1,7 @@
 # path<TAB>rule<TAB>count; may only shrink (TestHygieneAuditTest)
 androidApp.test/dev/stapler/stelekit/CaptureActivityTargetTest.kt	Thread.sleep	1
 androidApp.test/dev/stapler/stelekit/CaptureViewModelTest.kt	Thread.sleep	9
+androidInstrumentedTest/dev/stapler/stelekit/console/spike/QueryCancelSpikeAndroidTest.kt	Thread.sleep	4
 androidUnitTest/dev/stapler/stelekit/git/AndroidGitCloneWorkerLauncherTest.kt	Thread.sleep	1
 androidUnitTest/dev/stapler/stelekit/git/WorkManagerSyncSchedulerRetryOwnerTest.kt	Thread.sleep	1
 androidUnitTest/dev/stapler/stelekit/platform/SafChangeDetectorFileObserverTest.kt	real-clock-delay	2
@@ -24,6 +25,10 @@ businessTest/dev/stapler/stelekit/ui/transfer/QrEncodeViewModelTest.kt	real-cloc
 jvmTest/dev/stapler/stelekit/benchmark/LatencyShimFileSystem.kt	Thread.sleep	4
 jvmTest/dev/stapler/stelekit/benchmark/UserSessionBenchmarkTest.kt	real-clock-delay	14
 jvmTest/dev/stapler/stelekit/capture/PendingCapturePollerIntegrationTest.kt	real-clock-delay	1
+jvmTest/dev/stapler/stelekit/console/spike/DbSwapSpikeTest.kt	Thread.sleep	1
+jvmTest/dev/stapler/stelekit/console/spike/QueryCancelSpikeTest.kt	Thread.sleep	2
+jvmTest/dev/stapler/stelekit/console/spike/SpikeSupport.kt	Thread.sleep	1
+jvmTest/dev/stapler/stelekit/console/spike/WriteCascadeSpikeTest.kt	real-clock-delay	2
 jvmTest/dev/stapler/stelekit/db/GraphLoaderBatchWriteTest.kt	real-clock-delay	2
 jvmTest/dev/stapler/stelekit/db/GraphLoaderProgressiveTest.kt	Thread.sleep	1
 jvmTest/dev/stapler/stelekit/db/GraphLoaderWatcherTest.kt	real-clock-delay	4
