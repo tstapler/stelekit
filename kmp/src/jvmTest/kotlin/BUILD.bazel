@@ -96,6 +96,7 @@ kt_jvm_test(
         "//kmp/src/commonTest/kotlin:git_testsupport",
         "//kmp/src/commonTest/kotlin:merge_fixtures",
         "//kmp/src/commonTest/kotlin:observable_effect_jvm",
+        "//kmp/src/businessTest/kotlin:hop_aware_test_dispatcher",
         ":graph_content_wiring_test_sources_as_resources",
         "@maven//:com_google_zxing_core",
         "@maven//:io_ktor_ktor_client_mock_jvm",

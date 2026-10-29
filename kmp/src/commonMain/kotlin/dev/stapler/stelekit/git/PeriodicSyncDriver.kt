@@ -6,6 +6,7 @@ package dev.stapler.stelekit.git
 import arrow.core.Either
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
+import dev.stapler.stelekit.security.Redactor
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -158,7 +159,7 @@ class PeriodicSyncDriver(
             } catch (t: Throwable) {
                 TickOutcome.Failure(describe(t))
             }
-            val safe = if (outcome is TickOutcome.Failure) outcome.copy(message = redactSecrets(outcome.message)) else outcome
+            val safe = if (outcome is TickOutcome.Failure) outcome.copy(message = Redactor.redactGitMessage(outcome.message)) else outcome
             record(safe, attemptAt)
             return safe
         } finally {
@@ -221,7 +222,7 @@ class PeriodicSyncDriver(
         }
     }
 
-    private fun describe(t: Throwable): String = redactSecrets("${t::class.simpleName}: ${t.message ?: "no message"}")
+    private fun describe(t: Throwable): String = Redactor.redactGitMessage("${t::class.simpleName}: ${t.message ?: "no message"}")
 
     private fun intervalMs() = intervalMinutes * MILLIS_PER_MINUTE
 

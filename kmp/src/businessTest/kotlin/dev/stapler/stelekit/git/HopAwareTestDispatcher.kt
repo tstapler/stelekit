@@ -21,7 +21,7 @@ import kotlin.coroutines.CoroutineContext
  * runs the scheduler. No real sleeps and no polling.
  */
 @OptIn(ExperimentalCoroutinesApi::class, InternalCoroutinesApi::class)
-internal class HopAwareTestDispatcher(
+class HopAwareTestDispatcher(
     private val inner: TestDispatcher,
     private val testThread: Thread,
 ) : CoroutineDispatcher(), Delay by inner {

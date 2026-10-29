@@ -130,6 +130,20 @@ kt_jvm_library(
     deps = ["@maven//:org_jetbrains_kotlin_kotlin_stdlib"],
 )
 
+# HopAwareTestDispatcher for jvm_tests entry-point tests (no @Test classes; business_tests still compiles it from its own glob).
+kt_jvm_library(
+    name = "hop_aware_test_dispatcher",
+    srcs = ["dev/stapler/stelekit/git/HopAwareTestDispatcher.kt"],
+    testonly = True,
+    kotlinc_opts = "//:kmp_jvm_kotlinc_opts",
+    visibility = ["//kmp/src/jvmTest/kotlin:__pkg__"],
+    deps = [
+        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
+    ],
+)
+
 # Runnable test target — bazel test //kmp:business_tests
 kt_jvm_test(
     name = "business_tests",
