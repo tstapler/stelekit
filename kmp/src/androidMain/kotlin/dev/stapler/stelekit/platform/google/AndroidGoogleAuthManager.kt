@@ -5,14 +5,18 @@ package dev.stapler.stelekit.platform.google
 
 import android.content.Intent
 import android.net.Uri
+import android.util.Base64
 import arrow.core.Either
 import arrow.core.left
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.platform.SteleKitContext
+import io.ktor.client.HttpClient
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeout
+import java.security.MessageDigest
+import java.security.SecureRandom
 import java.util.UUID
 
 /**
@@ -26,24 +30,38 @@ import java.util.UUID
  * The redirect URI must be registered in the Google Cloud Console as:
  *   com.stelekit.app:/oauth2redirect
  *
- * TODO (Story 7.2): When `credentials` + `credentials-play-services-auth` deps are added
- *   to build.gradle.kts, replace this with GetGoogleIdOption Credential Manager flow.
- *
- * NOTE: Token exchange (auth code → access/refresh tokens) requires a server-side endpoint
- * or a native app client secret. For now this implementation is a structural stub that
- * opens the browser. The token exchange is wired once a client_id is configured.
+ * The authorization code is exchanged for tokens at Google's token endpoint with PKCE
+ * ([exchangeGoogleAuthCode]); the real sign-in has not been exercised against a Google account yet
+ * (plan item 12.5, owner device pass), and needs [clientId] to be set in the app build.
  */
 class AndroidGoogleAuthManager(
     private val tokenStore: GoogleTokenStore,
+    private val httpClient: HttpClient,
     private val clientId: String = "",
+    private val clientSecret: String = "",
 ) : GoogleAuthManager {
 
     companion object {
         val SCOPES = listOf(
+            "openid",
             "https://www.googleapis.com/auth/drive.file",
             "email",
             "profile",
         )
+
+        /** RFC 7636 S256 code challenge for [verifier]. */
+        fun pkceChallenge(verifier: String): String =
+            Base64.encodeToString(
+                MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray(Charsets.US_ASCII)),
+                Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING,
+            )
+
+        private fun newCodeVerifier(): String {
+            val bytes = ByteArray(PKCE_VERIFIER_BYTES).also { SecureRandom().nextBytes(it) }
+            return Base64.encodeToString(bytes, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
+        }
+
+        private const val PKCE_VERIFIER_BYTES = 48
         const val REDIRECT_URI = "com.stelekit.app:/oauth2redirect"
 
         /**
@@ -79,6 +97,7 @@ class AndroidGoogleAuthManager(
         val scopeString = SCOPES.joinToString(" ")
         val state = UUID.randomUUID().toString()
         pendingOAuthState = state
+        val codeVerifier = newCodeVerifier()
         val authUrl = "https://accounts.google.com/o/oauth2/auth" +
             "?client_id=$clientId" +
             "&redirect_uri=${Uri.encode(REDIRECT_URI)}" +
@@ -86,6 +105,8 @@ class AndroidGoogleAuthManager(
             "&scope=${Uri.encode(scopeString)}" +
             "&access_type=offline" +
             "&prompt=consent" +
+            "&code_challenge=${pkceChallenge(codeVerifier)}" +
+            "&code_challenge_method=S256" +
             "&state=${Uri.encode(state)}"
 
         return try {
@@ -108,8 +129,7 @@ class AndroidGoogleAuthManager(
                 ).left()
             }
 
-            // Exchange the authorization code for tokens
-            exchangeCodeForTokens(code)
+            exchangeGoogleAuthCode(httpClient, clientId, clientSecret, code, REDIRECT_URI, codeVerifier, tokenStore)
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
             DomainError.NetworkError.HttpError(
@@ -119,21 +139,6 @@ class AndroidGoogleAuthManager(
         }
     }
 
-    /**
-     * Exchange the OAuth authorization code for access/refresh tokens.
-     * TODO (Story 2.1.4): POST to https://oauth2.googleapis.com/token with:
-     *   grant_type=authorization_code, code=$code, redirect_uri, client_id, client_secret
-     * Store access_token, refresh_token, expires_in, email in tokenStore.
-     * Until Story 2.1.4 lands, returns Left — the auth code alone is not an access token
-     * and must not be stored as one.
-     */
-    private fun exchangeCodeForTokens(code: String): Either<DomainError, String> {
-        return DomainError.NetworkError.HttpError(
-            statusCode = 501,
-            message = "Google token exchange is not yet implemented (Story 2.1.4). " +
-                "Received auth code length=${code.length}.",
-        ).left()
-    }
 
     override suspend fun signOut() {
         tokenStore.clearTokens()

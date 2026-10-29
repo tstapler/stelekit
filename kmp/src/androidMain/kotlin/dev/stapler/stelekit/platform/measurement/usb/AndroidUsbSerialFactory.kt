@@ -1,58 +1,42 @@
 package dev.stapler.stelekit.platform.measurement.usb
 
-import android.app.PendingIntent
-import android.content.BroadcastReceiver
 import android.content.Context
+import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.platform.measurement.ExternalMeasurementDevice
 import dev.stapler.stelekit.platform.measurement.MeasurementDeviceFactory
-import dev.stapler.stelekit.platform.measurement.ble.NoOpBleScanner
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 
 /**
- * Android USB serial (OTG) factory stub.
+ * [MeasurementDeviceFactory] for laser meters on a USB-OTG serial adapter
+ * (`com.github.mik3y:usb-serial-for-android`, MIT).
  *
- * NOTE: `usb-serial-for-android` (kai-morich fork) is NOT currently on the classpath.
- * This stub delegates to [NoOpBleScanner] and returns an empty Flow.
- *
- * To enable USB serial support:
- *   1. Add to androidMain in kmp/build.gradle.kts:
- *      `implementation("com.github.kai-morich:usb-serial-for-android:<version>")`
- *   2. Confirm LGPL 2.1 compliance via dynamic `.aar` linking (confirmed acceptable per plan ADR-004).
- *   3. Replace the [scan] body with:
- *      ```kotlin
- *      val usbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
- *      val drivers = UsbSerialProber.getDefaultProber().findAllDrivers(usbManager)
- *      return flow {
- *          drivers.forEach { driver ->
- *              requestPermission(usbManager, driver.device)
- *              emit(AndroidUsbSerialDevice(driver, usbManager, context))
- *          }
- *      }
- *      ```
- *   4. Implement `AndroidUsbSerialDevice` wrapping the driver's serial port in a Flow.
- *
- * USB_PERMISSION broadcast action for permission request/response:
- *   [USB_PERMISSION_ACTION]
- *
- * To request permission before opening a device, broadcast a [PendingIntent] via:
- *   `usbManager.requestPermission(usbDevice, pendingIntent)`
- * and receive the response in a [BroadcastReceiver] registered for [USB_PERMISSION_ACTION].
+ * Each serial port the [finder] reports becomes one [UsbSerialMeasurementDevice]. With no adapter
+ * attached, no permission, or any failure while probing, the flow completes empty rather than
+ * throwing. When Android has not yet granted USB permission the finder asks for it and omits
+ * the device; the user re-scans (the panel's "Try Again") once they have accepted the system dialog.
  */
 class AndroidUsbSerialFactory(
-    @Suppress("UnusedPrivateMember")
-    private val context: Context,
+    context: Context,
+    private val finder: SerialMeterPortFinder = UsbSerialPortFinder(context),
 ) : MeasurementDeviceFactory {
 
-    /**
-     * Custom action string for the USB_PERMISSION PendingIntent broadcast.
-     */
-    companion object {
-        const val USB_PERMISSION_ACTION: String =
-            "dev.stapler.stelekit.USB_PERMISSION"
+    override fun scan(): Flow<ExternalMeasurementDevice> = flow {
+        val ports = try {
+            finder.findPorts()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.warn("USB serial scan failed: ${e.message}")
+            emptyList()
+        }
+        ports.forEach { emit(UsbSerialMeasurementDevice(it)) }
     }
 
-    // TODO(USB): Replace with real implementation once usb-serial-for-android is added.
-    private val noOp = NoOpBleScanner()
-
-    override fun scan(): Flow<ExternalMeasurementDevice> = noOp.scan()
+    companion object {
+        /** Action for the USB-permission PendingIntent; see [UsbSerialPortFinder]. */
+        const val USB_PERMISSION_ACTION: String = "dev.stapler.stelekit.USB_PERMISSION"
+        private val logger = Logger("AndroidUsbSerialFactory")
+    }
 }

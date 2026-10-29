@@ -5,6 +5,7 @@ import dev.stapler.stelekit.benchmark.GraphLoadTimingTest
 import dev.stapler.stelekit.benchmark.RepositoryBenchmarkRunnerTest
 import dev.stapler.stelekit.benchmark.RepositoryBenchmarkTest
 import dev.stapler.stelekit.cache.CacheHitBenchmarkTest
+import dev.stapler.stelekit.console.DbRestoreSwapTest
 import dev.stapler.stelekit.console.spike.AuthorizerSpikeTest
 import dev.stapler.stelekit.console.spike.DbSwapSpikeTest
 import dev.stapler.stelekit.console.spike.QueryCancelSpikeTest
@@ -178,6 +179,7 @@ import dev.stapler.stelekit.git.RemoteDefaultBranchTest
 import dev.stapler.stelekit.git.VaultCredentialStoreTest
 import dev.stapler.stelekit.google.DriveApiClientContentTypeTest
 import dev.stapler.stelekit.google.DriveExportServiceTest
+import dev.stapler.stelekit.google.GoogleAuthCodeExchangeHttpTest
 import dev.stapler.stelekit.google.GoogleApiClientTest
 import dev.stapler.stelekit.google.GoogleTokenRefresherTest
 import dev.stapler.stelekit.google.JvmGoogleAuthManagerTest
@@ -209,6 +211,9 @@ import dev.stapler.stelekit.coroutines.GraphScopedSessionThreadSafetyTest
 import dev.stapler.stelekit.desktop.CaptureCliArgsTest
 import dev.stapler.stelekit.domain.CaptureEnrichmentCoordinatorRealDispatcherTest
 import dev.stapler.stelekit.domain.PageNameIndexResilienceTest
+import dev.stapler.stelekit.desktop.DesktopMeasurementDeviceFactoriesTest
+import dev.stapler.stelekit.domain.HtmlClipboardReaderTest
+import dev.stapler.stelekit.domain.HtmlPasteEntryPointTest
 import dev.stapler.stelekit.domain.WaybackMachineServiceTest
 import dev.stapler.stelekit.llm.CustomOpenAiCompatibleLlmProviderTest
 import dev.stapler.stelekit.mcp.McpPendingCapTest
@@ -319,12 +324,16 @@ import dev.stapler.stelekit.ui.StelekitViewModelShareExportTest
 import dev.stapler.stelekit.capture.CapturePopupWindowTest
 import dev.stapler.stelekit.capture.CapturePopupWindowUxTest
 import dev.stapler.stelekit.wiring.DesktopWiredAppFixtureTest
+import dev.stapler.stelekit.wiring.GitSyncServiceRegistryBalanceTest
+import dev.stapler.stelekit.wiring.GitSyncStackEntryPointTest
+import dev.stapler.stelekit.wiring.JvmPlatformCapsRootTest
 import org.junit.runner.RunWith
 import org.junit.runners.Suite
 
 @RunWith(Suite::class)
 @Suite.SuiteClasses(
     GraphLoadJankTest::class,
+    DbRestoreSwapTest::class,
     AuthorizerSpikeTest::class,
     DbSwapSpikeTest::class,
     QueryCancelSpikeTest::class,
@@ -501,6 +510,7 @@ import org.junit.runners.Suite
     VaultCredentialStoreTest::class,
     DriveApiClientContentTypeTest::class,
     DriveExportServiceTest::class,
+    GoogleAuthCodeExchangeHttpTest::class,
     GoogleApiClientTest::class,
     GoogleTokenRefresherTest::class,
     JvmGoogleAuthManagerTest::class,
@@ -533,6 +543,9 @@ import org.junit.runners.Suite
     CaptureEnrichmentCoordinatorRealDispatcherTest::class,
     PageNameIndexResilienceTest::class,
     WaybackMachineServiceTest::class,
+    HtmlPasteEntryPointTest::class,
+    HtmlClipboardReaderTest::class,
+    DesktopMeasurementDeviceFactoriesTest::class,
     CustomOpenAiCompatibleLlmProviderTest::class,
     McpPendingCapTest::class,
     McpSocketPathPermissionTest::class,
@@ -647,5 +660,8 @@ import org.junit.runners.Suite
     SectionsSettingsDialogsTest::class,
     AllJvmTestsCompletenessTest::class,
     DesktopWiredAppFixtureTest::class,
+    GitSyncStackEntryPointTest::class,
+    GitSyncServiceRegistryBalanceTest::class,
+    JvmPlatformCapsRootTest::class,
 )
 class AllJvmTests

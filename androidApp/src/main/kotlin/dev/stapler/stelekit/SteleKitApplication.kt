@@ -9,8 +9,12 @@ import dev.stapler.stelekit.platform.SteleKitContext
 import dev.stapler.stelekit.platform.WriteBehindQueue
 import dev.stapler.stelekit.app.R
 import dev.stapler.stelekit.performance.BuildInfo
+import android.content.Context
+import dev.stapler.stelekit.platform.measurement.MeasurementDeviceFactory
 import dev.stapler.stelekit.platform.measurement.MeasurementDeviceRegistry
 import dev.stapler.stelekit.platform.measurement.ble.KableBleScanner
+import dev.stapler.stelekit.platform.measurement.keyboard.KeyboardEmulationDeviceFactory
+import dev.stapler.stelekit.platform.measurement.usb.AndroidUsbSerialFactory
 import dev.stapler.stelekit.platform.ml.OnnxMonocularDepthEstimator
 import dev.stapler.stelekit.platform.security.CredentialStore
 import dev.stapler.stelekit.platform.sensor.AndroidCameraFrameSource
@@ -32,6 +36,13 @@ import dev.stapler.stelekit.capture.createShareCaptureServices
 import dev.stapler.stelekit.capture.shareInboxConfigFor
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+
+/** Every measurement transport the Android app offers; keyboard entry is the always-available fallback. */
+internal fun defaultMeasurementDeviceFactories(context: Context): List<MeasurementDeviceFactory> = listOf(
+    KableBleScanner(context),
+    KeyboardEmulationDeviceFactory(),
+    AndroidUsbSerialFactory(context),
+)
 
 class SteleKitApplication : Application() {
 
@@ -184,6 +195,18 @@ class SteleKitApplication : Application() {
         installPersistentLogging()
         try {
             dev.stapler.stelekit.platform.NetworkMonitor.init(this)
+            // Debug/internal builds expose the Asset indexing switch; release variants stay hidden
+            // until the heap-gate flip PR (AssetBuildFlags.RELEASE_TOGGLE_VISIBLE).
+            dev.stapler.stelekit.asset.pipeline.AssetBuildFlags.internalBuild =
+                applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0
+            // The console's sql! write path follows the same rule (ConsoleBuildFlags.RELEASE_WRITES_ENABLED).
+            dev.stapler.stelekit.console.ConsoleBuildFlags.internalBuild =
+                dev.stapler.stelekit.asset.pipeline.AssetBuildFlags.internalBuild
+            // Debug/internal builds expose Google Photos import, Drive export and Drive browsing;
+            // release variants stay hidden until GoogleBuildFlags.RELEASE_VISIBLE is flipped after
+            // the OAuth device pass.
+            dev.stapler.stelekit.platform.google.GoogleBuildFlags.internalBuild =
+                applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0
             BuildInfo.commitHash = getString(R.string.git_commit_hash)
             BuildInfo.appVersion = packageManager.getPackageInfo(packageName, 0).versionName.orEmpty()
             SteleKitContext.init(this)
@@ -196,7 +219,7 @@ class SteleKitApplication : Application() {
             SensorModule.depthSensorProvider = ARCoreDepthProvider(applicationContext)
             SensorModule.motionSensorProvider = AndroidMotionSensorProvider(applicationContext)
             SensorModule.monocularDepthEstimator = OnnxMonocularDepthEstimator(applicationContext)
-            MeasurementDeviceRegistry.register(KableBleScanner(applicationContext))
+            defaultMeasurementDeviceFactories(applicationContext).forEach(MeasurementDeviceRegistry::register)
             fileSystem = PlatformFileSystem().apply { init(applicationContext) }
             // Activate write-behind when MANAGE_EXTERNAL_STORAGE is not granted.
             // Direct access (when granted) is faster than write-behind and makes it unnecessary.

@@ -5,7 +5,7 @@ Usage:
   coverage-map.py --jacoco jacoco.xml[:sourceSet] [--jacoco jacoco-android.xml:android ...]
                   --tiers coverage-tiers.yml --out docs/coverage
                   [--reachability-baseline scripts/ci/reachability-baseline.txt]
-                  [--mutations mutations.xml] [--churn-json FILE] [--runner gradle]
+                  [--mutations mutations.xml] [--churn-json FILE] [--check-source-tree] [--runner gradle]
                   [--repo-root DIR] [--commit SHA] [--command "…"]
 
 Writes <out>/coverage-map.json and <out>/coverage-map.md (sorted by rank, 1 = biggest gap).
@@ -26,9 +26,9 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 
 ROOT_PKG = "dev/stapler/stelekit"
-TIER_WEIGHT = {"T1": 4, "T2": 3, "T3": 1, "T4": 0}
+TIER_WEIGHT = {"T1": 4, "T2": 2, "T3": 1, "T4": 0}  # plan Epic 11 tiers table
 # Target line/branch percentage per tier; T4 is excluded from the gap ranking.
-TIER_TARGET = {"T1": (90, 80), "T2": (80, 70), "T3": (60, 40), "T4": (0, 0)}
+TIER_TARGET = {"T1": (85, 70), "T2": (70, 55), "T3": (40, 0), "T4": (0, 0)}  # plan Epic 11 tiers table (T3 branch: n.a.)
 CHURN_WINDOW_DAYS = 90
 
 
@@ -107,6 +107,24 @@ def read_tiers(path):
     return tiers
 
 
+def source_packages(repo_root):
+    """Package dirs (first segment) under every kmp/src/*Main/kotlin/dev/stapler/stelekit, plus '(root)' for loose files."""
+    names = set()
+    src = os.path.join(repo_root, "kmp", "src")
+    if not os.path.isdir(src):
+        return names
+    for sset in sorted(os.listdir(src)):
+        base = os.path.join(src, sset, "kotlin", *ROOT_PKG.split("/"))
+        if not sset.endswith("Main") or not os.path.isdir(base):
+            continue
+        for entry in os.listdir(base):
+            if os.path.isdir(os.path.join(base, entry)):
+                names.add(entry)
+            elif entry.endswith((".kt", ".java")):
+                names.add("(root)")
+    return names
+
+
 def read_mutations(path):
     """PIT mutations.xml -> {package: (killed, total)}; empty without a file."""
     if not path:
@@ -153,7 +171,10 @@ def build(args):
     for path, source_set in args.jacoco:
         read_jacoco(path, source_set, unreachable, acc)
     tiers = read_tiers(args.tiers)
-    missing = sorted({k for k, _ in acc} - set(tiers))
+    wanted = {k for k, _ in acc}
+    if args.check_source_tree:
+        wanted |= source_packages(args.repo_root)
+    missing = sorted(wanted - set(tiers))
     if missing:
         raise MapError("packages without a tier in " + args.tiers + ": " + ", ".join(missing))
     churn = json.load(open(args.churn_json)) if args.churn_json else churn_from_git(args.repo_root)
@@ -222,6 +243,8 @@ def parse_args(argv):
     ap.add_argument("--mutations")
     ap.add_argument("--churn-json")
     ap.add_argument("--owner-plan-json")
+    ap.add_argument("--check-source-tree", action="store_true",
+                    help="also require a tier for every package dir under kmp/src/*Main (catches packages with no coverage data)")
     ap.add_argument("--runner", default="gradle")
     ap.add_argument("--repo-root", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
     ap.add_argument("--commit")

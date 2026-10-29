@@ -8,7 +8,13 @@ import com.fleeksoft.ksoup.nodes.Element
 
 data class RawBlock(val content: String, val level: Int)
 
+/** HTML text read from a platform clipboard; [truncated] is true when it was cut at [HtmlBlockConverter.MAX_HTML_CHARS]. */
+data class ClipboardHtml(val html: String, val truncated: Boolean)
+
 object HtmlBlockConverter {
+    /** Largest HTML input callers should hand to [convert]; matches the URL fetcher's 2 MB body cap. */
+    const val MAX_HTML_CHARS = 2 * 1024 * 1024
+
     /**
      * Converts an HTML string to a structured list of raw blocks.
      * Headings become top-level blocks (level 0) with markdown heading syntax (## Heading).
@@ -48,7 +54,8 @@ object HtmlBlockConverter {
                 val allListItems = element.select("li")
                 for (li in allListItems) {
                     // Count parent ul/ol elements to determine nesting depth
-                    val depth = li.parents().select("ul,ol").size - 1
+                    // select() on the ancestors also matches nested lists beneath them, which inflated top-level items to depth 1.
+                    val depth = li.parents().count { it.tagName().lowercase() == "ul" || it.tagName().lowercase() == "ol" } - 1
                     // Get only the direct text of this li, not nested li text
                     val liText = getDirectText(li)
                     if (liText.isNotBlank()) {

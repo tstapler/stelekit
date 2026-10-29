@@ -19,6 +19,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.lifecycleScope
+import dev.stapler.stelekit.app.R
 import dev.stapler.stelekit.db.AndroidInsufficientSpaceCheck
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.db.RelocationStagingDirectory
@@ -39,7 +40,9 @@ import dev.stapler.stelekit.git.AndroidGitRepository
 import dev.stapler.stelekit.git.GitCloneWorker
 import dev.stapler.stelekit.git.GitShadowWorktree
 import dev.stapler.stelekit.git.GitSyncBusyCounter
-import dev.stapler.stelekit.git.GitSyncServiceRegistry
+import dev.stapler.stelekit.git.AndroidBackgroundRestrictionProbe
+import dev.stapler.stelekit.git.BackgroundSyncSchedulerFactory
+import dev.stapler.stelekit.git.WorkManagerSyncScheduler
 import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.service.rememberAndroidMediaAttachmentService
 import dev.stapler.stelekit.ui.StelekitApp
@@ -331,6 +334,13 @@ class MainActivity : ComponentActivity() {
                 dev.stapler.stelekit.git.AndroidGitCloneWorkerLauncher(applicationContext)
             }
             val attachmentService = rememberAndroidMediaAttachmentService(this@MainActivity, fileSystem)
+            // Null in release variants (GoogleBuildFlags), which hides every Google surface.
+            val googleIntegration = remember {
+                dev.stapler.stelekit.platform.google.AndroidGoogleIntegration.create(
+                    fileSystem = fileSystem,
+                    oauthClientId = getString(R.string.google_oauth_client_id),
+                )
+            }
 
             // Story 4.1.5: mirrors graphManager's onGraphManagerReady pattern above — kept current
             // by onViewModelReady so the deep-link LaunchedEffect further below always acts on the
@@ -402,18 +412,10 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            // Keep GitSyncServiceRegistry in sync so GitSyncWorker can reach the active service
-            // even when the process was revived by WorkManager without the UI being foregrounded.
+            // GitSyncServiceRegistry (read by GitSyncWorker) is registered by
+            // rememberGraphContentGitSyncStack beside registerGitSyncService, keyed on the graph id
+            // captured at composition so a graph switch can no longer unregister the wrong graph.
             val appGm = app.graphManager
-            val activeGitSyncService by (appGm?.activeGitSyncService
-                ?: kotlinx.coroutines.flow.MutableStateFlow(null)).collectAsState()
-            LaunchedEffect(activeGitSyncService) {
-                if (appGm == null) return@LaunchedEffect
-                val graphId = appGm.getActiveGraphId() ?: return@LaunchedEffect
-                val svc = activeGitSyncService
-                if (svc != null) GitSyncServiceRegistry.register(graphId.value, svc)
-                else GitSyncServiceRegistry.unregister(graphId.value)
-            }
 
             // Story 4.1.5: drives the notification deep link once both a target graph id
             // (pendingGitSetupGraphId) and the active graph's ViewModel (activeViewModel, kept
@@ -474,9 +476,16 @@ class MainActivity : ComponentActivity() {
                         onViewModelReady = { vm -> activeViewModel = vm },
                     ),
                     platformIntegrations = StelekitAppPlatformIntegrations(
+                        backgroundSyncSchedulerFactory = BackgroundSyncSchedulerFactory(
+                            minimumIntervalMinutes = WorkManagerSyncScheduler.MIN_PERIODIC_INTERVAL_MINUTES.toInt(),
+                        ) { graphId -> WorkManagerSyncScheduler(applicationContext, graphId) },
+                        backgroundRestrictionProbe = AndroidBackgroundRestrictionProbe(applicationContext),
+                        platformCaps = dev.stapler.stelekit.platform.ml.androidPlatformCaps(),
                         gitRepository = gitRepository,
                         gitCloneWorkerLauncher = gitCloneWorkerLauncher,
                         attachmentService = attachmentService,
+                        googleAuthManager = googleIntegration?.authManager,
+                        google = googleIntegration,
                         requestCameraPermission = ::requestCameraPermission,
                         graphMoveQuiesceStrategy = androidGraphMoveQuiesceStrategy,
                         hostLinkStep = androidHostLinkStep,

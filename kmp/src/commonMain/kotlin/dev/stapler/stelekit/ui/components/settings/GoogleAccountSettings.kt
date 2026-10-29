@@ -47,6 +47,8 @@ fun GoogleAccountSettings(
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Opens the Drive browser; null hides "Browse Drive" (builds without Google surfaces). */
+    onBrowseDrive: (() -> Unit)? = null,
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
         SettingsSection(title = "Google Account") {
@@ -55,6 +57,14 @@ fun GoogleAccountSettings(
                     email = connectedEmail,
                     onDisconnect = onDisconnect,
                 )
+                if (onBrowseDrive != null) {
+                    OutlinedButton(
+                        onClick = onBrowseDrive,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Browse Drive")
+                    }
+                }
             } else {
                 DisconnectedAccountCard(
                     isConnecting = isConnecting,

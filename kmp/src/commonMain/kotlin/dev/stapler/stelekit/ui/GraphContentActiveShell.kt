@@ -176,6 +176,10 @@ internal fun GraphContentActiveShell(
     val syncState by viewModel.syncState.collectAsState()
     val gitLastSyncAt by viewModel.gitLastSyncAt.collectAsState()
     val firstSyncReviewPending by viewModel.firstSyncReviewPending.collectAsState()
+    val scheduledSyncSettings = rememberScheduledSyncSettingsState(inputs.gitSyncStack) {
+        viewModel.setSettingsVisible(false)
+        viewModel.openGitSetup()
+    }
 
     val focusManager = LocalFocusManager.current
     BoxWithConstraints(
@@ -239,7 +243,15 @@ internal fun GraphContentActiveShell(
             }
         }
 
+        val archiveUrlAction = dev.stapler.stelekit.ui.components.rememberArchiveUrlAction(
+            deps.coreServices.waybackService,
+            snackbarHostState,
+        ) { blockUuid, appendText ->
+            blockStateManager.appendToBlock(dev.stapler.stelekit.model.BlockUuid(blockUuid), appendText)
+        }
+
         CompositionLocalProvider(
+            dev.stapler.stelekit.ui.components.LocalArchiveUrlAction provides archiveUrlAction,
             LocalWindowSizeClass provides windowSizeClass,
             LocalOpenSearchWithText provides { text -> viewModel.setSearchDialogVisible(true, text) },
             LocalFileSystem provides effectiveFileSystem,
@@ -336,6 +348,7 @@ internal fun GraphContentActiveShell(
                         syncState = syncState,
                         gitLastSyncAt = gitLastSyncAt,
                         firstSyncReviewPending = firstSyncReviewPending,
+                        scheduledSyncPaused = scheduledSyncSettings?.status?.paused == true,
                         storageLocationResolver = storageLocationResolver,
                         gitRepository = gitRepository,
                         onStorageLocationChoose = onStorageLocationChoose,
@@ -417,6 +430,8 @@ internal fun GraphContentActiveShell(
             frameMetric = frameMetricState,
             deps = GraphDialogLayerDeps(
                 settings = SettingsDialogDeps(
+                    assetIndexing = deps.assets?.indexing,
+                    scheduledSync = scheduledSyncSettings,
                     voiceSettings = voiceSettings,
                     llmCredentialStore = llmCredentialStore,
                     llmProviderRegistry = llmProviderRegistry,
@@ -438,6 +453,7 @@ internal fun GraphContentActiveShell(
                     googleAuthError = googleAuthError,
                     onConnectGoogle = onConnectGoogle,
                     onDisconnectGoogle = onDisconnectGoogle,
+                    driveBrowseAvailable = deps.platformIntegrations.google != null,
                     tagSettings = tagSettings,
                     hasLlmKey = hasTagSuggestionLlmProvider,
                     hostAccessState = hostAccessState,

@@ -84,6 +84,15 @@ internal fun GraphContentScreenAndCapture(deps: GraphContentDeps, viewModel: Ste
             enabled = queryBlocksEnabled,
         )
     }
+    val googlePhotos = rememberGraphContentGooglePhotosEntry(
+        google = deps.platformIntegrations.google,
+        attachments = deps.platformIntegrations.attachmentService,
+        notesPath = inputs.appState.currentNotesPath,
+        signInRecheckKey = inputs.appState.settingsVisible,
+        insertMarkdown = { blockUuid, markdown ->
+            inputs.viewModelStack.blockStateManager.insertTextAtCursor(blockUuid, markdown)
+        },
+    )
     CompositionLocalProvider(
         LocalQueryBlockContext provides queryContext,
     ) {
@@ -104,7 +113,9 @@ internal fun GraphContentScreenAndCapture(deps: GraphContentDeps, viewModel: Ste
             graphLoader = inputs.graphIoStack.graphLoader,
             graphDiagnostics = diagnosticsCollector::collect,
             backgroundJobs = deps.backgroundJobs,
-            capabilities = buildEditorCapabilities(deps, viewModel, inputs, captureState),
+            assetMover = deps.assets?.moveAsset,
+            google = deps.platformIntegrations.google,
+            capabilities = buildEditorCapabilities(deps, viewModel, inputs, captureState).copy(googlePhotos = googlePhotos),
             onImportImage = buildOnImportImage(deps, viewModel, inputs, captureState),
             platformSettings = deps.platformSettings,
             perfSpans = inputs.perfTelemetry.perfSpans,
@@ -133,6 +144,11 @@ private fun buildEditorCapabilities(
         onFileDrop = attachmentService?.let { service -> { files -> onFileDrop(service, inputs, files) } },
         onPasteImage = attachmentService?.let { service ->
             { editingBlockUuid: BlockUuid? -> tryPasteImage(service, inputs, editingBlockUuid) }
+        },
+        onPasteHtml = deps.platformIntegrations.readClipboardHtml?.let { read ->
+            { editingBlockUuid: BlockUuid? ->
+                pasteClipboardHtml(read, inputs.viewModelStack.blockStateManager, viewModel::sendSnackbar, editingBlockUuid)
+            }
         },
         onCaptureImage = buildOnCaptureImage(deps, viewModel, inputs, captureState),
     )

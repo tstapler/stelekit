@@ -37,11 +37,15 @@ UISTATE_RE = re.compile(r".*UiState$")
 KNOWN_FALSE_POSITIVES = {
     "InitializingDebugScreen": "used inside SettingsDialogHost.kt (register row 34)",
     "OtelSpanElement": "used by the in-file currentSpan extension consumed by OtelSqlDelightExtensions.kt (register row 35)",
+    # Register row 36: kotlinx-benchmark entry points, launched by `./gradlew :kmp:jvmBenchmark`
+    # (verified 2026-10-27: kmp/build/reports/benchmarks/main/*/jvm.json held all three classes).
+    "AhoCorasickBenchmark": "JMH entry point run by ./gradlew :kmp:jvmBenchmark (register row 36)",
+    "MarkdownEngineBenchmark": "JMH entry point run by ./gradlew :kmp:jvmBenchmark (register row 36)",
+    "SearchBenchmark": "JMH entry point run by ./gradlew :kmp:jvmBenchmark (register row 36)",
 }
 
 # Disposition Register (plan.md "Disposition Register"): row number -> type names it covers.
 REGISTER = {
-    1: ["DesktopSyncScheduler"],
     4: ["AssetIndexService"],
     5: ["AssetMoveService"],
     6: ["AssetPipelineService"],
@@ -51,9 +55,9 @@ REGISTER = {
     10: ["OcrPlugin"],
     11: ["CloudClaudePlugin", "CloudEnrichmentConfig"],
     12: ["CloudVisionPlugin"],
-    13: ["MlKitImageLabeler", "AndroidPdfTextExtractor", "OnnxImageLabeler", "JvmPdfTextExtractor"],
+    13: ["MlKitImageLabeler", "MlKitTextRecognizer", "AndroidPdfTextExtractor", "OnnxImageLabeler", "JvmPdfTextExtractor"],
     14: ["CoreMlImageLabeler", "IosPdfTextExtractor"],
-    15: ["NoOpPdfTextExtractor", "NoOpImageLabeler"],
+    15: ["NoOpPdfTextExtractor", "NoOpImageLabeler", "NoOpTextRecognizer"],
     16: ["RTCManager", "RTCOp"],
     17: ["VectorSearch", "InferenceWorker", "PlaceholderInferenceWorker", "RemoteInferenceWorker", "InferenceBridge"],
     18: ["DatalogEngine", "DatalogQuery", "DatalogPattern", "VisualQueryBuilder", "DatalogSearchSupport"],
@@ -285,6 +289,28 @@ def allowlist_problems(found, baseline, allowlist, previous=None):
     return problems
 
 
+def wiring_summary(root, found, baseline, catalog_path, allowlist_path=None):
+    """Metric-1 line (plan Task 11.5a): K = catalog seams whose entry-point test file exists;
+    J = catalog seams + awaiting-unit allowlist classes not yet in the catalog. Report-only."""
+    seams = {}
+    with open(catalog_path, encoding="utf-8") as f:
+        for ln in f:
+            parts = re.split(r"\s{2,}", ln.strip())
+            if ln.strip() and not ln.startswith("#") and len(parts) >= 2:
+                seams.setdefault(parts[0], set()).add(parts[1])
+    test_files = set()
+    for dirpath, _dirs, files in os.walk(os.path.join(root, "kmp", "src")):
+        if "/build/" not in dirpath + "/":
+            test_files.update(os.path.splitext(f)[0] for f in files if f.endswith(".kt"))
+    tested = sum(1 for tests in seams.values() if tests & test_files)
+    pending = 0
+    if allowlist_path:
+        pending = sum(1 for n, (reason, _d, _r) in read_allowlist(allowlist_path).items()
+                      if reason.startswith("awaiting-unit") and n not in seams)
+    return (f"unreferenced types: {len(found)} (baseline {len(baseline)}); "
+            f"wired features with entry-point tests: {tested} of {len(seams) + pending}")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--root", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
@@ -294,6 +320,7 @@ def main(argv=None):
     ap.add_argument("--check-baseline")
     ap.add_argument("--allowlist")
     ap.add_argument("--allowlist-prev")
+    ap.add_argument("--catalog", help="with --check-baseline: also print the metric-1 summary line from this wiring-catalog.txt")
     args = ap.parse_args(argv)
     root = os.path.abspath(args.root)
     candidates, skipped = scan(root)
@@ -310,6 +337,8 @@ def main(argv=None):
         found = {n for n, _ in candidates}
         new = sorted(found - set(baseline))
         shrunk = sorted(set(baseline) - found)
+        if args.catalog:
+            print(wiring_summary(root, found, baseline, args.catalog, args.allowlist))
         for n in shrunk:
             print(f"baseline can shrink: {n}")
         if new:

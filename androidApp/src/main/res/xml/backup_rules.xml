@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 and older (android:fullBackupContent). Mirrors data_extraction_rules.xml.
+     Console backups hold a full copy of the graph database, and restore keeps the live files as <db>.pre-restore beside it (no glob support here, so those rely on allowBackup=false); consent and run-marker settings must not
+     restore onto another device. allowBackup is false today, so these only matter if that changes. -->
+<full-backup-content>
+    <exclude domain="database" path="console-backups" />
+    <exclude domain="file" path="console-backups" />
+    <exclude domain="database" path="console-recovery" />
+    <exclude domain="file" path="console-recovery" />
+    <exclude domain="file" path="git-abort-recovery" />
+    <exclude domain="sharedpref" path="stelekit_secure_prefs.xml" />
+    <exclude domain="sharedpref" path="stelekit_prefs.xml" />
+</full-backup-content>

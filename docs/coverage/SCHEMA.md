@@ -6,7 +6,7 @@ Produced by `scripts/ci/coverage-map.py` from Gradle JaCoCo XML reports (plan St
 python3 scripts/ci/coverage-map.py \
   --jacoco kmp/build/reports/jacoco/jacocoTestReport/jacocoTestReport.xml \
   --jacoco kmp/build/reports/jacoco/jacocoAndroidTestReport/jacocoAndroidTestReport.xml:android \
-  --tiers docs/coverage/coverage-tiers.yml --reachability-baseline scripts/ci/reachability-baseline.txt \
+  --tiers docs/coverage/coverage-tiers.yml --check-source-tree --reachability-baseline scripts/ci/reachability-baseline.txt \
   --out docs/coverage --command "<the exact gradle command that produced the XMLs>"
 ```
 
@@ -31,14 +31,14 @@ python3 scripts/ci/coverage-map.py \
 | `mutation` | `{killed, total, measured}` from `--mutations` (PIT `mutations.xml`); `measured` is false without it |
 | `commits90d` | Commits in the last 90 days touching `kmp/src/**/dev/stapler/stelekit/<pkg>/` (`git log`, or `--churn-json`) |
 | `reachablePct` | Share of the package's source files not named for a type in the reachability baseline. The match is by file basename (a file named `Foo.kt` is unreachable when `Foo` is in the baseline), so a file holding a live type beside a baselined one is counted reachable. INFERRED approximation |
-| `score` | `uncoveredLines x tierWeight x log2(2 + commits90d)`; weights T1=4, T2=3, T3=1, T4=0 (the plan fixes T1=4 only; T2/T3 are this script's assumption) |
+| `score` | `uncoveredLines x tierWeight x log2(2 + commits90d)`; weights T1=4, T2=2, T3=1, T4=0 (plan Epic 11 tiers table) |
 | `rank` | 1 = largest `score` |
 | `ownerPlan` | Optional owning plan unit from `--owner-plan-json` |
-| `target` | `{line, branch}` percentage target for the tier (T1 90/80, T2 80/70, T3 60/40; assumption until Story 11.2 replaces it with measured targets) |
+| `target` | `{line, branch}` percentage target for the tier (T1 85/70, T2 70/55, T3 40/n.a. (0), from the plan tiers table; see `README.md` for how the first measured run compares) |
 
 Unreachable files are removed from the `lines`/`branches` denominators, so deleting dead code never scores as a coverage regression (pitfalls E1).
 
 ## Refusals
 
 - `--runner bazel`, or an XML path under `bazel-out/`: Bazel and Gradle coverage numbers are not comparable (pitfalls E6).
-- A package with no tier.
+- A package with no tier. With `--check-source-tree` this includes every package directory under `kmp/src/*Main/kotlin/dev/stapler/stelekit`, even one with no coverage data yet. `scripts/ci/coverage-map_test.py` also asserts `coverage-tiers.yml` covers every source package, so a new package fails the reachability CI job until it is classified.

@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
+import dev.stapler.stelekit.console.DeveloperMode
 
 @Composable
 fun DeveloperSettings(
@@ -28,8 +29,28 @@ fun DeveloperSettings(
     mcpLauncherCommand: String = "",
     pendingMcpSuggestionCount: Int = 0,
     onOpenMcpSuggestions: () -> Unit = {},
+    // Null hides the developer-mode section (and the console row inside it).
+    isDeveloperModeEnabled: Boolean = false,
+    onDeveloperModeToggle: ((Boolean) -> Unit)? = null,
+    onOpenConsole: (() -> Unit)? = null,
 ) {
     Column(modifier = modifier) {
+        if (onDeveloperModeToggle != null) SettingsSection("Developer mode") {
+            SettingsToggleRow(
+                label = "Developer mode",
+                checked = isDeveloperModeEnabled,
+                onCheckedChange = onDeveloperModeToggle,
+            )
+            Text(
+                text = DeveloperMode.WARNING,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
+            )
+            if (isDeveloperModeEnabled && onOpenConsole != null) {
+                TextButton(onClick = onOpenConsole) { Text("Dev console") }
+            }
+        }
         if (onLibsqlDriverToggle != null) SettingsSection("Database Driver") {
             SettingsToggleRow(
                 label = "Use libsql JNI driver",

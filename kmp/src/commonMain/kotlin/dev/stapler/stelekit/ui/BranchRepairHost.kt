@@ -3,6 +3,8 @@
 
 package dev.stapler.stelekit.ui
 
+import dev.stapler.stelekit.security.Redactor
+
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -16,7 +18,6 @@ import dev.stapler.stelekit.error.toSyncErrorMessage
 import dev.stapler.stelekit.git.BranchRepairProposal
 import dev.stapler.stelekit.git.BranchRepairResult
 import dev.stapler.stelekit.git.model.SyncState
-import dev.stapler.stelekit.git.redactSecrets
 import dev.stapler.stelekit.ui.screens.git.BranchRepairSheet
 import dev.stapler.stelekit.ui.screens.git.FirstSyncReviewDialog
 import kotlinx.coroutines.launch
@@ -99,7 +100,7 @@ internal fun BranchRepairHost(appState: AppState, viewModel: StelekitViewModel, 
                         }
                         is BranchRepairResult.TargetNotOnRemote ->
                             changeBackNote = "'${result.to}' is still not on the remote, so it can't be switched back to."
-                        is BranchRepairResult.SaveFailed -> changeBackNote = "Couldn't switch back: ${redactSecrets(result.message)}"
+                        is BranchRepairResult.SaveFailed -> changeBackNote = "Couldn't switch back: ${Redactor.redactGitMessage(result.message)}"
                         else -> changeBackNote = "Couldn't switch back."
                     }
                 }

@@ -1,0 +1,2492 @@
+{
+  "generatedAt": "2026-10-29T18:18:58Z",
+  "commit": "a543aecb9581835ef9a507a009f20815abd7e64c",
+  "runner": "scripts/ci/coverage-run.sh (coverage-baseline workflow run 40829801185: gradle jvmTest+jacocoTestReport, testDebugUnitTest+jacocoAndroidTestReport)",
+  "tiersFile": "34ec20e450a362069b6f9a7b6d5b4238527182dcda074b7e367b79fe7423d623",
+  "packages": [
+    {
+      "pkg": "db",
+      "sourceSet": "android",
+      "tier": "T1",
+      "lines": {
+        "covered": 1553,
+        "total": 11375
+      },
+      "branches": {
+        "covered": 555,
+        "total": 3485
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 67,
+      "reachablePct": 100.0,
+      "score": 239991.7,
+      "rank": 1,
+      "ownerPlan": "",
+      "target": {
+        "line": 85,
+        "branch": 70
+      }
+    },
+    {
+      "pkg": "ui",
+      "sourceSet": "android",
+      "tier": "T3",
+      "lines": {
+        "covered": 11736,
+        "total": 32878
+      },
+      "branches": {
+        "covered": 10352,
+        "total": 45358
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 118,
+      "reachablePct": 99.7,
+      "score": 146025.5,
+      "rank": 2,
+      "ownerPlan": "",
+      "target": {
+        "line": 40,
+        "branch": 0
+      }
+    },
+    {
+      "pkg": "ui",
+      "sourceSet": "jvm",
+      "tier": "T3",
+      "lines": {
+        "covered": 17349,
+        "total": 32722
+      },
+      "branches": {
+        "covered": 14119,
+        "total": 45266
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 118,
+      "reachablePct": 99.7,
+      "score": 106179.6,
+      "rank": 3,
+      "ownerPlan": "",
+      "target": {
+        "line": 40,
+        "branch": 0
+      }
+    },
+    {
+      "pkg": "db",
+      "sourceSet": "jvm",
+      "tier": "T1",
+      "lines": {
+        "covered": 8369,
+        "total": 11327
+      },
+      "branches": {
+        "covered": 2217,
+        "total": 3455
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 67,
+      "reachablePct": 100.0,
+      "score": 72276.1,
+      "rank": 4,
+      "ownerPlan": "",
+      "target": {
+        "line": 85,
+        "branch": 70
+      }
+    },
+    {
+      "pkg": "repository",
+      "sourceSet": "android",
+      "tier": "T1",
+      "lines": {
+        "covered": 713,
+        "total": 4160
+      },
+      "branches": {
+        "covered": 239,
+        "total": 2326
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 12,
+      "reachablePct": 100.0,
+      "score": 52495.8,
+      "rank": 5,
+      "ownerPlan": "",
+      "target": {
+        "line": 85,
+        "branch": 70
+      }
+    },
+    {
+      "pkg": "git",
+      "sourceSet": "android",
+      "tier": "T1",
+      "lines": {
+        "covered": 2355,
+        "total": 4218
+      },
+      "branches": {
+        "covered": 1448,
+        "total": 3115
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 47,
+      "reachablePct": 97.8,
+      "score": 41840.8,
+      "rank": 6,
+      "ownerPlan": "",
+      "target": {
+        "line": 85,
+        "branch": 70
+      }
+    },
+    {
+      "pkg": "merge",
+      "sourceSet": "android",
+      "tier": "T1",
+      "lines": {
+        "covered": 796,
+        "total": 2580
+      },
+      "branches": {
+        "covered": 613,
+        "total": 2058
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 6,
+      "reachablePct": 100.0,
+      "score": 21408.0,
+      "rank": 7,
+      "ownerPlan": "",
+      "target": {
+        "line": 85,
+        "branch": 70
+      }
+    },
+    {
+      "pkg": "repository",
+      "sourceSet": "jvm",
+      "tier": "T1",
+      "lines": {
+        "covered": 3003,
+        "total": 4161
+      },
+      "branches": {
+        "covered": 1101,
+        "total": 2328
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 12,
+      "reachablePct": 97.6,
+      "score": 17635.7,
+      "rank": 8,
+      "ownerPlan": "",
+      "target": {
+        "line": 85,
+        "branch": 70
+      }
+    },
+    {
+      "pkg": "git",
+      "sourceSet": "jvm",
+      "tier": "T1",
+      "lines": {
+        "covered": 2764,
+        "total": 3366
+      },
+      "branches": {
+        "covered": 1803,
+        "total": 2595
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 47,
+      "reachablePct": 98.8,
+      "score": 13520.2,
+      "rank": 9,
+      "ownerPlan": "",
+      "target": {
+        "line": 85,
+        "branch": 70
+      }
+    },
+    {
+      "pkg": "platform",
+      "sourceSet": "android",
+      "tier": "T3",
+      "lines": {
+        "covered": 1302,
+        "total": 3632
+      },
+      "branches": {
+        "covered": 619,
+        "total": 1984
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 52,
+      "reachablePct": 100.0,
+      "score": 13408.9,
+      "rank": 10,
+      "ownerPlan": "",
+      "target": {
+        "line": 40,
+        "branch": 0
+      }
+    },
+    {
+      "pkg": "capture",
+      "sourceSet": "android",
+      "tier": "T2",
+      "lines": {
+        "covered": 34,
+        "total": 687
+      },
+      "branches": {
+        "covered": 22,
+        "total": 547
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 10,
+      "reachablePct": 100.0,
+      "score": 4682.0,
+      "rank": 11,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "migration",
+      "sourceSet": "android",
+      "tier": "T1",
+      "lines": {
+        "covered": 121,
+        "total": 594
+      },
+      "branches": {
+        "covered": 64,
+        "total": 274
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 3,
+      "reachablePct": 94.4,
+      "score": 4393.1,
+      "rank": 12,
+      "ownerPlan": "",
+      "target": {
+        "line": 85,
+        "branch": 70
+      }
+    },
+    {
+      "pkg": "performance",
+      "sourceSet": "android",
+      "tier": "T3",
+      "lines": {
+        "covered": 191,
+        "total": 1338
+      },
+      "branches": {
+        "covered": 26,
+        "total": 527
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 7,
+      "reachablePct": 100.0,
+      "score": 3635.9,
+      "rank": 13,
+      "ownerPlan": "",
+      "target": {
+        "line": 40,
+        "branch": 0
+      }
+    },
+    {
+      "pkg": "vault",
+      "sourceSet": "android",
+      "tier": "T1",
+      "lines": {
+        "covered": 47,
+        "total": 606
+      },
+      "branches": {
+        "covered": 32,
+        "total": 304
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 1,
+      "reachablePct": 100.0,
+      "score": 3544.0,
+      "rank": 14,
+      "ownerPlan": "",
+      "target": {
+        "line": 85,
+        "branch": 70
+      }
+    },
+    {
+      "pkg": "platform",
+      "sourceSet": "jvm",
+      "tier": "T3",
+      "lines": {
+        "covered": 1204,
+        "total": 1774
+      },
+      "branches": {
+        "covered": 400,
+        "total": 765
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 52,
+      "reachablePct": 97.2,
+      "score": 3280.3,
+      "rank": 15,
+      "ownerPlan": "",
+      "target": {
+        "line": 40,
+        "branch": 0
+      }
+    },
+    {
+      "pkg": "llm",
+      "sourceSet": "android",
+      "tier": "T2",
+      "lines": {
+        "covered": 64,
+        "total": 580
+      },
+      "branches": {
+        "covered": 6,
+        "total": 255
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 7,
+      "reachablePct": 100.0,
+      "score": 3271.4,
+      "rank": 16,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "voice",
+      "sourceSet": "android",
+      "tier": "T2",
+      "lines": {
+        "covered": 32,
+        "total": 842
+      },
+      "branches": {
+        "covered": 3,
+        "total": 439
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 2,
+      "reachablePct": 100.0,
+      "score": 3240.0,
+      "rank": 17,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "asset",
+      "sourceSet": "android",
+      "tier": "T2",
+      "lines": {
+        "covered": 0,
+        "total": 427
+      },
+      "branches": {
+        "covered": 0,
+        "total": 242
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 5,
+      "reachablePct": 76.5,
+      "score": 2397.5,
+      "rank": 18,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "merge",
+      "sourceSet": "jvm",
+      "tier": "T1",
+      "lines": {
+        "covered": 2396,
+        "total": 2574
+      },
+      "branches": {
+        "covered": 1594,
+        "total": 2058
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 6,
+      "reachablePct": 100.0,
+      "score": 2136.0,
+      "rank": 19,
+      "ownerPlan": "",
+      "target": {
+        "line": 85,
+        "branch": 70
+      }
+    },
+    {
+      "pkg": "capture",
+      "sourceSet": "jvm",
+      "tier": "T2",
+      "lines": {
+        "covered": 1072,
+        "total": 1333
+      },
+      "branches": {
+        "covered": 673,
+        "total": 1223
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 10,
+      "reachablePct": 100.0,
+      "score": 1871.4,
+      "rank": 20,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "tags",
+      "sourceSet": "android",
+      "tier": "T2",
+      "lines": {
+        "covered": 0,
+        "total": 326
+      },
+      "branches": {
+        "covered": 0,
+        "total": 146
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 2,
+      "reachablePct": 100.0,
+      "score": 1304.0,
+      "rank": 21,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "editor",
+      "sourceSet": "android",
+      "tier": "T2",
+      "lines": {
+        "covered": 381,
+        "total": 777
+      },
+      "branches": {
+        "covered": 10,
+        "total": 132
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 1,
+      "reachablePct": 100.0,
+      "score": 1255.3,
+      "rank": 22,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "performance",
+      "sourceSet": "jvm",
+      "tier": "T3",
+      "lines": {
+        "covered": 884,
+        "total": 1259
+      },
+      "branches": {
+        "covered": 222,
+        "total": 449
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 7,
+      "reachablePct": 100.0,
+      "score": 1188.7,
+      "rank": 23,
+      "ownerPlan": "",
+      "target": {
+        "line": 40,
+        "branch": 0
+      }
+    },
+    {
+      "pkg": "migration",
+      "sourceSet": "jvm",
+      "tier": "T1",
+      "lines": {
+        "covered": 474,
+        "total": 594
+      },
+      "branches": {
+        "covered": 180,
+        "total": 274
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 3,
+      "reachablePct": 94.4,
+      "score": 1114.5,
+      "rank": 24,
+      "ownerPlan": "",
+      "target": {
+        "line": 85,
+        "branch": 70
+      }
+    },
+    {
+      "pkg": "console",
+      "sourceSet": "android",
+      "tier": "T1",
+      "lines": {
+        "covered": 158,
+        "total": 258
+      },
+      "branches": {
+        "covered": 36,
+        "total": 117
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 4,
+      "reachablePct": 100.0,
+      "score": 1034.0,
+      "rank": 25,
+      "ownerPlan": "",
+      "target": {
+        "line": 85,
+        "branch": 70
+      }
+    },
+    {
+      "pkg": "transfer",
+      "sourceSet": "android",
+      "tier": "T2",
+      "lines": {
+        "covered": 537,
+        "total": 692
+      },
+      "branches": {
+        "covered": 223,
+        "total": 376
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 8,
+      "reachablePct": 96.0,
+      "score": 1029.8,
+      "rank": 26,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "asset",
+      "sourceSet": "jvm",
+      "tier": "T2",
+      "lines": {
+        "covered": 251,
+        "total": 427
+      },
+      "branches": {
+        "covered": 125,
+        "total": 242
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 5,
+      "reachablePct": 76.5,
+      "score": 988.2,
+      "rank": 27,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "mcp",
+      "sourceSet": "jvm",
+      "tier": "T2",
+      "lines": {
+        "covered": 519,
+        "total": 703
+      },
+      "branches": {
+        "covered": 152,
+        "total": 303
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 3,
+      "reachablePct": 100.0,
+      "score": 854.5,
+      "rank": 28,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "export",
+      "sourceSet": "android",
+      "tier": "T2",
+      "lines": {
+        "covered": 498,
+        "total": 662
+      },
+      "branches": {
+        "covered": 279,
+        "total": 491
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 4,
+      "reachablePct": 100.0,
+      "score": 847.9,
+      "rank": 29,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "domain",
+      "sourceSet": "android",
+      "tier": "T2",
+      "lines": {
+        "covered": 430,
+        "total": 578
+      },
+      "branches": {
+        "covered": 234,
+        "total": 365
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 3,
+      "reachablePct": 94.1,
+      "score": 687.3,
+      "rank": 30,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "query",
+      "sourceSet": "android",
+      "tier": "T1",
+      "lines": {
+        "covered": 111,
+        "total": 214
+      },
+      "branches": {
+        "covered": 128,
+        "total": 249
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 1,
+      "reachablePct": 100.0,
+      "score": 653.0,
+      "rank": 31,
+      "ownerPlan": "",
+      "target": {
+        "line": 85,
+        "branch": 70
+      }
+    },
+    {
+      "pkg": "export",
+      "sourceSet": "jvm",
+      "tier": "T2",
+      "lines": {
+        "covered": 519,
+        "total": 641
+      },
+      "branches": {
+        "covered": 308,
+        "total": 485
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 4,
+      "reachablePct": 100.0,
+      "score": 630.7,
+      "rank": 32,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "parser",
+      "sourceSet": "android",
+      "tier": "T1",
+      "lines": {
+        "covered": 172,
+        "total": 234
+      },
+      "branches": {
+        "covered": 126,
+        "total": 176
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 3,
+      "reachablePct": 75.0,
+      "score": 575.8,
+      "rank": 33,
+      "ownerPlan": "",
+      "target": {
+        "line": 85,
+        "branch": 70
+      }
+    },
+    {
+      "pkg": "desktop",
+      "sourceSet": "jvm",
+      "tier": "T3",
+      "lines": {
+        "covered": 19,
+        "total": 174
+      },
+      "branches": {
+        "covered": 6,
+        "total": 128
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 10,
+      "reachablePct": 75.0,
+      "score": 555.7,
+      "rank": 34,
+      "ownerPlan": "",
+      "target": {
+        "line": 40,
+        "branch": 0
+      }
+    },
+    {
+      "pkg": "diagnostics",
+      "sourceSet": "android",
+      "tier": "T3",
+      "lines": {
+        "covered": 66,
+        "total": 226
+      },
+      "branches": {
+        "covered": 23,
+        "total": 92
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 7,
+      "reachablePct": 100.0,
+      "score": 507.2,
+      "rank": 35,
+      "ownerPlan": "",
+      "target": {
+        "line": 40,
+        "branch": 0
+      }
+    },
+    {
+      "pkg": "model",
+      "sourceSet": "android",
+      "tier": "T3",
+      "lines": {
+        "covered": 372,
+        "total": 494
+      },
+      "branches": {
+        "covered": 237,
+        "total": 347
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 11,
+      "reachablePct": 87.5,
+      "score": 451.5,
+      "rank": 36,
+      "ownerPlan": "",
+      "target": {
+        "line": 40,
+        "branch": 0
+      }
+    },
+    {
+      "pkg": "error",
+      "sourceSet": "jvm",
+      "tier": "T2",
+      "lines": {
+        "covered": 250,
+        "total": 304
+      },
+      "branches": {
+        "covered": 187,
+        "total": 250
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 10,
+      "reachablePct": 66.7,
+      "score": 387.2,
+      "rank": 37,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "vault",
+      "sourceSet": "jvm",
+      "tier": "T1",
+      "lines": {
+        "covered": 589,
+        "total": 649
+      },
+      "branches": {
+        "covered": 193,
+        "total": 304
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 1,
+      "reachablePct": 100.0,
+      "score": 380.4,
+      "rank": 38,
+      "ownerPlan": "",
+      "target": {
+        "line": 85,
+        "branch": 70
+      }
+    },
+    {
+      "pkg": "service",
+      "sourceSet": "android",
+      "tier": "T2",
+      "lines": {
+        "covered": 96,
+        "total": 187
+      },
+      "branches": {
+        "covered": 42,
+        "total": 136
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 2,
+      "reachablePct": 100.0,
+      "score": 364.0,
+      "rank": 39,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "domain",
+      "sourceSet": "jvm",
+      "tier": "T2",
+      "lines": {
+        "covered": 509,
+        "total": 586
+      },
+      "branches": {
+        "covered": 271,
+        "total": 369
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 3,
+      "reachablePct": 94.4,
+      "score": 357.6,
+      "rank": 40,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "model",
+      "sourceSet": "jvm",
+      "tier": "T3",
+      "lines": {
+        "covered": 398,
+        "total": 494
+      },
+      "branches": {
+        "covered": 248,
+        "total": 347
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 11,
+      "reachablePct": 87.5,
+      "score": 355.2,
+      "rank": 41,
+      "ownerPlan": "",
+      "target": {
+        "line": 40,
+        "branch": 0
+      }
+    },
+    {
+      "pkg": "parsing",
+      "sourceSet": "android",
+      "tier": "T1",
+      "lines": {
+        "covered": 888,
+        "total": 918
+      },
+      "branches": {
+        "covered": 622,
+        "total": 682
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 4,
+      "reachablePct": 100.0,
+      "score": 310.2,
+      "rank": 42,
+      "ownerPlan": "",
+      "target": {
+        "line": 85,
+        "branch": 70
+      }
+    },
+    {
+      "pkg": "console",
+      "sourceSet": "jvm",
+      "tier": "T1",
+      "lines": {
+        "covered": 229,
+        "total": 258
+      },
+      "branches": {
+        "covered": 83,
+        "total": 117
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 4,
+      "reachablePct": 100.0,
+      "score": 299.9,
+      "rank": 43,
+      "ownerPlan": "",
+      "target": {
+        "line": 85,
+        "branch": 70
+      }
+    },
+    {
+      "pkg": "parsing",
+      "sourceSet": "jvm",
+      "tier": "T1",
+      "lines": {
+        "covered": 890,
+        "total": 918
+      },
+      "branches": {
+        "covered": 625,
+        "total": 682
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 4,
+      "reachablePct": 100.0,
+      "score": 289.5,
+      "rank": 44,
+      "ownerPlan": "",
+      "target": {
+        "line": 85,
+        "branch": 70
+      }
+    },
+    {
+      "pkg": "parser",
+      "sourceSet": "jvm",
+      "tier": "T1",
+      "lines": {
+        "covered": 203,
+        "total": 234
+      },
+      "branches": {
+        "covered": 140,
+        "total": 176
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 3,
+      "reachablePct": 75.0,
+      "score": 287.9,
+      "rank": 45,
+      "ownerPlan": "",
+      "target": {
+        "line": 85,
+        "branch": 70
+      }
+    },
+    {
+      "pkg": "voice",
+      "sourceSet": "jvm",
+      "tier": "T2",
+      "lines": {
+        "covered": 474,
+        "total": 537
+      },
+      "branches": {
+        "covered": 195,
+        "total": 238
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 2,
+      "reachablePct": 100.0,
+      "score": 252.0,
+      "rank": 46,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "editor",
+      "sourceSet": "jvm",
+      "tier": "T2",
+      "lines": {
+        "covered": 700,
+        "total": 777
+      },
+      "branches": {
+        "covered": 99,
+        "total": 132
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 1,
+      "reachablePct": 100.0,
+      "score": 244.1,
+      "rank": 47,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "sections",
+      "sourceSet": "android",
+      "tier": "T2",
+      "lines": {
+        "covered": 66,
+        "total": 102
+      },
+      "branches": {
+        "covered": 26,
+        "total": 62
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 7,
+      "reachablePct": 100.0,
+      "score": 228.2,
+      "rank": 48,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "service",
+      "sourceSet": "jvm",
+      "tier": "T2",
+      "lines": {
+        "covered": 69,
+        "total": 126
+      },
+      "branches": {
+        "covered": 41,
+        "total": 96
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 2,
+      "reachablePct": 100.0,
+      "score": 228.0,
+      "rank": 49,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "transfer",
+      "sourceSet": "jvm",
+      "tier": "T2",
+      "lines": {
+        "covered": 659,
+        "total": 693
+      },
+      "branches": {
+        "covered": 300,
+        "total": 376
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 8,
+      "reachablePct": 96.0,
+      "score": 225.9,
+      "rank": 50,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "llm",
+      "sourceSet": "jvm",
+      "tier": "T2",
+      "lines": {
+        "covered": 539,
+        "total": 572
+      },
+      "branches": {
+        "covered": 195,
+        "total": 253
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 7,
+      "reachablePct": 100.0,
+      "score": 209.2,
+      "rank": 51,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "diagnostics",
+      "sourceSet": "jvm",
+      "tier": "T3",
+      "lines": {
+        "covered": 170,
+        "total": 226
+      },
+      "branches": {
+        "covered": 47,
+        "total": 92
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 7,
+      "reachablePct": 100.0,
+      "score": 177.5,
+      "rank": 52,
+      "ownerPlan": "",
+      "target": {
+        "line": 40,
+        "branch": 0
+      }
+    },
+    {
+      "pkg": "cli",
+      "sourceSet": "jvm",
+      "tier": "T3",
+      "lines": {
+        "covered": 152,
+        "total": 204
+      },
+      "branches": {
+        "covered": 77,
+        "total": 127
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 5,
+      "reachablePct": 100.0,
+      "score": 146.0,
+      "rank": 53,
+      "ownerPlan": "",
+      "target": {
+        "line": 40,
+        "branch": 0
+      }
+    },
+    {
+      "pkg": "cache",
+      "sourceSet": "android",
+      "tier": "T2",
+      "lines": {
+        "covered": 0,
+        "total": 44
+      },
+      "branches": {
+        "covered": 0,
+        "total": 4
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 1,
+      "reachablePct": 83.3,
+      "score": 139.5,
+      "rank": 54,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "logging",
+      "sourceSet": "jvm",
+      "tier": "T3",
+      "lines": {
+        "covered": 45,
+        "total": 113
+      },
+      "branches": {
+        "covered": 10,
+        "total": 36
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 2,
+      "reachablePct": 100.0,
+      "score": 136.0,
+      "rank": 55,
+      "ownerPlan": "",
+      "target": {
+        "line": 40,
+        "branch": 0
+      }
+    },
+    {
+      "pkg": "tags",
+      "sourceSet": "jvm",
+      "tier": "T2",
+      "lines": {
+        "covered": 298,
+        "total": 326
+      },
+      "branches": {
+        "covered": 104,
+        "total": 146
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 2,
+      "reachablePct": 100.0,
+      "score": 112.0,
+      "rank": 56,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "query",
+      "sourceSet": "jvm",
+      "tier": "T1",
+      "lines": {
+        "covered": 201,
+        "total": 215
+      },
+      "branches": {
+        "covered": 172,
+        "total": 274
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 1,
+      "reachablePct": 100.0,
+      "score": 88.8,
+      "rank": 57,
+      "ownerPlan": "",
+      "target": {
+        "line": 85,
+        "branch": 70
+      }
+    },
+    {
+      "pkg": "sections",
+      "sourceSet": "jvm",
+      "tier": "T2",
+      "lines": {
+        "covered": 89,
+        "total": 102
+      },
+      "branches": {
+        "covered": 44,
+        "total": 62
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 7,
+      "reachablePct": 100.0,
+      "score": 82.4,
+      "rank": 58,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "command",
+      "sourceSet": "android",
+      "tier": "T2",
+      "lines": {
+        "covered": 0,
+        "total": 39
+      },
+      "branches": {
+        "covered": 0,
+        "total": 16
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 0,
+      "reachablePct": 66.7,
+      "score": 78.0,
+      "rank": 59,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "command",
+      "sourceSet": "jvm",
+      "tier": "T2",
+      "lines": {
+        "covered": 0,
+        "total": 39
+      },
+      "branches": {
+        "covered": 0,
+        "total": 16
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 0,
+      "reachablePct": 66.7,
+      "score": 78.0,
+      "rank": 60,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "logging",
+      "sourceSet": "android",
+      "tier": "T3",
+      "lines": {
+        "covered": 88,
+        "total": 126
+      },
+      "branches": {
+        "covered": 25,
+        "total": 46
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 2,
+      "reachablePct": 100.0,
+      "score": 76.0,
+      "rank": 61,
+      "ownerPlan": "",
+      "target": {
+        "line": 40,
+        "branch": 0
+      }
+    },
+    {
+      "pkg": "outliner",
+      "sourceSet": "android",
+      "tier": "T1",
+      "lines": {
+        "covered": 189,
+        "total": 208
+      },
+      "branches": {
+        "covered": 70,
+        "total": 88
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 0,
+      "reachablePct": 85.7,
+      "score": 76.0,
+      "rank": 62,
+      "ownerPlan": "",
+      "target": {
+        "line": 85,
+        "branch": 70
+      }
+    },
+    {
+      "pkg": "outliner",
+      "sourceSet": "jvm",
+      "tier": "T1",
+      "lines": {
+        "covered": 189,
+        "total": 208
+      },
+      "branches": {
+        "covered": 70,
+        "total": 88
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 0,
+      "reachablePct": 85.7,
+      "score": 76.0,
+      "rank": 63,
+      "ownerPlan": "",
+      "target": {
+        "line": 85,
+        "branch": 70
+      }
+    },
+    {
+      "pkg": "error",
+      "sourceSet": "android",
+      "tier": "T2",
+      "lines": {
+        "covered": 250,
+        "total": 254
+      },
+      "branches": {
+        "covered": 187,
+        "total": 232
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 10,
+      "reachablePct": 50.0,
+      "score": 28.7,
+      "rank": 64,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "cache",
+      "sourceSet": "jvm",
+      "tier": "T2",
+      "lines": {
+        "covered": 36,
+        "total": 44
+      },
+      "branches": {
+        "covered": 2,
+        "total": 4
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 1,
+      "reachablePct": 83.3,
+      "score": 25.4,
+      "rank": 65,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "clipboard",
+      "sourceSet": "android",
+      "tier": "T3",
+      "lines": {
+        "covered": 72,
+        "total": 86
+      },
+      "branches": {
+        "covered": 37,
+        "total": 58
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 1,
+      "reachablePct": 100.0,
+      "score": 22.2,
+      "rank": 66,
+      "ownerPlan": "",
+      "target": {
+        "line": 40,
+        "branch": 0
+      }
+    },
+    {
+      "pkg": "clipboard",
+      "sourceSet": "jvm",
+      "tier": "T3",
+      "lines": {
+        "covered": 74,
+        "total": 86
+      },
+      "branches": {
+        "covered": 39,
+        "total": 58
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 1,
+      "reachablePct": 100.0,
+      "score": 19.0,
+      "rank": 67,
+      "ownerPlan": "",
+      "target": {
+        "line": 40,
+        "branch": 0
+      }
+    },
+    {
+      "pkg": "coroutines",
+      "sourceSet": "android",
+      "tier": "T2",
+      "lines": {
+        "covered": 49,
+        "total": 55
+      },
+      "branches": {
+        "covered": 9,
+        "total": 16
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 1,
+      "reachablePct": 100.0,
+      "score": 19.0,
+      "rank": 68,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "util",
+      "sourceSet": "android",
+      "tier": "T2",
+      "lines": {
+        "covered": 205,
+        "total": 211
+      },
+      "branches": {
+        "covered": 94,
+        "total": 112
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 1,
+      "reachablePct": 100.0,
+      "score": 19.0,
+      "rank": 69,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "util",
+      "sourceSet": "jvm",
+      "tier": "T2",
+      "lines": {
+        "covered": 205,
+        "total": 211
+      },
+      "branches": {
+        "covered": 96,
+        "total": 112
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 1,
+      "reachablePct": 100.0,
+      "score": 19.0,
+      "rank": 70,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "coroutines",
+      "sourceSet": "jvm",
+      "tier": "T2",
+      "lines": {
+        "covered": 50,
+        "total": 55
+      },
+      "branches": {
+        "covered": 11,
+        "total": 16
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 1,
+      "reachablePct": 100.0,
+      "score": 15.8,
+      "rank": 71,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "resilience",
+      "sourceSet": "android",
+      "tier": "T2",
+      "lines": {
+        "covered": 9,
+        "total": 13
+      },
+      "branches": {
+        "covered": 2,
+        "total": 8
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 1,
+      "reachablePct": 100.0,
+      "score": 12.7,
+      "rank": 72,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "resilience",
+      "sourceSet": "jvm",
+      "tier": "T2",
+      "lines": {
+        "covered": 10,
+        "total": 13
+      },
+      "branches": {
+        "covered": 3,
+        "total": 8
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 1,
+      "reachablePct": 100.0,
+      "score": 9.5,
+      "rank": 73,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "security",
+      "sourceSet": "android",
+      "tier": "T1",
+      "lines": {
+        "covered": 10,
+        "total": 11
+      },
+      "branches": {
+        "covered": 1,
+        "total": 4
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 1,
+      "reachablePct": 100.0,
+      "score": 6.3,
+      "rank": 74,
+      "ownerPlan": "",
+      "target": {
+        "line": 85,
+        "branch": 70
+      }
+    },
+    {
+      "pkg": "search",
+      "sourceSet": "android",
+      "tier": "T2",
+      "lines": {
+        "covered": 45,
+        "total": 46
+      },
+      "branches": {
+        "covered": 28,
+        "total": 32
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 2,
+      "reachablePct": 50.0,
+      "score": 4.0,
+      "rank": 75,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "search",
+      "sourceSet": "jvm",
+      "tier": "T2",
+      "lines": {
+        "covered": 45,
+        "total": 46
+      },
+      "branches": {
+        "covered": 28,
+        "total": 32
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 2,
+      "reachablePct": 50.0,
+      "score": 4.0,
+      "rank": 76,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "stats",
+      "sourceSet": "jvm",
+      "tier": "T3",
+      "lines": {
+        "covered": 195,
+        "total": 196
+      },
+      "branches": {
+        "covered": 106,
+        "total": 121
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 4,
+      "reachablePct": 100.0,
+      "score": 2.6,
+      "rank": 77,
+      "ownerPlan": "",
+      "target": {
+        "line": 40,
+        "branch": 0
+      }
+    },
+    {
+      "pkg": "benchmark",
+      "sourceSet": "android",
+      "tier": "T4",
+      "lines": {
+        "covered": 0,
+        "total": 0
+      },
+      "branches": {
+        "covered": 0,
+        "total": 0
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 4,
+      "reachablePct": 0.0,
+      "score": 0.0,
+      "rank": 78,
+      "ownerPlan": "",
+      "target": {
+        "line": 0,
+        "branch": 0
+      }
+    },
+    {
+      "pkg": "benchmark",
+      "sourceSet": "jvm",
+      "tier": "T4",
+      "lines": {
+        "covered": 0,
+        "total": 0
+      },
+      "branches": {
+        "covered": 0,
+        "total": 0
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 4,
+      "reachablePct": 0.0,
+      "score": 0.0,
+      "rank": 79,
+      "ownerPlan": "",
+      "target": {
+        "line": 0,
+        "branch": 0
+      }
+    },
+    {
+      "pkg": "benchmarks",
+      "sourceSet": "jvm",
+      "tier": "T4",
+      "lines": {
+        "covered": 0,
+        "total": 147
+      },
+      "branches": {
+        "covered": 0,
+        "total": 6
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 0,
+      "reachablePct": 100.0,
+      "score": 0.0,
+      "rank": 80,
+      "ownerPlan": "",
+      "target": {
+        "line": 0,
+        "branch": 0
+      }
+    },
+    {
+      "pkg": "calibration",
+      "sourceSet": "android",
+      "tier": "T4",
+      "lines": {
+        "covered": 119,
+        "total": 138
+      },
+      "branches": {
+        "covered": 62,
+        "total": 114
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 0,
+      "reachablePct": 100.0,
+      "score": 0.0,
+      "rank": 81,
+      "ownerPlan": "",
+      "target": {
+        "line": 0,
+        "branch": 0
+      }
+    },
+    {
+      "pkg": "calibration",
+      "sourceSet": "jvm",
+      "tier": "T4",
+      "lines": {
+        "covered": 119,
+        "total": 138
+      },
+      "branches": {
+        "covered": 62,
+        "total": 114
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 0,
+      "reachablePct": 100.0,
+      "score": 0.0,
+      "rank": 82,
+      "ownerPlan": "",
+      "target": {
+        "line": 0,
+        "branch": 0
+      }
+    },
+    {
+      "pkg": "docs",
+      "sourceSet": "android",
+      "tier": "T4",
+      "lines": {
+        "covered": 0,
+        "total": 118
+      },
+      "branches": {
+        "covered": 0,
+        "total": 2
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 2,
+      "reachablePct": 83.3,
+      "score": 0.0,
+      "rank": 83,
+      "ownerPlan": "",
+      "target": {
+        "line": 0,
+        "branch": 0
+      }
+    },
+    {
+      "pkg": "docs",
+      "sourceSet": "jvm",
+      "tier": "T4",
+      "lines": {
+        "covered": 96,
+        "total": 118
+      },
+      "branches": {
+        "covered": 2,
+        "total": 2
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 2,
+      "reachablePct": 83.3,
+      "score": 0.0,
+      "rank": 84,
+      "ownerPlan": "",
+      "target": {
+        "line": 0,
+        "branch": 0
+      }
+    },
+    {
+      "pkg": "flashcard",
+      "sourceSet": "android",
+      "tier": "T2",
+      "lines": {
+        "covered": 25,
+        "total": 25
+      },
+      "branches": {
+        "covered": 11,
+        "total": 20
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 0,
+      "reachablePct": 100.0,
+      "score": 0.0,
+      "rank": 85,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "flashcard",
+      "sourceSet": "jvm",
+      "tier": "T2",
+      "lines": {
+        "covered": 25,
+        "total": 25
+      },
+      "branches": {
+        "covered": 14,
+        "total": 20
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 0,
+      "reachablePct": 100.0,
+      "score": 0.0,
+      "rank": 86,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "loader",
+      "sourceSet": "android",
+      "tier": "T2",
+      "lines": {
+        "covered": 0,
+        "total": 0
+      },
+      "branches": {
+        "covered": 0,
+        "total": 0
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 0,
+      "reachablePct": 100.0,
+      "score": 0.0,
+      "rank": 87,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "loader",
+      "sourceSet": "jvm",
+      "tier": "T2",
+      "lines": {
+        "covered": 0,
+        "total": 0
+      },
+      "branches": {
+        "covered": 0,
+        "total": 0
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 0,
+      "reachablePct": 100.0,
+      "score": 0.0,
+      "rank": 88,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "rtc",
+      "sourceSet": "android",
+      "tier": "T2",
+      "lines": {
+        "covered": 0,
+        "total": 0
+      },
+      "branches": {
+        "covered": 0,
+        "total": 0
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 0,
+      "reachablePct": 0.0,
+      "score": 0.0,
+      "rank": 89,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "rtc",
+      "sourceSet": "jvm",
+      "tier": "T2",
+      "lines": {
+        "covered": 0,
+        "total": 0
+      },
+      "branches": {
+        "covered": 0,
+        "total": 0
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 0,
+      "reachablePct": 0.0,
+      "score": 0.0,
+      "rank": 90,
+      "ownerPlan": "",
+      "target": {
+        "line": 70,
+        "branch": 55
+      }
+    },
+    {
+      "pkg": "security",
+      "sourceSet": "jvm",
+      "tier": "T1",
+      "lines": {
+        "covered": 11,
+        "total": 11
+      },
+      "branches": {
+        "covered": 4,
+        "total": 4
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 1,
+      "reachablePct": 100.0,
+      "score": 0.0,
+      "rank": 91,
+      "ownerPlan": "",
+      "target": {
+        "line": 85,
+        "branch": 70
+      }
+    },
+    {
+      "pkg": "stats",
+      "sourceSet": "android",
+      "tier": "T3",
+      "lines": {
+        "covered": 181,
+        "total": 181
+      },
+      "branches": {
+        "covered": 95,
+        "total": 102
+      },
+      "mutation": {
+        "killed": 0,
+        "total": 0,
+        "measured": false
+      },
+      "commits90d": 4,
+      "reachablePct": 100.0,
+      "score": 0.0,
+      "rank": 92,
+      "ownerPlan": "",
+      "target": {
+        "line": 40,
+        "branch": 0
+      }
+    }
+  ]
+}

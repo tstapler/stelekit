@@ -45,7 +45,6 @@ import dev.stapler.stelekit.repository.PageRepository
 import dev.stapler.stelekit.ui.i18n.Language
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
 import dev.stapler.stelekit.editor.commands.CommandContext
-import dev.stapler.stelekit.editor.commands.CommandManager
 import dev.stapler.stelekit.editor.commands.EditorCommand
 import dev.stapler.stelekit.editor.commands.CommandResult
 import dev.stapler.stelekit.domain.AhoCorasickMatcher
@@ -344,10 +343,8 @@ class StelekitViewModel(
     // for the lifetime of the ViewModel.
     private val recentPagesByUuid = mutableMapOf<String, Page>()
 
-    // Initialize command system
-    private val commandManager = CommandManager.create(scope) { message, type, timeout ->
-        notificationManager?.show(message, type, timeout)
-    }
+    // Command system; owns the CommandManager and the block.toggle-todo interception.
+    private val commandCoordinator = CommandManagerCoordinator(scope, notificationManager) { blockStateManager }
     
     // Rename orchestrator — coordinates DB updates + disk file rewrites.
     // Lazy so tests that don't exercise rename don't fail on a missing actor at construction time.
@@ -1163,12 +1160,14 @@ class StelekitViewModel(
                     is Screen.Logs -> "Opened Logs"
                     is Screen.BackgroundJobs -> "Opened Background jobs"
                     is Screen.Performance -> "Opened Performance"
+                    is Screen.Console -> "Opened Console"
                     is Screen.GlobalUnlinkedReferences -> "Opened Unlinked References"
                     is Screen.Import -> "Import text as new page"
                     is Screen.LibraryStats -> "Opened Library Stats"
                     is Screen.VaultUnlock -> "Vault locked"
                     is Screen.Gallery -> "Opened Gallery"
                     is Screen.AssetBrowser -> "Opened Asset Browser"
+                    is Screen.DriveBrowser -> "Opened Google Drive"
                     is Screen.AssetDetail -> "Opened Asset: ${screen.assetUuid.value}"
                     is Screen.AnnotationEditor -> "Opened Annotation Editor"
                 }
@@ -1442,7 +1441,11 @@ class StelekitViewModel(
      */
     fun onMemoryPressure() {
         graphLoader.cancelBackgroundWork()
+        memoryPressureListeners.notifyListeners()
     }
+
+    /** Other stacks (asset pipeline) subscribe here to shed background work under memory pressure. */
+    val memoryPressureListeners = MemoryPressureListeners()
 
     fun close() {
         scope.cancel()
@@ -2040,7 +2043,7 @@ class StelekitViewModel(
      * selecting "Toggle Todo" from the palette appeared to work but never actually mutated block
      * content (features.md §2 — the "wired-looking but silently non-functional" trap this
      * project exists partly to eliminate). This is now intercepted BEFORE ever reaching
-     * [commandManager]`.executeCommand()`, calling the real `requestTodoToggle()` ->
+     * [CommandManagerCoordinator]'s delegate `CommandManager.executeCommand()`, calling the real `requestTodoToggle()` ->
      * `applyTodoToggle` mutation (Phase C.1) instead.
      *
      * The `"block.toggle-todo"` `EssentialCommands` entry is ALSO hidden from the palette
@@ -2052,15 +2055,8 @@ class StelekitViewModel(
      * `executeCommand("block.toggle-todo")` directly) rather than to serve a currently-visible
      * palette row.
      */
-    suspend fun executeCommand(commandId: String, context: CommandContext = CommandContext()): CommandResult {
-        if (commandId == "block.toggle-todo") {
-            val manager = blockStateManager
-                ?: return CommandResult.Error(message = "No block is currently being edited")
-            manager.requestTodoToggle()
-            return CommandResult.Success(message = "Todo status toggled")
-        }
-        return commandManager.executeCommand(commandId, context)
-    }
+    suspend fun executeCommand(commandId: String, context: CommandContext = CommandContext()): CommandResult =
+        commandCoordinator.executeCommand(commandId, context)
 
     /**
      * Get available commands for current context
@@ -2070,7 +2066,7 @@ class StelekitViewModel(
             currentPageId = _uiState.value.currentPage?.uuid?.value,
             currentBlockId = _uiState.value.currentPage?.uuid?.value // This would be updated by actual editor
         )
-        return commandManager.getAvailableCommands(context)
+        return commandCoordinator.getAvailableCommands(context)
     }
 
     fun newSectionJournalForToday(sectionId: String) = sectionManagementCoordinator.newSectionJournalForToday(sectionId)

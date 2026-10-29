@@ -23,6 +23,7 @@ import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.platform.isDynamicColorSupported
 import dev.stapler.stelekit.ui.AppState
 import dev.stapler.stelekit.ui.LocalWindowSizeClass
+import dev.stapler.stelekit.ui.rememberDeveloperModeEnabled
 import dev.stapler.stelekit.ui.isMobile
 import dev.stapler.stelekit.ui.Screen
 import dev.stapler.stelekit.ui.i18n.Language
@@ -48,6 +49,7 @@ fun TopBar(
     onShowDebugMenu: (() -> Unit)? = null,
 ) {
     val isMobile = LocalWindowSizeClass.current.isMobile
+    val developerModeOn = rememberDeveloperModeEnabled()
     var viewMenuExpanded by remember { mutableStateOf(false) }
     var fileMenuExpanded by remember { mutableStateOf(false) }
     var overflowMenuExpanded by remember { mutableStateOf(false) }
@@ -220,6 +222,15 @@ fun TopBar(
                             onNavigate(Screen.Performance)
                         }
                     )
+                    if (developerModeOn) {
+                        DropdownMenuItem(
+                            text = { Text("Console") },
+                            onClick = {
+                                overflowMenuExpanded = false
+                                onNavigate(Screen.Console)
+                            }
+                        )
+                    }
                 }
             }
         } else {
@@ -302,6 +313,15 @@ fun TopBar(
                             viewMenuExpanded = false
                         }
                     )
+                    if (developerModeOn) {
+                        DropdownMenuItem(
+                            text = { Text("Console") },
+                            onClick = {
+                                onNavigate(Screen.Console)
+                                viewMenuExpanded = false
+                            }
+                        )
+                    }
                     DropdownMenuItem(
                         text = { Text(if (appState.isDebugMode) "Hide Debug Info" else "Show Debug Info") },
                         onClick = {

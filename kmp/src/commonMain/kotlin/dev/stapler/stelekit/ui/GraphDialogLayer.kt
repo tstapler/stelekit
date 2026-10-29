@@ -131,8 +131,19 @@ private fun SettingsDialogHost(
     val mcpLauncherCommand = remember(appState.currentGraphId) {
         appState.currentGraphId?.let { dev.stapler.stelekit.db.PlatformUtils().mcpLauncherCommand(it) }.orEmpty()
     }
+    val console = LocalConsole.current
+    val developerModeOn = rememberDeveloperModeEnabled()
     SettingsDialog(
+        assetIndexing = settings.assetIndexing,
         visible = appState.shouldShowSettingsDialog(),
+        isDeveloperModeEnabled = developerModeOn,
+        onDeveloperModeToggle = console?.let { c -> { on: Boolean -> c.developerMode.set(on) } },
+        onOpenConsole = console?.let {
+            {
+                viewModel.setSettingsVisible(false)
+                viewModel.navigateTo(Screen.Console)
+            }
+        },
         onDismiss = {
             viewModel.setSettingsVisible(false)
             viewModel.dismissLlmProviderSettings()
@@ -169,6 +180,12 @@ private fun SettingsDialogHost(
         googleAuthError = settings.googleAuthError,
         onConnectGoogle = settings.onConnectGoogle,
         onDisconnectGoogle = settings.onDisconnectGoogle,
+        onBrowseDrive = if (settings.driveBrowseAvailable) {
+            {
+                viewModel.setSettingsVisible(false)
+                viewModel.navigateTo(Screen.DriveBrowser)
+            }
+        } else null,
         tagSettings = settings.tagSettings,
         hasLlmKey = settings.hasLlmKey,
         isLibsqlDriverEnabled = appState.isLibsqlDriverEnabled,
@@ -201,6 +218,7 @@ private fun SettingsDialogHost(
         hotkeyComboLabel = settings.hotkeyComboLabel,
         captureTargetSettings = settings.captureTargetSettings,
         captureGraphs = settings.captureGraphs,
+        scheduledSync = settings.scheduledSync,
     )
 }
 

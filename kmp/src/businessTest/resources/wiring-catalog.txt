@@ -1,4 +1,8 @@
 # Seam  EntryPointTest  effect:<label>
 # Maps each wired seam to the entry-point test that drives the real root factory and calls
 # ObservableEffect.assert("<label>") { ... } about runtime state (WiringCatalog, ADR-002).
-# Empty at U1: no seam implementation is wired yet. Each wiring unit appends its line in its own PR.
+# Each wiring unit appends its line in its own PR.
+ConsoleCommand  ConsoleEntryPointTest  effect:console-help
+MeasurementDeviceFactory  DesktopMeasurementDeviceFactoriesTest  effect:desktop-keyboard-device-emitted
+BackgroundSyncScheduler  GitSyncStackEntryPointTest  effect:scheduled-sync-tick
+BackgroundSyncScheduler  GitSyncSchedulingEntryPointTest  effect:periodic-work-enqueued

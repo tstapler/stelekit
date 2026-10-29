@@ -2,6 +2,7 @@ package dev.stapler.stelekit
 
 import dev.stapler.stelekit.db.WalConfiguredCallbackTest
 import dev.stapler.stelekit.git.AndroidGitRepositoryLfsGuardTest
+import dev.stapler.stelekit.google.AndroidGoogleSupportTest
 import dev.stapler.stelekit.git.AndroidGitRepositoryTestRemoteTest
 import dev.stapler.stelekit.git.GitSyncBusyCounterSharedWiringTest
 import dev.stapler.stelekit.platform.LegacyPathValidationTest
@@ -14,6 +15,7 @@ import dev.stapler.stelekit.platform.SafPermissionStateTransitionTest
 import dev.stapler.stelekit.platform.ShadowFileCacheTest
 import dev.stapler.stelekit.platform.UpgradePathTest
 import dev.stapler.stelekit.service.AndroidMediaAttachmentServiceTest
+import dev.stapler.stelekit.platform.measurement.usb.AndroidUsbSerialFactoryTest
 import dev.stapler.stelekit.platform.security.AndroidCredentialStoreCommitTest
 import dev.stapler.stelekit.platform.security.AndroidCredentialStoreFailsLoudTest
 import dev.stapler.stelekit.platform.image.PlatformImageDownscalerAndroidTest
@@ -24,12 +26,15 @@ import dev.stapler.stelekit.ui.components.MermaidWebViewBridgeTest
 import dev.stapler.stelekit.ui.components.MermaidWebViewSettingsTest
 import dev.stapler.stelekit.ui.transfer.QrDecodeViewModelBackgroundingTest
 import dev.stapler.stelekit.voice.AndroidSpeechRecognizerPermissionTest
+import dev.stapler.stelekit.wiring.PlatformCapsRootTest
 import org.junit.runner.RunWith
 import org.junit.runners.Suite
 
 @RunWith(Suite::class)
 @Suite.SuiteClasses(
     WalConfiguredCallbackTest::class,
+    PlatformCapsRootTest::class,
+    AndroidGoogleSupportTest::class,
     GitSyncBusyCounterSharedWiringTest::class,
     AndroidGitRepositoryTestRemoteTest::class,
     AndroidGitRepositoryLfsGuardTest::class,
@@ -38,6 +43,7 @@ import org.junit.runners.Suite
     PlatformFileSystemSafTest::class,
     PlatformFileSystemUriLogicTest::class,
     AndroidMediaAttachmentServiceTest::class,
+    AndroidUsbSerialFactoryTest::class,
     SafChangeDetectorFileObserverTest::class,
     SafPermissionPersistenceTest::class,
     SafPermissionStateTransitionTest::class,

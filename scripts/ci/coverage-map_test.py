@@ -108,10 +108,24 @@ class CoverageMapTest(unittest.TestCase):
         self.assertEqual(rows["jvm"]["lines"], {"covered": 90, "total": 100})
         self.assertEqual(rows["jvm"]["branches"], {"covered": 30, "total": 50})
         self.assertEqual(rows["jvm"]["mutation"], {"killed": 0, "total": 0, "measured": False})
-        self.assertEqual(rows["jvm"]["target"], {"line": 90, "branch": 80})
+        self.assertEqual(rows["jvm"]["target"], {"line": 85, "branch": 70})
         with open(os.path.join(self.dir.name, "out", "coverage-map.md"), encoding="utf-8") as f:
             md = f.read()
         self.assertIn("| 1 | db |", md)
+
+    def test_coverageMap_should_FailListingPackage_When_SourceDirHasNoTierAndNoCoverageData(self):
+        root = os.path.join(self.dir.name, "repo", "kmp", "src", "commonMain", "kotlin", "dev", "stapler", "stelekit")
+        os.makedirs(os.path.join(root, "db"))
+        os.makedirs(os.path.join(root, "brandnew"))
+        code, err = self.run_map(jacoco(("db", sourcefile("A.kt", 1, 1))), "db: T1\n",
+                                 extra=("--check-source-tree", "--repo-root", os.path.join(self.dir.name, "repo")))
+        self.assertEqual(code, 1)
+        self.assertIn("brandnew", err)
+
+    def test_coverageTiersFile_should_ClassifyEverySourcePackage_When_ReadFromRepo(self):
+        repo = os.path.abspath(os.path.join(HERE, "..", ".."))
+        tiers = cm.read_tiers(os.path.join(repo, "docs", "coverage", "coverage-tiers.yml"))
+        self.assertEqual(sorted(cm.source_packages(repo) - set(tiers)), [])
 
     def test_coverageMap_should_RankByScoreDescending(self):
         xml = jacoco(("small", sourcefile("A.kt", 10, 90)), ("big", sourcefile("B.kt", 900, 100)), ("mid", sourcefile("C.kt", 100, 0)))

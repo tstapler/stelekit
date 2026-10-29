@@ -22,6 +22,8 @@ kt_android_library(
             # Roborazzi screenshot tests — no Bazel integration; kept in Gradle
             "**/*Roborazzi*.kt",
             "**/*Screenshot*.kt",
+            # Composes @Composable lambdas; this target has no Compose compiler plugin (Gradle-only)
+            "**/ArchiveUrlEntryPointTest.kt",
         ],
     ),
     custom_package = "dev.stapler.stelekit",
@@ -42,6 +44,8 @@ kt_android_library(
         "@maven//:androidx_compose_ui_ui_test_junit4",
         "@maven//:androidx_compose_ui_ui_test_manifest",
         "//kmp/src/commonTest/kotlin:git_testsupport_android",
+        "//kmp/src/commonTest/kotlin:fake_file_system_android",
+        "//kmp/src/commonTest/kotlin:observable_effect_android",
     ],
 )
 
