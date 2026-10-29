@@ -84,6 +84,10 @@ fun SettingsDialog(
     mcpLauncherCommand: String = "",
     pendingMcpSuggestionCount: Int = 0,
     onOpenMcpSuggestions: () -> Unit = {},
+    // Developer mode / console: null onDeveloperModeToggle hides the toggle (and with it the console row).
+    isDeveloperModeEnabled: Boolean = false,
+    onDeveloperModeToggle: ((Boolean) -> Unit)? = null,
+    onOpenConsole: (() -> Unit)? = null,
     // Section settings
     sectionManifest: SectionManifest? = null,
     sectionStates: Map<String, SectionState> = emptyMap(),
@@ -131,15 +135,16 @@ fun SettingsDialog(
 
             val visibleCategories = remember(
                 onConnectGoogle, audiobookNotesSettingsContent, tagSettings,
-                onLibsqlDriverToggle, sectionManifest, llmProviderRegistry, llmSettings,
-                llmCredentialStore,
+                onLibsqlDriverToggle, onMcpServerToggle, onDeveloperModeToggle, sectionManifest,
+                llmProviderRegistry, llmSettings, llmCredentialStore,
             ) {
                 SettingsCategory.entries.filter { category ->
                     when (category) {
                         SettingsCategory.GOOGLE_ACCOUNT -> onConnectGoogle != null
                         SettingsCategory.AUDIOBOOK_NOTES -> audiobookNotesSettingsContent != null
                         SettingsCategory.TAG_SUGGESTIONS -> tagSettings != null
-                        SettingsCategory.DEVELOPER -> onLibsqlDriverToggle != null || onMcpServerToggle != null
+                        SettingsCategory.DEVELOPER ->
+                            isDeveloperCategoryVisible(onLibsqlDriverToggle, onMcpServerToggle, onDeveloperModeToggle)
                         SettingsCategory.SECTIONS -> sectionManifest != null
                         SettingsCategory.DEVICE_SUBSCRIPTIONS -> sectionManifest != null
                         SettingsCategory.LLM_PROVIDERS ->
@@ -226,8 +231,11 @@ fun SettingsDialog(
                             hasLlmKey = hasLlmKey,
                         )
                     }
-                    SettingsCategory.DEVELOPER -> if (onLibsqlDriverToggle != null || onMcpServerToggle != null) {
+                    SettingsCategory.DEVELOPER -> if (isDeveloperCategoryVisible(onLibsqlDriverToggle, onMcpServerToggle, onDeveloperModeToggle)) {
                         DeveloperSettings(
+                            isDeveloperModeEnabled = isDeveloperModeEnabled,
+                            onDeveloperModeToggle = onDeveloperModeToggle,
+                            onOpenConsole = onOpenConsole,
                             isLibsqlDriverEnabled = isLibsqlDriverEnabled,
                             onLibsqlDriverToggle = onLibsqlDriverToggle,
                             mcpServerEnabled = mcpServerEnabled,
@@ -476,6 +484,16 @@ enum class SettingsCategory(val label: String, val icon: ImageVector) {
     DEVICE_SUBSCRIPTIONS("Device Subscriptions", Icons.Default.Notifications),
     DEVELOPER("Developer", Icons.Default.BugReport),
 }
+
+/**
+ * The Developer category lists whenever any of its rows exists. The console toggle is non-null on
+ * every host, so Web (no libsql driver, no MCP launcher) still shows the category.
+ */
+fun isDeveloperCategoryVisible(
+    onLibsqlDriverToggle: ((Boolean) -> Unit)?,
+    onMcpServerToggle: ((Boolean) -> Unit)?,
+    onDeveloperModeToggle: ((Boolean) -> Unit)?,
+): Boolean = onLibsqlDriverToggle != null || onMcpServerToggle != null || onDeveloperModeToggle != null
 
 private fun versionLabel(appVersion: String, gitCommit: String): String =
     if (gitCommit == "unknown") "v$appVersion" else "v$appVersion ($gitCommit)"

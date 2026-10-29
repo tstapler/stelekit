@@ -505,6 +505,9 @@ private fun GraphContent(deps: GraphContentDeps) {
     val gitSyncGraphId = gitSyncStack.gitSyncGraphId
     val gitSyncService = gitSyncStack.gitSyncService
 
+    // See GraphContentConsoleSetup.kt: developer-mode flag and the console session (dark unless developer mode is on).
+    val consoleStack = rememberGraphContentConsoleSetup(deps, gitConfigRepository)
+
     // See GraphContentViewModelSetup.kt: blockStateManager, exportService, shareProvider, viewModel.
     val viewModelStack = rememberGraphContentViewModelStack(deps, effectiveFileSystem, graphIoStack, clipboardProvider)
     val blockStateManager = viewModelStack.blockStateManager
@@ -582,7 +585,7 @@ private fun GraphContent(deps: GraphContentDeps) {
     val appState by viewModel.uiState.collectAsState()
 
     StelekitTheme(themeMode = appState.themeMode) {
-        CompositionLocalProvider(LocalI18n provides I18n(appState.language)) {
+        CompositionLocalProvider(LocalI18n provides I18n(appState.language), LocalConsole provides consoleStack) {
             when {
                 !appState.onboardingCompleted -> {
                     GraphContentOnboarding(fileSystem, graphManager, viewModel, scope)
