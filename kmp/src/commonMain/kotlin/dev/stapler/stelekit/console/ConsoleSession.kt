@@ -81,7 +81,7 @@ class ConsoleSession(
     }
 
     private sealed interface Item {
-        class Line(val epoch: Int, val kind: ScrollbackKind, val text: String) : Item
+        class Line(val epoch: Int, val kind: ScrollbackKind, val text: String, val table: ResultTable? = null) : Item
         class Barrier(val done: CompletableDeferred<Unit>) : Item
     }
 
@@ -126,6 +126,7 @@ class ConsoleSession(
 
     /** The scrollback as text for the export file. Already redacted. */
     fun exportText(): String = scrollback.lines.value.joinToString("\n") { line ->
+        if (line.table != null) return@joinToString line.table.toText()
         when (line.kind) {
             ScrollbackKind.INPUT -> "> ${line.text}"
             ScrollbackKind.ERROR -> "ERR ${line.text}"
@@ -136,10 +137,10 @@ class ConsoleSession(
     fun clearScrollback() = scrollback.clear()
 
     /** `console-<yyyyMMdd-HHmmss>` in local time; the share provider adds `.txt`. */
-    fun exportFileBaseName(now: Instant, zone: TimeZone = TimeZone.currentSystemDefault()): String {
+    fun exportFileBaseName(now: Instant, zone: TimeZone = TimeZone.currentSystemDefault(), prefix: String = "console"): String {
         val t = now.toLocalDateTime(zone)
         fun two(n: Int) = n.toString().padStart(2, '0')
-        return "console-${t.year}${two(t.monthNumber)}${two(t.dayOfMonth)}-${two(t.hour)}${two(t.minute)}${two(t.second)}"
+        return "$prefix-${t.year}${two(t.monthNumber)}${two(t.dayOfMonth)}-${two(t.hour)}${two(t.minute)}${two(t.second)}"
     }
 
     private suspend fun execute(line: String, runEpoch: Int): Either<ConsoleError, Unit> {
@@ -153,6 +154,9 @@ class ConsoleSession(
         val out = object : ConsoleOutput {
             override fun info(text: String) = emit(runEpoch, ScrollbackKind.OUTPUT, text)
             override fun error(text: String) = emit(runEpoch, ScrollbackKind.ERROR, text)
+            override fun table(table: ResultTable) {
+                pending.trySend(Item.Line(runEpoch, ScrollbackKind.OUTPUT, "", table.mapCells(::safe).let { it.copy(explainSql = it.explainSql?.let(::safe)) }))
+            }
         }
         return try {
             command.run(tokens.drop(1), context, out).onLeft { fail(runEpoch, it) }
@@ -210,7 +214,7 @@ class ConsoleSession(
         val batch = mutableListOf<Item.Line>()
         fun publish() {
             val live = batch.filter { it.epoch == epoch }
-            scrollback.appendAll(live.map { it.kind to it.text })
+            scrollback.appendEntries(live.map { ScrollbackEntry(it.kind, it.text, it.table) })
             batch.clear()
         }
         for (first in pending) {

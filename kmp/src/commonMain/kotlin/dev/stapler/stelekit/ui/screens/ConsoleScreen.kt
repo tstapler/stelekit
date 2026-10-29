@@ -65,8 +65,12 @@ import dev.stapler.stelekit.console.ConfirmRequest
 import dev.stapler.stelekit.console.ConfirmTier
 import dev.stapler.stelekit.console.requiredText
 import dev.stapler.stelekit.console.ConsoleSession
+import dev.stapler.stelekit.console.ResultTable
 import dev.stapler.stelekit.console.ScrollbackKind
+import dev.stapler.stelekit.console.toCsv
+import dev.stapler.stelekit.export.ShareProvider
 import dev.stapler.stelekit.ui.rememberShareProvider
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlin.time.Clock
 
@@ -140,7 +144,14 @@ fun ConsoleScreen(session: ConsoleSession, modifier: Modifier = Modifier) {
             SelectionContainer {
                 LazyColumn(state = listState, modifier = Modifier.fillMaxSize().testTag("console-scrollback")) {
                     typedItems(lines, key = { it.id.toString() }) { line ->
-                        Text(
+                        val table = line.table
+                        if (table != null) {
+                            ConsoleResultGrid(
+                                table = table,
+                                onExportCsv = { exportCsv(session, shareProvider, scope, it) },
+                                onExplain = { input = ResultTable.explainCommandLine(it) },
+                            )
+                        } else Text(
                             text = if (line.kind == ScrollbackKind.INPUT) "> ${line.text}" else line.text,
                             fontFamily = FontFamily.Monospace,
                             fontSize = 12.sp,
@@ -190,6 +201,10 @@ fun ConsoleScreen(session: ConsoleSession, modifier: Modifier = Modifier) {
             }
         }
     }
+}
+
+private fun exportCsv(session: ConsoleSession, share: ShareProvider, scope: CoroutineScope, table: ResultTable) {
+    scope.launch { share.saveToFile(table.toCsv(), session.exportFileBaseName(Clock.System.now(), prefix = "sql"), "csv") }
 }
 
 /** The `sql!` confirm as a dialog window. Its content is [WriteConfirmPanel], which tests drive directly. */
@@ -257,6 +272,7 @@ private class Chip(val label: String, val input: String = label)
 
 private val CHIPS = listOf(
     Chip("tables"),
+    Chip("schema <table>", "schema "),
     Chip("sql: newest journals", "sql \"select name from pages where is_journal = 1 order by updated_at desc limit 3\""),
     Chip("diag"),
     Chip("help"),

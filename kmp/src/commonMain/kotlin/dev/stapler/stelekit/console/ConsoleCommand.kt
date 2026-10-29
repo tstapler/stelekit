@@ -35,4 +35,9 @@ class ConsoleContext(
 interface ConsoleOutput {
     fun info(text: String)
     fun error(text: String)
+
+    /** A tabular result. Outputs without a grid fall back to the text rendering, one line at a time. */
+    fun table(table: ResultTable) {
+        table.toText().takeIf { it.isNotEmpty() }?.lines()?.forEach(::info)
+    }
 }

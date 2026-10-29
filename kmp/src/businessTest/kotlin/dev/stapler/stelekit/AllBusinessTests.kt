@@ -85,6 +85,7 @@ import dev.stapler.stelekit.console.ConsoleSessionTest
 import dev.stapler.stelekit.console.CredentialColumnInventoryTest
 import dev.stapler.stelekit.console.SqlCommandTest
 import dev.stapler.stelekit.console.SqlConsoleBypassTest
+import dev.stapler.stelekit.console.ResultGridTest
 import dev.stapler.stelekit.console.ScrollbackBufferTest
 import dev.stapler.stelekit.security.RedactorSingleSiteAuditTest
 import dev.stapler.stelekit.security.RedactorTest
@@ -571,6 +572,7 @@ import org.junit.runners.Suite
     SqlCommandTest::class,
     SqlConsoleBypassTest::class,
     ScrollbackBufferTest::class,
+    ResultGridTest::class,
     RedactorSingleSiteAuditTest::class,
     RedactorTest::class,
     GoogleAuthCodeExchangeTest::class,
