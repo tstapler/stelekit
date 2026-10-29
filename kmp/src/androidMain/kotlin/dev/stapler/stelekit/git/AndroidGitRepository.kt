@@ -232,7 +232,9 @@ class AndroidGitRepository(
                 onFailed = { e -> DomainError.GitError.FetchFailed(e.message ?: "Fetch failed") },
                 onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
             ) {
-                openGitWithoutFreshnessCheck(config).use { git -> doFetch(git, config) }
+                openGitWithoutFreshnessCheck(config).use { git ->
+                    doFetch(git, config).also { if (lfsTransferAvailable(config.repoRoot.value)) lfs.retryPending(git, config) }
+                }
             }
         }
 

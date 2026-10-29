@@ -132,6 +132,32 @@ class JvmGitRepositoryLfsTransferTest {
     }
 
     @Test
+    fun `a download that failed is retried by the next fetch`() {
+        val a = newWorkRepo("a")
+        val bytes = Random(5).nextBytes(250_000)
+        File(a, ".gitattributes").writeText("*.bin filter=lfs diff=lfs merge=lfs -text\n")
+        File(a, "late.bin").writeBytes(bytes)
+        assertTrue(commitAndPush(a, "late").isRight())
+
+        val held = server.objects.toMap()
+        server.objects.clear() // the host cannot serve the object yet
+        val b = File(root, "b")
+        Git.cloneRepository().setURI(origin.toURI().toString()).setDirectory(b).setNoCheckout(true).call().use { git ->
+            git.repository.config.setString("lfs", null, "url", server.url)
+            git.repository.config.save()
+            runBlocking { LfsRepositorySupport({ throw IllegalStateException() }, { io.ktor.client.HttpClient(io.ktor.client.engine.okhttp.OkHttp) { configureLfsTimeouts() } }).afterClone(git, null) }
+        }
+        assertTrue(File(b, "late.bin").length() < 1024, "still pointer text while the object is unavailable")
+        assertTrue(File(b, ".git/lfs/pending").exists())
+
+        server.objects.putAll(held)
+        assertTrue(runBlocking { repo.fetch(configFor(b)) }.isRight())
+
+        assertContentEquals(bytes, File(b, "late.bin").readBytes())
+        assertFalse(File(b, ".git/lfs/pending").exists())
+    }
+
+    @Test
     fun `the token reaches the batch endpoint only`() {
         server.close()
         val authed = FakeLfsServer(requiredAuth = LfsRepositorySupport.basicAuth("", "tok"))

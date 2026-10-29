@@ -87,6 +87,17 @@ class LfsRepositorySupport(
         return wanted
     }
 
+    /**
+     * Background catch-up: when an earlier download failed (offline, quota, auth), the periodic fetch job calls
+     * this so the images arrive without the user having to merge by hand.
+     */
+    suspend fun retryPending(git: Git, config: GitConfig) {
+        val repo = git.repository
+        if (!pendingMarker(repo).exists() || !prepare(repo, config.graphId)) return
+        val tree = repo.resolve("HEAD^{tree}") ?: return
+        pull(repo, LfsPointerScanner(repo).pointersIn(tree), authHeaderFor(config))
+    }
+
     /** After a merge: make sure the working files of [pointers] hold the real bytes. */
     fun afterMerge(git: Git, pointers: Map<String, LfsPointer>) {
         if (pointers.isEmpty() || !filterActive) return

@@ -207,7 +207,7 @@ class JvmGitRepository(
                 onFailed = { e -> DomainError.GitError.FetchFailed(e.message ?: "Fetch failed") },
                 onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
             ) {
-                openGitFor(config).use { git -> doFetch(git, config) }
+                openGitFor(config).use { git -> doFetch(git, config).also { lfs.retryPending(git, config) } }
             }
         }
 
