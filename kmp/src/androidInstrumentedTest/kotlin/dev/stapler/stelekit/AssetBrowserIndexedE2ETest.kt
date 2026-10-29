@@ -22,7 +22,6 @@ import dev.stapler.stelekit.platform.SteleKitContext
 import dev.stapler.stelekit.repository.SqlDelightAssetRepository
 import dev.stapler.stelekit.ui.assets.AssetBrowserScreen
 import dev.stapler.stelekit.ui.assets.AssetBrowserViewModel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -81,7 +80,7 @@ class AssetBrowserIndexedE2ETest {
 
     private suspend fun backfill(service: AssetIndexService, notes: EffectiveNotesPath) {
         service.startBackfill(notes, writeActor = null, fileSystem = fs)
-        withTimeout(30_000) { while (service.progress.value !is AssetIndexProgress.Finished) delay(20) }
+        withTimeout(30_000) { service.progress.first { it is AssetIndexProgress.Finished } }
     }
 
     @Test

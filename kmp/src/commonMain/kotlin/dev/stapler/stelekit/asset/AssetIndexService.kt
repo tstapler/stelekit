@@ -55,6 +55,10 @@ class AssetIndexService(
     )
     private var backfillJob: Job? = null
 
+    // A cancelled run must not overwrite the progress of the run that replaced it.
+    @kotlin.concurrent.Volatile
+    private var runId = 0
+
     private val _progress = MutableStateFlow<AssetIndexProgress>(AssetIndexProgress.Idle)
     val progress: StateFlow<AssetIndexProgress> = _progress.asStateFlow()
 
@@ -143,15 +147,18 @@ class AssetIndexService(
         fileSystem: FileSystem,
     ) {
         backfillJob?.cancel()
+        val run = ++runId
+        // Set before launching so a caller (and a test) sees "started" without racing the coroutine.
+        _progress.value = AssetIndexProgress.Counting
         backfillJob = scope.launch {
             try {
-                backfillGraph(notesPath, writeActor, fileSystem)
+                backfillGraph(run, notesPath, writeActor, fileSystem)
             } catch (e: CancellationException) {
-                _progress.value = AssetIndexProgress.Idle
+                publish(run, AssetIndexProgress.Idle)
                 throw e
             } catch (e: Throwable) {
                 logger.error("Backfill failed: ${e.message}")
-                _progress.value = AssetIndexProgress.Idle
+                publish(run, AssetIndexProgress.Idle)
             }
         }
     }
@@ -160,6 +167,12 @@ class AssetIndexService(
     fun stopBackfill() {
         backfillJob?.cancel()
         backfillJob = null
+        runId++
+        _progress.value = AssetIndexProgress.Idle
+    }
+
+    private fun publish(run: Int, progress: AssetIndexProgress) {
+        if (run == runId) _progress.value = progress
     }
 
     /** Cancels everything and releases the scope; the service is unusable afterwards. */
@@ -168,24 +181,27 @@ class AssetIndexService(
     }
 
     private suspend fun backfillGraph(
+        run: Int,
         notesPath: EffectiveNotesPath,
         writeActor: DatabaseWriteActor?,
         fileSystem: FileSystem,
     ) {
         val assetsDir = notesPath.child("assets")
-        if (!fileSystem.directoryExists(assetsDir)) return
+        if (!fileSystem.directoryExists(assetsDir)) {
+            publish(run, AssetIndexProgress.Idle)
+            return
+        }
 
-        _progress.value = AssetIndexProgress.Counting
         val total = walkFiles(assetsDir, fileSystem).count()
         var done = 0
-        _progress.value = AssetIndexProgress.Indexing(done, total)
+        publish(run, AssetIndexProgress.Indexing(done, total))
         for (batch in walkFiles(assetsDir, fileSystem).chunked(BACKFILL_BATCH_SIZE)) {
             processBatch(batch, notesPath, writeActor, fileSystem)
             done += batch.size
-            _progress.value = AssetIndexProgress.Indexing(done, maxOf(total, done))
+            publish(run, AssetIndexProgress.Indexing(done, maxOf(total, done)))
             yield()
         }
-        _progress.value = AssetIndexProgress.Finished(done)
+        publish(run, AssetIndexProgress.Finished(done))
     }
 
     private suspend fun processBatch(

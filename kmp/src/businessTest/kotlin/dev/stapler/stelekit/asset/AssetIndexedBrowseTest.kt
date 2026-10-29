@@ -10,7 +10,7 @@ import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.SqlDelightAssetRepository
 import dev.stapler.stelekit.ui.assets.AssetBrowserViewModel
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlin.test.AfterTest
@@ -42,9 +42,9 @@ class AssetIndexedBrowseTest {
         val service = AssetIndexService(repo)
 
         service.startBackfill(EffectiveNotesPath("/graph"), writeActor = null, fileSystem = fs)
-        withTimeout(10_000) { while (service.progress.value !is AssetIndexProgress.Finished) delay(10) }
+        withTimeout(10_000) { service.progress.first { it is AssetIndexProgress.Finished } }
         val vm = AssetBrowserViewModel(assetRepository = repo)
-        withTimeout(10_000) { while (vm.uiState.value.assets.size < 7) delay(20) }
+        withTimeout(10_000) { vm.uiState.first { it.assets.size >= 7 } }
 
         assertEquals(7, vm.uiState.value.assets.size)
         assertTrue(vm.uiState.value.assets.all { it.relativePath.startsWith("../assets/p") && it.contentHash != null })

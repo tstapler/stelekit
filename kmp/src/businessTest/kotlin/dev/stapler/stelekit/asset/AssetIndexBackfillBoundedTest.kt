@@ -7,7 +7,6 @@ import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.repository.AssetRepository
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.InMemoryAssetRepository
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -60,9 +59,8 @@ class AssetIndexBackfillBoundedTest {
         repeat(3_000) { fs.put("/graph/assets/d${it % 30}/f$it.png", pngMagic) }
     }
 
-    private suspend fun awaitCount(repo: AssetRepository, expected: Long) = withTimeout(30_000) {
-        while (repo.countAssets().getOrNull() != expected) delay(20)
-    }
+    private suspend fun awaitFinished(service: AssetIndexService) =
+        withTimeout(30_000) { service.progress.first { it is AssetIndexProgress.Finished } }
 
     @Test
     fun backfill_indexesThreeThousandFilesInBatchesOfFifty_andFinishesWithProgress() = runBlocking {
@@ -72,9 +70,9 @@ class AssetIndexBackfillBoundedTest {
         val service = AssetIndexService(repo)
 
         service.startBackfill(notes, writeActor = null, fileSystem = fs)
-        awaitCount(inner, 3_000)
-        withTimeout(10_000) { while (service.progress.value !is AssetIndexProgress.Finished) delay(10) }
+        awaitFinished(service)
 
+        assertEquals(3_000L, inner.countAssets().getOrNull())
         assertEquals(AssetIndexProgress.Finished(3_000), service.progress.value)
         assertEquals(60, repo.lookupSizes.size, "3,000 files / 50 per batch")
         assertTrue(repo.lookupSizes.all { it <= AssetIndexService.BACKFILL_BATCH_SIZE }, "batches: ${repo.lookupSizes}")
@@ -102,14 +100,13 @@ class AssetIndexBackfillBoundedTest {
         repeat(120) { fs.put("/graph/assets/images/p$it.png", pngMagic) }
         val first = AssetIndexService(inner)
         first.startBackfill(notes, null, fs)
-        awaitCount(inner, 120)
-        withTimeout(10_000) { while (first.progress.value !is AssetIndexProgress.Finished) delay(10) }
+        awaitFinished(first)
         first.close()
         val readsAfterFirst = fs.reads.get()
 
         val second = AssetIndexService(inner)
         second.startBackfill(notes, null, fs)
-        withTimeout(10_000) { while (second.progress.value !is AssetIndexProgress.Finished) delay(10) }
+        awaitFinished(second)
 
         assertEquals(readsAfterFirst, fs.reads.get(), "re-run must not read files that already have a row")
         assertEquals(120L, inner.countAssets().getOrNull())
@@ -125,7 +122,7 @@ class AssetIndexBackfillBoundedTest {
         val service = AssetIndexService(inner)
 
         service.startBackfill(notes, null, fs)
-        awaitCount(inner, 1)
+        awaitFinished(service)
 
         val row = inner.getAssets(1, 0).first().getOrNull()!!.single()
         assertEquals(0, fs.reads.get(), "an oversized file must not be read into memory")
@@ -142,14 +139,23 @@ class AssetIndexBackfillBoundedTest {
         val service = AssetIndexService(inner)
 
         service.startBackfill(notes, null, fs)
-        withTimeout(10_000) { while ((inner.countAssets().getOrNull() ?: 0L) == 0L) delay(1) }
+        withTimeout(10_000) { service.progress.first { it is AssetIndexProgress.Indexing && it.done > 0 || it is AssetIndexProgress.Finished } }
         service.stopBackfill()
-        delay(200)
-        val settled = inner.countAssets().getOrNull()
-        delay(200)
-
-        assertEquals(settled, inner.countAssets().getOrNull(), "no rows are added after stop")
-        assertTrue(settled!! in 0L until 3_000L || service.progress.value is AssetIndexProgress.Finished)
+        assertEquals(AssetIndexProgress.Idle, service.progress.value, "stop reports Idle immediately")
+        val atStop = inner.countAssets().getOrNull()!!
+        // A batch already past its last cancellation point may still land; none may start after it ends.
+        val stragglers = AssetIndexService.BACKFILL_BATCH_SIZE.toLong()
+        val settled = withTimeout(10_000) {
+            var last = inner.countAssets().getOrNull()!!
+            while (true) {
+                kotlinx.coroutines.yield()
+                val now = inner.countAssets().getOrNull()!!
+                if (now == last && service.progress.value == AssetIndexProgress.Idle) break
+                last = now
+            }
+            last
+        }
+        assertTrue(settled < 3_000L && settled - atStop <= stragglers, "rows at stop=$atStop settled=$settled")
         service.close()
     }
 

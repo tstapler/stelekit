@@ -17,7 +17,7 @@ import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
 import dev.stapler.stelekit.ui.assets.AssetDetailViewModel
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -106,28 +106,31 @@ class AssetMoveReplayEntryPointTest {
     fun doubleTapOnMove_performsOneMove() = runBlocking {
         val asset = seedAsset()
         val calls = AtomicInteger()
-        val release = CompletableDeferred<Unit>()
+        val starts = Channel<Unit>(Channel.UNLIMITED)
+        var release = CompletableDeferred<Unit>()
         val vm = AssetDetailViewModel(
             assetRepository = repo,
             assetUuid = asset.uuid,
             mover = { _, _ ->
                 calls.incrementAndGet()
+                starts.send(Unit)
                 release.await()
                 arrow.core.Either.Right(Unit)
             },
         )
-        withTimeout(5_000) { while (vm.uiState.value.asset == null) delay(10) }
+        withTimeout(5_000) { vm.uiState.first { it.asset != null } }
 
         vm.moveTo("pdfs")
-        vm.moveTo("pdfs")
-        withTimeout(5_000) { while (calls.get() == 0) delay(5) }
-        delay(100)
+        withTimeout(5_000) { starts.receive() }
+        vm.moveTo("pdfs") // claimed synchronously: a tap while the first is in flight is ignored
+        release.complete(Unit)
+        withTimeout(5_000) { vm.uiState.first { !it.isMoving } }
         assertEquals(1, calls.get(), "second tap while a move is in flight is ignored")
 
-        release.complete(Unit)
-        withTimeout(5_000) { while (vm.uiState.value.isMoving) delay(5) }
+        release = CompletableDeferred<Unit>().also { it.complete(Unit) }
         vm.moveTo("pdfs")
-        withTimeout(5_000) { while (calls.get() < 2) delay(5) }
+        withTimeout(5_000) { starts.receive() }
+        assertEquals(2, calls.get(), "a tap after the first move finished starts a new one")
         vm.onForgotten()
     }
 }

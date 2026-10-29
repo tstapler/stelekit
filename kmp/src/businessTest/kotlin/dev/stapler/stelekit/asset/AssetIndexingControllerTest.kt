@@ -11,7 +11,7 @@ import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.InMemoryAssetRepository
 import dev.stapler.stelekit.service.AttachmentResult
 import dev.stapler.stelekit.wiring.FakeSettings
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlin.test.AfterTest
@@ -44,9 +44,8 @@ class AssetIndexingControllerTest {
     private fun controller(settings: Settings = FakeSettings(), visible: Boolean) =
         AssetIndexingController(settings, AssetIndexService(spy), toggleVisibleProvider = { visible })
 
-    private suspend fun awaitRows(count: Long) = withTimeout(10_000) {
-        while (repo.countAssets().getOrNull() != count) delay(10)
-    }
+    private suspend fun awaitFinished(c: AssetIndexingController) =
+        withTimeout(10_000) { c.progress.first { it is AssetIndexProgress.Finished } }
 
     @Test
     fun releaseFlag_isOffByDefault_and_defaultBuildHidesTheSwitch() {
@@ -70,7 +69,6 @@ class AssetIndexingControllerTest {
 
         c.setEnabled(true)
         c.onGraphReady(notes, writeActor = null, fileSystem = fs)
-        delay(200)
 
         assertFalse(settings.getBoolean(key, false), "a hidden switch cannot write the key")
         assertFalse(c.isActive)
@@ -87,7 +85,6 @@ class AssetIndexingControllerTest {
 
         c.onGraphReady(notes, writeActor = null, fileSystem = fs)
         c.registerAttachment(AttachmentResult("../assets/a0.png", "a0.png"))
-        delay(200)
 
         assertTrue(c.enabled.value, "the stored value is reported as stored")
         assertFalse(c.isActive, "but a build that hides the switch never acts on it")
@@ -101,8 +98,9 @@ class AssetIndexingControllerTest {
         val c = controller(visible = true)
 
         c.onGraphReady(notes, writeActor = null, fileSystem = fs)
-        delay(200)
 
+        // startBackfill publishes Counting synchronously, so Idle here means it was never started.
+        assertEquals(AssetIndexProgress.Idle, c.progress.value)
         assertEquals(0, spy.lookups)
         assertEquals(0L, repo.countAssets().getOrNull())
         c.close()
@@ -115,7 +113,8 @@ class AssetIndexingControllerTest {
         c.onGraphReady(notes, writeActor = null, fileSystem = fs)
 
         c.setEnabled(true)
-        awaitRows(5)
+        awaitFinished(c)
+        assertEquals(5L, repo.countAssets().getOrNull())
         assertTrue(settings.getBoolean(key, false))
 
         c.setEnabled(false)
@@ -130,11 +129,12 @@ class AssetIndexingControllerTest {
         val c = controller(settings, visible = true)
 
         c.onGraphNotReady()
-        delay(100)
-        assertEquals(0, spy.lookups, "a loading graph is never walked")
+        assertEquals(AssetIndexProgress.Idle, c.progress.value, "a loading graph is never walked")
+        assertEquals(0, spy.lookups)
 
         c.onGraphReady(notes, writeActor = null, fileSystem = fs)
-        awaitRows(5)
+        awaitFinished(c)
+        assertEquals(5L, repo.countAssets().getOrNull())
         c.close()
     }
 

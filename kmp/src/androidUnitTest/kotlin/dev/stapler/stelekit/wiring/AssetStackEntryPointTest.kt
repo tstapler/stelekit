@@ -8,6 +8,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.core.app.ApplicationProvider
 import arrow.core.Either
 import arrow.core.right
+import dev.stapler.stelekit.asset.AssetIndexProgress
 import dev.stapler.stelekit.asset.pipeline.AssetBuildFlags
 import dev.stapler.stelekit.db.sidecar.FakeFileSystem
 import dev.stapler.stelekit.error.DomainError
@@ -20,7 +21,7 @@ import dev.stapler.stelekit.ui.GraphContentAssetStack
 import dev.stapler.stelekit.ui.rememberGraphContentAssetStack
 import dev.stapler.stelekit.ui.rememberGraphContentGraphIoStack
 import dev.stapler.stelekit.ui.rememberGraphContentVaultSetup
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -91,19 +92,21 @@ class AssetStackEntryPointTest {
 
     private fun rows(wired: WiredAppFixture) = runBlocking { wired.repos.assetRepository.countAssets().getOrNull() ?: -1L }
 
-    private fun awaitRows(wired: WiredAppFixture, expected: Long) = runBlocking {
-        withTimeout(15_000) { while (rows(wired) != expected) { composeRule.waitForIdle(); delay(20) } }
+    /** The backfill runs on its own dispatcher; the effect that started it already ran inside `waitForIdle`. */
+    private fun awaitIndexed(stack: GraphContentAssetStack?) = runBlocking {
+        withTimeout(15_000) { assertNotNull(stack).indexing.progress.first { it is AssetIndexProgress.Finished } }
     }
 
     @Test
     fun switchOn_andGraphFullyLoaded_populatesAssetIndex_thenAttachIsRegisteredToo() {
         val (wired, _, stack) = mount(switchOn = true)
 
-        ObservableEffect.assert("asset-index-rows") { awaitRows(wired, 3) }
+        awaitIndexed(stack())
+        ObservableEffect.assert("asset-index-rows") { assertEquals(3L, rows(wired)) }
 
         val assets = assertNotNull(stack()?.attachmentService, "the attach path is wrapped when a platform service exists")
         runBlocking { assets.pickAndAttach(EffectiveNotesPath(graphPath), "") }
-        awaitRows(wired, 4)
+        assertEquals(4L, rows(wired))
         // The same bytes attached again are one row (idempotent on content hash).
         runBlocking { assets.pickAndAttach(EffectiveNotesPath(graphPath), "") }
         assertEquals(4L, rows(wired))
@@ -113,9 +116,7 @@ class AssetStackEntryPointTest {
     fun switchUnset_leavesTheIndexEmpty_evenWhenTheGraphIsFullyLoaded() {
         val (wired, _, stack) = mount(switchOn = false)
 
-        runBlocking { delay(300) }
-        composeRule.waitForIdle()
-
+        assertEquals(AssetIndexProgress.Idle, assertNotNull(stack()).indexing.progress.value, "the backfill was never started")
         assertEquals(0L, rows(wired))
         val attachments = assertNotNull(stack()?.attachmentService)
         runBlocking { attachments.pickAndAttach(EffectiveNotesPath(graphPath), "") }
@@ -124,23 +125,22 @@ class AssetStackEntryPointTest {
 
     @Test
     fun graphStillLoading_doesNotStartTheWalk_untilFullyLoaded() {
-        val (wired, appState, _) = mount(switchOn = true, loaded = false)
+        val (wired, appState, stack) = mount(switchOn = true, loaded = false)
 
-        runBlocking { delay(300) }
-        composeRule.waitForIdle()
-        assertEquals(0L, rows(wired), "loadGraph must never overlap the backfill")
+        assertEquals(AssetIndexProgress.Idle, assertNotNull(stack()).indexing.progress.value, "loadGraph must never overlap the backfill")
+        assertEquals(0L, rows(wired))
 
         appState.value = appState.value.copy(isFullyLoaded = true)
-        awaitRows(wired, 3)
+        composeRule.waitForIdle()
+        awaitIndexed(stack())
+        assertEquals(3L, rows(wired))
     }
 
     @Test
     fun releaseVariant_neverStartsTheBackfill_evenIfTheKeyIsSet() {
         val (wired, _, stack) = mount(switchOn = true, internalBuild = false)
 
-        runBlocking { delay(300) }
-        composeRule.waitForIdle()
-
+        assertEquals(AssetIndexProgress.Idle, assertNotNull(stack()).indexing.progress.value, "the backfill was never started")
         assertEquals(0L, rows(wired), "a build that hides the switch must not index, whatever the stored key says")
         assertEquals(false, assertNotNull(stack()).indexing.toggleVisible)
         assertEquals(null, stack()?.moveAsset, "Move is not offered when the switch is hidden")
