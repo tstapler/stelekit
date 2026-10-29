@@ -130,4 +130,17 @@ class ConfirmPolicyTest {
         assertFalse(ConfirmAnswer.Cancel.satisfies(ConfirmTier.Standard))
         assertTrue(ConfirmAnswer.Proceed().satisfies(ConfirmTier.Standard))
     }
+
+    @Test
+    fun satisfies_should_RequireTheExactCaseSensitivePhrase_When_TypedPhraseTier() {
+        val tier = ConfirmTier.TypedPhrase("RESTORE")
+        assertTrue(ConfirmAnswer.Proceed(" RESTORE ").satisfies(tier))
+        assertFalse(ConfirmAnswer.Proceed("restore").satisfies(tier))
+        assertFalse(ConfirmAnswer.Proceed("RESTOR").satisfies(tier))
+        assertFalse(ConfirmAnswer.Proceed(null).satisfies(tier))
+        assertFalse(ConfirmAnswer.Cancel.satisfies(tier))
+        assertEquals("RESTORE", tier.requiredText)
+        assertEquals("12", ConfirmTier.TypedCount(12).requiredText)
+        assertEquals(null, ConfirmTier.Standard.requiredText)
+    }
 }

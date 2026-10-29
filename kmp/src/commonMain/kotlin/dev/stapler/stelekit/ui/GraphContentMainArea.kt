@@ -178,6 +178,7 @@ private fun GraphContentBanners(
     var hostReconnectBannerDismissedFor by remember { mutableStateOf<Pair<String?, String?>?>(null) }
     val visibility = computeBannerVisibility(deps, inputs, activeGraphInfo, hostReconnectBannerDismissedFor)
     MisplacedFilesBannerHost(deps, viewModel, activeGraphInfo)
+    dev.stapler.stelekit.ui.components.RestoreRecoveryBannerHost()
 
     inputs.appState.mcpBindFailureMessage?.let { message ->
         dev.stapler.stelekit.ui.components.McpBindFailureBanner(

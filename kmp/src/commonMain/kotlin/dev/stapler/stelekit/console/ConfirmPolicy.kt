@@ -9,7 +9,18 @@ sealed interface ConfirmTier {
 
     /** The primary button stays disabled until the owner types [count] exactly. */
     data class TypedCount(val count: Long) : ConfirmTier
+
+    /** The primary button stays disabled until the owner types [phrase] exactly (case-sensitive, surrounding spaces trimmed). */
+    data class TypedPhrase(val phrase: String) : ConfirmTier
 }
+
+/** What the owner must type for this tier, or null when nothing is typed. */
+val ConfirmTier.requiredText: String?
+    get() = when (this) {
+        ConfirmTier.Standard -> null
+        is ConfirmTier.TypedCount -> count.toString()
+        is ConfirmTier.TypedPhrase -> phrase
+    }
 
 /** A table other than the target whose row count the dry run changed (trigger or cascade). */
 data class TableDelta(val table: String, val delta: Long)
@@ -79,6 +90,7 @@ object ConfirmPolicy {
         val actualCount = if (confirmed.triggered) maxOf(actualTotal, actualChanges) else actualChanges
         return when (val tier = confirmed.tier) {
             is ConfirmTier.TypedCount -> actualCount != tier.count
+            is ConfirmTier.TypedPhrase -> false // only restore uses a phrase, and it measures no row count
             ConfirmTier.Standard ->
                 reachesOtherRows(targetTable, actualChanges, actualTotal, otherTablesChanged = false) ||
                     tierFor(actualChanges, targetRows) is ConfirmTier.TypedCount

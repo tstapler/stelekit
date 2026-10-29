@@ -10,8 +10,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import dev.stapler.stelekit.ui.components.typedItems
@@ -53,6 +55,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -60,6 +63,7 @@ import androidx.compose.ui.window.Dialog
 import dev.stapler.stelekit.console.ConfirmAnswer
 import dev.stapler.stelekit.console.ConfirmRequest
 import dev.stapler.stelekit.console.ConfirmTier
+import dev.stapler.stelekit.console.requiredText
 import dev.stapler.stelekit.console.ConsoleSession
 import dev.stapler.stelekit.console.ScrollbackKind
 import dev.stapler.stelekit.ui.rememberShareProvider
@@ -153,19 +157,20 @@ fun ConsoleScreen(session: ConsoleSession, modifier: Modifier = Modifier) {
 
         LazyRow(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             typedItems(suggestedCommands(session), key = { it.label }) { chip ->
-                AssistChip(onClick = { input = chip.input }, label = { Text(chip.label) }, enabled = !running)
+                AssistChip(onClick = { input = chip.input }, label = { Text(chip.label) }, enabled = !running, modifier = Modifier.defaultMinSize(minWidth = MIN_TOUCH_TARGET, minHeight = MIN_TOUCH_TARGET))
             }
         }
-        LazyRow(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
-            typedItems(PUNCTUATION_KEYS, key = { it }) { key ->
-                TextButton(onClick = { input += key }) { Text(key, fontFamily = FontFamily.Monospace) }
+        // History arrows sit outside the scrolling key row so they stay reachable at 360dp.
+        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            LazyRow(modifier = Modifier.weight(1f)) {
+                typedItems(PUNCTUATION_KEYS, key = { it }) { key ->
+                    TextButton(onClick = { input += key }, modifier = Modifier.defaultMinSize(minWidth = MIN_TOUCH_TARGET, minHeight = MIN_TOUCH_TARGET)) {
+                        Text(key, fontFamily = FontFamily.Monospace)
+                    }
+                }
             }
-            item {
-                IconButton(onClick = { recall(-1) }) { Icon(Icons.Default.ArrowUpward, contentDescription = "Previous command") }
-            }
-            item {
-                IconButton(onClick = { recall(1) }) { Icon(Icons.Default.ArrowDownward, contentDescription = "Next command") }
-            }
+            IconButton(onClick = { recall(-1) }, modifier = Modifier.size(MIN_TOUCH_TARGET)) { Icon(Icons.Default.ArrowUpward, contentDescription = "Previous command") }
+            IconButton(onClick = { recall(1) }, modifier = Modifier.size(MIN_TOUCH_TARGET)) { Icon(Icons.Default.ArrowDownward, contentDescription = "Next command") }
         }
         Row(modifier = Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(
@@ -206,19 +211,24 @@ internal fun WriteConfirmPanel(request: ConfirmRequest, onAnswer: (ConfirmAnswer
     var typed by remember(request) { mutableStateOf("") }
     val cancelFocus = remember { FocusRequester() }
     val tier = request.tier
-    val ready = tier !is ConfirmTier.TypedCount || typed.trim() == tier.count.toString()
+    val required = tier.requiredText
+    val ready = required == null || typed.trim() == required
     LaunchedEffect(request) { runCatching { cancelFocus.requestFocus() } }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = modifier.testTag("console-write-confirm")) {
         Text(request.title, style = MaterialTheme.typography.headlineSmall)
         Text(request.statement, fontFamily = FontFamily.Monospace, fontSize = 12.sp, modifier = Modifier.testTag("console-write-statement"))
         request.details.forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
-        if (tier is ConfirmTier.TypedCount) {
+        if (required != null) {
             OutlinedTextField(
                 value = typed,
                 onValueChange = { typed = it },
                 singleLine = true,
-                label = { Text("Type ${tier.count} to confirm") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                label = { Text("Type $required to confirm") },
+                keyboardOptions = if (tier is ConfirmTier.TypedPhrase) {
+                    KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false)
+                } else {
+                    KeyboardOptions(keyboardType = KeyboardType.Number)
+                },
                 modifier = Modifier.testTag("console-write-typed-count"),
             )
         }
@@ -228,7 +238,7 @@ internal fun WriteConfirmPanel(request: ConfirmRequest, onAnswer: (ConfirmAnswer
                 modifier = Modifier.focusRequester(cancelFocus).testTag("console-write-cancel-button"),
             ) { Text("Cancel") }
             Button(
-                onClick = { onAnswer(ConfirmAnswer.Proceed(typed.takeIf { tier is ConfirmTier.TypedCount })) },
+                onClick = { onAnswer(ConfirmAnswer.Proceed(typed.takeIf { required != null })) },
                 enabled = ready,
                 modifier = Modifier.testTag("console-write-confirm-button"),
             ) { Text(request.primaryLabel) }
@@ -252,4 +262,5 @@ private val CHIPS = listOf(
     Chip("help"),
     Chip("logs"),
 )
+private val MIN_TOUCH_TARGET = 48.dp
 private val PUNCTUATION_KEYS = listOf("\"", "'", "-", "_", "/", "|", "*", ";")

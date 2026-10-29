@@ -13,7 +13,19 @@ import dev.stapler.stelekit.console.commands.DiagCommand
 import dev.stapler.stelekit.console.commands.HelpCommand
 import dev.stapler.stelekit.console.commands.LogsCommand
 import dev.stapler.stelekit.console.commands.SchemaCommand
+import dev.stapler.stelekit.console.ConsoleBuildFlags
 import dev.stapler.stelekit.console.ConsoleWriteLog
+import dev.stapler.stelekit.console.DbOnlyRowsGuard
+import dev.stapler.stelekit.console.JournalDbOnlyRowsSource
+import dev.stapler.stelekit.console.commands.BackupsCommand
+import dev.stapler.stelekit.console.commands.GraphRestoreCommand
+import dev.stapler.stelekit.console.commands.RestoreRunner
+import dev.stapler.stelekit.console.commands.RestoreToolkit
+import dev.stapler.stelekit.db.DbRestore
+import dev.stapler.stelekit.db.GraphManagerRestoreHost
+import dev.stapler.stelekit.db.ReadHandleRestoreInspector
+import dev.stapler.stelekit.db.RestoreCatalog
+import dev.stapler.stelekit.db.platformBackupFiles
 import dev.stapler.stelekit.console.commands.SqlCommand
 import dev.stapler.stelekit.console.commands.SqlWriteCommand
 import dev.stapler.stelekit.console.commands.TablesCommand
@@ -45,6 +57,8 @@ internal fun rememberGraphContentConsoleSetup(
         )
         val sqlConsole = { deps.repos.sqlConsole }
         val writeLog = ConsoleWriteLog()
+        val restoreToolkit = { restoreToolkitFor(deps) }
+        val restoreRunner = RestoreRunner(restoreToolkit, writeLog, writesEnabled = { ConsoleBuildFlags.WRITES_ENABLED })
         ConsoleSession(
             developerMode = developerMode,
             registry = ConsoleRegistry(
@@ -52,10 +66,32 @@ internal fun rememberGraphContentConsoleSetup(
                     HelpCommand(), DiagCommand(writeLog, collector::collect), LogsCommand(),
                     SqlCommand(sqlConsole = sqlConsole), TablesCommand(sqlConsole), SchemaCommand(sqlConsole),
                     SqlWriteCommand(writer = { deps.repos.sqlWriter }, backup = { deps.repos.consoleBackup }, writeLog = writeLog),
+                    GraphRestoreCommand(restoreRunner), BackupsCommand(restoreToolkit, restoreRunner),
                 ),
             ),
         )
     }
     DisposableEffect(session) { onDispose { session.close() } }
     return remember(developerMode, session) { GraphContentConsoleStack(developerMode, session) }
+}
+
+/** The restore tools for the open graph's database, or null where there is no database file or no active graph. */
+private fun restoreToolkitFor(deps: GraphContentDeps): RestoreToolkit? {
+    val backup = deps.repos.consoleBackup ?: return null
+    val files = platformBackupFiles() ?: return null
+    val graphId = deps.graphManager.getActiveGraphId() ?: return null
+    val inspector = ReadHandleRestoreInspector()
+    val dbDirectory = backup.dbPath.substringBeforeLast('/', "")
+    return RestoreToolkit(
+        dbPath = backup.dbPath,
+        backupsDirectory = backup.directory,
+        catalog = RestoreCatalog(backup.dbPath, files, backup.directory),
+        inspector = inspector,
+        restore = DbRestore(backup.dbPath, files, inspector, GraphManagerRestoreHost(deps.graphManager, graphId), backup.directory),
+        guard = DbOnlyRowsGuard(
+            source = JournalDbOnlyRowsSource(backup.dbPath) { deps.fileSystem.fileExists(it) },
+            files = files,
+            recoveryDirectory = "$dbDirectory/console-recovery",
+        ),
+    )
 }

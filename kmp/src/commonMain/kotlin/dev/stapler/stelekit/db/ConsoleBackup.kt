@@ -34,7 +34,7 @@ interface BackupEngine {
  * write more than [FRESH_WINDOW_MS] after the last backup.
  */
 class ConsoleBackup(
-    private val dbPath: String,
+    val dbPath: String,
     private val files: BackupFiles,
     private val engine: BackupEngine,
     private val nowMs: () -> Long = { Clock.System.now().toEpochMilliseconds() },

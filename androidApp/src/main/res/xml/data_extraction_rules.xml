@@ -5,6 +5,7 @@
     <cloud-backup>
         <exclude domain="database" path="console-backups" />
         <exclude domain="file" path="console-backups" />
+        <exclude domain="database" path="console-recovery" />
         <exclude domain="file" path="console-recovery" />
         <exclude domain="file" path="git-abort-recovery" />
         <exclude domain="sharedpref" path="stelekit_secure_prefs.xml" />
@@ -13,6 +14,7 @@
     <device-transfer>
         <exclude domain="database" path="console-backups" />
         <exclude domain="file" path="console-backups" />
+        <exclude domain="database" path="console-recovery" />
         <exclude domain="file" path="console-recovery" />
         <exclude domain="file" path="git-abort-recovery" />
         <exclude domain="sharedpref" path="stelekit_secure_prefs.xml" />

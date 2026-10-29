@@ -24,6 +24,7 @@ class BackupExclusionManifestTest {
     private val required = listOf(
         "database" to "console-backups",
         "file" to "console-backups",
+        "database" to "console-recovery",
         "file" to "console-recovery",
         "file" to "git-abort-recovery",
         "sharedpref" to "stelekit_secure_prefs.xml",
