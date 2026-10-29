@@ -186,3 +186,17 @@ kt_android_library(
     visibility = ["//kmp/src/androidUnitTest/kotlin:__pkg__"],
     deps = ["@maven//:org_jetbrains_kotlin_kotlin_stdlib"],
 )
+
+# FakeFileSystem only (no @Test classes) for android_unit_tests entry-point tests; common_test_fixtures is JVM-only.
+kt_android_library(
+    name = "fake_file_system_android",
+    srcs = ["dev/stapler/stelekit/db/sidecar/FakeFileSystem.kt"],
+    custom_package = "dev.stapler.stelekit.db.sidecar",
+    testonly = True,
+    kotlinc_opts = "//:kmp_android_kotlinc_opts",
+    visibility = ["//kmp/src/androidUnitTest/kotlin:__pkg__"],
+    deps = [
+        "//kmp/src/androidMain/kotlin:android_main",
+        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+    ],
+)
