@@ -5,6 +5,7 @@ package dev.stapler.stelekit.wiring
 
 import dev.stapler.stelekit.platform.ml.AndroidPdfTextExtractor
 import dev.stapler.stelekit.platform.ml.MlKitImageLabeler
+import dev.stapler.stelekit.platform.ml.MlKitTextRecognizer
 import dev.stapler.stelekit.platform.ml.androidPlatformCaps
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -20,10 +21,11 @@ import kotlin.test.assertIs
 @Config(sdk = [29])
 class PlatformCapsRootTest {
     @Test
-    fun androidPlatformCaps_returnsTheRealMlKitLabelerAndPdfExtractor() {
+    fun androidPlatformCaps_returnsTheRealMlKitLabelerPdfExtractorAndTextRecognizer() {
         val caps = androidPlatformCaps()
 
         assertIs<MlKitImageLabeler>(caps.imageLabeler)
         assertIs<AndroidPdfTextExtractor>(caps.pdfText)
+        assertIs<MlKitTextRecognizer>(caps.textRecognizer)
     }
 }

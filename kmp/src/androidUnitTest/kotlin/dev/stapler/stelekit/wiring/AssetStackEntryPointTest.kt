@@ -15,6 +15,7 @@ import dev.stapler.stelekit.asset.pipeline.PluginEnableKeys
 import dev.stapler.stelekit.platform.ml.ImageLabeler
 import dev.stapler.stelekit.platform.ml.Label
 import dev.stapler.stelekit.platform.ml.PdfTextExtractor
+import dev.stapler.stelekit.platform.ml.TextRecognizer
 import java.util.concurrent.atomic.AtomicInteger
 import dev.stapler.stelekit.db.sidecar.FakeFileSystem
 import dev.stapler.stelekit.error.DomainError
@@ -89,7 +90,16 @@ class AssetStackEntryPointTest {
         }
     }
 
+    private class CountingRecognizer : TextRecognizer {
+        val calls = AtomicInteger()
+        override suspend fun recognize(imageBytes: ByteArray): Either<DomainError, String> {
+            calls.incrementAndGet()
+            return "Invoice 4821".right()
+        }
+    }
+
     private val labeler = CountingLabeler()
+    private val recognizer = CountingRecognizer()
     private val pdfExtractor = CountingPdfExtractor()
     private val pdf = "%PDF-1.4\n%%EOF".encodeToByteArray()
 
@@ -113,7 +123,7 @@ class AssetStackEntryPointTest {
         val deps = wired.deps.copy(
             platformIntegrations = wired.deps.platformIntegrations.copy(
                 attachmentService = FakeAttachments(fs, png + byteArrayOf(42)),
-                platformCaps = PlatformCaps(labeler, pdfExtractor),
+                platformCaps = PlatformCaps(labeler, pdfExtractor, recognizer),
             ),
         )
         var stack: GraphContentAssetStack? = null
@@ -198,6 +208,7 @@ class AssetStackEntryPointTest {
         assertEquals(4L, unprocessedRows(wired), "no asset is marked processed or failed")
         assertEquals(0, labeler.calls.get(), "the labeler is never called")
         assertEquals(0, pdfExtractor.calls.get(), "the PDF extractor is never called")
+        assertEquals(0, recognizer.calls.get(), "the text recognizer is never called")
     }
 
     @Test
@@ -211,5 +222,19 @@ class AssetStackEntryPointTest {
         assertEquals(3, labeler.calls.get())
         assertEquals(0, pdfExtractor.calls.get(), "the PDF key is unset")
         assertEquals(1L, unprocessedRows(wired), "only the PDF stays unprocessed")
+    }
+
+    @Test
+    fun masterFlagOn_withOnlyTheTextRecognitionKey_readsTextFromImagesAndNothingElse() {
+        val (wired, _, stack) = mount(switchOn = true, pluginKeys = setOf(PluginEnableKeys.TEXT_RECOGNITION), withPdf = true)
+
+        awaitIndexed(stack())
+        runBlocking { withTimeout(15_000) { while (unprocessedRows(wired) > 1L) kotlinx.coroutines.delay(20) } }
+
+        assertEquals(3, recognizer.calls.get())
+        assertEquals(0, labeler.calls.get(), "the image-labels key is unset")
+        assertEquals(0, pdfExtractor.calls.get(), "the PDF key is unset")
+        val texts = runBlocking { wired.repos.assetRepository.getAssets(100, 0).first().getOrNull().orEmpty() }
+        assertEquals(3, texts.count { it.ocrText == "Invoice 4821" && it.mlProcessed })
     }
 }

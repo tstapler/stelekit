@@ -11,7 +11,9 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.platform.ml.ImageLabeler
 import dev.stapler.stelekit.platform.ml.Label
+import dev.stapler.stelekit.platform.ml.NoOpTextRecognizer
 import dev.stapler.stelekit.platform.ml.PdfTextExtractor
+import dev.stapler.stelekit.platform.ml.TextRecognizer
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.InMemoryAssetRepository
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
@@ -45,9 +47,18 @@ class DefaultAssetPluginsTest {
         }
     }
 
+    private class FakeRecognizer : TextRecognizer {
+        var calls = 0
+        override suspend fun recognize(imageBytes: ByteArray): Either<DomainError, String> {
+            calls++
+            return "Invoice 4821".right()
+        }
+    }
+
+    private val recognizer = FakeRecognizer()
     private val labeler = FakeLabeler()
     private val pdf = FakePdf()
-    private val caps = PlatformCaps(labeler, pdf)
+    private val caps = PlatformCaps(labeler, pdf, recognizer)
 
     private fun settingsWith(vararg ids: String) = FakeSettings().apply {
         ids.forEach { putBoolean(PluginEnableKeys.keyFor(it), true) }
@@ -74,8 +85,22 @@ class DefaultAssetPluginsTest {
     }
 
     @Test
-    fun textRecognitionKey_buildsNothingYet() {
-        assertEquals(emptyList(), ids(settingsWith(PluginEnableKeys.TEXT_RECOGNITION)))
+    fun textRecognitionKey_buildsOnlyTheOcrPlugin() {
+        assertEquals(listOf("ocr"), ids(settingsWith(PluginEnableKeys.TEXT_RECOGNITION)))
+    }
+
+    @Test
+    fun allThreeKeys_returnLabelingPdfThenOcr_andNeverACloudPlugin() {
+        val all = settingsWith(PluginEnableKeys.IMAGE_LABELS, PluginEnableKeys.PDF_TEXT, PluginEnableKeys.TEXT_RECOGNITION)
+        val plugins = defaultAssetPlugins(caps, all, fs)
+        assertEquals(listOf("on_device_labeling", "pdf_text", "ocr"), plugins.map { it.id })
+        assertTrue(plugins.none { it is CloudClaudePlugin || it is CloudVisionPlugin })
+    }
+
+    @Test
+    fun noOpTextRecognizer_buildsNoOcrPlugin_evenWithTheKeySet() {
+        val desktop = PlatformCaps(labeler, pdf, NoOpTextRecognizer())
+        assertEquals(emptyList(), ids(settingsWith(PluginEnableKeys.TEXT_RECOGNITION), desktop))
     }
 
     @Test

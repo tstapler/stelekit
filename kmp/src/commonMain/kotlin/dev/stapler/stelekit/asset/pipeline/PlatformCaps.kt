@@ -3,7 +3,9 @@ package dev.stapler.stelekit.asset.pipeline
 import dev.stapler.stelekit.platform.ml.ImageLabeler
 import dev.stapler.stelekit.platform.ml.NoOpImageLabeler
 import dev.stapler.stelekit.platform.ml.NoOpPdfTextExtractor
+import dev.stapler.stelekit.platform.ml.NoOpTextRecognizer
 import dev.stapler.stelekit.platform.ml.PdfTextExtractor
+import dev.stapler.stelekit.platform.ml.TextRecognizer
 
 /**
  * What this platform can do on-device. Every host names a value explicitly (no default on
@@ -13,8 +15,9 @@ import dev.stapler.stelekit.platform.ml.PdfTextExtractor
 data class PlatformCaps(
     val imageLabeler: ImageLabeler,
     val pdfText: PdfTextExtractor,
+    val textRecognizer: TextRecognizer,
 ) {
     companion object {
-        val NONE = PlatformCaps(NoOpImageLabeler(), NoOpPdfTextExtractor())
+        val NONE = PlatformCaps(NoOpImageLabeler(), NoOpPdfTextExtractor(), NoOpTextRecognizer())
     }
 }

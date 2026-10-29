@@ -6,6 +6,7 @@ package dev.stapler.stelekit.wiring
 
 import dev.stapler.stelekit.platform.ml.JvmPdfTextExtractor
 import dev.stapler.stelekit.platform.ml.NoOpImageLabeler
+import dev.stapler.stelekit.platform.ml.NoOpTextRecognizer
 import dev.stapler.stelekit.platform.ml.OnnxImageLabeler
 import dev.stapler.stelekit.platform.ml.jvmPlatformCaps
 import java.io.File
@@ -23,6 +24,11 @@ class JvmPlatformCapsRootTest {
 
         assertIs<NoOpImageLabeler>(caps.imageLabeler)
         assertIs<JvmPdfTextExtractor>(caps.pdfText)
+    }
+
+    @Test
+    fun theTextRecognizerIsNoOp_becauseDesktopOcrIsNotShipped() {
+        assertIs<NoOpTextRecognizer>(jvmPlatformCaps(modelFile = File(dir, "missing.onnx")).textRecognizer)
     }
 
     @Test

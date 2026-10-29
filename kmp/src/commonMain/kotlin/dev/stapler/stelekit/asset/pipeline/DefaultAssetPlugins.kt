@@ -4,6 +4,7 @@ import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.platform.ml.NoOpImageLabeler
 import dev.stapler.stelekit.platform.ml.NoOpPdfTextExtractor
+import dev.stapler.stelekit.platform.ml.NoOpTextRecognizer
 
 /**
  * The on-device plugins to run for [caps], re-derived at each drain start so a settings change
@@ -21,5 +22,8 @@ fun defaultAssetPlugins(
     }
     if (PluginEnableKeys.isEnabled(settings, PluginEnableKeys.PDF_TEXT) && caps.pdfText !is NoOpPdfTextExtractor) {
         add(PdfTextPlugin(caps.pdfText))
+    }
+    if (PluginEnableKeys.isEnabled(settings, PluginEnableKeys.TEXT_RECOGNITION) && caps.textRecognizer !is NoOpTextRecognizer) {
+        add(OcrPlugin(caps.textRecognizer, fileSystem))
     }
 }
