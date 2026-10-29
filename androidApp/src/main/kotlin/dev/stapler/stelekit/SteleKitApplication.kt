@@ -199,6 +199,9 @@ class SteleKitApplication : Application() {
             // until the heap-gate flip PR (AssetBuildFlags.RELEASE_TOGGLE_VISIBLE).
             dev.stapler.stelekit.asset.pipeline.AssetBuildFlags.internalBuild =
                 applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0
+            // The console's sql! write path follows the same rule (ConsoleBuildFlags.RELEASE_WRITES_ENABLED).
+            dev.stapler.stelekit.console.ConsoleBuildFlags.internalBuild =
+                dev.stapler.stelekit.asset.pipeline.AssetBuildFlags.internalBuild
             BuildInfo.commitHash = getString(R.string.git_commit_hash)
             BuildInfo.appVersion = packageManager.getPackageInfo(packageName, 0).versionName.orEmpty()
             SteleKitContext.init(this)

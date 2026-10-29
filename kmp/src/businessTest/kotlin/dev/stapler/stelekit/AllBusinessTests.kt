@@ -65,6 +65,15 @@ import dev.stapler.stelekit.db.GraphInfoSerializationTest
 import dev.stapler.stelekit.db.GraphLoaderLfsPointerTest
 import dev.stapler.stelekit.db.SplitJournalTest
 import dev.stapler.stelekit.console.CommandLineTokenizerTest
+import dev.stapler.stelekit.console.ConfirmPolicyTest
+import dev.stapler.stelekit.console.ConsoleBackupTest
+import dev.stapler.stelekit.console.ConsoleBuildFlagsTest
+import dev.stapler.stelekit.console.ConsoleSessionConfirmTest
+import dev.stapler.stelekit.console.SqlConsoleWriterTest
+import dev.stapler.stelekit.console.SqlWriteCommandTest
+import dev.stapler.stelekit.console.SqlWriteFtsConsistencyTest
+import dev.stapler.stelekit.console.SqlWriteGuardTest
+import dev.stapler.stelekit.db.DirectSqlWriteOptInAllowlistTest
 import dev.stapler.stelekit.console.ConsoleBoundedStreamingTest
 import dev.stapler.stelekit.console.ConsoleScopeOwnershipAuditTest
 import dev.stapler.stelekit.console.ConsoleSessionTest
@@ -519,6 +528,15 @@ import org.junit.runners.Suite
     WiringAllowlistRenewalTest::class,
     WiringCompletenessTest::class,
     CommandLineTokenizerTest::class,
+    ConfirmPolicyTest::class,
+    ConsoleBackupTest::class,
+    ConsoleBuildFlagsTest::class,
+    ConsoleSessionConfirmTest::class,
+    SqlConsoleWriterTest::class,
+    SqlWriteCommandTest::class,
+    SqlWriteFtsConsistencyTest::class,
+    SqlWriteGuardTest::class,
+    DirectSqlWriteOptInAllowlistTest::class,
     ConsoleBoundedStreamingTest::class,
     ConsoleScopeOwnershipAuditTest::class,
     ConsoleSessionTest::class,

@@ -13,7 +13,9 @@ import dev.stapler.stelekit.console.commands.DiagCommand
 import dev.stapler.stelekit.console.commands.HelpCommand
 import dev.stapler.stelekit.console.commands.LogsCommand
 import dev.stapler.stelekit.console.commands.SchemaCommand
+import dev.stapler.stelekit.console.ConsoleWriteLog
 import dev.stapler.stelekit.console.commands.SqlCommand
+import dev.stapler.stelekit.console.commands.SqlWriteCommand
 import dev.stapler.stelekit.console.commands.TablesCommand
 import dev.stapler.stelekit.diagnostics.GraphDiagnosticsCollector
 import dev.stapler.stelekit.git.GitConfigRepository
@@ -42,12 +44,14 @@ internal fun rememberGraphContentConsoleSetup(
             gitRepository = deps.platformIntegrations.gitRepository,
         )
         val sqlConsole = { deps.repos.sqlConsole }
+        val writeLog = ConsoleWriteLog()
         ConsoleSession(
             developerMode = developerMode,
             registry = ConsoleRegistry(
                 listOf(
-                    HelpCommand(), DiagCommand(collector::collect), LogsCommand(),
+                    HelpCommand(), DiagCommand(writeLog, collector::collect), LogsCommand(),
                     SqlCommand(sqlConsole = sqlConsole), TablesCommand(sqlConsole), SchemaCommand(sqlConsole),
+                    SqlWriteCommand(writer = { deps.repos.sqlWriter }, backup = { deps.repos.consoleBackup }, writeLog = writeLog),
                 ),
             ),
         )

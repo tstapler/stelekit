@@ -150,6 +150,8 @@ class DatabaseWriteActor(
             override val priority: Priority = Priority.HIGH,
             override val deferred: CompletableDeferred<Either<DomainError, Unit>> = CompletableDeferred(),
             val enqueueMs: Long = HistogramWriter.epochMs(),
+            /** False for work that always rolls back (console dry run): no one should re-query for it. */
+            val invalidate: Boolean = true,
         ) : WriteRequest()
 
         // Typed hot-path subclasses — carry pageUuid so blockInvalidations emits a targeted set
@@ -388,7 +390,7 @@ class DatabaseWriteActor(
         // processExecute has no onWriteSuccess call and the caller's op is opaque to the actor —
         // "invalidate regardless" is the safe default here. Still emitted before deferred.complete()
         // so subscribers observe the signal before the caller's await() returns.
-        _blockInvalidations.tryEmit(setOf(WILDCARD_PAGE_UUID))
+        if (request.invalidate) _blockInvalidations.tryEmit(setOf(WILDCARD_PAGE_UUID))
         request.deferred.complete(result)
     }
 
@@ -758,8 +760,12 @@ class DatabaseWriteActor(
      * Execute an arbitrary write operation through the actor's serialized channel.
      * Use this for any write that doesn't have a dedicated typed method.
      */
-    suspend fun execute(priority: Priority = Priority.HIGH, op: suspend () -> Either<DomainError, Unit>): Either<DomainError, Unit> {
-        val req = WriteRequest.Execute(op, priority)
+    suspend fun execute(
+        priority: Priority = Priority.HIGH,
+        invalidate: Boolean = true,
+        op: suspend () -> Either<DomainError, Unit>,
+    ): Either<DomainError, Unit> {
+        val req = WriteRequest.Execute(op, priority, invalidate = invalidate)
         return sendAndAwait(req)
     }
 
