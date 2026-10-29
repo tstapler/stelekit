@@ -158,4 +158,17 @@ class AssetIndexingControllerTest {
         assertTrue((repo.countAssets().getOrNull() ?: 0L) >= 1L)
         c.close()
     }
+
+    @Test
+    fun memoryPressure_stopsARunningBackfill() = runBlocking {
+        val settings = FakeSettings().apply { putBoolean(key, true) }
+        val c = controller(settings, visible = true)
+        c.onGraphReady(notes, writeActor = null, fileSystem = fs)
+        assertTrue(c.progress.value !is AssetIndexProgress.Idle, "backfill started")
+
+        c.onMemoryPressure()
+
+        assertEquals(AssetIndexProgress.Idle, c.progress.value, "stopBackfill publishes Idle synchronously")
+        c.close()
+    }
 }

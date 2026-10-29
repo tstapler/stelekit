@@ -52,6 +52,7 @@ internal fun rememberGraphContentAssetStack(
     effectiveFileSystem: FileSystem,
     graphIoStack: GraphContentGraphIoStack,
     appState: StateFlow<AppState>,
+    memoryPressure: MemoryPressureListeners,
     logger: Logger,
 ): GraphContentAssetStack {
     val repos = deps.repos
@@ -61,6 +62,10 @@ internal fun rememberGraphContentAssetStack(
     }
     val moveService = remember(repos) { AssetMoveService(repos.assetRepository, repos.restrictedQueries) }
     DisposableEffect(indexing) { onDispose { indexing.close() } }
+    DisposableEffect(indexing, memoryPressure) {
+        val unregister = memoryPressure.register { indexing.onMemoryPressure() }
+        onDispose { unregister() }
+    }
 
     LaunchedEffect(appState, indexing, moveService, effectiveFileSystem, graphIoStack) {
         appState.map { it.isFullyLoaded to it.currentNotesPath }.distinctUntilChanged().collectLatest { (loaded, notes) ->
