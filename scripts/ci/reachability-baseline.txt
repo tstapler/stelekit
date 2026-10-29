@@ -14,12 +14,10 @@ DatalogQuery	kmp/src/commonMain/kotlin/dev/stapler/stelekit/search/DatalogQuery.
 DatalogSearchSupport	kmp/src/commonMain/kotlin/dev/stapler/stelekit/search/DatalogQuery.kt	18
 DeleteBlockCommand	kmp/src/commonMain/kotlin/dev/stapler/stelekit/command/BlockCommands.kt	23
 DesktopFileSystem	kmp/src/jvmMain/kotlin/dev/stapler/stelekit/platform/DesktopFileSystem.kt	-
-DriveExportService	kmp/src/commonMain/kotlin/dev/stapler/stelekit/platform/google/DriveExportService.kt	28
 EavTuple	kmp/src/jvmMain/kotlin/dev/stapler/stelekit/repository/Migration.kt	22
 ExplanationContent	kmp/src/commonMain/kotlin/dev/stapler/stelekit/docs/DiataxisDoc.kt	-
 ExplanationDoc	kmp/src/commonMain/kotlin/dev/stapler/stelekit/docs/DiataxisDoc.kt	-
 GitObjectContentVerifier	kmp/src/androidMain/kotlin/dev/stapler/stelekit/git/GitObjectContentVerifier.android.kt	-
-GooglePhotosPickerLauncher	kmp/src/androidMain/kotlin/dev/stapler/stelekit/platform/google/GooglePhotosPickerLauncher.kt	27
 GraphPreset	kmp/src/commonMain/kotlin/dev/stapler/stelekit/benchmark/BenchmarkTypes.kt	-
 IOSKableBleScanner	kmp/src/iosMain/kotlin/dev/stapler/stelekit/platform/measurement/ble/IOSKableBleScanner.kt	-
 IndentBlockCommand	kmp/src/commonMain/kotlin/dev/stapler/stelekit/command/BlockCommands.kt	23

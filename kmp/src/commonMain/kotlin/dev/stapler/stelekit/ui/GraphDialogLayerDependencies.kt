@@ -56,6 +56,8 @@ data class SettingsDialogDeps(
     val googleAuthError: String? = null,
     val onConnectGoogle: (() -> Unit)? = null,
     val onDisconnectGoogle: (() -> Unit)? = null,
+    /** True when this build exposes the Drive browser; adds "Browse Drive" to the Google Account settings. */
+    val driveBrowseAvailable: Boolean = false,
     val tagSettings: TagSettings? = null,
     val hasLlmKey: Boolean = false,
     // web-local-folder-livesync (Task 3.1.1c): null/NotApplicable/false on JVM/Android/iOS, which

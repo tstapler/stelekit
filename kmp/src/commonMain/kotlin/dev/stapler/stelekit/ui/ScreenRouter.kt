@@ -46,6 +46,7 @@ import dev.stapler.stelekit.transfer.qrcode.QrImportService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import dev.stapler.stelekit.platform.openInBrowser
 import dev.stapler.stelekit.ui.annotate.AnnotationEditorScreen
 import dev.stapler.stelekit.ui.annotate.AnnotationEditorViewModel
 import dev.stapler.stelekit.ui.components.*
@@ -110,6 +111,8 @@ internal fun ScreenRouter(
     graphDiagnostics: (suspend () -> String)? = null,
     /** Moves an asset into an `assets/` subfolder; null hides the Move action on the asset detail screen. */
     assetMover: AssetMover? = null,
+    /** Google Drive browsing and annotation export; null where this build exposes no Google surfaces. */
+    google: dev.stapler.stelekit.platform.google.GoogleIntegration? = null,
 ) {
     if (appState.fatalError != null) {
         FatalErrorScreen(
@@ -360,6 +363,11 @@ internal fun ScreenRouter(
                 )
             }
 
+            is Screen.DriveBrowser -> {
+                NavigationTracingEffect("DriveBrowser")
+                DriveBrowserRoute(google = google, onNavigateBack = { viewModel.goBack() })
+            }
+
             is Screen.AssetDetail -> {
                 NavigationTracingEffect("AssetDetail")
                 val assetDetailViewModel = remember(currentScreen.assetUuid, assetMover) {
@@ -429,10 +437,16 @@ internal fun ScreenRouter(
                         }
                 }
                 resolvedAnnotation?.let { annotation ->
+                    val driveExport = rememberGraphContentDriveExportActions(google, annotationEditorViewModel, annotation)
                     AnnotationEditorScreen(
                         viewModel = annotationEditorViewModel,
                         imageAnnotation = annotation,
                         platformSettings = platformSettings,
+                        onExportToDrive = driveExport?.onExport,
+                        driveExportState = driveExport?.state ?: dev.stapler.stelekit.ui.annotate.DriveExportUiState.Idle,
+                        onCancelDriveExport = driveExport?.onCancel,
+                        onOpenDriveLink = if (driveExport != null) ::openInBrowser else null,
+                        driveExportDisabledReason = driveExport?.disabledReason,
                         onNavigateBack = {
                             if (currentScreen.pageUuid != null) {
                                 viewModel.navigateToPageByUuid(currentScreen.pageUuid)

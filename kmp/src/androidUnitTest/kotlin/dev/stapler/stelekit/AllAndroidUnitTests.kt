@@ -2,6 +2,7 @@ package dev.stapler.stelekit
 
 import dev.stapler.stelekit.db.WalConfiguredCallbackTest
 import dev.stapler.stelekit.git.AndroidGitRepositoryLfsGuardTest
+import dev.stapler.stelekit.google.AndroidGoogleSupportTest
 import dev.stapler.stelekit.git.AndroidGitRepositoryTestRemoteTest
 import dev.stapler.stelekit.git.GitSyncBusyCounterSharedWiringTest
 import dev.stapler.stelekit.platform.LegacyPathValidationTest
@@ -33,6 +34,7 @@ import org.junit.runners.Suite
 @Suite.SuiteClasses(
     WalConfiguredCallbackTest::class,
     PlatformCapsRootTest::class,
+    AndroidGoogleSupportTest::class,
     GitSyncBusyCounterSharedWiringTest::class,
     AndroidGitRepositoryTestRemoteTest::class,
     AndroidGitRepositoryLfsGuardTest::class,

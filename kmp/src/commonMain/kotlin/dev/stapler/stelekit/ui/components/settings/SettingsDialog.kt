@@ -62,6 +62,7 @@ fun SettingsDialog(
     googleAuthError: String? = null,
     onConnectGoogle: (() -> Unit)? = null,
     onDisconnectGoogle: (() -> Unit)? = null,
+    onBrowseDrive: (() -> Unit)? = null,
     // Vault / encryption settings
     isParanoidMode: Boolean = false,
     isVaultUnlocked: Boolean = false,
@@ -223,6 +224,7 @@ fun SettingsDialog(
                         errorMessage = googleAuthError,
                         onConnect = { onConnectGoogle?.invoke() },
                         onDisconnect = { onDisconnectGoogle?.invoke() },
+                        onBrowseDrive = onBrowseDrive,
                     )
                     SettingsCategory.VAULT -> VaultSettings(
                         isParanoidMode = isParanoidMode,

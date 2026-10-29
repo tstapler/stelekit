@@ -39,4 +39,17 @@ data class EditorCapabilities(
      * Only non-null on Android when SensorModule.cameraProvider.isAvailable is true.
      */
     val onCaptureImage: (() -> Unit)? = null,
+    /**
+     * "From Google Photos" toolbar entry: imports the photos the owner picks and inserts them at the
+     * editing block. Null (default, and every release build until the OAuth device pass) hides it.
+     */
+    val googlePhotos: GooglePhotosEntry? = null,
+)
+
+/** Signed-in state, import progress and the import action behind [EditorCapabilities.googlePhotos]. */
+class GooglePhotosEntry(
+    val signedIn: Boolean,
+    val status: dev.stapler.stelekit.platform.google.GooglePhotosImportState,
+    val onImport: (editingBlockUuid: BlockUuid) -> Unit,
+    val onDismissFailure: () -> Unit = {},
 )

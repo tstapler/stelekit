@@ -19,6 +19,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.lifecycleScope
+import dev.stapler.stelekit.app.R
 import dev.stapler.stelekit.db.AndroidInsufficientSpaceCheck
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.db.RelocationStagingDirectory
@@ -332,6 +333,13 @@ class MainActivity : ComponentActivity() {
                 dev.stapler.stelekit.git.AndroidGitCloneWorkerLauncher(applicationContext)
             }
             val attachmentService = rememberAndroidMediaAttachmentService(this@MainActivity, fileSystem)
+            // Null in release variants (GoogleBuildFlags), which hides every Google surface.
+            val googleIntegration = remember {
+                dev.stapler.stelekit.platform.google.AndroidGoogleIntegration.create(
+                    fileSystem = fileSystem,
+                    oauthClientId = getString(R.string.google_oauth_client_id),
+                )
+            }
 
             // Story 4.1.5: mirrors graphManager's onGraphManagerReady pattern above — kept current
             // by onViewModelReady so the deep-link LaunchedEffect further below always acts on the
@@ -475,6 +483,8 @@ class MainActivity : ComponentActivity() {
                         gitRepository = gitRepository,
                         gitCloneWorkerLauncher = gitCloneWorkerLauncher,
                         attachmentService = attachmentService,
+                        googleAuthManager = googleIntegration?.authManager,
+                        google = googleIntegration,
                         requestCameraPermission = ::requestCameraPermission,
                         graphMoveQuiesceStrategy = androidGraphMoveQuiesceStrategy,
                         hostLinkStep = androidHostLinkStep,

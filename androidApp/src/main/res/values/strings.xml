@@ -9,4 +9,7 @@
     <string name="widget_description">Quick note capture to today\'s journal</string>
     <string name="widget_voice_button">Voice note</string>
     <string name="widget_voice_description">Voice capture to today\'s journal</string>
+    <!-- Public OAuth client ID for Google sign-in (Photos import, Drive export). Empty until the owner
+         registers one in Google Cloud Console; sign-in then reports "client ID not configured". -->
+    <string name="google_oauth_client_id" translatable="false"></string>
 </resources>

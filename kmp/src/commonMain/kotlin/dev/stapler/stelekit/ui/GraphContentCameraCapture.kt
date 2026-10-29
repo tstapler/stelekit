@@ -84,6 +84,15 @@ internal fun GraphContentScreenAndCapture(deps: GraphContentDeps, viewModel: Ste
             enabled = queryBlocksEnabled,
         )
     }
+    val googlePhotos = rememberGraphContentGooglePhotosEntry(
+        google = deps.platformIntegrations.google,
+        attachments = deps.platformIntegrations.attachmentService,
+        notesPath = inputs.appState.currentNotesPath,
+        signInRecheckKey = inputs.appState.settingsVisible,
+        insertMarkdown = { blockUuid, markdown ->
+            inputs.viewModelStack.blockStateManager.insertTextAtCursor(blockUuid, markdown)
+        },
+    )
     CompositionLocalProvider(
         LocalQueryBlockContext provides queryContext,
     ) {
@@ -104,7 +113,8 @@ internal fun GraphContentScreenAndCapture(deps: GraphContentDeps, viewModel: Ste
             graphLoader = inputs.graphIoStack.graphLoader,
             graphDiagnostics = diagnosticsCollector::collect,
             assetMover = deps.assets?.moveAsset,
-            capabilities = buildEditorCapabilities(deps, viewModel, inputs, captureState),
+            google = deps.platformIntegrations.google,
+            capabilities = buildEditorCapabilities(deps, viewModel, inputs, captureState).copy(googlePhotos = googlePhotos),
             onImportImage = buildOnImportImage(deps, viewModel, inputs, captureState),
             platformSettings = deps.platformSettings,
             perfSpans = inputs.perfTelemetry.perfSpans,

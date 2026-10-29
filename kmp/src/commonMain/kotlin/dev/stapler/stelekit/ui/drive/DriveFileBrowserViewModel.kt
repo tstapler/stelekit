@@ -4,7 +4,8 @@
 package dev.stapler.stelekit.ui.drive
 
 import dev.stapler.stelekit.logging.Logger
-import dev.stapler.stelekit.platform.google.DriveApiClient
+import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.platform.google.DriveBrowserPort
 import dev.stapler.stelekit.platform.google.DriveFile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -22,10 +23,12 @@ data class DriveFileBrowserState(
     val files: List<DriveFile> = emptyList(),
     /** Stack of (folderId, folderName) pairs representing the navigation history. */
     val folderStack: List<Pair<String, String>> = emptyList(),
-    val isLoading: Boolean = false,
+    val isLoading: Boolean = true,
     val error: String? = null,
     /** File ID of a file currently being downloaded. */
     val downloadingFileId: String? = null,
+    /** The stored token was rejected (401/403): the owner must sign in again in Settings. */
+    val authExpired: Boolean = false,
 ) {
     /** Breadcrumb path for display in the header. */
     val breadcrumb: String
@@ -40,13 +43,19 @@ data class DriveFileBrowserState(
         get() = folderStack.lastOrNull()?.first
 }
 
+internal const val LOAD_FAILED_MESSAGE = "Couldn't load Drive"
+internal const val SIGN_IN_AGAIN_MESSAGE = "Google sign-in expired - sign in again in Settings"
+
+private fun DomainError.isAuthFailure(): Boolean =
+    this is DomainError.NetworkError.HttpError && (statusCode == 401 || statusCode == 403)
+
 /**
  * ViewModel for [DriveFileBrowserScreen].
  *
  * CRITICAL: owns its [CoroutineScope] internally — never accepts an externally supplied scope.
  */
 class DriveFileBrowserViewModel(
-    private val apiClient: DriveApiClient,
+    private val apiClient: DriveBrowserPort,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val logger = Logger("DriveFileBrowserViewModel")
@@ -63,16 +72,18 @@ class DriveFileBrowserViewModel(
         scope.launch {
             apiClient.listFiles(folderId).fold(
                 ifLeft = { err ->
+                    val authExpired = err.isAuthFailure()
                     _state.update {
                         it.copy(
                             isLoading = false,
-                            error = "Cannot load Drive files: ${err.message}",
+                            error = if (authExpired) SIGN_IN_AGAIN_MESSAGE else LOAD_FAILED_MESSAGE,
+                            authExpired = authExpired,
                         )
                     }
                     logger.error("Drive listFiles failed: ${err.message}")
                 },
                 ifRight = { files ->
-                    _state.update { it.copy(isLoading = false, files = files, error = null) }
+                    _state.update { it.copy(isLoading = false, files = files, error = null, authExpired = false) }
                 },
             )
         }
