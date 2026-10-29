@@ -5,6 +5,7 @@ import dev.stapler.stelekit.benchmark.GraphLoadTimingTest
 import dev.stapler.stelekit.benchmark.RepositoryBenchmarkRunnerTest
 import dev.stapler.stelekit.benchmark.RepositoryBenchmarkTest
 import dev.stapler.stelekit.cache.CacheHitBenchmarkTest
+import dev.stapler.stelekit.console.DbRestoreSwapTest
 import dev.stapler.stelekit.console.spike.AuthorizerSpikeTest
 import dev.stapler.stelekit.console.spike.DbSwapSpikeTest
 import dev.stapler.stelekit.console.spike.QueryCancelSpikeTest
@@ -330,6 +331,7 @@ import org.junit.runners.Suite
 @RunWith(Suite::class)
 @Suite.SuiteClasses(
     GraphLoadJankTest::class,
+    DbRestoreSwapTest::class,
     AuthorizerSpikeTest::class,
     DbSwapSpikeTest::class,
     QueryCancelSpikeTest::class,
