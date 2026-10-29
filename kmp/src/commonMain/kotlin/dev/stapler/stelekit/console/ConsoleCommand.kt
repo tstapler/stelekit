@@ -28,6 +28,7 @@ interface ConsoleCommand {
 class ConsoleContext(
     val registry: ConsoleRegistry,
     val logs: () -> List<LogEntry> = { LogManager.logs.value },
+    val confirmer: ConsoleConfirmer = NoConfirmer,
 )
 
 /** Where a command writes. Everything written is redacted by the session before it reaches scrollback. */

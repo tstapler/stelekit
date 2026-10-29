@@ -31,6 +31,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -43,14 +44,22 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import dev.stapler.stelekit.console.ConfirmAnswer
+import dev.stapler.stelekit.console.ConfirmRequest
+import dev.stapler.stelekit.console.ConfirmTier
 import dev.stapler.stelekit.console.ConsoleSession
 import dev.stapler.stelekit.console.ScrollbackKind
 import dev.stapler.stelekit.ui.rememberShareProvider
@@ -67,6 +76,7 @@ fun ConsoleScreen(session: ConsoleSession, modifier: Modifier = Modifier) {
     val lines by session.scrollback.lines.collectAsState()
     val running by session.isRunning.collectAsState()
     val history by session.history.collectAsState()
+    val pendingConfirm by session.pendingConfirm.collectAsState()
     var input by rememberSaveable { mutableStateOf("") }
     var historyCursor by remember { mutableIntStateOf(-1) }
     val listState = rememberLazyListState()
@@ -90,6 +100,10 @@ fun ConsoleScreen(session: ConsoleSession, modifier: Modifier = Modifier) {
         val next = (if (historyCursor == -1) history.size else historyCursor) + step
         historyCursor = next.coerceIn(0, history.lastIndex)
         input = history[historyCursor]
+    }
+
+    pendingConfirm?.let { request ->
+        WriteConfirmDialog(request, onAnswer = session::answerConfirm)
     }
 
     Column(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).imePadding()) {
@@ -169,6 +183,55 @@ fun ConsoleScreen(session: ConsoleSession, modifier: Modifier = Modifier) {
             } else {
                 Button(onClick = { submit() }, enabled = input.isNotBlank()) { Text("Run") }
             }
+        }
+    }
+}
+
+/** The `sql!` confirm as a dialog window. Its content is [WriteConfirmPanel], which tests drive directly. */
+@Composable
+internal fun WriteConfirmDialog(request: ConfirmRequest, onAnswer: (ConfirmAnswer) -> Unit) {
+    Dialog(onDismissRequest = { onAnswer(ConfirmAnswer.Cancel) }) {
+        Surface(shape = MaterialTheme.shapes.large, tonalElevation = 6.dp) {
+            WriteConfirmPanel(request, onAnswer, modifier = Modifier.padding(24.dp))
+        }
+    }
+}
+
+/**
+ * The statement verbatim, the plain-language details, and Cancel as the focused default. A
+ * [ConfirmTier.TypedCount] confirm keeps the primary button disabled until the exact count is typed.
+ */
+@Composable
+internal fun WriteConfirmPanel(request: ConfirmRequest, onAnswer: (ConfirmAnswer) -> Unit, modifier: Modifier = Modifier) {
+    var typed by remember(request) { mutableStateOf("") }
+    val cancelFocus = remember { FocusRequester() }
+    val tier = request.tier
+    val ready = tier !is ConfirmTier.TypedCount || typed.trim() == tier.count.toString()
+    LaunchedEffect(request) { runCatching { cancelFocus.requestFocus() } }
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = modifier.testTag("console-write-confirm")) {
+        Text(request.title, style = MaterialTheme.typography.headlineSmall)
+        Text(request.statement, fontFamily = FontFamily.Monospace, fontSize = 12.sp, modifier = Modifier.testTag("console-write-statement"))
+        request.details.forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
+        if (tier is ConfirmTier.TypedCount) {
+            OutlinedTextField(
+                value = typed,
+                onValueChange = { typed = it },
+                singleLine = true,
+                label = { Text("Type ${tier.count} to confirm") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.testTag("console-write-typed-count"),
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End), modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(
+                onClick = { onAnswer(ConfirmAnswer.Cancel) },
+                modifier = Modifier.focusRequester(cancelFocus).testTag("console-write-cancel-button"),
+            ) { Text("Cancel") }
+            Button(
+                onClick = { onAnswer(ConfirmAnswer.Proceed(typed.takeIf { tier is ConfirmTier.TypedCount })) },
+                enabled = ready,
+                modifier = Modifier.testTag("console-write-confirm-button"),
+            ) { Text(request.primaryLabel) }
         }
     }
 }

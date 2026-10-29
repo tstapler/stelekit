@@ -10,13 +10,17 @@ import dev.stapler.stelekit.console.ConsoleCommand
 import dev.stapler.stelekit.console.ConsoleContext
 import dev.stapler.stelekit.console.ConsoleError
 import dev.stapler.stelekit.console.ConsoleOutput
+import dev.stapler.stelekit.console.ConsoleWriteLog
 import kotlinx.coroutines.CancellationException
 
 /**
  * `diag` prints the same graph diagnostics report the Logs screen offers
  * (`GraphDiagnosticsCollector.collect`, already redacted). [collect] is null when no graph is active.
  */
-class DiagCommand(private val collect: (suspend () -> String)?) : ConsoleCommand {
+class DiagCommand(
+    private val writeLog: ConsoleWriteLog? = null,
+    private val collect: (suspend () -> String)?,
+) : ConsoleCommand {
     override val name = "diag"
     override val summary = "Print the graph diagnostics report"
 
@@ -31,6 +35,11 @@ class DiagCommand(private val collect: (suspend () -> String)?) : ConsoleCommand
             return ConsoleError.Failed("Diagnostics failed: ${e::class.simpleName}: ${e.message.orEmpty()}").left()
         }
         out.info(report)
+        val writes = writeLog?.entries.orEmpty()
+        if (writes.isNotEmpty()) {
+            out.info("Console writes this session (DB-only, not in markdown):")
+            writes.forEach { out.info("  $it") }
+        }
         return Unit.right()
     }
 }

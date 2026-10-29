@@ -54,7 +54,9 @@ class ConsoleSession(
     private val scope = CoroutineScope(
         SupervisorJob() + dispatcher + CoroutineExceptionHandler { _, t -> emit(epoch, ScrollbackKind.ERROR, "Internal error: ${describe(t)}") },
     )
-    private val context = ConsoleContext(registry)
+    private val pendingAnswer = MutableStateFlow<CompletableDeferred<ConfirmAnswer>?>(null)
+    private val confirmState = MutableStateFlow<ConfirmRequest?>(null)
+    private val context = ConsoleContext(registry, confirmer = ConsoleConfirmer { request -> askOwner(request) })
     private val pending = Channel<Item>(Channel.UNLIMITED)
     private val running = MutableStateFlow(false)
     private val historyState = MutableStateFlow<List<String>>(emptyList())
@@ -66,6 +68,14 @@ class ConsoleSession(
     val isRunning: StateFlow<Boolean> = running.asStateFlow()
     val history: StateFlow<List<String>> = historyState.asStateFlow()
     val commands: List<ConsoleCommand> get() = registry.all
+
+    /** The write confirm the screen must show, or null. A command waiting on it holds [isRunning] true. */
+    val pendingConfirm: StateFlow<ConfirmRequest?> = confirmState.asStateFlow()
+
+    /** The owner's answer to [pendingConfirm]; ignored when nothing is pending. */
+    fun answerConfirm(answer: ConfirmAnswer) {
+        pendingAnswer.value?.complete(answer)
+    }
 
     private sealed interface Item {
         class Line(val epoch: Int, val kind: ScrollbackKind, val text: String) : Item
@@ -147,6 +157,18 @@ class ConsoleSession(
             throw e
         } catch (t: Throwable) {
             fail(runEpoch, ConsoleError.Failed("Command failed: ${describe(t)}"))
+        }
+    }
+
+    private suspend fun askOwner(request: ConfirmRequest): ConfirmAnswer {
+        val answer = CompletableDeferred<ConfirmAnswer>()
+        pendingAnswer.value = answer
+        confirmState.value = request
+        try {
+            return answer.await()
+        } finally {
+            confirmState.value = null
+            pendingAnswer.value = null
         }
     }
 

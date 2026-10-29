@@ -60,7 +60,12 @@ class ConsoleEntryPointTest {
 
         ObservableEffect.assert("console-help") {
             assertTrue(result.isRight(), "help must succeed: $result")
-            assertEquals(listOf("diag", "help", "logs", "schema", "sql", "tables"), session.scrollback.lines.value.drop(1).map { it.text.substringBefore(' ') })
+            assertEquals(listOf("diag", "help", "logs", "schema", "sql", "sql!", "tables"), session.scrollback.lines.value.drop(1).map { it.text.substringBefore(' ') })
+            // Writes are off in any build that did not mark itself internal; the verb is listed with the reason.
+            assertTrue(
+                session.scrollback.lines.value.any { it.text.startsWith("sql!") && it.text.contains("disabled: writes not enabled in this build") },
+                "sql! must be listed disabled: ${session.scrollback.lines.value.map { it.text }}",
+            )
         }
     }
 

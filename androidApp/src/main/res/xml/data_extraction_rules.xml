@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+ (android:dataExtractionRules): cloud backup and device-to-device transfer.
+     See backup_rules.xml for why each path is excluded. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="database" path="console-backups" />
+        <exclude domain="file" path="console-backups" />
+        <exclude domain="file" path="console-recovery" />
+        <exclude domain="file" path="git-abort-recovery" />
+        <exclude domain="sharedpref" path="stelekit_secure_prefs.xml" />
+        <exclude domain="sharedpref" path="stelekit_prefs.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="database" path="console-backups" />
+        <exclude domain="file" path="console-backups" />
+        <exclude domain="file" path="console-recovery" />
+        <exclude domain="file" path="git-abort-recovery" />
+        <exclude domain="sharedpref" path="stelekit_secure_prefs.xml" />
+        <exclude domain="sharedpref" path="stelekit_prefs.xml" />
+    </device-transfer>
+</data-extraction-rules>
