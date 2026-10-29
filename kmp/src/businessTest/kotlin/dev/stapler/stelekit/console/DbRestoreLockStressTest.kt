@@ -9,7 +9,6 @@ import dev.stapler.stelekit.db.DbRestore
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.db.GraphManagerRestoreHost
-import dev.stapler.stelekit.db.GraphWriteLockOrderGuard
 import dev.stapler.stelekit.db.RegistryGraphLocator
 import dev.stapler.stelekit.db.RestoreOutcome
 import dev.stapler.stelekit.db.RestoreSource
@@ -81,7 +80,6 @@ class DbRestoreLockStressTest {
 
     @BeforeTest
     fun start() {
-        GraphWriteLockOrderGuard.forceEnabled = true
         val settings = MapSettings()
         settings.putString(
             "graph_registry",
@@ -92,7 +90,6 @@ class DbRestoreLockStressTest {
 
     @AfterTest
     fun stop() {
-        GraphWriteLockOrderGuard.forceEnabled = false
         manager.shutdown()
     }
 
