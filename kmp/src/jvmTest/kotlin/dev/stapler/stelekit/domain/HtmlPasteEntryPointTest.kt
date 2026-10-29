@@ -13,9 +13,9 @@ import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
+import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.ui.pasteClipboardHtml
 import dev.stapler.stelekit.ui.state.BlockStateManager
-import dev.stapler.stelekit.ui.state.FakeFileSystem
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -57,9 +57,9 @@ class HtmlPasteEntryPointTest {
         )
         val manager = BlockStateManager(
             blockRepo,
-            GraphLoader(FakeFileSystem(), pageRepo, blockRepo),
+            GraphLoader(NoOpFileSystem(), pageRepo, blockRepo),
             CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
-            graphWriter = GraphWriter(FakeFileSystem()),
+            graphWriter = GraphWriter(NoOpFileSystem()),
             pageRepository = pageRepo,
             graphPathProvider = { EffectiveNotesPath("/fake/graph") },
         )
@@ -147,4 +147,20 @@ class HtmlPasteEntryPointTest {
         assertEquals(parent.uuid, blocks.single { it.content == "child" }.parentUuid)
         assertEquals(null, blocks.single { it.content == "next" }.parentUuid)
     }
+}
+
+// Bazel's jvm_tests does not see commonTest's ui.state.FakeFileSystem, so this test owns its inert one.
+private class NoOpFileSystem : FileSystem {
+    override fun getDefaultGraphPath(): String = "/tmp"
+    override fun expandTilde(path: String) = path
+    override fun readFile(path: String): String? = null
+    override fun writeFile(path: String, content: String): Boolean = true
+    override fun listFiles(path: String): List<String> = emptyList()
+    override fun listDirectories(path: String): List<String> = emptyList()
+    override fun fileExists(path: String): Boolean = false
+    override fun directoryExists(path: String): Boolean = true
+    override fun createDirectory(path: String): Boolean = true
+    override fun deleteFile(path: String): Boolean = true
+    override fun pickDirectory(): String? = null
+    override fun getLastModifiedTime(path: String): Long? = null
 }
