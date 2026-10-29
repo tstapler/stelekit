@@ -14,7 +14,6 @@ DatalogQuery	kmp/src/commonMain/kotlin/dev/stapler/stelekit/search/DatalogQuery.
 DatalogSearchSupport	kmp/src/commonMain/kotlin/dev/stapler/stelekit/search/DatalogQuery.kt	18
 DeleteBlockCommand	kmp/src/commonMain/kotlin/dev/stapler/stelekit/command/BlockCommands.kt	23
 DesktopFileSystem	kmp/src/jvmMain/kotlin/dev/stapler/stelekit/platform/DesktopFileSystem.kt	-
-EavTuple	kmp/src/jvmMain/kotlin/dev/stapler/stelekit/repository/Migration.kt	22
 ExplanationContent	kmp/src/commonMain/kotlin/dev/stapler/stelekit/docs/DiataxisDoc.kt	-
 ExplanationDoc	kmp/src/commonMain/kotlin/dev/stapler/stelekit/docs/DiataxisDoc.kt	-
 GitObjectContentVerifier	kmp/src/androidMain/kotlin/dev/stapler/stelekit/git/GitObjectContentVerifier.android.kt	-
@@ -30,7 +29,6 @@ LidarHardwareCheck	kmp/src/iosMain/kotlin/dev/stapler/stelekit/platform/sensor/I
 LruWeigher	kmp/src/commonMain/kotlin/dev/stapler/stelekit/cache/LruCache.kt	-
 MeasureTemplateResolver	kmp/src/commonMain/kotlin/dev/stapler/stelekit/domain/MeasurementPropertySyncer.kt	-
 MergeBlockCommand	kmp/src/commonMain/kotlin/dev/stapler/stelekit/command/BlockCommands.kt	23
-MigrationCli	kmp/src/jvmMain/kotlin/dev/stapler/stelekit/desktop/MigrationCli.kt	21
 MoveBlockDownCommand	kmp/src/commonMain/kotlin/dev/stapler/stelekit/command/BlockCommands.kt	23
 MoveBlockUpCommand	kmp/src/commonMain/kotlin/dev/stapler/stelekit/command/BlockCommands.kt	23
 NamespaceUtils	kmp/src/commonMain/kotlin/dev/stapler/stelekit/outliner/NamespaceUtils.kt	-
@@ -38,7 +36,6 @@ NoOpErrorTracker	kmp/src/commonMain/kotlin/dev/stapler/stelekit/error/ErrorTrack
 OutdentBlockCommand	kmp/src/commonMain/kotlin/dev/stapler/stelekit/command/BlockCommands.kt	23
 PageOptics	kmp/src/commonMain/kotlin/dev/stapler/stelekit/model/ModelOptics.kt	-
 PlaceholderInferenceWorker	kmp/src/commonMain/kotlin/dev/stapler/stelekit/search/VectorSearch.kt	17
-PluginMigration	kmp/src/jvmMain/kotlin/dev/stapler/stelekit/repository/Migration.kt	22
 PropertiesParser	kmp/src/commonMain/kotlin/dev/stapler/stelekit/parser/PropertiesParser.kt	-
 PropertiesResult	kmp/src/commonMain/kotlin/dev/stapler/stelekit/parser/PropertiesParser.kt	-
 PropertyOptics	kmp/src/commonMain/kotlin/dev/stapler/stelekit/model/ModelOptics.kt	-
