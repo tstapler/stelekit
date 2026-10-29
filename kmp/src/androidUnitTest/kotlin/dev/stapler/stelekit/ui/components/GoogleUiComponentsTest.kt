@@ -35,10 +35,8 @@ class GoogleUiComponentsTest {
 
     private fun showButtonAndLine(s: GooglePhotosToolbarState) = composeTestRule.setContent {
         MaterialTheme {
-            androidx.compose.foundation.layout.Column {
-                GooglePhotosToolbarButton(s)
-                GooglePhotosStatusLine(s)
-            }
+            GooglePhotosToolbarButton(s)
+            GooglePhotosStatusLine(s)
         }
     }
 

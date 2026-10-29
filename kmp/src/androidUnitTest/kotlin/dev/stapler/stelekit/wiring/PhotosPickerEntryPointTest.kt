@@ -31,6 +31,7 @@ import dev.stapler.stelekit.service.AttachmentResult
 import dev.stapler.stelekit.service.MediaAttachmentService
 import dev.stapler.stelekit.ui.GraphContentAssetStack
 import dev.stapler.stelekit.ui.components.GooglePhotosEntry
+import dev.stapler.stelekit.ui.MemoryPressureListeners
 import dev.stapler.stelekit.ui.rememberGraphContentAssetStack
 import dev.stapler.stelekit.ui.rememberGraphContentGooglePhotosEntry
 import dev.stapler.stelekit.ui.rememberGraphContentGraphIoStack
@@ -138,7 +139,9 @@ class PhotosPickerEntryPointTest {
             val io = rememberGraphContentGraphIoStack(
                 deps, vault.effectiveFileSystem, vault.activeGraphPath, vault.activeGraphInfo, Logger("PhotosPickerEntryPointTest"),
             )
-            val assets = rememberGraphContentAssetStack(deps, vault.effectiveFileSystem, io, appState, Logger("PhotosPickerEntryPointTest"))
+            val assets = rememberGraphContentAssetStack(
+                deps, vault.effectiveFileSystem, io, appState, MemoryPressureListeners(), Logger("PhotosPickerEntryPointTest"),
+            )
             stack = assets
             entry = rememberGraphContentGooglePhotosEntry(
                 google = google,
