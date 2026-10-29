@@ -1513,7 +1513,8 @@ private fun LoupeOverlay(
                 model = loupeModel,
                 imageLoader = rememberSteleKitImageLoader(),
                 contentDescription = null,
-                contentScale = ContentScale.FillBounds,
+                // Must match the main image's Fit scaling, or the letterbox offsets differ and the crosshair misses the tap point.
+                contentScale = ContentScale.Fit,
                 modifier = Modifier
                     .size(innerWidthDp, innerHeightDp)
                     .offset { IntOffset(innerOffsetXPx.toInt(), innerOffsetYPx.toInt()) },
