@@ -301,4 +301,6 @@ data class GraphContentDeps(
     val hotkeyComboLabel: String? = null,
     /** Where this graph registers its editor-side writer for the share router. */
     val activeWriteHooks: dev.stapler.stelekit.capture.ActiveWriteHooks? = null,
+    /** Per-graph asset index/move stack; set by [GraphContent] itself (see GraphContentAssetSetup.kt), null in hosts. */
+    val assets: GraphContentAssetStack? = null,
 )

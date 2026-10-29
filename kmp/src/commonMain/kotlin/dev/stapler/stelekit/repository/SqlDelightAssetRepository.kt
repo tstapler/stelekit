@@ -119,6 +119,27 @@ class SqlDelightAssetRepository(
             }
         }
 
+    override suspend fun getIndexedFilePaths(filePaths: List<String>): Either<DomainError, Set<String>> =
+        withContext(PlatformDispatcher.DB) {
+            try {
+                // IN lists stay <= 500 (SQLITE_MAX_VARIABLE_NUMBER is 999 on Android API < 30).
+                filePaths.chunked(500).flatMap { queries.selectAssetFilePathsIn(it).executeAsList() }.toSet().right()
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                DomainError.DatabaseError.ReadFailed(e.message ?: "unknown").left()
+            }
+        }
+
+    override suspend fun findUuidByContentHash(contentHash: String): Either<DomainError, AssetUuid?> =
+        withContext(PlatformDispatcher.DB) {
+            try {
+                queries.selectAssetUuidByContentHash(contentHash).executeAsOneOrNull()?.let { AssetUuid(it) }.right()
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                DomainError.DatabaseError.ReadFailed(e.message ?: "unknown").left()
+            }
+        }
+
     @DirectRepositoryWrite
     override suspend fun saveAsset(asset: AssetEntry): Either<DomainError, Unit> =
         withContext(PlatformDispatcher.DB) {

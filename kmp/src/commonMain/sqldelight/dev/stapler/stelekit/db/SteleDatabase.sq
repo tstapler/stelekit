@@ -1298,6 +1298,13 @@ SELECT COUNT(*) FROM asset_index WHERE is_orphan = 1;
 selectAllTagsJson:
 SELECT tags FROM asset_index WHERE tags IS NOT NULL AND tags != '' AND tags != '[]';
 
+-- Projections for the index backfill: file_path only, bounded by the caller's IN list (<= 500).
+selectAssetFilePathsIn:
+SELECT file_path FROM asset_index WHERE file_path IN :paths;
+
+selectAssetUuidByContentHash:
+SELECT uuid FROM asset_index WHERE content_hash = :contentHash LIMIT 1;
+
 -- pending_asset_moves WAL table: holds in-flight moves for crash recovery
 -- This table is expected to hold <= a handful of rows at any time -- unbounded reads are safe.
 CREATE TABLE IF NOT EXISTS pending_asset_moves (

@@ -78,6 +78,8 @@ data class SettingsDialogDeps(
     val hotkeyComboLabel: String? = null,
     val captureTargetSettings: dev.stapler.stelekit.capture.CaptureTargetSettings? = null,
     val captureGraphs: List<dev.stapler.stelekit.model.GraphInfo> = emptyList(),
+    // Interim Settings > Plugins "Asset indexing" row (Task 4.1d); null hides it.
+    val assetIndexing: dev.stapler.stelekit.asset.AssetIndexingController? = null,
 )
 
 /**

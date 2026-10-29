@@ -113,9 +113,7 @@ class AssetMoveServiceWalTest {
         return AssetMoveService(repo, restricted).moveAsset(asset, subfolder, EffectiveNotesPath("/graph"), fs, GraphWriter(fileSystem = fs), writeActor = null)
     }
 
-    // No "success clears the WAL row" test: RestrictedDatabaseQueries.lastInsertRowId() throws ClassCastException
-    // (SimpleExecutableQuery -> Query), so insertWalEntry returns null and moveAsset never deletes the row.
-    // Production bug, out of scope for this test-only change; add that test when it is fixed.
+    // The success-clears-WAL case is covered by AssetMoveReplayEntryPointTest (the old lastInsertRowId cast bug is fixed).
 
     @Test
     fun moveAsset_renameFails_leavesWalRowForReplay() = runBlocking {

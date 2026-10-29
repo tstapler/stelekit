@@ -120,6 +120,8 @@ fun SettingsDialog(
     hotkeyComboLabel: String? = null,
     captureTargetSettings: dev.stapler.stelekit.capture.CaptureTargetSettings? = null,
     captureGraphs: List<dev.stapler.stelekit.model.GraphInfo> = emptyList(),
+    // Interim Plugins row (Task 4.1d): null hides it; the build gate lives in the controller.
+    assetIndexing: dev.stapler.stelekit.asset.AssetIndexingController? = null,
 ) {
     if (visible) {
         Dialog(
@@ -193,7 +195,7 @@ fun SettingsDialog(
                         }
                     }
                     SettingsCategory.EDITOR -> EditorSettings()
-                    SettingsCategory.PLUGINS -> PluginsSettings()
+                    SettingsCategory.PLUGINS -> PluginsSettings(assetIndexing)
                     SettingsCategory.ADVANCED -> AdvancedSettings(onReindex)
                     SettingsCategory.VOICE -> if (voiceSettings != null && onRebuildVoicePipeline != null) {
                         VoiceCaptureSettings(

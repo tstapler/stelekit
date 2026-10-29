@@ -20,11 +20,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Article
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -102,6 +105,14 @@ fun AssetDetailScreen(
                 },
                 actions = {
                     val asset = uiState.asset
+                    if (asset != null && viewModel.moveTargets.isNotEmpty()) {
+                        MoveAssetAction(
+                            currentSubfolder = asset.filePath.substringBeforeLast('/').substringAfterLast('/'),
+                            targets = viewModel.moveTargets,
+                            isMoving = uiState.isMoving,
+                            onMove = viewModel::moveTo,
+                        )
+                    }
                     if (asset != null && asset.mediaType == AssetMediaType.IMAGE && !asset.isOrphan) {
                         IconButton(onClick = { onAnnotate(asset) }) {
                             Icon(
@@ -139,8 +150,35 @@ fun AssetDetailScreen(
             uiState.asset != null -> {
                 AssetDetailContent(
                     asset = uiState.asset!!,
+                    moveError = uiState.moveError,
                     onNavigateToPage = onNavigateToPage,
                     modifier = Modifier.fillMaxSize().padding(innerPadding),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MoveAssetAction(
+    currentSubfolder: String,
+    targets: List<String>,
+    isMoving: Boolean,
+    onMove: (String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { expanded = true }, enabled = !isMoving) {
+            Icon(imageVector = Icons.Default.Folder, contentDescription = "Move asset")
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            targets.filter { it != currentSubfolder }.forEach { target ->
+                DropdownMenuItem(
+                    text = { Text("Move to $target") },
+                    onClick = {
+                        expanded = false
+                        onMove(target)
+                    },
                 )
             }
         }
@@ -152,8 +190,19 @@ private fun AssetDetailContent(
     asset: AssetEntry,
     onNavigateToPage: (String) -> Unit,
     modifier: Modifier = Modifier,
+    moveError: String? = null,
 ) {
     LazyColumn(modifier = modifier) {
+        if (moveError != null) {
+            item {
+                Text(
+                    text = "Move failed: $moveError",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(16.dp),
+                )
+            }
+        }
         item {
             if (asset.mediaType == AssetMediaType.IMAGE) {
                 key(asset.filePath) { ImageViewer(asset = asset) }

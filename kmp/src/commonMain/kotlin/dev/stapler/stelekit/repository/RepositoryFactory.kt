@@ -74,6 +74,8 @@ data class RepositorySet(
     val assetRepository: dev.stapler.stelekit.repository.AssetRepository = InMemoryAssetRepository(),
     /** Console-owned read-only SQL connection; null when the backend has no database file. Never the app pool. */
     val sqlConsole: dev.stapler.stelekit.console.views.SqlConsoleView? = null,
+    /** Gated raw-SQL handle for [dev.stapler.stelekit.asset.AssetMoveService]'s WAL; null off the SQLDelight backend. */
+    val restrictedQueries: dev.stapler.stelekit.db.RestrictedDatabaseQueries? = null,
 ) {
     /** Live-query executor bound to this graph's repositories; a new RepositorySet gets a fresh one. */
     val queryExecutor: dev.stapler.stelekit.query.QueryExecutor by lazy {
@@ -438,6 +440,9 @@ class RepositoryFactoryImpl(
             else InMemoryAssetRepository(),
             sqlConsole = if (backend == GraphBackend.SQLDELIGHT)
                 dev.stapler.stelekit.db.SqlConsoleReader(jdbcUrl).also { activeSqlConsole = it }
+            else null,
+            restrictedQueries = if (backend == GraphBackend.SQLDELIGHT)
+                dev.stapler.stelekit.db.RestrictedDatabaseQueries(database.steleDatabaseQueries)
             else null,
         )
     }

@@ -103,6 +103,10 @@ import dev.stapler.stelekit.ui.assets.AssetBrowserViewModelTest
 import dev.stapler.stelekit.asset.AssetMoveServiceTest
 import dev.stapler.stelekit.asset.AssetMoveServiceWalTest
 import dev.stapler.stelekit.asset.AssetIndexServiceTest
+import dev.stapler.stelekit.asset.AssetIndexBackfillBoundedTest
+import dev.stapler.stelekit.asset.AssetIndexedBrowseTest
+import dev.stapler.stelekit.asset.AssetIndexingControllerTest
+import dev.stapler.stelekit.asset.AssetMoveReplayEntryPointTest
 import dev.stapler.stelekit.voice.VoiceCaptureViewModelTest
 import dev.stapler.stelekit.voice.VoiceNoteBlockFormatTest
 import dev.stapler.stelekit.voice.VoicePipelineFactoryTest
@@ -338,6 +342,10 @@ import org.junit.runners.Suite
     AssetMoveServiceTest::class,
     AssetMoveServiceWalTest::class,
     AssetIndexServiceTest::class,
+    AssetIndexBackfillBoundedTest::class,
+    AssetIndexedBrowseTest::class,
+    AssetIndexingControllerTest::class,
+    AssetMoveReplayEntryPointTest::class,
     VoiceCaptureViewModelTest::class,
     VoiceNoteBlockFormatTest::class,
     VoicePipelineFactoryTest::class,
