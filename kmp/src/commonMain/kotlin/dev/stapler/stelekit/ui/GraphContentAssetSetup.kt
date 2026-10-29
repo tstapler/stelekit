@@ -11,10 +11,14 @@ import androidx.compose.runtime.remember
 import arrow.core.Either
 import arrow.core.left
 import dev.stapler.stelekit.asset.AssetEntry
+import dev.stapler.stelekit.asset.AssetIndexProgress
 import dev.stapler.stelekit.asset.AssetIndexService
 import dev.stapler.stelekit.asset.AssetIndexingController
 import dev.stapler.stelekit.asset.AssetMoveService
 import dev.stapler.stelekit.asset.IndexingMediaAttachmentService
+import dev.stapler.stelekit.asset.pipeline.AssetPipelineService
+import dev.stapler.stelekit.asset.pipeline.PluginRegistry
+import dev.stapler.stelekit.asset.pipeline.defaultAssetPlugins
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.platform.FileSystem
@@ -52,6 +56,7 @@ internal fun rememberGraphContentAssetStack(
     effectiveFileSystem: FileSystem,
     graphIoStack: GraphContentGraphIoStack,
     appState: StateFlow<AppState>,
+    memoryPressure: MemoryPressureListeners,
     logger: Logger,
 ): GraphContentAssetStack {
     val repos = deps.repos
@@ -61,6 +66,30 @@ internal fun rememberGraphContentAssetStack(
     }
     val moveService = remember(repos) { AssetMoveService(repos.assetRepository, repos.restrictedQueries) }
     DisposableEffect(indexing) { onDispose { indexing.close() } }
+    // Plugins are re-derived from the per-plugin settings keys at each drain start; with none set
+    // the pipeline never starts and only indexing runs.
+    val caps = deps.platformIntegrations.platformCaps
+    val pipeline = remember(repos, deps.platformSettings, caps, effectiveFileSystem) {
+        repos.writeActor?.let { actor ->
+            AssetPipelineService(PluginRegistry(), repos.assetRepository, actor) {
+                defaultAssetPlugins(caps, deps.platformSettings, effectiveFileSystem)
+            }
+        }
+    }
+    DisposableEffect(pipeline) { onDispose { pipeline?.shutdown() } }
+    DisposableEffect(indexing, pipeline, memoryPressure) {
+        val unregister = memoryPressure.register {
+            indexing.onMemoryPressure()
+            pipeline?.cancelBackfill()
+        }
+        onDispose { unregister() }
+    }
+    LaunchedEffect(indexing, pipeline) {
+        if (pipeline == null) return@LaunchedEffect
+        indexing.progress.collect { progress ->
+            if (progress is AssetIndexProgress.Finished && indexing.isActive) pipeline.scheduleBackfill()
+        }
+    }
 
     LaunchedEffect(appState, indexing, moveService, effectiveFileSystem, graphIoStack) {
         appState.map { it.isFullyLoaded to it.currentNotesPath }.distinctUntilChanged().collectLatest { (loaded, notes) ->

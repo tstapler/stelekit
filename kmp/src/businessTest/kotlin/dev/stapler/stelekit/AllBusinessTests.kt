@@ -99,6 +99,7 @@ import dev.stapler.stelekit.merge.PullIndexingTest
 import dev.stapler.stelekit.ui.PullCopyViewModelTest
 import dev.stapler.stelekit.transfer.MergeUuidRoundTripSpikeTest
 import dev.stapler.stelekit.ui.ToolbarActionTest
+import dev.stapler.stelekit.ui.MemoryPressureListenersTest
 import dev.stapler.stelekit.ui.CopyFlowControllerTest
 import dev.stapler.stelekit.ui.PullCopyFlowControllerTest
 import dev.stapler.stelekit.merge.InMemoryMergeStorageTest
@@ -126,6 +127,7 @@ import dev.stapler.stelekit.asset.AssetMediaTypeTest
 import dev.stapler.stelekit.asset.AssetStoragePathResolverTest
 import dev.stapler.stelekit.asset.MimeTypeDetectorTest
 import dev.stapler.stelekit.asset.pipeline.AssetPipelineServiceTest
+import dev.stapler.stelekit.asset.pipeline.DefaultAssetPluginsTest
 import dev.stapler.stelekit.asset.pipeline.PluginRegistryTest
 import dev.stapler.stelekit.auto.AudiobookNoteFormatterTest
 import dev.stapler.stelekit.auto.AudiobookNoteWriterTest
@@ -350,6 +352,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.db.GraphLocatorTest::class,
     MergeUuidRoundTripSpikeTest::class,
     ToolbarActionTest::class,
+    MemoryPressureListenersTest::class,
     AssetFilterTest::class,
     AssetBrowserViewModelTest::class,
     AssetMoveServiceTest::class,
@@ -369,6 +372,7 @@ import org.junit.runners.Suite
     AssetStoragePathResolverTest::class,
     MimeTypeDetectorTest::class,
     AssetPipelineServiceTest::class,
+    DefaultAssetPluginsTest::class,
     PluginRegistryTest::class,
     AudiobookNoteFormatterTest::class,
     AudiobookNoteWriterTest::class,

@@ -520,7 +520,9 @@ private fun GraphContent(deps: GraphContentDeps) {
 
     // See GraphContentAssetSetup.kt: asset index/move services, the Asset indexing switch, and the
     // attachment service that registers new files with the index.
-    val assetStack = rememberGraphContentAssetStack(deps, effectiveFileSystem, graphIoStack, viewModel.uiState, graphContentLogger)
+    val assetStack = rememberGraphContentAssetStack(
+        deps, effectiveFileSystem, graphIoStack, viewModel.uiState, viewModel.memoryPressureListeners, graphContentLogger,
+    )
     val shellDeps = remember(deps, assetStack) {
         deps.copy(
             platformIntegrations = deps.platformIntegrations.copy(attachmentService = assetStack.attachmentService),

@@ -1437,7 +1437,11 @@ class StelekitViewModel(
      */
     fun onMemoryPressure() {
         graphLoader.cancelBackgroundWork()
+        memoryPressureListeners.notifyListeners()
     }
+
+    /** Other stacks (asset pipeline) subscribe here to shed background work under memory pressure. */
+    val memoryPressureListeners = MemoryPressureListeners()
 
     fun close() {
         scope.cancel()

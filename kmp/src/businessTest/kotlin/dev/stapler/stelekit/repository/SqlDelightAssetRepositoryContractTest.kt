@@ -113,6 +113,28 @@ class SqlDelightAssetRepositoryContractTest {
     }
 
     @Test
+    fun `projected list queries match on ocr_text and auto_labels but never return them`() = runBlocking<Unit> {
+        val r = repo()
+        r.saveAsset(entry("a", tags = listOf("t")).copy(
+            autoLabels = listOf("sunrise"), ocrText = "Invoice 4821", cloudDescription = "desc",
+        ))
+
+        val byOcr = r.searchAssets("4821", 10, 0).first().getOrNull()!!.single()
+        val byLabel = r.searchAssets("sunrise", 10, 0).first().getOrNull()!!.single()
+        val unprocessed = r.getUnprocessedAssets(10, 0).first().getOrNull()!!.single()
+
+        for (row in listOf(byOcr, byLabel, unprocessed)) {
+            assertEquals("a", row.uuid.value)
+            assertTrue(row.autoLabels.isEmpty(), "auto_labels must not be materialized in list results")
+            assertNull(row.ocrText, "ocr_text must not be materialized in list results")
+            assertEquals(listOf("t"), row.tags)
+            assertEquals("desc", row.cloudDescription)
+        }
+        val full = r.getAssetByUuid(AssetUuid("a")).first().getOrNull()!!
+        assertEquals("Invoice 4821", full.ocrText, "point lookup still returns the full row")
+    }
+
+    @Test
     fun `unprocessed lifecycle - markMlProcessed and markMlFailed`() = runBlocking<Unit> {
         val r = repo()
         r.saveAsset(entry("a", importedAt = 1))

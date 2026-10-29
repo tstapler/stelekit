@@ -10,6 +10,12 @@ import arrow.core.Either
 import arrow.core.right
 import dev.stapler.stelekit.asset.AssetIndexProgress
 import dev.stapler.stelekit.asset.pipeline.AssetBuildFlags
+import dev.stapler.stelekit.asset.pipeline.PlatformCaps
+import dev.stapler.stelekit.asset.pipeline.PluginEnableKeys
+import dev.stapler.stelekit.platform.ml.ImageLabeler
+import dev.stapler.stelekit.platform.ml.Label
+import dev.stapler.stelekit.platform.ml.PdfTextExtractor
+import java.util.concurrent.atomic.AtomicInteger
 import dev.stapler.stelekit.db.sidecar.FakeFileSystem
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
@@ -18,6 +24,7 @@ import dev.stapler.stelekit.service.AttachmentResult
 import dev.stapler.stelekit.service.MediaAttachmentService
 import dev.stapler.stelekit.ui.AppState
 import dev.stapler.stelekit.ui.GraphContentAssetStack
+import dev.stapler.stelekit.ui.MemoryPressureListeners
 import dev.stapler.stelekit.ui.rememberGraphContentAssetStack
 import dev.stapler.stelekit.ui.rememberGraphContentGraphIoStack
 import dev.stapler.stelekit.ui.rememberGraphContentVaultSetup
@@ -66,17 +73,48 @@ class AssetStackEntryPointTest {
         }
     }
 
-    private fun mount(switchOn: Boolean, loaded: Boolean = true, internalBuild: Boolean = true): Triple<WiredAppFixture, MutableStateFlow<AppState>, () -> GraphContentAssetStack?> {
+    private class CountingLabeler : ImageLabeler {
+        val calls = AtomicInteger()
+        override suspend fun labelImage(imageBytes: ByteArray): Either<DomainError, List<Label>> {
+            calls.incrementAndGet()
+            return listOf(Label("cat", 0.9f)).right()
+        }
+    }
+
+    private class CountingPdfExtractor : PdfTextExtractor {
+        val calls = AtomicInteger()
+        override suspend fun extractText(absoluteFilePath: String): Either<DomainError, String> {
+            calls.incrementAndGet()
+            return "Q3 report".right()
+        }
+    }
+
+    private val labeler = CountingLabeler()
+    private val pdfExtractor = CountingPdfExtractor()
+    private val pdf = "%PDF-1.4\n%%EOF".encodeToByteArray()
+
+    private fun mount(
+        switchOn: Boolean,
+        loaded: Boolean = true,
+        internalBuild: Boolean = true,
+        pluginKeys: Set<String> = emptySet(),
+        withPdf: Boolean = false,
+    ): Triple<WiredAppFixture, MutableStateFlow<AppState>, () -> GraphContentAssetStack?> {
         AssetBuildFlags.internalBuild = internalBuild
         val fs = FakeFileSystem()
         repeat(3) { fs.writeFileBytes("$graphPath/assets/img$it.png", png) }
+        if (withPdf) fs.writeFileBytes("$graphPath/assets/doc.pdf", pdf)
         val ports = FakePlatformPorts(fileSystem = fs)
         ports.settings.putBoolean(AssetBuildFlags.PIPELINE_ENABLED_KEY, switchOn)
+        pluginKeys.forEach { ports.settings.putBoolean(PluginEnableKeys.keyFor(it), true) }
         val wired = runBlocking { WiredAppFixture.android(ApplicationProvider.getApplicationContext<Context>(), dataDir, ports, graphPath) }
         fixture = wired
         val appState = MutableStateFlow(AppState(currentGraphPath = graphPath, isFullyLoaded = loaded))
         val deps = wired.deps.copy(
-            platformIntegrations = wired.deps.platformIntegrations.copy(attachmentService = FakeAttachments(fs, png + byteArrayOf(42))),
+            platformIntegrations = wired.deps.platformIntegrations.copy(
+                attachmentService = FakeAttachments(fs, png + byteArrayOf(42)),
+                platformCaps = PlatformCaps(labeler, pdfExtractor),
+            ),
         )
         var stack: GraphContentAssetStack? = null
         composeRule.setContent {
@@ -84,7 +122,9 @@ class AssetStackEntryPointTest {
             val io = rememberGraphContentGraphIoStack(
                 deps, vault.effectiveFileSystem, vault.activeGraphPath, vault.activeGraphInfo, Logger("AssetStackEntryPointTest"),
             )
-            stack = rememberGraphContentAssetStack(deps, vault.effectiveFileSystem, io, appState, Logger("AssetStackEntryPointTest"))
+            stack = rememberGraphContentAssetStack(
+                deps, vault.effectiveFileSystem, io, appState, MemoryPressureListeners(), Logger("AssetStackEntryPointTest"),
+            )
         }
         composeRule.waitForIdle()
         return Triple(wired, appState, { stack })
@@ -144,5 +184,32 @@ class AssetStackEntryPointTest {
         assertEquals(0L, rows(wired), "a build that hides the switch must not index, whatever the stored key says")
         assertEquals(false, assertNotNull(stack()).indexing.toggleVisible)
         assertEquals(null, stack()?.moveAsset, "Move is not offered when the switch is hidden")
+    }
+
+    private fun unprocessedRows(wired: WiredAppFixture) =
+        runBlocking { wired.repos.assetRepository.countUnprocessedAssets().getOrNull() ?: -1L }
+
+    @Test
+    fun masterFlagOn_withEveryPluginKeyUnset_indexesButRunsNoPlugin() {
+        val (wired, _, stack) = mount(switchOn = true, withPdf = true)
+
+        awaitIndexed(stack())
+        assertEquals(4L, rows(wired), "the PNGs and the PDF are indexed")
+        assertEquals(4L, unprocessedRows(wired), "no asset is marked processed or failed")
+        assertEquals(0, labeler.calls.get(), "the labeler is never called")
+        assertEquals(0, pdfExtractor.calls.get(), "the PDF extractor is never called")
+    }
+
+    @Test
+    fun masterFlagOn_withOnlyTheImageLabelsKey_labelsImagesAndLeavesPdfsAlone() {
+        val (wired, _, stack) = mount(switchOn = true, pluginKeys = setOf(PluginEnableKeys.IMAGE_LABELS), withPdf = true)
+
+        awaitIndexed(stack())
+        runBlocking { withTimeout(15_000) { while (labeler.calls.get() < 3) kotlinx.coroutines.delay(20) } }
+        runBlocking { withTimeout(15_000) { while (unprocessedRows(wired) > 1L) kotlinx.coroutines.delay(20) } }
+
+        assertEquals(3, labeler.calls.get())
+        assertEquals(0, pdfExtractor.calls.get(), "the PDF key is unset")
+        assertEquals(1L, unprocessedRows(wired), "only the PDF stays unprocessed")
     }
 }

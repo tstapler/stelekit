@@ -73,6 +73,14 @@ class AssetIndexingController(
         indexService.stopBackfill()
     }
 
+    /**
+     * The OS reported memory pressure: drop the running backfill so its buffers can be reclaimed.
+     * It restarts on the next graph-ready or switch flip, not automatically.
+     */
+    fun onMemoryPressure() {
+        indexService.stopBackfill()
+    }
+
     fun close() {
         graph = null
         indexService.close()

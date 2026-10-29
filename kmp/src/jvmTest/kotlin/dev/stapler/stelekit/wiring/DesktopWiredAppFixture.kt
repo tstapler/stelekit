@@ -100,6 +100,7 @@ class DesktopWiredAppFixture private constructor(
         notificationManager = NotificationManager(),
         platformIntegrations = StelekitAppPlatformIntegrations(
             backgroundSyncSchedulerFactory = BackgroundSyncSchedulerFactory.None,
+            platformCaps = dev.stapler.stelekit.asset.pipeline.PlatformCaps.NONE,
             gitRepository = ports.gitRepository,
             gitSyncBusyCounter = busyCounter,
         ),

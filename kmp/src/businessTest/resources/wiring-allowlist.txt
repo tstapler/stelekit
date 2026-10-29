@@ -7,8 +7,6 @@ CloudVisionPlugin  awaiting-unit U11  2026-10-27  renewals=0
 IOSCameraProvider  out-of-scope-ios  never
 IOSKableBleScanner  out-of-scope-ios  never
 OcrPlugin  awaiting-unit U9  2026-10-27  renewals=0
-OnDeviceLabelingPlugin  awaiting-unit U8  2026-10-27  renewals=0
-PdfTextPlugin  awaiting-unit U8  2026-10-27  renewals=0
 WebCameraProvider  awaiting-unit U14  2026-10-27  renewals=0
 WebcamCameraProvider  awaiting-unit U14  2026-10-27  renewals=0
 CoreMlImageLabeler  out-of-scope-ios  never

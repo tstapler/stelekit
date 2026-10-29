@@ -46,7 +46,7 @@ class QueryPlanAuditTest {
         "selectAllBlocksWithPagePath",      // blocks scanned, pages joined by uuid index
         // asset_index LIKE search — tags/auto_labels/ocr_text are unindexed text columns;
         // FTS5 can cover content search but these fields need separate infrastructure
-        "searchAssets",
+        "searchAssetsLight",
         // COUNT with no WHERE — full traversal of the table
         "countAssets",
         // JSON-array tag search — LIKE on a JSON text column; no structural index possible
@@ -405,10 +405,10 @@ ORDER BY depth, parent_uuid, position"""),
             "SELECT * FROM asset_index ORDER BY imported_at_ms DESC LIMIT 10 OFFSET 0"),
         AuditQuery("selectAssetsByMediaType",
             "SELECT * FROM asset_index WHERE media_type = 'image/png' ORDER BY imported_at_ms DESC LIMIT 10 OFFSET 0"),
-        AuditQuery("searchAssets",
-            "SELECT * FROM asset_index WHERE (file_path LIKE '%test%' OR tags LIKE '%test%' OR auto_labels LIKE '%test%' OR ocr_text LIKE '%test%') ORDER BY imported_at_ms DESC LIMIT 10 OFFSET 0"),
-        AuditQuery("selectUnprocessedAssets",
-            "SELECT * FROM asset_index WHERE ml_processed = 0 AND ml_failed = 0 ORDER BY imported_at_ms ASC LIMIT 10 OFFSET 0"),
+        AuditQuery("searchAssetsLight",
+            "SELECT uuid, file_path, relative_path, media_type, subfolder, tags, cloud_description, page_uuids, size_bytes, imported_at_ms, ml_processed, ml_attempted_at, ml_failed, content_hash, is_orphan, ml_tags_source FROM asset_index WHERE (file_path LIKE '%test%' OR tags LIKE '%test%' OR auto_labels LIKE '%test%' OR ocr_text LIKE '%test%') ORDER BY imported_at_ms DESC LIMIT 10 OFFSET 0"),
+        AuditQuery("selectUnprocessedAssetsLight",
+            "SELECT uuid, file_path, relative_path, media_type, subfolder, tags, cloud_description, page_uuids, size_bytes, imported_at_ms, ml_processed, ml_attempted_at, ml_failed, content_hash, is_orphan, ml_tags_source FROM asset_index WHERE ml_processed = 0 AND ml_failed = 0 ORDER BY imported_at_ms ASC LIMIT 10 OFFSET 0"),
         AuditQuery("countUnprocessedAssets",
             "SELECT COUNT(*) FROM asset_index WHERE ml_processed = 0 AND ml_failed = 0"),
         AuditQuery("countAssets",

@@ -99,6 +99,11 @@ data class StelekitAppPlatformIntegrations(
      */
     val backgroundRestrictionProbe: dev.stapler.stelekit.git.BackgroundRestrictionProbe? = null,
     /**
+     * On-device ML capabilities for the asset pipeline. No default: every host names its value
+     * (`PlatformCaps.NONE` when it has nothing to offer).
+     */
+    val platformCaps: dev.stapler.stelekit.asset.pipeline.PlatformCaps,
+    /**
      * Platform-specific git implementation. Pass `JvmGitRepository` on Desktop,
      * `AndroidGitRepository` on Android. When null, git sync is disabled.
      */
