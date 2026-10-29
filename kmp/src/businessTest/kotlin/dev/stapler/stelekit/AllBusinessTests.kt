@@ -127,6 +127,7 @@ import dev.stapler.stelekit.asset.AssetMediaTypeTest
 import dev.stapler.stelekit.asset.AssetStoragePathResolverTest
 import dev.stapler.stelekit.asset.MimeTypeDetectorTest
 import dev.stapler.stelekit.asset.pipeline.AssetPipelineServiceTest
+import dev.stapler.stelekit.asset.pipeline.DefaultAssetPluginsTest
 import dev.stapler.stelekit.asset.pipeline.PluginRegistryTest
 import dev.stapler.stelekit.auto.AudiobookNoteFormatterTest
 import dev.stapler.stelekit.auto.AudiobookNoteWriterTest
@@ -371,6 +372,7 @@ import org.junit.runners.Suite
     AssetStoragePathResolverTest::class,
     MimeTypeDetectorTest::class,
     AssetPipelineServiceTest::class,
+    DefaultAssetPluginsTest::class,
     PluginRegistryTest::class,
     AudiobookNoteFormatterTest::class,
     AudiobookNoteWriterTest::class,

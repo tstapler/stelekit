@@ -322,6 +322,7 @@ import dev.stapler.stelekit.capture.CapturePopupWindowUxTest
 import dev.stapler.stelekit.wiring.DesktopWiredAppFixtureTest
 import dev.stapler.stelekit.wiring.GitSyncServiceRegistryBalanceTest
 import dev.stapler.stelekit.wiring.GitSyncStackEntryPointTest
+import dev.stapler.stelekit.wiring.JvmPlatformCapsRootTest
 import org.junit.runner.RunWith
 import org.junit.runners.Suite
 
@@ -653,5 +654,6 @@ import org.junit.runners.Suite
     DesktopWiredAppFixtureTest::class,
     GitSyncStackEntryPointTest::class,
     GitSyncServiceRegistryBalanceTest::class,
+    JvmPlatformCapsRootTest::class,
 )
 class AllJvmTests

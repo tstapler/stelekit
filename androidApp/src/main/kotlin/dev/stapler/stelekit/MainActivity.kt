@@ -471,6 +471,7 @@ class MainActivity : ComponentActivity() {
                             minimumIntervalMinutes = WorkManagerSyncScheduler.MIN_PERIODIC_INTERVAL_MINUTES.toInt(),
                         ) { graphId -> WorkManagerSyncScheduler(applicationContext, graphId) },
                         backgroundRestrictionProbe = AndroidBackgroundRestrictionProbe(applicationContext),
+                        platformCaps = dev.stapler.stelekit.platform.ml.androidPlatformCaps(),
                         gitRepository = gitRepository,
                         gitCloneWorkerLauncher = gitCloneWorkerLauncher,
                         attachmentService = attachmentService,

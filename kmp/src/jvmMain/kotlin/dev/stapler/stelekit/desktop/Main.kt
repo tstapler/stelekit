@@ -237,6 +237,7 @@ fun main(args: Array<String>) {
                     ),
                     platformIntegrations = StelekitAppPlatformIntegrations(
                         backgroundSyncSchedulerFactory = dev.stapler.stelekit.git.BackgroundSyncSchedulerFactory.None,
+                        platformCaps = dev.stapler.stelekit.platform.ml.jvmPlatformCaps(),
                         cryptoEngine = dev.stapler.stelekit.vault.JvmCryptoEngine(),
                         attachmentService = attachmentService,
                         readClipboardHtml = { dev.stapler.stelekit.domain.HtmlClipboardReader.read() },

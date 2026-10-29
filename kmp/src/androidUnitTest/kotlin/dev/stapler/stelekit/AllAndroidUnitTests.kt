@@ -25,12 +25,14 @@ import dev.stapler.stelekit.ui.components.MermaidWebViewBridgeTest
 import dev.stapler.stelekit.ui.components.MermaidWebViewSettingsTest
 import dev.stapler.stelekit.ui.transfer.QrDecodeViewModelBackgroundingTest
 import dev.stapler.stelekit.voice.AndroidSpeechRecognizerPermissionTest
+import dev.stapler.stelekit.wiring.PlatformCapsRootTest
 import org.junit.runner.RunWith
 import org.junit.runners.Suite
 
 @RunWith(Suite::class)
 @Suite.SuiteClasses(
     WalConfiguredCallbackTest::class,
+    PlatformCapsRootTest::class,
     GitSyncBusyCounterSharedWiringTest::class,
     AndroidGitRepositoryTestRemoteTest::class,
     AndroidGitRepositoryLfsGuardTest::class,
