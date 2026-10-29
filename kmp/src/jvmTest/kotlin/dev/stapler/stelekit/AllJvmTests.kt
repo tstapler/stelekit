@@ -169,6 +169,7 @@ import dev.stapler.stelekit.git.GitHubDeviceFlowClientTest
 import dev.stapler.stelekit.git.GitRefDiagnosticsRedactionTest
 import dev.stapler.stelekit.git.GitSyncAttributeMergeE2ETest
 import dev.stapler.stelekit.git.GitSyncServiceLfsJvmTest
+import dev.stapler.stelekit.git.lfs.JvmGitRepositoryLfsTransferTest
 import dev.stapler.stelekit.git.JvmGitCloneWorkerLauncherTest
 import dev.stapler.stelekit.git.JvmGitRepositoryTest
 import dev.stapler.stelekit.git.RemoteBranchResolutionTest
@@ -490,6 +491,7 @@ import org.junit.runners.Suite
     GitRefDiagnosticsRedactionTest::class,
     GitSyncAttributeMergeE2ETest::class,
     GitSyncServiceLfsJvmTest::class,
+    JvmGitRepositoryLfsTransferTest::class,
     JvmGitCloneWorkerLauncherTest::class,
     JvmGitRepositoryTest::class,
     RemoteBranchResolutionTest::class,

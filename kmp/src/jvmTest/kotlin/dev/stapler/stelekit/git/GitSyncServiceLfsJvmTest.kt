@@ -6,10 +6,13 @@ import dev.stapler.stelekit.model.RepoRoot
 import arrow.core.right
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphWriter
+import dev.stapler.stelekit.git.lfs.LfsMode
+import dev.stapler.stelekit.git.lfs.LfsModeSource
 import dev.stapler.stelekit.git.lfs.LfsOid
 import dev.stapler.stelekit.git.lfs.LfsPointer
 import dev.stapler.stelekit.git.lfs.LfsPointerCodec
 import dev.stapler.stelekit.git.lfs.LfsViolationReason
+import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.git.model.SyncState
@@ -82,10 +85,21 @@ class GitSyncServiceLfsJvmTest {
         work.deleteRecursively()
     }
 
+    private class MapSettings : Settings {
+        private val store = mutableMapOf<String, String>()
+        override fun getBoolean(key: String, defaultValue: Boolean) = store[key]?.toBoolean() ?: defaultValue
+        override fun putBoolean(key: String, value: Boolean) { store[key] = value.toString() }
+        override fun getString(key: String, defaultValue: String) = store.getOrDefault(key, defaultValue)
+        override fun putString(key: String, value: String) { store[key] = value }
+        override fun containsKey(key: String) = store.containsKey(key)
+    }
+
     private fun service(): GitSyncService {
         val fs = DiskFileSystem()
         return GitSyncService(
+            // These tests pin the safety floor (GUARD_ONLY); transfer is covered by JvmGitRepositoryLfsTransferTest.
             gitRepository = JvmGitRepository(),
+            settings = MapSettings().also { LfsModeSource(it).set("g", LfsMode.GUARD_ONLY) },
             graphLoader = GraphLoader(fs, InMemoryPageRepository(), InMemoryBlockRepository()),
             graphWriter = GraphWriter(fileSystem = fs),
             editLock = EditLock(),

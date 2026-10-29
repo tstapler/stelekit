@@ -91,9 +91,15 @@ interface GitRepository {
 
     /**
      * True only after a converting clean filter (not the pass-through one) was verified for this repository.
-     * Always false in Phase 1: nothing converts raw files to pointers yet.
+     * False unless the platform wrote and read back a converting filter for the active graph.
      */
     val cleanFilterActive: Boolean get() = false
+
+    /** True where this repository can transfer LFS objects (JVM, Android); drives [dev.stapler.stelekit.git.lfs.LfsPlatformCapabilities]. */
+    val lfsTransferSupported: Boolean get() = false
+
+    /** Supplies the effective [dev.stapler.stelekit.git.lfs.LfsMode] per graph id (null at clone time). No-op where transfer is unsupported. */
+    fun setLfsModeProvider(provider: (graphId: String?) -> dev.stapler.stelekit.git.lfs.LfsMode) {}
 
     /**
      * Raw binaries at LFS-tracked paths found in the commits the last [push] sent (detection only: they are

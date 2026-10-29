@@ -12,6 +12,11 @@ import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.git.lfs.LfsIndexVerifier
+import dev.stapler.stelekit.git.lfs.LfsMode
+import dev.stapler.stelekit.git.lfs.LfsRepositorySupport
+import dev.stapler.stelekit.git.lfs.configureLfsTimeouts
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.okhttp.OkHttp
 import dev.stapler.stelekit.git.lfs.LfsPostPushAudit
 import dev.stapler.stelekit.git.lfs.LfsViolation
 import dev.stapler.stelekit.git.model.DEFAULT_CLONE_DEPTH
@@ -52,6 +57,15 @@ class JvmGitRepository(
         internal set
 
     private val authConfigurer = JvmGitRepositoryAuth({ this.credentialAccess }, logger)
+
+    private val lfs = LfsRepositorySupport(
+        credentialAccess = { this.credentialAccess },
+        httpClientFactory = { HttpClient(OkHttp) { configureLfsTimeouts() } },
+    )
+
+    override val lfsTransferSupported: Boolean get() = true
+    override val cleanFilterActive: Boolean get() = lfs.filterActive
+    override fun setLfsModeProvider(provider: (graphId: String?) -> LfsMode) { lfs.modeFor = provider }
 
     override fun setCredentialAccess(access: CredentialAccess) { credentialAccess = access }
 
@@ -112,6 +126,8 @@ class JvmGitRepository(
             val cmd = Git.cloneRepository()
                 .setURI(url)
                 .setDirectory(File(localPath.value))
+                // Checkout happens in lfs.afterClone, after the repo-local filter config exists.
+                .setNoCheckout(true)
                 // Story 2.1.1/ADR-001: shallow by default — bounds a retry's cost to a small,
                 // fixed-size unit instead of the full repository history.
                 .setDepth(DEFAULT_CLONE_DEPTH)
@@ -130,7 +146,10 @@ class JvmGitRepository(
                 })
 
             authConfigurer.configureAuth(cmd, auth, preResolvedToken)
-            cmd.call().close()
+            val lfsAuth = (auth as? GitAuth.HttpsToken)?.let { a ->
+                preResolvedToken?.let { LfsRepositorySupport.basicAuth(a.username, it) }
+            }
+            cmd.call().use { git -> lfs.afterClone(git, lfsAuth) }
             Unit.right()
         }
     }
@@ -147,7 +166,7 @@ class JvmGitRepository(
 
     override suspend fun unshallow(config: GitConfig): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
-            val diverged = openGit(config.repoRoot.value).use { git ->
+            val diverged = openGitFor(config).use { git ->
                 hasRemoteDivergedSinceShallowClone(git, config) { authConfigurer.configureTransport(it, config) }
             }
             if (diverged) {
@@ -164,7 +183,7 @@ class JvmGitRepository(
                 onFailed = { e -> DomainError.GitError.FetchFailed(e.message ?: "Unshallow failed") },
                 onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
             ) {
-                openGit(config.repoRoot.value).use { git -> doUnshallow(git, config) }
+                openGitFor(config).use { git -> doUnshallow(git, config) }
             }
         }
 
@@ -188,7 +207,7 @@ class JvmGitRepository(
                 onFailed = { e -> DomainError.GitError.FetchFailed(e.message ?: "Fetch failed") },
                 onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
             ) {
-                openGit(config.repoRoot.value).use { git -> doFetch(git, config) }
+                openGitFor(config).use { git -> doFetch(git, config) }
             }
         }
 
@@ -219,7 +238,7 @@ class JvmGitRepository(
     override suspend fun status(config: GitConfig): Either<DomainError.GitError, GitStatus> =
         withContext(PlatformDispatcher.IO) {
             runGitOp({ e -> DomainError.GitError.FetchFailed("Status failed: ${e.message}") }) {
-                openGit(config.repoRoot.value).use { git -> buildGitStatus(git, config) }
+                openGitFor(config).use { git -> buildGitStatus(git, config) }
             }
         }
 
@@ -238,7 +257,7 @@ class JvmGitRepository(
     override suspend fun stageSubdir(config: GitConfig, excludePaths: Set<String>): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
             runGitOp({ e -> DomainError.GitError.CommitFailed("Stage failed: ${e.message}") }) {
-                openGit(config.repoRoot.value).use { git -> stageWikiSubdir(git, config, excludePaths) }
+                openGitFor(config).use { git -> stageWikiSubdir(git, config, excludePaths) }
             }
         }
 
@@ -254,12 +273,12 @@ class JvmGitRepository(
 
     override suspend fun stagedLfsViolations(config: GitConfig): List<LfsViolation> =
         withContext(PlatformDispatcher.IO) {
-            openGit(config.repoRoot.value).use { git -> LfsIndexVerifier(git.repository).verifyAndUnstage(git) }
+            openGitFor(config).use { git -> LfsIndexVerifier(git.repository).verifyAndUnstage(git) }
         }
 
     override suspend fun hasStagedChanges(config: GitConfig): Boolean =
         withContext(PlatformDispatcher.IO) {
-            openGit(config.repoRoot.value).use { git ->
+            openGitFor(config).use { git ->
                 val status = git.status().call()
                 status.added.isNotEmpty() || status.changed.isNotEmpty() || status.removed.isNotEmpty()
             }
@@ -268,7 +287,7 @@ class JvmGitRepository(
     override suspend fun commit(config: GitConfig, message: String): Either<DomainError.GitError, String> =
         withContext(PlatformDispatcher.IO) {
             runGitOp({ e -> DomainError.GitError.CommitFailed(e.message ?: "Commit failed") }) {
-                openGit(config.repoRoot.value).use { git ->
+                openGitFor(config).use { git ->
                     // Backstop: whatever stage path produced the index, a raw blob at an LFS-tracked path never commits.
                     LfsIndexVerifier(git.repository).refuseOnViolation(git)?.let { return@use it.left() }
                     val commit = git.commit()
@@ -282,11 +301,11 @@ class JvmGitRepository(
     override suspend fun merge(config: GitConfig): Either<DomainError.GitError, MergeResult> =
         withContext(PlatformDispatcher.IO) {
             runGitOp({ e -> DomainError.GitError.FetchFailed("Merge failed: ${e.message}") }) {
-                openGit(config.repoRoot.value).use { git -> doMerge(git, config) }
+                openGitFor(config).use { git -> doMerge(git, config) }
             }
         }
 
-    private fun doMerge(git: Git, config: GitConfig): Either<DomainError.GitError, MergeResult> {
+    private suspend fun doMerge(git: Git, config: GitConfig): Either<DomainError.GitError, MergeResult> {
         val repo = git.repository
         val remoteRef = resolveRemoteTrackingRef(repo, config.remoteName, config.remoteBranch)
             .getOrElse { return it.left() }
@@ -298,12 +317,14 @@ class JvmGitRepository(
             return DomainError.GitError.ShallowHistoryInsufficient.left()
         }
 
+        val lfsPointers = lfs.beforeMerge(git, config, remoteRef)
         val mergeResult = git.merge()
             .include(remoteRef)
             .setStrategy(MergeStrategy.RECURSIVE)
             .setFastForward(MergeCommand.FastForwardMode.NO_FF)
             .call()
 
+        lfs.afterMerge(git, lfsPointers)
         val hasConflicts = mergeResult.mergeStatus == org.eclipse.jgit.api.MergeResult.MergeStatus.CONFLICTING
         val conflictFiles = JvmGitConflictSupport.buildConflictFiles(repo, mergeResult, config)
 
@@ -341,12 +362,14 @@ class JvmGitRepository(
                 onFailed = { e -> DomainError.GitError.PushFailed(e.message ?: "Push failed") },
                 onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
             ) {
-                openGit(config.repoRoot.value).use { git -> doPush(git, config) }
+                openGitFor(config).use { git ->
+                    lfs.beforePush(git, config).fold({ it.left() }, { doPush(git, config) })
+                }
             }.also { result -> if (result.isRight()) auditPushedRange(config, previousRemoteTip) }
         }
 
     private fun remoteTrackingTip(config: GitConfig): org.eclipse.jgit.lib.ObjectId? = try {
-        openGit(config.repoRoot.value).use { it.repository.exactRef("${Constants.R_REMOTES}${config.remoteName}/${config.remoteBranch}")?.objectId }
+        openGitFor(config).use { it.repository.exactRef("${Constants.R_REMOTES}${config.remoteName}/${config.remoteBranch}")?.objectId }
     } catch (e: Exception) {
         null
     }
@@ -354,7 +377,7 @@ class JvmGitRepository(
     /** Best effort and never fatal: the push already succeeded, this only reports what it carried. */
     private suspend fun auditPushedRange(config: GitConfig, previousRemoteTip: org.eclipse.jgit.lib.ObjectId?) {
         try {
-            openGit(config.repoRoot.value).use { git ->
+            openGitFor(config).use { git ->
                 val tip = git.repository.resolve(Constants.HEAD) ?: return@use
                 pushAudit = LfsPostPushAudit.audit(git.repository, previousRemoteTip, tip)
                 if (pushAudit.isNotEmpty()) logger.warn("lfs: ${pushAudit.size} raw file(s) at LFS-tracked paths were pushed outside the guard")
@@ -402,7 +425,7 @@ class JvmGitRepository(
     override suspend fun log(config: GitConfig, maxCount: Int): Either<DomainError.GitError, List<GitCommit>> =
         withContext(PlatformDispatcher.IO) {
             runGitOp({ e -> DomainError.GitError.FetchFailed("Log failed: ${e.message}") }) {
-                openGit(config.repoRoot.value).use { git -> buildGitLog(git, maxCount) }
+                openGitFor(config).use { git -> buildGitLog(git, maxCount) }
             }
         }
 
@@ -421,7 +444,7 @@ class JvmGitRepository(
     override suspend fun abortMerge(config: GitConfig): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
             runGitOp({ e -> DomainError.GitError.CommitFailed("Abort merge failed: ${e.message}") }) {
-                openGit(config.repoRoot.value).use { git -> doAbortMerge(git) }
+                openGitFor(config).use { git -> doAbortMerge(git) }
             }
         }
 
@@ -449,7 +472,7 @@ class JvmGitRepository(
         side: MergeSide,
     ): Either<DomainError.GitError, Unit> = withContext(PlatformDispatcher.IO) {
         runGitOp({ e -> DomainError.GitError.CommitFailed("Checkout file failed: ${e.message}") }) {
-            openGit(config.repoRoot.value).use { git -> doCheckoutFile(git, config, filePath, side) }
+            openGitFor(config).use { git -> doCheckoutFile(git, config, filePath, side) }
         }
     }
 
@@ -473,7 +496,7 @@ class JvmGitRepository(
     override suspend fun markResolved(config: GitConfig, filePath: String): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
             runGitOp({ e -> DomainError.GitError.CommitFailed("Mark resolved failed: ${e.message}") }) {
-                openGit(config.repoRoot.value).use { git ->
+                openGitFor(config).use { git ->
                     val relativePath = filePath.removePrefix("${config.repoRoot.value}/")
                     git.add().addFilepattern(relativePath).call()
                     LfsIndexVerifier(git.repository).refuseOnViolation(git)?.let { return@use it.left() }
@@ -485,7 +508,7 @@ class JvmGitRepository(
     override suspend fun describeRefs(config: GitConfig): String =
         withContext(PlatformDispatcher.IO) {
             try {
-                openGit(config.repoRoot.value).use { git ->
+                openGitFor(config).use { git ->
                     describeGitRefs(git, config) { authConfigurer.configureTransport(it, config) }
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -498,7 +521,7 @@ class JvmGitRepository(
     override suspend fun hasDetachedHead(config: GitConfig): Boolean =
         withContext(PlatformDispatcher.IO) {
             runGitOpOrFalse {
-                openGit(config.repoRoot.value).use { git ->
+                openGitFor(config).use { git ->
                     val fullBranch = git.repository.fullBranch ?: return@use false
                     !fullBranch.startsWith("refs/heads/")
                 }
@@ -532,4 +555,8 @@ class JvmGitRepository(
     // ── Private helpers ───────────────────────────────────────────────────────
 
     private fun openGit(repoRoot: String): Git = Git.open(File(repoRoot))
+
+    /** Opens the repo and (for AUTO graphs) makes sure the LFS clean/smudge filters are configured before JGit touches files. */
+    private fun openGitFor(config: GitConfig): Git =
+        openGit(config.repoRoot.value).also { lfs.prepare(it.repository, config.graphId) }
 }

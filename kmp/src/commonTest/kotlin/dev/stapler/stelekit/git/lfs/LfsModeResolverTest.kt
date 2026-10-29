@@ -42,9 +42,9 @@ class LfsModeResolverTest {
     }
 
     @Test
-    fun modeSource_should_DefaultToGuardOnly_When_NothingIsStored() {
-        assertEquals(LfsMode.GUARD_ONLY, LfsModeSource(MapSettings()).get("g1"))
-        assertEquals(LfsMode.GUARD_ONLY, LfsModeSource(null).get("g1"))
+    fun modeSource_should_DefaultToAuto_When_NothingIsStored() {
+        assertEquals(LfsMode.AUTO, LfsModeSource(MapSettings()).get("g1"))
+        assertEquals(LfsMode.AUTO, LfsModeSource(null).get("g1"))
     }
 
     @Test
@@ -64,6 +64,6 @@ class LfsModeResolverTest {
     fun modeSource_should_FallBackToDefault_When_StoredValueIsUnknown() {
         val settings = MapSettings().apply { store["git_lfs_mode_g1"] = "TURBO" }
 
-        assertEquals(LfsMode.GUARD_ONLY, LfsModeSource(settings).get("g1"))
+        assertEquals(LfsMode.AUTO, LfsModeSource(settings).get("g1"))
     }
 }

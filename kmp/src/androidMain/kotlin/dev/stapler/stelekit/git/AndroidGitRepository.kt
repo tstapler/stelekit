@@ -13,6 +13,11 @@ import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.git.lfs.LfsIndexVerifier
+import dev.stapler.stelekit.git.lfs.LfsMode
+import dev.stapler.stelekit.git.lfs.LfsRepositorySupport
+import dev.stapler.stelekit.git.lfs.configureLfsTimeouts
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.okhttp.OkHttp
 import dev.stapler.stelekit.git.lfs.LfsPostPushAudit
 import dev.stapler.stelekit.git.lfs.LfsViolation
 import dev.stapler.stelekit.git.model.DEFAULT_CLONE_DEPTH
@@ -68,6 +73,26 @@ class AndroidGitRepository(
 
     override fun setCredentialAccess(access: CredentialAccess) { credentialAccess = access }
 
+    private val lfs = LfsRepositorySupport(
+        credentialAccess = { this.credentialAccess },
+        httpClientFactory = { HttpClient(OkHttp) { configureLfsTimeouts() } },
+    )
+
+    override val lfsTransferSupported: Boolean get() = true
+    override val cleanFilterActive: Boolean get() = lfs.filterActive
+    override fun setLfsModeProvider(provider: (graphId: String?) -> LfsMode) { lfs.modeFor = provider }
+
+    /**
+     * LFS transfer needs a real working tree. A SAF shadow mirror only round-trips text, so shadow-backed graphs stay
+     * guard-only (the filters are not configured and no objects are transferred).
+     */
+    private fun lfsTransferAvailable(repoRoot: String): Boolean = shadow.shadowWorktreeFor(repoRoot) == null
+
+    private fun prepareLfs(git: Git, config: GitConfig): Git {
+        if (lfsTransferAvailable(config.repoRoot.value)) lfs.prepare(git.repository, config.graphId)
+        return git
+    }
+
     override suspend fun isGitRepo(path: String): Boolean = withContext(PlatformDispatcher.IO) {
         File(shadow.resolveForJGit(path), ".git").exists()
     }
@@ -122,6 +147,8 @@ class AndroidGitRepository(
             val cmd = Git.cloneRepository()
                 .setURI(url)
                 .setDirectory(File(shadow.resolveForJGit(localPath.value)))
+                // Real working trees check out in lfs.afterClone, after the repo-local filter config exists.
+                .setNoCheckout(worktree == null)
                 // Story 2.1.1/ADR-001: shallow by default.
                 .setDepth(DEFAULT_CLONE_DEPTH)
                 .setTimeout(GIT_TRANSPORT_TIMEOUT_SECONDS)
@@ -140,8 +167,12 @@ class AndroidGitRepository(
                 })
 
             authConfigurer.configureAuth(cmd, auth, preResolvedToken)
+            val lfsAuth = (auth as? GitAuth.HttpsToken)?.let { a ->
+                preResolvedToken?.let { LfsRepositorySupport.basicAuth(a.username, it) }
+            }
             cmd.call().use { git ->
                 shadow.syncShadowAfterInitOrClone(localPath.value, git)
+                if (worktree == null) lfs.afterClone(git, lfsAuth)
             }
             logger.info("clone: done localPath=${localPath.value}")
             Unit.right()
@@ -314,12 +345,14 @@ class AndroidGitRepository(
             return DomainError.GitError.ShallowHistoryInsufficient.left()
         }
 
+        val lfsPointers = if (worktree == null) lfs.beforeMerge(git, config, remoteRef) else emptyMap()
         val mergeResult = git.merge()
             .include(remoteRef)
             .setStrategy(MergeStrategy.RECURSIVE)
             .setFastForward(MergeCommand.FastForwardMode.NO_FF)
             .call()
 
+        if (worktree == null) lfs.afterMerge(git, lfsPointers)
         val hasConflicts = mergeResult.mergeStatus == org.eclipse.jgit.api.MergeResult.MergeStatus.CONFLICTING
         val conflictFiles = mergeSupport.buildConflictFiles(repo, mergeResult, config, worktree)
 
@@ -380,7 +413,10 @@ class AndroidGitRepository(
                 onFailed = { e -> DomainError.GitError.PushFailed(e.message ?: "Push failed") },
                 onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
             ) {
-                openGitWithoutFreshnessCheck(config).use { git -> doPush(git, config) }
+                openGitWithoutFreshnessCheck(config).use { git ->
+                    val lfsReady = if (lfsTransferAvailable(config.repoRoot.value)) lfs.beforePush(git, config) else Unit.right()
+                    lfsReady.fold({ it.left() }, { doPush(git, config) })
+                }
             }.also { result -> if (result.isRight()) auditPushedRange(config, previousRemoteTip) }
         }
 
@@ -625,7 +661,7 @@ class AndroidGitRepository(
             listRecursive = { root -> fileSystem.listFilesRecursiveWithModTimes(root) },
             readSafFile = { relPath -> fileSystem.readFile("${config.repoRoot.value}/$relPath") },
         )
-        return Git.open(File(shadow.resolveForJGit(config.repoRoot.value)))
+        return prepareLfs(Git.open(File(shadow.resolveForJGit(config.repoRoot.value))), config)
     }
 
     /**
@@ -636,5 +672,5 @@ class AndroidGitRepository(
      * these really are two different operations, not one operation with an option.
      */
     private fun openGitWithoutFreshnessCheck(config: GitConfig): Git =
-        Git.open(File(shadow.resolveForJGit(config.repoRoot.value)))
+        prepareLfs(Git.open(File(shadow.resolveForJGit(config.repoRoot.value))), config)
 }
