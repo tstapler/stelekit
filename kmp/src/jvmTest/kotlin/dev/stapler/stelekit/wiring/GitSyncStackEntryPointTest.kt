@@ -10,7 +10,6 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.FetchResult
 import dev.stapler.stelekit.git.GitSyncBusyCounter
 import dev.stapler.stelekit.git.GitStatus
-import dev.stapler.stelekit.git.HopAwareTestDispatcher
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.git.testsupport.StubGitRepository
 import dev.stapler.stelekit.git.testsupport.sampleConfig
@@ -39,7 +38,7 @@ import kotlin.test.fail
 /**
  * Scheduled sync through the real `rememberGraphContentGitSyncStack` over real SQLDelight (IT-16,
  * IT-30, IT-31 and the stack half of the driver behaviors). Virtual time drives the loop; the IO hop
- * of every tick is settled with [HopAwareTestDispatcher], so there are no real sleeps.
+ * of every tick is settled on state while the scheduler is pumped, so there are no real sleeps.
  *
  * Runs on the desktop fixture, not Robolectric: Robolectric's SQLite has no FTS5, so the Android
  * fixture cannot create the schema and yields no service (see `WiredAppFixture.android`).
@@ -65,7 +64,7 @@ class GitSyncStackEntryPointTest {
     private val minute = 60_000L
     private val dataDir: File = createTempDirectory("git_sync_stack_").toFile()
     private val scheduler = TestCoroutineScheduler()
-    private val dispatcher = HopAwareTestDispatcher(StandardTestDispatcher(scheduler), Thread.currentThread())
+    private val dispatcher = StandardTestDispatcher(scheduler)
     private val repo = CountingGitRepository()
     private val settings = FakeSettings()
     private val busy = GitSyncBusyCounter()

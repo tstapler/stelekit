@@ -30,9 +30,9 @@ import kotlin.test.assertTrue
  * the pre-extraction loop and kept unchanged after [PeriodicSyncDriver] took the loop over.
  *
  * Virtual time cannot drive the whole service on its own: `fetchOnly` always hops onto the real
- * `PlatformDispatcher.IO` and back. [HopAwareDispatcher] makes that hop deterministic - it signals
- * when a continuation is dispatched from a non-test thread, so each tick is fully settled (parked
- * in its delay again) before virtual time moves on. No real sleeps, no polling.
+ * `PlatformDispatcher.IO` and back, and the hop may complete inline without a dispatch back. Each tick
+ * is therefore settled on state (fetch counted, `tickInFlight` false) while the scheduler is pumped,
+ * so virtual time only moves on once the loop has parked in its delay again. No real sleeps.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class GitSyncServicePeriodicTest {
@@ -49,7 +49,7 @@ class GitSyncServicePeriodicTest {
 
     private val scheduler = TestCoroutineScheduler()
     private val repo = CountingGitRepository()
-    private val dispatcher = HopAwareTestDispatcher(StandardTestDispatcher(scheduler), Thread.currentThread())
+    private val dispatcher = StandardTestDispatcher(scheduler)
     private var service: GitSyncService? = null
 
     private fun buildService(): GitSyncService {
@@ -72,11 +72,16 @@ class GitSyncServicePeriodicTest {
         service?.shutdown()
     }
 
-    /** Advances one interval and waits until the tick has returned from its IO hop and re-parked. */
+    /** Advances one interval, then pumps the scheduler until that tick's fetch has run and its tick has finished. */
     private fun runOneInterval(intervalMinutes: Int) {
+        val expected = repo.fetches.get() + 1
         scheduler.advanceTimeBy(intervalMinutes * 60_000L)
-        scheduler.runCurrent()
-        assertTrue(dispatcher.awaitTickReturned(), "tick never returned from its IO hop")
+        val deadline = System.nanoTime() + TICK_TIMEOUT_NANOS
+        while (!(repo.fetches.get() >= expected && service?.scheduledSyncStatus?.value?.tickInFlight == false)) {
+            assertTrue(System.nanoTime() < deadline, "tick $expected never finished")
+            scheduler.runCurrent()
+            Thread.yield()
+        }
         scheduler.runCurrent()
     }
 
@@ -128,5 +133,9 @@ class GitSyncServicePeriodicTest {
         assertEquals(0, repo.fetches.get())
         runOneInterval(15)
         assertEquals(1, repo.fetches.get())
+    }
+
+    private companion object {
+        const val TICK_TIMEOUT_NANOS = 30_000_000_000L
     }
 }
