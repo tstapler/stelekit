@@ -78,6 +78,24 @@ class GooglePhotosToolbarState(
     val onDismissFailure: () -> Unit = {},
 )
 
+/** The "From Google Photos" toolbar icon; its own composable keeps [MobileBlockToolbar]'s lambda small enough to compile. */
+@Composable
+internal fun GooglePhotosToolbarButton(googlePhotos: GooglePhotosToolbarState) {
+    val busy = googlePhotos.status is GooglePhotosImportState.Opening ||
+        googlePhotos.status is GooglePhotosImportState.Importing
+    IconButton(
+        onClick = googlePhotos.onImport,
+        enabled = googlePhotos.signedIn && !busy,
+        modifier = Modifier.semantics {
+            contentDescription = if (googlePhotos.signedIn) "From Google Photos"
+            else "From Google Photos. $GOOGLE_PHOTOS_SIGNED_OUT_REASON"
+            stateDescription = GooglePhotosSessionPicker.PICKER_UI_COPY
+        }
+    ) {
+        Icon(Icons.Default.PhotoLibrary, contentDescription = null)
+    }
+}
+
 /** The single status line under the toolbar: opening, importing, or a failure with Retry. */
 @Composable
 internal fun GooglePhotosStatusLine(state: GooglePhotosToolbarState) {
@@ -352,21 +370,7 @@ fun MobileBlockToolbar(
                                 Icon(Icons.Default.CameraAlt, contentDescription = null)
                             }
                         }
-                        if (googlePhotos != null) {
-                            val busy = googlePhotos.status is GooglePhotosImportState.Opening ||
-                                googlePhotos.status is GooglePhotosImportState.Importing
-                            IconButton(
-                                onClick = googlePhotos.onImport,
-                                enabled = googlePhotos.signedIn && !busy,
-                                modifier = Modifier.semantics {
-                                    contentDescription = if (googlePhotos.signedIn) "From Google Photos"
-                                    else "From Google Photos. $GOOGLE_PHOTOS_SIGNED_OUT_REASON"
-                                    stateDescription = GooglePhotosSessionPicker.PICKER_UI_COPY
-                                }
-                            ) {
-                                Icon(Icons.Default.PhotoLibrary, contentDescription = null)
-                            }
-                        }
+                        if (googlePhotos != null) GooglePhotosToolbarButton(googlePhotos)
                     }
 
                     if (googlePhotos != null) GooglePhotosStatusLine(googlePhotos)

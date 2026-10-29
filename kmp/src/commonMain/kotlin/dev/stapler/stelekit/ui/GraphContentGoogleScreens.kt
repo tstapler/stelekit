@@ -127,9 +127,10 @@ internal fun rememberGraphContentGooglePhotosEntry(
 /** The `Screen.DriveBrowser` route: a Drive file list over [GoogleIntegration.driveBrowser]. */
 @Composable
 internal fun DriveBrowserRoute(google: GoogleIntegration?, onNavigateBack: () -> Unit) {
+    val currentNavigateBack by rememberUpdatedState(onNavigateBack)
     if (google == null) {
         // A saved navigation entry from a build that had Google surfaces; there is nothing to show.
-        LaunchedEffect(Unit) { onNavigateBack() }
+        LaunchedEffect(Unit) { currentNavigateBack() }
         return
     }
     val browserViewModel = remember(google) { DriveFileBrowserViewModel(google.driveBrowser) }

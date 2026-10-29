@@ -19,6 +19,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.lifecycleScope
+import dev.stapler.stelekit.app.R
 import dev.stapler.stelekit.db.AndroidInsufficientSpaceCheck
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.db.RelocationStagingDirectory

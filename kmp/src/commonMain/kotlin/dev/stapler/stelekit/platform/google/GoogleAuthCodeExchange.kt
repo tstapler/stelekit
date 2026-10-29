@@ -80,6 +80,8 @@ suspend fun parseAuthCodeResponse(
 ): Either<DomainError, String> {
     val parsed = try {
         authCodeJson.decodeFromString<AuthCodeTokenResponse>(body)
+    } catch (e: CancellationException) {
+        throw e
     } catch (e: Exception) {
         return DomainError.NetworkError.HttpError(status, "Google sign-in returned an unreadable response (HTTP $status)").left()
     }
