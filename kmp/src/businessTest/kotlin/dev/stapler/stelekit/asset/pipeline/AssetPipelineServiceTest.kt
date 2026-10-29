@@ -6,7 +6,10 @@ import arrow.core.right
 import dev.stapler.stelekit.asset.AssetEntry
 import dev.stapler.stelekit.asset.AssetMediaType
 import dev.stapler.stelekit.asset.AssetUuid
+import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.repository.InMemoryBlockRepository
+import dev.stapler.stelekit.repository.InMemoryPageRepository
 import dev.stapler.stelekit.repository.InMemoryAssetRepository
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -40,6 +43,8 @@ private fun makeAssetEntry(
     mlTagsSource = "NONE",
 )
 
+private fun realActor() = DatabaseWriteActor(InMemoryBlockRepository(), InMemoryPageRepository())
+
 private class LabelsPlugin(private val labels: List<String>) : AssetPipelinePlugin {
     override val id = "labels-plugin"
     override fun canProcess(asset: AssetEntry) = true
@@ -64,9 +69,9 @@ class AssetPipelineServiceTest {
 
         val registry = PluginRegistry()
         registry.register(LabelsPlugin(listOf("cat", "dog")))
-        val service = AssetPipelineService(registry, repo)
+        val service = AssetPipelineService(registry, repo, realActor())
 
-        service.processAsset(asset, writeActor = null)
+        service.processAsset(asset)
 
         val result = repo.getAssetByUuid(asset.uuid).first().getOrNull()!!
         assertTrue(result.mlProcessed)
@@ -82,9 +87,9 @@ class AssetPipelineServiceTest {
 
         val registry = PluginRegistry()
         registry.register(FailingPlugin())
-        val service = AssetPipelineService(registry, repo)
+        val service = AssetPipelineService(registry, repo, realActor())
 
-        service.processAsset(asset, writeActor = null)
+        service.processAsset(asset)
 
         val result = repo.getAssetByUuid(asset.uuid).first().getOrNull()!!
         assertFalse(result.mlProcessed)
@@ -109,10 +114,10 @@ class AssetPipelineServiceTest {
 
         val registry = PluginRegistry()
         registry.register(countingPlugin)
-        val service = AssetPipelineService(registry, repo)
+        val service = AssetPipelineService(registry, repo, realActor())
 
-        service.processAsset(asset, writeActor = null)
-        service.processAsset(asset, writeActor = null)
+        service.processAsset(asset)
+        service.processAsset(asset)
 
         assertEquals(1, callCount, "Plugin should only be called once for the same asset UUID")
     }
@@ -127,11 +132,11 @@ class AssetPipelineServiceTest {
 
         val registry = PluginRegistry()
         registry.register(LabelsPlugin(listOf("label")))
-        val service = AssetPipelineService(registry, repo)
+        val service = AssetPipelineService(registry, repo, realActor())
 
         // Process all assets directly (synchronously)
         for (asset in assets) {
-            service.processAsset(asset, writeActor = null)
+            service.processAsset(asset)
         }
 
         // All should now be processed
