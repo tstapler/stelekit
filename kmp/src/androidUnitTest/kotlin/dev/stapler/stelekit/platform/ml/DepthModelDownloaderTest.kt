@@ -9,7 +9,8 @@ import androidx.work.WorkManager
 import androidx.work.testing.SynchronousExecutor
 import androidx.work.testing.WorkManagerTestInitHelper
 import kotlinx.coroutines.async
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.yield
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.After
@@ -25,6 +26,10 @@ import kotlin.test.assertTrue
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29])
 class DepthModelDownloaderTest {
+    private companion object {
+        const val SETTLE_YIELDS = 50
+    }
+
     private val context: Context = ApplicationProvider.getApplicationContext<Application>()
 
     @Before
@@ -43,7 +48,7 @@ class DepthModelDownloaderTest {
     private fun jobs() = WorkManager.getInstance(context).getWorkInfosForUniqueWork(DepthModelDownloader.UNIQUE_WORK_NAME).get()
 
     private suspend fun DepthModelDownloader.awaitDownloading() = withTimeout(5_000) {
-        while (modelState.value !is DepthModelDownloader.ModelState.Downloading) delay(10)
+        modelState.first { it is DepthModelDownloader.ModelState.Downloading }
     }
 
     @Test
@@ -61,7 +66,7 @@ class DepthModelDownloaderTest {
         val first = async { downloader.downloadModel() }
         downloader.awaitDownloading()
         val second = async { downloader.downloadModel() }
-        delay(100)
+        repeat(SETTLE_YIELDS) { yield() }
 
         assertEquals(1, jobs().size, "KEEP must not create a second job")
 
