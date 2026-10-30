@@ -131,11 +131,43 @@ class CompositeJobRegistry(private val sources: List<BackgroundJobRegistry>) : B
 }
 
 /**
+ * Follows one page-copy run at a time: [begin] opens the job and [settle] closes it from whichever outcome
+ * delivery the host uses. Split from [TrackedCopyRunHost] so the bookkeeping needs no real merge service.
+ */
+internal class CopyJobTracking(private val tracker: JobTracker) {
+    private var active: JobHandle? = null
+
+    fun begin(title: String, onCancel: () -> Unit) {
+        active = tracker.begin(JobKind.PageCopy, title, onCancel)
+    }
+
+    /** Closes the job opened by [begin] as cancelled when the host declined to start. */
+    fun declined() {
+        active?.cancelled()
+        active = null
+    }
+
+    fun settle(outcome: CopyRunOutcome) {
+        val handle = active
+        active = null
+        when (outcome) {
+            is CopyRunOutcome.Crashed -> handle?.fail(outcome.message)
+            is CopyRunOutcome.Finished -> outcome.result.fold(
+                ifLeft = { handle?.fail("The copy did not complete") },
+                ifRight = { result ->
+                    if (result.failed.isEmpty()) handle?.succeed() else handle?.fail("${result.failed.size} pages failed")
+                },
+            )
+        }
+    }
+}
+
+/**
  * Shows a page copy in the jobs list; the wrapped host still owns the run, its scope and its outcome delivery.
  * The host hands an outcome to whichever observer is attached when the run ends, so [attach] settles the job too.
  */
-class TrackedCopyRunHost(private val delegate: CopyRunHost, private val tracker: JobTracker) : CopyRunHost by delegate {
-    private var active: JobHandle? = null
+class TrackedCopyRunHost(private val delegate: CopyRunHost, tracker: JobTracker) : CopyRunHost by delegate {
+    private val tracking = CopyJobTracking(tracker)
     private val attached = mutableMapOf<(CopyRunOutcome) -> Unit, (CopyRunOutcome) -> Unit>()
 
     override fun start(service: PageMergeService, plan: MergePlan, onOutcome: (CopyRunOutcome) -> Unit): Boolean =
@@ -155,28 +187,14 @@ class TrackedCopyRunHost(private val delegate: CopyRunHost, private val tracker:
     }
 
     private fun tracked(title: String, service: PageMergeService, launch: () -> Boolean): Boolean {
-        val handle = tracker.begin(JobKind.PageCopy, title) { delegate.stop(service) }
-        active = handle
+        tracking.begin(title) { delegate.stop(service) }
         val started = launch()
-        if (!started) {
-            active = null
-            handle.cancelled()
-        }
+        if (!started) tracking.declined()
         return started
     }
 
     private fun settling(onOutcome: (CopyRunOutcome) -> Unit): (CopyRunOutcome) -> Unit = { outcome ->
-        val handle = active
-        active = null
-        when (outcome) {
-            is CopyRunOutcome.Crashed -> handle?.fail(outcome.message)
-            is CopyRunOutcome.Finished -> outcome.result.fold(
-                ifLeft = { handle?.fail("The copy did not complete") },
-                ifRight = { result ->
-                    if (result.failed.isEmpty()) handle?.succeed() else handle?.fail("${result.failed.size} pages failed")
-                },
-            )
-        }
+        tracking.settle(outcome)
         onOutcome(outcome)
     }
 }

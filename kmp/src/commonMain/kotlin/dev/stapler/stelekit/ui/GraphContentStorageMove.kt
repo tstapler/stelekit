@@ -186,7 +186,7 @@ private fun runStorageMove(
     }
 }
 
-private fun reportStorageMove(handle: JobHandle, state: StorageMoveUiState) {
+internal fun reportStorageMove(handle: JobHandle, state: StorageMoveUiState) {
     when (state) {
         is StorageMoveUiState.Copying -> handle.progress(if (state.total > 0) state.count * 100 / state.total else null)
         StorageMoveUiState.Summary -> handle.succeed()
