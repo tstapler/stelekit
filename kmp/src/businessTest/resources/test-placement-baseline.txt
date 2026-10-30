@@ -68,8 +68,8 @@ jvmTest/dev/stapler/stelekit/ui/screenshots/DemoGraphScreenshotTest.kt
 jvmTest/dev/stapler/stelekit/ui/screenshots/DesktopScreenshotTest.kt
 jvmTest/dev/stapler/stelekit/ui/screenshots/GitSetupScreenScreenshotTest.kt
 jvmTest/dev/stapler/stelekit/ui/screenshots/JournalsViewScreenshotTest.kt
-jvmTest/dev/stapler/stelekit/ui/screenshots/MobileBlockToolbarDiskConflictTest.kt
-jvmTest/dev/stapler/stelekit/ui/screenshots/MobileBlockToolbarGapButtonsTest.kt
+jvmTest/dev/stapler/stelekit/ui/components/MobileBlockToolbarDiskConflictTest.kt
+jvmTest/dev/stapler/stelekit/ui/components/MobileBlockToolbarGapButtonsTest.kt
 jvmTest/dev/stapler/stelekit/ui/screenshots/MobileScreenshotTest.kt
 jvmTest/dev/stapler/stelekit/ui/transfer/CameraPermissionRationaleDialogUxTest.kt
 jvmTest/dev/stapler/stelekit/ui/transfer/QrCancelUxTest.kt
