@@ -26,7 +26,6 @@ LidarHardwareCheck	kmp/src/iosMain/kotlin/dev/stapler/stelekit/platform/sensor/I
 LruWeigher	kmp/src/commonMain/kotlin/dev/stapler/stelekit/cache/LruCache.kt	-
 MeasureTemplateResolver	kmp/src/commonMain/kotlin/dev/stapler/stelekit/domain/MeasurementPropertySyncer.kt	-
 NamespaceUtils	kmp/src/commonMain/kotlin/dev/stapler/stelekit/outliner/NamespaceUtils.kt	-
-NoOpErrorTracker	kmp/src/commonMain/kotlin/dev/stapler/stelekit/error/ErrorTracker.kt	32
 PageOptics	kmp/src/commonMain/kotlin/dev/stapler/stelekit/model/ModelOptics.kt	-
 PlaceholderInferenceWorker	kmp/src/commonMain/kotlin/dev/stapler/stelekit/search/VectorSearch.kt	17
 PropertiesParser	kmp/src/commonMain/kotlin/dev/stapler/stelekit/parser/PropertiesParser.kt	-
@@ -40,5 +39,3 @@ TutorialDoc	kmp/src/commonMain/kotlin/dev/stapler/stelekit/docs/DiataxisDoc.kt	-
 UrlFetcherIos	kmp/src/iosMain/kotlin/dev/stapler/stelekit/domain/UrlFetcherIos.kt	-
 VectorSearch	kmp/src/commonMain/kotlin/dev/stapler/stelekit/search/VectorSearch.kt	17
 VisualQueryBuilder	kmp/src/commonMain/kotlin/dev/stapler/stelekit/search/DatalogQuery.kt	18
-WebCameraProvider	kmp/src/wasmJsMain/kotlin/dev/stapler/stelekit/platform/sensor/WebCameraProvider.kt	26
-WebcamCameraProvider	kmp/src/jvmMain/kotlin/dev/stapler/stelekit/platform/sensor/WebcamCameraProvider.kt	26
