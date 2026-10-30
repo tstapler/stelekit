@@ -42,6 +42,7 @@ kt_jvm_test(
             "**/screenshots/**",
             # Mermaid engine tests — own target below (mermaid_jvm_tests)
             "dev/stapler/stelekit/AllMermaidJvmTests.kt",
+            "dev/stapler/stelekit/AllMermaidJvmTestsCompletenessTest.kt",
             "dev/stapler/stelekit/ui/components/MermaidEngineActorTest.kt",
             "dev/stapler/stelekit/ui/components/MermaidJvmEngineTest.kt",
             "dev/stapler/stelekit/ui/components/MermaidRendererFallbackTest.kt",
@@ -113,6 +114,7 @@ kt_jvm_test(
     name = "mermaid_jvm_tests",
     srcs = [
         "dev/stapler/stelekit/AllMermaidJvmTests.kt",
+        "dev/stapler/stelekit/AllMermaidJvmTestsCompletenessTest.kt",
         "dev/stapler/stelekit/ui/components/MermaidEngineActorTest.kt",
         "dev/stapler/stelekit/ui/components/MermaidJvmEngineTest.kt",
         "dev/stapler/stelekit/ui/components/MermaidRendererFallbackTest.kt",
