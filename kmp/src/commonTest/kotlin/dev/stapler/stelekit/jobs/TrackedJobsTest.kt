@@ -103,10 +103,10 @@ class TrackedJobsTest {
 
     @Test
     fun storageMoveReporting_should_MapUiStatesOntoJobOutcomes() = runTest {
-        fun run(state: StorageMoveUiState): JobState {
+        suspend fun run(state: StorageMoveUiState): JobState {
             val jobs = InProcessJobs()
             reportStorageMove(jobs.begin(JobKind.StorageMove, "Moving"), state)
-            return kotlinx.coroutines.runBlocking { jobs.only() }
+            return jobs.only()
         }
 
         assertEquals(JobState.Running(50), run(StorageMoveUiState.Copying(5, 10)))
