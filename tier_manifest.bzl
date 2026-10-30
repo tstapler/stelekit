@@ -31,7 +31,6 @@ TIER_2_PACKAGES = [
     "cache",
     "coroutines",
     "util",
-    "command",
     "clipboard",
     "flashcard",
     "loader",
