@@ -93,6 +93,8 @@ import dev.stapler.stelekit.ui.components.LogDashboardTest
 import dev.stapler.stelekit.ui.components.MermaidBlockFocusTest
 import dev.stapler.stelekit.ui.components.MermaidBlockInteractionTest
 import dev.stapler.stelekit.ui.components.MermaidBlockTest
+import dev.stapler.stelekit.ui.components.MobileBlockToolbarDiskConflictTest
+import dev.stapler.stelekit.ui.components.MobileBlockToolbarGapButtonsTest
 import dev.stapler.stelekit.ui.components.ParseMarkdownWithStylingTest
 import dev.stapler.stelekit.ui.components.PerformanceDashboardTest
 import dev.stapler.stelekit.ui.components.RememberSteleKitImageLoaderTest
@@ -407,6 +409,8 @@ import org.junit.runners.Suite
     MermaidBlockFocusTest::class,
     MermaidBlockInteractionTest::class,
     MermaidBlockTest::class,
+    MobileBlockToolbarDiskConflictTest::class,
+    MobileBlockToolbarGapButtonsTest::class,
     ParseMarkdownWithStylingTest::class,
     SearchDialogTest::class,
     FileSystemResolveLoadableUriTest::class,
