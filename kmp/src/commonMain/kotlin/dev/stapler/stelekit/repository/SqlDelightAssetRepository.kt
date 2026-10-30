@@ -66,6 +66,45 @@ class SqlDelightAssetRepository(
         mlTagsSource = ml_tags_source,
     )
 
+    /** Row of a projected `...Light` query: `ocr_text` and `auto_labels` are not read, so they come back empty. */
+    private fun lightEntry(
+        uuid: String,
+        file_path: String,
+        relative_path: String,
+        media_type: String,
+        subfolder: String,
+        tags: String,
+        cloud_description: String?,
+        page_uuids: String,
+        size_bytes: Long,
+        imported_at_ms: Long,
+        ml_processed: Long,
+        ml_attempted_at: Long?,
+        ml_failed: Long,
+        content_hash: String?,
+        is_orphan: Long,
+        ml_tags_source: String,
+    ): AssetEntry = AssetEntry(
+        uuid = AssetUuid(uuid),
+        filePath = file_path,
+        relativePath = relative_path,
+        mediaType = AssetMediaType.valueOf(media_type),
+        subfolder = subfolder,
+        tags = tags.fromJsonList(),
+        autoLabels = emptyList(),
+        ocrText = null,
+        cloudDescription = cloud_description,
+        pageUuids = page_uuids.fromJsonList(),
+        sizeBytes = size_bytes,
+        importedAtMs = imported_at_ms,
+        mlProcessed = ml_processed != 0L,
+        mlAttemptedAt = ml_attempted_at,
+        mlFailed = ml_failed != 0L,
+        contentHash = content_hash,
+        isOrphan = is_orphan != 0L,
+        mlTagsSource = ml_tags_source,
+    )
+
     override fun getAssetByUuid(uuid: AssetUuid): Flow<Either<DomainError, AssetEntry?>> =
         queries.selectAssetByUuid(uuid.value)
             .asDbFlowOrNull(PlatformDispatcher.DB) { it.toModel() }
@@ -88,16 +127,16 @@ class SqlDelightAssetRepository(
         offset: Int,
     ): Flow<Either<DomainError, List<AssetEntry>>> {
         val escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        return queries.searchAssets("%$escaped%", limit.toLong(), offset.toLong())
-            .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
+        return queries.searchAssetsLight("%$escaped%", limit.toLong(), offset.toLong(), ::lightEntry)
+            .asDbFlowList(PlatformDispatcher.DB) { it }
     }
 
     override fun getUnprocessedAssets(
         limit: Int,
         offset: Int,
     ): Flow<Either<DomainError, List<AssetEntry>>> =
-        queries.selectUnprocessedAssets(limit.toLong(), offset.toLong())
-            .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
+        queries.selectUnprocessedAssetsLight(limit.toLong(), offset.toLong(), ::lightEntry)
+            .asDbFlowList(PlatformDispatcher.DB) { it }
 
     override suspend fun countUnprocessedAssets(): Either<DomainError, Long> =
         withContext(PlatformDispatcher.DB) {
@@ -113,6 +152,27 @@ class SqlDelightAssetRepository(
         withContext(PlatformDispatcher.DB) {
             try {
                 queries.countAssets().asFlow().mapToOne(PlatformDispatcher.DB).first().right()
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                DomainError.DatabaseError.ReadFailed(e.message ?: "unknown").left()
+            }
+        }
+
+    override suspend fun getIndexedFilePaths(filePaths: List<String>): Either<DomainError, Set<String>> =
+        withContext(PlatformDispatcher.DB) {
+            try {
+                // IN lists stay <= 500 (SQLITE_MAX_VARIABLE_NUMBER is 999 on Android API < 30).
+                filePaths.chunked(500).flatMap { queries.selectAssetFilePathsIn(it).executeAsList() }.toSet().right()
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                DomainError.DatabaseError.ReadFailed(e.message ?: "unknown").left()
+            }
+        }
+
+    override suspend fun findUuidByContentHash(contentHash: String): Either<DomainError, AssetUuid?> =
+        withContext(PlatformDispatcher.DB) {
+            try {
+                queries.selectAssetUuidByContentHash(contentHash).executeAsOneOrNull()?.let { AssetUuid(it) }.right()
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) {
                 DomainError.DatabaseError.ReadFailed(e.message ?: "unknown").left()

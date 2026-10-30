@@ -66,6 +66,11 @@ kt_jvm_test(
         "XAUTHORITY",
     ],
     jvm_flags = [
+        # Bound the test JVM: without -Xmx a JVM may claim 25% of host RAM, and on a dev box that
+        # starves the desktop (kernel OOM-killer took plasmashell/kwin). Gradle's test JVM is
+        # 512 MB by default, so 4 GB is generous. Exit fast instead of thrashing in GC.
+        "-Xmx4g",
+        "-XX:+ExitOnOutOfMemoryError",
         # Required for JVM attach (BlockHound, async-profiler)
         "-Djdk.attach.allowAttachSelf=true",
         # Required by Compose Desktop test infrastructure
@@ -91,6 +96,7 @@ kt_jvm_test(
         "//kmp/src/commonTest/kotlin:common_test_fixtures",
         "//kmp/src/commonTest/kotlin:git_testsupport",
         "//kmp/src/commonTest/kotlin:merge_fixtures",
+        "//kmp/src/commonTest/kotlin:observable_effect_jvm",
         ":graph_content_wiring_test_sources_as_resources",
         "@maven//:com_google_zxing_core",
         "@maven//:io_ktor_ktor_client_mock_jvm",
@@ -131,6 +137,11 @@ kt_jvm_test(
         "XAUTHORITY",
     ],
     jvm_flags = [
+        # Bound the test JVM: without -Xmx a JVM may claim 25% of host RAM, and on a dev box that
+        # starves the desktop (kernel OOM-killer took plasmashell/kwin). Gradle's test JVM is
+        # 512 MB by default, so 4 GB is generous. Exit fast instead of thrashing in GC.
+        "-Xmx4g",
+        "-XX:+ExitOnOutOfMemoryError",
         # Required for JVM attach (BlockHound, async-profiler)
         "-Djdk.attach.allowAttachSelf=true",
         # Required by Compose Desktop test infrastructure
@@ -154,4 +165,14 @@ kt_jvm_test(
         "@maven//:org_jetbrains_kotlin_kotlin_test_junit",
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
     ],
+)
+
+# All jvmTest sources for TestPlacementAuditTest and TestHygieneAuditTest.
+# Bundled as classpath resources by //kmp/src/businessTest/kotlin:wiring_kmp_sources_as_resources so
+# the wiring and test-audit gates (businessTest/.../wiring, .../audit) can read sources under Bazel's
+# sandbox. A subdirectory with its own BUILD.bazel is not crossed by glob(); none exists here.
+filegroup(
+    name = "test_audit_sources",
+    srcs = glob(["**/*.kt"]),
+    visibility = ["//kmp/src/businessTest/kotlin:__pkg__"],
 )

@@ -1,14 +1,19 @@
 package dev.stapler.stelekit.asset.pipeline
 
 class PluginRegistry {
-    private val _plugins = mutableListOf<AssetPipelinePlugin>()
-    val all: List<AssetPipelinePlugin> get() = _plugins.toList()
+    @kotlin.concurrent.Volatile
+    private var plugins: List<AssetPipelinePlugin> = emptyList()
+    val all: List<AssetPipelinePlugin> get() = plugins
 
     fun register(plugin: AssetPipelinePlugin) {
-        _plugins.add(plugin)
+        plugins = plugins + plugin
+    }
+
+    fun replaceAll(newPlugins: List<AssetPipelinePlugin>) {
+        plugins = newPlugins.toList()
     }
 
     fun clear() {
-        _plugins.clear()
+        plugins = emptyList()
     }
 }

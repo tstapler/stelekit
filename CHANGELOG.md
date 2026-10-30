@@ -1,5 +1,87 @@
 # Changelog
 
+## [0.100.0](https://github.com/tstapler/stelekit/compare/v0.99.2...v0.100.0) (2026-10-29)
+
+
+### Features
+
+* **assets:** OCR port and on-device plugins via PlatformCaps (U9, off by default) ([#523](https://github.com/tstapler/stelekit/issues/523)) ([963f335](https://github.com/tstapler/stelekit/commit/963f3351a99e48e4b18f78084f19710137bde883))
+* **assets:** PlatformCaps, defaultAssetPlugins, per-plugin keys (U8d, Tasks 5.2a+5.2d) ([#518](https://github.com/tstapler/stelekit/issues/518)) ([555929d](https://github.com/tstapler/stelekit/commit/555929de393f774b7ca0774943e935687ff89956))
+* **assets:** wire asset indexing and moves (U7, hidden in release) ([#511](https://github.com/tstapler/stelekit/issues/511)) ([cc48957](https://github.com/tstapler/stelekit/commit/cc489572af41acb537fcb902711a9bb48b0d920d))
+* **console:** developer console core behind developer mode (U3, stacked on [#506](https://github.com/tstapler/stelekit/issues/506)) ([#508](https://github.com/tstapler/stelekit/issues/508)) ([81bbdb7](https://github.com/tstapler/stelekit/commit/81bbdb794eb0a4aeeb426cfd0e99c22af12456ba))
+* **console:** guarded sql! writes with automatic backup (U5) ([#519](https://github.com/tstapler/stelekit/issues/519)) ([214ee2a](https://github.com/tstapler/stelekit/commit/214ee2a1798e9d4d4a161b7edbafd62d47ccc9e7))
+* **console:** read-only sql command (Story 3.2, U4) ([#510](https://github.com/tstapler/stelekit/issues/510)) ([fbbf174](https://github.com/tstapler/stelekit/commit/fbbf1745f2d38a68262b50bc2606f406ae693bc1))
+* **console:** sql result grid, CSV export and EXPLAIN chip (U4b) ([#525](https://github.com/tstapler/stelekit/issues/525)) ([8a58e69](https://github.com/tstapler/stelekit/commit/8a58e69b936268225f48016a3412b4a8ef8b3a58))
+* **console:** verified restore from console backups (U6) ([#522](https://github.com/tstapler/stelekit/issues/522)) ([d372d2e](https://github.com/tstapler/stelekit/commit/d372d2ea1c25b7f1e2bf5feb384d79f0800acf23))
+* **coverage:** tiers file, first coverage map, metric-1 summary line (U17) ([#524](https://github.com/tstapler/stelekit/issues/524)) ([fc673f9](https://github.com/tstapler/stelekit/commit/fc673f9999e48248a9dacdbcea424a57216f3f53))
+* **google:** wire Photos picker, Drive export and Drive browser (U13, hidden in release) ([#520](https://github.com/tstapler/stelekit/issues/520)) ([1a9ce1a](https://github.com/tstapler/stelekit/commit/1a9ce1ad563835cc793eedbff8108a5ac39c2e64))
+* **sync:** scheduled sync wiring (U2, stacked on [#506](https://github.com/tstapler/stelekit/issues/506)) ([#512](https://github.com/tstapler/stelekit/issues/512)) ([8d7c27e](https://github.com/tstapler/stelekit/commit/8d7c27eeb6e57bc619abb1e4d55fe8d06d7f879d))
+* **wiring:** U12 small wirings (Epic 7, stacked on [#506](https://github.com/tstapler/stelekit/issues/506)) ([#507](https://github.com/tstapler/stelekit/issues/507)) ([7d29e1c](https://github.com/tstapler/stelekit/commit/7d29e1c719acca9c07a03e1c63efb41e5393dc62))
+
+
+### Bug Fixes
+
+* **assets:** drain terminal-state fix, progress, crash-loop breaker, 512 MB heap gate (U8 gate) ([#521](https://github.com/tstapler/stelekit/issues/521)) ([d7f2f96](https://github.com/tstapler/stelekit/commit/d7f2f96c84644c58579c1ac55b68cd22708156fe))
+
+## [0.99.2](https://github.com/tstapler/stelekit/compare/v0.99.1...v0.99.2) (2026-10-28)
+
+
+### Bug Fixes
+
+* stop parsing binary files as pages, keep cache on failed count, dispose superseded loaders ([#501](https://github.com/tstapler/stelekit/issues/501)) ([b58337a](https://github.com/tstapler/stelekit/commit/b58337a69ae8b16ddf3ab1656ea1f45eed2c7f0d))
+* **ui:** sync block cursor after programmatic link insertion ([#502](https://github.com/tstapler/stelekit/issues/502)) ([6228676](https://github.com/tstapler/stelekit/commit/622867638fcb88071151beebc27afd356374960a))
+
+## [0.99.1](https://github.com/tstapler/stelekit/compare/v0.99.0...v0.99.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* clear blocks leaf-first and before pages so the cache wipe is ~6x faster ([#499](https://github.com/tstapler/stelekit/issues/499)) ([8379630](https://github.com/tstapler/stelekit/commit/8379630ce98d328efd9d8566f954e146559e7507))
+
+## [0.99.0](https://github.com/tstapler/stelekit/compare/v0.98.1...v0.99.0) (2026-10-26)
+
+
+### Features
+
+* make a slow cache wipe visible and log the SQLite state that decides its cost ([#497](https://github.com/tstapler/stelekit/issues/497)) ([3b7515b](https://github.com/tstapler/stelekit/commit/3b7515b4e085b8fab5cc779ae150f397a6e08f28))
+
+
+### Bug Fixes
+
+* **ci:** stop Bazel Android build from killing the runner ([#495](https://github.com/tstapler/stelekit/issues/495)) ([82afcfd](https://github.com/tstapler/stelekit/commit/82afcfdcfe7e6dcaee88db7314217176fc7cfe44))
+* graph detection can no longer leak an uncaught exception into other tests ([#493](https://github.com/tstapler/stelekit/issues/493)) ([95cc735](https://github.com/tstapler/stelekit/commit/95cc735d2e505f4114dd7a658c2b844c49335125))
+
+## [0.98.1](https://github.com/tstapler/stelekit/compare/v0.98.0...v0.98.1) (2026-10-25)
+
+
+### Bug Fixes
+
+* a launch no longer wipes the page cache by starting on the repo root ([#492](https://github.com/tstapler/stelekit/issues/492)) ([ba884bd](https://github.com/tstapler/stelekit/commit/ba884bd1d8129ac9623db590cabee6f0c8b37910))
+* **assets:** load asset browser images from thumbnail/display tiers ([#490](https://github.com/tstapler/stelekit/issues/490)) ([046fafe](https://github.com/tstapler/stelekit/commit/046fafe121642008e2ac1a3e9e67a23550164008))
+* shared database directory creation no longer races across processes ([#488](https://github.com/tstapler/stelekit/issues/488)) ([54b5978](https://github.com/tstapler/stelekit/commit/54b5978e3b6b64d367749c1eb7e601813a39739c))
+
+## [0.98.0](https://github.com/tstapler/stelekit/compare/v0.97.1...v0.98.0) (2026-10-22)
+
+
+### Features
+
+* **images:** thumbnail/display derivatives + tiered image loading ([#481](https://github.com/tstapler/stelekit/issues/481)) ([909acc0](https://github.com/tstapler/stelekit/commit/909acc09797fe44321521211e931b3cb95e661e3))
+* merge anyway for misplaced pages the automatic merge refuses ([#478](https://github.com/tstapler/stelekit/issues/478)) ([670f2fe](https://github.com/tstapler/stelekit/commit/670f2fe769803143c54fbad8fb0e6f379c4e75b0))
+
+
+### Bug Fixes
+
+* **android:** bound image memory across capture, annotation and Coil caches ([#480](https://github.com/tstapler/stelekit/issues/480)) ([f686228](https://github.com/tstapler/stelekit/commit/f68622851c71c8c6396a32de5e4683175d9d3c8e))
+
+## [0.97.1](https://github.com/tstapler/stelekit/compare/v0.97.0...v0.97.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* merge misplaced pages as block trees so shared parents combine instead of being refused or misfiled ([#475](https://github.com/tstapler/stelekit/issues/475)) ([7ad5e52](https://github.com/tstapler/stelekit/commit/7ad5e5261273aa8f09bc919e7c140f432be36888))
+* **search:** treat literal parentheses as FTS token boundaries ([#466](https://github.com/tstapler/stelekit/issues/466)) ([6748876](https://github.com/tstapler/stelekit/commit/67488765e4de052018e0e2aa4bf7bfc72b5c5af9))
+* write block sidecar positions as quoted strings so read can parse them ([#470](https://github.com/tstapler/stelekit/issues/470)) ([3988d53](https://github.com/tstapler/stelekit/commit/3988d53f9145384af3e6403537e15a1dcc43a5c8))
+
 ## [0.97.0](https://github.com/tstapler/stelekit/compare/v0.96.1...v0.97.0) (2026-10-17)
 
 

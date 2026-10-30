@@ -160,7 +160,7 @@ class ArgParserTest {
         val graph = java.nio.file.Files.createTempDirectory("sync-graph").toFile()
         val other = java.nio.file.Files.createTempDirectory("sync-last").toFile()
 
-        val result = resolveNotesPath(SyncArgs(graphPath = EffectiveNotesPath(graph.path)), other.path)
+        val result = resolveNotesPath(SyncArgs(graphPath = EffectiveNotesPath(graph.path)), EffectiveNotesPath(other.path))
 
         assertEquals(EffectiveNotesPath(graph.canonicalPath).right(), result)
     }
@@ -169,19 +169,19 @@ class ArgParserTest {
     fun `resolveNotesPath falls back to the last opened graph`() {
         val last = java.nio.file.Files.createTempDirectory("sync-last").toFile()
 
-        assertEquals(EffectiveNotesPath(last.canonicalPath).right(), resolveNotesPath(SyncArgs(), last.path))
+        assertEquals(EffectiveNotesPath(last.canonicalPath).right(), resolveNotesPath(SyncArgs(), EffectiveNotesPath(last.path)))
     }
 
     @Test
     fun `resolveNotesPath reports when neither is given`() {
-        assertTrue(resolveNotesPath(SyncArgs(), "").leftOrNull()!!.contains("No graph path specified"))
+        assertTrue(resolveNotesPath(SyncArgs(), null).leftOrNull()!!.contains("No graph path specified"))
     }
 
     @Test
     fun `resolveNotesPath reports a path that is not a directory`() {
         val missing = java.nio.file.Files.createTempDirectory("sync-graph").toFile().resolve("nope")
 
-        val message = resolveNotesPath(SyncArgs(graphPath = EffectiveNotesPath(missing.path)), "").leftOrNull()
+        val message = resolveNotesPath(SyncArgs(graphPath = EffectiveNotesPath(missing.path)), null).leftOrNull()
 
         assertTrue(message!!.contains("not a directory"), message)
     }
@@ -190,7 +190,7 @@ class ArgParserTest {
     fun `resolveNotesPath canonicalizes dot-dot segments`() {
         val graph = java.nio.file.Files.createTempDirectory("sync-graph").toFile()
 
-        val result = resolveNotesPath(SyncArgs(graphPath = EffectiveNotesPath("${graph.path}/sub/..")), "")
+        val result = resolveNotesPath(SyncArgs(graphPath = EffectiveNotesPath("${graph.path}/sub/..")), null)
 
         assertEquals(EffectiveNotesPath(graph.canonicalPath).right(), result)
     }

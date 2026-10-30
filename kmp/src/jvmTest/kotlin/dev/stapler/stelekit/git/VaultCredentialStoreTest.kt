@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.model.RepoRoot
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.security.CredentialStore
 import dev.stapler.stelekit.vault.JvmCryptoEngine
@@ -53,7 +54,7 @@ class VaultCredentialStoreTest {
     private fun makeStore(
         graphPath: String = "/tmp/test-graph",
         fs: FileSystem = InMemoryFileSystem(),
-    ): VaultCredentialStore = VaultCredentialStore(graphPath, engine, fs)
+    ): VaultCredentialStore = VaultCredentialStore(RepoRoot(graphPath), engine, fs)
 
     // VCS-01 — store and retrieve when vault unlocked
     @Test

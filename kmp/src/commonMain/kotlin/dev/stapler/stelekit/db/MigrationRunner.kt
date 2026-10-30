@@ -865,6 +865,7 @@ object MigrationRunner {
      */
     suspend fun applyAll(driver: SqlDriver) {
         applyAll(driver, all)
+        DatabaseOpenDiagnostics.log(driver)
         // Ensure FTS5 triggers are present iff the FTS5 virtual tables exist.
         // This handles devices whose SQLite lacks FTS5: the pages_fts_setup migration silently
         // skips pages_fts creation (IF NOT EXISTS swallows the error) but leaves pages_ai/ad/au

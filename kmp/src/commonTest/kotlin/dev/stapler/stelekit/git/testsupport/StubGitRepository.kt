@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.git.testsupport
 
+import dev.stapler.stelekit.model.RepoRoot
 import arrow.core.Either
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
@@ -26,10 +27,10 @@ import dev.stapler.stelekit.git.model.GitConfig
  */
 open class StubGitRepository : GitRepository {
     override suspend fun isGitRepo(path: String): Boolean = error("not implemented in stub")
-    override suspend fun init(repoRoot: String): Either<DomainError.GitError, Unit> = error("not implemented in stub")
+    override suspend fun init(repoRoot: RepoRoot): Either<DomainError.GitError, Unit> = error("not implemented in stub")
     override suspend fun clone(
         url: String,
-        localPath: String,
+        localPath: RepoRoot,
         auth: GitAuth,
         onProgress: (CloneProgress) -> Unit,
         onStateChange: (GitTransportRetryState) -> Unit,
@@ -102,11 +103,11 @@ fun cloningStub(
 ): GitRepository = object : StubGitRepository() {
     override suspend fun clone(
         url: String,
-        localPath: String,
+        localPath: RepoRoot,
         auth: GitAuth,
         onProgress: (CloneProgress) -> Unit,
         onStateChange: (GitTransportRetryState) -> Unit,
-    ) = onClone(url, localPath, auth, onProgress)
+    ) = onClone(url, localPath.value, auth, onProgress)
 }
 
 open class FailureSequenceGitRepository(
@@ -116,7 +117,7 @@ open class FailureSequenceGitRepository(
 ) : StubGitRepository() {
     override suspend fun clone(
         url: String,
-        localPath: String,
+        localPath: RepoRoot,
         auth: GitAuth,
         onProgress: (CloneProgress) -> Unit,
         onStateChange: (GitTransportRetryState) -> Unit,

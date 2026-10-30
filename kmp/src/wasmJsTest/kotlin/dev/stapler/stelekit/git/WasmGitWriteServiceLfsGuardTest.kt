@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.model.RepoRoot
 import arrow.core.Either
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.lfs.LfsOid
@@ -72,7 +73,7 @@ class WasmGitWriteServiceLfsGuardTest {
 
     private fun config(graphId: String, host: GitHostType = GitHostType.GITHUB) = GitConfig(
         graphId = graphId,
-        repoRoot = "/stelekit/$graphId",
+        repoRoot = RepoRoot("/stelekit/$graphId"),
         wikiSubdir = "",
         authType = if (host == GitHostType.GITHUB) GitAuthType.GITHUB_OAUTH else GitAuthType.NONE,
     )

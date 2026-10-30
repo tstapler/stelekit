@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.model.RepoRoot
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.git.model.GitAuthType
@@ -87,7 +88,7 @@ class GitSyncAttributeMergeE2ETest {
     }
 
     private fun service(): GitSyncService {
-        val config = GitConfig(graphId = GRAPH_ID, repoRoot = local.absolutePath, wikiSubdir = null, authType = GitAuthType.NONE)
+        val config = GitConfig(graphId = GRAPH_ID, repoRoot = RepoRoot(local.absolutePath), wikiSubdir = null, authType = GitAuthType.NONE)
         val fs = AppPrivateFileSystem()
         val graphLoader = GraphLoader(fs, InMemoryPageRepository(), InMemoryBlockRepository())
         val configRepository = StubConfigRepository(config.right())

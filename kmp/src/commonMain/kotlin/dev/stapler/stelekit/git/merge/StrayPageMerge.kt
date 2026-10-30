@@ -30,6 +30,7 @@ sealed interface StrayPageMergeResult {
  */
 object StrayPageMerge {
     private const val TAB_WIDTH = 2
+    private const val NL = "\n"
     private val BULLET = Regex("""^(\s*)-(\s.*|)$""")
     private val BLOCK_ID = Regex("""^\s*id::\s*(\S+)\s*$""")
 
@@ -42,7 +43,7 @@ object StrayPageMerge {
     ) {
         /** Equal keys mean the same block; `collapsed::` is view state, not content, so it never splits a block in two. */
         val key: String =
-            (listOf(header.trimEnd()) + body.map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("collapsed::") }).joinToString("\n")
+            (listOf(header.trimEnd()) + body.map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("collapsed::") }).joinToString(NL)
     }
 
     fun merge(notesText: String, strayText: String): StrayPageMergeResult {
@@ -59,12 +60,41 @@ object StrayPageMerge {
         val added = mergeInto(notesTree, parseTree(strayText, fromStray = true))
         if (hasDuplicateBlockId(notesTree)) return StrayPageMergeResult.Refused("a block id appears on two different blocks")
 
-        val rendered = render(notesTree, parentIndent = "", unit = unit).joinToString("\n")
-        val text = if (notesText.endsWith("\n")) "$rendered\n" else rendered
+        val rendered = render(notesTree, parentIndent = "", unit = unit).joinToString(NL)
+        val text = if (notesText.endsWith(NL)) "$rendered$NL" else rendered
         val mergedPaths = blockPaths(MarkdownParser().parsePage(text).blocks).toSet()
         val lost = (blockPaths(MarkdownParser().parsePage(notesText).blocks) + blockPaths(MarkdownParser().parsePage(strayText).blocks))
             .firstOrNull { it !in mergedPaths }
         if (lost != null) return StrayPageMergeResult.Refused("merging would alter or drop the block \"${lost.second.content.take(40)}\"")
+        return StrayPageMergeResult.Merged(text, added)
+    }
+
+    /**
+     * The fallback for pages [merge] refuses: puts every block of [strayText] after the last block of [notesText]
+     * for the user to tidy by hand. The notes copy is untouched; any properties above the stray copy's first block
+     * become a block of their own, and an `id::` the notes copy already uses is left off the appended block (two
+     * blocks sharing an id would collide) — the only text this drops.
+     */
+    fun appendAll(notesText: String, strayText: String): StrayPageMergeResult.Merged {
+        if (strayText.isBlank()) return StrayPageMergeResult.Merged(notesText, 0)
+        val firstBullet = strayText.lines().indexOfFirst { BULLET.matches(it) }.let { if (it < 0) strayText.lines().size else it }
+        val lines = strayText.lines()
+        val preamble = lines.take(firstBullet).filter { it.isNotBlank() }
+        val usedIds = notesText.lines().mapNotNull { BLOCK_ID.matchEntire(it)?.groupValues?.get(1) }.toMutableSet()
+        val blockLines = lines.drop(firstBullet).dropLastWhile { it.isBlank() }.filter { line ->
+            val id = BLOCK_ID.matchEntire(line)?.groupValues?.get(1)
+            id == null || usedIds.add(id)
+        }
+        val appended = buildList {
+            if (preamble.isNotEmpty()) {
+                add("- Properties from the misplaced copy")
+                preamble.forEach { add("  ${it.trim()}") }
+            }
+            addAll(blockLines)
+        }
+        val added = appended.count { BULLET.matches(it) }
+        val base = notesText.trimEnd('\n')
+        val text = (if (base.isEmpty()) "" else base + NL) + appended.joinToString(NL) + NL
         return StrayPageMergeResult.Merged(text, added)
     }
 

@@ -13,6 +13,7 @@ import dev.stapler.stelekit.cache.LruCache
 import dev.stapler.stelekit.cache.RepoCacheConfig
 import dev.stapler.stelekit.cache.RequestCoalescer
 import dev.stapler.stelekit.db.SteleDatabase
+import dev.stapler.stelekit.db.deleteAllBlocksLeafFirst
 import dev.stapler.stelekit.merge.SelectionFilter
 import dev.stapler.stelekit.merge.SelectionSqlArgs
 import dev.stapler.stelekit.merge.toSqlArgs
@@ -469,7 +470,11 @@ class SqlDelightPageRepository(
     }
 
     override suspend fun clear(): Unit = withContext(PlatformDispatcher.DB) {
-        queries.deleteAllPages()
+        // Blocks first so the page->block cascade has nothing left to walk.
+        queries.transaction {
+            queries.deleteAllBlocksLeafFirst()
+            queries.deleteAllPages()
+        }
         pageByUuidCache.invalidateAll()
         pageByNameCache.invalidateAll()
     }

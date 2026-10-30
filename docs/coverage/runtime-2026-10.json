@@ -1,0 +1,21 @@
+{
+  "android_testDebugUnitTest": {
+    "command": "android_tier",
+    "exit_code": 0,
+    "peak_rss_mb": 8122,
+    "wall_clock_seconds": 80
+  },
+  "jvm_display_available": false,
+  "jvm_jvmTest": {
+    "command": "jvm_tier",
+    "exit_code": 0,
+    "peak_rss_mb": 10871,
+    "wall_clock_seconds": 864
+  },
+  "pit_tier1": {
+    "command": "./gradlew --no-daemon :kmp:mutationTest -Pmutate.classes=dev.stapler.stelekit.db.*,dev.stapler.stelekit.repository.* -Pmutate.tests=dev.stapler.stelekit.db.*,dev.stapler.stelekit.repository.* -Pmutate.threshold=0 -Pmutate.timeoutMinutes=80",
+    "exit_code": 1,
+    "note": "mutations.xml empty or truncated: PIT was stopped before it finished",
+    "wall_clock_seconds": 4808
+  }
+}

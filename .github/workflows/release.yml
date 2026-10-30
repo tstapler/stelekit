@@ -159,14 +159,14 @@ jobs:
       - uses: ./.github/actions/setup-bcp
       - uses: bazel-contrib/setup-bazel@0.19.0
         with:
-          bazelisk-version: "1.x"
+          bazelisk-version: ""  # use the runner image's Bazelisk; "1.x" needs a GitHub releases lookup that intermittently fails
           disk-cache: shared
           repository-cache: true
           external-cache: true
           cache-save: ${{ github.event_name != 'pull_request' }}
       - name: Install Xvfb
         run: |
-          sudo apt-get install -y --no-install-recommends xvfb
+          sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends xvfb
           mkdir -p /tmp/.X11-unix
       - name: Run JVM unit tests
         # --flaky_test_attempts=3: MermaidEngineActorTest's real-GraalJS test
@@ -307,7 +307,7 @@ jobs:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
       - name: Install RPM toolchain
-        run: sudo apt-get install -y rpm
+        run: sudo apt-get update -qq && sudo apt-get install -y rpm
 
       # KNOWN GAP: the .deb/.rpm builds below invoke jpackage independently of
       # the AppImage build and hit the same classpath-buffer-overflow bug
@@ -405,7 +405,7 @@ jobs:
 
       - name: Smoke-test AppImage startup
         run: |
-          sudo apt-get install -y xvfb
+          sudo apt-get update -qq && sudo apt-get install -y xvfb
 
           APPIMAGE=$(find kmp/build/compose/binaries/main -name "*.AppImage" | head -1)
           chmod +x "$APPIMAGE"

@@ -1,0 +1,10 @@
+# Not built by Bazel (runs on the Pixel_Fold AVD via Gradle); stages sources for TestHygieneAuditTest only.
+# All androidInstrumentedTest sources for TestHygieneAuditTest.
+# Bundled as classpath resources by //kmp/src/businessTest/kotlin:wiring_kmp_sources_as_resources so
+# the wiring and test-audit gates (businessTest/.../wiring, .../audit) can read sources under Bazel's
+# sandbox. A subdirectory with its own BUILD.bazel is not crossed by glob(); none exists here.
+filegroup(
+    name = "test_audit_sources",
+    srcs = glob(["**/*.kt"]),
+    visibility = ["//kmp/src/businessTest/kotlin:__pkg__"],
+)

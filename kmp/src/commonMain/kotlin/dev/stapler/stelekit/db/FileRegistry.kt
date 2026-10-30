@@ -17,6 +17,11 @@ import kotlinx.coroutines.sync.withLock
  */
 class FileRegistry(private val fileSystem: FileSystem) {
 
+    companion object {
+        /** True for files the graph indexes as pages; anything else (images, sidecar JSON) must never reach the markdown parser. */
+        fun isPageFileName(name: String): Boolean = name.endsWith(".md") || name.endsWith(".md.stek")
+    }
+
     private val modTimes = mutableMapOf<FilePath, Long>()
     private val contentHashes = mutableMapOf<FilePath, Int>()
 
@@ -40,7 +45,7 @@ class FileRegistry(private val fileSystem: FileSystem) {
         if (!fileSystem.directoryExists(dirPath)) return@withLock emptyList()
 
         val entries = fileSystem.listFilesWithModTimes(dirPath)
-            .filter { (name, _) -> name.endsWith(".md") || name.endsWith(".md.stek") }
+            .filter { (name, _) -> isPageFileName(name) }
             .map { (fileName, modTime) ->
                 val filePath = "$dirPath/$fileName"
                 modTimes[FilePath(filePath)] = modTime
@@ -97,7 +102,7 @@ class FileRegistry(private val fileSystem: FileSystem) {
         if (!fileSystem.directoryExists(dirPath)) return@withLock ChangeSet.EMPTY
 
         val currentFilesWithTimes = fileSystem.listFilesWithModTimes(dirPath)
-            .filter { (name, _) -> name.endsWith(".md") || name.endsWith(".md.stek") }
+            .filter { (name, _) -> isPageFileName(name) }
         val newFiles = mutableListOf<ChangedFile>()
         val changedFiles = mutableListOf<ChangedFile>()
         val currentPaths = HashSet<String>(currentFilesWithTimes.size * 2)

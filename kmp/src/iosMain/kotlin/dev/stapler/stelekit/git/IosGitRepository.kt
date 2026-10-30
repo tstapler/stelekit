@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.model.RepoRoot
 import arrow.core.Either
 import arrow.core.left
 import dev.stapler.stelekit.error.DomainError
@@ -20,11 +21,11 @@ class IosGitRepository : GitRepository {
 
     override suspend fun isGitRepo(path: String): Boolean = false
 
-    override suspend fun init(repoRoot: String): Either<DomainError.GitError, Unit> = notSupported
+    override suspend fun init(repoRoot: RepoRoot): Either<DomainError.GitError, Unit> = notSupported
 
     override suspend fun clone(
         url: String,
-        localPath: String,
+        localPath: RepoRoot,
         auth: GitAuth,
         onProgress: (CloneProgress) -> Unit,
         onStateChange: (GitTransportRetryState) -> Unit,

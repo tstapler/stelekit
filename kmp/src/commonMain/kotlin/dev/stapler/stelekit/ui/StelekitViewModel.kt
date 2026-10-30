@@ -45,7 +45,6 @@ import dev.stapler.stelekit.repository.PageRepository
 import dev.stapler.stelekit.ui.i18n.Language
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
 import dev.stapler.stelekit.editor.commands.CommandContext
-import dev.stapler.stelekit.editor.commands.CommandManager
 import dev.stapler.stelekit.editor.commands.EditorCommand
 import dev.stapler.stelekit.editor.commands.CommandResult
 import dev.stapler.stelekit.domain.AhoCorasickMatcher
@@ -60,6 +59,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlin.time.Clock
+import kotlin.time.measureTime
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -343,10 +343,8 @@ class StelekitViewModel(
     // for the lifetime of the ViewModel.
     private val recentPagesByUuid = mutableMapOf<String, Page>()
 
-    // Initialize command system
-    private val commandManager = CommandManager.create(scope) { message, type, timeout ->
-        notificationManager?.show(message, type, timeout)
-    }
+    // Command system; owns the CommandManager and the block.toggle-todo interception.
+    private val commandCoordinator = CommandManagerCoordinator(scope, notificationManager) { blockStateManager }
     
     // Rename orchestrator — coordinates DB updates + disk file rewrites.
     // Lazy so tests that don't exercise rename don't fail on a missing actor at construction time.
@@ -619,6 +617,38 @@ class StelekitViewModel(
         }
     }
 
+    private fun hasGraphContent(path: String): Boolean =
+        fileSystem.directoryExists("$path/pages") || fileSystem.directoryExists("$path/journals")
+
+    /** Wipes the page/block cache, logging row counts and timings so a slow or interrupted wipe shows in the persisted logs. */
+    @OptIn(DirectRepositoryWrite::class)
+    private suspend fun clearPersistedCache(reason: String) {
+        val pages = pageRepository.countPages().first().getOrNull() ?: 0L
+        val blocks = blockRepository.countAllBlocks().getOrNull() ?: 0L
+        logger.info("Clearing persistent cache ($reason): pages=$pages blocks=$blocks")
+        _uiState.update { it.copy(statusMessage = "Clearing cached data ($pages pages, $blocks blocks)...") }
+        // A single DELETE has no progress, and a wedged one logs nothing at all; say it is still running.
+        val watchdog = scope.launch {
+            var waitedMs = 0L
+            while (true) {
+                delay(wipeWatchdogIntervalMs)
+                waitedMs += wipeWatchdogIntervalMs
+                logger.warn("Still clearing persistent cache ($reason) after ${waitedMs / 1000}s")
+                _uiState.update { it.copy(statusMessage = "Still clearing cached data (${waitedMs / 1000}s)...") }
+            }
+        }
+        try {
+            val blocksTime = measureTime { blockRepository.clear() }
+            val pagesTime = measureTime { pageRepository.clear() }
+            logger.info("Cleared persistent cache ($reason): pages in ${pagesTime.inWholeMilliseconds}ms, blocks in ${blocksTime.inWholeMilliseconds}ms")
+        } finally {
+            watchdog.cancel()
+        }
+    }
+
+    /** How often a still-running cache wipe is reported; a var only so tests need not wait 10 s. */
+    internal var wipeWatchdogIntervalMs: Long = WIPE_WATCHDOG_INTERVAL_MS
+
     @OptIn(DirectRepositoryWrite::class)
     fun triggerReindex() {
         val path = _uiState.value.currentGraphPath ?: return
@@ -627,9 +657,7 @@ class StelekitViewModel(
             logger.info("Manually triggering re-index for $path")
             _uiState.update { it.copy(statusMessage = "Clearing database...") }
             
-            // Clear repositories
-            pageRepository.clear()
-            blockRepository.clear()
+            clearPersistedCache("manual reindex")
             
             // Clear cached path to force GraphLoader to do a full scan
             platformSettings.putString(cachedGraphPathKey(), "")
@@ -679,26 +707,36 @@ class StelekitViewModel(
                 if (graphExists) {
                     _uiState.update { it.copy(statusMessage = "Checking database...") }
                     
-                    val pageCountResult = pageRepository.countPages().first()
-                    val pageCount = pageCountResult.getOrNull() ?: 0L
-                    
-                    logger.info("Loading graph progressively from: $path (Page count: $pageCount)")
-                    
+                    // null = the count query failed (e.g. OutOfMemoryError); that must never read as "empty",
+                    // or a populated cache is wiped and re-imported into the same exhausted heap.
+                    val pageCount: Long? = pageRepository.countPages().first().getOrNull()
+
+                    logger.info("Loading graph progressively from: $path (Page count: ${pageCount ?: "unknown"})")
+
                     // Per-graph marker: a switch must not look like "same graph" (stale cache) or wipe the
                     // other graph's incremental cache. The legacy global key seeds a graph's first load.
                     val cacheKey = cachedGraphPathKey()
                     var cachedPath = platformSettings.getString(cacheKey, "")
                         .ifEmpty { platformSettings.getString(CACHED_GRAPH_PATH_KEY, "") }
-                    
+
                     if (pageCount == 0L) {
                         logger.info("Database is empty - forcing full re-index")
                         cachedPath = ""
                     }
-                    
-                    if (path != cachedPath) {
+
+                    if (path != cachedPath && (pageCount ?: 0L) > 0L && !hasGraphContent(path)) {
+                        // A folder with neither pages/ nor journals/ (e.g. a repo root whose notes live in a
+                        // wiki subdirectory) would wipe a populated cache and then load nothing.
+                        logger.warn("Not loading '$path': no pages/ or journals/ folder, but the database holds $pageCount pages (cached path '$cachedPath') - keeping the cache")
+                        _uiState.update { it.copy(isLoading = false, statusMessage = "No pages or journals folder at $path") }
+                        return@launch
+                    }
+
+                    if (pageCount == null) {
+                        logger.warn("Page count unavailable - keeping the persistent cache for incremental load")
+                    } else if (path != cachedPath) {
                         logger.info("Switching graph from '$cachedPath' to '$path' - Clearing persistent cache")
-                        pageRepository.clear()
-                        blockRepository.clear()
+                        clearPersistedCache("graph switch")
                         platformSettings.putString(cacheKey, path)
                     } else {
                         logger.info("Loading same graph '$path' - Keeping persistent cache for incremental load")
@@ -869,8 +907,8 @@ class StelekitViewModel(
     @OptIn(DirectRepositoryWrite::class)
     fun clear() {
         scope.launch {
-            pageRepository.clear()
             blockRepository.clear()
+            pageRepository.clear()
         }
     }
 
@@ -1120,12 +1158,14 @@ class StelekitViewModel(
                     is Screen.Notifications -> "Opened Notifications"
                     is Screen.Logs -> "Opened Logs"
                     is Screen.Performance -> "Opened Performance"
+                    is Screen.Console -> "Opened Console"
                     is Screen.GlobalUnlinkedReferences -> "Opened Unlinked References"
                     is Screen.Import -> "Import text as new page"
                     is Screen.LibraryStats -> "Opened Library Stats"
                     is Screen.VaultUnlock -> "Vault locked"
                     is Screen.Gallery -> "Opened Gallery"
                     is Screen.AssetBrowser -> "Opened Asset Browser"
+                    is Screen.DriveBrowser -> "Opened Google Drive"
                     is Screen.AssetDetail -> "Opened Asset: ${screen.assetUuid.value}"
                     is Screen.AnnotationEditor -> "Opened Annotation Editor"
                 }
@@ -1398,7 +1438,11 @@ class StelekitViewModel(
      */
     fun onMemoryPressure() {
         graphLoader.cancelBackgroundWork()
+        memoryPressureListeners.notifyListeners()
     }
+
+    /** Other stacks (asset pipeline) subscribe here to shed background work under memory pressure. */
+    val memoryPressureListeners = MemoryPressureListeners()
 
     fun close() {
         scope.cancel()
@@ -1996,7 +2040,7 @@ class StelekitViewModel(
      * selecting "Toggle Todo" from the palette appeared to work but never actually mutated block
      * content (features.md §2 — the "wired-looking but silently non-functional" trap this
      * project exists partly to eliminate). This is now intercepted BEFORE ever reaching
-     * [commandManager]`.executeCommand()`, calling the real `requestTodoToggle()` ->
+     * [CommandManagerCoordinator]'s delegate `CommandManager.executeCommand()`, calling the real `requestTodoToggle()` ->
      * `applyTodoToggle` mutation (Phase C.1) instead.
      *
      * The `"block.toggle-todo"` `EssentialCommands` entry is ALSO hidden from the palette
@@ -2008,15 +2052,8 @@ class StelekitViewModel(
      * `executeCommand("block.toggle-todo")` directly) rather than to serve a currently-visible
      * palette row.
      */
-    suspend fun executeCommand(commandId: String, context: CommandContext = CommandContext()): CommandResult {
-        if (commandId == "block.toggle-todo") {
-            val manager = blockStateManager
-                ?: return CommandResult.Error(message = "No block is currently being edited")
-            manager.requestTodoToggle()
-            return CommandResult.Success(message = "Todo status toggled")
-        }
-        return commandManager.executeCommand(commandId, context)
-    }
+    suspend fun executeCommand(commandId: String, context: CommandContext = CommandContext()): CommandResult =
+        commandCoordinator.executeCommand(commandId, context)
 
     /**
      * Get available commands for current context
@@ -2026,7 +2063,7 @@ class StelekitViewModel(
             currentPageId = _uiState.value.currentPage?.uuid?.value,
             currentBlockId = _uiState.value.currentPage?.uuid?.value // This would be updated by actual editor
         )
-        return commandManager.getAvailableCommands(context)
+        return commandCoordinator.getAvailableCommands(context)
     }
 
     fun newSectionJournalForToday(sectionId: String) = sectionManagementCoordinator.newSectionJournalForToday(sectionId)
@@ -2404,6 +2441,7 @@ class StelekitViewModel(
 
     companion object {
         private const val CACHED_GRAPH_PATH_KEY = "cached_graph_path"
+        private const val WIPE_WATCHDOG_INTERVAL_MS = 10_000L
         private const val MIN_MIDNIGHT_DELAY_MS = 1_000L
     }
 }

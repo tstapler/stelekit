@@ -1,5 +1,8 @@
 package dev.stapler.stelekit.platform
 
+/** Boolean setting, default off: check the remote on a timer while the app is open (and, on Android, in the background). */
+const val SCHEDULED_SYNC_ENABLED_KEY = "scheduled_sync_enabled"
+
 interface Settings {
     fun getBoolean(key: String, defaultValue: Boolean): Boolean
     fun putBoolean(key: String, value: Boolean)

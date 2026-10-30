@@ -92,13 +92,19 @@ class MisplacedFilesService(
 
     /**
      * Moves each of [files] into the notes folder, merging it into the existing copy when there is one, then
-     * repoints the page rows of everything that moved. One file failing never stops the rest.
+     * repoints the page rows of everything that moved. One file failing never stops the rest. With
+     * [appendOnRefusal], a page that cannot be merged automatically is appended to the notes copy instead.
      */
-    suspend fun moveAll(repoRoot: RepoRoot, notesPath: EffectiveNotesPath, files: List<MisplacedFile>): List<Pair<MisplacedFile, StrayResult>> =
+    suspend fun moveAll(
+        repoRoot: RepoRoot,
+        notesPath: EffectiveNotesPath,
+        files: List<MisplacedFile>,
+        appendOnRefusal: Boolean = false,
+    ): List<Pair<MisplacedFile, StrayResult>> =
         withContext(PlatformDispatcher.IO) {
             val results = files.map { file ->
                 file to try {
-                    repair.settleOne(repoRoot, notesPath, file.relativePath)
+                    repair.settleOne(repoRoot, notesPath, file.relativePath, appendOnRefusal)
                 } catch (e: UnsupportedOperationException) {
                     StrayResult.Failed("this device cannot read the file's contents")
                 }

@@ -24,8 +24,11 @@ sealed interface ProposedResolution {
     /** Both copies exist and differ; the three-way merge keeps every block and adds [blocksToAdd] to the notes copy. */
     data class MergeIntoExisting(val blocksToAdd: Int) : ProposedResolution
 
-    /** Both copies exist and differ, and merging them automatically could lose a block. */
-    data class CannotMerge(val reason: String) : ProposedResolution
+    /**
+     * Both copies exist and differ, and merging them automatically could lose a block. [canAppend] means the user
+     * can still choose to append the misplaced copy's blocks to the end of the notes page and tidy them by hand.
+     */
+    data class CannotMerge(val reason: String, val canAppend: Boolean = false) : ProposedResolution
 }
 
 /** The result of moving one misplaced page into the notes folder. */
@@ -70,7 +73,7 @@ class ShareWritePathRepair(private val fs: FileSystem) {
     private enum class Settled { MOVED, MERGED, ALREADY_THERE, DEDUPED, NEITHER, CONFLICT, FAILED }
 
     /** Where a page merge backs up both originals, and where it reports why a merge was refused. */
-    private class MergeContext(val backupBase: String, val warnings: MutableList<String>) {
+    private class MergeContext(val backupBase: String, val warnings: MutableList<String>, val appendOnRefusal: Boolean = false) {
         var blocksAdded = 0
         var refusal: String? = null
     }
@@ -133,20 +136,21 @@ class ShareWritePathRepair(private val fs: FileSystem) {
         if (!relativePath.endsWith(MARKDOWN_SUFFIX)) return ProposedResolution.CannotMerge("only plain markdown pages can be merged")
         return when (val merge = StrayPageMerge.merge(notesBytes.decodeToString(), strayBytes.decodeToString())) {
             is StrayPageMergeResult.Merged -> ProposedResolution.MergeIntoExisting(merge.addedFromStray)
-            is StrayPageMergeResult.Refused -> ProposedResolution.CannotMerge(merge.reason)
+            is StrayPageMergeResult.Refused -> ProposedResolution.CannotMerge(merge.reason, canAppend = true)
         }
     }
 
     /**
      * Moves `<root>/[relativePath]` into the notes folder, three-way merging it into the copy already there. Both
      * originals are backed up first; the assets the page links move with it. This is the user-driven entry point,
-     * so unlike [repair] it never needs a page row.
+     * so unlike [repair] it never needs a page row. With [appendOnRefusal], a page the merge refuses is appended
+     * to the notes copy instead ([StrayPageMerge.appendAll]), after the same backups.
      */
-    fun settleOne(repoRoot: RepoRoot, notesPath: EffectiveNotesPath, relativePath: String): StrayResult {
+    fun settleOne(repoRoot: RepoRoot, notesPath: EffectiveNotesPath, relativePath: String, appendOnRefusal: Boolean = false): StrayResult {
         val root = repoRoot.value.trimEnd('/')
         val notes = notesPath.value.trimEnd('/')
         if (!isSubdir(root, notes) || !isStrayRelativePath(relativePath)) return StrayResult.Failed("not a file outside the notes folder")
-        val context = MergeContext("$root/$BACKUP_DIR/$relativePath", mutableListOf())
+        val context = MergeContext("$root/$BACKUP_DIR/$relativePath", mutableListOf(), appendOnRefusal)
         val how = when (settle("$root/$relativePath", "$notes/$relativePath", context)) {
             Settled.MOVED -> StrayResult.How.MOVED
             Settled.MERGED -> StrayResult.How.MERGED
@@ -224,7 +228,9 @@ class ShareWritePathRepair(private val fs: FileSystem) {
         if (!strayText.encodeToByteArray().contentEquals(oldBytes) || !notesText.encodeToByteArray().contentEquals(newBytes)) return Settled.CONFLICT
         val merged = when (val result = StrayPageMerge.merge(notesText, strayText)) {
             is StrayPageMergeResult.Merged -> result
-            is StrayPageMergeResult.Refused -> {
+            is StrayPageMergeResult.Refused -> if (context.appendOnRefusal) {
+                StrayPageMerge.appendAll(notesText, strayText)
+            } else {
                 context.refusal = result.reason
                 context.warnings += "not merged, ${result.reason}: $old"
                 return Settled.CONFLICT

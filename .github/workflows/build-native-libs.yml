@@ -103,7 +103,7 @@ jobs:
 
       - name: Install cross-linker
         if: matrix.linker-pkg != ''
-        run: sudo apt-get install -y ${{ matrix.linker-pkg }}
+        run: sudo apt-get update -qq && sudo apt-get install -y ${{ matrix.linker-pkg }}
 
       - name: Cache Bazel disk cache
         uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684

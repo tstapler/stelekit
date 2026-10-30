@@ -6,6 +6,7 @@ package dev.stapler.stelekit.ui
 
 import dev.stapler.stelekit.model.EffectiveNotesPath
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import dev.stapler.stelekit.db.GraphEpoch
@@ -60,6 +61,8 @@ internal fun rememberGraphContentGraphIoStack(
             }
         }
     }
+    // A superseded loader otherwise keeps its watcher polling and its reconcile parsing the whole graph.
+    DisposableEffect(graphLoader) { onDispose { graphLoader.dispose() } }
     WireGraphLoaderFlushCallbacks(effectiveFileSystem, graphLoader, repos)
 
     val graphWriter = rememberGraphWriter(effectiveFileSystem, repos, graphLoader, sidecarManager, activeGraphInfo)
@@ -103,6 +106,7 @@ private fun rememberImageIoSetup(
                 journalService = repos.journalService,
                 writeActor = repos.writeActor,
                 measurementAnnotationRepository = repos.measurementAnnotationRepository,
+                derivativeService = dev.stapler.stelekit.platform.image.ImageDerivativeService.shared,
             )
         } else null
     }

@@ -29,6 +29,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import dev.stapler.stelekit.model.EffectiveNotesPath
+import dev.stapler.stelekit.platform.image.ImageTier
+import dev.stapler.stelekit.ui.components.rememberTieredImageModel
 import dev.stapler.stelekit.model.CalibrationMethod
 import dev.stapler.stelekit.model.ImageAnnotation
 import dev.stapler.stelekit.ui.components.rememberSteleKitImageLoader
@@ -181,8 +184,14 @@ private fun GalleryCard(
         Column {
             // Thumbnail
             val imageLoader = rememberSteleKitImageLoader()
+            val tiered by rememberTieredImageModel(
+                reference = image.filePath,
+                tier = ImageTier.THUMBNAIL,
+                graph = EffectiveNotesPath(image.graphPath),
+                recordedThumbnail = image.thumbnailPath,
+            )
             AsyncImage(
-                model = image.thumbnailPath ?: image.filePath,
+                model = tiered.model,
                 contentDescription = "Annotated image",
                 imageLoader = imageLoader,
                 contentScale = ContentScale.Crop,

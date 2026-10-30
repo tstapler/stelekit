@@ -122,4 +122,29 @@ class StrayPageMergeTest {
         assertEquals(2, result.text.lines().count { it == "- todo" })
         assertEquals(1, result.addedFromStray)
     }
+
+    @Test
+    fun appendAll_should_PutEveryStrayBlockAfterTheNotesBlocks_AndTurnItsPropertiesIntoABlock() {
+        val result = StrayPageMerge.appendAll(notesText = "title:: a\n\n- x\n", strayText = "title:: b\n\n- y\n\t- y child\n")
+
+        assertEquals(
+            listOf("title:: a", "- x", "- Properties from the misplaced copy", "  title:: b", "- y", "\t- y child"),
+            result.text.lines().filter { it.isNotBlank() },
+        )
+        assertEquals(3, result.addedFromStray)
+    }
+
+    @Test
+    fun appendAll_should_LeaveOffAnIdTheNotesCopyAlreadyUses_AndKeepEverythingElse() {
+        val result = StrayPageMerge.appendAll(
+            notesText = "- x\n  id:: 11111111-1111-1111-1111-111111111111\n",
+            strayText = "- y\n  id:: 11111111-1111-1111-1111-111111111111\n- z\n  id:: 22222222-2222-2222-2222-222222222222\n",
+        )
+
+        assertEquals(
+            listOf("- x", "  id:: 11111111-1111-1111-1111-111111111111", "- y", "- z", "  id:: 22222222-2222-2222-2222-222222222222"),
+            result.text.lines().filter { it.isNotBlank() },
+        )
+        assertEquals(2, result.addedFromStray)
+    }
 }

@@ -1,0 +1,122 @@
+{
+  "timestamp": "2026-10-28 04:21:02 UTC",
+  "gitSha": "b58337a6",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 0,
+  "phase2Ms": 0,
+  "phase3Ms": 1,
+  "totalMs": 1,
+  "jankBaselineP50Ms": 1,
+  "jankBaselineP95Ms": 24,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.04,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 1081,
+      "pct": 32.3
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 253,
+      "pct": 7.6
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 225,
+      "pct": 6.7
+    },
+    {
+      "frame": "java.util.LinkedHashMap$Entry_[k]",
+      "samples": 178,
+      "pct": 5.3
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 144,
+      "pct": 4.3
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 89,
+      "pct": 2.7
+    },
+    {
+      "frame": "java.nio.DirectByteBuffer_[k]",
+      "samples": 69,
+      "pct": 2.1
+    },
+    {
+      "frame": "char[]_[k]",
+      "samples": 68,
+      "pct": 2.0
+    },
+    {
+      "frame": "dev.stapler.stelekit.parsing.lexer.Token_[k]",
+      "samples": 64,
+      "pct": 1.9
+    },
+    {
+      "frame": "java.lang.String[]_[k]",
+      "samples": 49,
+      "pct": 1.5
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 32540,
+      "pct": 97.0
+    },
+    {
+      "frame": "/tmp/sqlite-3.51.3.0-508dfeb4-2947-4ed0-a4d5-0f951ab76c4b-libsqlitejdbc.so",
+      "samples": 280,
+      "pct": 0.8
+    },
+    {
+      "frame": "fsync",
+      "samples": 217,
+      "pct": 0.6
+    },
+    {
+      "frame": "__libc_pwrite",
+      "samples": 97,
+      "pct": 0.3
+    },
+    {
+      "frame": "pthread_cond_signal",
+      "samples": 54,
+      "pct": 0.2
+    },
+    {
+      "frame": "SR_handler",
+      "samples": 46,
+      "pct": 0.1
+    },
+    {
+      "frame": "syscall",
+      "samples": 11,
+      "pct": 0.0
+    },
+    {
+      "frame": "prctl",
+      "samples": 9,
+      "pct": 0.0
+    },
+    {
+      "frame": "pread",
+      "samples": 5,
+      "pct": 0.0
+    },
+    {
+      "frame": "dev/stapler/stelekit/parsing/lexer/Lexer.isSpecial_[1]",
+      "samples": 4,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": []
+}

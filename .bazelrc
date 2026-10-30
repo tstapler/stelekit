@@ -50,6 +50,12 @@ build:android --android_sdk=@androidsdk//:sdk
 # OOM-kills the Bazel server (observed once bazel-ci.yml's shared disk-cache
 # let these run back-to-back — run 33803270917, "Server terminated abruptly").
 build:android --local_resources=memory=9000
+# The dex/desugar actions don't declare memory, so the cap above doesn't throttle them; --jobs
+# defaults to the 4 vCPUs, i.e. 4 x 3G JVMs + the 6G server. Runner was killed mid-dex in 5/5 recent builds.
+build:android --jobs=2
+# [mem-top] in run 40369927308 (peak 12.8G used): the two persistent Desugar worker JVMs held 4.6G + 2.8G,
+# the Kotlin worker 2.2G, the Bazel server only 1.3G. One Desugar worker should free ~3-4G.
+build:android --worker_max_instances=Desugar=1
 
 # ── Persistent workers for Android dex/desugar/resource actions — REVERTED ───
 # Tried `--persistent_android_dex_desugar` + `--persistent_android_resource_processor`

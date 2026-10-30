@@ -76,6 +76,7 @@ class AndroidShareProvider : ShareProvider {
                 "md" -> "text/markdown"
                 "html" -> "text/html"
                 "json" -> "application/json"
+                "csv" -> "text/csv"
                 else -> "text/plain"
             }
 
@@ -146,6 +147,7 @@ class AndroidShareProvider : ShareProvider {
         "md" -> "text/markdown"
         "html" -> "text/html"
         "json" -> "application/json"
+        "csv" -> "text/csv"
         else -> "text/plain"
     }
 }

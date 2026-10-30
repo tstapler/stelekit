@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.model.RepoRoot
 import android.content.Context
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
@@ -72,7 +73,8 @@ class WorkManagerSyncScheduler(
 
     companion object {
         /** Android's floor for periodic work — matches [schedule]'s existing clamp. */
-        private const val MIN_INTERVAL_MINUTES = 15L
+        const val MIN_PERIODIC_INTERVAL_MINUTES = 15L
+        private const val MIN_INTERVAL_MINUTES = MIN_PERIODIC_INTERVAL_MINUTES
 
         /** Not `private` (Story 5.1.2): [AndroidGitCloneWorkerLauncher] shares this name so
          * WorkManager's own uniqueness guarantee serializes it against the periodic job. */
@@ -224,7 +226,7 @@ internal suspend fun runSlowPathFetch(
 private fun dev.stapler.stelekit.db.Git_config.toGitConfig() =
     dev.stapler.stelekit.git.model.GitConfig(
         graphId = graph_id,
-        repoRoot = repo_root,
+        repoRoot = RepoRoot(repo_root),
         wikiSubdir = wiki_subdir.ifEmpty { null },
         remoteName = remote_name,
         remoteBranch = remote_branch,
@@ -242,25 +244,28 @@ private fun dev.stapler.stelekit.db.Git_config.toGitConfig() =
     )
 
 /**
- * Simple static registry that maps graphId → [GitSyncService].
- *
- * Populated from the Application class (or equivalent host) so [GitSyncWorker] can
- * retrieve the service without a DI container.
- *
- * In a future iteration this should be replaced with Hilt injection.
+ * Reports battery saver, a background-restricted app, or a restricted standby bucket as
+ * "restricted"; Doze is transient and deliberately not reported (it ends on its own).
  */
-object GitSyncServiceRegistry {
-    private val services = mutableMapOf<String, GitSyncService>()
+class AndroidBackgroundRestrictionProbe(private val context: Context) : BackgroundRestrictionProbe {
+    override fun isRestricted(): Boolean = runCatching {
+        val power = context.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
+        val activity = context.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
+        val usage = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            context.getSystemService(Context.USAGE_STATS_SERVICE) as? android.app.usage.UsageStatsManager
+        } else {
+            null
+        }
+        val bucketRestricted = usage != null && usage.appStandbyBucket >= STANDBY_BUCKET_RESTRICTED
+        val appRestricted = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P &&
+            activity?.isBackgroundRestricted == true
+        power?.isPowerSaveMode == true || appRestricted || bucketRestricted
+    }.getOrDefault(false)
 
-    fun register(graphId: String, service: GitSyncService) {
-        services[graphId] = service
+    private companion object {
+        /** `UsageStatsManager.STANDBY_BUCKET_RESTRICTED` (API 28). */
+        const val STANDBY_BUCKET_RESTRICTED = 45
     }
-
-    fun unregister(graphId: String) {
-        services.remove(graphId)
-    }
-
-    fun getService(graphId: String): GitSyncService? = services[graphId]
 }
 
 /**

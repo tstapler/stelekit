@@ -199,6 +199,8 @@ fun BlockList(
         androidx.compose.runtime.SideEffect { println("[Recompose] BlockList #${++recomposeCount.intValue}") }
     }
 
+    val archiveUrlAction = LocalArchiveUrlAction.current
+
     // Build a map of parent UUID to children for quick lookup
     val childrenByParent = remember(blocks) {
         blocks.groupBy { it.parentUuid?.value }
@@ -487,6 +489,7 @@ fun BlockList(
                     hasSectionFilter = hasSectionFilter,
                     localPageNames = localPageNames,
                     onUnavailableLinkTap = onUnavailableLinkTap,
+                    onArchiveUrl = archiveUrlAction,
                     modifier = Modifier.onGloballyPositioned { coords ->
                         val parent = columnCoords
                         if (parent != null) {

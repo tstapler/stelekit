@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.git.lfs
 
+import dev.stapler.stelekit.model.RepoRoot
 import dev.stapler.stelekit.git.JvmGitRepository
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
@@ -57,7 +58,7 @@ class LfsRawBinaryNeverCommittedPropertyTest {
                 val byPath = files.associateBy { it.path }
                 byPath.values.forEach { f.write(it.path, bytesFor(it.content)) }
                 val policy = LfsPathPolicy(AttributeRuleSet(listOf(GitAttributesParser.parse(attributes))))
-                val config = GitConfig(graphId = "g", repoRoot = f.dir.absolutePath, wikiSubdir = null, authType = GitAuthType.NONE)
+                val config = GitConfig(graphId = "g", repoRoot = RepoRoot(f.dir.absolutePath), wikiSubdir = null, authType = GitAuthType.NONE)
                 val repo = JvmGitRepository()
 
                 repo.stageSubdir(config, emptySet())

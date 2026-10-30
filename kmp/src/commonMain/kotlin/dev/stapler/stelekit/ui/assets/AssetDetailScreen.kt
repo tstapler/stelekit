@@ -20,11 +20,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Article
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -36,8 +39,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,6 +62,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import coil3.compose.rememberAsyncImagePainter
+import dev.stapler.stelekit.platform.image.ImageTier
+import dev.stapler.stelekit.ui.components.rememberTieredImageModel
 import dev.stapler.stelekit.asset.AssetEntry
 import dev.stapler.stelekit.asset.AssetMediaType
 import dev.stapler.stelekit.ui.components.rememberSteleKitImageLoader
@@ -97,6 +105,14 @@ fun AssetDetailScreen(
                 },
                 actions = {
                     val asset = uiState.asset
+                    if (asset != null && viewModel.moveTargets.isNotEmpty()) {
+                        MoveAssetAction(
+                            currentSubfolder = asset.filePath.substringBeforeLast('/').substringAfterLast('/'),
+                            targets = viewModel.moveTargets,
+                            isMoving = uiState.isMoving,
+                            onMove = viewModel::moveTo,
+                        )
+                    }
                     if (asset != null && asset.mediaType == AssetMediaType.IMAGE && !asset.isOrphan) {
                         IconButton(onClick = { onAnnotate(asset) }) {
                             Icon(
@@ -134,8 +150,35 @@ fun AssetDetailScreen(
             uiState.asset != null -> {
                 AssetDetailContent(
                     asset = uiState.asset!!,
+                    moveError = uiState.moveError,
                     onNavigateToPage = onNavigateToPage,
                     modifier = Modifier.fillMaxSize().padding(innerPadding),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MoveAssetAction(
+    currentSubfolder: String,
+    targets: List<String>,
+    isMoving: Boolean,
+    onMove: (String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { expanded = true }, enabled = !isMoving) {
+            Icon(imageVector = Icons.Default.Folder, contentDescription = "Move asset")
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            targets.filter { it != currentSubfolder }.forEach { target ->
+                DropdownMenuItem(
+                    text = { Text("Move to $target") },
+                    onClick = {
+                        expanded = false
+                        onMove(target)
+                    },
                 )
             }
         }
@@ -147,11 +190,22 @@ private fun AssetDetailContent(
     asset: AssetEntry,
     onNavigateToPage: (String) -> Unit,
     modifier: Modifier = Modifier,
+    moveError: String? = null,
 ) {
     LazyColumn(modifier = modifier) {
+        if (moveError != null) {
+            item {
+                Text(
+                    text = "Move failed: $moveError",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(16.dp),
+                )
+            }
+        }
         item {
             if (asset.mediaType == AssetMediaType.IMAGE) {
-                ImageViewer(asset = asset)
+                key(asset.filePath) { ImageViewer(asset = asset) }
             } else {
                 NonImageTypeIcon(asset = asset)
             }
@@ -237,12 +291,14 @@ private fun ImageViewer(asset: AssetEntry, modifier: Modifier = Modifier) {
         offsetX = (offsetX + panChange.x).coerceIn(-panBound.x, panBound.x)
         offsetY = (offsetY + panChange.y).coerceIn(-panBound.y, panBound.y)
     }
-    val coilModel = when {
-        asset.relativePath.startsWith("../assets/") -> asset.relativePath
-        asset.filePath.startsWith("saf://") -> asset.filePath
-        asset.filePath.startsWith("file://") || asset.filePath.startsWith("content://") -> asset.filePath
-        else -> "file://${asset.filePath}"
-    }
+    // Display-size copy until the user zooms in; then the original, with the display copy as placeholder.
+    var zoomedIn by remember(asset.filePath) { mutableStateOf(false) }
+    LaunchedEffect(scale > 1f) { if (scale > 1f) zoomedIn = true }
+    val reference = asset.imageReference()
+    val display by rememberTieredImageModel(reference, ImageTier.DISPLAY)
+    val original by rememberTieredImageModel(reference, ImageTier.ORIGINAL)
+    val coilModel = (if (zoomedIn) original.model else display.model)?.let(::coilModelFor)
+    val placeholderPainter = display.model?.takeIf { zoomedIn }?.let { rememberAsyncImagePainter(coilModelFor(it), imageLoader) }
 
     Column(modifier = modifier.fillMaxWidth()) {
         Box(
@@ -263,6 +319,7 @@ private fun ImageViewer(asset: AssetEntry, modifier: Modifier = Modifier) {
             AsyncImage(
                 model = coilModel,
                 imageLoader = imageLoader,
+                placeholder = placeholderPainter,
                 contentDescription = asset.filePath.substringAfterLast('/'),
                 contentScale = ContentScale.Fit,
                 onSuccess = { state ->

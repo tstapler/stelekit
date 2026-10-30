@@ -44,6 +44,7 @@ internal class GraphContentLeftSidebarInputs(
     val syncState: dev.stapler.stelekit.git.model.SyncState,
     val gitLastSyncAt: Long?,
     val firstSyncReviewPending: Boolean = false,
+    val scheduledSyncPaused: Boolean = false,
     val storageLocationResolver: dev.stapler.stelekit.db.StorageLocationResolver?,
     val gitRepository: dev.stapler.stelekit.git.GitRepository?,
     val onStorageLocationChoose: (StorageMoveOperation) -> Unit,
@@ -163,6 +164,8 @@ internal fun GraphContentLeftSidebar(
         syncState = inputs.syncState,
         gitLastSyncAt = inputs.gitLastSyncAt,
         firstSyncReviewPending = inputs.firstSyncReviewPending,
+        scheduledSyncPaused = inputs.scheduledSyncPaused,
+        onOpenScheduledSyncSettings = { viewModel.setSettingsVisible(true) },
         onBranchRepair = { viewModel.openBranchRepair() },
         onReviewFirstSync = { viewModel.openFirstSyncReview() },
         onSyncClick = {

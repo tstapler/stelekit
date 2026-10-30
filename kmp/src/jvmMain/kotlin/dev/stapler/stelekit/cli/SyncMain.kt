@@ -10,6 +10,7 @@ import dev.stapler.stelekit.git.buildCommitMessage
 import dev.stapler.stelekit.git.GitRepository
 import dev.stapler.stelekit.git.JvmGitRepository
 import dev.stapler.stelekit.git.model.GitConfig
+import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.platform.security.CredentialStore
@@ -20,7 +21,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.system.exitProcess
 
 // Thrown instead of exitProcess so that try/finally in runSync always calls graphManager.shutdown().
-private class SyncExitException(val code: Int) : Exception()
+internal class SyncExitException(val code: Int) : Exception()
 
 fun main(args: Array<String>) {
     val rootJob = Job()
@@ -49,10 +50,10 @@ suspend fun runSync(args: Array<String>) {
     val fileSystem = PlatformFileSystem()
     val settings = PlatformSettings()
 
-    val graphPath = resolveNotesPath(syncArgs, settings.lastNotesPath()?.value.orEmpty())
-        .getOrElse { message -> output.error(message); exitProcess(4) }.directory()
+    val graphPath = resolveNotesPath(syncArgs, settings.lastNotesPath())
+        .getOrElse { message -> output.error(message); exitProcess(4) }
 
-    output.info("Syncing graph at: $graphPath")
+    output.info("Syncing graph at: ${graphPath.directory()}")
 
     val credentialStore = CredentialStore()
     val gitRepository: GitRepository = JvmGitRepository(credentialStore)
@@ -69,12 +70,12 @@ suspend fun runSync(args: Array<String>) {
     if (exitCode != 0) exitProcess(exitCode)
 }
 
-private suspend fun runSyncWithManager(
+internal suspend fun runSyncWithManager(
     syncArgs: SyncArgs,
     graphManager: GraphManager,
     gitRepository: GitRepository,
     output: SyncOutput,
-    graphPath: String,
+    graphPath: EffectiveNotesPath,
 ) {
     val graphId = graphManager.addGraph(graphPath)
     graphManager.switchGraph(graphId)
@@ -97,7 +98,7 @@ private suspend fun runSyncWithManager(
 
     if (config == null) {
         output.error("No git sync config found for this graph. Set up sync in the app first.")
-        output.result(SyncResult(graph = graphPath, branch = "", localCommits = 0, remoteCommits = 0, status = "no_config"))
+        output.result(SyncResult(graph = graphPath.directory(), branch = "", localCommits = 0, remoteCommits = 0, status = "no_config"))
         throw SyncExitException(4)
     }
 
@@ -116,17 +117,17 @@ private suspend fun runSyncWithManager(
     }
 }
 
-private suspend fun runDryRun(
+internal suspend fun runDryRun(
     gitRepository: GitRepository,
     config: GitConfig,
     output: SyncOutput,
-    graphPath: String,
+    graphPath: EffectiveNotesPath,
 ) {
     output.info("Dry run mode — no changes will be made")
     val statusResult = gitRepository.status(config)
     val localChanges = (statusResult as? Either.Right)?.value?.hasLocalChanges ?: false
     output.info("Local changes: $localChanges")
-    output.result(SyncResult(graph = graphPath, branch = config.remoteBranch, localCommits = 0, remoteCommits = 0, status = "success"))
+    output.result(SyncResult(graph = graphPath.directory(), branch = config.remoteBranch, localCommits = 0, remoteCommits = 0, status = "success"))
 }
 
 /**
@@ -143,11 +144,11 @@ private suspend fun stageHoldingBackLfs(gitRepository: GitRepository, config: Gi
     return held.isEmpty() || gitRepository.hasStagedChanges(config)
 }
 
-private suspend fun runCommitOnly(
+internal suspend fun runCommitOnly(
     gitRepository: GitRepository,
     config: GitConfig,
     output: SyncOutput,
-    graphPath: String,
+    graphPath: EffectiveNotesPath,
 ) {
     output.info("Committing local changes...")
     val statusResult = gitRepository.status(config)
@@ -160,18 +161,18 @@ private suspend fun runCommitOnly(
             }
             output.info("Committed local changes")
         }
-        output.result(SyncResult(graph = graphPath, branch = config.remoteBranch, localCommits = if (commitNeeded) 1 else 0, remoteCommits = 0, status = "success"))
+        output.result(SyncResult(graph = graphPath.directory(), branch = config.remoteBranch, localCommits = if (commitNeeded) 1 else 0, remoteCommits = 0, status = "success"))
     } else {
         output.info("No local changes to commit")
-        output.result(SyncResult(graph = graphPath, branch = config.remoteBranch, localCommits = 0, remoteCommits = 0, status = "success"))
+        output.result(SyncResult(graph = graphPath.directory(), branch = config.remoteBranch, localCommits = 0, remoteCommits = 0, status = "success"))
     }
 }
 
-private suspend fun runFetchOnly(
+internal suspend fun runFetchOnly(
     gitRepository: GitRepository,
     config: GitConfig,
     output: SyncOutput,
-    graphPath: String,
+    graphPath: EffectiveNotesPath,
 ) {
     output.info("Fetching remote changes...")
     when (val fetchResult = gitRepository.fetch(config)) {
@@ -179,16 +180,16 @@ private suspend fun runFetchOnly(
         is Either.Right -> {
             val fr = fetchResult.value
             output.info("Remote commits: ${fr.remoteCommitCount}")
-            output.result(SyncResult(graph = graphPath, branch = config.remoteBranch, localCommits = 0, remoteCommits = fr.remoteCommitCount, status = "success"))
+            output.result(SyncResult(graph = graphPath.directory(), branch = config.remoteBranch, localCommits = 0, remoteCommits = fr.remoteCommitCount, status = "success"))
         }
     }
 }
 
-private suspend fun runFullSync(
+internal suspend fun runFullSync(
     gitRepository: GitRepository,
     config: GitConfig,
     output: SyncOutput,
-    graphPath: String,
+    graphPath: EffectiveNotesPath,
 ) {
     output.info("Starting full sync...")
     val localCommits = commitLocalChanges(gitRepository, config, output)
@@ -221,7 +222,7 @@ private suspend fun fetchAndMerge(
     gitRepository: GitRepository,
     config: GitConfig,
     output: SyncOutput,
-    graphPath: String,
+    graphPath: EffectiveNotesPath,
     localCommits: Int,
 ): Int? {
     return when (val fetchResult = gitRepository.fetch(config)) {
@@ -243,7 +244,7 @@ private suspend fun mergeRemoteChanges(
     gitRepository: GitRepository,
     config: GitConfig,
     output: SyncOutput,
-    graphPath: String,
+    graphPath: EffectiveNotesPath,
     localCommits: Int,
     remoteCommitCount: Int,
 ): Int? {
@@ -254,7 +255,7 @@ private suspend fun mergeRemoteChanges(
             if (mr.hasConflicts) {
                 output.error("Merge conflicts detected")
                 mr.conflicts.forEach { output.error("Conflict: ${it.filePath}") }
-                output.result(SyncResult(graph = graphPath, branch = config.remoteBranch, localCommits = localCommits, remoteCommits = 0, conflicts = mr.conflicts.map { it.filePath }, status = "conflicts"))
+                output.result(SyncResult(graph = graphPath.directory(), branch = config.remoteBranch, localCommits = localCommits, remoteCommits = 0, conflicts = mr.conflicts.map { it.filePath }, status = "conflicts"))
                 throw SyncExitException(1)
             }
             remoteCommitCount
@@ -266,7 +267,7 @@ private suspend fun pushChanges(
     gitRepository: GitRepository,
     config: GitConfig,
     output: SyncOutput,
-    graphPath: String,
+    graphPath: EffectiveNotesPath,
     localCommits: Int,
     remoteCommits: Int,
 ) {
@@ -274,15 +275,15 @@ private suspend fun pushChanges(
         is Either.Left -> handleGitError(pushResult.value, output, graphPath, config.remoteBranch)
         is Either.Right -> {
             output.info("Sync complete. Local: $localCommits, Remote: $remoteCommits")
-            output.result(SyncResult(graph = graphPath, branch = config.remoteBranch, localCommits = localCommits, remoteCommits = remoteCommits, status = "success"))
+            output.result(SyncResult(graph = graphPath.directory(), branch = config.remoteBranch, localCommits = localCommits, remoteCommits = remoteCommits, status = "success"))
         }
     }
 }
 
-private fun handleGitError(
+internal fun handleGitError(
     err: DomainError.GitError,
     output: SyncOutput,
-    graphPath: String,
+    graphPath: EffectiveNotesPath,
     branch: String,
 ): Nothing {
     val (status, exitCode) = when (err) {
@@ -292,6 +293,6 @@ private fun handleGitError(
         else -> "error" to 5
     }
     output.error(err.message)
-    output.result(SyncResult(graph = graphPath, branch = branch, localCommits = 0, remoteCommits = 0, status = status))
+    output.result(SyncResult(graph = graphPath.directory(), branch = branch, localCommits = 0, remoteCommits = 0, status = status))
     throw SyncExitException(exitCode)
 }

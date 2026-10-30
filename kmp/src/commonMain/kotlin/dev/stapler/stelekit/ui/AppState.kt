@@ -56,6 +56,9 @@ sealed class Screen {
     @HelpExempt(reason = "Developer profiling screen; reachable only from debug menu")
     data object Performance : Screen()
 
+    @HelpExempt(reason = "Developer console; reachable only while developer mode is on")
+    data object Console : Screen()
+
     @HelpPage(docs = GlobalUnlinkedReferencesDocs::class)
     data object GlobalUnlinkedReferences : Screen()
 
@@ -75,6 +78,10 @@ sealed class Screen {
     /** Asset browser for viewing and managing all graph assets. */
     @HelpExempt(reason = "Asset management surface; power-user feature not in primary nav")
     data object AssetBrowser : Screen()
+
+    /** Google Drive file browser, opened from Settings > Google Account > Browse Drive. */
+    @HelpExempt(reason = "Opened from Settings > Google Account; not a primary navigation destination")
+    data object DriveBrowser : Screen()
 
     /** Detail view for a single asset. */
     @HelpExempt(reason = "Opened by tapping an asset in the browser; not a primary nav destination")

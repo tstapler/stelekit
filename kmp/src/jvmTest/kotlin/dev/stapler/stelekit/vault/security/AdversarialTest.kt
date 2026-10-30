@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.vault.security
 
+import dev.stapler.stelekit.model.RepoRoot
 import dev.stapler.stelekit.vault.*
 import kotlinx.coroutines.test.runTest
 import kotlin.test.*
@@ -21,9 +22,9 @@ class AdversarialTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManager(store)
         val graphPath = "/tmp/sec-test"
-        vm.createVault(graphPath, "correct".toCharArray(), argon2Params = params)
+        vm.createVault(RepoRoot(graphPath), "correct".toCharArray(), argon2Params = params)
         repeat(5) { i ->  // Use 5 to keep test fast with Argon2id
-            val result = vm.unlock(graphPath, "wrong-$i".toCharArray(), params)
+            val result = vm.unlock(RepoRoot(graphPath), "wrong-$i".toCharArray(), params)
             assertTrue(result.isLeft(), "Attempt $i should fail")
             assertIs<VaultError.InvalidCredential>(result.leftOrNull())
         }
@@ -64,8 +65,8 @@ class AdversarialTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManager(store)
         val graphPath = "/tmp/sec-test"
-        val dek = vm.createVault(graphPath, "correct".toCharArray(), argon2Params = params).getOrNull()!!.dek
-        val vaultPath = VaultManager.vaultFilePath(graphPath)
+        val dek = vm.createVault(RepoRoot(graphPath), "correct".toCharArray(), argon2Params = params).getOrNull()!!.dek
+        val vaultPath = VaultManager.vaultFilePath(RepoRoot(graphPath))
         val headerBytes = store[vaultPath]!!
 
         // Verify DEK does not appear as a contiguous subsequence in the header
@@ -79,8 +80,8 @@ class AdversarialTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManager(store)
         val graphPath = "/tmp/sec-test"
-        vm.createVault(graphPath, "correct".toCharArray(), argon2Params = params)
-        vm.unlock(graphPath, "correct".toCharArray(), params)
+        vm.createVault(RepoRoot(graphPath), "correct".toCharArray(), argon2Params = params)
+        vm.unlock(RepoRoot(graphPath), "correct".toCharArray(), params)
         val dekRef = vm.currentDek()!!
         vm.lock()
         assertTrue(dekRef.all { it == 0.toByte() }, "All DEK bytes must be zero after lock()")
@@ -103,9 +104,9 @@ class AdversarialTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManager(store)
         val graphPath = "/tmp/sec-test"
-        vm.createVault(graphPath, "correct".toCharArray(), argon2Params = params)
+        vm.createVault(RepoRoot(graphPath), "correct".toCharArray(), argon2Params = params)
         val passphrase = charArrayOf('c', 'o', 'r', 'r', 'e', 'c', 't')
-        vm.unlock(graphPath, passphrase, params)
+        vm.unlock(RepoRoot(graphPath), passphrase, params)
         assertTrue(passphrase.all { it == ' ' }, "Passphrase CharArray must be zero-filled after unlock()")
     }
 

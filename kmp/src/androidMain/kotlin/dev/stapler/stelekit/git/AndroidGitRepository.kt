@@ -3,6 +3,9 @@
 
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.security.Redactor
+
+import dev.stapler.stelekit.model.RepoRoot
 import android.content.Context
 import arrow.core.Either
 import arrow.core.getOrElse
@@ -71,17 +74,17 @@ class AndroidGitRepository(
         File(shadow.resolveForJGit(path), ".git").exists()
     }
 
-    override suspend fun init(repoRoot: String): Either<DomainError.GitError, Unit> =
+    override suspend fun init(repoRoot: RepoRoot): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
             runGitOp({ e -> DomainError.GitError.CloneFailed("init failed: ${e.message}") }) {
-                val worktree = shadow.shadowWorktreeFor(repoRoot)
-                shadow.insufficientShadowStorageError(worktree, repoRoot)?.let { return@runGitOp it.left() }
+                val worktree = shadow.shadowWorktreeFor(repoRoot.value)
+                shadow.insufficientShadowStorageError(worktree, repoRoot.value)?.let { return@runGitOp it.left() }
                 // GitConfig.remoteBranch defaults to "main" — JGit's own default initial branch
                 // is "master" regardless of the host's `init.defaultBranch` git config, so a
                 // freshly-init'd (non-cloned) repo would otherwise never match the branch name
                 // fetch()/merge() look for.
-                Git.init().setDirectory(File(shadow.resolveForJGit(repoRoot))).setInitialBranch("main").call().use { git ->
-                    shadow.syncShadowAfterInitOrClone(repoRoot, git)
+                Git.init().setDirectory(File(shadow.resolveForJGit(repoRoot.value))).setInitialBranch("main").call().use { git ->
+                    shadow.syncShadowAfterInitOrClone(repoRoot.value, git)
                 }
                 Unit.right()
             }
@@ -89,7 +92,7 @@ class AndroidGitRepository(
 
     override suspend fun clone(
         url: String,
-        localPath: String,
+        localPath: RepoRoot,
         auth: GitAuth,
         onProgress: (CloneProgress) -> Unit,
         onStateChange: (GitTransportRetryState) -> Unit,
@@ -107,20 +110,20 @@ class AndroidGitRepository(
             // JvmGitRepository.clone()'s identical rationale. Operates on the resolved shadow
             // worktree path (not the SAF-facing localPath), matching every other JGit call site
             // on this platform.
-            beforeRetry = { deleteDirectoryContentsForRetry(File(shadow.resolveForJGit(localPath))) },
+            beforeRetry = { deleteDirectoryContentsForRetry(File(shadow.resolveForJGit(localPath.value))) },
             onAuthFailed = { e -> DomainError.GitError.AuthFailed(e.message ?: "Authentication failed") },
             onFailed = { e -> DomainError.GitError.CloneFailed(e.message ?: "Clone failed") },
             onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
         ) {
-            val worktree = shadow.shadowWorktreeFor(localPath)
-            shadow.insufficientShadowStorageError(worktree, localPath)?.let { return@runGitTransportOpWithRetry it.left() }
+            val worktree = shadow.shadowWorktreeFor(localPath.value)
+            shadow.insufficientShadowStorageError(worktree, localPath.value)?.let { return@runGitTransportOpWithRetry it.left() }
             // Resolve suspend credentials before entering JGit's synchronous territory
             val preResolvedToken: String? = if (auth is GitAuth.HttpsToken) auth.tokenProvider() else null
             val job = coroutineContext[kotlinx.coroutines.Job]
 
             val cmd = Git.cloneRepository()
                 .setURI(url)
-                .setDirectory(File(shadow.resolveForJGit(localPath)))
+                .setDirectory(File(shadow.resolveForJGit(localPath.value)))
                 // Story 2.1.1/ADR-001: shallow by default.
                 .setDepth(DEFAULT_CLONE_DEPTH)
                 .setTimeout(GIT_TRANSPORT_TIMEOUT_SECONDS)
@@ -140,9 +143,9 @@ class AndroidGitRepository(
 
             authConfigurer.configureAuth(cmd, auth, preResolvedToken)
             cmd.call().use { git ->
-                shadow.syncShadowAfterInitOrClone(localPath, git)
+                shadow.syncShadowAfterInitOrClone(localPath.value, git)
             }
-            logger.info("clone: done localPath=$localPath")
+            logger.info("clone: done localPath=${localPath.value}")
             Unit.right()
         }
     }
@@ -292,7 +295,7 @@ class AndroidGitRepository(
     override suspend fun merge(config: GitConfig): Either<DomainError.GitError, MergeResult> =
         withContext(PlatformDispatcher.IO) {
             runGitOp({ e -> DomainError.GitError.FetchFailed("Merge failed: ${e.message}") }) {
-                val worktree = shadow.shadowWorktreeFor(config.repoRoot)
+                val worktree = shadow.shadowWorktreeFor(config.repoRoot.value)
                 openGit(config).use { git -> doMerge(git, config, worktree) }
             }
         }
@@ -332,7 +335,7 @@ class AndroidGitRepository(
         // concurrent SAF edit is surfaced distinctly, not masked as a generic FetchFailed.
         if (worktree != null && wikiChangedGitRelativePaths.isNotEmpty()) {
             val concurrentEdit = mergeSupport.flushAndCheckConcurrentEdit(
-                worktree, wikiChangedGitRelativePaths, config.repoRoot, "merge",
+                worktree, wikiChangedGitRelativePaths, config.repoRoot.value, "merge",
             )
             if (concurrentEdit != null) return concurrentEdit.left()
         }
@@ -360,7 +363,7 @@ class AndroidGitRepository(
         config: GitConfig,
     ): List<String> = relPaths.map { relPath ->
         // relPath is shadow-relative, not repoRoot-relative — see AndroidGitMergeSupport.buildConflictFiles.
-        worktree?.toUserFacingPath("${worktree.worktreeRootPath}/$relPath") ?: "${config.repoRoot}/$relPath"
+        worktree?.toUserFacingPath("${worktree.worktreeRootPath}/$relPath") ?: "${config.repoRoot.value}/$relPath"
     }
 
     @Volatile private var pushAudit: List<LfsViolation> = emptyList()
@@ -411,7 +414,7 @@ class AndroidGitRepository(
     private fun doPush(git: Git, config: GitConfig): Either<DomainError.GitError, Unit> {
         val localBranch = git.repository.fullBranch
             ?.takeIf { it.startsWith(Constants.R_HEADS) }
-            ?: return DomainError.GitError.DetachedHead(config.repoRoot).left()
+            ?: return DomainError.GitError.DetachedHead(config.repoRoot.value).left()
         git.push()
             .setRemote(config.remoteName)
             .setRefSpecs(RefSpec("$localBranch:${Constants.R_HEADS}${config.remoteBranch}"))
@@ -466,11 +469,11 @@ class AndroidGitRepository(
             .setMode(org.eclipse.jgit.api.ResetCommand.ResetType.HARD)
             .call()
 
-        val worktree = shadow.shadowWorktreeFor(config.repoRoot)
+        val worktree = shadow.shadowWorktreeFor(config.repoRoot.value)
         if (worktree != null) {
             worktree.syncFromSafRoot(
                 listRecursive = { root -> fileSystem.listFilesRecursiveWithModTimes(root) },
-                readSafFile = { relPath -> fileSystem.readFile("${config.repoRoot}/$relPath") },
+                readSafFile = { relPath -> fileSystem.readFile("${config.repoRoot.value}/$relPath") },
                 force = true,
             )
         }
@@ -484,9 +487,9 @@ class AndroidGitRepository(
         side: MergeSide,
     ): Either<DomainError.GitError, Unit> = withContext(PlatformDispatcher.IO) {
         runGitOp({ e -> DomainError.GitError.CommitFailed("Checkout file failed: ${e.message}") }) {
-            val worktree = shadow.shadowWorktreeFor(config.repoRoot)
+            val worktree = shadow.shadowWorktreeFor(config.repoRoot.value)
             val gitRelativePath = worktree?.toGitRelativePath(filePath)
-                ?: filePath.removePrefix("${config.repoRoot}/")
+                ?: filePath.removePrefix("${config.repoRoot.value}/")
             openGit(config).use { git -> doCheckoutFile(git, config, worktree, gitRelativePath, side) }
         }
     }
@@ -511,7 +514,7 @@ class AndroidGitRepository(
         // otherwise resolveConflictBySide()'s side-based choice never reaches SAF.
         if (worktree != null) {
             val concurrentEdit = mergeSupport.flushAndCheckConcurrentEdit(
-                worktree, listOf(gitRelativePath), config.repoRoot, "checkoutFile",
+                worktree, listOf(gitRelativePath), config.repoRoot.value, "checkoutFile",
             )
             if (concurrentEdit != null) return concurrentEdit.left()
         }
@@ -522,9 +525,9 @@ class AndroidGitRepository(
     override suspend fun markResolved(config: GitConfig, filePath: String): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
             runGitOp({ e -> DomainError.GitError.CommitFailed("Mark resolved failed: ${e.message}") }) {
-                val worktree = shadow.shadowWorktreeFor(config.repoRoot)
+                val worktree = shadow.shadowWorktreeFor(config.repoRoot.value)
                 val gitRelativePath = worktree?.toGitRelativePath(filePath)
-                    ?: filePath.removePrefix("${config.repoRoot}/")
+                    ?: filePath.removePrefix("${config.repoRoot.value}/")
                 // Task 4.1.1a: the caller (GitSyncService.resolveConflict/applyJournalMerge)
                 // already wrote the resolved content straight to SAF via fileSystem.writeFile
                 // before calling markResolved() — but nothing has told the shadow tree about it,
@@ -557,7 +560,7 @@ class AndroidGitRepository(
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                "<failed to open repo: ${e::class.simpleName}: ${redactSecrets(e.message.orEmpty())}>"
+                "<failed to open repo: ${e::class.simpleName}: ${Redactor.redactGitMessage(e.message.orEmpty())}>"
             }
         }
 
@@ -573,7 +576,7 @@ class AndroidGitRepository(
 
     override suspend fun removeStaleLockFile(config: GitConfig): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
-            runGitOp({ _ -> DomainError.GitError.StaleLockFile("${config.repoRoot}/.git/index.lock") }) {
+            runGitOp({ _ -> DomainError.GitError.StaleLockFile("${config.repoRoot.value}/.git/index.lock") }) {
                 deleteStaleLockFile(config)
             }
         }
@@ -582,7 +585,7 @@ class AndroidGitRepository(
      * fixed 60s age) and [runGitTransportOpWithRetry]'s `beforeRetry` cleanup (retry-loop-relative
      * age, Task 1.2.2c). */
     private fun indexLockFile(config: GitConfig): File =
-        File(shadow.resolveForJGit(config.repoRoot), ".git/index.lock")
+        File(shadow.resolveForJGit(config.repoRoot.value), ".git/index.lock")
 
     private fun deleteStaleLockFile(config: GitConfig): Either<DomainError.GitError, Unit> {
         val lockFile = indexLockFile(config)
@@ -620,11 +623,11 @@ class AndroidGitRepository(
      * opening the repository. See [openGitWithoutFreshnessCheck] for callers that don't need this.
      */
     private suspend fun openGit(config: GitConfig): Git {
-        shadow.shadowWorktreeFor(config.repoRoot)?.ensureFresh(
+        shadow.shadowWorktreeFor(config.repoRoot.value)?.ensureFresh(
             listRecursive = { root -> fileSystem.listFilesRecursiveWithModTimes(root) },
-            readSafFile = { relPath -> fileSystem.readFile("${config.repoRoot}/$relPath") },
+            readSafFile = { relPath -> fileSystem.readFile("${config.repoRoot.value}/$relPath") },
         )
-        return Git.open(File(shadow.resolveForJGit(config.repoRoot)))
+        return Git.open(File(shadow.resolveForJGit(config.repoRoot.value)))
     }
 
     /**
@@ -635,5 +638,5 @@ class AndroidGitRepository(
      * these really are two different operations, not one operation with an option.
      */
     private fun openGitWithoutFreshnessCheck(config: GitConfig): Git =
-        Git.open(File(shadow.resolveForJGit(config.repoRoot)))
+        Git.open(File(shadow.resolveForJGit(config.repoRoot.value)))
 }

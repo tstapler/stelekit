@@ -237,11 +237,12 @@ fun PageView(
     CompositionLocalProvider(LocalNotesPath provides currentGraphPath.ifEmpty { null }?.let(::EffectiveNotesPath)) {
 
     Box(modifier = Modifier.fillMaxSize().imePadding()
-        .let { m -> if (capabilities.onPasteImage != null) m.onPreviewKeyEvent { event ->
+        .let { m -> if (capabilities.onPasteImage != null || capabilities.onPasteHtml != null) m.onPreviewKeyEvent { event ->
             event.type == KeyEventType.KeyDown &&
             (event.isCtrlPressed || event.isMetaPressed) &&
             event.key == Key.V &&
-            capabilities.onPasteImage.invoke(editingBlockUuid)
+            (capabilities.onPasteImage?.invoke(editingBlockUuid) == true ||
+                capabilities.onPasteHtml?.invoke(editingBlockUuid) == true)
         } else m }
         .onKeyEvent { event ->
         if (event.type != KeyEventType.KeyDown) return@onKeyEvent false

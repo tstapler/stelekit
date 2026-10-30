@@ -3,34 +3,69 @@ import dev.stapler.stelekit.model.EffectiveNotesPath
 
 import arrow.core.Either
 import arrow.core.right
+import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.repository.AssetRepository
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
+import dev.stapler.stelekit.util.ContentHasher
 import dev.stapler.stelekit.util.UuidGenerator
 import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.yield
 
+/** Progress of the index walk: files found vs files processed (not the plugin drain's backlog). */
+sealed interface AssetIndexProgress {
+    data object Idle : AssetIndexProgress
+    data object Counting : AssetIndexProgress
+    data class Indexing(val done: Int, val total: Int) : AssetIndexProgress
+    data class Finished(val total: Int) : AssetIndexProgress
+}
+
+/**
+ * Populates `asset_index` from the files under `<notesPath>/assets/` and from newly attached files.
+ *
+ * Memory bounds: the backfill walks the tree lazily (one directory listing at a time, never a list
+ * of every path), processes at most [BACKFILL_BATCH_SIZE] files per batch, looks up already-indexed
+ * paths with one bounded `IN` projection per batch, and reads at most [MAX_HASHED_FILE_BYTES] of any
+ * single file (larger files are indexed by name and size only). All writes go through the
+ * [DatabaseWriteActor].
+ */
 class AssetIndexService(
     private val assetRepository: AssetRepository,
 ) {
     private val logger = Logger("AssetIndexService")
     private val scope = CoroutineScope(
-        SupervisorJob() + Dispatchers.Default +
+        SupervisorJob() + PlatformDispatcher.Default +
             CoroutineExceptionHandler { _, throwable ->
                 logger.error("AssetIndexService uncaught: ${throwable.message}")
             }
     )
+    private var backfillJob: Job? = null
 
-    @Suppress("UnusedParameter")
+    // A cancelled run must not overwrite the progress of the run that replaced it.
+    @kotlin.concurrent.Volatile
+    private var runId = 0
+
+    private val _progress = MutableStateFlow<AssetIndexProgress>(AssetIndexProgress.Idle)
+    val progress: StateFlow<AssetIndexProgress> = _progress.asStateFlow()
+
+    /**
+     * Registers one attached file. Idempotent on content hash: attaching bytes that are already
+     * indexed returns the existing row instead of adding a second one.
+     */
     suspend fun registerAsset(
         filePath: String,
         notesPath: EffectiveNotesPath,
@@ -39,7 +74,15 @@ class AssetIndexService(
         writeActor: DatabaseWriteActor?,
         fileSystem: FileSystem,
     ): Either<DomainError, AssetEntry> {
-        val entry = buildAssetEntry(filePath, mimeHint, pageUuid, fileSystem)
+        val entry = buildAssetEntry(filePath, notesPath, mimeHint, pageUuid, fileSystem)
+        val hash = entry.contentHash
+        if (hash != null) {
+            val existing = assetRepository.findUuidByContentHash(hash).getOrNull()
+            if (existing != null) {
+                val row = assetRepository.getAssetByUuidOnce(existing)
+                if (row != null) return row.right()
+            }
+        }
         val result = if (writeActor != null) {
             writeActor.execute { @OptIn(DirectRepositoryWrite::class) assetRepository.saveAsset(entry) }
         } else {
@@ -50,20 +93,27 @@ class AssetIndexService(
 
     private fun buildAssetEntry(
         filePath: String,
+        notesPath: EffectiveNotesPath,
         mimeHint: String? = null,
         pageUuid: String? = null,
         fileSystem: FileSystem,
     ): AssetEntry {
         val filename = filePath.substringAfterLast('/')
-        val fileBytes = try {
-            fileSystem.readFileBytes(filePath)
-        } catch (_: Exception) { null }
-        val bytes = fileBytes?.take(16)?.toByteArray() ?: ByteArray(0)
-        val mime = mimeHint ?: MimeTypeDetector.detect(bytes, filename)
+        val knownSize = try { fileSystem.getFileSize(filePath) } catch (_: Exception) { null }
+        val fileBytes = if (knownSize != null && knownSize > MAX_HASHED_FILE_BYTES) {
+            null
+        } else {
+            try { fileSystem.readFileBytes(filePath) } catch (_: Exception) { null }
+        }
+        val head = fileBytes?.copyOf(minOf(MIME_SNIFF_BYTES, fileBytes.size)) ?: ByteArray(0)
+        val mime = mimeHint ?: MimeTypeDetector.detect(head, filename)
         val mediaType = AssetMediaType.fromMimeType(mime)
         val subfolder = AssetStoragePathResolver.resolveSubfolder(mime)
-        val relativePath = AssetStoragePathResolver.relativeMarkdownPath(subfolder, filename)
-        val sizeBytes = fileBytes?.size?.toLong() ?: 0L
+        // The row mirrors where the file really is (attachments land flat in assets/), so a later
+        // move rewrites the reference the pages actually contain.
+        val notesPrefix = notesPath.directory() + "/"
+        val relativePath = if (filePath.startsWith(notesPrefix)) "../" + filePath.removePrefix(notesPrefix)
+        else AssetStoragePathResolver.relativeMarkdownPath(subfolder, filename)
         return AssetEntry(
             uuid = AssetUuid(UuidGenerator.generateV7()),
             filePath = filePath,
@@ -75,85 +125,97 @@ class AssetIndexService(
             ocrText = null,
             cloudDescription = null,
             pageUuids = listOfNotNull(pageUuid),
-            sizeBytes = sizeBytes,
+            sizeBytes = fileBytes?.size?.toLong() ?: knownSize ?: 0L,
             importedAtMs = Clock.System.now().toEpochMilliseconds(),
             mlProcessed = false,
             mlAttemptedAt = null,
             mlFailed = false,
-            contentHash = null,
+            contentHash = fileBytes?.let { ContentHasher.sha256(it) },
             isOrphan = false,
             mlTagsSource = "NONE",
         )
     }
 
     /**
-     * Scans `<notesPath>/assets/` recursively in bounded batches (<= 50 per batch),
-     * skipping already-indexed files, registering new ones.
-     * Launched as a non-blocking background job.
+     * Scans `<notesPath>/assets/` recursively in bounded batches (<= [BACKFILL_BATCH_SIZE] per
+     * batch), skipping already-indexed files and registering new ones. Non-blocking; a second call
+     * replaces a run still in flight.
      */
     fun startBackfill(
         notesPath: EffectiveNotesPath,
         writeActor: DatabaseWriteActor?,
         fileSystem: FileSystem,
     ) {
-        scope.launch {
+        backfillJob?.cancel()
+        val run = ++runId
+        // Set before launching so a caller (and a test) sees "started" without racing the coroutine.
+        _progress.value = AssetIndexProgress.Counting
+        backfillJob = scope.launch {
             try {
-                backfillGraph(notesPath, writeActor, fileSystem)
+                backfillGraph(run, notesPath, writeActor, fileSystem)
             } catch (e: CancellationException) {
+                publish(run, AssetIndexProgress.Idle)
                 throw e
             } catch (e: Throwable) {
                 logger.error("Backfill failed: ${e.message}")
+                publish(run, AssetIndexProgress.Idle)
             }
         }
     }
 
+    /** Cancels a backfill in flight; already-saved batches stay. */
+    fun stopBackfill() {
+        backfillJob?.cancel()
+        backfillJob = null
+        runId++
+        _progress.value = AssetIndexProgress.Idle
+    }
+
+    private fun publish(run: Int, progress: AssetIndexProgress) {
+        if (run == runId) _progress.value = progress
+    }
+
+    /** Cancels everything and releases the scope; the service is unusable afterwards. */
+    fun close() {
+        scope.cancel()
+    }
+
     private suspend fun backfillGraph(
+        run: Int,
         notesPath: EffectiveNotesPath,
         writeActor: DatabaseWriteActor?,
         fileSystem: FileSystem,
     ) {
         val assetsDir = notesPath.child("assets")
-        if (!fileSystem.directoryExists(assetsDir)) return
+        if (!fileSystem.directoryExists(assetsDir)) {
+            publish(run, AssetIndexProgress.Idle)
+            return
+        }
 
-        val allFiles = collectFilesRecursively(assetsDir, fileSystem)
-
-        var offset = 0
-        while (offset < allFiles.size) {
-            val batch = allFiles.subList(offset, minOf(offset + BACKFILL_BATCH_SIZE, allFiles.size))
-            processBatch(batch, writeActor, fileSystem)
-            offset += BACKFILL_BATCH_SIZE
+        val total = walkFiles(assetsDir, fileSystem).count()
+        var done = 0
+        publish(run, AssetIndexProgress.Indexing(done, total))
+        for (batch in walkFiles(assetsDir, fileSystem).chunked(BACKFILL_BATCH_SIZE)) {
+            processBatch(batch, notesPath, writeActor, fileSystem)
+            done += batch.size
+            publish(run, AssetIndexProgress.Indexing(done, maxOf(total, done)))
             yield()
         }
-    }
-
-    private fun collectFilesRecursively(dir: String, fileSystem: FileSystem): List<String> {
-        val result = mutableListOf<String>()
-        try {
-            val files = fileSystem.listFiles(dir)
-            for (file in files) {
-                result.add("$dir/$file")
-            }
-            val subDirs = fileSystem.listDirectories(dir)
-            for (subDir in subDirs) {
-                result.addAll(collectFilesRecursively("$dir/$subDir", fileSystem))
-            }
-        } catch (_: Exception) {}
-        if (result.size > 1000) {
-            logger.warn("collectFilesRecursively: found ${result.size} files in '$dir' — large trees load entirely into memory before batching")
-        }
-        return result
+        publish(run, AssetIndexProgress.Finished(done))
     }
 
     private suspend fun processBatch(
         filePaths: List<String>,
+        notesPath: EffectiveNotesPath,
         writeActor: DatabaseWriteActor?,
         fileSystem: FileSystem,
     ) {
+        val indexed = assetRepository.getIndexedFilePaths(filePaths).getOrNull().orEmpty()
         // Build all entries first (file IO + mime detection), then save in one actor round-trip
         val entries = mutableListOf<AssetEntry>()
-        for (filePath in filePaths) {
+        for (filePath in filePaths.filter { it !in indexed }) {
             try {
-                entries.add(buildAssetEntry(filePath, null, null, fileSystem))
+                entries.add(buildAssetEntry(filePath, notesPath, null, null, fileSystem))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
@@ -177,5 +239,28 @@ class AssetIndexService(
 
     companion object {
         const val BACKFILL_BATCH_SIZE = 50
+        private const val MIME_SNIFF_BYTES = 16
+
+        /** Files above this are indexed by name and size only (no content read, no hash). */
+        const val MAX_HASHED_FILE_BYTES = 8L * 1024 * 1024
+
+        /**
+         * Lazy depth-first walk: holds one directory's entry names at a time plus the stack of
+         * unvisited sibling directories, never the whole tree's file list.
+         */
+        internal fun walkFiles(root: String, fileSystem: FileSystem): Sequence<String> = sequence {
+            val pending = ArrayDeque<String>()
+            pending.addLast(root)
+            while (pending.isNotEmpty()) {
+                val dir = pending.removeLast()
+                val files = try { fileSystem.listFiles(dir) } catch (_: Exception) { emptyList() }
+                for (file in files) yield("$dir/$file")
+                val subDirs = try { fileSystem.listDirectories(dir) } catch (_: Exception) { emptyList() }
+                for (subDir in subDirs) pending.addLast("$dir/$subDir")
+            }
+        }
     }
 }
+
+private suspend fun AssetRepository.getAssetByUuidOnce(uuid: AssetUuid): AssetEntry? =
+    getAssetByUuid(uuid).first().getOrNull()

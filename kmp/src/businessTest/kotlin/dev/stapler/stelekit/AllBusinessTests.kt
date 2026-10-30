@@ -64,9 +64,35 @@ import dev.stapler.stelekit.db.DemoGraphPersistenceTest
 import dev.stapler.stelekit.db.GraphInfoSerializationTest
 import dev.stapler.stelekit.db.GraphLoaderLfsPointerTest
 import dev.stapler.stelekit.db.SplitJournalTest
+import dev.stapler.stelekit.console.CommandLineTokenizerTest
+import dev.stapler.stelekit.console.ConfirmPolicyTest
+import dev.stapler.stelekit.console.ConsoleBackupTest
+import dev.stapler.stelekit.console.DbOnlyRowsGuardTest
+import dev.stapler.stelekit.console.DbRestoreLockStressTest
+import dev.stapler.stelekit.console.DbRestoreTest
+import dev.stapler.stelekit.console.GraphRestoreCommandTest
+import dev.stapler.stelekit.console.RestoreRecoveryTest
+import dev.stapler.stelekit.console.ConsoleBuildFlagsTest
+import dev.stapler.stelekit.console.ConsoleSessionConfirmTest
+import dev.stapler.stelekit.console.SqlConsoleWriterTest
+import dev.stapler.stelekit.console.SqlWriteCommandTest
+import dev.stapler.stelekit.console.SqlWriteFtsConsistencyTest
+import dev.stapler.stelekit.console.SqlWriteGuardTest
+import dev.stapler.stelekit.db.DirectSqlWriteOptInAllowlistTest
+import dev.stapler.stelekit.console.ConsoleBoundedStreamingTest
+import dev.stapler.stelekit.console.ConsoleScopeOwnershipAuditTest
+import dev.stapler.stelekit.console.ConsoleSessionTest
+import dev.stapler.stelekit.console.CredentialColumnInventoryTest
+import dev.stapler.stelekit.console.SqlCommandTest
+import dev.stapler.stelekit.console.SqlConsoleBypassTest
+import dev.stapler.stelekit.console.ResultGridTest
+import dev.stapler.stelekit.console.ScrollbackBufferTest
+import dev.stapler.stelekit.security.RedactorSingleSiteAuditTest
+import dev.stapler.stelekit.security.RedactorTest
 import dev.stapler.stelekit.repository.BacklinkRepositoryTest
 import dev.stapler.stelekit.sections.CrossSectionBacklinkRenderTest
 import dev.stapler.stelekit.sections.NewPageAutoAssignmentTest
+import dev.stapler.stelekit.ui.CommandManagerCoordinatorEquivalenceTest
 import dev.stapler.stelekit.merge.MarkdownTargetWriterTest
 import dev.stapler.stelekit.merge.MarkdownTargetWriterContractTest
 import dev.stapler.stelekit.merge.ActiveTargetWriterContractTest
@@ -79,16 +105,26 @@ import dev.stapler.stelekit.merge.PullIndexingTest
 import dev.stapler.stelekit.ui.PullCopyViewModelTest
 import dev.stapler.stelekit.transfer.MergeUuidRoundTripSpikeTest
 import dev.stapler.stelekit.ui.ToolbarActionTest
+import dev.stapler.stelekit.ui.MemoryPressureListenersTest
 import dev.stapler.stelekit.ui.CopyFlowControllerTest
 import dev.stapler.stelekit.ui.PullCopyFlowControllerTest
 import dev.stapler.stelekit.merge.InMemoryMergeStorageTest
 import dev.stapler.stelekit.ui.CopyPagesViewModelTest
+import dev.stapler.stelekit.platform.image.ImageSamplingTest
+import dev.stapler.stelekit.platform.image.ImageTiersTest
+import dev.stapler.stelekit.ui.assets.AssetImageReferenceTest
 import dev.stapler.stelekit.ui.PageSelectionTest
 import dev.stapler.stelekit.ui.assets.AssetFilterTest
 import dev.stapler.stelekit.ui.assets.AssetBrowserViewModelTest
 import dev.stapler.stelekit.asset.AssetMoveServiceTest
 import dev.stapler.stelekit.asset.AssetMoveServiceWalTest
 import dev.stapler.stelekit.asset.AssetIndexServiceTest
+import dev.stapler.stelekit.asset.AssetIndexBackfillBoundedTest
+import dev.stapler.stelekit.asset.AssetIndexedBrowseTest
+import dev.stapler.stelekit.asset.AssetIndexingControllerTest
+import dev.stapler.stelekit.asset.AssetIndexingFailurePathsTest
+import dev.stapler.stelekit.ui.assets.AssetDetailMoveTest
+import dev.stapler.stelekit.asset.AssetMoveReplayEntryPointTest
 import dev.stapler.stelekit.voice.VoiceCaptureViewModelTest
 import dev.stapler.stelekit.voice.VoiceNoteBlockFormatTest
 import dev.stapler.stelekit.voice.VoicePipelineFactoryTest
@@ -96,7 +132,14 @@ import dev.stapler.stelekit.voice.VoiceSettingsTest
 import dev.stapler.stelekit.asset.AssetMediaTypeTest
 import dev.stapler.stelekit.asset.AssetStoragePathResolverTest
 import dev.stapler.stelekit.asset.MimeTypeDetectorTest
+import dev.stapler.stelekit.asset.pipeline.AssetPipelineDrainBugTest
 import dev.stapler.stelekit.asset.pipeline.AssetPipelineServiceTest
+import dev.stapler.stelekit.asset.pipeline.AssetPipelineTerminalStateTest
+import dev.stapler.stelekit.asset.pipeline.AssetPipelineProgressTest
+import dev.stapler.stelekit.asset.pipeline.AssetPipelineOomInjectionTest
+import dev.stapler.stelekit.asset.pipeline.AssetPipelineCrashLoopBreakerTest
+import dev.stapler.stelekit.asset.pipeline.DefaultAssetPluginsTest
+import dev.stapler.stelekit.asset.pipeline.OcrPluginTest
 import dev.stapler.stelekit.asset.pipeline.PluginRegistryTest
 import dev.stapler.stelekit.auto.AudiobookNoteFormatterTest
 import dev.stapler.stelekit.auto.AudiobookNoteWriterTest
@@ -194,6 +237,8 @@ import dev.stapler.stelekit.git.lfs.GitAttributesMatcherTest
 import dev.stapler.stelekit.git.lfs.LfsPointerPropertyTest
 import dev.stapler.stelekit.git.lfs.LfsPointerTest
 import dev.stapler.stelekit.git.GitSyncServiceLfsGuardTest
+import dev.stapler.stelekit.git.GitSyncServicePeriodicTest
+import dev.stapler.stelekit.git.PeriodicSyncDriverTest
 import dev.stapler.stelekit.git.ShallowMergeTest
 import dev.stapler.stelekit.git.merge.JournalMergeServiceTest
 import dev.stapler.stelekit.git.merge.LogseqMergeDriverTest
@@ -245,6 +290,16 @@ import dev.stapler.stelekit.voice.GenAiErrorMappingTest
 import dev.stapler.stelekit.voice.LlmProviderSupportTest
 import dev.stapler.stelekit.voice.MlKitAvailabilityMappingTest
 import dev.stapler.stelekit.voice.VoicePipelineConfigTest
+import dev.stapler.stelekit.audit.TestHygieneAuditTest
+import dev.stapler.stelekit.audit.TestPlacementAuditTest
+import dev.stapler.stelekit.google.GoogleAuthCodeExchangeTest
+import dev.stapler.stelekit.google.GoogleDriveFlowTest
+import dev.stapler.stelekit.google.GooglePhotosFlowTest
+import dev.stapler.stelekit.wiring.FirstOpenSmokeCatalogTest
+import dev.stapler.stelekit.wiring.ObservableEffectCatalogTest
+import dev.stapler.stelekit.wiring.PlantedDeadCodeConstructorTest
+import dev.stapler.stelekit.wiring.WiringAllowlistRenewalTest
+import dev.stapler.stelekit.wiring.WiringCompletenessTest
 import org.junit.runner.RunWith
 import org.junit.runners.Suite
 
@@ -284,6 +339,7 @@ import org.junit.runners.Suite
     BacklinkRepositoryTest::class,
     CrossSectionBacklinkRenderTest::class,
     NewPageAutoAssignmentTest::class,
+    CommandManagerCoordinatorEquivalenceTest::class,
     DemoFileSystemSyncTest::class,
     DemoGraphPersistenceTest::class,
     GraphInfoSerializationTest::class,
@@ -304,15 +360,25 @@ import org.junit.runners.Suite
     PullIndexingTest::class,
     PullCopyViewModelTest::class,
     PageSelectionTest::class,
+    ImageSamplingTest::class,
+    ImageTiersTest::class,
+    AssetImageReferenceTest::class,
     dev.stapler.stelekit.merge.TargetWriterRouterInFlightSwitchTest::class,
     dev.stapler.stelekit.db.GraphLocatorTest::class,
     MergeUuidRoundTripSpikeTest::class,
     ToolbarActionTest::class,
+    MemoryPressureListenersTest::class,
     AssetFilterTest::class,
     AssetBrowserViewModelTest::class,
     AssetMoveServiceTest::class,
     AssetMoveServiceWalTest::class,
     AssetIndexServiceTest::class,
+    AssetIndexBackfillBoundedTest::class,
+    AssetIndexedBrowseTest::class,
+    AssetIndexingControllerTest::class,
+    AssetIndexingFailurePathsTest::class,
+    AssetDetailMoveTest::class,
+    AssetMoveReplayEntryPointTest::class,
     VoiceCaptureViewModelTest::class,
     VoiceNoteBlockFormatTest::class,
     VoicePipelineFactoryTest::class,
@@ -320,7 +386,14 @@ import org.junit.runners.Suite
     AssetMediaTypeTest::class,
     AssetStoragePathResolverTest::class,
     MimeTypeDetectorTest::class,
+    AssetPipelineDrainBugTest::class,
     AssetPipelineServiceTest::class,
+    AssetPipelineTerminalStateTest::class,
+    AssetPipelineProgressTest::class,
+    AssetPipelineOomInjectionTest::class,
+    AssetPipelineCrashLoopBreakerTest::class,
+    DefaultAssetPluginsTest::class,
+    OcrPluginTest::class,
     PluginRegistryTest::class,
     AudiobookNoteFormatterTest::class,
     AudiobookNoteWriterTest::class,
@@ -418,6 +491,8 @@ import org.junit.runners.Suite
     LfsPointerPropertyTest::class,
     LfsPointerTest::class,
     GitSyncServiceLfsGuardTest::class,
+    GitSyncServicePeriodicTest::class,
+    PeriodicSyncDriverTest::class,
     ShallowMergeTest::class,
     StubGitRepositoryFailureSequenceTest::class,
     JournalMergeServiceTest::class,
@@ -470,5 +545,40 @@ import org.junit.runners.Suite
     MlKitAvailabilityMappingTest::class,
     VoicePipelineConfigTest::class,
     QueryExecutorTest::class,
+    TestHygieneAuditTest::class,
+    TestPlacementAuditTest::class,
+    FirstOpenSmokeCatalogTest::class,
+    ObservableEffectCatalogTest::class,
+    PlantedDeadCodeConstructorTest::class,
+    WiringAllowlistRenewalTest::class,
+    WiringCompletenessTest::class,
+    CommandLineTokenizerTest::class,
+    ConfirmPolicyTest::class,
+    ConsoleBackupTest::class,
+    DbOnlyRowsGuardTest::class,
+    DbRestoreLockStressTest::class,
+    DbRestoreTest::class,
+    GraphRestoreCommandTest::class,
+    RestoreRecoveryTest::class,
+    ConsoleBuildFlagsTest::class,
+    ConsoleSessionConfirmTest::class,
+    SqlConsoleWriterTest::class,
+    SqlWriteCommandTest::class,
+    SqlWriteFtsConsistencyTest::class,
+    SqlWriteGuardTest::class,
+    DirectSqlWriteOptInAllowlistTest::class,
+    ConsoleBoundedStreamingTest::class,
+    ConsoleScopeOwnershipAuditTest::class,
+    ConsoleSessionTest::class,
+    CredentialColumnInventoryTest::class,
+    SqlCommandTest::class,
+    SqlConsoleBypassTest::class,
+    ScrollbackBufferTest::class,
+    ResultGridTest::class,
+    RedactorSingleSiteAuditTest::class,
+    RedactorTest::class,
+    GoogleAuthCodeExchangeTest::class,
+    GoogleDriveFlowTest::class,
+    GooglePhotosFlowTest::class,
 )
 class AllBusinessTests

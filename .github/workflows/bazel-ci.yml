@@ -34,7 +34,7 @@ jobs:
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@0.19.0
         with:
-          bazelisk-version: "1.x"
+          bazelisk-version: ""  # use the runner image's Bazelisk; "1.x" needs a GitHub releases lookup that intermittently fails
           # Shared across all 5 Bazel jobs (not job-scoped): their action graphs
           # heavily overlap (commonMain compile, external repo fetch/build, etc.),
           # and GitHub evicts the whole repo's caches once combined size crosses
@@ -50,7 +50,7 @@ jobs:
 
       - name: Install Xvfb (headless display for Compose Desktop tests)
         run: |
-          sudo apt-get install -y --no-install-recommends xvfb
+          sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends xvfb
           # Ensure /tmp/.X11-unix exists before Bazel sandbox tries to bind-mount it
           # (xvfb-run creates the socket, but Bazel validates the mount source at startup)
           mkdir -p /tmp/.X11-unix
@@ -88,11 +88,21 @@ jobs:
             set -o pipefail
             xvfb-run --auto-servernum bazel test //kmp:jvm_tests \
               --config=remote-cache \
-              --test_output=all \
+              --test_output=errors \
               --flaky_test_attempts=3 \
               --sandbox_add_mount_pair=/tmp/.X11-unix \
               --test_env=DISPLAY \
               --test_env=XAUTHORITY 2>&1 | tee "$RUNNER_TEMP/bazel-jvm-test.log"
+
+      # --test_output=errors drops a failing target's output once it exceeds
+      # Bazel's 1 MiB stdout cap, so the raw test.xml/test.log are the
+      # source of truth for which test failed.
+      - name: Collect JVM test logs
+        if: always()
+        uses: ./.github/actions/bazel-test-artifacts
+        with:
+          name: bazel-jvm-test-logs
+          targets-dir: kmp
 
       - name: CI job report
         if: always()
@@ -118,7 +128,7 @@ jobs:
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@0.19.0
         with:
-          bazelisk-version: "1.x"
+          bazelisk-version: ""  # use the runner image's Bazelisk; "1.x" needs a GitHub releases lookup that intermittently fails
           # Shared across all 5 Bazel jobs — see comment on bazel-jvm's setup step.
           disk-cache: shared
           repository-cache: true
@@ -146,7 +156,14 @@ jobs:
             bazel test //kmp:business_tests \
               --config=remote-cache \
               --test_env=LFS_DIFFERENTIAL_REQUIRED=true \
-              --test_output=all 2>&1 | tee "$RUNNER_TEMP/bazel-business-test.log"
+              --test_output=errors 2>&1 | tee "$RUNNER_TEMP/bazel-business-test.log"
+
+      - name: Collect business test logs
+        if: always()
+        uses: ./.github/actions/bazel-test-artifacts
+        with:
+          name: bazel-business-test-logs
+          targets-dir: kmp
 
       - name: CI job report
         if: always()
@@ -162,6 +179,9 @@ jobs:
     # directly exposed to the com_android_dex fetch flake (--config=android
     # pulls rules_android) — see bazel-jvm's comment for the incident.
     timeout-minutes: 125
+    permissions:
+      contents: read
+      pull-requests: write  # benchdiff's sticky memory comment
     steps:
       - uses: actions/checkout@v4
 
@@ -183,14 +203,14 @@ jobs:
           packages: "platform-tools"
 
       - name: Install host tools required by aar_import
-        run: sudo apt-get install -y --no-install-recommends unzip
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends unzip
 
       - uses: ./.github/actions/setup-bcp
 
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@0.19.0
         with:
-          bazelisk-version: "1.x"
+          bazelisk-version: ""  # use the runner image's Bazelisk; "1.x" needs a GitHub releases lookup that intermittently fails
           # Shared across all 5 Bazel jobs — see comment on bazel-jvm's setup step.
           disk-cache: shared
           repository-cache: true
@@ -209,7 +229,39 @@ jobs:
           timeout_minutes: 55
           max_attempts: 2
           retry_wait_seconds: 30
-          command: set -o pipefail; bazel build //kmp:android_app --config=android --config=remote-cache 2>&1 | tee "$RUNNER_TEMP/bazel-android-build.log"
+          # The wrapper logs memory to the job log (survives a killed runner) and writes ci-mem-head/metrics.json.
+          command: |
+            scripts/ci/with-mem-sampler.sh ci-mem-head/metrics.json android-build -- \
+              bash -c 'set -o pipefail; bazel build //kmp:android_app --config=android --config=remote-cache 2>&1 | tee "$RUNNER_TEMP/bazel-android-build.log"'
+
+      # Memory trend: main saves its numbers, PRs diff against the latest main run. Advisory only.
+      - name: Restore main's memory baseline
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@v4
+        with:
+          path: ci-mem-base
+          key: ci-mem-android-${{ github.sha }}
+          restore-keys: ci-mem-android-
+
+      - name: Save memory baseline (main only)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && hashFiles('ci-mem-head/metrics.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: ci-mem-head
+          key: ci-mem-android-${{ github.sha }}
+
+      - name: Compare memory to main
+        if: github.event_name == 'pull_request' && hashFiles('ci-mem-head/metrics.json') != ''
+        continue-on-error: true
+        uses: tstapler/benchdiff@3921c948d6d9cbc538a62d3808d979c06cc13a94 # v0.1.0
+        with:
+          head: ci-mem-head/metrics.json
+          base: ${{ hashFiles('ci-mem-base/metrics.json') != '' && 'ci-mem-base/metrics.json' || '' }}
+          format: benchdiff
+          threshold: 10
+          min-abs: 500
+          title: CI memory (Bazel Android build, 16 GB runner)
+          tag: ci-memory-android
 
       - name: CI job report
         if: always()
@@ -244,14 +296,14 @@ jobs:
           packages: "platform-tools"
 
       - name: Install host tools required by aar_import
-        run: sudo apt-get install -y --no-install-recommends unzip
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends unzip
 
       - uses: ./.github/actions/setup-bcp
 
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@0.19.0
         with:
-          bazelisk-version: "1.x"
+          bazelisk-version: ""  # use the runner image's Bazelisk; "1.x" needs a GitHub releases lookup that intermittently fails
           # Shared across all 5 Bazel jobs — see comment on bazel-jvm's setup step.
           disk-cache: shared
           repository-cache: true
@@ -272,8 +324,16 @@ jobs:
             bazel test //kmp/src/androidUnitTest/kotlin:android_unit_tests \
               --config=android \
               --config=remote-cache \
-              --test_output=all \
+              --test_output=errors \
               --experimental_ui_max_stdouterr_bytes=4194304 2>&1 | tee "$RUNNER_TEMP/bazel-android-tests.log"
+
+      - name: Collect Android unit test logs
+        if: always()
+        uses: ./.github/actions/bazel-test-artifacts
+        with:
+          name: bazel-android-unit-test-logs
+          targets-dir: kmp
+          bazel-flags: --config=android
 
       - name: CI job report
         if: always()
@@ -320,7 +380,7 @@ jobs:
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@0.19.0
         with:
-          bazelisk-version: "1.x"
+          bazelisk-version: ""  # use the runner image's Bazelisk; "1.x" needs a GitHub releases lookup that intermittently fails
           # Shared across all 5 Bazel jobs — see comment on bazel-jvm's setup step.
           disk-cache: shared
           repository-cache: true

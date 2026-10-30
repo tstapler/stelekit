@@ -59,7 +59,7 @@ class CaptureDeliveryDedupIntegrationTest {
             // having decoded the payload and called writeCaptureDirect before its "OK\n" reply
             // was lost in transit.
             val listenerWrite = CaptureWriter.writeCaptureDirect(graphManager, fileSystem, text, captureId)
-            assertIs<CaptureResult.Saved>(listenerWrite)
+            assertIs<CaptureResult.Saved>(listenerWrite, "listener write returned $listenerWrite")
 
             // (b) The client, having timed out waiting for the ack, falls back to writing the
             // same captureId to the pending-captures queue (CaptureSocketClient.trySend's

@@ -13,6 +13,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.model.GraphInfo
+import dev.stapler.stelekit.model.RepoRoot
+import dev.stapler.stelekit.vault.VaultRootMigration
 import dev.stapler.stelekit.platform.DemoFileSystem
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.model.EffectiveNotesPath
@@ -24,6 +26,7 @@ internal fun graphContentFileSystem(isDemo: Boolean, fileSystem: FileSystem): Fi
 internal class GraphContentVaultSetup(
     val activeGraphInfo: GraphInfo?,
     val activeGraphPath: String,
+    val activeRepoRoot: RepoRoot?,
     val effectiveFileSystem: FileSystem,
     val isParanoidModeState: MutableState<Boolean>,
     val vaultStateState: MutableState<VaultState>,
@@ -33,6 +36,12 @@ internal class GraphContentVaultSetup(
     /** The active graph's notes folder as a typed value, for page writers; null when no graph is active. */
     val activeNotesPath: EffectiveNotesPath? get() = activeGraphInfo?.effectiveNotesPath
 }
+
+internal fun migrateAndResolveRepoRoot(info: GraphInfo?, fileSystem: FileSystem): RepoRoot? =
+    info?.takeIf { !it.isDemo }?.let {
+        VaultRootMigration(fileSystem).migrate(it.repoRootObj, it.effectiveNotesPath)
+        it.repoRootObj
+    }
 
 /**
  * Resolves the active graph's info/path, picks the effective [FileSystem] (swapped for
@@ -52,16 +61,19 @@ internal fun rememberGraphContentVaultSetup(
     val graphRegistry by graphManager.graphRegistry.collectAsState()
     val activeGraphInfo = remember(graphRegistry) { graphManager.getActiveGraphInfo() }
     val activeGraphPath = activeGraphInfo?.effectiveNotesPath?.value ?: ""
+    // Vault files live at the repo root (ADR-020); move any left in the notes folder before they are read.
+    val activeRepoRoot: RepoRoot? = remember(activeGraphInfo) { migrateAndResolveRepoRoot(activeGraphInfo, fileSystem) }
 
     val effectiveFileSystem: FileSystem = remember(activeGraphInfo?.isDemo, fileSystem) {
         graphContentFileSystem(activeGraphInfo?.isDemo == true, fileSystem)
     }
 
-    val vault = rememberVaultState(graphManager, fileSystem, cryptoEngine, activeGraphPath)
+    val vault = rememberVaultState(graphManager, fileSystem, cryptoEngine, activeRepoRoot)
 
     return GraphContentVaultSetup(
         activeGraphInfo = activeGraphInfo,
         activeGraphPath = activeGraphPath,
+        activeRepoRoot = activeRepoRoot,
         effectiveFileSystem = effectiveFileSystem,
         isParanoidModeState = vault.isParanoidModeState,
         vaultStateState = vault.vaultStateState,
@@ -83,13 +95,13 @@ private fun rememberVaultState(
     graphManager: GraphManager,
     fileSystem: FileSystem,
     cryptoEngine: dev.stapler.stelekit.vault.CryptoEngine?,
-    activeGraphPath: String,
+    activeRepoRoot: RepoRoot?,
 ): VaultCoordinatorState {
     // Paranoid mode: true when a .stele-vault file exists for this graph and a crypto engine is available.
     val isParanoidModeState = remember {
         mutableStateOf(
-            cryptoEngine != null && activeGraphPath.isNotEmpty() &&
-                fileSystem.fileExists(dev.stapler.stelekit.vault.VaultManager.vaultFilePath(activeGraphPath))
+            cryptoEngine != null && activeRepoRoot != null &&
+                fileSystem.fileExists(dev.stapler.stelekit.vault.VaultManager.vaultFilePath(activeRepoRoot))
         )
     }
     val isParanoidMode = isParanoidModeState.value
@@ -102,7 +114,7 @@ private fun rememberVaultState(
     }
 
     val (vaultManagerState, vaultCredentialStore) =
-        rememberVaultManagerAndCredentialStore(graphManager, fileSystem, cryptoEngine, activeGraphPath, isParanoidModeState)
+        rememberVaultManagerAndCredentialStore(graphManager, fileSystem, cryptoEngine, activeRepoRoot, isParanoidModeState)
 
     return VaultCoordinatorState(isParanoidModeState, vaultStateState, vaultManagerState, vaultCredentialStore)
 }
@@ -113,7 +125,7 @@ private fun rememberVaultManagerAndCredentialStore(
     graphManager: GraphManager,
     fileSystem: FileSystem,
     cryptoEngine: dev.stapler.stelekit.vault.CryptoEngine?,
-    activeGraphPath: String,
+    activeRepoRoot: RepoRoot?,
     isParanoidModeState: androidx.compose.runtime.State<Boolean>,
 ): Pair<MutableState<dev.stapler.stelekit.vault.VaultManager?>, dev.stapler.stelekit.git.VaultCredentialStore?> {
     val isParanoidMode = isParanoidModeState.value
@@ -130,9 +142,9 @@ private fun rememberVaultManagerAndCredentialStore(
 
     // Vault-integrated credential store — non-null when paranoid mode is on and CryptoEngine is available.
     // Swapped into gitRepository.credentialAccess on vault unlock/lock.
-    val vaultCredentialStore = remember(activeGraphPath, isParanoidMode, cryptoEngine) {
-        if (isParanoidMode && cryptoEngine != null && activeGraphPath.isNotEmpty()) {
-            dev.stapler.stelekit.git.VaultCredentialStore(activeGraphPath, cryptoEngine, fileSystem)
+    val vaultCredentialStore = remember(activeRepoRoot, isParanoidMode, cryptoEngine) {
+        if (isParanoidMode && cryptoEngine != null && activeRepoRoot != null) {
+            dev.stapler.stelekit.git.VaultCredentialStore(activeRepoRoot, cryptoEngine, fileSystem)
         } else null
     }
 

@@ -111,6 +111,8 @@ fun LeftSidebar(
     gitLastSyncAt: Long? = null,
     /** A branch repair is waiting for its first reviewed sync. */
     firstSyncReviewPending: Boolean = false,
+    scheduledSyncPaused: Boolean = false,
+    onOpenScheduledSyncSettings: (() -> Unit)? = null,
     onBranchRepair: (() -> Unit)? = null,
     onReviewFirstSync: (() -> Unit)? = null,
     onSyncClick: () -> Unit = {},
@@ -265,12 +267,14 @@ fun LeftSidebar(
                     state = syncState,
                     lastSyncAt = gitLastSyncAt,
                     firstSyncReviewPending = firstSyncReviewPending,
+                    scheduledSyncPaused = scheduledSyncPaused,
                 ),
                 onSyncClick = onSyncClick,
                 isGitConfigured = isGitConfigured,
                 onAuthError = onAuthError,
                 onBranchRepair = onBranchRepair,
                 onReviewFirstSync = onReviewFirstSync,
+                onOpenScheduledSyncSettings = onOpenScheduledSyncSettings,
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
             )
 

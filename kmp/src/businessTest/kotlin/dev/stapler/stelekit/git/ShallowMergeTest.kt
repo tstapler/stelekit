@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.model.RepoRoot
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
@@ -75,7 +76,7 @@ class ShallowMergeTest {
 
     private fun baseConfig(repoRoot: String) = GitConfig(
         graphId = "shallow-merge-graph",
-        repoRoot = repoRoot,
+        repoRoot = RepoRoot(repoRoot),
         wikiSubdir = null,
         authType = GitAuthType.NONE,
         remoteName = "origin",
