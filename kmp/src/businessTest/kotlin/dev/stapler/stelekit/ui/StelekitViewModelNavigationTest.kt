@@ -64,6 +64,17 @@ class StelekitViewModelNavigationTest {
     }
 
     @Test
+    fun `background jobs screen opens by enum and by destination name`() {
+        vm.navigateTo(Screen.BackgroundJobs)
+        assertEquals(Screen.BackgroundJobs, state.currentScreen)
+        assertEquals("Opened Background jobs", state.statusMessage)
+
+        vm.navigateTo("logs")
+        vm.navigateTo("background-jobs")
+        assertEquals(Screen.BackgroundJobs, state.currentScreen)
+    }
+
+    @Test
     fun `navigating after goBack discards the forward history`() {
         vm.navigateTo(Screen.Flashcards)
         vm.navigateTo(Screen.Notifications)

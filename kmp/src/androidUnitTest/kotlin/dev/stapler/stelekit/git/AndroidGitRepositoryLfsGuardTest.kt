@@ -8,6 +8,7 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import arrow.core.Either
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.git.lfs.LfsMode
 import dev.stapler.stelekit.git.lfs.LfsOid
 import dev.stapler.stelekit.git.lfs.LfsPointer
 import dev.stapler.stelekit.git.lfs.LfsPointerCodec
@@ -55,7 +56,7 @@ class AndroidGitRepositoryLfsGuardTest {
             credentialAccess = FakeCredentialAccess(),
             pathResolver = { null },
             fileSystem = FakeSafFileSystem(),
-        )
+        ).apply { setLfsModeProvider { LfsMode.GUARD_ONLY } } // pins the safety floor; transfer is covered on the JVM
         assertTrue(repository.init(RepoRoot(root.absolutePath)).isRight())
         Git.open(root).use { git ->
             git.repository.config.apply {

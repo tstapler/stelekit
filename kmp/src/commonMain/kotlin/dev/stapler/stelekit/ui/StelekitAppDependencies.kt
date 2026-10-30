@@ -146,6 +146,8 @@ data class StelekitAppPlatformIntegrations(
      */
     val google: dev.stapler.stelekit.platform.google.GoogleIntegration? = null,
     val requestCameraPermission: (suspend () -> Boolean)? = null,
+    /** Downloads, clones and other work that finishes later; shown on the Background jobs screen. */
+    val backgroundJobs: dev.stapler.stelekit.jobs.BackgroundJobRegistry = dev.stapler.stelekit.jobs.NoBackgroundJobs,
     /** Reads HTML from the system clipboard (bounded). Null disables rich-text paste; set on Desktop. */
     val readClipboardHtml: (() -> dev.stapler.stelekit.domain.ClipboardHtml?)? = null,
     /**
@@ -325,6 +327,10 @@ data class GraphContentDeps(
     val gitSyncSeams: GitSyncServiceSeams = GitSyncServiceSeams(),
     /** Where this graph registers its editor-side writer for the share router. */
     val activeWriteHooks: dev.stapler.stelekit.capture.ActiveWriteHooks? = null,
+    /** Where in-process long-running work (git sync, storage moves) reports to the jobs list. */
+    val jobTracker: dev.stapler.stelekit.jobs.JobTracker = dev.stapler.stelekit.jobs.NoJobTracker,
+    /** Everything the Background jobs screen lists: in-process jobs plus the platform store. */
+    val backgroundJobs: dev.stapler.stelekit.jobs.BackgroundJobRegistry = dev.stapler.stelekit.jobs.NoBackgroundJobs,
     /** Per-graph asset index/move stack; set by [GraphContent] itself (see GraphContentAssetSetup.kt), null in hosts. */
     val assets: GraphContentAssetStack? = null,
 )

@@ -7,6 +7,10 @@ package dev.stapler.stelekit.ui
 import dev.stapler.stelekit.git.GitSyncService
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.git.model.SyncState
+import dev.stapler.stelekit.jobs.JobKind
+import dev.stapler.stelekit.jobs.JobTracker
+import dev.stapler.stelekit.jobs.NoJobTracker
+import dev.stapler.stelekit.jobs.track
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -62,6 +66,7 @@ class GitSyncCoordinator(
     private val onDismissBrowserOnlySyncBanner: (suspend (graphId: String) -> Unit)?,
     private val scope: CoroutineScope,
     private val uiState: MutableStateFlow<AppState>,
+    private val jobTracker: JobTracker = NoJobTracker,
 ) {
     /**
      * Dirty-file count derived from [GitSyncService.localStatus] — the platform-agnostic source,
@@ -123,7 +128,10 @@ class GitSyncCoordinator(
     fun triggerSync() {
         val graphId = activeGraphIdProvider() ?: uiState.value.currentGraphId ?: return
         scope.launch {
-            activeGitSyncService.value?.sync(graphId)
+            val service = activeGitSyncService.value ?: return@launch
+            jobTracker.track(JobKind.GitSync, "Syncing with remote") { handle ->
+                service.sync(graphId).onLeft { handle.fail(it.message) }
+            }
         }
     }
 
@@ -131,7 +139,10 @@ class GitSyncCoordinator(
     fun triggerFetchOnly() {
         val graphId = activeGraphIdProvider() ?: uiState.value.currentGraphId ?: return
         scope.launch {
-            activeGitSyncService.value?.fetchOnly(graphId)
+            val service = activeGitSyncService.value ?: return@launch
+            jobTracker.track(JobKind.GitSync, "Checking for remote changes") { handle ->
+                service.fetchOnly(graphId).onLeft { handle.fail(it.message) }
+            }
         }
     }
 

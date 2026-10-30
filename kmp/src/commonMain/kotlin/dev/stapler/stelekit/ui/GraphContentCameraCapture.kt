@@ -112,6 +112,7 @@ internal fun GraphContentScreenAndCapture(deps: GraphContentDeps, viewModel: Ste
             qrTransferSettings = inputs.tagVoiceStack.qrTransferSettings,
             graphLoader = inputs.graphIoStack.graphLoader,
             graphDiagnostics = diagnosticsCollector::collect,
+            backgroundJobs = deps.backgroundJobs,
             assetMover = deps.assets?.moveAsset,
             google = deps.platformIntegrations.google,
             capabilities = buildEditorCapabilities(deps, viewModel, inputs, captureState).copy(googlePhotos = googlePhotos),

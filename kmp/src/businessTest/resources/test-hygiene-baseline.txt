@@ -5,8 +5,6 @@ androidInstrumentedTest/dev/stapler/stelekit/console/spike/QueryCancelSpikeAndro
 androidUnitTest/dev/stapler/stelekit/git/AndroidGitCloneWorkerLauncherTest.kt	Thread.sleep	1
 androidUnitTest/dev/stapler/stelekit/git/WorkManagerSyncSchedulerRetryOwnerTest.kt	Thread.sleep	1
 androidUnitTest/dev/stapler/stelekit/platform/SafChangeDetectorFileObserverTest.kt	real-clock-delay	2
-androidUnitTest/dev/stapler/stelekit/platform/ml/DepthModelDownloaderReattachTest.kt	real-clock-delay	2
-androidUnitTest/dev/stapler/stelekit/platform/ml/DepthModelDownloaderRegressionTest.kt	real-clock-delay	2
 businessTest/dev/stapler/stelekit/asset/AssetIndexServiceTest.kt	real-clock-delay	2
 businessTest/dev/stapler/stelekit/capture/ShareInboxTest.kt	Thread.sleep	4
 businessTest/dev/stapler/stelekit/db/GraphManagerPendingStorageLocationRemovalTest.kt	real-clock-delay	2

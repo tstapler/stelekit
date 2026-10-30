@@ -45,7 +45,7 @@ class LfsRawBinaryNeverCommittedTest {
             f.write(".gitattributes", rules)
             f.write("assets/a.bin", LfsRepoFixture.PNG)
             f.write("pages/a.md", "# a")
-            val repo = JvmGitRepository()
+            val repo = JvmGitRepository().apply { setLfsModeProvider { LfsMode.GUARD_ONLY } }
 
             assertTrue(repo.stageSubdir(config(f), excludePaths = setOf("assets/a.bin")).isRight())
             val sha = repo.commit(config(f), "sync")
@@ -68,7 +68,7 @@ class LfsRawBinaryNeverCommittedTest {
             f.write("assets/a.bin", LfsRepoFixture.PNG)
             f.add("assets/a.bin")
 
-            val result = JvmGitRepository().commit(config(f), "bypass")
+            val result = JvmGitRepository().apply { setLfsModeProvider { LfsMode.GUARD_ONLY } }.commit(config(f), "bypass")
 
             val error = assertIs<DomainError.GitError.LfsRawBinaryRefused>(assertIs<Either.Left<DomainError.GitError>>(result).value)
             assertEquals(listOf("assets/a.bin"), error.paths)
@@ -85,7 +85,7 @@ class LfsRawBinaryNeverCommittedTest {
             f.write("assets/a.bin", LfsRepoFixture.PNG)
             f.write("pages/a.md", "# a")
             f.add(".")
-            val repo = JvmGitRepository()
+            val repo = JvmGitRepository().apply { setLfsModeProvider { LfsMode.GUARD_ONLY } }
             val first = repo.commit(config(f), "first")
             assertTrue(first.isLeft())
 
@@ -102,7 +102,7 @@ class LfsRawBinaryNeverCommittedTest {
         LfsRepoFixture().use { f ->
             f.write(".gitattributes", rules)
             f.write("assets/p.png", LfsRepoFixture.POINTER)
-            val repo = JvmGitRepository()
+            val repo = JvmGitRepository().apply { setLfsModeProvider { LfsMode.GUARD_ONLY } }
 
             repo.stageSubdir(config(f), emptySet())
             val sha = repo.commit(config(f), "pointer")
@@ -118,7 +118,7 @@ class LfsRawBinaryNeverCommittedTest {
             f.write(".gitattributes", rules)
             f.write("assets/a.bin", LfsRepoFixture.PNG)
 
-            val result = JvmGitRepository().markResolved(config(f), "${f.dir.absolutePath}/assets/a.bin")
+            val result = JvmGitRepository().apply { setLfsModeProvider { LfsMode.GUARD_ONLY } }.markResolved(config(f), "${f.dir.absolutePath}/assets/a.bin")
 
             assertIs<DomainError.GitError.LfsRawBinaryRefused>(assertIs<Either.Left<DomainError.GitError>>(result).value)
             assertTrue("assets/a.bin" !in f.stagedPaths())
@@ -133,7 +133,7 @@ class LfsRawBinaryNeverCommittedTest {
             f.add(".")
             f.commit("base")
             f.write("assets/a.bin", LfsRepoFixture.PNG)
-            val repo = JvmGitRepository()
+            val repo = JvmGitRepository().apply { setLfsModeProvider { LfsMode.GUARD_ONLY } }
 
             repo.stageSubdir(config(f), setOf("assets/a.bin"))
 

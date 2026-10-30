@@ -280,6 +280,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+            val backgroundJobs = remember { dev.stapler.stelekit.jobs.WorkManagerJobRegistry(this@MainActivity.applicationContext) }
             val audioRecorder = remember { AndroidAudioRecorder(this@MainActivity.applicationContext, this@MainActivity::requestMicrophonePermission) }
             val voiceSettings = remember { VoiceSettings(PlatformSettings()) }
             val deviceSttAvailable = remember { AndroidSpeechRecognizerProvider.isAvailable(this@MainActivity.applicationContext) }
@@ -491,6 +492,7 @@ class MainActivity : ComponentActivity() {
                         storageLocationResolver = androidStorageLocationResolver,
                         insufficientSpaceCheck = androidInsufficientSpaceCheck,
                         gitSyncBusyCounter = sharedGitSyncBusyCounter,
+                        backgroundJobs = backgroundJobs,
                     ),
                     captureDeps = app.captureDeps(copyHost),
                 ),

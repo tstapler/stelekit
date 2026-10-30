@@ -161,6 +161,7 @@ private fun buildViewModelDependencies(
         histogramWriter = repos.histogramWriter,
         ringBuffer = repos.ringBuffer,
         activeGitSyncService = graphManager.activeGitSyncService,
+        jobTracker = deps.jobTracker,
         localChangesCountFlow = deps.webSyncDeps.localChangesCountFlow,
         activeGraphIdProvider = { graphManager.getActiveGraphId()?.value },
         initialGraphPathProvider = {
