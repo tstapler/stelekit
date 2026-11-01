@@ -115,6 +115,28 @@ class GraphZipExporterWasmJsTest {
         assertTrue(result.isRight(), "export must succeed (Right) for a plain markdown graph: $result")
     }
 
+    @Test
+    fun wasmJsGraphZipExporter_export_should_ZipOnlyTheNotesFolder_When_GraphHasAWikiSubdir() = runTest {
+        val fileSystem = PlatformFileSystem().apply { markEphemeral() }
+        val repoRoot = "/stelekit/zip-wiki-${Random.nextInt(0, Int.MAX_VALUE)}"
+        val notesPath = EffectiveNotesPath("$repoRoot/logseq")
+        fileSystem.preload(repoRoot)
+        fileSystem.writeFile("$repoRoot/README.md", "# repo readme, outside the notes folder")
+        fileSystem.writeFile("$repoRoot/logseq/pages/Alpha.md", "- alpha")
+        fileSystem.writeFile("$repoRoot/logseq/pages/ns/Child.md", "- child")
+
+        val result = WasmJsGraphZipExporter().export(fileSystem, notesPath, "stelekit-graph")
+        assertTrue(result.isRight(), "export must succeed (Right) for a graph with a wiki subdir: $result")
+
+        // Same enumeration the exporter performs: entries relative to the notes folder.
+        val entries = fileSystem.listFilesRecursiveWithModTimes(notesPath.directory()).map { (rel, _) ->
+            StoredZipWriter.Entry(rel, fileSystem.getContentBytes(notesPath.child(rel))!!)
+        }
+        val names = readStoredZip(StoredZipWriter.build(entries)).map { it.name }.toSet()
+
+        assertEquals(setOf("pages/Alpha.md", "pages/ns/Child.md"), names, "entries must be rooted at the notes folder, not the repo root")
+    }
+
     /**
      * MUST FIX regression (idiom review): the exporter used to read every file through
      * [dev.stapler.stelekit.platform.FileSystem.readFile]'s String API before
