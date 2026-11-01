@@ -173,6 +173,8 @@ import dev.stapler.stelekit.git.GitRefDiagnosticsRedactionTest
 import dev.stapler.stelekit.git.GitSyncAttributeMergeE2ETest
 import dev.stapler.stelekit.git.GitSyncServiceLfsJvmTest
 import dev.stapler.stelekit.git.lfs.JvmGitRepositoryLfsTransferTest
+import dev.stapler.stelekit.git.lfs.LfsBatchClientStatusTest
+import dev.stapler.stelekit.git.lfs.LfsEndpointTest
 import dev.stapler.stelekit.platform.download.ResumableDownloadTest
 import dev.stapler.stelekit.git.JvmGitCloneWorkerLauncherTest
 import dev.stapler.stelekit.git.JvmGitRepositoryTest
@@ -506,6 +508,8 @@ import org.junit.runners.Suite
     GitSyncAttributeMergeE2ETest::class,
     GitSyncServiceLfsJvmTest::class,
     JvmGitRepositoryLfsTransferTest::class,
+    LfsBatchClientStatusTest::class,
+    LfsEndpointTest::class,
     ResumableDownloadTest::class,
     JvmGitCloneWorkerLauncherTest::class,
     JvmGitRepositoryTest::class,
