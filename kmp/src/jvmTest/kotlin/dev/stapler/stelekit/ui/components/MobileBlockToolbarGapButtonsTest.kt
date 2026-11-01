@@ -1,4 +1,4 @@
-package dev.stapler.stelekit.ui.screenshots
+package dev.stapler.stelekit.ui.components
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.assertIsDisplayed
@@ -7,8 +7,6 @@ import androidx.compose.ui.test.performClick
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.ui.ComposeUITestBase
-import dev.stapler.stelekit.ui.components.EditorCapabilities
-import dev.stapler.stelekit.ui.components.EditorToolbar
 import dev.stapler.stelekit.ui.screens.FormatAction
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue

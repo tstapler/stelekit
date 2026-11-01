@@ -1,4 +1,4 @@
-package dev.stapler.stelekit.ui.screenshots
+package dev.stapler.stelekit.ui.components
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.getValue
@@ -12,7 +12,6 @@ import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
 import dev.stapler.stelekit.ui.ComposeUITestBase
-import dev.stapler.stelekit.ui.components.MobileBlockToolbar
 import kotlin.test.assertEquals
 import org.junit.Test
 
