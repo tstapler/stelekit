@@ -17,6 +17,7 @@ import org.junit.runners.Suite
  */
 @RunWith(Suite::class)
 @Suite.SuiteClasses(
+    AllMermaidJvmTestsCompletenessTest::class,
     MermaidEngineActorTest::class,
     MermaidJvmEngineTest::class,
     MermaidRendererFallbackTest::class,
