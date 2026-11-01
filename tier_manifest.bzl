@@ -18,7 +18,6 @@ TIER_1_PACKAGES = [
     "logging",
     "parsing",
     "resilience",
-    "rtc",
     "service",
     "stats",
 ]
