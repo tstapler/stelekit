@@ -76,6 +76,10 @@ class AllJvmTestsCompletenessTest {
     @Test
     fun `the scan sees this test class`() {
         assumeBazelJar()
+        assertTrue(
+            testClasses.size >= registered.size / 2,
+            "scan found ${testClasses.size} test classes but the suite lists ${registered.size}; test detection is likely broken",
+        )
         assertTrue(AllJvmTestsCompletenessTest::class.java.name in testClasses, "scan found ${testClasses.size} classes")
     }
 }
