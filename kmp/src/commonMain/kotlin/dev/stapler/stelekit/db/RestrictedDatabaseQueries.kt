@@ -4,6 +4,7 @@ import app.cash.sqldelight.Query
 import app.cash.sqldelight.SuspendingTransactionWithoutReturn
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToOne
+import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import kotlinx.coroutines.flow.first
@@ -27,6 +28,47 @@ class RestrictedDatabaseQueries(
     // via this reference — use the annotated methods below instead.
     val rawQueries: SteleDatabaseQueries get() = queries
 
+
+    // ── Developer console raw SQL ─────────────────────────────────────────────
+
+    /** Rows the statement changed directly, and every row it changed including triggers and cascades. */
+    data class RawWriteCounts(val changes: Long, val totalChanges: Long)
+
+    /**
+     * Runs one arbitrary statement from the console's `sql!` on the connection of the current transaction
+     * (the caller is inside [transaction]) and reports `changes()` and the `total_changes()` delta.
+     * Needs a [driver] on the write connection: on Android the router would send the counter query to the
+     * separate read connection.
+     */
+    @DirectSqlWrite
+    fun rawExecWithCounts(sql: String): RawWriteCounts {
+        val d = requireNotNull(driver) { "raw SQL needs a driver" }
+        // A pooled connection that sat idle while the schema changed (a fresh database, a migration) still
+        // holds the old schema, and preparing the owner's statement then fails with "no such table". Stepping
+        // a statement that reads the database makes SQLite compare the schema cookie and reload first.
+        scalar(d, "SELECT COUNT(*) FROM sqlite_master")
+        val before = scalar(d, "SELECT total_changes()")
+        d.execute(null, sql, 0).value
+        val changes = scalar(d, "SELECT changes()")
+        return RawWriteCounts(changes, scalar(d, "SELECT total_changes()") - before)
+    }
+
+    /**
+     * Row count of every ordinary table, for the console dry run. Virtual tables (the FTS indexes mirror their
+     * content table's count), their shadow tables and `sqlite_*` are excluded: they are index maintenance, not rows.
+     */
+    fun rawTableRowCounts(): Map<String, Long> {
+        val d = requireNotNull(driver) { "raw SQL needs a driver" }
+        val names = mutableListOf<String>()
+        d.executeQuery(null, "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND sql NOT LIKE 'CREATE VIRTUAL TABLE%'", { c ->
+            while (c.next().value) c.getString(0)?.let(names::add)
+            QueryResult.Value(Unit)
+        }, 0).value
+        return names.filterNot { FTS_SHADOW.matches(it) }.associateWith { scalar(d, "SELECT COUNT(*) FROM \"$it\"") }
+    }
+
+    private fun scalar(d: SqlDriver, sql: String): Long =
+        d.executeQuery(null, sql, { c -> c.next(); QueryResult.Value(c.getLong(0) ?: 0L) }, 0).value
 
     // ── Transactions ──────────────────────────────────────────────────────────
 
@@ -438,6 +480,7 @@ class RestrictedDatabaseQueries(
     companion object {
         /** floor(999 / 2) — each pair consumes 2 bind params; stays below SQLITE_MAX_VARIABLE_NUMBER. */
         const val MAX_WIKILINK_BATCH_SIZE = 499
+        private val FTS_SHADOW = Regex("(.+_fts)_(data|idx|content|docsize|config)")
     }
 
     @DirectSqlWrite

@@ -1183,11 +1183,13 @@ SELECT * FROM asset_index ORDER BY imported_at_ms DESC LIMIT :limit OFFSET :offs
 selectAssetsByMediaType:
 SELECT * FROM asset_index WHERE media_type = ? ORDER BY imported_at_ms DESC LIMIT :limit OFFSET :offset;
 
-searchAssets:
-SELECT * FROM asset_index WHERE (file_path LIKE :query ESCAPE '\' OR tags LIKE :query ESCAPE '\' OR auto_labels LIKE :query ESCAPE '\' OR ocr_text LIKE :query ESCAPE '\') ORDER BY imported_at_ms DESC LIMIT :limit OFFSET :offset;
+-- Projected: omits the potentially large ocr_text and auto_labels blobs. The WHERE clause may still
+-- match against them; list/drain callers must never materialize them (one per row, thousands of rows).
+searchAssetsLight:
+SELECT uuid, file_path, relative_path, media_type, subfolder, tags, cloud_description, page_uuids, size_bytes, imported_at_ms, ml_processed, ml_attempted_at, ml_failed, content_hash, is_orphan, ml_tags_source FROM asset_index WHERE (file_path LIKE :query ESCAPE '\' OR tags LIKE :query ESCAPE '\' OR auto_labels LIKE :query ESCAPE '\' OR ocr_text LIKE :query ESCAPE '\') ORDER BY imported_at_ms DESC LIMIT :limit OFFSET :offset;
 
-selectUnprocessedAssets:
-SELECT * FROM asset_index WHERE ml_processed = 0 AND ml_failed = 0 ORDER BY imported_at_ms ASC LIMIT :limit OFFSET :offset;
+selectUnprocessedAssetsLight:
+SELECT uuid, file_path, relative_path, media_type, subfolder, tags, cloud_description, page_uuids, size_bytes, imported_at_ms, ml_processed, ml_attempted_at, ml_failed, content_hash, is_orphan, ml_tags_source FROM asset_index WHERE ml_processed = 0 AND ml_failed = 0 ORDER BY imported_at_ms ASC LIMIT :limit OFFSET :offset;
 
 countUnprocessedAssets:
 SELECT COUNT(*) FROM asset_index WHERE ml_processed = 0 AND ml_failed = 0;
@@ -1297,6 +1299,13 @@ SELECT COUNT(*) FROM asset_index WHERE is_orphan = 1;
 
 selectAllTagsJson:
 SELECT tags FROM asset_index WHERE tags IS NOT NULL AND tags != '' AND tags != '[]';
+
+-- Projections for the index backfill: file_path only, bounded by the caller's IN list (<= 500).
+selectAssetFilePathsIn:
+SELECT file_path FROM asset_index WHERE file_path IN :paths;
+
+selectAssetUuidByContentHash:
+SELECT uuid FROM asset_index WHERE content_hash = :contentHash LIMIT 1;
 
 -- pending_asset_moves WAL table: holds in-flight moves for crash recovery
 -- This table is expected to hold <= a handful of rows at any time -- unbounded reads are safe.

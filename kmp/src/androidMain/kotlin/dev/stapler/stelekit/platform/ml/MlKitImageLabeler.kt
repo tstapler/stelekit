@@ -16,7 +16,8 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 class MlKitImageLabeler : ImageLabeler {
-    private val labeler = ImageLabeling.getClient(ImageLabelerOptions.DEFAULT_OPTIONS)
+    // Lazy: building the client loads the ML Kit model, which must not happen until first use.
+    private val labeler by lazy { ImageLabeling.getClient(ImageLabelerOptions.DEFAULT_OPTIONS) }
 
     override suspend fun labelImage(imageBytes: ByteArray): Either<DomainError, List<Label>> {
         return try {

@@ -14,6 +14,9 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
+/** Shown when the encoded JPEG is empty; nothing has been uploaded at that point. */
+const val ZERO_BYTE_IMAGE_MESSAGE = "Couldn't encode the image - nothing was uploaded"
+
 private val sidecarJson = Json {
     prettyPrint = true
     encodeDefaults = true
@@ -114,6 +117,9 @@ open class DriveExportService(private val apiClient: DriveUploader) {
         imageJpegBytes: ByteArray,
         folderId: String? = null,
     ): Either<DomainError, DriveExportResult> {
+        if (imageJpegBytes.isEmpty()) {
+            return DomainError.ExportError.EncodingFailed(ZERO_BYTE_IMAGE_MESSAGE).left()
+        }
         // Derive file names from the image UUID + annotation count
         val baseName = "${imageAnnotation.uuid}_annotated"
         val imageName = "$baseName.jpg"

@@ -72,6 +72,14 @@ data class RepositorySet(
     val imageAnnotationRepository: ImageAnnotationRepository = InMemoryImageAnnotationRepository(),
     val measurementAnnotationRepository: MeasurementAnnotationRepository = InMemoryMeasurementAnnotationRepository(),
     val assetRepository: dev.stapler.stelekit.repository.AssetRepository = InMemoryAssetRepository(),
+    /** Console-owned read-only SQL connection; null when the backend has no database file. Never the app pool. */
+    val sqlConsole: dev.stapler.stelekit.console.views.SqlConsoleView? = null,
+    /** Gated raw-SQL handle for [dev.stapler.stelekit.asset.AssetMoveService]'s WAL; null off the SQLDelight backend. */
+    val restrictedQueries: dev.stapler.stelekit.db.RestrictedDatabaseQueries? = null,
+    /** Console `sql!` write path through [writeActor]; null off the SQLDelight backend. Used only by the console. */
+    val sqlWriter: dev.stapler.stelekit.db.SqlWriteView? = null,
+    /** Console backup for this graph's database file; null where the platform has none. */
+    val consoleBackup: dev.stapler.stelekit.db.ConsoleBackup? = null,
 ) {
     /** Live-query executor bound to this graph's repositories; a new RepositorySet gets a fresh one. */
     val queryExecutor: dev.stapler.stelekit.query.QueryExecutor by lazy {
@@ -124,6 +132,7 @@ class RepositoryFactoryImpl(
     private var wrappedDriver: app.cash.sqldelight.db.SqlDriver? = null
     private var activeTelemetryDriver: app.cash.sqldelight.db.SqlDriver? = null
     private var activeTelemetryDb: TelemetryDatabase? = null
+    private var activeSqlConsole: dev.stapler.stelekit.console.views.SqlConsoleView? = null
 
     // Set by createRepositorySet before repositories are instantiated so constructors receive
     // the live perf objects. Fields are written once before first use — not thread-safe by design.
@@ -433,7 +442,21 @@ class RepositoryFactoryImpl(
             assetRepository = if (backend == GraphBackend.SQLDELIGHT)
                 SqlDelightAssetRepository(database)
             else InMemoryAssetRepository(),
+            sqlConsole = if (backend == GraphBackend.SQLDELIGHT)
+                dev.stapler.stelekit.db.SqlConsoleReader(jdbcUrl).also { activeSqlConsole = it }
+            else null,
+            restrictedQueries = if (backend == GraphBackend.SQLDELIGHT)
+                dev.stapler.stelekit.db.RestrictedDatabaseQueries(database.steleDatabaseQueries)
+            else null,
+            sqlWriter = if (backend == GraphBackend.SQLDELIGHT) actor?.let { createSqlWriter(it) } else null,
+            consoleBackup = if (backend == GraphBackend.SQLDELIGHT) dev.stapler.stelekit.db.ConsoleBackup.forJdbcUrl(jdbcUrl) else null,
         )
+    }
+
+    /** Raw statements run on the write driver itself: on Android the router would send the counter queries to the read connection. */
+    private fun createSqlWriter(actor: DatabaseWriteActor): dev.stapler.stelekit.db.SqlConsoleWriter {
+        val queries = dev.stapler.stelekit.db.RestrictedDatabaseQueries(database.steleDatabaseQueries, activeDriver)
+        return dev.stapler.stelekit.db.SqlConsoleWriter(queries, { invalidate, op -> actor.execute(invalidate = invalidate, op = op) })
     }
 
     private fun wireCacheCallbacks(actor: DatabaseWriteActor, sqlBlockRepo: SqlDelightBlockRepository?) {
@@ -517,6 +540,9 @@ class RepositoryFactoryImpl(
     fun steleDatabase(): SteleDatabase = database
 
     override fun close() {
+        // Before the write driver: the console connection must not outlive the database it reads.
+        activeSqlConsole?.close()
+        activeSqlConsole = null
         // PRAGMA optimize + driver close per SQLite docs recommendation at connection close.
         // Platform-specific: JVM/iOS use runBlocking; WASM/JS skips PRAGMA (in-memory only).
         // Close write driver first (flushes WAL), then read driver.

@@ -29,6 +29,8 @@ class AssetIndexServiceTest {
     private inner class ReadLoggingFileSystem : FakeFileSystem() {
         val assetsDirChecked = CompletableDeferred<Unit>()
         override fun readFileBytes(path: String): ByteArray? = super.readFileBytes(path).also { events += 'R' }
+        // The size probe must not count as a content read (the default would call readFileBytes).
+        override fun getFileSize(path: String): Long? = super.readFileBytes(path)?.size?.toLong()
         override fun directoryExists(path: String): Boolean = super.directoryExists(path).also { assetsDirChecked.complete(Unit) }
     }
 

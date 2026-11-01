@@ -11,6 +11,7 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.platform.security.CredentialAccess
+import dev.stapler.stelekit.security.Redactor
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlin.time.Duration
@@ -129,8 +130,8 @@ sealed interface GitFailureClass {
  * `onFailed` instead — this is the fix for the pre-existing misclassification bug (a dropped
  * socket reported to the user as an authentication failure). Used by every clone/fetch/push/
  * testRemote call, the only operations that touch a remote transport. Every caught exception's
- * message is run through [redactUrlUserinfo] before either callback sees it, so a PAT pasted as
- * `https://ghp_xxx@host/...` (userinfo, not password — JGit's own redaction only strips the
+ * message is run through [Redactor.stripUrlUserinfo] before either callback sees it, so a PAT pasted as
+ * `https://<token>@host/...` (userinfo, not password — JGit's own redaction only strips the
  * password component) never reaches a [DomainError.GitError] and from there the UI/logs.
  */
 inline fun <T> runGitTransportOp(
@@ -302,24 +303,17 @@ fun deleteDirectoryContentsForRetry(dir: File) {
 }
 
 /**
- * Strips a URL's userinfo (`scheme://TOKEN@host/...`) — JGit's `TransportException` redacts the
- * password component but not a bare-userinfo credential (e.g. a PAT pasted as
- * `https://ghp_xxx@host/...`), so this must run before any transport-exception message reaches a
- * log or the UI. `@PublishedApi internal` (rather than plain `internal`) because [runGitTransportOp]
- * is a public inline function and must be able to call it.
- */
-@PublishedApi
-internal fun redactUrlUserinfo(message: String): String =
-    message.replace(Regex("""://[^/@\s]+@"""), "://")
-
-/**
- * Returns [e] with [redactUrlUserinfo] applied to its message, preserving [e] as the cause, or
- * [e] itself unchanged when there's nothing to redact (including a null message).
+ * Returns [e] with the URL userinfo stripped from its message, preserving [e] as the cause, or
+ * [e] itself unchanged when there's nothing to redact (including a null message). JGit's
+ * `TransportException` redacts the password component but not a bare-userinfo credential (a PAT
+ * pasted as `https://<token>@host/...`), so this must run before any transport-exception message
+ * reaches a log or the UI. `@PublishedApi internal` because [runGitTransportOp] is a public inline
+ * function and must be able to call it.
  */
 @PublishedApi
 internal fun redactedTransportException(e: Exception): Exception {
     val message = e.message ?: return e
-    val redacted = redactUrlUserinfo(message)
+    val redacted = Redactor.stripUrlUserinfo(message)
     return if (redacted == message) e else RuntimeException(redacted, e)
 }
 

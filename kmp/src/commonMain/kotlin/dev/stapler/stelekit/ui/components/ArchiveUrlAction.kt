@@ -4,11 +4,17 @@
 package dev.stapler.stelekit.ui.components
 
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.rememberCoroutineScope
 import dev.stapler.stelekit.domain.ArchiveResult
 import dev.stapler.stelekit.domain.WaybackMachineService
 import kotlinx.coroutines.launch
+
+/** Archive action for URLs in rendered blocks; null (default) disables right-click archiving. */
+@Suppress("CompositionLocalAllowlist") // set once by GraphContentActiveShell; threading it through BlockList/BlockRenderer would touch every page screen
+val LocalArchiveUrlAction = staticCompositionLocalOf<((url: String, blockUuid: String) -> Unit)?> { null }
 
 /**
  * Returns a callback that archives the given URL to the Wayback Machine and shows a
@@ -25,18 +31,22 @@ fun rememberArchiveUrlAction(
 ): ((url: String, blockUuid: String) -> Unit)? {
     if (waybackService == null) return null
     val scope = rememberCoroutineScope()
-    return { url, blockUuid ->
+    lateinit var archive: (url: String, blockUuid: String) -> Unit
+    archive = { url, blockUuid ->
         scope.launch {
-            snackbarHostState.showSnackbar("Archiving $url…")
+            // Not awaited: the in-flight notice must not block the request behind its own timeout.
+            val inFlight = launch { snackbarHostState.showSnackbar("Archiving $url…") }
             val result = waybackService.archiveUrl(url)
+            inFlight.cancel()
             result.fold(
-                ifLeft = { error ->
-                    snackbarHostState.showSnackbar("Archive failed: ${error.message}")
+                ifLeft = {
+                    val action = snackbarHostState.showSnackbar("Couldn't archive - Retry", actionLabel = "Retry")
+                    if (action == SnackbarResult.ActionPerformed) archive(url, blockUuid)
                 },
-                ifRight = { archive ->
-                    val archiveUrl = when (archive) {
-                        is ArchiveResult.Success -> archive.archiveUrl
-                        is ArchiveResult.AlreadyArchived -> archive.archiveUrl
+                ifRight = { archived ->
+                    val archiveUrl = when (archived) {
+                        is ArchiveResult.Success -> archived.archiveUrl
+                        is ArchiveResult.AlreadyArchived -> archived.archiveUrl
                     }
                     onBlockContentUpdate(blockUuid, " [archived]($archiveUrl)")
                     snackbarHostState.showSnackbar("Archived: $archiveUrl")
@@ -44,4 +54,5 @@ fun rememberArchiveUrlAction(
             )
         }
     }
+    return archive
 }

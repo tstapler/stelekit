@@ -42,6 +42,7 @@ kt_jvm_test(
             "**/screenshots/**",
             # Mermaid engine tests — own target below (mermaid_jvm_tests)
             "dev/stapler/stelekit/AllMermaidJvmTests.kt",
+            "dev/stapler/stelekit/AllMermaidJvmTestsCompletenessTest.kt",
             "dev/stapler/stelekit/ui/components/MermaidEngineActorTest.kt",
             "dev/stapler/stelekit/ui/components/MermaidJvmEngineTest.kt",
             "dev/stapler/stelekit/ui/components/MermaidRendererFallbackTest.kt",
@@ -95,6 +96,7 @@ kt_jvm_test(
         "//kmp/src/commonTest/kotlin:common_test_fixtures",
         "//kmp/src/commonTest/kotlin:git_testsupport",
         "//kmp/src/commonTest/kotlin:merge_fixtures",
+        "//kmp/src/commonTest/kotlin:observable_effect_jvm",
         ":graph_content_wiring_test_sources_as_resources",
         "@maven//:com_google_zxing_core",
         "@maven//:io_ktor_ktor_client_mock_jvm",
@@ -118,6 +120,7 @@ kt_jvm_test(
     name = "mermaid_jvm_tests",
     srcs = [
         "dev/stapler/stelekit/AllMermaidJvmTests.kt",
+        "dev/stapler/stelekit/AllMermaidJvmTestsCompletenessTest.kt",
         "dev/stapler/stelekit/ui/components/MermaidEngineActorTest.kt",
         "dev/stapler/stelekit/ui/components/MermaidJvmEngineTest.kt",
         "dev/stapler/stelekit/ui/components/MermaidRendererFallbackTest.kt",
@@ -162,4 +165,14 @@ kt_jvm_test(
         "@maven//:org_jetbrains_kotlin_kotlin_test_junit",
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
     ],
+)
+
+# All jvmTest sources for TestPlacementAuditTest and TestHygieneAuditTest.
+# Bundled as classpath resources by //kmp/src/businessTest/kotlin:wiring_kmp_sources_as_resources so
+# the wiring and test-audit gates (businessTest/.../wiring, .../audit) can read sources under Bazel's
+# sandbox. A subdirectory with its own BUILD.bazel is not crossed by glob(); none exists here.
+filegroup(
+    name = "test_audit_sources",
+    srcs = glob(["**/*.kt"]),
+    visibility = ["//kmp/src/businessTest/kotlin:__pkg__"],
 )

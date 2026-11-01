@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.logging
 
+import dev.stapler.stelekit.security.Redactor
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -68,8 +69,10 @@ object LogManager {
         sink.close()
     }
 
-    fun addLog(entry: LogEntry) {
-        if (entry.level < minLevel) return
+    fun addLog(raw: LogEntry) {
+        if (raw.level < minLevel) return
+        // Buffer, sinks and stdout all get the redacted copy, so no caller can forget to redact.
+        val entry = raw.copy(message = Redactor.redact(raw.message))
 
         // In-memory buffer for the Logs screen
         val currentLogs = _logs.value.toMutableList()
@@ -80,7 +83,7 @@ object LogManager {
         _logs.value = currentLogs
 
         // Format once, send to all sinks
-        val formatted = formatLogEntry(entry)
+        val formatted = Redactor.redact(formatLogEntry(entry))
 
         // Always print to stdout
         println(formatted)

@@ -60,7 +60,7 @@ private data class PickerMediaItemsResponse(
 class PhotosPickerApiClient(
     private val authClient: GoogleAuthClient,
     private val httpClient: HttpClient,
-) {
+) : PhotosPickerPort {
 
     // ── Google Photos Picker API ──────────────────────────────────────────────
 
@@ -76,7 +76,7 @@ class PhotosPickerApiClient(
      * NOTE: Uses the NEW Photos Picker API (photospicker.googleapis.com), NOT the
      * deprecated photoslibrary.readonly scope which was revoked March 2025.
      */
-    suspend fun createPhotosPickerSession(): Either<DomainError, PhotosPickerSession> {
+    override suspend fun createPhotosPickerSession(): Either<DomainError, PhotosPickerSession> {
         val token = authClient.getValidToken().getOrNull()
             ?: return DomainError.NetworkError.HttpError(
                 statusCode = 401,
@@ -112,7 +112,7 @@ class PhotosPickerApiClient(
     /**
      * Poll a Photos Picker [sessionId] to check if the user has made their selection.
      */
-    suspend fun getPickerSession(sessionId: String): Either<DomainError, PhotosPickerSession> {
+    override suspend fun getPickerSession(sessionId: String): Either<DomainError, PhotosPickerSession> {
         val token = authClient.getValidToken().getOrNull()
             ?: return DomainError.NetworkError.HttpError(
                 statusCode = 401,
@@ -153,7 +153,7 @@ class PhotosPickerApiClient(
      * @param baseUrl The temporary download URL from the picker session media item.
      * @param mediaItemId The stable media item ID to store for future reference.
      */
-    suspend fun downloadPickerMedia(
+    override suspend fun downloadPickerMedia(
         baseUrl: String,
         mediaItemId: String,
     ): Either<DomainError, ByteArray> {
@@ -197,7 +197,7 @@ class PhotosPickerApiClient(
      *
      * Endpoint: GET https://photospicker.googleapis.com/v1/mediaItems?sessionId={id}
      */
-    suspend fun listPickerMediaItems(sessionId: String): Either<DomainError, List<Pair<String, String>>> {
+    override suspend fun listPickerMediaItems(sessionId: String): Either<DomainError, List<Pair<String, String>>> {
         val token = authClient.getValidToken().getOrNull()
             ?: return DomainError.NetworkError.HttpError(
                 statusCode = 401,
@@ -238,7 +238,7 @@ class PhotosPickerApiClient(
      * Delete a Photos Picker session after import is complete.
      * Sessions expire automatically but explicit deletion is good practice.
      */
-    suspend fun deletePickerSession(sessionId: String): Either<DomainError, Unit> {
+    override suspend fun deletePickerSession(sessionId: String): Either<DomainError, Unit> {
         val token = authClient.getValidToken().getOrNull()
             ?: return DomainError.NetworkError.HttpError(statusCode = 401, message = "Not authenticated").left()
 

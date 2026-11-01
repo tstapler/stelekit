@@ -3,6 +3,8 @@
 
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.security.Redactor
+
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
@@ -102,5 +104,5 @@ class BranchRepairService(
         append("Nothing was pulled.")
     }
 
-    private fun stripUserInfo(url: String): String = redactSecrets(url)
+    private fun stripUserInfo(url: String): String = Redactor.redactGitMessage(url)
 }

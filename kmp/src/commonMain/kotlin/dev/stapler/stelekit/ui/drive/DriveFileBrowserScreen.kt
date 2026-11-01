@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -89,14 +90,20 @@ fun DriveFileBrowserScreen(
 
         when {
             state.isLoading -> {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
                     CircularProgressIndicator()
+                    Spacer(Modifier.height(12.dp))
+                    Text("Loading…", style = MaterialTheme.typography.bodyMedium)
                 }
             }
 
             state.error != null -> {
                 DriveErrorState(
-                    message = state.error ?: "Unknown error",
+                    message = state.error ?: LOAD_FAILED_MESSAGE,
                     onRetry = { viewModel.reload() },
                 )
             }
@@ -104,7 +111,7 @@ fun DriveFileBrowserScreen(
             state.files.isEmpty() -> {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
-                        text = "This folder is empty.",
+                        text = "No files",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -226,7 +233,7 @@ private fun DriveErrorState(
         )
         Spacer(modifier = Modifier.padding(8.dp))
         TextButton(onClick = onRetry) {
-            Text("Try again")
+            Text("Retry")
         }
     }
 }

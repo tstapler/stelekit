@@ -90,6 +90,7 @@ class AssetMoveService(
             newFilePath = newFilePath,
             oldRelativePath = asset.relativePath,
             newRelativePath = newRelativePath,
+            writeActor = writeActor,
         )
 
         // 2. Rename file
@@ -121,7 +122,7 @@ class AssetMoveService(
         }
 
         // 5. Delete WAL entry
-        walId?.let { deleteWalEntry(it) }
+        walId?.let { deleteWalEntry(it, writeActor) }
 
         return dbResult
     }
@@ -195,7 +196,7 @@ class AssetMoveService(
                 } else {
                     assetRepository.updateFilePath(uuid, newFilePath, newRelativePath)
                 }
-                deleteWalEntry(id)
+                deleteWalEntry(id, writeActor)
             }
             !oldExists && newExists -> {
                 // Move already completed; just update DB and clear WAL
@@ -205,7 +206,7 @@ class AssetMoveService(
                 } else {
                     assetRepository.updateFilePath(uuid, newFilePath, newRelativePath)
                 }
-                deleteWalEntry(id)
+                deleteWalEntry(id, writeActor)
             }
             oldExists && newExists -> {
                 // Ambiguous — log warning, do NOT delete WAL row
@@ -214,7 +215,7 @@ class AssetMoveService(
             else -> {
                 // Both absent — file gone; clean up WAL row
                 logger.warn("WAL replay: neither old nor new file exists for move id=$id; cleaning WAL row")
-                deleteWalEntry(id)
+                deleteWalEntry(id, writeActor)
             }
         }
     }
@@ -226,21 +227,34 @@ class AssetMoveService(
         newFilePath: String,
         oldRelativePath: String,
         newRelativePath: String,
+        writeActor: DatabaseWriteActor?,
     ): Long? {
         val queries = restrictedQueries ?: run {
             logger.warn("WAL disabled — restrictedQueries is null; crash recovery unavailable for this move")
             return null
         }
         return try {
-            queries.insertPendingMove(
-                asset_uuid = assetUuid,
-                old_file_path = oldFilePath,
-                new_file_path = newFilePath,
-                old_relative_path = oldRelativePath,
-                new_relative_path = newRelativePath,
-                created_at_ms = Clock.System.now().toEpochMilliseconds(),
-            )
-            queries.lastInsertRowId()
+            var rowId: Long? = null
+            val insert: suspend () -> Either<DomainError, Unit> = {
+                queries.insertPendingMove(
+                    asset_uuid = assetUuid,
+                    old_file_path = oldFilePath,
+                    new_file_path = newFilePath,
+                    old_relative_path = oldRelativePath,
+                    new_relative_path = newRelativePath,
+                    created_at_ms = Clock.System.now().toEpochMilliseconds(),
+                )
+                // last_insert_rowid() is per-connection (wrong on a pooled driver) and its helper cannot be
+                // cast to Query<Long>; the WAL table holds a handful of rows, so look the row up instead.
+                rowId = queries.rawQueries.selectAllPendingMoves().executeAsList()
+                    .lastOrNull { it.asset_uuid == assetUuid && it.old_file_path == oldFilePath && it.new_file_path == newFilePath }
+                    ?.id
+                Unit.right()
+            }
+            // Through the actor so the WAL row serialises with every other write; the row id is read
+            // inside the same actor operation as the insert.
+            if (writeActor != null) writeActor.execute { insert() }.onLeft { throw IllegalStateException(it.message) } else insert()
+            rowId
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -250,10 +264,14 @@ class AssetMoveService(
     }
 
     @OptIn(DirectSqlWrite::class)
-    private suspend fun deleteWalEntry(id: Long) {
+    private suspend fun deleteWalEntry(id: Long, writeActor: DatabaseWriteActor?) {
         val queries = restrictedQueries ?: return
         try {
-            queries.deletePendingMove(id)
+            val delete: suspend () -> Either<DomainError, Unit> = {
+                queries.deletePendingMove(id)
+                Unit.right()
+            }
+            if (writeActor != null) writeActor.execute { delete() }.onLeft { throw IllegalStateException(it.message) } else delete()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

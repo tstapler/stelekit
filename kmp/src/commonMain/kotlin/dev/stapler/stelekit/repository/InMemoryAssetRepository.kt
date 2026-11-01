@@ -90,6 +90,14 @@ class InMemoryAssetRepository : AssetRepository {
         return Unit.right()
     }
 
+    override suspend fun getIndexedFilePaths(filePaths: List<String>): Either<DomainError, Set<String>> {
+        val wanted = filePaths.toHashSet()
+        return store.value.values.mapNotNullTo(HashSet()) { it.filePath.takeIf { p -> p in wanted } }.right()
+    }
+
+    override suspend fun findUuidByContentHash(contentHash: String): Either<DomainError, AssetUuid?> =
+        store.value.values.firstOrNull { it.contentHash == contentHash }?.uuid.right()
+
     override suspend fun updateFilePath(
         uuid: AssetUuid,
         filePath: String,

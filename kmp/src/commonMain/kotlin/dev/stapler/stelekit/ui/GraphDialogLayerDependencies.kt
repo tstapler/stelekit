@@ -56,6 +56,8 @@ data class SettingsDialogDeps(
     val googleAuthError: String? = null,
     val onConnectGoogle: (() -> Unit)? = null,
     val onDisconnectGoogle: (() -> Unit)? = null,
+    /** True when this build exposes the Drive browser; adds "Browse Drive" to the Google Account settings. */
+    val driveBrowseAvailable: Boolean = false,
     val tagSettings: TagSettings? = null,
     val hasLlmKey: Boolean = false,
     // web-local-folder-livesync (Task 3.1.1c): null/NotApplicable/false on JVM/Android/iOS, which
@@ -78,6 +80,10 @@ data class SettingsDialogDeps(
     val hotkeyComboLabel: String? = null,
     val captureTargetSettings: dev.stapler.stelekit.capture.CaptureTargetSettings? = null,
     val captureGraphs: List<dev.stapler.stelekit.model.GraphInfo> = emptyList(),
+    // Interim Settings > Plugins "Asset indexing" row (Task 4.1d); null hides it.
+    val assetIndexing: dev.stapler.stelekit.asset.AssetIndexingController? = null,
+    /** Scheduled-sync switch, interval and status; null hides the Settings section (no git on this platform). */
+    val scheduledSync: dev.stapler.stelekit.ui.components.settings.ScheduledSyncSettingsState? = null,
 )
 
 /**

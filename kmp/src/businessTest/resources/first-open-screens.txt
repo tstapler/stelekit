@@ -1,0 +1,18 @@
+# Screens FirstOpenSmokeTest (androidApp/src/test) must open from MainActivity (plan Task 1.3c).
+# Each unit appends the screens it adds in its own PR and adds the same name to FIRST_OPEN_SCREENS in
+# FirstOpenSmokeTest; FirstOpenSmokeCatalogTest fails a screen listed here that the test omits.
+#
+# Not listed yet, though the plan names them for U1: Settings > Git sync, Settings > Plugins and Logs.
+# Their entry points are a Dialog / DropdownMenu window; under Robolectric those windows were not
+# reachable by semantics queries (verified: opening them left the root tree unchanged). Later units
+# that add a screen on those surfaces should first make popup windows queryable in the harness.
+# Console (U3) is not listed: it is reachable only from Settings > Developer (a Dialog) or the overflow
+# menu (a DropdownMenu), both unreachable here, and developer mode is off on a first open. Its first-open
+# check is ConsoleScreenRetentionTest / ConsoleEntryPointTest (androidUnitTest), which compose the screen
+# and the real console setup directly. Close this gap when the harness can query popup windows.
+# Drive (U13) is not listed: "Browse Drive" lives in Settings > Google Account (a Dialog, unreachable here),
+# the section is absent in release variants, and sign-in needs the owner's OAuth device pass (plan item 12.5).
+# Its first-render check is DriveEntryPointTest (androidUnitTest), which composes the same
+# DriveBrowserRoute that ScreenRouter mounts, over a fake client.
+# Planned additions: Assets search/empty state (U10).
+Assets browser

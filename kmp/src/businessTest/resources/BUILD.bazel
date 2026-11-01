@@ -1,0 +1,7 @@
+# Data files read by the wiring gates (WiringInputs.dataFile). business_tests globs only **/*.kt,
+# so without this bundle they would be invisible under Bazel (Task 1.1f).
+filegroup(
+    name = "business_test_data",
+    srcs = glob(["*.txt"]),
+    visibility = ["//kmp/src/businessTest/kotlin:__pkg__"],
+)

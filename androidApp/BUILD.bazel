@@ -26,3 +26,18 @@ android_binary(
     deps = ["//kmp/src/androidMain/kotlin:android_main"],
     visibility = ["//visibility:public"],
 )
+
+# Sources bundled as classpath resources by //kmp/src/businessTest/kotlin:wiring_androidapp_sources_as_resources
+# so WiringCompletenessTest can read the Android composition roots (MainActivity.kt,
+# SteleKitApplication.kt) and the test audits can read androidApp/src/test under Bazel's sandbox.
+filegroup(
+    name = "wiring_main_sources",
+    srcs = glob(["src/main/**/*.kt"]),
+    visibility = ["//kmp/src/businessTest/kotlin:__pkg__"],
+)
+
+filegroup(
+    name = "wiring_test_sources",
+    srcs = glob(["src/test/**/*.kt"]),
+    visibility = ["//kmp/src/businessTest/kotlin:__pkg__"],
+)

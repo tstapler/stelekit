@@ -78,6 +78,10 @@ class GitSyncService(
     lfsGuardCoordinator: LfsGuardCoordinator? = null,
     /** Connectivity probe; defaults to [networkMonitor]. Tests inject one because the JVM monitor pings 8.8.8.8. */
     private val isOnline: () -> Boolean = { networkMonitor.isOnline },
+    /** Extra context for the periodic-sync job only; tests inject a virtual-time dispatcher here. */
+    private val periodicSyncContext: kotlin.coroutines.CoroutineContext = kotlin.coroutines.EmptyCoroutineContext,
+    /** Wall-clock epoch millis for scheduled-sync bookkeeping; tests inject a fake. */
+    private val wallClockMs: () -> Long = { Clock.System.now().toEpochMilliseconds() },
 ) {
     private val logger = Logger("GitSyncService")
     private val markerGuard = ConflictMarkerGuard(fileSystem)
@@ -194,7 +198,18 @@ class GitSyncService(
         }
     }
 
-    @kotlin.concurrent.Volatile private var periodicSyncJob: Job? = null
+    @kotlin.concurrent.Volatile private var periodicGraphId: String = graphId
+    private val periodicDriver = PeriodicSyncDriver(
+        tick = { refreshLocalStatus(periodicGraphId); fetchOnly(periodicGraphId).toTickOutcome() },
+        scope = scope, clock = wallClockMs, isBusy = { gitSyncBusyCounter.isBusy.value },
+        label = graphId, launchContext = periodicSyncContext,
+    )
+
+    /** Observable state of the scheduled-sync loop (last check, next check, pause); see [PeriodicSyncDriver]. */
+    val scheduledSyncStatus: StateFlow<ScheduledSyncStatus> get() = periodicDriver.status
+
+    /** Runs one scheduled-sync tick now, even while paused; success clears the pause. */
+    suspend fun resumeScheduledSync() = periodicDriver.resume()
 
     /**
      * Story 3.4.2: the pending auto-retry scheduled by [scheduleRateLimitRetry] after a
@@ -748,23 +763,13 @@ class GitSyncService(
      * Starts a periodic sync loop that calls [fetchOnly] every [intervalMinutes] minutes.
      * Cancels any existing periodic sync before starting.
      */
-    fun startPeriodicSync(graphId: String, intervalMinutes: Int) {
-        stopPeriodicSync()
-        if (intervalMinutes <= 0) return
-        periodicSyncJob = scope.launch {
-            while (true) {
-                delay(intervalMinutes * 60_000L)
-                refreshLocalStatus(graphId)
-                fetchOnly(graphId)
-            }
-        }
+    fun startPeriodicSync(graphId: String, intervalMinutes: Int, immediateFirstTick: Boolean = false) {
+        periodicGraphId = graphId
+        periodicDriver.start(intervalMinutes, immediateFirstTick)
     }
 
     /** Cancels the periodic sync loop without shutting down the service. */
-    fun stopPeriodicSync() {
-        periodicSyncJob?.cancel()
-        periodicSyncJob = null
-    }
+    fun stopPeriodicSync() = periodicDriver.stop()
 
     /**
      * Shuts down this service, cancelling all coroutines — including any pending

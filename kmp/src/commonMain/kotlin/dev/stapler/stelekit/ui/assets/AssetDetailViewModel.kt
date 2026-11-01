@@ -39,6 +39,8 @@ data class AssetDetailUiState(
     val asset: AssetEntry? = null,
     val isLoading: Boolean = true,
     val error: String? = null,
+    val isMoving: Boolean = false,
+    val moveError: String? = null,
 )
 
 class AssetDetailViewModel(
@@ -48,6 +50,8 @@ class AssetDetailViewModel(
     private val blockRepository: BlockRepository = InMemoryBlockRepository(),
     private val writeActor: DatabaseWriteActor? = null,
     private val graphPath: String = "",
+    /** Moves the asset into an `assets/` subfolder; null hides the Move action. */
+    private val mover: (suspend (AssetEntry, String) -> Either<DomainError, Unit>)? = null,
 ) : RememberObserver {
     private val logger = Logger("AssetDetailViewModel")
     private val scope = CoroutineScope(
@@ -61,7 +65,35 @@ class AssetDetailViewModel(
     private val _uiState = MutableStateFlow(AssetDetailUiState())
     val uiState: StateFlow<AssetDetailUiState> = _uiState.asStateFlow()
 
+    /** Subfolders the Move action offers (those `AssetMoveService` accepts). */
+    val moveTargets: List<String> = if (mover == null) emptyList() else MOVE_SUBFOLDERS
+
+    // Atomic claim so a double tap on Move starts exactly one move.
+    private val moveClaimed = MutableStateFlow(false)
+
     init { load() }
+
+    fun moveTo(subfolder: String) {
+        val move = mover ?: return
+        val asset = _uiState.value.asset ?: return
+        if (subfolder !in MOVE_SUBFOLDERS || !moveClaimed.compareAndSet(false, true)) return
+        _uiState.value = _uiState.value.copy(isMoving = true, moveError = null)
+        scope.launch {
+            try {
+                move(asset, subfolder).fold(
+                    ifLeft = { err -> _uiState.value = _uiState.value.copy(moveError = err.message) },
+                    ifRight = { },
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                _uiState.value = _uiState.value.copy(moveError = e.message ?: "Move failed")
+            } finally {
+                _uiState.value = _uiState.value.copy(isMoving = false)
+                moveClaimed.value = false
+            }
+        }
+    }
 
     private fun load() {
         loadJob?.cancel()
@@ -74,7 +106,7 @@ class AssetDetailViewModel(
                             _uiState.value = AssetDetailUiState(isLoading = false, error = err.message)
                         },
                         ifRight = { asset ->
-                            _uiState.value = AssetDetailUiState(asset = asset, isLoading = false)
+                            _uiState.value = _uiState.value.copy(asset = asset, isLoading = false, error = null)
                         },
                     )
                 }
@@ -166,6 +198,10 @@ class AssetDetailViewModel(
     private suspend fun saveBlock(block: Block): Either<DomainError, Unit> {
         val actor = writeActor
         return if (actor != null) actor.saveBlock(block) else blockRepository.saveBlock(block)
+    }
+
+    companion object {
+        val MOVE_SUBFOLDERS = listOf("images", "pdfs", "audio", "video", "documents", "files")
     }
 
     override fun onRemembered() {}

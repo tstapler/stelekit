@@ -33,6 +33,12 @@ interface AssetRepository {
     suspend fun countOrphanedAssets(): Either<DomainError, Long>
     suspend fun getDistinctTags(): Either<DomainError, List<String>>
 
+    /** Subset of [filePaths] that already have a row. Callers chunk to at most 500 paths. */
+    suspend fun getIndexedFilePaths(filePaths: List<String>): Either<DomainError, Set<String>>
+
+    /** Uuid of an indexed asset whose content hash equals [contentHash], or null. */
+    suspend fun findUuidByContentHash(contentHash: String): Either<DomainError, AssetUuid?>
+
     @DirectRepositoryWrite
     suspend fun saveAsset(asset: AssetEntry): Either<DomainError, Unit>
     @DirectRepositoryWrite

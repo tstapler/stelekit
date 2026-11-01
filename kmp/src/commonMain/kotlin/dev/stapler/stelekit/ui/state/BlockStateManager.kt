@@ -15,6 +15,7 @@ import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.PageRepository
 import dev.stapler.stelekit.ui.screens.FormatAction
 import dev.stapler.stelekit.util.FractionalIndexing
+import dev.stapler.stelekit.domain.RawBlock
 import dev.stapler.stelekit.util.UuidGenerator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -351,16 +352,56 @@ class BlockStateManager(
      * Triggers queueDiskSave. When the clipboard operation is CUT, originals are
      * deleted after a successful paste and the clipboard is cleared.
      */
-    @OptIn(DirectRepositoryWrite::class)
     override fun pasteBlocks(afterBlockUuid: BlockUuid): Job = scope.launch {
-        val clip = _blockClipboard.value
-        if (clip.isEmpty) return@launch
+        pasteClipboardBlocks(_blockClipboard.value, afterBlockUuid, replaceBlankTarget = false)
+    }
+
+    /**
+     * Pastes HTML-derived [rawBlocks] (from [dev.stapler.stelekit.domain.HtmlBlockConverter]) after
+     * [afterBlockUuid] without touching the block clipboard. Level-2 items nest under the preceding
+     * block; everything else becomes a sibling. A blank, childless target is replaced by the first
+     * pasted block rather than left behind as an empty row.
+     */
+    fun pasteHtmlBlocks(afterBlockUuid: BlockUuid, rawBlocks: List<RawBlock>): Job = scope.launch {
+        val target = findBlockOrNull(afterBlockUuid) ?: return@launch
+        val now = kotlin.time.Clock.System.now()
+        var lastTopLevel: Block? = null
+        var position: String? = null
+        val blocks = rawBlocks.map { raw ->
+            val isNested = raw.level >= 2 && lastTopLevel != null
+            val parent = if (isNested) lastTopLevel else null
+            if (!isNested) position = dev.stapler.stelekit.util.FractionalIndexing.generateKeyBetween(position, null)
+            Block(
+                uuid = BlockUuid(UuidGenerator.generateV7()),
+                pageUuid = target.pageUuid,
+                parentUuid = parent?.uuid,
+                content = raw.content.trim(),
+                level = if (isNested) 1 else 0,
+                position = if (isNested) "a0" else position!!,
+                createdAt = now,
+                updatedAt = now,
+            ).also { if (!isNested) lastTopLevel = it }
+        }
+        pasteClipboardBlocks(
+            BlockClipboard().withBlocks(blocks, ClipboardOperation.COPY, ""),
+            afterBlockUuid,
+            replaceBlankTarget = true,
+        )
+    }
+
+    @OptIn(DirectRepositoryWrite::class)
+    private suspend fun pasteClipboardBlocks(
+        clip: BlockClipboard,
+        afterBlockUuid: BlockUuid,
+        replaceBlankTarget: Boolean,
+    ) {
+        if (clip.isEmpty) return
 
         val pageUuidStr = _blocks.value.entries
             .find { (_, blocks) -> blocks.any { it.uuid == afterBlockUuid } }
-            ?.key ?: return@launch
+            ?.key ?: return
 
-        val afterBlock = _blocks.value[pageUuidStr]?.find { it.uuid == afterBlockUuid } ?: return@launch
+        val afterBlock = _blocks.value[pageUuidStr]?.find { it.uuid == afterBlockUuid } ?: return
         val allBlocks = _blocks.value[pageUuidStr] ?: emptyList()
         val before = takePageSnapshot(pageUuidStr)
 
@@ -417,7 +458,7 @@ class BlockStateManager(
         // BUG 4 fix: remove pending after write completes
         pendingNewBlockUuids.update { it - newUuids }
 
-        if (!success) return@launch  // BUG 5 fix: early exit on DB error
+        if (!success) return  // BUG 5 fix: early exit on DB error
 
         // 7. Update in-memory state and persist
         val repairedExisting = if (existingRightSibling != null && lastPastedRootNewUuid != null)
@@ -425,6 +466,17 @@ class BlockStateManager(
         else allBlocks
         _blocks.update { state -> state + (pageUuidStr to (repairedExisting + pastedBlocks)) }
         queueDiskSave(pageUuidStr)
+
+        if (replaceBlankTarget && afterBlock.content.isBlank() && allBlocks.none { it.parentUuid == afterBlock.uuid }) {
+            writeDeleteBlockStructural(afterBlock.uuid, afterBlock.pageUuid)
+                .onRight {
+                    _blocks.update { state ->
+                        state + (pageUuidStr to state[pageUuidStr].orEmpty().filter { it.uuid != afterBlock.uuid })
+                    }
+                    queueDiskSave(pageUuidStr)
+                }
+                .onLeft { logger.error("pasteClipboardBlocks: could not remove blank target: $it") }
+        }
 
         // Handle CUT: delete original blocks after successful paste
         if (clip.isCut) {

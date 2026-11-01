@@ -113,6 +113,28 @@ class SqlDelightAssetRepositoryContractTest {
     }
 
     @Test
+    fun `projected list queries match on ocr_text and auto_labels but never return them`() = runBlocking<Unit> {
+        val r = repo()
+        r.saveAsset(entry("a", tags = listOf("t")).copy(
+            autoLabels = listOf("sunrise"), ocrText = "Invoice 4821", cloudDescription = "desc",
+        ))
+
+        val byOcr = r.searchAssets("4821", 10, 0).first().getOrNull()!!.single()
+        val byLabel = r.searchAssets("sunrise", 10, 0).first().getOrNull()!!.single()
+        val unprocessed = r.getUnprocessedAssets(10, 0).first().getOrNull()!!.single()
+
+        for (row in listOf(byOcr, byLabel, unprocessed)) {
+            assertEquals("a", row.uuid.value)
+            assertTrue(row.autoLabels.isEmpty(), "auto_labels must not be materialized in list results")
+            assertNull(row.ocrText, "ocr_text must not be materialized in list results")
+            assertEquals(listOf("t"), row.tags)
+            assertEquals("desc", row.cloudDescription)
+        }
+        val full = r.getAssetByUuid(AssetUuid("a")).first().getOrNull()!!
+        assertEquals("Invoice 4821", full.ocrText, "point lookup still returns the full row")
+    }
+
+    @Test
     fun `unprocessed lifecycle - markMlProcessed and markMlFailed`() = runBlocking<Unit> {
         val r = repo()
         r.saveAsset(entry("a", importedAt = 1))
@@ -260,5 +282,29 @@ class SqlDelightAssetRepositoryContractTest {
         assertEquals(1L, r.countAssets().getOrNull())
         assertNotNull(r.get("a"))
         assertEquals(1L, r.get("a")!!.sizeBytes)
+    }
+
+    @Test
+    fun `getIndexedFilePaths returns only indexed paths, chunking past 500`() = runBlocking<Unit> {
+        val r = repo()
+        r.saveAsset(entry("a", path = "/g/assets/a.bin"))
+        val probe = (0 until 1200).map { "/g/assets/missing$it.bin" } + "/g/assets/a.bin"
+        assertEquals(setOf("/g/assets/a.bin"), r.getIndexedFilePaths(probe).getOrNull())
+    }
+
+    @Test
+    fun `findUuidByContentHash finds the row or null`() = runBlocking<Unit> {
+        val r = repo()
+        r.saveAsset(entry("a").copy(contentHash = "h1"))
+        assertEquals(AssetUuid("a"), r.findUuidByContentHash("h1").getOrNull())
+        assertNull(r.findUuidByContentHash("nope").getOrNull())
+    }
+
+    @Test
+    fun `hash and path lookups against a closed database return ReadFailed, not a throw`() = runBlocking<Unit> {
+        val r = repo()
+        driver!!.close()
+        assertTrue(r.getIndexedFilePaths(listOf("/g/assets/a.bin")).isLeft())
+        assertTrue(r.findUuidByContentHash("h1").isLeft())
     }
 }

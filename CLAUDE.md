@@ -504,6 +504,14 @@ profiling, SLO alerts). Test source sets:
 - `iosTest` — iOS-target tests
 - `wasmJsTest` — Web (WASM/JS) tests, only compiled when `-PenableJs=true`
 
+### Wiring and test-hygiene gates (businessTest, run under Gradle and Bazel)
+
+- `WiringCompletenessTest`: every implementation of a seam interface (`WiringAudit.SEAMS`) must be constructed (`Name(`) in a composition root (`WiringRoots`), or be listed in `kmp/src/businessTest/resources/wiring-allowlist.txt`. **A PR that wires or deletes a listed class deletes its allowlist line** (a constructed class that is still listed fails as stale). Entries expire 90 days after their date, two renewals max; `scripts/ci/reachability-baseline.txt` is the separate name-based scan input (CI job `reachability`) and shrinks in the same PR.
+- A new wired seam also adds a `wiring-catalog.txt` line (`Seam  EntryPointTest  effect:<label>`); the entry-point test drives `WiredAppFixture`/`DesktopWiredAppFixture` and calls `ObservableEffect.assert("<label>") { ... }` about runtime state.
+- A new screen adds its name to `first-open-screens.txt` and to `FIRST_OPEN_SCREENS` in `androidApp/.../FirstOpenSmokeTest.kt`.
+- `TestPlacementAuditTest` / `TestHygieneAuditTest`: a `jvmTest` file importing `androidx.compose.ui.test` needs `// jvmTest-reason: <pixels|desktop-only>`; no new `Thread.sleep`, `GlobalScope`, uncancelled `Dispatchers.IO` scope or real-clock `delay`. Existing offenders are in `test-placement-baseline.txt` / `test-hygiene-baseline.txt`, which may only shrink (a fixed file must be removed from the baseline).
+- Sources for these gates are bundled as Bazel resources by `//kmp/src/businessTest/kotlin:wiring_*_as_resources`; a new source set that must be audited needs a `filegroup` there.
+
 ### Testing best practices
 
 - **A Compose-behavior test (dialog gating, text/content assertions, click handlers) that doesn't

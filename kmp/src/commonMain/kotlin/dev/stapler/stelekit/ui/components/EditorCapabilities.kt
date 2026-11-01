@@ -29,9 +29,27 @@ data class EditorCapabilities(
      */
     val onPasteImage: ((editingBlockUuid: BlockUuid?) -> Boolean)? = null,
     /**
+     * Handles Ctrl/Cmd+V when the clipboard holds multi-block HTML (a list, several paragraphs).
+     * Returns true if consumed; false lets the ordinary text paste run. Null disables it.
+     */
+    val onPasteHtml: ((editingBlockUuid: BlockUuid?) -> Boolean)? = null,
+    /**
      * Triggers a camera capture and inserts the resulting IMAGE_ANNOTATION block on the
      * current page below the editing cursor. Null hides the camera toolbar button.
      * Only non-null on Android when SensorModule.cameraProvider.isAvailable is true.
      */
     val onCaptureImage: (() -> Unit)? = null,
+    /**
+     * "From Google Photos" toolbar entry: imports the photos the owner picks and inserts them at the
+     * editing block. Null (default, and every release build until the OAuth device pass) hides it.
+     */
+    val googlePhotos: GooglePhotosEntry? = null,
+)
+
+/** Signed-in state, import progress and the import action behind [EditorCapabilities.googlePhotos]. */
+class GooglePhotosEntry(
+    val signedIn: Boolean,
+    val status: dev.stapler.stelekit.platform.google.GooglePhotosImportState,
+    val onImport: (editingBlockUuid: BlockUuid) -> Unit,
+    val onDismissFailure: () -> Unit = {},
 )

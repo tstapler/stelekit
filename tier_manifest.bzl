@@ -18,7 +18,6 @@ TIER_1_PACKAGES = [
     "logging",
     "parsing",
     "resilience",
-    "rtc",
     "service",
     "stats",
 ]
@@ -31,7 +30,6 @@ TIER_2_PACKAGES = [
     "cache",
     "coroutines",
     "util",
-    "command",
     "clipboard",
     "flashcard",
     "loader",

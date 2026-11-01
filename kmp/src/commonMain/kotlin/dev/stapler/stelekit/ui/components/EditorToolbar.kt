@@ -108,6 +108,18 @@ fun EditorToolbar(
                 { attachFn.invoke(targetUuid) }
             } else null
         },
+        googlePhotos = run {
+            val entry = capabilities.googlePhotos
+            val targetUuid = editingBlockUuid
+            if (entry != null && targetUuid != null) {
+                GooglePhotosToolbarState(
+                    signedIn = entry.signedIn,
+                    status = entry.status,
+                    onImport = { entry.onImport(targetUuid) },
+                    onDismissFailure = entry.onDismissFailure,
+                )
+            } else null
+        },
         onSuggestTags = run {
             val suggestFn = onSuggestTags
             val targetUuid = editingBlockUuid

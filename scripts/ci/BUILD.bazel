@@ -1,0 +1,1 @@
+exports_files(["reachability-baseline.txt"], visibility = ["//kmp/src/businessTest/kotlin:__pkg__"])

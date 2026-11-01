@@ -13,3 +13,9 @@ class NoOpPdfTextExtractor : PdfTextExtractor {
     override suspend fun extractText(absoluteFilePath: String): Either<DomainError, String> =
         "".right()
 }
+
+/** The desktop default (OD-3: no Tesseract). [defaultAssetPlugins] builds no OCR plugin for it. */
+class NoOpTextRecognizer : TextRecognizer {
+    override suspend fun recognize(imageBytes: ByteArray): Either<DomainError, String> =
+        "".right()
+}

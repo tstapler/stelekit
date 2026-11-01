@@ -3,6 +3,8 @@
 
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.security.Redactor
+
 import dev.stapler.stelekit.git.model.GitConfig
 import kotlinx.coroutines.CancellationException
 import org.eclipse.jgit.api.Git
@@ -34,7 +36,7 @@ internal fun describeGitRefs(
     }
     section("remote url") {
         val raw = repo.config.getString("remote", config.remoteName, "url") ?: "<unset>"
-        appendLine("${config.remoteName}.url=${redactSecrets(raw)}")
+        appendLine("${config.remoteName}.url=${Redactor.redactGitMessage(raw)}")
     }
     section("configured ref") {
         val resolved = repo.exactRef("${Constants.R_REMOTES}$configuredRef")?.objectId
@@ -71,6 +73,6 @@ private inline fun StringBuilder.section(title: String, body: StringBuilder.() -
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
-        appendLine("<failed: ${e::class.simpleName}: ${redactSecrets(e.message.orEmpty())}>")
+        appendLine("<failed: ${e::class.simpleName}: ${Redactor.redactGitMessage(e.message.orEmpty())}>")
     }
 }

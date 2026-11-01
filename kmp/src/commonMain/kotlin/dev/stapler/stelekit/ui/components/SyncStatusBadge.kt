@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.PauseCircle
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.CircularProgressIndicator
@@ -59,6 +60,8 @@ data class GitSyncStatus(
     val lastSyncAt: Long? = null,
     /** A branch repair is waiting for its first reviewed sync; shown in place of idle/success text. */
     val firstSyncReviewPending: Boolean = false,
+    /** Scheduled sync stopped after repeated failed checks; shown as an amber "Sync paused" chip. */
+    val scheduledSyncPaused: Boolean = false,
 )
 
 /**
@@ -88,6 +91,7 @@ fun SyncStatusBadge(
     onAuthError: (() -> Unit)? = null,
     onBranchRepair: (() -> Unit)? = null,
     onReviewFirstSync: (() -> Unit)? = null,
+    onOpenScheduledSyncSettings: (() -> Unit)? = null,
 ) {
     if (!isGitConfigured) {
         Box(modifier = modifier.padding(horizontal = 4.dp)) {
@@ -114,6 +118,7 @@ fun SyncStatusBadge(
             onAuthError = onAuthError,
             onBranchRepair = onBranchRepair,
             onReviewFirstSync = onReviewFirstSync,
+            onOpenScheduledSyncSettings = onOpenScheduledSyncSettings,
         )
 
         Spacer(modifier = Modifier.width(4.dp))
@@ -143,8 +148,15 @@ private fun SyncStateBadge(
     onAuthError: (() -> Unit)? = null,
     onBranchRepair: (() -> Unit)? = null,
     onReviewFirstSync: (() -> Unit)? = null,
+    onOpenScheduledSyncSettings: (() -> Unit)? = null,
 ) {
     val syncState = status.state
+    // Paused is a warning, not an error: it shows only over an otherwise-quiet badge, so a live
+    // sync, conflict or error state is never hidden behind it.
+    if (status.scheduledSyncPaused && (syncState is SyncState.Idle || syncState is SyncState.Success)) {
+        ScheduledSyncPausedChip(onOpenScheduledSyncSettings, modifier)
+        return
+    }
     val reviewPending = status.firstSyncReviewPending && onReviewFirstSync != null &&
         (syncState is SyncState.Idle || syncState is SyncState.Success || syncState is SyncState.LocalChangesPending)
     if (reviewPending) {
@@ -379,6 +391,26 @@ private fun SyncStateBadge(
                 )
             }
         }
+    }
+}
+
+/** Amber chip shown when scheduled sync paused itself after repeated failures; the pause icon differs in shape from the error icon. */
+@Composable
+private fun ScheduledSyncPausedChip(onOpen: (() -> Unit)?, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier
+            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+            .clickable { onOpen?.invoke() },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Default.PauseCircle,
+            contentDescription = "Sync paused - tap to open settings",
+            tint = Color(0xFFF59E0B), // amber-400
+            modifier = Modifier.size(16.dp),
+        )
+        Spacer(modifier = Modifier.width(2.dp))
+        Text(text = "Sync paused", style = MaterialTheme.typography.labelSmall, color = Color(0xFFF59E0B))
     }
 }
 

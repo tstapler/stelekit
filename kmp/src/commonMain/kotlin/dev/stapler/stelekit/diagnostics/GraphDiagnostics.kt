@@ -5,12 +5,12 @@ import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.db.LAST_NOTES_PATH_KEY
 import dev.stapler.stelekit.git.GitConfigRepository
 import dev.stapler.stelekit.git.GitRepository
-import dev.stapler.stelekit.git.redactSecrets
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.logging.LogManager
 import dev.stapler.stelekit.model.GraphInfo
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.Settings
+import dev.stapler.stelekit.security.Redactor
 import dev.stapler.stelekit.repository.RepositorySet
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
@@ -36,7 +36,7 @@ class GraphDiagnosticsCollector(
     private val gitRepository: GitRepository? = null,
 ) {
     suspend fun collect(): String = withContext(PlatformDispatcher.IO) {
-        buildString {
+        Redactor.redact(buildString {
             appendLine("# SteleKit graph diagnostics")
             appendLine("# WARNING: contains file and page names from your graph. Share only with trusted parties.")
             appendLine("generated: ${Clock.System.now()}")
@@ -51,7 +51,7 @@ class GraphDiagnosticsCollector(
                 appendGit(active)
             }
             appendLogTail()
-        }
+        })
     }
 
     // Diagnostics report the registry path itself, next to the notes path.
@@ -114,13 +114,13 @@ class GraphDiagnosticsCollector(
             return
         }
         appendGitConfig(config)
-        appendGitCall("status") { git.status(config).fold({ "error: ${redactSecrets(it.message)}" }, { s ->
+        appendGitCall("status") { git.status(config).fold({ "error: ${Redactor.redactGitMessage(it.message)}" }, { s ->
             "hasLocalChanges=${s.hasLocalChanges} modified=${s.modifiedFiles.size} untracked=${s.untrackedFiles.size}"
         }) }
         appendGitCall("detachedHead") { git.hasDetachedHead(config).toString() }
         appendGitCall("refs") { "\n" + git.describeRefs(config) }
         appendGitCall("log (last $GIT_LOG_ENTRIES)") {
-            git.log(config, GIT_LOG_ENTRIES).fold({ "error: ${redactSecrets(it.message)}" }, { commits ->
+            git.log(config, GIT_LOG_ENTRIES).fold({ "error: ${Redactor.redactGitMessage(it.message)}" }, { commits ->
                 commits.joinToString(prefix = "\n", separator = "\n") { c -> "${c.sha.take(9)} ${c.timestamp} ${c.shortMessage}" }
             })
         }
@@ -138,7 +138,7 @@ class GraphDiagnosticsCollector(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            "<failed: ${e::class.simpleName}: ${redactSecrets(e.message.orEmpty())}>"
+            "<failed: ${e::class.simpleName}: ${Redactor.redactGitMessage(e.message.orEmpty())}>"
         }
         appendLine("$label: $text")
     }

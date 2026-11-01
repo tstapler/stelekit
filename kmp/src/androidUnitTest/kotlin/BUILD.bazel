@@ -22,6 +22,8 @@ kt_android_library(
             # Roborazzi screenshot tests — no Bazel integration; kept in Gradle
             "**/*Roborazzi*.kt",
             "**/*Screenshot*.kt",
+            # Composes @Composable lambdas; this target has no Compose compiler plugin (Gradle-only)
+            "**/ArchiveUrlEntryPointTest.kt",
         ],
     ),
     custom_package = "dev.stapler.stelekit",
@@ -42,6 +44,8 @@ kt_android_library(
         "@maven//:androidx_compose_ui_ui_test_junit4",
         "@maven//:androidx_compose_ui_ui_test_manifest",
         "//kmp/src/commonTest/kotlin:git_testsupport_android",
+        "//kmp/src/commonTest/kotlin:fake_file_system_android",
+        "//kmp/src/commonTest/kotlin:observable_effect_android",
     ],
 )
 
@@ -57,4 +61,14 @@ android_local_test(
         "@maven//:org_robolectric_robolectric",
     ],
     visibility = ["//visibility:public"],
+)
+
+# All androidUnitTest sources for TestHygieneAuditTest and the catalog checks.
+# Bundled as classpath resources by //kmp/src/businessTest/kotlin:wiring_kmp_sources_as_resources so
+# the wiring and test-audit gates (businessTest/.../wiring, .../audit) can read sources under Bazel's
+# sandbox. A subdirectory with its own BUILD.bazel is not crossed by glob(); none exists here.
+filegroup(
+    name = "test_audit_sources",
+    srcs = glob(["**/*.kt"]),
+    visibility = ["//kmp/src/businessTest/kotlin:__pkg__"],
 )

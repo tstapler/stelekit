@@ -316,4 +316,22 @@ class GraphManagerUpdateGraphPathTest {
             )
         }
     }
+
+    @Test
+    fun `saveRegistry never persists an activeGraphId that the saved graph list does not contain`() = runTest {
+        val settings = RecordingSettings()
+        val ghost = GraphId("ghostghostghost0")
+        val seeded = GraphRegistry(activeGraphId = ghost)
+        settings.putString("graph_registry", Json.encodeToString(GraphRegistry.serializer(), seeded))
+        val graphManager = newManager(StubFileSystem(), settings)
+        settings.clearSaved()
+
+        graphManager.addGraph("/some/path")
+
+        assertTrue(settings.savedRegistries.isNotEmpty(), "addGraph saves the registry")
+        for (snapshot in settings.savedRegistries) {
+            val active = snapshot.activeGraphId ?: continue
+            assertTrue(snapshot.graphIds.contains(active), "dangling activeGraphId=$active persisted with graphs=${snapshot.graphIds}")
+        }
+    }
 }

@@ -405,9 +405,12 @@ class GraphManager(
     
     private fun saveRegistry() {
         val toSave = _graphRegistry.value.let { r ->
+            val persisted = r.graphs.filter { !it.isDemo }
             r.copy(
-                graphs = r.graphs.filter { !it.isDemo },
-                activeGraphId = if (r.activeGraphId == DEMO_GRAPH_ID) null else r.activeGraphId
+                graphs = persisted,
+                // A concurrent save (git detection) can land between updateGraphPath's re-key and switchGraph's
+                // activeGraphId update; never persist a pointer at an id the saved list no longer contains.
+                activeGraphId = r.activeGraphId?.takeIf { id -> id != DEMO_GRAPH_ID && persisted.any { it.id == id } },
             )
         }
         platformSettings.putString("graph_registry", json.encodeToString(toSave))
@@ -897,6 +900,7 @@ class GraphManager(
 
                     initHooks?.beforeCreateRepositorySet(id)
                     val dbUrl = driverFactory.getDatabaseUrl(id.value)
+                    RestoreRecovery.recoverBeforeOpen(dbUrl)
                     val factory = dev.stapler.stelekit.repository.RepositoryFactoryImpl(driverFactory, dbUrl, graphId = id.value)
                     val deviceInfo = try {
                         dev.stapler.stelekit.performance.getDeviceInfo()
