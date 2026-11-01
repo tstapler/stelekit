@@ -43,6 +43,10 @@ class CopyHostConfig(
     val canonicalize: (String) -> String = { it },
 )
 
+/** The same config with its runs reported to [tracker]. */
+fun CopyHostConfig.tracked(tracker: dev.stapler.stelekit.jobs.JobTracker): CopyHostConfig =
+    CopyHostConfig(storage, dev.stapler.stelekit.jobs.TrackedCopyRunHost(runHost, tracker), sourcePlatform, canonicalize)
+
 /** The copy pipeline for one app run; [router] is the same instance share uses when share is enabled. */
 class CopyServices(
     val service: PageMergeService,

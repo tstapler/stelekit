@@ -74,6 +74,7 @@ data class StelekitViewModelDependencies(
 
     // ── Git sync ─────────────────────────────────────────────────────────────
     val activeGitSyncService: StateFlow<GitSyncService?> = MutableStateFlow(null),
+    val jobTracker: dev.stapler.stelekit.jobs.JobTracker = dev.stapler.stelekit.jobs.NoJobTracker,
     val activeGraphIdProvider: () -> String? = { null },
     /**
      * The active graph's notes folder (repo root + wikiSubdir), resolved from the graph registry.

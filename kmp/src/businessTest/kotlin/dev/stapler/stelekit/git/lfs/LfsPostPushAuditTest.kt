@@ -117,7 +117,7 @@ class LfsPostPushAuditTest {
                 f.add(".")
                 f.commit("base")
                 val config = GitConfig(graphId = "g", repoRoot = RepoRoot(f.dir.absolutePath), wikiSubdir = null, authType = GitAuthType.NONE)
-                val repository = JvmGitRepository()
+                val repository = JvmGitRepository().apply { setLfsModeProvider { LfsMode.GUARD_ONLY } }
                 assertTrue(repository.push(config).isRight())
                 assertTrue(repository.lastPushLfsViolations.isEmpty())
 

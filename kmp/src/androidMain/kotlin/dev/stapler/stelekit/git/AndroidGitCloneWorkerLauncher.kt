@@ -14,6 +14,8 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.jobs.JobKind
+import dev.stapler.stelekit.jobs.JobTags
 import dev.stapler.stelekit.platform.security.CredentialAccess
 import dev.stapler.stelekit.platform.security.CredentialStore
 import kotlinx.coroutines.CancellationException
@@ -78,6 +80,9 @@ class AndroidGitCloneWorkerLauncher(
 
             val request = OneTimeWorkRequestBuilder<GitCloneWorker>()
                 .setInputData(inputData)
+                .addTag(JobTags.ANY)
+                .addTag(JobTags.kind(JobKind.GitClone))
+                .addTag(JobTags.title("Cloning ${graphDisplayName ?: "graph"}"))
                 .build()
 
             resumePeriodic = withContext(Dispatchers.IO) {

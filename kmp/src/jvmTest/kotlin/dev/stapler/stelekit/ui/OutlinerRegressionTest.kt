@@ -31,6 +31,10 @@ import org.junit.Test
  */
 class OutlinerRegressionTest {
 
+    private companion object {
+        const val HANG_GUARD_MS = 30_000L
+    }
+
     @get:Rule
     val composeTestRule = createComposeRule()
 
@@ -102,14 +106,19 @@ class OutlinerRegressionTest {
         }
 
         // 1. Verify page renders — formatJournalDate renders "Saturday, March 28, 2026"
-        composeTestRule.waitUntil(timeoutMillis = 5000) {
+        composeTestRule.waitUntil(timeoutMillis = HANG_GUARD_MS) {
             composeTestRule.onAllNodes(hasText("March 28", substring = true))
                 .fetchSemanticsNodes().isNotEmpty()
         }
         composeTestRule.onNodeWithText("March 28", substring = true).assertIsDisplayed()
 
-        // 2. Verify blocks render
-        composeTestRule.waitUntil(timeoutMillis = 5000) {
+        // 2. Verify blocks render. Block loading runs on the DB dispatcher, so wait on the
+        // ViewModel's completion signal (pumping frames) before asserting on the UI; the timeout
+        // is only a hang guard for a starved CI runner (JaCoCo + Xvfb), not a latency budget.
+        composeTestRule.waitUntil(timeoutMillis = HANG_GUARD_MS) {
+            viewModel.blocks.value[pageUuid]?.size == 2 && pageUuid !in viewModel.loadingPageUuids.value
+        }
+        composeTestRule.waitUntil(timeoutMillis = HANG_GUARD_MS) {
             composeTestRule.onAllNodes(hasText("Parent Block", substring = true))
                 .fetchSemanticsNodes().isNotEmpty()
         }

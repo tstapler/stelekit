@@ -5,7 +5,7 @@ package dev.stapler.stelekit.git.lfs
 
 import dev.stapler.stelekit.platform.Settings
 
-/** Per-graph Git LFS behaviour. Phase 1 only ever acts on the guard; `AUTO` is reserved for transfer support. */
+/** Per-graph Git LFS behaviour. `AUTO` converts and transfers LFS objects where the platform supports it. */
 enum class LfsMode {
     /** No LFS handling beyond the safety floor. */
     OFF,
@@ -40,8 +40,8 @@ class LfsModeSource(private val settings: Settings?) {
     }
 
     companion object {
-        /** Phase 1 owns the type but transfers nothing, so the default is the safety floor. */
-        val DEFAULT_MODE = LfsMode.GUARD_ONLY
+        /** Transfer where the platform supports it; [LfsModeResolver] collapses this to the safety floor elsewhere. */
+        val DEFAULT_MODE = LfsMode.AUTO
 
         fun key(graphId: String) = "git_lfs_mode_$graphId"
     }

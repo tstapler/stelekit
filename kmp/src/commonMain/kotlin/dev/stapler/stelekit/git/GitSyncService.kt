@@ -72,8 +72,8 @@ class GitSyncService(
      * callers that need to observe busy-ness externally (e.g. a quiesce strategy) should inject
      * a shared instance instead. */
     private val gitSyncBusyCounter: GitSyncBusyCounter = GitSyncBusyCounter(),
-    /** Platform capability for Git LFS; the default (no transfer support) keeps the safety-floor-only behaviour. */
-    lfsCapabilities: LfsPlatformCapabilities = LfsPlatformCapabilities.GUARD_ONLY_PLATFORM,
+    /** Platform capability for Git LFS; null derives it from [gitRepository] (transfer where the repository supports it). */
+    lfsCapabilities: LfsPlatformCapabilities? = null,
     /** Seam for the LFS safety floor. Tests inject one; production derives it from [settings] and [gitRepository]. */
     lfsGuardCoordinator: LfsGuardCoordinator? = null,
     /** Connectivity probe; defaults to [networkMonitor]. Tests inject one because the JVM monitor pings 8.8.8.8. */
@@ -85,7 +85,7 @@ class GitSyncService(
 ) {
     private val logger = Logger("GitSyncService")
     private val markerGuard = ConflictMarkerGuard(fileSystem)
-    private val lfsStaging = LfsGuardedStaging.create(gitRepository, fileSystem, settings, lfsCapabilities, lfsGuardCoordinator)
+    private val lfsStaging = LfsGuardedStaging.create(gitRepository, fileSystem, settings, graphId, lfsCapabilities, lfsGuardCoordinator)
     private val firstSyncConfirmation: FirstSyncConfirmation? = settings?.let { FirstSyncConfirmation(it) }
 
     /** Applies user-confirmed branch repairs; see [repairBranch]. */

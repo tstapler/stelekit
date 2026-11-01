@@ -28,6 +28,7 @@ error: T2
 export: T2
 flashcard: T2
 git: T1
+jobs: T2
 llm: T2
 loader: T2
 logging: T3

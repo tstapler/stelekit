@@ -59,7 +59,7 @@ class LfsRawBinaryNeverCommittedPropertyTest {
                 byPath.values.forEach { f.write(it.path, bytesFor(it.content)) }
                 val policy = LfsPathPolicy(AttributeRuleSet(listOf(GitAttributesParser.parse(attributes))))
                 val config = GitConfig(graphId = "g", repoRoot = RepoRoot(f.dir.absolutePath), wikiSubdir = null, authType = GitAuthType.NONE)
-                val repo = JvmGitRepository()
+                val repo = JvmGitRepository().apply { setLfsModeProvider { LfsMode.GUARD_ONLY } }
 
                 repo.stageSubdir(config, emptySet())
                 val commit = repo.commit(config, "generated")
