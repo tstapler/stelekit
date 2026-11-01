@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import dev.stapler.stelekit.capture.HotkeyRegistrationFailure
 import dev.stapler.stelekit.capture.createShareCaptureServices
 import dev.stapler.stelekit.capture.createTargetWriterRouter
+import dev.stapler.stelekit.ui.screens.copy.tracked
 import dev.stapler.stelekit.ui.screens.copy.CopyFlowController
 import dev.stapler.stelekit.ui.screens.copy.createCopyServices
 import dev.stapler.stelekit.ui.components.ShareInboxPanelHost
@@ -78,7 +79,11 @@ fun StelekitApp(
         onGraphManagerReady = deps.lifecycleHooks.onGraphManagerReady,
     )
     val graphManager = graphManagerState.graphManager
-    val crossGraph = rememberCrossGraphUi(graphManager, fileSystem, platformSettings, deps.captureDeps)
+    val inProcessJobs = remember { dev.stapler.stelekit.jobs.InProcessJobs() }
+    val backgroundJobs = remember(inProcessJobs, deps.platformIntegrations.backgroundJobs) {
+        dev.stapler.stelekit.jobs.CompositeJobRegistry(listOf(inProcessJobs, deps.platformIntegrations.backgroundJobs))
+    }
+    val crossGraph = rememberCrossGraphUi(graphManager, fileSystem, platformSettings, deps.captureDeps, inProcessJobs)
 
     if (permissionGateAndGraphInit(fileSystem, graphPath, graphManager, scope)) return
 
@@ -87,7 +92,7 @@ fun StelekitApp(
 
     if (emptyGraphGate(graphManager, fileSystem, scope, graphManagerState.activeGraphId)) return
 
-    MainGraphContentHost(fileSystem, deps, platformSettings, graphManagerState, notificationManager, crossGraph)
+    MainGraphContentHost(fileSystem, deps, platformSettings, graphManagerState, notificationManager, crossGraph, inProcessJobs, backgroundJobs)
 }
 
 /** The share inbox UI and the copy flow, both built over the one [dev.stapler.stelekit.merge.TargetWriterRouter]. */
@@ -105,6 +110,7 @@ private fun rememberCrossGraphUi(
     fileSystem: FileSystem,
     platformSettings: Settings,
     captureDeps: StelekitAppCaptureDeps,
+    jobTracker: dev.stapler.stelekit.jobs.JobTracker,
 ): CrossGraphUi {
     LaunchedEffect(platformSettings) {
         captureDeps.onCaptureSettingsReady?.invoke(dev.stapler.stelekit.capture.CaptureTargetSettings(platformSettings))
@@ -124,7 +130,7 @@ private fun rememberCrossGraphUi(
             val router = services?.router
                 ?: createTargetWriterRouter(graphManager, graphFileSystem, capabilities, host.canonicalize, captureDeps.activeWriteHooks)
             CopyFlowController(
-                services = createCopyServices(graphManager, graphFileSystem, router, capabilities, host, platformSettings),
+                services = createCopyServices(graphManager, graphFileSystem, router, capabilities, host.tracked(jobTracker), platformSettings),
                 graphRegistry = graphManager.graphRegistry,
                 switchTo = { graphManager.switchGraph(it) },
             )
@@ -152,6 +158,8 @@ private fun MainGraphContentHost(
     graphManagerState: GraphManagerState,
     notificationManager: NotificationManager,
     crossGraph: CrossGraphUi,
+    jobTracker: dev.stapler.stelekit.jobs.JobTracker,
+    backgroundJobs: dev.stapler.stelekit.jobs.BackgroundJobRegistry,
 ) {
     val shareUi = crossGraph.share
     val graphManager = graphManagerState.graphManager
@@ -186,6 +194,8 @@ private fun MainGraphContentHost(
                 copyFlow = crossGraph.copy,
                 hotkeyComboLabel = deps.captureDeps.hotkeyComboLabel,
                 activeWriteHooks = deps.captureDeps.activeWriteHooks,
+                jobTracker = jobTracker,
+                backgroundJobs = backgroundJobs,
             ))
         }
         ShareInboxHost(shareUi, graphManager)

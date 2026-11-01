@@ -36,17 +36,27 @@ class LfsGuardedStaging(
             gitRepository: GitRepository,
             fileSystem: FileSystem,
             settings: Settings?,
-            capabilities: LfsPlatformCapabilities,
+            graphId: String,
+            capabilities: LfsPlatformCapabilities?,
             guard: LfsGuardCoordinator?,
-        ) = LfsGuardedStaging(
-            gitRepository,
-            guard ?: LfsGuardCoordinator(
-                fileSystem = fileSystem,
-                modeSource = LfsModeSource(settings),
-                capabilities = capabilities,
-                delegated = gitRepository.guardsLfsInWritePath,
-            ),
-        )
+        ): LfsGuardedStaging {
+            // Null capabilities mean "whatever the repository can do": transfer on JVM and Android, safety floor elsewhere.
+            val effective = capabilities ?: LfsPlatformCapabilities(
+                transferSupported = gitRepository.lfsTransferSupported,
+                androidLfsEnabled = gitRepository.lfsTransferSupported,
+            )
+            val modeSource = LfsModeSource(settings)
+            gitRepository.setLfsModeProvider { id -> LfsModeResolver.effective(modeSource.get(id ?: graphId), effective) }
+            return LfsGuardedStaging(
+                gitRepository,
+                guard ?: LfsGuardCoordinator(
+                    fileSystem = fileSystem,
+                    modeSource = modeSource,
+                    capabilities = effective,
+                    delegated = gitRepository.guardsLfsInWritePath,
+                ),
+            )
+        }
     }
 
     /**
