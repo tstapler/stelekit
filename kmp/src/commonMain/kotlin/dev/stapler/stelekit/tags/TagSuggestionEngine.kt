@@ -2,6 +2,7 @@ package dev.stapler.stelekit.tags
 
 import arrow.core.Either
 import arrow.core.right
+import dev.stapler.stelekit.domain.LinkProtectedSpans
 import dev.stapler.stelekit.domain.PageNameIndex
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.llm.LlmProviderAvailability
@@ -48,7 +49,7 @@ class TagSuggestionEngine(
     fun directMatch(blockContent: String): List<TagSuggestion> {
         val matcher = pageNameIndex.matcher.value ?: return emptyList()
         // AhoCorasickMatcher.findAll() is the correct method name
-        return matcher.findAll(blockContent.lowercase())
+        return LinkProtectedSpans.findOutsideProtected(matcher, blockContent)
             .map { span ->
                 TagSuggestion(
                     term = span.canonicalName,

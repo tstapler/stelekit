@@ -55,7 +55,7 @@ class CaptureEnrichmentCoordinator(
         return try {
             val outcome = withTimeoutOrNull(budgetMs) {
                 withContext(Dispatchers.Default) {
-                    val raw = scanFn(text, matcher, pageNameIndex.vocabularyNames().toSet())
+                    val raw = scanFn(text, matcher, pageNameIndex.vocabularySet())
                     val (autoApply, confirmFirst) = partitionForAutoApply(raw.matchedPageNames)
                     val adjusted = if (confirmFirst.isEmpty()) {
                         raw

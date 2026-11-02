@@ -27,9 +27,15 @@ interface WaybackMachineService {
     suspend fun archiveUrl(url: String): Either<DomainError, ArchiveResult>
 }
 
+private val WAYBACK_SNAPSHOT = Regex("""(?i)^https?://(?:web\.)?archive\.org/web/""")
+
+internal fun isWaybackSnapshot(url: String): Boolean = WAYBACK_SNAPSHOT.containsMatchIn(url.trim())
+
 class KtorWaybackMachineService(private val httpClient: HttpClient) : WaybackMachineService {
 
     override suspend fun archiveUrl(url: String): Either<DomainError, ArchiveResult> {
+        // Saving a snapshot URL would archive the archive page itself.
+        if (isWaybackSnapshot(url)) return ArchiveResult.AlreadyArchived(url).right()
         return try {
             val encodedUrl = URLBuilder("https://web.archive.org/save/")
                 .appendPathSegments(url)
