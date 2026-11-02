@@ -34,6 +34,7 @@ import dev.stapler.stelekit.performance.DebugBuildConfig
 import dev.stapler.stelekit.performance.DebugMenuState
 import dev.stapler.stelekit.platform.*
 import dev.stapler.stelekit.ui.components.*
+import dev.stapler.stelekit.ui.components.settings.UpdatesNotificationSettingsState
 import dev.stapler.stelekit.vault.VaultManager
 import dev.stapler.stelekit.voice.VoiceCaptureState
 import kotlinx.coroutines.CoroutineScope
@@ -185,9 +186,17 @@ internal fun GraphContentActiveShell(
     val scheduledSyncSettings = rememberScheduledSyncSettingsState(
         inputs.gitSyncStack,
         onReviewFirstSync = viewModel::reviewFirstSyncFromSettings,
+        onOpenStatus = viewModel::openSyncStatusFromSettings,
     ) {
         viewModel.setSettingsVisible(false)
         viewModel.openGitSetup()
+    }
+
+    val notificationPermission = deps.platformIntegrations.notificationPermission
+    val updatesNotificationSettings = remember(platformSettings, notificationPermission) {
+        notificationPermission?.let {
+            UpdatesNotificationSettingsState(it, dev.stapler.stelekit.git.UpdatesNotificationPreference(platformSettings))
+        }
     }
 
     val stalenessChip = rememberStalenessChip(
@@ -450,6 +459,7 @@ internal fun GraphContentActiveShell(
                     assetIndexing = deps.assets?.indexing,
                     assetPlugins = deps.assets?.plugins,
                     scheduledSync = scheduledSyncSettings,
+                    updatesNotifications = updatesNotificationSettings,
                     voiceSettings = voiceSettings,
                     llmCredentialStore = llmCredentialStore,
                     llmProviderRegistry = llmProviderRegistry,

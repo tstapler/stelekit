@@ -185,6 +185,9 @@ data class AppState(
     // first sync of a repaired branch. Opened from the sync badge; neither auto-opens.
     val branchRepairVisible: Boolean = false,
     val firstSyncReviewVisible: Boolean = false,
+    /** The standalone sync status sheet (chip, Settings, banner and notification taps); [syncStatusNotice] is shown above it. */
+    val syncStatusSheetVisible: Boolean = false,
+    val syncStatusNotice: String? = null,
     /** The "unfinished merge" detail dialog (abort path) opened from the sync badge or the first-sync review. */
     val repairNeededVisible: Boolean = false,
     /** The mass-deletion typed-count confirm opened from the sync badge or the first-sync review. */

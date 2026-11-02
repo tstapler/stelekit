@@ -116,6 +116,8 @@ kt_jvm_library(
         "dev/stapler/stelekit/git/SyncNotificationLogicTest.kt",
         "dev/stapler/stelekit/git/SyncSafetyConfirmTest.kt",
         "dev/stapler/stelekit/git/SyncStalenessStoreTest.kt",
+        "dev/stapler/stelekit/git/SyncStatusSheetModelTest.kt",
+        "dev/stapler/stelekit/git/UpdatesNotificationToggleTest.kt",
         "dev/stapler/stelekit/git/lfs/GitAttributesMatcherPropertyTest.kt",
         "dev/stapler/stelekit/git/lfs/GitAttributesMatcherTest.kt",
         "dev/stapler/stelekit/git/lfs/GitAttributesParserTest.kt",

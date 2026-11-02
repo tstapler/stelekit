@@ -96,6 +96,8 @@ data class StelekitAppPlatformIntegrations(
      * say that closed-app checks are limited. Null means the platform has none to report.
      */
     val backgroundRestrictionProbe: dev.stapler.stelekit.git.BackgroundRestrictionProbe? = null,
+    /** Android 13+ `POST_NOTIFICATIONS` access for the Settings "Notify me" toggle; null hides that toggle. */
+    val notificationPermission: dev.stapler.stelekit.git.NotificationPermissionAccess? = null,
     /**
      * On-device ML capabilities for the asset pipeline. No default: every host names its value
      * (`PlatformCaps.NONE` when it has nothing to offer).

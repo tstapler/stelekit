@@ -128,6 +128,8 @@ fun SettingsDialog(
     onViewPipelineLog: () -> Unit = {},
     // Scheduled sync switch + interval (git-backed graphs only); null hides the section.
     scheduledSync: ScheduledSyncSettingsState? = null,
+    // "Notify me when updates are waiting" toggle; null where the platform has no notification permission seam.
+    updatesNotifications: UpdatesNotificationSettingsState? = null,
 ) {
     if (visible) {
         Dialog(
@@ -202,6 +204,7 @@ fun SettingsDialog(
                         if (scheduledSync != null) {
                             Spacer(modifier = Modifier.height(16.dp))
                             ScheduledSyncSection(scheduledSync)
+                            if (updatesNotifications != null) UpdatesNotificationSection(updatesNotifications)
                         }
                     }
                     SettingsCategory.EDITOR -> EditorSettings()

@@ -289,6 +289,7 @@ import dev.stapler.stelekit.ui.ShortcutTableConsistencyTest
 import dev.stapler.stelekit.ui.StelekitViewModelCrashReproductionTest
 import dev.stapler.stelekit.ui.StelekitViewModelSyncStateIntegrationTest
 import dev.stapler.stelekit.ui.StelekitViewModelSyncStateTest
+import dev.stapler.stelekit.ui.StelekitViewModelSyncStatusSheetTest
 import dev.stapler.stelekit.ui.SuggestionBottomSheetChipsUiTest
 import dev.stapler.stelekit.ui.TagInsertionFlagshipUiTest
 import dev.stapler.stelekit.ui.transfer.CameraPermissionRationaleDialogUxTest
@@ -630,6 +631,7 @@ import org.junit.runners.Suite
     StelekitViewModelCrashReproductionTest::class,
     StelekitViewModelSyncStateIntegrationTest::class,
     StelekitViewModelSyncStateTest::class,
+    StelekitViewModelSyncStatusSheetTest::class,
     SuggestionBottomSheetChipsUiTest::class,
     TagInsertionFlagshipUiTest::class,
     CameraPermissionRationaleDialogUxTest::class,

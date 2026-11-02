@@ -101,6 +101,8 @@ fun SyncStatusBadge(
     onOpenScheduledSyncSettings: (() -> Unit)? = null,
     /** Opens the detail sheet for an interrupted merge or a paused mass deletion. */
     onSyncDetails: (() -> Unit)? = null,
+    /** Tapping the "last merged · behind n" chip opens the standalone sync status sheet. */
+    onOpenSyncStatus: (() -> Unit)? = null,
 ) {
     if (!isGitConfigured) {
         Box(modifier = modifier.padding(horizontal = 4.dp)) {
@@ -149,12 +151,13 @@ fun SyncStatusBadge(
                 )
             }
         }
-        status.stalenessChip?.let { StalenessChip(it) }
+        status.stalenessChip?.let { StalenessChip(it, onClick = onOpenSyncStatus) }
     }
 }
 
 @Composable
-private fun StalenessChip(chip: StalenessChipState, modifier: Modifier = Modifier) {
+private fun StalenessChip(chip: StalenessChipState, onClick: (() -> Unit)?, modifier: Modifier = Modifier) {
+    val tap = if (onClick == null) modifier else modifier.sizeIn(minHeight = 48.dp).clickable(onClick = onClick)
     Text(
         text = chip.text,
         style = MaterialTheme.typography.labelSmall,
@@ -163,7 +166,7 @@ private fun StalenessChip(chip: StalenessChipState, modifier: Modifier = Modifie
             StalenessSeverity.Neutral -> MaterialTheme.colorScheme.onSurfaceVariant
             StalenessSeverity.Healthy -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
         },
-        modifier = modifier.padding(horizontal = 4.dp),
+        modifier = tap.padding(horizontal = 4.dp),
     )
 }
 

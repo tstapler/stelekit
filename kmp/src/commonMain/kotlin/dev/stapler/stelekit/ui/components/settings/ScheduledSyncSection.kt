@@ -17,6 +17,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -60,6 +61,8 @@ data class ScheduledSyncSettingsState(
     /** No manual, previewed sync has succeeded yet for this remote and branch (UW-16): the switch cannot be turned on. */
     val firstSyncReviewRequired: Boolean = false,
     val onReviewFirstSync: () -> Unit = {},
+    /** Opens the standalone sync status sheet. */
+    val onOpenStatus: () -> Unit = {},
 )
 
 internal const val DESKTOP_HELPER = "Syncs with the remote while SteleKit is open."
@@ -69,6 +72,7 @@ internal const val NO_REMOTE_REASON = "Set up Git sync first"
 internal const val REVIEW_FIRST_SYNC_REASON = "Review first sync to enable"
 internal const val ANDROID_FIVE_MINUTE_REASON = "Android runs at most every 15 minutes"
 internal const val SWITCH_LABEL = "Sync automatically"
+internal const val VIEW_STATUS_LABEL = "View sync status"
 private const val MIN_TARGET_DP = 48
 private const val STOPPING_DELAY_MILLIS = 2_000L
 private const val NOW_REFRESH_MILLIS = 30_000L
@@ -110,6 +114,7 @@ fun ScheduledSyncSection(
             }
             IntervalPicker(state, effective)
             StatusLine(line, state)
+            TextButton(onClick = state.onOpenStatus, modifier = Modifier.heightIn(min = MIN_TARGET_DP.dp)) { Text(VIEW_STATUS_LABEL) }
         }
     }
 }
