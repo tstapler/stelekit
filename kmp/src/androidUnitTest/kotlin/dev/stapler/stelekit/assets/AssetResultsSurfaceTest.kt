@@ -266,10 +266,8 @@ class AssetResultsSurfaceTest {
                 kotlinx.coroutines.flow.flowOf(DomainError.DatabaseError.ReadFailed("boom").left())
         }
         composeRule.setContent {
-            androidx.compose.foundation.layout.Column {
-                Text("Pages section")
-                AssetsSearchSection("4821", AssetSearchService(failing), onShowAll = {}, onOpenAsset = {})
-            }
+            Text("Pages section")
+            AssetsSearchSection("4821", AssetSearchService(failing), onShowAll = {}, onOpenAsset = {})
         }
         composeRule.waitUntil(5_000) { composeRule.onAllNodes(hasText("Couldn't search files - try again")).fetchSemanticsNodes().isNotEmpty() }
 
