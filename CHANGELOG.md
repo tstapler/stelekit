@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.105.0](https://github.com/tstapler/stelekit/compare/v0.104.0...v0.105.0) (2026-11-02)
+
+
+### Features
+
+* **assets:** Delete AI descriptions in cloud settings (UW-100) ([#546](https://github.com/tstapler/stelekit/issues/546)) ([3c62ac4](https://github.com/tstapler/stelekit/commit/3c62ac4dd629a286b4e3be0cc42fab0e7329c4ef))
+
 ## [0.104.0](https://github.com/tstapler/stelekit/compare/v0.103.0...v0.104.0) (2026-11-02)
 
 
