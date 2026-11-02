@@ -198,7 +198,7 @@ class GitSyncServiceScheduledSyncTest {
 
         val outcome = svc.scheduled.run("test-graph")
 
-        assertEquals(policySkip(ScheduledSkipReason.RepoState), outcome)
+        assertEquals(TickOutcome.Success, outcome, "fetched; the merge was withheld")
         assertEquals(listOf("health", "fetch"), h.spy.calls)
         assertEquals(SyncState.Error(DomainError.GitError.RepairNeeded("MERGING")), svc.syncState.value)
         svc.shutdown()
@@ -223,7 +223,7 @@ class GitSyncServiceScheduledSyncTest {
 
         val outcome = svc.scheduled.run("test-graph")
 
-        assertEquals(policySkip(ScheduledSkipReason.FirstSyncUnconfirmed), outcome)
+        assertEquals(TickOutcome.Success, outcome)
         assertEquals(emptyList(), h.spy.mutatingCalls())
         assertEquals(1, h.spy.calls.count { it == "fetch" })
         svc.shutdown()
@@ -246,7 +246,7 @@ class GitSyncServiceScheduledSyncTest {
         h.config = h.config.copy(remoteBranch = "master")
         val svc = h.service()
 
-        assertEquals(policySkip(ScheduledSkipReason.FirstSyncUnconfirmed), svc.scheduled.run("test-graph"))
+        assertEquals(TickOutcome.Success, svc.scheduled.run("test-graph"))
         assertEquals(emptyList(), h.spy.mutatingCalls())
         svc.shutdown()
     }
@@ -257,7 +257,7 @@ class GitSyncServiceScheduledSyncTest {
         FirstSyncConfirmation(h.settings).markReviewPending("test-graph", "main")
         val svc = h.service()
 
-        assertEquals(policySkip(ScheduledSkipReason.FirstSyncUnconfirmed), svc.scheduled.run("test-graph"))
+        assertEquals(TickOutcome.Success, svc.scheduled.run("test-graph"))
         svc.shutdown()
     }
 

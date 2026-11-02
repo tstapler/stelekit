@@ -20,7 +20,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
  *
  * The repository is read only after every cheap gate has passed, so a skipped tick makes no git call. A
  * skipped tick that still fetches ([ScheduledSkipReason.fetchesAnyway]) reports a fetch error as a failure
- * rather than hiding it. [fullSync] must use [SyncTrigger.Automatic], which can never lift the mass-change
+ * rather than hiding it, and a successful fetch as a success (only the merge was withheld). [fullSync] must use [SyncTrigger.Automatic], which can never lift the mass-change
  * guard. Logs one `ScheduledSync decision=...` line per tick.
  */
 class ScheduledSyncRunner(
@@ -79,6 +79,8 @@ class ScheduledSyncRunner(
             val fetched = fetch(graphId)
             if (reason == ScheduledSkipReason.RepoState) syncState.value = SyncState.Error(DomainError.GitError.RepairNeeded(health.state))
             fetched.onLeft { err -> return TickOutcome.Failure(err.message, err) }
+            // The tick did its job (a fetch); the policy only withheld the merge, so it must not read as skipped.
+            return TickOutcome.Success
         }
         return TickOutcome.Skip(
             when (reason) {
