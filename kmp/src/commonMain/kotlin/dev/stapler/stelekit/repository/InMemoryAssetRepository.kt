@@ -65,6 +65,32 @@ class InMemoryAssetRepository : AssetRepository {
                 .right()
         }
 
+    override suspend fun getSearchSnippets(
+        query: String,
+        uuids: List<AssetUuid>,
+    ): Either<DomainError, Map<AssetUuid, dev.stapler.stelekit.asset.AssetSearchPreview>> {
+        val q = query.lowercase()
+        fun excerpt(text: String): String {
+            val at = text.lowercase().indexOf(q).coerceAtLeast(0)
+            val from = (at - 80).coerceAtLeast(0)
+            return text.substring(from, minOf(text.length, from + 240))
+        }
+        val wanted = uuids.take(50).toSet()
+        return store.value.values.filter { it.uuid in wanted }.associate { a ->
+            val ocr = a.ocrText
+            val cloud = a.cloudDescription
+            val labels = a.autoLabels.joinToString(",")
+            val tags = a.tags.joinToString(",")
+            a.uuid to when {
+                ocr != null && ocr.lowercase().contains(q) -> dev.stapler.stelekit.asset.AssetSearchPreview("ocr_text", excerpt(ocr))
+                cloud != null && cloud.lowercase().contains(q) -> dev.stapler.stelekit.asset.AssetSearchPreview("cloud_description", excerpt(cloud))
+                labels.lowercase().contains(q) -> dev.stapler.stelekit.asset.AssetSearchPreview("auto_labels", excerpt(labels))
+                tags.lowercase().contains(q) -> dev.stapler.stelekit.asset.AssetSearchPreview("tags", excerpt(tags))
+                else -> dev.stapler.stelekit.asset.AssetSearchPreview("file_path", excerpt(a.filePath))
+            }
+        }.right()
+    }
+
     @Suppress("InMemoryPagination")
     override fun getUnprocessedAssets(
         limit: Int,
@@ -156,6 +182,11 @@ class InMemoryAssetRepository : AssetRepository {
         val asset = store.value[uuid.value]
             ?: return DomainError.DatabaseError.ReadFailed("Asset not found: ${uuid.value}").left()
         store.value = store.value + (uuid.value to asset.copy(mlFailed = true, mlAttemptedAt = attemptedAtMs))
+        return Unit.right()
+    }
+
+    override suspend fun resetFailedAssets(): Either<DomainError, Unit> {
+        store.value = store.value.mapValues { (_, a) -> if (a.mlFailed) a.copy(mlFailed = false, mlAttemptedAt = null) else a }
         return Unit.right()
     }
 
