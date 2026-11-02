@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.101.0](https://github.com/tstapler/stelekit/compare/v0.100.0...v0.101.0) (2026-11-02)
+
+
+### Features
+
+* **assets:** cloud Claude with consent gate and egress audit (U11) ([#543](https://github.com/tstapler/stelekit/issues/543)) ([7f35fb2](https://github.com/tstapler/stelekit/commit/7f35fb2d98333666eb6685a5aca68bdd36202119))
+* **assets:** per-plugin Settings &gt; Plugins UI, Assets search and PluginHost removal (U10) ([#534](https://github.com/tstapler/stelekit/issues/534)) ([28740f8](https://github.com/tstapler/stelekit/commit/28740f83c74790dcacea754fcfd1a977ca9d6185))
+* **git:** sync guards and first-sync preview (dev plan PR-A1; unblocks U16) ([#537](https://github.com/tstapler/stelekit/issues/537)) ([5db7a28](https://github.com/tstapler/stelekit/commit/5db7a282807f0eea93aa2f8cc56625fa6c6704bd))
+
+
+### Bug Fixes
+
+* **capture:** never auto-link inside URLs; tag URL-only matches; repair corrupted links ([#533](https://github.com/tstapler/stelekit/issues/533)) ([e7dbc71](https://github.com/tstapler/stelekit/commit/e7dbc71a91ce9bc0d41b4855b8164f48c10e5b43))
+
 ## [0.100.0](https://github.com/tstapler/stelekit/compare/v0.99.2...v0.100.0) (2026-10-29)
 
 
