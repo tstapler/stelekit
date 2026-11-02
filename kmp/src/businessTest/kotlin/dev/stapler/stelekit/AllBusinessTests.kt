@@ -44,6 +44,9 @@ import dev.stapler.stelekit.capture.JournalAppenderTest
 import dev.stapler.stelekit.clipboard.BlockClipboardTest
 import dev.stapler.stelekit.domain.ImportServiceTest
 import dev.stapler.stelekit.domain.LinkProtectedSpansTest
+import dev.stapler.stelekit.domain.PageNameIndexVocabularyCacheTest
+import dev.stapler.stelekit.domain.TopicExtractorProtectedSpansTest
+import dev.stapler.stelekit.domain.UrlLinkRepairTest
 import dev.stapler.stelekit.editor.LinkInsertionTest
 import dev.stapler.stelekit.editor.commands.CommandManagerTest
 import dev.stapler.stelekit.editor.commands.CommandSystemRegistryTest
@@ -323,6 +326,9 @@ import org.junit.runners.Suite
     InboxFallbackAppenderTest::class,
     ImportServiceTest::class,
     LinkProtectedSpansTest::class,
+    PageNameIndexVocabularyCacheTest::class,
+    TopicExtractorProtectedSpansTest::class,
+    UrlLinkRepairTest::class,
     LinkInsertionTest::class,
     CommandManagerTest::class,
     CommandSystemRegistryTest::class,

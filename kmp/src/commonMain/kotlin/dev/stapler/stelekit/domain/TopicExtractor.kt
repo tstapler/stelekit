@@ -58,7 +58,9 @@ object TopicExtractor {
      * Extract topic suggestions from [rawText], excluding any term whose
      * lowercase form already appears in [existingNames].
      */
-    fun extract(rawText: String, existingNames: Set<String> = emptySet()): List<TopicSuggestion> {
+    fun extract(input: String, existingNames: Set<String> = emptySet()): List<TopicSuggestion> {
+        // URLs, code, property lines and existing links/tags are not prose: no suggestions from them.
+        val rawText = LinkProtectedSpans.mask(input)
         val existingLower = existingNames.map { it.lowercase() }.toSet()
         val candidates = mutableMapOf<String, CandidateData>()
 

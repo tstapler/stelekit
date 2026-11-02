@@ -56,7 +56,26 @@ class PageNameIndex(
      * on Android.
      */
     /** Returns the canonical page names in the current matcher index snapshot. */
-    fun vocabularyNames(): List<String> = _entries.value.map { it.canonical }.distinct()
+    fun vocabularyNames(): List<String> = vocabularyCache().names
+
+    /**
+     * Same names as [vocabularyNames] as a set, cached per entry snapshot so a per-keystroke scan
+     * does not rebuild it (tens of thousands of trie entries on an 8 000-page graph).
+     */
+    fun vocabularySet(): Set<String> = vocabularyCache().set
+
+    private class Vocabulary(val source: List<AhoCorasickMatcher.TrieEntry>, val names: List<String>, val set: Set<String>)
+
+    @kotlin.concurrent.Volatile
+    private var vocabulary: Vocabulary? = null
+
+    // Keyed by identity of the entries list: _entries is replaced wholesale on every rebuild.
+    private fun vocabularyCache(): Vocabulary {
+        val entries = _entries.value
+        vocabulary?.takeIf { it.source === entries }?.let { return it }
+        val names = entries.map { it.canonical }.distinct()
+        return Vocabulary(entries, names, names.toHashSet()).also { vocabulary = it }
+    }
 
     val matcher: StateFlow<AhoCorasickMatcher?> = _entries
         .map { entries ->

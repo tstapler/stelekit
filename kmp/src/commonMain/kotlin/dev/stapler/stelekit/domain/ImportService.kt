@@ -6,10 +6,11 @@ package dev.stapler.stelekit.domain
 /**
  * Result of scanning raw text for known page-name matches.
  *
- * @param linkedText  The original text with all matched page names wrapped in wiki-link
- *                    syntax: `[[Page Name]]`. Unchanged segments are kept as-is.
- * @param matchedPageNames  Distinct canonical page names found in the text, in order of
- *                          first appearance.
+ * @param linkedText  The original text with matched page names wrapped in wiki-link syntax
+ *                    (`[[Page Name]]`). Names that occur only inside a URL are not rewritten
+ *                    there; they are appended as a `#Tag` at the end of the text instead.
+ * @param matchedPageNames  Distinct canonical page names the result now references (linked or
+ *                          tagged), in order of first appearance.
  * @param topicSuggestions  Local heuristic suggestions for new pages that could be created.
  */
 data class ScanResult(
@@ -23,7 +24,9 @@ data class ScanResult(
  *
  * Scans [rawText] using the pre-built [AhoCorasickMatcher] and returns a [ScanResult]
  * that contains:
- *  - the text with matched page names auto-linked as `[[Name]]`
+ *  - the text with matched page names auto-linked as `[[Name]]` (never inside URLs, code,
+ *    property lines, or existing links/tags — see [LinkProtectedSpans])
+ *  - `#Tag`s appended for pages that match only inside a URL
  *  - the distinct list of matched canonical page names
  *  - local heuristic topic suggestions via [TopicExtractor]
  */
@@ -32,7 +35,6 @@ object ImportService {
     /**
      * Scan [rawText] for known page names and return a [ScanResult].
      *
-     * All matches reported by [matcher] are wrapped with `[[…]]` syntax.
      * [TopicExtractor] is run on the raw text (before wiki-link brackets are inserted)
      * to preserve clean capitalisation for extraction.
      *
@@ -46,58 +48,44 @@ object ImportService {
         matcher: AhoCorasickMatcher,
         existingNames: Set<String> = emptySet(),
     ): ScanResult {
-        val spans = LinkProtectedSpans.findOutsideProtected(matcher, rawText)
+        val protectedSpans = LinkProtectedSpans.analyze(rawText)
+        val all = matcher.findAll(rawText)
+        val spans = all.filterNot { protectedSpans.overlapsAny(it.start, it.end) }
 
-        val linkedText: String
-        val matchedPageNames: List<String>
-
-        if (spans.isEmpty()) {
-            linkedText = rawText
-            matchedPageNames = emptyList()
-        } else {
-            val sb = StringBuilder()
-            var cursor = 0
-            val seen = LinkedHashSet<String>()
-
-            for (span in spans) {
-                if (span.start > cursor) {
-                    sb.append(rawText, cursor, span.start)
-                }
-                sb.append("[[")
-                sb.append(span.canonicalName)
-                sb.append("]]")
-                seen.add(span.canonicalName)
-                cursor = span.end
-            }
-
-            if (cursor < rawText.length) {
-                sb.append(rawText, cursor, rawText.length)
-            }
-
-            linkedText = sb.toString()
-            matchedPageNames = seen.toList()
+        val sb = StringBuilder()
+        var cursor = 0
+        val seen = LinkedHashSet<String>()
+        for (span in spans) {
+            sb.append(rawText, cursor, span.start)
+            sb.append("[[").append(span.canonicalName).append("]]")
+            seen.add(span.canonicalName)
+            cursor = span.end
         }
+        sb.append(rawText, cursor, rawText.length)
 
-        val suggestions = TopicExtractor.extract(rawText, existingNames)
+        val urlOnly = all.filter { protectedSpans.isUrlOnly(it.start, it.end) }.map { it.canonicalName }
+        val tagCandidates = urlOnly.distinct().filter { name -> seen.none { it.equals(name, ignoreCase = true) } }
+        val (linkedText, tagged) = appendUrlTags(sb.toString(), rawText, tagCandidates)
 
         return ScanResult(
             linkedText = linkedText,
-            matchedPageNames = matchedPageNames,
-            topicSuggestions = suggestions,
+            matchedPageNames = (seen + tagged).toList(),
+            topicSuggestions = TopicExtractor.extract(rawText, existingNames),
         )
     }
 
     /**
      * Wraps each plain-text occurrence of a term in [terms] with `[[term]]` syntax.
      *
-     * Occurrences already inside a pre-existing `[[…]]` span (present in [text] before this
-     * call) are skipped via [overlapsExistingLink]. Matching is case-insensitive; the display
-     * form from [terms] is used as the link target. All term matches are collected against the
-     * original (unmodified) [text] first, sorted by start offset (ties favor the longest term),
-     * then swept left-to-right accepting only matches whose start is at or past the previous
-     * accepted match's end. This greedy leftmost-then-longest sweep is what keeps the result
-     * order-independent and prevents a shorter term (e.g. "Network") from matching inside a
-     * longer term's own candidate span from this same call (e.g. "Neural Network Architecture"),
+     * Occurrences inside a protected span (URL, code, property line, existing `[[link]]` or `#tag`;
+     * see [LinkProtectedSpans]) are skipped. A term whose only occurrences are inside URLs is
+     * associated with the block by appending `#term` (or `#[[Multi Word]]`) at the end instead.
+     * Matching is case-insensitive; the display form from [terms] is used as the link target. All
+     * term matches are collected against the original (unmodified) [text] first, sorted by start
+     * offset (ties favor the longest term), then swept left-to-right accepting only matches whose
+     * start is at or past the previous accepted match's end. This greedy leftmost-then-longest
+     * sweep keeps the result order-independent and prevents a shorter term (e.g. "Network") from
+     * matching inside a longer term's own candidate span (e.g. "Neural Network Architecture"),
      * which would otherwise produce corrupt nested brackets.
      */
     fun insertWikiLinks(text: String, terms: List<String>): String {
@@ -105,21 +93,16 @@ object ImportService {
 
         data class Match(val start: Int, val end: Int, val term: String)
 
-        // URLs, code, existing [[links]] and #tags are off-limits (see LinkProtectedSpans).
-        val protectedSpans = LinkProtectedSpans.find(text)
-        fun overlapsExistingLink(start: Int, end: Int) =
-            LinkProtectedSpans.overlaps(protectedSpans, start, end)
+        val protectedSpans = LinkProtectedSpans.analyze(text)
 
-        // Collect every candidate match for every term against the original text, then
-        // sweep left-to-right keeping the first non-overlapping match — ties at the same
-        // start favor the longest term, mirroring the old longest-first intent.
-        val candidates = terms.filter { it.isNotEmpty() }
+        val allMatches = terms.filter { it.isNotEmpty() }
             .flatMap { term ->
                 Regex("""\b${Regex.escape(term)}\b""", RegexOption.IGNORE_CASE)
                     .findAll(text)
                     .map { Match(it.range.first, it.range.last + 1, term) }
             }
-            .filterNot { overlapsExistingLink(it.start, it.end) }
+        val candidates = allMatches
+            .filterNot { protectedSpans.overlapsAny(it.start, it.end) }
             .sortedWith(compareBy({ it.start }, { -(it.end - it.start) }))
 
         val accepted = mutableListOf<Match>()
@@ -130,7 +113,13 @@ object ImportService {
                 lastEnd = m.end
             }
         }
-        if (accepted.isEmpty()) return text
+
+        val linkedTerms = accepted.map { it.term.lowercase() }.toSet()
+        val tagCandidates = allMatches
+            .filter { protectedSpans.isUrlOnly(it.start, it.end) && it.term.lowercase() !in linkedTerms }
+            .sortedBy { it.start }
+            .map { it.term }
+            .distinctBy { it.lowercase() }
 
         val sb = StringBuilder()
         var cursor = 0
@@ -140,6 +129,47 @@ object ImportService {
             cursor = m.end
         }
         sb.append(text, cursor, text.length)
-        return sb.toString()
+        return appendUrlTags(sb.toString(), text, tagCandidates).first
+    }
+
+    private val TAG_SAFE = Regex("""[\p{L}\p{N}_\-]+""")
+
+    internal fun hashtagFor(name: String): String =
+        if (TAG_SAFE.matches(name)) "#$name" else "#[[$name]]"
+
+    /** True when [text] already references [name] as `[[name]]`, `[[name|alias]]`, `#name` or `#[[name]]`. */
+    internal fun alreadyReferences(text: String, name: String): Boolean {
+        val n = Regex.escape(name)
+        return Regex("""\[\[$n(?:\|[^\]]*)?]]|(?<![\w&])#$n(?![\p{L}\p{N}_\-])|#\[\[$n]]""", RegexOption.IGNORE_CASE)
+            .containsMatchIn(text)
+    }
+
+    /**
+     * Appends `#tag`s for [names] to [text] after its last body line — before any trailing
+     * `key:: value` property lines and trailing blank lines, which are preserved verbatim.
+     * Names that [original] or [text] already reference are skipped (so applying twice is a no-op).
+     * Returns the new text and the names actually tagged; text with no body line is unchanged.
+     */
+    private fun appendUrlTags(text: String, original: String, names: List<String>): Pair<String, List<String>> {
+        val tagged = names.filter { !alreadyReferences(original, it) && !alreadyReferences(text, it) }
+        if (tagged.isEmpty()) return text to emptyList()
+        val insertAt = bodyEnd(text)
+        if (insertAt < 0) return text to emptyList()
+        val tags = tagged.joinToString(" ") { hashtagFor(it) }
+        return (text.substring(0, insertAt) + " " + tags + text.substring(insertAt)) to tagged
+    }
+
+    /** End offset of the last line that is neither blank nor a property line; -1 when none. */
+    private fun bodyEnd(text: String): Int {
+        var end = text.length
+        while (end > 0) {
+            val lineStart = text.lastIndexOf('\n', end - 1) + 1
+            val line = text.substring(lineStart, end)
+            if (line.isNotBlank() && !LinkProtectedSpans.PROPERTY_LINE.matches(line)) {
+                return lineStart + line.trimEnd().length
+            }
+            end = lineStart - 1
+        }
+        return -1
     }
 }
