@@ -179,7 +179,6 @@ R8-only list (type, declaring file under `dev/stapler/stelekit/`):
 - `PickerMediaFile` (platform/google/PhotosPickerApiClient.kt)
 - `PickerMediaItem` (platform/google/PhotosPickerApiClient.kt)
 - `PickerMediaItemsResponse` (platform/google/PhotosPickerApiClient.kt)
-- `Plugin` (platform/PluginSystem.kt)
 - `PluginData` (model/PluginMetadata.kt)
 - `PluginMetadata` (model/PluginMetadata.kt)
 - `PluginRegistry` (asset/pipeline/PluginRegistry.kt)
