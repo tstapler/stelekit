@@ -80,6 +80,9 @@ class PluginRegistry(
         refresh()
     }
 
+    /** The stored cloud switch (consent is separate). */
+    fun cloudSwitchOn(): Boolean = settings?.let { PluginEnableKeys.isEnabled(it, PluginEnableKeys.CLOUD_CLAUDE) } ?: false
+
     /** Re-evaluates the count after cloud consent or the cloud switch changed. */
     fun onCloudStateChanged() {
         _enabledCount.value = countEnabled()

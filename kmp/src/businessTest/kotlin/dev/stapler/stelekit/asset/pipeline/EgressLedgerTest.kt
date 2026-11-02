@@ -75,6 +75,36 @@ class EgressLedgerTest {
     }
 
     @Test
+    fun dailyCount_should_BeSharedByEveryGraph_When_LedgersShareTheAppSettings() {
+        val appSettings = InspectableSettings()
+        val graphA = EgressLedger(appSettings, dailyCap = 3, session = AtomicInt(0), today = { "2026-11-01" })
+        val graphB = EgressLedger(appSettings, dailyCap = 3, session = AtomicInt(0), today = { "2026-11-01" })
+
+        assertEquals(EgressLedger.Reservation.Allowed, graphA.tryReserve(1L))
+        assertEquals(1, graphB.dailyCount, "a second graph sees the same day budget")
+        assertEquals(EgressLedger.Reservation.Allowed, graphB.tryReserve(1L))
+        assertEquals(2, graphA.dailyCount)
+    }
+
+    @Test
+    fun network_should_BlockUploadShowWaitingTextAndOfferNoOverride_When_MeteredOrOffline() = runTest {
+        assertEquals(CloudNetwork.Offline, cloudNetworkOf(isOnline = false, isMetered = false))
+        assertEquals(CloudNetwork.Metered, cloudNetworkOf(isOnline = true, isMetered = true))
+        assertEquals(CloudNetwork.Online, cloudNetworkOf(isOnline = true, isMetered = false))
+        assertEquals(CloudNetwork.Online, cloudNetworkOf(isOnline = true, isMetered = null), "desktop cannot tell and proceeds")
+
+        for (blocked in listOf(CloudNetwork.Metered, CloudNetwork.Offline)) {
+            val rig = CloudRig()
+            rig.network = blocked
+            rig.gate.grant(CloudRig.GRAPH_A, 1L, CloudBackfillScope.NewOnly)
+            val result = rig.plugin.processAsset(rig.putImage("a1"))
+            assertEquals(AssetPipelineResult.Skipped(PauseReason.Network), result.getOrNull())
+            assertEquals(0, rig.http.requests.size)
+            assertEquals(0, rig.ledger.sessionCount, "waiting costs no cap")
+        }
+    }
+
+    @Test
     fun egressLog_should_HaveAssetUuidBytesProviderAndNoContent_When_UploadHappens() = runTest {
         val lines = mutableListOf<String>()
         val sink = object : LogSink {

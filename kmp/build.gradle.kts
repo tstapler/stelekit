@@ -370,6 +370,8 @@ kotlin {
                 implementation("androidx.test.ext:junit:1.2.1")
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
                 implementation("androidx.arch.core:core-testing:2.2.0")
+                // Ktor MockEngine for the cloud stack wiring test (no network)
+                implementation("io.ktor:ktor-client-mock:3.1.3")
                 implementation("androidx.glance:glance-appwidget-testing:1.1.1")
                 // TestListenableWorkerBuilder — drives GitSyncWorker.doWork() through a real
                 // WorkManager test harness (git-sync-resilience Story 1.2.3). Same 2.9.1 as

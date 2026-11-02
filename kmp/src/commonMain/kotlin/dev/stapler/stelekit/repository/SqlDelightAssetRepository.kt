@@ -160,6 +160,23 @@ class SqlDelightAssetRepository(
         queries.selectUnprocessedAssetsLight(limit.toLong(), offset.toLong(), ::lightEntry)
             .asDbFlowList(PlatformDispatcher.DB) { it }
 
+    override fun getAssetsNeedingCloudDescription(
+        limit: Int,
+        offset: Int,
+    ): Flow<Either<DomainError, List<AssetEntry>>> =
+        queries.selectAssetsNeedingCloudDescriptionLight(limit.toLong(), offset.toLong(), ::lightEntry)
+            .asDbFlowList(PlatformDispatcher.DB) { it }
+
+    override suspend fun countAssetsNeedingCloudDescription(): Either<DomainError, Long> =
+        withContext(PlatformDispatcher.DB) {
+            try {
+                queries.countAssetsNeedingCloudDescription().asFlow().mapToOne(PlatformDispatcher.DB).first().right()
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                DomainError.DatabaseError.ReadFailed(e.message ?: "unknown").left()
+            }
+        }
+
     override suspend fun countUnprocessedAssets(): Either<DomainError, Long> =
         withContext(PlatformDispatcher.DB) {
             try {

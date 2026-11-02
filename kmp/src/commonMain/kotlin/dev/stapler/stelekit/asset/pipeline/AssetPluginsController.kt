@@ -28,6 +28,8 @@ class AssetPluginsController(
     val indexing: AssetIndexingController,
     private val settings: Settings? = null,
     private val power: PowerSource = AlwaysPowered,
+    /** Cloud description consent and switch; null where the platform has no cloud plugin wiring. */
+    val cloud: CloudSettingsController? = null,
 ) {
     private val logger = Logger("AssetPipelinePlugins")
 

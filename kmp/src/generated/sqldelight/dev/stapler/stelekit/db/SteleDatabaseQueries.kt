@@ -3260,6 +3260,54 @@ public class SteleDatabaseQueries(
 
   public fun selectUnprocessedAssetsLight(limit: Long, offset: Long): Query<SelectUnprocessedAssetsLight> = selectUnprocessedAssetsLight(limit, offset, ::SelectUnprocessedAssetsLight)
 
+  public fun <T : Any> selectAssetsNeedingCloudDescriptionLight(
+    limit: Long,
+    offset: Long,
+    mapper: (
+      uuid: String,
+      file_path: String,
+      relative_path: String,
+      media_type: String,
+      subfolder: String,
+      tags: String,
+      cloud_description: String?,
+      page_uuids: String,
+      size_bytes: Long,
+      imported_at_ms: Long,
+      ml_processed: Long,
+      ml_attempted_at: Long?,
+      ml_failed: Long,
+      content_hash: String?,
+      is_orphan: Long,
+      ml_tags_source: String,
+    ) -> T,
+  ): Query<T> = SelectAssetsNeedingCloudDescriptionLightQuery(limit, offset) { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!,
+      cursor.getString(3)!!,
+      cursor.getString(4)!!,
+      cursor.getString(5)!!,
+      cursor.getString(6),
+      cursor.getString(7)!!,
+      cursor.getLong(8)!!,
+      cursor.getLong(9)!!,
+      cursor.getLong(10)!!,
+      cursor.getLong(11),
+      cursor.getLong(12)!!,
+      cursor.getString(13),
+      cursor.getLong(14)!!,
+      cursor.getString(15)!!
+    )
+  }
+
+  public fun selectAssetsNeedingCloudDescriptionLight(limit: Long, offset: Long): Query<SelectAssetsNeedingCloudDescriptionLight> = selectAssetsNeedingCloudDescriptionLight(limit, offset, ::SelectAssetsNeedingCloudDescriptionLight)
+
+  public fun countAssetsNeedingCloudDescription(): Query<Long> = Query(1_602_893_090, arrayOf("asset_index"), driver, "SteleDatabase.sq", "countAssetsNeedingCloudDescription", "SELECT COUNT(*) FROM asset_index WHERE ml_processed = 1 AND ml_failed = 0 AND cloud_description IS NULL AND media_type = 'IMAGE'") { cursor ->
+    cursor.getLong(0)!!
+  }
+
   public fun countUnprocessedAssets(): Query<Long> = Query(-1_728_676_438, arrayOf("asset_index"), driver, "SteleDatabase.sq", "countUnprocessedAssets", "SELECT COUNT(*) FROM asset_index WHERE ml_processed = 0 AND ml_failed = 0") { cursor ->
     cursor.getLong(0)!!
   }
@@ -8136,6 +8184,28 @@ public class SteleDatabaseQueries(
     }
 
     override fun toString(): String = "SteleDatabase.sq:selectUnprocessedAssetsLight"
+  }
+
+  private inner class SelectAssetsNeedingCloudDescriptionLightQuery<out T : Any>(
+    public val limit: Long,
+    public val offset: Long,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("asset_index", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("asset_index", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(361_961_955, """SELECT uuid, file_path, relative_path, media_type, subfolder, tags, cloud_description, page_uuids, size_bytes, imported_at_ms, ml_processed, ml_attempted_at, ml_failed, content_hash, is_orphan, ml_tags_source FROM asset_index WHERE ml_processed = 1 AND ml_failed = 0 AND cloud_description IS NULL AND media_type = 'IMAGE' ORDER BY imported_at_ms ASC LIMIT ? OFFSET ?""", mapper, 2) {
+      var parameterIndex = 0
+      bindLong(parameterIndex++, limit)
+      bindLong(parameterIndex++, offset)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectAssetsNeedingCloudDescriptionLight"
   }
 
   private inner class SelectAssetsByDateKeysetQuery<out T : Any>(

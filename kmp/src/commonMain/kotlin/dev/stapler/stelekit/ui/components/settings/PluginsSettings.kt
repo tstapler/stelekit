@@ -51,6 +51,7 @@ fun PluginsSettings(
                     PluginSwitchesSection(plugins, onViewLog)
                 }
                 SearchableSuggestionRow(plugins)
+                plugins.cloud?.let { CloudSettingsSection(it) }
             }
         }
     } else {
