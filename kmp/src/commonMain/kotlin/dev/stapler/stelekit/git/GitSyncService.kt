@@ -12,6 +12,7 @@ import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.FilePath
+import dev.stapler.stelekit.model.RepoRoot
 import dev.stapler.stelekit.git.merge.JournalMergeService
 import dev.stapler.stelekit.git.lfs.LfsGuardCoordinator
 import dev.stapler.stelekit.git.lfs.LfsGuardedStaging
@@ -82,6 +83,8 @@ class GitSyncService(
     private val periodicSyncContext: kotlin.coroutines.CoroutineContext = kotlin.coroutines.EmptyCoroutineContext,
     /** Wall-clock epoch millis for scheduled-sync bookkeeping; tests inject a fake. */
     private val wallClockMs: () -> Long = { Clock.System.now().toEpochMilliseconds() },
+    /** Whether the graph sits in a directory this process writes directly; SAF graphs are fetch-only for scheduled work. Throwing counts as false. */
+    isAppOwnedPath: (RepoRoot) -> Boolean = { !it.value.startsWith("saf://") && !it.value.startsWith("content://") },
 ) {
     private val logger = Logger("GitSyncService")
     private val markerGuard = ConflictMarkerGuard(fileSystem)
@@ -201,6 +204,14 @@ class GitSyncService(
             scope.launch { refreshLocalStatus(graphId) }
         }
     }
+
+    /** Policy-gated scheduled tick (full sync, fetch-only or skip); see [ScheduledSyncRunner]. */
+    val scheduled = ScheduledSyncRunner(
+        gitRepository, configRepository, editLock, gitSyncBusyCounter, firstSyncConfirmation, credentialAccessProvider,
+        isOnline, wallClockMs, isAppOwnedPath, _syncState,
+        fullSync = { g -> sync(g, SyncTrigger.Automatic) },
+        fetch = { g -> fetchOnly(g) },
+    )
 
     @kotlin.concurrent.Volatile private var periodicGraphId: String = graphId
     private val periodicDriver = PeriodicSyncDriver(

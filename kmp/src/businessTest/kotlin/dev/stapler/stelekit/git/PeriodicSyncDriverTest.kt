@@ -108,6 +108,7 @@ class PeriodicSyncDriverTest {
                 is TickOutcome.Skip -> when (o.reason) {
                     SkipReason.Busy -> "busy"
                     SkipReason.Offline -> "offline"
+                    is SkipReason.Policy -> "policy"
                 }
             }
         }
