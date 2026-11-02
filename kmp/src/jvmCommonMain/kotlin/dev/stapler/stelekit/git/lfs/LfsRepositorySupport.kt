@@ -7,6 +7,10 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.jobs.JobKind
+import dev.stapler.stelekit.jobs.JobTracker
+import dev.stapler.stelekit.jobs.NoJobTracker
+import dev.stapler.stelekit.jobs.track
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.logging.Logger
@@ -33,6 +37,12 @@ class LfsRepositorySupport(
     @Volatile var modeFor: (graphId: String?) -> LfsMode = { LfsMode.AUTO },
 ) {
     private val logger = Logger("LfsRepositorySupport")
+
+    @Volatile var jobTracker: JobTracker = NoJobTracker
+    @Volatile var policy: () -> LfsTransferPolicy = { LfsTransferPolicy() }
+
+    /** Platform probe for a metered connection; only consulted when the policy asks to defer on metered. */
+    @Volatile var isMetered: () -> Boolean = { false }
 
     /** True once a converting filter was written and read back for the last repository touched. */
     @Volatile var filterActive: Boolean = false
@@ -116,7 +126,8 @@ class LfsRepositorySupport(
         if (pointers.isEmpty()) return Unit.right()
         val endpoint = endpointFor(repo, config.remoteName)
             ?: return DomainError.GitError.LfsNotSupportedHere("this remote has no Git LFS endpoint").left()
-        return withService(repo, endpoint, authHeaderFor(config)) { it.upload(pointers) }.map { }
+        val authHeader = authHeaderFor(config)
+        return withService(repo, endpoint, authHeader) { it.upload(pointers) }.map { }.mapLeft { explainMissingCredential(it, authHeader) }
     }
 
     private suspend fun pull(repo: Repository, pointers: Map<String, LfsPointer>, authHeader: String?) {
@@ -129,12 +140,28 @@ class LfsRepositorySupport(
             logger.warn("lfs: remote has no LFS endpoint; leaving ${pointers.size} pointer file(s) undownloaded")
             return
         }
-        val result = try {
-            withService(repo, endpoint, authHeader) { it.download(pointers.values) }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            DomainError.GitError.FetchFailed("Git LFS download failed: ${e::class.simpleName}").left()
+        val limits = policy()
+        if (limits.deferOnMetered && isMetered()) {
+            logger.info("lfs: on a metered connection; holding ${pointers.size} download(s) until it is unmetered")
+            pendingMarker(repo).apply { parentFile.mkdirs(); createNewFile() }
+            return
+        }
+        val result = jobTracker.track(JobKind.LfsTransfer, "Downloading images") { handle ->
+            val outcome = try {
+                withService(repo, endpoint, authHeader) { service ->
+                    service.download(pointers.values, limits.maxObjectBytes) { done, total -> handle.progress(done * 100 / total) }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                DomainError.GitError.FetchFailed("Git LFS download failed: ${e::class.simpleName}").left()
+            }
+            val explained = outcome.mapLeft { explainMissingCredential(it, authHeader) }
+            explained.fold(
+                { error -> handle.fail(error.message) },
+                { if (it.skippedOversize > 0) handle.fail(oversizeMessage(it.skippedOversize, limits)) },
+            )
+            explained
         }
         result.fold(
             { error ->
@@ -142,6 +169,7 @@ class LfsRepositorySupport(
                 pendingMarker(repo).apply { parentFile.mkdirs(); createNewFile() }
             },
             {
+                // Oversize objects are not retried: the cap decides, and retrying would fail a job every poll.
                 pendingMarker(repo).delete()
                 val work = repo.workTree
                 if (work != null) {
@@ -150,6 +178,13 @@ class LfsRepositorySupport(
             },
         )
     }
+
+    /** A 401/403 with no credential sent means the host wants a token SSH-key and anonymous remotes cannot supply. */
+    private fun explainMissingCredential(error: DomainError.GitError, authHeader: String?): DomainError.GitError =
+        if (authHeader == null && error is DomainError.GitError.LfsAuthFailed) error.copy(noCredentialSent = true) else error
+
+    private fun oversizeMessage(count: Int, limits: LfsTransferPolicy): String =
+        "$count image(s) over the ${limits.maxObjectBytes / (1024 * 1024)} MB limit were not downloaded"
 
     private suspend fun <T> withService(
         repo: Repository,

@@ -252,5 +252,6 @@ private fun buildGitSyncService(
         isOnline = seams.isOnline ?: { networkMonitor.isOnline },
         periodicSyncContext = seams.periodicSyncContext,
         wallClockMs = seams.wallClockMs ?: { kotlin.time.Clock.System.now().toEpochMilliseconds() },
+        jobTracker = deps.jobTracker,
     )
 }

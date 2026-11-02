@@ -8,6 +8,10 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.testing.SynchronousExecutor
 import androidx.work.testing.WorkManagerTestInitHelper
+import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.git.CloneProgress
+import dev.stapler.stelekit.git.GitCloneWorkerData
+import dev.stapler.stelekit.git.GitTransportRetryState
 import dev.stapler.stelekit.platform.ml.DepthModelDownloadWorker
 import dev.stapler.stelekit.platform.ml.DepthModelDownloader
 import dev.stapler.stelekit.platform.ml.DepthModelStorage
@@ -23,6 +27,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 @RunWith(RobolectricTestRunner::class)
@@ -93,5 +98,26 @@ class WorkManagerJobRegistryTest {
 
         assertTrue(withTimeout(5_000) { registry.jobs.first() }.isEmpty())
         assertNotNull(registry)
+    }
+
+    @Test
+    fun `clone progress is shown as a percentage once the total is known`() {
+        val data = GitCloneWorkerData.encodeState(GitTransportRetryState.Attempting(CloneProgress("Receiving objects", 50, 200)))
+
+        assertEquals(25, defaultProgressOf(JobKind.GitClone, data))
+    }
+
+    @Test
+    fun `clone progress stays indeterminate before the total is known`() {
+        val data = GitCloneWorkerData.encodeState(GitTransportRetryState.Attempting(CloneProgress("", 0, 0)))
+
+        assertNull(defaultProgressOf(JobKind.GitClone, data))
+    }
+
+    @Test
+    fun `a failed clone surfaces its error message`() {
+        val output = GitCloneWorkerData.encodeFailure(DomainError.GitError.CloneFailed("repository not found"), null)
+
+        assertEquals("repository not found", defaultErrorOf(JobKind.GitClone, output))
     }
 }

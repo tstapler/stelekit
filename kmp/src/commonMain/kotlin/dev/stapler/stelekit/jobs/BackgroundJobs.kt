@@ -12,6 +12,7 @@ enum class JobKind(val label: String) {
     GitSync("Git sync"),
     PageCopy("Page copy"),
     StorageMove("Storage move"),
+    LfsTransfer("Image transfer"),
 }
 
 sealed interface JobState {

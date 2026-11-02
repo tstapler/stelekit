@@ -204,6 +204,7 @@ import dev.stapler.stelekit.export.ExportServiceJournalRangeTest
 import dev.stapler.stelekit.export.ExportServiceLinkedPagesTest
 import dev.stapler.stelekit.git.GitCloneRetryCleanupTest
 import dev.stapler.stelekit.jobs.TrackedCopyRunHostTest
+import dev.stapler.stelekit.ui.GitSyncCoordinatorJobsTest
 import dev.stapler.stelekit.git.GitConfigCloneDepthMappingTest
 import dev.stapler.stelekit.git.GitOperationSupportClassifierTest
 import dev.stapler.stelekit.git.GitRepositoryUnshallowTest
@@ -582,5 +583,6 @@ import org.junit.runners.Suite
     GoogleDriveFlowTest::class,
     GooglePhotosFlowTest::class,
     TrackedCopyRunHostTest::class,
+    GitSyncCoordinatorJobsTest::class,
 )
 class AllBusinessTests

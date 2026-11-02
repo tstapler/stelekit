@@ -101,6 +101,9 @@ interface GitRepository {
     /** Supplies the effective [dev.stapler.stelekit.git.lfs.LfsMode] per graph id (null at clone time). No-op where transfer is unsupported. */
     fun setLfsModeProvider(provider: (graphId: String?) -> dev.stapler.stelekit.git.lfs.LfsMode) {}
 
+    /** Where LFS downloads are reported as jobs and which limits apply to them. No-op where transfer is unsupported. */
+    fun setLfsTransferContext(tracker: dev.stapler.stelekit.jobs.JobTracker, policy: () -> dev.stapler.stelekit.git.lfs.LfsTransferPolicy) {}
+
     /**
      * Raw binaries at LFS-tracked paths found in the commits the last [push] sent (detection only: they are
      * already remote). Empty when nothing was found, nothing was pushed, or the platform cannot audit.

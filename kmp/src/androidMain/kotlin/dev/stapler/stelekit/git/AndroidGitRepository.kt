@@ -83,6 +83,14 @@ class AndroidGitRepository(
     override val lfsTransferSupported: Boolean get() = true
     override val cleanFilterActive: Boolean get() = lfs.filterActive
     override fun setLfsModeProvider(provider: (graphId: String?) -> LfsMode) { lfs.modeFor = provider }
+    override fun setLfsTransferContext(tracker: dev.stapler.stelekit.jobs.JobTracker, policy: () -> dev.stapler.stelekit.git.lfs.LfsTransferPolicy) {
+        lfs.jobTracker = tracker
+        lfs.policy = policy
+        lfs.isMetered = {
+            (context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager)
+                ?.isActiveNetworkMetered ?: false
+        }
+    }
 
     /**
      * LFS transfer needs a real working tree. A SAF shadow mirror only round-trips text, so shadow-backed graphs stay

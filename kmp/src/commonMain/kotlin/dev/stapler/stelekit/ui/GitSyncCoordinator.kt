@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 
 /**
@@ -129,7 +130,8 @@ class GitSyncCoordinator(
         val graphId = activeGraphIdProvider() ?: uiState.value.currentGraphId ?: return
         scope.launch {
             val service = activeGitSyncService.value ?: return@launch
-            jobTracker.track(JobKind.GitSync, "Syncing with remote") { handle ->
+            val run = coroutineContext.job
+            jobTracker.track(JobKind.GitSync, "Syncing with remote", onCancel = { run.cancel() }) { handle ->
                 service.sync(graphId).onLeft { handle.fail(it.message) }
             }
         }
@@ -140,7 +142,8 @@ class GitSyncCoordinator(
         val graphId = activeGraphIdProvider() ?: uiState.value.currentGraphId ?: return
         scope.launch {
             val service = activeGitSyncService.value ?: return@launch
-            jobTracker.track(JobKind.GitSync, "Checking for remote changes") { handle ->
+            val run = coroutineContext.job
+            jobTracker.track(JobKind.GitSync, "Checking for remote changes", onCancel = { run.cancel() }) { handle ->
                 service.fetchOnly(graphId).onLeft { handle.fail(it.message) }
             }
         }
