@@ -791,6 +791,7 @@ class StelekitViewModel(
                                             _indexingProgress.value = IndexingState.InProgress(progress)
                                         }
                                         _indexingProgress.value = IndexingState.Complete
+                                        runUrlLinkRepairOnce(path)
                                     } catch (e: kotlinx.coroutines.CancellationException) {
                                         _indexingProgress.value = IndexingState.Idle
                                         throw e
@@ -1259,7 +1260,7 @@ class StelekitViewModel(
             "flashcards" -> Screen.Flashcards
             "all-pages" -> Screen.AllPages()
             "notifications" -> Screen.Notifications
-            "logs" -> Screen.Logs
+            "logs" -> Screen.Logs()
             "background-jobs" -> Screen.BackgroundJobs
             else -> Screen.Journals
         }
@@ -1843,7 +1844,12 @@ class StelekitViewModel(
     }
 
     fun setSettingsVisible(visible: Boolean) {
-        _uiState.update { it.copy(settingsVisible = visible) }
+        _uiState.update { it.copy(settingsVisible = visible, pluginsSettingsRequested = false) }
+    }
+
+    /** Opens Settings on the Plugins page, scrolled to the plugin switches. */
+    fun showPluginsSettings() {
+        _uiState.update { it.copy(settingsVisible = true, pluginsSettingsRequested = true) }
     }
 
     fun setCommandPaletteVisible(visible: Boolean) {
@@ -2374,6 +2380,26 @@ class StelekitViewModel(
         val today = now.toLocalDateTime(tz).date
         val tomorrowMidnight = today.plus(1, DateTimeUnit.DAY).atStartOfDayIn(tz)
         return (tomorrowMidnight - now).inWholeMilliseconds.coerceAtLeast(MIN_MIDNIGHT_DELAY_MS)
+    }
+
+    /**
+     * Repairs `https://[[Name]].tld` blocks left by the old auto-linker, once per graph path
+     * (the flag is only set after a clean run, so a partial failure retries next load).
+     * Runs after full indexing so every page's blocks are in the DB.
+     */
+    internal suspend fun runUrlLinkRepairOnce(path: String) {
+        val actor = writeActor ?: return
+        val key = dev.stapler.stelekit.db.UrlLinkRepairService.settingsKey(path)
+        if (platformSettings.getBoolean(key, false)) return
+        val report = dev.stapler.stelekit.db.UrlLinkRepairService(blockRepository, pageRepository, actor, graphWriter)
+            .run(dev.stapler.stelekit.model.EffectiveNotesPath(path))
+        report.fold(
+            { e -> logger.warn("URL link repair failed, will retry next load: ${e.message}") },
+            { r ->
+                logger.info("URL link repair: scanned=${r.candidatesScanned} repaired=${r.blocksRepaired} pages=${r.pagesRewritten} failures=${r.failures}")
+                if (r.clean) platformSettings.putBoolean(key, true)
+            },
+        )
     }
 
     internal fun startMidnightBoundaryWatcher(clock: Clock = Clock.System) {

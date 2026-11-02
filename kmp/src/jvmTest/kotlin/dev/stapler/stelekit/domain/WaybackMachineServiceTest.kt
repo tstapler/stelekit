@@ -140,6 +140,32 @@ class WaybackMachineServiceTest {
     }
 
     @Test
+    fun `already-archived wayback snapshot url is not re-submitted`() = runTest {
+        var requests = 0
+        val engine = MockEngine { _ ->
+            requests++
+            respond(content = "", status = HttpStatusCode.OK)
+        }
+        val snapshot = "https://web.archive.org/web/20260101000000/https://example.com/a"
+        val result = KtorWaybackMachineService(HttpClient(engine)).archiveUrl(snapshot)
+
+        assertEquals(0, requests)
+        assertIs<Either.Right<ArchiveResult>>(result)
+        assertEquals(ArchiveResult.AlreadyArchived(snapshot), result.value)
+    }
+
+    @Test
+    fun `plain url is posted to save endpoint with target url intact`() = runTest {
+        var captured = ""
+        val engine = MockEngine { request ->
+            captured = request.url.toString()
+            respond(content = "", status = HttpStatusCode.OK)
+        }
+        KtorWaybackMachineService(HttpClient(engine)).archiveUrl("https://github.com/lni/dragonboat")
+        assertEquals("https://web.archive.org/save/https://github.com/lni/dragonboat", captured)
+    }
+
+    @Test
     fun `url with query params and fragment is properly encoded in request`() = runTest {
         var capturedUrl = ""
         val engine = MockEngine { request ->

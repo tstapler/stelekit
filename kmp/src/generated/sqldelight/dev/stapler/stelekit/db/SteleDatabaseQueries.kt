@@ -3193,6 +3193,29 @@ public class SteleDatabaseQueries(
     offset: Long,
   ): Query<SearchAssetsLight> = searchAssetsLight(query, limit, offset, ::SearchAssetsLight)
 
+  public fun <T : Any> selectAssetsSearchPreview(
+    pattern: String,
+    raw: String?,
+    uuids: Collection<String>,
+    mapper: (
+      uuid: String,
+      matched_column: String,
+      excerpt: String?,
+    ) -> T,
+  ): Query<T> = SelectAssetsSearchPreviewQuery(pattern, raw, uuids) { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)
+    )
+  }
+
+  public fun selectAssetsSearchPreview(
+    pattern: String,
+    raw: String?,
+    uuids: Collection<String>,
+  ): Query<SelectAssetsSearchPreview> = selectAssetsSearchPreview(pattern, raw, uuids, ::SelectAssetsSearchPreview)
+
   public fun <T : Any> selectUnprocessedAssetsLight(
     limit: Long,
     offset: Long,
@@ -5459,6 +5482,17 @@ public class SteleDatabaseQueries(
           bindString(parameterIndex++, uuid)
         }.await()
     notifyQueries(83_642_654) { emit ->
+      emit("asset_index")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun resetFailedAssets(): Long {
+    val result = driver.execute(477_099_566, """UPDATE asset_index SET ml_failed = 0, ml_attempted_at = NULL WHERE ml_failed = 1""", 0).await()
+    notifyQueries(477_099_566) { emit ->
       emit("asset_index")
     }
     return result
@@ -8030,6 +8064,55 @@ public class SteleDatabaseQueries(
     }
 
     override fun toString(): String = "SteleDatabase.sq:searchAssetsLight"
+  }
+
+  private inner class SelectAssetsSearchPreviewQuery<out T : Any>(
+    public val pattern: String,
+    public val raw: String?,
+    public val uuids: Collection<String>,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("asset_index", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("asset_index", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> {
+      val uuidsIndexes = createArguments(count = uuids.size)
+      return driver.executeQuery(null, """
+          |SELECT uuid,
+          |  CASE WHEN ocr_text LIKE ? ESCAPE '\' THEN 'ocr_text' WHEN cloud_description LIKE ? ESCAPE '\' THEN 'cloud_description' WHEN auto_labels LIKE ? ESCAPE '\' THEN 'auto_labels' WHEN tags LIKE ? ESCAPE '\' THEN 'tags' ELSE 'file_path' END AS matched_column,
+          |  CASE WHEN ocr_text LIKE ? ESCAPE '\' THEN substr(ocr_text, max(1, instr(lower(ocr_text), lower(?)) - 80), 240)
+          |       WHEN cloud_description LIKE ? ESCAPE '\' THEN substr(cloud_description, max(1, instr(lower(cloud_description), lower(?)) - 80), 240)
+          |       WHEN auto_labels LIKE ? ESCAPE '\' THEN substr(auto_labels, max(1, instr(lower(auto_labels), lower(?)) - 80), 240)
+          |       WHEN tags LIKE ? ESCAPE '\' THEN substr(tags, max(1, instr(lower(tags), lower(?)) - 80), 240)
+          |       ELSE substr(file_path, max(1, instr(lower(file_path), lower(?)) - 80), 240) END AS excerpt
+          |FROM asset_index WHERE uuid IN $uuidsIndexes
+          """.trimMargin(), mapper, 13 + uuids.size) {
+            var parameterIndex = 0
+            bindString(parameterIndex++, pattern)
+            bindString(parameterIndex++, pattern)
+            bindString(parameterIndex++, pattern)
+            bindString(parameterIndex++, pattern)
+            bindString(parameterIndex++, pattern)
+            bindString(parameterIndex++, raw)
+            bindString(parameterIndex++, pattern)
+            bindString(parameterIndex++, raw)
+            bindString(parameterIndex++, pattern)
+            bindString(parameterIndex++, raw)
+            bindString(parameterIndex++, pattern)
+            bindString(parameterIndex++, raw)
+            bindString(parameterIndex++, raw)
+            uuids.forEach { uuids_ ->
+              bindString(parameterIndex++, uuids_)
+            }
+          }
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectAssetsSearchPreview"
   }
 
   private inner class SelectUnprocessedAssetsLightQuery<out T : Any>(

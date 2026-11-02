@@ -153,7 +153,7 @@ class DatalogBlockRepository : BlockRepository {
         val plainTextPattern = "\\b${Regex.escape(pageName)}\\b".toRegex(RegexOption.IGNORE_CASE)
         return blocks.map { map ->
             val unlinkedBlocks = map.values.filter { block ->
-                plainTextPattern.containsMatchIn(block.content) &&
+                dev.stapler.stelekit.domain.LinkProtectedSpans.containsOutsideUrls(plainTextPattern, block.content) &&
                     !wikiLinkPattern.containsMatchIn(block.content)
             }
             unlinkedBlocks.sortedBy { it.pageUuid.value }.right()
@@ -165,7 +165,7 @@ class DatalogBlockRepository : BlockRepository {
         val plainTextPattern = "\\b${Regex.escape(pageName)}\\b".toRegex(RegexOption.IGNORE_CASE)
         return blocks.map { map ->
             val unlinkedBlocks = map.values.filter { block ->
-                plainTextPattern.containsMatchIn(block.content) &&
+                dev.stapler.stelekit.domain.LinkProtectedSpans.containsOutsideUrls(plainTextPattern, block.content) &&
                     !wikiLinkPattern.containsMatchIn(block.content)
             }
             unlinkedBlocks.sortedBy { it.pageUuid.value }.drop(offset).take(limit).right()

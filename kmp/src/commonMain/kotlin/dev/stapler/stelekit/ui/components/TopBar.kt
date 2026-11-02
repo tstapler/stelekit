@@ -212,7 +212,7 @@ fun TopBar(
                         text = { Text("Logs") },
                         onClick = {
                             overflowMenuExpanded = false
-                            onNavigate(Screen.Logs)
+                            onNavigate(Screen.Logs())
                         }
                     )
                     DropdownMenuItem(
@@ -309,7 +309,7 @@ fun TopBar(
                     DropdownMenuItem(
                         text = { Text("Logs") },
                         onClick = {
-                            onNavigate(Screen.Logs)
+                            onNavigate(Screen.Logs())
                             viewMenuExpanded = false
                         }
                     )

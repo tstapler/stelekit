@@ -67,6 +67,10 @@ data class AssetBrowserUiState(
     val totalCount: Long = 0,
     val viewMode: ViewMode = ViewMode.GRID,
     val availableTags: List<String> = emptyList(),
+    /** Rows no plugin has processed yet; read only when a search returned nothing, to explain the gap. */
+    val pendingUnprocessed: Long = 0,
+    /** Bounded snippets for the rows of an active text search, keyed by uuid; empty otherwise. */
+    val searchPreviews: Map<dev.stapler.stelekit.asset.AssetUuid, dev.stapler.stelekit.asset.AssetSearchPreview> = emptyMap(),
     // Non-null when the action menu is shown for an asset.
     val actionMenuAsset: AssetEntry? = null,
     // Keyset cursors — all null means start from the first page.

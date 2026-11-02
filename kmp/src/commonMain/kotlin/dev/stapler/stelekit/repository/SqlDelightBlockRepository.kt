@@ -1130,7 +1130,7 @@ class SqlDelightBlockRepository(
             val plainTextPattern = "\\b${Regex.escape(pageName)}\\b".toRegex(RegexOption.IGNORE_CASE)
 
             val unlinked = allBlocks.filter { block ->
-                plainTextPattern.containsMatchIn(block.content) &&
+                dev.stapler.stelekit.domain.LinkProtectedSpans.containsOutsideUrls(plainTextPattern, block.content) &&
                         !wikiLinkPattern.containsMatchIn(block.content)
             }
             emit(unlinked.right())
@@ -1153,7 +1153,7 @@ class SqlDelightBlockRepository(
             val plainTextPattern = "\\b${Regex.escape(pageName)}\\b".toRegex(RegexOption.IGNORE_CASE)
 
             val unlinked = candidates.filter { block ->
-                plainTextPattern.containsMatchIn(block.content) &&
+                dev.stapler.stelekit.domain.LinkProtectedSpans.containsOutsideUrls(plainTextPattern, block.content) &&
                         !wikiLinkPattern.containsMatchIn(block.content)
             }
             emit(unlinked.right())

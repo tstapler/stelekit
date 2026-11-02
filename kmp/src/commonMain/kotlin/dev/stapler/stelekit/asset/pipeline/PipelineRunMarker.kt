@@ -21,7 +21,7 @@ class PipelineRunMarker(
     private val settings: Settings,
     private val processToken: String = PROCESS_TOKEN,
 ) {
-    private val logger = Logger("PipelineRunMarker")
+    private val logger = Logger("AssetPipelineRunMarker")
     private val activeOwners = MutableStateFlow<Set<String>>(emptySet())
 
     /** Consecutive unclean exits seen so far. */

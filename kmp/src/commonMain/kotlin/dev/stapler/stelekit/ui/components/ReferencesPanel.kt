@@ -35,7 +35,7 @@ private fun blockToEntry(
     pageName: String,
     matcher: AhoCorasickMatcher?,
 ): PanelUnlinkedEntry {
-    val span = matcher?.findAll(block.content)
+    val span = matcher?.let { dev.stapler.stelekit.domain.LinkProtectedSpans.findOutsideUrls(it, block.content) }
         ?.firstOrNull { it.canonicalName.equals(pageName, ignoreCase = true) }
     return PanelUnlinkedEntry(
         block = block,

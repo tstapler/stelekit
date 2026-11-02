@@ -169,6 +169,7 @@ import dev.stapler.stelekit.db.PathContainmentSymlinkTest
 import dev.stapler.stelekit.db.QueryExecutorGraphSwitchTest
 import dev.stapler.stelekit.git.GitCredentialConnectionStoreTest
 import dev.stapler.stelekit.git.GitHubDeviceFlowClientTest
+import dev.stapler.stelekit.git.GitHubDeviceFlowClientEdgeCasesTest
 import dev.stapler.stelekit.git.GitRefDiagnosticsRedactionTest
 import dev.stapler.stelekit.git.GitSyncAttributeMergeE2ETest
 import dev.stapler.stelekit.git.GitSyncServiceLfsJvmTest
@@ -220,6 +221,7 @@ import dev.stapler.stelekit.desktop.DesktopMeasurementDeviceFactoriesTest
 import dev.stapler.stelekit.domain.HtmlClipboardReaderTest
 import dev.stapler.stelekit.domain.HtmlPasteEntryPointTest
 import dev.stapler.stelekit.domain.WaybackMachineServiceTest
+import dev.stapler.stelekit.db.UrlLinkRepairServiceTest
 import dev.stapler.stelekit.llm.CustomOpenAiCompatibleLlmProviderTest
 import dev.stapler.stelekit.mcp.McpPendingCapTest
 import dev.stapler.stelekit.mcp.McpSocketPathPermissionTest
@@ -505,6 +507,7 @@ import org.junit.runners.Suite
     QueryExecutorGraphSwitchTest::class,
     GitCredentialConnectionStoreTest::class,
     GitHubDeviceFlowClientTest::class,
+    GitHubDeviceFlowClientEdgeCasesTest::class,
     GitRefDiagnosticsRedactionTest::class,
     GitSyncAttributeMergeE2ETest::class,
     GitSyncServiceLfsJvmTest::class,
@@ -553,6 +556,7 @@ import org.junit.runners.Suite
     CaptureEnrichmentCoordinatorRealDispatcherTest::class,
     PageNameIndexResilienceTest::class,
     WaybackMachineServiceTest::class,
+    UrlLinkRepairServiceTest::class,
     HtmlPasteEntryPointTest::class,
     HtmlClipboardReaderTest::class,
     DesktopMeasurementDeviceFactoriesTest::class,

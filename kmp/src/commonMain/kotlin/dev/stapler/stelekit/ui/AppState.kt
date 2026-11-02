@@ -54,7 +54,7 @@ sealed class Screen {
     data object BackgroundJobs : Screen()
 
     @HelpExempt(reason = "Developer log viewer; reachable only from debug menu")
-    data object Logs : Screen()
+    data class Logs(val initialFilter: String? = null) : Screen()
 
     @HelpExempt(reason = "Developer profiling screen; reachable only from debug menu")
     data object Performance : Screen()
@@ -80,7 +80,7 @@ sealed class Screen {
 
     /** Asset browser for viewing and managing all graph assets. */
     @HelpExempt(reason = "Asset management surface; power-user feature not in primary nav")
-    data object AssetBrowser : Screen()
+    data class AssetBrowser(val initialSearch: String? = null) : Screen()
 
     /** Google Drive file browser, opened from Settings > Google Account > Browse Drive. */
     @HelpExempt(reason = "Opened from Settings > Google Account; not a primary navigation destination")
@@ -173,6 +173,8 @@ data class AppState(
     // LLM provider settings — mirrors gitSetupVisible/openGitSetup()/dismissGitSetup() (Epic 6
     // Story 6.1). Drives direct-open + auto-selection of the "AI Providers" settings category.
     val llmProviderSettingsVisible: Boolean = false,
+    // Opens Settings directly on Plugins, scrolled to the switches (the Assets "Turn on" button).
+    val pluginsSettingsRequested: Boolean = false,
     val conflictResolutionVisible: Boolean = false,
     // Full-screen line-diff view for a disk conflict, reached via DiskConflictDialog's
     // "View full comparison" button. Does not clear diskConflict — only suppresses the

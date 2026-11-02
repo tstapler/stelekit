@@ -94,7 +94,12 @@ internal fun GraphContentActiveShell(
     val graphManager = deps.graphManager
     val notificationManager = deps.notificationManager
     val encryptionManager = deps.coreServices.encryptionManager
-    val pluginHost = deps.coreServices.pluginHost
+    // The status bar's plugin count reads the one registry (PluginRegistry.enabledCount); 0 without an asset stack.
+    // Only builds where the asset switch is visible search assets, so release variants stay dark.
+    val assetSearchService = remember(deps.assets, repos) {
+        deps.assets?.takeIf { it.indexing.toggleVisible }?.let { dev.stapler.stelekit.asset.AssetSearchService(repos.assetRepository) }
+    }
+    val enabledPluginCount = remember(deps.assets) { deps.assets?.plugins?.registry?.enabledCount ?: kotlinx.coroutines.flow.MutableStateFlow(0) }
     val voicePipeline = deps.coreServices.voicePipeline
     val voiceSettings = deps.voiceConfig.voiceSettings
     val onRebuildVoicePipeline = deps.voiceConfig.onRebuildVoicePipeline
@@ -404,7 +409,7 @@ internal fun GraphContentActiveShell(
                             appState = appState,
                             encryptionManager = encryptionManager,
                             activeGraphInfo = activeGraphInfo,
-                            pluginHost = pluginHost,
+                            pluginCount = enabledPluginCount,
                             activeVaultManager = vaultManager.takeIf { isParanoidMode },
                             graphIoStack = graphIoStack,
                         ),
@@ -431,6 +436,7 @@ internal fun GraphContentActiveShell(
             deps = GraphDialogLayerDeps(
                 settings = SettingsDialogDeps(
                     assetIndexing = deps.assets?.indexing,
+                    assetPlugins = deps.assets?.plugins,
                     scheduledSync = scheduledSyncSettings,
                     voiceSettings = voiceSettings,
                     llmCredentialStore = llmCredentialStore,
@@ -535,6 +541,7 @@ internal fun GraphContentActiveShell(
                     listOfNotNull(copyFlow?.let { flow -> Command("copy-pages", dev.stapler.stelekit.ui.screens.copy.CopyDialogStrings.entryLabel(flow.direction)) { flow.open() } })
                 },
                 loadPageBlocks = { pageUuidStr -> repos.blockRepository.getBlocksForPage(dev.stapler.stelekit.model.PageUuid(pageUuidStr)) },
+                assetSearch = assetSearchService,
                 onDebugStateChange = { newState ->
                     debugMenuStateState.value = newState
                     viewModel.onDebugMenuStateChange(newState)

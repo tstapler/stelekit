@@ -20,6 +20,8 @@ class PdfTextPlugin(private val pdfTextExtractor: PdfTextExtractor) : AssetPipel
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Throwable) {
+            // A missing native library is not a per-asset failure; the pipeline switches the plugin off.
+            if (e.isNativeLinkFailure()) throw e
             DomainError.DatabaseError.ReadFailed("PdfTextPlugin failed: ${e.message}").left()
         }
     }

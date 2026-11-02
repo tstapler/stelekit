@@ -332,7 +332,7 @@ fun LeftSidebar(
 
             // Media / Library
             NavigationItem("Gallery", Icons.Default.PhotoLibrary, currentScreen is Screen.Gallery) { onNavigate(Screen.Gallery) }
-            NavigationItem("Assets", Icons.Default.FolderOpen, currentScreen is Screen.AssetBrowser) { onNavigate(Screen.AssetBrowser) }
+            NavigationItem("Assets", Icons.Default.FolderOpen, currentScreen is Screen.AssetBrowser) { onNavigate(Screen.AssetBrowser()) }
 
             Spacer(Modifier.height(4.dp))
 
@@ -342,7 +342,7 @@ fun LeftSidebar(
 
             // Developer tools — only visible when already on those screens
             if (currentScreen is Screen.Logs || currentScreen is Screen.Performance) {
-                NavigationItem("Logs", Icons.Default.Info, currentScreen is Screen.Logs) { onNavigate(Screen.Logs) }
+                NavigationItem("Logs", Icons.Default.Info, currentScreen is Screen.Logs) { onNavigate(Screen.Logs()) }
                 NavigationItem("Performance", Icons.Default.Settings, currentScreen is Screen.Performance) { onNavigate(Screen.Performance) }
             }
             
