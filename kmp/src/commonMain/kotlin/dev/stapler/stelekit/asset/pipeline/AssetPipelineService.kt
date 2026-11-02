@@ -114,7 +114,7 @@ class AssetPipelineService(
                 throw e
             } catch (e: Throwable) {
                 logger.error("Plugin ${plugin.id} threw on ${asset.uuid.value}: ${e.message}")
-                if (e is LinkageError) _initFailures.tryEmit(plugin.id)
+                if (e.isNativeLinkFailure()) _initFailures.tryEmit(plugin.id)
                 failed = true
                 recordFailure(plugin.id)
             }

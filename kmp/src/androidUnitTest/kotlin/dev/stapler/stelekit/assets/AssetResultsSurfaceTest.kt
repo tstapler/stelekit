@@ -22,7 +22,6 @@ import dev.stapler.stelekit.ui.assets.AssetSearchEmptyState
 import dev.stapler.stelekit.ui.assets.AssetsSearchSection
 import dev.stapler.stelekit.ui.assets.assetSnippet
 import dev.stapler.stelekit.ui.assets.searchEmptyText
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
@@ -305,7 +304,8 @@ class AssetResultsSurfaceTest {
     fun slowWork_should_ShowSearchingTestingAndLoadingStatesAfter200ms_When_VirtualTimeAdvances() {
         val slowRepo = object : AssetRepository by repoWith(assetWith("inv", ocr = "Invoice 4821")) {
             override fun searchAssets(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<AssetEntry>>> = flow {
-                delay(60_000)
+                kotlinx.coroutines.awaitCancellation()
+                @Suppress("UNREACHABLE_CODE")
                 emit(emptyList<AssetEntry>().right())
             }
         }
