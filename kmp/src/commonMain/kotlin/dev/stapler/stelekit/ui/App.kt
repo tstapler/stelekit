@@ -431,7 +431,6 @@ private fun GraphContent(deps: GraphContentDeps) {
     val graphManager = deps.graphManager
     val notificationManager = deps.notificationManager
     val onMemoryPressure = deps.onMemoryPressure
-    val pluginHost = deps.coreServices.pluginHost
     val encryptionManager = deps.coreServices.encryptionManager
     val voicePipeline = deps.coreServices.voicePipeline
     val spanRecorder = deps.coreServices.spanRecorder
@@ -813,12 +812,14 @@ internal fun StatusBarContent(
             maxLines = 1,
             modifier = Modifier.padding(horizontal = 8.dp).weight(2f)
         )
-        Spacer(modifier = Modifier.width(8.dp))
-        Text(
-            text = "$pluginCount ${t("status.plugins_active")}",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        if (pluginCount > 0) {
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "$pluginCount ${t("status.plugins_active")}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 
