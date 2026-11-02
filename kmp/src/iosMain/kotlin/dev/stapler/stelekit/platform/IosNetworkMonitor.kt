@@ -38,6 +38,8 @@ actual class NetworkMonitor actual constructor() {
 
     actual val isOnline: Boolean get() = _isOnline
 
+    actual val isMetered: Boolean? get() = null
+
     actual fun observeConnectivity(): Flow<Boolean> = callbackFlow {
         val localMonitor = nw_path_monitor_create()
         val localQueue = dispatch_queue_create("dev.stapler.stelekit.nm.observer", DISPATCH_QUEUE_SERIAL)

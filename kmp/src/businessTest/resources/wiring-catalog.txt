@@ -6,3 +6,4 @@ ConsoleCommand  ConsoleEntryPointTest  effect:console-help
 MeasurementDeviceFactory  DesktopMeasurementDeviceFactoriesTest  effect:desktop-keyboard-device-emitted
 BackgroundSyncScheduler  GitSyncStackEntryPointTest  effect:scheduled-sync-tick
 BackgroundSyncScheduler  GitSyncSchedulingEntryPointTest  effect:periodic-work-enqueued
+AssetPipelinePlugin  CloudStackEntryPointTest  effect:cloud-description-persisted

@@ -20,6 +20,13 @@ class CloudStructuralAuditTest {
     }
 
     @Test
+    fun cloudVisionPlugin_should_NotExist_When_OwnerGate_OD5Confirmed() {
+        val mentions = WiringInputs.productionSources.filterValues { "CloudVision" + "Plugin" in it }.keys
+        assertEquals(emptySet(), mentions)
+        assertTrue(WiringInputs.productionSources.keys.none { it.endsWith("CloudVision" + "Plugin.kt") })
+    }
+
+    @Test
     fun modelId_should_ComeFromConfigNotLiteralInCloudClaudePlugin_When_SourceAudited() {
         val plugin = WiringInputs.productionSources.getValue("${assetPackage}pipeline/CloudClaudePlugin.kt")
         val config = WiringInputs.productionSources.getValue("${assetPackage}pipeline/CloudEnrichmentConfig.kt")

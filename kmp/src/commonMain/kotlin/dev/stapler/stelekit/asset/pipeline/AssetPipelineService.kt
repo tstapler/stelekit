@@ -80,9 +80,9 @@ class AssetPipelineService(
     /** What [processAsset] did with one asset. */
     enum class Outcome { Processed, Failed, Stayed }
 
-    suspend fun processAsset(asset: AssetEntry): Outcome = inFlight.withPermit {
+    suspend fun processAsset(asset: AssetEntry, cloudOnly: Boolean = false): Outcome = inFlight.withPermit {
         // A plugin whose breaker opened this run is skipped; an asset nobody handles stays unprocessed.
-        val plugins = registry.all.filter { it.canProcess(asset) && isClosed(it.id) }
+        val plugins = registry.all.filter { (!cloudOnly || it is CloudClaudePlugin) && it.canProcess(asset) && isClosed(it.id) }
         if (plugins.isEmpty()) return@withPermit Outcome.Stayed
 
         val alreadyAttempted = attemptedMutex.withLock { !attemptedUuids.add(asset.uuid.value) }
@@ -157,6 +157,8 @@ class AssetPipelineService(
             if (saved) return@withPermit Outcome.Processed
             logger.error("Writing results for ${asset.uuid.value} failed; marking it failed")
         }
+        // A backfill failure must not flip a previously good asset to failed.
+        if (cloudOnly) return@withPermit Outcome.Stayed
         val marked = writeGuarded {
             @OptIn(DirectRepositoryWrite::class)
             assetRepository.markMlFailed(asset.uuid, now)
@@ -317,7 +319,43 @@ class AssetPipelineService(
             if (batch.size < BATCH_SIZE) break
             offset += stayed
         }
+        if (capPause == null) {
+            val (cloudDone, paused) = drainCloudBackfill()
+            done += cloudDone
+            if (paused) return
+        }
+        // Clear the marker before publishing Finished so a watcher of Finished never sees a run still marked in progress.
+        runMarker?.end(MARKER_OWNER)
         _progress.value = PipelineProgress.Finished(done, failed)
+    }
+
+    /**
+     * The opt-in IncludeExisting pass: describes already-processed images in bounded batches,
+     * through the cloud plugin only. Returns how many were described and whether a cap or the
+     * network paused it.
+     */
+    private suspend fun drainCloudBackfill(): Pair<Int, Boolean> {
+        val cloud = registry.all.filterIsInstance<CloudClaudePlugin>().firstOrNull()
+        if (cloud == null || !cloud.wantsBackfill()) return 0 to false
+        var done = 0
+        var offset = 0
+        while (true) {
+            val batch = assetRepository.getAssetsNeedingCloudDescription(limit = BATCH_SIZE, offset = offset)
+                .first().getOrNull().orEmpty()
+            if (batch.isEmpty()) break
+            var stayed = 0
+            for (asset in batch) {
+                if (processAsset(asset, cloudOnly = true) == Outcome.Processed) done++ else stayed++
+                capPause?.let {
+                    _progress.value = PipelineProgress.Paused(it)
+                    return done to true
+                }
+            }
+            yield()
+            if (batch.size < BATCH_SIZE) break
+            offset += stayed
+        }
+        return done to false
     }
 
     fun shutdown() { scope.cancel() }

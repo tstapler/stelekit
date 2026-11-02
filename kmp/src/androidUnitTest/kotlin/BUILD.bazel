@@ -38,6 +38,7 @@ kt_android_library(
         "@maven//:androidx_test_ext_junit",
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
         "@maven//:androidx_arch_core_core_testing",
+        "@maven//:io_ktor_ktor_client_mock_jvm",
         "@maven//:androidx_glance_glance_appwidget_testing",
         "@maven//:androidx_work_work_testing",
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",

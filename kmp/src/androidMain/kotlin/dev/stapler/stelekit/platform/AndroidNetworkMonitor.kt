@@ -66,6 +66,13 @@ actual class NetworkMonitor actual constructor() {
             return internet && validated
         }
 
+    actual val isMetered: Boolean?
+        get() = try {
+            connectivityManager?.isActiveNetworkMetered
+        } catch (_: SecurityException) {
+            null
+        }
+
     actual fun observeConnectivity(): Flow<Boolean> = callbackFlow {
         val cm = connectivityManager
         if (cm == null) {

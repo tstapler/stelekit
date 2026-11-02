@@ -92,6 +92,21 @@ class InMemoryAssetRepository : AssetRepository {
         }.right()
     }
 
+    private fun needsCloudDescription(a: AssetEntry) =
+        a.mlProcessed && !a.mlFailed && a.cloudDescription == null && a.mediaType == dev.stapler.stelekit.asset.AssetMediaType.IMAGE
+
+    @Suppress("InMemoryPagination")
+    override fun getAssetsNeedingCloudDescription(
+        limit: Int,
+        offset: Int,
+    ): Flow<Either<DomainError, List<AssetEntry>>> =
+        store.map { map ->
+            map.values.filter(::needsCloudDescription).sortedBy { it.importedAtMs }.drop(offset).take(limit).right()
+        }
+
+    override suspend fun countAssetsNeedingCloudDescription(): Either<DomainError, Long> =
+        store.value.values.count(::needsCloudDescription).toLong().right()
+
     @Suppress("InMemoryPagination")
     override fun getUnprocessedAssets(
         limit: Int,

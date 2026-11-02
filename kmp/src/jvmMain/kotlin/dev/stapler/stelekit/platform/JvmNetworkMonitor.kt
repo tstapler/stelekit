@@ -29,6 +29,8 @@ actual class NetworkMonitor actual constructor() {
             false
         }
 
+    actual val isMetered: Boolean? get() = null
+
     actual fun observeConnectivity(): Flow<Boolean> = flow {
         while (true) {
             emit(isOnline)

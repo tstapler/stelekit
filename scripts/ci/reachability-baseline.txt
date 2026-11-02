@@ -3,7 +3,6 @@ AssetPendingMove	kmp/src/commonMain/kotlin/dev/stapler/stelekit/asset/AssetModel
 BenchmarkRegistry	kmp/src/commonMain/kotlin/dev/stapler/stelekit/benchmark/BenchmarkTypes.kt	-
 BlockOptics	kmp/src/commonMain/kotlin/dev/stapler/stelekit/model/ModelOptics.kt	-
 ChunkChecksum	kmp/src/commonMain/kotlin/dev/stapler/stelekit/transfer/TransferTypes.kt	-
-CloudVisionPlugin	kmp/src/commonMain/kotlin/dev/stapler/stelekit/asset/pipeline/CloudVisionPlugin.kt	12
 CoreMlImageLabeler	kmp/src/iosMain/kotlin/dev/stapler/stelekit/platform/ml/CoreMlImageLabeler.kt	14
 CursorState	kmp/src/commonMain/kotlin/dev/stapler/stelekit/model/CursorState.kt	-
 DatalogEngine	kmp/src/commonMain/kotlin/dev/stapler/stelekit/search/DatalogQuery.kt	18

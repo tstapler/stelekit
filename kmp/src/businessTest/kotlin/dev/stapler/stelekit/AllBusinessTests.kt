@@ -144,6 +144,7 @@ import dev.stapler.stelekit.asset.AssetSearchSqlTest
 import dev.stapler.stelekit.asset.AssetSearchCloudDescriptionTest
 import dev.stapler.stelekit.asset.CloudDescriptionStorageTest
 import dev.stapler.stelekit.asset.CloudKeyLeakageAuditTest
+import dev.stapler.stelekit.asset.pipeline.CloudBackfillTest
 import dev.stapler.stelekit.asset.pipeline.CloudClaudePluginTest
 import dev.stapler.stelekit.asset.pipeline.CloudConsentEnforcementTest
 import dev.stapler.stelekit.asset.pipeline.CloudStructuralAuditTest
@@ -446,6 +447,7 @@ import org.junit.runners.Suite
     CloudDescriptionStorageTest::class,
     CloudKeyLeakageAuditTest::class,
     CloudClaudePluginTest::class,
+    CloudBackfillTest::class,
     CloudConsentEnforcementTest::class,
     CloudStructuralAuditTest::class,
     EgressLedgerTest::class,
