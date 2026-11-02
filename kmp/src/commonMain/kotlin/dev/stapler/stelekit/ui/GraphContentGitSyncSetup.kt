@@ -10,6 +10,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -18,6 +20,10 @@ import dev.stapler.stelekit.git.GitSyncService
 import dev.stapler.stelekit.git.GitSyncServiceRegistry
 import dev.stapler.stelekit.git.ScheduledSyncPreferences
 import dev.stapler.stelekit.git.ScheduledSyncStatus
+import dev.stapler.stelekit.git.GitRepository
+import dev.stapler.stelekit.git.lfs.LfsTransferPolicySource
+import dev.stapler.stelekit.platform.Settings
+import dev.stapler.stelekit.ui.components.settings.LfsTransferSettingsState
 import dev.stapler.stelekit.ui.components.settings.ScheduledSyncSettingsState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -143,6 +149,27 @@ internal fun rememberScheduledSyncSettingsState(
         onResume = { scope.launch { service.resumeScheduledSync() } },
         onSetUpGit = onSetUpGit,
         onFix = onSetUpGit,
+    )
+}
+
+/**
+ * Settings model for the Large files (Git LFS) section, or null when this platform cannot transfer LFS objects.
+ * Writes go straight to [settings]; the transfer code re-reads them on every download, so a change applies at once.
+ */
+@Composable
+internal fun rememberLfsTransferSettingsState(
+    settings: Settings?,
+    gitRepository: GitRepository?,
+): LfsTransferSettingsState? {
+    val source = remember(settings) { LfsTransferPolicySource(settings) }
+    var policy by remember(source) { mutableStateOf(source.current()) }
+    if (settings == null || gitRepository == null || !gitRepository.lfsTransferSupported) return null
+    return LfsTransferSettingsState(
+        maxObjectMb = (policy.maxObjectBytes / (1024L * 1024)).toInt(),
+        deferOnMetered = policy.deferOnMetered,
+        meteredDetectionSupported = gitRepository.lfsMeteredDetectionSupported,
+        onMaxObjectMbChange = { mb -> policy = policy.copy(maxObjectBytes = mb * 1024L * 1024).also(source::save) },
+        onDeferOnMeteredChange = { defer -> policy = policy.copy(deferOnMetered = defer).also(source::save) },
     )
 }
 

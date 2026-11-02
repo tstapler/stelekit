@@ -181,6 +181,8 @@ internal fun GraphContentActiveShell(
         viewModel.openGitSetup()
     }
 
+    val lfsTransferSettings = rememberLfsTransferSettingsState(platformSettings, deps.platformIntegrations.gitRepository)
+
     val focusManager = LocalFocusManager.current
     BoxWithConstraints(
         modifier = Modifier
@@ -432,6 +434,7 @@ internal fun GraphContentActiveShell(
                 settings = SettingsDialogDeps(
                     assetIndexing = deps.assets?.indexing,
                     scheduledSync = scheduledSyncSettings,
+                    lfsTransfer = lfsTransferSettings,
                     voiceSettings = voiceSettings,
                     llmCredentialStore = llmCredentialStore,
                     llmProviderRegistry = llmProviderRegistry,

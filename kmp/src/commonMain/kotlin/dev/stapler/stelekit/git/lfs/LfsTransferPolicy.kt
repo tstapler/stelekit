@@ -20,10 +20,15 @@ data class LfsTransferPolicy(
 
 /** Reads [LfsTransferPolicy] from app settings; a missing or non-positive size falls back to the default cap. */
 class LfsTransferPolicySource(private val settings: Settings?) {
+    fun save(policy: LfsTransferPolicy) {
+        settings?.putString(KEY_MAX_OBJECT_MB, (policy.maxObjectBytes / BYTES_PER_MB).toString())
+        settings?.putBoolean(KEY_DEFER_ON_METERED, policy.deferOnMetered)
+    }
+
     fun current(): LfsTransferPolicy {
         val mb = settings?.getString(KEY_MAX_OBJECT_MB, "")?.toLongOrNull()?.takeIf { it > 0 }
         return LfsTransferPolicy(
-            maxObjectBytes = mb?.let { it * 1024 * 1024 } ?: LfsTransferPolicy.DEFAULT_MAX_OBJECT_BYTES,
+            maxObjectBytes = mb?.let { it * BYTES_PER_MB } ?: LfsTransferPolicy.DEFAULT_MAX_OBJECT_BYTES,
             deferOnMetered = settings?.getBoolean(KEY_DEFER_ON_METERED, false) ?: false,
         )
     }
@@ -31,5 +36,6 @@ class LfsTransferPolicySource(private val settings: Settings?) {
     companion object {
         const val KEY_MAX_OBJECT_MB = "git_lfs_max_object_mb"
         const val KEY_DEFER_ON_METERED = "git_lfs_defer_on_metered"
+        private const val BYTES_PER_MB = 1024L * 1024
     }
 }

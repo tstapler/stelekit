@@ -125,6 +125,8 @@ fun SettingsDialog(
     assetIndexing: dev.stapler.stelekit.asset.AssetIndexingController? = null,
     // Scheduled sync switch + interval (git-backed graphs only); null hides the section.
     scheduledSync: ScheduledSyncSettingsState? = null,
+    // Large files (Git LFS) size cap and metered switch; null hides the section.
+    lfsTransfer: LfsTransferSettingsState? = null,
 ) {
     if (visible) {
         Dialog(
@@ -199,6 +201,10 @@ fun SettingsDialog(
                         if (scheduledSync != null) {
                             Spacer(modifier = Modifier.height(16.dp))
                             ScheduledSyncSection(scheduledSync)
+                        }
+                        if (lfsTransfer != null) {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            LfsTransferSection(lfsTransfer)
                         }
                     }
                     SettingsCategory.EDITOR -> EditorSettings()

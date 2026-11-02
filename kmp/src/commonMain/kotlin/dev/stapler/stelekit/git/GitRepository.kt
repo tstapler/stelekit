@@ -98,6 +98,9 @@ interface GitRepository {
     /** True where this repository can transfer LFS objects (JVM, Android); drives [dev.stapler.stelekit.git.lfs.LfsPlatformCapabilities]. */
     val lfsTransferSupported: Boolean get() = false
 
+    /** True where the platform can tell a metered connection apart (Android); gates the "wait for unmetered" option. */
+    val lfsMeteredDetectionSupported: Boolean get() = false
+
     /** Supplies the effective [dev.stapler.stelekit.git.lfs.LfsMode] per graph id (null at clone time). No-op where transfer is unsupported. */
     fun setLfsModeProvider(provider: (graphId: String?) -> dev.stapler.stelekit.git.lfs.LfsMode) {}
 

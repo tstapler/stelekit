@@ -208,6 +208,16 @@ class LfsTransferPolicyTest {
     }
 
     @Test
+    fun policySource_should_RoundTripSavedPolicy() {
+        val settings = MapSettings()
+        val chosen = LfsTransferPolicy(maxObjectBytes = 100L * 1024 * 1024, deferOnMetered = true)
+
+        LfsTransferPolicySource(settings).save(chosen)
+
+        assertEquals(chosen, LfsTransferPolicySource(settings).current())
+    }
+
+    @Test
     fun policySource_should_FallBackToDefaultCap_When_StoredSizeIsInvalid() {
         for (bad in listOf("0", "-5", "abc")) {
             val settings = MapSettings(LfsTransferPolicySource.KEY_MAX_OBJECT_MB to bad)

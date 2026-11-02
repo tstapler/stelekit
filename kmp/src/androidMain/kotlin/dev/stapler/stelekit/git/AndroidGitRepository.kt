@@ -81,6 +81,7 @@ class AndroidGitRepository(
     )
 
     override val lfsTransferSupported: Boolean get() = true
+    override val lfsMeteredDetectionSupported: Boolean get() = true
     override val cleanFilterActive: Boolean get() = lfs.filterActive
     override fun setLfsModeProvider(provider: (graphId: String?) -> LfsMode) { lfs.modeFor = provider }
     override fun setLfsTransferContext(tracker: dev.stapler.stelekit.jobs.JobTracker, policy: () -> dev.stapler.stelekit.git.lfs.LfsTransferPolicy) {

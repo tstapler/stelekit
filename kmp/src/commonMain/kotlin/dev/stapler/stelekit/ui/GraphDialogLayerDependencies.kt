@@ -84,6 +84,8 @@ data class SettingsDialogDeps(
     val assetIndexing: dev.stapler.stelekit.asset.AssetIndexingController? = null,
     /** Scheduled-sync switch, interval and status; null hides the Settings section (no git on this platform). */
     val scheduledSync: dev.stapler.stelekit.ui.components.settings.ScheduledSyncSettingsState? = null,
+    /** Largest-image cap and wait-for-Wi-Fi switch for LFS downloads; null hides the section (no LFS transfer here). */
+    val lfsTransfer: dev.stapler.stelekit.ui.components.settings.LfsTransferSettingsState? = null,
 )
 
 /**
