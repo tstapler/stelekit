@@ -33,7 +33,7 @@ class ScheduledSyncStatusTest {
     }
 
     @Test
-    fun `line should read last checked 3 min ago and next in 12 when a tick succeeded 3 minutes ago at 15`() {
+    fun `line should read last synced 3 min ago and next in 12 when a tick succeeded 3 minutes ago at 15`() {
         val now = 10_000_000L
         val last = now - 3 * minute
         val status = ScheduledSyncStatus(running = true, lastAttemptAtMs = last, lastSuccessAtMs = last, nextAtMs = last + 15 * minute)
@@ -50,7 +50,7 @@ class ScheduledSyncStatusTest {
     }
 
     @Test
-    fun `line should report busy offline paused and never checked`() {
+    fun `line should report busy offline paused and never synced`() {
         assertEquals(ScheduledSyncLine.CheckInProgress, scheduledSyncLine(true, ScheduledSyncStatus(lastSkip = SkipReason.Busy), 0, false))
         assertEquals(ScheduledSyncLine.Offline, scheduledSyncLine(true, ScheduledSyncStatus(lastSkip = SkipReason.Offline), 0, false))
         assertEquals(ScheduledSyncLine.NeverChecked, scheduledSyncLine(true, ScheduledSyncStatus(), 0, false))

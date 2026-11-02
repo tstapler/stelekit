@@ -111,6 +111,7 @@ kt_jvm_library(
         "dev/stapler/stelekit/db/sidecar/FakeFileSystem.kt",
         "dev/stapler/stelekit/domain/HtmlBlockConverterTest.kt",
         "dev/stapler/stelekit/error/DomainErrorTest.kt",
+        "dev/stapler/stelekit/git/SyncSafetyConfirmTest.kt",
         "dev/stapler/stelekit/git/lfs/GitAttributesMatcherPropertyTest.kt",
         "dev/stapler/stelekit/git/lfs/GitAttributesMatcherTest.kt",
         "dev/stapler/stelekit/git/lfs/GitAttributesParserTest.kt",

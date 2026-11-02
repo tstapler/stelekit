@@ -19,7 +19,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import dev.stapler.stelekit.git.TypedConfirm
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -169,7 +176,22 @@ internal fun FirstSyncReviewDialog(
     onDismiss: () -> Unit,
     preview: FirstSyncPreviewState? = null,
     onRetryPreview: () -> Unit = {},
+    onCancelPreview: () -> Unit = {},
+    onSyncWithoutPreview: () -> Unit = {},
+    /** Non-null when the last sync ended in a state that has a detail surface (mass change, conflict, repair). */
+    onOpenDetails: (() -> Unit)? = null,
 ) {
+    var confirmingWithoutPreview by remember { mutableStateOf(false) }
+    if (confirmingWithoutPreview) {
+        SyncWithoutPreviewDialog(
+            busy = syncing,
+            onConfirm = {
+                confirmingWithoutPreview = false
+                onSyncWithoutPreview()
+            },
+            onCancel = { confirmingWithoutPreview = false },
+        )
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Branch set to $remoteBranch. Review before syncing.") },
@@ -179,18 +201,21 @@ internal fun FirstSyncReviewDialog(
                     "Sync now fetches '$remoteBranch', merges it into this device and pushes any local " +
                         "commits. Files here can be changed or deleted to match the remote.",
                 )
-                PreviewSection(preview, onRetryPreview)
+                PreviewSection(preview, onRetryPreview, onCancelPreview) { confirmingWithoutPreview = true }
                 resultLine?.let {
                     Spacer(Modifier.height(8.dp))
                     Text(it, style = MaterialTheme.typography.bodyMedium)
                 }
+                onOpenDetails?.let { TextButton(onClick = it) { Text("Open details") } }
                 if (syncing) {
                     Spacer(Modifier.height(8.dp))
                     Text("Syncing…", style = MaterialTheme.typography.bodySmall)
                 }
             }
         },
-        confirmButton = { Button(onClick = onSyncNow, enabled = !syncing) { Text("Sync now") } },
+        confirmButton = {
+            Button(onClick = onSyncNow, enabled = !syncing && (preview?.allowsSyncNow ?: true)) { Text("Sync now") }
+        },
         dismissButton = {
             Row {
                 if (previousBranch != null) {
@@ -203,21 +228,69 @@ internal fun FirstSyncReviewDialog(
 }
 
 @Composable
-private fun PreviewSection(preview: FirstSyncPreviewState?, onRetry: () -> Unit) {
+private fun PreviewSection(
+    preview: FirstSyncPreviewState?,
+    onRetry: () -> Unit,
+    onCancel: () -> Unit,
+    onSyncWithoutPreview: () -> Unit,
+) {
     if (preview == null) return
     Column {
         Spacer(Modifier.height(8.dp))
         when (preview) {
-            FirstSyncPreviewState.Loading -> Text("Loading preview…", style = MaterialTheme.typography.bodySmall)
+            FirstSyncPreviewState.Loading -> {
+                Text("Checking the remote…", style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = onCancel) { Text("Cancel") }
+            }
             is FirstSyncPreviewState.Failed -> {
-                Text("Preview unavailable: ${preview.message}", style = MaterialTheme.typography.bodySmall)
+                Text("Preview unavailable: ${preview.message}. Nothing was changed.", style = MaterialTheme.typography.bodySmall)
                 TextButton(onClick = onRetry) { Text("Retry preview") }
+                TextButton(onClick = onSyncWithoutPreview) { Text("Sync without preview") }
             }
             is FirstSyncPreviewState.Ready -> Column(Modifier.heightIn(max = PREVIEW_MAX_HEIGHT)) {
                 preview.preview.summaryLines().forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
             }
         }
     }
+}
+
+/**
+ * Confirm for syncing when the remote could not be checked. The user types [TypedConfirm.SYNC_WITHOUT_PREVIEW_WORD];
+ * focus starts on Cancel so a stray Enter cannot confirm.
+ */
+@Composable
+internal fun SyncWithoutPreviewDialog(busy: Boolean, onConfirm: () -> Unit, onCancel: () -> Unit) {
+    var typed by remember { mutableStateOf("") }
+    val cancelFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { cancelFocus.requestFocus() }
+    val matches = TypedConfirm.matches(typed, TypedConfirm.SYNC_WITHOUT_PREVIEW_WORD)
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text("Sync without a preview?") },
+        text = {
+            Column {
+                Text(
+                    "SteleKit couldn't check the remote, so how many commits are ahead or behind, and which " +
+                        "branches exist there, is unknown. Syncing can still pull commits and delete files on this " +
+                        "device to match the remote. The delete guard still applies.",
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = typed,
+                    onValueChange = { typed = it },
+                    label = { Text("Type sync to continue") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, capitalization = KeyboardCapitalization.None),
+                )
+                if (busy) {
+                    Spacer(Modifier.height(8.dp))
+                    Text("A sync is running. Wait for it to finish.", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        },
+        confirmButton = { Button(onClick = onConfirm, enabled = matches && !busy) { Text("Sync without preview") } },
+        dismissButton = { TextButton(onClick = onCancel, modifier = Modifier.focusRequester(cancelFocus)) { Text("Cancel") } },
+    )
 }
 
 private val PREVIEW_MAX_HEIGHT = 240.dp

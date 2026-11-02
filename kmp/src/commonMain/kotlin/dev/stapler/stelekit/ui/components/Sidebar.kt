@@ -115,6 +115,7 @@ fun LeftSidebar(
     onOpenScheduledSyncSettings: (() -> Unit)? = null,
     onBranchRepair: (() -> Unit)? = null,
     onReviewFirstSync: (() -> Unit)? = null,
+    onSyncDetails: (() -> Unit)? = null,
     onSyncClick: () -> Unit = {},
     onGitSetup: () -> Unit = {},
     isGitConfigured: Boolean = false,
@@ -274,6 +275,7 @@ fun LeftSidebar(
                 onAuthError = onAuthError,
                 onBranchRepair = onBranchRepair,
                 onReviewFirstSync = onReviewFirstSync,
+                onSyncDetails = onSyncDetails,
                 onOpenScheduledSyncSettings = onOpenScheduledSyncSettings,
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
             )

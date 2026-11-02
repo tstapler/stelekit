@@ -273,7 +273,11 @@ import dev.stapler.stelekit.git.ConflictMarkerDiffScanTest
 import dev.stapler.stelekit.git.FirstSyncPreviewSourceTest
 import dev.stapler.stelekit.git.GitSyncServiceChangeGuardsTest
 import dev.stapler.stelekit.git.GitSyncServicePublishFailureTest
+import dev.stapler.stelekit.git.GitSyncServiceAutoCommitTest
 import dev.stapler.stelekit.git.GitSyncServiceScheduledSyncTest
+import dev.stapler.stelekit.git.SyncSafetyConfirmTest
+import dev.stapler.stelekit.ui.FirstSyncPreviewLoaderTest
+import dev.stapler.stelekit.ui.GitSyncCoordinatorTest
 import dev.stapler.stelekit.git.ScheduledSyncPolicyTest
 import dev.stapler.stelekit.git.ScheduledSyncStackE2ETest
 import dev.stapler.stelekit.git.ShallowMergeTest
@@ -564,6 +568,10 @@ import org.junit.runners.Suite
     FirstSyncPreviewSourceTest::class,
     GitSyncServicePublishFailureTest::class,
     GitSyncServiceScheduledSyncTest::class,
+    GitSyncServiceAutoCommitTest::class,
+    SyncSafetyConfirmTest::class,
+    FirstSyncPreviewLoaderTest::class,
+    GitSyncCoordinatorTest::class,
     ScheduledSyncPolicyTest::class,
     ScheduledSyncStackE2ETest::class,
     ShallowMergeTest::class,

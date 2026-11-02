@@ -40,6 +40,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.error.toSyncErrorMessage
+import dev.stapler.stelekit.git.SyncDetailsTarget
+import dev.stapler.stelekit.git.detailsTarget
 import dev.stapler.stelekit.git.lfs.LfsViolation
 import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.ui.components.git.LfsHeldFilesSheet
@@ -92,6 +94,8 @@ fun SyncStatusBadge(
     onBranchRepair: (() -> Unit)? = null,
     onReviewFirstSync: (() -> Unit)? = null,
     onOpenScheduledSyncSettings: (() -> Unit)? = null,
+    /** Opens the detail sheet for an interrupted merge or a paused mass deletion. */
+    onSyncDetails: (() -> Unit)? = null,
 ) {
     if (!isGitConfigured) {
         Box(modifier = modifier.padding(horizontal = 4.dp)) {
@@ -119,6 +123,7 @@ fun SyncStatusBadge(
             onBranchRepair = onBranchRepair,
             onReviewFirstSync = onReviewFirstSync,
             onOpenScheduledSyncSettings = onOpenScheduledSyncSettings,
+            onSyncDetails = onSyncDetails,
         )
 
         Spacer(modifier = Modifier.width(4.dp))
@@ -149,6 +154,7 @@ private fun SyncStateBadge(
     onBranchRepair: (() -> Unit)? = null,
     onReviewFirstSync: (() -> Unit)? = null,
     onOpenScheduledSyncSettings: (() -> Unit)? = null,
+    onSyncDetails: (() -> Unit)? = null,
 ) {
     val syncState = status.state
     // Paused is a warning, not an error: it shows only over an otherwise-quiet badge, so a live
@@ -256,11 +262,13 @@ private fun SyncStateBadge(
         is SyncState.Error -> {
             val isAuthError = syncState.error is DomainError.GitError.AuthFailed
             val isBranchMissing = syncState.error is DomainError.GitError.RemoteBranchNotFound
+            val hasDetails = syncState.detailsTarget() != SyncDetailsTarget.None && onSyncDetails != null
             Row(
                 modifier = modifier.clickable {
                     when {
                         isAuthError && onAuthError != null -> onAuthError()
                         isBranchMissing && onBranchRepair != null -> onBranchRepair()
+                        hasDetails -> onSyncDetails?.invoke()
                         else -> onSyncClick()
                     }
                 },
@@ -271,6 +279,7 @@ private fun SyncStateBadge(
                     contentDescription = when {
                         isAuthError -> "Authentication failed — tap to update credentials"
                         isBranchMissing -> "Sync error — tap to fix"
+                        hasDetails -> "Sync error — tap for details"
                         else -> "Sync error — tap to retry"
                     },
                     tint = MaterialTheme.colorScheme.error,

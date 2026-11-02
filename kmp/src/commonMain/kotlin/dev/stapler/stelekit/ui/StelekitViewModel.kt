@@ -273,6 +273,13 @@ class StelekitViewModel(
     }
     fun dismissFirstSyncReview() = _uiState.update { it.copy(firstSyncReviewVisible = false) }
 
+    /** Badge tap / review `Open details`: opens whichever sheet explains the current sync problem. */
+    fun openSyncDetails() = gitSyncCoordinator.safety.openSyncDetails()
+    fun dismissRepairNeeded() = gitSyncCoordinator.safety.dismissRepairNeeded()
+    fun dismissMassChangeConfirm() = gitSyncCoordinator.safety.dismissMassChangeConfirm()
+    fun abortInterruptedMerge() = gitSyncCoordinator.safety.abortInterruptedMerge()
+    fun confirmMassChangeSync() = gitSyncCoordinator.safety.confirmMassChangeSync()
+
     /** Triggers a fetch-only check for remote changes on the active graph. */
     fun triggerFetchOnly() = gitSyncCoordinator.triggerFetchOnly()
 
