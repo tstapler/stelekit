@@ -11,6 +11,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 
 /** `Sync now` needs the remote numbers, so it waits for [FirstSyncPreviewState.Ready]. */
@@ -35,7 +36,18 @@ internal class FirstSyncPreviewLoader(
     fun start() {
         job?.cancel()
         _state.value = FirstSyncPreviewState.Loading
-        job = scope.launch { _state.value = load() }
+        job = scope.launch {
+            val result = load()
+            // Awaiting an already-completed result returns even from a cancelled job, so a plain assignment
+            // here could overwrite the state [cancel] just set. Publish only over the still-loading state.
+            ensureActive()
+            _state.compareAndSet(FirstSyncPreviewState.Loading, result)
+        }
+    }
+
+    /** Suspends until the current load job has finished or been cancelled. */
+    internal suspend fun awaitIdle() {
+        job?.join()
     }
 
     /** Stops a running check and keeps the local part; a finished load is left alone. */

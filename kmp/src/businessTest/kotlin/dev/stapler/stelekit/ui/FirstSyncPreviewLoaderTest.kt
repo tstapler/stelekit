@@ -44,19 +44,19 @@ class FirstSyncPreviewLoaderTest {
 
     @Test
     fun `cancel_should_StopTheCheckAndOfferSyncWithoutPreview_WhenLoading`() = runBlocking {
-        var finished = false
         val gate = CompletableDeferred<FirstSyncPreviewState>()
-        val loader = FirstSyncPreviewLoader({ gate.await().also { finished = true } })
+        val loader = FirstSyncPreviewLoader({ gate.await() })
         loader.start()
 
         loader.cancel()
         gate.complete(ready)
+        // Joining the job means a late result has had every chance to overwrite the cancelled state.
+        loader.awaitIdle()
 
         val state = loader.state.value
         assertEquals(FirstSyncPreviewState.Failed(FirstSyncPreviewLoader.CANCELLED_MESSAGE), state)
         assertTrue(state.allowsSyncWithoutPreview)
-        assertFalse(state.allowsSyncNow)
-        assertFalse(finished, "the cancelled load must not complete and overwrite the state")
+        assertFalse(state.allowsSyncNow, "the cancelled load must not complete and overwrite the state")
         loader.close()
     }
 

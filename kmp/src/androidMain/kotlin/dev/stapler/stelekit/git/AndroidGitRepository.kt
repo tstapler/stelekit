@@ -519,6 +519,34 @@ class AndroidGitRepository(
         return Unit.right()
     }
 
+    /**
+     * Shadow-backed graphs report nothing at risk: [doAbortMerge] resets only the shadow tree and then re-copies SAF
+     * over it, so the user's uncommitted edits (which live in SAF) are never touched. A real working tree
+     * (app-owned or a resolvable path) is reset in place, so its unstaged edits are what [GuardedMergeAbort] must keep.
+     */
+    override suspend fun editsAtRiskOfReset(config: GitConfig): Either<DomainError.GitError, List<String>> =
+        withContext(PlatformDispatcher.IO) {
+            if (shadow.shadowWorktreeFor(config.repoRoot.value) != null) return@withContext emptyList<String>().right()
+            runGitOp({ e -> DomainError.GitError.FetchFailed("Status failed: ${e.message}") }) {
+                openGitWithoutFreshnessCheck(config).use { git ->
+                    val status = git.status().call()
+                    (status.modified - status.conflicting).sorted().right()
+                }
+            }
+        }
+
+    override suspend fun readWorkingBytes(config: GitConfig, path: String): ByteArray? =
+        withContext(PlatformDispatcher.IO) {
+            runCatching { File(shadow.resolveForJGit(config.repoRoot.value), path).takeIf { it.isFile }?.readBytes() }.getOrNull()
+        }
+
+    override suspend fun writeWorkingBytes(config: GitConfig, path: String, bytes: ByteArray): Boolean =
+        withContext(PlatformDispatcher.IO) {
+            runCatching {
+                File(shadow.resolveForJGit(config.repoRoot.value), path).also { it.parentFile?.mkdirs() }.writeBytes(bytes)
+            }.isSuccess
+        }
+
     override suspend fun checkoutFile(
         config: GitConfig,
         filePath: String,

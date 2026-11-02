@@ -280,10 +280,27 @@ class StelekitViewModel(
     fun openSyncDestination(destination: dev.stapler.stelekit.git.NotificationDestination) {
         when (destination) {
             is dev.stapler.stelekit.git.NotificationDestination.FirstSyncReview -> openFirstSyncReview()
-            is dev.stapler.stelekit.git.NotificationDestination.SyncStatusSheet,
-            is dev.stapler.stelekit.git.NotificationDestination.CurrentGraphSheet -> setSettingsVisible(true)
+            is dev.stapler.stelekit.git.NotificationDestination.SyncStatusSheet -> openSyncStatusSheet()
+            is dev.stapler.stelekit.git.NotificationDestination.CurrentGraphSheet -> openSyncStatusSheet(destination.notice)
             is dev.stapler.stelekit.git.NotificationDestination.UpToDate -> Unit
         }
+    }
+
+    /** The sync chip, Settings' "View sync status" and sync destinations open this; it never starts a sync. */
+    fun openSyncStatusSheet(notice: String? = null) =
+        _uiState.update { it.copy(syncStatusSheetVisible = true, syncStatusNotice = notice) }
+    fun dismissSyncStatusSheet() = _uiState.update { it.copy(syncStatusSheetVisible = false, syncStatusNotice = null) }
+
+    /** Settings' "View sync status": closes Settings, then opens the sheet. */
+    fun openSyncStatusFromSettings() {
+        setSettingsVisible(false)
+        openSyncStatusSheet()
+    }
+
+    /** The sheet's "Open sync settings": closes the sheet, then opens Settings. */
+    fun openSyncSettingsFromStatusSheet() {
+        dismissSyncStatusSheet()
+        setSettingsVisible(true)
     }
     fun dismissRepairNeeded() = gitSyncCoordinator.safety.dismissRepairNeeded()
     fun dismissMassChangeConfirm() = gitSyncCoordinator.safety.dismissMassChangeConfirm()

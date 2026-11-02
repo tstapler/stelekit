@@ -43,6 +43,7 @@ import dev.stapler.stelekit.git.SyncNotifier
 import dev.stapler.stelekit.git.GitShadowWorktree
 import dev.stapler.stelekit.git.GitSyncBusyCounter
 import dev.stapler.stelekit.git.AndroidBackgroundRestrictionProbe
+import dev.stapler.stelekit.git.AndroidNotificationPermissionAccess
 import dev.stapler.stelekit.git.BackgroundSyncSchedulerFactory
 import dev.stapler.stelekit.git.WorkManagerSyncScheduler
 import dev.stapler.stelekit.model.GraphId
@@ -93,6 +94,7 @@ class MainActivity : ComponentActivity() {
     private var pendingFolderPick: CompletableDeferred<String?>? = null
     private var pendingMicPermission: CompletableDeferred<Boolean>? = null
     private var pendingCameraPermission: CompletableDeferred<Boolean>? = null
+    private var pendingNotificationPermission: CompletableDeferred<Boolean>? = null
     private var pendingSaveFile: CompletableDeferred<String?>? = null
     private var pendingFilePick: CompletableDeferred<String?>? = null
 
@@ -101,6 +103,13 @@ class MainActivity : ComponentActivity() {
     ) { granted ->
         pendingMicPermission?.complete(granted)
         pendingMicPermission = null
+    }
+
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        pendingNotificationPermission?.complete(granted)
+        pendingNotificationPermission = null
     }
 
     private val cameraPermissionLauncher = registerForActivityResult(
@@ -511,6 +520,18 @@ class MainActivity : ComponentActivity() {
                             minimumIntervalMinutes = WorkManagerSyncScheduler.MIN_PERIODIC_INTERVAL_MINUTES.toInt(),
                         ) { graphId -> WorkManagerSyncScheduler(applicationContext, graphId) },
                         backgroundRestrictionProbe = AndroidBackgroundRestrictionProbe(applicationContext),
+                        notificationPermission = remember {
+                            AndroidNotificationPermissionAccess(
+                                context = applicationContext,
+                                settings = PlatformSettings(),
+                                requestPermission = ::requestNotificationPermission,
+                                shouldShowRationale = {
+                                    androidx.core.app.ActivityCompat.shouldShowRequestPermissionRationale(
+                                        this@MainActivity, Manifest.permission.POST_NOTIFICATIONS,
+                                    )
+                                },
+                            )
+                        },
                         platformCaps = dev.stapler.stelekit.platform.ml.androidPlatformCaps(),
                         gitRepository = gitRepository,
                         gitCloneWorkerLauncher = gitCloneWorkerLauncher,
@@ -592,6 +613,18 @@ class MainActivity : ComponentActivity() {
         val deferred = CompletableDeferred<Boolean>()
         pendingMicPermission = deferred
         runOnUiThread { micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO) }
+        return deferred.await()
+    }
+
+    private suspend fun requestNotificationPermission(): Boolean {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) return true
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+            == PackageManager.PERMISSION_GRANTED
+        ) return true
+        pendingNotificationPermission?.let { return it.await() }
+        val deferred = CompletableDeferred<Boolean>()
+        pendingNotificationPermission = deferred
+        runOnUiThread { notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) }
         return deferred.await()
     }
 

@@ -17,9 +17,9 @@ import kotlin.time.Clock
 
 private const val CHIP_REFRESH_MILLIS = 60_000L
 
-/** The sync chip for [staleness], re-aged once a minute; null when there is no sync service to describe. */
+/** Wall-clock millis, refreshed once a minute so "5 min ago" text ages while it is on screen. */
 @Composable
-internal fun rememberStalenessChip(staleness: SyncStaleness?, intervalMinutes: Int): StalenessChipState? {
+internal fun rememberMinuteClockMs(): Long {
     var nowMs by remember { mutableLongStateOf(Clock.System.now().toEpochMilliseconds()) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -27,5 +27,12 @@ internal fun rememberStalenessChip(staleness: SyncStaleness?, intervalMinutes: I
             nowMs = Clock.System.now().toEpochMilliseconds()
         }
     }
+    return nowMs
+}
+
+/** The sync chip for [staleness], re-aged once a minute; null when there is no sync service to describe. */
+@Composable
+internal fun rememberStalenessChip(staleness: SyncStaleness?, intervalMinutes: Int): StalenessChipState? {
+    val nowMs = rememberMinuteClockMs()
     return remember(staleness, nowMs, intervalMinutes) { staleness?.let { stalenessChipState(it, nowMs, intervalMinutes) } }
 }

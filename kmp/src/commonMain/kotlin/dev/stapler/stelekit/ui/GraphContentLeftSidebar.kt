@@ -171,6 +171,7 @@ internal fun GraphContentLeftSidebar(
         onBranchRepair = { viewModel.openBranchRepair() },
         onReviewFirstSync = { viewModel.openFirstSyncReview() },
         onSyncDetails = { viewModel.openSyncDetails() },
+        onOpenSyncStatus = { viewModel.openSyncStatusSheet() },
         onSyncClick = {
             if (inputs.syncState is dev.stapler.stelekit.git.model.SyncState.CredentialVaultLocked) {
                 // Vault is locked — lock() re-shows the unlock screen

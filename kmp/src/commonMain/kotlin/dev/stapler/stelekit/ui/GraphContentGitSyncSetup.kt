@@ -127,6 +127,7 @@ internal fun rememberGraphContentGitSyncStack(
 internal fun rememberScheduledSyncSettingsState(
     stack: GraphContentGitSyncStack,
     onReviewFirstSync: () -> Unit = {},
+    onOpenStatus: () -> Unit = {},
     onSetUpGit: () -> Unit,
 ): ScheduledSyncSettingsState? {
     val controls = stack.scheduledSync
@@ -154,6 +155,7 @@ internal fun rememberScheduledSyncSettingsState(
         onFix = onSetUpGit,
         firstSyncReviewRequired = controls.hasRemote && !firstSyncConfirmed,
         onReviewFirstSync = onReviewFirstSync,
+        onOpenStatus = onOpenStatus,
     )
 }
 

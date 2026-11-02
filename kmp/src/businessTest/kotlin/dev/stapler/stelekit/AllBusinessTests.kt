@@ -282,6 +282,8 @@ import dev.stapler.stelekit.git.ColdSyncRunnerTest
 import dev.stapler.stelekit.git.StalenessChipStateTest
 import dev.stapler.stelekit.git.SyncNotificationLogicTest
 import dev.stapler.stelekit.git.SyncStalenessStoreTest
+import dev.stapler.stelekit.git.SyncStatusSheetModelTest
+import dev.stapler.stelekit.git.UpdatesNotificationToggleTest
 import dev.stapler.stelekit.ui.FirstSyncPreviewLoaderTest
 import dev.stapler.stelekit.ui.GitSyncCoordinatorTest
 import dev.stapler.stelekit.git.ScheduledSyncPolicyTest
@@ -582,6 +584,8 @@ import org.junit.runners.Suite
     StalenessChipStateTest::class,
     SyncNotificationLogicTest::class,
     SyncStalenessStoreTest::class,
+    SyncStatusSheetModelTest::class,
+    UpdatesNotificationToggleTest::class,
     FirstSyncPreviewLoaderTest::class,
     GitSyncCoordinatorTest::class,
     ScheduledSyncPolicyTest::class,

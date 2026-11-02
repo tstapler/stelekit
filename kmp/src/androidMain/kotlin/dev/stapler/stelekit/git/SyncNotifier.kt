@@ -98,12 +98,12 @@ class SyncNotifier(
     private fun notifiedKey(graphId: String) = "git_sync_notified_behind_$graphId"
 
     companion object {
-        const val SETTING_KEY = "git_sync_notify_enabled"
+        const val SETTING_KEY = UpdatesNotificationPreference.SETTING_KEY
         const val EXTRA_OPEN_SYNC_STATUS_GRAPH_ID = "dev.stapler.stelekit.OPEN_SYNC_STATUS_GRAPH_ID"
         const val EXTRA_OPEN_SYNC_STATUS_GRAPH_NAME = "dev.stapler.stelekit.OPEN_SYNC_STATUS_GRAPH_NAME"
 
         /** Default on (the plan's Settings toggle); Android 13+ still needs the runtime permission. */
-        fun isEnabled(settings: Settings): Boolean = settings.getBoolean(SETTING_KEY, true)
+        fun isEnabled(settings: Settings): Boolean = UpdatesNotificationPreference.isEnabled(settings)
 
         fun notificationId(graphId: String): Int = SYNC_NOTIFICATION_BASE + (graphId.hashCode() and 0xFFFF)
 
