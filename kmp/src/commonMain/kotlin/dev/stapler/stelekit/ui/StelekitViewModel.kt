@@ -1843,7 +1843,12 @@ class StelekitViewModel(
     }
 
     fun setSettingsVisible(visible: Boolean) {
-        _uiState.update { it.copy(settingsVisible = visible) }
+        _uiState.update { it.copy(settingsVisible = visible, pluginsSettingsRequested = false) }
+    }
+
+    /** Opens Settings on the Plugins page, scrolled to the plugin switches. */
+    fun showPluginsSettings() {
+        _uiState.update { it.copy(settingsVisible = true, pluginsSettingsRequested = true) }
     }
 
     fun setCommandPaletteVisible(visible: Boolean) {

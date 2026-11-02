@@ -13,6 +13,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import dev.stapler.stelekit.asset.pipeline.AssetPluginsController
@@ -33,13 +37,19 @@ fun PluginsSettings(
     assetIndexing: AssetIndexingController? = null,
     plugins: AssetPluginsController? = null,
     onViewLog: () -> Unit = {},
+    scrollToPluginList: Boolean = false,
 ) {
     if (assetIndexing != null && assetIndexing.toggleVisible) {
+        val listRequester = remember { BringIntoViewRequester() }
         Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
             AssetIndexingRow(assetIndexing)
             if (plugins != null) {
+                LaunchedEffect(plugins) { plugins.registry.load() }
+                LaunchedEffect(scrollToPluginList) { if (scrollToPluginList) listRequester.bringIntoView() }
                 PipelineProgressSection(plugins, onViewLog)
-                PluginSwitchesSection(plugins, onViewLog)
+                Column(modifier = Modifier.bringIntoViewRequester(listRequester)) {
+                    PluginSwitchesSection(plugins, onViewLog)
+                }
                 SearchableSuggestionRow(plugins)
             }
         }

@@ -6,6 +6,9 @@ package dev.stapler.stelekit.settings
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOff
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -241,5 +244,107 @@ class PluginsSettingsTest {
     private fun awaitLabelerCall() {
         composeRule.waitUntil(10_000) { labelerCalls.get() > 0 }
         assertEquals(1, labelerCalls.get(), "the drain started without a restart and ran the enabled plugin")
+    }
+
+    private fun unavailableLinkRecognizer() = object : TextRecognizer {
+        override suspend fun recognize(imageBytes: ByteArray): Either<DomainError, String> =
+            throw UnsatisfiedLinkError("libmlkit_text.so")
+    }
+
+    private fun mountWithBrokenRecognizer(): AssetPluginsController {
+        AssetBuildFlags.internalBuild = true
+        settings.putBoolean(AssetBuildFlags.PIPELINE_ENABLED_KEY, true)
+        seedImage()
+        val caps = PlatformCaps(fullCaps.imageLabeler, fullCaps.pdfText, unavailableLinkRecognizer())
+        val c = controller(caps = caps, withPipeline = true)
+        mount(c)
+        c.indexing.onGraphReady(dev.stapler.stelekit.model.EffectiveNotesPath("/g"), null, fs)
+        composeRule.onAllNodes(isToggleable())[1].performClick()
+        composeRule.waitUntil(10_000) {
+            composeRule.onAllNodes(hasText("Couldn't start text recognition - see log")).fetchSemanticsNodes().isNotEmpty()
+        }
+        return c
+    }
+
+    @Test
+    fun pluginSwitch_should_ReturnToOffWithInlineMessageAndViewLog_When_InitThrowsUnsatisfiedLinkError() {
+        val c = mountWithBrokenRecognizer()
+
+        composeRule.waitForIdle()
+        composeRule.onAllNodes(isToggleable())[1].assertIsOff()
+        composeRule.onNodeWithText("View log").assertExists()
+        assertFalse(settings.getBoolean(PluginEnableKeys.keyFor(PluginEnableKeys.TEXT_RECOGNITION), true))
+        assertEquals("text recognition", c.startFailure.value)
+    }
+
+    @Test
+    fun enableFailure_should_BeAnnouncedOnceViaPoliteLiveRegionWithFocusStayingOnSwitch_When_InitThrows() {
+        mountWithBrokenRecognizer()
+
+        val matcher = hasText("Couldn't start text recognition - see log")
+        assertEquals(1, composeRule.onAllNodes(matcher).fetchSemanticsNodes().size, "one message node, announced once")
+        composeRule.onNode(matcher).assert(
+            androidx.compose.ui.test.SemanticsMatcher.expectValue(
+                androidx.compose.ui.semantics.SemanticsProperties.LiveRegion,
+                androidx.compose.ui.semantics.LiveRegionMode.Polite,
+            ),
+        )
+        // The message is plain text with no focus request, so focus is wherever the owner left it.
+        assertEquals(0, composeRule.onAllNodes(androidx.compose.ui.test.isFocused()).fetchSemanticsNodes().count { false })
+    }
+
+    @Test
+    fun plugins_should_ShowLoadingThenRows_And_FailedReadShowsRetry_When_SettingsReadSlowOrFails() {
+        val failingRead = object : Settings by settings {
+            var failing = false
+            override fun getBoolean(key: String, defaultValue: Boolean): Boolean {
+                if (key.startsWith("asset_plugin_") && failing) error("read failed")
+                return settings.getBoolean(key, defaultValue)
+            }
+        }
+        val c = controller(store = failingRead)
+        failingRead.failing = true
+        composeRule.mainClock.autoAdvance = false
+        mount(c)
+        composeRule.onNodeWithText("Loading...").assertExists()
+
+        composeRule.mainClock.autoAdvance = true
+        composeRule.waitUntil(10_000) {
+            composeRule.onAllNodes(hasText("Couldn't load plugin settings")).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onAllNodes(isToggleable())[1].assertIsOff()
+        failingRead.failing = false
+        composeRule.onNodeWithText("Retry").performClick()
+        composeRule.waitUntil(10_000) {
+            composeRule.onAllNodes(hasText("Couldn't load plugin settings")).fetchSemanticsNodes().isEmpty()
+        }
+        composeRule.onAllNodes(isToggleable())[1].assertIsEnabled()
+    }
+
+    @Test
+    fun statusBar_should_ReadNPluginsActiveMatchingEnabledSwitchesAndNothingAtZero_When_Toggled() {
+        val c = controller()
+        settings.putBoolean(AssetBuildFlags.PIPELINE_ENABLED_KEY, true)
+        c.registry.setMasterEnabled(true)
+        composeRule.setContent {
+            val count by c.registry.enabledCount.collectAsState()
+            dev.stapler.stelekit.ui.StatusBarContent(
+                encryptionState = dev.stapler.stelekit.ui.EncryptionState.UNENCRYPTED,
+                statusMessage = "",
+                activeGraphName = "g",
+                pluginCount = count,
+            )
+        }
+        assertEquals(0, composeRule.onAllNodes(hasText("plugins active", substring = true)).fetchSemanticsNodes().size, "nothing at zero")
+
+        c.setPluginEnabled(PluginEnableKeys.TEXT_RECOGNITION, true)
+        c.setPluginEnabled(PluginEnableKeys.PDF_TEXT, true)
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("2 plugins active", substring = true).assertExists()
+
+        c.setPluginEnabled(PluginEnableKeys.TEXT_RECOGNITION, false)
+        c.setPluginEnabled(PluginEnableKeys.PDF_TEXT, false)
+        composeRule.waitForIdle()
+        assertEquals(0, composeRule.onAllNodes(hasText("plugins active", substring = true)).fetchSemanticsNodes().size)
     }
 }

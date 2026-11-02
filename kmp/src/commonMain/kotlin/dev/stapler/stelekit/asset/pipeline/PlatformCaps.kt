@@ -16,6 +16,8 @@ data class PlatformCaps(
     val imageLabeler: ImageLabeler,
     val pdfText: PdfTextExtractor,
     val textRecognizer: TextRecognizer,
+    /** Charger gate input; [AlwaysPowered] unless the host is battery powered. */
+    val power: PowerSource = AlwaysPowered,
 ) {
     companion object {
         val NONE = PlatformCaps(NoOpImageLabeler(), NoOpPdfTextExtractor(), NoOpTextRecognizer())

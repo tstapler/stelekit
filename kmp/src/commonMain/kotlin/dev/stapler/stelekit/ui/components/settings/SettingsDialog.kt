@@ -54,6 +54,7 @@ fun SettingsDialog(
     llmProviderRegistry: LlmProviderRegistry? = null,
     llmSettings: LlmSettings? = null,
     initialCategory: SettingsCategory = SettingsCategory.GENERAL,
+    scrollToPluginList: Boolean = false,
     onLlmCredentialsChange: () -> Unit = {},
     // Google Account settings (Story 7.2)
     isGoogleAuthenticated: Boolean = false,
@@ -204,7 +205,7 @@ fun SettingsDialog(
                         }
                     }
                     SettingsCategory.EDITOR -> EditorSettings()
-                    SettingsCategory.PLUGINS -> PluginsSettings(assetIndexing, assetPlugins, onViewPipelineLog)
+                    SettingsCategory.PLUGINS -> PluginsSettings(assetIndexing, assetPlugins, onViewPipelineLog, scrollToPluginList)
                     SettingsCategory.ADVANCED -> AdvancedSettings(onReindex)
                     SettingsCategory.VOICE -> if (voiceSettings != null && onRebuildVoicePipeline != null) {
                         VoiceCaptureSettings(

@@ -67,3 +67,15 @@ internal fun AssetBrowserStatusHeader(
         }
     }
 }
+
+/** "No matches", plus how many images are still waiting for processing and a link to the progress row. */
+@Composable
+internal fun AssetSearchEmptyState(pending: Long, onDetails: () -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(searchEmptyText(pending), style = MaterialTheme.typography.bodyMedium)
+        if (pending > 0) TextButton(onClick = onDetails) { Text("details") }
+    }
+}
+
+internal fun searchEmptyText(pending: Long): String =
+    if (pending > 0) "No matches. ${groupedCount(pending.toInt())} images are still being processed" else "No matches"

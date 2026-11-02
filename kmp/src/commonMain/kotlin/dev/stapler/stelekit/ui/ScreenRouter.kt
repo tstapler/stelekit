@@ -364,12 +364,15 @@ internal fun ScreenRouter(
                 val assetBrowserViewModel = remember {
                     dev.stapler.stelekit.ui.assets.AssetBrowserViewModel(assetRepository = repos.assetRepository, writeActor = repos.writeActor)
                 }
+                LaunchedEffect(currentScreen.initialSearch) {
+                    currentScreen.initialSearch?.let { assetBrowserViewModel.setSearch(it) }
+                }
                 dev.stapler.stelekit.ui.assets.AssetBrowserScreen(
                     viewModel = assetBrowserViewModel,
                     onNavigateBack = { viewModel.goBack() },
                     onNavigateToAsset = { uuid -> viewModel.navigateTo(Screen.AssetDetail(uuid)) },
                     plugins = assetPlugins,
-                    onOpenPluginsSettings = { viewModel.setSettingsVisible(true) },
+                    onOpenPluginsSettings = { viewModel.showPluginsSettings() },
                 )
             }
 

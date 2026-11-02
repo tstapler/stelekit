@@ -8,6 +8,11 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.platform.Settings
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -22,11 +27,44 @@ class AssetPluginsController(
     private val pipeline: AssetPipelineService?,
     val indexing: AssetIndexingController,
     private val settings: Settings? = null,
+    private val power: PowerSource = AlwaysPowered,
 ) {
     private val logger = Logger("AssetPipelinePlugins")
 
     private val idle = MutableStateFlow<PipelineProgress>(PipelineProgress.Idle)
     private val _stoppedByUser = MutableStateFlow(false)
+
+    private val _waitingForCharger = MutableStateFlow(false)
+    private var processNowOverride = false
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /** True while a requested drain waits for external power; the row offers "Process now". */
+    val waitingForCharger: StateFlow<Boolean> = _waitingForCharger.asStateFlow()
+
+    private val _startFailure = MutableStateFlow<String?>(null)
+
+    /** Display name of a plugin that could not start ("text recognition"); its switch has been returned to off. */
+    val startFailure: StateFlow<String?> = _startFailure.asStateFlow()
+
+    init {
+        pipeline?.let { service ->
+            scope.launch {
+                service.pluginInitFailures.collect { pluginId ->
+                    val settingsId = PluginRegistry.settingsIdFor(pluginId) ?: return@collect
+                    logger.warn("Plugin $pluginId could not start; switching it off")
+                    try {
+                        registry.setEnabled(settingsId, false)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Throwable) {
+                        registry.refresh()
+                    }
+                    _startFailure.value = PluginRegistry.displayName(settingsId)
+                }
+            }
+        }
+        scope.launch { power.isCharging.collect { charging -> if (charging && _waitingForCharger.value) requestBackfill() } }
+    }
 
     private val _promptDismissed = MutableStateFlow(readPromptDismissed())
 
@@ -59,8 +97,39 @@ class AssetPluginsController(
     private fun applyPluginChange() {
         val service = pipeline ?: return
         if (!indexing.isActive) return
+        if (registry.enabledCount.value == 0) {
+            _waitingForCharger.value = false
+            service.cancel()
+        } else {
+            requestBackfill()
+        }
+    }
+
+    /** Starts the drain, or parks it as "Waiting for charger" when on battery and the owner has not overridden. */
+    fun requestBackfill() {
+        val service = pipeline ?: return
+        if (!indexing.isActive) return
         _stoppedByUser.value = false
-        if (registry.enabledCount.value == 0) service.cancel() else service.scheduleBackfill()
+        if (!power.isCharging.value && !processNowOverride) {
+            _waitingForCharger.value = true
+            return
+        }
+        _waitingForCharger.value = false
+        service.scheduleBackfill()
+    }
+
+    /** The owner chose to process now, on battery. */
+    fun processNow() {
+        processNowOverride = true
+        requestBackfill()
+    }
+
+    fun close() {
+        scope.cancel()
+    }
+
+    fun dismissStartFailure() {
+        _startFailure.value = null
     }
 
     fun pause() {
@@ -73,12 +142,17 @@ class AssetPluginsController(
 
     fun cancel() {
         _stoppedByUser.value = true
+        _waitingForCharger.value = false
+        processNowOverride = false
         pipeline?.cancel()
     }
 
-    fun startAgain() {
+    fun startAgain() = requestBackfill()
+
+    /** Clears the failed flags and drains again (the "Retry failed" button). */
+    fun retryFailed() {
         _stoppedByUser.value = false
-        if (indexing.isActive) pipeline?.scheduleBackfill()
+        pipeline?.retryFailed()
     }
 
     /** Persists the card dismissal; it stays hidden across launches until [clearPromptDismissal]. */

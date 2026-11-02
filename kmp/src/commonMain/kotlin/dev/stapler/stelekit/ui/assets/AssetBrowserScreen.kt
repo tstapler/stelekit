@@ -137,9 +137,14 @@ fun AssetBrowserScreen(
             if (plugins != null) AssetBrowserStatusHeader(uiState.assets, plugins, onOpenPluginsSettings)
 
             if (uiState.assets.isEmpty() && !uiState.isLoading) {
-                AssetBrowserEmptyState(selectedFilter = uiState.selectedFilter)
+                if (uiState.searchQuery.isNotBlank()) {
+                    AssetSearchEmptyState(pending = uiState.pendingUnprocessed, onDetails = onOpenPluginsSettings)
+                } else {
+                    AssetBrowserEmptyState(selectedFilter = uiState.selectedFilter)
+                }
             } else {
-                when (uiState.viewMode) {
+                // A text search shows list rows so each match can carry its snippet.
+                when (if (uiState.searchQuery.isNotBlank()) ViewMode.LIST else uiState.viewMode) {
                     ViewMode.GRID -> {
                         val gridState = rememberLazyGridState()
                         LaunchedEffect(gridState) {
@@ -198,6 +203,8 @@ fun AssetBrowserScreen(
                                     viewMode = ViewMode.LIST,
                                     onClick = { onNavigateToAsset(asset.uuid) },
                                     onLongPress = { viewModel.showActionMenu(asset) },
+                                    snippet = uiState.searchPreviews[asset.uuid],
+                                    searchQuery = uiState.searchQuery,
                                 )
                                 HorizontalDivider()
                             }

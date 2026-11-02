@@ -86,7 +86,7 @@ internal fun rememberGraphContentAssetStack(
         }
     }
     DisposableEffect(pipeline) { onDispose { pipeline?.shutdown() } }
-    val plugins = remember(pluginRegistry, pipeline, indexing) { AssetPluginsController(pluginRegistry, pipeline, indexing, deps.platformSettings) }
+    val plugins = remember(pluginRegistry, pipeline, indexing) { AssetPluginsController(pluginRegistry, pipeline, indexing, deps.platformSettings, caps.power) }
     LaunchedEffect(indexing, pluginRegistry) {
         indexing.enabled.collect { pluginRegistry.setMasterEnabled(it) }
     }
@@ -97,10 +97,10 @@ internal fun rememberGraphContentAssetStack(
         }
         onDispose { unregister() }
     }
-    LaunchedEffect(indexing, pipeline) {
-        if (pipeline == null) return@LaunchedEffect
+    DisposableEffect(plugins) { onDispose { plugins.close() } }
+    LaunchedEffect(indexing, plugins) {
         indexing.progress.collect { progress ->
-            if (progress is AssetIndexProgress.Finished && indexing.isActive) pipeline.scheduleBackfill()
+            if (progress is AssetIndexProgress.Finished) plugins.requestBackfill()
         }
     }
 

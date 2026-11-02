@@ -30,6 +30,9 @@ class OnDeviceLabelingPlugin(
                 .map { labels -> AssetPipelineResult.Labels(labels.map { it.text }) }
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
+        } catch (e: LinkageError) {
+            // A missing native library is not a per-asset failure; the pipeline switches the plugin off.
+            throw e
         } catch (e: Throwable) {
             DomainError.DatabaseError.ReadFailed("OnDeviceLabelingPlugin failed: ${e.message}").left()
         }

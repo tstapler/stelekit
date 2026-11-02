@@ -3,7 +3,9 @@ package dev.stapler.stelekit.ui.assets
 import androidx.compose.runtime.RememberObserver
 import dev.stapler.stelekit.asset.AssetEntry
 import dev.stapler.stelekit.asset.AssetMediaType
+import dev.stapler.stelekit.asset.AssetSearchPreview
 import dev.stapler.stelekit.asset.AssetSortOrder
+import dev.stapler.stelekit.asset.AssetUuid
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.export.ClipboardProvider
 import dev.stapler.stelekit.logging.Logger
@@ -82,6 +84,8 @@ class AssetBrowserViewModel(
 
     fun setSearch(query: String) {
         loadMoreJob?.cancel()
+        // An in-flight load would write its cursor after this reset and make the debounced load skip rows.
+        loadJob?.cancel()
         _uiState.update {
             it.copy(
                 searchQuery = query,
@@ -183,9 +187,11 @@ class AssetBrowserViewModel(
                     },
                     ifRight = { page ->
                         val last = page.lastOrNull()
+                        val previews = previewsFor(state, page)
                         _uiState.update { st ->
                             st.copy(
                                 assets = st.assets + page,
+                                searchPreviews = st.searchPreviews + previews,
                                 isLoadingMore = false,
                                 hasMore = page.size == PAGE_SIZE,
                                 cursorMs = if (st.sortOrder == AssetSortOrder.BY_DATE_ADDED) last?.importedAtMs else null,
@@ -202,6 +208,13 @@ class AssetBrowserViewModel(
                 _uiState.update { it.copy(isLoadingMore = false, error = e.message ?: "Unknown error") }
             }
         }
+    }
+
+    /** Bounded snippets for a page of search results; empty when no search is active or the read fails. */
+    private suspend fun previewsFor(state: AssetBrowserUiState, page: List<AssetEntry>): Map<AssetUuid, AssetSearchPreview> {
+        val searching = state.searchQuery.isNotBlank() && state.selectedFilter != AssetFilter.ORPHANED && state.selectedFilter !is AssetFilter.TAG
+        if (!searching || page.isEmpty()) return emptyMap()
+        return assetRepository.getSearchSnippets(state.searchQuery, page.map { it.uuid }).getOrNull().orEmpty()
     }
 
     private fun loadDistinctTags() {
@@ -262,10 +275,18 @@ class AssetBrowserViewModel(
                     },
                     ifRight = { page ->
                         val last = page.lastOrNull()
+                        val previews = previewsFor(state, page)
+                        val pending = if (state.searchQuery.isNotBlank() && page.isEmpty()) {
+                            assetRepository.countUnprocessedAssets().getOrNull() ?: 0L
+                        } else {
+                            0L
+                        }
                         _uiState.update { st ->
                             st.copy(
                                 isLoading = false,
+                                pendingUnprocessed = pending,
                                 assets = page,
+                                searchPreviews = previews,
                                 hasMore = page.size == PAGE_SIZE,
                                 cursorMs = if (st.sortOrder == AssetSortOrder.BY_DATE_ADDED) last?.importedAtMs else null,
                                 cursorName = if (st.sortOrder == AssetSortOrder.BY_NAME) last?.filePath else null,

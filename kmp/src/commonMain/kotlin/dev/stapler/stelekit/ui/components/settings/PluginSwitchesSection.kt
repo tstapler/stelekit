@@ -15,6 +15,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import dev.stapler.stelekit.asset.pipeline.PluginSettingsLoad
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -27,6 +30,8 @@ import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.asset.pipeline.AssetPluginsController
 import dev.stapler.stelekit.asset.pipeline.PluginEnableKeys
 
+internal const val LOADING_PLUGINS_TEXT = "Loading..."
+internal const val LOAD_FAILED_TEXT = "Couldn't load plugin settings"
 internal const val SAVE_FAILED_TEXT = "Couldn't save this setting"
 internal const val SUGGESTION_AGAIN_TEXT = "Show the searchable-images suggestion again"
 
@@ -42,10 +47,27 @@ private val PLUGIN_ROWS = listOf(
 @Composable
 internal fun PluginSwitchesSection(controller: AssetPluginsController, onViewLog: () -> Unit) {
     val states by controller.registry.enabledStates.collectAsState()
+    val load by controller.registry.loadState.collectAsState()
+    val startFailure by controller.startFailure.collectAsState()
+    val scope = rememberCoroutineScope()
     var saveFailed by remember { mutableStateOf(false) }
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        when (load) {
+            PluginSettingsLoad.Loading -> Text(LOADING_PLUGINS_TEXT, style = MaterialTheme.typography.bodySmall)
+            PluginSettingsLoad.Failed -> {
+                Text(
+                    LOAD_FAILED_TEXT,
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                TextButton(onClick = { scope.launch { controller.registry.load() } }) { Text("Retry") }
+            }
+            PluginSettingsLoad.Loaded -> Unit
+        }
         PLUGIN_ROWS.forEach { row ->
             val reason = controller.registry.unavailableReason(row.id)
+            val interactive = reason == null && load == PluginSettingsLoad.Loaded
             val checked = reason == null && states[row.id] == true
             Row(
                 modifier = Modifier
@@ -53,7 +75,7 @@ internal fun PluginSwitchesSection(controller: AssetPluginsController, onViewLog
                     .defaultMinSize(minHeight = 48.dp)
                     .toggleable(
                         value = checked,
-                        enabled = reason == null,
+                        enabled = interactive,
                         role = Role.Switch,
                         onValueChange = { on -> saveFailed = controller.setPluginEnabled(row.id, on).isLeft() },
                     ),
@@ -67,8 +89,17 @@ internal fun PluginSwitchesSection(controller: AssetPluginsController, onViewLog
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Switch(checked = checked, onCheckedChange = null, enabled = reason == null)
+                Switch(checked = checked, onCheckedChange = null, enabled = interactive)
             }
+        }
+        startFailure?.let { name ->
+            Text(
+                "Couldn't start $name - see log",
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+            TextButton(onClick = onViewLog) { Text("View log") }
         }
         if (saveFailed) {
             Text(
