@@ -4,6 +4,7 @@
 package dev.stapler.stelekit.db
 
 import arrow.core.Either
+import arrow.core.flatMap
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.domain.UrlLinkRepair
@@ -13,6 +14,7 @@ import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.BlockRepository
+import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.PageRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
@@ -54,14 +56,21 @@ class UrlLinkRepairService(
             var failures = 0
             var repaired = 0
             val touchedPages = LinkedHashSet<PageUuid>()
-            for ((block, content) in fixes) {
-                val result = writeActor.updateBlockContentOnly(block.uuid, content, block.pageUuid)
+            val updated = fixes.map { (block, content) -> block.copy(content = content) }
+            if (updated.isNotEmpty()) {
+                // One actor call for the whole repair; each chunk is its own bounded repository write.
+                @OptIn(DirectRepositoryWrite::class)
+                val result = writeActor.execute {
+                    updated.chunked(batchSize).fold(Unit.right() as Either<DomainError, Unit>) { acc, chunk ->
+                        acc.flatMap { blockRepository.saveBlocks(chunk) }
+                    }
+                }
                 if (result.isRight()) {
-                    repaired++
-                    touchedPages += block.pageUuid
+                    repaired = updated.size
+                    updated.forEach { touchedPages += it.pageUuid }
                 } else {
-                    failures++
-                    logger.warn("URL link repair: could not update block ${block.uuid.value}")
+                    failures = updated.size
+                    logger.warn("URL link repair: could not update ${updated.size} blocks")
                 }
             }
             var rewritten = 0

@@ -46,6 +46,7 @@ class UrlLinkRepairServiceTest {
             blockRepo.saveBlock(block("b2", "p1", "clean https://github.com/x [[Treacle]]", "a1"))
             pageRepo.savePage(page("p2", "Other", File(pagesDir, "Other.md").absolutePath))
             blockRepo.saveBlock(block("b3", "p2", "no urls, just [[Treacle]]", "a0"))
+            blockRepo.saveBlock(block("b4", "p2", "www.[[GitHub]].com/y", "a1"))
 
             val path = EffectiveNotesPath(tempDir.absolutePath)
             val writer = GraphWriter(PlatformFileSystem.withRoot(tempDir.absolutePath)).also {
@@ -54,8 +55,9 @@ class UrlLinkRepairServiceTest {
             val service = UrlLinkRepairService(blockRepo, pageRepo, DatabaseWriteActor(blockRepo, pageRepo), writer, batchSize = 1)
 
             val first = service.run(path).getOrNull()!!
-            assertEquals(1, first.blocksRepaired)
-            assertEquals(1, first.pagesRewritten)
+            assertEquals(2, first.blocksRepaired)
+            assertEquals(2, first.pagesRewritten)
+            assertEquals("www.github.com/y", blockRepo.getBlockByUuid(BlockUuid("b4")).first().getOrNull()!!.content)
             assertTrue(first.clean)
             assertEquals("https://github.com/lni/dragonboat", blockRepo.getBlockByUuid(BlockUuid("b1")).first().getOrNull()!!.content)
             assertEquals("clean https://github.com/x [[Treacle]]", blockRepo.getBlockByUuid(BlockUuid("b2")).first().getOrNull()!!.content)
