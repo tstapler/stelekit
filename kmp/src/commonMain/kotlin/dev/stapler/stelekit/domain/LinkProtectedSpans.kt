@@ -23,13 +23,13 @@ object LinkProtectedSpans {
     }
 
     // Bare URL up to whitespace/angle/quote; trailing punctuation is trimmed afterwards.
-    private val URL = Regex("""(?i)\b(?:https?|ftp|file|mailto):[^\s<>"]+|\bwww\.[^\s<>"]+""")
-    private val FENCE = Regex("""(?s)```.*?(?:```|\z)""")
+    private val URL = Regex("""\b(?:https?|ftp|file|mailto):[^\s<>"]+|\bwww\.[^\s<>"]+""", RegexOption.IGNORE_CASE)
+    private val FENCE = Regex("""```[\s\S]*?(?:```|$)""")
     private val INLINE_CODE = Regex("""`[^`\n]*`""")
-    private val WIKI_LINK = Regex("""\[\[.*?]]""")
-    private val HASH_TAG = Regex("""(?<![\w&])#(?:\[\[.*?]]|[^\s,.;:!?()\[\]{}"'#]+)""")
+    private val WIKI_LINK = Regex("""\[\[.*?\]\]""")
+    private val HASH_TAG = Regex("""(?<![\w&])#(?:\[\[.*?\]\]|[^\s,.;:!?()\[\]\{\}"'#]+)""")
     // Logseq property: `key:: value` (a space or end of line after "::" — not `std::vector`).
-    internal val PROPERTY_LINE = Regex("""(?m)^[ \t]*[A-Za-z0-9_.\-]+::(?:[ \t].*)?$""")
+    internal val PROPERTY_LINE = Regex("""^[ \t]*[A-Za-z0-9_.\-]+::(?:[ \t].*)?$""", RegexOption.MULTILINE)
     private val TRAILING_PUNCT = setOf('.', ',', ';', ':', '!', '?', '\'', '"', '*', '_')
 
     fun analyze(text: String): Spans {

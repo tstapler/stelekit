@@ -91,7 +91,7 @@ class UrlLinkRepairService(
             var offset = 0
             while (true) {
                 val page = blockRepository.searchBlocksByContent(needle, batchSize, offset).first().getOrNull().orEmpty()
-                page.forEach { byUuid.putIfAbsent(it.uuid.value, it) }
+                page.forEach { if (it.uuid.value !in byUuid) byUuid[it.uuid.value] = it }
                 if (page.size < batchSize) break
                 offset += batchSize
             }

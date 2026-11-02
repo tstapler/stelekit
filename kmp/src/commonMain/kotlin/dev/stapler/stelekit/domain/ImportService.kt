@@ -140,7 +140,7 @@ object ImportService {
     /** True when [text] already references [name] as `[[name]]`, `[[name|alias]]`, `#name` or `#[[name]]`. */
     internal fun alreadyReferences(text: String, name: String): Boolean {
         val n = Regex.escape(name)
-        return Regex("""\[\[$n(?:\|[^\]]*)?]]|(?<![\w&])#$n(?![\p{L}\p{N}_\-])|#\[\[$n]]""", RegexOption.IGNORE_CASE)
+        return Regex("""\[\[$n(?:\|[^\]]*)?\]\]|(?<![\w&])#$n(?![\p{L}\p{N}_\-])|#\[\[$n\]\]""", RegexOption.IGNORE_CASE)
             .containsMatchIn(text)
     }
 

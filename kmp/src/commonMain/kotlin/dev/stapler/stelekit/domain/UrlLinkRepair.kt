@@ -17,7 +17,7 @@ package dev.stapler.stelekit.domain
 object UrlLinkRepair {
 
     // A single-token wiki link: no whitespace, brackets or alias bar (URLs cannot contain spaces).
-    private val INJECTED_LINK = Regex("""\[\[([^\s\[\]|]+)]]""")
+    private val INJECTED_LINK = Regex("""\[\[([^\s\[\]|]+)\]\]""")
 
     fun repair(text: String): String {
         if (!text.contains("[[")) return text
