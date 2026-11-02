@@ -207,4 +207,41 @@ class GitSafetyScansJvmTest {
             preview.remoteBranches,
         )
     }
+
+    @Test
+    fun `an unreadable repository fails closed for health and markers and reports no deletions`() = runTest {
+        val notARepo = createTempDirectory("stelekit_not_a_repo_").toFile().also { temps += it }
+        val config = GitConfig(graphId = "g", repoRoot = RepoRoot(notARepo.absolutePath), wikiSubdir = null, remoteBranch = "main", authType = GitAuthType.NONE)
+
+        assertEquals(RepositoryHealth(safe = false, state = "UNREADABLE"), repository.repositoryHealth(config))
+        assertIs<MarkerScan.Incomplete>(repository.scanForConflictMarkers(config, GuardScope.Staged))
+        assertEquals(DeletionSummary.None, repository.deletionSummary(config, GuardScope.Staged))
+        assertTrue(repository.firstSyncPreview(config).isLeft())
+    }
+
+    @Test
+    fun `first sync preview falls back to the known remote-tracking branches when ls-remote fails`() = runTest {
+        val c = clone()
+        val gone = File(c.dir.parentFile, "elsewhere")
+        Git.open(c.dir).use {
+            it.repository.config.setString("remote", "origin", "url", gone.absolutePath)
+            it.repository.config.save()
+        }
+
+        val preview = (repository.firstSyncPreview(c.config) as arrow.core.Either.Right).value
+
+        assertFalse(preview.remoteBranchesLive)
+        assertEquals(listOf(PreviewRemoteBranch("main", isSyncBranch = true)), preview.remoteBranches)
+    }
+
+    @Test
+    fun `first sync preview without a remote-tracking ref has unknown ahead and behind`() = runTest {
+        val c = clone()
+
+        val preview = (repository.firstSyncPreview(c.config.copy(remoteBranch = "missing")) as arrow.core.Either.Right).value
+
+        assertEquals(null, preview.ahead)
+        assertEquals(null, preview.behind)
+        assertEquals(0, preview.filesToDelete)
+    }
 }

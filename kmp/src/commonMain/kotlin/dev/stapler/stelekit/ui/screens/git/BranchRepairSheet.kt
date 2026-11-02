@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.BranchRepairResult
 import dev.stapler.stelekit.git.FirstSyncPreview
+import dev.stapler.stelekit.git.FirstSyncPreviewSource
 
 /** Why the last "Use" tap did not finish; null while idle. */
 internal fun BranchRepairResult.failureLine(): String? = when (this) {
@@ -128,6 +129,13 @@ internal sealed interface FirstSyncPreviewState {
     data class Ready(val preview: FirstSyncPreview) : FirstSyncPreviewState
     data class Failed(val message: String) : FirstSyncPreviewState
 }
+
+/** Loads the preview for the review dialog as UI state; a failure message is redacted. */
+internal suspend fun FirstSyncPreviewSource.loadState(graphId: String): FirstSyncPreviewState =
+    load(graphId).fold(
+        { FirstSyncPreviewState.Failed(dev.stapler.stelekit.security.Redactor.redactGitMessage(it.message)) },
+        { FirstSyncPreviewState.Ready(it) },
+    )
 
 /** Read-only summary lines for [preview]; the first-sync review renders exactly these. */
 internal fun FirstSyncPreview.summaryLines(): List<String> = buildList {

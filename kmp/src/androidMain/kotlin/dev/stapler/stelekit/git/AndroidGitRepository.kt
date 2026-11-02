@@ -612,47 +612,16 @@ class AndroidGitRepository(
             }
         }
 
+    private val safety = GitSafetyOps(::openGitWithoutFreshnessCheck)
+
     override suspend fun firstSyncPreview(config: GitConfig): Either<DomainError.GitError, FirstSyncPreview> =
-        withContext(PlatformDispatcher.IO) {
-            runGitOp({ e -> DomainError.GitError.FetchFailed(Redactor.redactGitMessage(e.message.orEmpty())) }) {
-                openGitWithoutFreshnessCheck(config).use { git ->
-                    buildFirstSyncPreview(git, config) { authConfigurer.configureTransport(it, config) }
-                }
-            }
-        }
+        safety.preview(config) { authConfigurer.configureTransport(it, config) }
 
-    override suspend fun repositoryHealth(config: GitConfig): RepositoryHealth =
-        withContext(PlatformDispatcher.IO) {
-            try {
-                openGitWithoutFreshnessCheck(config).use { repositoryHealthOf(it.repository) }
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                RepositoryHealth(false, "UNREADABLE")
-            }
-        }
+    override suspend fun repositoryHealth(config: GitConfig): RepositoryHealth = safety.health(config)
 
-    override suspend fun scanForConflictMarkers(config: GitConfig, scope: GuardScope): MarkerScan =
-        withContext(PlatformDispatcher.IO) {
-            try {
-                openGitWithoutFreshnessCheck(config).use { scanConflictMarkers(it, config, scope) }
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                MarkerScan.Incomplete("repository unreadable")
-            }
-        }
+    override suspend fun scanForConflictMarkers(config: GitConfig, scope: GuardScope): MarkerScan = safety.markers(config, scope)
 
-    override suspend fun deletionSummary(config: GitConfig, scope: GuardScope): DeletionSummary =
-        withContext(PlatformDispatcher.IO) {
-            try {
-                openGitWithoutFreshnessCheck(config).use { summarizeDeletions(it, config, scope) }
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                DeletionSummary.None
-            }
-        }
+    override suspend fun deletionSummary(config: GitConfig, scope: GuardScope): DeletionSummary = safety.deletions(config, scope)
 
     override suspend fun removeStaleLockFile(config: GitConfig): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {

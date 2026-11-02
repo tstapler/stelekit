@@ -22,6 +22,7 @@ import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.ui.screens.git.BranchRepairSheet
 import dev.stapler.stelekit.ui.screens.git.FirstSyncPreviewState
 import dev.stapler.stelekit.ui.screens.git.FirstSyncReviewDialog
+import dev.stapler.stelekit.ui.screens.git.loadState
 import kotlinx.coroutines.launch
 
 private fun SyncState.isRunning(): Boolean =
@@ -83,10 +84,7 @@ internal fun BranchRepairHost(appState: AppState, viewModel: StelekitViewModel, 
         var preview by remember { mutableStateOf<FirstSyncPreviewState>(FirstSyncPreviewState.Loading) }
         LaunchedEffect(previewNonce) {
             preview = FirstSyncPreviewState.Loading
-            preview = service.firstSyncPreviews.load(graphId).fold(
-                { FirstSyncPreviewState.Failed(Redactor.redactGitMessage(it.message)) },
-                { FirstSyncPreviewState.Ready(it) },
-            )
+            preview = service.firstSyncPreviews.loadState(graphId)
         }
         val resultLine = if (!sawRunning) null else when (val s = syncState) {
             is SyncState.Success -> if (s.remoteCommitsMerged > 0) "Pulled ${s.remoteCommitsMerged} commits" else "Already up to date"

@@ -3,8 +3,14 @@
 
 package dev.stapler.stelekit.git
 
+import arrow.core.Either
+import dev.stapler.stelekit.coroutines.PlatformDispatcher
+import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.model.GitConfig
+import dev.stapler.stelekit.security.Redactor
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withContext
+import org.eclipse.jgit.api.LsRemoteCommand
 import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.diff.DiffEntry
 import org.eclipse.jgit.diff.DiffFormatter
@@ -25,28 +31,57 @@ internal const val MARKER_SCAN_FILE_CAP_BYTES = 2L * KIB * KIB
 /** Largest total of bytes the marker scan will format in one run. */
 internal const val MARKER_SCAN_TOTAL_CAP_BYTES = 32L * KIB * KIB
 
-/** `Repository.getRepositoryState()` plus unmerged index paths; fails closed when the repository cannot be read. */
-internal fun repositoryHealthOf(repo: Repository): RepositoryHealth = try {
+/** `Repository.getRepositoryState()` plus unmerged index paths. Read errors propagate; [GitSafetyOps] fails closed. */
+internal fun repositoryHealthOf(repo: Repository): RepositoryHealth {
     val state = repo.repositoryState
-    when {
+    return when {
         state != RepositoryState.SAFE -> RepositoryHealth(false, state.name)
         repo.readDirCache().hasUnmergedPaths() -> RepositoryHealth(false, "UNMERGED_PATHS")
         else -> RepositoryHealth.Clean
     }
-} catch (e: CancellationException) {
-    throw e
-} catch (e: Exception) {
-    RepositoryHealth(false, "UNREADABLE")
 }
 
-/** Added-line conflict-marker scan of [scope]; see [GitRepository.scanForConflictMarkers]. */
-internal fun scanConflictMarkers(git: Git, config: GitConfig, scope: GuardScope): MarkerScan = try {
-    val diff = diffFor(git, config, scope)
-    if (diff == null) MarkerScan.Clean else scanDiff(git.repository, diff.entries)
-} catch (e: CancellationException) {
-    throw e
-} catch (e: Exception) {
-    MarkerScan.Incomplete("${e::class.simpleName}")
+/** Added-line conflict-marker scan of [scope]; see [GitRepository.scanForConflictMarkers]. Read errors propagate. */
+internal fun scanConflictMarkers(git: Git, config: GitConfig, scope: GuardScope): MarkerScan {
+    val diff = diffFor(git, config, scope) ?: return MarkerScan.Clean
+    return scanDiff(git.repository, diff.entries)
+}
+
+/** Returns [fallback] when [op] throws (cancellation still propagates): the guards must fail closed, never throw. */
+internal inline fun <T> failClosed(fallback: T, op: () -> T): T =
+    try {
+        op()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        fallback
+    }
+
+/**
+ * The guard and preview operations both [GitRepository] backends share; each backend supplies only how it opens
+ * the repository. Every operation hops to IO and fails closed on any read error.
+ */
+internal class GitSafetyOps(private val open: (GitConfig) -> Git) {
+    suspend fun health(config: GitConfig): RepositoryHealth = withContext(PlatformDispatcher.IO) {
+        failClosed(RepositoryHealth(safe = false, state = "UNREADABLE")) { open(config).use { repositoryHealthOf(it.repository) } }
+    }
+
+    suspend fun markers(config: GitConfig, scope: GuardScope): MarkerScan = withContext(PlatformDispatcher.IO) {
+        failClosed<MarkerScan>(MarkerScan.Incomplete("repository unreadable")) { open(config).use { scanConflictMarkers(it, config, scope) } }
+    }
+
+    suspend fun deletions(config: GitConfig, scope: GuardScope): DeletionSummary = withContext(PlatformDispatcher.IO) {
+        failClosed(DeletionSummary.None) { open(config).use { summarizeDeletions(it, config, scope) } }
+    }
+
+    suspend fun preview(
+        config: GitConfig,
+        configureLsRemote: (LsRemoteCommand) -> Unit,
+    ): Either<DomainError.GitError, FirstSyncPreview> = withContext(PlatformDispatcher.IO) {
+        runGitOp({ e -> DomainError.GitError.FetchFailed(Redactor.redactGitMessage(e.message.orEmpty())) }) {
+            open(config).use { buildFirstSyncPreview(it, config, configureLsRemote) }
+        }
+    }
 }
 
 /** Deleted paths of [scope]; no base tree gives [DeletionSummary.None]. Read errors propagate; the marker scan runs first and fails closed on the same read. */
