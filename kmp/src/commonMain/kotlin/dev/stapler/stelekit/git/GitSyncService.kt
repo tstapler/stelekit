@@ -39,6 +39,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.Clock
 
 /**
@@ -85,6 +86,7 @@ class GitSyncService(
 ) {
     private val logger = Logger("GitSyncService")
     private val markerGuard = ConflictMarkerGuard(fileSystem)
+    private val guards = GitChangeGuards(gitRepository, settings)
     private val lfsStaging = LfsGuardedStaging.create(gitRepository, fileSystem, settings, graphId, lfsCapabilities, lfsGuardCoordinator)
     private val firstSyncConfirmation: FirstSyncConfirmation? = settings?.let { FirstSyncConfirmation(it) }
 
@@ -120,6 +122,19 @@ class GitSyncService(
             is Either.Left -> change.value
             is Either.Right -> repairBranch(change.value)
         }
+
+    /**
+     * Read-only facts for the first-sync review (ahead/behind, remote branches, local-only commits, files the
+     * push would delete), bounded by [FirstSyncPreview.TIMEOUT_MILLIS]. Never changes the repository.
+     */
+    suspend fun firstSyncPreview(graphId: String): Either<DomainError.GitError, FirstSyncPreview> {
+        val config = when (val result = configRepository.getConfig(graphId)) {
+            is Either.Left -> return DomainError.GitError.FetchFailed("Failed to load git config: ${result.value.message}").left()
+            is Either.Right -> result.value ?: return DomainError.GitError.NotAGitRepo(graphId).left()
+        }
+        return withTimeoutOrNull(FirstSyncPreview.TIMEOUT_MILLIS) { gitRepository.firstSyncPreview(config) }
+            ?: DomainError.GitError.NetworkFailure("The preview took longer than ${FirstSyncPreview.TIMEOUT_MILLIS / MILLIS_PER_SECOND} s").left()
+    }
 
     /** Branch the last repair replaced, for "Change back"; null when none is recorded. */
     fun previousBranchBeforeRepair(): String? = firstSyncConfirmation?.previousBranch(graphId)
@@ -259,6 +274,8 @@ class GitSyncService(
     suspend fun sync(
         graphId: String,
         trigger: SyncTrigger = SyncTrigger.Manual,
+        /** One-run override of the mass-change guard from the foreground typed-count confirm; ignored for [SyncTrigger.Automatic]. */
+        liftMassChangeGuard: Boolean = false,
     ): Either<DomainError.GitError, SyncState.Success> =
         withContext(PlatformDispatcher.IO) {
             // Read the persisted flag, not the cached StateFlow: the review is confirmed in settings.
@@ -273,6 +290,7 @@ class GitSyncService(
 
             // Task 3.4.2c: a manual sync trigger always supersedes any pending scheduled retry.
             rateLimitRetryJob?.cancel()
+            val liftMassChange = liftMassChangeGuard && trigger == SyncTrigger.Manual
 
             // 1. Network check
             logger.info("sync/fetch start graphId=$graphId")
@@ -310,6 +328,9 @@ class GitSyncService(
                 return@withContext err.left()
             }
 
+            // 3a2. Mid-merge / unmerged repository: nothing may be staged, committed or pushed until repaired.
+            guards.repositoryState(config)?.let { return@withContext refuse(it) }
+
             // 3b. Remove stale lock file
             gitRepository.removeStaleLockFile(config).onLeft { lockErr ->
                 _syncState.value = SyncState.Error(lockErr)
@@ -338,6 +359,7 @@ class GitSyncService(
                 }
                 lfsHeld = staged.held
                 if (staged.commitNeeded) {
+                    guards.changes(config, GuardScope.Staged, liftMassChange)?.let { return@withContext refuse(it) }
                     gitRepository.commit(config, buildCommitMessage(config)).onLeft { err ->
                         if (err is DomainError.GitError.RateLimited) {
                             _syncState.value = SyncState.RateLimited(err.retryAfterSeconds)
@@ -463,6 +485,7 @@ class GitSyncService(
             }
 
             // 9. Push
+            guards.changes(config, GuardScope.NetPush, liftMassChange)?.let { return@withContext refuse(it) }
             _syncState.value = SyncState.Pushing
             gitRepository.push(config).onLeft { err ->
                 if (err is DomainError.GitError.RateLimited) {
@@ -504,6 +527,13 @@ class GitSyncService(
                 gitSyncBusyCounter.end()
             }
         }
+
+    /** Publishes [err] on [syncState] and returns it as the failure of the calling operation. */
+    private fun refuse(err: DomainError.GitError): Either<DomainError.GitError, Nothing> {
+        _syncState.value = SyncState.Error(err)
+        logger.warn("refused: ${err.message}")
+        return err.left()
+    }
 
     /**
      * Fetches from remote only — does not merge or push.
@@ -595,9 +625,11 @@ class GitSyncService(
 
             if (!status.hasLocalChanges) return@withContext (null as String?).right()
 
+            guards.repositoryState(config)?.let { return@withContext refuse(it) }
             _syncState.value = SyncState.Committing
             val staged = lfsStaging.stage(config, status).getOrElse { return@withContext it.left() }
             val sha = if (staged.commitNeeded) {
+                guards.changes(config, GuardScope.Staged, liftMassChange = false)?.let { return@withContext refuse(it) }
                 when (val r = gitRepository.commit(config, buildCommitMessage(config))) {
                     is Either.Left -> return@withContext r.value.left()
                     is Either.Right -> r.value
@@ -668,6 +700,8 @@ class GitSyncService(
 
         val resolvedPaths = (sideResolutions.keys + hunkResolutions.keys).toList()
         markerGuard.firstWithMarkers(resolvedPaths)?.let { return@withContext markerGuard.refusal(it).left() }
+        // No mass-change check here: during a merge the staged diff against HEAD includes the remote's own deletions.
+        guards.markers(config, GuardScope.Staged)?.let { return@withContext refuse(it) }
 
         val message = buildCommitMessage(config, isMerge = true)
         gitRepository.commit(config, message).onLeft { return@withContext it.left() }
@@ -714,6 +748,7 @@ class GitSyncService(
         lfsStaging.refusalFor(config, filePath)?.let { return@withContext it.left() }
         gitRepository.markResolved(config, filePath).onLeft { return@withContext it.left() }
 
+        guards.markers(config, GuardScope.Staged)?.let { return@withContext refuse(it) }
         val message = buildCommitMessage(config, isMerge = true)
         gitRepository.commit(config, message).onLeft { return@withContext it.left() }
 
@@ -724,6 +759,7 @@ class GitSyncService(
             graphLoader.endGitMerge()
         }
 
+        guards.changes(config, GuardScope.NetPush, liftMassChange = false)?.let { return@withContext refuse(it) }
         _syncState.value = SyncState.Pushing
         gitRepository.push(config).onLeft { err ->
             _syncState.value = SyncState.Error(err)
@@ -787,5 +823,6 @@ class GitSyncService(
          * `WasmSectionSyncService.githubFetch` exponential-backoff precedent's cap of 60s.
          */
         const val DEFAULT_RATE_LIMIT_RETRY_SECONDS = 60
+        private const val MILLIS_PER_SECOND = 1000L
     }
 }

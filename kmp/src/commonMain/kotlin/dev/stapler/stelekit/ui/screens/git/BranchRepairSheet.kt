@@ -30,6 +30,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.BranchRepairResult
+import dev.stapler.stelekit.git.FirstSyncPreview
 
 /** Why the last "Use" tap did not finish; null while idle. */
 internal fun BranchRepairResult.failureLine(): String? = when (this) {
@@ -121,6 +122,30 @@ internal fun BranchRepairSheet(
     )
 }
 
+/** What the first-sync review shows about the preview: still loading, ready, or why it could not be built. */
+internal sealed interface FirstSyncPreviewState {
+    data object Loading : FirstSyncPreviewState
+    data class Ready(val preview: FirstSyncPreview) : FirstSyncPreviewState
+    data class Failed(val message: String) : FirstSyncPreviewState
+}
+
+/** Read-only summary lines for [preview]; the first-sync review renders exactly these. */
+internal fun FirstSyncPreview.summaryLines(): List<String> = buildList {
+    val position = if (ahead != null && behind != null) "$ahead ahead, $behind behind $syncRef" else "Ahead/behind of $syncRef is unknown"
+    add(position)
+    val source = if (remoteBranchesLive) "" else " (last fetched)"
+    add(
+        "Remote branches$source: " + remoteBranches.joinToString(", ") {
+            if (it.isSyncBranch) it.name else "${it.name} (not the sync branch)"
+        },
+    )
+    add(if (filesToDelete == 0) "No files would be deleted" else "$filesToDelete files would be deleted from the remote")
+    if (localOnlyCommits.isNotEmpty()) {
+        add("Local commits not on the remote:")
+        localOnlyCommits.forEach { add("${it.shortSha} ${it.subject}") }
+    }
+}
+
 /**
  * Shown after a branch repair, before any sync runs. The user's "Sync now" tap is the consent.
  * [resultLine] reports the outcome of that sync; the dialog stays open until the user closes it.
@@ -134,6 +159,8 @@ internal fun FirstSyncReviewDialog(
     onSyncNow: () -> Unit,
     onChangeBack: () -> Unit,
     onDismiss: () -> Unit,
+    preview: FirstSyncPreviewState? = null,
+    onRetryPreview: () -> Unit = {},
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -144,6 +171,7 @@ internal fun FirstSyncReviewDialog(
                     "Sync now fetches '$remoteBranch', merges it into this device and pushes any local " +
                         "commits. Files here can be changed or deleted to match the remote.",
                 )
+                PreviewSection(preview, onRetryPreview)
                 resultLine?.let {
                     Spacer(Modifier.height(8.dp))
                     Text(it, style = MaterialTheme.typography.bodyMedium)
@@ -165,3 +193,23 @@ internal fun FirstSyncReviewDialog(
         },
     )
 }
+
+@Composable
+private fun PreviewSection(preview: FirstSyncPreviewState?, onRetry: () -> Unit) {
+    if (preview == null) return
+    Column {
+        Spacer(Modifier.height(8.dp))
+        when (preview) {
+            FirstSyncPreviewState.Loading -> Text("Loading preview…", style = MaterialTheme.typography.bodySmall)
+            is FirstSyncPreviewState.Failed -> {
+                Text("Preview unavailable: ${preview.message}", style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = onRetry) { Text("Retry preview") }
+            }
+            is FirstSyncPreviewState.Ready -> Column(Modifier.heightIn(max = PREVIEW_MAX_HEIGHT)) {
+                preview.preview.summaryLines().forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
+            }
+        }
+    }
+}
+
+private val PREVIEW_MAX_HEIGHT = 240.dp

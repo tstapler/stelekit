@@ -119,6 +119,26 @@ interface GitRepository {
      */
     suspend fun hasStagedChanges(config: GitConfig): Boolean = true
 
+    /**
+     * The repository's own state (`MERGING`, rebase, unmerged paths): unsafe means no stage, commit or push.
+     * Defaults to clean for platforms with no local index of their own; JGit-backed implementations fail closed.
+     */
+    suspend fun repositoryHealth(config: GitConfig): RepositoryHealth = RepositoryHealth.Clean
+
+    /**
+     * Scans the added lines of [scope] for conflict-marker pairs (see [ConflictMarkerDiffScan]). With no
+     * remote-tracking ref, [GuardScope.NetPush] has no base tree and reports [MarkerScan.Clean]: push stays
+     * blocked by the unresolved-ref error instead. Default clean for platforms that cannot scan.
+     */
+    suspend fun scanForConflictMarkers(config: GitConfig, scope: GuardScope): MarkerScan = MarkerScan.Clean
+
+    /** Files [scope] would delete (and the base tree size); [DeletionSummary.None] where unsupported or without a base tree. */
+    suspend fun deletionSummary(config: GitConfig, scope: GuardScope): DeletionSummary = DeletionSummary.None
+
+    /** Read-only facts for the first-sync review; never fetches into the repository and never mutates it. */
+    suspend fun firstSyncPreview(config: GitConfig): Either<DomainError.GitError, FirstSyncPreview> =
+        Either.Left(DomainError.GitError.NotSupported("this platform"))
+
     /** Read-only ref report for the diagnostics export (see `describeGitRefs`); never throws. */
     suspend fun describeRefs(config: GitConfig): String = "(not supported on this platform)"
 

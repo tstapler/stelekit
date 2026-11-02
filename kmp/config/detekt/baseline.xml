@@ -40,6 +40,7 @@
     <ID>LargeClass:DemoFileSystem.kt$DemoFileSystem : FileSystem</ID>
     <ID>LargeClass:GraphLoader.kt$GraphLoader : GraphLoaderPort</ID>
     <ID>LargeClass:GraphManager.kt$GraphManager : StorageLocationStore</ID>
+    <ID>LargeClass:GitSyncService.kt$GitSyncService</ID>
     <ID>LargeClass:GraphWriter.kt$GraphWriter : GraphWriterPort</ID>
     <ID>LargeClass:MigrationRunner.kt$MigrationRunner</ID>
     <ID>LargeClass:PlatformFileSystem.kt$PlatformFileSystem : FileSystem</ID>
@@ -98,6 +99,7 @@
     <ID>ParameterNaming:SearchDialog.kt$onPageSelected</ID>
     <ID>ParameterNaming:Sidebar.kt$onGraphSelected</ID>
     <ID>TooManyFunctions:AndroidGitRepository.kt$AndroidGitRepository : GitRepository</ID>
+    <ID>TooManyFunctions:GitSyncService.kt$GitSyncService</ID>
     <ID>TooManyFunctions:AnnotationEditorViewModel.kt$AnnotationEditorViewModel</ID>
     <ID>TooManyFunctions:BlockParser.kt$BlockParser</ID>
     <ID>TooManyFunctions:BlockStateManager.kt$BlockStateManager : BlockEditingPortBlockStructurePortBlockSelectionPortBlockNavigationPort</ID>

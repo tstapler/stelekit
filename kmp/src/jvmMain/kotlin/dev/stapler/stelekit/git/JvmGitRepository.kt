@@ -530,6 +530,48 @@ class JvmGitRepository(
             }
         }
 
+    override suspend fun firstSyncPreview(config: GitConfig): Either<DomainError.GitError, FirstSyncPreview> =
+        withContext(PlatformDispatcher.IO) {
+            runGitOp({ e -> DomainError.GitError.FetchFailed(Redactor.redactGitMessage(e.message.orEmpty())) }) {
+                openGitFor(config).use { git ->
+                    buildFirstSyncPreview(git, config) { authConfigurer.configureTransport(it, config) }
+                }
+            }
+        }
+
+    override suspend fun repositoryHealth(config: GitConfig): RepositoryHealth =
+        withContext(PlatformDispatcher.IO) {
+            try {
+                openGitFor(config).use { repositoryHealthOf(it.repository) }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                RepositoryHealth(false, "UNREADABLE")
+            }
+        }
+
+    override suspend fun scanForConflictMarkers(config: GitConfig, scope: GuardScope): MarkerScan =
+        withContext(PlatformDispatcher.IO) {
+            try {
+                openGitFor(config).use { scanConflictMarkers(it, config, scope) }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                MarkerScan.Incomplete("repository unreadable")
+            }
+        }
+
+    override suspend fun deletionSummary(config: GitConfig, scope: GuardScope): DeletionSummary =
+        withContext(PlatformDispatcher.IO) {
+            try {
+                openGitFor(config).use { summarizeDeletions(it, config, scope) }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                DeletionSummary.None
+            }
+        }
+
     override suspend fun removeStaleLockFile(config: GitConfig): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
             runGitOp({ _ -> DomainError.GitError.StaleLockFile("${config.repoRoot.value}/.git/index.lock") }) {

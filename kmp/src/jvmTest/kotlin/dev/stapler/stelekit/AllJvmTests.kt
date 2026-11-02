@@ -179,6 +179,7 @@ import dev.stapler.stelekit.platform.download.ResumableDownloadTest
 import dev.stapler.stelekit.git.JvmGitCloneWorkerLauncherTest
 import dev.stapler.stelekit.git.JvmGitRepositoryTest
 import dev.stapler.stelekit.git.RemoteBranchResolutionTest
+import dev.stapler.stelekit.git.GitSafetyScansJvmTest
 import dev.stapler.stelekit.git.RemoteDefaultBranchTest
 import dev.stapler.stelekit.git.VaultCredentialStoreTest
 import dev.stapler.stelekit.google.DriveApiClientContentTypeTest
@@ -514,6 +515,7 @@ import org.junit.runners.Suite
     JvmGitCloneWorkerLauncherTest::class,
     JvmGitRepositoryTest::class,
     RemoteBranchResolutionTest::class,
+    GitSafetyScansJvmTest::class,
     RemoteDefaultBranchTest::class,
     VaultCredentialStoreTest::class,
     DriveApiClientContentTypeTest::class,

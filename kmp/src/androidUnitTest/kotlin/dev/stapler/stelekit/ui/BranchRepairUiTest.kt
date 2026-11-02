@@ -4,6 +4,8 @@
 package dev.stapler.stelekit.ui
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -12,10 +14,14 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.BranchRepairResult
+import dev.stapler.stelekit.git.FirstSyncPreview
+import dev.stapler.stelekit.git.PreviewCommit
+import dev.stapler.stelekit.git.PreviewRemoteBranch
 import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.ui.components.GitSyncStatus
 import dev.stapler.stelekit.ui.components.SyncStatusBadge
 import dev.stapler.stelekit.ui.screens.git.BranchRepairSheet
+import dev.stapler.stelekit.ui.screens.git.FirstSyncPreviewState
 import dev.stapler.stelekit.ui.screens.git.FirstSyncReviewDialog
 import org.junit.Rule
 import org.junit.Test
@@ -143,5 +149,38 @@ class BranchRepairUiTest {
         assertEquals(0, syncs)
         composeTestRule.onNodeWithText("Sync now").performClick()
         assertEquals(1, syncs)
+    }
+
+    @Test
+    fun review_showsReadOnlyPreview_andRetryAfterFailure() {
+        var retries = 0
+        val ready = FirstSyncPreview(
+            syncRef = "origin/master", ahead = 2, behind = 1,
+            remoteBranches = listOf(PreviewRemoteBranch("master", true), PreviewRemoteBranch("main", false)),
+            remoteBranchesLive = true,
+            localOnlyCommits = listOf(PreviewCommit("abc1234", "edit journal", 0L)),
+            filesToDelete = 3,
+        )
+        var state by androidx.compose.runtime.mutableStateOf<FirstSyncPreviewState>(FirstSyncPreviewState.Failed("timed out"))
+        composeTestRule.setContent {
+            MaterialTheme {
+                FirstSyncReviewDialog(
+                    remoteBranch = "origin/master", previousBranch = null, syncing = false, resultLine = null,
+                    onSyncNow = {}, onChangeBack = {}, onDismiss = {},
+                    preview = state, onRetryPreview = { retries++ },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Preview unavailable: timed out").assertExists()
+        composeTestRule.onNodeWithText("Retry preview").performClick()
+        assertEquals(1, retries)
+
+        state = FirstSyncPreviewState.Ready(ready)
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("2 ahead, 1 behind origin/master").assertExists()
+        composeTestRule.onNodeWithText("Remote branches: master, main (not the sync branch)").assertExists()
+        composeTestRule.onNodeWithText("3 files would be deleted from the remote").assertExists()
+        composeTestRule.onNodeWithText("abc1234 edit journal").assertExists()
     }
 }
