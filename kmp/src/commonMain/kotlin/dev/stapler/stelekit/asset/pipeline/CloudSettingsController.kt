@@ -60,7 +60,10 @@ class CloudSettingsController(
     private val onEnabled: () -> Unit = {},
 ) {
     private val logger = Logger("CloudSettings")
-    private val _state = MutableStateFlow(read())
+    // Nothing is read until the page asks (refresh): reading the key store at construction would touch the platform keystore on every graph open.
+    private val _state = MutableStateFlow(
+        CloudUiState(CloudConsent.NotAsked, false, false, 0, 0, ledger.sessionLimit, ledger.dailyLimit),
+    )
     val state: StateFlow<CloudUiState> = _state.asStateFlow()
 
     private fun read(): CloudUiState {
