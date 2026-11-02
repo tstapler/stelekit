@@ -74,7 +74,7 @@ class SyncStalenessStore(private val settings: Settings) {
         const val HISTORY_LIMIT = 10
         private const val NONE = "-"
 
-        internal fun encode(s: SyncStaleness): String = listOf(
+        fun encode(s: SyncStaleness): String = listOf(
             "m=${s.lastMergedAtMs ?: NONE}",
             "f=${s.lastFetchedAtMs ?: NONE}",
             "b=${s.behindCount ?: NONE}",
@@ -84,7 +84,7 @@ class SyncStalenessStore(private val settings: Settings) {
         ).joinToString(";")
 
         /** Tolerant: any malformed field falls back to its default so a corrupt value never blocks sync. */
-        internal fun decode(raw: String): SyncStaleness {
+        fun decode(raw: String): SyncStaleness {
             if (raw.isEmpty()) return SyncStaleness()
             val fields = raw.split(';').mapNotNull { f -> f.indexOf('=').takeIf { it > 0 }?.let { f.substring(0, it) to f.substring(it + 1) } }.toMap()
             return SyncStaleness(

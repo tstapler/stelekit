@@ -15,17 +15,11 @@ import dev.stapler.stelekit.model.RepoRoot
 import dev.stapler.stelekit.platform.NetworkMonitor
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
-import io.kotest.property.Arb
-import io.kotest.property.PropTestConfig
-import io.kotest.property.arbitrary.byte
-import io.kotest.property.arbitrary.byteArray
-import io.kotest.property.arbitrary.int
-import io.kotest.property.arbitrary.list
-import io.kotest.property.checkAll
 import kotlinx.coroutines.test.runTest
 import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.lib.RepositoryState
 import java.io.File
+import kotlin.random.Random
 import kotlin.io.path.createTempDirectory
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -164,7 +158,9 @@ class GitAbortRecoveryJvmTest {
     @Test
     fun `any set of edited non-conflicted files is byte-identical after the abort`() = runTest {
         val names = listOf("a.md", "b.md", "c.md")
-        checkAll(PropTestConfig(iterations = 6), Arb.list(Arb.byteArray(Arb.int(0..64), Arb.byte()), 1..3)) { contents ->
+        val random = Random(SEED)
+        repeat(ITERATIONS) {
+            val contents = List(random.nextInt(1, names.size + 1)) { random.nextBytes(random.nextInt(0, 65)) }
             val f = mergingClone(names)
             val edited = contents.mapIndexed { i, bytes -> names[i] to bytes }.toMap()
             edited.forEach { (name, bytes) -> f.write(name, bytes) }
@@ -176,5 +172,10 @@ class GitAbortRecoveryJvmTest {
             assertEquals(RepositoryState.SAFE, f.state())
             f.service.shutdown()
         }
+    }
+
+    private companion object {
+        const val SEED = 24L
+        const val ITERATIONS = 6
     }
 }

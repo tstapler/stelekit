@@ -9,16 +9,10 @@ import dev.stapler.stelekit.git.testsupport.BareOriginFixtures
 import dev.stapler.stelekit.git.testsupport.StubConfigRepository
 import dev.stapler.stelekit.model.RepoRoot
 import dev.stapler.stelekit.platform.Settings
-import io.kotest.property.Arb
-import io.kotest.property.PropTestConfig
-import io.kotest.property.arbitrary.byte
-import io.kotest.property.arbitrary.byteArray
-import io.kotest.property.arbitrary.int
-import io.kotest.property.arbitrary.list
-import io.kotest.property.checkAll
 import kotlinx.coroutines.test.runTest
 import org.eclipse.jgit.api.Git
 import java.io.File
+import kotlin.random.Random
 import kotlin.io.path.createTempDirectory
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -70,7 +64,10 @@ class ColdSyncRunnerTreeJvmTest {
     @Test
     fun `for any generated dirty set the working tree and HEAD are byte-identical after the run`() = runTest {
         val names = listOf("a.md", "b.md", "c.md")
-        checkAll(PropTestConfig(iterations = 6), Arb.list(Arb.byteArray(Arb.int(0..48), Arb.byte()), 0..3), Arb.int(0..2)) { edits, untracked ->
+        val random = Random(SEED)
+        repeat(ITERATIONS) {
+            val edits = List(random.nextInt(0, names.size + 1)) { random.nextBytes(random.nextInt(0, 49)) }
+            val untracked = random.nextInt(0, 3)
             val s = clone(names)
             BareOriginFixtures.pushCommit(s.origin, "main", "remote.md", "new upstream\n", "upstream")
             edits.forEachIndexed { i, bytes -> File(s.dir, names[i]).writeBytes(bytes) }
@@ -102,5 +99,10 @@ class ColdSyncRunnerTreeJvmTest {
         assertIs<ColdSyncOutcome.Fetched>(outcome)
         assertEquals(before, tree(s.dir))
         assertEquals(state, Git.open(s.dir).use { it.repository.repositoryState })
+    }
+
+    private companion object {
+        const val SEED = 7L
+        const val ITERATIONS = 6
     }
 }
