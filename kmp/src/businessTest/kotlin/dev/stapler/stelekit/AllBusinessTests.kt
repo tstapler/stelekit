@@ -242,6 +242,9 @@ import dev.stapler.stelekit.git.lfs.GitWildmatchTest
 import dev.stapler.stelekit.git.GitOperationSupportHelpersTest
 import dev.stapler.stelekit.git.GitRefDiagnosticsTest
 import dev.stapler.stelekit.domain.HtmlBlockConverterTest
+import dev.stapler.stelekit.mcp.McpServerControllerTest
+import dev.stapler.stelekit.tags.LlmTagProviderBranchesTest
+import dev.stapler.stelekit.llm.LlmSuggestionWriterEditsTest
 import dev.stapler.stelekit.vault.VaultHeaderModelTest
 import dev.stapler.stelekit.parser.MarkdownParserInlineStorageTest
 import dev.stapler.stelekit.git.lfs.FileSystemLfsContentProbeTest
@@ -507,6 +510,9 @@ import org.junit.runners.Suite
     GitOperationSupportHelpersTest::class,
     GitRefDiagnosticsTest::class,
     HtmlBlockConverterTest::class,
+    McpServerControllerTest::class,
+    LlmTagProviderBranchesTest::class,
+    LlmSuggestionWriterEditsTest::class,
     VaultHeaderModelTest::class,
     MarkdownParserInlineStorageTest::class,
     FileSystemLfsContentProbeTest::class,
