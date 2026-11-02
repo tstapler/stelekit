@@ -57,7 +57,8 @@ class InMemoryAssetRepository : AssetRepository {
                     asset.filePath.lowercase().contains(q) ||
                         asset.tags.any { it.lowercase().contains(q) } ||
                         asset.autoLabels.any { it.lowercase().contains(q) } ||
-                        asset.ocrText?.lowercase()?.contains(q) == true
+                        asset.ocrText?.lowercase()?.contains(q) == true ||
+                        asset.cloudDescription?.lowercase()?.contains(q) == true
                 }
                 .sortedByDescending { it.importedAtMs }
                 .drop(offset)
@@ -223,7 +224,8 @@ class InMemoryAssetRepository : AssetRepository {
                 asset.filePath.lowercase().contains(q) ||
                     asset.tags.any { it.lowercase().contains(q) } ||
                     asset.autoLabels.any { it.lowercase().contains(q) } ||
-                    asset.ocrText?.lowercase()?.contains(q) == true
+                    asset.ocrText?.lowercase()?.contains(q) == true ||
+                    asset.cloudDescription?.lowercase()?.contains(q) == true
             }
         }
 

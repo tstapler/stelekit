@@ -8053,8 +8053,9 @@ public class SteleDatabaseQueries(
       driver.removeListener("asset_index", listener = listener)
     }
 
-    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(1_619_469_738, """SELECT uuid, file_path, relative_path, media_type, subfolder, tags, cloud_description, page_uuids, size_bytes, imported_at_ms, ml_processed, ml_attempted_at, ml_failed, content_hash, is_orphan, ml_tags_source FROM asset_index WHERE (file_path LIKE ? ESCAPE '\' OR tags LIKE ? ESCAPE '\' OR auto_labels LIKE ? ESCAPE '\' OR ocr_text LIKE ? ESCAPE '\') ORDER BY imported_at_ms DESC LIMIT ? OFFSET ?""", mapper, 6) {
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(1_619_469_738, """SELECT uuid, file_path, relative_path, media_type, subfolder, tags, cloud_description, page_uuids, size_bytes, imported_at_ms, ml_processed, ml_attempted_at, ml_failed, content_hash, is_orphan, ml_tags_source FROM asset_index WHERE (file_path LIKE ? ESCAPE '\' OR tags LIKE ? ESCAPE '\' OR auto_labels LIKE ? ESCAPE '\' OR ocr_text LIKE ? ESCAPE '\' OR cloud_description LIKE ? ESCAPE '\') ORDER BY imported_at_ms DESC LIMIT ? OFFSET ?""", mapper, 7) {
       var parameterIndex = 0
+      bindString(parameterIndex++, query)
       bindString(parameterIndex++, query)
       bindString(parameterIndex++, query)
       bindString(parameterIndex++, query)
@@ -8219,13 +8220,14 @@ public class SteleDatabaseQueries(
 
     override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(null, """
     |SELECT asset_index.uuid, asset_index.file_path, asset_index.relative_path, asset_index.media_type, asset_index.subfolder, asset_index.tags, asset_index.auto_labels, asset_index.ocr_text, asset_index.cloud_description, asset_index.page_uuids, asset_index.size_bytes, asset_index.imported_at_ms, asset_index.ml_processed, asset_index.ml_attempted_at, asset_index.ml_failed, asset_index.content_hash, asset_index.is_orphan, asset_index.ml_tags_source FROM asset_index
-    |WHERE (file_path LIKE ? ESCAPE '\' OR tags LIKE ? ESCAPE '\' OR auto_labels LIKE ? ESCAPE '\' OR ocr_text LIKE ? ESCAPE '\')
+    |WHERE (file_path LIKE ? ESCAPE '\' OR tags LIKE ? ESCAPE '\' OR auto_labels LIKE ? ESCAPE '\' OR ocr_text LIKE ? ESCAPE '\' OR cloud_description LIKE ? ESCAPE '\')
     |AND (imported_at_ms < COALESCE(?, 9999999999999)
     |    OR (imported_at_ms ${ if (cursorMs == null) "IS" else "=" } ? AND uuid < COALESCE(?, '')))
     |ORDER BY imported_at_ms DESC, uuid DESC
     |LIMIT ?
-    """.trimMargin(), mapper, 8) {
+    """.trimMargin(), mapper, 9) {
       var parameterIndex = 0
+      bindString(parameterIndex++, query)
       bindString(parameterIndex++, query)
       bindString(parameterIndex++, query)
       bindString(parameterIndex++, query)

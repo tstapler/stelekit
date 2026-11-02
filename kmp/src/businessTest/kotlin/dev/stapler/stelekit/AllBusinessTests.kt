@@ -141,6 +141,16 @@ import dev.stapler.stelekit.asset.pipeline.AssetPipelineCrashLoopBreakerTest
 import dev.stapler.stelekit.asset.pipeline.DefaultAssetPluginsTest
 import dev.stapler.stelekit.asset.pipeline.OcrPluginTest
 import dev.stapler.stelekit.asset.AssetSearchSqlTest
+import dev.stapler.stelekit.asset.AssetSearchCloudDescriptionTest
+import dev.stapler.stelekit.asset.CloudDescriptionStorageTest
+import dev.stapler.stelekit.asset.CloudKeyLeakageAuditTest
+import dev.stapler.stelekit.asset.pipeline.CloudClaudePluginTest
+import dev.stapler.stelekit.asset.pipeline.CloudConsentEnforcementTest
+import dev.stapler.stelekit.asset.pipeline.CloudStructuralAuditTest
+import dev.stapler.stelekit.asset.pipeline.EgressLedgerTest
+import dev.stapler.stelekit.asset.pipeline.GrantedConsentMintSiteAuditTest
+import dev.stapler.stelekit.audit.EgressSurfaceAuditTest
+import dev.stapler.stelekit.llm.AnthropicMessagesClientCharacterizationTest
 import dev.stapler.stelekit.asset.pipeline.AssetPluginsControllerTest
 import dev.stapler.stelekit.asset.pipeline.PluginRegistryTest
 import dev.stapler.stelekit.settings.PluginHostRemovalAuditTest
@@ -422,6 +432,16 @@ import org.junit.runners.Suite
     OcrPluginTest::class,
     PluginRegistryTest::class,
     AssetSearchSqlTest::class,
+    AssetSearchCloudDescriptionTest::class,
+    CloudDescriptionStorageTest::class,
+    CloudKeyLeakageAuditTest::class,
+    CloudClaudePluginTest::class,
+    CloudConsentEnforcementTest::class,
+    CloudStructuralAuditTest::class,
+    EgressLedgerTest::class,
+    GrantedConsentMintSiteAuditTest::class,
+    EgressSurfaceAuditTest::class,
+    AnthropicMessagesClientCharacterizationTest::class,
     AssetPluginsControllerTest::class,
     PluginHostRemovalAuditTest::class,
     AudiobookNoteFormatterTest::class,
