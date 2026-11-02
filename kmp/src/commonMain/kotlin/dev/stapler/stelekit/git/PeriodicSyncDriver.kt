@@ -29,6 +29,9 @@ sealed interface SkipReason {
 
     /** The network monitor reports offline; not a failure. */
     data object Offline : SkipReason
+
+    /** [ScheduledSyncPolicy] withheld the full sync for [reason] (anything but busy and offline, which have their own cases). */
+    data class Policy(val reason: ScheduledSkipReason) : SkipReason
 }
 
 /** Result of one scheduled tick. */
@@ -219,6 +222,7 @@ class PeriodicSyncDriver(
         is TickOutcome.Skip -> when (reason) {
             SkipReason.Busy -> "skip(busy)"
             SkipReason.Offline -> "skip(offline)"
+            is SkipReason.Policy -> "skip(${reason.reason.name})"
         }
     }
 
