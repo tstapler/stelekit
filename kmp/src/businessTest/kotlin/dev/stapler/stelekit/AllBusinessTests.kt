@@ -237,6 +237,14 @@ import dev.stapler.stelekit.git.lfs.GitAttributesMatcherPropertyTest
 import dev.stapler.stelekit.git.lfs.GitAttributesMatcherTest
 import dev.stapler.stelekit.git.lfs.LfsPointerPropertyTest
 import dev.stapler.stelekit.git.lfs.LfsPointerTest
+import dev.stapler.stelekit.git.lfs.GitAttributesParserTest
+import dev.stapler.stelekit.git.lfs.GitWildmatchTest
+import dev.stapler.stelekit.git.GitOperationSupportHelpersTest
+import dev.stapler.stelekit.git.GitRefDiagnosticsTest
+import dev.stapler.stelekit.git.lfs.FileSystemLfsContentProbeTest
+import dev.stapler.stelekit.git.SqlDelightGitConfigRepositoryRoundTripTest
+import dev.stapler.stelekit.migration.ChangeApplierBranchesTest
+import dev.stapler.stelekit.migration.PostMigrationFlusherTest
 import dev.stapler.stelekit.git.GitSyncServiceLfsGuardTest
 import dev.stapler.stelekit.git.GitSyncServicePeriodicTest
 import dev.stapler.stelekit.git.PeriodicSyncDriverTest
@@ -491,6 +499,14 @@ import org.junit.runners.Suite
     GitAttributesMatcherTest::class,
     LfsPointerPropertyTest::class,
     LfsPointerTest::class,
+    GitAttributesParserTest::class,
+    GitWildmatchTest::class,
+    GitOperationSupportHelpersTest::class,
+    GitRefDiagnosticsTest::class,
+    FileSystemLfsContentProbeTest::class,
+    SqlDelightGitConfigRepositoryRoundTripTest::class,
+    ChangeApplierBranchesTest::class,
+    PostMigrationFlusherTest::class,
     GitSyncServiceLfsGuardTest::class,
     GitSyncServicePeriodicTest::class,
     PeriodicSyncDriverTest::class,

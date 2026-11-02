@@ -169,6 +169,7 @@ import dev.stapler.stelekit.db.PathContainmentSymlinkTest
 import dev.stapler.stelekit.db.QueryExecutorGraphSwitchTest
 import dev.stapler.stelekit.git.GitCredentialConnectionStoreTest
 import dev.stapler.stelekit.git.GitHubDeviceFlowClientTest
+import dev.stapler.stelekit.git.GitHubDeviceFlowClientEdgeCasesTest
 import dev.stapler.stelekit.git.GitRefDiagnosticsRedactionTest
 import dev.stapler.stelekit.git.GitSyncAttributeMergeE2ETest
 import dev.stapler.stelekit.git.GitSyncServiceLfsJvmTest
@@ -504,6 +505,7 @@ import org.junit.runners.Suite
     QueryExecutorGraphSwitchTest::class,
     GitCredentialConnectionStoreTest::class,
     GitHubDeviceFlowClientTest::class,
+    GitHubDeviceFlowClientEdgeCasesTest::class,
     GitRefDiagnosticsRedactionTest::class,
     GitSyncAttributeMergeE2ETest::class,
     GitSyncServiceLfsJvmTest::class,
