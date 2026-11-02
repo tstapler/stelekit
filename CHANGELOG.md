@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.102.0](https://github.com/tstapler/stelekit/compare/v0.101.0...v0.102.0) (2026-11-02)
+
+
+### Features
+
+* **git:** scheduled ticks run the full policy-gated sync (U16 / Story 2.4; stacked on [#538](https://github.com/tstapler/stelekit/issues/538)) ([#540](https://github.com/tstapler/stelekit/issues/540)) ([c87ae4a](https://github.com/tstapler/stelekit/commit/c87ae4af9676af2037f4980b90e669370083910a))
+* **sync:** sync safety follow-ups to scheduled sync ([#547](https://github.com/tstapler/stelekit/issues/547)) ([6a9d105](https://github.com/tstapler/stelekit/commit/6a9d10597aa864bd48209b2dcfbaa840b5f6e1f7))
+
 ## [0.101.0](https://github.com/tstapler/stelekit/compare/v0.100.0...v0.101.0) (2026-11-02)
 
 
