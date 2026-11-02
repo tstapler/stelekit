@@ -156,4 +156,15 @@ class StelekitViewModelSyncStateTest {
         }
         current
     }
+
+    @Test
+    fun `reviewFirstSyncFromSettings closes Settings and opens the first sync review`() {
+        val vm = makeViewModel()
+        vm.setSettingsVisible(true)
+
+        vm.reviewFirstSyncFromSettings()
+
+        assertEquals(false, vm.uiState.value.settingsVisible)
+        assertEquals(true, vm.uiState.value.firstSyncReviewVisible)
+    }
 }

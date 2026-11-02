@@ -266,6 +266,11 @@ class StelekitViewModel(
     fun openBranchRepair() = _uiState.update { it.copy(branchRepairVisible = true) }
     fun dismissBranchRepair() = _uiState.update { it.copy(branchRepairVisible = false) }
     fun openFirstSyncReview() = _uiState.update { it.copy(firstSyncReviewVisible = true, branchRepairVisible = false) }
+    /** Settings' "Review first sync" button: closes Settings, then opens the review. */
+    fun reviewFirstSyncFromSettings() {
+        setSettingsVisible(false)
+        openFirstSyncReview()
+    }
     fun dismissFirstSyncReview() = _uiState.update { it.copy(firstSyncReviewVisible = false) }
 
     /** Triggers a fetch-only check for remote changes on the active graph. */
