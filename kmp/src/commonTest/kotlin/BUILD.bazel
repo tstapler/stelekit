@@ -109,6 +109,7 @@ kt_jvm_library(
         # PullIndexingTest's fake. Not the whole common_test_fixtures target: it bundles unregistered @Test
         # classes that AllBusinessTestsCompletenessTest would then find on the classpath.
         "dev/stapler/stelekit/db/sidecar/FakeFileSystem.kt",
+        "dev/stapler/stelekit/domain/HtmlBlockConverterTest.kt",
         "dev/stapler/stelekit/error/DomainErrorTest.kt",
         "dev/stapler/stelekit/git/lfs/GitAttributesMatcherPropertyTest.kt",
         "dev/stapler/stelekit/git/lfs/GitAttributesMatcherTest.kt",
@@ -121,10 +122,12 @@ kt_jvm_library(
         "dev/stapler/stelekit/git/lfs/LfsPathPolicyTest.kt",
         "dev/stapler/stelekit/git/lfs/LfsPointerPropertyTest.kt",
         "dev/stapler/stelekit/git/lfs/LfsPointerTest.kt",
+        "dev/stapler/stelekit/parser/MarkdownParserInlineStorageTest.kt",
         "dev/stapler/stelekit/platform/image/ImageSamplingTest.kt",
         "dev/stapler/stelekit/platform/image/ImageTiersTest.kt",
         "dev/stapler/stelekit/ui/assets/AssetImageReferenceTest.kt",
         "dev/stapler/stelekit/ui/PageSelectionTest.kt",
+        "dev/stapler/stelekit/vault/VaultHeaderModelTest.kt",
     ],
     testonly = True,
     kotlinc_opts = "//:kmp_jvm_kotlinc_opts",

@@ -241,6 +241,9 @@ import dev.stapler.stelekit.git.lfs.GitAttributesParserTest
 import dev.stapler.stelekit.git.lfs.GitWildmatchTest
 import dev.stapler.stelekit.git.GitOperationSupportHelpersTest
 import dev.stapler.stelekit.git.GitRefDiagnosticsTest
+import dev.stapler.stelekit.domain.HtmlBlockConverterTest
+import dev.stapler.stelekit.vault.VaultHeaderModelTest
+import dev.stapler.stelekit.parser.MarkdownParserInlineStorageTest
 import dev.stapler.stelekit.git.lfs.FileSystemLfsContentProbeTest
 import dev.stapler.stelekit.git.SqlDelightGitConfigRepositoryRoundTripTest
 import dev.stapler.stelekit.migration.ChangeApplierBranchesTest
@@ -503,6 +506,9 @@ import org.junit.runners.Suite
     GitWildmatchTest::class,
     GitOperationSupportHelpersTest::class,
     GitRefDiagnosticsTest::class,
+    HtmlBlockConverterTest::class,
+    VaultHeaderModelTest::class,
+    MarkdownParserInlineStorageTest::class,
     FileSystemLfsContentProbeTest::class,
     SqlDelightGitConfigRepositoryRoundTripTest::class,
     ChangeApplierBranchesTest::class,
