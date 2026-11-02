@@ -97,10 +97,13 @@ object AndroidCrashRecorder {
         }
     }
 
-    private fun runtimeMemoryNote(): String {
+    internal fun runtimeMemoryNote(): String {
         val r = Runtime.getRuntime()
         val mb = 1024 * 1024
-        return "used=${(r.totalMemory() - r.freeMemory()) / mb}MB max=${r.maxMemory() / mb}MB"
+        // Bitmap pixels live in the native heap on API 26+, so the Java heap alone can read low during an image OOM.
+        // Fail-soft: a throw here would lose the whole crash record, which is worth more than this one number.
+        val native = runCatching { "${android.os.Debug.getNativeHeapAllocatedSize() / mb}MB" }.getOrDefault("n/a")
+        return "used=${(r.totalMemory() - r.freeMemory()) / mb}MB max=${r.maxMemory() / mb}MB native=$native"
     }
 }
 
