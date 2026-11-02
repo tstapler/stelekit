@@ -31,7 +31,7 @@ import kotlin.test.assertTrue
 /** [GitSyncService.runScheduledSync]: policy plus sync or fetch, against a call-recording fake repository. */
 class GitSyncServiceScheduledSyncTest {
 
-    private class MapSettings : Settings {
+    private open class MapSettings : Settings {
         private val store = mutableMapOf<String, String>()
         override fun getBoolean(key: String, defaultValue: Boolean) = store[key]?.toBoolean() ?: defaultValue
         override fun putBoolean(key: String, value: Boolean) { store[key] = value.toString() }
@@ -106,6 +106,9 @@ class GitSyncServiceScheduledSyncTest {
         val editLock: EditLock = EditLock(),
         val busy: GitSyncBusyCounter = GitSyncBusyCounter(),
         var vault: CredentialAccess? = null,
+        var vaultProvider: (() -> CredentialAccess)? = null,
+        var isOnline: () -> Boolean = { online },
+        val settings2: Settings? = null,
     ) {
         fun confirmFirstSync() = FirstSyncConfirmation(settings).confirm("test-graph", config.remoteName, config.remoteBranch)
 
@@ -119,11 +122,11 @@ class GitSyncServiceScheduledSyncTest {
                 configRepository = StubConfigRepository(config.right()),
                 networkMonitor = NetworkMonitor(),
                 fileSystem = fs,
-                credentialAccessProvider = vault?.let { v -> { v } },
+                credentialAccessProvider = vaultProvider ?: vault?.let { v -> { v } },
                 graphId = "test-graph",
-                settings = settings,
+                settings = settings2 ?: settings,
                 gitSyncBusyCounter = busy,
-                isOnline = { online },
+                isOnline = { isOnline() },
                 wallClockMs = { now },
                 isAppOwnedPath = { appOwned(it) },
             )
@@ -397,6 +400,44 @@ class GitSyncServiceScheduledSyncTest {
 
         assertEquals(TickOutcome.Success, svc.scheduled.run("test-graph"))
         assertEquals(emptyList(), spy.calls)
+        svc.shutdown()
+    }
+
+    @Test
+    fun `a vault provider that throws counts as available, like sync`() = runBlocking {
+        val h = Harness(vaultProvider = { error("keystore unavailable") }).also { it.confirmFirstSync() }
+        val svc = h.service()
+
+        assertEquals(TickOutcome.Success, svc.scheduled.run("test-graph"))
+        assertTrue("push" in h.spy.calls)
+        svc.shutdown()
+    }
+
+    @Test
+    fun `going offline between the policy check and the sync is a skip, not a failure`() = runBlocking {
+        val answers = ArrayDeque(listOf(true, true))
+        val h = Harness(isOnline = { answers.removeFirstOrNull() ?: false }).also { it.confirmFirstSync() }
+        val svc = h.service()
+
+        assertEquals(TickOutcome.Skip(SkipReason.Offline), svc.scheduled.run("test-graph"))
+        assertEquals(emptyList(), h.spy.mutatingCalls())
+        svc.shutdown()
+    }
+
+    @Test
+    fun `a review that becomes pending between the policy check and the sync is a first-sync skip`() = runBlocking {
+        val gate = object : MapSettings() {
+            var pendingReads = 0
+            override fun getBoolean(key: String, defaultValue: Boolean): Boolean =
+                if (key.startsWith("git_first_sync_review_pending_")) ++pendingReads > 3 else super.getBoolean(key, defaultValue)
+        }
+        val h = Harness(settings2 = gate).also { it.confirmFirstSync() }
+        h.settings.putString("git_first_sync_confirmed_test-graph", "origin/main")
+        gate.putString("git_first_sync_confirmed_test-graph", "origin/main")
+        val svc = h.service()
+
+        assertEquals(policySkip(ScheduledSkipReason.FirstSyncUnconfirmed), svc.scheduled.run("test-graph"))
+        assertEquals(emptyList(), h.spy.mutatingCalls())
         svc.shutdown()
     }
 }
