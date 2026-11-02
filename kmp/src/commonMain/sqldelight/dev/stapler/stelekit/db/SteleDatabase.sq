@@ -1210,6 +1210,9 @@ SELECT uuid, file_path, relative_path, media_type, subfolder, tags, cloud_descri
 countAssetsNeedingCloudDescription:
 SELECT COUNT(*) FROM asset_index WHERE ml_processed = 1 AND ml_failed = 0 AND cloud_description IS NULL AND media_type = 'IMAGE';
 
+countAssetsWithCloudDescription:
+SELECT COUNT(*) FROM asset_index WHERE cloud_description IS NOT NULL;
+
 countUnprocessedAssets:
 SELECT COUNT(*) FROM asset_index WHERE ml_processed = 0 AND ml_failed = 0;
 
@@ -1230,6 +1233,9 @@ UPDATE asset_index SET ocr_text = :ocrText WHERE uuid = :uuid;
 
 updateAssetCloudDescription:
 UPDATE asset_index SET cloud_description = :cloudDescription, ml_tags_source = :mlTagsSource WHERE uuid = :uuid;
+
+clearAllAssetCloudDescriptions:
+UPDATE asset_index SET cloud_description = NULL, ml_tags_source = CASE WHEN ml_tags_source = 'CLOUD_CLAUDE' THEN 'NONE' ELSE ml_tags_source END WHERE cloud_description IS NOT NULL;
 
 markAssetMlProcessed:
 UPDATE asset_index SET ml_processed = 1, ml_attempted_at = :attemptedAt WHERE uuid = :uuid;

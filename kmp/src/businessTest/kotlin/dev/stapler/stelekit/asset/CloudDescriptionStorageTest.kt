@@ -78,4 +78,25 @@ class CloudDescriptionStorageTest {
         repo.updateCloudDescription(asset.uuid, "text", "CLOUD_CLAUDE")
         assertEquals("CLOUD_CLAUDE", repo.getAssetByUuid(asset.uuid).first().getOrNull()!!.mlTagsSource)
     }
+
+    @Test
+    fun deleteAiDescriptions_should_ClearAllCloudDescriptionsInOneActorWriteAndKeepOcrAndLabels_When_ExecutedThroughActor() = runBlocking<Unit> {
+        val rig = CloudRig()
+        repo.saveAsset(rig.putImage("d1").copy(ocrText = "printed", autoLabels = listOf("receipt")))
+        repo.saveAsset(rig.putImage("d2"))
+        repo.saveAsset(rig.putImage("d3"))
+        repo.updateCloudDescription(dev.stapler.stelekit.asset.AssetUuid("d1"), "A receipt", "CLOUD_CLAUDE")
+        repo.updateCloudDescription(dev.stapler.stelekit.asset.AssetUuid("d2"), "A dog", "CLOUD_CLAUDE")
+        assertEquals(2L, repo.countCloudDescriptions().getOrNull())
+        val actor = DatabaseWriteActor(InMemoryBlockRepository(), InMemoryPageRepository())
+
+        assertTrue(actor.execute { repo.clearCloudDescriptions() }.isRight())
+
+        assertEquals(0L, repo.countCloudDescriptions().getOrNull())
+        val d1 = repo.getAssetByUuid(dev.stapler.stelekit.asset.AssetUuid("d1")).first().getOrNull()!!
+        assertEquals(null, d1.cloudDescription)
+        assertEquals("NONE", d1.mlTagsSource)
+        assertEquals("printed", d1.ocrText)
+        assertEquals(listOf("receipt"), d1.autoLabels)
+    }
 }

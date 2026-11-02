@@ -107,6 +107,17 @@ class InMemoryAssetRepository : AssetRepository {
     override suspend fun countAssetsNeedingCloudDescription(): Either<DomainError, Long> =
         store.value.values.count(::needsCloudDescription).toLong().right()
 
+    override suspend fun countCloudDescriptions(): Either<DomainError, Long> =
+        store.value.values.count { it.cloudDescription != null }.toLong().right()
+
+    override suspend fun clearCloudDescriptions(): Either<DomainError, Unit> {
+        store.value = store.value.mapValues { (_, a) ->
+            if (a.cloudDescription == null) a
+            else a.copy(cloudDescription = null, mlTagsSource = if (a.mlTagsSource == "CLOUD_CLAUDE") "NONE" else a.mlTagsSource)
+        }
+        return Unit.right()
+    }
+
     @Suppress("InMemoryPagination")
     override fun getUnprocessedAssets(
         limit: Int,

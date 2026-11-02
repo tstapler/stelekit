@@ -29,6 +29,8 @@ class QueryPlanAuditTest {
 
     // ── Queries where a full heap scan is expected / unavoidable ─────────────────────────────
     private val ALLOWLIST = setOf(
+        // One-shot count behind the "Delete AI descriptions" confirm; runs once per tap, never observed
+        "countAssetsWithCloudDescription",
         // No WHERE clause — full traversal by design
         "selectAllBlocks", "selectAllBlocksPaginated", "countBlocks",
         "selectAllPagesPaginated", "countPages", "selectPageNameEntries",
@@ -416,6 +418,8 @@ ORDER BY depth, parent_uuid, position"""),
             "SELECT uuid, file_path, relative_path, media_type, subfolder, tags, cloud_description, page_uuids, size_bytes, imported_at_ms, ml_processed, ml_attempted_at, ml_failed, content_hash, is_orphan, ml_tags_source FROM asset_index WHERE ml_processed = 1 AND ml_failed = 0 AND cloud_description IS NULL AND media_type = 'IMAGE' ORDER BY imported_at_ms ASC LIMIT 10 OFFSET 0"),
         AuditQuery("countAssetsNeedingCloudDescription",
             "SELECT COUNT(*) FROM asset_index WHERE ml_processed = 1 AND ml_failed = 0 AND cloud_description IS NULL AND media_type = 'IMAGE'"),
+        AuditQuery("countAssetsWithCloudDescription",
+            "SELECT COUNT(*) FROM asset_index WHERE cloud_description IS NOT NULL"),
         AuditQuery("countUnprocessedAssets",
             "SELECT COUNT(*) FROM asset_index WHERE ml_processed = 0 AND ml_failed = 0"),
         AuditQuery("countAssets",

@@ -177,6 +177,28 @@ class SqlDelightAssetRepository(
             }
         }
 
+    override suspend fun countCloudDescriptions(): Either<DomainError, Long> =
+        withContext(PlatformDispatcher.DB) {
+            try {
+                queries.countAssetsWithCloudDescription().asFlow().mapToOne(PlatformDispatcher.DB).first().right()
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                DomainError.DatabaseError.ReadFailed(e.message ?: "unknown").left()
+            }
+        }
+
+    @DirectRepositoryWrite
+    override suspend fun clearCloudDescriptions(): Either<DomainError, Unit> =
+        withContext(PlatformDispatcher.DB) {
+            try {
+                queries.clearAllAssetCloudDescriptions()
+                Unit.right()
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
+            }
+        }
+
     override suspend fun countUnprocessedAssets(): Either<DomainError, Long> =
         withContext(PlatformDispatcher.DB) {
             try {

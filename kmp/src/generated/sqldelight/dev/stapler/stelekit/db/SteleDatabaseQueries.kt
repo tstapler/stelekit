@@ -3308,6 +3308,10 @@ public class SteleDatabaseQueries(
     cursor.getLong(0)!!
   }
 
+  public fun countAssetsWithCloudDescription(): Query<Long> = Query(1_466_364_638, arrayOf("asset_index"), driver, "SteleDatabase.sq", "countAssetsWithCloudDescription", "SELECT COUNT(*) FROM asset_index WHERE cloud_description IS NOT NULL") { cursor ->
+    cursor.getLong(0)!!
+  }
+
   public fun countUnprocessedAssets(): Query<Long> = Query(-1_728_676_438, arrayOf("asset_index"), driver, "SteleDatabase.sq", "countUnprocessedAssets", "SELECT COUNT(*) FROM asset_index WHERE ml_processed = 0 AND ml_failed = 0") { cursor ->
     cursor.getLong(0)!!
   }
@@ -5500,6 +5504,17 @@ public class SteleDatabaseQueries(
           bindString(parameterIndex++, uuid)
         }.await()
     notifyQueries(-280_162_643) { emit ->
+      emit("asset_index")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun clearAllAssetCloudDescriptions(): Long {
+    val result = driver.execute(-790_666_191, """UPDATE asset_index SET cloud_description = NULL, ml_tags_source = CASE WHEN ml_tags_source = 'CLOUD_CLAUDE' THEN 'NONE' ELSE ml_tags_source END WHERE cloud_description IS NOT NULL""", 0).await()
+    notifyQueries(-790_666_191) { emit ->
       emit("asset_index")
     }
     return result

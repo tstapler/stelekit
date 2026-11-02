@@ -1,7 +1,11 @@
 package dev.stapler.stelekit.asset.pipeline
 
+import arrow.core.Either
+import dev.stapler.stelekit.db.DatabaseWriteActor
+import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.repository.AssetRepository
+import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,6 +21,13 @@ const val CLOUD_NETWORK_UNMETERED_LINE = "Only on an unmetered network."
 const val CLOUD_NETWORK_ONLINE_LINE = "Only while online."
 const val CLOUD_REVOKE_COPY =
     "Cloud descriptions are off. Descriptions already received are kept. Images already sent can't be recalled from Anthropic."
+const val CLOUD_DELETE_LABEL = "Delete AI descriptions"
+const val CLOUD_DELETE_RECALL_NOTE = "Images already sent can't be recalled."
+
+/** The confirm body: graph name and count, per the plan's copy. */
+fun cloudDeleteConfirmText(graphName: String, count: Long): String =
+    "Delete AI descriptions for $graphName? $count ${if (count == 1L) "description" else "descriptions"} will be removed from this graph's search. $CLOUD_DELETE_RECALL_NOTE"
+
 const val CLOUD_POLICY_URL = "https://www.anthropic.com/legal/privacy"
 
 /** What the consent dialog shows, computed when it opens. */
@@ -58,6 +69,7 @@ class CloudSettingsController(
     private val meteredAware: () -> Boolean,
     private val now: () -> Long,
     private val onEnabled: () -> Unit = {},
+    private val writeActor: DatabaseWriteActor? = null,
 ) {
     private val logger = Logger("CloudSettings")
     // Nothing is read until the page asks (refresh): reading the key store at construction would touch the platform keystore on every graph open.
@@ -115,6 +127,19 @@ class CloudSettingsController(
         registry.onCloudStateChanged()
         logger.info("cloud descriptions revoked")
         refresh()
+    }
+
+    fun graphDisplayName(): String = graphName()
+
+    /** Descriptions the confirm dialog says it will remove. */
+    suspend fun aiDescriptionCount(): Long = assets.countCloudDescriptions().getOrNull() ?: 0L
+
+    /** "Delete AI descriptions": one batched write through the actor; OCR text and on-device labels stay. */
+    @OptIn(DirectRepositoryWrite::class)
+    suspend fun deleteAiDescriptions(): Either<DomainError, Unit> {
+        val result = writeActor?.execute { assets.clearCloudDescriptions() } ?: assets.clearCloudDescriptions()
+        result.onLeft { logger.warn("delete AI descriptions failed: ${it.message}") }
+        return result
     }
 
     /** "Forget API key": also stops Claude voice formatting, since the key is shared. */

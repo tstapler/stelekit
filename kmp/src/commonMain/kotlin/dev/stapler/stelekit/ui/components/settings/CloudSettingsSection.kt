@@ -22,10 +22,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import dev.stapler.stelekit.asset.pipeline.CLOUD_DELETE_LABEL
 import dev.stapler.stelekit.asset.pipeline.CLOUD_REVOKE_COPY
 import dev.stapler.stelekit.asset.pipeline.CloudConsent
 import dev.stapler.stelekit.asset.pipeline.CloudConsentDialogModel
 import dev.stapler.stelekit.asset.pipeline.CloudSettingsController
+import dev.stapler.stelekit.asset.pipeline.cloudDeleteConfirmText
 import kotlinx.coroutines.launch
 
 internal const val CLOUD_SWITCH_LABEL = "Cloud description (Anthropic)"
@@ -43,6 +45,7 @@ fun CloudSettingsSection(controller: CloudSettingsController, modifier: Modifier
     val state by controller.state.collectAsState()
     val scope = rememberCoroutineScope()
     var dialog by remember { mutableStateOf<CloudConsentDialogModel?>(null) }
+    var deleteCount by rememberSaveable { mutableStateOf<Long?>(null) }
     var confirmForget by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(controller) { controller.refresh() }
 
@@ -72,6 +75,7 @@ fun CloudSettingsSection(controller: CloudSettingsController, modifier: Modifier
         if (!state.switchOn && state.consent is CloudConsent.Revoked) {
             Text(CLOUD_REVOKE_COPY, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        TextButton(onClick = { scope.launch { deleteCount = controller.aiDescriptionCount() } }) { Text(CLOUD_DELETE_LABEL) }
         if (state.keyPresent) {
             TextButton(onClick = { confirmForget = true }) { Text(CLOUD_FORGET_LABEL) }
         }
@@ -90,6 +94,15 @@ fun CloudSettingsSection(controller: CloudSettingsController, modifier: Modifier
             text = { Text(CLOUD_FORGET_CONFIRM) },
             confirmButton = { TextButton(onClick = { confirmForget = false; controller.forgetApiKey() }) { Text("Forget") } },
             dismissButton = { TextButton(onClick = { confirmForget = false }) { Text("Cancel") } },
+        )
+    }
+    deleteCount?.let { count ->
+        AlertDialog(
+            onDismissRequest = { deleteCount = null },
+            title = { Text(CLOUD_DELETE_LABEL) },
+            text = { Text(cloudDeleteConfirmText(controller.graphDisplayName(), count)) },
+            confirmButton = { TextButton(onClick = { deleteCount = null; scope.launch { controller.deleteAiDescriptions() } }) { Text("Delete") } },
+            dismissButton = { TextButton(onClick = { deleteCount = null }) { Text("Cancel") } },
         )
     }
 }
