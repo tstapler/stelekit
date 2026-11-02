@@ -62,20 +62,20 @@ data class ScheduledSyncSettingsState(
     val onReviewFirstSync: () -> Unit = {},
 )
 
-internal const val DESKTOP_HELPER = "Checks the remote while SteleKit is open."
+internal const val DESKTOP_HELPER = "Syncs with the remote while SteleKit is open."
 internal const val ANDROID_HELPER = "Also checks about every 15 minutes while SteleKit is closed. Open the app to merge."
-internal const val RESTRICTED_HELPER = "Background checks are restricted by Android. Checks run while SteleKit is open."
+internal const val RESTRICTED_HELPER = "Background checks are restricted by Android. Syncs run while SteleKit is open."
 internal const val NO_REMOTE_REASON = "Set up Git sync first"
 internal const val REVIEW_FIRST_SYNC_REASON = "Review first sync to enable"
 internal const val ANDROID_FIVE_MINUTE_REASON = "Android runs at most every 15 minutes"
-internal const val SWITCH_LABEL = "Check for updates automatically"
+internal const val SWITCH_LABEL = "Sync automatically"
 private const val MIN_TARGET_DP = 48
 private const val STOPPING_DELAY_MILLIS = 2_000L
 private const val NOW_REFRESH_MILLIS = 30_000L
 
 /**
- * Settings > Scheduled sync. Until the pull step ships the tick only fetches, so all copy says
- * "check"/"checked", never "sync"/"synced".
+ * Settings > Scheduled sync. A tick now pulls and pushes (UW-17), so the status line says
+ * "sync"/"synced"; only the closed-app helper still says "checks" because the closed app only fetches.
  *
  * @param nowMs fixed clock for tests; null follows the wall clock, refreshed every 30 s.
  */
@@ -202,13 +202,13 @@ private fun StatusLine(line: ScheduledSyncLine, state: ScheduledSyncSettingsStat
 internal fun lineText(line: ScheduledSyncLine): String = when (line) {
     ScheduledSyncLine.NotScheduled -> "Not scheduled"
     ScheduledSyncLine.Stopping -> "Stopping..."
-    ScheduledSyncLine.NeverChecked -> "Not checked yet"
-    ScheduledSyncLine.CheckInProgress -> "Check in progress"
-    ScheduledSyncLine.Offline -> "Offline - will check when you are back online"
+    ScheduledSyncLine.NeverChecked -> "Not synced yet"
+    ScheduledSyncLine.CheckInProgress -> "Sync in progress"
+    ScheduledSyncLine.Offline -> "Offline - will sync when you are back online"
     is ScheduledSyncLine.Checked -> {
         val ago = if (line.lastCheckedMinutesAgo < 1) "just now" else "${line.lastCheckedMinutesAgo} min ago"
         val next = line.nextInMinutes?.let { " · next in $it min" }.orEmpty()
-        "Last checked $ago$next"
+        "Last synced $ago$next"
     }
     is ScheduledSyncLine.Paused -> "Paused after ${line.failures} failures - tap to fix"
 }

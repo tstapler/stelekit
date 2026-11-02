@@ -109,6 +109,9 @@ class GitSyncCoordinator(
         .flatMapLatest { service -> service?.firstSyncReviewPending ?: flowOf(false) }
         .stateIn(scope, SharingStarted.Eagerly, false)
 
+    /** Detail sheets for sync problems (interrupted merge, mass deletion); see [SyncSafetyActions]. */
+    val safety = SyncSafetyActions(activeGitSyncService, activeGraphIdProvider, scope, uiState, jobTracker) { syncState.value }
+
     internal fun observeSyncState() {
         scope.launch {
             syncState.collect { state ->

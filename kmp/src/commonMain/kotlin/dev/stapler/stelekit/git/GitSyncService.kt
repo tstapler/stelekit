@@ -6,6 +6,7 @@ package dev.stapler.stelekit.git
 import arrow.core.Either
 import arrow.core.getOrElse
 import arrow.core.left
+import arrow.core.raise.either
 import arrow.core.right
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.db.GraphLoader
@@ -174,15 +175,10 @@ class GitSyncService(
      * is the one collaborator that already holds both. No settings-screen UI calls this yet
      * (backend capability only, per plan.md).
      */
-    suspend fun deepen(graphId: String): Either<DomainError, Unit> {
-        val config = when (val result = configRepository.getConfig(graphId)) {
-            is Either.Left -> return result
-            is Either.Right -> result.value ?: return DomainError.DatabaseError.NotFound("GitConfig", graphId).left()
-        }
-        return gitRepository.unshallow(config).fold(
-            { it.left() },
-            { configRepository.saveConfig(config.copy(cloneDepthState = CloneDepthState.FullHistory)) },
-        )
+    suspend fun deepen(graphId: String): Either<DomainError, Unit> = either {
+        val config = configRepository.getConfig(graphId).bind() ?: raise(DomainError.DatabaseError.NotFound("GitConfig", graphId))
+        gitRepository.unshallow(config).bind()
+        configRepository.saveConfig(config.copy(cloneDepthState = CloneDepthState.FullHistory)).bind()
     }
 
     // Owns its own scope — never accept rememberCoroutineScope()
@@ -365,6 +361,10 @@ class GitSyncService(
             _syncState.value = SyncState.Committing
             val statusResult = gitRepository.status(config)
             if (statusResult is Either.Right && statusResult.value.hasLocalChanges) {
+                if (!config.autoCommit) {
+                    val onFetchFailed = { err: DomainError.GitError -> publishFailure(graphId, err, config.authType == GitAuthType.GITHUB_OAUTH) { g -> sync(g, SyncTrigger.Automatic) } }
+                    return@withContext AutoCommitHold.fetchAndReport(gitRepository, config, statusResult.value, { _syncState.value = it }, onFetchFailed).left()
+                }
                 // A conflicted merge leaves markers in the tree; committing them would push them to the remote.
                 markerGuard.findUnresolved(config, statusResult.value)?.let { unresolved ->
                     logger.warn("refusing to commit: ${unresolved.files.size} file(s) still contain conflict markers")

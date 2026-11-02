@@ -132,7 +132,7 @@ class ScheduledSyncSettingsTest {
     fun status_should_ReadLastChecked3MinNextIn12Min_And_NotTakeFocus_When_TickSucceeded() {
         val last = now - 3 * minute
         show(state(enabled = true, status = ScheduledSyncStatus(running = true, lastAttemptAtMs = last, lastSuccessAtMs = last, nextAtMs = last + 15 * minute)))
-        composeTestRule.onNodeWithText("Last checked 3 min ago · next in 12 min").assertExists()
+        composeTestRule.onNodeWithText("Last synced 3 min ago · next in 12 min").assertExists()
         assertTrue(composeTestRule.onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.Focused, true)).fetchSemanticsNodes().isEmpty())
     }
 
@@ -209,13 +209,13 @@ class ScheduledSyncSettingsTest {
     @Test
     fun tick_should_BeSkippedShowCheckInProgressAndNeverQueued_When_PreviousTickRunning() {
         show(state(enabled = true, status = ScheduledSyncStatus(lastSkip = SkipReason.Busy)))
-        composeTestRule.onNodeWithText("Check in progress").assertExists()
+        composeTestRule.onNodeWithText("Sync in progress").assertExists()
     }
 
     @Test
     fun status_should_ReadOfflineWillResume_When_Offline() {
         show(state(enabled = true, status = ScheduledSyncStatus(lastSkip = SkipReason.Offline)))
-        composeTestRule.onNodeWithText("Offline - will check when you are back online").assertExists()
+        composeTestRule.onNodeWithText("Offline - will sync when you are back online").assertExists()
     }
 
     @Test
@@ -243,14 +243,14 @@ class ScheduledSyncSettingsTest {
     }
 
     @Test
-    fun labelAndHelper_should_SayCheckForUpdatesAndMentionBackgroundChecksOnAndroid_And_NeverSaySyncedBeforeU16() {
+    fun labelAndStatus_should_SaySyncedNowThatScheduledTicksPull_And_NeverSayChecked_UW17() {
         show(state(closedApp = true, minimum = 15, enabled = true, status = ScheduledSyncStatus(lastSuccessAtMs = now - minute, nextAtMs = now + 14 * minute)))
-        assertEquals("Check for updates automatically", SWITCH_LABEL)
+        assertEquals("Sync automatically", SWITCH_LABEL)
         composeTestRule.onNodeWithText(ANDROID_HELPER).assertExists()
         val allText = composeTestRule.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.Text))
             .fetchSemanticsNodes().flatMap { it.config[SemanticsProperties.Text] }.joinToString(" ") { it.text }
-        assertFalse(allText.contains("synced", ignoreCase = true), allText)
-        assertFalse(allText.contains("sync automatically", ignoreCase = true), allText)
+        assertTrue(allText.contains("Last synced 1 min ago"), allText)
+        assertFalse(allText.contains("Last checked", ignoreCase = true), allText)
     }
 
     @Test

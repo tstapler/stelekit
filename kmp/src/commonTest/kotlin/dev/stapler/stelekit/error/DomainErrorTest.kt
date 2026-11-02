@@ -47,6 +47,7 @@ class DomainErrorTest {
             DomainError.GitError.ConflictMarkersPresent(listOf("a.md")),
             DomainError.GitError.ScanIncomplete("too big"),
             DomainError.GitError.MassChangeBlocked(30, 20, listOf("a.md")),
+            DomainError.GitError.AutoCommitDisabled(2),
             DomainError.GitError.CredentialExpired("expired"),
             DomainError.GitError.RateLimited(42),
             DomainError.GitError.FileTooLarge("assets/large.md.stek", 90_000_000, 75_000_000),
@@ -134,6 +135,7 @@ class DomainErrorTest {
                 is DomainError.GitError.ConflictMarkersPresent -> err.message
                 is DomainError.GitError.ScanIncomplete -> err.message
                 is DomainError.GitError.MassChangeBlocked -> err.message
+                is DomainError.GitError.AutoCommitDisabled -> err.message
                 is DomainError.GitError.CredentialExpired -> err.message
                 is DomainError.GitError.RateLimited -> err.message
                 is DomainError.GitError.FileTooLarge -> err.message
