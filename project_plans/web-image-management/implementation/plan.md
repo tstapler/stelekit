@@ -100,7 +100,8 @@ Waves (agent fan-out): W0 spikes (7 parallel, browser-run ones serialized on the
 **Acceptance criteria**: pure functions classify binary vs text paths, local-only paths, and image types; `FileSystem` gains suspend binary reads/writes with defaults that preserve current JVM/Android/iOS behavior; new `DomainError` variants have display strings.
 **Files**: `kmp/src/commonMain/kotlin/dev/stapler/stelekit/platform/binary/{FileSource,BinaryClassifier,LocalOnlyPaths,ImageTypes}.kt`, `kmp/src/commonMain/kotlin/dev/stapler/stelekit/platform/FileSystem.kt`, `kmp/src/commonMain/kotlin/dev/stapler/stelekit/error/DomainError.kt`
 - Task 1.1.1a (S): create `FileSource`, `BinaryClassifier.isBinaryAssetPath`, `LocalOnlyPaths.isLocalOnly`, `ImageTypes` (one table: extension, MIME, decodable-in-browser, animated-possible, tier-eligible). Tests: `commonTest/.../platform/binary/{LocalOnlyPathsTest,ImageTypesTest}.kt` incl. a property test (`checkAll` over generated paths: nothing under `.stelekit/cache/` is ever dirty-eligible).
-- Task 1.1.1b (M): add to `FileSystem`: `suspend fun readFileHead(path, n): ByteArray?`, `suspend fun readFileBytesBounded(path, maxBytes): ByteArray?`, `suspend fun contentHashHex(path): String?`, `suspend fun writeFileStream(path, source: FileSource): Boolean`, all defaulting to the existing sync methods so other platforms are unchanged. Test: `commonTest/.../platform/FileSystemBinaryDefaultsTest.kt` against `businessTest`'s `MemoryFileSystem` pattern (copy a commonTest fake).
+- Task 1.1.1b (M): [D4 = B] create the commonMain `BinaryAssetStore` port with `suspend fun readHead(path, n): ByteArray?`, `readBounded(path, maxBytes): ByteArray?`, `contentHashHex(path): String?`, `writeStream(path, source: FileSource): Boolean`, plus a default implementation over the existing sync `FileSystem` methods so JVM/Android/iOS are unchanged. `FileSystem` is NOT modified. Test: `commonTest/.../platform/binary/BinaryAssetStoreDefaultsTest.kt` against a commonTest fake `FileSystem`.
+- Task 1.1.1b2 (M): [D4 = B] thread the port through its consumers (`AssetIndexService`, `ImageImportService`, `AssetCopier`, and every other binary reader the audit finds) as a constructor dependency; update their fakes and composition roots; `WiringCompletenessTest` must see the web implementation constructed. Replaces the `FileSystem`-method references in tasks 1.2.1c, 1.3.1d and 3.1.1b (read them as calls on the port). Re-tally task counts and the cost estimate by script after this change.
 - Task 1.1.1c (XS): `DomainError.AttachmentError.{QuotaExceeded,TooLarge,UnsupportedType,StorageUnavailable}` + `displayMessage` arms (`DomainError.kt:381-383` region); test that the `when` is exhaustive (compile) and strings non-blank.
 
 #### Story 1.2.1: `WebBinaryStore` and index
@@ -356,12 +357,16 @@ Waves (agent fan-out): W0 spikes (7 parallel, browser-run ones serialized on the
 
 ## Decisions needing the owner (each has a recommended default; work proceeds on the default)
 
+**Decided 2026-11-01:** D1 = A (OPFS working store + optional host-folder mirror), D4 = **B (separate commonMain `BinaryAssetStore` port, overriding the recommended default; see ADR-002 Amendment)**, D5 = A (Assets browser default ON, gated by the 2,000-image memory test), D11 = A (this plan executes the web LFS slice). D2, D3, D6 to D10 and D12 to D14 remain open and proceed on their defaults.
+
+
 | ID | Decision | Options | Recommended default | Decided by spike | Blocks |
 |---|---|---|---|---|---|
 | D1 | Browser storage backend for images | OPFS working store + optional host-folder mirror + git (A); IndexedDB blobs (B); host folder only (C) | A (ADR-001) | S3 for Safari | E1 |
 | D2 | Write path where `createWritable` is unavailable (Safari) | main thread only and show unsupported; worker sync-access-handle path; disable attach on Safari | worker path chosen by capability probe | S3 | E1.3, E10.3 |
 | D3 | How images render from blob URLs | Coil fetcher for `blob:` (A); DOM `<img>` overlay (B) | A, only if S1 shows Coil cannot do it natively | S1 | E4.3 |
 | D4 | Shape of the binary read API | suspend methods on `FileSystem` with defaults (A); separate commonMain `BinaryAssetStore` port (B) | A (smallest change to existing services; ADR-002) | none | E1.1 |
+<!-- D4 decided 2026-11-01: option B (separate port). See ADR-002 Amendment. -->
 | D5 | Asset index switch on web | default ON for web with the 2,000-image memory test as the gate (A); follow Android's hidden-until-heap-gate (B) | A (otherwise Assets stays empty on web) | S4 | E3.1 |
 | D6 | On-device engines | tesseract.js OCR + ORT-web labels + depth behind explicit download (A); OCR only (B); none (C) | A, vendored same-origin | S7 | E7 |
 | D7 | Web Bluetooth measurement devices | hide (A); implement Web Bluetooth (B) | A | none | E6.2 |

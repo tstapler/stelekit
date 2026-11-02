@@ -1,6 +1,6 @@
 # ADR-002: JS owns image bytes; Kotlin owns metadata; `WebBinaryStore` collaborator plus suspend binary reads on `FileSystem`
 
-**Status**: Proposed (owner decision D4; recommended default)
+**Status**: Accepted 2026-11-01 with owner decision D4 = option B (separate commonMain `BinaryAssetStore` port; `FileSystem` is left alone). This overrides point 2 below and the recommended default; see Amendment.
 **Date**: 2026-11-01
 **Related**: `wasm-image-drop` ADR-002 (base64 bridge), `research/architecture.md` sections 0 to 2, `research/pitfalls.md` P1 to P3
 
@@ -25,3 +25,10 @@ Kotlin/Wasm has no zero-copy `ByteArray` to `Uint8Array` path, so the repo uses 
 - Callers that today use sync `readFileBytes` for large images are migrated to the suspend API in the same epics (E3, E6); small fixed-size reads keep working.
 - New pure code is tested in `commonTest`; interop in `wasmJsTest`.
 - Wiring and structural tests (`LocalOnlyCallSitesStructuralTest`, `LfsStagingCallSitesStructuralTest`) pin the invariants.
+
+## Amendment (owner decision D4 = B)
+The owner chose the separate-port option. Consequences that replace the earlier text where they differ:
+- Point 2 no longer applies: `FileSystem` gains no new methods. The four operations (`readHead`, `readBounded`, `contentHashHex`, `writeStream`) live on a new commonMain `BinaryAssetStore` interface; `WebBinaryStore` implements it on web and a default implementation delegates to the existing sync `FileSystem` methods on JVM/Android/iOS so their behavior is unchanged.
+- The blast radius named in the Alternatives table is now in scope: `AssetIndexService`, `ImageImportService`, `AssetCopier` (and any other binary reader found by the E1 audit) take the port as a constructor dependency, and their test fakes gain a matching fake store. The wiring audit (`WiringCompletenessTest`) must see the new implementation constructed in a composition root.
+- Metadata (`getFileSize`, `listFiles`, `fileExists`, ...) still comes from `FileSystem`, answered from the index on web.
+- Task counts and the cost tally in `implementation/plan.md` predate this and must be recomputed by script before Phase 5.
