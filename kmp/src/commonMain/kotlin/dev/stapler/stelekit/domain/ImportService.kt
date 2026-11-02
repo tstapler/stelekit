@@ -46,7 +46,7 @@ object ImportService {
         matcher: AhoCorasickMatcher,
         existingNames: Set<String> = emptySet(),
     ): ScanResult {
-        val spans = matcher.findAll(rawText)
+        val spans = LinkProtectedSpans.findOutsideProtected(matcher, rawText)
 
         val linkedText: String
         val matchedPageNames: List<String>
@@ -105,11 +105,10 @@ object ImportService {
 
         data class Match(val start: Int, val end: Int, val term: String)
 
-        val existingLinkSpans = Regex("""\[\[.*?\]\]""").findAll(text)
-            .map { it.range }
-            .toList()
+        // URLs, code, existing [[links]] and #tags are off-limits (see LinkProtectedSpans).
+        val protectedSpans = LinkProtectedSpans.find(text)
         fun overlapsExistingLink(start: Int, end: Int) =
-            existingLinkSpans.any { it.first < end && start <= it.last }
+            LinkProtectedSpans.overlaps(protectedSpans, start, end)
 
         // Collect every candidate match for every term against the original text, then
         // sweep left-to-right keeping the first non-overlapping match — ties at the same
