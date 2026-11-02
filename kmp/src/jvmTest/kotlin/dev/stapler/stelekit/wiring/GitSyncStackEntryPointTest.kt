@@ -160,7 +160,7 @@ class GitSyncStackEntryPointTest {
         ObservableEffect.assert("scheduled-sync-tick") {
             assertEquals(4, repo.fetches.get(), "1 immediate tick after load + 3 ticks in 45 minutes")
             assertEquals(4, syncTickLines().size)
-            assertTrue(syncTickLines().all { it.message.contains("decision=fetch") })
+            assertTrue(syncTickLines().all { it.message.contains("decision=scheduled") })
         }
     }
 

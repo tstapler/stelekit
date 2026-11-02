@@ -26,6 +26,7 @@ import dev.stapler.stelekit.ui.components.settings.ANDROID_HELPER
 import dev.stapler.stelekit.ui.components.settings.DESKTOP_HELPER
 import dev.stapler.stelekit.ui.components.settings.NO_REMOTE_REASON
 import dev.stapler.stelekit.ui.components.settings.RESTRICTED_HELPER
+import dev.stapler.stelekit.ui.components.settings.REVIEW_FIRST_SYNC_REASON
 import dev.stapler.stelekit.ui.components.settings.SWITCH_LABEL
 import dev.stapler.stelekit.ui.components.settings.ScheduledSyncSection
 import dev.stapler.stelekit.ui.components.settings.ScheduledSyncSettingsState
@@ -58,6 +59,7 @@ class ScheduledSyncSettingsTest {
         var resumes = 0
         var setUp = 0
         var fixes = 0
+        var reviews = 0
         val count get() = listOfNotNull(enabled, interval).size + resumes + setUp + fixes
     }
 
@@ -70,12 +72,14 @@ class ScheduledSyncSettingsTest {
         closedApp: Boolean = false,
         restricted: Boolean = false,
         status: ScheduledSyncStatus = ScheduledSyncStatus(),
+        reviewRequired: Boolean = false,
     ) = ScheduledSyncSettingsState(
         hasRemote = hasRemote, enabled = enabled, configuredIntervalMinutes = configured,
         minimumIntervalMinutes = minimum, closedAppChecks = closedApp, backgroundRestricted = restricted,
         status = status,
         onEnabledChange = { taps.enabled = it }, onIntervalChange = { taps.interval = it },
         onResume = { taps.resumes++ }, onSetUpGit = { taps.setUp++ }, onFix = { taps.fixes++ },
+        firstSyncReviewRequired = reviewRequired, onReviewFirstSync = { taps.reviews++ },
     )
 
     private fun show(s: ScheduledSyncSettingsState, nowMs: Long = now) {
@@ -261,5 +265,30 @@ class ScheduledSyncSettingsTest {
     fun switch_should_ShowOn_When_EnabledState() {
         show(state(enabled = true))
         composeTestRule.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.ToggleableState)).assertIsOn()
+    }
+
+    @Test
+    fun scheduledSyncSection_should_DisableSwitchWithReasonAndReviewButton_When_FirstSyncNotReviewed() {
+        val taps = Taps()
+        show(state(taps, reviewRequired = true))
+        composeTestRule.onNodeWithText(REVIEW_FIRST_SYNC_REASON).assertExists()
+        composeTestRule.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.ToggleableState)).assertIsNotEnabled()
+        composeTestRule.onNodeWithText("Review first sync").performClick()
+        assertEquals(1, taps.reviews)
+        assertEquals(null, taps.enabled, "the switch itself must not have fired")
+    }
+
+    @Test
+    fun scheduledSyncSection_should_KeepAnAlreadyOnSwitchUsable_When_FirstSyncNotReviewed() {
+        show(state(enabled = true, reviewRequired = true))
+        composeTestRule.onNodeWithText(REVIEW_FIRST_SYNC_REASON).assertDoesNotExist()
+        composeTestRule.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.ToggleableState)).assertIsEnabled().assertIsOn()
+    }
+
+    @Test
+    fun scheduledSyncSection_should_RenderNoReviewRow_When_FirstSyncConfirmed() {
+        show(state(reviewRequired = false))
+        composeTestRule.onNodeWithText(REVIEW_FIRST_SYNC_REASON).assertDoesNotExist()
+        composeTestRule.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.ToggleableState)).assertIsEnabled()
     }
 }

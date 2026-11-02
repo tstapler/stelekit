@@ -215,9 +215,9 @@ class GitSyncService(
 
     @kotlin.concurrent.Volatile private var periodicGraphId: String = graphId
     private val periodicDriver = PeriodicSyncDriver(
-        tick = { refreshLocalStatus(periodicGraphId); fetchOnly(periodicGraphId).toTickOutcome() },
+        tick = { refreshLocalStatus(periodicGraphId); scheduled.run(periodicGraphId) },
         scope = scope, clock = wallClockMs, isBusy = { gitSyncBusyCounter.isBusy.value },
-        label = graphId, launchContext = periodicSyncContext,
+        label = graphId, decision = "scheduled", launchContext = periodicSyncContext,
     )
 
     /** Observable state of the scheduled-sync loop (last check, next check, pause); see [PeriodicSyncDriver]. */
