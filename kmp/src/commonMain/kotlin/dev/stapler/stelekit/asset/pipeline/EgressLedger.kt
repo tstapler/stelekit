@@ -34,6 +34,9 @@ class EgressLedger(
 
     val dailyCount: Int get() = readDaily()
 
+    val sessionLimit: Int get() = sessionCap
+    val dailyLimit: Int get() = dailyCap
+
     /** Counts one upload against both caps when it is allowed; a refused one counts nothing. */
     fun tryReserve(sizeBytes: Long): Reservation {
         if (sizeBytes > perAssetMaxBytes) return Reservation.TooLarge(sizeBytes, perAssetMaxBytes)

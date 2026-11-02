@@ -16,6 +16,7 @@ class CloudPluginDeps(
     val graphId: () -> String,
     val config: CloudEnrichmentConfig = CloudEnrichmentConfig(CloudProvider.CLAUDE, enabled = true),
     val downscaler: ImageDownscalerPort = PlatformImageDownscaler,
+    val network: () -> CloudNetwork = { CloudNetwork.Online },
 )
 
 /**
@@ -50,6 +51,7 @@ fun defaultAssetPlugins(
                 ledger = EgressLedger(settings, cloud.config.sessionCap, cloud.config.dailyCap, cloud.config.perAssetMaxBytes),
                 fileSystem = fileSystem,
                 downscaler = cloud.downscaler,
+                network = cloud.network,
             ),
         )
     }

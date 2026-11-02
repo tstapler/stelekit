@@ -109,6 +109,9 @@ private fun AssetGridItem(
                     containerColor = MaterialTheme.colorScheme.primary,
                 ) { Text("✓") }
             }
+            if (asset.isDescribedByAnthropic()) {
+                DescribedByAnthropicGridBadge(Modifier.align(Alignment.TopStart).padding(4.dp))
+            }
             Text(
                 text = asset.filePath.substringAfterLast('/'),
                 modifier = Modifier

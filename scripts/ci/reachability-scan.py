@@ -54,7 +54,6 @@ REGISTER = {
     9: ["PdfTextPlugin"],
     10: ["OcrPlugin"],
     11: ["CloudClaudePlugin", "CloudEnrichmentConfig"],
-    12: ["CloudVisionPlugin"],
     13: ["MlKitImageLabeler", "MlKitTextRecognizer", "AndroidPdfTextExtractor", "OnnxImageLabeler", "JvmPdfTextExtractor"],
     14: ["CoreMlImageLabeler", "IosPdfTextExtractor"],
     15: ["NoOpPdfTextExtractor", "NoOpImageLabeler", "NoOpTextRecognizer"],

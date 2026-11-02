@@ -76,6 +76,7 @@ class CloudRig(
             return scaled?.let { s -> maxEdges.map { s } }
         }
     }
+    var network = CloudNetwork.Online
     val plugin = CloudClaudePlugin(
         config = CloudEnrichmentConfig(CloudProvider.CLAUDE, enabled = true),
         client = client,
@@ -84,6 +85,7 @@ class CloudRig(
         ledger = ledger,
         fileSystem = fs,
         downscaler = downscaler,
+        network = { network },
     )
 
     fun putImage(uuid: String, bytes: ByteArray = SMALL_JPEG, importedAtMs: Long = 2_000L, sizeBytes: Long = bytes.size.toLong()): AssetEntry {

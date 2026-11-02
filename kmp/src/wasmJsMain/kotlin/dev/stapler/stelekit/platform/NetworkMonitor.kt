@@ -8,5 +8,6 @@ import kotlinx.coroutines.flow.flowOf
 
 actual class NetworkMonitor actual constructor() {
     actual val isOnline: Boolean get() = true
+    actual val isMetered: Boolean? get() = null
     actual fun observeConnectivity(): Flow<Boolean> = flowOf(true)
 }

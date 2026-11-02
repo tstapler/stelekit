@@ -81,7 +81,7 @@ class DefaultAssetPluginsTest {
     fun bothKeys_returnLabelingThenPdfText_andNeverACloudPlugin() {
         val plugins = defaultAssetPlugins(caps, settingsWith(PluginEnableKeys.IMAGE_LABELS, PluginEnableKeys.PDF_TEXT), fs)
         assertEquals(listOf("on_device_labeling", "pdf_text"), plugins.map { it.id })
-        assertTrue(plugins.none { it is CloudClaudePlugin || it is CloudVisionPlugin })
+        assertTrue(plugins.none { it is CloudClaudePlugin })
     }
 
     @Test
@@ -94,7 +94,7 @@ class DefaultAssetPluginsTest {
         val all = settingsWith(PluginEnableKeys.IMAGE_LABELS, PluginEnableKeys.PDF_TEXT, PluginEnableKeys.TEXT_RECOGNITION)
         val plugins = defaultAssetPlugins(caps, all, fs)
         assertEquals(listOf("on_device_labeling", "pdf_text", "ocr"), plugins.map { it.id })
-        assertTrue(plugins.none { it is CloudClaudePlugin || it is CloudVisionPlugin })
+        assertTrue(plugins.none { it is CloudClaudePlugin })
     }
 
     @Test

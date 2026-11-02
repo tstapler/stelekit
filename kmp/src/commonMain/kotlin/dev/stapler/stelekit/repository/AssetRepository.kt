@@ -21,6 +21,12 @@ interface AssetRepository {
 
     fun getUnprocessedAssets(limit: Int, offset: Int): Flow<Either<DomainError, List<AssetEntry>>>
     suspend fun countUnprocessedAssets(): Either<DomainError, Long>
+
+    /** Bounded batches of ML-processed images with no cloud description, oldest first (the IncludeExisting backfill). */
+    fun getAssetsNeedingCloudDescription(limit: Int, offset: Int): Flow<Either<DomainError, List<AssetEntry>>> =
+        kotlinx.coroutines.flow.flowOf(Either.Right(emptyList()))
+
+    suspend fun countAssetsNeedingCloudDescription(): Either<DomainError, Long> = Either.Right(0L)
     suspend fun countAssets(): Either<DomainError, Long>
 
     // Keyset pagination — pass all cursor fields null for the first page.

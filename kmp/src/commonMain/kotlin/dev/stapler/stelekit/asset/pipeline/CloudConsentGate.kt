@@ -39,6 +39,8 @@ class CloudConsentGate(
         _revocations.value = _revocations.value + 1
     }
 
+    fun hasApiKey(): Boolean = !credentials.getApiKey(PROVIDER).isNullOrBlank()
+
     /** Deletes the shared key, which also stops Claude voice formatting. */
     fun forgetApiKey() {
         credentials.deleteApiKey(PROVIDER)

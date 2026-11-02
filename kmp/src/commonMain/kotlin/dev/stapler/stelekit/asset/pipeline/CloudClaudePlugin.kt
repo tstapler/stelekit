@@ -38,15 +38,26 @@ class CloudClaudePlugin(
     private val ledger: EgressLedger,
     private val fileSystem: FileSystem,
     private val downscaler: ImageDownscalerPort,
+    private val network: () -> CloudNetwork = { CloudNetwork.Online },
 ) : AssetPipelinePlugin {
     override val id: String = "cloud_claude"
     private val logger = Logger("CloudClaudePlugin")
 
     override fun canProcess(asset: AssetEntry): Boolean {
         if (!config.enabled || config.provider != CloudProvider.CLAUDE) return false
-        if (asset.mediaType != AssetMediaType.IMAGE || asset.mlProcessed) return false
-        if (asset.mlTagsSource == CLOUD_TAGS_SOURCE) return false
-        return admitted(asset) != null
+        if (asset.mediaType != AssetMediaType.IMAGE || asset.mlTagsSource == CLOUD_TAGS_SOURCE) return false
+        val consent = admitted(asset) ?: return false
+        if (!asset.mlProcessed) return true
+        // Already ML-processed images are only described when the owner chose IncludeExisting.
+        return consent.scope == CloudBackfillScope.IncludeExisting && asset.cloudDescription == null && !asset.mlFailed
+    }
+
+    /** True while consent for this graph covers images that were processed before it was granted. */
+    fun wantsBackfill(): Boolean = gate.token(graphId)?.scope == CloudBackfillScope.IncludeExisting
+
+    private fun networkSkip(): AssetPipelineResult.Skipped? = when (network()) {
+        CloudNetwork.Online -> null
+        CloudNetwork.Offline, CloudNetwork.Metered -> AssetPipelineResult.Skipped(PauseReason.Network)
     }
 
     override suspend fun processAsset(asset: AssetEntry): Either<DomainError, AssetPipelineResult> {
@@ -57,6 +68,7 @@ class CloudClaudePlugin(
     /** The upload path. The [consent] parameter is what makes it uncallable without the gate. */
     @Suppress("UNUSED_PARAMETER")
     suspend fun processAsset(asset: AssetEntry, consent: GrantedConsent): Either<DomainError, AssetPipelineResult> {
+        networkSkip()?.let { return it.right() }
         when (val reservation = ledger.tryReserve(asset.sizeBytes)) {
             EgressLedger.Reservation.Allowed -> Unit
             EgressLedger.Reservation.SessionCap -> return AssetPipelineResult.Skipped(PauseReason.SessionCap).right()

@@ -20,6 +20,10 @@ import dev.stapler.stelekit.asset.pipeline.AssetPipelineService
 import dev.stapler.stelekit.asset.pipeline.AssetPluginsController
 import dev.stapler.stelekit.asset.pipeline.CloudConsentGate
 import dev.stapler.stelekit.asset.pipeline.CloudPluginDeps
+import dev.stapler.stelekit.asset.pipeline.CloudSettingsController
+import dev.stapler.stelekit.asset.pipeline.EgressLedger
+import dev.stapler.stelekit.asset.pipeline.cloudNetwork
+import dev.stapler.stelekit.platform.NetworkMonitor
 import dev.stapler.stelekit.llm.AnthropicMessagesClient
 import dev.stapler.stelekit.llm.LlmCredentialStore
 import dev.stapler.stelekit.platform.security.CredentialStore
@@ -46,6 +50,13 @@ typealias AssetMover = suspend (AssetEntry, String) -> Either<DomainError, Unit>
  * [moveAsset] is null when this build hides the asset switch (release variants before the heap
  * gate), so the Move action is not offered there.
  */
+/** Test seams for the cloud plugin's key store and HTTP engine; production leaves both null. */
+class CloudStackSeams(
+    val credentials: LlmCredentialStore? = null,
+    val httpClient: io.ktor.client.HttpClient? = null,
+    val network: (() -> dev.stapler.stelekit.asset.pipeline.CloudNetwork)? = null,
+)
+
 class GraphContentAssetStack(
     val indexing: AssetIndexingController,
     val plugins: AssetPluginsController,
@@ -67,6 +78,7 @@ internal fun rememberGraphContentAssetStack(
     appState: StateFlow<AppState>,
     memoryPressure: MemoryPressureListeners,
     logger: Logger,
+    cloudSeams: CloudStackSeams = CloudStackSeams(),
 ): GraphContentAssetStack {
     val repos = deps.repos
     val delegateAttachments = deps.platformIntegrations.attachmentService
@@ -80,9 +92,13 @@ internal fun rememberGraphContentAssetStack(
     // Plugins are re-derived from the per-plugin settings keys at each drain start; with none set
     // the pipeline never starts and only indexing runs.
     val caps = deps.platformIntegrations.platformCaps
-    val llmCredentials = remember { LlmCredentialStore(CredentialStore()) }
+    val llmCredentials = remember(cloudSeams) { cloudSeams.credentials ?: LlmCredentialStore(CredentialStore()) }
     val cloudGate = remember(deps.platformSettings, llmCredentials) { CloudConsentGate(deps.platformSettings, llmCredentials) }
-    val cloudClient = remember(llmCredentials) { AnthropicMessagesClient.withDefaults { llmCredentials.getApiKey(CloudConsentGate.PROVIDER) } }
+    val cloudClient = remember(llmCredentials, cloudSeams) {
+        val apiKey = { llmCredentials.getApiKey(CloudConsentGate.PROVIDER) }
+        cloudSeams.httpClient?.let { AnthropicMessagesClient(it, apiKey) } ?: AnthropicMessagesClient.withDefaults(apiKey)
+    }
+    val networkMonitor = remember { NetworkMonitor() }
     DisposableEffect(cloudClient) { onDispose { cloudClient.close() } }
     val activeGraphId = { deps.graphManager.graphRegistry.value.activeGraphId?.value.orEmpty() }
     val pluginRegistry = remember(deps.platformSettings, caps, cloudGate) {
@@ -95,7 +111,7 @@ internal fun rememberGraphContentAssetStack(
                 pluginSource = {
                     defaultAssetPlugins(
                         caps, deps.platformSettings, effectiveFileSystem,
-                        cloud = CloudPluginDeps(cloudClient, cloudGate, activeGraphId),
+                        cloud = CloudPluginDeps(cloudClient, cloudGate, activeGraphId, network = cloudSeams.network ?: { networkMonitor.cloudNetwork() }),
                     )
                 },
                 runMarker = runMarker,
@@ -103,7 +119,25 @@ internal fun rememberGraphContentAssetStack(
         }
     }
     DisposableEffect(pipeline) { onDispose { pipeline?.shutdown() } }
-    val plugins = remember(pluginRegistry, pipeline, indexing) { AssetPluginsController(pluginRegistry, pipeline, indexing, deps.platformSettings, caps.power) }
+    val cloudSettings = remember(cloudGate, pluginRegistry, repos, pipeline, networkMonitor) {
+        CloudSettingsController(
+            gate = cloudGate,
+            registry = pluginRegistry,
+            ledger = EgressLedger(deps.platformSettings),
+            assets = repos.assetRepository,
+            graphId = activeGraphId,
+            graphName = {
+                val registry = deps.graphManager.graphRegistry.value
+                registry.graphs.firstOrNull { it.id == registry.activeGraphId }?.displayName.orEmpty()
+            },
+            meteredAware = { networkMonitor.isMetered != null },
+            now = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
+            onEnabled = { pipeline?.scheduleBackfill() },
+        )
+    }
+    val plugins = remember(pluginRegistry, pipeline, indexing, cloudSettings) {
+        AssetPluginsController(pluginRegistry, pipeline, indexing, deps.platformSettings, caps.power, cloud = cloudSettings)
+    }
     LaunchedEffect(indexing, pluginRegistry) {
         indexing.enabled.collect { pluginRegistry.setMasterEnabled(it) }
     }
