@@ -377,8 +377,9 @@ private fun ConflictResolutionDialogHost(appState: AppState, viewModel: Stelekit
             onAbortMerge = if (gitSync.gitSyncService != null && gitSync.activeGraphId != null) {
                 {
                     val id = gitSync.activeGraphId
-                    gitSync.gitSyncService.abortActiveMerge(id)
-                    viewModel.dismissConflictResolution()
+                    if (viewModel.abortMergeConfirmed(gitSync.gitSyncService, id).isRight()) {
+                        viewModel.dismissConflictResolution()
+                    }
                 }
             } else null,
             onDismiss = { viewModel.dismissConflictResolution() },

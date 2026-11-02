@@ -181,6 +181,7 @@ internal fun GraphContentActiveShell(
     val syncState by viewModel.syncState.collectAsState()
     val gitLastSyncAt by viewModel.gitLastSyncAt.collectAsState()
     val firstSyncReviewPending by viewModel.firstSyncReviewPending.collectAsState()
+    val syncStaleness by viewModel.syncStaleness.collectAsState()
     val scheduledSyncSettings = rememberScheduledSyncSettingsState(
         inputs.gitSyncStack,
         onReviewFirstSync = viewModel::reviewFirstSyncFromSettings,
@@ -188,6 +189,13 @@ internal fun GraphContentActiveShell(
         viewModel.setSettingsVisible(false)
         viewModel.openGitSetup()
     }
+
+    val stalenessChip = rememberStalenessChip(
+        staleness = syncStaleness,
+        intervalMinutes = scheduledSyncSettings?.let {
+            dev.stapler.stelekit.git.effectiveScheduledIntervalMinutes(it.configuredIntervalMinutes, it.minimumIntervalMinutes)
+        } ?: DEFAULT_CHIP_INTERVAL_MINUTES,
+    )
 
     val focusManager = LocalFocusManager.current
     BoxWithConstraints(
@@ -357,6 +365,7 @@ internal fun GraphContentActiveShell(
                         gitLastSyncAt = gitLastSyncAt,
                         firstSyncReviewPending = firstSyncReviewPending,
                         scheduledSyncPaused = scheduledSyncSettings?.status?.paused == true,
+                        stalenessChip = stalenessChip,
                         storageLocationResolver = storageLocationResolver,
                         gitRepository = gitRepository,
                         onStorageLocationChoose = onStorageLocationChoose,
@@ -603,3 +612,5 @@ internal fun GraphContentActiveShell(
         } // CompositionLocalProvider(LocalWindowSizeClass)
     }
 }
+
+private const val DEFAULT_CHIP_INTERVAL_MINUTES = 15

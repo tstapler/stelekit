@@ -3,6 +3,9 @@
 
 package dev.stapler.stelekit.ui
 
+import arrow.core.Either
+import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.git.AbortPreservation
 import dev.stapler.stelekit.git.GitSyncService
 import dev.stapler.stelekit.git.SyncDetailsTarget
 import dev.stapler.stelekit.git.detailsTarget
@@ -10,6 +13,7 @@ import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.jobs.JobKind
 import dev.stapler.stelekit.jobs.JobTracker
 import dev.stapler.stelekit.jobs.track
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -48,12 +52,39 @@ class SyncSafetyActions(
 
     fun dismissMassChangeConfirm() = uiState.update { it.copy(massChangeConfirmVisible = false) }
 
+    private val _abortPrompt = MutableStateFlow<AbortPreservation?>(null)
+
+    /** Set while an abort waits for the user to accept that their listed edits are copied aside and restored. */
+    val abortPrompt: StateFlow<AbortPreservation?> = _abortPrompt
+
+    private var abortAnswer: CompletableDeferred<Boolean>? = null
+
+    fun answerAbortPrompt(confirmed: Boolean) {
+        abortAnswer?.complete(confirmed)
+    }
+
+    private suspend fun askToPreserve(preservation: AbortPreservation): Boolean {
+        val answer = CompletableDeferred<Boolean>()
+        abortAnswer = answer
+        _abortPrompt.value = preservation
+        return try {
+            answer.await()
+        } finally {
+            _abortPrompt.value = null
+            abortAnswer = null
+        }
+    }
+
+    /** The one abort path for every surface: edits that the reset would discard are listed first and restored after it. */
+    suspend fun abortMerge(service: GitSyncService, graphId: String): Either<DomainError.GitError, Unit> =
+        service.abortActiveMerge(graphId, ::askToPreserve)
+
     /** Aborts the interrupted merge (the same reset the conflict screen's Cancel uses) and closes the dialog on success. */
     fun abortInterruptedMerge() {
         val graphId = graphId() ?: return
         scope.launch {
             val service = activeGitSyncService.value ?: return@launch
-            if (service.abortActiveMerge(graphId).isRight()) dismissRepairNeeded()
+            if (abortMerge(service, graphId).isRight()) dismissRepairNeeded()
         }
     }
 

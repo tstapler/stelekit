@@ -135,6 +135,19 @@ interface GitRepository {
     /** Files [scope] would delete (and the base tree size); [DeletionSummary.None] where unsupported or without a base tree. */
     suspend fun deletionSummary(config: GitConfig, scope: GuardScope): DeletionSummary = DeletionSummary.None
 
+    /**
+     * Repo-relative paths with unstaged working-tree edits that are not conflicted, i.e. what a hard reset in
+     * [abortMerge] would silently discard (staged paths belong to the merge itself and are excluded). Default
+     * empty for platforms that cannot say; [readWorkingBytes] and [writeWorkingBytes] move their content.
+     */
+    suspend fun editsAtRiskOfReset(config: GitConfig): Either<DomainError.GitError, List<String>> = Either.Right(emptyList())
+
+    /** Bytes of the working-tree file at repo-relative [path], or null when unreadable or unsupported. */
+    suspend fun readWorkingBytes(config: GitConfig, path: String): ByteArray? = null
+
+    /** Writes [bytes] over the working-tree file at repo-relative [path]; false when it could not be written. */
+    suspend fun writeWorkingBytes(config: GitConfig, path: String, bytes: ByteArray): Boolean = false
+
     /** Read-only facts for the first-sync review; never fetches into the repository and never mutates it. */
     suspend fun firstSyncPreview(config: GitConfig): Either<DomainError.GitError, FirstSyncPreview> =
         Either.Left(DomainError.GitError.NotSupported("this platform"))

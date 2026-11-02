@@ -32,10 +32,8 @@ import dev.stapler.stelekit.logging.Logger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -89,6 +87,12 @@ class GitSyncService(
 ) {
     private val logger = Logger("GitSyncService")
     private val markerGuard = ConflictMarkerGuard(fileSystem)
+    private val stalenessTracker = StalenessTracker.create(settings, graphId, wallClockMs)
+
+    /** Persisted last-merged / behind-count facts behind the sync chip, the banner and the notification. */
+    val staleness: StateFlow<SyncStaleness> = stalenessTracker.state
+
+    private val guardedAbort = GuardedMergeAbort.create(gitRepository, fileSystem, wallClockMs)
     private val guards = GitChangeGuards(gitRepository, settings)
     private val lfsStaging = LfsGuardedStaging.create(gitRepository, fileSystem, settings, graphId, lfsCapabilities, lfsGuardCoordinator)
     private val firstSyncConfirmation: FirstSyncConfirmation? = settings?.let { FirstSyncConfirmation(it) }
@@ -96,15 +100,15 @@ class GitSyncService(
     /** Applies user-confirmed branch repairs; see [repairBranch]. */
     val branchRepair: BranchRepairService = BranchRepairService(configRepository, firstSyncConfirmation)
 
-    private val _firstSyncReviewPending = MutableStateFlow(firstSyncConfirmation?.isReviewPending(graphId) ?: false)
+    private val reviewState = FirstSyncReviewState(firstSyncConfirmation, graphId)
 
-    /** True after a branch repair until a manual sync succeeds for the new branch (drives the "Review first sync" badge). */
-    val firstSyncReviewPending: StateFlow<Boolean> = _firstSyncReviewPending.asStateFlow()
+    /** True while a review is owed (see [FirstSyncReviewState]); drives the "Review first sync" badge. */
+    val firstSyncReviewPending: StateFlow<Boolean> = reviewState.pending
 
     /** Applies [proposal] (no sync is run) and refreshes [firstSyncReviewPending]. */
     suspend fun repairBranch(proposal: BranchRepairProposal): BranchRepairResult =
         branchRepair.apply(proposal).also {
-            _firstSyncReviewPending.value = firstSyncConfirmation?.isReviewPending(graphId) ?: false
+            reviewState.onRepaired()
             // The missing-branch error described the old setting; a stale red badge would reopen a dead repair.
             val current = _syncState.value
             if (it is BranchRepairResult.Repaired && current is SyncState.Error &&
@@ -165,6 +169,7 @@ class GitSyncService(
     suspend fun refreshLocalStatus(graphId: String) {
         val config = configRepository.getConfig(graphId).getOrNull() ?: return
         _localStatus.value = gitRepository.status(config).getOrNull()
+        reviewState.refresh(config)
     }
 
     /**
@@ -197,6 +202,8 @@ class GitSyncService(
         // Populate localStatus immediately on construction (graph open) rather than waiting for
         // the first periodic poll tick or manual sync — see refreshLocalStatus's doc.
         if (graphId.isNotEmpty()) {
+            // The app is open now, so a leftover "app closed" fetch-only marker from the worker no longer applies.
+            stalenessTracker.onServiceStarted()
             scope.launch { refreshLocalStatus(graphId) }
         }
     }
@@ -207,6 +214,7 @@ class GitSyncService(
         isOnline, wallClockMs, isAppOwnedPath, _syncState,
         fullSync = { g -> sync(g, SyncTrigger.Automatic) },
         fetch = { g -> fetchOnly(g) },
+        staleness = stalenessTracker.store,
     )
 
     @kotlin.concurrent.Volatile private var periodicGraphId: String = graphId
@@ -222,38 +230,7 @@ class GitSyncService(
     /** Runs one scheduled-sync tick now, even while paused; success clears the pause. */
     suspend fun resumeScheduledSync() = periodicDriver.resume()
 
-    /**
-     * Story 3.4.2: the pending auto-retry scheduled by [scheduleRateLimitRetry] after a
-     * [DomainError.GitError.RateLimited] result — reuses the same "own scope, never
-     * rememberCoroutineScope()" pattern already established by [periodicSyncJob]/[startPeriodicSync],
-     * so [shutdown] cancels it for free via [scope]'s own cancellation.
-     */
-    @kotlin.concurrent.Volatile private var rateLimitRetryJob: Job? = null
-
-    /**
-     * Task 3.4.2a: schedules a one-shot re-invocation of [retryOperation] after
-     * [retryAfterSeconds] (or [DEFAULT_RATE_LIMIT_RETRY_SECONDS] when the header was absent —
-     * matching `WasmSectionSyncService.githubFetch`'s `(1 shl retryCount).coerceAtMost(60)`
-     * fallback precedent). Cancels any previously-scheduled retry first, so a second rate-limit
-     * hit (or a manual sync trigger via [sync]/[fetchOnly]'s own cancel-at-top) never results in
-     * two overlapping scheduled retries for this instance.
-     */
-    private fun scheduleRateLimitRetry(
-        graphId: String,
-        retryAfterSeconds: Int?,
-        retryOperation: suspend (String) -> Unit,
-    ) {
-        rateLimitRetryJob?.cancel()
-        rateLimitRetryJob = scope.launch {
-            delay((retryAfterSeconds ?: DEFAULT_RATE_LIMIT_RETRY_SECONDS) * 1000L)
-            // Clear before invoking retryOperation — sync()/fetchOnly() cancel rateLimitRetryJob
-            // at their own top as a "manual trigger supersedes a pending retry" guard. If left
-            // pointing at this currently-running job, that cancel-at-top would self-cancel this
-            // very coroutine, silently aborting the retry at its first suspension point.
-            rateLimitRetryJob = null
-            retryOperation(graphId)
-        }
-    }
+    private val rateLimitRetry = RateLimitRetry(scope)
 
     /** Publishes the state for a failed git step: rate limit (with auto-retry), expired credentials, or the plain error. */
     private fun publishFailure(
@@ -264,7 +241,7 @@ class GitSyncService(
     ) {
         _syncState.value = when {
             err is DomainError.GitError.RateLimited -> {
-                scheduleRateLimitRetry(graphId, err.retryAfterSeconds, retry)
+                rateLimitRetry.schedule(graphId, err.retryAfterSeconds, retry)
                 SyncState.RateLimited(err.retryAfterSeconds)
             }
             err is DomainError.GitError.CredentialExpired ||
@@ -303,7 +280,7 @@ class GitSyncService(
             try {
 
             // Task 3.4.2c: a manual sync trigger always supersedes any pending scheduled retry.
-            rateLimitRetryJob?.cancel()
+            rateLimitRetry.cancel()
             val liftMassChange = liftMassChangeGuard && trigger == SyncTrigger.Manual
 
             // 1. Network check
@@ -505,8 +482,10 @@ class GitSyncService(
                 autoMergedPaths = autoMergedPaths,
             )
             recordLastSyncAt(success.lastSyncAt)
+            guardedAbort.clearRecovery(graphId)
+            stalenessTracker.merged(success.lastSyncAt)
             firstSyncConfirmation?.confirm(graphId, config.remoteName, config.remoteBranch)
-            _firstSyncReviewPending.value = false
+            reviewState.onConfirmed()
             // Non-fatal: the held files need the user's attention, so the badge keeps showing them instead of fading.
             val lfsAttention = lfsHeld + gitRepository.lastPushLfsViolations
             _syncState.value = if (lfsAttention.isEmpty()) success else SyncState.LfsActionRequired(lfsAttention)
@@ -537,7 +516,7 @@ class GitSyncService(
             try {
 
             // Task 3.4.2c: a manual fetchOnly trigger always supersedes any pending scheduled retry.
-            rateLimitRetryJob?.cancel()
+            rateLimitRetry.cancel()
 
             logger.info("sync/fetch start graphId=$graphId")
             if (!isOnline()) {
@@ -566,11 +545,13 @@ class GitSyncService(
             when (val result = gitRepository.fetch(config)) {
                 is Either.Left -> {
                     val err = result.value
+                    stalenessTracker.failed(err)
                     publishFailure(graphId, err, config.authType == GitAuthType.GITHUB_OAUTH) { g -> fetchOnly(g) }
                     err.left()
                 }
                 is Either.Right -> {
                     val fetchResult = result.value
+                    stalenessTracker.fetched(if (fetchResult.hasRemoteChanges) fetchResult.remoteCommitCount else 0)
                     _syncState.value = if (fetchResult.hasRemoteChanges) {
                         SyncState.MergeAvailable(fetchResult.remoteCommitCount)
                     } else {
@@ -748,6 +729,7 @@ class GitSyncService(
         refreshLocalStatus(graphId)
         val successAt = Clock.System.now().toEpochMilliseconds()
         recordLastSyncAt(successAt)
+        stalenessTracker.merged(successAt)
         _syncState.value = SyncState.Success(
             localCommitsMade = 0,
             remoteCommitsMerged = 1,
@@ -760,7 +742,7 @@ class GitSyncService(
      * Aborts an in-progress git merge, leaving the repository in its pre-merge state.
      * Call this when the user cancels conflict resolution.
      */
-    suspend fun abortActiveMerge(graphId: String): Either<DomainError.GitError, Unit> =
+    suspend fun abortActiveMerge(graphId: String, confirm: suspend (AbortPreservation) -> Boolean = { true }): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
             val config = when (val result = configRepository.getConfig(graphId)) {
                 is Either.Left -> return@withContext DomainError.GitError.CommitFailed(
@@ -769,7 +751,7 @@ class GitSyncService(
                 is Either.Right -> result.value
             } ?: return@withContext Unit.right()
 
-            gitRepository.abortMerge(config).also { result ->
+            guardedAbort.abort(graphId, config, confirm).also { result ->
                 if (result.isRight()) _syncState.value = SyncState.Idle
             }
         }
@@ -788,7 +770,7 @@ class GitSyncService(
 
     /**
      * Shuts down this service, cancelling all coroutines — including any pending
-     * [rateLimitRetryJob], since it is a child of [scope] and was never a
+     * [rateLimitRetry], since it is a child of [scope] and was never a
      * `rememberCoroutineScope()` (Task 3.4.2d).
      */
     fun shutdown() {
@@ -797,10 +779,10 @@ class GitSyncService(
 
     companion object {
         /**
-         * Task 3.4.2a: fallback delay (seconds) for [scheduleRateLimitRetry] when a
+         * Task 3.4.2a: fallback delay (seconds) for [RateLimitRetry] when a
          * [DomainError.GitError.RateLimited] carries no `retryAfterSeconds` — matches the existing
          * `WasmSectionSyncService.githubFetch` exponential-backoff precedent's cap of 60s.
          */
-        const val DEFAULT_RATE_LIMIT_RETRY_SECONDS = 60
+        const val DEFAULT_RATE_LIMIT_RETRY_SECONDS = RateLimitRetry.DEFAULT_SECONDS
     }
 }

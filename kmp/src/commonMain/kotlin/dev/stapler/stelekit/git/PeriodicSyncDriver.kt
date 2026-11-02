@@ -36,7 +36,11 @@ sealed interface SkipReason {
 
 /** Result of one scheduled tick. */
 sealed interface TickOutcome {
+    /** A full sync (or nothing needed merging) completed; the only outcome that moves "Last synced". */
     data object Success : TickOutcome
+
+    /** One fetch ran and nothing was merged (fetch-only decision, SAF graph, or the merge was withheld); never "Last synced". */
+    data object Fetched : TickOutcome
     data class Failure(val message: String, val error: DomainError? = null) : TickOutcome
     data class Skip(val reason: SkipReason) : TickOutcome
 }
@@ -47,7 +51,7 @@ internal fun Either<DomainError.GitError, FetchResult>.toTickOutcome(): TickOutc
         if (err is DomainError.GitError.Offline) TickOutcome.Skip(SkipReason.Offline)
         else TickOutcome.Failure(err.message, err)
     },
-    { TickOutcome.Success },
+    { TickOutcome.Fetched },
 )
 
 /**
@@ -61,6 +65,8 @@ data class ScheduledSyncStatus(
     val tickInFlight: Boolean = false,
     val lastAttemptAtMs: Long? = null,
     val lastSuccessAtMs: Long? = null,
+    /** Last tick that only fetched; kept apart from [lastSuccessAtMs] so fetch-only graphs never read as synced. */
+    val lastFetchedAtMs: Long? = null,
     /** `lastAttemptAtMs + interval`; null while stopped or paused. */
     val nextAtMs: Long? = null,
     /** Set after [PeriodicSyncDriver.PAUSE_AFTER_FAILURES] consecutive failures; cleared by a successful tick. */
@@ -188,6 +194,13 @@ class PeriodicSyncDriver(
                     lastFailure = null,
                     nextAtMs = attemptAt + intervalMs(),
                 )
+                is TickOutcome.Fetched -> s.copy(
+                    lastFetchedAtMs = clock(),
+                    consecutiveFailures = 0,
+                    paused = false,
+                    lastFailure = null,
+                    nextAtMs = attemptAt + intervalMs(),
+                )
                 is TickOutcome.Failure -> {
                     val failures = s.consecutiveFailures + 1
                     val paused = failures >= PAUSE_AFTER_FAILURES
@@ -218,6 +231,7 @@ class PeriodicSyncDriver(
 
     private fun TickOutcome.logName(): String = when (this) {
         is TickOutcome.Success -> "success"
+        is TickOutcome.Fetched -> "fetched"
         is TickOutcome.Failure -> "failure"
         is TickOutcome.Skip -> when (reason) {
             SkipReason.Busy -> "skip(busy)"

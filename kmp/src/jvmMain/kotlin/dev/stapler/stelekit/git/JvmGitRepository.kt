@@ -256,6 +256,26 @@ class JvmGitRepository(
         ).right()
     }
 
+    override suspend fun editsAtRiskOfReset(config: GitConfig): Either<DomainError.GitError, List<String>> =
+        withContext(PlatformDispatcher.IO) {
+            runGitOp({ e -> DomainError.GitError.FetchFailed("Status failed: ${e.message}") }) {
+                openGitFor(config).use { git ->
+                    val status = git.status().call()
+                    (status.modified - status.conflicting).sorted().right()
+                }
+            }
+        }
+
+    override suspend fun readWorkingBytes(config: GitConfig, path: String): ByteArray? =
+        withContext(PlatformDispatcher.IO) {
+            runCatching { File(config.repoRoot.value, path).takeIf { it.isFile }?.readBytes() }.getOrNull()
+        }
+
+    override suspend fun writeWorkingBytes(config: GitConfig, path: String, bytes: ByteArray): Boolean =
+        withContext(PlatformDispatcher.IO) {
+            runCatching { File(config.repoRoot.value, path).also { it.parentFile?.mkdirs() }.writeBytes(bytes) }.isSuccess
+        }
+
     override suspend fun stageSubdir(config: GitConfig, excludePaths: Set<String>): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
             runGitOp({ e -> DomainError.GitError.CommitFailed("Stage failed: ${e.message}") }) {

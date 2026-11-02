@@ -275,9 +275,23 @@ class StelekitViewModel(
 
     /** Badge tap / review `Open details`: opens whichever sheet explains the current sync problem. */
     fun openSyncDetails() = gitSyncCoordinator.safety.openSyncDetails()
+
+    /** Banner Review and notification taps: opens the review or status surface; never starts a sync. */
+    fun openSyncDestination(destination: dev.stapler.stelekit.git.NotificationDestination) {
+        when (destination) {
+            is dev.stapler.stelekit.git.NotificationDestination.FirstSyncReview -> openFirstSyncReview()
+            is dev.stapler.stelekit.git.NotificationDestination.SyncStatusSheet,
+            is dev.stapler.stelekit.git.NotificationDestination.CurrentGraphSheet -> setSettingsVisible(true)
+            is dev.stapler.stelekit.git.NotificationDestination.UpToDate -> Unit
+        }
+    }
     fun dismissRepairNeeded() = gitSyncCoordinator.safety.dismissRepairNeeded()
     fun dismissMassChangeConfirm() = gitSyncCoordinator.safety.dismissMassChangeConfirm()
     fun abortInterruptedMerge() = gitSyncCoordinator.safety.abortInterruptedMerge()
+    val abortPrompt: StateFlow<dev.stapler.stelekit.git.AbortPreservation?> get() = gitSyncCoordinator.safety.abortPrompt
+    fun answerAbortPrompt(confirmed: Boolean) = gitSyncCoordinator.safety.answerAbortPrompt(confirmed)
+    suspend fun abortMergeConfirmed(service: dev.stapler.stelekit.git.GitSyncService, graphId: String) =
+        gitSyncCoordinator.safety.abortMerge(service, graphId)
     fun confirmMassChangeSync() = gitSyncCoordinator.safety.confirmMassChangeSync()
 
     /** Triggers a fetch-only check for remote changes on the active graph. */
@@ -416,6 +430,9 @@ class StelekitViewModel(
 
     /** Forwards to [GitSyncCoordinator.syncState] — read directly by Compose call sites and dedicated tests. */
     val syncState: StateFlow<SyncState> = gitSyncCoordinator.syncState
+
+    /** Forwards to [GitSyncCoordinator.syncStaleness]. */
+    val syncStaleness: StateFlow<dev.stapler.stelekit.git.SyncStaleness?> = gitSyncCoordinator.syncStaleness
 
     /** Forwards to [GitSyncCoordinator.firstSyncReviewPending]. */
     val firstSyncReviewPending: StateFlow<Boolean> = gitSyncCoordinator.firstSyncReviewPending
