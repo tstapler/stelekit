@@ -28,10 +28,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -103,7 +103,7 @@ class GitSyncCoordinatorTest {
     }
 
     private suspend fun eventually(what: String, condition: () -> Boolean) {
-        withTimeout(AWAIT_MILLIS) { while (!condition()) delay(POLL_MILLIS) }
+        withTimeout(AWAIT_MILLIS) { while (!condition()) yield() }
         assertTrue(condition(), what)
     }
 
@@ -185,6 +185,5 @@ class GitSyncCoordinatorTest {
 
     private companion object {
         const val AWAIT_MILLIS = 5_000L
-        const val POLL_MILLIS = 10L
     }
 }
