@@ -18,6 +18,8 @@ import dev.stapler.stelekit.ui.GraphContentGitSyncStack
 import dev.stapler.stelekit.ui.rememberGraphContentGitSyncStack
 import dev.stapler.stelekit.ui.rememberGraphContentGraphIoStack
 import dev.stapler.stelekit.ui.rememberGraphContentVaultSetup
+import dev.stapler.stelekit.ui.rememberScheduledSyncSettingsState
+import dev.stapler.stelekit.ui.components.settings.ScheduledSyncSettingsState
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -50,7 +52,9 @@ class ScheduledSyncOriginE2ETest {
     private var fixture: DesktopWiredAppFixture? = null
     private var headless: HeadlessComposition? = null
     private var stack: GraphContentGitSyncStack? = null
+    private var settingsState: ScheduledSyncSettingsState? = null
     private var graphId = ""
+    private var reviewTaps = 0
 
     @AfterTest
     fun tearDown() {
@@ -100,6 +104,7 @@ class ScheduledSyncOriginE2ETest {
                     dev.stapler.stelekit.logging.Logger("ScheduledSyncOriginE2ETest"),
                 )
                 stack = rememberGraphContentGitSyncStack(wired.deps, io, vault.vaultCredentialStore)
+                settingsState = rememberScheduledSyncSettingsState(stack!!, onReviewFirstSync = { reviewTaps++ }, onSetUpGit = {})
             }
         }
     }
@@ -128,6 +133,8 @@ class ScheduledSyncOriginE2ETest {
         assertEquals("- remote one\n", File(remote.clone, "journals/2026_10_08.md").readText())
         assertEquals("- remote two\n", File(remote.clone, "journals/2026_10_09.md").readText())
         assertEquals(BareOriginFixtures.remoteHead(remote.origin, "main"), Git.open(remote.clone).use { it.repository.resolve("HEAD").name })
+        awaitCondition("the settings state") { settingsState?.hasRemote == true }
+        assertFalse(settingsState!!.firstSyncReviewRequired, "a confirmed graph needs no review")
     }
 
     @Test
@@ -143,6 +150,10 @@ class ScheduledSyncOriginE2ETest {
             assertEquals(BareOriginFixtures.remoteHead(remote.origin, "main"), tracking, "the fetch still ran")
             assertTrue(git.repository.resolve("HEAD").name != tracking, "HEAD did not move")
         }
+        awaitCondition("the settings state") { settingsState?.hasRemote == true }
+        assertTrue(settingsState!!.firstSyncReviewRequired, "the Settings switch asks for the review first")
+        settingsState!!.onReviewFirstSync()
+        assertEquals(1, reviewTaps)
     }
 
     private companion object {
