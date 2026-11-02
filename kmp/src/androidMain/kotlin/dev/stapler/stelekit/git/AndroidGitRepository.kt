@@ -612,6 +612,17 @@ class AndroidGitRepository(
             }
         }
 
+    private val safety = GitSafetyOps(::openGitWithoutFreshnessCheck)
+
+    override suspend fun firstSyncPreview(config: GitConfig): Either<DomainError.GitError, FirstSyncPreview> =
+        safety.preview(config) { authConfigurer.configureTransport(it, config) }
+
+    override suspend fun repositoryHealth(config: GitConfig): RepositoryHealth = safety.health(config)
+
+    override suspend fun scanForConflictMarkers(config: GitConfig, scope: GuardScope): MarkerScan = safety.markers(config, scope)
+
+    override suspend fun deletionSummary(config: GitConfig, scope: GuardScope): DeletionSummary = safety.deletions(config, scope)
+
     override suspend fun removeStaleLockFile(config: GitConfig): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
             runGitOp({ _ -> DomainError.GitError.StaleLockFile("${config.repoRoot.value}/.git/index.lock") }) {

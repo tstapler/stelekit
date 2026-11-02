@@ -85,6 +85,7 @@ class GitSyncService(
 ) {
     private val logger = Logger("GitSyncService")
     private val markerGuard = ConflictMarkerGuard(fileSystem)
+    private val guards = GitChangeGuards(gitRepository, settings)
     private val lfsStaging = LfsGuardedStaging.create(gitRepository, fileSystem, settings, graphId, lfsCapabilities, lfsGuardCoordinator)
     private val firstSyncConfirmation: FirstSyncConfirmation? = settings?.let { FirstSyncConfirmation(it) }
 
@@ -120,6 +121,9 @@ class GitSyncService(
             is Either.Left -> change.value
             is Either.Right -> repairBranch(change.value)
         }
+
+    /** Read-only facts for the first-sync review; never changes the repository. */
+    val firstSyncPreviews = FirstSyncPreviewSource(gitRepository, configRepository)
 
     /** Branch the last repair replaced, for "Change back"; null when none is recorded. */
     fun previousBranchBeforeRepair(): String? = firstSyncConfirmation?.previousBranch(graphId)
@@ -244,6 +248,24 @@ class GitSyncService(
         }
     }
 
+    /** Publishes the state for a failed git step: rate limit (with auto-retry), expired credentials, or the plain error. */
+    private fun publishFailure(
+        graphId: String,
+        err: DomainError.GitError,
+        authFailureMeansExpired: Boolean = false,
+        retry: suspend (String) -> Unit,
+    ) {
+        _syncState.value = when {
+            err is DomainError.GitError.RateLimited -> {
+                scheduleRateLimitRetry(graphId, err.retryAfterSeconds, retry)
+                SyncState.RateLimited(err.retryAfterSeconds)
+            }
+            err is DomainError.GitError.CredentialExpired ||
+                (authFailureMeansExpired && err is DomainError.GitError.AuthFailed) -> SyncState.CredentialExpired(graphId)
+            else -> SyncState.Error(err)
+        }
+    }
+
     /**
      * Full sync sequence ([SyncTrigger.Automatic] callers wait while a first-sync review is pending):
      * 1. Network check
@@ -259,6 +281,8 @@ class GitSyncService(
     suspend fun sync(
         graphId: String,
         trigger: SyncTrigger = SyncTrigger.Manual,
+        /** One-run override of the mass-change guard from the foreground typed-count confirm; ignored for [SyncTrigger.Automatic]. */
+        liftMassChangeGuard: Boolean = false,
     ): Either<DomainError.GitError, SyncState.Success> =
         withContext(PlatformDispatcher.IO) {
             // Read the persisted flag, not the cached StateFlow: the review is confirmed in settings.
@@ -273,6 +297,7 @@ class GitSyncService(
 
             // Task 3.4.2c: a manual sync trigger always supersedes any pending scheduled retry.
             rateLimitRetryJob?.cancel()
+            val liftMassChange = liftMassChangeGuard && trigger == SyncTrigger.Manual
 
             // 1. Network check
             logger.info("sync/fetch start graphId=$graphId")
@@ -310,6 +335,9 @@ class GitSyncService(
                 return@withContext err.left()
             }
 
+            // 3a2. Mid-merge / unmerged repository: nothing may be staged, committed or pushed until repaired.
+            guards.repositoryState(config)?.let { return@withContext refuse(it) }
+
             // 3b. Remove stale lock file
             gitRepository.removeStaleLockFile(config).onLeft { lockErr ->
                 _syncState.value = SyncState.Error(lockErr)
@@ -338,15 +366,9 @@ class GitSyncService(
                 }
                 lfsHeld = staged.held
                 if (staged.commitNeeded) {
+                    guards.changes(config, GuardScope.Staged, liftMassChange)?.let { return@withContext refuse(it) }
                     gitRepository.commit(config, buildCommitMessage(config)).onLeft { err ->
-                        if (err is DomainError.GitError.RateLimited) {
-                            _syncState.value = SyncState.RateLimited(err.retryAfterSeconds)
-                            scheduleRateLimitRetry(graphId, err.retryAfterSeconds) { g -> sync(g, SyncTrigger.Automatic) }
-                        } else if (err is DomainError.GitError.CredentialExpired) {
-                            _syncState.value = SyncState.CredentialExpired(graphId)
-                        } else {
-                            _syncState.value = SyncState.Error(err)
-                        }
+                        publishFailure(graphId, err) { g -> sync(g, SyncTrigger.Automatic) }
                         return@withContext err.left()
                     }
                     localCommitsMade = 1
@@ -357,17 +379,7 @@ class GitSyncService(
             _syncState.value = SyncState.Fetching
             val fetchResult = when (val r = gitRepository.fetch(config)) {
                 is Either.Left -> {
-                    val err = r.value
-                    if (err is DomainError.GitError.AuthFailed && config.authType == GitAuthType.GITHUB_OAUTH) {
-                        _syncState.value = SyncState.CredentialExpired(graphId)
-                    } else if (err is DomainError.GitError.CredentialExpired) {
-                        _syncState.value = SyncState.CredentialExpired(graphId)
-                    } else if (err is DomainError.GitError.RateLimited) {
-                        _syncState.value = SyncState.RateLimited(err.retryAfterSeconds)
-                        scheduleRateLimitRetry(graphId, err.retryAfterSeconds) { g -> sync(g, SyncTrigger.Automatic) }
-                    } else {
-                        _syncState.value = SyncState.Error(err)
-                    }
+                    publishFailure(graphId, r.value, config.authType == GitAuthType.GITHUB_OAUTH) { g -> sync(g, SyncTrigger.Automatic) }
                     return@withContext r.value.left()
                 }
                 is Either.Right -> r.value
@@ -380,15 +392,7 @@ class GitSyncService(
                 _syncState.value = SyncState.Merging
                 val mergeResult = when (val r = gitRepository.merge(config)) {
                     is Either.Left -> {
-                        val err = r.value
-                        if (err is DomainError.GitError.RateLimited) {
-                            _syncState.value = SyncState.RateLimited(err.retryAfterSeconds)
-                            scheduleRateLimitRetry(graphId, err.retryAfterSeconds) { g -> sync(g, SyncTrigger.Automatic) }
-                        } else if (err is DomainError.GitError.CredentialExpired) {
-                            _syncState.value = SyncState.CredentialExpired(graphId)
-                        } else {
-                            _syncState.value = SyncState.Error(err)
-                        }
+                        publishFailure(graphId, r.value) { g -> sync(g, SyncTrigger.Automatic) }
                         return@withContext r.value.left()
                     }
                     is Either.Right -> r.value
@@ -463,14 +467,10 @@ class GitSyncService(
             }
 
             // 9. Push
+            guards.changes(config, GuardScope.NetPush, liftMassChange)?.let { return@withContext refuse(it) }
             _syncState.value = SyncState.Pushing
             gitRepository.push(config).onLeft { err ->
-                if (err is DomainError.GitError.RateLimited) {
-                    _syncState.value = SyncState.RateLimited(err.retryAfterSeconds)
-                    scheduleRateLimitRetry(graphId, err.retryAfterSeconds) { g -> sync(g, SyncTrigger.Automatic) }
-                } else if (err is DomainError.GitError.CredentialExpired) {
-                    _syncState.value = SyncState.CredentialExpired(graphId)
-                } else if (err is DomainError.GitError.MergeConflict) {
+                if (err is DomainError.GitError.MergeConflict) {
                     // Task 3.2.3b: a push-time conflict (GitHub's ref-PATCH 409/422, or GitLab's
                     // commits-POST 400) is a *conflict*, not a generic push failure — route it to
                     // the same ConflictPending path merge()-time conflicts already use, so the
@@ -481,7 +481,7 @@ class GitSyncService(
                         err.conflictPaths.map { ConflictFile(it, it, emptyList()) }
                     )
                 } else {
-                    _syncState.value = SyncState.Error(err)
+                    publishFailure(graphId, err) { g -> sync(g, SyncTrigger.Automatic) }
                 }
                 return@withContext err.left()
             }
@@ -504,6 +504,13 @@ class GitSyncService(
                 gitSyncBusyCounter.end()
             }
         }
+
+    /** Publishes the guard's refusal on [syncState] and returns it as the failure of the calling operation. */
+    private val refuse: (DomainError.GitError) -> Either<DomainError.GitError, Nothing> = { err ->
+        _syncState.value = SyncState.Error(err)
+        logger.warn("refused: ${err.message}")
+        err.left()
+    }
 
     /**
      * Fetches from remote only — does not merge or push.
@@ -548,16 +555,7 @@ class GitSyncService(
             when (val result = gitRepository.fetch(config)) {
                 is Either.Left -> {
                     val err = result.value
-                    if (err is DomainError.GitError.AuthFailed && config.authType == GitAuthType.GITHUB_OAUTH) {
-                        _syncState.value = SyncState.CredentialExpired(graphId)
-                    } else if (err is DomainError.GitError.CredentialExpired) {
-                        _syncState.value = SyncState.CredentialExpired(graphId)
-                    } else if (err is DomainError.GitError.RateLimited) {
-                        _syncState.value = SyncState.RateLimited(err.retryAfterSeconds)
-                        scheduleRateLimitRetry(graphId, err.retryAfterSeconds) { g -> fetchOnly(g) }
-                    } else {
-                        _syncState.value = SyncState.Error(err)
-                    }
+                    publishFailure(graphId, err, config.authType == GitAuthType.GITHUB_OAUTH) { g -> fetchOnly(g) }
                     err.left()
                 }
                 is Either.Right -> {
@@ -595,9 +593,11 @@ class GitSyncService(
 
             if (!status.hasLocalChanges) return@withContext (null as String?).right()
 
+            guards.repositoryState(config)?.let { return@withContext refuse(it) }
             _syncState.value = SyncState.Committing
             val staged = lfsStaging.stage(config, status).getOrElse { return@withContext it.left() }
             val sha = if (staged.commitNeeded) {
+                guards.changes(config, GuardScope.Staged, liftMassChange = false)?.let { return@withContext refuse(it) }
                 when (val r = gitRepository.commit(config, buildCommitMessage(config))) {
                     is Either.Left -> return@withContext r.value.left()
                     is Either.Right -> r.value
@@ -668,6 +668,8 @@ class GitSyncService(
 
         val resolvedPaths = (sideResolutions.keys + hunkResolutions.keys).toList()
         markerGuard.firstWithMarkers(resolvedPaths)?.let { return@withContext markerGuard.refusal(it).left() }
+        // No mass-change check here: during a merge the staged diff against HEAD includes the remote's own deletions.
+        guards.markers(config, GuardScope.Staged)?.let { return@withContext refuse(it) }
 
         val message = buildCommitMessage(config, isMerge = true)
         gitRepository.commit(config, message).onLeft { return@withContext it.left() }
@@ -714,6 +716,7 @@ class GitSyncService(
         lfsStaging.refusalFor(config, filePath)?.let { return@withContext it.left() }
         gitRepository.markResolved(config, filePath).onLeft { return@withContext it.left() }
 
+        guards.markers(config, GuardScope.Staged)?.let { return@withContext refuse(it) }
         val message = buildCommitMessage(config, isMerge = true)
         gitRepository.commit(config, message).onLeft { return@withContext it.left() }
 
@@ -724,6 +727,7 @@ class GitSyncService(
             graphLoader.endGitMerge()
         }
 
+        guards.changes(config, GuardScope.NetPush, liftMassChange = false)?.let { return@withContext refuse(it) }
         _syncState.value = SyncState.Pushing
         gitRepository.push(config).onLeft { err ->
             _syncState.value = SyncState.Error(err)

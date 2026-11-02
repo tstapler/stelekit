@@ -259,6 +259,10 @@ import dev.stapler.stelekit.migration.PostMigrationFlusherTest
 import dev.stapler.stelekit.git.GitSyncServiceLfsGuardTest
 import dev.stapler.stelekit.git.GitSyncServicePeriodicTest
 import dev.stapler.stelekit.git.PeriodicSyncDriverTest
+import dev.stapler.stelekit.git.ConflictMarkerDiffScanTest
+import dev.stapler.stelekit.git.FirstSyncPreviewSourceTest
+import dev.stapler.stelekit.git.GitSyncServiceChangeGuardsTest
+import dev.stapler.stelekit.git.GitSyncServicePublishFailureTest
 import dev.stapler.stelekit.git.ShallowMergeTest
 import dev.stapler.stelekit.git.merge.JournalMergeServiceTest
 import dev.stapler.stelekit.git.merge.LogseqMergeDriverTest
@@ -532,6 +536,10 @@ import org.junit.runners.Suite
     GitSyncServiceLfsGuardTest::class,
     GitSyncServicePeriodicTest::class,
     PeriodicSyncDriverTest::class,
+    ConflictMarkerDiffScanTest::class,
+    GitSyncServiceChangeGuardsTest::class,
+    FirstSyncPreviewSourceTest::class,
+    GitSyncServicePublishFailureTest::class,
     ShallowMergeTest::class,
     StubGitRepositoryFailureSequenceTest::class,
     JournalMergeServiceTest::class,

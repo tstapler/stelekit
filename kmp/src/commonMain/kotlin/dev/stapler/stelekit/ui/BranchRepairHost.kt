@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -19,7 +20,9 @@ import dev.stapler.stelekit.git.BranchRepairProposal
 import dev.stapler.stelekit.git.BranchRepairResult
 import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.ui.screens.git.BranchRepairSheet
+import dev.stapler.stelekit.ui.screens.git.FirstSyncPreviewState
 import dev.stapler.stelekit.ui.screens.git.FirstSyncReviewDialog
+import dev.stapler.stelekit.ui.screens.git.loadState
 import kotlinx.coroutines.launch
 
 private fun SyncState.isRunning(): Boolean =
@@ -77,6 +80,12 @@ internal fun BranchRepairHost(appState: AppState, viewModel: StelekitViewModel, 
         var changeBackNote by remember { mutableStateOf<String?>(null) }
         LaunchedEffect(syncState, started) { if (started && syncState.isRunning()) sawRunning = true }
         val label = config?.let { "${it.remoteName}/${it.remoteBranch}" } ?: "the new branch"
+        var previewNonce by remember { mutableIntStateOf(0) }
+        var preview by remember { mutableStateOf<FirstSyncPreviewState>(FirstSyncPreviewState.Loading) }
+        LaunchedEffect(previewNonce) {
+            preview = FirstSyncPreviewState.Loading
+            preview = service.firstSyncPreviews.loadState(graphId)
+        }
         val resultLine = if (!sawRunning) null else when (val s = syncState) {
             is SyncState.Success -> if (s.remoteCommitsMerged > 0) "Pulled ${s.remoteCommitsMerged} commits" else "Already up to date"
             is SyncState.Error -> s.error.toSyncErrorMessage()
@@ -106,6 +115,8 @@ internal fun BranchRepairHost(appState: AppState, viewModel: StelekitViewModel, 
                 }
             },
             onDismiss = { viewModel.dismissFirstSyncReview() },
+            preview = preview,
+            onRetryPreview = { previewNonce++ },
         )
     }
 }
