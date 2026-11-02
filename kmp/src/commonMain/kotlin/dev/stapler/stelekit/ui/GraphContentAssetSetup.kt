@@ -133,6 +133,7 @@ internal fun rememberGraphContentAssetStack(
             meteredAware = { networkMonitor.isMetered != null },
             now = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
             onEnabled = { pipeline?.scheduleBackfill() },
+            writeActor = repos.writeActor,
         )
     }
     val plugins = remember(pluginRegistry, pipeline, indexing, cloudSettings) {

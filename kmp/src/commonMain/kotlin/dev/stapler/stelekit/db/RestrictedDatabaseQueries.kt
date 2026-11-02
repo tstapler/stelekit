@@ -676,6 +676,10 @@ class RestrictedDatabaseQueries(
         queries.updateAssetCloudDescription(cloudDescription, mlTagsSource, uuid)
 
     @DirectSqlWrite
+    suspend fun clearAllAssetCloudDescriptions(): Long =
+        queries.clearAllAssetCloudDescriptions()
+
+    @DirectSqlWrite
     suspend fun markAssetMlProcessed(attemptedAt: Long, uuid: String): Long =
         queries.markAssetMlProcessed(attemptedAt, uuid)
 

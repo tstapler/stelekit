@@ -27,6 +27,13 @@ interface AssetRepository {
         kotlinx.coroutines.flow.flowOf(Either.Right(emptyList()))
 
     suspend fun countAssetsNeedingCloudDescription(): Either<DomainError, Long> = Either.Right(0L)
+
+    /** Assets holding an AI (cloud) description; the "Delete AI descriptions" confirm shows this number. */
+    suspend fun countCloudDescriptions(): Either<DomainError, Long> = Either.Right(0L)
+
+    /** Clears every cloud description in one statement; OCR text and on-device labels stay. */
+    @DirectRepositoryWrite
+    suspend fun clearCloudDescriptions(): Either<DomainError, Unit> = Either.Right(Unit)
     suspend fun countAssets(): Either<DomainError, Long>
 
     // Keyset pagination — pass all cursor fields null for the first page.

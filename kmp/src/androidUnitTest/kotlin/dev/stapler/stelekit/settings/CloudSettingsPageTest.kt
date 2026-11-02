@@ -2,10 +2,14 @@ package dev.stapler.stelekit.settings
 
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import dev.stapler.stelekit.asset.AssetEntry
+import dev.stapler.stelekit.asset.AssetMediaType
+import dev.stapler.stelekit.asset.AssetUuid
 import dev.stapler.stelekit.asset.pipeline.AssetBuildFlags
 import dev.stapler.stelekit.asset.pipeline.CLOUD_REVOKE_COPY
 import dev.stapler.stelekit.asset.pipeline.CloudBackfillScope
@@ -18,6 +22,7 @@ import dev.stapler.stelekit.asset.pipeline.PluginEnableKeys
 import dev.stapler.stelekit.asset.pipeline.PluginRegistry
 import dev.stapler.stelekit.llm.LlmCredentialStore
 import dev.stapler.stelekit.platform.security.CredentialAccess
+import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.InMemoryAssetRepository
 import dev.stapler.stelekit.ui.components.settings.CloudSettingsSection
 import dev.stapler.stelekit.wiring.FakeSettings
@@ -26,6 +31,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -49,10 +56,20 @@ class CloudSettingsPageTest {
     private val gate = CloudConsentGate(settings, LlmCredentialStore(creds))
     private var graph = "graph-a"
 
+    private val assetRepo = InMemoryAssetRepository()
+
+    private fun asset(uuid: String, ocr: String?, cloud: String?) = AssetEntry(
+        uuid = AssetUuid(uuid), filePath = "/g/assets/$uuid.jpg", relativePath = "../assets/$uuid.jpg",
+        mediaType = AssetMediaType.IMAGE, subfolder = "", tags = emptyList(), autoLabels = emptyList(),
+        ocrText = ocr, cloudDescription = cloud, pageUuids = emptyList(), sizeBytes = 1L, importedAtMs = 1L,
+        mlProcessed = true, mlAttemptedAt = null, mlFailed = false, contentHash = null, isOrphan = false,
+        mlTagsSource = if (cloud != null) "CLOUD_CLAUDE" else "NONE",
+    )
+
     private fun controller(): CloudSettingsController {
         val registry = PluginRegistry(settings, PlatformCaps.NONE, cloudConsentGranted = { gate.token(graph) != null })
         return CloudSettingsController(
-            gate = gate, registry = registry, ledger = EgressLedger(settings), assets = InMemoryAssetRepository(),
+            gate = gate, registry = registry, ledger = EgressLedger(settings), assets = assetRepo,
             graphId = { graph }, graphName = { "Work notes" }, meteredAware = { false }, now = { 1_000L },
         )
     }
@@ -134,5 +151,58 @@ class CloudSettingsPageTest {
         val second = controller()
         assertEquals(controller().state.value.dailyCount, second.state.value.dailyCount)
         assertEquals(controller().state.value.launchCount, second.state.value.launchCount)
+    }
+
+    @OptIn(DirectRepositoryWrite::class)
+    @Test
+    fun deleteAiDescriptions_should_ClearCloudDescriptionsForThisGraphAndKeepOcrText_When_ConsentRevokedAndDescriptionsStored() = runBlocking<Unit> {
+        gate.grant(graph, 1L, CloudBackfillScope.NewOnly)
+        gate.revoke(graph)
+        assetRepo.saveAsset(asset("a1", ocr = "printed words", cloud = "A receipt from Acme"))
+        assetRepo.saveAsset(asset("a2", ocr = null, cloud = "A dog"))
+        assetRepo.saveAsset(asset("a3", ocr = "only text", cloud = null))
+
+        val result = controller().deleteAiDescriptions()
+
+        assertTrue(result.isRight())
+        val a1 = assetRepo.getAssetByUuid(AssetUuid("a1")).first().getOrNull()!!
+        assertNull(a1.cloudDescription)
+        assertEquals("printed words", a1.ocrText)
+        assertEquals("NONE", a1.mlTagsSource)
+        assertEquals(0L, assetRepo.countCloudDescriptions().getOrNull())
+        assertEquals("only text", assetRepo.getAssetByUuid(AssetUuid("a3")).first().getOrNull()!!.ocrText)
+    }
+
+    @OptIn(DirectRepositoryWrite::class)
+    @Test
+    fun deleteAiDescriptionsConfirm_should_NameGraphAndCount_And_CancelKeepsAndDeleteClears_When_Tapped() = runBlocking<Unit> {
+        assetRepo.saveAsset(asset("a1", ocr = null, cloud = "A receipt"))
+        assetRepo.saveAsset(asset("a2", ocr = null, cloud = "A dog"))
+        mount()
+
+        composeRule.onNodeWithText("Delete AI descriptions").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText(
+            "Delete AI descriptions for Work notes? 2 descriptions will be removed from this graph's search. Images already sent can't be recalled.",
+        ).assertExists()
+        composeRule.onNodeWithText("Cancel").performClick()
+        composeRule.waitForIdle()
+        assertEquals(2L, assetRepo.countCloudDescriptions().getOrNull())
+
+        composeRule.onNodeWithText("Delete AI descriptions").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Delete").performClick()
+        composeRule.waitForIdle()
+        assertEquals(0L, assetRepo.countCloudDescriptions().getOrNull())
+    }
+
+    @Test
+    fun destructiveFollowUps_should_AskStandardConfirmWithCancelDefault_When_DeleteAiDescriptionsTapped() {
+        mount()
+
+        composeRule.onNodeWithText("Delete AI descriptions").performClick()
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("Cancel").assertIsFocused()
     }
 }
