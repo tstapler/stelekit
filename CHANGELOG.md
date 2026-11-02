@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.104.0](https://github.com/tstapler/stelekit/compare/v0.103.0...v0.104.0) (2026-11-02)
+
+
+### Features
+
+* **assets:** cloud consent UI, IncludeExisting backfill, network gate, CloudVision removal (U11 part 2) ([#544](https://github.com/tstapler/stelekit/issues/544)) ([44bb0ab](https://github.com/tstapler/stelekit/commit/44bb0ab749a0cf15d24b9439de1e1972740a286b))
+* **sync:** sync status sheet, notification toggle, Android abort preservation ([#550](https://github.com/tstapler/stelekit/issues/550)) ([6d3acdd](https://github.com/tstapler/stelekit/commit/6d3acdde64c01aaa05ab7ef414c9e76139eb190b))
+
 ## [0.103.0](https://github.com/tstapler/stelekit/compare/v0.102.0...v0.103.0) (2026-11-02)
 
 
