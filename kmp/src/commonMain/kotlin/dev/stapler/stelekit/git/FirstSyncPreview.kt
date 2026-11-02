@@ -3,6 +3,11 @@
 
 package dev.stapler.stelekit.git
 
+import arrow.core.Either
+import arrow.core.left
+import dev.stapler.stelekit.error.DomainError
+import kotlinx.coroutines.withTimeoutOrNull
+
 /** A remote branch the preview lists; [isSyncBranch] false means a stray the sync will not touch. */
 data class PreviewRemoteBranch(val name: String, val isSyncBranch: Boolean)
 
@@ -29,5 +34,24 @@ data class FirstSyncPreview(
 
         /** Upper bound on building the preview; a slower one is reported as a timeout, never left spinning. */
         const val TIMEOUT_MILLIS = 15_000L
+    }
+}
+
+/** Builds the [FirstSyncPreview] for a graph, bounded by [FirstSyncPreview.TIMEOUT_MILLIS]. */
+class FirstSyncPreviewSource(
+    private val repository: GitRepository,
+    private val configs: GitConfigRepository,
+) {
+    suspend fun load(graphId: String): Either<DomainError.GitError, FirstSyncPreview> {
+        val config = when (val result = configs.getConfig(graphId)) {
+            is Either.Left -> return DomainError.GitError.FetchFailed("Failed to load git config: ${result.value.message}").left()
+            is Either.Right -> result.value ?: return DomainError.GitError.NotAGitRepo(graphId).left()
+        }
+        return withTimeoutOrNull(FirstSyncPreview.TIMEOUT_MILLIS) { repository.firstSyncPreview(config) }
+            ?: DomainError.GitError.NetworkFailure("The preview took longer than ${FirstSyncPreview.TIMEOUT_MILLIS / MILLIS_PER_SECOND} s").left()
+    }
+
+    private companion object {
+        const val MILLIS_PER_SECOND = 1000L
     }
 }

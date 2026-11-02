@@ -39,7 +39,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.Clock
 
 /**
@@ -123,18 +122,8 @@ class GitSyncService(
             is Either.Right -> repairBranch(change.value)
         }
 
-    /**
-     * Read-only facts for the first-sync review (ahead/behind, remote branches, local-only commits, files the
-     * push would delete), bounded by [FirstSyncPreview.TIMEOUT_MILLIS]. Never changes the repository.
-     */
-    suspend fun firstSyncPreview(graphId: String): Either<DomainError.GitError, FirstSyncPreview> {
-        val config = when (val result = configRepository.getConfig(graphId)) {
-            is Either.Left -> return DomainError.GitError.FetchFailed("Failed to load git config: ${result.value.message}").left()
-            is Either.Right -> result.value ?: return DomainError.GitError.NotAGitRepo(graphId).left()
-        }
-        return withTimeoutOrNull(FirstSyncPreview.TIMEOUT_MILLIS) { gitRepository.firstSyncPreview(config) }
-            ?: DomainError.GitError.NetworkFailure("The preview took longer than ${FirstSyncPreview.TIMEOUT_MILLIS / MILLIS_PER_SECOND} s").left()
-    }
+    /** Read-only facts for the first-sync review; never changes the repository. */
+    val firstSyncPreviews = FirstSyncPreviewSource(gitRepository, configRepository)
 
     /** Branch the last repair replaced, for "Change back"; null when none is recorded. */
     fun previousBranchBeforeRepair(): String? = firstSyncConfirmation?.previousBranch(graphId)
@@ -259,6 +248,24 @@ class GitSyncService(
         }
     }
 
+    /** Publishes the state for a failed git step: rate limit (with auto-retry), expired credentials, or the plain error. */
+    private fun publishFailure(
+        graphId: String,
+        err: DomainError.GitError,
+        authFailureMeansExpired: Boolean = false,
+        retry: suspend (String) -> Unit,
+    ) {
+        _syncState.value = when {
+            err is DomainError.GitError.RateLimited -> {
+                scheduleRateLimitRetry(graphId, err.retryAfterSeconds, retry)
+                SyncState.RateLimited(err.retryAfterSeconds)
+            }
+            err is DomainError.GitError.CredentialExpired ||
+                (authFailureMeansExpired && err is DomainError.GitError.AuthFailed) -> SyncState.CredentialExpired(graphId)
+            else -> SyncState.Error(err)
+        }
+    }
+
     /**
      * Full sync sequence ([SyncTrigger.Automatic] callers wait while a first-sync review is pending):
      * 1. Network check
@@ -361,14 +368,7 @@ class GitSyncService(
                 if (staged.commitNeeded) {
                     guards.changes(config, GuardScope.Staged, liftMassChange)?.let { return@withContext refuse(it) }
                     gitRepository.commit(config, buildCommitMessage(config)).onLeft { err ->
-                        if (err is DomainError.GitError.RateLimited) {
-                            _syncState.value = SyncState.RateLimited(err.retryAfterSeconds)
-                            scheduleRateLimitRetry(graphId, err.retryAfterSeconds) { g -> sync(g, SyncTrigger.Automatic) }
-                        } else if (err is DomainError.GitError.CredentialExpired) {
-                            _syncState.value = SyncState.CredentialExpired(graphId)
-                        } else {
-                            _syncState.value = SyncState.Error(err)
-                        }
+                        publishFailure(graphId, err) { g -> sync(g, SyncTrigger.Automatic) }
                         return@withContext err.left()
                     }
                     localCommitsMade = 1
@@ -379,17 +379,7 @@ class GitSyncService(
             _syncState.value = SyncState.Fetching
             val fetchResult = when (val r = gitRepository.fetch(config)) {
                 is Either.Left -> {
-                    val err = r.value
-                    if (err is DomainError.GitError.AuthFailed && config.authType == GitAuthType.GITHUB_OAUTH) {
-                        _syncState.value = SyncState.CredentialExpired(graphId)
-                    } else if (err is DomainError.GitError.CredentialExpired) {
-                        _syncState.value = SyncState.CredentialExpired(graphId)
-                    } else if (err is DomainError.GitError.RateLimited) {
-                        _syncState.value = SyncState.RateLimited(err.retryAfterSeconds)
-                        scheduleRateLimitRetry(graphId, err.retryAfterSeconds) { g -> sync(g, SyncTrigger.Automatic) }
-                    } else {
-                        _syncState.value = SyncState.Error(err)
-                    }
+                    publishFailure(graphId, r.value, config.authType == GitAuthType.GITHUB_OAUTH) { g -> sync(g, SyncTrigger.Automatic) }
                     return@withContext r.value.left()
                 }
                 is Either.Right -> r.value
@@ -402,15 +392,7 @@ class GitSyncService(
                 _syncState.value = SyncState.Merging
                 val mergeResult = when (val r = gitRepository.merge(config)) {
                     is Either.Left -> {
-                        val err = r.value
-                        if (err is DomainError.GitError.RateLimited) {
-                            _syncState.value = SyncState.RateLimited(err.retryAfterSeconds)
-                            scheduleRateLimitRetry(graphId, err.retryAfterSeconds) { g -> sync(g, SyncTrigger.Automatic) }
-                        } else if (err is DomainError.GitError.CredentialExpired) {
-                            _syncState.value = SyncState.CredentialExpired(graphId)
-                        } else {
-                            _syncState.value = SyncState.Error(err)
-                        }
+                        publishFailure(graphId, r.value) { g -> sync(g, SyncTrigger.Automatic) }
                         return@withContext r.value.left()
                     }
                     is Either.Right -> r.value
@@ -488,12 +470,7 @@ class GitSyncService(
             guards.changes(config, GuardScope.NetPush, liftMassChange)?.let { return@withContext refuse(it) }
             _syncState.value = SyncState.Pushing
             gitRepository.push(config).onLeft { err ->
-                if (err is DomainError.GitError.RateLimited) {
-                    _syncState.value = SyncState.RateLimited(err.retryAfterSeconds)
-                    scheduleRateLimitRetry(graphId, err.retryAfterSeconds) { g -> sync(g, SyncTrigger.Automatic) }
-                } else if (err is DomainError.GitError.CredentialExpired) {
-                    _syncState.value = SyncState.CredentialExpired(graphId)
-                } else if (err is DomainError.GitError.MergeConflict) {
+                if (err is DomainError.GitError.MergeConflict) {
                     // Task 3.2.3b: a push-time conflict (GitHub's ref-PATCH 409/422, or GitLab's
                     // commits-POST 400) is a *conflict*, not a generic push failure — route it to
                     // the same ConflictPending path merge()-time conflicts already use, so the
@@ -504,7 +481,7 @@ class GitSyncService(
                         err.conflictPaths.map { ConflictFile(it, it, emptyList()) }
                     )
                 } else {
-                    _syncState.value = SyncState.Error(err)
+                    publishFailure(graphId, err) { g -> sync(g, SyncTrigger.Automatic) }
                 }
                 return@withContext err.left()
             }
@@ -528,11 +505,11 @@ class GitSyncService(
             }
         }
 
-    /** Publishes [err] on [syncState] and returns it as the failure of the calling operation. */
-    private fun refuse(err: DomainError.GitError): Either<DomainError.GitError, Nothing> {
+    /** Publishes the guard's refusal on [syncState] and returns it as the failure of the calling operation. */
+    private val refuse: (DomainError.GitError) -> Either<DomainError.GitError, Nothing> = { err ->
         _syncState.value = SyncState.Error(err)
         logger.warn("refused: ${err.message}")
-        return err.left()
+        err.left()
     }
 
     /**
@@ -578,16 +555,7 @@ class GitSyncService(
             when (val result = gitRepository.fetch(config)) {
                 is Either.Left -> {
                     val err = result.value
-                    if (err is DomainError.GitError.AuthFailed && config.authType == GitAuthType.GITHUB_OAUTH) {
-                        _syncState.value = SyncState.CredentialExpired(graphId)
-                    } else if (err is DomainError.GitError.CredentialExpired) {
-                        _syncState.value = SyncState.CredentialExpired(graphId)
-                    } else if (err is DomainError.GitError.RateLimited) {
-                        _syncState.value = SyncState.RateLimited(err.retryAfterSeconds)
-                        scheduleRateLimitRetry(graphId, err.retryAfterSeconds) { g -> fetchOnly(g) }
-                    } else {
-                        _syncState.value = SyncState.Error(err)
-                    }
+                    publishFailure(graphId, err, config.authType == GitAuthType.GITHUB_OAUTH) { g -> fetchOnly(g) }
                     err.left()
                 }
                 is Either.Right -> {
@@ -823,6 +791,5 @@ class GitSyncService(
          * `WasmSectionSyncService.githubFetch` exponential-backoff precedent's cap of 60s.
          */
         const val DEFAULT_RATE_LIMIT_RETRY_SECONDS = 60
-        private const val MILLIS_PER_SECOND = 1000L
     }
 }

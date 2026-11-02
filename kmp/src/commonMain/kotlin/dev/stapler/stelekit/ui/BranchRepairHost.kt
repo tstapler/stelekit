@@ -83,7 +83,7 @@ internal fun BranchRepairHost(appState: AppState, viewModel: StelekitViewModel, 
         var preview by remember { mutableStateOf<FirstSyncPreviewState>(FirstSyncPreviewState.Loading) }
         LaunchedEffect(previewNonce) {
             preview = FirstSyncPreviewState.Loading
-            preview = service.firstSyncPreview(graphId).fold(
+            preview = service.firstSyncPreviews.load(graphId).fold(
                 { FirstSyncPreviewState.Failed(Redactor.redactGitMessage(it.message)) },
                 { FirstSyncPreviewState.Ready(it) },
             )
