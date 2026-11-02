@@ -135,6 +135,67 @@ class WorkManagerSyncSchedulerRetryOwnerTest {
         assertIs<ListenableWorker.Result.Failure>(result)
     }
 
+    private class MapSettings : dev.stapler.stelekit.platform.Settings {
+        private val store = mutableMapOf<String, String>()
+        override fun getBoolean(key: String, defaultValue: Boolean) = store[key]?.toBoolean() ?: defaultValue
+        override fun putBoolean(key: String, value: Boolean) { store[key] = value.toString() }
+        override fun getString(key: String, defaultValue: String) = store[key] ?: defaultValue
+        override fun putString(key: String, value: String) { store[key] = value }
+        override fun containsKey(key: String) = store.containsKey(key)
+    }
+
+    @Test
+    fun `fast path runs the policy-gated scheduled tick, not a bare fetchOnly`() {
+        val settings = MapSettings()
+        val stubFs = StubFileSystem()
+        val service = GitSyncService(
+            gitRepository = object : StubGitRepository() {
+                override suspend fun fetch(config: GitConfig) = FetchResult(true, 3).right()
+            },
+            graphLoader = GraphLoader(stubFs, InMemoryPageRepository(), InMemoryBlockRepository()),
+            graphWriter = GraphWriter(fileSystem = stubFs),
+            editLock = EditLock(),
+            configRepository = StubConfigRepository(sampleConfig.right()),
+            networkMonitor = NetworkMonitor(),
+            fileSystem = stubFs,
+            graphId = FAST_PATH_GRAPH_ID,
+            settings = settings,
+            isOnline = { true },
+            // A SAF-style graph: only the policy path records this reason; fetchOnly alone never does.
+            isAppOwnedPath = { false },
+        )
+        GitSyncServiceRegistry.register(FAST_PATH_GRAPH_ID, service)
+
+        val result = runBlocking { buildWorker(FAST_PATH_GRAPH_ID).doWork() }
+
+        assertIs<ListenableWorker.Result.Success>(result)
+        assertEquals(FetchOnlyReason.Saf, SyncStalenessStore(settings).read(FAST_PATH_GRAPH_ID).fetchOnlyReason)
+        assertEquals(3, SyncStalenessStore(settings).read(FAST_PATH_GRAPH_ID).behindCount)
+        service.shutdown()
+    }
+
+    @Test
+    fun `slow path hands the single fetch to the cold runner and records the behind count`() {
+        val settings = MapSettings()
+        val staleness = SyncStalenessStore(settings)
+        val result = runBlocking {
+            runSlowPathFetch({ sampleConfig }, repoReturning(FetchResult(true, 4).right()), staleness, clock = { 9L })
+        }
+        assertIs<ListenableWorker.Result.Success>(result)
+        val stored = staleness.read(sampleConfig.graphId)
+        assertEquals(4, stored.behindCount)
+        assertEquals(FetchOnlyReason.AppClosed, stored.fetchOnlyReason)
+    }
+
+    @Test
+    fun `slow path records a typed fetch error as the outcome and fails`() {
+        val staleness = SyncStalenessStore(MapSettings())
+        val error = DomainError.GitError.RemoteBranchNotFound("origin", "main", emptyList())
+        val result = runBlocking { runSlowPathFetch({ sampleConfig }, repoReturning(error.left()), staleness, clock = { 9L }) }
+        assertIs<ListenableWorker.Result.Failure>(result)
+        assertEquals("RemoteBranchNotFound", staleness.read(sampleConfig.graphId).history.last().detail)
+    }
+
     // Story 1.2.3 slow path: exercised via runSlowPathFetch, the DB-free seam GitSyncWorker.doWork()
     // delegates to (a real driver needs the `fts5` SQLite module Robolectric's build lacks).
     private fun repoReturning(result: Either<DomainError.GitError, FetchResult>) =

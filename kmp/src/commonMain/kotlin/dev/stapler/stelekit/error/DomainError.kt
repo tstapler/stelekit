@@ -110,6 +110,10 @@ sealed interface DomainError {
         data class ScanIncomplete(val reason: String) : GitError {
             override val message: String = "Could not check for conflict markers: $reason"
         }
+        /** Auto-commit is off and the tree has local changes, so a sync would have to commit them; nothing was committed or merged. */
+        data class AutoCommitDisabled(val fileCount: Int) : GitError {
+            override val message: String = "Uncommitted changes — commit or enable auto-commit"
+        }
         /** The change would delete more files than the mass-change thresholds allow. */
         data class MassChangeBlocked(val deleted: Int, val threshold: Int, val sample: List<String>) : GitError {
             override val message: String = "This sync would delete $deleted files (limit $threshold)"
@@ -378,6 +382,7 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.GitError.ConflictMarkersPresent -> message
     is DomainError.GitError.ScanIncomplete -> message
     is DomainError.GitError.MassChangeBlocked -> message
+    is DomainError.GitError.AutoCommitDisabled -> message
     is DomainError.GitError.CredentialExpired -> "GitHub authentication expired — tap to re-connect"
     is DomainError.GitError.RateLimited -> "Rate limited — retrying automatically"
     is DomainError.GitError.FileTooLarge -> "File too large to sync: ${path}"
@@ -442,6 +447,7 @@ fun DomainError.GitError.toSyncErrorMessage(): String = when (this) {
     is DomainError.GitError.ConflictMarkersPresent -> "Conflict markers in ${files.size} file(s) — resolve before syncing"
     is DomainError.GitError.ScanIncomplete -> "Could not check files for conflict markers — sync stopped"
     is DomainError.GitError.MassChangeBlocked -> "Sync would delete $deleted files — confirm in the sync details"
+    is DomainError.GitError.AutoCommitDisabled -> message
     is DomainError.GitError.CredentialExpired -> "GitHub authentication expired — tap to re-connect"
     is DomainError.GitError.RateLimited -> "Rate limited by GitHub/GitLab — retrying automatically"
     is DomainError.GitError.FileTooLarge -> "File too large to sync: $path"

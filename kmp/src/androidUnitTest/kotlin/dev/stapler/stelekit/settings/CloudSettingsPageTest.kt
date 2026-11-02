@@ -2,6 +2,7 @@ package dev.stapler.stelekit.settings
 
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -193,5 +194,15 @@ class CloudSettingsPageTest {
         composeRule.onNodeWithText("Delete").performClick()
         composeRule.waitForIdle()
         assertEquals(0L, assetRepo.countCloudDescriptions().getOrNull())
+    }
+
+    @Test
+    fun destructiveFollowUps_should_AskStandardConfirmWithCancelDefault_When_DeleteAiDescriptionsTapped() {
+        mount()
+
+        composeRule.onNodeWithText("Delete AI descriptions").performClick()
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("Cancel").assertIsFocused()
     }
 }

@@ -109,6 +109,14 @@ class GitSyncCoordinator(
         .flatMapLatest { service -> service?.firstSyncReviewPending ?: flowOf(false) }
         .stateIn(scope, SharingStarted.Eagerly, false)
 
+    /** Last-merged / behind-count facts for the sync chip and the updates-waiting banner; null with no service. */
+    val syncStaleness: StateFlow<dev.stapler.stelekit.git.SyncStaleness?> = activeGitSyncService
+        .flatMapLatest { service -> service?.staleness ?: flowOf(null) }
+        .stateIn(scope, SharingStarted.Eagerly, null)
+
+    /** Detail sheets for sync problems (interrupted merge, mass deletion); see [SyncSafetyActions]. */
+    val safety = SyncSafetyActions(activeGitSyncService, activeGraphIdProvider, scope, uiState, jobTracker) { syncState.value }
+
     internal fun observeSyncState() {
         scope.launch {
             syncState.collect { state ->
@@ -204,7 +212,7 @@ class GitSyncCoordinator(
         scope.launch {
             // Re-validate: syncState may have advanced (e.g. auto-completed) between capture and execution
             if (syncState.value !is SyncState.JournalMergeReady) return@launch
-            activeGitSyncService.value?.abortActiveMerge(state.graphId)
+            activeGitSyncService.value?.let { safety.abortMerge(it, state.graphId) }
         }
     }
 

@@ -117,7 +117,7 @@ class GitSyncServicePeriodicTest {
         }
         assertTrue("periodicDriver.start(" in body)
         val driverDecl = source.substring(source.indexOf("private val periodicDriver"), source.indexOf("val scheduledSyncStatus"))
-        assertTrue("refreshLocalStatus(periodicGraphId)" in driverDecl && "fetchOnly(periodicGraphId).toTickOutcome()" in driverDecl)
+        assertTrue("refreshLocalStatus(periodicGraphId)" in driverDecl && "scheduled.run(periodicGraphId)" in driverDecl)
     }
 
     @Test

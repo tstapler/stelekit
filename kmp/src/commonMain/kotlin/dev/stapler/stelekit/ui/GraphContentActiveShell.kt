@@ -34,6 +34,7 @@ import dev.stapler.stelekit.performance.DebugBuildConfig
 import dev.stapler.stelekit.performance.DebugMenuState
 import dev.stapler.stelekit.platform.*
 import dev.stapler.stelekit.ui.components.*
+import dev.stapler.stelekit.ui.components.settings.UpdatesNotificationSettingsState
 import dev.stapler.stelekit.vault.VaultManager
 import dev.stapler.stelekit.voice.VoiceCaptureState
 import kotlinx.coroutines.CoroutineScope
@@ -181,10 +182,29 @@ internal fun GraphContentActiveShell(
     val syncState by viewModel.syncState.collectAsState()
     val gitLastSyncAt by viewModel.gitLastSyncAt.collectAsState()
     val firstSyncReviewPending by viewModel.firstSyncReviewPending.collectAsState()
-    val scheduledSyncSettings = rememberScheduledSyncSettingsState(inputs.gitSyncStack) {
+    val syncStaleness by viewModel.syncStaleness.collectAsState()
+    val scheduledSyncSettings = rememberScheduledSyncSettingsState(
+        inputs.gitSyncStack,
+        onReviewFirstSync = viewModel::reviewFirstSyncFromSettings,
+        onOpenStatus = viewModel::openSyncStatusFromSettings,
+    ) {
         viewModel.setSettingsVisible(false)
         viewModel.openGitSetup()
     }
+
+    val notificationPermission = deps.platformIntegrations.notificationPermission
+    val updatesNotificationSettings = remember(platformSettings, notificationPermission) {
+        notificationPermission?.let {
+            UpdatesNotificationSettingsState(it, dev.stapler.stelekit.git.UpdatesNotificationPreference(platformSettings))
+        }
+    }
+
+    val stalenessChip = rememberStalenessChip(
+        staleness = syncStaleness,
+        intervalMinutes = scheduledSyncSettings?.let {
+            dev.stapler.stelekit.git.effectiveScheduledIntervalMinutes(it.configuredIntervalMinutes, it.minimumIntervalMinutes)
+        } ?: DEFAULT_CHIP_INTERVAL_MINUTES,
+    )
 
     val focusManager = LocalFocusManager.current
     BoxWithConstraints(
@@ -354,6 +374,7 @@ internal fun GraphContentActiveShell(
                         gitLastSyncAt = gitLastSyncAt,
                         firstSyncReviewPending = firstSyncReviewPending,
                         scheduledSyncPaused = scheduledSyncSettings?.status?.paused == true,
+                        stalenessChip = stalenessChip,
                         storageLocationResolver = storageLocationResolver,
                         gitRepository = gitRepository,
                         onStorageLocationChoose = onStorageLocationChoose,
@@ -438,6 +459,7 @@ internal fun GraphContentActiveShell(
                     assetIndexing = deps.assets?.indexing,
                     assetPlugins = deps.assets?.plugins,
                     scheduledSync = scheduledSyncSettings,
+                    updatesNotifications = updatesNotificationSettings,
                     voiceSettings = voiceSettings,
                     llmCredentialStore = llmCredentialStore,
                     llmProviderRegistry = llmProviderRegistry,
@@ -600,3 +622,5 @@ internal fun GraphContentActiveShell(
         } // CompositionLocalProvider(LocalWindowSizeClass)
     }
 }
+
+private const val DEFAULT_CHIP_INTERVAL_MINUTES = 15

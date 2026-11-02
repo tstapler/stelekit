@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -180,6 +181,12 @@ private fun GraphContentBanners(
     MisplacedFilesBannerHost(deps, viewModel, activeGraphInfo)
     dev.stapler.stelekit.ui.components.RestoreRecoveryBannerHost()
 
+    val reviewPending by viewModel.firstSyncReviewPending.collectAsState()
+    val staleness by viewModel.syncStaleness.collectAsState()
+    val behindCount = staleness?.behindCount ?: 0
+    val dismissals = rememberSyncBannerDismissals(inputs.activeGraphId?.value)
+    val bannerChoice = syncBannerChoice(visibility.showContentMismatchBanner, reviewPending, behindCount, dismissals)
+
     inputs.appState.mcpBindFailureMessage?.let { message ->
         dev.stapler.stelekit.ui.components.McpBindFailureBanner(
             message = message,
@@ -197,7 +204,10 @@ private fun GraphContentBanners(
             },
         )
     }
-    if (visibility.showContentMismatchBanner) {
+    SyncLaunchBannerHost(bannerChoice, behindCount, dismissals) {
+        viewModel.openSyncDestination(reviewDestinationFor(reviewPending, inputs.activeGraphId?.value.orEmpty()))
+    }
+    if (bannerChoice.banner == dev.stapler.stelekit.git.Banner.Mismatch) {
         val mismatchInfo = activeGraphInfo?.directoryScanCandidates?.firstOrNull() ?: dev.stapler.stelekit.diagnostics.DirectoryScanResult(
             path = activeGraphInfo?.effectiveNotesPath?.value ?: "",
             pages = true,

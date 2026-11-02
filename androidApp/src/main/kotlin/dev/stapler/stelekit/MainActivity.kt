@@ -38,9 +38,12 @@ import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.platform.security.CredentialStore
 import dev.stapler.stelekit.git.AndroidGitRepository
 import dev.stapler.stelekit.git.GitCloneWorker
+import dev.stapler.stelekit.git.NotificationTapRouter
+import dev.stapler.stelekit.git.SyncNotifier
 import dev.stapler.stelekit.git.GitShadowWorktree
 import dev.stapler.stelekit.git.GitSyncBusyCounter
 import dev.stapler.stelekit.git.AndroidBackgroundRestrictionProbe
+import dev.stapler.stelekit.git.AndroidNotificationPermissionAccess
 import dev.stapler.stelekit.git.BackgroundSyncSchedulerFactory
 import dev.stapler.stelekit.git.WorkManagerSyncScheduler
 import dev.stapler.stelekit.model.GraphId
@@ -85,9 +88,13 @@ class MainActivity : ComponentActivity() {
      * deep-link effect below has switched to the graph and opened Git Setup at Step 5 for it.
      */
     private var pendingGitSetupGraphId by mutableStateOf<String?>(null)
+
+    /** Graph id and display name from the updates-waiting notification tap; consumed by the routing effect below. */
+    private var pendingSyncStatus by mutableStateOf<Pair<String, String>?>(null)
     private var pendingFolderPick: CompletableDeferred<String?>? = null
     private var pendingMicPermission: CompletableDeferred<Boolean>? = null
     private var pendingCameraPermission: CompletableDeferred<Boolean>? = null
+    private var pendingNotificationPermission: CompletableDeferred<Boolean>? = null
     private var pendingSaveFile: CompletableDeferred<String?>? = null
     private var pendingFilePick: CompletableDeferred<String?>? = null
 
@@ -96,6 +103,13 @@ class MainActivity : ComponentActivity() {
     ) { granted ->
         pendingMicPermission?.complete(granted)
         pendingMicPermission = null
+    }
+
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        pendingNotificationPermission?.complete(granted)
+        pendingNotificationPermission = null
     }
 
     private val cameraPermissionLauncher = registerForActivityResult(
@@ -211,6 +225,7 @@ class MainActivity : ComponentActivity() {
         // Story 4.1.5: cold-start deep link from a GitCloneWorker notification tap — see
         // pendingGitSetupGraphId's kdoc. onNewIntent handles the warm-start case below.
         pendingGitSetupGraphId = intent.getStringExtra(GitCloneWorker.EXTRA_OPEN_GIT_SETUP_GRAPH_ID)
+        pendingSyncStatus = syncStatusTapOf(intent)
 
         // Re-wire camera provider with this Activity's runtime permission launcher.
         // SteleKitApplication sets a no-callback provider at process start; the callback
@@ -441,6 +456,31 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            // Updates-waiting notification tap: routed by NotificationTapRouter once the target graph's
+            // ViewModel exists; never starts a sync.
+            LaunchedEffect(pendingSyncStatus, activeViewModel, appGm) {
+                val tap = pendingSyncStatus
+                val vm = activeViewModel
+                val gm = appGm
+                if (tap != null && vm != null && gm != null) {
+                    val known = gm.graphRegistry.value.graphIds.map { it.value }.toSet()
+                    if (tap.first in known && gm.getActiveGraphId()?.value != tap.first) {
+                        gm.switchGraph(GraphId(tap.first))
+                    } else {
+                        vm.openSyncDestination(
+                            NotificationTapRouter.route(
+                                intentGraphId = tap.first,
+                                intentGraphName = tap.second,
+                                knownGraphIds = known,
+                                firstSyncUnconfirmed = { vm.firstSyncReviewPending.value },
+                                behindCount = { vm.syncStaleness.value?.behindCount ?: 0 },
+                            ),
+                        )
+                        pendingSyncStatus = null
+                    }
+                }
+            }
+
             androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize()) {
             val copyHost = androidx.compose.runtime.remember {
                 dev.stapler.stelekit.ui.screens.copy.copyHostConfigFor(
@@ -480,6 +520,18 @@ class MainActivity : ComponentActivity() {
                             minimumIntervalMinutes = WorkManagerSyncScheduler.MIN_PERIODIC_INTERVAL_MINUTES.toInt(),
                         ) { graphId -> WorkManagerSyncScheduler(applicationContext, graphId) },
                         backgroundRestrictionProbe = AndroidBackgroundRestrictionProbe(applicationContext),
+                        notificationPermission = remember {
+                            AndroidNotificationPermissionAccess(
+                                context = applicationContext,
+                                settings = PlatformSettings(),
+                                requestPermission = ::requestNotificationPermission,
+                                shouldShowRationale = {
+                                    androidx.core.app.ActivityCompat.shouldShowRequestPermissionRationale(
+                                        this@MainActivity, Manifest.permission.POST_NOTIFICATIONS,
+                                    )
+                                },
+                            )
+                        },
                         platformCaps = dev.stapler.stelekit.platform.ml.androidPlatformCaps(),
                         gitRepository = gitRepository,
                         gitCloneWorkerLauncher = gitCloneWorkerLauncher,
@@ -509,6 +561,7 @@ class MainActivity : ComponentActivity() {
         intent.getStringExtra(GitCloneWorker.EXTRA_OPEN_GIT_SETUP_GRAPH_ID)?.let {
             pendingGitSetupGraphId = it
         }
+        syncStatusTapOf(intent)?.let { pendingSyncStatus = it }
         // Handle OAuth 2.0 deep-link callback: com.stelekit.app:/oauth2redirect?code=...
         val data = intent.data
         if (data?.scheme == "com.stelekit.app" && data.path == "/oauth2redirect") {
@@ -560,6 +613,18 @@ class MainActivity : ComponentActivity() {
         val deferred = CompletableDeferred<Boolean>()
         pendingMicPermission = deferred
         runOnUiThread { micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO) }
+        return deferred.await()
+    }
+
+    private suspend fun requestNotificationPermission(): Boolean {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) return true
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+            == PackageManager.PERMISSION_GRANTED
+        ) return true
+        pendingNotificationPermission?.let { return it.await() }
+        val deferred = CompletableDeferred<Boolean>()
+        pendingNotificationPermission = deferred
+        runOnUiThread { notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) }
         return deferred.await()
     }
 
@@ -639,3 +704,8 @@ internal fun resolveGitSetupDeepLinkAction(
         GitSetupDeepLinkAction.OpenStep5
     }
 }
+
+private fun syncStatusTapOf(intent: Intent): Pair<String, String>? =
+    intent.getStringExtra(SyncNotifier.EXTRA_OPEN_SYNC_STATUS_GRAPH_ID)?.let {
+        it to intent.getStringExtra(SyncNotifier.EXTRA_OPEN_SYNC_STATUS_GRAPH_NAME).orEmpty()
+    }

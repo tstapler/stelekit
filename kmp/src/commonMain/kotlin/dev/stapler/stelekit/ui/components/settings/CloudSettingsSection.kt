@@ -21,6 +21,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.asset.pipeline.CLOUD_DELETE_LABEL
 import dev.stapler.stelekit.asset.pipeline.CLOUD_REVOKE_COPY
@@ -97,12 +99,15 @@ fun CloudSettingsSection(controller: CloudSettingsController, modifier: Modifier
         )
     }
     deleteCount?.let { count ->
+        // Destructive confirm: Cancel holds default focus so Enter/Space can't delete by accident.
+        val cancelFocus = remember { FocusRequester() }
+        LaunchedEffect(Unit) { cancelFocus.requestFocus() }
         AlertDialog(
             onDismissRequest = { deleteCount = null },
             title = { Text(CLOUD_DELETE_LABEL) },
             text = { Text(cloudDeleteConfirmText(controller.graphDisplayName(), count)) },
             confirmButton = { TextButton(onClick = { deleteCount = null; scope.launch { controller.deleteAiDescriptions() } }) { Text("Delete") } },
-            dismissButton = { TextButton(onClick = { deleteCount = null }) { Text("Cancel") } },
+            dismissButton = { TextButton(onClick = { deleteCount = null }, modifier = Modifier.focusRequester(cancelFocus)) { Text("Cancel") } },
         )
     }
 }

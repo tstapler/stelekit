@@ -26,6 +26,7 @@ import dev.stapler.stelekit.ui.components.settings.ANDROID_HELPER
 import dev.stapler.stelekit.ui.components.settings.DESKTOP_HELPER
 import dev.stapler.stelekit.ui.components.settings.NO_REMOTE_REASON
 import dev.stapler.stelekit.ui.components.settings.RESTRICTED_HELPER
+import dev.stapler.stelekit.ui.components.settings.REVIEW_FIRST_SYNC_REASON
 import dev.stapler.stelekit.ui.components.settings.SWITCH_LABEL
 import dev.stapler.stelekit.ui.components.settings.ScheduledSyncSection
 import dev.stapler.stelekit.ui.components.settings.ScheduledSyncSettingsState
@@ -58,6 +59,7 @@ class ScheduledSyncSettingsTest {
         var resumes = 0
         var setUp = 0
         var fixes = 0
+        var reviews = 0
         val count get() = listOfNotNull(enabled, interval).size + resumes + setUp + fixes
     }
 
@@ -70,12 +72,14 @@ class ScheduledSyncSettingsTest {
         closedApp: Boolean = false,
         restricted: Boolean = false,
         status: ScheduledSyncStatus = ScheduledSyncStatus(),
+        reviewRequired: Boolean = false,
     ) = ScheduledSyncSettingsState(
         hasRemote = hasRemote, enabled = enabled, configuredIntervalMinutes = configured,
         minimumIntervalMinutes = minimum, closedAppChecks = closedApp, backgroundRestricted = restricted,
         status = status,
         onEnabledChange = { taps.enabled = it }, onIntervalChange = { taps.interval = it },
         onResume = { taps.resumes++ }, onSetUpGit = { taps.setUp++ }, onFix = { taps.fixes++ },
+        firstSyncReviewRequired = reviewRequired, onReviewFirstSync = { taps.reviews++ },
     )
 
     private fun show(s: ScheduledSyncSettingsState, nowMs: Long = now) {
@@ -128,7 +132,7 @@ class ScheduledSyncSettingsTest {
     fun status_should_ReadLastChecked3MinNextIn12Min_And_NotTakeFocus_When_TickSucceeded() {
         val last = now - 3 * minute
         show(state(enabled = true, status = ScheduledSyncStatus(running = true, lastAttemptAtMs = last, lastSuccessAtMs = last, nextAtMs = last + 15 * minute)))
-        composeTestRule.onNodeWithText("Last checked 3 min ago · next in 12 min").assertExists()
+        composeTestRule.onNodeWithText("Last synced 3 min ago · next in 12 min").assertExists()
         assertTrue(composeTestRule.onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.Focused, true)).fetchSemanticsNodes().isEmpty())
     }
 
@@ -205,13 +209,13 @@ class ScheduledSyncSettingsTest {
     @Test
     fun tick_should_BeSkippedShowCheckInProgressAndNeverQueued_When_PreviousTickRunning() {
         show(state(enabled = true, status = ScheduledSyncStatus(lastSkip = SkipReason.Busy)))
-        composeTestRule.onNodeWithText("Check in progress").assertExists()
+        composeTestRule.onNodeWithText("Sync in progress").assertExists()
     }
 
     @Test
     fun status_should_ReadOfflineWillResume_When_Offline() {
         show(state(enabled = true, status = ScheduledSyncStatus(lastSkip = SkipReason.Offline)))
-        composeTestRule.onNodeWithText("Offline - will check when you are back online").assertExists()
+        composeTestRule.onNodeWithText("Offline - will sync when you are back online").assertExists()
     }
 
     @Test
@@ -239,14 +243,14 @@ class ScheduledSyncSettingsTest {
     }
 
     @Test
-    fun labelAndHelper_should_SayCheckForUpdatesAndMentionBackgroundChecksOnAndroid_And_NeverSaySyncedBeforeU16() {
+    fun labelAndStatus_should_SaySyncedNowThatScheduledTicksPull_And_NeverSayChecked_UW17() {
         show(state(closedApp = true, minimum = 15, enabled = true, status = ScheduledSyncStatus(lastSuccessAtMs = now - minute, nextAtMs = now + 14 * minute)))
-        assertEquals("Check for updates automatically", SWITCH_LABEL)
+        assertEquals("Sync automatically", SWITCH_LABEL)
         composeTestRule.onNodeWithText(ANDROID_HELPER).assertExists()
         val allText = composeTestRule.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.Text))
             .fetchSemanticsNodes().flatMap { it.config[SemanticsProperties.Text] }.joinToString(" ") { it.text }
-        assertFalse(allText.contains("synced", ignoreCase = true), allText)
-        assertFalse(allText.contains("sync automatically", ignoreCase = true), allText)
+        assertTrue(allText.contains("Last synced 1 min ago"), allText)
+        assertFalse(allText.contains("Last checked", ignoreCase = true), allText)
     }
 
     @Test
@@ -261,5 +265,30 @@ class ScheduledSyncSettingsTest {
     fun switch_should_ShowOn_When_EnabledState() {
         show(state(enabled = true))
         composeTestRule.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.ToggleableState)).assertIsOn()
+    }
+
+    @Test
+    fun scheduledSyncSection_should_DisableSwitchWithReasonAndReviewButton_When_FirstSyncNotReviewed() {
+        val taps = Taps()
+        show(state(taps, reviewRequired = true))
+        composeTestRule.onNodeWithText(REVIEW_FIRST_SYNC_REASON).assertExists()
+        composeTestRule.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.ToggleableState)).assertIsNotEnabled()
+        composeTestRule.onNodeWithText("Review first sync").performClick()
+        assertEquals(1, taps.reviews)
+        assertEquals(null, taps.enabled, "the switch itself must not have fired")
+    }
+
+    @Test
+    fun scheduledSyncSection_should_KeepAnAlreadyOnSwitchUsable_When_FirstSyncNotReviewed() {
+        show(state(enabled = true, reviewRequired = true))
+        composeTestRule.onNodeWithText(REVIEW_FIRST_SYNC_REASON).assertDoesNotExist()
+        composeTestRule.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.ToggleableState)).assertIsEnabled().assertIsOn()
+    }
+
+    @Test
+    fun scheduledSyncSection_should_RenderNoReviewRow_When_FirstSyncConfirmed() {
+        show(state(reviewRequired = false))
+        composeTestRule.onNodeWithText(REVIEW_FIRST_SYNC_REASON).assertDoesNotExist()
+        composeTestRule.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.ToggleableState)).assertIsEnabled()
     }
 }

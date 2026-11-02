@@ -112,9 +112,12 @@ fun LeftSidebar(
     /** A branch repair is waiting for its first reviewed sync. */
     firstSyncReviewPending: Boolean = false,
     scheduledSyncPaused: Boolean = false,
+    stalenessChip: dev.stapler.stelekit.git.StalenessChipState? = null,
     onOpenScheduledSyncSettings: (() -> Unit)? = null,
     onBranchRepair: (() -> Unit)? = null,
     onReviewFirstSync: (() -> Unit)? = null,
+    onSyncDetails: (() -> Unit)? = null,
+    onOpenSyncStatus: (() -> Unit)? = null,
     onSyncClick: () -> Unit = {},
     onGitSetup: () -> Unit = {},
     isGitConfigured: Boolean = false,
@@ -268,12 +271,15 @@ fun LeftSidebar(
                     lastSyncAt = gitLastSyncAt,
                     firstSyncReviewPending = firstSyncReviewPending,
                     scheduledSyncPaused = scheduledSyncPaused,
+                    stalenessChip = stalenessChip,
                 ),
                 onSyncClick = onSyncClick,
                 isGitConfigured = isGitConfigured,
                 onAuthError = onAuthError,
                 onBranchRepair = onBranchRepair,
                 onReviewFirstSync = onReviewFirstSync,
+                onSyncDetails = onSyncDetails,
+                onOpenSyncStatus = onOpenSyncStatus,
                 onOpenScheduledSyncSettings = onOpenScheduledSyncSettings,
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
             )

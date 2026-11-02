@@ -33,12 +33,28 @@ class ScheduledSyncStatusTest {
     }
 
     @Test
-    fun `line should read last checked 3 min ago and next in 12 when a tick succeeded 3 minutes ago at 15`() {
+    fun `line should read last synced 3 min ago and next in 12 when a tick succeeded 3 minutes ago at 15`() {
         val now = 10_000_000L
         val last = now - 3 * minute
         val status = ScheduledSyncStatus(running = true, lastAttemptAtMs = last, lastSuccessAtMs = last, nextAtMs = last + 15 * minute)
         val line = scheduledSyncLine(enabled = true, status = status, nowMs = now, stoppingVisible = false)
         assertEquals(ScheduledSyncLine.Checked(lastCheckedMinutesAgo = 3, nextInMinutes = 12), line)
+    }
+
+    @Test
+    fun `line should say checked, never synced, when only fetches have run`() {
+        val now = 10_000_000L
+        val fetched = now - 4 * minute
+        val onlyFetched = ScheduledSyncStatus(running = true, lastFetchedAtMs = fetched, nextAtMs = fetched + 15 * minute)
+        assertEquals(ScheduledSyncLine.FetchedOnly(lastFetchedMinutesAgo = 4, nextInMinutes = 11), scheduledSyncLine(true, onlyFetched, now, false))
+
+        val synced = now - 20 * minute
+        val both = onlyFetched.copy(lastSuccessAtMs = synced)
+        assertEquals(
+            ScheduledSyncLine.Checked(lastCheckedMinutesAgo = 20, nextInMinutes = 11),
+            scheduledSyncLine(true, both, now, false),
+            "Last synced keeps the last real sync time even when newer fetches ran",
+        )
     }
 
     @Test
@@ -50,7 +66,7 @@ class ScheduledSyncStatusTest {
     }
 
     @Test
-    fun `line should report busy offline paused and never checked`() {
+    fun `line should report busy offline paused and never synced`() {
         assertEquals(ScheduledSyncLine.CheckInProgress, scheduledSyncLine(true, ScheduledSyncStatus(lastSkip = SkipReason.Busy), 0, false))
         assertEquals(ScheduledSyncLine.Offline, scheduledSyncLine(true, ScheduledSyncStatus(lastSkip = SkipReason.Offline), 0, false))
         assertEquals(ScheduledSyncLine.NeverChecked, scheduledSyncLine(true, ScheduledSyncStatus(), 0, false))

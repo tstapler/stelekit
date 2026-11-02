@@ -71,6 +71,7 @@ internal fun GraphDialogLayer(
     GitSetupDialogHost(appState, viewModel, fileSystem, deps.gitSync)
     ConflictResolutionDialogHost(appState, viewModel, deps.gitSync)
     BranchRepairHost(appState, viewModel, deps.gitSync)
+    SyncStatusSheetHost(appState, viewModel, deps.gitSync, deps.settings.scheduledSync)
     JournalMergeReviewHost(appState, viewModel)
     LlmSuggestionReviewHost(appState, viewModel)
     DiskConflictHost(appState, viewModel)
@@ -246,6 +247,7 @@ private fun SettingsDialogHost(
         captureTargetSettings = settings.captureTargetSettings,
         captureGraphs = settings.captureGraphs,
         scheduledSync = settings.scheduledSync,
+        updatesNotifications = settings.updatesNotifications,
     )
 }
 
@@ -377,8 +379,9 @@ private fun ConflictResolutionDialogHost(appState: AppState, viewModel: Stelekit
             onAbortMerge = if (gitSync.gitSyncService != null && gitSync.activeGraphId != null) {
                 {
                     val id = gitSync.activeGraphId
-                    gitSync.gitSyncService.abortActiveMerge(id)
-                    viewModel.dismissConflictResolution()
+                    if (viewModel.abortMergeConfirmed(gitSync.gitSyncService, id).isRight()) {
+                        viewModel.dismissConflictResolution()
+                    }
                 }
             } else null,
             onDismiss = { viewModel.dismissConflictResolution() },

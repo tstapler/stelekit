@@ -274,8 +274,20 @@ import dev.stapler.stelekit.git.ConflictMarkerDiffScanTest
 import dev.stapler.stelekit.git.FirstSyncPreviewSourceTest
 import dev.stapler.stelekit.git.GitSyncServiceChangeGuardsTest
 import dev.stapler.stelekit.git.GitSyncServicePublishFailureTest
+import dev.stapler.stelekit.git.GitSyncServiceAutoCommitTest
 import dev.stapler.stelekit.git.GitSyncServiceScheduledSyncTest
+import dev.stapler.stelekit.git.SyncSafetyConfirmTest
+import dev.stapler.stelekit.git.BannerPrecedenceTest
+import dev.stapler.stelekit.git.ColdSyncRunnerTest
+import dev.stapler.stelekit.git.StalenessChipStateTest
+import dev.stapler.stelekit.git.SyncNotificationLogicTest
+import dev.stapler.stelekit.git.SyncStalenessStoreTest
+import dev.stapler.stelekit.git.SyncStatusSheetModelTest
+import dev.stapler.stelekit.git.UpdatesNotificationToggleTest
+import dev.stapler.stelekit.ui.FirstSyncPreviewLoaderTest
+import dev.stapler.stelekit.ui.GitSyncCoordinatorTest
 import dev.stapler.stelekit.git.ScheduledSyncPolicyTest
+import dev.stapler.stelekit.git.ScheduledSyncStackE2ETest
 import dev.stapler.stelekit.git.ShallowMergeTest
 import dev.stapler.stelekit.git.merge.JournalMergeServiceTest
 import dev.stapler.stelekit.git.merge.LogseqMergeDriverTest
@@ -565,7 +577,19 @@ import org.junit.runners.Suite
     FirstSyncPreviewSourceTest::class,
     GitSyncServicePublishFailureTest::class,
     GitSyncServiceScheduledSyncTest::class,
+    GitSyncServiceAutoCommitTest::class,
+    SyncSafetyConfirmTest::class,
+    BannerPrecedenceTest::class,
+    ColdSyncRunnerTest::class,
+    StalenessChipStateTest::class,
+    SyncNotificationLogicTest::class,
+    SyncStalenessStoreTest::class,
+    SyncStatusSheetModelTest::class,
+    UpdatesNotificationToggleTest::class,
+    FirstSyncPreviewLoaderTest::class,
+    GitSyncCoordinatorTest::class,
     ScheduledSyncPolicyTest::class,
+    ScheduledSyncStackE2ETest::class,
     ShallowMergeTest::class,
     StubGitRepositoryFailureSequenceTest::class,
     JournalMergeServiceTest::class,
