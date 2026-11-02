@@ -13,6 +13,9 @@ object PluginEnableKeys {
     const val IMAGE_LABELS: String = "image_labels"
     const val PDF_TEXT: String = "pdf_text"
 
+    /** The cloud description switch; not in the on-device plugin list, and it needs consent as well. */
+    const val CLOUD_CLAUDE: String = "cloud_claude"
+
     fun keyFor(pluginId: String): String = "asset_plugin_${pluginId}_enabled"
 
     /** A read failure counts as off. */

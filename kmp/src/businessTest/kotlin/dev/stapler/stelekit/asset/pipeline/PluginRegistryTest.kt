@@ -123,4 +123,27 @@ class PluginRegistryTest {
         assertNull(withLabeler.unavailableReason(PluginEnableKeys.IMAGE_LABELS))
         assertTrue(withLabeler.enabledStates.value.keys == PluginRegistry.PLUGIN_IDS.toSet())
     }
+
+    @Test fun enabledCount_should_IncludeCloudPluginOnlyWhileConsentGrantedAndSwitchOn_When_StatusBarReadsRegistry() {
+        val settings = FakeSettings()
+        settings.putBoolean(AssetBuildFlags.PIPELINE_ENABLED_KEY, true)
+        var granted = false
+        val registry = PluginRegistry(settings, PlatformCaps.NONE, cloudConsentGranted = { granted })
+        assertEquals(0, registry.enabledCount.value)
+
+        registry.setEnabled(PluginEnableKeys.CLOUD_CLAUDE, true)
+        assertEquals(0, registry.enabledCount.value, "switch on without consent counts nothing")
+
+        granted = true
+        registry.onCloudStateChanged()
+        assertEquals(1, registry.enabledCount.value, "consent granted and switch on counts the cloud plugin")
+
+        granted = false
+        registry.onCloudStateChanged()
+        assertEquals(0, registry.enabledCount.value, "revoked consent drops it at once")
+
+        granted = true
+        registry.setEnabled(PluginEnableKeys.CLOUD_CLAUDE, false)
+        assertEquals(0, registry.enabledCount.value, "consent without the switch counts nothing")
+    }
 }

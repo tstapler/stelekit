@@ -22,6 +22,8 @@ enum class PluginSettingsLoad { Loading, Loaded, Failed }
 class PluginRegistry(
     private val settings: Settings? = null,
     private val caps: PlatformCaps = PlatformCaps.NONE,
+    /** Whether cloud consent is granted for the open graph right now; the cloud plugin counts only while it is. */
+    private val cloudConsentGranted: () -> Boolean = { false },
 ) {
     @kotlin.concurrent.Volatile
     private var plugins: List<AssetPipelinePlugin> = emptyList()
@@ -78,6 +80,11 @@ class PluginRegistry(
         refresh()
     }
 
+    /** Re-evaluates the count after cloud consent or the cloud switch changed. */
+    fun onCloudStateChanged() {
+        _enabledCount.value = countEnabled()
+    }
+
     /** Mirrors the master `asset_pipeline_enabled` flag so a master-off state reads as zero plugins. */
     fun setMasterEnabled(value: Boolean) {
         _masterEnabled.value = value
@@ -108,7 +115,12 @@ class PluginRegistry(
     }
 
     private fun countEnabled(): Int =
-        if (!_masterEnabled.value) 0 else _enabledStates.value.count { (id, on) -> on && unavailableReason(id) == null }
+        if (!_masterEnabled.value) 0 else _enabledStates.value.count { (id, on) -> on && unavailableReason(id) == null } + cloudCount()
+
+    private fun cloudCount(): Int {
+        val store = settings ?: return 0
+        return if (PluginEnableKeys.isEnabled(store, PluginEnableKeys.CLOUD_CLAUDE) && cloudConsentGranted()) 1 else 0
+    }
 
     companion object {
         val PLUGIN_IDS: List<String> = listOf(

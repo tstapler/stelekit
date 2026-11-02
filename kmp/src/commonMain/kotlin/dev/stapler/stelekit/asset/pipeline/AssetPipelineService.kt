@@ -65,6 +65,10 @@ class AssetPipelineService(
     private val consecutiveFailures = mutableMapOf<String, Int>()
     private var backfillJob: Job? = null
 
+    /** Set when a plugin hit a cap during the current drain; the drain stops after that asset. */
+    @kotlin.concurrent.Volatile
+    private var capPause: PauseReason? = null
+
     private val _progress = MutableStateFlow<PipelineProgress>(PipelineProgress.Idle)
     val progress: StateFlow<PipelineProgress> = _progress.asStateFlow()
 
@@ -86,6 +90,9 @@ class AssetPipelineService(
 
         val allLabels = mutableListOf<String>()
         var ocrText: String? = null
+        var cloudDescription: String? = null
+        var localRan = false
+        var gotResult = false
         var failed = false
 
         for (plugin in plugins) {
@@ -100,12 +107,22 @@ class AssetPipelineService(
                     ifRight = { pluginResult ->
                         consecutiveFailures[plugin.id] = 0
                         when (pluginResult) {
-                            is AssetPipelineResult.Labels -> allLabels.addAll(pluginResult.labels)
-                            is AssetPipelineResult.OcrText -> ocrText = pluginResult.text
-                            is AssetPipelineResult.CloudDescription -> allLabels.addAll(pluginResult.labelsAdded)
+                            is AssetPipelineResult.Skipped -> {
+                                if (pluginResult.pause != null) capPause = pluginResult.pause
+                            }
+                            is AssetPipelineResult.Labels -> { gotResult = true; localRan = true; allLabels.addAll(pluginResult.labels) }
+                            is AssetPipelineResult.OcrText -> { gotResult = true; localRan = true; ocrText = pluginResult.text }
+                            is AssetPipelineResult.CloudDescription -> {
+                                gotResult = true
+                                cloudDescription = pluginResult.description
+                                allLabels.addAll(pluginResult.labelsAdded)
+                            }
                             is AssetPipelineResult.Combined -> {
+                                gotResult = true
+                                localRan = true
                                 allLabels.addAll(pluginResult.labels)
                                 if (pluginResult.ocrText != null) ocrText = pluginResult.ocrText
+                                if (pluginResult.cloudDescription != null) cloudDescription = pluginResult.cloudDescription
                             }
                         }
                     },
@@ -120,6 +137,9 @@ class AssetPipelineService(
             }
         }
 
+        // Every plugin that took the asset declined it (no consent, a cap): nothing ran, so it stays unprocessed.
+        if (!failed && !gotResult) return@withPermit Outcome.Stayed
+
         val now = Clock.System.now().toEpochMilliseconds()
         if (!failed) {
             val finalLabels = allLabels.distinct()
@@ -130,8 +150,8 @@ class AssetPipelineService(
             }
             val saved = writeGuarded {
                 @OptIn(DirectRepositoryWrite::class)
-                assetRepository.updateAutoLabels(asset.uuid, finalLabels, "LOCAL")
-                    .flatMap { assetRepository.updateOcrText(asset.uuid, storedOcr) }
+                writeLocalResults(asset, localRan, finalLabels, storedOcr)
+                    .flatMap { writeCloudDescription(asset, cloudDescription) }
                     .flatMap { assetRepository.markMlProcessed(asset.uuid, now) }
             }
             if (saved) return@withPermit Outcome.Processed
@@ -143,6 +163,24 @@ class AssetPipelineService(
         }
         if (marked) Outcome.Failed else Outcome.Stayed
     }
+
+    // A cloud-only result must not clear labels or OCR text another plugin stored earlier.
+    @OptIn(DirectRepositoryWrite::class)
+    private suspend fun writeLocalResults(
+        asset: AssetEntry,
+        localRan: Boolean,
+        labels: List<String>,
+        ocr: String?,
+    ): Either<DomainError, Unit> {
+        if (!localRan) return Either.Right(Unit)
+        return assetRepository.updateAutoLabels(asset.uuid, labels, "LOCAL")
+            .flatMap { assetRepository.updateOcrText(asset.uuid, ocr) }
+    }
+
+    @OptIn(DirectRepositoryWrite::class)
+    private suspend fun writeCloudDescription(asset: AssetEntry, description: String?): Either<DomainError, Unit> =
+        if (description == null) Either.Right(Unit)
+        else assetRepository.updateCloudDescription(asset.uuid, description, CloudClaudePlugin.CLOUD_TAGS_SOURCE)
 
     private fun isClosed(pluginId: String): Boolean =
         (consecutiveFailures[pluginId] ?: 0) < PLUGIN_FAILURE_THRESHOLD
@@ -249,6 +287,7 @@ class AssetPipelineService(
     private suspend fun drainUnprocessed() {
         attemptedMutex.withLock { attemptedUuids.clear() }
         consecutiveFailures.clear()
+        capPause = null
         runMarker?.begin(MARKER_OWNER)
         val total = (assetRepository.countUnprocessedAssets().getOrNull() ?: 0L).toInt()
         var done = 0
@@ -269,6 +308,10 @@ class AssetPipelineService(
                     Outcome.Stayed -> stayed++
                 }
                 _progress.value = PipelineProgress.Running(done, total, failed)
+                capPause?.let {
+                    _progress.value = PipelineProgress.Paused(it)
+                    return
+                }
             }
             yield()
             if (batch.size < BATCH_SIZE) break

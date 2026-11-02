@@ -18,6 +18,11 @@ import dev.stapler.stelekit.asset.AssetMoveService
 import dev.stapler.stelekit.asset.IndexingMediaAttachmentService
 import dev.stapler.stelekit.asset.pipeline.AssetPipelineService
 import dev.stapler.stelekit.asset.pipeline.AssetPluginsController
+import dev.stapler.stelekit.asset.pipeline.CloudConsentGate
+import dev.stapler.stelekit.asset.pipeline.CloudPluginDeps
+import dev.stapler.stelekit.llm.AnthropicMessagesClient
+import dev.stapler.stelekit.llm.LlmCredentialStore
+import dev.stapler.stelekit.platform.security.CredentialStore
 import dev.stapler.stelekit.asset.pipeline.PauseReason
 import dev.stapler.stelekit.asset.pipeline.PipelineRunMarker
 import dev.stapler.stelekit.asset.pipeline.PluginRegistry
@@ -75,12 +80,24 @@ internal fun rememberGraphContentAssetStack(
     // Plugins are re-derived from the per-plugin settings keys at each drain start; with none set
     // the pipeline never starts and only indexing runs.
     val caps = deps.platformIntegrations.platformCaps
-    val pluginRegistry = remember(deps.platformSettings, caps) { PluginRegistry(deps.platformSettings, caps) }
-    val pipeline = remember(repos, deps.platformSettings, caps, effectiveFileSystem, runMarker, pluginRegistry) {
+    val llmCredentials = remember { LlmCredentialStore(CredentialStore()) }
+    val cloudGate = remember(deps.platformSettings, llmCredentials) { CloudConsentGate(deps.platformSettings, llmCredentials) }
+    val cloudClient = remember(llmCredentials) { AnthropicMessagesClient.withDefaults { llmCredentials.getApiKey(CloudConsentGate.PROVIDER) } }
+    DisposableEffect(cloudClient) { onDispose { cloudClient.close() } }
+    val activeGraphId = { deps.graphManager.graphRegistry.value.activeGraphId?.value.orEmpty() }
+    val pluginRegistry = remember(deps.platformSettings, caps, cloudGate) {
+        PluginRegistry(deps.platformSettings, caps, cloudConsentGranted = { cloudGate.token(activeGraphId()) != null })
+    }
+    val pipeline = remember(repos, deps.platformSettings, caps, effectiveFileSystem, runMarker, pluginRegistry, cloudGate, cloudClient) {
         repos.writeActor?.let { actor ->
             AssetPipelineService(
                 pluginRegistry, repos.assetRepository, actor,
-                pluginSource = { defaultAssetPlugins(caps, deps.platformSettings, effectiveFileSystem) },
+                pluginSource = {
+                    defaultAssetPlugins(
+                        caps, deps.platformSettings, effectiveFileSystem,
+                        cloud = CloudPluginDeps(cloudClient, cloudGate, activeGraphId),
+                    )
+                },
                 runMarker = runMarker,
             )
         }
