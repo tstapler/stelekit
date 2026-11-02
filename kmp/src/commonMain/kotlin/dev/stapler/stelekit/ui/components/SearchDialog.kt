@@ -60,6 +60,8 @@ fun SearchDialog(
     initialQuery: String = "",
     isIndexing: Boolean = false,
     loadPageBlocks: (String) -> Flow<Either<DomainError, List<Block>>> = { kotlinx.coroutines.flow.flowOf(Either.Right(emptyList())) },
+    /** Slot under the page/block results for the Assets section; null where the asset stack is absent. */
+    assetsSection: (@Composable (query: String) -> Unit)? = null,
 ) {
     if (!visible) return
 
@@ -370,6 +372,7 @@ fun SearchDialog(
                         }
                     }
                 }
+                if (uiState.query.isNotBlank()) assetsSection?.invoke(uiState.query)
             }
 
             if (isMobile) {

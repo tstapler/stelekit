@@ -18,7 +18,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
@@ -65,6 +68,11 @@ class AssetPipelineService(
     private val _progress = MutableStateFlow<PipelineProgress>(PipelineProgress.Idle)
     val progress: StateFlow<PipelineProgress> = _progress.asStateFlow()
 
+    private val _initFailures = MutableSharedFlow<String>(extraBufferCapacity = 8)
+
+    /** Ids of plugins that could not start at all (a missing native library), so the UI can switch them off. */
+    val pluginInitFailures: SharedFlow<String> = _initFailures.asSharedFlow()
+
     /** What [processAsset] did with one asset. */
     enum class Outcome { Processed, Failed, Stayed }
 
@@ -106,6 +114,7 @@ class AssetPipelineService(
                 throw e
             } catch (e: Throwable) {
                 logger.error("Plugin ${plugin.id} threw on ${asset.uuid.value}: ${e.message}")
+                if (e.isNativeLinkFailure()) _initFailures.tryEmit(plugin.id)
                 failed = true
                 recordFailure(plugin.id)
             }
@@ -196,6 +205,17 @@ class AssetPipelineService(
             } finally {
                 runMarker?.end(MARKER_OWNER)
             }
+        }
+    }
+
+    /** Clears every failed flag, then drains again; plugins that stay broken fail the rows once more. */
+    fun retryFailed() {
+        scope.launch {
+            val cleared = writeGuarded {
+                @OptIn(DirectRepositoryWrite::class)
+                assetRepository.resetFailedAssets()
+            }
+            if (cleared) scheduleBackfill()
         }
     }
 

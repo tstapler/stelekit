@@ -66,7 +66,7 @@ internal fun GraphDialogLayer(
     val scope = rememberCoroutineScope()
 
     CommandPaletteHost(appState, viewModel, deps.extraCommands)
-    SearchDialogHost(appState, searchViewModel, viewModel, deps.loadPageBlocks)
+    SearchDialogHost(appState, searchViewModel, viewModel, deps.loadPageBlocks, deps.assetSearch)
     SettingsDialogHost(appState, viewModel, fileSystem, deps.settings)
     GitSetupDialogHost(appState, viewModel, fileSystem, deps.gitSync)
     ConflictResolutionDialogHost(appState, viewModel, deps.gitSync)
@@ -106,6 +106,7 @@ private fun SearchDialogHost(
     searchViewModel: SearchViewModel,
     viewModel: StelekitViewModel,
     loadPageBlocks: (String) -> kotlinx.coroutines.flow.Flow<Either<DomainError, List<dev.stapler.stelekit.model.Block>>>,
+    assetSearch: dev.stapler.stelekit.asset.AssetSearchService? = null,
 ) {
     val indexingProgress by viewModel.indexingProgress.collectAsState()
     SearchDialog(
@@ -117,7 +118,23 @@ private fun SearchDialogHost(
         onCreatePage = { viewModel.navigateToPageByName(it) },
         initialQuery = appState.searchDialogInitialQuery,
         isIndexing = indexingProgress is IndexingState.InProgress,
-        loadPageBlocks = loadPageBlocks
+        loadPageBlocks = loadPageBlocks,
+        assetsSection = assetSearch?.let { service ->
+            { query ->
+                dev.stapler.stelekit.ui.assets.AssetsSearchSection(
+                    query = query,
+                    service = service,
+                    onShowAll = { q ->
+                        viewModel.setSearchDialogVisible(false)
+                        viewModel.navigateTo(Screen.AssetBrowser(q))
+                    },
+                    onOpenAsset = { uuid ->
+                        viewModel.setSearchDialogVisible(false)
+                        viewModel.navigateTo(Screen.AssetDetail(uuid))
+                    },
+                )
+            }
+        },
     )
 }
 
@@ -135,6 +152,11 @@ private fun SettingsDialogHost(
     val developerModeOn = rememberDeveloperModeEnabled()
     SettingsDialog(
         assetIndexing = settings.assetIndexing,
+        assetPlugins = settings.assetPlugins,
+        onViewPipelineLog = {
+            viewModel.setSettingsVisible(false)
+            viewModel.navigateTo(Screen.Logs(dev.stapler.stelekit.ui.components.PIPELINE_LOG_FILTER))
+        },
         visible = appState.shouldShowSettingsDialog(),
         isDeveloperModeEnabled = developerModeOn,
         onDeveloperModeToggle = console?.let { c -> { on: Boolean -> c.developerMode.set(on) } },
@@ -162,7 +184,12 @@ private fun SettingsDialogHost(
         llmCredentialStore = settings.llmCredentialStore,
         llmProviderRegistry = settings.llmProviderRegistry,
         llmSettings = settings.llmSettings,
-        initialCategory = if (appState.llmProviderSettingsVisible) SettingsCategory.LLM_PROVIDERS else SettingsCategory.GENERAL,
+        initialCategory = when {
+            appState.llmProviderSettingsVisible -> SettingsCategory.LLM_PROVIDERS
+            appState.pluginsSettingsRequested -> SettingsCategory.PLUGINS
+            else -> SettingsCategory.GENERAL
+        },
+        scrollToPluginList = appState.pluginsSettingsRequested,
         onLlmCredentialsChange = settings.onLlmCredentialsChange,
         onRebuildVoicePipeline = settings.onRebuildVoicePipeline,
         deviceSttAvailable = settings.deviceSttAvailable,

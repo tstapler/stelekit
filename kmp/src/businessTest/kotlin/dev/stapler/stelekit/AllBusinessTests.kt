@@ -140,7 +140,10 @@ import dev.stapler.stelekit.asset.pipeline.AssetPipelineOomInjectionTest
 import dev.stapler.stelekit.asset.pipeline.AssetPipelineCrashLoopBreakerTest
 import dev.stapler.stelekit.asset.pipeline.DefaultAssetPluginsTest
 import dev.stapler.stelekit.asset.pipeline.OcrPluginTest
+import dev.stapler.stelekit.asset.AssetSearchSqlTest
+import dev.stapler.stelekit.asset.pipeline.AssetPluginsControllerTest
 import dev.stapler.stelekit.asset.pipeline.PluginRegistryTest
+import dev.stapler.stelekit.settings.PluginHostRemovalAuditTest
 import dev.stapler.stelekit.auto.AudiobookNoteFormatterTest
 import dev.stapler.stelekit.auto.AudiobookNoteWriterTest
 import dev.stapler.stelekit.capture.ShareInboxTest
@@ -412,6 +415,9 @@ import org.junit.runners.Suite
     DefaultAssetPluginsTest::class,
     OcrPluginTest::class,
     PluginRegistryTest::class,
+    AssetSearchSqlTest::class,
+    AssetPluginsControllerTest::class,
+    PluginHostRemovalAuditTest::class,
     AudiobookNoteFormatterTest::class,
     AudiobookNoteWriterTest::class,
     AtomicFileRelocationStepTest::class,

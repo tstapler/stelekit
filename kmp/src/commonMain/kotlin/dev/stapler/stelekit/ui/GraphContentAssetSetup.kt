@@ -17,6 +17,7 @@ import dev.stapler.stelekit.asset.AssetIndexingController
 import dev.stapler.stelekit.asset.AssetMoveService
 import dev.stapler.stelekit.asset.IndexingMediaAttachmentService
 import dev.stapler.stelekit.asset.pipeline.AssetPipelineService
+import dev.stapler.stelekit.asset.pipeline.AssetPluginsController
 import dev.stapler.stelekit.asset.pipeline.PauseReason
 import dev.stapler.stelekit.asset.pipeline.PipelineRunMarker
 import dev.stapler.stelekit.asset.pipeline.PluginRegistry
@@ -42,6 +43,7 @@ typealias AssetMover = suspend (AssetEntry, String) -> Either<DomainError, Unit>
  */
 class GraphContentAssetStack(
     val indexing: AssetIndexingController,
+    val plugins: AssetPluginsController,
     val moveAsset: AssetMover?,
     val attachmentService: dev.stapler.stelekit.service.MediaAttachmentService?,
 )
@@ -73,16 +75,21 @@ internal fun rememberGraphContentAssetStack(
     // Plugins are re-derived from the per-plugin settings keys at each drain start; with none set
     // the pipeline never starts and only indexing runs.
     val caps = deps.platformIntegrations.platformCaps
-    val pipeline = remember(repos, deps.platformSettings, caps, effectiveFileSystem, runMarker) {
+    val pluginRegistry = remember(deps.platformSettings, caps) { PluginRegistry(deps.platformSettings, caps) }
+    val pipeline = remember(repos, deps.platformSettings, caps, effectiveFileSystem, runMarker, pluginRegistry) {
         repos.writeActor?.let { actor ->
             AssetPipelineService(
-                PluginRegistry(), repos.assetRepository, actor,
+                pluginRegistry, repos.assetRepository, actor,
                 pluginSource = { defaultAssetPlugins(caps, deps.platformSettings, effectiveFileSystem) },
                 runMarker = runMarker,
             )
         }
     }
     DisposableEffect(pipeline) { onDispose { pipeline?.shutdown() } }
+    val plugins = remember(pluginRegistry, pipeline, indexing) { AssetPluginsController(pluginRegistry, pipeline, indexing, deps.platformSettings, caps.power) }
+    LaunchedEffect(indexing, pluginRegistry) {
+        indexing.enabled.collect { pluginRegistry.setMasterEnabled(it) }
+    }
     DisposableEffect(indexing, pipeline, memoryPressure) {
         val unregister = memoryPressure.register {
             indexing.onMemoryPressure()
@@ -90,10 +97,10 @@ internal fun rememberGraphContentAssetStack(
         }
         onDispose { unregister() }
     }
-    LaunchedEffect(indexing, pipeline) {
-        if (pipeline == null) return@LaunchedEffect
+    DisposableEffect(plugins) { onDispose { plugins.close() } }
+    LaunchedEffect(indexing, plugins) {
         indexing.progress.collect { progress ->
-            if (progress is AssetIndexProgress.Finished && indexing.isActive) pipeline.scheduleBackfill()
+            if (progress is AssetIndexProgress.Finished) plugins.requestBackfill()
         }
     }
 
@@ -108,7 +115,7 @@ internal fun rememberGraphContentAssetStack(
         }
     }
 
-    return remember(indexing, moveService, delegateAttachments, effectiveFileSystem, graphIoStack, appState) {
+    return remember(indexing, plugins, moveService, delegateAttachments, effectiveFileSystem, graphIoStack, appState) {
         val mover: AssetMover? = if (indexing.toggleVisible) {
             { asset, subfolder ->
                 val notes = appState.value.currentNotesPath
@@ -123,6 +130,7 @@ internal fun rememberGraphContentAssetStack(
         }
         GraphContentAssetStack(
             indexing = indexing,
+            plugins = plugins,
             moveAsset = mover,
             attachmentService = delegateAttachments?.let { IndexingMediaAttachmentService(it, indexing) },
         )

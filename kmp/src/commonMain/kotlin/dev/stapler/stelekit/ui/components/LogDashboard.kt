@@ -40,10 +40,12 @@ import kotlinx.coroutines.launch
 fun LogDashboard(
     modifier: Modifier = Modifier,
     diagnostics: (suspend () -> String)? = null,
+    /** Pre-fills the search box, e.g. [PIPELINE_LOG_FILTER] from Settings > Plugins "View log". */
+    initialFilter: String? = null,
 ) {
     val logs by LogManager.logs.collectAsState()
     var filterLevel by remember { mutableStateOf<LogLevel?>(null) }
-    var searchQuery by remember { mutableStateOf("") }
+    var searchQuery by remember(initialFilter) { mutableStateOf(initialFilter.orEmpty()) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val shareProvider = rememberShareProvider()
@@ -350,3 +352,6 @@ private fun getLevelColor(level: LogLevel): Color {
         LogLevel.ERROR -> scheme.error
     }
 }
+
+/** Log tag prefix shared by the asset pipeline classes; the "View log" filter for pipeline lines. */
+const val PIPELINE_LOG_FILTER: String = "AssetPipeline"

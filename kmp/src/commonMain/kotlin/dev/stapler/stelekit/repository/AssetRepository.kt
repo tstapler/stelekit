@@ -13,6 +13,12 @@ interface AssetRepository {
     fun getAssets(limit: Int, offset: Int): Flow<Either<DomainError, List<AssetEntry>>>
     fun getAssetsByMediaType(mediaType: AssetMediaType, limit: Int, offset: Int): Flow<Either<DomainError, List<AssetEntry>>>
     fun searchAssets(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<AssetEntry>>>
+    /** Bounded snippets (<= 50 uuids, <= 240 characters each) for rows returned by [searchAssets]. */
+    suspend fun getSearchSnippets(
+        query: String,
+        uuids: List<AssetUuid>,
+    ): Either<DomainError, Map<AssetUuid, dev.stapler.stelekit.asset.AssetSearchPreview>>
+
     fun getUnprocessedAssets(limit: Int, offset: Int): Flow<Either<DomainError, List<AssetEntry>>>
     suspend fun countUnprocessedAssets(): Either<DomainError, Long>
     suspend fun countAssets(): Either<DomainError, Long>
@@ -55,6 +61,9 @@ interface AssetRepository {
     suspend fun markMlProcessed(uuid: AssetUuid, attemptedAtMs: Long): Either<DomainError, Unit>
     @DirectRepositoryWrite
     suspend fun markMlFailed(uuid: AssetUuid, attemptedAtMs: Long): Either<DomainError, Unit>
+    /** Clears the failed flag on every failed row so the next drain tries them again. */
+    @DirectRepositoryWrite
+    suspend fun resetFailedAssets(): Either<DomainError, Unit>
     @DirectRepositoryWrite
     suspend fun updatePageUuids(uuid: AssetUuid, pageUuids: List<String>): Either<DomainError, Unit>
     @DirectRepositoryWrite

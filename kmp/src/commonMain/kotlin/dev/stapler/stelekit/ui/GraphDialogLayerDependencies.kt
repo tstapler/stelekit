@@ -82,6 +82,7 @@ data class SettingsDialogDeps(
     val captureGraphs: List<dev.stapler.stelekit.model.GraphInfo> = emptyList(),
     // Interim Settings > Plugins "Asset indexing" row (Task 4.1d); null hides it.
     val assetIndexing: dev.stapler.stelekit.asset.AssetIndexingController? = null,
+    val assetPlugins: dev.stapler.stelekit.asset.pipeline.AssetPluginsController? = null,
     /** Scheduled-sync switch, interval and status; null hides the Settings section (no git on this platform). */
     val scheduledSync: dev.stapler.stelekit.ui.components.settings.ScheduledSyncSettingsState? = null,
 )
@@ -137,4 +138,6 @@ data class GraphDialogLayerDeps(
     val onDebugStateChange: (DebugMenuState) -> Unit = {},
     /** Entries appended to the command palette by hosts that own a feature (e.g. "Copy pages to..."). */
     val extraCommands: List<Command> = emptyList(),
+    /** Backs the global-search Assets section; null (release variants, no asset stack) hides it. */
+    val assetSearch: dev.stapler.stelekit.asset.AssetSearchService? = null,
 )

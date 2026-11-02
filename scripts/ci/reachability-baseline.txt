@@ -21,6 +21,7 @@ InferenceBridge	kmp/src/commonMain/kotlin/dev/stapler/stelekit/search/VectorSear
 InferenceWorker	kmp/src/commonMain/kotlin/dev/stapler/stelekit/search/VectorSearch.kt	17
 IosMediaAttachmentService	kmp/src/iosMain/kotlin/dev/stapler/stelekit/service/IosMediaAttachmentService.kt	-
 IosPdfTextExtractor	kmp/src/iosMain/kotlin/dev/stapler/stelekit/platform/ml/IosPdfTextExtractor.kt	14
+JsPluginBridge	kmp/src/commonMain/kotlin/dev/stapler/stelekit/platform/PluginSystem.kt	19
 LfsPointerSniffer	kmp/src/commonMain/kotlin/dev/stapler/stelekit/git/lfs/LfsPointer.kt	-
 LidarHardwareCheck	kmp/src/iosMain/kotlin/dev/stapler/stelekit/platform/sensor/IOSLidarDepthProvider.kt	-
 LruWeigher	kmp/src/commonMain/kotlin/dev/stapler/stelekit/cache/LruCache.kt	-
