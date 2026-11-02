@@ -32,10 +32,8 @@ import dev.stapler.stelekit.logging.Logger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -232,38 +230,7 @@ class GitSyncService(
     /** Runs one scheduled-sync tick now, even while paused; success clears the pause. */
     suspend fun resumeScheduledSync() = periodicDriver.resume()
 
-    /**
-     * Story 3.4.2: the pending auto-retry scheduled by [scheduleRateLimitRetry] after a
-     * [DomainError.GitError.RateLimited] result — reuses the same "own scope, never
-     * rememberCoroutineScope()" pattern already established by [periodicSyncJob]/[startPeriodicSync],
-     * so [shutdown] cancels it for free via [scope]'s own cancellation.
-     */
-    @kotlin.concurrent.Volatile private var rateLimitRetryJob: Job? = null
-
-    /**
-     * Task 3.4.2a: schedules a one-shot re-invocation of [retryOperation] after
-     * [retryAfterSeconds] (or [DEFAULT_RATE_LIMIT_RETRY_SECONDS] when the header was absent —
-     * matching `WasmSectionSyncService.githubFetch`'s `(1 shl retryCount).coerceAtMost(60)`
-     * fallback precedent). Cancels any previously-scheduled retry first, so a second rate-limit
-     * hit (or a manual sync trigger via [sync]/[fetchOnly]'s own cancel-at-top) never results in
-     * two overlapping scheduled retries for this instance.
-     */
-    private fun scheduleRateLimitRetry(
-        graphId: String,
-        retryAfterSeconds: Int?,
-        retryOperation: suspend (String) -> Unit,
-    ) {
-        rateLimitRetryJob?.cancel()
-        rateLimitRetryJob = scope.launch {
-            delay((retryAfterSeconds ?: DEFAULT_RATE_LIMIT_RETRY_SECONDS) * 1000L)
-            // Clear before invoking retryOperation — sync()/fetchOnly() cancel rateLimitRetryJob
-            // at their own top as a "manual trigger supersedes a pending retry" guard. If left
-            // pointing at this currently-running job, that cancel-at-top would self-cancel this
-            // very coroutine, silently aborting the retry at its first suspension point.
-            rateLimitRetryJob = null
-            retryOperation(graphId)
-        }
-    }
+    private val rateLimitRetry = RateLimitRetry(scope)
 
     /** Publishes the state for a failed git step: rate limit (with auto-retry), expired credentials, or the plain error. */
     private fun publishFailure(
@@ -274,7 +241,7 @@ class GitSyncService(
     ) {
         _syncState.value = when {
             err is DomainError.GitError.RateLimited -> {
-                scheduleRateLimitRetry(graphId, err.retryAfterSeconds, retry)
+                rateLimitRetry.schedule(graphId, err.retryAfterSeconds, retry)
                 SyncState.RateLimited(err.retryAfterSeconds)
             }
             err is DomainError.GitError.CredentialExpired ||
@@ -313,7 +280,7 @@ class GitSyncService(
             try {
 
             // Task 3.4.2c: a manual sync trigger always supersedes any pending scheduled retry.
-            rateLimitRetryJob?.cancel()
+            rateLimitRetry.cancel()
             val liftMassChange = liftMassChangeGuard && trigger == SyncTrigger.Manual
 
             // 1. Network check
@@ -549,7 +516,7 @@ class GitSyncService(
             try {
 
             // Task 3.4.2c: a manual fetchOnly trigger always supersedes any pending scheduled retry.
-            rateLimitRetryJob?.cancel()
+            rateLimitRetry.cancel()
 
             logger.info("sync/fetch start graphId=$graphId")
             if (!isOnline()) {
@@ -803,7 +770,7 @@ class GitSyncService(
 
     /**
      * Shuts down this service, cancelling all coroutines — including any pending
-     * [rateLimitRetryJob], since it is a child of [scope] and was never a
+     * [rateLimitRetry], since it is a child of [scope] and was never a
      * `rememberCoroutineScope()` (Task 3.4.2d).
      */
     fun shutdown() {
@@ -812,10 +779,10 @@ class GitSyncService(
 
     companion object {
         /**
-         * Task 3.4.2a: fallback delay (seconds) for [scheduleRateLimitRetry] when a
+         * Task 3.4.2a: fallback delay (seconds) for [RateLimitRetry] when a
          * [DomainError.GitError.RateLimited] carries no `retryAfterSeconds` — matches the existing
          * `WasmSectionSyncService.githubFetch` exponential-backoff precedent's cap of 60s.
          */
-        const val DEFAULT_RATE_LIMIT_RETRY_SECONDS = 60
+        const val DEFAULT_RATE_LIMIT_RETRY_SECONDS = RateLimitRetry.DEFAULT_SECONDS
     }
 }
