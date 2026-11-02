@@ -114,7 +114,6 @@ kt_jvm_library(
         "dev/stapler/stelekit/git/lfs/GitAttributesMatcherPropertyTest.kt",
         "dev/stapler/stelekit/git/lfs/GitAttributesMatcherTest.kt",
         "dev/stapler/stelekit/git/lfs/GitAttributesParserTest.kt",
-        "dev/stapler/stelekit/git/lfs/GitWildmatchTest.kt",
         "dev/stapler/stelekit/git/lfs/LfsArbs.kt",
         "dev/stapler/stelekit/git/lfs/LfsGuardPropertyTest.kt",
         "dev/stapler/stelekit/git/lfs/LfsGuardTest.kt",

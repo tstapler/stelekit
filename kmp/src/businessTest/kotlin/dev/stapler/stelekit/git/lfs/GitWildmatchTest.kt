@@ -12,7 +12,10 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
-/** Vectors follow git's `wildmatch.c` semantics (the cases in git's t3070-wildmatch). */
+/**
+ * Vectors follow git's `wildmatch.c` semantics (the cases in git's t3070-wildmatch). Lives in businessTest,
+ * not commonTest, because `GitWildmatch` is `internal` and only businessTest is an associate of the main library under Bazel.
+ */
 class GitWildmatchTest {
     private fun check(expected: Boolean, pattern: String, text: String, pathname: Boolean = true) =
         assertEquals(expected, GitWildmatch.matches(pattern, text, pathname), "pattern=[$pattern] text=[$text] pathname=$pathname")
