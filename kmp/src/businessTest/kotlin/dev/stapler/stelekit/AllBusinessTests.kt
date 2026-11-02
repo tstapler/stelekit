@@ -276,6 +276,11 @@ import dev.stapler.stelekit.git.GitSyncServicePublishFailureTest
 import dev.stapler.stelekit.git.GitSyncServiceAutoCommitTest
 import dev.stapler.stelekit.git.GitSyncServiceScheduledSyncTest
 import dev.stapler.stelekit.git.SyncSafetyConfirmTest
+import dev.stapler.stelekit.git.BannerPrecedenceTest
+import dev.stapler.stelekit.git.ColdSyncRunnerTest
+import dev.stapler.stelekit.git.StalenessChipStateTest
+import dev.stapler.stelekit.git.SyncNotificationLogicTest
+import dev.stapler.stelekit.git.SyncStalenessStoreTest
 import dev.stapler.stelekit.ui.FirstSyncPreviewLoaderTest
 import dev.stapler.stelekit.ui.GitSyncCoordinatorTest
 import dev.stapler.stelekit.git.ScheduledSyncPolicyTest
@@ -570,6 +575,11 @@ import org.junit.runners.Suite
     GitSyncServiceScheduledSyncTest::class,
     GitSyncServiceAutoCommitTest::class,
     SyncSafetyConfirmTest::class,
+    BannerPrecedenceTest::class,
+    ColdSyncRunnerTest::class,
+    StalenessChipStateTest::class,
+    SyncNotificationLogicTest::class,
+    SyncStalenessStoreTest::class,
     FirstSyncPreviewLoaderTest::class,
     GitSyncCoordinatorTest::class,
     ScheduledSyncPolicyTest::class,

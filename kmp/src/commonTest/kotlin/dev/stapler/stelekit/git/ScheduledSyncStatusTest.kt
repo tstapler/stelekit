@@ -42,6 +42,22 @@ class ScheduledSyncStatusTest {
     }
 
     @Test
+    fun `line should say checked, never synced, when only fetches have run`() {
+        val now = 10_000_000L
+        val fetched = now - 4 * minute
+        val onlyFetched = ScheduledSyncStatus(running = true, lastFetchedAtMs = fetched, nextAtMs = fetched + 15 * minute)
+        assertEquals(ScheduledSyncLine.FetchedOnly(lastFetchedMinutesAgo = 4, nextInMinutes = 11), scheduledSyncLine(true, onlyFetched, now, false))
+
+        val synced = now - 20 * minute
+        val both = onlyFetched.copy(lastSuccessAtMs = synced)
+        assertEquals(
+            ScheduledSyncLine.Checked(lastCheckedMinutesAgo = 20, nextInMinutes = 11),
+            scheduledSyncLine(true, both, now, false),
+            "Last synced keeps the last real sync time even when newer fetches ran",
+        )
+    }
+
+    @Test
     fun `line should be not scheduled when off and stopping only after the delay while a tick runs`() {
         val running = ScheduledSyncStatus(tickInFlight = true)
         assertEquals(ScheduledSyncLine.NotScheduled, scheduledSyncLine(false, running, 0, stoppingVisible = false))

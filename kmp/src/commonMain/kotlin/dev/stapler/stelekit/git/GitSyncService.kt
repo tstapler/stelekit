@@ -89,6 +89,12 @@ class GitSyncService(
 ) {
     private val logger = Logger("GitSyncService")
     private val markerGuard = ConflictMarkerGuard(fileSystem)
+    private val stalenessTracker = StalenessTracker.create(settings, graphId, wallClockMs)
+
+    /** Persisted last-merged / behind-count facts behind the sync chip, the banner and the notification. */
+    val staleness: StateFlow<SyncStaleness> = stalenessTracker.state
+
+    private val guardedAbort = GuardedMergeAbort.create(gitRepository, fileSystem, wallClockMs)
     private val guards = GitChangeGuards(gitRepository, settings)
     private val lfsStaging = LfsGuardedStaging.create(gitRepository, fileSystem, settings, graphId, lfsCapabilities, lfsGuardCoordinator)
     private val firstSyncConfirmation: FirstSyncConfirmation? = settings?.let { FirstSyncConfirmation(it) }
@@ -96,15 +102,15 @@ class GitSyncService(
     /** Applies user-confirmed branch repairs; see [repairBranch]. */
     val branchRepair: BranchRepairService = BranchRepairService(configRepository, firstSyncConfirmation)
 
-    private val _firstSyncReviewPending = MutableStateFlow(firstSyncConfirmation?.isReviewPending(graphId) ?: false)
+    private val reviewState = FirstSyncReviewState(firstSyncConfirmation, graphId)
 
-    /** True after a branch repair until a manual sync succeeds for the new branch (drives the "Review first sync" badge). */
-    val firstSyncReviewPending: StateFlow<Boolean> = _firstSyncReviewPending.asStateFlow()
+    /** True while a review is owed (see [FirstSyncReviewState]); drives the "Review first sync" badge. */
+    val firstSyncReviewPending: StateFlow<Boolean> = reviewState.pending
 
     /** Applies [proposal] (no sync is run) and refreshes [firstSyncReviewPending]. */
     suspend fun repairBranch(proposal: BranchRepairProposal): BranchRepairResult =
         branchRepair.apply(proposal).also {
-            _firstSyncReviewPending.value = firstSyncConfirmation?.isReviewPending(graphId) ?: false
+            reviewState.onRepaired()
             // The missing-branch error described the old setting; a stale red badge would reopen a dead repair.
             val current = _syncState.value
             if (it is BranchRepairResult.Repaired && current is SyncState.Error &&
@@ -165,6 +171,7 @@ class GitSyncService(
     suspend fun refreshLocalStatus(graphId: String) {
         val config = configRepository.getConfig(graphId).getOrNull() ?: return
         _localStatus.value = gitRepository.status(config).getOrNull()
+        reviewState.refresh(config)
     }
 
     /**
@@ -197,6 +204,8 @@ class GitSyncService(
         // Populate localStatus immediately on construction (graph open) rather than waiting for
         // the first periodic poll tick or manual sync — see refreshLocalStatus's doc.
         if (graphId.isNotEmpty()) {
+            // The app is open now, so a leftover "app closed" fetch-only marker from the worker no longer applies.
+            stalenessTracker.onServiceStarted()
             scope.launch { refreshLocalStatus(graphId) }
         }
     }
@@ -207,6 +216,7 @@ class GitSyncService(
         isOnline, wallClockMs, isAppOwnedPath, _syncState,
         fullSync = { g -> sync(g, SyncTrigger.Automatic) },
         fetch = { g -> fetchOnly(g) },
+        staleness = stalenessTracker.store,
     )
 
     @kotlin.concurrent.Volatile private var periodicGraphId: String = graphId
@@ -505,8 +515,10 @@ class GitSyncService(
                 autoMergedPaths = autoMergedPaths,
             )
             recordLastSyncAt(success.lastSyncAt)
+            guardedAbort.clearRecovery(graphId)
+            stalenessTracker.merged(success.lastSyncAt)
             firstSyncConfirmation?.confirm(graphId, config.remoteName, config.remoteBranch)
-            _firstSyncReviewPending.value = false
+            reviewState.onConfirmed()
             // Non-fatal: the held files need the user's attention, so the badge keeps showing them instead of fading.
             val lfsAttention = lfsHeld + gitRepository.lastPushLfsViolations
             _syncState.value = if (lfsAttention.isEmpty()) success else SyncState.LfsActionRequired(lfsAttention)
@@ -566,11 +578,13 @@ class GitSyncService(
             when (val result = gitRepository.fetch(config)) {
                 is Either.Left -> {
                     val err = result.value
+                    stalenessTracker.failed(err)
                     publishFailure(graphId, err, config.authType == GitAuthType.GITHUB_OAUTH) { g -> fetchOnly(g) }
                     err.left()
                 }
                 is Either.Right -> {
                     val fetchResult = result.value
+                    stalenessTracker.fetched(if (fetchResult.hasRemoteChanges) fetchResult.remoteCommitCount else 0)
                     _syncState.value = if (fetchResult.hasRemoteChanges) {
                         SyncState.MergeAvailable(fetchResult.remoteCommitCount)
                     } else {
@@ -748,6 +762,7 @@ class GitSyncService(
         refreshLocalStatus(graphId)
         val successAt = Clock.System.now().toEpochMilliseconds()
         recordLastSyncAt(successAt)
+        stalenessTracker.merged(successAt)
         _syncState.value = SyncState.Success(
             localCommitsMade = 0,
             remoteCommitsMerged = 1,
@@ -760,7 +775,7 @@ class GitSyncService(
      * Aborts an in-progress git merge, leaving the repository in its pre-merge state.
      * Call this when the user cancels conflict resolution.
      */
-    suspend fun abortActiveMerge(graphId: String): Either<DomainError.GitError, Unit> =
+    suspend fun abortActiveMerge(graphId: String, confirm: suspend (AbortPreservation) -> Boolean = { true }): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
             val config = when (val result = configRepository.getConfig(graphId)) {
                 is Either.Left -> return@withContext DomainError.GitError.CommitFailed(
@@ -769,7 +784,7 @@ class GitSyncService(
                 is Either.Right -> result.value
             } ?: return@withContext Unit.right()
 
-            gitRepository.abortMerge(config).also { result ->
+            guardedAbort.abort(graphId, config, confirm).also { result ->
                 if (result.isRight()) _syncState.value = SyncState.Idle
             }
         }

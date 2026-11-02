@@ -110,3 +110,31 @@ internal fun MassChangeConfirmDialog(
         dismissButton = { TextButton(onClick = onCancel) { Text("Cancel") } },
     )
 }
+
+/**
+ * Shown before an abort when the reset would discard edits that are not part of the merge: they are copied
+ * aside first and put back afterwards, so this is a confirmation, not a warning of loss.
+ */
+@Composable
+internal fun AbortPreservationDialog(
+    paths: List<String>,
+    recoveryDir: String,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text("Keep your edits while aborting?") },
+        text = {
+            Column(Modifier.fillMaxWidth()) {
+                Text("These files have edits that are not part of the merge. They are copied to $recoveryDir and restored after the abort:")
+                Spacer(Modifier.height(8.dp))
+                Column(Modifier.heightIn(max = 160.dp).verticalScroll(rememberScrollState())) {
+                    paths.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
+                }
+            }
+        },
+        confirmButton = { Button(onClick = onConfirm) { Text("Abort and keep edits") } },
+        dismissButton = { TextButton(onClick = onCancel) { Text("Cancel") } },
+    )
+}

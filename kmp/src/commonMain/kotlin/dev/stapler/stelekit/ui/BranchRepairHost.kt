@@ -21,6 +21,7 @@ import dev.stapler.stelekit.git.BranchRepairResult
 import dev.stapler.stelekit.git.SyncDetailsTarget
 import dev.stapler.stelekit.git.detailsTarget
 import dev.stapler.stelekit.git.model.SyncState
+import dev.stapler.stelekit.ui.screens.git.AbortPreservationDialog
 import dev.stapler.stelekit.ui.screens.git.BranchRepairSheet
 import dev.stapler.stelekit.ui.screens.git.FirstSyncPreviewLoader
 import dev.stapler.stelekit.ui.screens.git.FirstSyncReviewDialog
@@ -140,6 +141,16 @@ internal fun BranchRepairHost(appState: AppState, viewModel: StelekitViewModel, 
                 onClose = viewModel::dismissRepairNeeded,
             )
         }
+    }
+
+    val abortPrompt by viewModel.abortPrompt.collectAsState()
+    abortPrompt?.let { prompt ->
+        AbortPreservationDialog(
+            paths = prompt.paths,
+            recoveryDir = prompt.recoveryDir,
+            onConfirm = { viewModel.answerAbortPrompt(true) },
+            onCancel = { viewModel.answerAbortPrompt(false) },
+        )
     }
 
     if (appState.massChangeConfirmVisible) {

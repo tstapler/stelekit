@@ -24,6 +24,8 @@ sealed interface ScheduledSyncLine {
     data object CheckInProgress : ScheduledSyncLine
     data object Offline : ScheduledSyncLine
     data class Checked(val lastCheckedMinutesAgo: Long, val nextInMinutes: Long?) : ScheduledSyncLine
+    /** Only fetches have run (SAF graph or merge withheld): never worded as "synced". */
+    data class FetchedOnly(val lastFetchedMinutesAgo: Long, val nextInMinutes: Long?) : ScheduledSyncLine
     data class Paused(val failures: Int, val lastFailure: String?) : ScheduledSyncLine
 }
 
@@ -42,6 +44,10 @@ fun scheduledSyncLine(
     status.tickInFlight -> ScheduledSyncLine.CheckInProgress
     status.lastSkip == SkipReason.Busy -> ScheduledSyncLine.CheckInProgress
     status.lastSkip == SkipReason.Offline -> ScheduledSyncLine.Offline
+    status.lastSuccessAtMs == null && status.lastFetchedAtMs != null -> ScheduledSyncLine.FetchedOnly(
+        lastFetchedMinutesAgo = minutesBetween(status.lastFetchedAtMs, nowMs),
+        nextInMinutes = status.nextAtMs?.let { minutesBetween(nowMs, it) },
+    )
     status.lastSuccessAtMs == null -> ScheduledSyncLine.NeverChecked
     else -> ScheduledSyncLine.Checked(
         lastCheckedMinutesAgo = minutesBetween(status.lastSuccessAtMs, nowMs),

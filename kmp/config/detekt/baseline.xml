@@ -38,6 +38,7 @@
     <ID>LargeClass:BlockStateManager.kt$BlockStateManager : BlockEditingPortBlockStructurePortBlockSelectionPortBlockNavigationPort</ID>
     <ID>LargeClass:DatabaseWriteActor.kt$DatabaseWriteActor</ID>
     <ID>LargeClass:DemoFileSystem.kt$DemoFileSystem : FileSystem</ID>
+    <ID>LargeClass:GitSyncService.kt$GitSyncService</ID>
     <ID>LargeClass:GraphLoader.kt$GraphLoader : GraphLoaderPort</ID>
     <ID>LargeClass:GraphManager.kt$GraphManager : StorageLocationStore</ID>
     <ID>LargeClass:GraphWriter.kt$GraphWriter : GraphWriterPort</ID>

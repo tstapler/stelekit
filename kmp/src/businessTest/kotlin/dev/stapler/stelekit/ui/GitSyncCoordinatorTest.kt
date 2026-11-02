@@ -18,7 +18,9 @@ import dev.stapler.stelekit.git.RepositoryHealth
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.git.testsupport.StubConfigRepository
+import dev.stapler.stelekit.db.sidecar.FakeFileSystem
 import dev.stapler.stelekit.git.testsupport.StubFileSystem
+import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.git.testsupport.StubGitRepository
 import dev.stapler.stelekit.git.testsupport.sampleConfig
 import dev.stapler.stelekit.platform.NetworkMonitor
@@ -45,6 +47,14 @@ class GitSyncCoordinatorTest {
         var health = RepositoryHealth.Clean
         var deletions = DeletionSummary.None
         val calls = mutableListOf<String>()
+        val workingFiles = mutableMapOf<String, ByteArray>()
+
+        override suspend fun editsAtRiskOfReset(config: GitConfig): Either<DomainError.GitError, List<String>> = workingFiles.keys.sorted().right()
+        override suspend fun readWorkingBytes(config: GitConfig, path: String): ByteArray? = workingFiles[path]
+        override suspend fun writeWorkingBytes(config: GitConfig, path: String, bytes: ByteArray): Boolean {
+            workingFiles[path] = bytes
+            return true
+        }
 
         override suspend fun status(config: GitConfig): Either<DomainError.GitError, GitStatus> =
             GitStatus(false, emptyList(), emptyList()).right()
@@ -64,15 +74,16 @@ class GitSyncCoordinatorTest {
 
         override suspend fun abortMerge(config: GitConfig): Either<DomainError.GitError, Unit> {
             calls += "abort"
+            workingFiles.keys.toList().forEach { workingFiles[it] = "reset".encodeToByteArray() }
             health = RepositoryHealth.Clean
             return Unit.right()
         }
     }
 
-    private class Harness(val spy: Spy) {
+    private class Harness(val spy: Spy, fs: FileSystem = StubFileSystem()) {
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val uiState = MutableStateFlow(AppState())
-        val service: GitSyncService = StubFileSystem().let { fs ->
+        val service: GitSyncService = fs.let { fs ->
             GitSyncService(
                 gitRepository = spy,
                 graphLoader = GraphLoader(fs, InMemoryPageRepository(), InMemoryBlockRepository()),
@@ -148,6 +159,45 @@ class GitSyncCoordinatorTest {
         eventually("dialog closed") { !h.uiState.value.repairNeededVisible }
         assertEquals(SyncState.Idle, h.service.syncState.value)
         assertTrue(h.service.sync(graphId).isRight(), "the repository is safe again, so sync proceeds")
+        h.close()
+    }
+
+    @Test
+    fun `abortInterruptedMerge_should_ListUnrelatedEditsAndAbortOnlyAfterConfirmation_ThenRestoreThem`() = runBlocking {
+        val spy = Spy().apply { health = RepositoryHealth(false, "MERGING"); workingFiles["notes.md"] = "mine".encodeToByteArray() }
+        val h = Harness(spy, FakeFileSystem())
+        h.service.sync(graphId)
+        eventually("mirrored") { h.coordinator.syncState.value is SyncState.Error }
+        h.coordinator.safety.openSyncDetails()
+
+        h.coordinator.safety.abortInterruptedMerge()
+        eventually("prompt shown") { h.coordinator.safety.abortPrompt.value != null }
+        assertEquals(listOf("notes.md"), h.coordinator.safety.abortPrompt.value?.paths)
+        assertTrue("abort" !in spy.calls, "nothing is reset before the user confirms")
+
+        h.coordinator.safety.answerAbortPrompt(true)
+        eventually("abort ran") { "abort" in spy.calls }
+        eventually("dialog closed") { !h.uiState.value.repairNeededVisible }
+        assertEquals("mine", spy.workingFiles.getValue("notes.md").decodeToString(), "the edit is back after the reset")
+        assertEquals(null, h.coordinator.safety.abortPrompt.value)
+        h.close()
+    }
+
+    @Test
+    fun `abortInterruptedMerge_should_LeaveTheMergeAndTheDialogInPlace_WhenTheUserCancels`() = runBlocking {
+        val spy = Spy().apply { health = RepositoryHealth(false, "MERGING"); workingFiles["notes.md"] = "mine".encodeToByteArray() }
+        val h = Harness(spy, FakeFileSystem())
+        h.service.sync(graphId)
+        eventually("mirrored") { h.coordinator.syncState.value is SyncState.Error }
+        h.coordinator.safety.openSyncDetails()
+
+        h.coordinator.safety.abortInterruptedMerge()
+        eventually("prompt shown") { h.coordinator.safety.abortPrompt.value != null }
+        h.coordinator.safety.answerAbortPrompt(false)
+
+        eventually("prompt cleared") { h.coordinator.safety.abortPrompt.value == null }
+        assertTrue("abort" !in spy.calls)
+        assertTrue(h.uiState.value.repairNeededVisible, "the dialog stays so the user can choose again")
         h.close()
     }
 

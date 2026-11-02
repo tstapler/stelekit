@@ -38,6 +38,8 @@ import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.platform.security.CredentialStore
 import dev.stapler.stelekit.git.AndroidGitRepository
 import dev.stapler.stelekit.git.GitCloneWorker
+import dev.stapler.stelekit.git.NotificationTapRouter
+import dev.stapler.stelekit.git.SyncNotifier
 import dev.stapler.stelekit.git.GitShadowWorktree
 import dev.stapler.stelekit.git.GitSyncBusyCounter
 import dev.stapler.stelekit.git.AndroidBackgroundRestrictionProbe
@@ -85,6 +87,9 @@ class MainActivity : ComponentActivity() {
      * deep-link effect below has switched to the graph and opened Git Setup at Step 5 for it.
      */
     private var pendingGitSetupGraphId by mutableStateOf<String?>(null)
+
+    /** Graph id and display name from the updates-waiting notification tap; consumed by the routing effect below. */
+    private var pendingSyncStatus by mutableStateOf<Pair<String, String>?>(null)
     private var pendingFolderPick: CompletableDeferred<String?>? = null
     private var pendingMicPermission: CompletableDeferred<Boolean>? = null
     private var pendingCameraPermission: CompletableDeferred<Boolean>? = null
@@ -211,6 +216,7 @@ class MainActivity : ComponentActivity() {
         // Story 4.1.5: cold-start deep link from a GitCloneWorker notification tap — see
         // pendingGitSetupGraphId's kdoc. onNewIntent handles the warm-start case below.
         pendingGitSetupGraphId = intent.getStringExtra(GitCloneWorker.EXTRA_OPEN_GIT_SETUP_GRAPH_ID)
+        pendingSyncStatus = syncStatusTapOf(intent)
 
         // Re-wire camera provider with this Activity's runtime permission launcher.
         // SteleKitApplication sets a no-callback provider at process start; the callback
@@ -441,6 +447,31 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            // Updates-waiting notification tap: routed by NotificationTapRouter once the target graph's
+            // ViewModel exists; never starts a sync.
+            LaunchedEffect(pendingSyncStatus, activeViewModel, appGm) {
+                val tap = pendingSyncStatus
+                val vm = activeViewModel
+                val gm = appGm
+                if (tap != null && vm != null && gm != null) {
+                    val known = gm.graphRegistry.value.graphIds.map { it.value }.toSet()
+                    if (tap.first in known && gm.getActiveGraphId()?.value != tap.first) {
+                        gm.switchGraph(GraphId(tap.first))
+                    } else {
+                        vm.openSyncDestination(
+                            NotificationTapRouter.route(
+                                intentGraphId = tap.first,
+                                intentGraphName = tap.second,
+                                knownGraphIds = known,
+                                firstSyncUnconfirmed = { vm.firstSyncReviewPending.value },
+                                behindCount = { vm.syncStaleness.value?.behindCount ?: 0 },
+                            ),
+                        )
+                        pendingSyncStatus = null
+                    }
+                }
+            }
+
             androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize()) {
             val copyHost = androidx.compose.runtime.remember {
                 dev.stapler.stelekit.ui.screens.copy.copyHostConfigFor(
@@ -509,6 +540,7 @@ class MainActivity : ComponentActivity() {
         intent.getStringExtra(GitCloneWorker.EXTRA_OPEN_GIT_SETUP_GRAPH_ID)?.let {
             pendingGitSetupGraphId = it
         }
+        syncStatusTapOf(intent)?.let { pendingSyncStatus = it }
         // Handle OAuth 2.0 deep-link callback: com.stelekit.app:/oauth2redirect?code=...
         val data = intent.data
         if (data?.scheme == "com.stelekit.app" && data.path == "/oauth2redirect") {
@@ -639,3 +671,8 @@ internal fun resolveGitSetupDeepLinkAction(
         GitSetupDeepLinkAction.OpenStep5
     }
 }
+
+private fun syncStatusTapOf(intent: Intent): Pair<String, String>? =
+    intent.getStringExtra(SyncNotifier.EXTRA_OPEN_SYNC_STATUS_GRAPH_ID)?.let {
+        it to intent.getStringExtra(SyncNotifier.EXTRA_OPEN_SYNC_STATUS_GRAPH_NAME).orEmpty()
+    }

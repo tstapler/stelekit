@@ -22,6 +22,7 @@ import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.platform.security.CredentialAccess
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -201,7 +202,7 @@ class GitSyncServiceScheduledSyncTest {
 
         val outcome = svc.scheduled.run("test-graph")
 
-        assertEquals(TickOutcome.Success, outcome, "fetched; the merge was withheld")
+        assertEquals(TickOutcome.Fetched, outcome, "fetched; the merge was withheld")
         assertEquals(listOf("health", "fetch"), h.spy.calls)
         assertEquals(SyncState.Error(DomainError.GitError.RepairNeeded("MERGING")), svc.syncState.value)
         svc.shutdown()
@@ -226,7 +227,7 @@ class GitSyncServiceScheduledSyncTest {
 
         val outcome = svc.scheduled.run("test-graph")
 
-        assertEquals(TickOutcome.Success, outcome)
+        assertEquals(TickOutcome.Fetched, outcome)
         assertEquals(emptyList(), h.spy.mutatingCalls())
         assertEquals(1, h.spy.calls.count { it == "fetch" })
         svc.shutdown()
@@ -249,7 +250,7 @@ class GitSyncServiceScheduledSyncTest {
         h.config = h.config.copy(remoteBranch = "master")
         val svc = h.service()
 
-        assertEquals(TickOutcome.Success, svc.scheduled.run("test-graph"))
+        assertEquals(TickOutcome.Fetched, svc.scheduled.run("test-graph"))
         assertEquals(emptyList(), h.spy.mutatingCalls())
         svc.shutdown()
     }
@@ -260,7 +261,7 @@ class GitSyncServiceScheduledSyncTest {
         FirstSyncConfirmation(h.settings).markReviewPending("test-graph", "main")
         val svc = h.service()
 
-        assertEquals(TickOutcome.Success, svc.scheduled.run("test-graph"))
+        assertEquals(TickOutcome.Fetched, svc.scheduled.run("test-graph"))
         svc.shutdown()
     }
 
@@ -272,7 +273,7 @@ class GitSyncServiceScheduledSyncTest {
             h.spy.remoteChanges = true
             val svc = h.service()
 
-            assertEquals(TickOutcome.Success, svc.scheduled.run("test-graph"))
+            assertEquals(TickOutcome.Fetched, svc.scheduled.run("test-graph"))
 
             assertEquals(1, h.spy.calls.count { it == "fetch" })
             assertEquals(emptyList(), h.spy.mutatingCalls())
@@ -320,12 +321,66 @@ class GitSyncServiceScheduledSyncTest {
     }
 
     @Test
+    fun `a merged sync records lastMerged and zero behind while a fetch-only tick records only the fetch`() = runBlocking {
+        val h = Harness(appOwned = { false }).also { it.confirmFirstSync() }
+        h.spy.remoteChanges = true
+        val saf = h.service()
+
+        assertEquals(TickOutcome.Fetched, saf.scheduled.run("test-graph"))
+        val afterFetch = saf.staleness.value
+        assertEquals(2, afterFetch.behindCount)
+        assertEquals(null, afterFetch.lastMergedAtMs, "a fetch is not a merge")
+        assertEquals(FetchOnlyReason.Saf, afterFetch.fetchOnlyReason)
+        assertEquals(null, saf.lastSyncAt.value, "Last synced is not driven by a fetch-only tick")
+        saf.shutdown()
+
+        val h2 = Harness().also { it.confirmFirstSync() }
+        h2.spy.remoteChanges = true
+        val live = h2.service()
+        assertEquals(TickOutcome.Success, live.scheduled.run("test-graph"))
+        assertEquals(0, live.staleness.value.behindCount)
+        assertTrue(live.staleness.value.lastMergedAtMs != null)
+        assertEquals(live.lastSyncAt.value, live.staleness.value.lastMergedAtMs)
+        assertEquals(null, live.staleness.value.fetchOnlyReason)
+        live.shutdown()
+    }
+
+    @Test
+    fun `an app-closed marker left by the worker is cleared when the service starts`() = runBlocking {
+        val h = Harness()
+        SyncStalenessStore(h.settings).setFetchOnlyReason("test-graph", FetchOnlyReason.AppClosed)
+        val svc = h.service()
+        assertEquals(null, SyncStalenessStore(h.settings).read("test-graph").fetchOnlyReason)
+        svc.shutdown()
+    }
+
+    @Test
+    fun `the review badge covers every unconfirmed config, not only a pending repair`() = runBlocking {
+        val unconfirmed = Harness().service()
+        unconfirmed.refreshLocalStatus("test-graph")
+        assertTrue(unconfirmed.firstSyncReviewPending.value, "first run after upgrade has no confirmation")
+        unconfirmed.shutdown()
+
+        val confirmedHarness = Harness().also { it.confirmFirstSync() }
+        val confirmed = confirmedHarness.service()
+        confirmed.refreshLocalStatus("test-graph")
+        assertEquals(false, confirmed.firstSyncReviewPending.value)
+
+        confirmedHarness.config = confirmedHarness.config.copy(remoteBranch = "other")
+        val rebranched = confirmedHarness.service()
+        rebranched.refreshLocalStatus("test-graph")
+        assertTrue(rebranched.firstSyncReviewPending.value, "a changed branch is unconfirmed again")
+        confirmed.shutdown()
+        rebranched.shutdown()
+    }
+
+    @Test
     fun `autoCommit off with a dirty tree fetches only and commits nothing`() = runBlocking {
         val h = Harness(config = sampleConfig.copy(autoCommit = false)).also { it.confirmFirstSync() }
         h.spy.dirty = true
         val svc = h.service()
 
-        assertEquals(TickOutcome.Success, svc.scheduled.run("test-graph"))
+        assertEquals(TickOutcome.Fetched, svc.scheduled.run("test-graph"))
 
         assertEquals(emptyList(), h.spy.mutatingCalls())
         svc.shutdown()
@@ -398,7 +453,7 @@ class GitSyncServiceScheduledSyncTest {
             isOnline = { true },
         )
 
-        assertEquals(TickOutcome.Success, svc.scheduled.run("test-graph"))
+        assertEquals(TickOutcome.Fetched, svc.scheduled.run("test-graph"))
         assertEquals(emptyList(), spy.calls)
         svc.shutdown()
     }
@@ -435,6 +490,9 @@ class GitSyncServiceScheduledSyncTest {
         h.settings.putString("git_first_sync_confirmed_test-graph", "origin/main")
         gate.putString("git_first_sync_confirmed_test-graph", "origin/main")
         val svc = h.service()
+        // The service's own startup refresh also reads the key; let it finish, then count from the tick's reads only.
+        svc.localStatus.first { it != null }
+        gate.pendingReads = 1
 
         assertEquals(policySkip(ScheduledSkipReason.FirstSyncUnconfirmed), svc.scheduled.run("test-graph"))
         assertEquals(emptyList(), h.spy.mutatingCalls())

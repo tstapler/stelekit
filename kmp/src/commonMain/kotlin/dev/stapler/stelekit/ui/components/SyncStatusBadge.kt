@@ -8,6 +8,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
@@ -45,6 +46,8 @@ import dev.stapler.stelekit.git.detailsTarget
 import dev.stapler.stelekit.git.lfs.LfsViolation
 import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.ui.components.git.LfsHeldFilesSheet
+import dev.stapler.stelekit.git.StalenessChipState
+import dev.stapler.stelekit.git.StalenessSeverity
 import kotlinx.coroutines.delay
 import kotlin.time.Clock
 
@@ -64,6 +67,8 @@ data class GitSyncStatus(
     val firstSyncReviewPending: Boolean = false,
     /** Scheduled sync stopped after repeated failed checks; shown as an amber "Sync paused" chip. */
     val scheduledSyncPaused: Boolean = false,
+    /** Always-visible "last merged · behind n" chip; null when there is no git sync service. */
+    val stalenessChip: StalenessChipState? = null,
 )
 
 /**
@@ -111,38 +116,55 @@ fun SyncStatusBadge(
         return
     }
 
-    Row(
-        modifier = modifier.padding(horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        // Badge area — state-specific icon and label
-        SyncStateBadge(
-            status = status,
-            onSyncClick = onSyncClick,
-            onAuthError = onAuthError,
-            onBranchRepair = onBranchRepair,
-            onReviewFirstSync = onReviewFirstSync,
-            onOpenScheduledSyncSettings = onOpenScheduledSyncSettings,
-            onSyncDetails = onSyncDetails,
-        )
-
-        Spacer(modifier = Modifier.width(4.dp))
-
-        // Manual sync button — always visible
-        IconButton(
-            onClick = onSyncClick,
-            enabled = isGitConfigured,
-            modifier = Modifier.size(32.dp),
+    Column(modifier = modifier) {
+        Row(
+            modifier = Modifier.padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(
-                imageVector = Icons.Default.Sync,
-                contentDescription = if (isGitConfigured) "Sync now" else "Git sync not configured",
-                tint = if (isGitConfigured) MaterialTheme.colorScheme.onSurfaceVariant
-                       else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
-                modifier = Modifier.size(16.dp),
+            // Badge area — state-specific icon and label
+            SyncStateBadge(
+                status = status,
+                onSyncClick = onSyncClick,
+                onAuthError = onAuthError,
+                onBranchRepair = onBranchRepair,
+                onReviewFirstSync = onReviewFirstSync,
+                onOpenScheduledSyncSettings = onOpenScheduledSyncSettings,
+                onSyncDetails = onSyncDetails,
             )
+
+            Spacer(modifier = Modifier.width(4.dp))
+
+            // Manual sync button — always visible
+            IconButton(
+                onClick = onSyncClick,
+                enabled = isGitConfigured,
+                modifier = Modifier.size(32.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Sync,
+                    contentDescription = if (isGitConfigured) "Sync now" else "Git sync not configured",
+                    tint = if (isGitConfigured) MaterialTheme.colorScheme.onSurfaceVariant
+                           else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
+                    modifier = Modifier.size(16.dp),
+                )
+            }
         }
+        status.stalenessChip?.let { StalenessChip(it) }
     }
+}
+
+@Composable
+private fun StalenessChip(chip: StalenessChipState, modifier: Modifier = Modifier) {
+    Text(
+        text = chip.text,
+        style = MaterialTheme.typography.labelSmall,
+        color = when (chip.severity) {
+            StalenessSeverity.Amber -> Color(0xFFF59E0B)
+            StalenessSeverity.Neutral -> MaterialTheme.colorScheme.onSurfaceVariant
+            StalenessSeverity.Healthy -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+        },
+        modifier = modifier.padding(horizontal = 4.dp),
+    )
 }
 
 @Composable

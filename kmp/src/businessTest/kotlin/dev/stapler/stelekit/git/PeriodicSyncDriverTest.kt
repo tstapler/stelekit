@@ -100,10 +100,12 @@ class PeriodicSyncDriverTest {
         assertEquals(ScheduledSyncStatus(), d.status.value)
         val outcomes: List<TickOutcome> = listOf(
             TickOutcome.Success, TickOutcome.Failure("x"), TickOutcome.Skip(SkipReason.Busy), TickOutcome.Skip(SkipReason.Offline),
+            TickOutcome.Fetched,
         )
         val names = outcomes.map { o ->
             when (o) {
                 is TickOutcome.Success -> "success"
+                is TickOutcome.Fetched -> "fetched"
                 is TickOutcome.Failure -> "failure"
                 is TickOutcome.Skip -> when (o.reason) {
                     SkipReason.Busy -> "busy"
@@ -112,7 +114,7 @@ class PeriodicSyncDriverTest {
                 }
             }
         }
-        assertEquals(listOf("success", "failure", "busy", "offline"), names)
+        assertEquals(listOf("success", "failure", "busy", "offline", "fetched"), names)
     }
 
     @Test
@@ -169,6 +171,20 @@ class PeriodicSyncDriverTest {
         runCurrent()
         assertEquals(1, calls, "the skipped tick is dropped, not queued")
         assertNull(d.status.value.lastSkip)
+    }
+
+    @Test
+    fun `a fetch-only tick records lastFetchedAt and never moves lastSuccessAt`() = driverTest {
+        val d = driver("fetched") { TickOutcome.Fetched }
+        d.start(interval)
+        wallClock = 7_000_000L
+        advanceTimeBy(intervalMs)
+        runCurrent()
+        val s = d.status.value
+        assertNull(s.lastSuccessAtMs, "a fetch is not a sync")
+        assertEquals(7_000_000L, s.lastFetchedAtMs)
+        assertEquals(7_000_000L + intervalMs, s.nextAtMs)
+        assertEquals(0, s.consecutiveFailures)
     }
 
     @Test

@@ -210,6 +210,11 @@ internal fun lineText(line: ScheduledSyncLine): String = when (line) {
         val next = line.nextInMinutes?.let { " · next in $it min" }.orEmpty()
         "Last synced $ago$next"
     }
+    is ScheduledSyncLine.FetchedOnly -> {
+        val ago = if (line.lastFetchedMinutesAgo < 1) "just now" else "${line.lastFetchedMinutesAgo} min ago"
+        val next = line.nextInMinutes?.let { " · next in $it min" }.orEmpty()
+        "Checked $ago, updates not merged yet$next"
+    }
     is ScheduledSyncLine.Paused -> "Paused after ${line.failures} failures - tap to fix"
 }
 
