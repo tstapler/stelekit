@@ -181,7 +181,10 @@ internal fun GraphContentActiveShell(
     val syncState by viewModel.syncState.collectAsState()
     val gitLastSyncAt by viewModel.gitLastSyncAt.collectAsState()
     val firstSyncReviewPending by viewModel.firstSyncReviewPending.collectAsState()
-    val scheduledSyncSettings = rememberScheduledSyncSettingsState(inputs.gitSyncStack) {
+    val scheduledSyncSettings = rememberScheduledSyncSettingsState(
+        inputs.gitSyncStack,
+        onReviewFirstSync = viewModel::reviewFirstSyncFromSettings,
+    ) {
         viewModel.setSettingsVisible(false)
         viewModel.openGitSetup()
     }

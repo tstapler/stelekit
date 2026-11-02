@@ -57,12 +57,16 @@ data class ScheduledSyncSettingsState(
     val onSetUpGit: () -> Unit,
     /** Opens the screen that fixes the last failure (the Git setup wizard). */
     val onFix: () -> Unit,
+    /** No manual, previewed sync has succeeded yet for this remote and branch (UW-16): the switch cannot be turned on. */
+    val firstSyncReviewRequired: Boolean = false,
+    val onReviewFirstSync: () -> Unit = {},
 )
 
 internal const val DESKTOP_HELPER = "Checks the remote while SteleKit is open."
 internal const val ANDROID_HELPER = "Also checks about every 15 minutes while SteleKit is closed. Open the app to merge."
 internal const val RESTRICTED_HELPER = "Background checks are restricted by Android. Checks run while SteleKit is open."
 internal const val NO_REMOTE_REASON = "Set up Git sync first"
+internal const val REVIEW_FIRST_SYNC_REASON = "Review first sync to enable"
 internal const val ANDROID_FIVE_MINUTE_REASON = "Android runs at most every 15 minutes"
 internal const val SWITCH_LABEL = "Check for updates automatically"
 private const val MIN_TARGET_DP = 48
@@ -100,6 +104,10 @@ fun ScheduledSyncSection(
                 Button(onClick = state.onSetUpGit, modifier = Modifier.heightIn(min = MIN_TARGET_DP.dp)) { Text("Set up Git sync") }
                 return@Column
             }
+            if (state.firstSyncReviewRequired && !state.enabled) {
+                Text(REVIEW_FIRST_SYNC_REASON, style = MaterialTheme.typography.bodyMedium)
+                Button(onClick = state.onReviewFirstSync, modifier = Modifier.heightIn(min = MIN_TARGET_DP.dp)) { Text("Review first sync") }
+            }
             IntervalPicker(state, effective)
             StatusLine(line, state)
         }
@@ -114,16 +122,20 @@ private fun ToggleRow(state: ScheduledSyncSettingsState) {
             .heightIn(min = MIN_TARGET_DP.dp)
             .toggleable(
                 value = state.enabled,
-                enabled = state.hasRemote,
+                enabled = switchEnabled(state),
                 role = Role.Switch,
                 onValueChange = state.onEnabledChange,
             ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(SWITCH_LABEL, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-        Switch(checked = state.enabled, onCheckedChange = null, enabled = state.hasRemote)
+        Switch(checked = state.enabled, onCheckedChange = null, enabled = switchEnabled(state))
     }
 }
+
+/** Off needs a remote and a confirmed first sync; an already-on switch stays usable so it can always be turned off. */
+private fun switchEnabled(state: ScheduledSyncSettingsState): Boolean =
+    state.hasRemote && (!state.firstSyncReviewRequired || state.enabled)
 
 @Composable
 private fun IntervalPicker(state: ScheduledSyncSettingsState, effective: Int) {
