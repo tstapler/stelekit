@@ -342,7 +342,7 @@ fun LeftSidebar(
 
             // Developer tools — only visible when already on those screens
             if (currentScreen is Screen.Logs || currentScreen is Screen.Performance) {
-                NavigationItem("Logs", Icons.Default.Info, currentScreen is Screen.Logs) { onNavigate(Screen.Logs) }
+                NavigationItem("Logs", Icons.Default.Info, currentScreen is Screen.Logs) { onNavigate(Screen.Logs()) }
                 NavigationItem("Performance", Icons.Default.Settings, currentScreen is Screen.Performance) { onNavigate(Screen.Performance) }
             }
             

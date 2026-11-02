@@ -135,6 +135,11 @@ private fun SettingsDialogHost(
     val developerModeOn = rememberDeveloperModeEnabled()
     SettingsDialog(
         assetIndexing = settings.assetIndexing,
+        assetPlugins = settings.assetPlugins,
+        onViewPipelineLog = {
+            viewModel.setSettingsVisible(false)
+            viewModel.navigateTo(Screen.Logs(dev.stapler.stelekit.ui.components.PIPELINE_LOG_FILTER))
+        },
         visible = appState.shouldShowSettingsDialog(),
         isDeveloperModeEnabled = developerModeOn,
         onDeveloperModeToggle = console?.let { c -> { on: Boolean -> c.developerMode.set(on) } },

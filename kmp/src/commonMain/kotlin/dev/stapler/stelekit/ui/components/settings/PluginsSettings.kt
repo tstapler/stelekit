@@ -13,6 +13,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import dev.stapler.stelekit.asset.pipeline.AssetPluginsController
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -20,14 +23,26 @@ import dev.stapler.stelekit.asset.AssetIndexProgress
 import dev.stapler.stelekit.asset.AssetIndexingController
 
 /**
- * Settings > Plugins. Until the full plugin list lands, the one row is the "Asset indexing"
- * switch, shown only when [assetIndexing] exists and this build exposes the switch
- * ([AssetIndexingController.toggleVisible]; hidden in release variants before the heap gate).
+ * Settings > Plugins: the "Asset indexing" master switch, then (when [plugins] is wired) one
+ * switch per on-device plugin and the pipeline progress row. Shown only when [assetIndexing]
+ * exists and this build exposes the switch ([AssetIndexingController.toggleVisible]; hidden in
+ * release variants before the heap gate), so release builds keep the placeholder.
  */
 @Composable
-fun PluginsSettings(assetIndexing: AssetIndexingController? = null) {
+fun PluginsSettings(
+    assetIndexing: AssetIndexingController? = null,
+    plugins: AssetPluginsController? = null,
+    onViewLog: () -> Unit = {},
+) {
     if (assetIndexing != null && assetIndexing.toggleVisible) {
-        AssetIndexingRow(assetIndexing)
+        Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+            AssetIndexingRow(assetIndexing)
+            if (plugins != null) {
+                PipelineProgressSection(plugins, onViewLog)
+                PluginSwitchesSection(plugins, onViewLog)
+                SearchableSuggestionRow(plugins)
+            }
+        }
     } else {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text("No plugins installed", color = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -1259,7 +1259,7 @@ class StelekitViewModel(
             "flashcards" -> Screen.Flashcards
             "all-pages" -> Screen.AllPages()
             "notifications" -> Screen.Notifications
-            "logs" -> Screen.Logs
+            "logs" -> Screen.Logs()
             "background-jobs" -> Screen.BackgroundJobs
             else -> Screen.Journals
         }

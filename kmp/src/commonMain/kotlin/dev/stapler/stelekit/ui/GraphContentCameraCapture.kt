@@ -114,6 +114,7 @@ internal fun GraphContentScreenAndCapture(deps: GraphContentDeps, viewModel: Ste
             graphDiagnostics = diagnosticsCollector::collect,
             backgroundJobs = deps.backgroundJobs,
             assetMover = deps.assets?.moveAsset,
+            assetPlugins = deps.assets?.plugins,
             google = deps.platformIntegrations.google,
             capabilities = buildEditorCapabilities(deps, viewModel, inputs, captureState).copy(googlePhotos = googlePhotos),
             onImportImage = buildOnImportImage(deps, viewModel, inputs, captureState),

@@ -54,7 +54,7 @@ sealed class Screen {
     data object BackgroundJobs : Screen()
 
     @HelpExempt(reason = "Developer log viewer; reachable only from debug menu")
-    data object Logs : Screen()
+    data class Logs(val initialFilter: String? = null) : Screen()
 
     @HelpExempt(reason = "Developer profiling screen; reachable only from debug menu")
     data object Performance : Screen()

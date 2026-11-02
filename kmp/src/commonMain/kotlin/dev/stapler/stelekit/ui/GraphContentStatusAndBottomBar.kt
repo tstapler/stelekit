@@ -11,11 +11,12 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import dev.stapler.stelekit.model.GraphInfo
 import dev.stapler.stelekit.platform.EncryptionManager
-import dev.stapler.stelekit.platform.PluginHost
 import dev.stapler.stelekit.ui.components.VoiceCaptureButton
 import dev.stapler.stelekit.vault.VaultManager
 import dev.stapler.stelekit.voice.VoiceCaptureState
@@ -27,7 +28,7 @@ internal class GraphContentStatusRowInputs(
     val appState: AppState,
     val encryptionManager: EncryptionManager,
     val activeGraphInfo: GraphInfo?,
-    val pluginHost: PluginHost,
+    val pluginCount: kotlinx.coroutines.flow.StateFlow<Int>,
     val activeVaultManager: VaultManager?,
     val graphIoStack: GraphContentGraphIoStack,
 )
@@ -42,6 +43,7 @@ internal class GraphContentStatusRowInputs(
  */
 @Composable
 internal fun GraphContentDesktopStatusRow(viewModel: StelekitViewModel, inputs: GraphContentStatusRowInputs) {
+    val pluginCount by inputs.pluginCount.collectAsState()
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         StatusBarContent(
             encryptionState = if (inputs.encryptionManager.isEncryptionEnabled(inputs.appState.currentGraphPath.orEmpty())) {
@@ -51,7 +53,7 @@ internal fun GraphContentDesktopStatusRow(viewModel: StelekitViewModel, inputs: 
             },
             statusMessage = inputs.appState.statusMessage,
             activeGraphName = inputs.activeGraphInfo?.displayName ?: "",
-            pluginCount = inputs.pluginHost.getAllPlugins().size,
+            pluginCount = pluginCount,
             modifier = Modifier.weight(1f),
         )
         val activeVaultManager = inputs.activeVaultManager

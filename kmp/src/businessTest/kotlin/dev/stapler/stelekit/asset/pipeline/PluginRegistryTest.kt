@@ -7,7 +7,15 @@ import dev.stapler.stelekit.asset.AssetMediaType
 import dev.stapler.stelekit.asset.AssetUuid
 import dev.stapler.stelekit.error.DomainError
 import kotlin.test.Test
+import dev.stapler.stelekit.platform.ml.ImageLabeler
+import dev.stapler.stelekit.platform.ml.Label
+import dev.stapler.stelekit.platform.ml.PdfTextExtractor
+import dev.stapler.stelekit.platform.ml.TextRecognizer
+import dev.stapler.stelekit.wiring.FakeSettings
+import dev.stapler.stelekit.wiring.WiringInputs
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 private fun makeAsset(mediaType: AssetMediaType) = AssetEntry(
     uuid = AssetUuid("test"),
@@ -67,5 +75,52 @@ class PluginRegistryTest {
         val applicable = registry.all.filter { it.canProcess(asset) }
         assertEquals(1, applicable.size)
         assertEquals("pdf", applicable[0].id)
+    }
+
+    private val fullCaps = PlatformCaps(
+        object : ImageLabeler {
+            override suspend fun labelImage(imageBytes: ByteArray): Either<DomainError, List<Label>> = emptyList<Label>().right()
+        },
+        object : PdfTextExtractor {
+            override suspend fun extractText(absoluteFilePath: String): Either<DomainError, String> = "".right()
+        },
+        object : TextRecognizer {
+            override suspend fun recognize(imageBytes: ByteArray): Either<DomainError, String> = "".right()
+        },
+    )
+
+    @Test fun pluginRegistry_should_ExposeEnabledCountAsStateFlow_And_BeOnlyEnabledStateSource_When_AuditedInProduction() {
+        val settings = FakeSettings().apply { putBoolean(AssetBuildFlags.PIPELINE_ENABLED_KEY, true) }
+        val registry = PluginRegistry(settings, fullCaps)
+        assertEquals(0, registry.enabledCount.value)
+
+        registry.setEnabled(PluginEnableKeys.TEXT_RECOGNITION, true)
+        registry.setEnabled(PluginEnableKeys.PDF_TEXT, true)
+        assertEquals(2, registry.enabledCount.value)
+        assertEquals(true, registry.enabledStates.value[PluginEnableKeys.PDF_TEXT])
+
+        // Source audit: only the registry and the plugin factory read the per-plugin keys.
+        val readers = WiringInputs.productionSources
+            .filter { (_, text) -> "PluginEnableKeys.isEnabled(" in text || "PluginEnableKeys.keyFor(" in text }
+            .keys.map { it.substringAfterLast('/') }.toSet()
+        assertEquals(setOf("PluginRegistry.kt", "DefaultAssetPlugins.kt"), readers)
+    }
+
+    @Test fun enabledCount_should_DropToZeroWhenMasterOffAndIgnoreUnavailablePlugins_When_MasterOffOrCapabilityMissing() {
+        val settings = FakeSettings().apply {
+            putBoolean(AssetBuildFlags.PIPELINE_ENABLED_KEY, true)
+            putBoolean(PluginEnableKeys.keyFor(PluginEnableKeys.IMAGE_LABELS), true)
+        }
+        val withLabeler = PluginRegistry(settings, fullCaps)
+        assertEquals(1, withLabeler.enabledCount.value)
+        withLabeler.setMasterEnabled(false)
+        assertEquals(0, withLabeler.enabledCount.value)
+
+        val none = PluginRegistry(settings, PlatformCaps.NONE)
+        assertEquals(0, none.enabledCount.value, "a stored key for a plugin this platform cannot run is not counted")
+        assertEquals(PluginRegistry.MODEL_NOT_INSTALLED, none.unavailableReason(PluginEnableKeys.IMAGE_LABELS))
+        assertEquals(PluginRegistry.NOT_AVAILABLE_ON_DESKTOP, none.unavailableReason(PluginEnableKeys.TEXT_RECOGNITION))
+        assertNull(withLabeler.unavailableReason(PluginEnableKeys.IMAGE_LABELS))
+        assertTrue(withLabeler.enabledStates.value.keys == PluginRegistry.PLUGIN_IDS.toSet())
     }
 }

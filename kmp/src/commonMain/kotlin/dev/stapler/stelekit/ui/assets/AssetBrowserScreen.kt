@@ -68,6 +68,9 @@ fun AssetBrowserScreen(
     onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier,
     onNavigateToAsset: (AssetUuid) -> Unit = {},
+    /** Drives the "Make images searchable" card and the inline processing line; null shows neither. */
+    plugins: dev.stapler.stelekit.asset.pipeline.AssetPluginsController? = null,
+    onOpenPluginsSettings: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showNewGroupDialog by remember { mutableStateOf(false) }
@@ -130,6 +133,8 @@ fun AssetBrowserScreen(
                     modifier = Modifier.padding(16.dp),
                 )
             }
+
+            if (plugins != null) AssetBrowserStatusHeader(uiState.assets, plugins, onOpenPluginsSettings)
 
             if (uiState.assets.isEmpty() && !uiState.isLoading) {
                 AssetBrowserEmptyState(selectedFilter = uiState.selectedFilter)
