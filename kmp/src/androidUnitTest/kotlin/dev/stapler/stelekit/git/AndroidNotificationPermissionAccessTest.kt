@@ -12,13 +12,15 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
-import org.robolectric.annotation.Config
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
  * Device verification is not possible here: these tests drive the real [AndroidNotificationPermissionAccess] under
  * Robolectric with the Activity's launcher replaced by a lambda, so the system dialog itself is untested.
+ * No `@Config(sdk=...)`: a new SDK level loads another android-all sandbox into the shared test fork, which
+ * pushed `:kmp:testDebugUnitTest` over its default heap (OOM in PlatformImageDownscalerAndroidTest). The SDK
+ * level the access sees is injected through its `sdkInt` parameter instead.
  */
 @RunWith(RobolectricTestRunner::class)
 class AndroidNotificationPermissionAccessTest {
@@ -41,20 +43,17 @@ class AndroidNotificationPermissionAccessTest {
     ) = AndroidNotificationPermissionAccess(app, settings, request, rationale, sdk)
 
     @Test
-    @Config(sdk = [33])
     fun `before the first ask the state is NotAsked`() {
         assertEquals(NotifyPermissionState.NotAsked, access().state())
     }
 
     @Test
-    @Config(sdk = [33])
     fun `granted wins over every other fact`() {
         shadowOf(app).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
         assertEquals(NotifyPermissionState.Granted, access(rationale = { true }).state())
     }
 
     @Test
-    @Config(sdk = [33])
     fun `a denial that still allows a rationale is DeniedOnce, and one that does not is permanent`() = runTest {
         val settings = MapSettings()
         assertEquals(NotifyPermissionState.DeniedOnce, access(settings, rationale = { true }, request = { false }).request())
@@ -62,7 +61,6 @@ class AndroidNotificationPermissionAccessTest {
     }
 
     @Test
-    @Config(sdk = [33])
     fun `request launches the system dialog exactly once and reports the granted result`() = runTest {
         var launches = 0
         val access = access(request = {
@@ -76,7 +74,6 @@ class AndroidNotificationPermissionAccessTest {
     }
 
     @Test
-    @Config(sdk = [32])
     fun `below API 33 no permission is required and the toggle enables straight away`() {
         val state = access(sdk = 32).state()
         assertEquals(NotifyPermissionState.NotRequired, state)
