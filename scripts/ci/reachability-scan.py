@@ -61,8 +61,6 @@ REGISTER = {
     16: ["RTCManager", "RTCOp"],
     17: ["VectorSearch", "InferenceWorker", "PlaceholderInferenceWorker", "RemoteInferenceWorker", "InferenceBridge"],
     18: ["DatalogEngine", "DatalogQuery", "DatalogPattern", "VisualQueryBuilder", "DatalogSearchSupport"],
-    19: ["JsPluginBridge"],
-    20: ["PluginHost", "Plugin"],
     21: ["MigrationCli"],
     22: ["PluginMigration", "EavTuple"],
     23: ["Command", "UndoManager", "BlockCommands"],

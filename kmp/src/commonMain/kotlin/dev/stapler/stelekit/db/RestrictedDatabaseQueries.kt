@@ -684,6 +684,10 @@ class RestrictedDatabaseQueries(
         queries.markAssetMlFailed(attemptedAt, uuid)
 
     @DirectSqlWrite
+    suspend fun resetFailedAssets(): Long =
+        queries.resetFailedAssets()
+
+    @DirectSqlWrite
     suspend fun updateAssetPageUuids(pageUuids: String, uuid: String): Long =
         queries.updateAssetPageUuids(pageUuids, uuid)
 

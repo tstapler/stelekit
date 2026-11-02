@@ -54,6 +54,7 @@ fun SettingsDialog(
     llmProviderRegistry: LlmProviderRegistry? = null,
     llmSettings: LlmSettings? = null,
     initialCategory: SettingsCategory = SettingsCategory.GENERAL,
+    scrollToPluginList: Boolean = false,
     onLlmCredentialsChange: () -> Unit = {},
     // Google Account settings (Story 7.2)
     isGoogleAuthenticated: Boolean = false,
@@ -123,6 +124,8 @@ fun SettingsDialog(
     captureGraphs: List<dev.stapler.stelekit.model.GraphInfo> = emptyList(),
     // Interim Plugins row (Task 4.1d): null hides it; the build gate lives in the controller.
     assetIndexing: dev.stapler.stelekit.asset.AssetIndexingController? = null,
+    assetPlugins: dev.stapler.stelekit.asset.pipeline.AssetPluginsController? = null,
+    onViewPipelineLog: () -> Unit = {},
     // Scheduled sync switch + interval (git-backed graphs only); null hides the section.
     scheduledSync: ScheduledSyncSettingsState? = null,
 ) {
@@ -202,7 +205,7 @@ fun SettingsDialog(
                         }
                     }
                     SettingsCategory.EDITOR -> EditorSettings()
-                    SettingsCategory.PLUGINS -> PluginsSettings(assetIndexing)
+                    SettingsCategory.PLUGINS -> PluginsSettings(assetIndexing, assetPlugins, onViewPipelineLog, scrollToPluginList)
                     SettingsCategory.ADVANCED -> AdvancedSettings(onReindex)
                     SettingsCategory.VOICE -> if (voiceSettings != null && onRebuildVoicePipeline != null) {
                         VoiceCaptureSettings(

@@ -80,9 +80,9 @@ class StelekitViewModelNavigationTest {
         vm.navigateTo(Screen.Notifications)
         vm.goBack()
 
-        vm.navigateTo(Screen.Logs)
+        vm.navigateTo(Screen.Logs())
 
-        assertEquals(listOf(Screen.Journals, Screen.Flashcards, Screen.Logs), state.navigationHistory)
+        assertEquals(listOf(Screen.Journals, Screen.Flashcards, Screen.Logs()), state.navigationHistory)
         assertEquals(2, state.historyIndex)
         assertFalse(state.canGoForward)
     }

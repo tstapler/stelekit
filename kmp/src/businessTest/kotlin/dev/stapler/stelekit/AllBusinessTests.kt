@@ -140,7 +140,10 @@ import dev.stapler.stelekit.asset.pipeline.AssetPipelineOomInjectionTest
 import dev.stapler.stelekit.asset.pipeline.AssetPipelineCrashLoopBreakerTest
 import dev.stapler.stelekit.asset.pipeline.DefaultAssetPluginsTest
 import dev.stapler.stelekit.asset.pipeline.OcrPluginTest
+import dev.stapler.stelekit.asset.AssetSearchSqlTest
+import dev.stapler.stelekit.asset.pipeline.AssetPluginsControllerTest
 import dev.stapler.stelekit.asset.pipeline.PluginRegistryTest
+import dev.stapler.stelekit.settings.PluginHostRemovalAuditTest
 import dev.stapler.stelekit.auto.AudiobookNoteFormatterTest
 import dev.stapler.stelekit.auto.AudiobookNoteWriterTest
 import dev.stapler.stelekit.capture.ShareInboxTest
@@ -237,6 +240,22 @@ import dev.stapler.stelekit.git.lfs.GitAttributesMatcherPropertyTest
 import dev.stapler.stelekit.git.lfs.GitAttributesMatcherTest
 import dev.stapler.stelekit.git.lfs.LfsPointerPropertyTest
 import dev.stapler.stelekit.git.lfs.LfsPointerTest
+import dev.stapler.stelekit.git.lfs.GitAttributesParserTest
+import dev.stapler.stelekit.git.lfs.GitWildmatchTest
+import dev.stapler.stelekit.git.GitOperationSupportHelpersTest
+import dev.stapler.stelekit.git.GitRefDiagnosticsTest
+import dev.stapler.stelekit.domain.HtmlBlockConverterTest
+import dev.stapler.stelekit.mcp.McpServerControllerTest
+import dev.stapler.stelekit.git.GitSyncServiceStepRoutingTest
+import dev.stapler.stelekit.capture.ActiveWriteHooksTest
+import dev.stapler.stelekit.tags.LlmTagProviderBranchesTest
+import dev.stapler.stelekit.llm.LlmSuggestionWriterEditsTest
+import dev.stapler.stelekit.vault.VaultHeaderModelTest
+import dev.stapler.stelekit.parser.MarkdownParserInlineStorageTest
+import dev.stapler.stelekit.git.lfs.FileSystemLfsContentProbeTest
+import dev.stapler.stelekit.git.SqlDelightGitConfigRepositoryRoundTripTest
+import dev.stapler.stelekit.migration.ChangeApplierBranchesTest
+import dev.stapler.stelekit.migration.PostMigrationFlusherTest
 import dev.stapler.stelekit.git.GitSyncServiceLfsGuardTest
 import dev.stapler.stelekit.git.GitSyncServicePeriodicTest
 import dev.stapler.stelekit.git.PeriodicSyncDriverTest
@@ -403,6 +422,9 @@ import org.junit.runners.Suite
     DefaultAssetPluginsTest::class,
     OcrPluginTest::class,
     PluginRegistryTest::class,
+    AssetSearchSqlTest::class,
+    AssetPluginsControllerTest::class,
+    PluginHostRemovalAuditTest::class,
     AudiobookNoteFormatterTest::class,
     AudiobookNoteWriterTest::class,
     AtomicFileRelocationStepTest::class,
@@ -498,6 +520,22 @@ import org.junit.runners.Suite
     GitAttributesMatcherTest::class,
     LfsPointerPropertyTest::class,
     LfsPointerTest::class,
+    GitAttributesParserTest::class,
+    GitWildmatchTest::class,
+    GitOperationSupportHelpersTest::class,
+    GitRefDiagnosticsTest::class,
+    HtmlBlockConverterTest::class,
+    McpServerControllerTest::class,
+    GitSyncServiceStepRoutingTest::class,
+    ActiveWriteHooksTest::class,
+    LlmTagProviderBranchesTest::class,
+    LlmSuggestionWriterEditsTest::class,
+    VaultHeaderModelTest::class,
+    MarkdownParserInlineStorageTest::class,
+    FileSystemLfsContentProbeTest::class,
+    SqlDelightGitConfigRepositoryRoundTripTest::class,
+    ChangeApplierBranchesTest::class,
+    PostMigrationFlusherTest::class,
     GitSyncServiceLfsGuardTest::class,
     GitSyncServicePeriodicTest::class,
     PeriodicSyncDriverTest::class,

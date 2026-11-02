@@ -9,7 +9,6 @@ import dev.stapler.stelekit.performance.SpanRecorder
 import dev.stapler.stelekit.platform.DefaultEncryptionManager
 import dev.stapler.stelekit.platform.EncryptionManager
 import dev.stapler.stelekit.platform.HostAccessState
-import dev.stapler.stelekit.platform.PluginHost
 import dev.stapler.stelekit.domain.NoOpUrlFetcher
 import dev.stapler.stelekit.domain.UrlFetcher
 import dev.stapler.stelekit.platform.LibraryStatsProvider
@@ -35,10 +34,9 @@ import dev.stapler.stelekit.repository.RepositorySet
  *
  * [StelekitApp] must default this parameter via `remember { StelekitAppCoreServices() }`, not a
  * plain `= StelekitAppCoreServices()`, to preserve the per-composition-stable identity the
- * individual `remember { PluginHost() }`-style defaults had before this grouping.
+ * individual `remember { EncryptionManager() }`-style defaults had before this grouping.
  */
 data class StelekitAppCoreServices(
-    val pluginHost: PluginHost = PluginHost(),
     val encryptionManager: EncryptionManager = DefaultEncryptionManager(),
     val urlFetcher: UrlFetcher = NoOpUrlFetcher(),
     /** Null hides the block URL "archive" action (right-click a URL). Constructed by each platform root. */
