@@ -229,6 +229,23 @@ class AnnotationEditorViewModelBranchTest {
         assertFalse(vm(image(method = CalibrationMethod.NONE)).isCalibrated())
     }
 
+    // ── label input ───────────────────────────────────────────────────────────
+
+    @Test
+    fun updateLabelText_onlyChangesText_andDismissClearsIt() {
+        val v = vm()
+        v.selectTool(AnnotationTool.LABEL)
+        v.addPoint(NormalizedPoint(0.5, 0.5))
+        v.updateLabelText("Door")
+        assertEquals("Door", v.state.value.labelInputText)
+        assertTrue(v.state.value.committedAnnotations.isEmpty())
+        v.dismissLabelInput()
+        assertEquals("", v.state.value.labelInputText)
+        assertNull(v.state.value.pendingLabelPoint)
+        v.confirmLabel() // no pending point -> no-op
+        assertTrue(v.state.value.committedAnnotations.isEmpty())
+    }
+
     // ── injectMeasurementFromDevice ───────────────────────────────────────────
 
     @Test
