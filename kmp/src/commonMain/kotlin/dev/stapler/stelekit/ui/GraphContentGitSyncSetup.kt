@@ -18,7 +18,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import dev.stapler.stelekit.git.GitConfigRepository
 import dev.stapler.stelekit.git.GitSyncService
 import dev.stapler.stelekit.git.GitSyncServiceRegistry
+import dev.stapler.stelekit.git.FirstSyncConfirmation
 import dev.stapler.stelekit.git.ScheduledSyncPreferences
+import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.git.ScheduledSyncStatus
 import dev.stapler.stelekit.git.GitRepository
 import dev.stapler.stelekit.git.lfs.LfsTransferPolicySource
@@ -67,6 +69,8 @@ internal class ScheduledSyncControls(
     val setEnabled: (Boolean) -> Unit,
     /** Persists the new poll interval to the graph's git config; the loop restarts from the config flow. */
     val setIntervalMinutes: suspend (Int) -> Unit,
+    /** True once a manual, previewed sync succeeded for the current `(remote, branch)`; scheduled sync only fetches until then. */
+    val firstSyncConfirmed: () -> Boolean = { true },
 ) {
     companion object {
         val Unavailable = ScheduledSyncControls(
@@ -128,14 +132,20 @@ internal fun rememberGraphContentGitSyncStack(
 @Composable
 internal fun rememberScheduledSyncSettingsState(
     stack: GraphContentGitSyncStack,
+    onReviewFirstSync: () -> Unit = {},
+    onOpenStatus: () -> Unit = {},
     onSetUpGit: () -> Unit,
 ): ScheduledSyncSettingsState? {
     val controls = stack.scheduledSync
     val service = stack.gitSyncService
     val idle = remember { MutableStateFlow(ScheduledSyncStatus()) }
+    val idleSyncState = remember { MutableStateFlow<SyncState>(SyncState.Idle) }
     val status by (service?.scheduledSyncStatus ?: idle).collectAsState()
     val scope = rememberCoroutineScope()
+    val syncState by (service?.syncState ?: idleSyncState).collectAsState()
     if (service == null) return null
+    // A successful manual sync confirms the first sync, so re-read it whenever the sync state moves.
+    val firstSyncConfirmed = remember(syncState, controls) { controls.firstSyncConfirmed() }
     return ScheduledSyncSettingsState(
         hasRemote = controls.hasRemote,
         enabled = controls.enabled,
@@ -149,6 +159,9 @@ internal fun rememberScheduledSyncSettingsState(
         onResume = { scope.launch { service.resumeScheduledSync() } },
         onSetUpGit = onSetUpGit,
         onFix = onSetUpGit,
+        firstSyncReviewRequired = controls.hasRemote && !firstSyncConfirmed,
+        onReviewFirstSync = onReviewFirstSync,
+        onOpenStatus = onOpenStatus,
     )
 }
 
@@ -196,6 +209,7 @@ internal fun rememberGraphContentScheduledSyncControls(
     val factory = deps.platformIntegrations.backgroundSyncSchedulerFactory
     val probe = deps.platformIntegrations.backgroundRestrictionProbe
     val prefs = remember(deps.platformSettings) { ScheduledSyncPreferences(deps.platformSettings) }
+    val firstSyncConfirmation = remember(deps.platformSettings) { FirstSyncConfirmation(deps.platformSettings) }
     val enabled by prefs.enabled.collectAsState()
     val configLoad: State<ConfigLoad> = remember(configRepository, graphId) {
         configRepository.observeConfig(graphId).map { ConfigLoad.Loaded(it.getOrNull()) }
@@ -242,6 +256,10 @@ internal fun rememberGraphContentScheduledSyncControls(
         setEnabled = prefs::setEnabled,
         setIntervalMinutes = { minutes ->
             configRepository.getConfig(graphId).getOrNull()?.let { configRepository.saveConfig(it.copy(pollIntervalMinutes = minutes)) }
+        },
+        firstSyncConfirmed = {
+            config != null && firstSyncConfirmation.isConfirmed(graphId, config.remoteName, config.remoteBranch) &&
+                !firstSyncConfirmation.isReviewPending(graphId)
         },
     )
 }

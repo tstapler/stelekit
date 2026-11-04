@@ -528,6 +528,34 @@ class AndroidGitRepository(
         return Unit.right()
     }
 
+    /**
+     * Shadow-backed graphs report nothing at risk: [doAbortMerge] resets only the shadow tree and then re-copies SAF
+     * over it, so the user's uncommitted edits (which live in SAF) are never touched. A real working tree
+     * (app-owned or a resolvable path) is reset in place, so its unstaged edits are what [GuardedMergeAbort] must keep.
+     */
+    override suspend fun editsAtRiskOfReset(config: GitConfig): Either<DomainError.GitError, List<String>> =
+        withContext(PlatformDispatcher.IO) {
+            if (shadow.shadowWorktreeFor(config.repoRoot.value) != null) return@withContext emptyList<String>().right()
+            runGitOp({ e -> DomainError.GitError.FetchFailed("Status failed: ${e.message}") }) {
+                openGitWithoutFreshnessCheck(config).use { git ->
+                    val status = git.status().call()
+                    (status.modified - status.conflicting).sorted().right()
+                }
+            }
+        }
+
+    override suspend fun readWorkingBytes(config: GitConfig, path: String): ByteArray? =
+        withContext(PlatformDispatcher.IO) {
+            runCatching { File(shadow.resolveForJGit(config.repoRoot.value), path).takeIf { it.isFile }?.readBytes() }.getOrNull()
+        }
+
+    override suspend fun writeWorkingBytes(config: GitConfig, path: String, bytes: ByteArray): Boolean =
+        withContext(PlatformDispatcher.IO) {
+            runCatching {
+                File(shadow.resolveForJGit(config.repoRoot.value), path).also { it.parentFile?.mkdirs() }.writeBytes(bytes)
+            }.isSuccess
+        }
+
     override suspend fun checkoutFile(
         config: GitConfig,
         filePath: String,
@@ -620,6 +648,17 @@ class AndroidGitRepository(
                 }
             }
         }
+
+    private val safety = GitSafetyOps(::openGitWithoutFreshnessCheck)
+
+    override suspend fun firstSyncPreview(config: GitConfig): Either<DomainError.GitError, FirstSyncPreview> =
+        safety.preview(config) { authConfigurer.configureTransport(it, config) }
+
+    override suspend fun repositoryHealth(config: GitConfig): RepositoryHealth = safety.health(config)
+
+    override suspend fun scanForConflictMarkers(config: GitConfig, scope: GuardScope): MarkerScan = safety.markers(config, scope)
+
+    override suspend fun deletionSummary(config: GitConfig, scope: GuardScope): DeletionSummary = safety.deletions(config, scope)
 
     override suspend fun removeStaleLockFile(config: GitConfig): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {

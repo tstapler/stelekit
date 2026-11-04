@@ -169,6 +169,7 @@ import dev.stapler.stelekit.db.PathContainmentSymlinkTest
 import dev.stapler.stelekit.db.QueryExecutorGraphSwitchTest
 import dev.stapler.stelekit.git.GitCredentialConnectionStoreTest
 import dev.stapler.stelekit.git.GitHubDeviceFlowClientTest
+import dev.stapler.stelekit.git.GitHubDeviceFlowClientEdgeCasesTest
 import dev.stapler.stelekit.git.GitRefDiagnosticsRedactionTest
 import dev.stapler.stelekit.git.GitSyncAttributeMergeE2ETest
 import dev.stapler.stelekit.git.GitSyncServiceLfsJvmTest
@@ -180,6 +181,9 @@ import dev.stapler.stelekit.platform.download.ResumableDownloadTest
 import dev.stapler.stelekit.git.JvmGitCloneWorkerLauncherTest
 import dev.stapler.stelekit.git.JvmGitRepositoryTest
 import dev.stapler.stelekit.git.RemoteBranchResolutionTest
+import dev.stapler.stelekit.git.GitSafetyScansJvmTest
+import dev.stapler.stelekit.git.GitAbortRecoveryJvmTest
+import dev.stapler.stelekit.git.ColdSyncRunnerTreeJvmTest
 import dev.stapler.stelekit.git.RemoteDefaultBranchTest
 import dev.stapler.stelekit.git.VaultCredentialStoreTest
 import dev.stapler.stelekit.google.DriveApiClientContentTypeTest
@@ -220,6 +224,7 @@ import dev.stapler.stelekit.desktop.DesktopMeasurementDeviceFactoriesTest
 import dev.stapler.stelekit.domain.HtmlClipboardReaderTest
 import dev.stapler.stelekit.domain.HtmlPasteEntryPointTest
 import dev.stapler.stelekit.domain.WaybackMachineServiceTest
+import dev.stapler.stelekit.db.UrlLinkRepairServiceTest
 import dev.stapler.stelekit.llm.CustomOpenAiCompatibleLlmProviderTest
 import dev.stapler.stelekit.mcp.McpPendingCapTest
 import dev.stapler.stelekit.mcp.McpSocketPathPermissionTest
@@ -285,6 +290,7 @@ import dev.stapler.stelekit.ui.ShortcutTableConsistencyTest
 import dev.stapler.stelekit.ui.StelekitViewModelCrashReproductionTest
 import dev.stapler.stelekit.ui.StelekitViewModelSyncStateIntegrationTest
 import dev.stapler.stelekit.ui.StelekitViewModelSyncStateTest
+import dev.stapler.stelekit.ui.StelekitViewModelSyncStatusSheetTest
 import dev.stapler.stelekit.ui.SuggestionBottomSheetChipsUiTest
 import dev.stapler.stelekit.ui.TagInsertionFlagshipUiTest
 import dev.stapler.stelekit.ui.transfer.CameraPermissionRationaleDialogUxTest
@@ -331,6 +337,7 @@ import dev.stapler.stelekit.capture.CapturePopupWindowUxTest
 import dev.stapler.stelekit.wiring.DesktopWiredAppFixtureTest
 import dev.stapler.stelekit.wiring.GitSyncServiceRegistryBalanceTest
 import dev.stapler.stelekit.wiring.GitSyncStackEntryPointTest
+import dev.stapler.stelekit.wiring.ScheduledSyncOriginE2ETest
 import dev.stapler.stelekit.wiring.JvmPlatformCapsRootTest
 import org.junit.runner.RunWith
 import org.junit.runners.Suite
@@ -505,6 +512,7 @@ import org.junit.runners.Suite
     QueryExecutorGraphSwitchTest::class,
     GitCredentialConnectionStoreTest::class,
     GitHubDeviceFlowClientTest::class,
+    GitHubDeviceFlowClientEdgeCasesTest::class,
     GitRefDiagnosticsRedactionTest::class,
     GitSyncAttributeMergeE2ETest::class,
     GitSyncServiceLfsJvmTest::class,
@@ -516,6 +524,9 @@ import org.junit.runners.Suite
     JvmGitCloneWorkerLauncherTest::class,
     JvmGitRepositoryTest::class,
     RemoteBranchResolutionTest::class,
+    GitSafetyScansJvmTest::class,
+    GitAbortRecoveryJvmTest::class,
+    ColdSyncRunnerTreeJvmTest::class,
     RemoteDefaultBranchTest::class,
     VaultCredentialStoreTest::class,
     DriveApiClientContentTypeTest::class,
@@ -553,6 +564,7 @@ import org.junit.runners.Suite
     CaptureEnrichmentCoordinatorRealDispatcherTest::class,
     PageNameIndexResilienceTest::class,
     WaybackMachineServiceTest::class,
+    UrlLinkRepairServiceTest::class,
     HtmlPasteEntryPointTest::class,
     HtmlClipboardReaderTest::class,
     DesktopMeasurementDeviceFactoriesTest::class,
@@ -621,6 +633,7 @@ import org.junit.runners.Suite
     StelekitViewModelCrashReproductionTest::class,
     StelekitViewModelSyncStateIntegrationTest::class,
     StelekitViewModelSyncStateTest::class,
+    StelekitViewModelSyncStatusSheetTest::class,
     SuggestionBottomSheetChipsUiTest::class,
     TagInsertionFlagshipUiTest::class,
     CameraPermissionRationaleDialogUxTest::class,
@@ -671,6 +684,7 @@ import org.junit.runners.Suite
     AllJvmTestsCompletenessTest::class,
     DesktopWiredAppFixtureTest::class,
     GitSyncStackEntryPointTest::class,
+    ScheduledSyncOriginE2ETest::class,
     GitSyncServiceRegistryBalanceTest::class,
     JvmPlatformCapsRootTest::class,
 )

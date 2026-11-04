@@ -45,6 +45,7 @@ internal class GraphContentLeftSidebarInputs(
     val gitLastSyncAt: Long?,
     val firstSyncReviewPending: Boolean = false,
     val scheduledSyncPaused: Boolean = false,
+    val stalenessChip: dev.stapler.stelekit.git.StalenessChipState? = null,
     val storageLocationResolver: dev.stapler.stelekit.db.StorageLocationResolver?,
     val gitRepository: dev.stapler.stelekit.git.GitRepository?,
     val onStorageLocationChoose: (StorageMoveOperation) -> Unit,
@@ -165,9 +166,12 @@ internal fun GraphContentLeftSidebar(
         gitLastSyncAt = inputs.gitLastSyncAt,
         firstSyncReviewPending = inputs.firstSyncReviewPending,
         scheduledSyncPaused = inputs.scheduledSyncPaused,
+        stalenessChip = inputs.stalenessChip,
         onOpenScheduledSyncSettings = { viewModel.setSettingsVisible(true) },
         onBranchRepair = { viewModel.openBranchRepair() },
         onReviewFirstSync = { viewModel.openFirstSyncReview() },
+        onSyncDetails = { viewModel.openSyncDetails() },
+        onOpenSyncStatus = { viewModel.openSyncStatusSheet() },
         onSyncClick = {
             if (inputs.syncState is dev.stapler.stelekit.git.model.SyncState.CredentialVaultLocked) {
                 // Vault is locked — lock() re-shows the unlock screen

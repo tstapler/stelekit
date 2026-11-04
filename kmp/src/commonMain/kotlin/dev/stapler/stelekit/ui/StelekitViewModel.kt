@@ -266,7 +266,50 @@ class StelekitViewModel(
     fun openBranchRepair() = _uiState.update { it.copy(branchRepairVisible = true) }
     fun dismissBranchRepair() = _uiState.update { it.copy(branchRepairVisible = false) }
     fun openFirstSyncReview() = _uiState.update { it.copy(firstSyncReviewVisible = true, branchRepairVisible = false) }
+    /** Settings' "Review first sync" button: closes Settings, then opens the review. */
+    fun reviewFirstSyncFromSettings() {
+        setSettingsVisible(false)
+        openFirstSyncReview()
+    }
     fun dismissFirstSyncReview() = _uiState.update { it.copy(firstSyncReviewVisible = false) }
+
+    /** Badge tap / review `Open details`: opens whichever sheet explains the current sync problem. */
+    fun openSyncDetails() = gitSyncCoordinator.safety.openSyncDetails()
+
+    /** Banner Review and notification taps: opens the review or status surface; never starts a sync. */
+    fun openSyncDestination(destination: dev.stapler.stelekit.git.NotificationDestination) {
+        when (destination) {
+            is dev.stapler.stelekit.git.NotificationDestination.FirstSyncReview -> openFirstSyncReview()
+            is dev.stapler.stelekit.git.NotificationDestination.SyncStatusSheet -> openSyncStatusSheet()
+            is dev.stapler.stelekit.git.NotificationDestination.CurrentGraphSheet -> openSyncStatusSheet(destination.notice)
+            is dev.stapler.stelekit.git.NotificationDestination.UpToDate -> Unit
+        }
+    }
+
+    /** The sync chip, Settings' "View sync status" and sync destinations open this; it never starts a sync. */
+    fun openSyncStatusSheet(notice: String? = null) =
+        _uiState.update { it.copy(syncStatusSheetVisible = true, syncStatusNotice = notice) }
+    fun dismissSyncStatusSheet() = _uiState.update { it.copy(syncStatusSheetVisible = false, syncStatusNotice = null) }
+
+    /** Settings' "View sync status": closes Settings, then opens the sheet. */
+    fun openSyncStatusFromSettings() {
+        setSettingsVisible(false)
+        openSyncStatusSheet()
+    }
+
+    /** The sheet's "Open sync settings": closes the sheet, then opens Settings. */
+    fun openSyncSettingsFromStatusSheet() {
+        dismissSyncStatusSheet()
+        setSettingsVisible(true)
+    }
+    fun dismissRepairNeeded() = gitSyncCoordinator.safety.dismissRepairNeeded()
+    fun dismissMassChangeConfirm() = gitSyncCoordinator.safety.dismissMassChangeConfirm()
+    fun abortInterruptedMerge() = gitSyncCoordinator.safety.abortInterruptedMerge()
+    val abortPrompt: StateFlow<dev.stapler.stelekit.git.AbortPreservation?> get() = gitSyncCoordinator.safety.abortPrompt
+    fun answerAbortPrompt(confirmed: Boolean) = gitSyncCoordinator.safety.answerAbortPrompt(confirmed)
+    suspend fun abortMergeConfirmed(service: dev.stapler.stelekit.git.GitSyncService, graphId: String) =
+        gitSyncCoordinator.safety.abortMerge(service, graphId)
+    fun confirmMassChangeSync() = gitSyncCoordinator.safety.confirmMassChangeSync()
 
     /** Triggers a fetch-only check for remote changes on the active graph. */
     fun triggerFetchOnly() = gitSyncCoordinator.triggerFetchOnly()
@@ -404,6 +447,9 @@ class StelekitViewModel(
 
     /** Forwards to [GitSyncCoordinator.syncState] — read directly by Compose call sites and dedicated tests. */
     val syncState: StateFlow<SyncState> = gitSyncCoordinator.syncState
+
+    /** Forwards to [GitSyncCoordinator.syncStaleness]. */
+    val syncStaleness: StateFlow<dev.stapler.stelekit.git.SyncStaleness?> = gitSyncCoordinator.syncStaleness
 
     /** Forwards to [GitSyncCoordinator.firstSyncReviewPending]. */
     val firstSyncReviewPending: StateFlow<Boolean> = gitSyncCoordinator.firstSyncReviewPending
@@ -791,6 +837,7 @@ class StelekitViewModel(
                                             _indexingProgress.value = IndexingState.InProgress(progress)
                                         }
                                         _indexingProgress.value = IndexingState.Complete
+                                        runUrlLinkRepairOnce(path)
                                     } catch (e: kotlinx.coroutines.CancellationException) {
                                         _indexingProgress.value = IndexingState.Idle
                                         throw e
@@ -1259,7 +1306,7 @@ class StelekitViewModel(
             "flashcards" -> Screen.Flashcards
             "all-pages" -> Screen.AllPages()
             "notifications" -> Screen.Notifications
-            "logs" -> Screen.Logs
+            "logs" -> Screen.Logs()
             "background-jobs" -> Screen.BackgroundJobs
             else -> Screen.Journals
         }
@@ -1843,7 +1890,12 @@ class StelekitViewModel(
     }
 
     fun setSettingsVisible(visible: Boolean) {
-        _uiState.update { it.copy(settingsVisible = visible) }
+        _uiState.update { it.copy(settingsVisible = visible, pluginsSettingsRequested = false) }
+    }
+
+    /** Opens Settings on the Plugins page, scrolled to the plugin switches. */
+    fun showPluginsSettings() {
+        _uiState.update { it.copy(settingsVisible = true, pluginsSettingsRequested = true) }
     }
 
     fun setCommandPaletteVisible(visible: Boolean) {
@@ -2374,6 +2426,26 @@ class StelekitViewModel(
         val today = now.toLocalDateTime(tz).date
         val tomorrowMidnight = today.plus(1, DateTimeUnit.DAY).atStartOfDayIn(tz)
         return (tomorrowMidnight - now).inWholeMilliseconds.coerceAtLeast(MIN_MIDNIGHT_DELAY_MS)
+    }
+
+    /**
+     * Repairs `https://[[Name]].tld` blocks left by the old auto-linker, once per graph path
+     * (the flag is only set after a clean run, so a partial failure retries next load).
+     * Runs after full indexing so every page's blocks are in the DB.
+     */
+    internal suspend fun runUrlLinkRepairOnce(path: String) {
+        val actor = writeActor ?: return
+        val key = dev.stapler.stelekit.db.UrlLinkRepairService.settingsKey(path)
+        if (platformSettings.getBoolean(key, false)) return
+        val report = dev.stapler.stelekit.db.UrlLinkRepairService(blockRepository, pageRepository, actor, graphWriter)
+            .run(dev.stapler.stelekit.model.EffectiveNotesPath(path))
+        report.fold(
+            { e -> logger.warn("URL link repair failed, will retry next load: ${e.message}") },
+            { r ->
+                logger.info("URL link repair: scanned=${r.candidatesScanned} repaired=${r.blocksRepaired} pages=${r.pagesRewritten} failures=${r.failures}")
+                if (r.clean) platformSettings.putBoolean(key, true)
+            },
+        )
     }
 
     internal fun startMidnightBoundaryWatcher(clock: Clock = Clock.System) {

@@ -148,7 +148,7 @@ class WiringCompletenessTest {
         val text = allowlist()
         assertEquals(emptyList(), WiringAudit.evaluate(WiringInputs.productionSources, roots, text, today))
         val awaiting = text.lines().filter { it.contains("awaiting-unit") }
-        assertTrue(awaiting.isNotEmpty(), "U1 seeds awaiting-unit entries")
+        // Empty once every owning unit has wired or deleted its classes; the loop is then vacuous.
         for (line in awaiting) {
             val cls = line.trim().split(Regex("""\s{2,}"""))[0]
             val without = text.lines().filter { it != line }.joinToString("\n")

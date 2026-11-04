@@ -462,6 +462,8 @@ private fun AssetMetadataCard(
                 }
             }
 
+            if (asset.isDescribedByAnthropic()) DescribedByAnthropicMarker()
+
             if (!asset.ocrText.isNullOrBlank()) {
                 var ocrExpanded by remember { mutableStateOf(false) }
                 Column {

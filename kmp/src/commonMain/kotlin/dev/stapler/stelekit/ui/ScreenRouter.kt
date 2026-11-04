@@ -113,6 +113,8 @@ internal fun ScreenRouter(
     backgroundJobs: dev.stapler.stelekit.jobs.BackgroundJobRegistry = dev.stapler.stelekit.jobs.NoBackgroundJobs,
     /** Moves an asset into an `assets/` subfolder; null hides the Move action on the asset detail screen. */
     assetMover: AssetMover? = null,
+    /** Drives the Assets browser's searchable-images card and processing line; null hides them. */
+    assetPlugins: dev.stapler.stelekit.asset.pipeline.AssetPluginsController? = null,
     /** Google Drive browsing and annotation export; null where this build exposes no Google surfaces. */
     google: dev.stapler.stelekit.platform.google.GoogleIntegration? = null,
 ) {
@@ -239,7 +241,7 @@ internal fun ScreenRouter(
             }
             is Screen.Logs -> {
                 NavigationTracingEffect("Logs")
-                LogDashboard(diagnostics = graphDiagnostics)
+                LogDashboard(diagnostics = graphDiagnostics, initialFilter = currentScreen.initialFilter)
             }
             is Screen.Console -> {
                 NavigationTracingEffect("Console")
@@ -362,10 +364,15 @@ internal fun ScreenRouter(
                 val assetBrowserViewModel = remember {
                     dev.stapler.stelekit.ui.assets.AssetBrowserViewModel(assetRepository = repos.assetRepository, writeActor = repos.writeActor)
                 }
+                LaunchedEffect(currentScreen.initialSearch) {
+                    currentScreen.initialSearch?.let { assetBrowserViewModel.setSearch(it) }
+                }
                 dev.stapler.stelekit.ui.assets.AssetBrowserScreen(
                     viewModel = assetBrowserViewModel,
                     onNavigateBack = { viewModel.goBack() },
                     onNavigateToAsset = { uuid -> viewModel.navigateTo(Screen.AssetDetail(uuid)) },
+                    plugins = assetPlugins,
+                    onOpenPluginsSettings = { viewModel.showPluginsSettings() },
                 )
             }
 

@@ -7,4 +7,5 @@ fun androidPlatformCaps(): PlatformCaps = PlatformCaps(
     imageLabeler = MlKitImageLabeler(),
     pdfText = AndroidPdfTextExtractor(),
     textRecognizer = MlKitTextRecognizer(),
+    power = AndroidPowerSource(),
 )

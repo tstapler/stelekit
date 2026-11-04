@@ -54,7 +54,7 @@ sealed class Screen {
     data object BackgroundJobs : Screen()
 
     @HelpExempt(reason = "Developer log viewer; reachable only from debug menu")
-    data object Logs : Screen()
+    data class Logs(val initialFilter: String? = null) : Screen()
 
     @HelpExempt(reason = "Developer profiling screen; reachable only from debug menu")
     data object Performance : Screen()
@@ -80,7 +80,7 @@ sealed class Screen {
 
     /** Asset browser for viewing and managing all graph assets. */
     @HelpExempt(reason = "Asset management surface; power-user feature not in primary nav")
-    data object AssetBrowser : Screen()
+    data class AssetBrowser(val initialSearch: String? = null) : Screen()
 
     /** Google Drive file browser, opened from Settings > Google Account > Browse Drive. */
     @HelpExempt(reason = "Opened from Settings > Google Account; not a primary navigation destination")
@@ -173,6 +173,8 @@ data class AppState(
     // LLM provider settings — mirrors gitSetupVisible/openGitSetup()/dismissGitSetup() (Epic 6
     // Story 6.1). Drives direct-open + auto-selection of the "AI Providers" settings category.
     val llmProviderSettingsVisible: Boolean = false,
+    // Opens Settings directly on Plugins, scrolled to the switches (the Assets "Turn on" button).
+    val pluginsSettingsRequested: Boolean = false,
     val conflictResolutionVisible: Boolean = false,
     // Full-screen line-diff view for a disk conflict, reached via DiskConflictDialog's
     // "View full comparison" button. Does not clear diskConflict — only suppresses the
@@ -183,6 +185,13 @@ data class AppState(
     // first sync of a repaired branch. Opened from the sync badge; neither auto-opens.
     val branchRepairVisible: Boolean = false,
     val firstSyncReviewVisible: Boolean = false,
+    /** The standalone sync status sheet (chip, Settings, banner and notification taps); [syncStatusNotice] is shown above it. */
+    val syncStatusSheetVisible: Boolean = false,
+    val syncStatusNotice: String? = null,
+    /** The "unfinished merge" detail dialog (abort path) opened from the sync badge or the first-sync review. */
+    val repairNeededVisible: Boolean = false,
+    /** The mass-deletion typed-count confirm opened from the sync badge or the first-sync review. */
+    val massChangeConfirmVisible: Boolean = false,
     // LLM suggestion inbox — mirrors journalMergeReviewVisible's shape. Set true when
     // LlmSuggestionInbox.pendingForGraph(currentGraphId) becomes non-empty; NOT auto-dismissed
     // when it becomes empty via accept/reject (same "do NOT auto-dismiss" rule as journal merge).

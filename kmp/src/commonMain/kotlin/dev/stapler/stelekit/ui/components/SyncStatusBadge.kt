@@ -8,6 +8,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
@@ -40,9 +41,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.error.toSyncErrorMessage
+import dev.stapler.stelekit.git.SyncDetailsTarget
+import dev.stapler.stelekit.git.detailsTarget
 import dev.stapler.stelekit.git.lfs.LfsViolation
 import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.ui.components.git.LfsHeldFilesSheet
+import dev.stapler.stelekit.git.StalenessChipState
+import dev.stapler.stelekit.git.StalenessSeverity
 import kotlinx.coroutines.delay
 import kotlin.time.Clock
 
@@ -62,6 +67,8 @@ data class GitSyncStatus(
     val firstSyncReviewPending: Boolean = false,
     /** Scheduled sync stopped after repeated failed checks; shown as an amber "Sync paused" chip. */
     val scheduledSyncPaused: Boolean = false,
+    /** Always-visible "last merged · behind n" chip; null when there is no git sync service. */
+    val stalenessChip: StalenessChipState? = null,
 )
 
 /**
@@ -92,6 +99,10 @@ fun SyncStatusBadge(
     onBranchRepair: (() -> Unit)? = null,
     onReviewFirstSync: (() -> Unit)? = null,
     onOpenScheduledSyncSettings: (() -> Unit)? = null,
+    /** Opens the detail sheet for an interrupted merge or a paused mass deletion. */
+    onSyncDetails: (() -> Unit)? = null,
+    /** Tapping the "last merged · behind n" chip opens the standalone sync status sheet. */
+    onOpenSyncStatus: (() -> Unit)? = null,
 ) {
     if (!isGitConfigured) {
         Box(modifier = modifier.padding(horizontal = 4.dp)) {
@@ -107,37 +118,56 @@ fun SyncStatusBadge(
         return
     }
 
-    Row(
-        modifier = modifier.padding(horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        // Badge area — state-specific icon and label
-        SyncStateBadge(
-            status = status,
-            onSyncClick = onSyncClick,
-            onAuthError = onAuthError,
-            onBranchRepair = onBranchRepair,
-            onReviewFirstSync = onReviewFirstSync,
-            onOpenScheduledSyncSettings = onOpenScheduledSyncSettings,
-        )
-
-        Spacer(modifier = Modifier.width(4.dp))
-
-        // Manual sync button — always visible
-        IconButton(
-            onClick = onSyncClick,
-            enabled = isGitConfigured,
-            modifier = Modifier.size(32.dp),
+    Column(modifier = modifier) {
+        Row(
+            modifier = Modifier.padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(
-                imageVector = Icons.Default.Sync,
-                contentDescription = if (isGitConfigured) "Sync now" else "Git sync not configured",
-                tint = if (isGitConfigured) MaterialTheme.colorScheme.onSurfaceVariant
-                       else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
-                modifier = Modifier.size(16.dp),
+            // Badge area — state-specific icon and label
+            SyncStateBadge(
+                status = status,
+                onSyncClick = onSyncClick,
+                onAuthError = onAuthError,
+                onBranchRepair = onBranchRepair,
+                onReviewFirstSync = onReviewFirstSync,
+                onOpenScheduledSyncSettings = onOpenScheduledSyncSettings,
+                onSyncDetails = onSyncDetails,
             )
+
+            Spacer(modifier = Modifier.width(4.dp))
+
+            // Manual sync button — always visible
+            IconButton(
+                onClick = onSyncClick,
+                enabled = isGitConfigured,
+                modifier = Modifier.size(32.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Sync,
+                    contentDescription = if (isGitConfigured) "Sync now" else "Git sync not configured",
+                    tint = if (isGitConfigured) MaterialTheme.colorScheme.onSurfaceVariant
+                           else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
+                    modifier = Modifier.size(16.dp),
+                )
+            }
         }
+        status.stalenessChip?.let { StalenessChip(it, onClick = onOpenSyncStatus) }
     }
+}
+
+@Composable
+private fun StalenessChip(chip: StalenessChipState, onClick: (() -> Unit)?, modifier: Modifier = Modifier) {
+    val tap = if (onClick == null) modifier else modifier.sizeIn(minHeight = 48.dp).clickable(onClick = onClick)
+    Text(
+        text = chip.text,
+        style = MaterialTheme.typography.labelSmall,
+        color = when (chip.severity) {
+            StalenessSeverity.Amber -> Color(0xFFF59E0B)
+            StalenessSeverity.Neutral -> MaterialTheme.colorScheme.onSurfaceVariant
+            StalenessSeverity.Healthy -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+        },
+        modifier = tap.padding(horizontal = 4.dp),
+    )
 }
 
 @Composable
@@ -149,6 +179,7 @@ private fun SyncStateBadge(
     onBranchRepair: (() -> Unit)? = null,
     onReviewFirstSync: (() -> Unit)? = null,
     onOpenScheduledSyncSettings: (() -> Unit)? = null,
+    onSyncDetails: (() -> Unit)? = null,
 ) {
     val syncState = status.state
     // Paused is a warning, not an error: it shows only over an otherwise-quiet badge, so a live
@@ -256,11 +287,13 @@ private fun SyncStateBadge(
         is SyncState.Error -> {
             val isAuthError = syncState.error is DomainError.GitError.AuthFailed
             val isBranchMissing = syncState.error is DomainError.GitError.RemoteBranchNotFound
+            val hasDetails = syncState.detailsTarget() != SyncDetailsTarget.None && onSyncDetails != null
             Row(
                 modifier = modifier.clickable {
                     when {
                         isAuthError && onAuthError != null -> onAuthError()
                         isBranchMissing && onBranchRepair != null -> onBranchRepair()
+                        hasDetails -> onSyncDetails?.invoke()
                         else -> onSyncClick()
                     }
                 },
@@ -271,6 +304,7 @@ private fun SyncStateBadge(
                     contentDescription = when {
                         isAuthError -> "Authentication failed — tap to update credentials"
                         isBranchMissing -> "Sync error — tap to fix"
+                        hasDetails -> "Sync error — tap for details"
                         else -> "Sync error — tap to retry"
                     },
                     tint = MaterialTheme.colorScheme.error,

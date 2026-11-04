@@ -18,7 +18,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
@@ -62,15 +65,24 @@ class AssetPipelineService(
     private val consecutiveFailures = mutableMapOf<String, Int>()
     private var backfillJob: Job? = null
 
+    /** Set when a plugin hit a cap during the current drain; the drain stops after that asset. */
+    @kotlin.concurrent.Volatile
+    private var capPause: PauseReason? = null
+
     private val _progress = MutableStateFlow<PipelineProgress>(PipelineProgress.Idle)
     val progress: StateFlow<PipelineProgress> = _progress.asStateFlow()
+
+    private val _initFailures = MutableSharedFlow<String>(extraBufferCapacity = 8)
+
+    /** Ids of plugins that could not start at all (a missing native library), so the UI can switch them off. */
+    val pluginInitFailures: SharedFlow<String> = _initFailures.asSharedFlow()
 
     /** What [processAsset] did with one asset. */
     enum class Outcome { Processed, Failed, Stayed }
 
-    suspend fun processAsset(asset: AssetEntry): Outcome = inFlight.withPermit {
+    suspend fun processAsset(asset: AssetEntry, cloudOnly: Boolean = false): Outcome = inFlight.withPermit {
         // A plugin whose breaker opened this run is skipped; an asset nobody handles stays unprocessed.
-        val plugins = registry.all.filter { it.canProcess(asset) && isClosed(it.id) }
+        val plugins = registry.all.filter { (!cloudOnly || it is CloudClaudePlugin) && it.canProcess(asset) && isClosed(it.id) }
         if (plugins.isEmpty()) return@withPermit Outcome.Stayed
 
         val alreadyAttempted = attemptedMutex.withLock { !attemptedUuids.add(asset.uuid.value) }
@@ -78,6 +90,9 @@ class AssetPipelineService(
 
         val allLabels = mutableListOf<String>()
         var ocrText: String? = null
+        var cloudDescription: String? = null
+        var localRan = false
+        var gotResult = false
         var failed = false
 
         for (plugin in plugins) {
@@ -92,12 +107,22 @@ class AssetPipelineService(
                     ifRight = { pluginResult ->
                         consecutiveFailures[plugin.id] = 0
                         when (pluginResult) {
-                            is AssetPipelineResult.Labels -> allLabels.addAll(pluginResult.labels)
-                            is AssetPipelineResult.OcrText -> ocrText = pluginResult.text
-                            is AssetPipelineResult.CloudDescription -> allLabels.addAll(pluginResult.labelsAdded)
+                            is AssetPipelineResult.Skipped -> {
+                                if (pluginResult.pause != null) capPause = pluginResult.pause
+                            }
+                            is AssetPipelineResult.Labels -> { gotResult = true; localRan = true; allLabels.addAll(pluginResult.labels) }
+                            is AssetPipelineResult.OcrText -> { gotResult = true; localRan = true; ocrText = pluginResult.text }
+                            is AssetPipelineResult.CloudDescription -> {
+                                gotResult = true
+                                cloudDescription = pluginResult.description
+                                allLabels.addAll(pluginResult.labelsAdded)
+                            }
                             is AssetPipelineResult.Combined -> {
+                                gotResult = true
+                                localRan = true
                                 allLabels.addAll(pluginResult.labels)
                                 if (pluginResult.ocrText != null) ocrText = pluginResult.ocrText
+                                if (pluginResult.cloudDescription != null) cloudDescription = pluginResult.cloudDescription
                             }
                         }
                     },
@@ -106,10 +131,14 @@ class AssetPipelineService(
                 throw e
             } catch (e: Throwable) {
                 logger.error("Plugin ${plugin.id} threw on ${asset.uuid.value}: ${e.message}")
+                if (e.isNativeLinkFailure()) _initFailures.tryEmit(plugin.id)
                 failed = true
                 recordFailure(plugin.id)
             }
         }
+
+        // Every plugin that took the asset declined it (no consent, a cap): nothing ran, so it stays unprocessed.
+        if (!failed && !gotResult) return@withPermit Outcome.Stayed
 
         val now = Clock.System.now().toEpochMilliseconds()
         if (!failed) {
@@ -121,19 +150,39 @@ class AssetPipelineService(
             }
             val saved = writeGuarded {
                 @OptIn(DirectRepositoryWrite::class)
-                assetRepository.updateAutoLabels(asset.uuid, finalLabels, "LOCAL")
-                    .flatMap { assetRepository.updateOcrText(asset.uuid, storedOcr) }
+                writeLocalResults(asset, localRan, finalLabels, storedOcr)
+                    .flatMap { writeCloudDescription(asset, cloudDescription) }
                     .flatMap { assetRepository.markMlProcessed(asset.uuid, now) }
             }
             if (saved) return@withPermit Outcome.Processed
             logger.error("Writing results for ${asset.uuid.value} failed; marking it failed")
         }
+        // A backfill failure must not flip a previously good asset to failed.
+        if (cloudOnly) return@withPermit Outcome.Stayed
         val marked = writeGuarded {
             @OptIn(DirectRepositoryWrite::class)
             assetRepository.markMlFailed(asset.uuid, now)
         }
         if (marked) Outcome.Failed else Outcome.Stayed
     }
+
+    // A cloud-only result must not clear labels or OCR text another plugin stored earlier.
+    @OptIn(DirectRepositoryWrite::class)
+    private suspend fun writeLocalResults(
+        asset: AssetEntry,
+        localRan: Boolean,
+        labels: List<String>,
+        ocr: String?,
+    ): Either<DomainError, Unit> {
+        if (!localRan) return Either.Right(Unit)
+        return assetRepository.updateAutoLabels(asset.uuid, labels, "LOCAL")
+            .flatMap { assetRepository.updateOcrText(asset.uuid, ocr) }
+    }
+
+    @OptIn(DirectRepositoryWrite::class)
+    private suspend fun writeCloudDescription(asset: AssetEntry, description: String?): Either<DomainError, Unit> =
+        if (description == null) Either.Right(Unit)
+        else assetRepository.updateCloudDescription(asset.uuid, description, CloudClaudePlugin.CLOUD_TAGS_SOURCE)
 
     private fun isClosed(pluginId: String): Boolean =
         (consecutiveFailures[pluginId] ?: 0) < PLUGIN_FAILURE_THRESHOLD
@@ -199,6 +248,17 @@ class AssetPipelineService(
         }
     }
 
+    /** Clears every failed flag, then drains again; plugins that stay broken fail the rows once more. */
+    fun retryFailed() {
+        scope.launch {
+            val cleared = writeGuarded {
+                @OptIn(DirectRepositoryWrite::class)
+                assetRepository.resetFailedAssets()
+            }
+            if (cleared) scheduleBackfill()
+        }
+    }
+
     /** Stops a drain in flight for [reason]; assets already written stay. [resume] restarts it. */
     fun pause(reason: PauseReason) {
         val job = backfillJob ?: return
@@ -229,6 +289,7 @@ class AssetPipelineService(
     private suspend fun drainUnprocessed() {
         attemptedMutex.withLock { attemptedUuids.clear() }
         consecutiveFailures.clear()
+        capPause = null
         runMarker?.begin(MARKER_OWNER)
         val total = (assetRepository.countUnprocessedAssets().getOrNull() ?: 0L).toInt()
         var done = 0
@@ -249,12 +310,52 @@ class AssetPipelineService(
                     Outcome.Stayed -> stayed++
                 }
                 _progress.value = PipelineProgress.Running(done, total, failed)
+                capPause?.let {
+                    _progress.value = PipelineProgress.Paused(it)
+                    return
+                }
             }
             yield()
             if (batch.size < BATCH_SIZE) break
             offset += stayed
         }
+        if (capPause == null) {
+            val (cloudDone, paused) = drainCloudBackfill()
+            done += cloudDone
+            if (paused) return
+        }
+        // Clear the marker before publishing Finished so a watcher of Finished never sees a run still marked in progress.
+        runMarker?.end(MARKER_OWNER)
         _progress.value = PipelineProgress.Finished(done, failed)
+    }
+
+    /**
+     * The opt-in IncludeExisting pass: describes already-processed images in bounded batches,
+     * through the cloud plugin only. Returns how many were described and whether a cap or the
+     * network paused it.
+     */
+    private suspend fun drainCloudBackfill(): Pair<Int, Boolean> {
+        val cloud = registry.all.filterIsInstance<CloudClaudePlugin>().firstOrNull()
+        if (cloud == null || !cloud.wantsBackfill()) return 0 to false
+        var done = 0
+        var offset = 0
+        while (true) {
+            val batch = assetRepository.getAssetsNeedingCloudDescription(limit = BATCH_SIZE, offset = offset)
+                .first().getOrNull().orEmpty()
+            if (batch.isEmpty()) break
+            var stayed = 0
+            for (asset in batch) {
+                if (processAsset(asset, cloudOnly = true) == Outcome.Processed) done++ else stayed++
+                capPause?.let {
+                    _progress.value = PipelineProgress.Paused(it)
+                    return done to true
+                }
+            }
+            yield()
+            if (batch.size < BATCH_SIZE) break
+            offset += stayed
+        }
+        return done to false
     }
 
     fun shutdown() { scope.cancel() }

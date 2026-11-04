@@ -29,6 +29,8 @@ class QueryPlanAuditTest {
 
     // ── Queries where a full heap scan is expected / unavoidable ─────────────────────────────
     private val ALLOWLIST = setOf(
+        // One-shot count behind the "Delete AI descriptions" confirm; runs once per tap, never observed
+        "countAssetsWithCloudDescription",
         // No WHERE clause — full traversal by design
         "selectAllBlocks", "selectAllBlocksPaginated", "countBlocks",
         "selectAllPagesPaginated", "countPages", "selectPageNameEntries",
@@ -406,9 +408,18 @@ ORDER BY depth, parent_uuid, position"""),
         AuditQuery("selectAssetsByMediaType",
             "SELECT * FROM asset_index WHERE media_type = 'image/png' ORDER BY imported_at_ms DESC LIMIT 10 OFFSET 0"),
         AuditQuery("searchAssetsLight",
-            "SELECT uuid, file_path, relative_path, media_type, subfolder, tags, cloud_description, page_uuids, size_bytes, imported_at_ms, ml_processed, ml_attempted_at, ml_failed, content_hash, is_orphan, ml_tags_source FROM asset_index WHERE (file_path LIKE '%test%' OR tags LIKE '%test%' OR auto_labels LIKE '%test%' OR ocr_text LIKE '%test%') ORDER BY imported_at_ms DESC LIMIT 10 OFFSET 0"),
+            "SELECT uuid, file_path, relative_path, media_type, subfolder, tags, cloud_description, page_uuids, size_bytes, imported_at_ms, ml_processed, ml_attempted_at, ml_failed, content_hash, is_orphan, ml_tags_source FROM asset_index WHERE (file_path LIKE '%test%' OR tags LIKE '%test%' OR auto_labels LIKE '%test%' OR ocr_text LIKE '%test%' OR cloud_description LIKE '%test%') ORDER BY imported_at_ms DESC LIMIT 10 OFFSET 0"),
+        // Snippet read for at most 50 uuids already returned by the search: a primary-key IN lookup, never a scan.
+        AuditQuery("selectAssetsSearchPreview",
+            "SELECT uuid, CASE WHEN ocr_text LIKE '%t%' THEN 'ocr_text' ELSE 'file_path' END AS matched_column, substr(ocr_text, max(1, instr(lower(ocr_text), lower('t')) - 80), 240) AS excerpt FROM asset_index WHERE uuid IN ('a0', 'a1')"),
         AuditQuery("selectUnprocessedAssetsLight",
             "SELECT uuid, file_path, relative_path, media_type, subfolder, tags, cloud_description, page_uuids, size_bytes, imported_at_ms, ml_processed, ml_attempted_at, ml_failed, content_hash, is_orphan, ml_tags_source FROM asset_index WHERE ml_processed = 0 AND ml_failed = 0 ORDER BY imported_at_ms ASC LIMIT 10 OFFSET 0"),
+        AuditQuery("selectAssetsNeedingCloudDescriptionLight",
+            "SELECT uuid, file_path, relative_path, media_type, subfolder, tags, cloud_description, page_uuids, size_bytes, imported_at_ms, ml_processed, ml_attempted_at, ml_failed, content_hash, is_orphan, ml_tags_source FROM asset_index WHERE ml_processed = 1 AND ml_failed = 0 AND cloud_description IS NULL AND media_type = 'IMAGE' ORDER BY imported_at_ms ASC LIMIT 10 OFFSET 0"),
+        AuditQuery("countAssetsNeedingCloudDescription",
+            "SELECT COUNT(*) FROM asset_index WHERE ml_processed = 1 AND ml_failed = 0 AND cloud_description IS NULL AND media_type = 'IMAGE'"),
+        AuditQuery("countAssetsWithCloudDescription",
+            "SELECT COUNT(*) FROM asset_index WHERE cloud_description IS NOT NULL"),
         AuditQuery("countUnprocessedAssets",
             "SELECT COUNT(*) FROM asset_index WHERE ml_processed = 0 AND ml_failed = 0"),
         AuditQuery("countAssets",
@@ -418,7 +429,7 @@ ORDER BY depth, parent_uuid, position"""),
         AuditQuery("selectAssetsByMediaTypeByDateKeyset",
             "SELECT * FROM asset_index WHERE media_type = 'image/png' AND imported_at_ms < COALESCE(9999999999999, 9999999999999) ORDER BY imported_at_ms DESC, uuid DESC LIMIT 10"),
         AuditQuery("selectAssetsBySearchByDateKeyset",
-            "SELECT * FROM asset_index WHERE (file_path LIKE '%test%' OR tags LIKE '%test%' OR auto_labels LIKE '%test%' OR ocr_text LIKE '%test%') AND imported_at_ms < COALESCE(9999999999999, 9999999999999) ORDER BY imported_at_ms DESC, uuid DESC LIMIT 10"),
+            "SELECT * FROM asset_index WHERE (file_path LIKE '%test%' OR tags LIKE '%test%' OR auto_labels LIKE '%test%' OR ocr_text LIKE '%test%' OR cloud_description LIKE '%test%') AND imported_at_ms < COALESCE(9999999999999, 9999999999999) ORDER BY imported_at_ms DESC, uuid DESC LIMIT 10"),
         AuditQuery("selectAssetsByNameKeyset",
             "SELECT * FROM asset_index WHERE (file_path > COALESCE('', '') OR (file_path = '' AND uuid > COALESCE('', ''))) ORDER BY file_path ASC, uuid ASC LIMIT 10"),
         AuditQuery("selectAssetsByMediaTypeByNameKeyset",

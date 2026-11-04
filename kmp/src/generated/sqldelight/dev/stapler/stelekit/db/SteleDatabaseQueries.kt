@@ -3193,6 +3193,29 @@ public class SteleDatabaseQueries(
     offset: Long,
   ): Query<SearchAssetsLight> = searchAssetsLight(query, limit, offset, ::SearchAssetsLight)
 
+  public fun <T : Any> selectAssetsSearchPreview(
+    pattern: String,
+    raw: String?,
+    uuids: Collection<String>,
+    mapper: (
+      uuid: String,
+      matched_column: String,
+      excerpt: String?,
+    ) -> T,
+  ): Query<T> = SelectAssetsSearchPreviewQuery(pattern, raw, uuids) { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)
+    )
+  }
+
+  public fun selectAssetsSearchPreview(
+    pattern: String,
+    raw: String?,
+    uuids: Collection<String>,
+  ): Query<SelectAssetsSearchPreview> = selectAssetsSearchPreview(pattern, raw, uuids, ::SelectAssetsSearchPreview)
+
   public fun <T : Any> selectUnprocessedAssetsLight(
     limit: Long,
     offset: Long,
@@ -3236,6 +3259,58 @@ public class SteleDatabaseQueries(
   }
 
   public fun selectUnprocessedAssetsLight(limit: Long, offset: Long): Query<SelectUnprocessedAssetsLight> = selectUnprocessedAssetsLight(limit, offset, ::SelectUnprocessedAssetsLight)
+
+  public fun <T : Any> selectAssetsNeedingCloudDescriptionLight(
+    limit: Long,
+    offset: Long,
+    mapper: (
+      uuid: String,
+      file_path: String,
+      relative_path: String,
+      media_type: String,
+      subfolder: String,
+      tags: String,
+      cloud_description: String?,
+      page_uuids: String,
+      size_bytes: Long,
+      imported_at_ms: Long,
+      ml_processed: Long,
+      ml_attempted_at: Long?,
+      ml_failed: Long,
+      content_hash: String?,
+      is_orphan: Long,
+      ml_tags_source: String,
+    ) -> T,
+  ): Query<T> = SelectAssetsNeedingCloudDescriptionLightQuery(limit, offset) { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!,
+      cursor.getString(3)!!,
+      cursor.getString(4)!!,
+      cursor.getString(5)!!,
+      cursor.getString(6),
+      cursor.getString(7)!!,
+      cursor.getLong(8)!!,
+      cursor.getLong(9)!!,
+      cursor.getLong(10)!!,
+      cursor.getLong(11),
+      cursor.getLong(12)!!,
+      cursor.getString(13),
+      cursor.getLong(14)!!,
+      cursor.getString(15)!!
+    )
+  }
+
+  public fun selectAssetsNeedingCloudDescriptionLight(limit: Long, offset: Long): Query<SelectAssetsNeedingCloudDescriptionLight> = selectAssetsNeedingCloudDescriptionLight(limit, offset, ::SelectAssetsNeedingCloudDescriptionLight)
+
+  public fun countAssetsNeedingCloudDescription(): Query<Long> = Query(1_602_893_090, arrayOf("asset_index"), driver, "SteleDatabase.sq", "countAssetsNeedingCloudDescription", "SELECT COUNT(*) FROM asset_index WHERE ml_processed = 1 AND ml_failed = 0 AND cloud_description IS NULL AND media_type = 'IMAGE'") { cursor ->
+    cursor.getLong(0)!!
+  }
+
+  public fun countAssetsWithCloudDescription(): Query<Long> = Query(1_466_364_638, arrayOf("asset_index"), driver, "SteleDatabase.sq", "countAssetsWithCloudDescription", "SELECT COUNT(*) FROM asset_index WHERE cloud_description IS NOT NULL") { cursor ->
+    cursor.getLong(0)!!
+  }
 
   public fun countUnprocessedAssets(): Query<Long> = Query(-1_728_676_438, arrayOf("asset_index"), driver, "SteleDatabase.sq", "countUnprocessedAssets", "SELECT COUNT(*) FROM asset_index WHERE ml_processed = 0 AND ml_failed = 0") { cursor ->
     cursor.getLong(0)!!
@@ -5437,6 +5512,17 @@ public class SteleDatabaseQueries(
   /**
    * @return The number of rows updated.
    */
+  public suspend fun clearAllAssetCloudDescriptions(): Long {
+    val result = driver.execute(-790_666_191, """UPDATE asset_index SET cloud_description = NULL, ml_tags_source = CASE WHEN ml_tags_source = 'CLOUD_CLAUDE' THEN 'NONE' ELSE ml_tags_source END WHERE cloud_description IS NOT NULL""", 0).await()
+    notifyQueries(-790_666_191) { emit ->
+      emit("asset_index")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
   public suspend fun markAssetMlProcessed(attemptedAt: Long?, uuid: String): Long {
     val result = driver.execute(158_555_853, """UPDATE asset_index SET ml_processed = 1, ml_attempted_at = ? WHERE uuid = ?""", 2) {
           var parameterIndex = 0
@@ -5459,6 +5545,17 @@ public class SteleDatabaseQueries(
           bindString(parameterIndex++, uuid)
         }.await()
     notifyQueries(83_642_654) { emit ->
+      emit("asset_index")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun resetFailedAssets(): Long {
+    val result = driver.execute(477_099_566, """UPDATE asset_index SET ml_failed = 0, ml_attempted_at = NULL WHERE ml_failed = 1""", 0).await()
+    notifyQueries(477_099_566) { emit ->
       emit("asset_index")
     }
     return result
@@ -8019,8 +8116,9 @@ public class SteleDatabaseQueries(
       driver.removeListener("asset_index", listener = listener)
     }
 
-    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(1_619_469_738, """SELECT uuid, file_path, relative_path, media_type, subfolder, tags, cloud_description, page_uuids, size_bytes, imported_at_ms, ml_processed, ml_attempted_at, ml_failed, content_hash, is_orphan, ml_tags_source FROM asset_index WHERE (file_path LIKE ? ESCAPE '\' OR tags LIKE ? ESCAPE '\' OR auto_labels LIKE ? ESCAPE '\' OR ocr_text LIKE ? ESCAPE '\') ORDER BY imported_at_ms DESC LIMIT ? OFFSET ?""", mapper, 6) {
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(1_619_469_738, """SELECT uuid, file_path, relative_path, media_type, subfolder, tags, cloud_description, page_uuids, size_bytes, imported_at_ms, ml_processed, ml_attempted_at, ml_failed, content_hash, is_orphan, ml_tags_source FROM asset_index WHERE (file_path LIKE ? ESCAPE '\' OR tags LIKE ? ESCAPE '\' OR auto_labels LIKE ? ESCAPE '\' OR ocr_text LIKE ? ESCAPE '\' OR cloud_description LIKE ? ESCAPE '\') ORDER BY imported_at_ms DESC LIMIT ? OFFSET ?""", mapper, 7) {
       var parameterIndex = 0
+      bindString(parameterIndex++, query)
       bindString(parameterIndex++, query)
       bindString(parameterIndex++, query)
       bindString(parameterIndex++, query)
@@ -8030,6 +8128,55 @@ public class SteleDatabaseQueries(
     }
 
     override fun toString(): String = "SteleDatabase.sq:searchAssetsLight"
+  }
+
+  private inner class SelectAssetsSearchPreviewQuery<out T : Any>(
+    public val pattern: String,
+    public val raw: String?,
+    public val uuids: Collection<String>,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("asset_index", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("asset_index", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> {
+      val uuidsIndexes = createArguments(count = uuids.size)
+      return driver.executeQuery(null, """
+          |SELECT uuid,
+          |  CASE WHEN ocr_text LIKE ? ESCAPE '\' THEN 'ocr_text' WHEN cloud_description LIKE ? ESCAPE '\' THEN 'cloud_description' WHEN auto_labels LIKE ? ESCAPE '\' THEN 'auto_labels' WHEN tags LIKE ? ESCAPE '\' THEN 'tags' ELSE 'file_path' END AS matched_column,
+          |  CASE WHEN ocr_text LIKE ? ESCAPE '\' THEN substr(ocr_text, max(1, instr(lower(ocr_text), lower(?)) - 80), 240)
+          |       WHEN cloud_description LIKE ? ESCAPE '\' THEN substr(cloud_description, max(1, instr(lower(cloud_description), lower(?)) - 80), 240)
+          |       WHEN auto_labels LIKE ? ESCAPE '\' THEN substr(auto_labels, max(1, instr(lower(auto_labels), lower(?)) - 80), 240)
+          |       WHEN tags LIKE ? ESCAPE '\' THEN substr(tags, max(1, instr(lower(tags), lower(?)) - 80), 240)
+          |       ELSE substr(file_path, max(1, instr(lower(file_path), lower(?)) - 80), 240) END AS excerpt
+          |FROM asset_index WHERE uuid IN $uuidsIndexes
+          """.trimMargin(), mapper, 13 + uuids.size) {
+            var parameterIndex = 0
+            bindString(parameterIndex++, pattern)
+            bindString(parameterIndex++, pattern)
+            bindString(parameterIndex++, pattern)
+            bindString(parameterIndex++, pattern)
+            bindString(parameterIndex++, pattern)
+            bindString(parameterIndex++, raw)
+            bindString(parameterIndex++, pattern)
+            bindString(parameterIndex++, raw)
+            bindString(parameterIndex++, pattern)
+            bindString(parameterIndex++, raw)
+            bindString(parameterIndex++, pattern)
+            bindString(parameterIndex++, raw)
+            bindString(parameterIndex++, raw)
+            uuids.forEach { uuids_ ->
+              bindString(parameterIndex++, uuids_)
+            }
+          }
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectAssetsSearchPreview"
   }
 
   private inner class SelectUnprocessedAssetsLightQuery<out T : Any>(
@@ -8052,6 +8199,28 @@ public class SteleDatabaseQueries(
     }
 
     override fun toString(): String = "SteleDatabase.sq:selectUnprocessedAssetsLight"
+  }
+
+  private inner class SelectAssetsNeedingCloudDescriptionLightQuery<out T : Any>(
+    public val limit: Long,
+    public val offset: Long,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("asset_index", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("asset_index", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(361_961_955, """SELECT uuid, file_path, relative_path, media_type, subfolder, tags, cloud_description, page_uuids, size_bytes, imported_at_ms, ml_processed, ml_attempted_at, ml_failed, content_hash, is_orphan, ml_tags_source FROM asset_index WHERE ml_processed = 1 AND ml_failed = 0 AND cloud_description IS NULL AND media_type = 'IMAGE' ORDER BY imported_at_ms ASC LIMIT ? OFFSET ?""", mapper, 2) {
+      var parameterIndex = 0
+      bindLong(parameterIndex++, limit)
+      bindLong(parameterIndex++, offset)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectAssetsNeedingCloudDescriptionLight"
   }
 
   private inner class SelectAssetsByDateKeysetQuery<out T : Any>(
@@ -8136,13 +8305,14 @@ public class SteleDatabaseQueries(
 
     override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(null, """
     |SELECT asset_index.uuid, asset_index.file_path, asset_index.relative_path, asset_index.media_type, asset_index.subfolder, asset_index.tags, asset_index.auto_labels, asset_index.ocr_text, asset_index.cloud_description, asset_index.page_uuids, asset_index.size_bytes, asset_index.imported_at_ms, asset_index.ml_processed, asset_index.ml_attempted_at, asset_index.ml_failed, asset_index.content_hash, asset_index.is_orphan, asset_index.ml_tags_source FROM asset_index
-    |WHERE (file_path LIKE ? ESCAPE '\' OR tags LIKE ? ESCAPE '\' OR auto_labels LIKE ? ESCAPE '\' OR ocr_text LIKE ? ESCAPE '\')
+    |WHERE (file_path LIKE ? ESCAPE '\' OR tags LIKE ? ESCAPE '\' OR auto_labels LIKE ? ESCAPE '\' OR ocr_text LIKE ? ESCAPE '\' OR cloud_description LIKE ? ESCAPE '\')
     |AND (imported_at_ms < COALESCE(?, 9999999999999)
     |    OR (imported_at_ms ${ if (cursorMs == null) "IS" else "=" } ? AND uuid < COALESCE(?, '')))
     |ORDER BY imported_at_ms DESC, uuid DESC
     |LIMIT ?
-    """.trimMargin(), mapper, 8) {
+    """.trimMargin(), mapper, 9) {
       var parameterIndex = 0
+      bindString(parameterIndex++, query)
       bindString(parameterIndex++, query)
       bindString(parameterIndex++, query)
       bindString(parameterIndex++, query)

@@ -9,7 +9,6 @@ import dev.stapler.stelekit.performance.SpanRecorder
 import dev.stapler.stelekit.platform.DefaultEncryptionManager
 import dev.stapler.stelekit.platform.EncryptionManager
 import dev.stapler.stelekit.platform.HostAccessState
-import dev.stapler.stelekit.platform.PluginHost
 import dev.stapler.stelekit.domain.NoOpUrlFetcher
 import dev.stapler.stelekit.domain.UrlFetcher
 import dev.stapler.stelekit.platform.LibraryStatsProvider
@@ -35,10 +34,9 @@ import dev.stapler.stelekit.repository.RepositorySet
  *
  * [StelekitApp] must default this parameter via `remember { StelekitAppCoreServices() }`, not a
  * plain `= StelekitAppCoreServices()`, to preserve the per-composition-stable identity the
- * individual `remember { PluginHost() }`-style defaults had before this grouping.
+ * individual `remember { EncryptionManager() }`-style defaults had before this grouping.
  */
 data class StelekitAppCoreServices(
-    val pluginHost: PluginHost = PluginHost(),
     val encryptionManager: EncryptionManager = DefaultEncryptionManager(),
     val urlFetcher: UrlFetcher = NoOpUrlFetcher(),
     /** Null hides the block URL "archive" action (right-click a URL). Constructed by each platform root. */
@@ -98,6 +96,8 @@ data class StelekitAppPlatformIntegrations(
      * say that closed-app checks are limited. Null means the platform has none to report.
      */
     val backgroundRestrictionProbe: dev.stapler.stelekit.git.BackgroundRestrictionProbe? = null,
+    /** Android 13+ `POST_NOTIFICATIONS` access for the Settings "Notify me" toggle; null hides that toggle. */
+    val notificationPermission: dev.stapler.stelekit.git.NotificationPermissionAccess? = null,
     /**
      * On-device ML capabilities for the asset pipeline. No default: every host names its value
      * (`PlatformCaps.NONE` when it has nothing to offer).

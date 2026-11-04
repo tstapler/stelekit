@@ -6,6 +6,7 @@ package dev.stapler.stelekit.ui
 import dev.stapler.stelekit.security.Redactor
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -17,9 +18,16 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.error.toSyncErrorMessage
 import dev.stapler.stelekit.git.BranchRepairProposal
 import dev.stapler.stelekit.git.BranchRepairResult
+import dev.stapler.stelekit.git.SyncDetailsTarget
+import dev.stapler.stelekit.git.detailsTarget
 import dev.stapler.stelekit.git.model.SyncState
+import dev.stapler.stelekit.ui.screens.git.AbortPreservationDialog
 import dev.stapler.stelekit.ui.screens.git.BranchRepairSheet
+import dev.stapler.stelekit.ui.screens.git.FirstSyncPreviewLoader
 import dev.stapler.stelekit.ui.screens.git.FirstSyncReviewDialog
+import dev.stapler.stelekit.ui.screens.git.MassChangeConfirmDialog
+import dev.stapler.stelekit.ui.screens.git.RepairNeededDialog
+import dev.stapler.stelekit.ui.screens.git.loadState
 import kotlinx.coroutines.launch
 
 private fun SyncState.isRunning(): Boolean =
@@ -77,6 +85,16 @@ internal fun BranchRepairHost(appState: AppState, viewModel: StelekitViewModel, 
         var changeBackNote by remember { mutableStateOf<String?>(null) }
         LaunchedEffect(syncState, started) { if (started && syncState.isRunning()) sawRunning = true }
         val label = config?.let { "${it.remoteName}/${it.remoteBranch}" } ?: "the new branch"
+        val loader = remember(graphId) { FirstSyncPreviewLoader({ service.firstSyncPreviews.loadState(graphId) }) }
+        DisposableEffect(loader) {
+            loader.start()
+            onDispose { loader.close() }
+        }
+        val preview by loader.state.collectAsState()
+        val runSync = {
+            started = true
+            viewModel.triggerSync()
+        }
         val resultLine = if (!sawRunning) null else when (val s = syncState) {
             is SyncState.Success -> if (s.remoteCommitsMerged > 0) "Pulled ${s.remoteCommitsMerged} commits" else "Already up to date"
             is SyncState.Error -> s.error.toSyncErrorMessage()
@@ -87,10 +105,7 @@ internal fun BranchRepairHost(appState: AppState, viewModel: StelekitViewModel, 
             previousBranch = service.previousBranchBeforeRepair(),
             syncing = syncState.isRunning(),
             resultLine = changeBackNote ?: resultLine,
-            onSyncNow = {
-                started = true
-                viewModel.triggerSync()
-            },
+            onSyncNow = runSync,
             onChangeBack = {
                 scope.launch {
                     when (val result = service.changeBackBranch()) {
@@ -106,7 +121,50 @@ internal fun BranchRepairHost(appState: AppState, viewModel: StelekitViewModel, 
                 }
             },
             onDismiss = { viewModel.dismissFirstSyncReview() },
+            preview = preview,
+            onRetryPreview = loader::start,
+            onCancelPreview = loader::cancel,
+            onSyncWithoutPreview = runSync,
+            onOpenDetails = if (sawRunning && syncState.detailsTarget() != SyncDetailsTarget.None) viewModel::openSyncDetails else null,
         )
+    }
+
+    if (appState.repairNeededVisible) {
+        val error = (syncState as? SyncState.Error)?.error as? DomainError.GitError.RepairNeeded
+        if (error == null) {
+            LaunchedEffect(Unit) { viewModel.dismissRepairNeeded() }
+        } else {
+            RepairNeededDialog(
+                error = error,
+                busy = syncState.isRunning(),
+                onAbortMerge = viewModel::abortInterruptedMerge,
+                onClose = viewModel::dismissRepairNeeded,
+            )
+        }
+    }
+
+    val abortPrompt by viewModel.abortPrompt.collectAsState()
+    abortPrompt?.let { prompt ->
+        AbortPreservationDialog(
+            paths = prompt.paths,
+            recoveryDir = prompt.recoveryDir,
+            onConfirm = { viewModel.answerAbortPrompt(true) },
+            onCancel = { viewModel.answerAbortPrompt(false) },
+        )
+    }
+
+    if (appState.massChangeConfirmVisible) {
+        val error = (syncState as? SyncState.Error)?.error as? DomainError.GitError.MassChangeBlocked
+        if (error == null) {
+            LaunchedEffect(Unit) { viewModel.dismissMassChangeConfirm() }
+        } else {
+            MassChangeConfirmDialog(
+                error = error,
+                busy = syncState.isRunning(),
+                onConfirm = viewModel::confirmMassChangeSync,
+                onCancel = viewModel::dismissMassChangeConfirm,
+            )
+        }
     }
 }
 

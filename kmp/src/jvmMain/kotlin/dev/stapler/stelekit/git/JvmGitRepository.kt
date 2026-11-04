@@ -260,6 +260,26 @@ class JvmGitRepository(
         ).right()
     }
 
+    override suspend fun editsAtRiskOfReset(config: GitConfig): Either<DomainError.GitError, List<String>> =
+        withContext(PlatformDispatcher.IO) {
+            runGitOp({ e -> DomainError.GitError.FetchFailed("Status failed: ${e.message}") }) {
+                openGitFor(config).use { git ->
+                    val status = git.status().call()
+                    (status.modified - status.conflicting).sorted().right()
+                }
+            }
+        }
+
+    override suspend fun readWorkingBytes(config: GitConfig, path: String): ByteArray? =
+        withContext(PlatformDispatcher.IO) {
+            runCatching { File(config.repoRoot.value, path).takeIf { it.isFile }?.readBytes() }.getOrNull()
+        }
+
+    override suspend fun writeWorkingBytes(config: GitConfig, path: String, bytes: ByteArray): Boolean =
+        withContext(PlatformDispatcher.IO) {
+            runCatching { File(config.repoRoot.value, path).also { it.parentFile?.mkdirs() }.writeBytes(bytes) }.isSuccess
+        }
+
     override suspend fun stageSubdir(config: GitConfig, excludePaths: Set<String>): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
             runGitOp({ e -> DomainError.GitError.CommitFailed("Stage failed: ${e.message}") }) {
@@ -533,6 +553,17 @@ class JvmGitRepository(
                 }
             }
         }
+
+    private val safety = GitSafetyOps(::openGitFor)
+
+    override suspend fun firstSyncPreview(config: GitConfig): Either<DomainError.GitError, FirstSyncPreview> =
+        safety.preview(config) { authConfigurer.configureTransport(it, config) }
+
+    override suspend fun repositoryHealth(config: GitConfig): RepositoryHealth = safety.health(config)
+
+    override suspend fun scanForConflictMarkers(config: GitConfig, scope: GuardScope): MarkerScan = safety.markers(config, scope)
+
+    override suspend fun deletionSummary(config: GitConfig, scope: GuardScope): DeletionSummary = safety.deletions(config, scope)
 
     override suspend fun removeStaleLockFile(config: GitConfig): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {

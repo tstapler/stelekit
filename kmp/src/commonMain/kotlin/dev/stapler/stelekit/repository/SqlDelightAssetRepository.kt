@@ -131,12 +131,73 @@ class SqlDelightAssetRepository(
             .asDbFlowList(PlatformDispatcher.DB) { it }
     }
 
+    override suspend fun getSearchSnippets(
+        query: String,
+        uuids: List<AssetUuid>,
+    ): Either<DomainError, Map<AssetUuid, dev.stapler.stelekit.asset.AssetSearchPreview>> = withContext(PlatformDispatcher.DB) {
+        try {
+            val escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            val wanted = uuids.take(PREVIEW_UUID_LIMIT).map { it.value }
+            if (wanted.isEmpty()) {
+                emptyMap<AssetUuid, dev.stapler.stelekit.asset.AssetSearchPreview>().right()
+            } else {
+                queries.selectAssetsSearchPreview("%$escaped%", query, wanted).executeAsList()
+                    .associate {
+                        AssetUuid(it.uuid) to dev.stapler.stelekit.asset.AssetSearchPreview(it.matched_column, it.excerpt.orEmpty())
+                    }
+                    .right()
+            }
+        } catch (e: CancellationException) { throw e }
+        catch (e: Exception) {
+            DomainError.DatabaseError.ReadFailed(e.message ?: "unknown").left()
+        }
+    }
+
     override fun getUnprocessedAssets(
         limit: Int,
         offset: Int,
     ): Flow<Either<DomainError, List<AssetEntry>>> =
         queries.selectUnprocessedAssetsLight(limit.toLong(), offset.toLong(), ::lightEntry)
             .asDbFlowList(PlatformDispatcher.DB) { it }
+
+    override fun getAssetsNeedingCloudDescription(
+        limit: Int,
+        offset: Int,
+    ): Flow<Either<DomainError, List<AssetEntry>>> =
+        queries.selectAssetsNeedingCloudDescriptionLight(limit.toLong(), offset.toLong(), ::lightEntry)
+            .asDbFlowList(PlatformDispatcher.DB) { it }
+
+    override suspend fun countAssetsNeedingCloudDescription(): Either<DomainError, Long> =
+        withContext(PlatformDispatcher.DB) {
+            try {
+                queries.countAssetsNeedingCloudDescription().asFlow().mapToOne(PlatformDispatcher.DB).first().right()
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                DomainError.DatabaseError.ReadFailed(e.message ?: "unknown").left()
+            }
+        }
+
+    override suspend fun countCloudDescriptions(): Either<DomainError, Long> =
+        withContext(PlatformDispatcher.DB) {
+            try {
+                queries.countAssetsWithCloudDescription().asFlow().mapToOne(PlatformDispatcher.DB).first().right()
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                DomainError.DatabaseError.ReadFailed(e.message ?: "unknown").left()
+            }
+        }
+
+    @DirectRepositoryWrite
+    override suspend fun clearCloudDescriptions(): Either<DomainError, Unit> =
+        withContext(PlatformDispatcher.DB) {
+            try {
+                queries.clearAllAssetCloudDescriptions()
+                Unit.right()
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
+            }
+        }
 
     override suspend fun countUnprocessedAssets(): Either<DomainError, Long> =
         withContext(PlatformDispatcher.DB) {
@@ -302,6 +363,18 @@ class SqlDelightAssetRepository(
         }
 
     @DirectRepositoryWrite
+    override suspend fun resetFailedAssets(): Either<DomainError, Unit> =
+        withContext(PlatformDispatcher.DB) {
+            try {
+                queries.resetFailedAssets()
+                Unit.right()
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
+            }
+        }
+
+    @DirectRepositoryWrite
     override suspend fun updatePageUuids(uuid: AssetUuid, pageUuids: List<String>): Either<DomainError, Unit> =
         withContext(PlatformDispatcher.DB) {
             try {
@@ -388,4 +461,9 @@ class SqlDelightAssetRepository(
                 DomainError.DatabaseError.ReadFailed(e.message ?: "unknown").left()
             }
         }
+
+    private companion object {
+        /** Upper bound on uuids per preview query; matches AssetSearchService.MAX_RESULTS. */
+        const val PREVIEW_UUID_LIMIT = 50
+    }
 }

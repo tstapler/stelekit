@@ -140,7 +140,21 @@ import dev.stapler.stelekit.asset.pipeline.AssetPipelineOomInjectionTest
 import dev.stapler.stelekit.asset.pipeline.AssetPipelineCrashLoopBreakerTest
 import dev.stapler.stelekit.asset.pipeline.DefaultAssetPluginsTest
 import dev.stapler.stelekit.asset.pipeline.OcrPluginTest
+import dev.stapler.stelekit.asset.AssetSearchSqlTest
+import dev.stapler.stelekit.asset.AssetSearchCloudDescriptionTest
+import dev.stapler.stelekit.asset.CloudDescriptionStorageTest
+import dev.stapler.stelekit.asset.CloudKeyLeakageAuditTest
+import dev.stapler.stelekit.asset.pipeline.CloudBackfillTest
+import dev.stapler.stelekit.asset.pipeline.CloudClaudePluginTest
+import dev.stapler.stelekit.asset.pipeline.CloudConsentEnforcementTest
+import dev.stapler.stelekit.asset.pipeline.CloudStructuralAuditTest
+import dev.stapler.stelekit.asset.pipeline.EgressLedgerTest
+import dev.stapler.stelekit.asset.pipeline.GrantedConsentMintSiteAuditTest
+import dev.stapler.stelekit.audit.EgressSurfaceAuditTest
+import dev.stapler.stelekit.llm.AnthropicMessagesClientCharacterizationTest
+import dev.stapler.stelekit.asset.pipeline.AssetPluginsControllerTest
 import dev.stapler.stelekit.asset.pipeline.PluginRegistryTest
+import dev.stapler.stelekit.settings.PluginHostRemovalAuditTest
 import dev.stapler.stelekit.auto.AudiobookNoteFormatterTest
 import dev.stapler.stelekit.auto.AudiobookNoteWriterTest
 import dev.stapler.stelekit.capture.ShareInboxTest
@@ -238,9 +252,43 @@ import dev.stapler.stelekit.git.lfs.GitAttributesMatcherPropertyTest
 import dev.stapler.stelekit.git.lfs.GitAttributesMatcherTest
 import dev.stapler.stelekit.git.lfs.LfsPointerPropertyTest
 import dev.stapler.stelekit.git.lfs.LfsPointerTest
+import dev.stapler.stelekit.git.lfs.GitAttributesParserTest
+import dev.stapler.stelekit.git.lfs.GitWildmatchTest
+import dev.stapler.stelekit.git.GitOperationSupportHelpersTest
+import dev.stapler.stelekit.git.GitRefDiagnosticsTest
+import dev.stapler.stelekit.domain.HtmlBlockConverterTest
+import dev.stapler.stelekit.mcp.McpServerControllerTest
+import dev.stapler.stelekit.git.GitSyncServiceStepRoutingTest
+import dev.stapler.stelekit.capture.ActiveWriteHooksTest
+import dev.stapler.stelekit.tags.LlmTagProviderBranchesTest
+import dev.stapler.stelekit.llm.LlmSuggestionWriterEditsTest
+import dev.stapler.stelekit.vault.VaultHeaderModelTest
+import dev.stapler.stelekit.parser.MarkdownParserInlineStorageTest
+import dev.stapler.stelekit.git.lfs.FileSystemLfsContentProbeTest
+import dev.stapler.stelekit.git.SqlDelightGitConfigRepositoryRoundTripTest
+import dev.stapler.stelekit.migration.ChangeApplierBranchesTest
+import dev.stapler.stelekit.migration.PostMigrationFlusherTest
 import dev.stapler.stelekit.git.GitSyncServiceLfsGuardTest
 import dev.stapler.stelekit.git.GitSyncServicePeriodicTest
 import dev.stapler.stelekit.git.PeriodicSyncDriverTest
+import dev.stapler.stelekit.git.ConflictMarkerDiffScanTest
+import dev.stapler.stelekit.git.FirstSyncPreviewSourceTest
+import dev.stapler.stelekit.git.GitSyncServiceChangeGuardsTest
+import dev.stapler.stelekit.git.GitSyncServicePublishFailureTest
+import dev.stapler.stelekit.git.GitSyncServiceAutoCommitTest
+import dev.stapler.stelekit.git.GitSyncServiceScheduledSyncTest
+import dev.stapler.stelekit.git.SyncSafetyConfirmTest
+import dev.stapler.stelekit.git.BannerPrecedenceTest
+import dev.stapler.stelekit.git.ColdSyncRunnerTest
+import dev.stapler.stelekit.git.StalenessChipStateTest
+import dev.stapler.stelekit.git.SyncNotificationLogicTest
+import dev.stapler.stelekit.git.SyncStalenessStoreTest
+import dev.stapler.stelekit.git.SyncStatusSheetModelTest
+import dev.stapler.stelekit.git.UpdatesNotificationToggleTest
+import dev.stapler.stelekit.ui.FirstSyncPreviewLoaderTest
+import dev.stapler.stelekit.ui.GitSyncCoordinatorTest
+import dev.stapler.stelekit.git.ScheduledSyncPolicyTest
+import dev.stapler.stelekit.git.ScheduledSyncStackE2ETest
 import dev.stapler.stelekit.git.ShallowMergeTest
 import dev.stapler.stelekit.git.merge.JournalMergeServiceTest
 import dev.stapler.stelekit.git.merge.LogseqMergeDriverTest
@@ -397,6 +445,20 @@ import org.junit.runners.Suite
     DefaultAssetPluginsTest::class,
     OcrPluginTest::class,
     PluginRegistryTest::class,
+    AssetSearchSqlTest::class,
+    AssetSearchCloudDescriptionTest::class,
+    CloudDescriptionStorageTest::class,
+    CloudKeyLeakageAuditTest::class,
+    CloudClaudePluginTest::class,
+    CloudBackfillTest::class,
+    CloudConsentEnforcementTest::class,
+    CloudStructuralAuditTest::class,
+    EgressLedgerTest::class,
+    GrantedConsentMintSiteAuditTest::class,
+    EgressSurfaceAuditTest::class,
+    AnthropicMessagesClientCharacterizationTest::class,
+    AssetPluginsControllerTest::class,
+    PluginHostRemovalAuditTest::class,
     AudiobookNoteFormatterTest::class,
     AudiobookNoteWriterTest::class,
     AtomicFileRelocationStepTest::class,
@@ -492,9 +554,43 @@ import org.junit.runners.Suite
     GitAttributesMatcherTest::class,
     LfsPointerPropertyTest::class,
     LfsPointerTest::class,
+    GitAttributesParserTest::class,
+    GitWildmatchTest::class,
+    GitOperationSupportHelpersTest::class,
+    GitRefDiagnosticsTest::class,
+    HtmlBlockConverterTest::class,
+    McpServerControllerTest::class,
+    GitSyncServiceStepRoutingTest::class,
+    ActiveWriteHooksTest::class,
+    LlmTagProviderBranchesTest::class,
+    LlmSuggestionWriterEditsTest::class,
+    VaultHeaderModelTest::class,
+    MarkdownParserInlineStorageTest::class,
+    FileSystemLfsContentProbeTest::class,
+    SqlDelightGitConfigRepositoryRoundTripTest::class,
+    ChangeApplierBranchesTest::class,
+    PostMigrationFlusherTest::class,
     GitSyncServiceLfsGuardTest::class,
     GitSyncServicePeriodicTest::class,
     PeriodicSyncDriverTest::class,
+    ConflictMarkerDiffScanTest::class,
+    GitSyncServiceChangeGuardsTest::class,
+    FirstSyncPreviewSourceTest::class,
+    GitSyncServicePublishFailureTest::class,
+    GitSyncServiceScheduledSyncTest::class,
+    GitSyncServiceAutoCommitTest::class,
+    SyncSafetyConfirmTest::class,
+    BannerPrecedenceTest::class,
+    ColdSyncRunnerTest::class,
+    StalenessChipStateTest::class,
+    SyncNotificationLogicTest::class,
+    SyncStalenessStoreTest::class,
+    SyncStatusSheetModelTest::class,
+    UpdatesNotificationToggleTest::class,
+    FirstSyncPreviewLoaderTest::class,
+    GitSyncCoordinatorTest::class,
+    ScheduledSyncPolicyTest::class,
+    ScheduledSyncStackE2ETest::class,
     ShallowMergeTest::class,
     StubGitRepositoryFailureSequenceTest::class,
     JournalMergeServiceTest::class,

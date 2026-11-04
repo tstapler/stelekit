@@ -4,6 +4,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -49,10 +50,13 @@ fun AssetItemCard(
     onClick: (() -> Unit)? = null,
     onLongPress: (() -> Unit)? = null,
     onAction: ((AssetAction) -> Unit)? = null,
+    /** Match snippet for an active text search; shown by the list layout, which has room for it. */
+    snippet: dev.stapler.stelekit.asset.AssetSearchPreview? = null,
+    searchQuery: String = "",
 ) {
     when (viewMode) {
         ViewMode.GRID -> AssetGridItem(asset, modifier, onClick, onLongPress)
-        ViewMode.LIST -> AssetListItem(asset, modifier, onClick, onLongPress, onAction)
+        ViewMode.LIST -> AssetListItem(asset, modifier, onClick, onLongPress, onAction, snippet, searchQuery)
     }
 }
 
@@ -105,6 +109,9 @@ private fun AssetGridItem(
                     containerColor = MaterialTheme.colorScheme.primary,
                 ) { Text("✓") }
             }
+            if (asset.isDescribedByAnthropic()) {
+                DescribedByAnthropicGridBadge(Modifier.align(Alignment.TopStart).padding(4.dp))
+            }
             Text(
                 text = asset.filePath.substringAfterLast('/'),
                 modifier = Modifier
@@ -129,6 +136,8 @@ private fun AssetListItem(
     onClick: (() -> Unit)? = null,
     onLongPress: (() -> Unit)? = null,
     onAction: ((AssetAction) -> Unit)? = null,
+    snippet: dev.stapler.stelekit.asset.AssetSearchPreview? = null,
+    searchQuery: String = "",
 ) {
     Box(
         modifier = modifier.combinedClickable(
@@ -165,10 +174,16 @@ private fun AssetListItem(
                 )
             },
             supportingContent = {
-                Text(
-                    text = "${asset.sizeBytes / 1024} KB · ${asset.mediaType.name}",
-                    style = MaterialTheme.typography.bodySmall,
-                )
+                Column {
+                    Text(
+                        text = "${asset.sizeBytes / 1024} KB · ${asset.mediaType.name}",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    snippet?.sourceLabel?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
+                    snippet?.takeIf { it.excerpt.isNotEmpty() }?.let {
+                        Text(assetSnippet(it.excerpt, searchQuery), style = MaterialTheme.typography.bodySmall, maxLines = 3)
+                    }
+                }
             },
             trailingContent = {
                 Row(verticalAlignment = Alignment.CenterVertically) {

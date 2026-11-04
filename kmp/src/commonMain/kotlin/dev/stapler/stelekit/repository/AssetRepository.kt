@@ -13,8 +13,27 @@ interface AssetRepository {
     fun getAssets(limit: Int, offset: Int): Flow<Either<DomainError, List<AssetEntry>>>
     fun getAssetsByMediaType(mediaType: AssetMediaType, limit: Int, offset: Int): Flow<Either<DomainError, List<AssetEntry>>>
     fun searchAssets(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<AssetEntry>>>
+    /** Bounded snippets (<= 50 uuids, <= 240 characters each) for rows returned by [searchAssets]. */
+    suspend fun getSearchSnippets(
+        query: String,
+        uuids: List<AssetUuid>,
+    ): Either<DomainError, Map<AssetUuid, dev.stapler.stelekit.asset.AssetSearchPreview>>
+
     fun getUnprocessedAssets(limit: Int, offset: Int): Flow<Either<DomainError, List<AssetEntry>>>
     suspend fun countUnprocessedAssets(): Either<DomainError, Long>
+
+    /** Bounded batches of ML-processed images with no cloud description, oldest first (the IncludeExisting backfill). */
+    fun getAssetsNeedingCloudDescription(limit: Int, offset: Int): Flow<Either<DomainError, List<AssetEntry>>> =
+        kotlinx.coroutines.flow.flowOf(Either.Right(emptyList()))
+
+    suspend fun countAssetsNeedingCloudDescription(): Either<DomainError, Long> = Either.Right(0L)
+
+    /** Assets holding an AI (cloud) description; the "Delete AI descriptions" confirm shows this number. */
+    suspend fun countCloudDescriptions(): Either<DomainError, Long> = Either.Right(0L)
+
+    /** Clears every cloud description in one statement; OCR text and on-device labels stay. */
+    @DirectRepositoryWrite
+    suspend fun clearCloudDescriptions(): Either<DomainError, Unit> = Either.Right(Unit)
     suspend fun countAssets(): Either<DomainError, Long>
 
     // Keyset pagination — pass all cursor fields null for the first page.
@@ -55,6 +74,9 @@ interface AssetRepository {
     suspend fun markMlProcessed(uuid: AssetUuid, attemptedAtMs: Long): Either<DomainError, Unit>
     @DirectRepositoryWrite
     suspend fun markMlFailed(uuid: AssetUuid, attemptedAtMs: Long): Either<DomainError, Unit>
+    /** Clears the failed flag on every failed row so the next drain tries them again. */
+    @DirectRepositoryWrite
+    suspend fun resetFailedAssets(): Either<DomainError, Unit>
     @DirectRepositoryWrite
     suspend fun updatePageUuids(uuid: AssetUuid, pageUuids: List<String>): Either<DomainError, Unit>
     @DirectRepositoryWrite

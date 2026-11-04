@@ -1,0 +1,31 @@
+# path<TAB>destination class<TAB>reason. One line per production file that imports io.ktor.client or calls HttpClient(.
+# Destination classes: first-party | user-configured | third-party-llm | third-party-google | git-remote | url-fetch.
+# Seeded from EgressSurfaceAuditTest's discovered set; a new file fails the test until a line is added here.
+androidMain/dev/stapler/stelekit/domain/UrlFetcherAndroid.kt	url-fetch	fetches user-supplied URLs for link capture
+androidMain/dev/stapler/stelekit/git/AndroidGitRepository.kt	git-remote	repository transfer over HTTPS to the user's remote
+androidMain/dev/stapler/stelekit/platform/google/AndroidGoogleAuthManager.kt	third-party-google	Google sign-in token exchange
+androidMain/dev/stapler/stelekit/platform/google/AndroidGoogleIntegration.kt	third-party-google	Google Drive and Photos access
+commonMain/dev/stapler/stelekit/domain/WaybackMachineService.kt	url-fetch	archive.org availability lookup for links
+commonMain/dev/stapler/stelekit/git/GitHubDeviceFlowClient.kt	git-remote	GitHub device-flow sign-in for the user's remote
+commonMain/dev/stapler/stelekit/llm/AnthropicMessagesClient.kt	third-party-llm	the one Anthropic Messages transport (voice, topics, cloud asset descriptions)
+commonMain/dev/stapler/stelekit/llm/CustomOpenAiCompatibleLlmProvider.kt	user-configured	user-entered OpenAI-compatible endpoint
+commonMain/dev/stapler/stelekit/llm/LlmProviderRegistryFactory.kt	third-party-llm	builds the provider HTTP clients the user configured
+commonMain/dev/stapler/stelekit/platform/google/DriveApiClient.kt	third-party-google	Google Drive API
+commonMain/dev/stapler/stelekit/platform/google/GoogleApiClient.kt	third-party-google	shared Google API client
+commonMain/dev/stapler/stelekit/platform/google/GoogleAuthClient.kt	third-party-google	Google OAuth
+commonMain/dev/stapler/stelekit/platform/google/GoogleAuthCodeExchange.kt	third-party-google	Google OAuth code exchange
+commonMain/dev/stapler/stelekit/platform/google/GoogleTokenRefresher.kt	third-party-google	Google OAuth token refresh
+commonMain/dev/stapler/stelekit/platform/google/PhotosPickerApiClient.kt	third-party-google	Google Photos picker API
+commonMain/dev/stapler/stelekit/ui/components/settings/LlmProviderSettings.kt	third-party-llm	"Test key" call for a configured LLM provider
+commonMain/dev/stapler/stelekit/voice/ClaudeLlmFormatterProvider.kt	third-party-llm	builds the default HttpClient for Claude voice formatting
+commonMain/dev/stapler/stelekit/voice/GeminiLlmFormatterProvider.kt	third-party-llm	Gemini voice formatting
+commonMain/dev/stapler/stelekit/voice/OpenAiLlmFormatterProvider.kt	third-party-llm	OpenAI voice formatting
+commonMain/dev/stapler/stelekit/voice/WhisperSpeechToTextProvider.kt	third-party-llm	Whisper speech-to-text
+iosMain/dev/stapler/stelekit/domain/UrlFetcherIos.kt	url-fetch	fetches user-supplied URLs for link capture
+jvmCommonMain/dev/stapler/stelekit/git/lfs/LfsBatchClient.kt	git-remote	LFS batch API of the user's remote
+jvmCommonMain/dev/stapler/stelekit/git/lfs/LfsRepositorySupport.kt	git-remote	LFS transfers to the user's remote
+jvmMain/dev/stapler/stelekit/domain/UrlFetcherJvm.kt	url-fetch	fetches user-supplied URLs for link capture
+jvmMain/dev/stapler/stelekit/git/JvmGitRepository.kt	git-remote	repository transfer over HTTPS to the user's remote
+wasmJsMain/dev/stapler/stelekit/git/lfs/WasmLfsRulesSource.kt	git-remote	reads LFS rules from the user's remote
+wasmJsMain/dev/stapler/stelekit/git/WasmGitRepository.kt	git-remote	repository transfer over HTTPS to the user's remote
+wasmJsMain/dev/stapler/stelekit/git/WasmGitWriteService.kt	git-remote	writes to the user's remote

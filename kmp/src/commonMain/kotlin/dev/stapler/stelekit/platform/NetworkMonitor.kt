@@ -11,5 +11,8 @@ import kotlinx.coroutines.flow.Flow
  */
 expect class NetworkMonitor() {
     val isOnline: Boolean
+
+    /** True on a metered connection, false on an unmetered one, null where the platform cannot tell (desktop, iOS, web). */
+    val isMetered: Boolean?
     fun observeConnectivity(): Flow<Boolean>
 }

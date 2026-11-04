@@ -31,6 +31,8 @@ class OnDeviceLabelingPlugin(
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Throwable) {
+            // A missing native library is not a per-asset failure; the pipeline switches the plugin off.
+            if (e.isNativeLinkFailure()) throw e
             DomainError.DatabaseError.ReadFailed("OnDeviceLabelingPlugin failed: ${e.message}").left()
         }
     }

@@ -57,13 +57,66 @@ class InMemoryAssetRepository : AssetRepository {
                     asset.filePath.lowercase().contains(q) ||
                         asset.tags.any { it.lowercase().contains(q) } ||
                         asset.autoLabels.any { it.lowercase().contains(q) } ||
-                        asset.ocrText?.lowercase()?.contains(q) == true
+                        asset.ocrText?.lowercase()?.contains(q) == true ||
+                        asset.cloudDescription?.lowercase()?.contains(q) == true
                 }
                 .sortedByDescending { it.importedAtMs }
                 .drop(offset)
                 .take(limit)
                 .right()
         }
+
+    override suspend fun getSearchSnippets(
+        query: String,
+        uuids: List<AssetUuid>,
+    ): Either<DomainError, Map<AssetUuid, dev.stapler.stelekit.asset.AssetSearchPreview>> {
+        val q = query.lowercase()
+        fun excerpt(text: String): String {
+            val at = text.lowercase().indexOf(q).coerceAtLeast(0)
+            val from = (at - 80).coerceAtLeast(0)
+            return text.substring(from, minOf(text.length, from + 240))
+        }
+        val wanted = uuids.take(50).toSet()
+        return store.value.values.filter { it.uuid in wanted }.associate { a ->
+            val ocr = a.ocrText
+            val cloud = a.cloudDescription
+            val labels = a.autoLabels.joinToString(",")
+            val tags = a.tags.joinToString(",")
+            a.uuid to when {
+                ocr != null && ocr.lowercase().contains(q) -> dev.stapler.stelekit.asset.AssetSearchPreview("ocr_text", excerpt(ocr))
+                cloud != null && cloud.lowercase().contains(q) -> dev.stapler.stelekit.asset.AssetSearchPreview("cloud_description", excerpt(cloud))
+                labels.lowercase().contains(q) -> dev.stapler.stelekit.asset.AssetSearchPreview("auto_labels", excerpt(labels))
+                tags.lowercase().contains(q) -> dev.stapler.stelekit.asset.AssetSearchPreview("tags", excerpt(tags))
+                else -> dev.stapler.stelekit.asset.AssetSearchPreview("file_path", excerpt(a.filePath))
+            }
+        }.right()
+    }
+
+    private fun needsCloudDescription(a: AssetEntry) =
+        a.mlProcessed && !a.mlFailed && a.cloudDescription == null && a.mediaType == dev.stapler.stelekit.asset.AssetMediaType.IMAGE
+
+    @Suppress("InMemoryPagination")
+    override fun getAssetsNeedingCloudDescription(
+        limit: Int,
+        offset: Int,
+    ): Flow<Either<DomainError, List<AssetEntry>>> =
+        store.map { map ->
+            map.values.filter(::needsCloudDescription).sortedBy { it.importedAtMs }.drop(offset).take(limit).right()
+        }
+
+    override suspend fun countAssetsNeedingCloudDescription(): Either<DomainError, Long> =
+        store.value.values.count(::needsCloudDescription).toLong().right()
+
+    override suspend fun countCloudDescriptions(): Either<DomainError, Long> =
+        store.value.values.count { it.cloudDescription != null }.toLong().right()
+
+    override suspend fun clearCloudDescriptions(): Either<DomainError, Unit> {
+        store.value = store.value.mapValues { (_, a) ->
+            if (a.cloudDescription == null) a
+            else a.copy(cloudDescription = null, mlTagsSource = if (a.mlTagsSource == "CLOUD_CLAUDE") "NONE" else a.mlTagsSource)
+        }
+        return Unit.right()
+    }
 
     @Suppress("InMemoryPagination")
     override fun getUnprocessedAssets(
@@ -159,6 +212,11 @@ class InMemoryAssetRepository : AssetRepository {
         return Unit.right()
     }
 
+    override suspend fun resetFailedAssets(): Either<DomainError, Unit> {
+        store.value = store.value.mapValues { (_, a) -> if (a.mlFailed) a.copy(mlFailed = false, mlAttemptedAt = null) else a }
+        return Unit.right()
+    }
+
     override suspend fun updatePageUuids(uuid: AssetUuid, pageUuids: List<String>): Either<DomainError, Unit> {
         val asset = store.value[uuid.value]
             ?: return DomainError.DatabaseError.ReadFailed("Asset not found: ${uuid.value}").left()
@@ -192,7 +250,8 @@ class InMemoryAssetRepository : AssetRepository {
                 asset.filePath.lowercase().contains(q) ||
                     asset.tags.any { it.lowercase().contains(q) } ||
                     asset.autoLabels.any { it.lowercase().contains(q) } ||
-                    asset.ocrText?.lowercase()?.contains(q) == true
+                    asset.ocrText?.lowercase()?.contains(q) == true ||
+                    asset.cloudDescription?.lowercase()?.contains(q) == true
             }
         }
 

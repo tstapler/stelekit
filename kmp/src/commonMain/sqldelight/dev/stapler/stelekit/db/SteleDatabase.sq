@@ -1186,10 +1186,32 @@ SELECT * FROM asset_index WHERE media_type = ? ORDER BY imported_at_ms DESC LIMI
 -- Projected: omits the potentially large ocr_text and auto_labels blobs. The WHERE clause may still
 -- match against them; list/drain callers must never materialize them (one per row, thousands of rows).
 searchAssetsLight:
-SELECT uuid, file_path, relative_path, media_type, subfolder, tags, cloud_description, page_uuids, size_bytes, imported_at_ms, ml_processed, ml_attempted_at, ml_failed, content_hash, is_orphan, ml_tags_source FROM asset_index WHERE (file_path LIKE :query ESCAPE '\' OR tags LIKE :query ESCAPE '\' OR auto_labels LIKE :query ESCAPE '\' OR ocr_text LIKE :query ESCAPE '\') ORDER BY imported_at_ms DESC LIMIT :limit OFFSET :offset;
+SELECT uuid, file_path, relative_path, media_type, subfolder, tags, cloud_description, page_uuids, size_bytes, imported_at_ms, ml_processed, ml_attempted_at, ml_failed, content_hash, is_orphan, ml_tags_source FROM asset_index WHERE (file_path LIKE :query ESCAPE '\' OR tags LIKE :query ESCAPE '\' OR auto_labels LIKE :query ESCAPE '\' OR ocr_text LIKE :query ESCAPE '\' OR cloud_description LIKE :query ESCAPE '\') ORDER BY imported_at_ms DESC LIMIT :limit OFFSET :offset;
+
+-- Bounded search snippet for at most 50 uuids already returned by searchAssetsLight: the matched column's
+-- name and a <= 240 character excerpt around the first match, so no full ocr_text/auto_labels blob leaves SQL.
+selectAssetsSearchPreview:
+SELECT uuid,
+  CASE WHEN ocr_text LIKE :pattern ESCAPE '\' THEN 'ocr_text' WHEN cloud_description LIKE :pattern ESCAPE '\' THEN 'cloud_description' WHEN auto_labels LIKE :pattern ESCAPE '\' THEN 'auto_labels' WHEN tags LIKE :pattern ESCAPE '\' THEN 'tags' ELSE 'file_path' END AS matched_column,
+  CASE WHEN ocr_text LIKE :pattern ESCAPE '\' THEN substr(ocr_text, max(1, instr(lower(ocr_text), lower(:raw)) - 80), 240)
+       WHEN cloud_description LIKE :pattern ESCAPE '\' THEN substr(cloud_description, max(1, instr(lower(cloud_description), lower(:raw)) - 80), 240)
+       WHEN auto_labels LIKE :pattern ESCAPE '\' THEN substr(auto_labels, max(1, instr(lower(auto_labels), lower(:raw)) - 80), 240)
+       WHEN tags LIKE :pattern ESCAPE '\' THEN substr(tags, max(1, instr(lower(tags), lower(:raw)) - 80), 240)
+       ELSE substr(file_path, max(1, instr(lower(file_path), lower(:raw)) - 80), 240) END AS excerpt
+FROM asset_index WHERE uuid IN :uuids;
 
 selectUnprocessedAssetsLight:
 SELECT uuid, file_path, relative_path, media_type, subfolder, tags, cloud_description, page_uuids, size_bytes, imported_at_ms, ml_processed, ml_attempted_at, ml_failed, content_hash, is_orphan, ml_tags_source FROM asset_index WHERE ml_processed = 0 AND ml_failed = 0 ORDER BY imported_at_ms ASC LIMIT :limit OFFSET :offset;
+
+-- Already-ML-processed images with no cloud description yet: the opt-in "IncludeExisting" cloud backfill reads these in bounded batches.
+selectAssetsNeedingCloudDescriptionLight:
+SELECT uuid, file_path, relative_path, media_type, subfolder, tags, cloud_description, page_uuids, size_bytes, imported_at_ms, ml_processed, ml_attempted_at, ml_failed, content_hash, is_orphan, ml_tags_source FROM asset_index WHERE ml_processed = 1 AND ml_failed = 0 AND cloud_description IS NULL AND media_type = 'IMAGE' ORDER BY imported_at_ms ASC LIMIT :limit OFFSET :offset;
+
+countAssetsNeedingCloudDescription:
+SELECT COUNT(*) FROM asset_index WHERE ml_processed = 1 AND ml_failed = 0 AND cloud_description IS NULL AND media_type = 'IMAGE';
+
+countAssetsWithCloudDescription:
+SELECT COUNT(*) FROM asset_index WHERE cloud_description IS NOT NULL;
 
 countUnprocessedAssets:
 SELECT COUNT(*) FROM asset_index WHERE ml_processed = 0 AND ml_failed = 0;
@@ -1212,11 +1234,17 @@ UPDATE asset_index SET ocr_text = :ocrText WHERE uuid = :uuid;
 updateAssetCloudDescription:
 UPDATE asset_index SET cloud_description = :cloudDescription, ml_tags_source = :mlTagsSource WHERE uuid = :uuid;
 
+clearAllAssetCloudDescriptions:
+UPDATE asset_index SET cloud_description = NULL, ml_tags_source = CASE WHEN ml_tags_source = 'CLOUD_CLAUDE' THEN 'NONE' ELSE ml_tags_source END WHERE cloud_description IS NOT NULL;
+
 markAssetMlProcessed:
 UPDATE asset_index SET ml_processed = 1, ml_attempted_at = :attemptedAt WHERE uuid = :uuid;
 
 markAssetMlFailed:
 UPDATE asset_index SET ml_failed = 1, ml_attempted_at = :attemptedAt WHERE uuid = :uuid;
+
+resetFailedAssets:
+UPDATE asset_index SET ml_failed = 0, ml_attempted_at = NULL WHERE ml_failed = 1;
 
 updateAssetPageUuids:
 UPDATE asset_index SET page_uuids = :pageUuids WHERE uuid = :uuid;
@@ -1244,7 +1272,7 @@ LIMIT :limit;
 
 selectAssetsBySearchByDateKeyset:
 SELECT * FROM asset_index
-WHERE (file_path LIKE :query ESCAPE '\' OR tags LIKE :query ESCAPE '\' OR auto_labels LIKE :query ESCAPE '\' OR ocr_text LIKE :query ESCAPE '\')
+WHERE (file_path LIKE :query ESCAPE '\' OR tags LIKE :query ESCAPE '\' OR auto_labels LIKE :query ESCAPE '\' OR ocr_text LIKE :query ESCAPE '\' OR cloud_description LIKE :query ESCAPE '\')
 AND (imported_at_ms < COALESCE(:cursorMs, 9999999999999)
     OR (imported_at_ms = :cursorMs AND uuid < COALESCE(:cursorUuid, '')))
 ORDER BY imported_at_ms DESC, uuid DESC

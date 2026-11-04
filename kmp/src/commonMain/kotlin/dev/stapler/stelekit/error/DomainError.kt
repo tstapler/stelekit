@@ -98,6 +98,26 @@ sealed interface DomainError {
         data object FirstSyncReviewPending : GitError {
             override val message: String = "Waiting for you to review the first sync"
         }
+        /** The repository is mid-merge/rebase or has unmerged paths; sync must not stage, commit or push until it is repaired. */
+        data class RepairNeeded(val repositoryState: String) : GitError {
+            override val message: String = "Repository is in an unfinished state ($repositoryState)"
+        }
+        /** Added lines in [files] carry a conflict-marker pair, so committing or pushing them would publish the markers. */
+        data class ConflictMarkersPresent(val files: List<String>) : GitError {
+            override val message: String = "Conflict markers found in ${files.size} file(s): ${files.take(3).joinToString(", ")}"
+        }
+        /** The marker scan hit its size cap; it fails closed rather than skipping the file. */
+        data class ScanIncomplete(val reason: String) : GitError {
+            override val message: String = "Could not check for conflict markers: $reason"
+        }
+        /** Auto-commit is off and the tree has local changes, so a sync would have to commit them; nothing was committed or merged. */
+        data class AutoCommitDisabled(val fileCount: Int) : GitError {
+            override val message: String = "Uncommitted changes — commit or enable auto-commit"
+        }
+        /** The change would delete more files than the mass-change thresholds allow. */
+        data class MassChangeBlocked(val deleted: Int, val threshold: Int, val sample: List<String>) : GitError {
+            override val message: String = "This sync would delete $deleted files (limit $threshold)"
+        }
         data object EditingInProgress : GitError {
             override val message: String = "Cannot sync while editing is in progress"
         }
@@ -362,6 +382,11 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.GitError.Offline -> message
     is DomainError.GitError.EditingInProgress -> message
     is DomainError.GitError.FirstSyncReviewPending -> message
+    is DomainError.GitError.RepairNeeded -> message
+    is DomainError.GitError.ConflictMarkersPresent -> message
+    is DomainError.GitError.ScanIncomplete -> message
+    is DomainError.GitError.MassChangeBlocked -> message
+    is DomainError.GitError.AutoCommitDisabled -> message
     is DomainError.GitError.CredentialExpired -> "GitHub authentication expired — tap to re-connect"
     is DomainError.GitError.RateLimited -> "Rate limited — retrying automatically"
     is DomainError.GitError.FileTooLarge -> "File too large to sync: ${path}"
@@ -422,6 +447,11 @@ fun DomainError.GitError.toSyncErrorMessage(): String = when (this) {
     is DomainError.GitError.NotSupported -> "Git not supported on this platform"
     is DomainError.GitError.EditingInProgress -> "Editing in progress — sync will resume when idle"
     is DomainError.GitError.FirstSyncReviewPending -> "Review the first sync to resume automatic sync"
+    is DomainError.GitError.RepairNeeded -> "Unfinished merge — resolve or abort it before syncing"
+    is DomainError.GitError.ConflictMarkersPresent -> "Conflict markers in ${files.size} file(s) — resolve before syncing"
+    is DomainError.GitError.ScanIncomplete -> "Could not check files for conflict markers — sync stopped"
+    is DomainError.GitError.MassChangeBlocked -> "Sync would delete $deleted files — confirm in the sync details"
+    is DomainError.GitError.AutoCommitDisabled -> message
     is DomainError.GitError.CredentialExpired -> "GitHub authentication expired — tap to re-connect"
     is DomainError.GitError.RateLimited -> "Rate limited by GitHub/GitLab — retrying automatically"
     is DomainError.GitError.FileTooLarge -> "File too large to sync: $path"

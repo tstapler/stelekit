@@ -676,12 +676,20 @@ class RestrictedDatabaseQueries(
         queries.updateAssetCloudDescription(cloudDescription, mlTagsSource, uuid)
 
     @DirectSqlWrite
+    suspend fun clearAllAssetCloudDescriptions(): Long =
+        queries.clearAllAssetCloudDescriptions()
+
+    @DirectSqlWrite
     suspend fun markAssetMlProcessed(attemptedAt: Long, uuid: String): Long =
         queries.markAssetMlProcessed(attemptedAt, uuid)
 
     @DirectSqlWrite
     suspend fun markAssetMlFailed(attemptedAt: Long, uuid: String): Long =
         queries.markAssetMlFailed(attemptedAt, uuid)
+
+    @DirectSqlWrite
+    suspend fun resetFailedAssets(): Long =
+        queries.resetFailedAssets()
 
     @DirectSqlWrite
     suspend fun updateAssetPageUuids(pageUuids: String, uuid: String): Long =

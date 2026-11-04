@@ -14,11 +14,12 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import arrow.core.Either
+import arrow.core.right
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.platform.PlatformFileSystem
+import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.platform.security.CredentialStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
@@ -56,6 +57,7 @@ class WorkManagerSyncScheduler(
             .setInputData(
                 androidx.work.Data.Builder()
                     .putString(GitSyncWorker.KEY_GRAPH_ID, graphId)
+                    .putLong(GitSyncWorker.KEY_INTERVAL_MINUTES, repeatInterval)
                     .build()
             )
             .build()
@@ -110,10 +112,9 @@ class WorkManagerSyncScheduler(
 }
 
 /**
- * WorkManager worker that calls [GitSyncService.fetchOnly] to check for remote changes.
- *
- * Only fetches — does not merge — to minimise battery impact and avoid data loss
- * from automatic merges when the user may be editing.
+ * WorkManager worker for scheduled sync. With the app alive it runs the policy-gated
+ * [ScheduledSyncRunner] tick on the registered service (the same state a manual sync produces); with no live
+ * service it hands the single fetch to [ColdSyncRunner], which cannot touch the working tree.
  *
  * The [GitSyncService] instance is obtained from [GitSyncServiceRegistry], which must be
  * populated from the Application class before WorkManager starts any work.
@@ -125,6 +126,7 @@ class GitSyncWorker(
 
     companion object {
         const val KEY_GRAPH_ID = "graph_id"
+        const val KEY_INTERVAL_MINUTES = "interval_minutes"
     }
 
     override suspend fun doWork(): Result {
@@ -135,25 +137,24 @@ class GitSyncWorker(
         // GitCloneWorker's own retry ownership, not this unrelated watchdog check).
         runCatching { checkAndSurfaceStuckGitCloneWorker(applicationContext, graphId) }
 
+        val intervalMinutes = inputData.getLong(KEY_INTERVAL_MINUTES, WorkManagerSyncScheduler.MIN_PERIODIC_INTERVAL_MINUTES).toInt()
+
         // Fast path: app is running and service is registered
         val service = GitSyncServiceRegistry.getService(graphId)
         if (service != null) {
             return try {
-                // fetchOnly() communicates failure via Either.Left, not by throwing — the result
-                // must be inspected, not discarded, or every fetch failure silently reads as
-                // Result.success() regardless of what the catch block below does (Story 1.2.3).
-                when (service.fetchOnly(graphId)) {
-                    is Either.Left -> Result.failure()
-                    is Either.Right -> Result.success()
-                }
+                // The tick reports failure through TickOutcome.Failure, not by throwing — it must be
+                // inspected, or every failed fetch would read as Result.success() (Story 1.2.3).
+                val outcome = service.scheduled.run(graphId)
+                notifyUpdatesWaiting(graphId, service.staleness.value, intervalMinutes)
+                if (outcome is TickOutcome.Failure) Result.failure() else Result.success()
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
                 // ADR-002: GitOperationSupport.runGitTransportOpWithRetry (Story 1.2.2) already
-                // retried internally before fetchOnly() ever threw/returned Left here — a second
-                // WorkManager-level Result.retry() would stack a second, uncoordinated retry
-                // layer on top of the first. Result.failure() leaves the next attempt to
-                // WorkManager's own 15-minute periodic schedule, not an early re-invocation.
+                // retried internally before the tick failed here — a second WorkManager-level
+                // Result.retry() would stack a second, uncoordinated retry layer on top of the
+                // first. Result.failure() leaves the next attempt to WorkManager's own periodic schedule.
                 Result.failure()
             }
         }
@@ -178,19 +179,31 @@ class GitSyncWorker(
             // write-back happens on this call path even though resolveForJGit's shadowWorktreeFor
             // still correctly targets the shadow directory. The user's next foreground merge()
             // call is what surfaces fetched changes into SAF (plan.md Task 5.1.2b).
-            runSlowPathFetch(
+            val settings = PlatformSettings()
+            val staleness = SyncStalenessStore(settings)
+            val result = runSlowPathFetch(
                 loadConfig = { loadGitConfigFromDb(graphId) },
                 gitRepository = AndroidGitRepository(
                     context = applicationContext,
                     fileSystem = PlatformFileSystem(),
                 ),
+                staleness = staleness,
             )
+            notifyUpdatesWaiting(graphId, staleness.read(graphId), intervalMinutes)
+            result
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
             // ADR-002: gitRepository.fetch() (Story 1.2.2e) already retried internally via
             // runGitTransportOpWithRetry — see the fast path's identical comment above.
             Result.failure()
+        }
+    }
+
+    /** Never affects the worker's own result: a notification problem must not make a good fetch look failed. */
+    private fun notifyUpdatesWaiting(graphId: String, staleness: SyncStaleness, intervalMinutes: Int) {
+        runCatching {
+            SyncNotifier(applicationContext, PlatformSettings()).onBackgroundTick(graphId, "", staleness, intervalMinutes)
         }
     }
 
@@ -215,12 +228,33 @@ class GitSyncWorker(
 internal suspend fun runSlowPathFetch(
     loadConfig: suspend () -> dev.stapler.stelekit.git.model.GitConfig?,
     gitRepository: GitRepository,
+    staleness: SyncStalenessStore = SyncStalenessStore(InMemorySettings()),
+    clock: () -> Long = { System.currentTimeMillis() },
+    locks: NamedLocks = ColdSyncLocks,
 ): ListenableWorker.Result {
     val config = loadConfig() ?: return ListenableWorker.Result.success()
-    return when (gitRepository.fetch(config)) {
-        is Either.Left -> ListenableWorker.Result.failure()
-        is Either.Right -> ListenableWorker.Result.success()
+    val configs = object : GitConfigRepository {
+        override suspend fun getConfig(graphId: String) = config.right()
+        override suspend fun saveConfig(config: dev.stapler.stelekit.git.model.GitConfig) = Unit.right()
+        override suspend fun deleteConfig(graphId: String) = Unit.right()
+        override fun observeConfig(graphId: String) = kotlinx.coroutines.flow.flowOf(config.right())
     }
+    return when (ColdSyncRunner(gitRepository, configs, staleness, locks, clock).run(config.graphId)) {
+        is ColdSyncOutcome.Error -> ListenableWorker.Result.failure()
+        is ColdSyncOutcome.Fetched, ColdSyncOutcome.NoConfig -> ListenableWorker.Result.success()
+    }
+}
+
+/** One lock registry per process, shared by every closed-app fetch. */
+private val ColdSyncLocks = NamedLocks()
+
+private class InMemorySettings : dev.stapler.stelekit.platform.Settings {
+    private val values = mutableMapOf<String, String>()
+    override fun getBoolean(key: String, defaultValue: Boolean) = values[key]?.toBoolean() ?: defaultValue
+    override fun putBoolean(key: String, value: Boolean) { values[key] = value.toString() }
+    override fun getString(key: String, defaultValue: String) = values[key] ?: defaultValue
+    override fun putString(key: String, value: String) { values[key] = value }
+    override fun containsKey(key: String) = values.containsKey(key)
 }
 
 private fun dev.stapler.stelekit.db.Git_config.toGitConfig() =

@@ -34,6 +34,7 @@ import dev.stapler.stelekit.performance.DebugBuildConfig
 import dev.stapler.stelekit.performance.DebugMenuState
 import dev.stapler.stelekit.platform.*
 import dev.stapler.stelekit.ui.components.*
+import dev.stapler.stelekit.ui.components.settings.UpdatesNotificationSettingsState
 import dev.stapler.stelekit.vault.VaultManager
 import dev.stapler.stelekit.voice.VoiceCaptureState
 import kotlinx.coroutines.CoroutineScope
@@ -94,7 +95,12 @@ internal fun GraphContentActiveShell(
     val graphManager = deps.graphManager
     val notificationManager = deps.notificationManager
     val encryptionManager = deps.coreServices.encryptionManager
-    val pluginHost = deps.coreServices.pluginHost
+    // The status bar's plugin count reads the one registry (PluginRegistry.enabledCount); 0 without an asset stack.
+    // Only builds where the asset switch is visible search assets, so release variants stay dark.
+    val assetSearchService = remember(deps.assets, repos) {
+        deps.assets?.takeIf { it.indexing.toggleVisible }?.let { dev.stapler.stelekit.asset.AssetSearchService(repos.assetRepository) }
+    }
+    val enabledPluginCount = remember(deps.assets) { deps.assets?.plugins?.registry?.enabledCount ?: kotlinx.coroutines.flow.MutableStateFlow(0) }
     val voicePipeline = deps.coreServices.voicePipeline
     val voiceSettings = deps.voiceConfig.voiceSettings
     val onRebuildVoicePipeline = deps.voiceConfig.onRebuildVoicePipeline
@@ -176,12 +182,30 @@ internal fun GraphContentActiveShell(
     val syncState by viewModel.syncState.collectAsState()
     val gitLastSyncAt by viewModel.gitLastSyncAt.collectAsState()
     val firstSyncReviewPending by viewModel.firstSyncReviewPending.collectAsState()
-    val scheduledSyncSettings = rememberScheduledSyncSettingsState(inputs.gitSyncStack) {
+    val syncStaleness by viewModel.syncStaleness.collectAsState()
+    val scheduledSyncSettings = rememberScheduledSyncSettingsState(
+        inputs.gitSyncStack,
+        onReviewFirstSync = viewModel::reviewFirstSyncFromSettings,
+        onOpenStatus = viewModel::openSyncStatusFromSettings,
+    ) {
         viewModel.setSettingsVisible(false)
         viewModel.openGitSetup()
     }
 
     val lfsTransferSettings = rememberLfsTransferSettingsState(platformSettings, deps.platformIntegrations.gitRepository)
+    val notificationPermission = deps.platformIntegrations.notificationPermission
+    val updatesNotificationSettings = remember(platformSettings, notificationPermission) {
+        notificationPermission?.let {
+            UpdatesNotificationSettingsState(it, dev.stapler.stelekit.git.UpdatesNotificationPreference(platformSettings))
+        }
+    }
+
+    val stalenessChip = rememberStalenessChip(
+        staleness = syncStaleness,
+        intervalMinutes = scheduledSyncSettings?.let {
+            dev.stapler.stelekit.git.effectiveScheduledIntervalMinutes(it.configuredIntervalMinutes, it.minimumIntervalMinutes)
+        } ?: DEFAULT_CHIP_INTERVAL_MINUTES,
+    )
 
     val focusManager = LocalFocusManager.current
     BoxWithConstraints(
@@ -351,6 +375,7 @@ internal fun GraphContentActiveShell(
                         gitLastSyncAt = gitLastSyncAt,
                         firstSyncReviewPending = firstSyncReviewPending,
                         scheduledSyncPaused = scheduledSyncSettings?.status?.paused == true,
+                        stalenessChip = stalenessChip,
                         storageLocationResolver = storageLocationResolver,
                         gitRepository = gitRepository,
                         onStorageLocationChoose = onStorageLocationChoose,
@@ -406,7 +431,7 @@ internal fun GraphContentActiveShell(
                             appState = appState,
                             encryptionManager = encryptionManager,
                             activeGraphInfo = activeGraphInfo,
-                            pluginHost = pluginHost,
+                            pluginCount = enabledPluginCount,
                             activeVaultManager = vaultManager.takeIf { isParanoidMode },
                             graphIoStack = graphIoStack,
                         ),
@@ -433,8 +458,10 @@ internal fun GraphContentActiveShell(
             deps = GraphDialogLayerDeps(
                 settings = SettingsDialogDeps(
                     assetIndexing = deps.assets?.indexing,
+                    assetPlugins = deps.assets?.plugins,
                     scheduledSync = scheduledSyncSettings,
                     lfsTransfer = lfsTransferSettings,
+                    updatesNotifications = updatesNotificationSettings,
                     voiceSettings = voiceSettings,
                     llmCredentialStore = llmCredentialStore,
                     llmProviderRegistry = llmProviderRegistry,
@@ -538,6 +565,7 @@ internal fun GraphContentActiveShell(
                     listOfNotNull(copyFlow?.let { flow -> Command("copy-pages", dev.stapler.stelekit.ui.screens.copy.CopyDialogStrings.entryLabel(flow.direction)) { flow.open() } })
                 },
                 loadPageBlocks = { pageUuidStr -> repos.blockRepository.getBlocksForPage(dev.stapler.stelekit.model.PageUuid(pageUuidStr)) },
+                assetSearch = assetSearchService,
                 onDebugStateChange = { newState ->
                     debugMenuStateState.value = newState
                     viewModel.onDebugMenuStateChange(newState)
@@ -596,3 +624,5 @@ internal fun GraphContentActiveShell(
         } // CompositionLocalProvider(LocalWindowSizeClass)
     }
 }
+
+private const val DEFAULT_CHIP_INTERVAL_MINUTES = 15

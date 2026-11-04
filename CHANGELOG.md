@@ -1,5 +1,49 @@
 # Changelog
 
+## [0.105.0](https://github.com/tstapler/stelekit/compare/v0.104.0...v0.105.0) (2026-11-02)
+
+
+### Features
+
+* **assets:** Delete AI descriptions in cloud settings (UW-100) ([#546](https://github.com/tstapler/stelekit/issues/546)) ([3c62ac4](https://github.com/tstapler/stelekit/commit/3c62ac4dd629a286b4e3be0cc42fab0e7329c4ef))
+
+## [0.104.0](https://github.com/tstapler/stelekit/compare/v0.103.0...v0.104.0) (2026-11-02)
+
+
+### Features
+
+* **assets:** cloud consent UI, IncludeExisting backfill, network gate, CloudVision removal (U11 part 2) ([#544](https://github.com/tstapler/stelekit/issues/544)) ([44bb0ab](https://github.com/tstapler/stelekit/commit/44bb0ab749a0cf15d24b9439de1e1972740a286b))
+* **sync:** sync status sheet, notification toggle, Android abort preservation ([#550](https://github.com/tstapler/stelekit/issues/550)) ([6d3acdd](https://github.com/tstapler/stelekit/commit/6d3acdde64c01aaa05ab7ef414c9e76139eb190b))
+
+## [0.103.0](https://github.com/tstapler/stelekit/compare/v0.102.0...v0.103.0) (2026-11-02)
+
+
+### Features
+
+* **git:** cold fetch runner, staleness chip/banner/notifier, abort edit preservation ([#548](https://github.com/tstapler/stelekit/issues/548)) ([70a3db9](https://github.com/tstapler/stelekit/commit/70a3db962b6610bd793fa92ad4c47eeffe85f157))
+
+## [0.102.0](https://github.com/tstapler/stelekit/compare/v0.101.0...v0.102.0) (2026-11-02)
+
+
+### Features
+
+* **git:** scheduled ticks run the full policy-gated sync (U16 / Story 2.4; stacked on [#538](https://github.com/tstapler/stelekit/issues/538)) ([#540](https://github.com/tstapler/stelekit/issues/540)) ([c87ae4a](https://github.com/tstapler/stelekit/commit/c87ae4af9676af2037f4980b90e669370083910a))
+* **sync:** sync safety follow-ups to scheduled sync ([#547](https://github.com/tstapler/stelekit/issues/547)) ([6a9d105](https://github.com/tstapler/stelekit/commit/6a9d10597aa864bd48209b2dcfbaa840b5f6e1f7))
+
+## [0.101.0](https://github.com/tstapler/stelekit/compare/v0.100.0...v0.101.0) (2026-11-02)
+
+
+### Features
+
+* **assets:** cloud Claude with consent gate and egress audit (U11) ([#543](https://github.com/tstapler/stelekit/issues/543)) ([7f35fb2](https://github.com/tstapler/stelekit/commit/7f35fb2d98333666eb6685a5aca68bdd36202119))
+* **assets:** per-plugin Settings &gt; Plugins UI, Assets search and PluginHost removal (U10) ([#534](https://github.com/tstapler/stelekit/issues/534)) ([28740f8](https://github.com/tstapler/stelekit/commit/28740f83c74790dcacea754fcfd1a977ca9d6185))
+* **git:** sync guards and first-sync preview (dev plan PR-A1; unblocks U16) ([#537](https://github.com/tstapler/stelekit/issues/537)) ([5db7a28](https://github.com/tstapler/stelekit/commit/5db7a282807f0eea93aa2f8cc56625fa6c6704bd))
+
+
+### Bug Fixes
+
+* **capture:** never auto-link inside URLs; tag URL-only matches; repair corrupted links ([#533](https://github.com/tstapler/stelekit/issues/533)) ([e7dbc71](https://github.com/tstapler/stelekit/commit/e7dbc71a91ce9bc0d41b4855b8164f48c10e5b43))
+
 ## [0.100.0](https://github.com/tstapler/stelekit/compare/v0.99.2...v0.100.0) (2026-10-29)
 
 
