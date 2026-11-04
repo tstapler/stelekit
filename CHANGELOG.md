@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.106.0](https://github.com/tstapler/stelekit/compare/v0.105.0...v0.106.0) (2026-11-04)
+
+
+### Features
+
+* **jobs,lfs:** cancel manual sync, clone percent, LFS downloads as jobs with size cap ([#532](https://github.com/tstapler/stelekit/issues/532)) ([667f4f5](https://github.com/tstapler/stelekit/commit/667f4f538cd1c8782c5524f850bd7f0fc3dcaae8))
+
 ## [0.105.0](https://github.com/tstapler/stelekit/compare/v0.104.0...v0.105.0) (2026-11-02)
 
 
