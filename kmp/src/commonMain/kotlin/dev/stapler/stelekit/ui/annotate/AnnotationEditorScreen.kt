@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -419,6 +420,8 @@ fun AnnotationEditorScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .onGloballyPositioned { coords -> canvasSize = coords.size },
+                // Explicit: LoupeOverlay's offset math assumes Fit letterboxing.
+                contentScale = ContentScale.Fit,
             )
 
             // Layer 2: Committed annotations Canvas
@@ -978,11 +981,11 @@ private fun InProgressAnnotationCanvas(
                         if (!change.pressed) break
                     }
                     val isTap = (lastPos - downPos).getDistance() < tapThresholdPx
-                    onLoupeOffset?.invoke(null)
                     if (isTap) {
                         if (currentTool != AnnotationTool.SELECT) { onRipple?.invoke(lastPos) }
                         onTap(lastPos)
                     }
+                    onLoupeOffset?.invoke(null)
                 }
             },
     ) {
@@ -1554,8 +1557,7 @@ private fun LoupeOverlay(
         val (w, h) = loupeDecodeSize(canvasSize.width, canvasSize.height, zoomFactor)
         ImageRequest.Builder(platformContext).data(imageUri).size(Size(w, h)).build()
     }
-    val innerOffsetXPx = loupeSizePx / 2f - touchOffset.x * zoomFactor
-    val innerOffsetYPx = loupeSizePx / 2f - touchOffset.y * zoomFactor
+    val innerOffset = loupeInnerOffset(loupeSizePx, touchOffset, zoomFactor)
     Box(
         modifier = Modifier
             .offset { IntOffset(loupeXPx.toInt(), loupeYPx.toInt()) }
@@ -1570,8 +1572,10 @@ private fun LoupeOverlay(
                 // Must match the main image's Fit scaling, or the letterbox offsets differ and the crosshair misses the tap point.
                 contentScale = ContentScale.Fit,
                 modifier = Modifier
-                    .size(innerWidthDp, innerHeightDp)
-                    .offset { IntOffset(innerOffsetXPx.toInt(), innerOffsetYPx.toInt()) },
+                    // requiredSize: plain size() is clamped to the 120dp parent, which silently
+                    // collapses the 3x inner image and breaks the offset math.
+                    .requiredSize(innerWidthDp, innerHeightDp)
+                    .offset { innerOffset },
             )
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val halfX = size.width / 2f
