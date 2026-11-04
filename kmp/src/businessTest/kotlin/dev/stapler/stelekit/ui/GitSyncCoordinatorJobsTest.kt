@@ -8,6 +8,7 @@ import arrow.core.left
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.FetchResult
 import dev.stapler.stelekit.git.model.GitConfig
+import dev.stapler.stelekit.git.GitStatus
 import dev.stapler.stelekit.git.buildGitSyncTestService
 import dev.stapler.stelekit.git.testsupport.StubConfigRepository
 import dev.stapler.stelekit.git.testsupport.StubGitRepository
@@ -103,7 +104,11 @@ class GitSyncCoordinatorJobsTest {
 
     @Test
     fun triggerSync_should_ListSyncJob_When_SyncStarts() = runTest {
-        val repository = ParkedFetchRepository(CompletableDeferred(Unit))
+        val repository = object : StubGitRepository() {
+            // The stub's status() throws; park it so the sync job stays Running while we list it.
+            override suspend fun status(config: GitConfig): Either<DomainError.GitError, GitStatus> =
+                CompletableDeferred<Nothing>().await()
+        }
 
         coordinator(repository).triggerSync()
 
