@@ -32,7 +32,7 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
-      - uses: tstapler/gha-actions/gradle-ci-memory@a4cb933590e4470b66a09c970e9002e65b6803c4 # v0.1.0
+      - uses: tstapler/gha-actions/gradle-ci-memory@b365b0a976467f8e22798bb60162bd1de27f6be6 # v0.1.2
 
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -91,7 +91,7 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
-      - uses: tstapler/gha-actions/gradle-ci-memory@a4cb933590e4470b66a09c970e9002e65b6803c4 # v0.1.0
+      - uses: tstapler/gha-actions/gradle-ci-memory@b365b0a976467f8e22798bb60162bd1de27f6be6 # v0.1.2
 
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -145,7 +145,7 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
-      - uses: tstapler/gha-actions/gradle-ci-memory@a4cb933590e4470b66a09c970e9002e65b6803c4 # v0.1.0
+      - uses: tstapler/gha-actions/gradle-ci-memory@b365b0a976467f8e22798bb60162bd1de27f6be6 # v0.1.2
 
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -228,12 +228,12 @@ jobs:
           distribution: 'temurin'
 
       - id: mem
-        uses: tstapler/gha-actions/gradle-ci-memory@a4cb933590e4470b66a09c970e9002e65b6803c4 # v0.1.0
+        uses: tstapler/gha-actions/gradle-ci-memory@b365b0a976467f8e22798bb60162bd1de27f6be6 # v0.1.2
         with:
           kotlin-gc-log: 'true'
           heap-dump-on-oom: 'true'
 
-      - uses: tstapler/gha-actions/mem-sampler@a4cb933590e4470b66a09c970e9002e65b6803c4 # v0.1.0
+      - uses: tstapler/gha-actions/mem-sampler@b365b0a976467f8e22798bb60162bd1de27f6be6 # v0.1.2
 
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -264,7 +264,7 @@ jobs:
 
       - name: Report CI memory on the PR
         if: always()
-        uses: tstapler/gha-actions/mem-sampler/report@a4cb933590e4470b66a09c970e9002e65b6803c4 # v0.1.0
+        uses: tstapler/gha-actions/mem-sampler/report@b365b0a976467f8e22798bb60162bd1de27f6be6 # v0.1.2
         with:
           metrics: ci-mem-head/metrics.json
           baseline-cache: 'false'  # this job is PR-only, so there is no main run to diff against
@@ -273,7 +273,7 @@ jobs:
 
       - name: Upload JVM diagnostics (hs_err, heap dumps, GC logs, Gradle reports)
         if: always()
-        uses: tstapler/gha-actions/jvm-diagnostics-upload@a4cb933590e4470b66a09c970e9002e65b6803c4 # v0.1.0
+        uses: tstapler/gha-actions/jvm-diagnostics-upload@b365b0a976467f8e22798bb60162bd1de27f6be6 # v0.1.2
         with:
           name: diff-coverage-jvm-diagnostics
           extra-paths: ${{ steps.mem.outputs.diagnostics-dir }}
@@ -281,7 +281,7 @@ jobs:
 
       - name: Effective Gradle/Kotlin daemon flags
         if: always()
-        uses: tstapler/gha-actions/gradle-ci-memory/effective-flags@a4cb933590e4470b66a09c970e9002e65b6803c4 # v0.1.0
+        uses: tstapler/gha-actions/gradle-ci-memory/effective-flags@b365b0a976467f8e22798bb60162bd1de27f6be6 # v0.1.2
 
       # Report-only: PIT scores whole classes, so a one-line change to a large class is judged on
       # mutants it never touched, and a diff touching GraphLoader/GitSyncService re-runs their large
@@ -331,7 +331,7 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - uses: tstapler/gha-actions/gradle-ci-memory@a4cb933590e4470b66a09c970e9002e65b6803c4 # v0.1.0
+      - uses: tstapler/gha-actions/gradle-ci-memory@b365b0a976467f8e22798bb60162bd1de27f6be6 # v0.1.2
 
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -404,7 +404,7 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
-      - uses: tstapler/gha-actions/gradle-ci-memory@a4cb933590e4470b66a09c970e9002e65b6803c4 # v0.1.0
+      - uses: tstapler/gha-actions/gradle-ci-memory@b365b0a976467f8e22798bb60162bd1de27f6be6 # v0.1.2
 
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -468,7 +468,7 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
-      - uses: tstapler/gha-actions/gradle-ci-memory@a4cb933590e4470b66a09c970e9002e65b6803c4 # v0.1.0
+      - uses: tstapler/gha-actions/gradle-ci-memory@b365b0a976467f8e22798bb60162bd1de27f6be6 # v0.1.2
 
       - uses: gradle/actions/setup-gradle@v4
         with:

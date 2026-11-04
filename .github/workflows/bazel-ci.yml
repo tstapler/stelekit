@@ -220,11 +220,11 @@ jobs:
           # harmless — GHA scopes PR caches to the branch, not main.
           cache-save: true
 
-      - uses: tstapler/gha-actions/mem-sampler@a4cb933590e4470b66a09c970e9002e65b6803c4 # v0.1.0
+      - uses: tstapler/gha-actions/mem-sampler@b365b0a976467f8e22798bb60162bd1de27f6be6 # v0.1.2
 
       - name: Bazel profile (trace + memory profile + resource flags)
         id: bazel-profile
-        uses: tstapler/gha-actions/bazel-profile@a4cb933590e4470b66a09c970e9002e65b6803c4 # v0.1.0
+        uses: tstapler/gha-actions/bazel-profile@b365b0a976467f8e22798bb60162bd1de27f6be6 # v0.1.2
 
       - name: Build Android APK
         # nick-fields/retry absorbs transient Bazel external-repository fetch
@@ -243,7 +243,7 @@ jobs:
       # Main saves its numbers; PRs diff against the latest main run. Advisory only.
       - name: Report CI memory
         if: always()
-        uses: tstapler/gha-actions/mem-sampler/report@a4cb933590e4470b66a09c970e9002e65b6803c4 # v0.1.0
+        uses: tstapler/gha-actions/mem-sampler/report@b365b0a976467f8e22798bb60162bd1de27f6be6 # v0.1.2
         with:
           metrics: ci-mem-head/metrics.json
           title: CI memory (Bazel Android build, 16 GB runner)
@@ -251,7 +251,7 @@ jobs:
 
       - name: Bazel profile report
         if: always()
-        uses: tstapler/gha-actions/bazel-profile/report@a4cb933590e4470b66a09c970e9002e65b6803c4 # v0.1.0
+        uses: tstapler/gha-actions/bazel-profile/report@b365b0a976467f8e22798bb60162bd1de27f6be6 # v0.1.2
         with:
           profile-path: ${{ steps.bazel-profile.outputs.profile-path }}
           name: bazel-android-build-profile
